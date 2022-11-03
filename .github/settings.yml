@@ -156,9 +156,9 @@ repository:
 
 # Collaborators: give specific users access to this repository.
 # See https://docs.github.com/en/rest/collaborators/collaborators#add-a-repository-collaborator for available options
-collaborators:
-  - username: marcusrbrown
-    permission: push
+# collaborators:
+#   - username: marcusrbrown
+#     permission: push
 
   # Note: `permission` is only valid on organization-owned repositories.
   # The permission to grant the collaborator. Can be one of:
