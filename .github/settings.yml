@@ -126,7 +126,7 @@ repository:
 
   # Either `true` to enable automated security fixes, or `false` to disable
   # automated security fixes.
-  # enable_automated_security_fixes: false
+  enable_automated_security_fixes: false
 
   # Either `true` to enable vulnerability alerts, or `false` to disable
   # vulnerability alerts.
