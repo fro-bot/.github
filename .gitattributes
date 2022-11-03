@@ -1,0 +1,27 @@
+# Auto detect text files and perform LF normalization
+* text=auto eol=lf
+
+*.bin filter=lfs diff=lfs merge=lfs -text
+*.bmp filter=lfs diff=lfs merge=lfs -text
+*.gif filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+*.p[n|x]m filter=lfs diff=lfs merge=lfs -text
+*.svg filter=lfs diff=lfs merge=lfs -text
+*.tga filter=lfs diff=lfs merge=lfs -text
+*.tiff? filter=lfs diff=lfs merge=lfs -text
+*.xpm filter=lfs diff=lfs merge=lfs -text
+
+*.a -text
+*.ar -text
+*.class -text
+*.dll -text
+*.k?elf -text
+*.exe -text
+*.idb -text
+*.lib -text
+*.o -text
+*.obj -text
+*.out -text
+*.pdb -text
+*.so -text
