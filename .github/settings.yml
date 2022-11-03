@@ -103,14 +103,14 @@ repository:
   #  - PR_TITLE - default to the pull request's title.
   #  - MERGE_MESSAGE - default to the classic title for a merge message (e.g., Merge pull request #123 from branch-name).
   # Can be one of: PR_TITLE, MERGE_MESSAGE
-  merge_commit_title: PR_TITLE
+  # merge_commit_title: PR_TITLE
 
   # The default value for a merge commit message.
   #  - PR_TITLE - default to the pull request's title.
   #  - PR_BODY - default to the pull request's body.
   #  - BLANK - default to a blank commit message.
   # Can be one of: PR_BODY, PR_TITLE, BLANK
-  merge_commit_message: BLANK
+  # merge_commit_message: BLANK
 
   # true to archive this repository. Note: You cannot unarchive repositories through the API.
   # Default: false
