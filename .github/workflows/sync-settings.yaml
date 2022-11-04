@@ -1,0 +1,24 @@
+name: sync-settings
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/settings.yml']
+  schedule:
+    - cron: '55 2 * * *'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Token
+        id: get_workflow_token
+        uses: peter-murray/workflow-application-token-action@v1
+        with:
+          application_id: ${{ secrets.APPLICATION_ID }}
+          application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+
+      - uses: exivity/actions/sync-defaults@main
+        with:
+          gh-token: ${{ steps.get_workflow_token.outputs.token }}
