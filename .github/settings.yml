@@ -188,6 +188,8 @@ labels:
 # Collaborators: give specific users access to this repository.
 # See https://docs.github.com/en/rest/collaborators/collaborators#add-a-repository-collaborator for available options
 collaborators:
+  - username: fro-bot
+    permission: admin
   - username: marcusrbrown
     permission: push
 
