@@ -90,7 +90,7 @@ repository:
   #  - PR_TITLE - default to the pull request's title.
   #  - COMMIT_OR_PR_TITLE - default to the commit's title (if only one commit) or the pull request's title (when more than one commit).
   # Can be one of: PR_TITLE, COMMIT_OR_PR_TITLE
-  squash_merge_commit_title: COMMIT_OR_PR_TITLE
+  squash_merge_commit_title: PR_TITLE
 
   # The default value for a squash merge commit message:
   #  - PR_BODY - default to the pull request's body.
@@ -103,14 +103,14 @@ repository:
   #  - PR_TITLE - default to the pull request's title.
   #  - MERGE_MESSAGE - default to the classic title for a merge message (e.g., Merge pull request #123 from branch-name).
   # Can be one of: PR_TITLE, MERGE_MESSAGE
-  merge_commit_title: PR_TITLE
+  # merge_commit_title: PR_TITLE
 
   # The default value for a merge commit message.
   #  - PR_TITLE - default to the pull request's title.
   #  - PR_BODY - default to the pull request's body.
   #  - BLANK - default to a blank commit message.
   # Can be one of: PR_BODY, PR_TITLE, BLANK
-  merge_commit_message: BLANK
+  # merge_commit_message: BLANK
 
   # true to archive this repository. Note: You cannot unarchive repositories through the API.
   # Default: false
@@ -126,26 +126,57 @@ repository:
 
   # Either `true` to enable automated security fixes, or `false` to disable
   # automated security fixes.
-  # enable_automated_security_fixes: false
+  enable_automated_security_fixes: false
 
   # Either `true` to enable vulnerability alerts, or `false` to disable
   # vulnerability alerts.
   enable_vulnerability_alerts: true
 
 # Labels: define labels for Issues and Pull Requests
-# labels:
-#   - name: bug
-#     color: CC0000
-#     description: An issue with the system 🐛.
+labels:
+  - name: bug
+    color: '#d73a4a'
+    description: Something isn't working
 
-#   - name: feature
-#     # If including a `#`, make sure to wrap it with quotes!
-#     color: '#336699'
-#     description: New functionality.
+  - name: dependencies
+    color: '#A0BB41'
+    description: Dependency updates or security alerts
 
-#   - name: Help Wanted
-#     # Provide a new name to rename an existing label
-#     new_name: first-timers-only
+  - name: documentation
+    color: '#0075ca'
+    description: Improvements or additions to documentation
+
+  - name: duplicate
+    color: '#cfd3d7'
+    description: This issue or pull request already exists
+
+  - name: enhancement
+    color: '#a2eeef'
+    description: New feature or request
+
+  - name: good first issue
+    color: '#7057ff'
+    description: Good for newcomers
+
+  - name: help wanted
+    color: '#008672'
+    description: Extra attention is needed
+
+  - name: invalid
+    color: '#e4e669'
+    description: This doesn't seem right
+
+  - name: question
+    color: '#d876e3'
+    description: Further information is requested
+
+  - name: security
+    color: '#ff0000'
+    description: Security vulnerability
+
+  - name: wontfix
+    color: '#ffffff'
+    description: This will not be worked on
 
 # Milestones: define milestones for Issues and Pull Requests
 # milestones:
@@ -157,14 +188,11 @@ repository:
 # Collaborators: give specific users access to this repository.
 # See https://docs.github.com/en/rest/collaborators/collaborators#add-a-repository-collaborator for available options
 # collaborators:
-  # - username: fro-bot
-  #   permission: admin
+#   - username: fro-bot
+#     permission: admin
 
-  # - username: bkeepers
-  #   permission: push
-
-  # - username: hubot
-  #   permission: pull
+#   - username: marcusrbrown
+#     permission: push
 
   # Note: `permission` is only valid on organization-owned repositories.
   # The permission to grant the collaborator. Can be one of:
@@ -186,7 +214,7 @@ teams:
     permission: admin
 
   - name: services
-    permission: pull
+    permission: maintain
 
 branches:
   - name: main
