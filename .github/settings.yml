@@ -190,6 +190,7 @@ labels:
 collaborators:
   - username: fro-bot
     permission: admin
+
   - username: marcusrbrown
     permission: push
 
@@ -213,7 +214,7 @@ collaborators:
     # permission: admin
 
   # - name: services
-  #   permission: pull
+  #   permission: maintain
 
 branches:
   - name: main
