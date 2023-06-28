@@ -12,7 +12,7 @@ name: Fro Bot (GitHub App)
     outputs:
       access-token:
         description: The Installation Access Token
-        value: ${{ jobs.get-installation-access-token.outputs.access-token }}
+        value: ${{ jobs.get-app.outputs.access-token }}
       app:
         description: The GitHub App
         value: ${{ jobs.get-app.outputs.app }}
@@ -27,46 +27,31 @@ name: Fro Bot (GitHub App)
 
 permissions: {}
 
-env:
-  APP_SLUG: 'fro-bot'
-
 jobs:
-  get-installation-access-token:
-    name: Get Installation Access Token
+  get-app:
+    name: Get App
     outputs:
       access-token: ${{ steps.get-workflow-app-token.outputs.token }}
+      app: ${{ steps.get-app.outputs.app }}
     runs-on: ubuntu-latest
     steps:
-      - name: Get Token
-        id: get-workflow-app-token
+      - id: get-workflow-app-token
+        name: Get Token
         uses: peter-murray/workflow-application-token-action@v2
         with:
           application_id: ${{ secrets.APPLICATION_ID }}
           application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-
-  get-app:
-    name: Get App
-    needs: get-installation-access-token
-    outputs:
-      app: ${{ steps.get-app.outputs.app }}
-    runs-on: ubuntu-latest
-    steps:
       - id: get-app
         name: Get App
         env:
-          GH_TOKEN: ${{ needs.get-installation-access-token.outputs.access-token }}
+          APP_SLUG: 'fro-bot'
+          GH_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
         run: |
           gh api /apps/${{ env.APP_SLUG }} \
             -H 'Accept: application/vnd.github+json' \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             | tr -d '\n' > app.json
           echo "app=$(cat app.json)" >> $GITHUB_OUTPUT
-
-  display-app:
-    if: github.event_name != 'workflow_call'
-    name: Display App
-    needs: get-app
-    runs-on: ubuntu-latest
-    steps:
-      - name: Display App
-        run: echo "${{ needs.get-app.outputs.app }}" | jq
+      - if: github.event_name != 'workflow_call'
+        name: Display App
+        run: echo "${{ steps.get-app.outputs.app }}" | jq
