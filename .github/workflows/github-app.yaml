@@ -39,7 +39,7 @@ jobs:
     steps:
       - name: Get Token
         id: get-workflow-app-token
-        uses: peter-murray/workflow-application-token-action@v1
+        uses: peter-murray/workflow-application-token-action@v2
         with:
           application_id: ${{ secrets.APPLICATION_ID }}
           application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -53,10 +53,12 @@ jobs:
     steps:
       - id: get-app
         name: Get App
+        env:
+          GH_TOKEN: ${{ needs.get-installation-access-token.outputs.access-token }}
         run: |
           gh api /apps/${{ env.APP_SLUG }} \
-            -H 'Accept: application/vnd.github.v3+json' \
-            -H "Authorization: Bearer ${{ needs.get-installation-access-token.outputs.access-token }}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
             | tr -d '\n' > app.json
           echo "app=$(cat app.json)" >> $GITHUB_OUTPUT
 
