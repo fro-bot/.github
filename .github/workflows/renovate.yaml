@@ -1,0 +1,59 @@
+---
+# Renovate this repository if this workflow file or the Renovate configuration file is changed.
+name: Renovate
+
+'on':
+  issue_comment:
+    types: [edited]
+  issues:
+    types: [edited]
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/renovate.yaml'
+      - '.github/renovate.json'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/renovate.yaml'
+      - '.github/renovate.json'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  should-renovate:
+    name: Check if Renovate should run
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (
+        (github.event_name == 'issue_comment' || github.event_name == 'issues') &&
+        (
+          contains(github.event.issue.body, '- [x] <!-- rebase-check -->') ||
+          contains(github.event.issue.body, '- [x] <!-- manual job -->') ||
+          contains(github.event.issue.body, '- [x] <!-- retry-branch=')
+        )
+      )
+    outputs:
+      renovate: ${{ steps.create-output.outputs.renovate }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: create-output
+        run: echo "renovate=true" >> $GITHUB_OUTPUT
+
+  Renovate:
+    uses: bfra-me/renovate-config/.github/workflows/renovate.yaml@main
+    needs: should-renovate
+    if: needs.should-renovate.outputs.renovate == 'true'
+    with:
+      autodiscover: false
+      branch: ${{ github.head_ref }}
+      dry_run: ${{ github.event_name == 'pull_request' && true }}
+      print_config: ${{ github.event_name == 'pull_request' && true }}
+    secrets:
+      APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
+      APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
