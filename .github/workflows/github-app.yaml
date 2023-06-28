@@ -54,4 +54,6 @@ jobs:
           echo "app=$(cat app.json)" >> $GITHUB_OUTPUT
       - if: github.event_name != 'workflow_call'
         name: Display App
-        run: echo "${{ steps.get-app.outputs.app }}" | jq
+        env:
+          APP: ${{ steps.get-app.outputs.app }}
+        run: echo "${{ env.APP }}" | jq
