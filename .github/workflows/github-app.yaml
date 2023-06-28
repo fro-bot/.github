@@ -1,0 +1,70 @@
+---
+# Access the 'Fro Bot' GitHub App
+name: Fro Bot (GitHub App)
+
+'on':
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/github-app.yaml'
+  workflow_call:
+    outputs:
+      access-token:
+        description: The Installation Access Token
+        value: ${{ jobs.get-installation-access-token.outputs.access-token }}
+      app:
+        description: The GitHub App
+        value: ${{ jobs.get-app.outputs.app }}
+    secrets:
+      APPLICATION_ID:
+        description: GitHub App ID
+        required: true
+      APPLICATION_PRIVATE_KEY:
+        description: GitHub App private key
+        required: true
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  APP_SLUG: 'fro-bot'
+
+jobs:
+  get-installation-access-token:
+    name: Get Installation Access Token
+    outputs:
+      access-token: ${{ steps.get-workflow-app-token.outputs.token }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Token
+        id: get-workflow-app-token
+        uses: peter-murray/workflow-application-token-action@v1
+        with:
+          application_id: ${{ secrets.APPLICATION_ID }}
+          application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+
+  get-app:
+    name: Get App
+    needs: get-installation-access-token
+    outputs:
+      app: ${{ steps.get-app.outputs.app }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: get-app
+        name: Get App
+        run: |
+          gh api /apps/${{ env.APP_SLUG }} \
+            -H 'Accept: application/vnd.github.v3+json' \
+            -H "Authorization: Bearer ${{ needs.get-installation-access-token.outputs.access-token }}" \
+            | tr -d '\n' > app.json
+          echo "app=$(cat app.json)" >> $GITHUB_OUTPUT
+
+  display-app:
+    if: github.event_name != 'workflow_call'
+    name: Display App
+    needs: get-app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Display App
+        run: echo "${{ needs.get-app.outputs.app }}" | jq
