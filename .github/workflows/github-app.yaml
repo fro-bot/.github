@@ -57,4 +57,4 @@ jobs:
         name: Display App
         env:
           APP: ${{ steps.get-app.outputs.app }}
-        run: jq -C app.json
+        run: jq -C . app.json
