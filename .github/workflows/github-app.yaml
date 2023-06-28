@@ -30,8 +30,6 @@ permissions: {}
 jobs:
   get-app:
     name: Get App
-    env:
-      FORCE_COLOR: 3
     outputs:
       access-token: ${{ steps.get-workflow-app-token.outputs.token }}
       app: ${{ steps.get-app.outputs.app }}
@@ -59,4 +57,4 @@ jobs:
         name: Display App
         env:
           APP: ${{ steps.get-app.outputs.app }}
-        run: cat app.json | jq
+        run: jq -C app.json
