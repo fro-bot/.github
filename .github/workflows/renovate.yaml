@@ -49,7 +49,7 @@ jobs:
     if: needs.should-renovate.outputs.renovate == 'true'
     name: Renovate
     needs: should-renovate
-    uses: bfra-me/renovate-config/.github/workflows/renovate.yaml@v1.3.0
+    uses: bfra-me/renovate-config/.github/workflows/renovate.yaml@v1.4.0
     with:
       autodiscover: false
       # Disable this input until after the repo has been onboarded.
