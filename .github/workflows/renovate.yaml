@@ -3,16 +3,10 @@
 name: Renovate
 
 'on':
-  issue_comment:
-    types: [edited]
   issues:
     types: [edited]
   pull_request:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/renovate.yaml'
-      - '.github/renovate.json5?'
+    types: [edited]
   push:
     branches:
       - main
@@ -27,16 +21,11 @@ jobs:
   should-renovate:
     name: Check if Renovate should run
     if: >-
-      github.event_name == 'pull_request' ||
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name != 'issues' && github.event_name != 'pull_request') ||
       (
-        (github.event_name == 'issue_comment' || github.event_name == 'issues') &&
-        (
-          contains(github.event.issue.body, '- [x] <!-- rebase-check -->') ||
-          contains(github.event.issue.body, '- [x] <!-- manual job -->') ||
-          contains(github.event.issue.body, '- [x] <!-- retry-branch=')
-        )
+        contains(github.event.*.body, '- [x] <!-- rebase-check -->') ||
+        contains(github.event.*.body, '- [x] <!-- manual job -->') ||
+        contains(github.event.*.body, '- [x] <!-- retry-branch=')
       )
     outputs:
       renovate: ${{ steps.create-output.outputs.renovate }}
@@ -52,11 +41,8 @@ jobs:
     uses: bfra-me/renovate-config/.github/workflows/renovate.yaml@v1.4.0
     with:
       autodiscover: false
-      # Disable this input until after the repo has been onboarded.
-      # branch: ${{ github.head_ref }}
-      dry_run: ${{ github.event_name == 'pull_request' && true }}
-      print_config: ${{ github.event_name == 'pull_request' && true }}
-      renovate_git_author: 'Fro Bot <109017866+fro-bot[bot]@users.noreply.github.com>'
+      dry_run: false
+      renovate_git_author: '"Fro Bot" <109017866+fro-bot[bot]@users.noreply.github.com>'
       renovate_username: 'fro-bot[bot]'
     secrets:
       APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
