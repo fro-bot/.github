@@ -54,6 +54,7 @@ jobs:
       autodiscover: false
       branch: ${{ github.head_ref }}
       dry_run: ${{ github.event_name == 'pull_request' && true }}
+      log_level: trace
       print_config: ${{ github.event_name == 'pull_request' && true }}
       renovate_git_author: 'Fro Bot <109017866+fro-bot[bot]@users.noreply.github.com>'
       renovate_username: 'fro-bot[bot]'
