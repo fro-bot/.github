@@ -23,12 +23,9 @@ jobs:
     if: >-
       (github.event_name != 'issues' && github.event_name != 'pull_request') ||
       (
-        github.event.changes &&
-        (
-          contains(github.event.*.body, '- [x] <!-- rebase-check -->') ||
-          contains(github.event.*.body, '- [x] <!-- manual job -->') ||
-          contains(github.event.*.body, '- [x] <!-- retry-branch=')
-        )
+        contains(github.event.*.body, '- [x] <!-- rebase-check -->') ||
+        contains(github.event.*.body, '- [x] <!-- manual job -->') ||
+        contains(github.event.*.body, '- [x] <!-- retry-branch=')
       )
     outputs:
       renovate: ${{ steps.create-output.outputs.renovate }}
