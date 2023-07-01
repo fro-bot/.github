@@ -53,7 +53,7 @@ jobs:
     with:
       autodiscover: false
       # Disable this input until after the repo has been onboarded.
-      branch: ${{ github.head_ref }}
+      # branch: ${{ github.head_ref }}
       dry_run: ${{ github.event_name == 'pull_request' && true }}
       print_config: ${{ github.event_name == 'pull_request' && true }}
       renovate_git_author: 'Fro Bot <109017866+fro-bot[bot]@users.noreply.github.com>'
