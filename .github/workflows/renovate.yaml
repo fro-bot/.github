@@ -23,15 +23,17 @@ jobs:
     if: >-
       (github.event_name != 'issues' && github.event_name != 'pull_request') ||
       (
-        contains(github.event.*.body, '- [x] <!-- rebase-check -->') ||
-        contains(github.event.*.body, '- [x] <!-- manual job -->') ||
-        contains(github.event.*.body, '- [x] <!-- retry-branch=')
+        contains(join(github.event.*.body, ''), '- [x] <!-- rebase-check -->') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- manual job -->') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- retry-branch=')
       )
     outputs:
       renovate: ${{ steps.create-output.outputs.renovate }}
     runs-on: ubuntu-latest
     steps:
       - id: create-output
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
         run: echo "renovate=true" >> $GITHUB_OUTPUT
 
   renovate:
