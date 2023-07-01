@@ -45,15 +45,18 @@ jobs:
       - id: create-output
         run: echo "renovate=true" >> $GITHUB_OUTPUT
 
-  Renovate:
-    uses: bfra-me/renovate-config/.github/workflows/renovate.yaml@main
-    needs: should-renovate
+  renovate:
     if: needs.should-renovate.outputs.renovate == 'true'
+    name: Renovate
+    needs: should-renovate
+    uses: bfra-me/renovate-config/.github/workflows/renovate.yaml@v1.3.0
     with:
       autodiscover: false
       branch: ${{ github.head_ref }}
       dry_run: ${{ github.event_name == 'pull_request' && true }}
       print_config: ${{ github.event_name == 'pull_request' && true }}
+      renovate_git_author: 'Fro Bot <109017866+fro-bot[bot]@users.noreply.github.com>'
+      renovate_username: 'fro-bot[bot]'
     secrets:
       APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
       APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
