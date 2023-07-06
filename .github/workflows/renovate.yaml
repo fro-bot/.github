@@ -14,7 +14,7 @@ name: Renovate
       - '.github/workflows/renovate.yaml'
       - '.github/renovate.json5?'
   schedule:
-    - cron: '0 0 * * *' # Run every hour
+    - cron: '0 * * * *' # Run every hour
   workflow_dispatch:
 
 permissions: {}
