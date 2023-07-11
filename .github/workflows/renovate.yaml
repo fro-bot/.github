@@ -25,9 +25,19 @@ jobs:
     if: >-
       (github.event_name != 'issues' && github.event_name != 'pull_request') ||
       (
-        contains(join(github.event.*.body, ''), '- [x] <!-- rebase-check -->') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- approve-all-pending-prs -->') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- approve-branch=') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- approvePr-branch=') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- create-all-rate-limited-prs -->') ||
         contains(join(github.event.*.body, ''), '- [x] <!-- manual job -->') ||
-        contains(join(github.event.*.body, ''), '- [x] <!-- retry-branch=')
+        contains(join(github.event.*.body, ''), '- [x] <!-- other-branch=') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- rebase-all-open-prs -->') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- rebase-branch=') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- rebase-check -->') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- recreate-branch=') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- retry-branch=') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- unlimit-branch=') ||
+        contains(join(github.event.*.body, ''), '- [x] <!-- unschedule-branch=')
       )
     outputs:
       renovate: ${{ steps.create-output.outputs.renovate }}
