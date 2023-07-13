@@ -50,7 +50,7 @@ jobs:
     if: needs.should-renovate.outputs.renovate == 'true'
     name: Renovate
     needs: should-renovate
-    uses: bfra-me/renovate-config/.github/workflows/renovate.yaml@806fbf1c36f9be2bd670bf45c4750527431957a4 # v1.11.0
+    uses: bfra-me/renovate-config/.github/workflows/renovate.yaml@bbe99d0fedcd1bc9ec33bc72aade8fc8b6f8e2fb # v1.12.1
     with:
       dry_run: false
       renovate_git_author: 'fro-bot[bot] <109017866+fro-bot[bot]@users.noreply.github.com>'
