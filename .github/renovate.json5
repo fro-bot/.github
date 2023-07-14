@@ -3,4 +3,5 @@
   extends: ['github>bfra-me/renovate-config#v1.12.4'],
   automergeType: 'pr',
   prCreation: 'immediate',
+  ignoreTests: true,
 }
