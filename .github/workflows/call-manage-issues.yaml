@@ -1,0 +1,12 @@
+---
+name: Mark or close stale issues and pull requests
+
+'on':
+  schedule:
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+
+jobs:
+  manage-issues:
+    uses: fro-bot/.github/.github/workflows/manage-issues.yaml@main
+    secrets: inherit

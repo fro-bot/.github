@@ -1,0 +1,95 @@
+---
+name: Manage Issues
+
+'on':
+  workflow_call:
+
+concurrency:
+  group: lock
+
+jobs:
+  stale:
+    name: Stale
+    runs-on: ubuntu-latest
+    steps:
+      - id: get-workflow-app-token
+        name: Get Workflow Access Token
+        uses: peter-murray/workflow-application-token-action@8e1ba3bf1619726336414f1014e37f17fbadf1db # v2.1.0
+        with:
+          application_id: ${{ secrets.APPLICATION_ID }}
+          application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          permissions: 'issues:write,pull-requests:write'
+
+      - id: stale
+        name: Mark stale issues and pull requests
+        uses: actions/stale@v8.0.0
+        with:
+          close-issue-label: closed-issue-activity
+          close-pr-label: closed-pr-activity
+          days-before-close: 60
+          days-before-stale: 30
+          exempt-issue-labels: awaiting-approval,work-in-progress
+          exempt-pr-labels: awaiting-approval,work-in-progress
+          repo-token: ${{ steps.get-workflow-app-token.outputs.token }}
+          stale-issue-label: no-issue-activity
+          stale-issue-message: 'This issue is stale because it has been open for 30 days with no activity. Remove this label to keep it open.'
+          stale-pr-label: no-pr-activity
+          stale-pr-message: 'This pull request is stale because it has been open for 30 days with no activity. Remove this label to keep it open.'
+          operations-per-run: 50
+
+      - name: Output summary
+        if: success() && (fromJSON(steps.stale.outputs.closed-issues-prs).length > 0 || fromJSON(steps.stale.outputs.staled-issues-prs).length > 0)
+        env:
+          closed: ${{ steps.stale.outputs.closed-issues-prs }}
+          staled: ${{ steps.stale.outputs.staled-issues-prs }}
+        run: |
+          # Output summary of previous step
+          echo 'Closed issues and PRs:'' >> $GITHUB_STEP_SUMMARY
+          echo '${{ env.closed }}' >> $GITHUB_STEP_SUMMARY
+          echo 'Staled issues and PRs:' >> $GITHUB_STEP_SUMMARY
+          echo '${{ env.staled }}' >> $GITHUB_STEP_SUMMARY
+        shell: bash
+
+      # - name: Sleep (for rate-limiting)
+      #   run: sleep 380
+
+  lock:
+    continue-on-error: true
+    name: Lock
+    needs: stale
+    runs-on: ubuntu-latest
+    steps:
+      - id: get-workflow-app-token
+        name: Get Workflow Access Token
+        uses: peter-murray/workflow-application-token-action@8e1ba3bf1619726336414f1014e37f17fbadf1db # v2.1.0
+        with:
+          application_id: ${{ secrets.APPLICATION_ID }}
+          application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          permissions: 'issues:write,pull-requests:write'
+
+      - id: lock-threads
+        name: Lock stale issues and pull requests
+        uses: dessant/lock-threads@v4.0.1
+        with:
+          exclude-any-issue-labels: awaiting-approval,work-in-progress
+          exclude-any-pr-labels: awaiting-approval,work-in-progress
+          include-any-issue-labels: no-issue-activity
+          include-any-pr-labels: no-pr-activity
+          issue-comment: This issue is locked because of inactivity.
+          issue-inactive-days: '30'
+          github-token: ${{ steps.get-workflow-app-token.outputs.token }}
+          pr-comment: This pull request is locked because of inactivity.
+          pr-inactive-days: '30'
+
+      - if: success() && (fromJSON(steps.lock-threads.outputs.prs).length > 0 || fromJSON(steps.lock-threads.outputs.issues).length > 0)
+        env:
+          issues: ${{ steps.lock-threads.outputs.issues }}
+          prs: ${{ steps.lock-threads.outputs.prs }}
+        name: Output summary
+        run: |
+          # Output summary of previous step
+          echo 'Locked stale issues:'' >> $GITHUB_STEP_SUMMARY
+          echo '${{ env.issues }}' >> $GITHUB_STEP_SUMMARY
+          echo 'Locked stale pull requests:' >> $GITHUB_STEP_SUMMARY
+          echo '${{ env.prs }}' >> $GITHUB_STEP_SUMMARY
+        shell: bash
