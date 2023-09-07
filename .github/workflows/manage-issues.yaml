@@ -18,7 +18,7 @@ jobs:
         with:
           application_id: ${{ secrets.APPLICATION_ID }}
           application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-          permissions: 'issues:write,pull-requests:write'
+          permissions: 'issues:write,pull_requests:write'
 
       - id: stale
         name: Mark stale issues and pull requests
@@ -65,7 +65,7 @@ jobs:
         with:
           application_id: ${{ secrets.APPLICATION_ID }}
           application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-          permissions: 'issues:write,pull-requests:write'
+          permissions: 'issues:write,pull_requests:write'
 
       - id: lock-threads
         name: Lock stale issues and pull requests
