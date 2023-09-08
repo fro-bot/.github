@@ -43,7 +43,7 @@ jobs:
           staled: ${{ steps.stale.outputs.staled-issues-prs }}
         run: |
           # Output summary of previous step
-          echo 'Closed issues and PRs:'' >> $GITHUB_STEP_SUMMARY
+          echo 'Closed issues and PRs:' >> $GITHUB_STEP_SUMMARY
           echo '${{ env.closed }}' >> $GITHUB_STEP_SUMMARY
           echo 'Staled issues and PRs:' >> $GITHUB_STEP_SUMMARY
           echo '${{ env.staled }}' >> $GITHUB_STEP_SUMMARY
@@ -86,7 +86,7 @@ jobs:
         name: Output summary
         run: |
           # Output summary of previous step
-          echo 'Locked stale issues:'' >> $GITHUB_STEP_SUMMARY
+          echo 'Locked stale issues:' >> $GITHUB_STEP_SUMMARY
           echo '${{ env.issues }}' >> $GITHUB_STEP_SUMMARY
           echo 'Locked stale pull requests:' >> $GITHUB_STEP_SUMMARY
           echo '${{ env.prs }}' >> $GITHUB_STEP_SUMMARY
