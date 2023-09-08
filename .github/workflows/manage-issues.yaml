@@ -38,7 +38,6 @@ jobs:
           operations-per-run: 50
 
       - name: Output summary
-        if: success() && (fromJSON(steps.stale.outputs.closed-issues-prs).length > 0 || fromJSON(steps.stale.outputs.staled-issues-prs).length > 0)
         env:
           closed: ${{ steps.stale.outputs.closed-issues-prs }}
           staled: ${{ steps.stale.outputs.staled-issues-prs }}
@@ -81,8 +80,7 @@ jobs:
           pr-comment: This pull request is locked because of inactivity.
           pr-inactive-days: '30'
 
-      - if: success() && (fromJSON(steps.lock-threads.outputs.prs).length > 0 || fromJSON(steps.lock-threads.outputs.issues).length > 0)
-        env:
+      - env:
           issues: ${{ steps.lock-threads.outputs.issues }}
           prs: ${{ steps.lock-threads.outputs.prs }}
         name: Output summary
