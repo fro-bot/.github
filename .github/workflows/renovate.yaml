@@ -8,13 +8,19 @@ name: Renovate
   pull_request:
     types: [edited]
   push:
-    branches: ['**']
+    branches: [main]
     paths:
       - '.github/workflows/renovate.yaml'
       - '.github/renovate.json5?'
   schedule:
     - cron: '0 * * * *' # Run every hour
   workflow_dispatch:
+    inputs:
+      print_config:
+        description: Log the fully-resolved Renovate config for each repository, plus fully-resolved presets.
+        required: false
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -49,11 +55,12 @@ jobs:
     if: needs.should-renovate.outputs.renovate == 'true'
     name: Renovate
     needs: should-renovate
-    uses: bfra-me/renovate-config/.github/workflows/renovate.yaml@f2bb7ac82c5becc73f89a91b5747a674ee992cd9 # v1.24.0
-    with:
-      dry_run: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
-      renovate_git_author: 'fro-bot[bot] <109017866+fro-bot[bot]@users.noreply.github.com>'
-      renovate_username: 'fro-bot[bot]'
-    secrets:
-      APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
-      APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Renovate
+        uses: bfra-me/renovate-action@v2.1.4
+        with:
+          print_config: ${{ inputs.print_config || 'false' }}
+          renovate_app_id: ${{ secrets.APPLICATION_ID }}
+          renovate_app_pem: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          renovate_app_slug: ${{ github.repository_owner }}
