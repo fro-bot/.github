@@ -33,7 +33,8 @@ jobs:
           prettier_options: --check .
           prettier_version: ${{ env.PRETTIER_VERSION }}
 
-  build:
+  test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -41,8 +42,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.10'
+          python-version: '3.10' # renovate: datasource=pypi depName=python
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
       - name: Run tests
         run: pytest
