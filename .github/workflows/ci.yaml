@@ -40,7 +40,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@3542bca2639a428e1796aaa6a2ffef0c0f575566 # v3
         with:
           python-version: '3.10' # renovate: datasource=pypi depName=python
       - name: Install dependencies
