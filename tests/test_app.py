@@ -1,6 +1,5 @@
 # Test app.py
 
-import pytest
 from src import app
 
 
