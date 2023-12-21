@@ -1,6 +1,6 @@
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
-  extends: ['github>bfra-me/renovate-config#v2.3.2', 'github>bfra-me/renovate-config:automerge/prForCI#v2.3.2'],
+  extends: ['github>bfra-me/renovate-config#v2.3.5'],
   postUpgradeTasks: {
     commands: ['npx prettier@3.1.1 --no-color --write .'],
     executionMode: 'branch',
