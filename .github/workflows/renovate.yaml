@@ -8,7 +8,7 @@ name: Renovate
   pull_request:
     types: [edited]
   push:
-    branches: ['*']
+    branches: ['**']
   schedule:
     - cron: '0 * * * *' # Run every hour
   workflow_dispatch:
