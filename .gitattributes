@@ -24,3 +24,5 @@
 *.out -text
 *.pdb -text
 *.so -text
+
+*.json text linguist-language=JSON-with-Comments
