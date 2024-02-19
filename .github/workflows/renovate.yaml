@@ -25,6 +25,6 @@ jobs:
     secrets:
       APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
       APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-    uses: bfra-me/.github/.github/workflows/renovate.yaml@32d7bd081661bd78f5542bc0d4ac23ab1664878f # v1.2.2
+    uses: bfra-me/.github/.github/workflows/renovate.yaml@7a2fa62a669f3e478ba321ef388878bc77147e42 # v1.2.3
     with:
       print_config: ${{ inputs.print_config || false }}
