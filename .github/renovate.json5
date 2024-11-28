@@ -3,7 +3,7 @@
   extends: ['github>bfra-me/renovate-config', 'github>bfra-me/renovate-config:internal.json5'],
   platformAutomerge: true,
   postUpgradeTasks: {
-    commands: ['npx prettier@3.3.3 --no-color --write .'],
+    commands: ['npx prettier@3.4.1 --no-color --write .'],
     executionMode: 'branch',
   },
 }
