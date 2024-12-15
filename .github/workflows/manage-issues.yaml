@@ -14,11 +14,10 @@ jobs:
     steps:
       - id: get-workflow-app-token
         name: Get Workflow Access Token
-        uses: peter-murray/workflow-application-token-action@baa1ef2638c3d9e5967b7c8b86219f8fc919e1bb # v3.0.1
+        uses: actions/create-github-app-token@5d869da34e18e7287c1daad50e0b8ea0f506ce69 # v1.11.0
         with:
-          application_id: ${{ secrets.APPLICATION_ID }}
-          application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-          permissions: 'issues:write,pull_requests:write'
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
 
       - id: stale
         name: Mark stale issues and pull requests
@@ -60,11 +59,10 @@ jobs:
     steps:
       - id: get-workflow-app-token
         name: Get Workflow Access Token
-        uses: peter-murray/workflow-application-token-action@baa1ef2638c3d9e5967b7c8b86219f8fc919e1bb # v3.0.1
+        uses: actions/create-github-app-token@5d869da34e18e7287c1daad50e0b8ea0f506ce69 # v1.11.0
         with:
-          application_id: ${{ secrets.APPLICATION_ID }}
-          application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-          permissions: 'issues:write,pull_requests:write'
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
 
       - id: lock-threads
         name: Lock stale issues and pull requests
