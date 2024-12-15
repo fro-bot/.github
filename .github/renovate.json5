@@ -1,10 +1,32 @@
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
-  extends: ['github>bfra-me/renovate-config#3.1.1', 'github>bfra-me/renovate-config:internal.json5#3.1.1'],
+  extends: [
+    'security:openssf-scorecard',
+    'github>sanity-io/renovate-config:semantic-commit-type',
+    'github>bfra-me/renovate-config#v3',
+    'github>bfra-me/renovate-config:internal.json5#v3',
+  ],
   automergeType: 'pr',
+  packageRules: [
+    {
+      description: 'Show Merge Confidence, OpenSSF Scorecard, and GitHub Search badges for Renovate dependencies.',
+      matchDatasources: ['go', 'maven', 'npm', 'nuget', 'packagist', 'pypi', 'rubygems'],
+      matchUpdateTypes: ['pin', 'patch', 'minor', 'major'],
+      prBodyColumns: ['Package', 'Change', 'Age', 'Confidence', 'GitHub'],
+    },
+    {
+      description: 'Show Merge Confidence, OpenSSF Scorecard, and GitHub Search badges for Renovate dependencies.',
+      matchDatasources: ['go', 'maven', 'npm', 'nuget', 'packagist', 'pypi', 'rubygems'],
+      matchUpdateTypes: ['pin', 'patch', 'minor', 'major'],
+      matchSourceUrls: ['https://github.com/**'],
+      prBodyColumns: ['Package', 'Change', 'Age', 'Confidence', 'OpenSSF', 'GitHub'],
+    },
+  ],
   platformAutomerge: true,
   postUpgradeTasks: {
     commands: ['npx prettier@3.3.3 --no-color --write .'],
     executionMode: 'branch',
   },
+  prCreation: 'immediate',
+  rebaseWhen: 'auto',
 }
