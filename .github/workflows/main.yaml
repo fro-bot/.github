@@ -1,11 +1,12 @@
 ---
-name: CI
+name: main
 
 'on':
   pull_request:
+    branches: [main]
     types: [opened, ready_for_review, reopened, synchronize]
   push:
-    branches: ['**']
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
