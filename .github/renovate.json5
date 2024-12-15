@@ -3,8 +3,8 @@
   extends: [
     'security:openssf-scorecard',
     'github>sanity-io/renovate-config:semantic-commit-type',
-    'github>bfra-me/renovate-config#v3',
-    'github>bfra-me/renovate-config:internal.json5#v3',
+    'github>bfra-me/renovate-config#v3.12.1',
+    'github>bfra-me/renovate-config:internal.json5#v3.12.1',
   ],
   automergeType: 'pr',
   packageRules: [
