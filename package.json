@@ -23,6 +23,7 @@
     "format": "prettier --write .",
     "lint": "eslint --flag unstable_ts_config ."
   },
+  "prettier": "@bfra.me/prettier-config/80-proof",
   "devDependencies": {
     "@bfra.me/eslint-config": "0.12.0",
     "@bfra.me/prettier-config": "0.13.6",

@@ -1,9 +1,0 @@
-bracketSpacing: false
-jsxSingleQuote: true
-singleQuote: true
-tabWidth: 2
-overrides:
-  - files:
-      - '.vscode/*.json'
-    options:
-      tabWidth: 4
