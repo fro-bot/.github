@@ -280,7 +280,7 @@ branches:
 
         # Whether someone other than the person who last pushed to the branch must approve this pull request. Default: false.
         # Default: false
-        # require_last_push_approval: false
+        require_last_push_approval: true
 
         # Allow specific users, teams, or apps to bypass pull request requirements.
         # bypass_pull_request_allowances:
