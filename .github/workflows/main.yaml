@@ -1,7 +1,8 @@
+# Continuous Integration jobs for changes headed to main.
 ---
-name: main
+name: Main
 
-'on':
+on:
   pull_request:
     branches: [main]
     types: [opened, ready_for_review, reopened, synchronize]
@@ -11,7 +12,7 @@ name: main
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read

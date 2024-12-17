@@ -1,7 +1,7 @@
 ---
 name: Manage Issues
 
-'on':
+on:
   workflow_call:
 
 concurrency:
@@ -31,9 +31,9 @@ jobs:
           exempt-pr-labels: awaiting-approval,work-in-progress
           repo-token: ${{ steps.get-workflow-app-token.outputs.token }}
           stale-issue-label: no-issue-activity
-          stale-issue-message: 'This issue is stale because it has been open for 30 days with no activity. Remove this label to keep it open.'
+          stale-issue-message: This issue is stale because it has been open for 30 days with no activity. Remove this label to keep it open.
           stale-pr-label: no-pr-activity
-          stale-pr-message: 'This pull request is stale because it has been open for 30 days with no activity. Remove this label to keep it open.'
+          stale-pr-message: This pull request is stale because it has been open for 30 days with no activity. Remove this label to keep it open.
           operations-per-run: 50
 
       - name: Output summary

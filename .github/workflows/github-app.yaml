@@ -2,12 +2,12 @@
 # Access the 'Fro Bot' GitHub App
 name: Fro Bot (GitHub App)
 
-'on':
+on:
   pull_request:
     branches:
       - main
     paths:
-      - '.github/workflows/github-app.yaml'
+      - .github/workflows/github-app.yaml
   workflow_call:
     outputs:
       access-token:
@@ -44,7 +44,7 @@ jobs:
       - id: get-app
         name: Get App
         env:
-          APP_SLUG: 'fro-bot'
+          APP_SLUG: fro-bot
           GH_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
         run: |
           # Retrieve the GitHub App

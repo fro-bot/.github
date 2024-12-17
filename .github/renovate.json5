@@ -21,6 +21,10 @@
       matchSourceUrls: ['https://github.com/**'],
       prBodyColumns: ['Package', 'Change', 'Age', 'Confidence', 'OpenSSF', 'GitHub'],
     },
+    {
+      matchDepNames: ['python'],
+      allowedVersions: '<=3.12',
+    },
   ],
   platformAutomerge: true,
   postUpgradeTasks: {

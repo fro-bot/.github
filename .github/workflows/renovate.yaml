@@ -2,7 +2,7 @@
 # Renovate this repository if Renovate-specific tasks are checked, if this workflow file or the Renovate configuration file is changed, or if dispatched.
 name: Renovate
 
-'on':
+on:
   issues:
     types: [edited]
   pull_request:
@@ -16,7 +16,7 @@ name: Renovate
       log-level:
         description: Log level for Renovate
         type: string
-        default: 'debug'
+        default: debug
       print-config:
         description: Log the fully-resolved Renovate config for each repository, plus fully-resolved presets.
         type: boolean
@@ -33,7 +33,7 @@ name: Renovate
       log-level:
         description: Log level for Renovate
         type: string
-        default: 'debug'
+        default: debug
       print-config:
         description: Log the fully-resolved Renovate config for each repository, plus fully-resolved presets.
         type: boolean
@@ -41,7 +41,7 @@ name: Renovate
   workflow_run:
     branches: [main]
     types: [completed]
-    workflows: [main]
+    workflows: [Main]
 
 concurrency:
   group: ${{ github.repository }}-${{ github.workflow }}-${{ github.run_number || github.ref }}
@@ -91,7 +91,7 @@ jobs:
           autodiscover: >-
             ${{ github.event.repository.name == '.github' && !contains('["issues", "pull_request"]', github.event_name) && github.ref_name == github.event.repository.default_branch }}
           dry_run: ${{ github.event_name == 'push' && github.ref_name != github.event.repository.default_branch }}
-          RENOVATE_FORK_PROCESSING: 'disabled'
+          RENOVATE_FORK_PROCESSING: disabled
         if: >-
           ${{ !contains('["push", "workflow_run"]', github.event_name) || github.event.workflow_run.conclusion == 'success' || steps.filter.outputs.changes == 'true' }}
         uses: bfra-me/renovate-action@v5
@@ -101,7 +101,7 @@ jobs:
           cache: true
           dry-run: ${{ env.dry_run }}
           log-level: ${{ inputs.log-level || env.autodiscover == 'true' && 'info' || env.WORKFLOW_LOG_LEVEL }}
-          print-config: ${{ inputs.print-config || github.event_name == 'push' }}
+          print-config: ${{ inputs.print-config }}
           renovate-app-id: ${{ secrets.APPLICATION_ID }}
           renovate-app-private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-    timeout-minutes: 30
+    timeout-minutes: 15
