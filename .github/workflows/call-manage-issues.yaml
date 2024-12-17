@@ -6,6 +6,9 @@ on:
     - cron: '30 1 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   manage-issues:
     uses: fro-bot/.github/.github/workflows/manage-issues.yaml@main
