@@ -17,3 +17,9 @@ The following versions of the project are currently being supported with securit
 | Version | Supported          |
 | ------- | ------------------ |
 | < 1.0   | :white_check_mark: |
+
+## OpenSSF Badges
+
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/fro-bot/.github/badge?style=for-the-badge)](https://securityscorecards.dev/viewer/?uri=github.com/fro-bot/.github "View OpenSSF Scorecard")
+
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/9834/badge?style=for-the-badge)](https://www.bestpractices.dev/projects/9834 "View OpenSSF Best Practices")
