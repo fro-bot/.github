@@ -1,1 +1,1 @@
-export {default} from '@bfra.me/eslint-config';
+export {default} from '@bfra.me/eslint-config'
