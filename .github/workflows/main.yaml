@@ -17,20 +17,22 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash -Eeuo pipefail {0}
+
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - name: ⤵️ Checkout Branch
+      - name: ⤵ Checkout Branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.head_ref }}
 
-      - name: 💅🏽 Run Prettier
-        uses: creyD/prettier_action@31355f8eef017f8aeba2e0bc09d8502b13dbbad1 # v4.3
-        env:
-          PRETTIER_VERSION: 3.4.2 # renovate: datasource=npm depName=prettier
-        with:
-          prettier_options: --check .
-          prettier_version: ${{ env.PRETTIER_VERSION }}
+      - name: 📦 Setup pnpm
+        uses: ./.github/actions/pnpm-setup
+
+      - name: 💅🏽 Lint
+        run: pnpm run lint

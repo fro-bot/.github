@@ -1,0 +1,39 @@
+{
+  "name": "@fro-bot/.github",
+  "version": "0.0.0",
+  "description": "Community health files for @fro-bot",
+  "private": true,
+  "keywords": [
+    "actions",
+    "renovate-config",
+    "github-actions",
+    "fro-bot"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fro-bot/.github.git"
+  },
+  "license": "MIT",
+  "author": "Marcus R. Brown <git@mrbro.dev> (https://mrbro.dev/)",
+  "type": "module",
+  "scripts": {
+    "bootstrap": "pnpm install --prefer-offline --loglevel error",
+    "check-format": "prettier --check .",
+    "fix": "pnpm run lint --fix",
+    "format": "prettier --write .",
+    "lint": "eslint --flag unstable_ts_config ."
+  },
+  "devDependencies": {
+    "@bfra.me/eslint-config": "0.11.0",
+    "@bfra.me/prettier-config": "0.13.6",
+    "@types/node": "22.10.2",
+    "eslint": "9.17.0",
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-prettier": "5.2.1",
+    "jiti": "2.4.1",
+    "prettier": "3.4.2",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
