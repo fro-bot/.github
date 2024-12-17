@@ -1,0 +1,45 @@
+---
+# Based on https://github.com/bfra-me/works/blob/7217b637351a0b251d1d0c2158614210c7efdad0/.github/actions/pnpm-install/action.yaml
+name: Setup pnpm
+description: Setup pnpm and install dependencies
+
+runs:
+  steps:
+    - id: configure-cache
+      name: Configure cache
+      env:
+        # This must be updated if the pnpm store path changes
+        PNPM_SETUP_STORE_PATH: ~/setup-pnpm/node_modules/.bin/store/v3
+      run: |
+        pnpm_store_path="$PNPM_SETUP_STORE_PATH"
+        if [ `which pnpm` ]; then
+          pnpm_store_path="$(pnpm store path --silent)"
+        fi
+        if [ -z "pnpm_store_path" ]; then
+          echo "Failed to get pnpm store path"
+          exit 1
+        fi
+        mkdir -p "pnpm_store_path" || exit 1
+        echo "path=$pnpm_store_path" >> $GITHUB_OUTPUT
+        year_month=$(date -u '+%Y%m')
+        base_key="${{ runner.os }}-pnpm-cache-v${year_month}"
+        echo "key=${base_key}-${{ hashFiles('**/pnpm-lock.yaml') }}" >> $GITHUB_OUTPUT
+        echo "restore-keys=${base_key}-" >> $GITHUB_OUTPUT
+      shell: 'bash -Eeuo pipefail {0}'
+
+    - name: Cache pnpm store
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        key: ${{ steps.configure-cache.outputs.key }}
+        path: ${{ steps.configure-cache.outputs.path }}
+        restore-keys: ${{ steps.configure-cache.outputs.restore-keys }}
+
+    - name: Setup pnpm
+      env:
+        HUSKY: '0'
+      uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+      with:
+        run_install: |
+          - args: [--frozen-lockfile, --prefer-offline, --loglevel, error]
+
+  using: composite
