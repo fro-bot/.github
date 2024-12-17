@@ -21,9 +21,7 @@
         "flags": ["unstable_ts_config"]
     },
     // Silent the stylistic rules in you IDE, but still auto fix them
-    "eslint.rules.customizations": [
-        {"rule": "prettier/prettier", "severity": "off", "fixable": true}
-    ],
+    "eslint.rules.customizations": [{"rule": "prettier/prettier", "severity": "off", "fixable": true}],
 
     "explorer.fileNesting.enabled": false,
 
