@@ -273,10 +273,10 @@ branches:
 
         # Blocks merging pull requests until code owners review them.
         # https://docs.github.com/articles/about-code-owners/
-        require_code_owner_reviews: false
+        require_code_owner_reviews: true
 
         # Specify the number of reviewers required to approve pull requests. Use a number between 1 and 6 or 0 to not require reviewers.
-        required_approving_review_count: 0
+        required_approving_review_count: 1
 
         # Whether someone other than the person who last pushed to the branch must approve this pull request. Default: false.
         # Default: false

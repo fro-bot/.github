@@ -1,6 +1,7 @@
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
+    'npm:unpublishSafe',
     'security:openssf-scorecard',
     'github>sanity-io/renovate-config:semantic-commit-type',
     'github>bfra-me/renovate-config#v3.12.1',
@@ -28,7 +29,7 @@
   ],
   platformAutomerge: true,
   postUpgradeTasks: {
-    commands: ['npx prettier@3.4.2 --no-color --write .'],
+    commands: ['pnpm run bootstrap', 'pnpm run fix'],
     executionMode: 'branch',
   },
   prBodyDefinitions: {
