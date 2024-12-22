@@ -4,8 +4,8 @@
     'npm:unpublishSafe',
     'security:openssf-scorecard',
     'github>sanity-io/renovate-config:semantic-commit-type',
-    'github>bfra-me/renovate-config#v3.12.1',
-    'github>bfra-me/renovate-config:internal.json5#v3.12.1',
+    'github>bfra-me/renovate-config#v3.13.0',
+    'github>bfra-me/renovate-config:internal.json5#v3.13.0',
   ],
   automergeType: 'pr',
   packageRules: [
