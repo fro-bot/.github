@@ -27,12 +27,6 @@
 
     "github-actions.workflows.pinned.workflows": [".github/workflows/main.yaml"],
 
-    "prettier.enable": false,
-
     "typescript.enablePromptUseWorkspaceTsdk": true,
-    "typescript.tsdk": "node_modules/typescript/lib",
-
-    "[json]": {
-        "editor.defaultFormatter": "esbenp.prettier-vscode"
-    }
+    "typescript.tsdk": "node_modules/typescript/lib"
 }
