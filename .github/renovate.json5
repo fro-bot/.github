@@ -32,8 +32,14 @@
       prBodyColumns: ['Package', 'Change', 'Age', 'Confidence', 'OpenSSF', 'GitHub'],
     },
     {
-      matchDepNames: ['python'],
+      matchPackageNames: ['python'],
       allowedVersions: '<=3.12',
+    },
+    {
+      description: 'Group GitHub actions except for @bfra-me.',
+      matchPackageNames: ['!bfra-me/{/,}**'],
+      groupName: 'GitHub Actions',
+      groupSlug: 'github-actions',
     },
   ],
   platformAutomerge: true,
