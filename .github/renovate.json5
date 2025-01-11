@@ -37,7 +37,7 @@
     },
     {
       description: 'Group GitHub actions except for @bfra-me.',
-      matchDatasources: ["github-actions"],
+      matchDatasources: ['github-actions'],
       matchPackageNames: ['!bfra-me/{/,}**'],
       groupName: 'GitHub Actions',
       groupSlug: 'github-actions',
