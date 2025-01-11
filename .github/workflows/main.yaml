@@ -31,8 +31,11 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
 
-      - name: 📦 Setup pnpm
+      - name: 📦 Setup pnpm and install dependencies
         uses: ./.github/actions/pnpm-setup
 
+      - name: ✅ Check Types
+        run: pnpm check-types
+
       - name: 💅🏽 Lint
-        run: pnpm run lint
+        run: pnpm lint
