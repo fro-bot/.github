@@ -19,7 +19,7 @@
   "scripts": {
     "bootstrap": "pnpm install --prefer-offline --loglevel error",
     "check-format": "prettier --check .",
-    "check-types": "tsc --noEmit",
+    "check-types": "tsc --noEmit --project ./tsconfig.json",
     "fix": "pnpm run lint --fix",
     "format": "prettier --write .",
     "lint": "eslint --flag unstable_ts_config ."
