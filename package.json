@@ -19,6 +19,7 @@
   "scripts": {
     "bootstrap": "pnpm install --prefer-offline --loglevel error",
     "check-format": "prettier --check .",
+    "check-types": "tsc --noEmit",
     "fix": "pnpm run lint --fix",
     "format": "prettier --write .",
     "lint": "eslint --flag unstable_ts_config ."
@@ -27,9 +28,11 @@
   "devDependencies": {
     "@bfra.me/eslint-config": "0.16.0",
     "@bfra.me/prettier-config": "0.14.0",
+    "@bfra.me/tsconfig": "0.9.7",
     "@types/node": "22.10.2",
     "eslint": "9.17.0",
     "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-node-dependencies": "0.12.0",
     "eslint-plugin-prettier": "5.2.1",
     "prettier": "3.4.2",
     "tsx": "4.19.2",
