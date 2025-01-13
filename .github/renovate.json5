@@ -33,14 +33,13 @@
     },
     {
       matchPackageNames: ['python'],
-      allowedVersions: '<=3.12',
+      allowedVersions: '<=3.13',
     },
     {
       description: 'Group GitHub actions except for @bfra-me.',
-      matchDatasources: ['github-actions'],
+      matchDepTypes: ['actions'],
       matchPackageNames: ['!bfra-me/{/,}**'],
       groupName: 'GitHub Actions',
-      groupSlug: 'github-actions',
     },
   ],
   platformAutomerge: true,
