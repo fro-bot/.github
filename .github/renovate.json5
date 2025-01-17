@@ -28,6 +28,11 @@
       enabled: false,
     },
     {
+      description: 'Do not group TypeScript and Python with other updates',
+      matchPackageNames: ['typescript', 'python'],
+      groupName: null,
+    },
+    {
       description: 'Show Merge Confidence, OpenSSF Scorecard, and GitHub Search badges for Renovate dependencies.',
       matchDatasources: ['go', 'maven', 'npm', 'nuget', 'packagist', 'pypi', 'rubygems'],
       matchUpdateTypes: ['pin', 'patch', 'minor', 'major'],
