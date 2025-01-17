@@ -7,4 +7,4 @@ _.path = [
 [tools]
 node = "22.13.0"
 pnpm = "9.15.3"
-python = "3.12.8"
+python = "3.13.1"
