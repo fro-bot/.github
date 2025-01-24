@@ -62,7 +62,7 @@
   ],
   platformAutomerge: true,
   postUpgradeTasks: {
-    commands: ['pnpm run bootstrap', 'pnpm run fix', 'pnpm run format'],
+    commands: ['pnpm run bootstrap', 'pnpm run fix'],
     executionMode: 'branch',
   },
   prBodyDefinitions: {
