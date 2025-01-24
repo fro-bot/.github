@@ -34,12 +34,8 @@ runs:
         path: ${{ steps.configure-cache.outputs.path }}
         restore-keys: ${{ steps.configure-cache.outputs.restore-keys }}
 
-    - name: Setup pnpm
-      env:
-        HUSKY: '0'
-      uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
-      with:
-        run_install: |
-          - args: [--frozen-lockfile, --prefer-offline, --loglevel, error]
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile --prefer-offline --loglevel error
+      shell: bash -Eeuo pipefail {0}
 
   using: composite
