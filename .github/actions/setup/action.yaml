@@ -6,7 +6,7 @@ description: Setup build environment and install dependencies
 inputs:
   cache-version:
     default: '0'
-    description: Cache version. Can be used to invalidate the cache.
+    description: Cache version. Can be incremented to invalidate the cache.
     required: false
 
 runs:
@@ -33,7 +33,7 @@ runs:
         mkdir -p "$pnpm_store_path" || exit 1
         echo "path=$pnpm_store_path" >> $GITHUB_OUTPUT
         year_month=$(date -u '+%Y-%m')
-        base_key="pnpm-store-${{ inputs.cache-version }}-${{ runner.os }}-${year_month}-"
+        base_key="pnpm-store-v${{ inputs.cache-version }}-${{ runner.os }}-${year_month}-"
         echo "key=${base_key}${{ hashFiles('**/pnpm-lock.yaml') }}" >> $GITHUB_OUTPUT
         echo "restore-keys=${base_key}" >> $GITHUB_OUTPUT
       shell: 'bash -Eeuo pipefail {0}'
