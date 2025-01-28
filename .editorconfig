@@ -3,7 +3,7 @@
 # http://EditorConfig.org
 
 # Uncomment to prevent defintions being loaded from parent .editorconfig files
-# root = true
+root = true
 
 [*]
 charset = utf-8
