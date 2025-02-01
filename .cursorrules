@@ -1,0 +1,180 @@
+# AI Development Rules for @fro-bot/.github
+
+## Base Layer (Project Constants)
+
+### 1. Quality Standards
+- **Type Safety**
+  - Strict TypeScript mode required (`noEmit` with project-specific `tsconfig.json`)
+  - Type checking enforced via `pnpm check-types`
+  - No implicit any values allowed
+
+- **Code Style**
+  - Prettier configuration from `@bfra.me/prettier-config/120-proof`
+  - ESLint using `@bfra.me/eslint-config`
+  - Line length limit: 120 characters
+  - Automatic formatting via `pnpm format`
+
+- **Documentation**
+  - JSDoc comments required for public APIs
+  - README.md must be maintained for each package
+  - Clear description of package purpose and usage
+  - License and author information preserved
+
+- **Testing**
+  - Unit tests required for new functionality
+  - Integration tests for GitHub Actions workflows
+  - Test coverage requirements defined per package
+
+### 2. Process Standards
+
+- **Version Control**
+  - Semantic commit messages required
+  - Pull request workflow enforced
+  - Branch protection on `main`
+  - Squash merging preferred
+
+- **Code Review**
+  - Required reviews before merge
+  - CI checks must pass
+  - Type checking and linting gates
+  - Security scanning via OpenSSF Scorecard
+
+- **CI/CD Integration**
+  - GitHub Actions for automation
+  - Concurrent job handling with cancellation
+  - Automated dependency updates via Renovate
+  - Cache management for build artifacts
+
+- **Dependency Management**
+  - pnpm as package manager (v9.15.3+)
+  - Frozen lockfile enforcement
+  - Automated updates via Renovate
+  - Security vulnerability scanning
+
+## Flexible Layer (Project-Specific)
+
+### 1. Architecture Rules
+```typescript
+interface ArchitectureRules {
+  packageScope: '@fro-bot';
+  type: 'monorepo';
+  buildSystem: 'pnpm';
+  typescript: {
+    strict: true;
+    config: '@bfra.me/tsconfig';
+  };
+}
+```
+
+### 2. Technology Stack
+```typescript
+interface TechnologyStack {
+  runtime: 'node';
+  packageManager: 'pnpm';
+  buildTools: ['tsx'];
+  linting: ['eslint', 'prettier'];
+  ci: 'github-actions';
+}
+```
+
+### 3. Validation Strategies
+
+#### Code Quality
+```typescript
+interface QualityValidation {
+  typeCheck: 'pnpm check-types';
+  lint: 'pnpm lint';
+  format: 'pnpm check-format';
+  fix: 'pnpm fix';
+}
+```
+
+#### Dependency Management
+```typescript
+interface DependencyValidation {
+  install: 'pnpm bootstrap';
+  update: 'renovate';
+  security: ['openssf-scorecard', 'npm:unpublishSafe'];
+}
+```
+
+### 4. AI Assistant Behavior
+
+#### Code Generation
+- Generate TypeScript code with strict types
+- Include all necessary imports
+- Follow existing project patterns
+- Maintain consistent file structure
+
+#### Code Modifications
+- Preserve existing formatting
+- Maintain type safety
+- Update documentation as needed
+- Consider package boundaries
+
+#### Problem Solving
+- Check existing configurations first
+- Reference package.json for dependencies
+- Validate against ESLint rules
+- Consider monorepo context
+
+## Implementation Guidelines
+
+### 1. File Structure
+```typescript
+interface FileStructure {
+  root: {
+    config: ['.github/', 'package.json', 'pnpm-lock.yaml'];
+    source: ['src/'];
+    docs: ['README.md'];
+  };
+  packages: {
+    scope: '@fro-bot';
+    independent: boolean;
+  };
+}
+```
+
+### 2. Quality Gates
+```typescript
+interface QualityGates {
+  prChecks: ['type-check', 'lint', 'format', 'test'];
+  autofix: ['format', 'lint --fix'];
+  manual: ['security-review', 'performance-check'];
+}
+```
+
+### 3. Automation Rules
+```typescript
+interface AutomationRules {
+  renovate: {
+    automerge: true;
+    schedule: 'non-office-hours';
+    grouping: 'recommended';
+  };
+  github: {
+    actions: true;
+    dependabot: false;
+  };
+}
+```
+
+## Maintenance and Updates
+
+### 1. Rule Updates
+- Review rules quarterly
+- Align with dependency updates
+- Maintain compatibility with tooling
+- Document changes in commit history
+
+### 2. Validation Process
+- Automated checks via CI
+- Manual review for major changes
+- Security impact assessment
+- Performance impact review
+
+### 3. Exception Handling
+- Document rule exceptions
+- Provide justification
+- Time-bound exceptions
+- Regular review process
