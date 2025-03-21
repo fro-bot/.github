@@ -6,7 +6,6 @@
     'github>sanity-io/renovate-config:semantic-commit-type',
     'github>sanity-io/renovate-config:security',
     'github>sanity-io/renovate-config:lock-file-maintenance',
-    'github>sanity-io/renovate-config:group-non-major',
     'github>bfra-me/renovate-config#v3.14.0',
     'github>bfra-me/renovate-config:internal.json5#v3.14.0',
   ],
