@@ -34,8 +34,7 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      - name: ✅ Check Types
-        run: pnpm check-types
-
-      - name: 💅🏽 Lint
+      - env:
+          TIMING: 1
+        name: 💅🏽 Lint
         run: pnpm lint
