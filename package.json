@@ -22,7 +22,7 @@
     "check-types": "tsc --noEmit --project ./tsconfig.json",
     "fix": "pnpm run lint --fix",
     "format": "prettier --write .",
-    "lint": "TIMING=1 eslint ."
+    "lint": "eslint ."
   },
   "prettier": "@bfra.me/prettier-config/120-proof",
   "devDependencies": {
