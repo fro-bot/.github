@@ -55,7 +55,6 @@
       groupName: 'GitHub Actions',
     },
   ],
-  platformAutomerge: true,
   postUpgradeTasks: {
     commands: ['pnpm run bootstrap', 'pnpm run fix'],
     executionMode: 'branch',
@@ -63,6 +62,6 @@
   prBodyDefinitions: {
     GitHub: '[![GitHub Code Search for "{{{depName}}}"](https://img.shields.io/badge/code_search-{{{replace "-" "--" depName}}}-2671E5.svg?logo=github)](https://github.com/search?q=repo:{{{encodeURIComponent repository}}}+NOT+path:/package(-lock)%3F%5C.json%7Cyarn%5C.lock%7Cpnpm-lock%5C.yaml/+{{{encodeURIComponent depName}}})',
   },
-  prCreation: 'immediate',
+  prCreation: 'not-pending',
   rebaseWhen: 'auto',
 }
