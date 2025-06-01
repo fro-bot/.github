@@ -17,7 +17,7 @@
   "author": "Marcus R. Brown <git@mrbro.dev> (https://mrbro.dev/)",
   "type": "module",
   "scripts": {
-    "bootstrap": "pnpm install --prefer-offline --loglevel error",
+    "bootstrap": "pnpm install --prefer-offline --loglevel warn",
     "check-format": "prettier --check .",
     "check-types": "tsc --noEmit --project ./tsconfig.json",
     "fix": "pnpm run lint --fix",
