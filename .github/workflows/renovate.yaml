@@ -8,7 +8,7 @@ on:
   pull_request:
     types: [edited]
   push:
-    branches: ['**']
+    branches-ignore: [main]
   schedule:
     - cron: '0 * * * *' # Run every hour
   workflow_call:
@@ -55,7 +55,12 @@ permissions:
 jobs:
   renovate:
     name: Renovate
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+      (github.event.action == 'edited' && !contains(github.actor, '[bot]')) ||
+      (
+        github.event_name != 'workflow_run' ||
+        github.event.workflow_run.conclusion == 'success'
+      )
     secrets:
       APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
       APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}

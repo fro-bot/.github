@@ -15,9 +15,7 @@ branches:
           - Analyze (typescript)
           - CodeQL
           - Lint
-          - Renovate / Prepare Repository List
           - Renovate / Renovate
-          - Renovate / Trigger Repository Updates
           - Review Dependencies
 
       enforce_admins: true
