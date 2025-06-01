@@ -38,5 +38,5 @@
     "tsx": "4.19.2",
     "typescript": "5.8.2"
   },
-  "packageManager": "pnpm@10.6.5"
+  "packageManager": "pnpm@10.11.0"
 }
