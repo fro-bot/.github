@@ -1079,8 +1079,8 @@ packages:
     resolution: {integrity: sha512-HVJyzUrLIL1c0QmviVh5E8VGyUS7xCFPS6yydaVd1UegW+ibV/CohqTH9MkOLDp5o+rb82DMo77PTuc9F/8GKw==}
     engines: {node: ^14.17.0 || ^16.13.0 || >=18.0.0}
 
-  http-cache-semantics@4.1.1:
-    resolution: {integrity: sha512-er295DKPVsV82j5kw1Gjt+ADA/XYHsajl82cGNQG2eyoPkvgUhX+nDIyelzhIWbbsXP39EHcI6l5tYs2FYqYXQ==}
+  http-cache-semantics@4.2.0:
+    resolution: {integrity: sha512-dTxcvPXqPvXBQpq5dUr6mEMJX4oIEFv6bwom3FDwKRDsuIjjJGANqhBuoAn9c1RQJIdAKav33ED65E2ys+87QQ==}
 
   http2-wrapper@2.2.1:
     resolution: {integrity: sha512-V5nVw1PAOgfI3Lmeaj2Exmeg7fenjhRUgz1lPSezy1CuhPYbgQtbQj4jZfEAEMlaL+vupsvhjqCyjzob0yxsmQ==}
@@ -2380,7 +2380,7 @@ snapshots:
     dependencies:
       '@types/http-cache-semantics': 4.0.4
       get-stream: 6.0.1
-      http-cache-semantics: 4.1.1
+      http-cache-semantics: 4.2.0
       keyv: 4.5.4
       mimic-response: 4.0.0
       normalize-url: 8.0.1
@@ -2943,7 +2943,7 @@ snapshots:
     dependencies:
       lru-cache: 7.18.3
 
-  http-cache-semantics@4.1.1: {}
+  http-cache-semantics@4.2.0: {}
 
   http2-wrapper@2.2.1:
     dependencies:
