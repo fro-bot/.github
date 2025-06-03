@@ -10,15 +10,6 @@
     'github>bfra-me/renovate-config:internal.json5#v3.14.6',
   ],
   automergeType: 'pr',
-  customManagers: [
-    {
-      customType: 'regex',
-      datasourceTemplate: 'github-releases',
-      depTypeTemplate: 'config',
-      fileMatch: ['^\\.git(hu|la)b\\/renovate\\.json5?$', '^\\.renovaterc(\\.json5?)?$', '^renovate\\.json5?$'],
-      matchStrings: ['github>(?<depName>fro-bot/\\.github)#(?<currentValue>(\\d+\\.){2}\\d+)'],
-    },
-  ],
   packageRules: [
     {
       description: 'Disable patch updates except for select dependencies.',
