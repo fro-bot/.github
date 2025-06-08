@@ -62,5 +62,5 @@ jobs:
       APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
     uses: bfra-me/.github/.github/workflows/renovate.yaml@6b6336a0dc5bb8316868520ca6203489f1d4c10e # v3.0.1
     with:
-      log_level: ${{ inputs.log-level || 'debug' }}
-      print_config: ${{ inputs.print-config || false }}
+      log-level: ${{ inputs.log-level || 'debug' }}
+      print-config: ${{ inputs.print-config || false }}

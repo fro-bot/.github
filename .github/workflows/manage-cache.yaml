@@ -47,4 +47,10 @@ jobs:
       actions: write
     runs-on: ubuntu-latest
     steps:
-      - uses: ./.github/actions/setup
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.REF }}
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
