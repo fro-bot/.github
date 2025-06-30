@@ -30,7 +30,7 @@
     "@bfra.me/prettier-config": "0.15.1",
     "@bfra.me/tsconfig": "0.10.0",
     "@types/node": "22.15.32",
-    "eslint": "9.29.0",
+    "eslint": "9.30.0",
     "eslint-config-prettier": "10.1.1",
     "eslint-plugin-node-dependencies": "1.1.0",
     "eslint-plugin-prettier": "5.5.0",
