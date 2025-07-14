@@ -15,11 +15,11 @@ importers:
         specifier: 0.24.0
         version: 0.24.0(@typescript-eslint/eslint-plugin@8.34.1(@typescript-eslint/parser@8.34.1(eslint@9.30.0(jiti@2.1.2))(typescript@5.8.3))(eslint@9.30.0(jiti@2.1.2))(typescript@5.8.3))(@typescript-eslint/utils@8.35.0(eslint@9.30.0(jiti@2.1.2))(typescript@5.8.3))(eslint-config-prettier@10.1.1(eslint@9.30.0(jiti@2.1.2)))(eslint-plugin-prettier@5.5.0(eslint-config-prettier@10.1.1(eslint@9.30.0(jiti@2.1.2)))(eslint@9.30.0(jiti@2.1.2))(prettier@3.6.0))(eslint@9.30.0(jiti@2.1.2))(typescript@5.8.3)
       '@bfra.me/prettier-config':
-        specifier: 0.15.1
-        version: 0.15.1(prettier@3.6.0)
+        specifier: 0.16.0
+        version: 0.16.0(prettier@3.6.0)
       '@bfra.me/tsconfig':
-        specifier: 0.10.0
-        version: 0.10.0
+        specifier: 0.11.0
+        version: 0.11.0
       '@types/node':
         specifier: 22.15.32
         version: 22.15.32
@@ -72,13 +72,13 @@ packages:
       eslint-plugin-prettier:
         optional: true
 
-  '@bfra.me/prettier-config@0.15.1':
-    resolution: {integrity: sha512-1Ao7h400syP60kcGl9Ig0lvGtu03KkW3nLm0q6fmpbIDHnH9f82aRCAoog+sqWYhszp3qW5lPa2t27AvB6hEdQ==}
+  '@bfra.me/prettier-config@0.16.0':
+    resolution: {integrity: sha512-03K1cyic0Ffi9nn+STkfsjwhjXzeEgkngirN3NCjzaqjzx73pVLAENxPc+0Yeh9+kV0MJNFKEwGtX43hvkjLWw==}
     peerDependencies:
       prettier: ^3.0.0
 
-  '@bfra.me/tsconfig@0.10.0':
-    resolution: {integrity: sha512-dvWmv5y6ZrZh7baSH8o02NtdOqQIFcUKYW4dfVNb73cZ3ODCrTeto3Gn7H/B7VYrW5n7itypZC/GpTeT7gvArQ==}
+  '@bfra.me/tsconfig@0.11.0':
+    resolution: {integrity: sha512-XnO6flP9qOU3XXWi/LUY3Ev8n/cEOhulDVXK7Nip9U7tgh8KxfS+yIB8TAbSUkGsf7/AOX8+v/xfdruo5CH2mw==}
 
   '@emnapi/core@1.4.3':
     resolution: {integrity: sha512-4m62DuCE07lw01soJwPiBGC0nAww0Q+RY70VZ+n49yDIO13yyinhbWCeNnaob0lakDtWQzSdtNWzJeOJt2ma+g==}
@@ -1696,11 +1696,11 @@ snapshots:
       - supports-color
       - typescript
 
-  '@bfra.me/prettier-config@0.15.1(prettier@3.6.0)':
+  '@bfra.me/prettier-config@0.16.0(prettier@3.6.0)':
     dependencies:
       prettier: 3.6.0
 
-  '@bfra.me/tsconfig@0.10.0': {}
+  '@bfra.me/tsconfig@0.11.0': {}
 
   '@emnapi/core@1.4.3':
     dependencies:
