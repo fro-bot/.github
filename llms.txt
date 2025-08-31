@@ -1,0 +1,45 @@
+# Fro Bot .github Repository
+
+> Community health files and automated control center for Fro Bot, an AI-powered GitHub bot designed to enhance repository management experience through automated tasks, code quality improvements, and streamlined collaboration.
+
+Fro Bot leverages advanced AI technologies to automate repository management tasks including pull request reviews, repository monitoring with insights and recommendations, documentation maintenance, and automated repository starring for followed users. This repository contains the foundational configuration files and workflows that power Fro Bot's functionality across all managed repositories.
+
+The repository follows strict development standards with TypeScript, comprehensive linting via ESLint, automated formatting with Prettier, and robust CI/CD pipelines. All automation is handled through GitHub Actions with sophisticated dependency management via Renovate.
+
+## Documentation
+
+- [Main README](README.md): Primary project documentation explaining Fro Bot's purpose and capabilities
+- [Security Policy](SECURITY.md): Vulnerability reporting procedures and security guidelines
+- [License](LICENSE.md): MIT license terms and copyright information
+- [Code Owners](/.github/CODEOWNERS): Repository maintainership and review assignments
+- [Copilot Instructions](/.github/copilot-instructions.md): AI coding agent guidelines and project-specific development patterns
+
+## Configuration
+
+- [Package Configuration](package.json): Project metadata, dependencies, and development scripts
+- [TypeScript Config](tsconfig.json): TypeScript compiler configuration with strict mode
+- [ESLint Config](eslint.config.ts): Code linting rules and style enforcement
+- [AI Development Rules](.cursorrules): Comprehensive development standards and AI assistant behavior guidelines
+- [Editor Config](.editorconfig): Consistent coding style across editors
+
+## Automation
+
+- [Main Workflow](/.github/workflows/main.yaml): Primary CI/CD pipeline for linting and testing
+- [Setup Action](/.github/actions/setup/action.yaml): Reusable action for environment setup and dependency installation
+- [Repository Settings](/.github/settings.yml): Automated repository configuration via Probot
+- [Renovate Configuration](/.github/renovate.json5): Automated dependency management and security updates
+
+## Repository Management
+
+- [Common Settings](common-settings.yaml): Shared repository configuration template for all Fro Bot repositories
+- [CodeQL Analysis](/.github/workflows/codeql-analysis.yaml): Security vulnerability scanning automation
+- [Dependency Review](/.github/workflows/dependency-review.yaml): Automated dependency security analysis
+- [OpenSSF Scorecard](/.github/workflows/scorecard.yaml): Security posture assessment and monitoring
+
+## Optional
+
+- [Workspace Configuration](pnpm-workspace.yaml): pnpm monorepo workspace configuration
+- [Tool Version Management](mise.toml): Development environment tool version specifications
+- [Change Management](/.changeset/): Automated changelog and version management configuration
+- [Cache Management](/.github/workflows/manage-cache.yaml): CI/CD cache optimization workflows
+- [Issue Management](/.github/workflows/manage-issues.yaml): Automated issue lifecycle management
