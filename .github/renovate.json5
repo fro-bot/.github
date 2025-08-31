@@ -6,6 +6,9 @@
     'github>sanity-io/renovate-config:security',
     'github>sanity-io/renovate-config:lock-file-maintenance',
   ],
+  lockFileMaintenance: {
+    dependencyDashboardApproval: false
+  },
   packageRules: [
     {
       description: 'Disable patch updates except for select dependencies.',
