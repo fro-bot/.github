@@ -2,12 +2,14 @@
   "name": "@fro-bot/.github",
   "version": "0.0.0",
   "private": true,
-  "description": "Community health files for @fro-bot",
+  "description": "Community health files and automated control center for @fro-bot",
   "keywords": [
     "actions",
-    "renovate-config",
+    "ai",
+    "automation",
     "github-actions",
-    "fro-bot"
+    "fro-bot",
+    "renovate-config"
   ],
   "repository": {
     "type": "git",

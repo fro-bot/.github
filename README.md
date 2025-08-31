@@ -11,7 +11,26 @@
 </p>
 
 <p align="center">
-  Community health files for <a href="https://github.com/fro-bot">@fro-bot</a>
+  Community health files and automated control center for <a href="https://github.com/fro-bot">@fro-bot</a>
 </p>
 
 &nbsp;
+
+<p align="center">
+  <img alt="Fro Bot" src="https://raw.githubusercontent.com/fro-bot/.github/main/assets/fro-bot.png" height="100" />
+</p>
+
+## What is Fro Bot?
+
+Fro Bot is an AI-powered GitHub bot designed to enhance the repository management experience. It leverages advanced AI technologies to automate tasks, improve code quality, and streamline collaboration within select projects.
+
+This repository contains the configuration files and workflows that power Fro Bot's functionality across its managed repositories:
+
+- Review pull requests and provide feedback
+- Monitor repository activity and provide insights and recommendations
+- Keep documentation and links up to date
+- Automatically star repositories contributed to by followed users
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
