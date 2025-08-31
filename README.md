@@ -1,4 +1,5 @@
 <h3 align="center">
+
   <img alt="transparent" src="https://raw.githubusercontent.com/catppuccin/catppuccin/main/assets/misc/transparent.png" height="30" width="0px"/>
   .github
   <img alt="transparent" src="https://raw.githubusercontent.com/catppuccin/catppuccin/main/assets/misc/transparent.png" height="30" width="0px"/>
@@ -14,10 +15,8 @@
   Community health files and automated control center for <a href="https://github.com/fro-bot">@fro-bot</a>
 </p>
 
-&nbsp;
-
 <p align="center">
-  <img alt="Fro Bot" src="https://raw.githubusercontent.com/fro-bot/.github/main/assets/fro-bot.png" height="100" />
+  <img alt="Fro Bot" src="https://media.githubusercontent.com/media/fro-bot/.github/main/assets/fro-bot.png" height="200" />
 </p>
 
 ## What is Fro Bot?
