@@ -7,7 +7,7 @@
     'github>sanity-io/renovate-config:lock-file-maintenance',
   ],
   lockFileMaintenance: {
-    dependencyDashboardApproval: false
+    dependencyDashboardApproval: false,
   },
   packageRules: [
     {
