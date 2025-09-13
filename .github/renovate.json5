@@ -13,12 +13,12 @@
     {
       description: 'Disable patch updates except for select dependencies.',
       matchUpdateTypes: ['patch'],
-      matchPackageNames: ['!typescript', '!python'],
+      matchPackageNames: ['!python', '!typescript'],
       enabled: false,
     },
     {
       description: 'Do not group TypeScript and Python with other updates',
-      matchPackageNames: ['typescript', 'python'],
+      matchPackageNames: ['python', 'typescript'],
       groupName: null,
     },
     {
