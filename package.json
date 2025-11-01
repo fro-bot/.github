@@ -36,7 +36,7 @@
     "eslint-config-prettier": "10.1.1",
     "eslint-plugin-node-dependencies": "1.2.0",
     "eslint-plugin-prettier": "5.5.0",
-    "jiti": "<2.7.0",
+    "jiti": "2.6.1",
     "prettier": "3.6.0",
     "tsx": "4.20.3",
     "typescript": "5.9.3"
