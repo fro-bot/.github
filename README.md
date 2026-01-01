@@ -109,7 +109,6 @@ This repository provides shared configurations and automation for the Fro Bot ec
    pnpm format
    ```
 
->
 > [!TIP] This repository follows strict development standards. Make sure to run quality checks before committing changes.
 
 ## Repository Structure
@@ -179,7 +178,6 @@ The [`.cursorrules`](.cursorrules) file contains comprehensive guidelines for AI
 - Quality validation strategies
 - Automation and maintenance procedures
 
->
 > [!NOTE] These guidelines ensure consistent AI assistant behavior and maintain code quality across the project.
 
 ## Resources
