@@ -69,7 +69,7 @@ jobs:
 
       - id: lock-threads
         name: Lock stale issues and pull requests
-        uses: dessant/lock-threads@1bf7ec25051fe7c00bdd17e6a7cf3d7bfb7dc771 # v5.0.1
+        uses: dessant/lock-threads@7266a7ce5c1df01b1c6db85bf8cd86c737dadbe7 # v6.0.0
         with:
           exclude-any-issue-labels: awaiting-approval,work-in-progress
           exclude-any-pr-labels: awaiting-approval,work-in-progress
