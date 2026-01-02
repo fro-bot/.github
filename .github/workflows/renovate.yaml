@@ -11,23 +11,6 @@ on:
     branches-ignore: [main]
   schedule:
     - cron: '0 * * * *' # Run every hour
-  workflow_call:
-    inputs:
-      log-level:
-        description: Log level for Renovate
-        type: string
-        default: debug
-      print-config:
-        description: Log the fully-resolved Renovate config for each repository, plus fully-resolved presets.
-        type: boolean
-        default: false
-    secrets:
-      APPLICATION_ID:
-        description: GitHub App ID
-        required: true
-      APPLICATION_PRIVATE_KEY:
-        description: GitHub App private key
-        required: true
   workflow_dispatch:
     inputs:
       log-level:
@@ -63,4 +46,10 @@ jobs:
     uses: bfra-me/.github/.github/workflows/renovate.yaml@91a3c6845c9193b3c29e019509010dfbd53cb6bf # v4.3.3
     with:
       log-level: ${{ inputs.log-level || 'debug' }}
+      path-filters: >-
+        [
+          '.github/workflows/renovate.yaml',
+          '.github/renovate.json5',
+          'default.json',
+        ]
       print-config: ${{ inputs.print-config || false }}
