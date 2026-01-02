@@ -13,7 +13,6 @@
         "source.fixAll.eslint": "explicit",
         "source.organizeImports": "never"
     },
-    "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": false,
 
     // Silent the stylistic rules in you IDE, but still auto fix them
@@ -22,6 +21,8 @@
     "explorer.fileNesting.enabled": false,
 
     "github-actions.workflows.pinned.workflows": [".github/workflows/main.yaml"],
+
+    "prettier.enable": false,
 
     "typescript.enablePromptUseWorkspaceTsdk": true,
     "typescript.tsdk": "node_modules/typescript/lib"
