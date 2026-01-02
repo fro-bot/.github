@@ -44,7 +44,7 @@ jobs:
     if: github.event_name != 'pull_request'
     name: Setup cache
     permissions:
-      actions: write
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: ⤵ Checkout Branch
