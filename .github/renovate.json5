@@ -1,14 +1,6 @@
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
-  extends: [
-    'github>bfra-me/renovate-config#5.0.0',
-    'github>sanity-io/renovate-config:semantic-commit-type',
-    'github>sanity-io/renovate-config:security',
-    'github>sanity-io/renovate-config:lock-file-maintenance',
-  ],
-  lockFileMaintenance: {
-    dependencyDashboardApproval: false,
-  },
+  extends: ['local>fro-bot/.github'],
   packageRules: [
     {
       description: 'Disable patch updates except for select dependencies.',
@@ -21,20 +13,9 @@
       matchPackageNames: ['python', 'typescript'],
       groupName: null,
     },
-    {
-      matchPackageNames: ['python'],
-      allowedVersions: '<=3.13',
-    },
-    {
-      description: 'Group GitHub actions except for @bfra-me.',
-      matchDepTypes: ['action'],
-      matchPackageNames: ['!bfra-me/{/,}**'],
-      groupName: 'GitHub Actions',
-    },
   ],
   postUpgradeTasks: {
     commands: ['pnpm run bootstrap', 'pnpm run fix'],
     executionMode: 'branch',
   },
-  rebaseWhen: 'behind-base-branch',
 }

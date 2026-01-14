@@ -1,4 +1,44 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>fro-bot/.github//.github/renovate.json5"]
+  "extends": [
+    "github>bfra-me/renovate-config#5.0.0",
+    "github>sanity-io/renovate-config:semantic-commit-type",
+    "github>sanity-io/renovate-config:security",
+    "github>sanity-io/renovate-config:lock-file-maintenance",
+    ":assignAndReview(fro-bot)"
+  ],
+  "lockFileMaintenance": {
+    "dependencyDashboardApproval": false
+  },
+  "packageRules": [
+    {
+      "matchPackageNames": ["python"],
+      "allowedVersions": "<=3.13"
+    },
+    {
+      "description": "Group GitHub actions except for @bfra-me.",
+      "matchDepTypes": ["action"],
+      "matchPackageNames": ["!bfra-me/{/,}**"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Automerge my project dependencies without a minimum release age.",
+      "matchPackageNames": [
+        "@bfra.me/{/,}**",
+        "bfra-me/{/,}**",
+        "/^@?fro.bot/",
+        "fro-bot/{/,}**",
+        "pro-actions/{/,}**"
+      ],
+      "minimumReleaseAge": null,
+      "prCreation": "immediate"
+    },
+    {
+      "description": "Automerge my project dependencies without a minimum release age.",
+      "matchSourceUrlPrefixes": ["https://github.com/bfra-me", "https://github.com/fro-bot"],
+      "minimumReleaseAge": null,
+      "prCreation": "immediate"
+    }
+  ],
+  "rebaseWhen": "behind-base-branch"
 }
