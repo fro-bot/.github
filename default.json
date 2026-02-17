@@ -22,7 +22,7 @@
       "groupName": "GitHub Actions"
     },
     {
-      "description": "Automerge my project dependencies without a minimum release age.",
+      "description": "Update my project dependencies without a minimum release age.",
       "matchPackageNames": [
         "@bfra.me/{/,}**",
         "bfra-me/{/,}**",
@@ -34,10 +34,23 @@
       "prCreation": "immediate"
     },
     {
-      "description": "Automerge my project dependencies without a minimum release age.",
+      "description": "Update my project dependencies without a minimum release age.",
       "matchSourceUrlPrefixes": ["https://github.com/bfra-me", "https://github.com/fro-bot"],
       "minimumReleaseAge": null,
       "prCreation": "immediate"
+    },
+    {
+      "description": [
+        "Automerge `minor` and `patch` update types of @bfra-me and @fro-bot packages (disable dashboard approval)."
+      ],
+      "matchPackageNames": ["@bfra.me/**", "bfra-me/**", "@fro-bot/**", "fro-bot/**"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "addLabels": ["automerge"],
+      "dependencyDashboardApproval": false,
+      "automerge": true,
+      "platformAutomerge": true,
+      "prCreation": "immediate",
+      "rebaseWhen": "behind-base-branch"
     }
   ],
   "rebaseWhen": "behind-base-branch"
