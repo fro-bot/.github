@@ -89,21 +89,26 @@ jobs:
   fro-bot:
     name: Fro Bot
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      discussions: write
-      issues: write
-      pull-requests: write
     if: >-
       (
         github.event.pull_request == null ||
-        !github.event.pull_request.head.repo.fork
+        (
+          !github.event.pull_request.head.repo.fork &&
+          !endsWith(github.event.pull_request.user.login || '', '[bot]')
+        )
       ) && (
-        github.event_name == 'issues' ||
+        (
+          github.event_name == 'issues' &&
+          !endsWith(github.event.issue.user.login || '', '[bot]') &&
+          (github.event.issue.user.login || '') != 'fro-bot'
+        ) ||
+        (
+          github.event_name == 'pull_request' &&
+          !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
+          (github.event.pull_request.user.login || '') != 'fro-bot'
+        ) ||
         github.event_name == 'schedule' ||
         github.event_name == 'workflow_dispatch' ||
-        github.event_name == 'pull_request' ||
         (
           (github.event_name == 'issue_comment' ||
            github.event_name == 'pull_request_review_comment' ||
@@ -115,21 +120,22 @@ jobs:
       )
     steps:
       - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0
-          token: >-
+          ref: >-
             ${{
-              github.event_name == 'workflow_dispatch'
-              && secrets.GITHUB_TOKEN
-              || secrets.FRO_BOT_PAT
+              (github.event.issue.pull_request && format('refs/pull/{0}/head', github.event.issue.number))
+              || github.event.pull_request.head.sha
+              || ''
             }}
+          token: ${{ secrets.FRO_BOT_PAT }}
 
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
       - name: Run Fro Bot
-        uses: fro-bot/agent@v0
+        uses: fro-bot/agent@81459bc29d4f005d9c4f27eea514b91a2e2ae313 # v0.26.17
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PROMPT: >-
@@ -140,11 +146,7 @@ jobs:
               || ''
             }}
         with:
-          github-token: >-
-            ${{
-              github.event_name == 'workflow_dispatch'
-              && secrets.GITHUB_TOKEN
-              || secrets.FRO_BOT_PAT
-            }}
+          github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
+          omo-providers: ${{ secrets.OMO_PROVIDERS }}
           prompt: ${{ env.PROMPT }}
