@@ -1,12 +1,10 @@
-import {defineConfig, type Config} from '@bfra.me/eslint-config'
+import {defineConfig} from '@bfra.me/eslint-config'
 
-const config: ReturnType<typeof defineConfig> = defineConfig({
+export default defineConfig({
   name: '@fro-bot/.github',
-  ignores: ['.ai/', '.github/copilot-instructions.md'],
+  ignores: ['.ai/', '.github/copilot-instructions.md', '**/AGENTS.md'],
   packageJson: true,
   typescript: {
     tsconfigPath: './tsconfig.json',
   },
 })
-
-export default config as Config
