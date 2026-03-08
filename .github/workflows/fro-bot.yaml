@@ -11,7 +11,7 @@ on:
   issues:
     types: [opened, edited]
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [synchronize, ready_for_review, reopened, review_requested]
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
@@ -19,6 +19,12 @@ on:
       prompt:
         description: Custom prompt for the Fro Bot agent
         required: true
+  workflow_call:
+    inputs:
+      prompt:
+        description: Prompt passed by reusable caller workflow
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -51,6 +57,12 @@ env:
     - Tests: verify new/changed behavior has tests covering happy path, errors,
       and boundaries. If tests aren't needed, explain why.
 
+    Hard boundaries:
+    - Review only. Do NOT push commits, modify files, create branches, or open PRs.
+    - Do NOT use labels, assignments, or milestone changes.
+    - Use inline comments for file-specific findings. Use review body for summary only.
+    - Do NOT speculate. If uncertain, state what evidence is missing.
+
     Do NOT comment on formatting, lint, or style nits handled by CI.
 
     Output:
@@ -59,6 +71,11 @@ env:
     ### Non-blocking concerns
     ### Missing tests
     ### Risk assessment (LOW/MED/HIGH) + rationale
+
+    Requirements:
+    - Include every heading exactly once and in the order above.
+    - Write "None" under headings with no findings.
+    - Keep findings actionable: file path, impact, and concrete remediation.
 
   SCHEDULE_PROMPT: |
     Create a single issue titled "Daily Org Oversight Report — YYYY-MM-DD (UTC)"
@@ -109,6 +126,7 @@ jobs:
         ) ||
         github.event_name == 'schedule' ||
         github.event_name == 'workflow_dispatch' ||
+        inputs.prompt != '' ||
         (
           (github.event_name == 'issue_comment' ||
            github.event_name == 'pull_request_review_comment' ||
@@ -141,6 +159,7 @@ jobs:
           PROMPT: >-
             ${{
               (github.event_name == 'workflow_dispatch' && (github.event.inputs.prompt || ''))
+              || inputs.prompt
               || (github.event_name == 'schedule' && env.SCHEDULE_PROMPT)
               || (github.event_name == 'pull_request' && env.PR_REVIEW_PROMPT)
               || ''

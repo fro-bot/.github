@@ -149,6 +149,8 @@ This repository provides shared configurations and automation for the Fro Bot ec
 | **Renovate**  | Automated dependency updates                  | Schedule           |
 | **Scorecard** | Security posture assessment                   | Push to main       |
 
+> [!NOTE] The Fro Bot PR-review workflow triggers on `ready_for_review` and `review_requested` to reduce duplicate runs. For ad hoc reviews outside those events, mention `@fro-bot` in the PR conversation.
+
 ### Repository Settings Management
 
 Fro Bot uses [Probot Settings](https://probot.github.io/apps/settings/) to automatically synchronize repository configurations across all managed repositories. The settings ensure consistent:
