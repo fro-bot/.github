@@ -4,125 +4,107 @@
 
 This is the foundational `.github` repository for Fro Bot, an AI-powered GitHub bot ecosystem. It serves as the automated control center containing community health files, shared configurations, and workflows that power repository management across all Fro Bot projects.
 
+## Canonical Context (read first)
+
+1. `README.md` — repository purpose and structure
+2. `.cursorrules` — AI-development conventions and constraints
+3. `.github/workflows/main.yaml` — current CI quality gate behavior
+4. `.github/actions/setup/action.yaml` — required environment/bootstrap pattern
+5. `package.json` — authoritative scripts and package-manager contract
+
+Additional high-signal config:
+
+- `tsconfig.json` (extends `@bfra.me/tsconfig`)
+- `eslint.config.ts` (uses `@bfra.me/eslint-config`)
+- `common-settings.yaml` (repository settings contract)
+
+If guidance conflicts, follow the order above.
+
+## Repository Contract
+
+- This repo is the automation/config control center for the Fro Bot org.
+- Keep changes minimal and targeted; avoid broad refactors.
+- Use **pnpm only** (never npm/yarn).
+- Use existing conventions from `@bfra.me/*` configs.
+
 ## Architecture & Key Components
 
-### Repository Structure
-- **Community Health Files**: Centralized README, SECURITY, LICENSE, CODEOWNERS
-- **Automation Hub**: GitHub Actions workflows, custom actions, and Probot settings
-- **Configuration Templates**: Shared ESLint, TypeScript, and Renovate configurations
-- **Development Standards**: AI development guidelines in `.cursorrules`
+- Community health files (`README.md`, `SECURITY.md`, `LICENSE.md`)
+- Automation hub (`.github/workflows/`, `.github/actions/`)
+- Copilot governance hooks (`.github/hooks/`)
+- Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
+- Development standards and quality gates (`.cursorrules`, TypeScript/ESLint/Prettier)
 
-### Core Configuration Pattern
-All configuration extends from `@bfra.me/*` packages:
-- TypeScript: `@bfra.me/tsconfig` with strict mode
-- ESLint: `@bfra.me/eslint-config`
-- Prettier: `@bfra.me/prettier-config/120-proof` (120 char limit)
+## Required Workflow for Every Change
 
-## Development Workflows
+1. Read nearby files and match existing style/patterns.
+2. Implement the smallest safe diff.
+3. Run verification commands locally.
+4. Update docs when behavior or usage changes.
 
-### Essential Commands
+## Verification Commands (required)
+
+Run these commands in repository root before finalizing:
+
 ```bash
-# Quality check pipeline (run before commits)
-pnpm check-types    # TypeScript strict checking
-pnpm lint          # ESLint validation
-pnpm check-format  # Prettier formatting check
-
-# Auto-fix workflow
-pnpm fix           # Auto-fix linting issues
-pnpm format        # Auto-format code
-
-# Bootstrap (not npm install)
-pnpm bootstrap     # Installs with --prefer-offline --loglevel warn
+pnpm bootstrap
+pnpm check-types
+pnpm lint
+pnpm check-format
 ```
 
-### GitHub Actions Setup Pattern
-All workflows use the custom setup action at `.github/actions/setup/action.yaml`:
-- Installs mise for tool version management
-- Configures pnpm cache with monthly rotation
-- Runs `pnpm bootstrap` for dependency installation
+If you touched workflows, also validate YAML shape and action references in modified files.
 
-## TypeScript Patterns & Standards
+If you touched docs/instructions/agent files, ensure markdown lint rules still pass.
 
-### Type Safety Rules
-- **Avoid ES6 classes** - Use functions and interfaces instead
-- **No `any` types** - Use `unknown` for uncertain types, leverage built-in utilities
-- **Explicit return types** required for all functions
-- **Const assertions** for fixed values: `as const`
+## High-Risk Do / Don’t Patterns
 
-### Utility Type Usage
-```typescript
-// Prefer built-in utility types
-type UserUpdate = Partial<User>           // Not custom partial interface
-type UserName = Pick<User, 'name'>        // Not extracting manually
-type UserNoId = Omit<User, 'id'>          // Not custom exclusion
+### Package manager
 
-// Use const assertions for fixed data
-const CONFIG_KEYS = ['api', 'cache'] as const
-type ConfigKey = typeof CONFIG_KEYS[number]
-```
+- **Do:** `pnpm bootstrap`
+- **Don’t:** `npm install`, `yarn install`, or lockfile rewrites from other managers
 
-### Documentation Standards
-- **JSDoc for public APIs** with `@param`, `@returns`, `@throws`
-- **Comments explain "why"** not "what" - focus on business logic reasoning
-- **Meaningful error messages** with context and actionable guidance
+### Workflow setup
 
-### Testing with Vitest
-- Leverage Vitest's type-checking support
-- Use `expectTypeOf` for type assertions in tests
-- Prefer `unknown` over `any` in test mocks
+- **Do:** use `./.github/actions/setup` in workflows that need dependencies
+- **Don’t:** duplicate ad-hoc setup steps that drift from the shared setup action
 
-### Logging Standards
-```typescript
-// Use consola instead of console
-import { consola } from 'consola'
+### Type safety
 
-consola.info('Repository settings updated')    // Not console.log
-consola.error('Failed to sync settings', err)  // Not console.error
-```
+- **Do:** prefer `unknown` + narrowing and explicit types where needed
+- **Don’t:** introduce `any`, `@ts-ignore`, or silent type suppression
 
-## Automation & Integration Patterns
+### Logging
 
-### Renovate Configuration
-- Extends `github>bfra-me/renovate-config#v4.1.1`
-- Disables patch updates except TypeScript/Python
-- Groups GitHub Actions (except @bfra-me scope)
-- Auto-merges during non-office hours
+- **Do:** prefer structured, meaningful logging where applicable
+- **Don’t:** add noisy `console.log` debugging output to committed workflow scripts/code
 
-### Repository Settings Management
-Uses Probot Settings app to sync `common-settings.yaml` across all repositories:
-- Branch protection rules
-- Required status checks
-- Security policies
-- Collaboration settings
+### Scope control
 
-### Workflow Triggers
-- **Main workflow**: PR events + push to main + manual dispatch
-- **CodeQL**: PR, push, scheduled security scans
-- **Renovate**: Scheduled dependency updates
-- **Scorecard**: Push to main for security assessment
+- **Do:** change only files relevant to the request
+- **Don’t:** bundle unrelated cleanup/refactors in the same PR
 
-## Project-Specific Conventions
+## Security & Safety Constraints
 
-### Package Manager
-- **Always use pnpm** (v10.15.0+), never npm/yarn
-- **Frozen lockfile** enforced in CI
-- **Bootstrap script** for installation with specific flags
+- Never add or expose credentials/secrets in code, workflow logs, or docs.
+- Do not weaken branch protections, required checks, or security workflow coverage.
+- Prefer least-privilege permissions in workflows and automation.
+- Never add destructive commands without explicit requirement and safe guards.
 
-### File Naming & Organization
-- Configuration files at root level
-- GitHub-specific configs in `.github/`
-- Shared templates in `workflow-templates/`
-- Assets organized in `assets/`
+## Platform-Specific Notes
 
-### Dependency Management
-- Scope: `@fro-bot` for internal packages
-- External configs from `@bfra.me/*` ecosystem
-- Security scanning via OpenSSF Scorecard
-- Automated updates via Renovate with approval gates
+### GitHub Copilot coding agent
 
-### AI Development Guidelines
-Reference `.cursorrules` for comprehensive AI assistant behavior:
-- Generate strict TypeScript with proper imports
-- Preserve existing formatting and patterns
-- Update documentation alongside code changes
-- Consider monorepo context and package boundaries
+- Setup-steps workflow job name must be `copilot-setup-steps`.
+- Keep setup-steps deterministic and focused on environment preparation.
+- Copilot hooks are configured via `.github/hooks/*.json`.
+- MCP and firewall are configured in GitHub repository settings, not via committed repo files.
+
+## Completion Criteria
+
+A change is done only when:
+
+1. The requested behavior/config is implemented.
+2. Verification commands pass.
+3. Documentation is updated if behavior changed.
+4. No unrelated files were modified.
