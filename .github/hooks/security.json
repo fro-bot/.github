@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "./prevent-dangerous-commands.sh",
+        "cwd": ".github/hooks",
+        "timeoutSec": 15
+      }
+    ]
+  }
+}
