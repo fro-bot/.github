@@ -1,0 +1,117 @@
+---
+name: Apply Branding
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Target repository (e.g. fro-bot/some-repo)
+        required: true
+        type: string
+      tagline:
+        description: Repository tagline for the banner
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: Preview changes without applying
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apply-branding-${{ github.event.inputs.repository }}
+  cancel-in-progress: false
+
+env:
+  BRANDING_PROMPT: |
+    Apply Fro Bot social branding to the target repository: $REPOSITORY
+
+    You are an expert visual engineer applying consistent Fro Bot branding.
+    Follow the styleguide at `assets/styleguide.md` exactly.
+
+    ## Context
+
+    - Target repository: $REPOSITORY
+    - Tagline: $TAGLINE
+    - Dry run: $DRY_RUN
+    - This repo (fro-bot/.github) contains the branding templates:
+      - `assets/banner-template.svg` — parametric SVG banner (1280×640)
+      - `assets/styleguide.md` — complete design system
+      - `branding/README-template.md` — skeleton README
+      - `branding/tokens.css` — CSS design tokens
+
+    ## Steps
+
+    1. Read the banner template from `assets/banner-template.svg`
+    2. Read the README template from `branding/README-template.md`
+    3. Read the styleguide from `assets/styleguide.md`
+
+    4. Generate the repo-specific banner:
+       - Replace `{{REPO_ORG}}` with the org name (first part of $REPOSITORY)
+       - Replace `{{REPO_NAME}}` with the repo name (second part of $REPOSITORY)
+       - Replace `{{TAGLINE}}` with: $TAGLINE
+       - Replace `{{CTA}}` with: @fro-bot — mention it anywhere
+       - Save as `assets/banner.svg` in the target repo
+
+    5. Generate the repo-specific README:
+       - Use the README template as the foundation
+       - Fill in all `{{PLACEHOLDER}}` values
+       - Preserve any existing README content sections that aren't in the template
+       - Apply brand-styled badges with labelColor=0D0216 and brand accent colors
+       - Ensure the banner is at the top in a centered div
+
+    6. Copy `assets/styleguide.md` to the target repo's `assets/` directory
+    7. Copy `branding/tokens.css` to the target repo's `assets/` directory
+    8. Copy `assets/fro-bot.png` to the target repo's `assets/` directory (if not present)
+
+    9. Style any existing Mermaid diagrams in the README to use brand colors:
+       - Background: #1A0B2E
+       - Primary: #00BCD4
+       - Secondary: #E91E63
+       - Tertiary: #FFC107
+
+    ## Constraints
+
+    - If dry_run is true, report what would change but do NOT push commits
+    - If dry_run is false, commit all changes to a new branch `branding/apply-template`
+      and open a PR in the target repository
+    - Never overwrite existing content without merging — preserve repo-specific sections
+    - Always follow WCAG AA compliance from the styleguide
+    - Use brand colors for all badges: labelColor=0D0216, colors from palette
+
+jobs:
+  resolve-prompt:
+    name: Resolve Branding Prompt
+    runs-on: ubuntu-latest
+    outputs:
+      prompt: ${{ steps.resolve.outputs.prompt }}
+    steps:
+      - id: resolve
+        env:
+          REPOSITORY: ${{ github.event.inputs.repository }}
+          TAGLINE: ${{ github.event.inputs.tagline }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          PROMPT_TEMPLATE: ${{ env.BRANDING_PROMPT }}
+        run: |
+          delimiter="EOF_$(openssl rand -hex 8)"
+          resolved=$(echo "$PROMPT_TEMPLATE" \
+            | sed "s|\$REPOSITORY|$REPOSITORY|g" \
+            | sed "s|\$TAGLINE|${TAGLINE:-AI-powered automation}|g" \
+            | sed "s|\$DRY_RUN|$DRY_RUN|g")
+          {
+            echo "prompt<<$delimiter"
+            echo "$resolved"
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+  apply-branding:
+    name: Apply Branding
+    needs: resolve-prompt
+    uses: ./.github/workflows/fro-bot.yaml
+    secrets: inherit
+    with:
+      prompt: ${{ needs.resolve-prompt.outputs.prompt }}
