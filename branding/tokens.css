@@ -79,8 +79,8 @@
 }
 
 /* ─── Dark Theme (Default) ────────────────────────────── */
-[data-theme='dark'],
-@media (prefers-color-scheme: dark) {
+/* Dark semantic tokens in :root — dark is the default theme */
+:root {
   --color-bg: #0d0216; /* Page background */
   --color-surface: #1a0b2e; /* Card/panel background */
   --color-surface-raised: #2d1b4e; /* Elevated card, tooltip */
@@ -116,9 +116,85 @@
   --shadow-glow-magenta: 0 0 20px rgba(233, 30, 99, 0.25);
 }
 
+/* Explicit dark theme via data attribute */
+[data-theme='dark'] {
+  --color-bg: #0d0216;
+  --color-surface: #1a0b2e;
+  --color-surface-raised: #2d1b4e;
+  --color-surface-overlay: #3d2a5f;
+
+  --color-border: #3d2a5f;
+  --color-border-muted: #2d1b4e;
+  --color-border-accent: #00bcd4;
+
+  --color-text: #ffffff;
+  --color-text-muted: #f5ebeb;
+  --color-text-subtle: rgba(245, 235, 235, 0.5);
+  --color-text-disabled: rgba(255, 255, 255, 0.3);
+
+  --color-accent: #00bcd4;
+  --color-accent-hover: #00e5ff;
+  --color-accent-pressed: #00acc1;
+
+  --color-cta: #e91e63;
+  --color-cta-hover: #f06292;
+
+  --color-highlight: #ffc107;
+
+  --color-success: #69f0ae;
+  --color-warning: #ffc107;
+  --color-error: #f44336;
+  --color-info: #00bcd4;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.8);
+  --shadow-glow: 0 0 20px rgba(0, 188, 212, 0.25);
+  --shadow-glow-magenta: 0 0 20px rgba(233, 30, 99, 0.25);
+}
+
+/* OS-level dark preference */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0d0216;
+    --color-surface: #1a0b2e;
+    --color-surface-raised: #2d1b4e;
+    --color-surface-overlay: #3d2a5f;
+
+    --color-border: #3d2a5f;
+    --color-border-muted: #2d1b4e;
+    --color-border-accent: #00bcd4;
+
+    --color-text: #ffffff;
+    --color-text-muted: #f5ebeb;
+    --color-text-subtle: rgba(245, 235, 235, 0.5);
+    --color-text-disabled: rgba(255, 255, 255, 0.3);
+
+    --color-accent: #00bcd4;
+    --color-accent-hover: #00e5ff;
+    --color-accent-pressed: #00acc1;
+
+    --color-cta: #e91e63;
+    --color-cta-hover: #f06292;
+
+    --color-highlight: #ffc107;
+
+    --color-success: #69f0ae;
+    --color-warning: #ffc107;
+    --color-error: #f44336;
+    --color-info: #00bcd4;
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.7);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.8);
+    --shadow-glow: 0 0 20px rgba(0, 188, 212, 0.25);
+    --shadow-glow-magenta: 0 0 20px rgba(233, 30, 99, 0.25);
+  }
+}
+
 /* ─── Light Theme ─────────────────────────────────────── */
-[data-theme='light'],
-@media (prefers-color-scheme: light) {
+/* Explicit light theme via data attribute */
+[data-theme='light'] {
   --color-bg: #ffffff; /* Page background */
   --color-surface: #f5ebeb; /* Card/panel background */
   --color-surface-raised: #edd8d8; /* Elevated card */
@@ -152,6 +228,45 @@
   --shadow-lg: 0 8px 32px rgba(26, 11, 46, 0.18);
   --shadow-glow: 0 0 20px rgba(0, 96, 100, 0.15);
   --shadow-glow-magenta: 0 0 20px rgba(136, 14, 79, 0.15);
+}
+
+/* OS-level light preference */
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-bg: #ffffff;
+    --color-surface: #f5ebeb;
+    --color-surface-raised: #edd8d8;
+    --color-surface-overlay: #e8cccc;
+
+    --color-border: #d4b8b8;
+    --color-border-muted: #edd8d8;
+    --color-border-accent: #006064;
+
+    --color-text: #1a0b2e;
+    --color-text-muted: #5c4569;
+    --color-text-subtle: rgba(26, 11, 46, 0.45);
+    --color-text-disabled: rgba(26, 11, 46, 0.3);
+
+    --color-accent: #006064;
+    --color-accent-hover: #00838f;
+    --color-accent-pressed: #004d50;
+
+    --color-cta: #880e4f;
+    --color-cta-hover: #ad1457;
+
+    --color-highlight: #e65100;
+
+    --color-success: #2e7d32;
+    --color-warning: #e65100;
+    --color-error: #c62828;
+    --color-info: #006064;
+
+    --shadow-sm: 0 1px 3px rgba(26, 11, 46, 0.12);
+    --shadow-md: 0 4px 12px rgba(26, 11, 46, 0.15);
+    --shadow-lg: 0 8px 32px rgba(26, 11, 46, 0.18);
+    --shadow-glow: 0 0 20px rgba(0, 96, 100, 0.15);
+    --shadow-glow-magenta: 0 0 20px rgba(136, 14, 79, 0.15);
+  }
 }
 
 /* ─── Accessibility ───────────────────────────────────── */
