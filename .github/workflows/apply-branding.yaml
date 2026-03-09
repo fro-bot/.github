@@ -5,16 +5,16 @@ on:
   workflow_dispatch:
     inputs:
       repository:
-        description: 'Target repository (e.g. fro-bot/some-repo)'
+        description: Target repository (e.g. fro-bot/some-repo)
         required: true
         type: string
       tagline:
-        description: 'Repository tagline for the banner'
+        description: Repository tagline for the banner
         required: false
         type: string
         default: ''
       dry_run:
-        description: 'Preview changes without applying'
+        description: Preview changes without applying
         required: false
         type: boolean
         default: false
