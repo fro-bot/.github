@@ -7,7 +7,7 @@
     "github>sanity-io/renovate-config:security",
     "github>sanity-io/renovate-config:lock-file-maintenance",
     ":assignAndReview(fro-bot)",
-    ":disableRateLimiting"
+    ":updateNotScheduled"
   ],
   "lockFileMaintenance": {
     "dependencyDashboardApproval": false
