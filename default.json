@@ -2,10 +2,12 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>bfra-me/renovate-config#5.0.0",
+    "github>bfra-me/renovate-config:fro-bot.json5#5.0.0",
     "github>sanity-io/renovate-config:semantic-commit-type",
     "github>sanity-io/renovate-config:security",
     "github>sanity-io/renovate-config:lock-file-maintenance",
-    ":assignAndReview(fro-bot)"
+    ":assignAndReview(fro-bot)",
+    ":disableRateLimiting"
   ],
   "lockFileMaintenance": {
     "dependencyDashboardApproval": false
