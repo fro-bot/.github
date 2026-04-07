@@ -147,7 +147,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Run Fro Bot
-        uses: fro-bot/agent@d160f2fc8a287f6f05a2fe55cfeffd3059756b7f # v0.36.3
+        uses: fro-bot/agent@1309012058ed227b288a72c8ed44bd99d650964c # v0.37.1
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PROMPT: >-
