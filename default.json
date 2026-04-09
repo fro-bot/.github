@@ -55,5 +55,6 @@
       "rebaseWhen": "behind-base-branch"
     }
   ],
-  "rebaseWhen": "behind-base-branch"
+  "rebaseWhen": "behind-base-branch",
+  "schedule": ["at any time"]
 }
