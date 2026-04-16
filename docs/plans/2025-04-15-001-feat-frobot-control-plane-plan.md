@@ -220,7 +220,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ### Phase 1: Character First
 
-- [ ] **Unit 1: Persona Document**
+- [x] **Unit 1: Persona Document**
 
 **Goal:** Create the versioned persona definition that all Fro Bot interactions will load.
 
@@ -258,7 +258,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 2: Metadata Structure & Allowlist**
+- [x] **Unit 2: Metadata Structure & Allowlist**
 
 **Goal:** Create the metadata directory, shared metadata commit module, and public control-plane state files.
 
@@ -305,7 +305,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 3: CI Hardening**
+- [x] **Unit 3: CI Hardening**
 
 **Goal:** Make `main.yaml` CI match the repo’s stated contract.
 
