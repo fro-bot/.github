@@ -1,0 +1,13 @@
+# Collaborator repositories where Fro Bot is active.
+# Updated by: invitation handler (Unit 7), metadata workflow (Unit 16).
+version: 1
+repos: []
+# Schema for each repo entry:
+#   owner: string
+#   name: string
+#   added: ISO date
+#   onboarding_status: pending | onboarded | failed
+#   last_survey_at: ISO datetime | null
+#   last_survey_status: success | failure | null
+#   has_fro_bot_workflow: boolean
+#   has_renovate: boolean

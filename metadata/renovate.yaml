@@ -1,0 +1,10 @@
+# Repos where Fro Bot can dispatch Renovate via workflow_dispatch.
+# Updated by: metadata workflow (Unit 16), Renovate dispatch (Unit 15).
+version: 1
+repos: []
+# Schema for each repo entry:
+#   owner: string
+#   name: string
+#   workflow_path: .github/workflows/renovate.yaml (default)
+#   last_dispatched_at: ISO datetime | null
+#   last_dispatch_status: success | skipped-running | failure | null

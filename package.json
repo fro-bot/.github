@@ -27,6 +27,10 @@
     "lint": "eslint"
   },
   "prettier": "@bfra.me/prettier-config/120-proof",
+  "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "yaml": "^2.6.0"
+  },
   "devDependencies": {
     "@bfra.me/eslint-config": "0.51.0",
     "@bfra.me/prettier-config": "0.16.0",
