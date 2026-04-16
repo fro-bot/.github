@@ -106,7 +106,7 @@ This plan turns the repo into a control plane where Fro Bot is a character first
 
 ## High-Level Technical Design
 
-> *This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce.*
+> _This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce._
 
 ```mermaid
 graph TD
@@ -229,25 +229,30 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** None
 
 **Files:**
+
 - Create: `persona/fro-bot-persona.md`
 - Create: `persona/README.md`
 
 **Approach:**
+
 - Define the trickster-helper voice, tone guidelines, and Afrofuturism × Cyberpunk expression
 - Include concrete examples across PR review, issue triage, social post, onboarding, and journal contexts
 - Structure the document as reusable prompt instructions that can be prepended to task-specific prompts
 - Keep visual identity assets out of scope here; this unit covers voice, behavior, and narrative stance only
 
 **Patterns to follow:**
+
 - Existing prompt resolution pattern in `fro-bot.yaml`
 - Prompt composition style used by `fro-bot/agent`
 
 **Test scenarios:**
+
 - Persona document parses as clean markdown
 - Prompt text fits expected workflow input limits
 - Voice guidance covers review, issue, social, and journal contexts
 
 **Verification:**
+
 - Persona document exists and is referenced by at least one workflow
 - Guidelines are specific enough that different operators would generate recognizably similar Fro Bot voice
 
@@ -262,6 +267,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** None
 
 **Files:**
+
 - Create: `metadata/allowlist.yaml`
 - Create: `metadata/repos.yaml`
 - Create: `metadata/renovate.yaml`
@@ -271,6 +277,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Modify: `package.json` — add `yaml@^2.6.0`
 
 **Approach:**
+
 - `allowlist.yaml` stores approved inviters; initial contents should include `marcusrbrown`
 - `repos.yaml` tracks collaborator repos, onboarding status, survey status, and wiki-related metadata
 - `renovate.yaml` tracks which collaborator repos have Renovate installed and dispatchable
@@ -280,15 +287,18 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Document the PAT split using `FRO_BOT_POLL_PAT` for polling/survey reads and `FRO_BOT_PAT` for write-tier control-plane actions
 
 **Patterns to follow:**
+
 - `bfra-me/.github/metadata/renovate.yaml` structure
 - Existing YAML style in `.github/settings.yml`
 
 **Test scenarios:**
+
 - YAML files parse cleanly
 - Allowlist contains at least one approved user
 - Shared metadata module updates a file successfully and retries cleanly on a simulated SHA conflict
 
 **Verification:**
+
 - Metadata files exist and are valid YAML
 - `package.json` includes `yaml`
 - README documents schema and commit conventions for each metadata file
@@ -304,25 +314,30 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** None
 
 **Files:**
+
 - Modify: `.github/workflows/main.yaml`
 - Modify: `.github/settings.yml`
 
 **Approach:**
+
 - Add `pnpm check-types` and `pnpm check-format` to the main CI workflow
 - Add workflow validation with `actionlint`
 - Update required status checks in `.github/settings.yml` to match actual job names
 - Keep existing lint coverage intact
 
 **Patterns to follow:**
+
 - Existing `main.yaml` lint job
 - `copilot-setup-steps.yaml` quality gate sequencing
 
 **Test scenarios:**
+
 - CI runs lint, types, format, and workflow validation on pull requests
 - Invalid workflow syntax is caught by validation
 - Required checks in settings match actual job outputs
 
 **Verification:**
+
 - `main.yaml` runs lint + check-types + check-format + actionlint
 - `.github/settings.yml` required checks match the workflow job names
 
@@ -339,18 +354,21 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Unit 2
 
 **Files:**
+
 - Modify: `.github/workflows/fro-bot-autoheal.yaml`
 - Modify: `.github/workflows/apply-branding.yaml`
 - Modify: `.github/workflows/fro-bot.yaml`
 - Modify: `metadata/README.md`
 
 **Approach:**
+
 - Replace `secrets: inherit` with explicit secret maps in all reusable workflow callers
 - Expose only the secrets needed by each workflow invocation
 - Standardize on `FRO_BOT_POLL_PAT` for polling/survey reads and `FRO_BOT_PAT` for write-tier actions
 - Add a credential table to `metadata/README.md` that maps each workflow to the minimum required secret set
 
 **Verification:**
+
 - No workflow uses blanket secret inheritance
 - Each caller passes only the secrets it needs
 - Credential documentation matches the workflow interfaces
@@ -366,12 +384,14 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** None
 
 **Files:**
+
 - Create: `scripts/data-branch-bootstrap.ts`
 - Create: `scripts/merge-data-pr.ts`
 - Create: `.github/workflows/merge-data.yaml`
 - Modify: `.github/settings.yml`
 
 **Approach:**
+
 - `data-branch-bootstrap.ts` checks whether `data` exists and creates it from `main` if missing; the operation is idempotent
 - Weekly merge workflow runs Sundays at 22:00 UTC, after wiki lint, and opens a `data` → `main` pull request
 - `merge-data-pr.ts` compares changed paths; if every changed file is under `knowledge/` or `metadata/`, it labels the PR `auto-merge` and enables auto-merge
@@ -381,9 +401,11 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - `.github/settings.yml` records `data` as an unprotected branch while preserving `main` protections unchanged
 
 **Patterns to follow:**
+
 - Scheduled merge PR flow adapted from `bfra-me/.github`
 
 **Test scenarios:**
+
 - First run creates `data`
 - Weekly merge PR auto-merges when only knowledge or metadata changed
 - Weekly merge PR requires human review when code paths changed
@@ -391,6 +413,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Stale divergence beyond two weeks produces an alert
 
 **Verification:**
+
 - `data` branch exists
 - Weekly merge PRs are created
 - Auto-merge happens only for knowledge-only or metadata-only changes
@@ -406,6 +429,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Unit 5
 
 **Files:**
+
 - Create: `knowledge/schema.md`
 - Create: `knowledge/index.md`
 - Create: `knowledge/log.md`
@@ -416,12 +440,14 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Create: `knowledge/wiki/comparisons/.gitkeep`
 
 **Approach:**
+
 - `knowledge/schema.md` defines page types (`repo`, `topic`, `entity`, `comparison`, `source-summary`), frontmatter rules, filename conventions, wikilink rules, update heuristics, and page-size guidance
 - `knowledge/index.md` is the master catalog organized by Repos, Topics, Entities, and Comparisons
 - `knowledge/log.md` is append-only and uses `## [YYYY-MM-DD HH:MM] <operation> | <target>` entries for easy grep-based inspection
 - The directory structure matches the Karpathy pattern: raw sources stay upstream, the wiki compounds locally, and the schema governs the wiki layer
 
 **Verification:**
+
 - Schema document exists and is comprehensive
 - Directory structure matches the intended architecture
 - Index and log files exist with valid bootstrap content
@@ -437,11 +463,13 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Units 2, 4
 
 **Files:**
+
 - Create: `.github/workflows/poll-invitations.yaml`
 - Create: `scripts/handle-invitation.ts`
 - Modify: `metadata/repos.yaml`
 
 **Approach:**
+
 - Scheduled workflow runs every 15 minutes
 - Uses `FRO_BOT_POLL_PAT` for invitation polling, invite acceptance, collaborator discovery, and survey read preparation
 - `handle-invitation.ts` polls pending invitations, validates the inviter against `metadata/allowlist.yaml`, accepts approved invitations, stars the repo, updates `repos.yaml`, and dispatches the survey workflow
@@ -451,16 +479,19 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - All metadata updates go through `scripts/commit-metadata.ts`
 
 **Patterns to follow:**
+
 - Scheduled workflow patterns used elsewhere in this repo
 - Existing concurrency grouping from `fro-bot.yaml`
 
 **Test scenarios:**
+
 - Invitation from an approved user is accepted and repo is starred
 - Invitation from an unapproved user is skipped and logged to the journal
 - Duplicate or already-accepted invites do not fail the workflow
 - Catch-up logic adds a collaborator repo missing from `repos.yaml`
 
 **Verification:**
+
 - Workflow runs on schedule and processes invitations
 - `repos.yaml` reflects newly accepted or discovered repos
 - Journal entries exist for accepted and rejected invite outcomes
@@ -476,12 +507,14 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Units 1, 5, 6, 7
 
 **Files:**
+
 - Create: `.github/workflows/survey-repo.yaml`
 - Create: `scripts/wiki-ingest.ts`
 - Dynamically create or update: `knowledge/wiki/repos/{repo-slug}.md`
 - Dynamically create or update: related files under `knowledge/wiki/topics/`, `knowledge/wiki/entities/`, and `knowledge/wiki/comparisons/`
 
 **Approach:**
+
 - Triggered by `workflow_dispatch` from Unit 7 with repo owner/name inputs
 - Uses `FRO_BOT_POLL_PAT` for untrusted repo reads only
 - Survey scope is capped to directory listings, README files, manifests, and workflow files; no arbitrary deep file reads
@@ -493,10 +526,12 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - If the target repo lacks `fro-bot.yaml`, Fro Bot opens a draft PR proposing it; the draft PR remains approval-gated under revised R17
 
 **Patterns to follow:**
+
 - Wiki frontmatter and wikilink conventions from `fro-bot/agent/docs/wiki/`
 - Existing reusable workflow invocation patterns in this repo
 
 **Test scenarios:**
+
 - First survey produces multiple wiki files for a real repo
 - Re-survey updates wiki pages without overwriting accumulated knowledge
 - Cross-repo topic and entity pages evolve as more repos are surveyed
@@ -504,6 +539,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Atomic ingest lands as one coherent commit on `data`
 
 **Verification:**
+
 - Multiple wiki files are created or updated from a single survey
 - `knowledge/index.md` catalogs the new pages
 - `knowledge/log.md` records the ingest
@@ -519,23 +555,28 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Unit 1
 
 **Files:**
+
 - Modify: `.github/workflows/fro-bot.yaml`
 
 **Approach:**
+
 - Read `persona/fro-bot-persona.md` and prepend it to the resolved task prompt
 - Preserve current prompt selection behavior for PR review, issue response, schedule, and manual dispatch cases
 - Keep persona injection additive so existing task-specific prompts still control the immediate job while Fro Bot’s voice remains stable
 
 **Patterns to follow:**
+
 - Current prompt resolution in `fro-bot.yaml`
 - Prompt section assembly style used by `fro-bot/agent`
 
 **Test scenarios:**
+
 - PR review responses reflect persona voice
 - Scheduled oversight reports sound consistent with the persona
 - Manual dispatch prompts still work when persona context is prepended
 
 **Verification:**
+
 - Agent invocations receive combined persona + task prompts
 - Existing workflow behavior remains functional
 
@@ -550,10 +591,12 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Units 1, 6, 8, 9
 
 **Files:**
+
 - Create: `scripts/wiki-query.ts`
 - Modify: `.github/workflows/fro-bot.yaml`
 
 **Approach:**
+
 - Pre-agent step: `wiki-query.ts` receives event context and searches `knowledge/index.md` plus relevant wiki pages to assemble a compact knowledge excerpt
 - Query budget is capped at 5 KB; repo pages are prioritized for repo-local events and topic/entity pages for broader cross-cutting work
 - Post-agent step: if the agent marks an insight as worth persisting, trigger `scripts/wiki-ingest.ts` in incremental mode
@@ -561,12 +604,14 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Event ingest uses the same git-based atomic commit path as Unit 8 so multi-file updates remain coherent on `data`
 
 **Test scenarios:**
+
 - Query step returns relevant wiki context for a PR review task
 - Prompt injection stays within the hard budget
 - Event ingest creates or updates wiki pages from non-survey interactions
 - Wiki growth becomes visible across repeated repo interactions
 
 **Verification:**
+
 - Wiki pages grow from issue, PR, and oversight activity
 - Agent responses visibly incorporate wiki context
 - Query budget is never exceeded
@@ -584,23 +629,28 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Unit 1
 
 **Files:**
+
 - Create: `scripts/discord-notify.ts`
 
 **Approach:**
+
 - Implement a TypeScript module with typed inputs for title, description, URL, fields, color, image, and footer metadata
 - Post to `DISCORD_WEBHOOK_URL` using `fetch()`
 - Preserve Fro Bot branding colors and avatar configuration in the payload builder
 - Retry on rate limiting with backoff and respect server-provided retry hints
 
 **Patterns to follow:**
+
 - Discord embed structure and webhook payload rules
 
 **Test scenarios:**
+
 - Script posts a rich embed successfully
 - Optional fields can be omitted without failing
 - Rate limiting is handled gracefully
 
 **Verification:**
+
 - Script can be called from any workflow step
 - Embeds render correctly in the configured Discord channel
 
@@ -615,10 +665,12 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Unit 1
 
 **Files:**
+
 - Create: `scripts/bluesky-post.ts`
 - Modify: `package.json` — add `@atproto/api`
 
 **Approach:**
+
 - Use `@atproto/api` for authentication, rich text handling, and record creation
 - Read `BLUESKY_APP_PASSWORD` and `BLUESKY_HANDLE` from secrets
 - Support text posts, rich links, and optional image attachments
@@ -626,15 +678,18 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Keep per-run session creation for V1; session reuse is deferred
 
 **Patterns to follow:**
+
 - `RichText` usage and blob-upload flow from `@atproto/api`
 
 **Test scenarios:**
+
 - Script posts text successfully
 - Links are emitted as rich text facets
 - Oversized posts are truncated cleanly
 - Auth failures produce actionable errors
 
 **Verification:**
+
 - Script can be called from any workflow step
 - Posts appear on the configured BlueSky account
 
@@ -649,11 +704,13 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Units 1, 7, 9
 
 **Files:**
+
 - Create: `scripts/journal-entry.ts`
 - Modify: `.github/workflows/fro-bot.yaml`
 - Modify: `.github/workflows/poll-invitations.yaml`
 
 **Approach:**
+
 - Use typed GitHub API calls to search for an existing daily journal issue and create one if missing
 - Deduplicate on issue title and close accidental duplicates if a race occurs
 - Use `journal` on all journal issues and `journal-active` on the current open issue
@@ -661,15 +718,18 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Close or relabel the previous day’s active issue when the first event of a new day arrives
 
 **Patterns to follow:**
+
 - GitHub issue creation and comment flows already used in the repo
 - Persona rules from Unit 1
 
 **Test scenarios:**
+
 - Current day journal issue is created when missing
 - Multiple events append to the same issue
 - Journal comments stay in character while preserving machine-readable metadata
 
 **Verification:**
+
 - Journal issues appear in `fro-bot/.github` with expected labels
 - Entries are readable, persona-consistent, and link back to workflow runs
 
@@ -684,12 +744,14 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Units 9, 11, 12, 13
 
 **Files:**
+
 - Create: `.github/workflows/social-broadcast.yaml`
 - Modify: `.github/workflows/poll-invitations.yaml`
 - Modify: `.github/workflows/fro-bot.yaml`
 - Modify: `metadata/social-cooldowns.yaml`
 
 **Approach:**
+
 - Implement a reusable workflow that accepts event type, source URL, repo, significance metadata, and persona context
 - Deterministic gates decide whether to post: static event allowlists plus per-event cooldowns stored in `metadata/social-cooldowns.yaml`
 - Once the gate passes, call `fro-bot/agent` with `SOCIAL_POST_PROMPT`, event context, and persona
@@ -699,15 +761,18 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Cooldown updates use `scripts/commit-metadata.ts`
 
 **Patterns to follow:**
+
 - Reusable workflow pattern from `fro-bot.yaml`
 
 **Test scenarios:**
+
 - Eligible high-signal events are posted to both platforms
 - Cooldown-gated events are skipped cleanly
 - Discord and BlueSky output are formatted appropriately for each platform
 - Failed posting to one channel does not block the other
 
 **Verification:**
+
 - Notable events appear on both platforms
 - Routine events are filtered out
 - Cooldown state is updated correctly after successful broadcasts
@@ -725,11 +790,13 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Units 2, 9
 
 **Files:**
+
 - Create: `.github/workflows/dispatch-renovate.yaml`
 - Create: `scripts/dispatch-renovate.ts`
 - Modify: `metadata/renovate.yaml`
 
 **Approach:**
+
 - Scheduled workflow runs hourly
 - Read `metadata/renovate.yaml` for dispatchable repos
 - For each repo, check whether its Renovate workflow is already running and skip duplicates
@@ -738,14 +805,17 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Treat dispatch as autonomous under revised R17 because it invokes already-installed owner-approved automation
 
 **Patterns to follow:**
+
 - Renovate tracking pattern from `bfra-me/.github`
 
 **Test scenarios:**
+
 - Dispatch runs in repos where Renovate is not already in progress
 - In-progress repos are skipped cleanly
 - Repos absent from `metadata/renovate.yaml` are ignored
 
 **Verification:**
+
 - Workflow runs hourly and dispatches correctly
 - Deduplication prevents redundant Renovate runs
 
@@ -760,10 +830,12 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Units 2, 5, 7
 
 **Files:**
+
 - Create: `.github/workflows/update-metadata.yaml`
 - Create: `scripts/update-metadata.ts`
 
 **Approach:**
+
 - Daily scheduled workflow reads `metadata/repos.yaml` for tracked repos
 - Refresh whether `fro-bot.yaml` exists, whether Renovate exists, and whether last survey status needs correction or follow-up
 - Update `metadata/repos.yaml` and `metadata/renovate.yaml` through `scripts/commit-metadata.ts`
@@ -772,16 +844,19 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - If a repo remains onboarded but unsurveyed or survey-failed, re-dispatch the survey workflow
 
 **Patterns to follow:**
+
 - Metadata scan patterns from `bfra-me/.github`
 - Scheduled workflow patterns already present in this repo
 
 **Test scenarios:**
+
 - Newly tracked repos appear in metadata refresh results
 - Renovate presence detection stays accurate
 - No commit is created when nothing changed
 - Survey recovery is triggered for failed or missing survey state
 
 **Verification:**
+
 - Metadata files reflect current collaborator repo state
 - Workflow runs daily without errors
 
@@ -796,10 +871,12 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 **Dependencies:** Units 6, 8, 10
 
 **Files:**
+
 - Create: `.github/workflows/wiki-lint.yaml`
 - Create: `scripts/wiki-lint.ts`
 
 **Approach:**
+
 - Scheduled workflow runs Sundays at 20:00 UTC
 - `wiki-lint.ts` scans `knowledge/wiki/` for broken wikilinks, stale claims, orphan pages, missing cross-references, and knowledge gaps
 - Lint findings become input to an agent maintenance prompt that proposes fixes on a `fro-bot/wiki-lint` branch
@@ -807,14 +884,17 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - Lint results are appended to `knowledge/log.md`
 
 **Patterns to follow:**
+
 - Wiki maintenance flow modeled after the weekly wiki prompt pattern in `fro-bot/agent`
 
 **Test scenarios:**
+
 - Weekly lint produces a report when issues are present
 - Draft PR is created for actionable fixes
 - `knowledge/log.md` records lint operations
 
 **Verification:**
+
 - Weekly workflow produces lint output
 - Draft PR is created when actionable issues exist
 - Log entries exist for lint runs

@@ -6,6 +6,7 @@ export default defineConfig({
     '.ai/',
     '.github/copilot-instructions.md',
     '**/AGENTS.md',
+    'docs/archive/',
     'docs/brainstorms/',
     'docs/plans/',
     'docs/solutions/',
