@@ -1,0 +1,8 @@
+# Approved users whose collaboration invitations Fro Bot will accept.
+# Additions require a PR from @marcusrbrown and pass the main CI.
+# See persona/README.md for the allowlist policy.
+version: 1
+approved_inviters:
+  - username: marcusrbrown
+    added: 2025-04-15
+    role: owner
