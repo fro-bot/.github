@@ -9,3 +9,7 @@ globs:
   - '!.ai/**'
   - '!.cursorrules'
   - '!.github/copilot-instructions.md'
+  - '!**/AGENTS.md'
+  - '!docs/brainstorms/**'
+  - '!docs/plans/**'
+  - '!docs/solutions/**'
