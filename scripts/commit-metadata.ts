@@ -11,7 +11,7 @@ const DEFAULT_MAX_RETRIES = 3
 /**
  * Paths this helper is allowed to write. The helper is intentionally scoped to
  * metadata YAML only. Wiki ingest and multi-file updates must use a different
- * helper (see Unit 8 plan — git-based atomic commits).
+ * helper (wiki-ingest.ts uses git-based atomic commits via the Git Data API).
  */
 const METADATA_PATH_PATTERN = /^metadata\/[a-z][a-z0-9-]*\.yaml$/
 

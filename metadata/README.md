@@ -35,7 +35,7 @@ repos:
     has_renovate: boolean
 ```
 
-Update convention: invitation handler (Unit 7) and metadata workflow (Unit 16) update this file programmatically on the `data` branch.
+Update convention: invitation handler and metadata workflow update this file programmatically on the `data` branch.
 
 ### `renovate.yaml`
 
@@ -51,7 +51,7 @@ repos:
     last_dispatch_status: success | skipped-running | failure | null
 ```
 
-Update convention: metadata workflow (Unit 16) and Renovate dispatch (Unit 15) update this file programmatically on the `data` branch.
+Update convention: metadata workflow and Renovate dispatch update this file programmatically on the `data` branch.
 
 ### `social-cooldowns.yaml`
 
@@ -65,16 +65,16 @@ cooldowns:
     repo: optional scoping string
 ```
 
-Update convention: social broadcast workflow (Unit 14) updates this file programmatically on the `data` branch.
+Update convention: social broadcast workflow updates this file programmatically on the `data` branch.
 
 ## Credential expectations
 
 | File                    | Updated by                                       | Credential         |
 | ----------------------- | ------------------------------------------------ | ------------------ |
 | `allowlist.yaml`        | Human PR                                         | n/a (human commit) |
-| `repos.yaml`            | Invitation handler (U7), Metadata workflow (U16) | `FRO_BOT_PAT`      |
-| `renovate.yaml`         | Metadata workflow (U16), Renovate dispatch (U15) | `FRO_BOT_PAT`      |
-| `social-cooldowns.yaml` | Social broadcast (U14)                           | `FRO_BOT_PAT`      |
+| `repos.yaml`            | Invitation handler, Metadata workflow             | `FRO_BOT_PAT`      |
+| `renovate.yaml`         | Metadata workflow, Renovate dispatch              | `FRO_BOT_PAT`      |
+| `social-cooldowns.yaml` | Social broadcast                                 | `FRO_BOT_PAT`      |
 
 PAT split summary:
 
@@ -88,8 +88,8 @@ PAT split summary:
 | `fro-bot.yaml`          | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG`    |
 | `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`)                               |
 | `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                               |
-| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only (Phase 2 Unit 7)                                   |
-| `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions) (Phase 2 Unit 5) |
+| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only                                                    |
+| `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)                  |
 
 ## Commit conventions
 
@@ -99,4 +99,4 @@ PAT split summary:
 
 ## Metrics note
 
-`metrics.yaml` is intentionally not created in this phase. Active-phase operational telemetry is routed through the journal issue system in Unit 13. The metrics pipeline belongs to the deferred self-improvement plan.
+`metrics.yaml` is intentionally deferred. Operational telemetry is routed through the journal issue system. The metrics pipeline belongs to the deferred self-improvement plan.

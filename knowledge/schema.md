@@ -81,6 +81,6 @@ Operations: `ingest`, `query`, `lint`, `manual-edit`.
 
 ## Maintenance
 
-- **Weekly lint** (Unit 17): scans for broken wikilinks, orphan pages, stale claims, missing cross-references, and knowledge gaps.
+- **Weekly lint**: scans for broken wikilinks, orphan pages, stale claims, missing cross-references, and knowledge gaps.
 - **Ingest validation**: every ingest operation validates output against this schema before committing.
 - **Index consistency**: `index.md` MUST list every page in `wiki/`. Orphan pages (in wiki but not index) are flagged by lint.
