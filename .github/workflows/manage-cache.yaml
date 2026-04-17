@@ -31,9 +31,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - if: env.REF != ''
+        id: get-workflow-app-token
+        name: Get Workflow Access Token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+
+      - if: env.REF != ''
         name: Deleting workflow caches on ${{ env.REF }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
         run: |
           CACHE_KEYS="$(gh cache list -R "${{ github.repository }}" --ref "${{ env.REF }}" --limit 100 --order asc --sort last_accessed_at | cut -f 2 | tr '\n' ' ')"
           for key in $CACHE_KEYS; do
