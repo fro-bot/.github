@@ -114,17 +114,12 @@ describe('deepEquals', () => {
 
 describe('commitMetadata guards', () => {
   it('rejects invalid paths (INVALID_PATH)', async () => {
-    await expect(commitMetadata({path: 'not-metadata/foo.yaml', message: 'test', mutator: x => x})).rejects.toThrow(
-      CommitMetadataError,
+    const error = await commitMetadata({path: 'not-metadata/foo.yaml', message: 'test', mutator: x => x}).catch(
+      (error: unknown) => error,
     )
-
-    try {
-      await commitMetadata({path: 'not-metadata/foo.yaml', message: 'test', mutator: x => x})
-    } catch (error) {
-      expect(error).toBeInstanceOf(CommitMetadataError)
-      expect((error as CommitMetadataError).code).toBe('INVALID_PATH')
-      expect((error as CommitMetadataError).remediation).toContain('metadata/')
-    }
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('INVALID_PATH')
+    expect((error as CommitMetadataError).remediation).toContain('metadata/')
   })
 
   it('rejects paths with traversal characters', async () => {
@@ -140,32 +135,26 @@ describe('commitMetadata guards', () => {
   })
 
   it('rejects maxRetries < 1 (INVALID_RETRIES)', async () => {
-    try {
-      await commitMetadata({
-        path: 'metadata/repos.yaml',
-        maxRetries: 0,
-        message: 'test',
-        mutator: x => x,
-      })
-    } catch (error) {
-      expect(error).toBeInstanceOf(CommitMetadataError)
-      expect((error as CommitMetadataError).code).toBe('INVALID_RETRIES')
-    }
+    const error = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      maxRetries: 0,
+      message: 'test',
+      mutator: x => x,
+    }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('INVALID_RETRIES')
   })
 
   it('rejects non-data branches without allowUnsafeBranch (UNSAFE_BRANCH)', async () => {
-    try {
-      await commitMetadata({
-        path: 'metadata/repos.yaml',
-        branch: 'random-branch',
-        message: 'test',
-        mutator: x => x,
-      })
-    } catch (error) {
-      expect(error).toBeInstanceOf(CommitMetadataError)
-      expect((error as CommitMetadataError).code).toBe('UNSAFE_BRANCH')
-      expect((error as CommitMetadataError).remediation).toContain('allowUnsafeBranch')
-    }
+    const error = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      branch: 'random-branch',
+      message: 'test',
+      mutator: x => x,
+    }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('UNSAFE_BRANCH')
+    expect((error as CommitMetadataError).remediation).toContain('allowUnsafeBranch')
   })
 
   it('allows non-data branches with allowUnsafeBranch: true', async () => {
@@ -186,12 +175,11 @@ describe('commitMetadata guards', () => {
     delete process.env.GITHUB_TOKEN
 
     try {
-      await commitMetadata({
+      const error = await commitMetadata({
         path: 'metadata/repos.yaml',
         message: 'test',
         mutator: x => x,
-      })
-    } catch (error) {
+      }).catch((error: unknown) => error)
       expect(error).toBeInstanceOf(CommitMetadataError)
       expect((error as CommitMetadataError).code).toBe('MISSING_TOKEN')
     } finally {
@@ -209,91 +197,92 @@ describe('commitMetadata guards', () => {
 describe('commitMetadata API', () => {
   it('refuses to write to main branch (PROTECTED_BRANCH)', async () => {
     const octokit = mockOctokit()
-    try {
-      await commitMetadata({
-        path: 'metadata/repos.yaml',
-        branch: 'main',
-        allowUnsafeBranch: true,
-        message: 'test',
-        mutator: x => x,
-        octokit,
-      })
-    } catch (error) {
-      expect(error).toBeInstanceOf(CommitMetadataError)
-      expect((error as CommitMetadataError).code).toBe('PROTECTED_BRANCH')
-    }
+    const error = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      branch: 'main',
+      allowUnsafeBranch: true,
+      message: 'test',
+      mutator: x => x,
+      octokit,
+    }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('PROTECTED_BRANCH')
   })
 
   it('refuses protected: true branches (PROTECTED_BRANCH)', async () => {
     const octokit = mockOctokit({
       getBranch: async () => ({data: {name: 'data', protected: true}}),
     })
-    try {
-      await commitMetadata({
-        path: 'metadata/repos.yaml',
-        message: 'test',
-        mutator: x => x,
-        octokit,
-      })
-    } catch (error) {
-      expect(error).toBeInstanceOf(CommitMetadataError)
-      expect((error as CommitMetadataError).code).toBe('PROTECTED_BRANCH')
-    }
+    const error = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'test',
+      mutator: x => x,
+      octokit,
+    }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('PROTECTED_BRANCH')
   })
 
   it('refuses protection.enabled branches (PROTECTED_BRANCH)', async () => {
     const octokit = mockOctokit({
       getBranch: async () => ({data: {name: 'data', protected: false, protection: {enabled: true}}}),
     })
-    try {
-      await commitMetadata({
-        path: 'metadata/repos.yaml',
-        message: 'test',
-        mutator: x => x,
-        octokit,
-      })
-    } catch (error) {
-      expect(error).toBeInstanceOf(CommitMetadataError)
-      expect((error as CommitMetadataError).code).toBe('PROTECTED_BRANCH')
-    }
+    const error = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'test',
+      mutator: x => x,
+      octokit,
+    }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('PROTECTED_BRANCH')
   })
 
   it('throws MISSING_FILE on 404 with init remediation', async () => {
     const octokit = mockOctokit({
       getContent: async () => {
-        const err = Object.assign(new Error('Not Found'), {status: 404})
-        throw err
+        throw Object.assign(new Error('Not Found'), {status: 404})
       },
     })
-    try {
-      await commitMetadata({
-        path: 'metadata/repos.yaml',
-        message: 'test',
-        mutator: x => x,
-        octokit,
-      })
-    } catch (error) {
-      expect(error).toBeInstanceOf(CommitMetadataError)
-      expect((error as CommitMetadataError).code).toBe('MISSING_FILE')
-      expect((error as CommitMetadataError).remediation).toContain('Initialize')
-    }
+    const error = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'test',
+      mutator: x => x,
+      octokit,
+    }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('MISSING_FILE')
+    expect((error as CommitMetadataError).remediation).toContain('Initialize')
   })
 
   it('throws INVALID_FILE when getContent returns a directory listing', async () => {
     const octokit = mockOctokit({
       getContent: async () => ({data: [{name: 'file1.yaml'}, {name: 'file2.yaml'}]}),
     })
-    try {
-      await commitMetadata({
-        path: 'metadata/repos.yaml',
-        message: 'test',
-        mutator: x => x,
-        octokit,
-      })
-    } catch (error) {
-      expect(error).toBeInstanceOf(CommitMetadataError)
-      expect((error as CommitMetadataError).code).toBe('INVALID_FILE')
-    }
+    const error = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'test',
+      mutator: x => x,
+      octokit,
+    }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('INVALID_FILE')
+  })
+
+  it('throws INVALID_FILE when content is not base64-encoded', async () => {
+    const octokit = mockOctokit({
+      getContent: async () => ({
+        data: {type: 'file' as const, sha: 'abc', content: undefined, encoding: 'none'},
+      }),
+    })
+    const error = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'test',
+      mutator: x => x,
+      octokit,
+    }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('INVALID_FILE')
+    expect((error as CommitMetadataError).remediation).toContain('base64')
   })
 
   it('returns committed: false when content is unchanged', async () => {
@@ -374,20 +363,16 @@ describe('commitMetadata API', () => {
         throw Object.assign(new Error('Conflict'), {status: 409})
       },
     })
-
-    try {
-      await commitMetadata({
-        path: 'metadata/repos.yaml',
-        message: 'conflict test',
-        maxRetries: 2,
-        mutator: () => ({version: 999}),
-        octokit,
-      })
-    } catch (error) {
-      expect(error).toBeInstanceOf(CommitMetadataError)
-      expect((error as CommitMetadataError).code).toBe('CONFLICT_EXHAUSTED')
-      expect((error as CommitMetadataError).remediation).toContain('maxRetries')
-    }
+    const error = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'conflict test',
+      maxRetries: 2,
+      mutator: () => ({version: 999}),
+      octokit,
+    }).catch((error: unknown) => error)
+    expect(error).toBeInstanceOf(CommitMetadataError)
+    expect((error as CommitMetadataError).code).toBe('CONFLICT_EXHAUSTED')
+    expect((error as CommitMetadataError).remediation).toContain('maxRetries')
   })
 
   it('propagates non-conflict API errors directly', async () => {
