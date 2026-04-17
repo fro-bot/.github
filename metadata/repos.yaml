@@ -4,7 +4,7 @@ version: 1
 repos:
   - owner: marcusrbrown
     name: ha-config
-    added: '2026-04-17'
+    added: 2026-04-17
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
