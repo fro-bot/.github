@@ -4,11 +4,11 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
-_No repo pages yet. Pages will appear here as repositories are surveyed._
+- [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
 
 ## Topics
 
-_No topic pages yet. Pages will appear here as cross-cutting themes emerge._
+- [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
 
 ## Entities
 
