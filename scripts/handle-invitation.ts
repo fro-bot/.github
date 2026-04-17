@@ -9,13 +9,13 @@ import {
   type OctokitClient as CommitMetadataOctokitClient,
   type CommitMetadataParams,
   type CommitMetadataResult,
-} from './commit-metadata.js'
+} from './commit-metadata.ts'
 import {
   bootstrapDataBranch,
   type OctokitClient as BootstrapOctokitClient,
   type DataBranchBootstrapParams,
-} from './data-branch-bootstrap.js'
-import {assertAllowlistFile, assertReposFile, SchemaValidationError, type ReposFile} from './schemas.js'
+} from './data-branch-bootstrap.ts'
+import {assertAllowlistFile, assertReposFile, SchemaValidationError, type ReposFile} from './schemas.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'

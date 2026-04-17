@@ -12,7 +12,7 @@ import {
   isReposFile,
   isSocialCooldownsFile,
   SchemaValidationError,
-} from './schemas.js'
+} from './schemas.ts'
 
 function readMetadata(filename: string): unknown {
   return parse(readFileSync(`metadata/${filename}`, 'utf8'))

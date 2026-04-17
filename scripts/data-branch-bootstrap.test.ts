@@ -1,6 +1,6 @@
-import type {OctokitClient} from './data-branch-bootstrap.js'
+import type {OctokitClient} from './data-branch-bootstrap.ts'
 import {describe, expect, it, vi} from 'vitest'
-import {bootstrapDataBranch, DataBranchBootstrapError} from './data-branch-bootstrap.js'
+import {bootstrapDataBranch, DataBranchBootstrapError} from './data-branch-bootstrap.ts'
 
 function mockOctokit(overrides?: {
   getBranch?: OctokitClient['rest']['repos']['getBranch']
