@@ -345,7 +345,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ### Phase 2: Core Event Loop
 
-- [ ] **Unit 4: Secrets Hardening**
+- [x] **Unit 4: Secrets Hardening**
 
 **Goal:** Replace blanket secret inheritance with explicit secret passing and align credential naming with the actual trust model.
 
@@ -375,7 +375,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 5: Data Branch Lifecycle**
+- [x] **Unit 5: Data Branch Lifecycle**
 
 **Goal:** Create and maintain the `data` branch used for autonomous writes, and set up the weekly merge-back workflow.
 
@@ -420,7 +420,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 6: Wiki Schema & Initial Structure**
+- [x] **Unit 6: Wiki Schema & Initial Structure**
 
 **Goal:** Define the wiki conventions and initialize the persistent knowledge structure.
 
@@ -454,7 +454,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 7: Invitation Polling Workflow**
+- [x] **Unit 7: Invitation Polling Workflow**
 
 **Goal:** Detect pending collaboration invitations, verify the inviter, accept approved invites, star repos, and dispatch survey ingest.
 
@@ -546,7 +546,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 9: Enhanced Event Handling with Persona**
+- [x] **Unit 9: Enhanced Event Handling with Persona**
 
 **Goal:** Upgrade `fro-bot.yaml` so every agent invocation loads the persona document and keeps existing event behavior intact.
 
