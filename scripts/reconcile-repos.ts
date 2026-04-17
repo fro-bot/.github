@@ -492,6 +492,8 @@ export interface HandleReconcileResult {
   issuesFailed: number
   /** Count of stale `reconcile:pending-review` issues auto-closed this run. */
   closedStaleIssues: number
+  /** Count of field probes that failed and were treated as no-change. */
+  probesFailed: number
   integrityCheck: 'ok' | 'skipped-no-data-branch'
   committed: boolean
 }
@@ -531,7 +533,9 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const perRepoStatus = await fetchPerRepoStatus(userOctokit, currentRepos, accessList)
 
   // 5. Field probes for still-accessible tracked entries.
-  const fieldProbes = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+  const fieldProbeOutcome = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+  const fieldProbes = fieldProbeOutcome.probes
+  const probesFailed = fieldProbeOutcome.failed
 
   // 6. Run the pure engine to produce the change plan.
   const plan = reconcileRepos({currentRepos, accessList, perRepoStatus, allowlist, fieldProbes, now})
@@ -569,6 +573,26 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
       message: formatCommitMessage(plan.summary),
       mutator: async currentParsed => {
         assertReposFile(currentParsed, 'repos')
+        // Re-verify data-branch integrity inside the mutator to close the TOCTOU window
+        // between the initial check (step 7) and the first commit attempt. Each 409 retry
+        // also re-verifies, catching any tamper that lands during the retry loop.
+        const retryIntegrity = await verifyDataBranchIntegrity({appOctokit, owner, repo, operatorLogins})
+        if (!retryIntegrity.ok) {
+          await fileIntegrityAlert({
+            appOctokit,
+            owner,
+            repo,
+            authorLogin: retryIntegrity.authorLogin,
+            sha: retryIntegrity.sha,
+            logger,
+          })
+          throw new ReconcileError({
+            code: 'DATA_BRANCH_TAMPER',
+            message: `Unexpected author on data branch tip commit during commit retry: ${retryIntegrity.authorLogin ?? 'unknown'} (sha: ${retryIntegrity.sha})`,
+            remediation:
+              'Investigate who has contents:write on this repo. If legitimate, add the login to RECONCILE_OPERATOR_LOGINS and rerun.',
+          })
+        }
         const rerun = reconcileRepos({
           currentRepos: currentParsed,
           accessList,
@@ -634,6 +658,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     rollupIssues: issueOutcome.rollupSucceeded + healedRollups,
     issuesFailed: issueOutcome.failed,
     closedStaleIssues,
+    probesFailed,
     integrityCheck,
     committed,
   }
@@ -775,9 +800,10 @@ async function fetchFieldProbes(
   currentRepos: ReposFile,
   accessList: AccessListEntry[],
   logger: ReconcileLogger,
-): Promise<Map<string, FieldProbe>> {
+): Promise<{probes: Map<string, FieldProbe>; failed: number}> {
   const accessKeys = new Set(accessList.filter(a => a.archived === false).map(a => `${a.owner}/${a.name}`))
   const map = new Map<string, FieldProbe>()
+  let failed = 0
   for (const entry of currentRepos.repos) {
     const key = `${entry.owner}/${entry.name}`
     if (!accessKeys.has(key)) continue // only probe still-accessible tracked entries
@@ -786,11 +812,12 @@ async function fetchFieldProbes(
       map.set(key, probe)
     } catch (error: unknown) {
       // Non-blocking: omit from map so reconcileRepos treats as no-field-change.
+      failed += 1
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
       logger.warn(`reconcile: field probe failed (status=${status}); treating as no-change.`)
     }
   }
-  return map
+  return {probes: map, failed}
 }
 
 async function probeSingleRepo(userOctokit: OctokitClient, owner: string, name: string): Promise<FieldProbe> {
@@ -1194,6 +1221,11 @@ async function selfHealRollups(params: {
     }
     if (rollupEntries.length < 2) continue // missing access data leaves us without ≥2 identifiable entries
 
+    // Self-healed rollups always use 'unsolicited-new' as the reason. The original reason
+    // ('unsolicited-new' or 'unsolicited-regain') is not tracked on the RepoEntry itself
+    // (it's only known at the moment the pending-review state is established), so once the
+    // original rollup issue is closed we lose that signal. Operator triages by visiting the
+    // listed entries in `repos.yaml`; the title wording is a minor simplification.
     const rollupIssue: PerOwnerRollupIssue = {
       kind: 'per-owner-rollup',
       owner,

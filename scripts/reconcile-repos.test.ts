@@ -1449,7 +1449,9 @@ describe('handleReconcile (I/O shell)', () => {
         expect(re.code).toBe('MISSING_TOKEN')
         expect(re.message).toContain('FRO_BOT_POLL_PAT')
         // Token hygiene: message must not contain any real token-looking substring
-        expect(re.message).not.toMatch(/gh[ps]_/)
+        // Token hygiene: message must not contain any GitHub token prefix pattern or substring
+        // that could be confused for a real token value.
+        expect(re.message).not.toMatch(/gh[pso]_|github_pat_/)
       } finally {
         if (saved !== undefined) process.env.FRO_BOT_POLL_PAT = saved
       }
