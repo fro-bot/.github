@@ -10,6 +10,7 @@ globs:
   - '!.cursorrules'
   - '!.github/copilot-instructions.md'
   - '!**/AGENTS.md'
+  - '!coverage/**'
   - '!docs/archive/**'
   - '!docs/brainstorms/**'
   - '!docs/plans/**'
