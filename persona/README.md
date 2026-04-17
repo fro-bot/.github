@@ -24,6 +24,4 @@ Visual identity assets (logos, SVG banners, color palettes, and CSS tokens) live
 
 ## See also
 
-- Implementation Plan: `docs/plans/2025-04-15-001-feat-frobot-control-plane-plan.md`
-- Origin Requirements: `docs/brainstorms/2025-04-15-frobot-control-plane-requirements.md`
 - Visual Styleguide: `assets/styleguide.md`

@@ -1,5 +1,5 @@
 # Last broadcast timestamps per event type (and optionally per repo).
-# Updated by: social broadcast workflow (Unit 14).
+# Updated by: social broadcast workflow.
 # Prevents spam by enforcing minimum intervals between broadcasts.
 version: 1
 cooldowns: {}
@@ -7,4 +7,4 @@ cooldowns: {}
 #   <event-type>:
 #     last_broadcast_at: ISO datetime
 #     repo: optional scoping string
-# Event types and default cooldowns are defined in Unit 14
+# Event types and default cooldowns are defined in the social broadcast script.
