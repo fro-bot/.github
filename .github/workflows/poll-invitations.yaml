@@ -1,0 +1,31 @@
+---
+name: Poll Invitations
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: poll-invitations
+  cancel-in-progress: false
+
+jobs:
+  poll-invitations:
+    name: Poll pending collaboration invitations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 📬 Poll invitations
+        env:
+          GITHUB_TOKEN: ${{ secrets.FRO_BOT_POLL_PAT }}
+        run: node scripts/handle-invitation.ts

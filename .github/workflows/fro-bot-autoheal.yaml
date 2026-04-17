@@ -102,6 +102,10 @@ jobs:
     name: Fro Bot Autoheal
     needs: resolve-prompt
     uses: ./.github/workflows/fro-bot.yaml
-    secrets: inherit
+    secrets:
+      FRO_BOT_PAT: ${{ secrets.FRO_BOT_PAT }}
+      OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON }}
+      OMO_PROVIDERS: ${{ secrets.OMO_PROVIDERS }}
+      OPENCODE_CONFIG: ${{ secrets.OPENCODE_CONFIG }}
     with:
       prompt: ${{ needs.resolve-prompt.outputs.prompt }}

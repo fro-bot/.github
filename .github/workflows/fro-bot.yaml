@@ -25,6 +25,19 @@ on:
         description: Prompt passed by reusable caller workflow
         required: true
         type: string
+    secrets:
+      FRO_BOT_PAT:
+        description: GitHub PAT for Fro Bot write-tier actions
+        required: true
+      OPENCODE_AUTH_JSON:
+        description: OpenCode authentication configuration
+        required: true
+      OMO_PROVIDERS:
+        description: OhMyOpenCode provider configuration
+        required: true
+      OPENCODE_CONFIG:
+        description: OpenCode runtime configuration
+        required: true
 
 permissions:
   contents: read
@@ -146,11 +159,22 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      - name: 🎭 Load Persona
+        id: persona
+        run: |
+          delimiter="EOF_$(openssl rand -hex 8)"
+          {
+            echo "content<<$delimiter"
+            cat persona/fro-bot-persona.md
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Run Fro Bot
         uses: fro-bot/agent@4247f5e4d1fbd1857617ebe00040f1f95be0071f # v0.40.0
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
-          PROMPT: >-
+          PERSONA: ${{ steps.persona.outputs.content }}
+          TASK_PROMPT: >-
             ${{
               (github.event_name == 'workflow_dispatch' && (github.event.inputs.prompt || ''))
               || inputs.prompt
@@ -164,4 +188,9 @@ jobs:
           model: ${{ vars.FRO_BOT_MODEL }}
           omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
-          prompt: ${{ env.PROMPT }}
+          prompt: |
+            <persona>
+            ${{ env.PERSONA }}
+            </persona>
+
+            ${{ env.TASK_PROMPT }}

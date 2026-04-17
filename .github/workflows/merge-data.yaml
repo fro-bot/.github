@@ -1,0 +1,31 @@
+---
+name: Merge Data Branch
+
+on:
+  schedule:
+    - cron: '0 22 * * 0' # Every Sunday at 22:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  merge-data:
+    name: Merge data into main
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🔀 Open weekly data merge PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/merge-data-pr.ts

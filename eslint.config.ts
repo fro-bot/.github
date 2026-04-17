@@ -11,6 +11,7 @@ export default defineConfig({
     'docs/brainstorms/',
     'docs/plans/',
     'docs/solutions/',
+    'knowledge/',
   ],
   packageJson: true,
   typescript: {
