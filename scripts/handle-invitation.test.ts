@@ -15,7 +15,7 @@ function mockOctokit(overrides?: {
     ref: string
     inputs?: Record<string, string>
   }) => Promise<void>
-}): HandleInvitationsOctokit {
+}): OctokitClient {
   return {
     rest: {
       repos: {
@@ -55,7 +55,7 @@ function mockOctokit(overrides?: {
           }),
       },
     },
-  }
+  } as unknown as OctokitClient
 }
 
 interface Invitation {
@@ -70,8 +70,6 @@ interface Invitation {
     }
   }
 }
-
-type HandleInvitationsOctokit = OctokitClient
 
 describe('handleInvitations', () => {
   it('accepts approved invitations, stars repos, updates metadata, and dispatches survey', async () => {

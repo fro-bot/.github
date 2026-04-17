@@ -2,10 +2,12 @@ import type {OctokitClient} from './data-branch-bootstrap.ts'
 import {describe, expect, it, vi} from 'vitest'
 import {bootstrapDataBranch, DataBranchBootstrapError} from './data-branch-bootstrap.ts'
 
-function mockOctokit(overrides?: {
-  getBranch?: OctokitClient['rest']['repos']['getBranch']
-  createRef?: OctokitClient['rest']['git']['createRef']
-}): OctokitClient {
+interface MockOverrides {
+  getBranch?: (params: {owner: string; repo: string; branch: string}) => Promise<unknown>
+  createRef?: (params: {owner: string; repo: string; ref: string; sha: string}) => Promise<unknown>
+}
+
+function mockOctokit(overrides?: MockOverrides): OctokitClient {
   return {
     rest: {
       repos: {
@@ -22,7 +24,7 @@ function mockOctokit(overrides?: {
         createRef: overrides?.createRef ?? (async () => ({data: {ref: 'refs/heads/data'}})),
       },
     },
-  }
+  } as unknown as OctokitClient
 }
 
 describe('bootstrapDataBranch', () => {

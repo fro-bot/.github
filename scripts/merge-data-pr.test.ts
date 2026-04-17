@@ -13,14 +13,28 @@ function isoDaysAgo(daysAgo: number): string {
   return new Date(Date.UTC(2026, 3, 16 - daysAgo, 0, 0, 0)).toISOString()
 }
 
-function mockOctokit(overrides?: {
-  compareCommitsWithBasehead?: OctokitClient['rest']['repos']['compareCommitsWithBasehead']
-  listPullRequestsAssociatedWithCommit?: OctokitClient['rest']['repos']['listPullRequestsAssociatedWithCommit']
-  createPullRequest?: OctokitClient['rest']['pulls']['create']
-  addLabels?: OctokitClient['rest']['issues']['addLabels']
-  createIssue?: OctokitClient['rest']['issues']['create']
-  listForRepo?: OctokitClient['rest']['issues']['listForRepo']
-}): OctokitClient {
+interface MockOverrides {
+  compareCommitsWithBasehead?: (params: {owner: string; repo: string; basehead: string}) => Promise<unknown>
+  listPullRequestsAssociatedWithCommit?: (params: {owner: string; repo: string; commit_sha: string}) => Promise<unknown>
+  createPullRequest?: (params: {
+    owner: string
+    repo: string
+    title: string
+    head: string
+    base: string
+    body: string
+  }) => Promise<unknown>
+  addLabels?: (params: {owner: string; repo: string; issue_number: number; labels: string[]}) => Promise<unknown>
+  createIssue?: (params: {owner: string; repo: string; title: string; body: string}) => Promise<unknown>
+  listForRepo?: (params: {
+    owner: string
+    repo: string
+    state: 'open' | 'closed' | 'all'
+    per_page?: number
+  }) => Promise<unknown>
+}
+
+function mockOctokit(overrides?: MockOverrides): OctokitClient {
   return {
     rest: {
       repos: {
@@ -56,7 +70,7 @@ function mockOctokit(overrides?: {
         listForRepo: overrides?.listForRepo ?? (async () => ({data: []})),
       },
     },
-  }
+  } as unknown as OctokitClient
 }
 
 describe('mergeDataPr', () => {
