@@ -356,6 +356,61 @@ describe('handleInvitations', () => {
     expect((error as InvitationHandlingError).remediation).toContain('Retry after the GitHub API rate limit resets')
   })
 
+  it('skips invitations where GitHub nulled the inviter', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 106,
+            // GitHub returns inviter: null when the inviting user's account has been deleted.
+            inviter: null as unknown as {login: string},
+            repository: {name: 'orphaned-repo', owner: {login: 'fro-bot'}},
+          },
+        ],
+      }),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+    })
+
+    // #given an invitation from a deleted inviter account (inviter: null)
+    // #when invitation polling runs
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: async (path: string) => {
+        if (path === 'metadata/allowlist.yaml') {
+          return {
+            version: 1,
+            approved_inviters: [{username: 'marcusrbrown', added: '2025-04-15', role: 'owner'}],
+          }
+        }
+
+        return {version: 1, repos: []}
+      },
+    })
+
+    // #then it skips the invitation with inviter-unknown instead of throwing
+    expect(result.processed).toEqual([
+      {
+        invitationId: 106,
+        inviter: null,
+        owner: 'fro-bot',
+        repo: 'orphaned-repo',
+        status: 'skipped',
+        reason: 'inviter-unknown',
+      },
+    ])
+    expect(acceptInvitation).not.toHaveBeenCalled()
+    expect(commitMetadata).not.toHaveBeenCalled()
+  })
+
   it('returns an empty result when there are no invitations', async () => {
     const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
     const octokit = mockOctokit({

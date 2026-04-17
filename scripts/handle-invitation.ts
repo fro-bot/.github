@@ -28,9 +28,13 @@ type OctokitConstructor = new (params: {auth: string}) => OctokitClient
 
 export interface RepositoryInvitation {
   id: number
+  /**
+   * GitHub's schema types inviter as `nullable-simple-user` — it can be `null` when the inviting
+   * user account has been deleted. Always guard before dereferencing `inviter.login`.
+   */
   inviter: {
     login: string
-  }
+  } | null
   repository: {
     name: string
     owner: {
@@ -94,11 +98,11 @@ export interface AcceptedInvitationResult {
 
 export interface SkippedInvitationResult {
   invitationId: number
-  inviter: string
+  inviter: string | null
   owner: string
   repo: string
   status: 'skipped'
-  reason: 'inviter-not-allowlisted'
+  reason: 'inviter-not-allowlisted' | 'inviter-unknown'
 }
 
 export interface FailedInvitationResult {
@@ -195,9 +199,22 @@ async function processInvitation(params: {
   invitation: RepositoryInvitation
   commitMetadata: (params: CommitMetadataParams) => Promise<CommitMetadataResult>
 }): Promise<InvitationProcessResult> {
-  const inviter = params.invitation.inviter.login
+  const inviter = params.invitation.inviter?.login ?? null
   const repoOwner = params.invitation.repository.owner.login
   const repoName = params.invitation.repository.name
+
+  // Skip invitations where GitHub has nulled the inviter (deleted account). We can't allowlist-check
+  // an unknown inviter, so treat it as a skip rather than failing the whole poll.
+  if (inviter === null) {
+    return {
+      invitationId: params.invitation.id,
+      inviter: null,
+      owner: repoOwner,
+      repo: repoName,
+      status: 'skipped',
+      reason: 'inviter-unknown',
+    }
+  }
 
   if (!params.approvedInviters.has(inviter)) {
     return {
