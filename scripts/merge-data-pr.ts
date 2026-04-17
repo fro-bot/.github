@@ -99,6 +99,18 @@ export interface OctokitClient {
           html_url: string
         }
       }>
+      listForRepo: (params: {
+        owner: string
+        repo: string
+        state: 'open' | 'closed' | 'all'
+        per_page?: number
+      }) => Promise<{
+        data: {
+          number: number
+          title: string
+          state: string
+        }[]
+      }>
     }
   }
 }
@@ -257,10 +269,25 @@ async function maybeCreateStaleDivergenceAlert(params: {
     return null
   }
 
+  const alertTitle = `Stale data branch divergence: ${params.headBranch} is older than 14 days`
+
+  const existingIssues = await params.octokit.rest.issues.listForRepo({
+    owner: params.owner,
+    repo: params.repo,
+    state: 'open',
+    per_page: 30,
+  })
+
+  const existingAlert = existingIssues.data.find(issue => issue.title.startsWith('Stale data branch divergence:'))
+
+  if (existingAlert !== undefined) {
+    return null
+  }
+
   const alert = await params.octokit.rest.issues.create({
     owner: params.owner,
     repo: params.repo,
-    title: `Stale data branch divergence: ${params.headBranch} is older than 14 days`,
+    title: alertTitle,
     body: createStaleAlertBody({
       baseBranch: params.baseBranch,
       headBranch: params.headBranch,

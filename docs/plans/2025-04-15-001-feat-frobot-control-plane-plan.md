@@ -498,7 +498,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 8: Repo Survey + Wiki Ingest**
+- [x] **Unit 8: Repo Survey + Wiki Ingest**
 
 **Goal:** After invitation acceptance, survey the target repo and ingest findings into the wiki as an atomic multi-file update.
 
@@ -582,7 +582,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 10: Wiki Query Integration + Event Ingest**
+- [x] **Unit 10: Wiki Query Integration + Event Ingest**
 
 **Goal:** Inject relevant wiki context before agent work and persist meaningful new insights after agent work.
 

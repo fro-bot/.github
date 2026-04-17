@@ -159,6 +159,19 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      - name: Sync wiki from data branch
+        run: |
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch origin data
+            git restore --source FETCH_HEAD --worktree -- knowledge
+          fi
+
+      - name: Capture wiki baseline
+        id: wiki-baseline
+        run: |
+          git diff --no-ext-diff -- knowledge/index.md knowledge/log.md knowledge/wiki > "$RUNNER_TEMP/wiki-baseline.diff"
+          echo "hash=$(shasum -a 256 "$RUNNER_TEMP/wiki-baseline.diff" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+
       - name: 🎭 Load Persona
         id: persona
         run: |
@@ -169,11 +182,35 @@ jobs:
             echo "$delimiter"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Query wiki context
+        id: wiki-query
+        env:
+          WIKI_QUERY_EVENT_NAME: ${{ github.event_name }}
+          WIKI_QUERY_OWNER: ${{ github.repository_owner }}
+          WIKI_QUERY_REPO: ${{ github.event.repository.name }}
+          WIKI_QUERY_TITLE: >-
+            ${{
+              github.event.pull_request.title ||
+              github.event.issue.title ||
+              github.event.discussion.title ||
+              ''
+            }}
+          WIKI_QUERY_BODY: >-
+            ${{
+              github.event.pull_request.body ||
+              github.event.issue.body ||
+              github.event.comment.body ||
+              ''
+            }}
+        run: node scripts/wiki-query.ts
+
       - name: Run Fro Bot
+        id: fro-bot-agent
         uses: fro-bot/agent@4247f5e4d1fbd1857617ebe00040f1f95be0071f # v0.40.0
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
+          WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
           TASK_PROMPT: >-
             ${{
               (github.event_name == 'workflow_dispatch' && (github.event.inputs.prompt || ''))
@@ -194,3 +231,49 @@ jobs:
             </persona>
 
             ${{ env.TASK_PROMPT }}
+
+            <wiki_context>
+            ${{ env.WIKI_CONTEXT }}
+            </wiki_context>
+
+            <knowledge_persistence>
+            Use the wiki context when it materially improves the response.
+            If this interaction surfaces durable knowledge worth keeping, update only
+            `knowledge/wiki/**`, `knowledge/index.md`, and `knowledge/log.md` following
+            `knowledge/schema.md`. Keep changes additive, preserve contradictions with
+            dates and sources, and leave the wiki untouched when the signal is weak.
+            </knowledge_persistence>
+
+      - name: Detect wiki insight changes
+        id: wiki-changes
+        if: always() && !cancelled()
+        run: |
+          git diff --no-ext-diff -- knowledge/index.md knowledge/log.md knowledge/wiki > "$RUNNER_TEMP/wiki-current.diff"
+          current_hash=$(shasum -a 256 "$RUNNER_TEMP/wiki-current.diff" | cut -d ' ' -f1)
+          if [ "$current_hash" = "${{ steps.wiki-baseline.outputs.hash }}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Capture ingest timestamp
+        if: >-
+          success() &&
+          steps.wiki-changes.outputs.changed == 'true' &&
+          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule"]'), github.event_name)
+        id: ingest-ts
+        run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Ingest wiki insight changes
+        if: >-
+          success() &&
+          steps.wiki-changes.outputs.changed == 'true' &&
+          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule"]'), github.event_name)
+        env:
+          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          WIKI_OPERATION: event
+          WIKI_TARGET: 'repo:${{ github.repository }}'
+          WIKI_SUMMARY: Persisted durable knowledge from the ${{ github.event_name }} interaction on ${{ github.repository }}.
+          WIKI_COMMIT_MESSAGE: 'feat(knowledge): ingest ${{ github.event_name }} context for ${{ github.repository }}'
+          WIKI_SOURCES: '[{"url":"https://github.com/${{ github.repository }}","sha":"${{ github.sha }}","accessed":"${{ steps.ingest-ts.outputs.now }}"}]'
+        run: node scripts/wiki-ingest.ts
