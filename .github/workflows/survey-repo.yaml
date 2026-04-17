@@ -88,7 +88,7 @@ jobs:
         run: |
           delimiter="EOF_$(openssl rand -hex 8)"
           target_repository="$TARGET_OWNER/$TARGET_REPO"
-          target_slug="$(printf '%s--%s' "$TARGET_OWNER" "$TARGET_REPO" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9-' '-')"
+          target_slug="$(node scripts/wiki-slug.ts "$TARGET_OWNER" "$TARGET_REPO")"
           export TARGET_REPOSITORY="$target_repository"
           export TARGET_SLUG="$target_slug"
           resolved=$(printf '%s' "$PROMPT_TEMPLATE" | perl -0pe 's/\$TARGET_REPOSITORY/$ENV{TARGET_REPOSITORY}/g; s/\$TARGET_SLUG/$ENV{TARGET_SLUG}/g')
