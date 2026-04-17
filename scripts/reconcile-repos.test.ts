@@ -1,8 +1,20 @@
-import {describe, expect, it} from 'vitest'
+import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
+import type {AllowlistFile, RepoEntry, ReposFile} from './schemas.ts'
+import process from 'node:process'
 
-import {reconcileRepos, type AccessListEntry, type ReconcileInput} from './reconcile-repos.ts'
+import {describe, expect, it, vi} from 'vitest'
+
+import {
+  handleReconcile,
+  ReconcileError,
+  reconcileRepos,
+  type AccessListEntry,
+  type HandleReconcileParams,
+  type OctokitClient,
+  type ReconcileInput,
+} from './reconcile-repos.ts'
 import {addRepoEntry} from './repos-metadata.ts'
-import {assertReposFile, type AllowlistFile, type RepoEntry, type ReposFile} from './schemas.ts'
+import {assertReposFile} from './schemas.ts'
 
 const NOW = new Date('2026-04-17T12:00:00Z')
 
@@ -497,6 +509,980 @@ describe('reconcileRepos', () => {
           }),
         ),
       ).toThrow(/duplicate/i)
+    })
+  })
+})
+
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// Unit 3 — I/O shell tests for `handleReconcile`
+// ─────────────────────────────────────────────────────────────────────────────
+//
+
+interface OctokitMockOverrides {
+  paginate?: (fn: unknown, opts: unknown) => Promise<unknown[]>
+  listForAuthenticatedUser?: (opts: unknown) => Promise<{data: AccessListApiEntry[]}>
+  reposGet?: (params: {owner: string; repo: string}) => Promise<{data: RepoGetResponse}>
+  getBranch?: (params: {owner: string; repo: string; branch: string}) => Promise<{data: BranchResponse}>
+  getContent?: (params: {owner: string; repo: string; path: string}) => Promise<unknown>
+  createOrUpdateFileContents?: (params: unknown) => Promise<unknown>
+  createRef?: (params: unknown) => Promise<unknown>
+  createWorkflowDispatch?: (params: unknown) => Promise<unknown>
+  issuesCreate?: (params: unknown) => Promise<{data: {number: number}}>
+  issuesUpdate?: (params: unknown) => Promise<unknown>
+  issuesListForRepo?: (params: unknown) => Promise<{data: IssueListEntry[]}>
+}
+
+interface AccessListApiEntry {
+  owner: {login: string}
+  name: string
+  archived: boolean
+  private: boolean
+  node_id: string
+}
+
+interface RepoGetResponse {
+  archived?: boolean
+  private?: boolean
+  node_id?: string
+}
+
+interface BranchResponse {
+  name: string
+  commit: {
+    sha: string
+    author: {login: string} | null
+    committer?: {login: string} | null
+  }
+}
+
+interface IssueListEntry {
+  number: number
+  title: string
+  body: string | null
+  state: 'open' | 'closed'
+  labels: {name: string}[]
+}
+
+function apiError(status: number, message = 'API error'): Error {
+  return Object.assign(new Error(message), {status})
+}
+
+/**
+ * Extract the first positional argument of the first recorded call on a vi.fn mock.
+ * Bypasses the `[]` tuple inference that `noUncheckedIndexedAccess` flags when mocks
+ * are created with untyped `async () => ...` bodies.
+ */
+function firstCallArg<A>(fn: {mock: {calls: unknown[]}}): A | undefined {
+  const call = fn.mock.calls[0] as [A] | undefined
+  return call?.[0]
+}
+
+function notFoundGetBranch(): (params: unknown) => Promise<never> {
+  return async () => {
+    throw apiError(404, 'Not Found')
+  }
+}
+
+function mockOctokit(overrides: OctokitMockOverrides = {}): OctokitClient {
+  const defaultListForAuthenticatedUser: (opts: unknown) => Promise<{data: AccessListApiEntry[]}> = async () => ({
+    data: [],
+  })
+  const listForAuthenticatedUser = overrides.listForAuthenticatedUser ?? defaultListForAuthenticatedUser
+  const defaultPaginate: (fn: unknown, opts: unknown) => Promise<unknown[]> = async (fn, opts) => {
+    const call = fn as (opts: unknown) => Promise<{data: unknown[]}>
+    const response = await call(opts)
+    return response.data
+  }
+
+  return {
+    paginate: overrides.paginate ?? defaultPaginate,
+    rest: {
+      repos: {
+        listForAuthenticatedUser,
+        get:
+          overrides.reposGet ??
+          (async () => ({
+            data: {archived: false, private: false, node_id: 'R_default'} as RepoGetResponse,
+          })),
+        getBranch:
+          overrides.getBranch ??
+          (async () => ({
+            data: {
+              name: 'data',
+              commit: {
+                sha: 'data-tip-sha',
+                author: {login: 'fro-bot[bot]'},
+              },
+            } satisfies BranchResponse,
+          })),
+        getContent:
+          overrides.getContent ??
+          (async () => {
+            throw apiError(404, 'Not Found')
+          }),
+        createOrUpdateFileContents:
+          overrides.createOrUpdateFileContents ?? (async () => ({data: {commit: {sha: 'x'}}})),
+      },
+      git: {
+        createRef: overrides.createRef ?? (async () => ({data: {ref: 'refs/heads/data'}})),
+      },
+      actions: {
+        createWorkflowDispatch: overrides.createWorkflowDispatch ?? (async () => undefined),
+      },
+      issues: {
+        create: overrides.issuesCreate ?? (async () => ({data: {number: 1}})),
+        update: overrides.issuesUpdate ?? (async () => ({data: {}})),
+        listForRepo: overrides.issuesListForRepo ?? (async () => ({data: [] as IssueListEntry[]})),
+      },
+    },
+  } as unknown as OctokitClient
+}
+
+function makeReadMetadata(
+  opts: {allowlist?: AllowlistFile; repos?: ReposFile} = {},
+): (path: string) => Promise<unknown> {
+  const allowlist = opts.allowlist ?? makeAllowlist([])
+  const repos = opts.repos ?? {version: 1, repos: []}
+  return async (path: string) => {
+    if (path.endsWith('allowlist.yaml')) return allowlist
+    if (path.endsWith('repos.yaml')) return repos
+    throw new Error(`unexpected readMetadata path: ${path}`)
+  }
+}
+
+function silentLogger(): {warn: ReturnType<typeof vi.fn<(message: string) => void>>} {
+  return {warn: vi.fn<(message: string) => void>()}
+}
+
+function baseParams(overrides: Partial<HandleReconcileParams> = {}): HandleReconcileParams {
+  return {
+    userOctokit: overrides.userOctokit ?? mockOctokit(),
+    appOctokit: overrides.appOctokit ?? mockOctokit(),
+    owner: overrides.owner ?? 'fro-bot',
+    repo: overrides.repo ?? '.github',
+    allowlistPath: overrides.allowlistPath ?? 'metadata/allowlist.yaml',
+    reposPath: overrides.reposPath ?? 'metadata/repos.yaml',
+    now: overrides.now ?? NOW,
+    readMetadata: overrides.readMetadata ?? makeReadMetadata(),
+    commitMetadata:
+      overrides.commitMetadata ?? (vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1})) as never),
+    bootstrapDataBranch:
+      overrides.bootstrapDataBranch ??
+      (vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 'data-sha'})) as never),
+    dispatchTimeoutMs: overrides.dispatchTimeoutMs ?? 100,
+    operatorLogins: overrides.operatorLogins ?? [],
+    logger: overrides.logger ?? silentLogger(),
+    workflowFile: overrides.workflowFile ?? 'survey-repo.yaml',
+    workflowRef: overrides.workflowRef ?? 'main',
+  }
+}
+
+describe('handleReconcile (I/O shell)', () => {
+  describe('orchestration order', () => {
+    it('calls bootstrapDataBranch exactly once before any metadata read', async () => {
+      const calls: string[] = []
+      const bootstrap = vi.fn(async () => {
+        calls.push('bootstrap')
+        return {created: false, ref: 'refs/heads/data', sha: 'x'}
+      })
+      const readMetadata = vi.fn(async (path: string) => {
+        calls.push(`read:${path}`)
+        if (path.endsWith('allowlist.yaml')) return makeAllowlist([])
+        return {version: 1, repos: []}
+      })
+
+      await handleReconcile(
+        baseParams({
+          bootstrapDataBranch: bootstrap as never,
+          readMetadata,
+        }),
+      )
+
+      expect(bootstrap).toHaveBeenCalledOnce()
+      expect(calls[0]).toBe('bootstrap')
+      // both reads happen after bootstrap
+      expect(calls.slice(1).every(c => c.startsWith('read:'))).toBe(true)
+    })
+
+    it('invokes commitMetadata BEFORE any createWorkflowDispatch (commit-before-dispatch)', async () => {
+      const calls: string[] = []
+      const commitMetadata = vi.fn(async (params: CommitMetadataParams): Promise<CommitMetadataResult> => {
+        calls.push('commit')
+        // Drive the mutator once so it returns a sensible result
+        await params.mutator({version: 1, repos: []})
+        return {committed: true, sha: 'commit-sha', attempts: 1}
+      })
+      const createWorkflowDispatch = vi.fn(async () => {
+        calls.push('dispatch')
+      })
+      const appOctokit = mockOctokit({createWorkflowDispatch})
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {
+              owner: {login: 'marcusrbrown'},
+              name: 'new-repo',
+              archived: false,
+              private: false,
+              node_id: 'R_new',
+            },
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit,
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['marcusrbrown'])}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      expect(calls).toEqual(['commit', 'dispatch'])
+      expect(commitMetadata).toHaveBeenCalledOnce()
+      expect(createWorkflowDispatch).toHaveBeenCalledOnce()
+    })
+
+    it('mixed newcomers produces one commit, one dispatch, one per-repo issue', async () => {
+      const commitMetadata = vi.fn(async (params: CommitMetadataParams): Promise<CommitMetadataResult> => {
+        await params.mutator({version: 1, repos: []})
+        return {committed: true, sha: 'sha', attempts: 1}
+      })
+      const createWorkflowDispatch = vi.fn(async () => undefined)
+      const issuesCreate = vi.fn(async () => ({data: {number: 42}}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'trusted'}, name: 'ok-repo', archived: false, private: false, node_id: 'R_ok'},
+            {owner: {login: 'stranger'}, name: 'sus-repo', archived: false, private: false, node_id: 'R_sus'},
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch, issuesCreate}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['trusted'])}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      expect(commitMetadata).toHaveBeenCalledOnce()
+      expect(createWorkflowDispatch).toHaveBeenCalledOnce()
+      expect(issuesCreate).toHaveBeenCalledOnce()
+    })
+
+    it('skips commit, dispatch, and issue create when reconcile summary is all zero', async () => {
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+      const createWorkflowDispatch = vi.fn(async () => undefined)
+      const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
+      const existing: ReposFile = {
+        version: 1,
+        repos: [makeEntry({name: 'stable-repo', onboarding_status: 'pending'})],
+      }
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'fro-bot'}, name: 'stable-repo', archived: false, private: false, node_id: 'R_stable'},
+          ],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch, issuesCreate}),
+          readMetadata: makeReadMetadata({repos: existing}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      expect(commitMetadata).not.toHaveBeenCalled()
+      expect(createWorkflowDispatch).not.toHaveBeenCalled()
+      expect(issuesCreate).not.toHaveBeenCalled()
+      expect(result.committed).toBe(false)
+      expect(result.summary.added).toBe(0)
+      expect(result.summary.unchanged).toBe(1)
+    })
+  })
+
+  describe('field probes (integration)', () => {
+    it('omits a failed field probe from the map — reconcile treats as no-change', async () => {
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({
+            name: 'probe-fail-repo',
+            onboarding_status: 'onboarded',
+            has_fro_bot_workflow: true,
+            has_renovate: true,
+          }),
+        ],
+      }
+      const commitMetadata = vi.fn(async () => ({committed: false, attempts: 1}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 'fro-bot'}, name: 'probe-fail-repo', archived: false, private: false, node_id: 'R_x'}],
+        }),
+        getContent: async () => {
+          throw apiError(500, 'Internal Server Error')
+        },
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({repos: existing}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      // probe failed → omitted → reconcile sees no probe → no-change → unchanged counter
+      expect(result.summary.unchanged).toBe(1)
+      expect(result.summary.refreshed).toBe(0)
+      expect(commitMetadata).not.toHaveBeenCalled()
+    })
+
+    it('flips all tracked entries to lost-access when /user/repos returns 0 repos', async () => {
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({name: 'a', onboarding_status: 'onboarded'}),
+          makeEntry({name: 'b', onboarding_status: 'onboarded'}),
+        ],
+      }
+      const reposGet = vi.fn(async () => {
+        throw apiError(404)
+      })
+      let seenNext: ReposFile | null = null
+      const commitMetadata = vi.fn(async (params: CommitMetadataParams): Promise<CommitMetadataResult> => {
+        const next = (await params.mutator(existing)) as ReposFile
+        seenNext = next
+        return {committed: true, sha: 'sha', attempts: 1}
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit: mockOctokit({
+            listForAuthenticatedUser: async () => ({data: []}),
+            reposGet,
+          }),
+          readMetadata: makeReadMetadata({repos: existing}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      expect(result.summary.lostAccess).toBe(2)
+      expect(seenNext).not.toBeNull()
+      const resolvedNext = seenNext as unknown as ReposFile
+      expect(resolvedNext.repos.every(r => r.onboarding_status === 'lost-access')).toBe(true)
+      expect(reposGet).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('dispatch loop', () => {
+    it('continues after a dispatch failure (dispatch #2 of 3 fails)', async () => {
+      const dispatchCalls: {owner: string; repo: string}[] = []
+      const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+        const typed = params as {inputs?: {owner: string; repo: string}}
+        const inputs = typed.inputs ?? {owner: '', repo: ''}
+        dispatchCalls.push(inputs)
+        if (dispatchCalls.length === 2) throw apiError(500, 'dispatch boom')
+      })
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 't'}, name: 'r1', archived: false, private: false, node_id: 'R_1'},
+            {owner: {login: 't'}, name: 'r2', archived: false, private: false, node_id: 'R_2'},
+            {owner: {login: 't'}, name: 'r3', archived: false, private: false, node_id: 'R_3'},
+          ],
+        }),
+      })
+
+      const logger = silentLogger()
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          logger,
+        }),
+      )
+
+      expect(dispatchCalls).toHaveLength(3)
+      expect(result.dispatches).toBe(2)
+      expect(result.dispatchesFailed).toBe(1)
+      expect(logger.warn).toHaveBeenCalled()
+    })
+
+    it('treats a dispatch timeout as failure and continues to the next', async () => {
+      const dispatchCalls: string[] = []
+      const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+        const typed = params as {inputs?: {owner: string; repo: string}}
+        const name = typed.inputs?.repo ?? '?'
+        dispatchCalls.push(name)
+        if (name === 'r2') {
+          await new Promise(() => {
+            /* never resolves — simulates hang */
+          })
+        }
+      })
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 't'}, name: 'r1', archived: false, private: false, node_id: 'R_1'},
+            {owner: {login: 't'}, name: 'r2', archived: false, private: false, node_id: 'R_2'},
+            {owner: {login: 't'}, name: 'r3', archived: false, private: false, node_id: 'R_3'},
+          ],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          dispatchTimeoutMs: 20, // tight timeout for test speed
+        }),
+      )
+
+      expect(dispatchCalls).toEqual(['r1', 'r2', 'r3'])
+      expect(result.dispatches).toBe(2)
+      expect(result.dispatchesFailed).toBe(1)
+    })
+  })
+
+  describe('issue creation and auto-close', () => {
+    it('creates a public-repo per-repo issue with owner/repo in title and body', async () => {
+      const issuesCreate = vi.fn(async () => ({data: {number: 7}}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 'stranger'}, name: 'leaked-repo', archived: false, private: false, node_id: 'R_pub'}],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate}),
+          readMetadata: makeReadMetadata({}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        }),
+      )
+
+      expect(issuesCreate).toHaveBeenCalledOnce()
+      const params = firstCallArg<{title: string; body: string; labels: string[]}>(issuesCreate)
+      expect(params?.title).toContain('stranger/leaked-repo')
+      expect(params?.body).toContain('stranger/leaked-repo')
+      expect(params?.body).toContain('R_pub')
+      expect(params?.labels).toContain('reconcile:pending-review')
+    })
+
+    it('creates a private-repo per-repo issue with generic title, no owner/repo anywhere, node_id in body', async () => {
+      const issuesCreate = vi.fn(async () => ({data: {number: 8}}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 'stranger'}, name: 'secret-repo', archived: false, private: true, node_id: 'R_priv'}],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate}),
+          readMetadata: makeReadMetadata({}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        }),
+      )
+
+      expect(issuesCreate).toHaveBeenCalledOnce()
+      const params = firstCallArg<{title: string; body: string}>(issuesCreate)
+      expect(params?.title).not.toContain('secret-repo')
+      expect(params?.title).not.toContain('stranger/secret-repo')
+      expect(params?.body).not.toContain('secret-repo')
+      expect(params?.body).toContain('R_priv')
+    })
+
+    it('continues through remaining issues when one issue creation fails', async () => {
+      let created = 0
+      const issuesCreate = vi.fn(async () => {
+        created += 1
+        if (created === 1) throw apiError(500, 'issue boom')
+        return {data: {number: 100 + created}}
+      })
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'a'}, name: 'r1', archived: false, private: false, node_id: 'R_1'},
+            {owner: {login: 'b'}, name: 'r2', archived: false, private: false, node_id: 'R_2'},
+          ],
+        }),
+      })
+      const logger = silentLogger()
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate}),
+          readMetadata: makeReadMetadata({}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          logger,
+        }),
+      )
+
+      expect(issuesCreate).toHaveBeenCalledTimes(2)
+      expect(result.issuesFailed).toBe(1)
+      expect(result.perRepoIssues).toBe(1)
+      expect(logger.warn).toHaveBeenCalled()
+    })
+
+    it('auto-closes a stale pending-review issue when the subject is no longer pending-review', async () => {
+      // entry is promoted — no longer pending-review
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({
+            owner: 'stranger',
+            name: 'promoted-repo',
+            onboarding_status: 'pending', // operator promoted
+          }),
+        ],
+      }
+      const issuesListForRepo = vi.fn(async () => ({
+        data: [
+          {
+            number: 42,
+            title: 'Unsolicited collaborator grant: stranger/promoted-repo',
+            body: '<!-- reconcile:subject:node_id=R_prom -->\nbody text',
+            state: 'open' as const,
+            labels: [{name: 'reconcile:pending-review'}],
+          },
+        ],
+      }))
+      const issuesUpdate = vi.fn(async () => ({data: {}}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {
+              owner: {login: 'stranger'},
+              name: 'promoted-repo',
+              archived: false,
+              private: false,
+              node_id: 'R_prom',
+            },
+          ],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesListForRepo, issuesUpdate}),
+          readMetadata: makeReadMetadata({repos: existing}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      expect(issuesUpdate).toHaveBeenCalledOnce()
+      const params = firstCallArg<{issue_number: number; state: string}>(issuesUpdate)
+      expect(params?.issue_number).toBe(42)
+      expect(params?.state).toBe('closed')
+      expect(result.closedStaleIssues).toBe(1)
+    })
+
+    it('does NOT auto-close an open issue whose subject is still pending-review', async () => {
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({
+            owner: 'stranger',
+            name: 'still-sus-repo',
+            onboarding_status: 'pending-review',
+          }),
+        ],
+      }
+      const issuesUpdate = vi.fn(async () => ({data: {}}))
+      const issuesListForRepo = vi.fn(async () => ({
+        data: [
+          {
+            number: 7,
+            title: 'Unsolicited collaborator grant: stranger/still-sus-repo',
+            body: '<!-- reconcile:subject:node_id=R_sus -->',
+            state: 'open' as const,
+            labels: [{name: 'reconcile:pending-review'}],
+          },
+        ],
+      }))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {
+              owner: {login: 'stranger'},
+              name: 'still-sus-repo',
+              archived: false,
+              private: false,
+              node_id: 'R_sus',
+            },
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesListForRepo, issuesUpdate}),
+          readMetadata: makeReadMetadata({repos: existing}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      expect(issuesUpdate).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('self-healing rollup', () => {
+    it('re-files a rollup issue when ≥2 pending-review entries exist for same owner but no open rollup issue', async () => {
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({owner: 'bad', name: 'r1', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'bad', name: 'r2', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'bad', name: 'r3', onboarding_status: 'pending-review'}),
+        ],
+      }
+      const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+      // No open rollup issue exists; simulate prior one was closed manually
+      const issuesListForRepo = vi.fn(async () => ({data: []}))
+
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: existing.repos.map((r, i) => ({
+            owner: {login: r.owner},
+            name: r.name,
+            archived: false,
+            private: false,
+            node_id: `R_exist_${i}`,
+          })),
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
+          readMetadata: makeReadMetadata({repos: existing}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      // The self-healing loop should file one rollup issue since none exists
+      expect(issuesCreate).toHaveBeenCalledOnce()
+      const params = firstCallArg<{title: string; labels: string[]}>(issuesCreate)
+      expect(params?.title.toLowerCase()).toContain('bad')
+      expect(params?.labels).toContain('reconcile:rollup-pending-review')
+    })
+
+    it('does not file a new rollup when an open rollup issue already exists for that owner', async () => {
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({owner: 'bad', name: 'r1', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'bad', name: 'r2', onboarding_status: 'pending-review'}),
+        ],
+      }
+      const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+      const issuesListForRepo = vi.fn(async () => ({
+        data: [
+          {
+            number: 50,
+            title: 'Unsolicited collaborator grants from bad',
+            body: '<!-- reconcile:subject:rollup-owner=bad -->',
+            state: 'open' as const,
+            labels: [{name: 'reconcile:pending-review'}, {name: 'reconcile:rollup-pending-review'}],
+          },
+        ],
+      }))
+
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: existing.repos.map((r, i) => ({
+            owner: {login: r.owner},
+            name: r.name,
+            archived: false,
+            private: false,
+            node_id: `R_exist_${i}`,
+          })),
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
+          readMetadata: makeReadMetadata({repos: existing}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      expect(issuesCreate).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('data branch integrity check', () => {
+    it('passes when data branch tip is authored by fro-bot[bot]', async () => {
+      const getBranch = vi.fn(async () => ({
+        data: {name: 'data', commit: {sha: 'sha1', author: {login: 'fro-bot[bot]'}}},
+      }))
+      const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 't'}, name: 'r', archived: false, private: false, node_id: 'R_1'}],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({getBranch, issuesCreate}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      expect(result.integrityCheck).toBe('ok')
+      expect(commitMetadata).toHaveBeenCalledOnce()
+      // Integrity alert issue should NOT be filed
+      const alertCalls = (issuesCreate.mock.calls as unknown as [{labels?: string[]}][]).filter(c => {
+        const p = c[0]
+        return p.labels?.includes('reconcile:integrity-alert') ?? false
+      })
+      expect(alertCalls).toHaveLength(0)
+    })
+
+    it('passes when data branch tip is authored by an operator login in RECONCILE_OPERATOR_LOGINS', async () => {
+      const getBranch = vi.fn(async () => ({
+        data: {name: 'data', commit: {sha: 'op-sha', author: {login: 'marcusrbrown'}}},
+      }))
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 't'}, name: 'r', archived: false, private: false, node_id: 'R_1'}],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({getBranch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: commitMetadata as never,
+          operatorLogins: ['marcusrbrown'],
+        }),
+      )
+
+      expect(result.integrityCheck).toBe('ok')
+      expect(commitMetadata).toHaveBeenCalledOnce()
+    })
+
+    it('aborts with DATA_BRANCH_TAMPER and files an integrity-alert issue for unexpected author', async () => {
+      const getBranch = vi.fn(async () => ({
+        data: {name: 'data', commit: {sha: 'evil-sha', author: {login: 'impostor'}}},
+      }))
+      const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 't'}, name: 'r', archived: false, private: false, node_id: 'R_1'}],
+        }),
+      })
+
+      await expect(
+        handleReconcile(
+          baseParams({
+            userOctokit,
+            appOctokit: mockOctokit({getBranch, issuesCreate}),
+            readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+            commitMetadata: commitMetadata as never,
+          }),
+        ),
+      ).rejects.toMatchObject({code: 'DATA_BRANCH_TAMPER'})
+
+      // Alert issue is filed; no commit is attempted
+      expect(issuesCreate).toHaveBeenCalledOnce()
+      const params = firstCallArg<{labels: string[]; body: string}>(issuesCreate)
+      expect(params?.labels).toContain('reconcile:integrity-alert')
+      expect(params?.body).toContain('impostor')
+      expect(params?.body).toContain('evil-sha')
+      expect(commitMetadata).not.toHaveBeenCalled()
+    })
+
+    it('skips the integrity check in the bootstrap case (data branch does not exist)', async () => {
+      const getBranch = notFoundGetBranch()
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 't'}, name: 'r', archived: false, private: false, node_id: 'R_1'}],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({getBranch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      expect(result.integrityCheck).toBe('skipped-no-data-branch')
+      expect(commitMetadata).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('commit error handling', () => {
+    it('propagates CONFLICT_EXHAUSTED from commitMetadata and skips all dispatches', async () => {
+      const conflictError = Object.assign(new Error('conflict'), {
+        name: 'CommitMetadataError',
+        code: 'CONFLICT_EXHAUSTED',
+        remediation: 'retry',
+      })
+      const commitMetadata = vi.fn(async () => {
+        throw conflictError
+      })
+      const createWorkflowDispatch = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 't'}, name: 'r', archived: false, private: false, node_id: 'R_1'}],
+        }),
+      })
+
+      await expect(
+        handleReconcile(
+          baseParams({
+            userOctokit,
+            appOctokit: mockOctokit({createWorkflowDispatch}),
+            readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+            commitMetadata: commitMetadata as never,
+          }),
+        ),
+      ).rejects.toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+
+      expect(createWorkflowDispatch).not.toHaveBeenCalled()
+    })
+
+    it('re-runs reconcileRepos on 409-retry: mutator called twice with v1 then v2, merges concurrent entry', async () => {
+      // The scenario requires hasChanges=true so the commit path actually executes. We
+      // give reconcile a brand-new repo `b` in the access list, simulating a new grant
+      // that reconcile wants to add. Meanwhile a concurrent writer (handle-invitation)
+      // appends `concurrent-c` to repos.yaml between our initial read and the 409 retry.
+      const v1: ReposFile = {version: 1, repos: [makeEntry({name: 'a', onboarding_status: 'pending'})]}
+      const v2: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({name: 'a', onboarding_status: 'pending'}),
+          makeEntry({name: 'concurrent-c', onboarding_status: 'pending'}),
+        ],
+      }
+
+      const mutatorInvocations: ReposFile[] = []
+      const commitMetadata = vi.fn(async (params: CommitMetadataParams): Promise<CommitMetadataResult> => {
+        // First invocation with v1 (pre-concurrent-write state)
+        const first = (await params.mutator(v1)) as ReposFile
+        mutatorInvocations.push(first)
+        // Second invocation with v2 (simulates 409 retry post-concurrent-write)
+        const second = (await params.mutator(v2)) as ReposFile
+        mutatorInvocations.push(second)
+        return {committed: true, sha: 'sha', attempts: 2}
+      })
+
+      // Access list has both `a` (tracked) and `b` (new) — reconcile wants to add `b`.
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'fro-bot'}, name: 'a', archived: false, private: false, node_id: 'R_a'},
+            {owner: {login: 'fro-bot'}, name: 'b', archived: false, private: false, node_id: 'R_b'},
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({repos: v1, allowlist: makeAllowlist(['fro-bot'])}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      expect(mutatorInvocations).toHaveLength(2)
+      // First invocation: v1 + add b → 2 entries (a, b)
+      expect(mutatorInvocations[0]?.repos.map(r => r.name).sort()).toEqual(['a', 'b'])
+      // Second invocation: v2 (a + concurrent-c) + add b → 3 entries. Crucially, concurrent-c
+      // is preserved (no incorrect lost-access flip) because it's not in accessList and has no
+      // probe (perRepoStatus was computed from the initial v1 read, so c wasn't probed).
+      expect(mutatorInvocations[1]?.repos.map(r => r.name).sort()).toEqual(['a', 'b', 'concurrent-c'])
+      expect(mutatorInvocations[1]?.repos.find(r => r.name === 'concurrent-c')?.onboarding_status).toBe('pending')
+    })
+  })
+
+  describe('env-based auth and MISSING_TOKEN', () => {
+    it('throws MISSING_TOKEN with env-var name and no token value when FRO_BOT_POLL_PAT is missing', async () => {
+      const saved = process.env.FRO_BOT_POLL_PAT
+      delete process.env.FRO_BOT_POLL_PAT
+      try {
+        const caught = await handleReconcile({
+          appOctokit: mockOctokit(),
+          owner: 'fro-bot',
+          repo: '.github',
+          readMetadata: makeReadMetadata(),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+          bootstrapDataBranch: vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 's'})) as never,
+        }).catch((error: unknown) => error)
+
+        expect(caught).toBeInstanceOf(ReconcileError)
+        const re = caught as ReconcileError
+        expect(re.code).toBe('MISSING_TOKEN')
+        expect(re.message).toContain('FRO_BOT_POLL_PAT')
+        // Token hygiene: message must not contain any real token-looking substring
+        expect(re.message).not.toMatch(/gh[ps]_/)
+      } finally {
+        if (saved !== undefined) process.env.FRO_BOT_POLL_PAT = saved
+      }
+    })
+
+    it('throws MISSING_TOKEN when GITHUB_TOKEN is missing (app token not minted)', async () => {
+      const savedUser = process.env.FRO_BOT_POLL_PAT
+      const savedApp = process.env.GITHUB_TOKEN
+      process.env.FRO_BOT_POLL_PAT = 'fake-pat-value-for-test'
+      delete process.env.GITHUB_TOKEN
+      try {
+        const caught = await handleReconcile({
+          userOctokit: mockOctokit(),
+          owner: 'fro-bot',
+          repo: '.github',
+          readMetadata: makeReadMetadata(),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+          bootstrapDataBranch: vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 's'})) as never,
+        }).catch((error: unknown) => error)
+
+        expect(caught).toBeInstanceOf(ReconcileError)
+        const re = caught as ReconcileError
+        expect(re.code).toBe('MISSING_TOKEN')
+        expect(re.message).toContain('GITHUB_TOKEN')
+        expect(re.message).not.toContain('fake-pat-value-for-test')
+      } finally {
+        if (savedUser === undefined) {
+          delete process.env.FRO_BOT_POLL_PAT
+        } else {
+          process.env.FRO_BOT_POLL_PAT = savedUser
+        }
+        if (savedApp !== undefined) process.env.GITHUB_TOKEN = savedApp
+      }
     })
   })
 })
