@@ -256,6 +256,14 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Capture ingest timestamp
+        if: >-
+          success() &&
+          steps.wiki-changes.outputs.changed == 'true' &&
+          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule"]'), github.event_name)
+        id: ingest-ts
+        run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Ingest wiki insight changes
         if: >-
           success() &&
@@ -267,5 +275,5 @@ jobs:
           WIKI_TARGET: 'repo:${{ github.repository }}'
           WIKI_SUMMARY: Persisted durable knowledge from the ${{ github.event_name }} interaction on ${{ github.repository }}.
           WIKI_COMMIT_MESSAGE: 'feat(knowledge): ingest ${{ github.event_name }} context for ${{ github.repository }}'
-          WIKI_SOURCES: '[{"url":"https://github.com/${{ github.repository }}","sha":"${{ github.sha }}","accessed":"${{ github.run_started_at }}"}]'
+          WIKI_SOURCES: '[{"url":"https://github.com/${{ github.repository }}","sha":"${{ github.sha }}","accessed":"${{ steps.ingest-ts.outputs.now }}"}]'
         run: node scripts/wiki-ingest.ts

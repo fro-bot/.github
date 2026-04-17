@@ -127,6 +127,11 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Capture timestamp
+        if: steps.wiki-changes.outputs.changed == 'true'
+        id: ts
+        run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Commit wiki ingest to data branch
         if: steps.wiki-changes.outputs.changed == 'true'
         env:
@@ -135,5 +140,5 @@ jobs:
           WIKI_TARGET: 'repo:${{ steps.ingest-prompt.outputs.target-repository }}'
           WIKI_SUMMARY: Surveyed ${{ steps.ingest-prompt.outputs.target-repository }} and updated the control-plane wiki.
           WIKI_COMMIT_MESSAGE: 'feat(knowledge): survey ${{ steps.ingest-prompt.outputs.target-repository }}'
-          WIKI_SOURCES: '[{"url":"https://github.com/${{ steps.ingest-prompt.outputs.target-repository }}","accessed":"${{ github.event.repository.updated_at || github.run_started_at }}"}]'
+          WIKI_SOURCES: '[{"url":"https://github.com/${{ steps.ingest-prompt.outputs.target-repository }}","accessed":"${{ steps.ts.outputs.now }}"}]'
         run: node scripts/wiki-ingest.ts
