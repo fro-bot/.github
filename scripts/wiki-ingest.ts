@@ -1,3 +1,4 @@
+import type {Dirent} from 'node:fs'
 import {execFile} from 'node:child_process'
 import {readdir, readFile} from 'node:fs/promises'
 import {basename} from 'node:path'
@@ -265,6 +266,7 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
       return {committed: true, commitSha: createdCommit.data.sha, attempts: attempt}
     } catch (error: unknown) {
       if (isConflictError(error) && attempt < maxRetries) {
+        await delayConflictRetry(attempt)
         continue
       }
 
@@ -345,9 +347,10 @@ function validateWikiPage(path: string, content: string): void {
 }
 
 function validateWikilinks(files: Record<string, string>): void {
-  const knownSlugs = new Set(collectWikiPages(files).map(page => page.slug))
+  const pages = collectWikiPages(files)
+  const knownSlugs = new Set(pages.map(page => page.slug))
 
-  for (const page of collectWikiPages(files)) {
+  for (const page of pages) {
     for (const wikilink of extractWikilinks(page.content)) {
       if (!knownSlugs.has(wikilink)) {
         throw new WikiIngestError({
@@ -518,7 +521,7 @@ function extractIndexFooter(index: string): string {
 }
 
 function assertWikiPagePath(path: string): void {
-  const pattern = /^knowledge\/wiki\/(?:repos|topics|entities|comparisons)\/[a-z0-9-]+\.md$/
+  const pattern = /^knowledge\/wiki\/(?:repos|topics|entities|comparisons)\/[a-z0-9.-]+\.md$/
   if (!pattern.test(path)) {
     throw new WikiIngestError({
       code: 'INVALID_PAGE_PATH',
@@ -561,7 +564,12 @@ function isWikiPageType(value: unknown): value is WikiPageType {
 }
 
 function isConflictError(error: unknown): boolean {
-  return isRecord(error) && typeof error.status === 'number' && (error.status === 409 || error.status === 422)
+  return isRecord(error) && error.status === 409
+}
+
+async function delayConflictRetry(attempt: number): Promise<void> {
+  const delayMs = Math.min(1000 * 2 ** (attempt - 1) + Math.random() * 500, 10_000)
+  await new Promise(resolve => setTimeout(resolve, delayMs))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -585,18 +593,47 @@ async function loadExistingWikiFiles(): Promise<Record<string, string>> {
   const files: Record<string, string> = {}
 
   for (const path of [INDEX_PATH, LOG_PATH]) {
-    files[path] = await readFile(path, 'utf8')
+    try {
+      files[path] = await readFile(path, 'utf8')
+    } catch (error: unknown) {
+      if (isEnoentError(error)) {
+        files[path] = ''
+        continue
+      }
+
+      throw error
+    }
   }
 
   for (const directory of ['repos', 'topics', 'entities', 'comparisons']) {
     const directoryPath = `${WIKI_ROOT}/${directory}`
-    for (const entry of await readdir(directoryPath, {withFileTypes: true})) {
+    let entries: Dirent[]
+
+    try {
+      entries = await readdir(directoryPath, {withFileTypes: true})
+    } catch (error: unknown) {
+      if (isEnoentError(error)) {
+        continue
+      }
+
+      throw error
+    }
+
+    for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith('.md')) {
         continue
       }
 
       const path = `${directoryPath}/${entry.name}`
-      files[path] = await readFile(path, 'utf8')
+      try {
+        files[path] = await readFile(path, 'utf8')
+      } catch (error: unknown) {
+        if (isEnoentError(error)) {
+          continue
+        }
+
+        throw error
+      }
     }
   }
 
@@ -750,6 +787,10 @@ function parseSources(raw: string | undefined): WikiSource[] {
 
 function isWikiSource(value: unknown): value is WikiSource {
   return isRecord(value) && typeof value.url === 'string' && typeof value.accessed === 'string'
+}
+
+function isEnoentError(error: unknown): error is NodeJS.ErrnoException {
+  return isRecord(error) && error.code === 'ENOENT'
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

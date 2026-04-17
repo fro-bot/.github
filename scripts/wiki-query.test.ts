@@ -138,4 +138,64 @@ describe('assembleWikiContext', () => {
     expect(result.selectedPaths).toContain('knowledge/wiki/topics/github-actions-ci.md')
     expect(result.excerpt).toContain('GitHub Actions CI should pin actions')
   })
+
+  it('returns an empty excerpt when no pages match the event context', () => {
+    // #given wiki pages that share no signals with the incoming event
+    const result = assembleWikiContext({
+      files: {
+        'knowledge/index.md': '# Wiki Index\n',
+        'knowledge/wiki/topics/rust-embedded.md': [
+          '---',
+          'type: topic',
+          'title: Rust Embedded',
+          'created: 2026-04-16',
+          'updated: 2026-04-16',
+          'tags: [firmware, embedded]',
+          '---',
+          '',
+          'Rust Embedded focuses on firmware tooling and device constraints.',
+          '',
+        ].join('\n'),
+      },
+      event: {
+        eventName: 'issues',
+        owner: 'fro-bot',
+        repo: '.github',
+        title: 'Quartz zephyr tuning',
+        body: 'Nebula glyph orbits lumen vectors.',
+      },
+    })
+
+    // #when wiki relevance scoring finds zero matches
+    // #then the assembled context is intentionally empty
+    expect(result.excerpt).toBe('')
+    expect(result.selectedPaths).toEqual([])
+    expect(result.byteLength).toBe(0)
+  })
+
+  it('truncates multi-byte utf8 content without emitting invalid text', () => {
+    const emojiHeavyBody = 'Deploy notes 😀😀😀 remain valid after truncation.'.repeat(200)
+
+    // #given a matching page whose excerpt must be truncated through emoji bytes
+    const result = assembleWikiContext({
+      files: {
+        'knowledge/index.md': '# Wiki Index\n',
+        'knowledge/wiki/repos/fro-bot--agent.md': `---\ntype: repo\ntitle: Fro Bot Agent\ncreated: 2026-04-16\nupdated: 2026-04-16\n---\n\n${emojiHeavyBody}\n`,
+      },
+      event: {
+        eventName: 'pull_request',
+        owner: 'fro-bot',
+        repo: 'agent',
+        title: 'Agent deploy notes',
+        body: 'Deploy notes mention emoji handling.',
+      },
+      maxBytes: 160,
+    })
+
+    // #when utf8 truncation slices the excerpt to the byte budget
+    // #then it keeps valid text and appends the overflow marker
+    expect(result.excerpt).toContain('…')
+    expect(result.byteLength).toBeLessThanOrEqual(160)
+    expect(result.excerpt).not.toContain('�')
+  })
 })

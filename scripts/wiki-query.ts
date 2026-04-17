@@ -121,20 +121,24 @@ function splitFrontmatter(content: string): {frontmatter: Record<string, unknown
 }
 
 function scorePage(page: PageSummary, eventName: string, tokens: Set<string>, repoSlug: string | null): number {
-  let score = baseTypeWeight(page.type, eventName)
+  let relevanceScore = 0
 
   if (repoSlug !== null && page.slug === repoSlug) {
-    score += 1000
+    relevanceScore += 1000
   }
 
   for (const token of tokens) {
-    if (page.slug.includes(token)) score += 25
-    if (page.title.toLowerCase().includes(token)) score += 15
-    if (page.tags.some(tag => tag.toLowerCase().includes(token))) score += 10
-    if (page.body.toLowerCase().includes(token)) score += 4
+    if (page.slug.includes(token)) relevanceScore += 25
+    if (page.title.toLowerCase().includes(token)) relevanceScore += 15
+    if (page.tags.some(tag => tag.toLowerCase().includes(token))) relevanceScore += 10
+    if (page.body.toLowerCase().includes(token)) relevanceScore += 4
   }
 
-  return score
+  if (relevanceScore === 0) {
+    return 0
+  }
+
+  return relevanceScore + baseTypeWeight(page.type, eventName)
 }
 
 function baseTypeWeight(type: PageSummary['type'], eventName: string): number {
@@ -202,12 +206,15 @@ function truncateToBytes(value: string, maxBytes: number): string {
     return value
   }
 
-  let truncated = value
-  while (truncated !== '' && byteLength(`${truncated}…`) > maxBytes) {
-    truncated = truncated.slice(0, -1)
+  const ellipsis = '…'
+  const contentBudget = maxBytes - byteLength(ellipsis)
+  if (contentBudget <= 0) {
+    return ''
   }
 
-  return truncated === '' ? '' : `${truncated}…`
+  const truncated = Buffer.from(value).subarray(0, contentBudget).toString('utf8')
+
+  return truncated === '' ? '' : `${truncated}${ellipsis}`
 }
 
 async function loadWikiFilesFromDisk(): Promise<Record<string, string>> {
