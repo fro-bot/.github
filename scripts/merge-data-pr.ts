@@ -1,3 +1,4 @@
+import type {Octokit} from '@octokit/rest'
 import process from 'node:process'
 
 const DEFAULT_OWNER = 'fro-bot'
@@ -28,92 +29,11 @@ export interface MergeDataPrResult {
   staleAlertIssueNumber: number | null
 }
 
-export interface OctokitClient {
-  rest: {
-    repos: {
-      compareCommitsWithBasehead: (params: {owner: string; repo: string; basehead: string}) => Promise<{
-        data: {
-          files?: {
-            filename: string
-          }[]
-          merge_base_commit?: {
-            sha: string
-            commit?: {
-              committer?: {
-                date?: string | null
-              }
-            }
-          }
-          commits: {
-            sha: string
-            commit?: {
-              committer?: {
-                date?: string | null
-              }
-            }
-          }[]
-          ahead_by: number
-          behind_by: number
-          total_commits: number
-        }
-      }>
-      listPullRequestsAssociatedWithCommit: (params: {owner: string; repo: string; commit_sha: string}) => Promise<{
-        data: {
-          number: number
-          html_url: string
-          head?: {
-            ref?: string
-          }
-          base?: {
-            ref?: string
-          }
-        }[]
-      }>
-    }
-    pulls: {
-      create: (params: {
-        owner: string
-        repo: string
-        title: string
-        head: string
-        base: string
-        body: string
-      }) => Promise<{
-        data: {
-          number: number
-          html_url: string
-        }
-      }>
-    }
-    issues: {
-      addLabels: (params: {owner: string; repo: string; issue_number: number; labels: string[]}) => Promise<{
-        data: {
-          labels: {
-            name: string
-          }[]
-        }
-      }>
-      create: (params: {owner: string; repo: string; title: string; body: string}) => Promise<{
-        data: {
-          number: number
-          html_url: string
-        }
-      }>
-      listForRepo: (params: {
-        owner: string
-        repo: string
-        state: 'open' | 'closed' | 'all'
-        per_page?: number
-      }) => Promise<{
-        data: {
-          number: number
-          title: string
-          state: string
-        }[]
-      }>
-    }
-  }
-}
+/**
+ * Narrow Octokit client type derived from the real `@octokit/rest` SDK.
+ * See commit-metadata.ts for the rationale behind deriving rather than handwriting.
+ */
+export type OctokitClient = Octokit
 
 export type MergeDataPrErrorCode = 'MISSING_TOKEN' | 'OCTOKIT_LOAD_FAILED' | 'API_ERROR'
 

@@ -15,11 +15,25 @@ function encode(value: unknown): string {
   return Buffer.from(text, 'utf8').toString('base64')
 }
 
-function mockOctokit(overrides?: {
-  getBranch?: OctokitClient['rest']['repos']['getBranch']
-  getContent?: OctokitClient['rest']['repos']['getContent']
-  createOrUpdateFileContents?: OctokitClient['rest']['repos']['createOrUpdateFileContents']
-}): OctokitClient {
+interface MockOverrides {
+  getBranch?: (params: {owner: string; repo: string; branch: string}) => Promise<unknown>
+  getContent?: (params: {owner: string; repo: string; ref: string; path: string}) => Promise<unknown>
+  createOrUpdateFileContents?: (params: {
+    owner: string
+    repo: string
+    branch: string
+    path: string
+    message: string
+    sha: string
+    content: string
+  }) => Promise<unknown>
+}
+
+// Tests construct a minimal shape and cast to OctokitClient (the real @octokit/rest
+// type is massive and includes internals like `endpoint`/`defaults` we never exercise).
+// Production call sites still enforce SDK method-name and nullability correctness —
+// the cast here only relaxes what test mocks must implement, not what prod code sees.
+function mockOctokit(overrides?: MockOverrides): OctokitClient {
   return {
     rest: {
       repos: {
@@ -35,7 +49,7 @@ function mockOctokit(overrides?: {
           overrides?.createOrUpdateFileContents ?? (async () => ({data: {commit: {sha: 'new-sha-456'}}})),
       },
     },
-  }
+  } as unknown as OctokitClient
 }
 
 // ---------------------------------------------------------------------------

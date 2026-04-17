@@ -1,4 +1,5 @@
 import type {Dirent} from 'node:fs'
+import type {Octokit} from '@octokit/rest'
 import {execFile} from 'node:child_process'
 import {readdir, readFile} from 'node:fs/promises'
 import {basename} from 'node:path'
@@ -65,63 +66,11 @@ export interface CommitWikiChangesResult {
   attempts: number
 }
 
-export interface OctokitClient {
-  rest: {
-    git: {
-      getRef: (params: {owner: string; repo: string; ref: string}) => Promise<{
-        data: {
-          object: {
-            sha: string
-          }
-        }
-      }>
-      getCommit: (params: {owner: string; repo: string; commit_sha: string}) => Promise<{
-        data: {
-          sha: string
-          tree: {
-            sha: string
-          }
-        }
-      }>
-      createBlob: (params: {owner: string; repo: string; content: string; encoding: 'utf-8'}) => Promise<{
-        data: {
-          sha: string
-        }
-      }>
-      createTree: (params: {
-        owner: string
-        repo: string
-        base_tree: string
-        tree: {
-          path: string
-          mode: '100644'
-          type: 'blob'
-          sha: string
-        }[]
-      }) => Promise<{
-        data: {
-          sha: string
-        }
-      }>
-      createCommit: (params: {
-        owner: string
-        repo: string
-        message: string
-        tree: string
-        parents: string[]
-      }) => Promise<{
-        data: {
-          sha: string
-        }
-      }>
-      updateRef: (params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<{
-        data: {
-          ref: string
-        }
-      }>
-    }
-  }
-}
+/**
+ * Narrow Octokit client type derived from the real `@octokit/rest` SDK.
+ * See commit-metadata.ts for the rationale behind deriving rather than handwriting.
+ */
+export type OctokitClient = Octokit
 
 export type WikiIngestErrorCode =
   | 'INVALID_PAYLOAD'

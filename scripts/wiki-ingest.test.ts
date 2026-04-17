@@ -1,3 +1,4 @@
+import type {OctokitClient} from './wiki-ingest.ts'
 import {Buffer} from 'node:buffer'
 
 import {describe, expect, it, vi} from 'vitest'
@@ -10,44 +11,27 @@ const wikiIngestModulePromise: Promise<{
 }> = import(`./wiki-ingest${'.js'}`)
 const {buildWikiIngestChanges, commitWikiChanges, WikiIngestError} = await wikiIngestModulePromise
 
-interface GitClient {
-  rest: {
-    git: {
-      getRef: (params: {owner: string; repo: string; ref: string}) => Promise<{data: {object: {sha: string}}}>
-      getCommit: (params: {owner: string; repo: string; commit_sha: string}) => Promise<{
-        data: {sha: string; tree: {sha: string}}
-      }>
-      createBlob: (params: {owner: string; repo: string; content: string; encoding: 'utf-8'}) => Promise<{
-        data: {sha: string}
-      }>
-      createTree: (params: {
-        owner: string
-        repo: string
-        base_tree: string
-        tree: {path: string; mode: '100644'; type: 'blob'; sha: string}[]
-      }) => Promise<{data: {sha: string}}>
-      createCommit: (params: {
-        owner: string
-        repo: string
-        message: string
-        tree: string
-        parents: string[]
-      }) => Promise<{data: {sha: string}}>
-      updateRef: (params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<{
-        data: {ref: string}
-      }>
-    }
-  }
+interface MockOverrides {
+  getRef?: (params: {owner: string; repo: string; ref: string}) => Promise<unknown>
+  getCommit?: (params: {owner: string; repo: string; commit_sha: string}) => Promise<unknown>
+  createBlob?: (params: {owner: string; repo: string; content: string; encoding: 'utf-8'}) => Promise<unknown>
+  createTree?: (params: {
+    owner: string
+    repo: string
+    base_tree: string
+    tree: {path: string; mode: '100644'; type: 'blob'; sha: string}[]
+  }) => Promise<unknown>
+  createCommit?: (params: {
+    owner: string
+    repo: string
+    message: string
+    tree: string
+    parents: string[]
+  }) => Promise<unknown>
+  updateRef?: (params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>
 }
 
-function createOctokitMock(overrides?: {
-  getRef?: GitClient['rest']['git']['getRef']
-  getCommit?: GitClient['rest']['git']['getCommit']
-  createBlob?: GitClient['rest']['git']['createBlob']
-  createTree?: GitClient['rest']['git']['createTree']
-  createCommit?: GitClient['rest']['git']['createCommit']
-  updateRef?: GitClient['rest']['git']['updateRef']
-}): GitClient {
+function createOctokitMock(overrides?: MockOverrides): OctokitClient {
   return {
     rest: {
       git: {
@@ -68,7 +52,7 @@ function createOctokitMock(overrides?: {
         updateRef: overrides?.updateRef ?? (async () => ({data: {ref: 'refs/heads/data'}})),
       },
     },
-  }
+  } as unknown as OctokitClient
 }
 
 function createEmptyWikiFiles(): Record<string, string> {
@@ -487,7 +471,7 @@ describe('commitWikiChanges', () => {
     const createTree = vi.fn(async () => ({data: {sha: 'tree-after-write'}}))
     const createCommit = vi.fn(async () => ({data: {sha: 'commit-after-write'}}))
     const updateRef = vi
-      .fn<GitClient['rest']['git']['updateRef']>()
+      .fn<(params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>>()
       .mockRejectedValueOnce(Object.assign(new Error('Reference update failed'), {status: 409}))
       .mockResolvedValueOnce({data: {ref: 'refs/heads/data'}})
     const octokit = createOctokitMock({createBlob, createTree, createCommit, updateRef})
@@ -522,7 +506,7 @@ describe('commitWikiChanges', () => {
   it('backs off exponentially before retrying a 409 ref conflict', async () => {
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
     const updateRef = vi
-      .fn<GitClient['rest']['git']['updateRef']>()
+      .fn<(params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>>()
       .mockRejectedValueOnce(Object.assign(new Error('Reference update failed'), {status: 409}))
       .mockResolvedValueOnce({data: {ref: 'refs/heads/data'}})
 
@@ -554,7 +538,7 @@ describe('commitWikiChanges', () => {
     vi.useFakeTimers()
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
     const updateRef = vi
-      .fn<GitClient['rest']['git']['updateRef']>()
+      .fn<(params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>>()
       .mockRejectedValue(Object.assign(new Error('Reference update failed'), {status: 409}))
 
     try {
@@ -583,7 +567,7 @@ describe('commitWikiChanges', () => {
 
   it('does not retry 422 updateRef failures', async () => {
     const updateRef = vi
-      .fn<GitClient['rest']['git']['updateRef']>()
+      .fn<(params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>>()
       .mockRejectedValue(Object.assign(new Error('Validation failed'), {status: 422}))
 
     // #given a non-conflict updateRef failure from GitHub

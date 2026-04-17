@@ -1,3 +1,4 @@
+import type {Octokit} from '@octokit/rest'
 import process from 'node:process'
 
 const DEFAULT_OWNER = 'fro-bot'
@@ -21,27 +22,11 @@ export interface DataBranchBootstrapResult {
   sha: string
 }
 
-export interface OctokitClient {
-  rest: {
-    repos: {
-      getBranch: (params: {owner: string; repo: string; branch: string}) => Promise<{
-        data: {
-          name: string
-          commit: {
-            sha: string
-          }
-        }
-      }>
-    }
-    git: {
-      createRef: (params: {owner: string; repo: string; ref: string; sha: string}) => Promise<{
-        data: {
-          ref: string
-        }
-      }>
-    }
-  }
-}
+/**
+ * Narrow Octokit client type derived from the real `@octokit/rest` SDK.
+ * See commit-metadata.ts for the rationale behind deriving rather than handwriting.
+ */
+export type OctokitClient = Octokit
 
 export type DataBranchBootstrapErrorCode =
   | 'MISSING_TOKEN'

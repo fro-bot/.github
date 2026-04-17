@@ -4,17 +4,8 @@ import process from 'node:process'
 import {Octokit} from '@octokit/rest'
 import {parse} from 'yaml'
 
-import {
-  commitMetadata,
-  type OctokitClient as CommitMetadataOctokitClient,
-  type CommitMetadataParams,
-  type CommitMetadataResult,
-} from './commit-metadata.ts'
-import {
-  bootstrapDataBranch,
-  type OctokitClient as BootstrapOctokitClient,
-  type DataBranchBootstrapParams,
-} from './data-branch-bootstrap.ts'
+import {commitMetadata, type CommitMetadataParams, type CommitMetadataResult} from './commit-metadata.ts'
+import {bootstrapDataBranch, type DataBranchBootstrapParams} from './data-branch-bootstrap.ts'
 import {assertAllowlistFile, assertReposFile, SchemaValidationError, type ReposFile} from './schemas.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
@@ -43,29 +34,11 @@ export interface RepositoryInvitation {
   }
 }
 
-export interface OctokitClient extends CommitMetadataOctokitClient {
-  rest: CommitMetadataOctokitClient['rest'] & {
-    git: BootstrapOctokitClient['rest']['git']
-    repos: CommitMetadataOctokitClient['rest']['repos'] & {
-      listInvitationsForAuthenticatedUser: () => Promise<{
-        data: RepositoryInvitation[]
-      }>
-      acceptInvitationForAuthenticatedUser: (params: {invitation_id: number}) => Promise<void>
-    }
-    activity: {
-      starRepoForAuthenticatedUser: (params: {owner: string; repo: string}) => Promise<void>
-    }
-    actions: {
-      createWorkflowDispatch: (params: {
-        owner: string
-        repo: string
-        workflow_id: string
-        ref: string
-        inputs?: Record<string, string>
-      }) => Promise<void>
-    }
-  }
-}
+/**
+ * Narrow Octokit client type derived from the real `@octokit/rest` SDK.
+ * See commit-metadata.ts for the rationale behind deriving rather than handwriting.
+ */
+export type OctokitClient = Octokit
 
 export interface HandleInvitationsParams {
   octokit?: OctokitClient
@@ -151,9 +124,7 @@ export async function handleInvitations(params: HandleInvitationsParams = {}): P
   const bootstrap = params.bootstrapDataBranch ?? bootstrapDataBranch
 
   // Ensure data branch exists before any metadata writes (idempotent — no-op if already present).
-  // The bootstrap needs getBranch to return commit.sha; the real Octokit does, but our typed
-  // subset omits it. Safe to cast since bootstrapDataBranch only reads repos.getBranch + git.createRef.
-  await bootstrap({octokit: octokit as unknown as BootstrapOctokitClient, owner, repo})
+  await bootstrap({octokit, owner, repo})
 
   const allowlist = await loadAllowlist(readMetadata, allowlistPath)
   const approvedInviters = new Set(allowlist.approved_inviters.map(inviter => inviter.username))

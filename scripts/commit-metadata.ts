@@ -1,3 +1,4 @@
+import type {Octokit} from '@octokit/rest'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
@@ -74,46 +75,20 @@ export interface CommitMetadataResult {
   attempts: number
 }
 
-export interface OctokitClient {
-  rest: {
-    repos: {
-      getBranch: (params: {owner: string; repo: string; branch: string}) => Promise<{
-        data: {
-          name: string
-          protected?: boolean
-          protection?: {
-            enabled?: boolean
-          }
-        }
-      }>
-      getContent: (params: {owner: string; repo: string; ref: string; path: string}) => Promise<{
-        data: FileContentResponse | unknown[]
-      }>
-      createOrUpdateFileContents: (params: {
-        owner: string
-        repo: string
-        branch: string
-        path: string
-        message: string
-        sha: string
-        content: string
-      }) => Promise<{
-        data: {
-          commit: {
-            sha: string
-          }
-        }
-      }>
-    }
-  }
-}
-
-interface FileContentResponse {
-  type: 'file'
-  sha: string
-  content?: string
-  encoding?: string
-}
+/**
+ * Narrow Octokit client type derived from the real `@octokit/rest` SDK.
+ *
+ * Why derived, not handwritten: handwritten interfaces can declare methods that
+ * don't exist on the real SDK (past bugs: `listRepositoryInvitations`, `starRepo`),
+ * and can silently tighten nullability (past bug: non-null `inviter`). Deriving
+ * from `Octokit` forces `tsc` to catch both classes of drift at compile time.
+ *
+ * The full `Octokit` type is large; callers use `as unknown as OctokitClient`
+ * when constructing partial mocks in tests. That cast is acceptable because the
+ * invariant we care about — SDK surface correctness — is enforced on production
+ * call sites, not on mocks.
+ */
+export type OctokitClient = Octokit
 
 interface FileSnapshot {
   sha: string
