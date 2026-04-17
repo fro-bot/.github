@@ -49,7 +49,7 @@ export interface OctokitClient extends CommitMetadataOctokitClient {
       acceptInvitationForAuthenticatedUser: (params: {invitation_id: number}) => Promise<void>
     }
     activity: {
-      starRepo: (params: {owner: string; repo: string}) => Promise<void>
+      starRepoForAuthenticatedUser: (params: {owner: string; repo: string}) => Promise<void>
     }
     actions: {
       createWorkflowDispatch: (params: {
@@ -212,7 +212,7 @@ async function processInvitation(params: {
 
   try {
     await acceptInvitation(params.octokit, params.invitation.id)
-    await params.octokit.rest.activity.starRepo({owner: repoOwner, repo: repoName})
+    await params.octokit.rest.activity.starRepoForAuthenticatedUser({owner: repoOwner, repo: repoName})
     await params.commitMetadata({
       octokit: params.octokit,
       path: params.reposPath,

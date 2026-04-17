@@ -7,7 +7,7 @@ function mockOctokit(overrides?: {
     data: Invitation[]
   }>
   acceptInvitationForAuthenticatedUser?: (params: {invitation_id: number}) => Promise<void>
-  starRepo?: (params: {owner: string; repo: string}) => Promise<void>
+  starRepoForAuthenticatedUser?: (params: {owner: string; repo: string}) => Promise<void>
   createWorkflowDispatch?: (params: {
     owner: string
     repo: string
@@ -41,8 +41,8 @@ function mockOctokit(overrides?: {
         createRef: async () => ({data: {ref: 'refs/heads/data'}}),
       },
       activity: {
-        starRepo:
-          overrides?.starRepo ??
+        starRepoForAuthenticatedUser:
+          overrides?.starRepoForAuthenticatedUser ??
           (async () => {
             return undefined
           }),
@@ -76,7 +76,7 @@ type HandleInvitationsOctokit = OctokitClient
 describe('handleInvitations', () => {
   it('accepts approved invitations, stars repos, updates metadata, and dispatches survey', async () => {
     const acceptInvitation = vi.fn(async () => undefined)
-    const starRepo = vi.fn(async () => undefined)
+    const starRepoForAuthenticatedUser = vi.fn(async () => undefined)
     const createWorkflowDispatch = vi.fn(async () => undefined)
     const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
     const octokit = mockOctokit({
@@ -93,7 +93,7 @@ describe('handleInvitations', () => {
         ],
       }),
       acceptInvitationForAuthenticatedUser: acceptInvitation,
-      starRepo,
+      starRepoForAuthenticatedUser,
       createWorkflowDispatch,
     })
 
@@ -130,7 +130,7 @@ describe('handleInvitations', () => {
       status: 'accepted',
     })
     expect(acceptInvitation).toHaveBeenCalledWith({invitation_id: 101})
-    expect(starRepo).toHaveBeenCalledWith({owner: 'fro-bot', repo: 'hello-world'})
+    expect(starRepoForAuthenticatedUser).toHaveBeenCalledWith({owner: 'fro-bot', repo: 'hello-world'})
     expect(createWorkflowDispatch).toHaveBeenCalledWith({
       owner: 'fro-bot',
       repo: '.github',
@@ -203,7 +203,7 @@ describe('handleInvitations', () => {
       .fn<(params: {invitation_id: number}) => Promise<void>>()
       .mockRejectedValueOnce(Object.assign(new Error('boom'), {status: 500}))
       .mockResolvedValueOnce(undefined)
-    const starRepo = vi.fn(async () => undefined)
+    const starRepoForAuthenticatedUser = vi.fn(async () => undefined)
     const createWorkflowDispatch = vi.fn(async () => undefined)
     const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
     const octokit = mockOctokit({
@@ -222,7 +222,7 @@ describe('handleInvitations', () => {
         ],
       }),
       acceptInvitationForAuthenticatedUser: acceptInvitation,
-      starRepo,
+      starRepoForAuthenticatedUser,
       createWorkflowDispatch,
     })
 
@@ -259,7 +259,7 @@ describe('handleInvitations', () => {
       invitationId: 104,
       status: 'accepted',
     })
-    expect(starRepo).toHaveBeenCalledOnce()
+    expect(starRepoForAuthenticatedUser).toHaveBeenCalledOnce()
     expect(commitMetadata).toHaveBeenCalledOnce()
   })
 
@@ -267,7 +267,7 @@ describe('handleInvitations', () => {
     const acceptInvitation = vi.fn(async () => {
       throw Object.assign(new Error('Gone'), {status: 410})
     })
-    const starRepo = vi.fn(async () => undefined)
+    const starRepoForAuthenticatedUser = vi.fn(async () => undefined)
     const createWorkflowDispatch = vi.fn(async () => undefined)
     const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
     const octokit = mockOctokit({
@@ -281,7 +281,7 @@ describe('handleInvitations', () => {
         ],
       }),
       acceptInvitationForAuthenticatedUser: acceptInvitation,
-      starRepo,
+      starRepoForAuthenticatedUser,
       createWorkflowDispatch,
     })
 
@@ -317,7 +317,7 @@ describe('handleInvitations', () => {
         status: 'accepted',
       },
     ])
-    expect(starRepo).toHaveBeenCalledWith({owner: 'fro-bot', repo: 'already-accepted'})
+    expect(starRepoForAuthenticatedUser).toHaveBeenCalledWith({owner: 'fro-bot', repo: 'already-accepted'})
     expect(commitMetadata).toHaveBeenCalledOnce()
   })
 
