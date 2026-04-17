@@ -34,7 +34,7 @@ export interface RepoEntry {
   has_renovate: boolean
 }
 
-export type OnboardingStatus = 'pending' | 'onboarded' | 'failed'
+export type OnboardingStatus = 'pending' | 'onboarded' | 'failed' | 'lost-access' | 'pending-review'
 export type SurveyStatus = 'success' | 'failure'
 
 export interface RenovateFile {
@@ -141,7 +141,10 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
   if (typeof value.name !== 'string') throw new SchemaValidationError(`${path}.name`, 'expected string')
   if (typeof value.added !== 'string') throw new SchemaValidationError(`${path}.added`, 'expected ISO date string')
   if (!isOnboardingStatus(value.onboarding_status))
-    throw new SchemaValidationError(`${path}.onboarding_status`, 'expected one of: pending, onboarded, failed')
+    throw new SchemaValidationError(
+      `${path}.onboarding_status`,
+      'expected one of: pending, onboarded, failed, lost-access, pending-review',
+    )
   if (value.last_survey_at !== null && typeof value.last_survey_at !== 'string')
     throw new SchemaValidationError(`${path}.last_survey_at`, 'expected string or null')
   if (value.last_survey_status !== null && !isSurveyStatus(value.last_survey_status))
@@ -153,7 +156,13 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
 }
 
 function isOnboardingStatus(value: unknown): value is OnboardingStatus {
-  return value === 'pending' || value === 'onboarded' || value === 'failed'
+  return (
+    value === 'pending' ||
+    value === 'onboarded' ||
+    value === 'failed' ||
+    value === 'lost-access' ||
+    value === 'pending-review'
+  )
 }
 
 function isSurveyStatus(value: unknown): value is SurveyStatus {
