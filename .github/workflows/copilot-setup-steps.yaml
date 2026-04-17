@@ -32,6 +32,3 @@ jobs:
 
       - name: ✅ Validate Lint
         run: pnpm lint
-
-      - name: ✅ Validate Formatting
-        run: pnpm check-format

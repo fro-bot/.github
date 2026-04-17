@@ -28,9 +28,13 @@ type OctokitConstructor = new (params: {auth: string}) => OctokitClient
 
 export interface RepositoryInvitation {
   id: number
+  /**
+   * GitHub's schema types inviter as `nullable-simple-user` — it can be `null` when the inviting
+   * user account has been deleted. Always guard before dereferencing `inviter.login`.
+   */
   inviter: {
     login: string
-  }
+  } | null
   repository: {
     name: string
     owner: {
@@ -42,14 +46,14 @@ export interface RepositoryInvitation {
 export interface OctokitClient extends CommitMetadataOctokitClient {
   rest: CommitMetadataOctokitClient['rest'] & {
     git: BootstrapOctokitClient['rest']['git']
-    users: {
-      listRepositoryInvitations: () => Promise<{
+    repos: CommitMetadataOctokitClient['rest']['repos'] & {
+      listInvitationsForAuthenticatedUser: () => Promise<{
         data: RepositoryInvitation[]
       }>
-      acceptInvitation: (params: {invitation_id: number}) => Promise<void>
+      acceptInvitationForAuthenticatedUser: (params: {invitation_id: number}) => Promise<void>
     }
     activity: {
-      starRepo: (params: {owner: string; repo: string}) => Promise<void>
+      starRepoForAuthenticatedUser: (params: {owner: string; repo: string}) => Promise<void>
     }
     actions: {
       createWorkflowDispatch: (params: {
@@ -94,11 +98,11 @@ export interface AcceptedInvitationResult {
 
 export interface SkippedInvitationResult {
   invitationId: number
-  inviter: string
+  inviter: string | null
   owner: string
   repo: string
   status: 'skipped'
-  reason: 'inviter-not-allowlisted'
+  reason: 'inviter-not-allowlisted' | 'inviter-unknown'
 }
 
 export interface FailedInvitationResult {
@@ -195,9 +199,22 @@ async function processInvitation(params: {
   invitation: RepositoryInvitation
   commitMetadata: (params: CommitMetadataParams) => Promise<CommitMetadataResult>
 }): Promise<InvitationProcessResult> {
-  const inviter = params.invitation.inviter.login
+  const inviter = params.invitation.inviter?.login ?? null
   const repoOwner = params.invitation.repository.owner.login
   const repoName = params.invitation.repository.name
+
+  // Skip invitations where GitHub has nulled the inviter (deleted account). We can't allowlist-check
+  // an unknown inviter, so treat it as a skip rather than failing the whole poll.
+  if (inviter === null) {
+    return {
+      invitationId: params.invitation.id,
+      inviter: null,
+      owner: repoOwner,
+      repo: repoName,
+      status: 'skipped',
+      reason: 'inviter-unknown',
+    }
+  }
 
   if (!params.approvedInviters.has(inviter)) {
     return {
@@ -212,7 +229,7 @@ async function processInvitation(params: {
 
   try {
     await acceptInvitation(params.octokit, params.invitation.id)
-    await params.octokit.rest.activity.starRepo({owner: repoOwner, repo: repoName})
+    await params.octokit.rest.activity.starRepoForAuthenticatedUser({owner: repoOwner, repo: repoName})
     await params.commitMetadata({
       octokit: params.octokit,
       path: params.reposPath,
@@ -251,7 +268,7 @@ async function processInvitation(params: {
 
 async function pollInvitations(octokit: OctokitClient): Promise<RepositoryInvitation[]> {
   try {
-    const response = await octokit.rest.users.listRepositoryInvitations()
+    const response = await octokit.rest.repos.listInvitationsForAuthenticatedUser()
     return response.data
   } catch (error: unknown) {
     throw normalizePollingError(error)
@@ -260,7 +277,7 @@ async function pollInvitations(octokit: OctokitClient): Promise<RepositoryInvita
 
 async function acceptInvitation(octokit: OctokitClient, invitationId: number): Promise<void> {
   try {
-    await octokit.rest.users.acceptInvitation({invitation_id: invitationId})
+    await octokit.rest.repos.acceptInvitationForAuthenticatedUser({invitation_id: invitationId})
   } catch (error: unknown) {
     if (isApiStatus(error, 404) || isApiStatus(error, 410)) {
       return

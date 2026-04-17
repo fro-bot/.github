@@ -4,5 +4,8 @@
 version: 1
 approved_inviters:
   - username: marcusrbrown
-    added: 2025-04-15
+    added: 2026-04-15
     role: owner
+  - username: mrbro-bot[bot]
+    added: 2026-04-17
+    role: bot
