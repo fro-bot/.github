@@ -10,6 +10,11 @@ import {
   type CommitMetadataParams,
   type CommitMetadataResult,
 } from './commit-metadata.js'
+import {
+  bootstrapDataBranch,
+  type OctokitClient as BootstrapOctokitClient,
+  type DataBranchBootstrapParams,
+} from './data-branch-bootstrap.js'
 import {assertAllowlistFile, assertReposFile, SchemaValidationError, type ReposFile} from './schemas.js'
 
 const DEFAULT_OWNER = 'fro-bot'
@@ -36,6 +41,7 @@ export interface RepositoryInvitation {
 
 export interface OctokitClient extends CommitMetadataOctokitClient {
   rest: CommitMetadataOctokitClient['rest'] & {
+    git: BootstrapOctokitClient['rest']['git']
     users: {
       listRepositoryInvitations: () => Promise<{
         data: RepositoryInvitation[]
@@ -68,6 +74,8 @@ export interface HandleInvitationsParams {
   now?: Date
   readMetadata?: (path: string) => Promise<unknown>
   commitMetadata?: (params: CommitMetadataParams) => Promise<CommitMetadataResult>
+  /** Idempotent data branch bootstrap. Called once per run before any metadata writes. */
+  bootstrapDataBranch?: (params: DataBranchBootstrapParams) => Promise<unknown>
 }
 
 export interface HandleInvitationsResult {
@@ -136,6 +144,12 @@ export async function handleInvitations(params: HandleInvitationsParams = {}): P
   const octokit = params.octokit ?? (await createOctokitFromEnv())
   const readMetadata = params.readMetadata ?? readMetadataFromDisk
   const commitMetadataImpl = params.commitMetadata ?? commitMetadata
+  const bootstrap = params.bootstrapDataBranch ?? bootstrapDataBranch
+
+  // Ensure data branch exists before any metadata writes (idempotent — no-op if already present).
+  // The bootstrap needs getBranch to return commit.sha; the real Octokit does, but our typed
+  // subset omits it. Safe to cast since bootstrapDataBranch only reads repos.getBranch + git.createRef.
+  await bootstrap({octokit: octokit as unknown as BootstrapOctokitClient, owner, repo})
 
   const allowlist = await loadAllowlist(readMetadata, allowlistPath)
   const approvedInviters = new Set(allowlist.approved_inviters.map(inviter => inviter.username))

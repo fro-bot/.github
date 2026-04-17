@@ -78,18 +78,18 @@ Update convention: social broadcast workflow (Unit 14) updates this file program
 
 PAT split summary:
 
-- `FRO_BOT_POLL_PAT`: polling and read-only metadata consumers.
-- `FRO_BOT_PAT`: write-capable automation that commits metadata updates to the `data` branch.
+- `FRO_BOT_POLL_PAT`: invitation polling, acceptance, starring, metadata commits to `data` branch, and survey workflow dispatch. Required scopes: `repo` (contents:write for data branch commits, actions:write for workflow dispatch), `user` (read:user for invitation polling, user:invite for acceptance), `starring`.
+- `FRO_BOT_PAT`: agent execution, PR review, autoheal, branding. Write-capable across repos.
 
 ### Workflow secret mapping
 
-| Workflow                | Secrets passed (explicit, not inherited)                                |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `fro-bot.yaml`          | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG` |
-| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`)                            |
-| `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                            |
-| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only (Phase 2 Unit 7)                                |
-| `merge-data.yaml`       | `FRO_BOT_PAT` only (Phase 2 Unit 5)                                     |
+| Workflow                | Secrets passed (explicit, not inherited)                                   |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `fro-bot.yaml`          | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG`    |
+| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`)                               |
+| `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                               |
+| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only (Phase 2 Unit 7)                                   |
+| `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions) (Phase 2 Unit 5) |
 
 ## Commit conventions
 

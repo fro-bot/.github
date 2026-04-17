@@ -19,11 +19,16 @@ function mockOctokit(overrides?: {
   return {
     rest: {
       repos: {
-        getBranch: async () => ({data: {name: 'data', protected: false, protection: {enabled: false}}}),
+        getBranch: async () => ({
+          data: {name: 'data', protected: false, protection: {enabled: false}, commit: {sha: 'data-sha'}},
+        }),
         getContent: async () => ({
           data: {type: 'file' as const, sha: 'repos-sha', content: 'dmVyc2lvbjogMQpyZXBvczogW10K', encoding: 'base64'},
         }),
         createOrUpdateFileContents: async () => ({data: {commit: {sha: 'metadata-commit-sha'}}}),
+      },
+      git: {
+        createRef: async () => ({data: {ref: 'refs/heads/data'}}),
       },
       users: {
         listRepositoryInvitations:
@@ -125,6 +130,7 @@ describe('handleInvitations', () => {
       workflowFile: 'survey.yaml',
       workflowRef: 'main',
       commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
       readMetadata: async (path: string) => {
         if (path === 'metadata/allowlist.yaml') {
           return {
@@ -187,6 +193,7 @@ describe('handleInvitations', () => {
       workflowFile: 'survey.yaml',
       workflowRef: 'main',
       commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
       readMetadata: async (path: string) => {
         if (path === 'metadata/allowlist.yaml') {
           return {
