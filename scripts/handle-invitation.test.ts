@@ -1,6 +1,6 @@
-import type {OctokitClient} from './handle-invitation.js'
+import type {OctokitClient} from './handle-invitation.ts'
 import {describe, expect, it, vi} from 'vitest'
-import {handleInvitations, InvitationHandlingError} from './handle-invitation.js'
+import {handleInvitations, InvitationHandlingError} from './handle-invitation.ts'
 
 function mockOctokit(overrides?: {
   listRepositoryInvitations?: () => Promise<{

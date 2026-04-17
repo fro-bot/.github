@@ -1,9 +1,9 @@
-import type {OctokitClient} from './commit-metadata.js'
+import type {OctokitClient} from './commit-metadata.ts'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 import {stringify} from 'yaml'
-import {commitMetadata, CommitMetadataError, deepEquals} from './commit-metadata.js'
+import {commitMetadata, CommitMetadataError, deepEquals} from './commit-metadata.ts'
 
 // ---------------------------------------------------------------------------
 // Helpers

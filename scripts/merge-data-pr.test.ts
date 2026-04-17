@@ -1,6 +1,6 @@
-import type {OctokitClient} from './merge-data-pr.js'
+import type {OctokitClient} from './merge-data-pr.ts'
 import {describe, expect, it, vi} from 'vitest'
-import {mergeDataPr, MergeDataPrError} from './merge-data-pr.js'
+import {mergeDataPr, MergeDataPrError} from './merge-data-pr.ts'
 
 interface CreateIssueParams {
   owner: string

@@ -2,8 +2,10 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "@bfra.me/tsconfig",
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "noEmit": true
   },
   "include": ["**/*.ts"],
   "exclude": ["node_modules", "dist"]
