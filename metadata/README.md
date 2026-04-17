@@ -69,12 +69,12 @@ Update convention: social broadcast workflow updates this file programmatically 
 
 ## Credential expectations
 
-| File                    | Updated by                                       | Credential         |
-| ----------------------- | ------------------------------------------------ | ------------------ |
-| `allowlist.yaml`        | Human PR                                         | n/a (human commit) |
-| `repos.yaml`            | Invitation handler, Metadata workflow             | `FRO_BOT_PAT`      |
-| `renovate.yaml`         | Metadata workflow, Renovate dispatch              | `FRO_BOT_PAT`      |
-| `social-cooldowns.yaml` | Social broadcast                                 | `FRO_BOT_PAT`      |
+| File                    | Updated by                            | Credential         |
+| ----------------------- | ------------------------------------- | ------------------ |
+| `allowlist.yaml`        | Human PR                              | n/a (human commit) |
+| `repos.yaml`            | Invitation handler, Metadata workflow | `FRO_BOT_PAT`      |
+| `renovate.yaml`         | Metadata workflow, Renovate dispatch  | `FRO_BOT_PAT`      |
+| `social-cooldowns.yaml` | Social broadcast                      | `FRO_BOT_PAT`      |
 
 PAT split summary:
 
@@ -83,13 +83,13 @@ PAT split summary:
 
 ### Workflow secret mapping
 
-| Workflow                | Secrets passed (explicit, not inherited)                                   |
-| ----------------------- | -------------------------------------------------------------------------- |
-| `fro-bot.yaml`          | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG`    |
-| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`)                               |
-| `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                               |
-| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only                                                    |
-| `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)                  |
+| Workflow                | Secrets passed (explicit, not inherited)                                |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `fro-bot.yaml`          | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG` |
+| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`)                            |
+| `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                            |
+| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only                                                 |
+| `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)               |
 
 ## Commit conventions
 
