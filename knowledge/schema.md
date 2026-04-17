@@ -10,12 +10,12 @@ This document defines conventions for the Fro Bot knowledge wiki — a persisten
 
 ## Page Types
 
-| Type         | Directory                    | Purpose                                              |
-| ------------ | ---------------------------- | ---------------------------------------------------- |
-| `repo`       | `knowledge/wiki/repos/`      | Per-repository knowledge page                        |
-| `topic`      | `knowledge/wiki/topics/`     | Cross-cutting technical topic (e.g., testing, CI/CD) |
-| `entity`     | `knowledge/wiki/entities/`   | Named entity (person, org, tool, service)            |
-| `comparison` | `knowledge/wiki/comparisons/`| Side-by-side analysis of alternatives                |
+| Type         | Directory                     | Purpose                                              |
+| ------------ | ----------------------------- | ---------------------------------------------------- |
+| `repo`       | `knowledge/wiki/repos/`       | Per-repository knowledge page                        |
+| `topic`      | `knowledge/wiki/topics/`      | Cross-cutting technical topic (e.g., testing, CI/CD) |
+| `entity`     | `knowledge/wiki/entities/`    | Named entity (person, org, tool, service)            |
+| `comparison` | `knowledge/wiki/comparisons/` | Side-by-side analysis of alternatives                |
 
 ## Frontmatter
 
@@ -35,8 +35,7 @@ tags: [relevant, tags]
 ---
 ```
 
-Required fields: `type`, `title`, `created`, `updated`.
-Optional fields: `sources`, `tags`, `aliases`, `related`.
+Required fields: `type`, `title`, `created`, `updated`. Optional fields: `sources`, `tags`, `aliases`, `related`.
 
 ## Filename Conventions
 
@@ -51,8 +50,7 @@ Optional fields: `sources`, `tags`, `aliases`, `related`.
 Use `[[filename]]` wikilink syntax (without `.md` extension):
 
 ```markdown
-See [[vitest]] for testing patterns used across repos.
-Compare with [[jest-vs-vitest]] for migration rationale.
+See [[vitest]] for testing patterns used across repos. Compare with [[jest-vs-vitest]] for migration rationale.
 ```
 
 Wikilinks MUST point to existing pages. Broken links are flagged by weekly lint.
