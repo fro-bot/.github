@@ -81,6 +81,16 @@ PAT split summary:
 - `FRO_BOT_POLL_PAT`: polling and read-only metadata consumers.
 - `FRO_BOT_PAT`: write-capable automation that commits metadata updates to the `data` branch.
 
+### Workflow secret mapping
+
+| Workflow                | Secrets passed (explicit, not inherited)                                |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `fro-bot.yaml`          | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG` |
+| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`)                            |
+| `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                            |
+| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only (Phase 2 Unit 7)                                |
+| `merge-data.yaml`       | `FRO_BOT_PAT` only (Phase 2 Unit 5)                                     |
+
 ## Commit conventions
 
 - All programmatic metadata writes must go through `scripts/commit-metadata.ts` and target the `data` branch.
