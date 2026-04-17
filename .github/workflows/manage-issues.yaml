@@ -14,8 +14,41 @@ permissions:
   contents: read
 
 jobs:
+  close-automated-reports:
+    name: Close Automated Reports
+    runs-on: ubuntu-latest
+    steps:
+      - id: get-workflow-app-token
+        name: Get Workflow Access Token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+
+      - name: Close old automated report issues
+        env:
+          GH_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+        run: |
+          # Close automated daily report issues older than 3 days.
+          # These are superseded by newer reports and accumulate without bound.
+          cutoff=$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          closed=0
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 200 \
+            --json number,title,createdAt \
+            --jq ".[] | select(.title | test(\"Daily (Org Oversight|Autohealing) Report\")) | select(.createdAt < \"$cutoff\") | .number" | \
+          while read -r number; do
+            [ -z "$number" ] && continue
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" --reason "not planned" \
+              --comment "Auto-closed: daily report retention policy (3 days). Superseded by newer reports." || true
+            closed=$((closed + 1))
+            sleep 1
+          done
+          echo "Closed $closed automated report issues older than 3 days."
+        shell: bash
+
   stale:
     name: Stale
+    needs: close-automated-reports
     runs-on: ubuntu-latest
     steps:
       - id: get-workflow-app-token
