@@ -121,21 +121,18 @@ This repository provides shared configurations and automation for the Fro Bot ec
    # Type checking
    pnpm check-types
 
-   # Linting
+   # Linting (ESLint runs Prettier via eslint-plugin-prettier)
    pnpm lint
 
-   # Code formatting
-   pnpm check-format
+   # Tests
+   pnpm test
    ```
 
 4. **Auto-fix issues:**
 
    ```bash
-   # Fix linting issues
+   # Auto-fix lint and formatting via ESLint
    pnpm fix
-
-   # Format code
-   pnpm format
    ```
 
 > [!TIP] This repository follows strict development standards. Make sure to run quality checks before committing changes.

@@ -50,7 +50,7 @@ Run these commands in repository root before finalizing:
 pnpm bootstrap
 pnpm check-types
 pnpm lint
-pnpm check-format
+pnpm test
 ```
 
 If you touched workflows, also validate YAML shape and action references in modified files.

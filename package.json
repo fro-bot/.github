@@ -20,11 +20,9 @@
   "type": "module",
   "scripts": {
     "bootstrap": "pnpm install --prefer-offline --loglevel warn",
-    "check-format": "prettier --check .",
     "check-types": "tsc --noEmit --project ./tsconfig.json",
     "coverage": "vitest run --coverage",
     "fix": "pnpm run lint --fix",
-    "format": "prettier --write .",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest"

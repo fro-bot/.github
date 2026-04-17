@@ -12,7 +12,7 @@
   - Prettier configuration from `@bfra.me/prettier-config/120-proof`
   - ESLint using `@bfra.me/eslint-config`
   - Line length limit: 120 characters
-  - Automatic formatting via `pnpm format`
+  - Automatic formatting via `pnpm fix` (ESLint with eslint-plugin-prettier)
 
 - **Documentation**
   - JSDoc comments required for public APIs
@@ -84,7 +84,6 @@ interface TechnologyStack {
 interface QualityValidation {
   typeCheck: 'pnpm check-types';
   lint: 'pnpm lint';
-  format: 'pnpm check-format';
   fix: 'pnpm fix';
 }
 ```
