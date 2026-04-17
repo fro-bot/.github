@@ -1,7 +1,15 @@
 # Collaborator repositories where Fro Bot is active.
 # Updated by: invitation handler and metadata workflow.
 version: 1
-repos: []
+repos:
+  - owner: marcusrbrown
+    name: ha-config
+    added: 2026-04-17
+    onboarding_status: pending
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: false
 # Schema for each repo entry:
 #   owner: string
 #   name: string
