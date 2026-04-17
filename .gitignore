@@ -18,3 +18,7 @@ Thumbs.db
 # Build output
 dist
 *.tsbuildinfo
+
+# Test output
+coverage
+.vitest-cache

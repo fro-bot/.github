@@ -21,3 +21,4 @@ branches:
           - Lint
           - Renovate / Renovate
           - Review Dependencies
+          - Test

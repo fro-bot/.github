@@ -78,6 +78,24 @@ jobs:
       - name: ✅ Validate Formatting
         run: pnpm check-format
 
+  test:
+    name: Test
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🧪 Run Tests
+        run: pnpm test
+
   check-workflows:
     name: Check Workflows
     permissions:
