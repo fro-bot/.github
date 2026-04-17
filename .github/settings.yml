@@ -13,7 +13,6 @@ branches:
         strict: true
         contexts:
           - Analyze (typescript)
-          - Check Format
           - Check Types
           - Check Workflows
           - CodeQL
