@@ -19,6 +19,7 @@ function mockOctokit(overrides?: {
   createPullRequest?: OctokitClient['rest']['pulls']['create']
   addLabels?: OctokitClient['rest']['issues']['addLabels']
   createIssue?: OctokitClient['rest']['issues']['create']
+  listForRepo?: OctokitClient['rest']['issues']['listForRepo']
 }): OctokitClient {
   return {
     rest: {
@@ -52,6 +53,7 @@ function mockOctokit(overrides?: {
           (async () => ({
             data: {number: 99, html_url: 'https://github.com/fro-bot/.github/issues/99'},
           })),
+        listForRepo: overrides?.listForRepo ?? (async () => ({data: []})),
       },
     },
   }
@@ -207,6 +209,110 @@ describe('mergeDataPr', () => {
     expect(issueParams.owner).toBe('fro-bot')
     expect(issueParams.repo).toBe('.github')
     expect(issueParams.title).toContain('Stale data branch divergence')
+  })
+
+  it('reuses existing PR and applies label when one already exists for data branch', async () => {
+    const addLabels = vi.fn(async () => ({data: {labels: [{name: 'auto-merge'}]}}))
+    const createPullRequest = vi.fn(async () => ({
+      data: {number: 42, html_url: 'https://github.com/fro-bot/.github/pull/42'},
+    }))
+    const octokit = mockOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({
+        data: [
+          {
+            number: 55,
+            html_url: 'https://github.com/fro-bot/.github/pull/55',
+            head: {ref: 'data'},
+            base: {ref: 'main'},
+          },
+        ],
+      }),
+      createPullRequest,
+      addLabels,
+    })
+
+    // #given an existing PR already targets data -> main
+    // #when the merge PR script runs
+    const result = await mergeDataPr({octokit, now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then it reuses the existing PR and does not create a new one
+    expect(result.createdPullRequest).toBe(true)
+    expect(result.pullRequestNumber).toBe(55)
+    expect(result.pullRequestUrl).toBe('https://github.com/fro-bot/.github/pull/55')
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(addLabels).toHaveBeenCalledWith({
+      owner: 'fro-bot',
+      repo: '.github',
+      issue_number: 55,
+      labels: ['auto-merge'],
+    })
+  })
+
+  it('creates a journal entry for non-conflict 422 errors with descriptive title', async () => {
+    const createIssue = vi.fn(async () => ({
+      data: {number: 88, html_url: 'https://github.com/fro-bot/.github/issues/88'},
+    }))
+    const octokit = mockOctokit({
+      createIssue,
+      createPullRequest: async () => {
+        // #given GitHub rejects the PR with a non-conflict 422 (e.g. duplicate PR)
+        throw Object.assign(new Error('Validation Failed: A pull request already exists'), {
+          status: 422,
+          response: {data: {message: 'Validation Failed', errors: [{message: 'A pull request already exists'}]}},
+        })
+      },
+    })
+
+    // #when the merge PR script runs
+    const result = await mergeDataPr({octokit, now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then it creates a journal entry (safe fallback for any 422)
+    expect(result.createdPullRequest).toBe(false)
+    expect(result.journalIssueNumber).toBe(88)
+  })
+
+  it('skips stale-divergence alert when an existing open alert issue matches', async () => {
+    const createIssue = vi.fn(async () => ({
+      data: {number: 77, html_url: 'https://github.com/fro-bot/.github/issues/77'},
+    }))
+    const listForRepo = vi.fn(async () => ({
+      data: [
+        {
+          number: 60,
+          title: 'Stale data branch divergence: data is older than 14 days',
+          state: 'open' as const,
+        },
+      ],
+    }))
+    const octokit = mockOctokit({
+      compareCommitsWithBasehead: async () => ({
+        data: {
+          files: [{filename: 'metadata/repos.yaml'}],
+          merge_base_commit: {sha: 'merge-base-sha', commit: {committer: {date: isoDaysAgo(20)}}},
+          commits: [{sha: 'stale-data-commit-sha', commit: {committer: {date: isoDaysAgo(20)}}}],
+          ahead_by: 3,
+          behind_by: 0,
+          total_commits: 3,
+        },
+      }),
+      createIssue,
+      listForRepo,
+    })
+
+    // #given the data branch is stale and an existing stale alert is already open
+    // #when the merge PR script runs
+    const result = await mergeDataPr({octokit, now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then it does NOT create a duplicate stale alert
+    expect(result.staleAlertIssueNumber).toBeNull()
+    expect(createIssue).not.toHaveBeenCalled()
+    expect(listForRepo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: 'fro-bot',
+        repo: '.github',
+        state: 'open',
+      }),
+    )
   })
 
   it('throws a structured error on non-conflict API failures', async () => {
