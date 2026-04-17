@@ -3,10 +3,10 @@ import {describe, expect, it, vi} from 'vitest'
 import {handleInvitations, InvitationHandlingError} from './handle-invitation.ts'
 
 function mockOctokit(overrides?: {
-  listRepositoryInvitations?: () => Promise<{
+  listInvitationsForAuthenticatedUser?: () => Promise<{
     data: Invitation[]
   }>
-  acceptInvitation?: (params: {invitation_id: number}) => Promise<void>
+  acceptInvitationForAuthenticatedUser?: (params: {invitation_id: number}) => Promise<void>
   starRepo?: (params: {owner: string; repo: string}) => Promise<void>
   createWorkflowDispatch?: (params: {
     owner: string
@@ -26,21 +26,19 @@ function mockOctokit(overrides?: {
           data: {type: 'file' as const, sha: 'repos-sha', content: 'dmVyc2lvbjogMQpyZXBvczogW10K', encoding: 'base64'},
         }),
         createOrUpdateFileContents: async () => ({data: {commit: {sha: 'metadata-commit-sha'}}}),
-      },
-      git: {
-        createRef: async () => ({data: {ref: 'refs/heads/data'}}),
-      },
-      users: {
-        listRepositoryInvitations:
-          overrides?.listRepositoryInvitations ??
+        listInvitationsForAuthenticatedUser:
+          overrides?.listInvitationsForAuthenticatedUser ??
           (async () => ({
             data: [],
           })),
-        acceptInvitation:
-          overrides?.acceptInvitation ??
+        acceptInvitationForAuthenticatedUser:
+          overrides?.acceptInvitationForAuthenticatedUser ??
           (async () => {
             return undefined
           }),
+      },
+      git: {
+        createRef: async () => ({data: {ref: 'refs/heads/data'}}),
       },
       activity: {
         starRepo:
@@ -73,28 +71,7 @@ interface Invitation {
   }
 }
 
-interface HandleInvitationsOctokit extends OctokitClient {
-  rest: OctokitClient['rest'] & {
-    users: {
-      listRepositoryInvitations: () => Promise<{
-        data: Invitation[]
-      }>
-      acceptInvitation: (params: {invitation_id: number}) => Promise<void>
-    }
-    activity: {
-      starRepo: (params: {owner: string; repo: string}) => Promise<void>
-    }
-    actions: {
-      createWorkflowDispatch: (params: {
-        owner: string
-        repo: string
-        workflow_id: string
-        ref: string
-        inputs?: Record<string, string>
-      }) => Promise<void>
-    }
-  }
-}
+type HandleInvitationsOctokit = OctokitClient
 
 describe('handleInvitations', () => {
   it('accepts approved invitations, stars repos, updates metadata, and dispatches survey', async () => {
@@ -103,7 +80,7 @@ describe('handleInvitations', () => {
     const createWorkflowDispatch = vi.fn(async () => undefined)
     const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
     const octokit = mockOctokit({
-      listRepositoryInvitations: async () => ({
+      listInvitationsForAuthenticatedUser: async () => ({
         data: [
           {
             id: 101,
@@ -115,7 +92,7 @@ describe('handleInvitations', () => {
           },
         ],
       }),
-      acceptInvitation,
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
       starRepo,
       createWorkflowDispatch,
     })
@@ -168,7 +145,7 @@ describe('handleInvitations', () => {
     const acceptInvitation = vi.fn(async () => undefined)
     const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
     const octokit = mockOctokit({
-      listRepositoryInvitations: async () => ({
+      listInvitationsForAuthenticatedUser: async () => ({
         data: [
           {
             id: 102,
@@ -180,7 +157,7 @@ describe('handleInvitations', () => {
           },
         ],
       }),
-      acceptInvitation,
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
     })
 
     // #given an unapproved inviter
@@ -230,7 +207,7 @@ describe('handleInvitations', () => {
     const createWorkflowDispatch = vi.fn(async () => undefined)
     const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
     const octokit = mockOctokit({
-      listRepositoryInvitations: async () => ({
+      listInvitationsForAuthenticatedUser: async () => ({
         data: [
           {
             id: 103,
@@ -244,7 +221,7 @@ describe('handleInvitations', () => {
           },
         ],
       }),
-      acceptInvitation,
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
       starRepo,
       createWorkflowDispatch,
     })
@@ -294,7 +271,7 @@ describe('handleInvitations', () => {
     const createWorkflowDispatch = vi.fn(async () => undefined)
     const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
     const octokit = mockOctokit({
-      listRepositoryInvitations: async () => ({
+      listInvitationsForAuthenticatedUser: async () => ({
         data: [
           {
             id: 105,
@@ -303,7 +280,7 @@ describe('handleInvitations', () => {
           },
         ],
       }),
-      acceptInvitation,
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
       starRepo,
       createWorkflowDispatch,
     })
@@ -346,7 +323,7 @@ describe('handleInvitations', () => {
 
   it('throws a structured error when polling is rate limited', async () => {
     const octokit = mockOctokit({
-      listRepositoryInvitations: async () => {
+      listInvitationsForAuthenticatedUser: async () => {
         throw Object.assign(new Error('Too Many Requests'), {status: 429})
       },
     })
@@ -382,7 +359,7 @@ describe('handleInvitations', () => {
   it('returns an empty result when there are no invitations', async () => {
     const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
     const octokit = mockOctokit({
-      listRepositoryInvitations: async () => ({data: []}),
+      listInvitationsForAuthenticatedUser: async () => ({data: []}),
     })
 
     // #given no pending invitations

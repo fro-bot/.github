@@ -42,11 +42,11 @@ export interface RepositoryInvitation {
 export interface OctokitClient extends CommitMetadataOctokitClient {
   rest: CommitMetadataOctokitClient['rest'] & {
     git: BootstrapOctokitClient['rest']['git']
-    users: {
-      listRepositoryInvitations: () => Promise<{
+    repos: CommitMetadataOctokitClient['rest']['repos'] & {
+      listInvitationsForAuthenticatedUser: () => Promise<{
         data: RepositoryInvitation[]
       }>
-      acceptInvitation: (params: {invitation_id: number}) => Promise<void>
+      acceptInvitationForAuthenticatedUser: (params: {invitation_id: number}) => Promise<void>
     }
     activity: {
       starRepo: (params: {owner: string; repo: string}) => Promise<void>
@@ -251,7 +251,7 @@ async function processInvitation(params: {
 
 async function pollInvitations(octokit: OctokitClient): Promise<RepositoryInvitation[]> {
   try {
-    const response = await octokit.rest.users.listRepositoryInvitations()
+    const response = await octokit.rest.repos.listInvitationsForAuthenticatedUser()
     return response.data
   } catch (error: unknown) {
     throw normalizePollingError(error)
@@ -260,7 +260,7 @@ async function pollInvitations(octokit: OctokitClient): Promise<RepositoryInvita
 
 async function acceptInvitation(octokit: OctokitClient, invitationId: number): Promise<void> {
   try {
-    await octokit.rest.users.acceptInvitation({invitation_id: invitationId})
+    await octokit.rest.repos.acceptInvitationForAuthenticatedUser({invitation_id: invitationId})
   } catch (error: unknown) {
     if (isApiStatus(error, 404) || isApiStatus(error, 410)) {
       return
