@@ -4,17 +4,23 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
-- [[marcusrbrown--dotfiles]] — Marcus's dotfiles repo (bare git, XDG-compliant, multi-shell config with mise, sheldon, starship, devcontainer, and Fro Bot integration)
+- [[marcusrbrown--dotfiles]] — marcusrbrown/.dotfiles
+- [[marcusrbrown--github]] — Marcus's personal `.github` repo; GitHub defaults, community health files, and canonical Probot Settings template (`common-settings.yaml`)
+- [[marcusrbrown--esphome-life]] — marcusrbrown/esphome.life
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
+- [[marcusrbrown--tokentoilet]] — marcusrbrown/tokentoilet
+- [[marcusrbrown--vbs]] — marcusrbrown/vbs
 
 ## Topics
 
-- [[dotfiles]] — Dotfiles management patterns: bare git repos, XDG compliance, shell init organization, devcontainer portability
+- [[dotfiles]] — Dotfiles Management
 - [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
+- [[probot-settings]] — Repository configuration management via Probot Settings; inheritance patterns, common-settings templates, and governance across repos
+- [[web3-defi]] — Web3 & DeFi Development
 
 ## Entities
 
-- [[mise]] — Polyglot runtime/tool version manager (Rust-based asdf successor); used across dotfiles and ha-config repos
+- [[mise]] — mise
 
 ## Comparisons
 
