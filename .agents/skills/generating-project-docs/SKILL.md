@@ -32,17 +32,17 @@ If you cannot point at a file, command, or commit that justifies a sentence, do 
 
 Before writing anything, gather these from the live repo:
 
-| Source | What to extract |
-| --- | --- |
-| `package.json` | name, description, scripts, packageManager (pnpm version), engines, repository |
-| `README.md` (current) | banner, badges, navigation, section order, voice |
-| `.github/workflows/` | workflow names, triggers, purposes (read each `name:` and top-level `on:` block) |
-| `scripts/*.ts` | TypeScript entrypoints, exported functions, test counts (`pnpm test --reporter=basic`) |
-| `metadata/*.yaml` | metadata files in scope and their schemas |
-| `knowledge/{schema,index,log}.md` + `knowledge/wiki/` | wiki coverage stats (counts of repos/topics/entities) |
-| `persona/`, `branding/`, `assets/` | character + brand asset inventory |
-| `mise.toml` | tool versions (Node, pnpm) |
-| `git log --oneline -15` | recent change context |
+| Source                                                | What to extract                                                                        |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `package.json`                                        | name, description, scripts, packageManager (pnpm version), engines, repository         |
+| `README.md` (current)                                 | banner, badges, navigation, section order, voice                                       |
+| `.github/workflows/`                                  | workflow names, triggers, purposes (read each `name:` and top-level `on:` block)       |
+| `scripts/*.ts`                                        | TypeScript entrypoints, exported functions, test counts (`pnpm test --reporter=basic`) |
+| `metadata/*.yaml`                                     | metadata files in scope and their schemas                                              |
+| `knowledge/{schema,index,log}.md` + `knowledge/wiki/` | wiki coverage stats (counts of repos/topics/entities)                                  |
+| `persona/`, `branding/`, `assets/`                    | character + brand asset inventory                                                      |
+| `mise.toml`                                           | tool versions (Node, pnpm)                                                             |
+| `git log --oneline -15`                               | recent change context                                                                  |
 
 Counts (workflows, scripts, tests, metadata files, wiki pages) MUST come from `ls`, `find`, or `pnpm test` output. Never guess or carry over from the previous draft.
 
@@ -50,7 +50,7 @@ Counts (workflows, scripts, tests, metadata files, wiki pages) MUST come from `l
 
 These rules match this repo's evolved style. Match them exactly.
 
-1. **Header block**: centered `<div align="center">` with `<img src="./assets/banner.svg" ... width="100%" />`, H1, single blockquote tagline, badge row, navigation row (bold links separated by `·`).
+1. **Header block**: centered `<div align="center">` with `<img src="./assets/banner.svg" ... width="100%" />`, H1, single blockquote tagline, badge row, navigation row (bold links separated by ` · `).
 2. **Badges**: `style=for-the-badge`, `labelColor=0D0216`, brand colors:
    - Build / primary action: `color=00BCD4` (cyan)
    - Security / secondary: `color=E91E63` (magenta)
@@ -110,23 +110,22 @@ For section-scoped updates: read the current document, locate the section by hea
 
 **Style (always):**
 
-- Markdown lints clean (`pnpm lint` covers files not excluded in `.markdownlint-cli2.yaml`)
 - Headings monotonically increase (H1 → H2 → H3, no skipping)
 - Code blocks all have language tags
 - All file references use backticks
 
 ## Common Mistakes
 
-| Mistake | Fix |
-| --- | --- |
-| Carrying over counts from previous draft | Re-derive every count from a live `ls` / `find` / `pnpm test` run |
-| Adding "Robust", "Powerful", "Enterprise-grade" language | Delete it. State the fact instead. |
-| Listing a workflow that doesn't exist | Cross-check against `ls .github/workflows/` |
-| Using bare `<img>` instead of `<picture>` or `<img ... width="100%" />` | Match the existing header block exactly |
-| Wrong badge color/style | Check brand tokens above; `style=for-the-badge` + `labelColor=0D0216` |
-| Replacing the evolved structure with a generic template | Read the current doc first; preserve sections you aren't updating |
-| Inventing new top-level sections | Get explicit approval before adding a new H2 |
-| Leaking session/plan/skill/subagent names into docs | Public docs describe the system, not how it was built |
+| Mistake                                                                | Fix                                                                   |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Carrying over counts from previous draft                               | Re-derive every count from a live `ls` / `find` / `pnpm test` run     |
+| Adding "Robust", "Powerful", "Enterprise-grade" language               | Delete it. State the fact instead.                                    |
+| Listing a workflow that doesn't exist                                  | Cross-check against `ls .github/workflows/`                           |
+| Using bare `<img>` instead of `<picture>` or `<img ... width="100%" />` | Match the existing header block exactly                               |
+| Wrong badge color/style                                                | Check brand tokens above; `style=for-the-badge` + `labelColor=0D0216` |
+| Replacing the evolved structure with a generic template                | Read the current doc first; preserve sections you aren't updating     |
+| Inventing new top-level sections                                       | Get explicit approval before adding a new H2                          |
+| Leaking session/plan/skill/subagent names into docs                    | Public docs describe the system, not how it was built                 |
 
 ## Quick Reference
 
@@ -141,7 +140,6 @@ find knowledge/wiki -name '*.md' | wc -l   # wiki page count
 git log --oneline -15                      # recent change context
 
 # Verification (run after writing)
-pnpm lint <changed-files>                  # markdown + style check
 git diff README.md                         # review own diff
 ```
 
