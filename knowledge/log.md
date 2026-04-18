@@ -23,22 +23,22 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/ha-config (SHA 83784bc3a212c10cd358be4da9425e46aa6e90f0)
 
-## [2026-04-18 00:00] ingest | marcusrbrown/esphome.life
+## [2026-04-18 06:00] ingest | marcusrbrown/.dotfiles
 
-Survey of `marcusrbrown/esphome.life` (SHA `e398c2e`). Created repo page `marcusrbrown--esphome-life.md`. Updated topic page `home-assistant.md` with esphome.life cross-references. Fixed wikilink slug in `marcusrbrown--ha-config.md` related field (`marcusrbrown-esphome-life` → `marcusrbrown--esphome-life`). Updated `index.md`.
+Survey of `marcusrbrown/.dotfiles` (SHA `b5f5dee`). Created repo page `marcusrbrown--dotfiles.md`, topic pages `dotfiles.md` and `mise.md`. Updated `index.md` to catalog all three new pages.
 
 Key findings:
 
-- ESPHome project derived from `esphome/esphome-project-template`, builds firmware for Olimex ESP32-PoE-ISO Bluetooth Proxy devices
-- Two per-device configs (`13451c`, `1349f4`), one shared package (`packages/olimex-bluetooth-proxy.yaml`)
-- Only `1349f4` is in the CI build matrix; `13451c` is not built by CI
-- CI deploys to GitHub Pages with ESP Web Tools for browser-based firmware installation
-- ESPHome version pinned at 2025.12.7 in both CI and devcontainer
-- Devcontainer uses `ptr727/esphome-nonroot` image with ESPHome dashboard, PlatformIO, and serial monitor extensions
-- Renovate extends `marcusrbrown/renovate-config#4.5.1` with ESPHome-specific package rules (loose versioning, semantic commits)
-- Probot settings extend `fro-bot/.github:common-settings.yaml`
-- **No Fro Bot agent workflow detected** — follow-up PR recommended
-- All devices use Ethernet (LAN8720) — no Wi-Fi — for wired Bluetooth Proxy backhaul
-- Template artifacts (`docs/readme.md`, `static/index.md`) remain uncustomized
+- Bare git worktree dotfiles repo (GIT_DIR=~/.dotfiles, GIT_WORK_TREE=~/), created 2011, actively maintained
+- Allowlist .gitignore pattern, modular shell init (bash init.d/ with numbered prefixes + zsh via sheldon)
+- mise manages 30+ tools: Node 24, Python 3.14, Rust 1.95, Go 1.26, Zig 0.15, Deno 2.7, plus AI CLIs (Claude Code, OpenCode)
+- Three parallel AI agent setups: Claude Code (.claude/), OpenCode (.config/opencode/ with own AGENTS.md), shared skills (.agents/)
+- Zsh plugin management via sheldon with deferred loading (zsh-defer), starship prompt with Catppuccin Mocha
+- Ghostty terminal (migrated from iTerm2) with Catppuccin Mocha, Nerd Font
+- Devcontainer with 4 custom features (dotfiles-dev, mise, sheldon, keychain), image pushed to ghcr.io
+- **Fro Bot workflow present** (fro-bot/agent@v0.40.2) — comprehensive PR review prompt + 6-category daily maintenance schedule including cross-project portfolio health monitoring
+- Renovate extends marcusrbrown/renovate-config#4.5.8, Probot settings extend fro-bot/.github:common-settings.yaml
+- macOS Brewfile: 100+ VS Code extensions, Nerd Fonts, Homebrew CLI tools, Mac App Store apps
+- Created mise topic page — mise used in both .dotfiles (primary toolchain) and ha-config (pre-commit via aqua)
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA b5f5dee391bccd83e735b63c58ca9e416b72e702)

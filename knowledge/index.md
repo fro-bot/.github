@@ -4,12 +4,14 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
-- [[marcusrbrown--esphome-life]] — ESPHome device firmware configs for Olimex ESP32-PoE-ISO Bluetooth Proxies; CI-built and deployed to GitHub Pages via ESP Web Tools
+- [[marcusrbrown--dotfiles]] — Marcus's bare git dotfiles repo; shell/dev configs, mise toolchain, AI agent setups (Claude Code, OpenCode), devcontainer, Fro Bot CI
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
 
 ## Topics
 
+- [[dotfiles]] — Dotfiles management patterns: bare git worktree, allowlist .gitignore, modular shell init, XDG compliance
 - [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
+- [[mise]] — Polyglot runtime/tool version manager (Rust-based asdf successor); used for toolchain management across repos
 
 ## Entities
 
