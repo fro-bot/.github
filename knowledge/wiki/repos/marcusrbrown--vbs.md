@@ -7,122 +7,125 @@ sources:
   - url: https://github.com/marcusrbrown/vbs
     sha: a552e7335af70122f68380440c78a415a785749f
     accessed: 2026-04-18
-tags: [star-trek, typescript, vite, local-first, viewing-guide, d3, github-pages, functional-factories]
+tags: [typescript, vite, star-trek, viewing-guide, local-first, d3, github-pages, functional-architecture]
 aliases: [vbs, view-by-stardate]
 related:
-  - marcusrbrown--ha-config
+  - github-actions-ci
 ---
 
 # marcusrbrown/vbs
 
-**VBS (View By Stardate)** — a local-first Star Trek chronological viewing guide. TypeScript + Vite web app deployed to GitHub Pages, using functional factory architecture with closure-based state, generic EventEmitters, and D3.js for timeline visualization.
+**VBS (View By Stardate)** — a local-first, chronological Star Trek viewing guide web application. TypeScript + Vite + D3.js, deployed to GitHub Pages. Uses a functional factory architecture with closure-based state management and generic EventEmitters.
 
 ## Overview
 
-- **Purpose:** Interactive chronological Star Trek viewing guide with progress tracking
-- **Homepage:** https://marcusrbrown.github.io/vbs/
+- **Purpose:** Interactive Star Trek chronological viewing guide with progress tracking
 - **Default branch:** `main`
 - **Created:** 2025-07-18
 - **Last push:** 2026-04-17
-- **License:** MIT (stated in package.json, no LICENSE file observed)
+- **Homepage:** https://marcusrbrown.github.io/vbs/
+- **License:** MIT (declared in package.json; no LICENSE file observed at root)
 - **Topics:** `star-trek`, `viewing-guide`, `chronological`, `progress-tracker`, `local-first`
-- **Package name:** `@marcusrbrown/vbs` (private, v0.0.0)
+- **Package manager:** pnpm 10.33.0
+- **Node.js:** 22.x
 
 ## Tech Stack
 
-| Layer           | Technology                                                                   |
-| --------------- | ---------------------------------------------------------------------------- |
-| Language        | TypeScript 5.9.x (strict mode, `erasableSyntaxOnly`, `verbatimModuleSyntax`) |
-| Build           | Vite 7.x, `tsc && vite build`                                                |
-| Testing         | Vitest 4.x, jsdom environment, coverage via `@vitest/coverage-v8`            |
-| Linting         | ESLint 9.x (`@bfra.me/eslint-config`), Prettier (`@bfra.me/prettier-config`) |
-| Runtime dep     | D3.js 7.x (timeline visualization)                                           |
-| Package manager | pnpm 10.33.0                                                                 |
-| Node.js         | 22.x                                                                         |
-| Git hooks       | `simple-git-hooks` + `lint-staged`                                           |
-| TypeScript base | `@bfra.me/tsconfig`                                                          |
+| Layer             | Technology                                                                        |
+| ----------------- | --------------------------------------------------------------------------------- |
+| Language          | TypeScript 5.9 (strict mode, `erasableSyntaxOnly`, `verbatimModuleSyntax`)        |
+| Build             | Vite 7.x (base `/vbs/`, source maps, manual chunk for data module)                |
+| Runtime           | Vanilla TS — no framework, functional factories with closures                     |
+| Visualization     | D3 7.x (production dependency)                                                    |
+| Testing           | Vitest 4.x + jsdom + `@vitest/coverage-v8` + `@vitest/ui`                         |
+| Linting           | ESLint 9.x via `@bfra.me/eslint-config` + Prettier via `@bfra.me/prettier-config` |
+| TypeScript config | Extends `@bfra.me/tsconfig`                                                       |
+| Git hooks         | `simple-git-hooks` + `lint-staged`                                                |
+| Env management    | `dotenv` for optional API keys (TMDB)                                             |
 
 ## Architecture
 
 ### Functional Factory Pattern
 
-The project enforces a strict **no-class, no-`this`** rule. All modules use functional factories with closure-based private state and return public API objects. Generic `createEventEmitter<TEventMap>()` provides type-safe event handling.
+The codebase enforces a strict **no-class** policy. All state management uses closure-based factories that return public API objects. Key constraints:
 
-Key conventions (from AGENTS.md and workflow prompts):
+- No `this` binding — closures eliminate context issues
+- No `any` / `@ts-ignore` / `@ts-expect-error`
+- All imports use `.js` extensions for ESM resolution
+- Components must provide `destroy()` for listener cleanup
+- CSS custom properties use `--vbs-` prefix; no inline styles
+- Error handling via `withErrorHandling()` (async) / `withSyncErrorHandling()`
 
-- No `any`, `@ts-ignore`, or `@ts-expect-error`
-- All imports must use `.js` extensions for ESM resolution
-- CSS custom properties with `--vbs-` prefix; no inline styles
-- Components must expose `destroy()` for cleanup
-- Error boundaries via `withErrorHandling()` / `withSyncErrorHandling()`
-- Event map types centralized in `src/modules/types.ts`
+### Generic EventEmitter
 
-### Source Layout
-
-```
-src/
-├── main.ts                    # App entry, application factory
-├── style.css                  # Global styles, Star Trek theme
-├── vite-env.d.ts              # Vite type declarations
-├── components/                # UI components (co-located .ts + .css)
-│   ├── metadata-debug-panel   # Dev/debug metadata panel
-│   ├── metadata-expert-mode   # Expert metadata controls
-│   ├── metadata-preferences   # Metadata display preferences
-│   ├── metadata-quality-indicator
-│   ├── metadata-source-attribution
-│   ├── metadata-sync-status
-│   ├── metadata-usage-controls
-│   ├── migration-progress     # Data migration progress UI
-│   ├── streaming-indicators   # Streaming availability indicators
-│   ├── streaming-preferences  # Streaming service preferences
-│   ├── timeline-controls      # Timeline navigation controls
-│   └── timeline-viz.css       # Timeline visualization styles
-├── data/
-│   └── star-trek-data.ts      # Comprehensive Star Trek dataset (~570 lines)
-├── modules/                   # Core logic factories
-│   ├── types.ts               # Shared interfaces, event maps
-│   ├── progress.ts            # Progress tracking factory
-│   ├── search.ts              # Search/filtering factory
-│   ├── timeline.ts            # Timeline rendering factory
-│   ├── storage.ts             # Import/export, generic storage adapters
-│   ├── events.ts              # Event system
-│   ├── episodes.ts            # Episode-level tracking
-│   ├── episode-tracker.ts     # Episode tracker factory
-│   ├── themes.ts              # Theme management
-│   ├── preferences.ts         # User preferences
-│   ├── settings-manager.ts    # Settings UI factory
-│   ├── logger.ts              # Structured logger
-│   ├── error-handler.ts       # Error boundary factories
-│   ├── migration.ts           # Data migration logic
-│   ├── version-manager.ts     # Schema versioning
-│   ├── cache-warming.ts       # Cache pre-warming
-│   ├── metadata-*.ts          # Metadata sources, quality, queue, scheduler, storage
-│   ├── streaming-api.ts       # Streaming service API integration
-│   ├── timeline-viz.ts        # D3-based timeline visualization
-│   ├── conflict-resolution.ts # Data conflict resolution
-│   └── progress-validation.ts # Progress data validation
-└── utils/
-    ├── composition.ts         # Functional composition (pipe, compose, curry, tap)
-    ├── download.ts            # File download utility
-    ├── geographic.ts          # Geographic utilities
-    ├── metadata-validation.ts # Metadata validation
-    └── index.ts               # Utils barrel export
-```
+Type-safe event system using `createEventEmitter<TEventMap>()`. Event map types are centralized in `src/modules/types.ts`.
 
 ### Data Model
 
-Star Trek content organized as 7 chronological eras (22nd–32nd century, 1000+ years), each containing series, movies, and animated content. Items have IDs following conventions:
+Star Trek content organized as 7 chronological eras (22nd–32nd century), each containing `StarTrekItem` entries (series, movies, animated). Items have IDs, types, and stardate ranges.
 
-- Episode: `/^[a-z]+_s\d+_e\d+$/`
-- Season: `/^[a-z]+_s\d+$/`
-- Series: `/^[a-z]+(?:_s\d+)?$/`
+- Episode ID pattern: `/^[a-z]+_s\d+_e\d+$/`
+- Season ID pattern: `/^[a-z]+_s\d+$/`
+- Series ID pattern: `/^[a-z]+(?:_s\d+)?$/`
 
-### State Management
+### Data Generation Pipeline
 
-- **Local-first:** All progress stored in browser localStorage
-- **Data portability:** JSON export/import for backup and sync
-- **Generic storage adapters:** Type-safe `StorageAdapter<T>` interface with `LocalStorageAdapter` implementation
-- **IndexedDB migration:** Planned (documented in `docs/indexeddb-migration.md`)
+An automated pipeline (`scripts/generate-star-trek-data.ts`) aggregates metadata from TMDB, Memory Alpha, TrekCore, and STAPI. Quality scoring (minimum 0.6) validates completeness. Runs weekly via the `update-star-trek-data.yaml` workflow, which creates PRs for data changes using `peter-evans/create-pull-request`.
+
+## Repository Structure
+
+```
+vbs/
+├── src/
+│   ├── main.ts                  # Application entry factory
+│   ├── style.css                # Global Star Trek theme
+│   ├── data/
+│   │   └── star-trek-data.ts    # Comprehensive dataset (~570 lines)
+│   ├── modules/                 # Core business logic (27 files)
+│   │   ├── types.ts             # Central type definitions + event maps
+│   │   ├── progress.ts          # Progress tracking factory
+│   │   ├── search.ts            # Search/filtering factory
+│   │   ├── timeline.ts          # Timeline rendering factory
+│   │   ├── storage.ts           # Import/export functionality
+│   │   ├── events.ts            # EventEmitter implementation
+│   │   ├── episode-tracker.ts   # Episode-level tracking
+│   │   ├── error-handler.ts     # Error boundary utilities
+│   │   ├── logger.ts            # Structured logging
+│   │   ├── preferences.ts       # User preferences
+│   │   ├── themes.ts            # Theme management
+│   │   ├── settings-manager.ts  # Settings UI
+│   │   ├── metadata-*.ts        # Metadata enrichment subsystem (6 files)
+│   │   ├── streaming-api.ts     # Streaming availability
+│   │   ├── cache-warming.ts     # Cache pre-population
+│   │   ├── conflict-resolution.ts
+│   │   ├── migration.ts         # Data migration
+│   │   ├── version-manager.ts   # Version tracking
+│   │   └── timeline-viz.ts      # D3 timeline visualization
+│   ├── components/              # UI components (11 .ts + 11 .css)
+│   │   ├── metadata-*.ts/css    # Metadata UI components
+│   │   ├── streaming-*.ts/css   # Streaming UI components
+│   │   ├── timeline-*.ts/css    # Timeline visualization controls
+│   │   └── migration-progress.ts
+│   └── utils/
+│       ├── composition.ts       # Functional composition (pipe, compose, curry, tap)
+│       ├── download.ts          # Download utilities
+│       ├── geographic.ts        # Geographic utilities
+│       ├── metadata-validation.ts
+│       └── index.ts
+├── test/                        # Vitest test suite
+├── scripts/                     # CLI tools (data generation, validation)
+├── docs/                        # Documentation + ADRs
+├── public/                      # Static assets
+├── .ai/                         # AI context files
+├── .github/
+│   ├── workflows/               # 8 workflow files
+│   ├── actions/                 # Custom actions (setup-pnpm)
+│   ├── agents/                  # Agent definitions (data-curator)
+│   └── settings.yml             # Probot settings
+├── AGENTS.md                    # Root AI development conventions
+├── viewing-guide.md             # Content reference
+└── llms.txt                     # LLM context file
+```
 
 ## CI/CD Pipeline
 
@@ -131,108 +134,71 @@ Star Trek content organized as 7 chronological eras (22nd–32nd century, 1000+ 
 | Workflow | File | Trigger | Purpose |
 | --- | --- | --- | --- |
 | CI | `ci.yaml` | push/PR to `main` | Lint, type-check, test with coverage, build |
-| Deploy | `deploy.yaml` | push to `main`, dispatch | Build and deploy to GitHub Pages |
-| Fro Bot | `fro-bot.yaml` | PR, issues, comments, schedule (daily 15:30 UTC), dispatch | AI PR review, daily maintenance reporting |
-| Fro Bot Autoheal | `fro-bot-autoheal.yaml` | daily cron (03:30 UTC), dispatch | Automated repo healing: fix errored PRs, security, code quality, DX, data quality |
-| Update Star Trek Data | `update-star-trek-data.yaml` | weekly (Mon 09:00 UTC), dispatch | Automated data generation from TMDB/Memory Alpha/TrekCore/STAPI |
-| Renovate | `renovate.yaml` | issue/PR edit, push, dispatch, CI completion | Dependency updates via `bfra-me/.github` reusable workflow |
-| Update Repo Settings | `update-repo-settings.yaml` | push to `main`, 12h cron, dispatch | Probot settings sync via `bfra-me/.github` reusable workflow |
-| Copilot Setup Steps | `copilot-setup-steps.yaml` | dispatch, push/PR touching itself | Copilot coding agent environment bootstrap |
+| Deploy | `deploy.yaml` | push to `main`, dispatch | Build + deploy to GitHub Pages |
+| Fro Bot | `fro-bot.yaml` | PR, issue, comment, schedule (daily 15:30 UTC), dispatch | PR review, daily maintenance, ad-hoc prompts |
+| Fro Bot Autoheal | `fro-bot-autoheal.yaml` | daily cron (03:30 UTC), dispatch | Automated repo healing (errored PRs, security, lint, data quality) |
+| Update Star Trek Data | `update-star-trek-data.yaml` | weekly Monday 09:00 UTC, dispatch | Regenerate data from external sources, validate, create PR |
+| Renovate | `renovate.yaml` | — | Dependency updates |
+| Update Repo Settings | `update-repo-settings.yaml` | — | Probot settings sync |
+| Copilot Setup Steps | `copilot-setup-steps.yaml` | — | GitHub Copilot agent environment |
+
+### CI Jobs (ci.yaml)
+
+1. **Test** — checkout → setup pnpm → lint → type-check → test with coverage → upload to Codecov
+2. **Build** — checkout → setup pnpm → build → upload artifact (7-day retention)
 
 ### Branch Protection
 
-Required status checks on `main`: `Build`, `Fro Bot`, `Renovate / Renovate`, `Test`. Linear history enforced, admin enforcement enabled, no required PR reviews.
-
-### Shared Infrastructure
-
-- **Reusable workflows:** Renovate and repo settings workflows use `bfra-me/.github@v4.16.6`
-- **Authentication:** `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` secrets (GitHub App), plus `FRO_BOT_PAT` for Fro Bot agent
-- **Actions pinned by SHA:** All action references use full commit SHA pins (security best practice)
+Required status checks on `main`: Build, Fro Bot, Renovate, Test. Linear history enforced, admin enforcement enabled, no required PR reviews.
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present and active.** Uses `fro-bot/agent@v0.40.2` (SHA-pinned).
+**Fro Bot workflow is present and active** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.40.2`.
 
 ### PR Review
 
-Structured review with VBS-specific checklist:
+Triggers on `opened`, `synchronize`, `reopened`, `ready_for_review`, `review_requested`. Custom review prompt focuses on:
 
-- Verdict format: `PASS | CONDITIONAL | REJECT`
-- Focus areas: correctness, security, breaking API changes, test coverage
-- VBS convention enforcement: `.js` imports, no `any`, functional factories, closure state, `destroy()` methods, CSS custom properties, event map types
+- Correctness, security, breaking changes to factory APIs
+- VBS-specific violations (missing `.js` extensions, `any` usage, class patterns, `this` binding, missing `destroy()`, inline styles, missing event map types)
+- Structured review output: Verdict (PASS/CONDITIONAL/REJECT), Blocking issues, Non-blocking concerns, Missing tests, Risk assessment
 
 ### Daily Maintenance
 
-Scheduled run (15:30 UTC) updates a rolling "Daily Maintenance Report" issue with:
+Scheduled at 15:30 UTC daily. Maintains a rolling "Daily Maintenance Report" issue with metrics, stale issues/PRs, unassigned bugs, and recommended actions. 14-day rolling window with historical summary compression.
 
-- Summary metrics (issues, PRs, stale items, branch status)
-- Stale issues/PRs flagged with recommended actions
-- 14-day rolling window with historical summary
+### Daily Autoheal
 
-### Autoheal
+Scheduled at 03:30 UTC daily via separate `fro-bot-autoheal.yaml`. Five-category sweep:
 
-Separate daily workflow (03:30 UTC) with five categories:
+1. Errored PRs — diagnose and fix failing CI on open PRs
+2. Security — remediate Dependabot/Renovate security alerts
+3. Code quality — build, test coverage, stale TODOs, convention compliance, AGENTS.md drift
+4. Developer experience — lint fixes
+5. Data quality — validate Star Trek dataset integrity
 
-1. **Errored PRs** — diagnose and fix CI failures on open PRs
-2. **Security** — remediate Dependabot/Renovate security alerts
-3. **Code Quality** — build/test verification, coverage, stale TODOs, convention compliance, AGENTS.md drift
-4. **Developer Experience** — lint/format fixes via PR
-5. **Data Quality** — validate Star Trek dataset integrity (IDs, ordering, patterns)
+Hard boundaries: no force-push, no direct commits to main, no merging PRs, no disabling tests to pass checks.
 
-Hard boundaries: no force-push, no direct pushes to `main`, no merging PRs, no weakening guardrails.
+### Mention-triggered
+
+Responds to `@fro-bot` mentions in issue/PR/discussion comments from OWNER/MEMBER/COLLABORATOR.
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8`. Groups all non-major. Post-upgrade runs `pnpm install` + `pnpm fix`. Rebase when behind base branch.
-- **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` (shared with [[marcusrbrown--ha-config]]).
-- **ESLint:** `@bfra.me/eslint-config` with TypeScript support. Logger module gets relaxed `no-console` (allows warn, error, info). Ignores `.ai/`, `AGENTS.md`, copilot instructions, viewing guide, PWA manifest.
-- **Git hooks:** `simple-git-hooks` runs `lint-staged` on pre-commit. Lint-staged runs `eslint --fix` on staged files.
-- **Copilot:** Copilot setup steps workflow bootstraps environment with pnpm + build for the Copilot coding agent.
-
-## Automated Data Pipeline
-
-The Star Trek dataset is maintained via an automated generation pipeline:
-
-- **Script:** `scripts/generate-star-trek-data.ts` (run via `jiti`)
-- **Sources:** TMDB, Memory Alpha, TrekCore, STAPI — multi-source aggregation with conflict resolution
-- **Validation:** `scripts/validate-episode-data.ts` with quality scoring (minimum: 0.6)
-- **Modes:** Full regeneration or incremental (per-series) updates
-- **Workflow:** Weekly automated PR creation via `peter-evans/create-pull-request`
-- **Environment:** Optional `TMDB_API_KEY` for enhanced metadata
-
-## Test Suite
-
-Comprehensive Vitest test suite (~43 test files) covering:
-
-- Core modules (progress, storage, search, events, episodes, timeline)
-- Components (metadata panels, streaming indicators, timeline controls)
-- Utilities (composition, geographic, metadata validation)
-- Integration tests (composition, timeline-progress, parallel execution)
-- Type-level tests (`type-safety.test-d.ts` with Vitest `typecheck`)
-- Data validation tests (`validate-episode-data.test.ts`)
-- Coverage reporting via `@vitest/coverage-v8`, uploaded to Codecov
-
-## Documentation
-
-The `docs/` directory contains:
-
-- ADR directory (`adr/`) — architecture decision records (data generation architecture)
-- `data-generation.md` — data generation guide
-- `data-generation-migration.md` — migration from previous data approach
-- `environment-variables.md` — env var configuration
-- `automated-data-updates.md` — GitHub Actions data update workflow docs
-- `composition-examples.md` — functional composition usage examples
-- `generic-types-examples.md` — TypeScript generics usage
-- `indexeddb-migration.md` — planned IndexedDB migration
-- `metadata-storage-integration.md` — metadata storage patterns
-- `settings-architecture.md` — settings system architecture
+- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8` + `group:allNonMajor`. Post-upgrade tasks run `pnpm install` + `pnpm fix`. Rebase when behind base branch.
+- **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` — confirms membership in the Fro Bot-managed ecosystem.
+- **Git hooks:** `simple-git-hooks` runs `lint-staged` on pre-commit. Lint-staged runs `eslint --fix` on TS/JS/CSS/MD/JSON/YAML files.
+- **AI context:** Root `AGENTS.md`, `src/modules/AGENTS.md`, `src/components/AGENTS.md`, `.ai/` directory, `llms.txt`, `.github/copilot-instructions.md`, `.github/agents/` (data-curator agent).
+- **pnpm workspace:** Single-package workspace with `autoInstallPeers`, `shamefullyHoist`, `shellEmulator` enabled.
+- **Environment:** Optional TMDB API key via `.env` for metadata enrichment scripts.
 
 ## Notable Patterns
 
-- **Functional purity enforcement:** The entire codebase bans classes and `this` in favor of closure-based factories. This is enforced by convention (AGENTS.md), review prompts, and autoheal checks — not by lint rules.
-- **Generic EventEmitter integration:** Event-driven architecture with compile-time type checking of event names and payloads.
-- **Multi-source data aggregation:** Star Trek data isn't hand-maintained — it's programmatically generated from 4+ authoritative sources with quality scoring and conflict resolution.
-- **Three-tier Fro Bot integration:** PR review + daily maintenance + nightly autoheal. This is the most comprehensive Fro Bot setup observed across Marcus's repositories.
-- **Co-located component CSS:** Components pair `.ts` and `.css` files side-by-side in `src/components/`, using `--vbs-` namespaced custom properties.
-- **Probot settings extend common baseline:** Same pattern as [[marcusrbrown--ha-config]], inheriting from `fro-bot/.github:common-settings.yaml`.
-- **Shared config ecosystem:** TypeScript, ESLint, Prettier, and Renovate all extend `@bfra.me/*` or `marcusrbrown/*` shared configurations.
+- **No framework:** Pure TypeScript with functional factories — deliberate avoidance of React/Vue/Svelte. State lives in closures, not component trees.
+- **Comprehensive metadata subsystem:** 6 metadata modules + 6 metadata UI components for enrichment from external sources (TMDB, Memory Alpha, TrekCore, STAPI).
+- **Functional composition utilities:** `src/utils/composition.ts` provides `pipe()`, `compose()`, `curry()`, `tap()`, `asyncPipe()`, `asyncCompose()` — a mini FP library embedded in the project.
+- **Generic storage adapters:** Type-safe `StorageAdapter<T>` interface with `LocalStorageAdapter` implementation; designed for future IndexedDB migration.
+- **D3 timeline visualization:** `timeline-viz.ts` module + `timeline-controls.ts` component for interactive chronological visualization.
+- **Streaming availability layer:** `streaming-api.ts` module with UI components for Paramount+/Netflix availability.
+- **Data-curator agent:** Dedicated `.github/agents/data-curator.agent.md` for Star Trek data management via Copilot agents.
+- **Aggressive autoheal:** The `fro-bot-autoheal.yaml` workflow is one of the most comprehensive automated maintenance configurations in the ecosystem, covering 5 categories with detailed output formatting.
