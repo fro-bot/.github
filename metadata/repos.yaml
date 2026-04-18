@@ -3,7 +3,7 @@ repos:
   - owner: marcusrbrown
     name: ha-config
     added: 2026-04-17
-    onboarding_status: lost-access
+    onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
     has_fro_bot_workflow: false
