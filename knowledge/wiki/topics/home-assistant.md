@@ -3,9 +3,10 @@ type: topic
 title: Home Assistant
 created: 2025-06-18
 updated: 2026-04-18
-tags: [home-assistant, iot, smart-home, yaml, automation]
+tags: [home-assistant, iot, smart-home, yaml, automation, esphome]
 related:
   - marcusrbrown--ha-config
+  - marcusrbrown--esphome-life
 ---
 
 # Home Assistant
@@ -15,6 +16,7 @@ Open-source home automation platform. Core references across the Fro Bot ecosyst
 ## Repos Using Home Assistant
 
 - [[marcusrbrown--ha-config]] — Marcus's primary HA configuration (public, CI-validated)
+- [[marcusrbrown--esphome-life]] — ESPHome device firmware configs (Olimex ESP32-PoE-ISO Bluetooth Proxies), deployed via GitHub Pages
 
 ## Configuration Patterns Observed
 
@@ -24,7 +26,7 @@ The preferred pattern splits configuration by domain into `packages/` directory 
 
 ### CI Validation
 
-Home Assistant configs can be validated in CI using `frenck/action-home-assistant` (currently v1.4.1), which runs the HA config check against a specific HA version pinned in `.HA_VERSION`. This catches YAML errors, missing integrations, and breaking changes before merge. In [[marcusrbrown--ha-config]], HA version is pinned at 2025.6.3 as of 2026-04-18.
+Home Assistant configs can be validated in CI using `frenck/action-home-assistant`, which runs the HA config check against a specific HA version pinned in `.HA_VERSION`. This catches YAML errors, missing integrations, and breaking changes before merge.
 
 ### Custom Components
 
@@ -32,7 +34,7 @@ Third-party integrations installed via HACS or manually into `custom_components/
 
 ### ESPHome Integration
 
-ESPHome device configurations are commonly managed as a separate repository and linked via git submodule, keeping device firmware definitions decoupled from the HA config.
+ESPHome device configurations are commonly managed as a separate repository and linked via git submodule, keeping device firmware definitions decoupled from the HA config. See [[marcusrbrown--esphome-life]] for a concrete example using package-based device configs with CI-built firmware and ESP Web Tools deployment.
 
 ## Related Technologies
 
