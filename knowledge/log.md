@@ -63,3 +63,19 @@ Key findings:
 - Copilot setup steps workflow present
 
 Sources: https://github.com/marcusrbrown/tokentoilet (SHA 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3)
+
+## [2026-04-18 04:00] ingest | marcusrbrown/ha-config
+
+Re-survey of `marcusrbrown/ha-config` (SHA `54a6727`). Updated repo page `marcusrbrown--ha-config.md` and topic page `home-assistant.md`. Index unchanged (already cataloged).
+
+Delta from prior survey (SHA `83784bc`, 2025-06-18):
+
+- Prettier bumped 3.8.2 → 3.8.3 (CI env and Renovate post-upgrade)
+- Renovate config preset bumped `marcusrbrown/renovate-config#4.5.7` → `#4.5.8`
+- actions/checkout pinned at v6.0.2, bfra-me/.github at v4.16.6
+- pre-commit-hooks pinned at v6.0.0
+- Repository structure, packages, custom components, HA version (2025.6.3), Python deps all unchanged
+- **Still no Fro Bot agent workflow** — recommendation for follow-up PR carried forward
+- Recent commit activity is exclusively Renovate dependency bumps (PRs #753–#762)
+
+Sources: https://github.com/marcusrbrown/ha-config (SHA 54a67275e00ed01a52f30399065d4fe6eaa4ee54)

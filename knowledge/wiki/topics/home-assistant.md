@@ -2,7 +2,7 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2025-06-18
+updated: 2026-04-18
 tags: [home-assistant, iot, smart-home, yaml, automation]
 related:
   - marcusrbrown--ha-config
@@ -24,7 +24,7 @@ The preferred pattern splits configuration by domain into `packages/` directory 
 
 ### CI Validation
 
-Home Assistant configs can be validated in CI using `frenck/action-home-assistant`, which runs the HA config check against a specific HA version pinned in `.HA_VERSION`. This catches YAML errors, missing integrations, and breaking changes before merge.
+Home Assistant configs can be validated in CI using `frenck/action-home-assistant` (currently v1.4.1), which runs the HA config check against a specific HA version pinned in `.HA_VERSION`. This catches YAML errors, missing integrations, and breaking changes before merge. In [[marcusrbrown--ha-config]], HA version is pinned at 2025.6.3 as of 2026-04-18.
 
 ### Custom Components
 

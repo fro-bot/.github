@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/ha-config"
 created: 2025-06-18
-updated: 2025-06-18
+updated: 2026-04-18
 sources:
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 54a67275e00ed01a52f30399065d4fe6eaa4ee54
+    accessed: 2026-04-18
   - url: https://github.com/marcusrbrown/ha-config
     sha: 83784bc3a212c10cd358be4da9425e46aa6e90f0
     accessed: 2025-06-18
@@ -22,7 +25,7 @@ Marcus R. Brown's [[home-assistant]] configuration repository. Public, version-c
 - **Purpose:** Version-controlled Home Assistant configuration
 - **Default branch:** `main`
 - **Created:** 2023-07-25
-- **Last push:** 2026-04-15
+- **Last push:** 2026-04-18
 - **HA version tracked:** 2025.6.3 (pinned in `.HA_VERSION`)
 - **Topics:** `home-assistant`, `home-assistant-config`
 
@@ -98,7 +101,19 @@ The CI pipeline runs four sequential/parallel jobs:
 1. **YAML Lint** — `frenck/action-yamllint` validates YAML syntax
 2. **Remark Lint** — Markdown linting via `pipelinecomponents/remark-lint` (continue-on-error)
 3. **Prettier** — Format check using Prettier 3.8.2 (diff-only on PRs)
-4. **Check Home Assistant Config** — Runs `frenck/action-home-assistant` against the HA version in `.HA_VERSION` (depends on lint jobs)
+4. **Check Home Assistant Config** — Runs `frenck/action-home-assistant@v1.4.1` against the HA version in `.HA_VERSION` (depends on lint jobs)
+
+### Pinned Action Versions (as of 2026-04-18)
+
+| Action                         | Version | SHA        |
+| ------------------------------ | ------- | ---------- |
+| `actions/checkout`             | v6.0.2  | `de0fac2e` |
+| `frenck/action-yamllint`       | v1.5.0  | `34b4bbca` |
+| `frenck/action-home-assistant` | v1.4.1  | `941d5d91` |
+| `creyD/prettier_action`        | v4.3    | `31355f8e` |
+| `bfra-me/.github` (reusable)   | v4.16.6 | `9465f883` |
+
+Prettier version in CI: **3.8.3** (previously 3.8.2)
 
 ### Branch Protection
 
@@ -110,8 +125,8 @@ Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflow
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.7`. Custom managers for `.pre-commit-config.yaml` (Python version + pip packages) and `mise.toml` (pre-commit via aqua). Git submodules enabled. Post-upgrade runs Prettier. Automerge on minor/patch pip updates.
-- **Pre-commit:** Managed via `mise` (aqua, v4.5.1). Hooks: trailing whitespace, EOF fixer, double-quote string fixer, requirements-txt fixer, large file check, merge conflict check, TOML/YAML validation. Excludes `custom_components/`, `www/`, `.HA_VERSION`.
+- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8` (previously 4.5.7). Custom managers for `.pre-commit-config.yaml` (Python version + pip packages) and `mise.toml` (pre-commit via aqua). Git submodules enabled. Post-upgrade runs Prettier 3.8.3. Automerge on minor/patch pip updates. ESPHome updates grouped (no separate major/minor/patch splits).
+- **Pre-commit:** Managed via `mise` (aqua, v4.5.1). Hooks via `pre-commit/pre-commit-hooks@v6.0.0`: trailing whitespace, EOF fixer, double-quote string fixer, requirements-txt fixer, large file check, merge conflict check, TOML/YAML validation. Excludes `custom_components/`, `www/`, `.HA_VERSION`.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` for repository configuration sync.
 - **AI Rules:** `.cursorrules` defines HA-specific development conventions (YAML standards, package organization, security, testing).
 - **Python deps:** `esphome==2025.12.7`, `yamllint==1.38.0` (in `requirements.txt`).
