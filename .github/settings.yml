@@ -21,3 +21,4 @@ branches:
           - Renovate / Renovate
           - Review Dependencies
           - Test
+          - Test Scripts Load
