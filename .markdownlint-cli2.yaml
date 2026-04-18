@@ -8,7 +8,6 @@ config:
 globs:
   - '!.agents/skills/**'
   - '!.ai/**'
-  - '!.cursorrules'
   - '!.github/copilot-instructions.md'
   - '!**/AGENTS.md'
   - '!coverage/**'

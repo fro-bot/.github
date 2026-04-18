@@ -19,7 +19,6 @@ The repository follows strict development standards with TypeScript, comprehensi
 - [Package Configuration](package.json): Project metadata, dependencies, and development scripts
 - [TypeScript Config](tsconfig.json): TypeScript compiler configuration with strict mode
 - [ESLint Config](eslint.config.ts): Code linting rules and style enforcement
-- [AI Development Rules](.cursorrules): Comprehensive development standards and AI assistant behavior guidelines
 - [Editor Config](.editorconfig): Consistent coding style across editors
 
 ## Automation
