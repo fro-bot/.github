@@ -42,27 +42,25 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fadc7341da26e03c)
 
-## [2026-04-18 00:00] ingest | marcusrbrown/marcusrbrown
+## [2026-04-18 00:00] ingest | marcusrbrown/containers
 
-Survey of `marcusrbrown/marcusrbrown` (SHA `af78e68`). Created repo page `marcusrbrown--marcusrbrown.md` and topic page `github-actions-ci.md`. Updated `index.md` to catalog both pages.
+Survey of `marcusrbrown/containers` (SHA `e582f85`). Created repo page `marcusrbrown--containers.md`. Created topic pages `docker-containers.md` and `github-actions-ci.md`. Updated `index.md` to catalog all three new pages.
 
 Key findings:
 
-- GitHub profile README repo, public, TypeScript-powered with template-driven content generation
-- Automated profile updates every 6 hours via `muesli/readme-scribe` and custom TypeScript scripts
-- Sponsor tracking pipeline: GitHub GraphQL API fetch, template rendering, auto-PR via `peter-evans/create-pull-request`
-- Badge automation: `@bfra.me/badge-config`, technology detection, shields.io client, caching layer
-- A/B testing framework for sponsor conversion content (`templates/variants/`)
-- Content analytics and mobile responsiveness testing scripts
-- CI: markdownlint + tsc + eslint via `main.yaml`; profile generation via `update-profile.yaml`
-- Dev tooling: pnpm 10.31.0, Node 24.14.0 (mise), Vitest 4.0.18, `@bfra.me/*` shared configs
-- Renovate extends `marcusrbrown/renovate-config#4.5.1`, post-upgrade runs bootstrap + fix
-- Probot settings extend `fro-bot/.github:common-settings.yaml`
-- Automated commits by `mrbro-bot[bot]` (app 137683033), not Fro Bot
-- **No Fro Bot agent workflow detected** — follow-up PR recommended
-- Cross-cutting GitHub Actions patterns extracted to new topic page `github-actions-ci.md`
+- Container collection repo, public, oldest in Marcus's portfolio (created 2016-12-19), actively maintained
+- Two active Node.js container variants: Alpine (~70 MB) and Bookworm-slim (~160 MB), both Node 24, multi-arch (amd64+arm64)
+- Archived Ethereum Parity containers excluded from all CI pipelines
+- Python automation layer (Poetry, Python 3.13): Dockerfile generation, metrics collection, image tagging, AI-powered template intelligence (OpenAI + Anthropic)
+- Template system covering Alpine base, Express.js, FastAPI, PostgreSQL, Nginx, Go microservices
+- Comprehensive CI: multi-arch builds via Buildx+QEMU, Trivy security scanning, Hadolint, Black/isort/pylint, pre-commit, Prettier
+- Publishes to GHCR and Docker Hub (legacy `igetgames` alias in settings homepage)
+- All GitHub Actions and base images SHA/digest-pinned; OCI label convention with clear CI-injected vs static split
+- **Fro Bot workflow present** (`fro-bot.yaml`, `fro-bot/agent@v0.40.0`) — PR review with container-specific prompts, daily autohealing schedule at 14:30 UTC
+- Renovate extends `marcusrbrown/renovate-config#4.5.0`, Probot settings extend `fro-bot/.github:common-settings.yaml`
+- Shared `@bfra.me/*` config heritage with `ha-config` repo — new `github-actions-ci` topic page cross-references both
 
-Sources: https://github.com/marcusrbrown/marcusrbrown (SHA af78e68d510b24152531f7fdafe9bff35a58f071)
+Sources: https://github.com/marcusrbrown/containers (SHA e582f856844ac1dd52fc8739f1a9aa8398248e6e)
 
 ## [2026-04-18 00:00] ingest | marcusrbrown/gpt
 
@@ -127,6 +125,28 @@ Key findings:
 - Copilot coding agent configured with setup steps and pre-tool-use hooks
 
 Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 51f5cab5c77768b761d9f0a688ac7436cc5a06f4)
+
+## [2026-04-18 00:00] ingest | marcusrbrown/marcusrbrown
+
+Survey of `marcusrbrown/marcusrbrown` (SHA `af78e68`). Created repo page `marcusrbrown--marcusrbrown.md` and topic page `github-actions-ci.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- GitHub profile README repo, public, TypeScript-powered with template-driven content generation
+- Automated profile updates every 6 hours via `muesli/readme-scribe` and custom TypeScript scripts
+- Sponsor tracking pipeline: GitHub GraphQL API fetch, template rendering, auto-PR via `peter-evans/create-pull-request`
+- Badge automation: `@bfra.me/badge-config`, technology detection, shields.io client, caching layer
+- A/B testing framework for sponsor conversion content (`templates/variants/`)
+- Content analytics and mobile responsiveness testing scripts
+- CI: markdownlint + tsc + eslint via `main.yaml`; profile generation via `update-profile.yaml`
+- Dev tooling: pnpm 10.31.0, Node 24.14.0 (mise), Vitest 4.0.18, `@bfra.me/*` shared configs
+- Renovate extends `marcusrbrown/renovate-config#4.5.1`, post-upgrade runs bootstrap + fix
+- Probot settings extend `fro-bot/.github:common-settings.yaml`
+- Automated commits by `mrbro-bot[bot]` (app 137683033), not Fro Bot
+- **No Fro Bot agent workflow detected** — follow-up PR recommended
+- Cross-cutting GitHub Actions patterns extracted to new topic page `github-actions-ci.md`
+
+Sources: https://github.com/marcusrbrown/marcusrbrown (SHA af78e68d510b24152531f7fdafe9bff35a58f071)
 
 ## [2026-04-18 02:32] ingest | marcusrbrown/vbs
 

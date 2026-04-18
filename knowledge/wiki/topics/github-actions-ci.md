@@ -1,59 +1,63 @@
 ---
 type: topic
-title: GitHub Actions CI/CD
+title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-04-18
-tags: [github-actions, ci-cd, automation, workflows]
+tags: [github-actions, ci-cd, automation, security, renovate]
 related:
-  - marcusrbrown--marcusrbrown
+  - marcusrbrown--containers
   - marcusrbrown--ha-config
 ---
 
-# GitHub Actions CI/CD
+# GitHub Actions CI
 
-Cross-cutting patterns for GitHub Actions usage across Marcus's repositories.
+Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bot ecosystem.
 
 ## Repos Using GitHub Actions
 
-- [[marcusrbrown--marcusrbrown]] — Profile README automation (lint, scheduled content generation, cache cleanup)
-- [[marcusrbrown--ha-config]] — Home Assistant config validation (YAML lint, Remark lint, Prettier, HA config check)
+- [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
+- [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 
 ## Common Patterns
 
-### Shared Reusable Workflows
+### Action Pinning
 
-Both repos reference reusable workflows from `bfra-me/.github` for Renovate and repository settings sync. Authentication uses GitHub App tokens via `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets with `actions/create-github-app-token`.
-
-### Setup Action
-
-Repos use a local `.github/actions/setup` composite action for consistent environment bootstrapping (Node.js + pnpm install). This avoids drift from ad-hoc setup steps.
-
-### Concurrency Groups
-
-Standard concurrency pattern observed across repos:
+All repositories SHA-pin GitHub Actions with version comments:
 
 ```yaml
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.number || github.ref }}
-  cancel-in-progress: true
+uses: actions/checkout@de0fac2e... # v6.0.2
 ```
 
-### Branch Protection via CI
+This prevents supply-chain attacks from tag mutation. Renovate manages SHA updates automatically.
 
-Required status checks enforce CI passage before merge. Both repos use `strict: false` for status checks (no rebase requirement) with `required_linear_history: true`.
+### Probot Settings
 
-### Probot Settings Sync
+Both repos extend `fro-bot/.github:common-settings.yaml` via `.github/settings.yml`. This synchronizes branch protection rules, required status checks, and repository settings from a central source.
 
-Repository settings are managed via Probot, extending `fro-bot/.github:common-settings.yaml`. A dedicated `update-repo-settings.yaml` workflow applies settings on push to main, daily cron, and manual dispatch.
+### Renovate Configuration
 
-### Renovate Integration
+Both repos extend `marcusrbrown/renovate-config` for dependency updates, with repo-specific overrides:
 
-Renovate workflows trigger on issue/PR edits, non-main pushes, dispatch, and after Main workflow completion. All extend `marcusrbrown/renovate-config` with repo-specific overrides. Post-upgrade tasks typically run `pnpm bootstrap` and `pnpm fix`.
+- [[marcusrbrown--containers]] — `#4.5.0`, ignores `templates/`, disables patch updates (except TypeScript/Python), post-upgrade runs `pnpm install && pnpm format`
+- [[marcusrbrown--ha-config]] — `#4.5.7`, custom managers for pre-commit and mise, post-upgrade runs Prettier, automerge on minor/patch pip updates
 
-### Cache Cleanup
+### Branch Protection
 
-`cleanup-cache.yaml` prunes stale GHA cache entries on PR close and weekly schedule to control storage usage.
+Both repos enforce linear history, enable admin enforcement, and require specific status checks. Neither requires PR reviews for merge.
 
-### Commit Authorship
+### Change Detection
 
-Automated commits use GitHub App bot identities (`mrbro-bot[bot]` in profile repo). Signed commits are enabled where supported (`peter-evans/create-pull-request` with `sign-commits: true`).
+Both repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reducing unnecessary builds.
+
+### Fro Bot Agent
+
+| Repo                         | Fro Bot Workflow         | Schedule                    |
+| ---------------------------- | ------------------------ | --------------------------- |
+| [[marcusrbrown--containers]] | Present (`fro-bot.yaml`) | Daily 14:30 UTC autohealing |
+| [[marcusrbrown--ha-config]]  | **Not present**          | N/A                         |
+
+The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
+
+### Shared Config Heritage
+
+Both repos use `@bfra.me/*` ecosystem packages for formatting and linting configuration, suggesting a shared infrastructure baseline across Marcus's projects.

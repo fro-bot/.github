@@ -6,6 +6,7 @@ Master catalog of all wiki pages, organized by type.
 
 - [[marcusrbrown--dotfiles]] — marcusrbrown/.dotfiles
 - [[marcusrbrown--github]] — Marcus's personal `.github` repo; GitHub defaults, community health files, and canonical Probot Settings template (`common-settings.yaml`)
+- [[marcusrbrown--containers]] — Container collection and automation framework (Dockerfiles, multi-arch builds, Python CLI, AI-powered templates, CI/CD)
 - [[marcusrbrown--copiloting]] — Polyglot AI/LLM experimentation monorepo (Python + TypeScript); LangChain tutorials, Flask + SvelteKit PDF chat app, Fro Bot agent workflows
 - [[marcusrbrown--esphome-life]] — marcusrbrown/esphome.life
 - [[marcusrbrown--extend-vscode]] — VS Code extension toolkit (TypeScript, dual Node/Web targets, tsup, Vitest, semantic-release publishing)
@@ -19,6 +20,7 @@ Master catalog of all wiki pages, organized by type.
 
 ## Topics
 
+- [[docker-containers]] — Docker container patterns: base image pinning, OCI labels, multi-arch builds, security scanning
 - [[dotfiles]] — Dotfiles Management
 - [[github-actions-ci]] — Cross-cutting GitHub Actions CI/CD patterns across the Fro Bot-managed ecosystem
 - [[github-pages]] — Static site hosting via GitHub; deployment patterns and performance monitoring

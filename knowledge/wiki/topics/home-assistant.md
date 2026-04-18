@@ -2,11 +2,11 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2026-04-18
-tags: [home-assistant, iot, smart-home, yaml, automation, esphome]
+updated: 2025-06-18
+tags: [home-assistant, iot, smart-home, yaml, automation]
 related:
   - marcusrbrown--ha-config
-  - marcusrbrown--esphome-life
+  - github-actions-ci
 ---
 
 # Home Assistant
@@ -16,7 +16,6 @@ Open-source home automation platform. Core references across the Fro Bot ecosyst
 ## Repos Using Home Assistant
 
 - [[marcusrbrown--ha-config]] — Marcus's primary HA configuration (public, CI-validated)
-- [[marcusrbrown--esphome-life]] — ESPHome device firmware configs (Olimex ESP32-PoE-ISO Bluetooth Proxies), deployed via GitHub Pages
 
 ## Configuration Patterns Observed
 
@@ -34,7 +33,7 @@ Third-party integrations installed via HACS or manually into `custom_components/
 
 ### ESPHome Integration
 
-ESPHome device configurations are commonly managed as a separate repository and linked via git submodule, keeping device firmware definitions decoupled from the HA config. See [[marcusrbrown--esphome-life]] for a concrete example using package-based device configs with CI-built firmware and ESP Web Tools deployment.
+ESPHome device configurations are commonly managed as a separate repository and linked via git submodule, keeping device firmware definitions decoupled from the HA config.
 
 ## Related Technologies
 
