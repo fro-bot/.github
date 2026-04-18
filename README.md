@@ -96,9 +96,10 @@ This repository provides shared configurations and automation for the Fro Bot ec
 
 ### Prerequisites
 
-- **Node.js** (version 20 or higher)
-- **pnpm** (version 10.15.0 or higher)
+- **Node.js** 24 (pinned in [`mise.toml`](mise.toml); native TypeScript execution, no build step)
+- **pnpm** 10.33.0 (pinned in `packageManager`)
 - **Git** for version control
+- Optional: [`mise`](https://mise.jdx.dev/) to auto-install the pinned toolchain
 
 ### Local Development
 
@@ -124,8 +125,11 @@ This repository provides shared configurations and automation for the Fro Bot ec
    # Linting (ESLint runs Prettier via eslint-plugin-prettier)
    pnpm lint
 
-   # Tests
+   # Tests (Vitest, colocated as scripts/*.test.ts)
    pnpm test
+
+   # Coverage
+   pnpm coverage
    ```
 
 4. **Auto-fix issues:**
@@ -141,61 +145,102 @@ This repository provides shared configurations and automation for the Fro Bot ec
 
 ```text
 .github/
-├── .github/                 # GitHub-specific configurations
-│   ├── workflows/          # GitHub Actions workflows
-│   │   ├── apply-branding.yaml  # Brand template automation
-│   │   ├── fro-bot.yaml         # Core Fro Bot agent workflow
-│   │   └── ...                  # Other workflows
-│   ├── actions/            # Custom GitHub Actions
-│   ├── settings.yml        # Repository settings via Probot
-│   └── renovate.json5      # Dependency management config
-├── assets/                 # Brand assets
-│   ├── banner.svg          # This repo's social banner (1280×640)
-│   ├── banner-template.svg # Parametric SVG template
-│   ├── fro-bot.png         # Brand avatar
-│   └── styleguide.md       # Complete design system
-├── branding/               # Branding templates
-│   ├── README-template.md  # Skeleton README
+├── .agents/                # Repo-scoped agent skills
+│   └── skills/             # Self-contained SKILL.md references
+├── .github/                # GitHub-specific configurations
+│   ├── actions/setup/      # Composite bootstrap action
+│   ├── hooks/              # Copilot governance hooks
+│   ├── workflows/          # 16 GitHub Actions workflows (see Automation)
+│   ├── copilot-instructions.md  # Canonical AI-assistant guidance
+│   ├── renovate.json5      # Dependency management config
+│   └── settings.yml        # Repository settings via Probot
+├── assets/                 # Brand assets (banner, avatar, styleguide)
+├── branding/               # Downstream branding templates
+│   ├── README-template.md  # Skeleton README applied by Apply Branding workflow
 │   └── tokens.css          # CSS design tokens
-├── workflow-templates/     # Reusable workflow templates
-├── common-settings.yaml    # Shared repository settings
-├── .cursorrules           # AI development guidelines
-├── eslint.config.ts       # Linting configuration
-├── tsconfig.json          # TypeScript configuration
-└── package.json           # Project metadata and scripts
+├── docs/                   # Planning artifacts (brainstorms, plans, solutions, archive)
+├── knowledge/              # Karpathy-style LLM wiki
+│   ├── schema.md           # Conventions for wiki entries
+│   ├── index.md            # Catalog of all wiki pages
+│   ├── log.md              # Chronological ingest log
+│   └── wiki/{repos,topics,entities,comparisons}/
+├── metadata/               # Versioned control-plane state (YAML)
+├── persona/                # Fro Bot voice and character definition
+├── scripts/                # TypeScript entrypoints (Node 24 native TS)
+├── common-settings.yaml    # Shared repository settings for downstream repos
+├── eslint.config.ts        # Linting configuration
+├── mise.toml               # Pinned tool versions
+├── package.json            # Project metadata and scripts
+├── tsconfig.json           # TypeScript configuration
+└── vitest.config.ts        # Test runner configuration
 ```
 
 ### Key Configuration Files
 
-| File                                               | Purpose                                                      |
-| -------------------------------------------------- | ------------------------------------------------------------ |
-| [`common-settings.yaml`](common-settings.yaml)     | Template for repository settings across all Fro Bot projects |
-| [`.cursorrules`](.cursorrules)                     | Comprehensive AI development rules and standards             |
-| [`eslint.config.ts`](eslint.config.ts)             | Code quality and style enforcement rules                     |
-| [`.github/renovate.json5`](.github/renovate.json5) | Automated dependency management configuration                |
+| File | Purpose |
+| --- | --- |
+| [`common-settings.yaml`](common-settings.yaml) | Shared repository settings applied across Fro Bot projects |
+| [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | Canonical AI-assistant guidance for contributions to this repo |
+| [`.github/settings.yml`](.github/settings.yml) | Probot-managed settings for this repository (branch protection, required checks) |
+| [`.github/renovate.json5`](.github/renovate.json5) | Automated dependency management configuration |
+| [`eslint.config.ts`](eslint.config.ts) | Lint + format configuration (ESLint runs Prettier via `eslint-plugin-prettier`) |
+| [`mise.toml`](mise.toml) | Pinned Node, pnpm, and Python versions |
+| [`tsconfig.json`](tsconfig.json) | TypeScript strict-mode configuration (native TS execution) |
+| [`vitest.config.ts`](vitest.config.ts) | Vitest configuration for colocated `scripts/*.test.ts` files |
 
 ## Automation
 
 ### GitHub Actions Workflows
 
-| Workflow           | Purpose                                       | Trigger            |
-| ------------------ | --------------------------------------------- | ------------------ |
-| **Main**           | Linting, type checking, and quality assurance | PR, push to main   |
-| **CodeQL**         | Security vulnerability analysis               | PR, push, schedule |
-| **Renovate**       | Automated dependency updates                  | Schedule           |
-| **Scorecard**      | Security posture assessment                   | Push to main       |
-| **Apply Branding** | Apply brand template to any Fro Bot repo      | Manual dispatch    |
+Quality gates:
+
+| Workflow                | Purpose                                                 | Trigger                    |
+| ----------------------- | ------------------------------------------------------- | -------------------------- |
+| **Main**                | Lint, type checking, tests, workflow validation, CodeQL | PR, push to main, dispatch |
+| **CodeQL**              | Security vulnerability analysis                         | PR, push to main, weekly   |
+| **Dependency Review**   | Block PRs introducing known-vulnerable packages         | Pull request               |
+| **Scorecard**           | OpenSSF supply-chain security posture                   | Push to main, weekly       |
+| **Copilot Setup Steps** | Environment bootstrap for GitHub Copilot coding agent   | PR/push touching the file  |
+
+Fro Bot agent:
+
+| Workflow | Purpose | Trigger |
+| --- | --- | --- |
+| **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Issues, PR events, schedule, dispatch |
+| **Fro Bot Autoheal** | Scheduled self-repair pass | Daily 03:30 UTC, dispatch |
+| **Poll Invitations** | Accept allowlisted collaboration invitations | Every 15 minutes, dispatch |
+| **Reconcile Repos** | Reconcile collaborator access against `metadata/repos.yaml`; dispatch surveys for stale repos | Daily 05:17 UTC, dispatch |
+| **Survey Repo** | Ingest a repository into the knowledge wiki | Dispatch (by Reconcile Repos) |
+| **Merge Data Branch** | Promote autonomous `data`-branch commits to `main` | Sunday 22:00 UTC, dispatch |
+
+Repository management:
+
+| Workflow | Purpose | Trigger |
+| --- | --- | --- |
+| **Apply Branding** | Apply brand template (banner + README) to a Fro Bot repo | Manual dispatch |
+| **Update Repo Settings** | Sync `.github/settings.yml` via Probot | Push to main, daily 04:05 UTC, dispatch |
+| **Manage Cache** | Clean up workflow caches | PR close, Sunday 00:00 UTC, dispatch |
+| **Manage Issues** | Issue-hygiene automation | Daily 01:30 UTC, reusable, dispatch |
+| **Renovate** | Automated dependency updates | Hourly, PR/issue events, dispatch |
 
 > [!NOTE] The Fro Bot PR-review workflow triggers on `ready_for_review` and `review_requested` to reduce duplicate runs. For ad hoc reviews outside those events, mention `@fro-bot` in the PR conversation.
 
 ### Repository Settings Management
 
-Fro Bot uses [Probot Settings](https://probot.github.io/apps/settings/) to automatically synchronize repository configurations across all managed repositories. The settings ensure consistent:
+Fro Bot uses [Probot Settings](https://probot.github.io/apps/settings/) to synchronize repository configurations across managed repositories. The settings enforce consistent:
 
 - Branch protection rules
 - Required status checks
 - Security policies
 - Collaboration settings
+
+### Control Plane State
+
+Runtime state lives in version-controlled YAML under [`metadata/`](metadata/) (allowlist, tracked repos, Renovate targets, social cooldowns). See [`metadata/README.md`](metadata/README.md) for schemas and update conventions. Autonomous writes target the unprotected `data` branch and promote to `main` via the **Merge Data Branch** workflow.
+
+### Knowledge Wiki
+
+Fro Bot maintains a [Karpathy-style LLM wiki](knowledge/) (`schema.md`, `index.md`, `log.md`, plus `wiki/{repos,topics,entities,comparisons}/`) that compounds cross-repo knowledge. The **Survey Repo** workflow ingests repositories into the wiki; **Reconcile Repos** schedules those surveys.
 
 ## Development
 
@@ -210,12 +255,15 @@ This repository enforces strict quality standards:
 
 ### AI Development Guidelines
 
-The [`.cursorrules`](.cursorrules) file contains comprehensive guidelines for AI-assisted development, including:
+[`.github/copilot-instructions.md`](.github/copilot-instructions.md) is the canonical guidance for AI coding agents (GitHub Copilot, OpenCode, and others) contributing to this repo. It covers:
 
-- Project-specific architecture rules
-- Technology stack preferences
-- Quality validation strategies
-- Automation and maintenance procedures
+- Canonical-context reading order and repository contract
+- Required verification commands and quality gates
+- High-risk do/don't patterns (package manager, workflow setup, type safety, scope control)
+- Security and safety constraints
+- Platform-specific notes (GitHub Copilot coding agent, Copilot hooks)
+
+Repo-scoped agent skills live in [`.agents/skills/`](.agents/skills/) for techniques specific to this repository's conventions.
 
 > [!NOTE] These guidelines ensure consistent AI assistant behavior and maintain code quality across the project.
 
