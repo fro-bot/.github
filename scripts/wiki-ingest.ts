@@ -313,6 +313,80 @@ function validateWikilinks(files: Record<string, string>): void {
   }
 }
 
+/**
+ * Regenerate `knowledge/index.md` deterministically from a snapshot of wiki files.
+ *
+ * Used both by ingest (to update the catalog inline with new pages) and by
+ * `scripts/rebuild-wiki-index.ts` (to heal `index.md` after merge conflicts on
+ * the shared catalog file — see PR #3114's companion context).
+ *
+ * Preserves any header/footer prose found in `existingIndex` so operator notes
+ * above `## Repos` and below the closing `---` survive regeneration.
+ */
+export function rebuildWikiIndex(params: {existingIndex?: string; wikiFiles: Record<string, string>}): string {
+  return buildIndexDocument(params.existingIndex, collectWikiPages(params.wikiFiles))
+}
+
+const LOG_HEADER =
+  '# Wiki Log\n\nChronological record of all wiki operations.\n\n---\n\n_Entries are appended by ingest, query, lint, and manual-edit operations. This file is append-only._\n'
+// Matches a log entry header line: "## [YYYY-MM-DD HH:MM] <op> | <target>".
+// `[ \t]*` instead of `\s*` keeps the regex anchored to single-line whitespace and
+// avoids the super-linear backtracking risk on adjacent variable-length classes.
+const LOG_ENTRY_PATTERN = /\n## \[([^\]]+)\] (?:ingest|query|lint|manual-edit) \| ([^\n]+)\n/g
+
+interface WikiLogEntry {
+  timestamp: string
+  target: string
+  /** Raw entry markup including the leading blank-line separator — byte-for-byte fidelity on reinsertion. */
+  raw: string
+}
+
+/**
+ * Merge multiple `knowledge/log.md` contents into a single canonical log.
+ *
+ * Used to resolve merge conflicts on the append-only log: given log.md from
+ * main and log.md from a PR, produce a combined log with every entry present
+ * (deduplicated by timestamp+target) in chronological order.
+ *
+ * The log's documented contract is append-only. This helper keeps that contract
+ * intact across concurrent writers by canonicalizing the order rather than
+ * forcing operators to hand-merge conflict markers.
+ */
+export function mergeWikiLogs(logs: (string | undefined)[]): string {
+  const entryMap = new Map<string, WikiLogEntry>()
+  for (const log of logs) {
+    if (log === undefined || log === '') continue
+    for (const entry of parseWikiLogEntries(log)) {
+      // Dedupe by the natural key (timestamp, target). When the same entry
+      // appears in multiple inputs, the last one wins — but since entries are
+      // normalized the content matches byte-for-byte.
+      entryMap.set(`${entry.timestamp}\0${entry.target}`, entry)
+    }
+  }
+  const entries = [...entryMap.values()].sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+  return normalizeText(`${LOG_HEADER}${entries.map(entry => entry.raw).join('')}`)
+}
+
+function parseWikiLogEntries(log: string): WikiLogEntry[] {
+  const entries: WikiLogEntry[] = []
+  const matches = [...log.matchAll(LOG_ENTRY_PATTERN)]
+  for (let i = 0; i < matches.length; i += 1) {
+    const match = matches[i]
+    if (match === undefined || match.index === undefined) continue
+    const [, timestamp, target] = match
+    if (timestamp === undefined || target === undefined) continue
+    const start = match.index
+    const nextMatch = matches[i + 1]
+    const end = nextMatch?.index ?? log.length
+    entries.push({
+      timestamp: timestamp.trim(),
+      target: target.trim(),
+      raw: log.slice(start, end),
+    })
+  }
+  return entries
+}
+
 function buildIndexDocument(existingIndex: string | undefined, pages: ParsedWikiPage[]): string {
   const header =
     existingIndex === undefined || existingIndex === ''
@@ -322,6 +396,13 @@ function buildIndexDocument(existingIndex: string | undefined, pages: ParsedWiki
     existingIndex === undefined || existingIndex === ''
       ? '\n---\n\n_This index is maintained automatically by wiki ingest operations. Manual edits are preserved across updates._\n'
       : extractIndexFooter(existingIndex)
+
+  // Preserve operator-curated or previously-generated entry descriptions when a
+  // slug still has a wiki page. Rebuilds only add new entries and drop stale
+  // ones — they never degrade richer descriptions back to bare frontmatter
+  // titles.
+  const existingLines: Map<string, string> =
+    existingIndex === undefined ? new Map<string, string>() : parseIndexEntryLines(existingIndex)
 
   const sections: {heading: string; type: WikiPageType; empty: string}[] = [
     {
@@ -351,13 +432,31 @@ function buildIndexDocument(existingIndex: string | undefined, pages: ParsedWiki
       const entries = pages
         .filter(page => page.type === section.type)
         .sort((left, right) => left.title.localeCompare(right.title))
-        .map(page => `- [[${page.slug}]] — ${page.title}`)
+        .map(page => existingLines.get(page.slug) ?? `- [[${page.slug}]] — ${page.title}`)
 
       return [`## ${section.heading}`, '', ...(entries.length > 0 ? entries : [section.empty]), ''].join('\n')
     })
     .join('\n')
 
   return normalizeText(`${header}${body}${footer}`)
+}
+
+/**
+ * Extract previously-rendered entry lines from an index document keyed by slug.
+ * Used to preserve operator-curated or agent-generated rich descriptions across
+ * rebuilds — only new slugs get fresh `slug — title` lines.
+ */
+function parseIndexEntryLines(index: string): Map<string, string> {
+  const entries = new Map<string, string>()
+  // Match the full line: "- [[slug]] — description"
+  // Description may contain anything except a newline (we keep the entire trailing text).
+  const pattern = /^- \[\[([^\]|]+)\]\]\s*—\s*(?:\S.*|[\t\v\f \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF])$/gmu
+  for (const match of index.matchAll(pattern)) {
+    const [line, slug] = match
+    if (line === undefined || slug === undefined) continue
+    entries.set(slug.trim(), line)
+  }
+  return entries
 }
 
 function appendLogEntry(existingLog: string | undefined, params: BuildWikiIngestChangesParams): string {

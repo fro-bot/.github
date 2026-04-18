@@ -4,17 +4,25 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
+- [[marcusrbrown--dotfiles]] — marcusrbrown/.dotfiles
+- [[marcusrbrown--github]] — Marcus's personal `.github` repo; GitHub defaults, community health files, and canonical Probot Settings template (`common-settings.yaml`)
+- [[marcusrbrown--esphome-life]] — marcusrbrown/esphome.life
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
 - [[marcusrbrown--mrbro-dev]] — Marcus's developer portfolio (React 19, TypeScript, Vite 7, GitHub Pages at mrbro.dev, advanced theme system, Fro Bot agent + autoheal)
+- [[marcusrbrown--tokentoilet]] — marcusrbrown/tokentoilet
+- [[marcusrbrown--vbs]] — marcusrbrown/vbs
 
 ## Topics
 
+- [[dotfiles]] — Dotfiles Management
 - [[github-pages]] — Static site hosting via GitHub; deployment patterns and performance monitoring
 - [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
+- [[probot-settings]] — Repository configuration management via Probot Settings; inheritance patterns, common-settings templates, and governance across repos
+- [[web3-defi]] — Web3 & DeFi Development
 
 ## Entities
 
-_No entity pages yet. Pages will appear here as tools and services are documented._
+- [[mise]] — mise
 
 ## Comparisons
 
