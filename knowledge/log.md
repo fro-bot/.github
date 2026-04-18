@@ -42,27 +42,23 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fadc7341da26e03c)
 
-## [2026-04-18 00:00] ingest | marcusrbrown/extend-vscode
+## [2026-04-18 00:00] ingest | marcusrbrown/mrbro.dev
 
-Initial survey of `marcusrbrown/extend-vscode` (SHA `a4dcbbb`). Created repo page `marcusrbrown--extend-vscode.md` and topic page `vscode-extensions.md`. Updated `index.md` to catalog both pages.
+Initial survey of `marcusrbrown/mrbro.dev` (SHA `51f5cab`). Created repo page `marcusrbrown--mrbro-dev.md` and topic page `github-pages.md`. Updated `index.md` to catalog both pages.
 
 Key findings:
 
-- VS Code extension toolkit, modular architecture with central `ExtensionController`
-- TypeScript, MIT, pnpm 10.33.0, tsup build, dual Node/Web extension targets
-- Feature modules: commands, webviews, tree views, status bar, tasks, telemetry, logging, configuration
-- Generated types from package.json via `vscode-ext-gen`
-- Vitest unit + web tests, `@vscode/test-electron` integration, Playwright visual regression
-- Semantic-release publishing to VS Code Marketplace, OpenVSIX, and npm
-- Emergency rollback workflow with per-platform support
-- Extends `@bfra.me/eslint-config` and `@bfra.me/tsconfig`
-- Renovate extends `marcusrbrown/renovate-config#4.5.0` + `sanity-io/renovate-config`
-- Probot settings extend `fro-bot/.github:common-settings.yaml`
-- AI context: `llms.txt`, `.github/copilot-instructions.md`, `.ai/`, `.cursor/` directories
-- **No Fro Bot agent workflow detected** — follow-up PR recommended
-- Version 0.1.0 (pre-release), created 2020-11-16, last push 2026-04-17
+- Developer portfolio site: React 19, TypeScript (strict), Vite 7 (SWC), deployed to GitHub Pages at mrbro.dev
+- Advanced theme system with 10+ presets, custom theme creator, JSON schema validation (Ajv), import/export
+- GitHub API integration for dynamic blog and project showcase (no CMS)
+- Comprehensive test infrastructure: Vitest (unit), Playwright (E2E, visual regression, accessibility), Lighthouse CI (performance)
+- **Fro Bot workflow present and active** — `fro-bot.yaml` (PR review, daily maintenance) and `fro-bot-autoheal.yaml` (daily CI repair, security, code quality, production site review via agent-browser)
+- Shares `@bfra.me/*` config ecosystem and `marcusrbrown/renovate-config` with [[marcusrbrown--ha-config]]
+- Notable conventions: PascalCase hook files, no barrel exports, pure ESM, SWC over Babel, Shiki externalized in build
+- Coverage below enforced 80% thresholds on statements (70.81%), functions (60.4%), lines (70.81%)
+- Copilot coding agent configured with setup steps and pre-tool-use hooks
 
-Sources: https://github.com/marcusrbrown/extend-vscode (SHA a4dcbbb175828a60855053d778fd21903a3d73d6)
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 51f5cab5c77768b761d9f0a688ac7436cc5a06f4)
 
 ## [2026-04-18 00:00] ingest | marcusrbrown/gpt
 
@@ -87,6 +83,28 @@ Key findings:
 - Node.js 24.15.0, pnpm 10.33.0
 
 Sources: https://github.com/marcusrbrown/gpt (SHA 60bd62e86caa1a07610c2162d9ffbb917d172dc3)
+
+## [2026-04-18 00:00] ingest | marcusrbrown/extend-vscode
+
+Initial survey of `marcusrbrown/extend-vscode` (SHA `a4dcbbb`). Created repo page `marcusrbrown--extend-vscode.md` and topic page `vscode-extensions.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- VS Code extension toolkit, modular architecture with central `ExtensionController`
+- TypeScript, MIT, pnpm 10.33.0, tsup build, dual Node/Web extension targets
+- Feature modules: commands, webviews, tree views, status bar, tasks, telemetry, logging, configuration
+- Generated types from package.json via `vscode-ext-gen`
+- Vitest unit + web tests, `@vscode/test-electron` integration, Playwright visual regression
+- Semantic-release publishing to VS Code Marketplace, OpenVSIX, and npm
+- Emergency rollback workflow with per-platform support
+- Extends `@bfra.me/eslint-config` and `@bfra.me/tsconfig`
+- Renovate extends `marcusrbrown/renovate-config#4.5.0` + `sanity-io/renovate-config`
+- Probot settings extend `fro-bot/.github:common-settings.yaml`
+- AI context: `llms.txt`, `.github/copilot-instructions.md`, `.ai/`, `.cursor/` directories
+- **No Fro Bot agent workflow detected** — follow-up PR recommended
+- Version 0.1.0 (pre-release), created 2020-11-16, last push 2026-04-17
+
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA a4dcbbb175828a60855053d778fd21903a3d73d6)
 
 ## [2026-04-18 02:32] ingest | marcusrbrown/vbs
 
