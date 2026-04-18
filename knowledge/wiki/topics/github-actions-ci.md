@@ -1,80 +1,86 @@
 ---
 type: topic
-title: GitHub Actions CI
+title: GitHub Actions CI/CD
 created: 2026-04-18
 updated: 2026-04-18
-tags: [github-actions, ci-cd, automation, workflows]
+tags: [github-actions, ci-cd, workflows, automation]
 related:
+  - marcusrbrown--infra
   - marcusrbrown--ha-config
-  - marcusrbrown--vbs
 ---
 
-# GitHub Actions CI
+# GitHub Actions CI/CD
 
-Cross-cutting patterns for GitHub Actions CI/CD observed across the Fro Bot-managed ecosystem.
+CI/CD patterns observed across Marcus's repositories. All repos use GitHub Actions with SHA-pinned actions, reusable workflows from `bfra-me/.github`, and Probot settings synced from `fro-bot/.github:common-settings.yaml`.
 
 ## Repos Using GitHub Actions
 
-- [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, HA config validation
-- [[marcusrbrown--vbs]] — ESLint, TypeScript type-check, Vitest coverage, Vite build, GitHub Pages deploy
+- [[marcusrbrown--infra]] — Bun monorepo with CI (lint/type-check/test), deploy (path-filtered, environment-gated), release (Changesets), and Fro Bot agent
+- [[marcusrbrown--ha-config]] — Home Assistant config with CI (YAML lint, Remark lint, Prettier, HA config validation)
 
 ## Common Patterns
 
-### Shared Setup Actions
+### SHA-Pinned Actions
 
-Repos use local composite actions (`.github/actions/setup-pnpm` or `.github/actions/setup`) to bootstrap the environment. This avoids duplicating setup steps across workflows and prevents drift.
+All repos SHA-pin GitHub Actions with a `# vX.Y.Z` version comment. This prevents supply-chain attacks from tag mutation while keeping version context visible.
+
+```yaml
+- uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+```
+
+### Reusable Workflows from `bfra-me/.github`
+
+Both repos reference reusable workflows from `bfra-me/.github` for Renovate and repo settings sync. Critical convention: **never use `secrets: inherit` with cross-org reusable workflows** — pass secrets explicitly.
 
 ### Probot Settings Sync
 
-Repos extend `fro-bot/.github:common-settings.yaml` via `.github/settings.yml` for consistent repository configuration (branch protection, topics, description). Sync runs via a shared reusable workflow from `bfra-me/.github`.
+Both repos extend `fro-bot/.github:common-settings.yaml` for repository configuration. Settings are synced via the `update-repo-settings.yaml` workflow (daily cron + push to `main`).
 
-### Renovate Configuration
+### Renovate
 
-Both repos extend `marcusrbrown/renovate-config` for dependency management. Post-upgrade tasks run formatting/linting fixes. Configured via `.github/renovate.json5`.
+Both repos use Renovate extending `marcusrbrown/renovate-config`:
+
+| Repo                        | Renovate Preset Version | Post-Upgrade Tasks            |
+| --------------------------- | ----------------------- | ----------------------------- |
+| [[marcusrbrown--infra]]     | #4.5.8                  | `bun install` + `bun run fix` |
+| [[marcusrbrown--ha-config]] | #4.5.7                  | Prettier formatting           |
 
 ### Branch Protection
 
-Common pattern: required status checks on `main`, linear history enforced, admin enforcement enabled. No required PR reviews — automation handles review via Fro Bot.
+Both repos enforce linear history and admin enforcement on `main`, with required status checks but no required PR reviews.
 
-### Fro Bot Agent Workflow
+## Divergent Patterns
 
-The `fro-bot.yaml` workflow pattern uses `fro-bot/agent` for:
+### CI Strategy
 
-- PR review (triggered on PR events, excludes forks and bot authors)
-- Scheduled maintenance (daily rolling report issues)
-- Ad-hoc dispatch (custom prompts via `workflow_dispatch`)
-- Mention-triggered responses (`@fro-bot` in comments, restricted to OWNER/MEMBER/COLLABORATOR)
+| Aspect     | [[marcusrbrown--infra]]                  | [[marcusrbrown--ha-config]]                      |
+| ---------- | ---------------------------------------- | ------------------------------------------------ |
+| Runtime    | Bun + Node 24 (pinned for ES2024 compat) | Python + YAML tooling                            |
+| Lint       | ESLint via `@bfra.me/eslint-config`      | `frenck/action-yamllint` + Remark + Prettier     |
+| Type check | `bunx tsc --noEmit`                      | N/A (YAML config)                                |
+| Tests      | `bun test --recursive`                   | `frenck/action-home-assistant` config validation |
+| CI gate    | Summary job checking lint + type-check   | All jobs must pass                               |
 
-Concurrency groups prevent parallel runs on the same issue/PR.
+### Deploy
 
-**Observed in:** [[marcusrbrown--vbs]] **Not yet present in:** [[marcusrbrown--ha-config]] (noted for follow-up)
+| Aspect       | [[marcusrbrown--infra]]                            | [[marcusrbrown--ha-config]]  |
+| ------------ | -------------------------------------------------- | ---------------------------- |
+| Mechanism    | SSH/rsync (KeeWeb), Docker Compose (CLIProxyAPI)   | N/A (config repo, no deploy) |
+| Gating       | `dorny/paths-filter` + GitHub Environment approval | N/A                          |
+| Health check | Post-deploy `curl` verification                    | N/A                          |
 
-### Fro Bot Autoheal Workflow
+### Fro Bot Integration
 
-A separate `fro-bot-autoheal.yaml` workflow runs daily automated repository healing: fixing errored PRs, remediating security alerts, checking code quality, and validating data integrity. Hard-bounded to prevent destructive actions.
+| Aspect            | [[marcusrbrown--infra]]                      | [[marcusrbrown--ha-config]]       |
+| ----------------- | -------------------------------------------- | --------------------------------- |
+| Workflow present  | Yes (`fro-bot.yaml`)                         | **No** — follow-up PR recommended |
+| PR review         | Structured verdict (PASS/CONDITIONAL/REJECT) | N/A                               |
+| Daily autohealing | 7-category schedule + live site review       | N/A                               |
 
-**Observed in:** [[marcusrbrown--vbs]]
+## Node Version Pinning
 
-### Pin-by-SHA
+The `marcusrbrown/infra` repo documents an important CI pitfall: ESLint's binary shebang uses `#!/usr/bin/env node`, which resolves to system Node on ubuntu-latest (Node 20). Transitive dependencies like `eslint-flat-config-utils` require ES2024 APIs (e.g., `Object.groupBy`) unavailable in Node 20. The fix is explicit `actions/setup-node` with Node 24 in all workflows that run linting or type-checking.
 
-All action references use full commit SHA pins with version comments (e.g., `actions/checkout@<sha> # v6.0.2`). This is a security best practice preventing supply-chain attacks via tag mutation.
+## Authentication Pattern
 
-### GitHub App Tokens
-
-Workflows that need elevated permissions (e.g., creating PRs, pushing to branches) use `actions/create-github-app-token` with `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets rather than personal access tokens, limiting blast radius.
-
-## Deployment Patterns
-
-### GitHub Pages
-
-[[marcusrbrown--vbs]] deploys via `actions/deploy-pages` with:
-
-- `actions/configure-pages` for setup
-- `actions/upload-pages-artifact` for the build output
-- Dedicated `github-pages` environment with URL output
-- Concurrency group `pages` with `cancel-in-progress: false`
-- Permissions: `contents: read`, `pages: write`, `id-token: write`
-
-## Coverage Reporting
-
-[[marcusrbrown--vbs]] uploads coverage to Codecov via `codecov/codecov-action` from lcov output.
+Both repos use GitHub App tokens (`APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`) via `actions/create-github-app-token` for operations that need elevated permissions (Renovate, release, settings sync). This avoids using personal access tokens for automation.
