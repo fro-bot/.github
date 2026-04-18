@@ -148,9 +148,16 @@ jobs:
         run: node scripts/wiki-ingest.ts
 
       # Write the survey outcome back to metadata/repos.yaml on the data branch so
-      # the reconcile staleness gate (>30d since last survey) can filter this repo out
-      # of tomorrow's candidate list. Runs regardless of whether wiki content changed —
-      # "surveyed and found nothing new" is still a completed survey.
+      # the reconcile staleness gate (30 days or more since last survey) can filter this
+      # repo out of tomorrow's candidate list. Runs regardless of whether wiki content
+      # changed — "surveyed and found nothing new" is still a completed survey.
+      #
+      # Status mapping for the agent step's conclusion:
+      # - 'success'   → 'success' (wiki updated or no-op; either is a completed survey)
+      # - 'failure'   → 'failure' (agent ran but raised an error, e.g. upstream rate limit)
+      # - 'cancelled' → 'failure' (cancelled surveys produce no useful output; retry next run)
+      # The outer `!cancelled()` already excludes job-level cancellation. The `!= 'skipped'`
+      # guard skips the write when an upstream step kept the agent from running at all.
       - name: Record survey result
         if: always() && !cancelled() && steps.survey-agent.conclusion != 'skipped'
         env:

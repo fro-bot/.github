@@ -299,7 +299,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
 
   // Still-accessible tracked entry.
   //
-  // Periodic re-survey: onboarded entries whose `last_survey_at` is null or older than
+  // Periodic re-survey: onboarded entries whose `last_survey_at` is null or has reached
   // the staleness threshold become dispatch candidates. The actual dispatch may still be
   // deferred by the per-run cap; entries that are genuinely fresh never become candidates
   // so they don't compete for dispatch slots.
@@ -327,12 +327,27 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
 }
 
 /**
- * Milliseconds in the staleness window. Entries whose `last_survey_at` is older than
- * this (or null) are eligible for a re-survey dispatch.
+ * Staleness threshold for survey re-dispatch. Entries are stale (and therefore candidates
+ * for re-survey) when `last_survey_at` is null or when the elapsed time since
+ * `last_survey_at` is 30 days or more. `last_survey_at` is an ISO calendar date, so
+ * "elapsed time" is measured from midnight UTC of that date.
+ *
+ * Exposed for test-only boundary pinning; production callers use the full reconcile flow.
  */
-const SURVEY_STALENESS_MS = 30 * 24 * 60 * 60 * 1000
+export const SURVEY_STALENESS_MS = 30 * 24 * 60 * 60 * 1000
 
-function isSurveyStale(lastSurveyAt: string | null, now: Date): boolean {
+/**
+ * Return true when the entry should be a candidate for the next survey dispatch.
+ *
+ * Boundary semantics: an entry surveyed exactly {@link SURVEY_STALENESS_MS} ago is stale
+ * (inclusive threshold). This keeps the daily cron predictable — a repo last surveyed at
+ * midnight UTC on day D is re-eligible at the day-D+30 cron run, not day-D+31.
+ *
+ * A null `last_survey_at` signals "never surveyed" and is always stale. A malformed date
+ * string is also treated as stale so recoverable metadata corruption doesn't silently
+ * suppress coverage.
+ */
+export function isSurveyStale(lastSurveyAt: string | null, now: Date): boolean {
   if (lastSurveyAt === null) return true
   const lastMs = Date.parse(`${lastSurveyAt}T00:00:00Z`)
   if (!Number.isFinite(lastMs)) return true
@@ -1133,8 +1148,11 @@ async function defaultSleep(ms: number): Promise<void> {
  * Parse `RECONCILE_DISPATCH_STAGGER_MS` from env. Returns the default when unset, empty,
  * or non-numeric. Negative values clamp to 0 (no stagger). Upper-bounded at 300s (5 min)
  * to prevent accidental workflow-timeout triggers from bad operator config.
+ *
+ * Exported for direct env-parsing tests; production callers use it implicitly via
+ * {@link HandleReconcileParams.dispatchStaggerMs}.
  */
-function loadDispatchStaggerFromEnv(): number {
+export function loadDispatchStaggerFromEnv(): number {
   const raw = process.env.RECONCILE_DISPATCH_STAGGER_MS
   if (raw === undefined || raw === '') return DEFAULT_DISPATCH_STAGGER_MS
   const parsed = Number.parseInt(raw, 10)
@@ -1148,14 +1166,26 @@ function loadDispatchStaggerFromEnv(): number {
  * Parse `RECONCILE_MAX_DISPATCHES_PER_RUN` from env. Returns the default when unset, empty,
  * or non-numeric. A value of 0 or negative disables the cap (dispatch all eligible
  * candidates, matching pre-cap behavior).
+ *
+ * Exported for direct env-parsing tests; production callers use it implicitly via
+ * {@link HandleReconcileParams.maxDispatchesPerRun}.
  */
-function loadMaxDispatchesPerRunFromEnv(): number {
+export function loadMaxDispatchesPerRunFromEnv(): number {
   const raw = process.env.RECONCILE_MAX_DISPATCHES_PER_RUN
   if (raw === undefined || raw === '') return DEFAULT_MAX_DISPATCHES_PER_RUN
   const parsed = Number.parseInt(raw, 10)
   if (!Number.isFinite(parsed)) return DEFAULT_MAX_DISPATCHES_PER_RUN
   return parsed
 }
+
+/**
+ * Internal default exposed for test parity with {@link loadDispatchStaggerFromEnv}
+ * and {@link loadMaxDispatchesPerRunFromEnv}.
+ */
+export const DISPATCH_DEFAULTS = {
+  staggerMs: DEFAULT_DISPATCH_STAGGER_MS,
+  maxDispatchesPerRun: DEFAULT_MAX_DISPATCHES_PER_RUN,
+} as const
 
 async function dispatchWithTimeout<T>(work: () => Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined

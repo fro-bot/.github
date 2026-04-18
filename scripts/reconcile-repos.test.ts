@@ -5,9 +5,14 @@ import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 
 import {
+  DISPATCH_DEFAULTS,
   handleReconcile,
+  isSurveyStale,
+  loadDispatchStaggerFromEnv,
+  loadMaxDispatchesPerRunFromEnv,
   ReconcileError,
   reconcileRepos,
+  SURVEY_STALENESS_MS,
   type AccessListEntry,
   type HandleReconcileParams,
   type OctokitClient,
@@ -1771,6 +1776,142 @@ describe('handleReconcile (I/O shell)', () => {
         }
         if (savedApp !== undefined) process.env.GITHUB_TOKEN = savedApp
       }
+    })
+  })
+})
+
+describe('isSurveyStale', () => {
+  const JUST_BEFORE = SURVEY_STALENESS_MS - 1
+  const EXACTLY = SURVEY_STALENESS_MS
+  const JUST_AFTER = SURVEY_STALENESS_MS + 1
+
+  it('treats null as stale (never surveyed)', () => {
+    expect(isSurveyStale(null, new Date('2026-04-17T12:00:00Z'))).toBe(true)
+  })
+
+  it('treats a malformed date string as stale (recoverable corruption)', () => {
+    expect(isSurveyStale('not-a-date', new Date('2026-04-17T12:00:00Z'))).toBe(true)
+  })
+
+  it('treats exactly 30 days old as stale (inclusive boundary)', () => {
+    const anchor = new Date('2026-04-01T00:00:00Z')
+    const now = new Date(anchor.getTime() + EXACTLY)
+    expect(isSurveyStale('2026-04-01', now)).toBe(true)
+  })
+
+  it('treats just under 30 days as fresh', () => {
+    const anchor = new Date('2026-04-01T00:00:00Z')
+    const now = new Date(anchor.getTime() + JUST_BEFORE)
+    expect(isSurveyStale('2026-04-01', now)).toBe(false)
+  })
+
+  it('treats just over 30 days as stale', () => {
+    const anchor = new Date('2026-04-01T00:00:00Z')
+    const now = new Date(anchor.getTime() + JUST_AFTER)
+    expect(isSurveyStale('2026-04-01', now)).toBe(true)
+  })
+})
+
+describe('loadDispatchStaggerFromEnv', () => {
+  const ENV_KEY = 'RECONCILE_DISPATCH_STAGGER_MS'
+
+  function withEnv<T>(value: string | undefined, run: () => T): T {
+    const saved = process.env[ENV_KEY]
+    if (value === undefined) delete process.env[ENV_KEY]
+    else process.env[ENV_KEY] = value
+    try {
+      return run()
+    } finally {
+      if (saved === undefined) delete process.env[ENV_KEY]
+      else process.env[ENV_KEY] = saved
+    }
+  }
+
+  it('returns the default when unset', () => {
+    withEnv(undefined, () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(DISPATCH_DEFAULTS.staggerMs)
+    })
+  })
+
+  it('returns the default when empty string', () => {
+    withEnv('', () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(DISPATCH_DEFAULTS.staggerMs)
+    })
+  })
+
+  it('returns the default when non-numeric', () => {
+    withEnv('not-a-number', () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(DISPATCH_DEFAULTS.staggerMs)
+    })
+  })
+
+  it('returns the parsed value within bounds', () => {
+    withEnv('12345', () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(12345)
+    })
+  })
+
+  it('clamps negative values to 0', () => {
+    withEnv('-500', () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(0)
+    })
+  })
+
+  it('clamps values over 300_000 to the 300s ceiling', () => {
+    withEnv('999999', () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(300_000)
+    })
+  })
+})
+
+describe('loadMaxDispatchesPerRunFromEnv', () => {
+  const ENV_KEY = 'RECONCILE_MAX_DISPATCHES_PER_RUN'
+
+  function withEnv<T>(value: string | undefined, run: () => T): T {
+    const saved = process.env[ENV_KEY]
+    if (value === undefined) delete process.env[ENV_KEY]
+    else process.env[ENV_KEY] = value
+    try {
+      return run()
+    } finally {
+      if (saved === undefined) delete process.env[ENV_KEY]
+      else process.env[ENV_KEY] = saved
+    }
+  }
+
+  it('returns the default when unset', () => {
+    withEnv(undefined, () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(DISPATCH_DEFAULTS.maxDispatchesPerRun)
+    })
+  })
+
+  it('returns the default when empty string', () => {
+    withEnv('', () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(DISPATCH_DEFAULTS.maxDispatchesPerRun)
+    })
+  })
+
+  it('returns the default when non-numeric', () => {
+    withEnv('not-a-number', () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(DISPATCH_DEFAULTS.maxDispatchesPerRun)
+    })
+  })
+
+  it('returns the parsed value as-is (positive)', () => {
+    withEnv('10', () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(10)
+    })
+  })
+
+  it('returns 0 verbatim (disables the cap in the caller)', () => {
+    withEnv('0', () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(0)
+    })
+  })
+
+  it('returns negative verbatim (disables the cap in the caller)', () => {
+    withEnv('-1', () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(-1)
     })
   })
 })
