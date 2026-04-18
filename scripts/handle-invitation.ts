@@ -6,6 +6,7 @@ import {parse} from 'yaml'
 
 import {commitMetadata, type CommitMetadataParams, type CommitMetadataResult} from './commit-metadata.ts'
 import {bootstrapDataBranch, type DataBranchBootstrapParams} from './data-branch-bootstrap.ts'
+import {addRepoEntry} from './repos-metadata.ts'
 import {assertAllowlistFile, assertReposFile, SchemaValidationError, type ReposFile} from './schemas.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
@@ -205,7 +206,7 @@ async function processInvitation(params: {
       octokit: params.octokit,
       path: params.reposPath,
       message: `chore(metadata): add ${repoOwner}/${repoName} from invitation polling`,
-      mutator: current => addRepoEntry({current, owner: repoOwner, repo: repoName, now: params.now}),
+      mutator: current => addRepoEntry(current, {owner: repoOwner, repo: repoName, now: params.now}),
     })
     await params.octokit.rest.actions.createWorkflowDispatch({
       owner: params.owner,
@@ -277,31 +278,6 @@ async function loadRepos(readMetadata: (path: string) => Promise<unknown>, repos
 async function readMetadataFromDisk(path: string): Promise<unknown> {
   const contents = await readFile(path, 'utf8')
   return parse(contents)
-}
-
-function addRepoEntry(params: {current: unknown; owner: string; repo: string; now: Date}): ReposFile {
-  assertReposFile(params.current, 'repos')
-
-  if (params.current.repos.some(entry => entry.owner === params.owner && entry.name === params.repo)) {
-    return params.current
-  }
-
-  return {
-    ...params.current,
-    repos: [
-      ...params.current.repos,
-      {
-        owner: params.owner,
-        name: params.repo,
-        added: params.now.toISOString().slice(0, 10),
-        onboarding_status: 'pending',
-        last_survey_at: null,
-        last_survey_status: null,
-        has_fro_bot_workflow: false,
-        has_renovate: false,
-      },
-    ],
-  }
 }
 
 function normalizeMetadataError(error: unknown, target: 'allowlist' | 'repos'): InvitationHandlingError {

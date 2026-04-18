@@ -28,14 +28,24 @@ repos:
   - owner: string
     name: string
     added: ISO date
-    onboarding_status: pending | onboarded | failed
+    onboarding_status: pending | onboarded | failed | lost-access | pending-review
     last_survey_at: ISO datetime | null
     last_survey_status: success | failure | null
     has_fro_bot_workflow: boolean
     has_renovate: boolean
 ```
 
-Update convention: invitation handler and metadata workflow update this file programmatically on the `data` branch.
+Update convention: invitation handler, metadata workflow, and daily reconcile update this file programmatically on the `data` branch.
+
+Onboarding status values:
+
+- `pending` — repo was added but has not been surveyed yet.
+- `onboarded` — repo was surveyed successfully at least once.
+- `failed` — the most recent survey attempt failed.
+- `lost-access` — fro-bot no longer has collaborator access (revoked, archived, or deleted). The entry is preserved for audit; other fields stay at their last-known values.
+- `pending-review` — repo was discovered via collaborator access from an owner not listed in `allowlist.yaml`. A GitHub issue labeled `reconcile:pending-review` tracks each one; the entry stays in this state until an operator promotes it (approve and change status to `pending`) or removes it.
+
+For private repos in `pending-review`, the issue body omits the owner/repo name and identifies the subject via its GitHub `node_id`. Public-repo `pending-review` issues include the full `owner/repo`. The control-plane repo is public, so issue bodies never leak private repo names.
 
 ### `renovate.yaml`
 
@@ -90,6 +100,7 @@ PAT split summary:
 | `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                            |
 | `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only                                                 |
 | `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)               |
+| `reconcile-repos.yaml`  | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`       |
 
 ## Commit conventions
 

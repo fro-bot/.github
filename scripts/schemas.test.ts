@@ -102,6 +102,67 @@ describe('schemas — rejection cases', () => {
     expect(error.path).toContain('onboarding_status')
   })
 
+  it('accepts lost-access onboarding_status', () => {
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'lost-access',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('accepts pending-review onboarding_status', () => {
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending-review',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('rejects archived as an onboarding_status (not in the enum)', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'archived',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('onboarding_status')
+  })
+
   it('rejects invalid last_dispatch_status enum', () => {
     const bad = {
       version: 1,
