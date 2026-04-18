@@ -23,22 +23,21 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/ha-config (SHA 83784bc3a212c10cd358be4da9425e46aa6e90f0)
 
-## [2026-04-18 00:00] ingest | marcusrbrown/esphome.life
+## [2026-04-18 00:00] ingest | marcusrbrown/containers
 
-Survey of `marcusrbrown/esphome.life` (SHA `e398c2e`). Created repo page `marcusrbrown--esphome-life.md`. Updated topic page `home-assistant.md` with esphome.life cross-references. Fixed wikilink slug in `marcusrbrown--ha-config.md` related field (`marcusrbrown-esphome-life` → `marcusrbrown--esphome-life`). Updated `index.md`.
+Survey of `marcusrbrown/containers` (SHA `e582f85`). Created repo page `marcusrbrown--containers.md` and topic page `docker-containers.md`. Updated `index.md` to catalog both pages.
 
 Key findings:
 
-- ESPHome project derived from `esphome/esphome-project-template`, builds firmware for Olimex ESP32-PoE-ISO Bluetooth Proxy devices
-- Two per-device configs (`13451c`, `1349f4`), one shared package (`packages/olimex-bluetooth-proxy.yaml`)
-- Only `1349f4` is in the CI build matrix; `13451c` is not built by CI
-- CI deploys to GitHub Pages with ESP Web Tools for browser-based firmware installation
-- ESPHome version pinned at 2025.12.7 in both CI and devcontainer
-- Devcontainer uses `ptr727/esphome-nonroot` image with ESPHome dashboard, PlatformIO, and serial monitor extensions
-- Renovate extends `marcusrbrown/renovate-config#4.5.1` with ESPHome-specific package rules (loose versioning, semantic commits)
-- Probot settings extend `fro-bot/.github:common-settings.yaml`
-- **No Fro Bot agent workflow detected** — follow-up PR recommended
-- All devices use Ethernet (LAN8720) — no Wi-Fi — for wired Bluetooth Proxy backhaul
-- Template artifacts (`docs/readme.md`, `static/index.md`) remain uncustomized
+- Container ecosystem repo, public, MIT-licensed, Python primary language
+- Active containers: Node.js Alpine (~70MB) and Debian Bookworm release (~160MB) variants; archived Ethereum Parity client
+- Python automation framework (15 modules): Dockerfile generation, metrics collection, image tagging, template engine, AI-powered tooling (OpenAI + Anthropic)
+- Template system with 5 categories (apps, base, databases, infrastructure, microservices) and Jinja2 rendering
+- Multi-arch builds (amd64 + arm64) via Buildx + QEMU, publishing to both GHCR and Docker Hub
+- 10 GitHub Actions workflows including build-publish, container-scan (Trivy), test (pre-commit + pytest + Hadolint + Black/isort), Fro Bot agent
+- **Fro Bot workflow present** (`fro-bot.yaml`, agent v0.40.0) — PR review with structured verdict, daily autohealing (14:30 UTC) with perpetual issue pattern, mention-triggered responses
+- Probot settings extend `fro-bot/.github:common-settings.yaml`; Renovate extends `marcusrbrown/renovate-config#4.5.0`
+- Tooling: mise (Node 24.15.0, pnpm 10.33.0, Python 3.13, Poetry), dual ecosystem (Poetry for Python, pnpm for Prettier)
+- OCI Image Spec annotation compliance; deprecated `org.label-schema.*` labels removed
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+Sources: https://github.com/marcusrbrown/containers (SHA e582f856844ac1dd52fc8739f1a9aa8398248e6e)

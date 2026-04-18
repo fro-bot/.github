@@ -4,11 +4,12 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
-- [[marcusrbrown--esphome-life]] — ESPHome device firmware configs for Olimex ESP32-PoE-ISO Bluetooth Proxies; CI-built and deployed to GitHub Pages via ESP Web Tools
+- [[marcusrbrown--containers]] — Container ecosystem with Dockerfiles, Python automation, AI template tooling, and multi-arch CI/CD (GHCR + Docker Hub)
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
 
 ## Topics
 
+- [[docker-containers]] — Docker build, publish, and security patterns across the ecosystem
 - [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
 
 ## Entities
