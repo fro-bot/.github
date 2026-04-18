@@ -41,3 +41,25 @@ Key findings:
 - Updated `marcusrbrown--ha-config` cross-reference context: ha-config extends `fro-bot/.github` settings, not `marcusrbrown/.github`
 
 Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fadc7341da26e03c)
+
+## [2026-04-18 06:22] ingest | marcusrbrown/infra
+
+Survey of `marcusrbrown/infra` (SHA `3fae5db`). Created repo page `marcusrbrown--infra.md` and topic page `github-actions-ci.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- Bun workspace monorepo (apps/keeweb, apps/cliproxy, packages/cli)
+- KeeWeb v1.18.7 self-hosted password manager deployed to `kw.igg.ms` via SSH/rsync
+- CLIProxyAPI at `cliproxy.fro.bot` — Claude proxy that powers Fro Bot agent runs across repos
+- Published CLI `@marcusrbrown/infra` (v0.4.3) on npm with goke framework and MCP bridge
+- 9 GitHub Actions workflows: CI (lint/type-check/test), Deploy (path-filtered), Release (Changesets), Fro Bot (v0.40.2), Renovate, Renovate Changesets, Copilot Setup, Scorecard, Settings Sync
+- **Fro Bot agent workflow present** with structured PR review format and 7-category daily autohealing
+- Shares `@bfra.me/*` config ecosystem, Renovate preset, and Probot settings pattern with `marcusrbrown/ha-config`
+- Node 24 pin required in CI due to ESLint shebang + ES2024 API gap on ubuntu-latest
+- Compound learning docs in `docs/solutions/` with YAML frontmatter
+- Changesets for versioning, `@svitejs/changesets-changelog-github-compact` for changelogs
+- Docker-based CLIProxyAPI uses `eceasy/cli-proxy-api` image with Caddy reverse proxy on DigitalOcean
+
+Sources: https://github.com/marcusrbrown/infra (SHA 3fae5db4f57cce6a662da29c50ca9bbe37fdda2a)
+
+> > > > > > > e4cf67a (knowledge: ingest marcusrbrown/infra survey)
