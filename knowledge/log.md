@@ -145,6 +145,20 @@ Delta from prior survey (SHA `83784bc`, 2025-06-18):
 
 Sources: https://github.com/marcusrbrown/ha-config (SHA 54a67275e00ed01a52f30399065d4fe6eaa4ee54)
 
+## [2026-04-18 05:00] ingest | marcusrbrown/tokentoilet
+
+Follow-up survey of `marcusrbrown/tokentoilet` (SHA `0ed90a6`, same as prior ingest). Additive update to existing repo page `marcusrbrown--tokentoilet.md`.
+
+Changes:
+
+- Added `related` cross-references to `marcusrbrown--ha-config` and `marcusrbrown--vbs` in frontmatter
+- Added "Shared Ecosystem Patterns" section with cross-repo comparison table (Probot, Renovate, ESLint, Prettier, pnpm, Fro Bot, Copilot, AGENTS.md)
+- Specified Renovate preset version (`#4.5.8`), post-upgrade tasks, and `lucide-react` monthly automerge rule
+- Documented branch protection details from `settings.yml` (required checks, linear history, admin enforcement)
+- No contradictions with prior ingest — all findings confirmed at same commit SHA
+
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3)
+
 ## [2026-04-18 05:31] ingest | marcusrbrown/infra
 
 Survey of `marcusrbrown/infra` (SHA `20de047`). Created repo page `marcusrbrown--infra.md` and topic page `github-actions-ci.md`. Updated `index.md` to catalog both pages.
