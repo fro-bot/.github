@@ -50,8 +50,8 @@ If guidance conflicts, follow the order above.
 
 - Autonomous writes target the unprotected `data` branch (`main` has `enforce_admins: true`).
 - All metadata writes go through `scripts/commit-metadata.ts`.
-- `data → main` promotes via the `Merge Data Branch` workflow (Sunday 22:00 UTC).
-- Conditional auto-merge: automatic if the PR only touches `knowledge/` or `metadata/` paths; human approval required for code changes.
+- `data → main` promotes via the `Merge Data Branch` workflow (weekly; see [`merge-data.yaml`](workflows/merge-data.yaml) for schedule).
+- Conditional auto-merge: PRs touching only `knowledge/` or `metadata/` paths are labeled for auto-merge; PRs touching code paths require human approval. See [`metadata/README.md`](../metadata/README.md) for schema, credential expectations, and commit conventions.
 
 ## Required Workflow for Every Change
 
