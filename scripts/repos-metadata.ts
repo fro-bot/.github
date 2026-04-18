@@ -105,12 +105,16 @@ export function recordSurveyResult(current: unknown, input: RecordSurveyResultIn
 
 export class RepoEntryNotFoundError extends Error {
   readonly code = 'REPO_ENTRY_NOT_FOUND'
+  // Explicit field declarations + assignment in the constructor body, not parameter properties.
+  // Node's strip-only TypeScript mode rejects `constructor(readonly owner: string)` syntax with
+  // ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX at runtime even though tsc and Vitest both accept it.
+  readonly owner: string
+  readonly repo: string
 
-  constructor(
-    readonly owner: string,
-    readonly repo: string,
-  ) {
+  constructor(owner: string, repo: string) {
     super(`metadata/repos.yaml has no entry for ${owner}/${repo}`)
     this.name = 'RepoEntryNotFoundError'
+    this.owner = owner
+    this.repo = repo
   }
 }
