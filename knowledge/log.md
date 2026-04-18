@@ -23,6 +23,25 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/ha-config (SHA 83784bc3a212c10cd358be4da9425e46aa6e90f0)
 
+## [2025-06-18 01:00] ingest | marcusrbrown/.github
+
+Survey of `marcusrbrown/.github` (SHA `be01029`). Created repo page `marcusrbrown--github.md` and topic page `probot-settings.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- Personal `.github` repo providing GitHub defaults and community health files for `marcusrbrown` repositories
+- Contains canonical `common-settings.yaml` — the Probot Settings template extended by other Marcus repos
+- Settings divergence documented: personal template (no PR reviews, Marcus admin) vs. fro-bot org template (1 reviewer required, fro-bot admin)
+- CI pipeline: Prettier-only — appropriate for a YAML/Markdown repo with no application code
+- Renovate extends `marcusrbrown/renovate-config#4.5.1`, post-upgrade runs Prettier 3.8.1
+- Shared workflows from `bfra-me/.github@v4.4.0` for Renovate and settings sync
+- Community health files: Contributor Covenant v1.4, MIT license, GitHub Sponsors
+- `fro-bot` listed as collaborator (push) confirming Fro Bot write access
+- **No Fro Bot agent workflow detected** — follow-up PR recommended
+- Updated `marcusrbrown--ha-config` cross-reference context: ha-config extends `fro-bot/.github` settings, not `marcusrbrown/.github`
+
+Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fadc7341da26e03c)
+
 ## [2026-04-18 00:00] ingest | marcusrbrown/gpt
 
 Initial survey of `marcusrbrown/gpt` (SHA `60bd62e`). Created repo page `marcusrbrown--gpt.md`. Updated `index.md` to catalog the new page. No new topic/entity/comparison pages created — cross-cutting topics (LangChain, MCP, local-first) are candidates for standalone pages once a second repo references them.
