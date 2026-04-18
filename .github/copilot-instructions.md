@@ -33,6 +33,25 @@ If guidance conflicts, follow the order above.
 - Copilot governance hooks (`.github/hooks/`)
 - Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
 - Development standards and quality gates (TypeScript/ESLint/Prettier)
+- Control-plane TypeScript (`scripts/*.ts`, executed with Node 24 native TS; no build step)
+- Metadata state (`metadata/*.yaml`, written programmatically to the `data` branch)
+- Knowledge wiki (`knowledge/{schema,index,log}.md` + `knowledge/wiki/`, Karpathy-style LLM-generated)
+- Character definition (`persona/`, injected into agent prompts)
+- Repo-scoped agent skills (`.agents/skills/`)
+- Brand assets (`assets/`, `branding/`) — downstream applied via the `apply-branding` workflow
+
+### Tests
+
+- Vitest runs tests colocated as `scripts/*.test.ts`.
+- Mocks use `vi.hoisted()` + `vi.mock()` for static `@octokit/rest` shims.
+- Prefer behavior-level assertions over implementation-coupled ones.
+
+### Autonomous Commits
+
+- Autonomous writes target the unprotected `data` branch (`main` has `enforce_admins: true`).
+- All metadata writes go through `scripts/commit-metadata.ts`.
+- `data → main` promotes via the `Merge Data Branch` workflow (Sunday 22:00 UTC).
+- Conditional auto-merge: automatic if the PR only touches `knowledge/` or `metadata/` paths; human approval required for code changes.
 
 ## Required Workflow for Every Change
 
