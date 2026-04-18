@@ -21,7 +21,11 @@ jobs:
       actions: write
       issues: write
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Stagger + cap keep fan-out inside this budget even at the maximum configured
+    # dispatch count: 6 dispatches × 90s = 9 minutes of stagger, plus ≤1 minute of
+    # pre-dispatch work (access list, probes, commit). 15 minutes provides headroom
+    # for GitHub API jitter without permitting a truly-stuck run.
+    timeout-minutes: 15
     steps:
       - id: get-workflow-app-token
         name: Get Workflow Access Token
@@ -40,9 +44,12 @@ jobs:
         env:
           FRO_BOT_POLL_PAT: ${{ secrets.FRO_BOT_POLL_PAT }}
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
-          # Stagger Survey Repo dispatches by 8 seconds so concurrent surveys don't saturate
-          # the shared Claude max20 OAuth seat (marcusrbrown/infra#144). Raise for larger
-          # access lists; clamp at 60s in the script. Workflow-level 10-minute timeout still
-          # bounds the full run.
-          RECONCILE_DISPATCH_STAGGER_MS: '8000'
+          # Stagger between Survey Repo dispatches. Each survey run holds upstream LLM
+          # capacity for ~5 minutes; 90 seconds between starts keeps the single seat from
+          # saturating under fan-out (see marcusrbrown/infra#144).
+          RECONCILE_DISPATCH_STAGGER_MS: '90000'
+          # Cap dispatches per reconcile run. Candidates beyond the cap are eligible again
+          # on the next run via the staleness gate, producing a progressive day-over-day
+          # cadence instead of bursty fan-outs that exhaust upstream capacity.
+          RECONCILE_MAX_DISPATCHES_PER_RUN: '6'
         run: node scripts/reconcile-repos.ts

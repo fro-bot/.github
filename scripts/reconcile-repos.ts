@@ -175,6 +175,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       summary,
       dispatches,
       rawIssues,
+      now,
     })
   })
 
@@ -231,6 +232,7 @@ interface ClassifyTrackedParams {
   summary: ReconcileSummary
   dispatches: DispatchRequest[]
   rawIssues: RawIssue[]
+  now: Date
 }
 
 /**
@@ -295,7 +297,17 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     return {...entry, onboarding_status: nextStatus}
   }
 
-  // Still-accessible tracked entry — apply field refresh if the probe disagrees.
+  // Still-accessible tracked entry.
+  //
+  // Periodic re-survey: onboarded entries whose `last_survey_at` is null or has reached
+  // the staleness threshold become dispatch candidates. The actual dispatch may still be
+  // deferred by the per-run cap; entries that are genuinely fresh never become candidates
+  // so they don't compete for dispatch slots.
+  if (entry.onboarding_status === 'onboarded' && isSurveyStale(entry.last_survey_at, params.now)) {
+    dispatches.push({owner: entry.owner, repo: entry.name})
+  }
+
+  // Field refresh: apply probe results when they disagree with tracked fields.
   const probe = fieldProbes.get(key)
   if (probe === undefined) {
     // No probe data — preserve existing field values (do not overwrite with undefined).
@@ -312,6 +324,34 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     has_fro_bot_workflow: probe.has_fro_bot_workflow,
     has_renovate: probe.has_renovate,
   }
+}
+
+/**
+ * Staleness threshold for survey re-dispatch. Entries are stale (and therefore candidates
+ * for re-survey) when `last_survey_at` is null or when the elapsed time since
+ * `last_survey_at` is 30 days or more. `last_survey_at` is an ISO calendar date, so
+ * "elapsed time" is measured from midnight UTC of that date.
+ *
+ * Exposed for test-only boundary pinning; production callers use the full reconcile flow.
+ */
+export const SURVEY_STALENESS_MS = 30 * 24 * 60 * 60 * 1000
+
+/**
+ * Return true when the entry should be a candidate for the next survey dispatch.
+ *
+ * Boundary semantics: an entry surveyed exactly {@link SURVEY_STALENESS_MS} ago is stale
+ * (inclusive threshold). This keeps the daily cron predictable — a repo last surveyed at
+ * midnight UTC on day D is re-eligible at the day-D+30 cron run, not day-D+31.
+ *
+ * A null `last_survey_at` signals "never surveyed" and is always stale. A malformed date
+ * string is also treated as stale so recoverable metadata corruption doesn't silently
+ * suppress coverage.
+ */
+export function isSurveyStale(lastSurveyAt: string | null, now: Date): boolean {
+  if (lastSurveyAt === null) return true
+  const lastMs = Date.parse(`${lastSurveyAt}T00:00:00Z`)
+  if (!Number.isFinite(lastMs)) return true
+  return now.getTime() - lastMs >= SURVEY_STALENESS_MS
 }
 
 interface RawIssue {
@@ -420,17 +460,32 @@ const DEFAULT_WORKFLOW_FILE = 'survey-repo.yaml'
 const DEFAULT_WORKFLOW_REF = 'main'
 const DEFAULT_DISPATCH_TIMEOUT_MS = 15_000
 /**
- * Delay (ms) inserted between consecutive Survey Repo dispatches. Surveys share a single
- * Claude max20 OAuth seat via cliproxy.fro.bot and saturate upstream Anthropic rate limits
- * when dispatched concurrently (see marcusrbrown/infra#144 diagnosis). Staggering spreads
- * LLM context-window kickoff over time without exceeding the 10-minute workflow job
- * timeout for any realistic access-list size.
+ * Delay (ms) inserted between consecutive Survey Repo dispatches.
  *
- * Default: 8s between dispatches → ~2 minutes to fan out 16 surveys, well under the
- * 10-minute cap even if the access list grows to 50+ entries. Override via
- * `RECONCILE_DISPATCH_STAGGER_MS` env var or `dispatchStaggerMs` param. Tests pass 0.
+ * Surveys share a single upstream LLM seat through cliproxy.fro.bot. Concurrent kickoffs
+ * saturate upstream rate limits (see marcusrbrown/infra#144). Staggering the starts gives
+ * each survey's session breathing room to progress through its LLM calls before the next
+ * one begins.
+ *
+ * Default: 90s between dispatches. Combined with {@link DEFAULT_MAX_DISPATCHES_PER_RUN}
+ * this keeps the full fan-out inside the workflow job timeout even when the access list
+ * grows. Override via `RECONCILE_DISPATCH_STAGGER_MS` env var or `dispatchStaggerMs` param.
+ * Tests pass 0.
  */
-const DEFAULT_DISPATCH_STAGGER_MS = 8_000
+const DEFAULT_DISPATCH_STAGGER_MS = 90_000
+/**
+ * Maximum number of Survey Repo dispatches fired in a single reconcile run.
+ *
+ * Each survey run consumes upstream LLM capacity for ~5 minutes. Limiting dispatches per
+ * run keeps the scheduled job inside its timeout and bounds peak concurrent surveys to a
+ * level the single OAuth seat can sustain. Skipped candidates are dispatched on subsequent
+ * runs once the staleness gate makes them eligible again.
+ *
+ * Default: 6 dispatches. Override via `RECONCILE_MAX_DISPATCHES_PER_RUN` env var or
+ * `maxDispatchesPerRun` param. A value of 0 or negative disables the cap (dispatch all
+ * eligible candidates).
+ */
+const DEFAULT_MAX_DISPATCHES_PER_RUN = 6
 
 const PENDING_REVIEW_LABEL = 'reconcile:pending-review'
 const ROLLUP_LABEL = 'reconcile:rollup-pending-review'
@@ -486,10 +541,16 @@ export interface HandleReconcileParams {
   dispatchTimeoutMs?: number
   /**
    * Delay (ms) inserted between consecutive dispatches to avoid concurrent LLM requests
-   * against the shared Claude OAuth seat. Default 8_000 (see `DEFAULT_DISPATCH_STAGGER_MS`).
+   * against the shared upstream seat. Default {@link DEFAULT_DISPATCH_STAGGER_MS}.
    * Tests should pass 0 for speed; workflow env can override via `RECONCILE_DISPATCH_STAGGER_MS`.
    */
   dispatchStaggerMs?: number
+  /**
+   * Maximum number of dispatches fired in this run. Skipped candidates are eligible again
+   * on the next run. Default {@link DEFAULT_MAX_DISPATCHES_PER_RUN}. A value of 0 or
+   * negative disables the cap.
+   */
+  maxDispatchesPerRun?: number
   /**
    * Sleep implementation used by the dispatch loop. Test-only injection point — production
    * uses `setTimeout`-backed Promise. Tests replace with a mock to verify stagger without
@@ -508,6 +569,11 @@ export interface HandleReconcileResult {
   dispatches: number
   /** Count of dispatch failures (timed out, HTTP error, etc.). */
   dispatchesFailed: number
+  /**
+   * Count of dispatch candidates deferred to a future run because this run hit the
+   * `maxDispatchesPerRun` cap. Zero when every eligible candidate was dispatched.
+   */
+  dispatchesDeferred: number
   /** Count of successfully-created per-repo issues from reconcile's classification plan. */
   perRepoIssues: number
   /** Count of successfully-created rollup issues (from plan + self-healing). */
@@ -542,6 +608,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const now = params.now ?? new Date()
   const dispatchTimeoutMs = params.dispatchTimeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS
   const dispatchStaggerMs = params.dispatchStaggerMs ?? loadDispatchStaggerFromEnv()
+  const maxDispatchesPerRun = params.maxDispatchesPerRun ?? loadMaxDispatchesPerRunFromEnv()
   const logger: ReconcileLogger = params.logger ?? {warn: message => process.stderr.write(`${message}\n`)}
   const operatorLogins = params.operatorLogins ?? loadOperatorLoginsFromEnv()
   const readMetadata = params.readMetadata ?? readMetadataFromDisk
@@ -653,7 +720,16 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     committed = commitResult.committed
   }
 
-  // 9. Dispatch loop (serial, non-blocking on failure, wrapped in a per-call timeout).
+  // 9. Dispatch loop. Prioritize candidates with null `last_survey_at` first
+  //    (never surveyed), then oldest `last_survey_at` first. Cap at
+  //    `maxDispatchesPerRun` so a single run stays inside the workflow job budget and
+  //    bounds peak concurrent surveys against the shared upstream seat. Deferred
+  //    candidates become eligible again on the next run via the staleness gate.
+  const prioritizedDispatches = prioritizeDispatches(plan.dispatches, plan.nextRepos.repos)
+  const dispatchCap = maxDispatchesPerRun > 0 ? maxDispatchesPerRun : prioritizedDispatches.length
+  const selectedDispatches = prioritizedDispatches.slice(0, dispatchCap)
+  const dispatchesDeferred = prioritizedDispatches.length - selectedDispatches.length
+
   const dispatchOutcome = await runDispatches({
     staggerMs: dispatchStaggerMs,
     sleep: params.dispatchSleep,
@@ -662,7 +738,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     repo,
     workflowFile,
     workflowRef,
-    dispatches: plan.dispatches,
+    dispatches: selectedDispatches,
     timeoutMs: dispatchTimeoutMs,
     logger,
   })
@@ -702,6 +778,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     summary: plan.summary,
     dispatches: dispatchOutcome.succeeded,
     dispatchesFailed: dispatchOutcome.failed,
+    dispatchesDeferred,
     perRepoIssues: issueOutcome.perRepoSucceeded,
     rollupIssues: issueOutcome.rollupSucceeded + healedRollups,
     issuesFailed: issueOutcome.failed,
@@ -710,6 +787,34 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     integrityCheck,
     committed,
   }
+}
+
+/**
+ * Order dispatch candidates by survey freshness: repos that have never been surveyed go
+ * first, then oldest `last_survey_at` first. Ties break on `owner/name` for determinism
+ * so the cap selects the same slice across reruns.
+ */
+function prioritizeDispatches(dispatches: DispatchRequest[], nextRepos: ReposFile['repos']): DispatchRequest[] {
+  const lookup = new Map<string, string | null>()
+  for (const entry of nextRepos) {
+    lookup.set(`${entry.owner}/${entry.name}`, entry.last_survey_at)
+  }
+
+  return [...dispatches].sort((left, right) => {
+    const leftKey = `${left.owner}/${left.repo}`
+    const rightKey = `${right.owner}/${right.repo}`
+    const leftAt = lookup.get(leftKey) ?? null
+    const rightAt = lookup.get(rightKey) ?? null
+
+    // Null (never surveyed) comes before any date.
+    if (leftAt === null && rightAt !== null) return -1
+    if (rightAt === null && leftAt !== null) return 1
+    if (leftAt !== null && rightAt !== null && leftAt !== rightAt) {
+      return leftAt.localeCompare(rightAt)
+    }
+    // Deterministic tiebreak.
+    return leftKey.localeCompare(rightKey)
+  })
 }
 
 /**
@@ -1041,18 +1146,46 @@ async function defaultSleep(ms: number): Promise<void> {
 
 /**
  * Parse `RECONCILE_DISPATCH_STAGGER_MS` from env. Returns the default when unset, empty,
- * or non-numeric. Negative values clamp to 0 (no stagger). Upper-bounded at 60s to prevent
- * accidental workflow-timeout triggers from bad operator config.
+ * or non-numeric. Negative values clamp to 0 (no stagger). Upper-bounded at 300s (5 min)
+ * to prevent accidental workflow-timeout triggers from bad operator config.
+ *
+ * Exported for direct env-parsing tests; production callers use it implicitly via
+ * {@link HandleReconcileParams.dispatchStaggerMs}.
  */
-function loadDispatchStaggerFromEnv(): number {
+export function loadDispatchStaggerFromEnv(): number {
   const raw = process.env.RECONCILE_DISPATCH_STAGGER_MS
   if (raw === undefined || raw === '') return DEFAULT_DISPATCH_STAGGER_MS
   const parsed = Number.parseInt(raw, 10)
   if (!Number.isFinite(parsed)) return DEFAULT_DISPATCH_STAGGER_MS
   if (parsed < 0) return 0
-  if (parsed > 60_000) return 60_000
+  if (parsed > 300_000) return 300_000
   return parsed
 }
+
+/**
+ * Parse `RECONCILE_MAX_DISPATCHES_PER_RUN` from env. Returns the default when unset, empty,
+ * or non-numeric. A value of 0 or negative disables the cap (dispatch all eligible
+ * candidates, matching pre-cap behavior).
+ *
+ * Exported for direct env-parsing tests; production callers use it implicitly via
+ * {@link HandleReconcileParams.maxDispatchesPerRun}.
+ */
+export function loadMaxDispatchesPerRunFromEnv(): number {
+  const raw = process.env.RECONCILE_MAX_DISPATCHES_PER_RUN
+  if (raw === undefined || raw === '') return DEFAULT_MAX_DISPATCHES_PER_RUN
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed)) return DEFAULT_MAX_DISPATCHES_PER_RUN
+  return parsed
+}
+
+/**
+ * Internal default exposed for test parity with {@link loadDispatchStaggerFromEnv}
+ * and {@link loadMaxDispatchesPerRunFromEnv}.
+ */
+export const DISPATCH_DEFAULTS = {
+  staggerMs: DEFAULT_DISPATCH_STAGGER_MS,
+  maxDispatchesPerRun: DEFAULT_MAX_DISPATCHES_PER_RUN,
+} as const
 
 async function dispatchWithTimeout<T>(work: () => Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined

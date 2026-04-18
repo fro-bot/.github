@@ -101,6 +101,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Run Fro Bot survey ingest
+        id: survey-agent
         uses: fro-bot/agent@fc1387ec5c25afed73b11b8b26c482b90b3ad9cd # v0.41.0
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
@@ -109,11 +110,7 @@ jobs:
           omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           # Write wiki updates to the workflow's working tree so the next step can
-          # commit them to the `data` branch via scripts/wiki-ingest.ts. Without
-          # `working-dir`, the agent's skill-layer defaults push a side branch +
-          # PR per survey, which serializes through knowledge/index.md and
-          # knowledge/log.md — the root cause of the N-way merge conflicts this
-          # workflow used to produce.
+          # commit them to the `data` branch via scripts/wiki-ingest.ts.
           output-mode: working-dir
           prompt: |
             <persona>
@@ -149,3 +146,23 @@ jobs:
           WIKI_COMMIT_MESSAGE: 'feat(knowledge): survey ${{ steps.ingest-prompt.outputs.target-repository }}'
           WIKI_SOURCES: '[{"url":"https://github.com/${{ steps.ingest-prompt.outputs.target-repository }}","accessed":"${{ steps.ts.outputs.now }}"}]'
         run: node scripts/wiki-ingest.ts
+
+      # Write the survey outcome back to metadata/repos.yaml on the data branch so
+      # the reconcile staleness gate (30 days or more since last survey) can filter this
+      # repo out of tomorrow's candidate list. Runs regardless of whether wiki content
+      # changed — "surveyed and found nothing new" is still a completed survey.
+      #
+      # Status mapping for the agent step's conclusion:
+      # - 'success'   → 'success' (wiki updated or no-op; either is a completed survey)
+      # - 'failure'   → 'failure' (agent ran but raised an error, e.g. upstream rate limit)
+      # - 'cancelled' → 'failure' (cancelled surveys produce no useful output; retry next run)
+      # The outer `!cancelled()` already excludes job-level cancellation. The `!= 'skipped'`
+      # guard skips the write when an upstream step kept the agent from running at all.
+      - name: Record survey result
+        if: always() && !cancelled() && steps.survey-agent.conclusion != 'skipped'
+        env:
+          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          REPO_OWNER: ${{ github.event.inputs.owner }}
+          REPO_NAME: ${{ github.event.inputs.repo }}
+          SURVEY_STATUS: ${{ steps.survey-agent.conclusion == 'success' && 'success' || 'failure' }}
+        run: node scripts/record-survey-result.ts
