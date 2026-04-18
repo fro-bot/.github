@@ -183,3 +183,23 @@ Key findings:
 - Created `github-actions-ci.md` topic page to capture cross-repo CI patterns (pin-by-SHA, shared setup actions, GitHub App tokens, Pages deployment)
 
 Sources: https://github.com/marcusrbrown/vbs (SHA a552e7335af70122f68380440c78a415a785749f)
+
+## [2026-04-18 12:00] ingest | marcusrbrown/copiloting
+
+Survey of `marcusrbrown/copiloting` (SHA `cfc8bb6`). Created repo page `marcusrbrown--copiloting.md` and topic pages `langchain.md`, `polyglot-monorepo.md`. Updated `index.md` to catalog all three new pages.
+
+Key findings:
+
+- Polyglot Python 3.14 (Poetry) + TypeScript (pnpm 10) AI/LLM experimentation monorepo
+- Flask + SvelteKit PDF chat app in `course/pdf-dist/`, Python LangChain course sections, TS tutorials
+- Stack: LangChain ^1.2 (Python) / 0.0.212 (JS — very old), OpenAI ^2.0, Pydantic ^2.10, Vitest, pytest
+- **Fro Bot workflow present** (`fro-bot.yaml`) — PR review, issue triage, daily maintenance, @fro-bot mentions
+- **Fro Bot Autoheal workflow present** (`fro-bot-autoheal.yaml`) — daily auto-healing with progressive stale import migration
+- CI uses path filtering (dorny/paths-filter) to run Node.js and Python jobs independently
+- Renovate extends `marcusrbrown/renovate-config#v4`, settings extend `fro-bot/.github:common-settings.yaml`
+- Copilot Setup Steps workflow present for GitHub Copilot agent bootstrap
+- Known issue: Python application code uses stale pre-0.2 LangChain import paths despite deps being upgraded
+- JS langchain version (0.0.212) significantly behind Python side (^1.2)
+- Comprehensive AGENTS.md and .github/copilot-instructions.md for AI agent conventions
+
+Sources: https://github.com/marcusrbrown/copiloting (SHA cfc8bb6d5e814c9918a6e55f4b6747c3a36e4fb1)
