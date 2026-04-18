@@ -4,6 +4,7 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
+- [[marcusrbrown--dotfiles]] — marcusrbrown/.dotfiles
 - [[marcusrbrown--github]] — Marcus's personal `.github` repo; GitHub defaults, community health files, and canonical Probot Settings template (`common-settings.yaml`)
 - [[marcusrbrown--esphome-life]] — marcusrbrown/esphome.life
 - [[marcusrbrown--gpt]] — Local-first GPT creation platform (React 19, TypeScript 5.9, Vite 7, LangChain, MCP, IndexedDB, Web Crypto; deployed to gpt.mrbro.dev)
@@ -13,13 +14,14 @@ Master catalog of all wiki pages, organized by type.
 
 ## Topics
 
+- [[dotfiles]] — Dotfiles Management
 - [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
 - [[probot-settings]] — Repository configuration management via Probot Settings; inheritance patterns, common-settings templates, and governance across repos
 - [[web3-defi]] — Web3 & DeFi Development
 
 ## Entities
 
-_No entity pages yet. Pages will appear here as tools and services are documented._
+- [[mise]] — mise
 
 ## Comparisons
 
