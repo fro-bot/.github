@@ -141,6 +141,26 @@ Delta from prior survey (SHA `83784bc`, 2025-06-18):
 
 Sources: https://github.com/marcusrbrown/ha-config (SHA 54a67275e00ed01a52f30399065d4fe6eaa4ee54)
 
+## [2026-04-18 05:31] ingest | marcusrbrown/infra
+
+Survey of `marcusrbrown/infra` (SHA `20de047`). Created repo page `marcusrbrown--infra.md` and topic page `github-actions-ci.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- Bun workspace monorepo (`apps/*` + `packages/*`) for personal infrastructure management
+- Two apps: KeeWeb v1.18.7 static site deploy at `kw.igg.ms` (SSH/rsync to `box.heatvision.co`), CLIProxyAPI Docker Compose stack at `cliproxy.fro.bot` (shared Claude proxy for Fro Bot agents)
+- Published CLI package `@marcusrbrown/infra` v0.4.3 on npm — deploy triggers, health checks, MCP bridge (`infra mcp`)
+- CLI framework: goke + Zod Standard Schemas + @goke/mcp for MCP tool exposure
+- CI: ESLint + TypeScript + Bun tests in parallel; Node 24 pinned for ES2024 API compat (ESLint shebang pitfall)
+- Deploy: path-filtered via `dorny/paths-filter`, environment-gated (keeweb + cliproxy environments), post-deploy health checks
+- Release: Changesets + npm publish with provenance
+- **Fro Bot workflow present** (`fro-bot/agent@v0.40.2`) — PR review with structured verdict, 7-category daily autohealing, cross-project intelligence, live site review via browser automation
+- Shared ecosystem with ha-config: both extend `fro-bot/.github:common-settings.yaml`, `marcusrbrown/renovate-config`, and `@bfra.me/*` shared configs
+- Compound learning pattern: `docs/solutions/` with YAML frontmatter
+- 9 workflows total, all using `.yaml` extension and SHA-pinned actions with version comments
+
+Sources: https://github.com/marcusrbrown/infra (SHA 20de04713bf01294217dee4d3b64d5d7cfb2426e)
+
 ## [2026-04-18 06:00] ingest | marcusrbrown/.dotfiles
 
 Survey of `marcusrbrown/.dotfiles` (SHA `2f2d1e6`). Created repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Updated `index.md` to catalog all three pages.
@@ -165,26 +185,6 @@ Cross-references established: dotfiles shares mise tooling, Renovate config patt
 
 Sources: https://github.com/marcusrbrown/.dotfiles (SHA 2f2d1e6ac04999c5e61ee054fc585d9542cd3a74)
 
-## [2026-04-18 12:00] ingest | marcusrbrown/copiloting
-
-Survey of `marcusrbrown/copiloting` (SHA `cfc8bb6`). Created repo page `marcusrbrown--copiloting.md` and topic pages `langchain.md`, `polyglot-monorepo.md`. Updated `index.md` to catalog all three new pages.
-
-Key findings:
-
-- Polyglot Python 3.14 (Poetry) + TypeScript (pnpm 10) AI/LLM experimentation monorepo
-- Flask + SvelteKit PDF chat app in `course/pdf-dist/`, Python LangChain course sections, TS tutorials
-- Stack: LangChain ^1.2 (Python) / 0.0.212 (JS — very old), OpenAI ^2.0, Pydantic ^2.10, Vitest, pytest
-- **Fro Bot workflow present** (`fro-bot.yaml`) — PR review, issue triage, daily maintenance, @fro-bot mentions
-- **Fro Bot Autoheal workflow present** (`fro-bot-autoheal.yaml`) — daily auto-healing with progressive stale import migration
-- CI uses path filtering (dorny/paths-filter) to run Node.js and Python jobs independently
-- Renovate extends `marcusrbrown/renovate-config#v4`, settings extend `fro-bot/.github:common-settings.yaml`
-- Copilot Setup Steps workflow present for GitHub Copilot agent bootstrap
-- Known issue: Python application code uses stale pre-0.2 LangChain import paths despite deps being upgraded
-- JS langchain version (0.0.212) significantly behind Python side (^1.2)
-- Comprehensive AGENTS.md and .github/copilot-instructions.md for AI agent conventions
-
-Sources: https://github.com/marcusrbrown/copiloting (SHA cfc8bb6d5e814c9918a6e55f4b6747c3a36e4fb1)
-
 ## [2026-04-18 12:00] ingest | marcusrbrown/vbs
 
 Initial survey of `marcusrbrown/vbs` (SHA `a552e73`). Created repo page `marcusrbrown--vbs.md` and topic page `github-actions-ci.md`. Updated `index.md` to catalog both pages.
@@ -207,3 +207,23 @@ Key findings:
 - Created `github-actions-ci.md` topic page to capture cross-repo CI patterns (pin-by-SHA, shared setup actions, GitHub App tokens, Pages deployment)
 
 Sources: https://github.com/marcusrbrown/vbs (SHA a552e7335af70122f68380440c78a415a785749f)
+
+## [2026-04-18 12:00] ingest | marcusrbrown/copiloting
+
+Survey of `marcusrbrown/copiloting` (SHA `cfc8bb6`). Created repo page `marcusrbrown--copiloting.md` and topic pages `langchain.md`, `polyglot-monorepo.md`. Updated `index.md` to catalog all three new pages.
+
+Key findings:
+
+- Polyglot Python 3.14 (Poetry) + TypeScript (pnpm 10) AI/LLM experimentation monorepo
+- Flask + SvelteKit PDF chat app in `course/pdf-dist/`, Python LangChain course sections, TS tutorials
+- Stack: LangChain ^1.2 (Python) / 0.0.212 (JS — very old), OpenAI ^2.0, Pydantic ^2.10, Vitest, pytest
+- **Fro Bot workflow present** (`fro-bot.yaml`) — PR review, issue triage, daily maintenance, @fro-bot mentions
+- **Fro Bot Autoheal workflow present** (`fro-bot-autoheal.yaml`) — daily auto-healing with progressive stale import migration
+- CI uses path filtering (dorny/paths-filter) to run Node.js and Python jobs independently
+- Renovate extends `marcusrbrown/renovate-config#v4`, settings extend `fro-bot/.github:common-settings.yaml`
+- Copilot Setup Steps workflow present for GitHub Copilot agent bootstrap
+- Known issue: Python application code uses stale pre-0.2 LangChain import paths despite deps being upgraded
+- JS langchain version (0.0.212) significantly behind Python side (^1.2)
+- Comprehensive AGENTS.md and .github/copilot-instructions.md for AI agent conventions
+
+Sources: https://github.com/marcusrbrown/copiloting (SHA cfc8bb6d5e814c9918a6e55f4b6747c3a36e4fb1)
