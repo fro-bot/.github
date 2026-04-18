@@ -13,6 +13,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
 - [[marcusrbrown--infra]] — Bun workspace monorepo for personal infrastructure (KeeWeb deploy, CLIProxyAPI proxy, operational CLI with MCP bridge)
 - [[marcusrbrown--marcusrbrown]] — GitHub profile README with TypeScript-powered automation (badge generation, sponsor tracking, A/B testing, scheduled updates)
+- [[marcusrbrown--mrbro-dev]] — Marcus's developer portfolio (React 19, TypeScript, Vite 7, GitHub Pages at mrbro.dev, advanced theme system, Fro Bot agent + autoheal)
 - [[marcusrbrown--tokentoilet]] — marcusrbrown/tokentoilet
 - [[marcusrbrown--vbs]] — marcusrbrown/vbs
 
@@ -20,6 +21,7 @@ Master catalog of all wiki pages, organized by type.
 
 - [[dotfiles]] — Dotfiles Management
 - [[github-actions-ci]] — Cross-cutting GitHub Actions CI/CD patterns across the Fro Bot-managed ecosystem
+- [[github-pages]] — Static site hosting via GitHub; deployment patterns and performance monitoring
 - [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
 - [[langchain]] — LLM application framework (Python + TypeScript); version notes and migration patterns
 - [[polyglot-monorepo]] — Patterns for managing Python + TypeScript monorepos with independent toolchains

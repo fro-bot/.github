@@ -110,6 +110,24 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/extend-vscode (SHA a4dcbbb175828a60855053d778fd21903a3d73d6)
 
+## [2026-04-18 00:00] ingest | marcusrbrown/mrbro.dev
+
+Initial survey of `marcusrbrown/mrbro.dev` (SHA `51f5cab`). Created repo page `marcusrbrown--mrbro-dev.md` and topic page `github-pages.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- Developer portfolio site: React 19, TypeScript (strict), Vite 7 (SWC), deployed to GitHub Pages at mrbro.dev
+- Advanced theme system with 10+ presets, custom theme creator, JSON schema validation (Ajv), import/export
+- GitHub API integration for dynamic blog and project showcase (no CMS)
+- Comprehensive test infrastructure: Vitest (unit), Playwright (E2E, visual regression, accessibility), Lighthouse CI (performance)
+- **Fro Bot workflow present and active** — `fro-bot.yaml` (PR review, daily maintenance) and `fro-bot-autoheal.yaml` (daily CI repair, security, code quality, production site review via agent-browser)
+- Shares `@bfra.me/*` config ecosystem and `marcusrbrown/renovate-config` with [[marcusrbrown--ha-config]]
+- Notable conventions: PascalCase hook files, no barrel exports, pure ESM, SWC over Babel, Shiki externalized in build
+- Coverage below enforced 80% thresholds on statements (70.81%), functions (60.4%), lines (70.81%)
+- Copilot coding agent configured with setup steps and pre-tool-use hooks
+
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 51f5cab5c77768b761d9f0a688ac7436cc5a06f4)
+
 ## [2026-04-18 02:32] ingest | marcusrbrown/vbs
 
 Survey of `marcusrbrown/vbs` (SHA `a552e73`). Created repo page `marcusrbrown--vbs.md`. Updated `index.md` to catalog the new page.
