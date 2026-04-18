@@ -1,14 +1,12 @@
 /**
  * Shared helpers for `metadata/repos.yaml` mutation.
  *
- * Any script that adds entries to the repos file should use `addRepoEntry` so every writer
- * produces byte-compatible entry shapes. `addRepoEntry` is for NEW entries only; it is
- * idempotent on duplicate `owner+name` and preserves the existing entry as-is (it does NOT
- * update status of existing entries — callers that need status transitions should produce
- * fresh entries inline, since a generic "update status" helper would obscure intent).
+ * Writers that add entries use `addRepoEntry`; writers that record survey outcomes use
+ * `recordSurveyResult`. Both are pure functions that never mutate inputs. `addRepoEntry`
+ * is idempotent on duplicate `owner+name` and preserves existing entries as-is.
  */
 
-import {assertReposFile, type OnboardingStatus, type ReposFile} from './schemas.ts'
+import {assertReposFile, type OnboardingStatus, type ReposFile, type SurveyStatus} from './schemas.ts'
 
 export interface AddRepoEntryInput {
   owner: string
@@ -53,5 +51,66 @@ export function addRepoEntry(current: unknown, input: AddRepoEntryInput): ReposF
         has_renovate: false,
       },
     ],
+  }
+}
+
+export interface RecordSurveyResultInput {
+  owner: string
+  repo: string
+  at: Date
+  status: SurveyStatus
+}
+
+/**
+ * Record the outcome of a Survey Repo run against an existing entry.
+ *
+ * Updates `last_survey_at` to the ISO date of `input.at` and `last_survey_status` to
+ * `input.status`. Throws `RepoEntryNotFoundError` when the entry is missing — callers must
+ * ensure the entry exists (typically via a prior reconcile run that called `addRepoEntry`).
+ *
+ * Reconcile's `>30d since last survey` staleness gate only engages when survey workflows
+ * write their outcome back here. Without this write-back, reconcile treats every repo as
+ * never-surveyed and re-dispatches the full access list every run.
+ *
+ * Pure function: never mutates `current` in place. Returns a fresh top-level object with a
+ * fresh `repos` array.
+ */
+export function recordSurveyResult(current: unknown, input: RecordSurveyResultInput): ReposFile {
+  assertReposFile(current, 'repos')
+
+  const matchIndex = current.repos.findIndex(entry => entry.owner === input.owner && entry.name === input.repo)
+  if (matchIndex === -1) {
+    throw new RepoEntryNotFoundError(input.owner, input.repo)
+  }
+
+  const match = current.repos[matchIndex]
+  if (match === undefined) {
+    throw new RepoEntryNotFoundError(input.owner, input.repo)
+  }
+
+  const updated = {
+    ...match,
+    last_survey_at: input.at.toISOString().slice(0, 10),
+    last_survey_status: input.status,
+  }
+
+  const nextRepos = [...current.repos]
+  nextRepos[matchIndex] = updated
+
+  return {
+    ...current,
+    repos: nextRepos,
+  }
+}
+
+export class RepoEntryNotFoundError extends Error {
+  readonly code = 'REPO_ENTRY_NOT_FOUND'
+
+  constructor(
+    readonly owner: string,
+    readonly repo: string,
+  ) {
+    super(`metadata/repos.yaml has no entry for ${owner}/${repo}`)
+    this.name = 'RepoEntryNotFoundError'
   }
 }
