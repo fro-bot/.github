@@ -4,13 +4,18 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
+- [[marcusrbrown--github]] — marcusrbrown/.github
+- [[marcusrbrown--esphome-life]] — marcusrbrown/esphome.life
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
+- [[marcusrbrown--tokentoilet]] — marcusrbrown/tokentoilet
 - [[marcusrbrown--vbs]] — VBS (View By Stardate): local-first Star Trek chronological viewing guide (TypeScript + Vite + D3, functional factory architecture, GitHub Pages)
 
 ## Topics
 
 - [[github-actions-ci]] — Cross-cutting GitHub Actions CI/CD patterns across the Fro Bot-managed ecosystem
 - [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
+- [[probot-settings]] — Probot Settings
+- [[web3-defi]] — Web3 & DeFi Development
 
 ## Entities
 
