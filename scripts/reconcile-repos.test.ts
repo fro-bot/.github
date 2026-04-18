@@ -1343,6 +1343,43 @@ describe('handleReconcile (I/O shell)', () => {
       expect(result.integrityCheck).toBe('skipped-no-data-branch')
       expect(commitMetadata).toHaveBeenCalledOnce()
     })
+
+    it('skips the integrity check when data branch was just bootstrapped this run', async () => {
+      // bootstrapDataBranch returns created:true when it created the branch from main HEAD
+      // this run. The branch now exists but its tip commit is inherited from main — authored
+      // by whoever merged the last PR, not fro-bot[bot]. The check must be skipped to avoid
+      // a false-positive DATA_BRANCH_TAMPER on every first run after a main merge.
+      const bootstrap = vi.fn(async () => ({created: true, ref: 'refs/heads/data', sha: 'new-data-sha'}))
+      const getBranch = vi.fn(async () => ({
+        data: {name: 'data', commit: {sha: 'main-sha', author: {login: 'human-merger'}}},
+      }))
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+      const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 't'}, name: 'r', archived: false, private: false, node_id: 'R_1'}],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({getBranch, issuesCreate}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: commitMetadata as never,
+          bootstrapDataBranch: bootstrap as never,
+          operatorLogins: [], // no operators — would normally reject 'human-merger'
+        }),
+      )
+
+      expect(result.integrityCheck).toBe('skipped-just-bootstrapped')
+      expect(commitMetadata).toHaveBeenCalledOnce()
+      // getBranch would normally be called by verifyDataBranchIntegrity — but we're skipping
+      // that step entirely on bootstrap, so it should never be invoked. No getBranch call
+      // also means no path to file a reconcile:integrity-alert issue.
+      expect(getBranch).not.toHaveBeenCalled()
+      expect(issuesCreate).not.toHaveBeenCalled()
+    })
   })
 
   describe('commit error handling', () => {

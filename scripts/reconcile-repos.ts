@@ -494,7 +494,13 @@ export interface HandleReconcileResult {
   closedStaleIssues: number
   /** Count of field probes that failed and were treated as no-change. */
   probesFailed: number
-  integrityCheck: 'ok' | 'skipped-no-data-branch'
+  /**
+   * Status of the pre-commit data-branch integrity check.
+   * - `'ok'` — check ran and passed.
+   * - `'skipped-no-data-branch'` — `data` branch does not exist (fresh first run before bootstrap); check is not applicable.
+   * - `'skipped-just-bootstrapped'` — `data` was created this run from `main`'s HEAD, so the author check would falsely flag the inherited commit.
+   */
+  integrityCheck: 'ok' | 'skipped-no-data-branch' | 'skipped-just-bootstrapped'
   committed: boolean
 }
 
@@ -519,8 +525,13 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const userOctokit = params.userOctokit ?? (await createOctokitFromEnv('FRO_BOT_POLL_PAT'))
   const appOctokit = params.appOctokit ?? (await createOctokitFromEnv('GITHUB_TOKEN'))
 
-  // 1. Bootstrap data branch (idempotent).
-  await bootstrap({octokit: appOctokit, owner, repo})
+  // 1. Bootstrap data branch (idempotent). On first run, this creates `data` from `main`'s
+  //    HEAD. The new branch inherits `main`'s history, so its tip commit is authored by
+  //    whoever merged the most recent PR — not `fro-bot[bot]`. Track the `created` flag so
+  //    we can skip the author-integrity check on bootstrap runs; once fro-bot makes its
+  //    first commit on `data`, subsequent runs enforce the check normally.
+  const bootstrapResult = await bootstrap({octokit: appOctokit, owner, repo})
+  const justBootstrapped = bootstrapResult.created === true
 
   // 2. Read metadata from disk (main branch checkout).
   const allowlist = await loadAllowlist(readMetadata, allowlistPath)
@@ -541,29 +552,36 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const plan = reconcileRepos({currentRepos, accessList, perRepoStatus, allowlist, fieldProbes, now})
 
   const hasChanges = planHasChanges(plan)
-  let integrityCheck: 'ok' | 'skipped-no-data-branch' = 'ok'
+  let integrityCheck: 'ok' | 'skipped-no-data-branch' | 'skipped-just-bootstrapped' = 'ok'
   let committed = false
 
   if (hasChanges) {
-    // 7. Pre-commit integrity check — fail closed on unexpected authors.
-    const integrity = await verifyDataBranchIntegrity({appOctokit, owner, repo, operatorLogins})
-    if (!integrity.ok) {
-      await fileIntegrityAlert({
-        appOctokit,
-        owner,
-        repo,
-        authorLogin: integrity.authorLogin,
-        sha: integrity.sha,
-        logger,
-      })
-      throw new ReconcileError({
-        code: 'DATA_BRANCH_TAMPER',
-        message: `Unexpected author on data branch tip commit: ${integrity.authorLogin ?? 'unknown'} (sha: ${integrity.sha})`,
-        remediation:
-          'Investigate who has contents:write on this repo. If legitimate, add the login to RECONCILE_OPERATOR_LOGINS and rerun.',
-      })
+    // 7. Pre-commit integrity check — fail closed on unexpected authors. Skipped entirely
+    //    when `data` was just bootstrapped this run: its tip commit is inherited from
+    //    `main` and is by definition authored by whoever merged the most recent PR, not
+    //    `fro-bot[bot]`. The check activates on the next run after fro-bot commits.
+    if (justBootstrapped) {
+      integrityCheck = 'skipped-just-bootstrapped'
+    } else {
+      const integrity = await verifyDataBranchIntegrity({appOctokit, owner, repo, operatorLogins})
+      if (!integrity.ok) {
+        await fileIntegrityAlert({
+          appOctokit,
+          owner,
+          repo,
+          authorLogin: integrity.authorLogin,
+          sha: integrity.sha,
+          logger,
+        })
+        throw new ReconcileError({
+          code: 'DATA_BRANCH_TAMPER',
+          message: `Unexpected author on data branch tip commit: ${integrity.authorLogin ?? 'unknown'} (sha: ${integrity.sha})`,
+          remediation:
+            'Investigate who has contents:write on this repo. If legitimate, add the login to RECONCILE_OPERATOR_LOGINS and rerun.',
+        })
+      }
+      integrityCheck = integrity.status
     }
-    integrityCheck = integrity.status
 
     // 8. Commit via mutator closure. Mutator re-runs reconcileRepos on each invocation,
     //    so 409-retry in commitMetadata absorbs concurrent writes correctly.
@@ -575,23 +593,26 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
         assertReposFile(currentParsed, 'repos')
         // Re-verify data-branch integrity inside the mutator to close the TOCTOU window
         // between the initial check (step 7) and the first commit attempt. Each 409 retry
-        // also re-verifies, catching any tamper that lands during the retry loop.
-        const retryIntegrity = await verifyDataBranchIntegrity({appOctokit, owner, repo, operatorLogins})
-        if (!retryIntegrity.ok) {
-          await fileIntegrityAlert({
-            appOctokit,
-            owner,
-            repo,
-            authorLogin: retryIntegrity.authorLogin,
-            sha: retryIntegrity.sha,
-            logger,
-          })
-          throw new ReconcileError({
-            code: 'DATA_BRANCH_TAMPER',
-            message: `Unexpected author on data branch tip commit during commit retry: ${retryIntegrity.authorLogin ?? 'unknown'} (sha: ${retryIntegrity.sha})`,
-            remediation:
-              'Investigate who has contents:write on this repo. If legitimate, add the login to RECONCILE_OPERATOR_LOGINS and rerun.',
-          })
+        // also re-verifies, catching any tamper that lands during the retry loop. Skipped
+        // on bootstrap runs for the same reason as the initial check.
+        if (!justBootstrapped) {
+          const retryIntegrity = await verifyDataBranchIntegrity({appOctokit, owner, repo, operatorLogins})
+          if (!retryIntegrity.ok) {
+            await fileIntegrityAlert({
+              appOctokit,
+              owner,
+              repo,
+              authorLogin: retryIntegrity.authorLogin,
+              sha: retryIntegrity.sha,
+              logger,
+            })
+            throw new ReconcileError({
+              code: 'DATA_BRANCH_TAMPER',
+              message: `Unexpected author on data branch tip commit during commit retry: ${retryIntegrity.authorLogin ?? 'unknown'} (sha: ${retryIntegrity.sha})`,
+              remediation:
+                'Investigate who has contents:write on this repo. If legitimate, add the login to RECONCILE_OPERATOR_LOGINS and rerun.',
+            })
+          }
         }
         const rerun = reconcileRepos({
           currentRepos: currentParsed,
