@@ -671,6 +671,8 @@ function baseParams(overrides: Partial<HandleReconcileParams> = {}): HandleRecon
       overrides.bootstrapDataBranch ??
       (vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 'data-sha'})) as never),
     dispatchTimeoutMs: overrides.dispatchTimeoutMs ?? 100,
+    dispatchStaggerMs: overrides.dispatchStaggerMs ?? 0,
+    dispatchSleep: overrides.dispatchSleep,
     operatorLogins: overrides.operatorLogins ?? [],
     logger: overrides.logger ?? silentLogger(),
     workflowFile: overrides.workflowFile ?? 'survey-repo.yaml',
@@ -917,6 +919,81 @@ describe('handleReconcile (I/O shell)', () => {
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesFailed).toBe(1)
       expect(logger.warn).toHaveBeenCalled()
+    })
+
+    it('staggers between dispatches but not before the first or after the last', async () => {
+      // Verifies the stagger contract documented in the triage for marcusrbrown/infra#144.
+      // For N dispatches we expect exactly N-1 stagger sleeps, never called before dispatch 1
+      // (to keep first-survey latency unchanged) and never after dispatch N (to avoid trailing
+      // idle time inside the 10-minute workflow job timeout).
+      const dispatchCalls: string[] = []
+      const sleepCalls: number[] = []
+      const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+        const typed = params as {inputs?: {owner: string; repo: string}}
+        dispatchCalls.push(typed.inputs?.repo ?? '?')
+      })
+      const dispatchSleep = vi.fn(async (ms: number) => {
+        sleepCalls.push(ms)
+      })
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 't'}, name: 'r1', archived: false, private: false, node_id: 'R_1'},
+            {owner: {login: 't'}, name: 'r2', archived: false, private: false, node_id: 'R_2'},
+            {owner: {login: 't'}, name: 'r3', archived: false, private: false, node_id: 'R_3'},
+            {owner: {login: 't'}, name: 'r4', archived: false, private: false, node_id: 'R_4'},
+          ],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          dispatchStaggerMs: 5000,
+          dispatchSleep,
+        }),
+      )
+
+      // Exactly 4 dispatches fired in order.
+      expect(dispatchCalls).toEqual(['r1', 'r2', 'r3', 'r4'])
+      expect(result.dispatches).toBe(4)
+      // Exactly 3 sleeps — between r1→r2, r2→r3, r3→r4. Never before r1. Never after r4.
+      expect(sleepCalls).toEqual([5000, 5000, 5000])
+      expect(dispatchSleep).toHaveBeenCalledTimes(3)
+    })
+
+    it('skips stagger entirely when dispatchStaggerMs is 0', async () => {
+      const dispatchSleep = vi.fn(async () => {
+        /* no-op */
+      })
+      const createWorkflowDispatch = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 't'}, name: 'r1', archived: false, private: false, node_id: 'R_1'},
+            {owner: {login: 't'}, name: 'r2', archived: false, private: false, node_id: 'R_2'},
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          dispatchStaggerMs: 0,
+          dispatchSleep,
+        }),
+      )
+
+      // No sleeps at all when stagger is 0 — the conditional `if (params.staggerMs > 0)`
+      // short-circuits before calling sleep. Critical for test-suite speed.
+      expect(dispatchSleep).not.toHaveBeenCalled()
+      expect(createWorkflowDispatch).toHaveBeenCalledTimes(2)
     })
 
     it('treats a dispatch timeout as failure and continues to the next', async () => {

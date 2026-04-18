@@ -40,4 +40,9 @@ jobs:
         env:
           FRO_BOT_POLL_PAT: ${{ secrets.FRO_BOT_POLL_PAT }}
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          # Stagger Survey Repo dispatches by 8 seconds so concurrent surveys don't saturate
+          # the shared Claude max20 OAuth seat (marcusrbrown/infra#144). Raise for larger
+          # access lists; clamp at 60s in the script. Workflow-level 10-minute timeout still
+          # bounds the full run.
+          RECONCILE_DISPATCH_STAGGER_MS: '8000'
         run: node scripts/reconcile-repos.ts

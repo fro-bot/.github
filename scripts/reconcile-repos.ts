@@ -419,6 +419,18 @@ const DEFAULT_REPOS_PATH = 'metadata/repos.yaml'
 const DEFAULT_WORKFLOW_FILE = 'survey-repo.yaml'
 const DEFAULT_WORKFLOW_REF = 'main'
 const DEFAULT_DISPATCH_TIMEOUT_MS = 15_000
+/**
+ * Delay (ms) inserted between consecutive Survey Repo dispatches. Surveys share a single
+ * Claude max20 OAuth seat via cliproxy.fro.bot and saturate upstream Anthropic rate limits
+ * when dispatched concurrently (see marcusrbrown/infra#144 diagnosis). Staggering spreads
+ * LLM context-window kickoff over time without exceeding the 10-minute workflow job
+ * timeout for any realistic access-list size.
+ *
+ * Default: 8s between dispatches → ~2 minutes to fan out 16 surveys, well under the
+ * 10-minute cap even if the access list grows to 50+ entries. Override via
+ * `RECONCILE_DISPATCH_STAGGER_MS` env var or `dispatchStaggerMs` param. Tests pass 0.
+ */
+const DEFAULT_DISPATCH_STAGGER_MS = 8_000
 
 const PENDING_REVIEW_LABEL = 'reconcile:pending-review'
 const ROLLUP_LABEL = 'reconcile:rollup-pending-review'
@@ -472,6 +484,18 @@ export interface HandleReconcileParams {
   bootstrapDataBranch?: (params: DataBranchBootstrapParams) => Promise<DataBranchBootstrapResult>
   /** Timeout (ms) applied to each `createWorkflowDispatch` call. Defaults to 15_000. */
   dispatchTimeoutMs?: number
+  /**
+   * Delay (ms) inserted between consecutive dispatches to avoid concurrent LLM requests
+   * against the shared Claude OAuth seat. Default 8_000 (see `DEFAULT_DISPATCH_STAGGER_MS`).
+   * Tests should pass 0 for speed; workflow env can override via `RECONCILE_DISPATCH_STAGGER_MS`.
+   */
+  dispatchStaggerMs?: number
+  /**
+   * Sleep implementation used by the dispatch loop. Test-only injection point — production
+   * uses `setTimeout`-backed Promise. Tests replace with a mock to verify stagger without
+   * real-time waits.
+   */
+  dispatchSleep?: (ms: number) => Promise<void>
   /** Extra authors allowed on the data branch tip commit (beyond `fro-bot[bot]`). */
   operatorLogins?: string[]
   logger?: ReconcileLogger
@@ -517,6 +541,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const workflowRef = params.workflowRef ?? DEFAULT_WORKFLOW_REF
   const now = params.now ?? new Date()
   const dispatchTimeoutMs = params.dispatchTimeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS
+  const dispatchStaggerMs = params.dispatchStaggerMs ?? loadDispatchStaggerFromEnv()
   const logger: ReconcileLogger = params.logger ?? {warn: message => process.stderr.write(`${message}\n`)}
   const operatorLogins = params.operatorLogins ?? loadOperatorLoginsFromEnv()
   const readMetadata = params.readMetadata ?? readMetadataFromDisk
@@ -630,6 +655,8 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
 
   // 9. Dispatch loop (serial, non-blocking on failure, wrapped in a per-call timeout).
   const dispatchOutcome = await runDispatches({
+    staggerMs: dispatchStaggerMs,
+    sleep: params.dispatchSleep,
     appOctokit,
     owner,
     repo,
@@ -962,11 +989,29 @@ async function runDispatches(params: {
   workflowRef: string
   dispatches: DispatchRequest[]
   timeoutMs: number
+  /**
+   * Delay (ms) inserted BETWEEN consecutive dispatches (not before the first, not after
+   * the last). Zero disables staggering entirely — test suites pass 0 for speed.
+   */
+  staggerMs: number
   logger: ReconcileLogger
+  /**
+   * Sleep implementation. Injected for test speed — production uses `setTimeout`-backed
+   * Promise; tests pass a no-op or a deterministic fake clock.
+   */
+  sleep?: (ms: number) => Promise<void>
 }): Promise<{succeeded: number; failed: number}> {
+  const sleep = params.sleep ?? defaultSleep
   let succeeded = 0
   let failed = 0
-  for (const dispatch of params.dispatches) {
+  for (let i = 0; i < params.dispatches.length; i += 1) {
+    const dispatch = params.dispatches[i]
+    if (dispatch === undefined) continue
+    // Stagger BETWEEN dispatches only — never before the first, never after the last.
+    // This keeps the first survey's kickoff latency unchanged and avoids trailing idle time.
+    if (i > 0 && params.staggerMs > 0) {
+      await sleep(params.staggerMs)
+    }
     try {
       await dispatchWithTimeout(
         async () =>
@@ -988,6 +1033,25 @@ async function runDispatches(params: {
     }
   }
   return {succeeded, failed}
+}
+
+async function defaultSleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * Parse `RECONCILE_DISPATCH_STAGGER_MS` from env. Returns the default when unset, empty,
+ * or non-numeric. Negative values clamp to 0 (no stagger). Upper-bounded at 60s to prevent
+ * accidental workflow-timeout triggers from bad operator config.
+ */
+function loadDispatchStaggerFromEnv(): number {
+  const raw = process.env.RECONCILE_DISPATCH_STAGGER_MS
+  if (raw === undefined || raw === '') return DEFAULT_DISPATCH_STAGGER_MS
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed)) return DEFAULT_DISPATCH_STAGGER_MS
+  if (parsed < 0) return 0
+  if (parsed > 60_000) return 60_000
+  return parsed
 }
 
 async function dispatchWithTimeout<T>(work: () => Promise<T>, timeoutMs: number): Promise<T> {
