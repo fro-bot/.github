@@ -23,22 +23,24 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/ha-config (SHA 83784bc3a212c10cd358be4da9425e46aa6e90f0)
 
-## [2026-04-18 00:00] ingest | marcusrbrown/esphome.life
+## [2026-04-18 00:00] ingest | marcusrbrown/extend-vscode
 
-Survey of `marcusrbrown/esphome.life` (SHA `e398c2e`). Created repo page `marcusrbrown--esphome-life.md`. Updated topic page `home-assistant.md` with esphome.life cross-references. Fixed wikilink slug in `marcusrbrown--ha-config.md` related field (`marcusrbrown-esphome-life` → `marcusrbrown--esphome-life`). Updated `index.md`.
+Initial survey of `marcusrbrown/extend-vscode` (SHA `a4dcbbb`). Created repo page `marcusrbrown--extend-vscode.md` and topic page `vscode-extensions.md`. Updated `index.md` to catalog both pages.
 
 Key findings:
 
-- ESPHome project derived from `esphome/esphome-project-template`, builds firmware for Olimex ESP32-PoE-ISO Bluetooth Proxy devices
-- Two per-device configs (`13451c`, `1349f4`), one shared package (`packages/olimex-bluetooth-proxy.yaml`)
-- Only `1349f4` is in the CI build matrix; `13451c` is not built by CI
-- CI deploys to GitHub Pages with ESP Web Tools for browser-based firmware installation
-- ESPHome version pinned at 2025.12.7 in both CI and devcontainer
-- Devcontainer uses `ptr727/esphome-nonroot` image with ESPHome dashboard, PlatformIO, and serial monitor extensions
-- Renovate extends `marcusrbrown/renovate-config#4.5.1` with ESPHome-specific package rules (loose versioning, semantic commits)
+- VS Code extension toolkit, modular architecture with central `ExtensionController`
+- TypeScript, MIT, pnpm 10.33.0, tsup build, dual Node/Web extension targets
+- Feature modules: commands, webviews, tree views, status bar, tasks, telemetry, logging, configuration
+- Generated types from package.json via `vscode-ext-gen`
+- Vitest unit + web tests, `@vscode/test-electron` integration, Playwright visual regression
+- Semantic-release publishing to VS Code Marketplace, OpenVSIX, and npm
+- Emergency rollback workflow with per-platform support
+- Extends `@bfra.me/eslint-config` and `@bfra.me/tsconfig`
+- Renovate extends `marcusrbrown/renovate-config#4.5.0` + `sanity-io/renovate-config`
 - Probot settings extend `fro-bot/.github:common-settings.yaml`
+- AI context: `llms.txt`, `.github/copilot-instructions.md`, `.ai/`, `.cursor/` directories
 - **No Fro Bot agent workflow detected** — follow-up PR recommended
-- All devices use Ethernet (LAN8720) — no Wi-Fi — for wired Bluetooth Proxy backhaul
-- Template artifacts (`docs/readme.md`, `static/index.md`) remain uncustomized
+- Version 0.1.0 (pre-release), created 2020-11-16, last push 2026-04-17
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA a4dcbbb175828a60855053d778fd21903a3d73d6)
