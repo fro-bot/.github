@@ -9,6 +9,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--containers]] — Container collection and automation framework (Dockerfiles, multi-arch builds, Python CLI, AI-powered templates, CI/CD)
 - [[marcusrbrown--copiloting]] — Polyglot AI/LLM experimentation monorepo (Python + TypeScript); LangChain tutorials, Flask + SvelteKit PDF chat app, Fro Bot agent workflows
 - [[marcusrbrown--esphome-life]] — marcusrbrown/esphome.life
+- [[marcusrbrown--extend-vscode]] — VS Code extension toolkit (TypeScript, dual Node/Web targets, tsup, Vitest, semantic-release publishing)
 - [[marcusrbrown--gpt]] — Local-first GPT creation platform (React 19, TypeScript 5.9, Vite 7, LangChain, MCP, IndexedDB, Web Crypto; deployed to gpt.mrbro.dev)
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
 - [[marcusrbrown--infra]] — Bun workspace monorepo for personal infrastructure (KeeWeb deploy, CLIProxyAPI proxy, operational CLI with MCP bridge)
@@ -24,6 +25,7 @@ Master catalog of all wiki pages, organized by type.
 - [[langchain]] — LLM application framework (Python + TypeScript); version notes and migration patterns
 - [[polyglot-monorepo]] — Patterns for managing Python + TypeScript monorepos with independent toolchains
 - [[probot-settings]] — Repository configuration management via Probot Settings; inheritance patterns, common-settings templates, and governance across repos
+- [[vscode-extensions]] — VS Code extension development patterns, dual-target builds, and publishing tooling
 - [[web3-defi]] — Web3 & DeFi Development
 
 ## Entities
