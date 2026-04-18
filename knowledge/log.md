@@ -42,6 +42,30 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fadc7341da26e03c)
 
+## [2026-04-18 00:00] ingest | marcusrbrown/gpt
+
+Initial survey of `marcusrbrown/gpt` (SHA `60bd62e`). Created repo page `marcusrbrown--gpt.md`. Updated `index.md` to catalog the new page. No new topic/entity/comparison pages created — cross-cutting topics (LangChain, MCP, local-first) are candidates for standalone pages once a second repo references them.
+
+Key findings:
+
+- Local-first GPT creation platform deployed to gpt.mrbro.dev (GitHub Pages)
+- React 19 + TypeScript 5.9 + Vite 8 + HeroUI + TailwindCSS 4
+- IndexedDB (Dexie 4.4.2) for client-side storage, Web Crypto (AES-GCM/PBKDF2) for API key encryption
+- Multi-provider LLM abstraction via `BaseLLMProvider`: OpenAI, Anthropic, Azure, Ollama
+- LangChain 1.3.3 + LangGraph 1.2.8 for AI orchestration, MCP SDK 1.29.0 for tool integration
+- 13 RFCs documenting architectural decisions (storage through Tauri desktop app)
+- 5 test dimensions: unit (Vitest), E2E (Playwright, currently disabled workflow), accessibility (axe-core), visual regression, performance (Lighthouse)
+- **Full Fro Bot integration:** `fro-bot.yaml` (PR review, triage, daily maintenance at 15:30 UTC) and `fro-bot-autoheal.yaml` (daily autohealing at 03:30 UTC), both using `fro-bot/agent@v0.40.2`
+- Renovate extends `marcusrbrown/renovate-config#4.5.8` with LangChain monorepo grouping
+- Probot settings extend `fro-bot/.github:common-settings.yaml`
+- AGENTS.md hierarchy with directory-level guides for AI-assisted development
+- Copilot coding agent support via `copilot-setup-steps.yaml`
+- Uses `@bfra.me/*` shared configs (tsconfig, eslint, prettier)
+- `@typescript/native-preview` (tsgo) for fast type-checking in build step
+- Node.js 24.15.0, pnpm 10.33.0
+
+Sources: https://github.com/marcusrbrown/gpt (SHA 60bd62e86caa1a07610c2162d9ffbb917d172dc3)
+
 ## [2026-04-18 06:00] ingest | marcusrbrown/.dotfiles
 
 Survey of `marcusrbrown/.dotfiles` (SHA `2f2d1e6`). Created repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Updated `index.md` to catalog all three pages.
