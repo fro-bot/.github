@@ -42,23 +42,27 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fadc7341da26e03c)
 
-## [2026-04-18 00:00] ingest | marcusrbrown/mrbro.dev
+## [2026-04-18 00:00] ingest | marcusrbrown/marcusrbrown
 
-Initial survey of `marcusrbrown/mrbro.dev` (SHA `51f5cab`). Created repo page `marcusrbrown--mrbro-dev.md` and topic page `github-pages.md`. Updated `index.md` to catalog both pages.
+Survey of `marcusrbrown/marcusrbrown` (SHA `af78e68`). Created repo page `marcusrbrown--marcusrbrown.md` and topic page `github-actions-ci.md`. Updated `index.md` to catalog both pages.
 
 Key findings:
 
-- Developer portfolio site: React 19, TypeScript (strict), Vite 7 (SWC), deployed to GitHub Pages at mrbro.dev
-- Advanced theme system with 10+ presets, custom theme creator, JSON schema validation (Ajv), import/export
-- GitHub API integration for dynamic blog and project showcase (no CMS)
-- Comprehensive test infrastructure: Vitest (unit), Playwright (E2E, visual regression, accessibility), Lighthouse CI (performance)
-- **Fro Bot workflow present and active** — `fro-bot.yaml` (PR review, daily maintenance) and `fro-bot-autoheal.yaml` (daily CI repair, security, code quality, production site review via agent-browser)
-- Shares `@bfra.me/*` config ecosystem and `marcusrbrown/renovate-config` with [[marcusrbrown--ha-config]]
-- Notable conventions: PascalCase hook files, no barrel exports, pure ESM, SWC over Babel, Shiki externalized in build
-- Coverage below enforced 80% thresholds on statements (70.81%), functions (60.4%), lines (70.81%)
-- Copilot coding agent configured with setup steps and pre-tool-use hooks
+- GitHub profile README repo, public, TypeScript-powered with template-driven content generation
+- Automated profile updates every 6 hours via `muesli/readme-scribe` and custom TypeScript scripts
+- Sponsor tracking pipeline: GitHub GraphQL API fetch, template rendering, auto-PR via `peter-evans/create-pull-request`
+- Badge automation: `@bfra.me/badge-config`, technology detection, shields.io client, caching layer
+- A/B testing framework for sponsor conversion content (`templates/variants/`)
+- Content analytics and mobile responsiveness testing scripts
+- CI: markdownlint + tsc + eslint via `main.yaml`; profile generation via `update-profile.yaml`
+- Dev tooling: pnpm 10.31.0, Node 24.14.0 (mise), Vitest 4.0.18, `@bfra.me/*` shared configs
+- Renovate extends `marcusrbrown/renovate-config#4.5.1`, post-upgrade runs bootstrap + fix
+- Probot settings extend `fro-bot/.github:common-settings.yaml`
+- Automated commits by `mrbro-bot[bot]` (app 137683033), not Fro Bot
+- **No Fro Bot agent workflow detected** — follow-up PR recommended
+- Cross-cutting GitHub Actions patterns extracted to new topic page `github-actions-ci.md`
 
-Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 51f5cab5c77768b761d9f0a688ac7436cc5a06f4)
+Sources: https://github.com/marcusrbrown/marcusrbrown (SHA af78e68d510b24152531f7fdafe9bff35a58f071)
 
 ## [2026-04-18 00:00] ingest | marcusrbrown/gpt
 
@@ -105,6 +109,24 @@ Key findings:
 - Version 0.1.0 (pre-release), created 2020-11-16, last push 2026-04-17
 
 Sources: https://github.com/marcusrbrown/extend-vscode (SHA a4dcbbb175828a60855053d778fd21903a3d73d6)
+
+## [2026-04-18 00:00] ingest | marcusrbrown/mrbro.dev
+
+Initial survey of `marcusrbrown/mrbro.dev` (SHA `51f5cab`). Created repo page `marcusrbrown--mrbro-dev.md` and topic page `github-pages.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- Developer portfolio site: React 19, TypeScript (strict), Vite 7 (SWC), deployed to GitHub Pages at mrbro.dev
+- Advanced theme system with 10+ presets, custom theme creator, JSON schema validation (Ajv), import/export
+- GitHub API integration for dynamic blog and project showcase (no CMS)
+- Comprehensive test infrastructure: Vitest (unit), Playwright (E2E, visual regression, accessibility), Lighthouse CI (performance)
+- **Fro Bot workflow present and active** — `fro-bot.yaml` (PR review, daily maintenance) and `fro-bot-autoheal.yaml` (daily CI repair, security, code quality, production site review via agent-browser)
+- Shares `@bfra.me/*` config ecosystem and `marcusrbrown/renovate-config` with [[marcusrbrown--ha-config]]
+- Notable conventions: PascalCase hook files, no barrel exports, pure ESM, SWC over Babel, Shiki externalized in build
+- Coverage below enforced 80% thresholds on statements (70.81%), functions (60.4%), lines (70.81%)
+- Copilot coding agent configured with setup steps and pre-tool-use hooks
+
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 51f5cab5c77768b761d9f0a688ac7436cc5a06f4)
 
 ## [2026-04-18 02:32] ingest | marcusrbrown/vbs
 
