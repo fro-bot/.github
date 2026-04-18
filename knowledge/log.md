@@ -23,22 +23,20 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/ha-config (SHA 83784bc3a212c10cd358be4da9425e46aa6e90f0)
 
-## [2026-04-18 00:00] ingest | marcusrbrown/esphome.life
+## [2026-04-18 00:00] ingest | marcusrbrown/mrbro.dev
 
-Survey of `marcusrbrown/esphome.life` (SHA `e398c2e`). Created repo page `marcusrbrown--esphome-life.md`. Updated topic page `home-assistant.md` with esphome.life cross-references. Fixed wikilink slug in `marcusrbrown--ha-config.md` related field (`marcusrbrown-esphome-life` → `marcusrbrown--esphome-life`). Updated `index.md`.
+Initial survey of `marcusrbrown/mrbro.dev` (SHA `51f5cab`). Created repo page `marcusrbrown--mrbro-dev.md` and topic page `github-pages.md`. Updated `index.md` to catalog both pages.
 
 Key findings:
 
-- ESPHome project derived from `esphome/esphome-project-template`, builds firmware for Olimex ESP32-PoE-ISO Bluetooth Proxy devices
-- Two per-device configs (`13451c`, `1349f4`), one shared package (`packages/olimex-bluetooth-proxy.yaml`)
-- Only `1349f4` is in the CI build matrix; `13451c` is not built by CI
-- CI deploys to GitHub Pages with ESP Web Tools for browser-based firmware installation
-- ESPHome version pinned at 2025.12.7 in both CI and devcontainer
-- Devcontainer uses `ptr727/esphome-nonroot` image with ESPHome dashboard, PlatformIO, and serial monitor extensions
-- Renovate extends `marcusrbrown/renovate-config#4.5.1` with ESPHome-specific package rules (loose versioning, semantic commits)
-- Probot settings extend `fro-bot/.github:common-settings.yaml`
-- **No Fro Bot agent workflow detected** — follow-up PR recommended
-- All devices use Ethernet (LAN8720) — no Wi-Fi — for wired Bluetooth Proxy backhaul
-- Template artifacts (`docs/readme.md`, `static/index.md`) remain uncustomized
+- Developer portfolio site: React 19, TypeScript (strict), Vite 7 (SWC), deployed to GitHub Pages at mrbro.dev
+- Advanced theme system with 10+ presets, custom theme creator, JSON schema validation (Ajv), import/export
+- GitHub API integration for dynamic blog and project showcase (no CMS)
+- Comprehensive test infrastructure: Vitest (unit), Playwright (E2E, visual regression, accessibility), Lighthouse CI (performance)
+- **Fro Bot workflow present and active** — `fro-bot.yaml` (PR review, daily maintenance) and `fro-bot-autoheal.yaml` (daily CI repair, security, code quality, production site review via agent-browser)
+- Shares `@bfra.me/*` config ecosystem and `marcusrbrown/renovate-config` with [[marcusrbrown--ha-config]]
+- Notable conventions: PascalCase hook files, no barrel exports, pure ESM, SWC over Babel, Shiki externalized in build
+- Coverage below enforced 80% thresholds on statements (70.81%), functions (60.4%), lines (70.81%)
+- Copilot coding agent configured with setup steps and pre-tool-use hooks
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 51f5cab5c77768b761d9f0a688ac7436cc5a06f4)
