@@ -23,22 +23,24 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/ha-config (SHA 83784bc3a212c10cd358be4da9425e46aa6e90f0)
 
-## [2026-04-18 00:00] ingest | marcusrbrown/esphome.life
+## [2026-04-18 00:00] ingest | marcusrbrown/marcusrbrown
 
-Survey of `marcusrbrown/esphome.life` (SHA `e398c2e`). Created repo page `marcusrbrown--esphome-life.md`. Updated topic page `home-assistant.md` with esphome.life cross-references. Fixed wikilink slug in `marcusrbrown--ha-config.md` related field (`marcusrbrown-esphome-life` → `marcusrbrown--esphome-life`). Updated `index.md`.
+Survey of `marcusrbrown/marcusrbrown` (SHA `af78e68`). Created repo page `marcusrbrown--marcusrbrown.md` and topic page `github-actions-ci.md`. Updated `index.md` to catalog both pages.
 
 Key findings:
 
-- ESPHome project derived from `esphome/esphome-project-template`, builds firmware for Olimex ESP32-PoE-ISO Bluetooth Proxy devices
-- Two per-device configs (`13451c`, `1349f4`), one shared package (`packages/olimex-bluetooth-proxy.yaml`)
-- Only `1349f4` is in the CI build matrix; `13451c` is not built by CI
-- CI deploys to GitHub Pages with ESP Web Tools for browser-based firmware installation
-- ESPHome version pinned at 2025.12.7 in both CI and devcontainer
-- Devcontainer uses `ptr727/esphome-nonroot` image with ESPHome dashboard, PlatformIO, and serial monitor extensions
-- Renovate extends `marcusrbrown/renovate-config#4.5.1` with ESPHome-specific package rules (loose versioning, semantic commits)
+- GitHub profile README repo, public, TypeScript-powered with template-driven content generation
+- Automated profile updates every 6 hours via `muesli/readme-scribe` and custom TypeScript scripts
+- Sponsor tracking pipeline: GitHub GraphQL API fetch, template rendering, auto-PR via `peter-evans/create-pull-request`
+- Badge automation: `@bfra.me/badge-config`, technology detection, shields.io client, caching layer
+- A/B testing framework for sponsor conversion content (`templates/variants/`)
+- Content analytics and mobile responsiveness testing scripts
+- CI: markdownlint + tsc + eslint via `main.yaml`; profile generation via `update-profile.yaml`
+- Dev tooling: pnpm 10.31.0, Node 24.14.0 (mise), Vitest 4.0.18, `@bfra.me/*` shared configs
+- Renovate extends `marcusrbrown/renovate-config#4.5.1`, post-upgrade runs bootstrap + fix
 - Probot settings extend `fro-bot/.github:common-settings.yaml`
+- Automated commits by `mrbro-bot[bot]` (app 137683033), not Fro Bot
 - **No Fro Bot agent workflow detected** — follow-up PR recommended
-- All devices use Ethernet (LAN8720) — no Wi-Fi — for wired Bluetooth Proxy backhaul
-- Template artifacts (`docs/readme.md`, `static/index.md`) remain uncustomized
+- Cross-cutting GitHub Actions patterns extracted to new topic page `github-actions-ci.md`
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+Sources: https://github.com/marcusrbrown/marcusrbrown (SHA af78e68d510b24152531f7fdafe9bff35a58f071)

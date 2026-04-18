@@ -4,11 +4,12 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
-- [[marcusrbrown--esphome-life]] — ESPHome device firmware configs for Olimex ESP32-PoE-ISO Bluetooth Proxies; CI-built and deployed to GitHub Pages via ESP Web Tools
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
+- [[marcusrbrown--marcusrbrown]] — GitHub profile README with TypeScript-powered automation (badge generation, sponsor tracking, A/B testing, scheduled updates)
 
 ## Topics
 
+- [[github-actions-ci]] — GitHub Actions CI/CD patterns across Marcus's repositories (shared workflows, setup actions, Renovate, Probot)
 - [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
 
 ## Entities
