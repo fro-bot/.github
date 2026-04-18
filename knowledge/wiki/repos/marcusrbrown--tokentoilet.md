@@ -9,7 +9,9 @@ sources:
     accessed: 2026-04-18
 tags: [next-js, react, web3, defi, wagmi, reown-appkit, tailwindcss, vitest, storybook, vercel, typescript]
 aliases: [tokentoilet]
-related: []
+related:
+  - marcusrbrown--ha-config
+  - marcusrbrown--vbs
 ---
 
 # marcusrbrown/tokentoilet
@@ -161,8 +163,8 @@ The Fro Bot workflow conditionals filter out: fork PRs, bot-authored PRs/issues,
 - **ESLint:** `@bfra.me/eslint-config` with React, Next.js, and Prettier plugins.
 - **Bundle analysis:** `@next/bundle-analyzer` available via `NEXT_BUILD_ENV_ANALYZE=true`.
 - **Environment:** `@t3-oss/env-nextjs` + Zod for typed environment validation. Access via `import {env} from '@/env'`, never `process.env`.
-- **Renovate:** Via reusable workflow, extends `marcusrbrown/renovate-config`.
-- **Probot Settings:** Via `bfra-me/.github` reusable workflow.
+- **Renovate:** Via reusable workflow, extends `marcusrbrown/renovate-config#4.5.8`. Post-upgrade tasks run `pnpm install` + `pnpm run fix`. Custom rule: `lucide-react` minor automerge monthly. Same preset ecosystem as [[marcusrbrown--ha-config]] and [[marcusrbrown--vbs]].
+- **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` via `bfra-me/.github` reusable workflow. Branch protection requires: Build, Build Storybook, Lint, Renovate, Security Audit, Test. Linear history enforced, admin enforcement enabled, no required PR reviews.
 
 ## Architecture Patterns
 
@@ -187,6 +189,21 @@ The Fro Bot workflow conditionals filter out: fork PRs, bot-authored PRs/issues,
 
 - `scripts/validate-design-system.ts` — Verifies design system completeness
 - `scripts/validate-web3-integration.ts` — Verifies Web3 integration patterns
+
+## Shared Ecosystem Patterns
+
+This repo participates in the same developer tooling ecosystem as [[marcusrbrown--ha-config]] and [[marcusrbrown--vbs]]:
+
+| Pattern              | tokentoilet                            | ha-config       | vbs      |
+| -------------------- | -------------------------------------- | --------------- | -------- |
+| Probot settings base | `fro-bot/.github:common-settings.yaml` | Same            | Same     |
+| Renovate preset      | `marcusrbrown/renovate-config#4.5.8`   | `#4.5.8`        | `#4.5.8` |
+| ESLint config        | `@bfra.me/eslint-config`               | N/A (YAML repo) | Same     |
+| Prettier config      | `@bfra.me/prettier-config/120-proof`   | N/A             | Same     |
+| Package manager      | pnpm                                   | N/A (YAML repo) | pnpm     |
+| Fro Bot workflow     | Present (v0.40.2)                      | **Missing**     | Present  |
+| Copilot setup steps  | Present                                | Not present     | Present  |
+| AGENTS.md            | Present                                | Not present     | Present  |
 
 ## Notable Observations
 
