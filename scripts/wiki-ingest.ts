@@ -612,13 +612,35 @@ async function getChangedWikiPaths(): Promise<string[]> {
     `${WIKI_ROOT}/comparisons`,
   ])
 
+  return parsePorcelainPaths(stdout).filter(path => path !== INDEX_PATH && path !== LOG_PATH && path.endsWith('.md'))
+}
+
+/**
+ * Parse paths from `git status --porcelain=v1` output.
+ *
+ * Porcelain v1 format is `XY<space>PATH\n` where X = index status and Y = worktree
+ * status. Either position may be a literal space for "unchanged". Example lines:
+ * - ` M path/to/file` — modified in worktree, not staged (X = space)
+ * - `M  path/to/file` — staged modification (Y = space)
+ * - `A  path/to/file` — newly added (staged)
+ * - `?? path/to/file` — untracked
+ *
+ * Rename lines (`XY OLD -> NEW`) and submodules are out of scope — this script
+ * only commits additive wiki markdown files, never renames.
+ *
+ * Historical bug: a prior implementation used `line.trim()` before `line.slice(3)`,
+ * which stripped the X-position space for unstaged changes and caused
+ * `line.slice(3)` to eat the first character of the path (e.g. `knowledge/...`
+ * became `nowledge/...` and the subsequent `readFile` failed with ENOENT). The
+ * fix: preserve the fixed 3-char prefix and only strip trailing CR for cross-platform safety.
+ */
+export function parsePorcelainPaths(stdout: string): string[] {
   return stdout
     .split('\n')
-    .map(line => line.trim())
-    .filter(line => line !== '')
+    .map(line => line.replace(/\r$/, ''))
+    .filter(line => line.length >= 4)
     .map(line => line.slice(3))
-    .filter(path => path !== INDEX_PATH && path !== LOG_PATH)
-    .filter(path => path.endsWith('.md'))
+    .filter(path => path !== '')
 }
 
 function parsePayload(raw: string): WikiIngestPayload {

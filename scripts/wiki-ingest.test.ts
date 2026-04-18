@@ -7,9 +7,10 @@ import {describe, expect, it, vi} from 'vitest'
 const wikiIngestModulePromise: Promise<{
   buildWikiIngestChanges: typeof import('./wiki-ingest.js').buildWikiIngestChanges
   commitWikiChanges: typeof import('./wiki-ingest.js').commitWikiChanges
+  parsePorcelainPaths: typeof import('./wiki-ingest.js').parsePorcelainPaths
   WikiIngestError: typeof import('./wiki-ingest.js').WikiIngestError
 }> = import(`./wiki-ingest${'.js'}`)
-const {buildWikiIngestChanges, commitWikiChanges, WikiIngestError} = await wikiIngestModulePromise
+const {buildWikiIngestChanges, commitWikiChanges, parsePorcelainPaths, WikiIngestError} = await wikiIngestModulePromise
 
 interface MockOverrides {
   getRef?: (params: {owner: string; repo: string; ref: string}) => Promise<unknown>
@@ -564,7 +565,78 @@ describe('commitWikiChanges', () => {
       vi.useRealTimers()
     }
   })
+})
 
+describe('parsePorcelainPaths', () => {
+  it('extracts paths with X=space (unstaged worktree modification)', () => {
+    // #given `git status --porcelain` output where the index position is unchanged (space)
+    // and the worktree has a modification — this is what we produce when the survey agent
+    // updates existing wiki files without staging them.
+    // Regression: earlier logic called `.trim()` first, stripping the leading X-space,
+    // then `.slice(3)` ate one character of the path. This test pins the fixed-offset parse.
+    const stdout = ' M knowledge/wiki/repos/marcusrbrown--ha-config.md\n'
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then the full path survives, no leading character dropped
+    expect(paths).toEqual(['knowledge/wiki/repos/marcusrbrown--ha-config.md'])
+  })
+
+  it('extracts paths with Y=space (staged modification) and added/untracked entries', () => {
+    // #given a mixed porcelain listing covering all status variants the wiki commit path encounters
+    const stdout = [
+      'M  knowledge/index.md', // staged modification
+      ' M knowledge/log.md', // unstaged modification
+      'A  knowledge/wiki/repos/fro-bot--agent.md', // staged add
+      '?? knowledge/wiki/topics/new-topic.md', // untracked
+      '',
+    ].join('\n')
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then every path emerges intact in input order
+    expect(paths).toEqual([
+      'knowledge/index.md',
+      'knowledge/log.md',
+      'knowledge/wiki/repos/fro-bot--agent.md',
+      'knowledge/wiki/topics/new-topic.md',
+    ])
+  })
+
+  it('strips trailing CR from windows-style line endings without touching the path', () => {
+    // #given porcelain output terminated with \r\n (e.g., from a Windows git environment)
+    const stdout = ' M knowledge/log.md\r\nA  knowledge/wiki/repos/marcusrbrown--vbs.md\r\n'
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then CRs are stripped but paths are preserved exactly
+    expect(paths).toEqual(['knowledge/log.md', 'knowledge/wiki/repos/marcusrbrown--vbs.md'])
+  })
+
+  it('returns an empty array for empty or whitespace-only stdout', () => {
+    // #given `git status --porcelain` output with no changes
+    // #when porcelain lines are parsed
+    // #then no paths are emitted (no spurious empty strings)
+    expect(parsePorcelainPaths('')).toEqual([])
+    expect(parsePorcelainPaths('\n\n\n')).toEqual([])
+  })
+
+  it('ignores malformed lines shorter than the status prefix', () => {
+    // #given a pathological input with lines that can't possibly be porcelain entries
+    const stdout = ['xy', 'ab', ' M valid/path.md', ''].join('\n')
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then only the well-formed entry is kept; short garbage is ignored
+    expect(paths).toEqual(['valid/path.md'])
+  })
+})
+
+describe('commitWikiChanges (422 surfacing)', () => {
   it('does not retry 422 updateRef failures', async () => {
     const updateRef = vi
       .fn<(params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>>()
