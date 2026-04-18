@@ -42,3 +42,23 @@ Key findings:
 - Template artifacts (`docs/readme.md`, `static/index.md`) remain uncustomized
 
 Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+
+## [2026-04-18 00:00] ingest | marcusrbrown/copiloting
+
+Survey of `marcusrbrown/copiloting` (SHA `cfc8bb6`). Created repo page `marcusrbrown--copiloting.md` and topic page `langchain.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- Polyglot AI/LLM experimentation monorepo: Python 3.14 (Poetry 2.3.4) + TypeScript (pnpm 10.33.0, Node 24.15.0)
+- Three sub-projects: TypeScript tutorials, Python course modules (agents/chains/facts/tchat), Flask + SvelteKit PDF chat app with RAG pipeline
+- Core AI stack: LangChain (Python ^1.2, JS 0.0.212), OpenAI ^2.0, Pinecone, Redis/Celery, Pydantic ^2.10
+- **Fro Bot workflow present and fully configured** — both `fro-bot.yaml` (PR review, triage, daily maintenance) and `fro-bot-autoheal.yaml` (daily autohealing with progressive stale import migration)
+- GitHub Copilot coding agent integration: `copilot-setup-steps.yaml`, `copilot-instructions.md`, `AGENTS.md`
+- CI: dual-language pipeline with `dorny/paths-filter` for conditional job execution; required checks include Fro Bot, Build Node.js, Build Python, Renovate
+- Known issue: Python imports stale after dep upgrades (langchain 0.3 → 1.2, openai v1 → v2, pydantic v1 → v2); autoheal migrates one file per run
+- Root JS langchain pin (0.0.212) significantly outdated vs Python side (^1.2)
+- Renovate extends `marcusrbrown/renovate-config#v4`; Probot settings extend `fro-bot/.github:common-settings.yaml`
+- Tooling: mise manages all versions, @bfra.me configs for ESLint/Prettier/TSConfig, SHA-pinned GitHub Actions
+- Testing: pytest (Flask app factory, auth views, models, config) + vitest (TypeScript)
+
+Sources: https://github.com/marcusrbrown/copiloting (SHA cfc8bb6d5e814c9918a6e55f4b6747c3a36e4fb1)
