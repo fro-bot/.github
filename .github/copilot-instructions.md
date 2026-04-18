@@ -7,10 +7,9 @@ This is the foundational `.github` repository for Fro Bot, an AI-powered GitHub 
 ## Canonical Context (read first)
 
 1. `README.md` — repository purpose and structure
-2. `.cursorrules` — AI-development conventions and constraints
-3. `.github/workflows/main.yaml` — current CI quality gate behavior
-4. `.github/actions/setup/action.yaml` — required environment/bootstrap pattern
-5. `package.json` — authoritative scripts and package-manager contract
+2. `.github/workflows/main.yaml` — current CI quality gate behavior
+3. `.github/actions/setup/action.yaml` — required environment/bootstrap pattern
+4. `package.json` — authoritative scripts and package-manager contract
 
 Additional high-signal config:
 
@@ -33,7 +32,7 @@ If guidance conflicts, follow the order above.
 - Automation hub (`.github/workflows/`, `.github/actions/`)
 - Copilot governance hooks (`.github/hooks/`)
 - Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
-- Development standards and quality gates (`.cursorrules`, TypeScript/ESLint/Prettier)
+- Development standards and quality gates (TypeScript/ESLint/Prettier)
 
 ## Required Workflow for Every Change
 
