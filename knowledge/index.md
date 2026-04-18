@@ -15,6 +15,7 @@ Master catalog of all wiki pages, organized by type.
 ## Topics
 
 - [[dotfiles]] — Dotfiles Management
+- [[github-actions-ci]] — Cross-cutting GitHub Actions CI/CD patterns across the Fro Bot-managed ecosystem
 - [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
 - [[probot-settings]] — Repository configuration management via Probot Settings; inheritance patterns, common-settings templates, and governance across repos
 - [[web3-defi]] — Web3 & DeFi Development

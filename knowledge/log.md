@@ -89,3 +89,26 @@ Key findings:
 Cross-references established: dotfiles shares mise tooling, Renovate config patterns, and Probot settings with ha-config. Entity page for mise created to track cross-repo usage.
 
 Sources: https://github.com/marcusrbrown/.dotfiles (SHA 2f2d1e6ac04999c5e61ee054fc585d9542cd3a74)
+
+## [2026-04-18 12:00] ingest | marcusrbrown/vbs
+
+Initial survey of `marcusrbrown/vbs` (SHA `a552e73`). Created repo page `marcusrbrown--vbs.md` and topic page `github-actions-ci.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- Star Trek chronological viewing guide, TypeScript + Vite + D3.js, deployed to GitHub Pages
+- Functional factory architecture: no classes, closure-based state, generic EventEmitters, strict TS
+- Comprehensive metadata subsystem: 6 modules + 6 UI components sourcing from TMDB, Memory Alpha, TrekCore, STAPI
+- Automated data generation pipeline with quality scoring, weekly via `update-star-trek-data.yaml`
+- Functional composition utilities embedded: `pipe()`, `compose()`, `curry()`, `tap()`, async variants
+- Generic storage adapters with `StorageAdapter<T>` interface; IndexedDB migration planned
+- **Fro Bot agent workflow present and active** (`fro-bot.yaml` + `fro-bot-autoheal.yaml`)
+  - PR review with VBS-specific convention checks (no `any`, no classes, `.js` extensions, `destroy()` methods)
+  - Daily maintenance report (rolling issue, 14-day window)
+  - Daily autoheal (5-category sweep: errored PRs, security, code quality, DX, data quality)
+- CI: ESLint, type-check, Vitest coverage (Codecov), Vite build
+- Renovate extends `marcusrbrown/renovate-config#4.5.8`, post-upgrade runs `pnpm install` + `pnpm fix`
+- Probot settings extend `fro-bot/.github:common-settings.yaml`
+- Created `github-actions-ci.md` topic page to capture cross-repo CI patterns (pin-by-SHA, shared setup actions, GitHub App tokens, Pages deployment)
+
+Sources: https://github.com/marcusrbrown/vbs (SHA a552e7335af70122f68380440c78a415a785749f)
