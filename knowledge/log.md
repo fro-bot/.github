@@ -42,3 +42,24 @@ Key findings:
 - pnpm 10.33.0, Node.js 22.x, TypeScript 5.9.x strict mode
 
 Sources: https://github.com/marcusrbrown/vbs (SHA a552e7335af70122f68380440c78a415a785749f)
+
+## [2026-04-18 03:30] ingest | marcusrbrown/tokentoilet
+
+Survey of `marcusrbrown/tokentoilet` (SHA `0ed90a6`). Created repo page `marcusrbrown--tokentoilet.md` and topic page `web3-defi.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- Web3 DeFi token disposal app — "chump and dump" unwanted tokens to charity
+- Next.js 16.2.3, React 19.2.5, TypeScript 6.0.2, Wagmi v2, Reown AppKit, Tailwind CSS v4, Vitest 4, Storybook 10 alpha
+- Deployed to Vercel (preview on PRs, prod on main push)
+- Extensive custom hooks layer: 12 hooks covering wallet, token operations, transaction queue, error handling — all with co-located tests
+- Violet-branded glass morphism design system with 14+ UI components, WCAG 2.1 AA accessible
+- **Fro Bot workflow present** (`fro-bot.yaml`, agent v0.40.2) — PR review with Web3 security focus, daily autohealing schedule at 03:30 UTC
+- CI pipeline: lint, type-check, test, Next.js build, Storybook build, dependency review
+- Dev tooling: `@bfra.me/eslint-config`, `@bfra.me/prettier-config/120-proof`, simple-git-hooks + lint-staged, `@t3-oss/env-nextjs` + Zod for typed env
+- Renovate via reusable workflow, Probot settings via `bfra-me/.github`
+- Early stage: smart contracts and core disposal mechanism not yet implemented per roadmap
+- No license file specified (unusual for public repo)
+- Copilot setup steps workflow present
+
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3)
