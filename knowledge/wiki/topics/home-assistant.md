@@ -2,11 +2,16 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2026-04-18
-tags: [home-assistant, iot, smart-home, yaml, automation, esphome]
+updated: 2025-06-18
+sources:
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
+    accessed: 2026-04-18
+tags: [home-assistant, iot, smart-home, yaml, automation]
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--esphome-life
+  - esphome
 ---
 
 # Home Assistant
@@ -16,7 +21,6 @@ Open-source home automation platform. Core references across the Fro Bot ecosyst
 ## Repos Using Home Assistant
 
 - [[marcusrbrown--ha-config]] — Marcus's primary HA configuration (public, CI-validated)
-- [[marcusrbrown--esphome-life]] — ESPHome device firmware configs (Olimex ESP32-PoE-ISO Bluetooth Proxies), deployed via GitHub Pages
 
 ## Configuration Patterns Observed
 
@@ -34,11 +38,11 @@ Third-party integrations installed via HACS or manually into `custom_components/
 
 ### ESPHome Integration
 
-ESPHome device configurations are commonly managed as a separate repository and linked via git submodule, keeping device firmware definitions decoupled from the HA config. See [[marcusrbrown--esphome-life]] for a concrete example using package-based device configs with CI-built firmware and ESP Web Tools deployment.
+[[esphome]] device configurations are commonly managed as a separate repository and linked via git submodule, keeping device firmware definitions decoupled from the HA config. See [[marcusrbrown--esphome-life]] for Marcus's ESPHome device configs, consumed as a submodule by [[marcusrbrown--ha-config]].
 
 ## Related Technologies
 
-- **ESPHome** — ESP32/ESP8266 firmware framework, integrated with HA
+- **[[esphome]]** — ESP32/ESP8266 firmware framework, integrated with HA
 - **Z-Wave** — Mesh networking protocol for IoT devices
 - **HACS** — Home Assistant Community Store for third-party integrations
 - **InfluxDB** — Time-series database for long-term HA metrics retention

@@ -11,6 +11,8 @@ tags: [home-assistant, home-assistant-config, yaml, esphome, iot]
 aliases: [ha-config]
 related:
   - marcusrbrown--esphome-life
+  - esphome
+  - home-assistant
 ---
 
 # marcusrbrown/ha-config

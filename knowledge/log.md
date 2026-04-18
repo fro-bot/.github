@@ -41,3 +41,23 @@ Key findings:
 - Updated `marcusrbrown--ha-config` cross-reference context: ha-config extends `fro-bot/.github` settings, not `marcusrbrown/.github`
 
 Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fadc7341da26e03c)
+
+## [2026-04-18 06:25] ingest | marcusrbrown/esphome.life
+
+Survey of `marcusrbrown/esphome.life` (SHA `e398c2e`). Updated repo page `marcusrbrown--esphome-life.md` with enriched device details, concurrency config, and cross-references. Created topic page `esphome.md`. Updated `home-assistant.md` and `marcusrbrown--ha-config.md` with wikilinks. Fixed ha-config related field slug.
+
+Key findings:
+
+- ESPHome device config repo, generated from `esphome/esphome-project-template`
+- Two Olimex ESP32-PoE-ISO Bluetooth proxy devices (Ethernet-connected, not Wi-Fi)
+- Shared package pattern via `github://` remote imports
+- CI builds firmware with `esphome/build-action@v7.1.0`, ESPHome `2025.12.7`
+- GitHub Pages site at `marcusrbrown.com/esphome.life` with ESP Web Tools for browser-based flashing
+- Only one of two devices built in CI (second uses API encryption secret)
+- Renovate extends `marcusrbrown/renovate-config#4.5.1`, post-upgrade runs Prettier
+- Probot settings extend `fro-bot/.github:common-settings.yaml`
+- Dev container uses `ptr727/esphome-nonroot:2025.12.7` with VS Code ESPHome extensions
+- **No Fro Bot agent workflow detected** — follow-up PR recommended
+- Fixed `marcusrbrown--ha-config.md` related field (was `marcusrbrown-esphome-life`, corrected to `marcusrbrown--esphome-life`)
+
+Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)

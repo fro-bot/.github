@@ -11,11 +11,13 @@ tags: [esphome, iot, esp32, bluetooth-proxy, home-assistant, firmware, github-pa
 aliases: [esphome-life, esphome.life]
 related:
   - marcusrbrown--ha-config
+  - esphome
+  - home-assistant
 ---
 
 # marcusrbrown/esphome.life
 
-ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forked from the [esphome-project-template](https://github.com/esphome/esphome-project-template), it builds firmware via CI and publishes a GitHub Pages site with [ESP Web Tools](https://esphome.github.io/esp-web-tools/) for browser-based flashing.
+Marcus R. Brown's [[esphome]] device configuration repository. Manages ESP32-based Bluetooth proxy firmware with CI builds and a GitHub Pages site for OTA installation via ESP Web Tools.
 
 ## Overview
 
@@ -27,45 +29,47 @@ ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forke
 - **License:** None specified
 - **Topics:** _(none set)_
 - **ESPHome version:** 2025.12.7 (pinned in CI workflow and devcontainer)
+- **Template origin:** Generated from [esphome/esphome-project-template](https://github.com/esphome/esphome-project-template)
+- **GitHub Pages:** Active at [marcusrbrown.com/esphome.life](https://marcusrbrown.com/esphome.life/) (custom domain, HTTPS enforced, cert expires 2026-06-04)
 - **Linked from:** [[marcusrbrown--ha-config]] as a git submodule at `esphome/`
 
 ## Repository Structure
 
-| Path                                   | Purpose                                                                   |
-| -------------------------------------- | ------------------------------------------------------------------------- |
-| `olimex-bluetooth-proxy-13451c.yaml`   | Per-device config (Bluetooth Proxy unit 13451c) — not built in CI         |
-| `olimex-bluetooth-proxy-1349f4.yaml`   | Per-device config (Bluetooth Proxy unit 1349f4) — built in CI             |
-| `packages/olimex-bluetooth-proxy.yaml` | Shared package defining the Olimex ESP32-PoE-ISO Bluetooth Proxy          |
-| `static/`                              | GitHub Pages site (Jekyll with slate theme, ESP Web Tools install button) |
-| `docs/`                                | Template README from upstream project template (not customized)           |
-| `.devcontainer.json`                   | VS Code devcontainer using `ptr727/esphome-nonroot:2025.12.7`             |
-| `.github/`                             | Workflows, Renovate config, Probot settings                               |
+| Path                                   | Purpose                                                            |
+| -------------------------------------- | ------------------------------------------------------------------ |
+| `olimex-bluetooth-proxy-1349f4.yaml`   | Device config for Olimex ESP32-PoE-ISO unit (1349f4), CI-built     |
+| `olimex-bluetooth-proxy-13451c.yaml`   | Device config for Olimex ESP32-PoE-ISO unit (13451c), not CI-built |
+| `packages/olimex-bluetooth-proxy.yaml` | Shared ESPHome package with common BLE proxy config                |
+| `static/`                              | GitHub Pages site content (Jekyll theme: slate)                    |
+| `static/index.md`                      | Landing page with ESP Web Tools install button                     |
+| `static/_config.yml`                   | Jekyll config (title: "ESPHome Life")                              |
+| `docs/readme.md`                       | Template README from esphome-project-template                      |
+| `.cache/`                              | Local cache directory (git-tracked placeholder, contents ignored)  |
+| `.devcontainer.json`                   | Dev container using `ptr727/esphome-nonroot:2025.12.7`             |
 
-### Device Configurations
+## Devices
 
-All current devices are **Olimex ESP32-PoE-ISO** boards running as Bluetooth Proxies for [[home-assistant]].
+### Olimex ESP32-PoE-ISO Bluetooth Proxies
 
-**Per-device YAML files** are thin — they set the device `name` via substitution and pull the shared package from GitHub:
+Two physical Olimex ESP32-PoE-ISO boards configured as ESPHome Bluetooth proxies:
 
-```yaml
-packages:
-  olimex-bluetooth-proxy: github://marcusrbrown/esphome.life/packages/olimex-bluetooth-proxy.yaml@main
-```
+| Device                          | Config file                          | CI-built | API encryption |
+| ------------------------------- | ------------------------------------ | -------- | -------------- |
+| `olimex-bluetooth-proxy-1349f4` | `olimex-bluetooth-proxy-1349f4.yaml` | Yes      | No             |
+| `olimex-bluetooth-proxy-13451c` | `olimex-bluetooth-proxy-13451c.yaml` | No       | Yes (secret)   |
 
-The `13451c` unit additionally configures an API encryption key (`!secret`). The `1349f4` unit does not.
-
-**Note:** Only `olimex-bluetooth-proxy-1349f4.yaml` is listed in the CI build matrix. The `13451c` config is present in the repo but not built by CI.
+Both devices import the shared package via `github://marcusrbrown/esphome.life/packages/olimex-bluetooth-proxy.yaml@main`. The `13451c` unit additionally configures a friendly name ("Bluetooth Proxy 13451c").
 
 ### Shared Package (`packages/olimex-bluetooth-proxy.yaml`)
 
-Defines the full device configuration:
-
 - **Board:** `esp32-poe-iso`
 - **Framework:** ESP-IDF
-- **Ethernet:** LAN8720 (GPIO23/18/17/12)
-- **Minimum ESPHome version:** 2024.6.0
-- **Features:** BLE tracker (active scan, 1100ms interval/window), Bluetooth Proxy (active mode), safe mode button, OTA, API, logger
-- **Dashboard import:** References `esphome/firmware/bluetooth-proxy/olimex-esp32-poe-iso.yaml@main`
+- **Connectivity:** Ethernet (LAN8720: MDC GPIO23, MDIO GPIO18, CLK GPIO17_OUT, PHY addr 0, power GPIO12) — not Wi-Fi
+- **BLE:** Active scanning (1100ms interval/window), active Bluetooth proxy
+- **Min ESPHome version:** 2024.6.0
+- **Project name:** `esphome.bluetooth-proxy` v1.0
+- **Features:** API, logger, OTA (esphome platform), safe mode button
+- **Dashboard import:** References upstream `esphome/firmware` Olimex PoE ISO template
 
 ## CI/CD Pipeline
 
@@ -75,52 +79,59 @@ Defines the full device configuration:
 | --- | --- | --- | --- |
 | CI | `ci.yaml` | push/PR to `main`, dispatch | Build firmware + deploy to GitHub Pages |
 | Renovate | `renovate.yaml` | issue/PR edit, push (non-main), dispatch, CI completion | Dependency updates |
-| Update Repo Settings | `update-repo-settings.yaml` | push to `main`, daily cron (12:23 UTC), dispatch | Probot settings sync |
+| Update Repo Settings | `update-repo-settings.yaml` | push to `main`, daily cron, dispatch | Probot settings sync |
 
-### CI Pipeline (ci.yaml)
+### CI Pipeline (`ci.yaml`)
 
 The CI workflow has four jobs:
 
-1. **Prepare** — Outputs the list of YAML files to build (currently only `olimex-bluetooth-proxy-1349f4.yaml`) and the repo name
-2. **Build firmware** — Matrix build using `esphome/build-action@v7.1.0` with ESPHome 2025.12.7. Uploads build artifacts
-3. **Build** — Gate job (depends on firmware build, reports completion)
-4. **Publish** — Only on `marcusrbrown/esphome.life`. Downloads artifacts, creates a combined `manifest.json`, copies static site files, deploys to `gh-pages` branch using `JamesIves/github-pages-deploy-action@v4.8.0`
+1. **Prepare** — Extracts the list of config files to build (currently only `olimex-bluetooth-proxy-1349f4.yaml`)
+2. **Build firmware** — Uses `esphome/build-action@v7.1.0` with ESPHome `2025.12.7` to compile firmware
+3. **Build** — Gate job (depends on firmware build)
+4. **Publish** — Downloads artifacts, generates `manifest.json`, copies static site content, deploys to `gh-pages` branch via `JamesIves/github-pages-deploy-action@v4.8.0`
 
-Publish uses a GitHub App token (`APPLICATION_ID` / `APPLICATION_PRIVATE_KEY` secrets) and commits as `mrbro-bot[bot]`.
+Deployment uses a GitHub App token (`APPLICATION_ID` / `APPLICATION_PRIVATE_KEY`). Git commits to `gh-pages` are authored as `mrbro-bot[bot]`.
 
-### Branch Protection
-
-Required status checks on `main`: `Prepare`, `Build`, `Publish`, `Renovate / Renovate`. Strict status checks enabled. Linear history enforced. Admin enforcement enabled. No required PR reviews.
+Note: Only `olimex-bluetooth-proxy-1349f4.yaml` is built in CI. The `13451c` device is excluded (likely because it uses API encryption with a secret not available in CI, or it is a secondary/offline device).
 
 ### Concurrency
 
 CI workflow uses concurrency group `${{ github.workflow }}-${{ github.event.number || github.ref }}` with cancel-in-progress on non-main branches.
 
+### Branch Protection
+
+Required status checks on `main`: `Prepare`, `Build`, `Publish`, `Renovate / Renovate`. Strict status checks enabled. Linear history enforced. Admin enforcement enabled. No required PR reviews.
+
+### Shared Workflows
+
+Both `renovate.yaml` and `update-repo-settings.yaml` reference the same reusable workflow (`bfra-me/.github/.github/workflows/renovate.yaml@v4.4.0`). Authentication via GitHub App secrets. Note: `update-repo-settings.yaml` reuses the Renovate workflow rather than a dedicated settings workflow — this appears intentional as the settings sync is likely handled as part of the Renovate pipeline.
+
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.1`. Custom package rule tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types. Post-upgrade runs `npx prettier@3.8.1`.
-- **Devcontainer:** Uses `docker.io/ptr727/esphome-nonroot:2025.12.7` with ESPHome dashboard, verbose logging, `America/Phoenix` timezone. Forwards port 6052 (ESPHome native API). VS Code extensions include ESPHome, PlatformIO, Python, YAML, EditorConfig, Markdown lint, serial monitor, and spell checker. File associations map `*.yaml`/`*.yml` to ESPHome language mode (with exceptions for workflow/settings files).
-- **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml`. Overrides description and branch protection.
-- **EditorConfig:** UTF-8, LF, 2-space indent, 120-char max line, trailing whitespace trimming.
-- **Prettier:** 120 print width, single quotes.
-- **Git:** LF line endings enforced via `.gitattributes`. JSON files tagged as JSON-with-comments for linguist.
+- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.1`. Custom package rules for ESPHome Docker images and GitHub releases (loose versioning, combined major/minor/patch). Post-upgrade runs Prettier 3.8.1.
+- **Dev Container:** Uses `ptr727/esphome-nonroot:2025.12.7` image. Timezone: `America/Phoenix`. Forwards port 6052 (ESPHome native API). Includes VS Code extensions for ESPHome, YAML, Python, PlatformIO, serial monitor, markdownlint, editorconfig, spell checker.
+- **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` (same pattern as [[marcusrbrown--ha-config]]).
+- **Prettier:** 120-char line width, single quotes.
+- **EditorConfig:** UTF-8, LF line endings, 2-space indentation, 120-char max line length.
 
-## GitHub Pages Site
+## ESP Web Tools Site
 
-The repo deploys a static site to GitHub Pages using Jekyll (slate theme). The site provides a browser-based firmware installer via ESP Web Tools (`esp-web-tools@8.0.3`). The `manifest.json` is generated by CI from build artifacts.
+The repository deploys a static site to GitHub Pages (`gh-pages` branch) using the Jekyll `slate` theme. The site provides an ESP Web Tools install button that reads `manifest.json` (generated by CI from ESPHome build artifacts) to flash firmware directly from the browser via USB.
 
-The site content (`static/index.md`) is minimal — the upstream template placeholder text has not been customized.
+- **URL:** [marcusrbrown.com/esphome.life](https://marcusrbrown.com/esphome.life/)
+- **Custom domain:** `marcusrbrown.com` (HTTPS enforced, certificate approved)
+- **ESP Web Tools version:** 8.0.3
 
 ## Fro Bot Integration
 
-**No Fro Bot agent workflow detected.** The repository does not contain a `fro-bot.yaml` workflow. It does extend `fro-bot/.github:common-settings.yaml` via Probot settings, confirming it is part of the Fro Bot-managed ecosystem.
+**No Fro Bot agent workflow detected.** The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration. A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage.
 
-A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage.
+The repo does use `fro-bot/.github:common-settings.yaml` in its Probot settings, confirming it is part of the Fro Bot-managed ecosystem.
 
 ## Notable Patterns
 
-- **Package-based device configs:** Thin per-device YAML files pull shared configuration from a `packages/` directory via `github://` package imports. This is the standard ESPHome pattern for managing multiple devices with a shared base.
-- **Partial CI coverage:** Only one of two device configs (`1349f4`) is built in CI. The `13451c` config is not in the build matrix.
-- **Template heritage:** The repo was generated from `esphome/esphome-project-template`. Template artifacts remain in `docs/readme.md` and `static/index.md` without customization.
-- **Ethernet-only devices:** All devices use ESP32-PoE-ISO with LAN8720 Ethernet — no Wi-Fi. This is notable for a Bluetooth Proxy setup where wired backhaul provides more reliable connectivity.
-- **Git submodule consumer:** This repo is referenced as a submodule from [[marcusrbrown--ha-config]] at the `esphome/` path, linking ESPHome device firmware to the Home Assistant configuration.
+- **Package imports via GitHub URL:** Device configs import shared packages using `github://marcusrbrown/esphome.life/packages/...@main`, which is ESPHome's native remote package mechanism. This keeps per-device YAML minimal.
+- **Ethernet-based BLE proxies:** The Olimex ESP32-PoE-ISO boards use wired Ethernet (LAN8720) instead of Wi-Fi, providing more reliable connectivity for Bluetooth proxy duty.
+- **Single-device CI build:** Only one of two devices is built in CI, likely due to API encryption secrets. The second device may be built locally or via the dev container.
+- **Template origin:** The repo structure (static site, ESP Web Tools, manifest generation) follows the `esphome/esphome-project-template` pattern, adapted for Marcus's specific hardware.
+- **Git submodule linkage:** This repo is consumed as a submodule by [[marcusrbrown--ha-config]], coupling ESPHome device firmware to the Home Assistant configuration lifecycle.
