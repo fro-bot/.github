@@ -10,7 +10,8 @@ sources:
 tags: [home-assistant, home-assistant-config, yaml, esphome, iot]
 aliases: [ha-config]
 related:
-  - marcusrbrown--esphome-life
+  - marcusrbrown-esphome-life
+  - marcusrbrown--infra
 ---
 
 # marcusrbrown/ha-config
