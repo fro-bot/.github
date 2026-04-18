@@ -1,7 +1,7 @@
 import type {ReposFile} from './schemas.ts'
 
 import {describe, expect, it} from 'vitest'
-import {addRepoEntry} from './repos-metadata.ts'
+import {addRepoEntry, recordSurveyResult, RepoEntryNotFoundError} from './repos-metadata.ts'
 
 const EMPTY_REPOS: ReposFile = {version: 1, repos: []}
 const NOW = new Date('2026-04-17T12:00:00Z')
@@ -158,5 +158,152 @@ describe('addRepoEntry', () => {
     expect(result.repos[0]?.name).toBe('first')
     expect(result.repos[1]?.name).toBe('second')
     expect(result.repos[2]?.name).toBe('third')
+  })
+})
+
+describe('recordSurveyResult', () => {
+  // Behavioral contract: writes ISO date + status on a matching entry
+  it('writes last_survey_at (ISO date) and last_survey_status when the entry exists', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        {
+          owner: 'alice',
+          name: 'project',
+          added: '2026-04-17',
+          onboarding_status: 'onboarded',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+
+    const result = recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'project',
+      at: new Date('2026-04-18T05:34:00Z'),
+      status: 'success',
+    })
+
+    expect(result.repos[0]?.last_survey_at).toBe('2026-04-18')
+    expect(result.repos[0]?.last_survey_status).toBe('success')
+  })
+
+  // Behavioral contract: pure — original input unchanged
+  it('does not mutate the input file', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        {
+          owner: 'alice',
+          name: 'project',
+          added: '2026-04-17',
+          onboarding_status: 'onboarded',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+
+    const snapshot = structuredClone(current)
+    recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'project',
+      at: NOW,
+      status: 'success',
+    })
+
+    expect(current).toEqual(snapshot)
+  })
+
+  // Behavioral contract: preserves sibling entries unchanged
+  it('preserves other entries verbatim while updating only the match', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        {
+          owner: 'alice',
+          name: 'first',
+          added: '2026-04-01',
+          onboarding_status: 'onboarded',
+          last_survey_at: '2026-04-02',
+          last_survey_status: 'success',
+          has_fro_bot_workflow: true,
+          has_renovate: true,
+        },
+        {
+          owner: 'bob',
+          name: 'second',
+          added: '2026-04-15',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+
+    const result = recordSurveyResult(current, {
+      owner: 'bob',
+      repo: 'second',
+      at: new Date('2026-04-18T00:00:00Z'),
+      status: 'success',
+    })
+
+    // First entry untouched
+    expect(result.repos[0]).toEqual(current.repos[0])
+    // Second entry updated
+    expect(result.repos[1]?.last_survey_at).toBe('2026-04-18')
+    expect(result.repos[1]?.last_survey_status).toBe('success')
+    // Other fields on the updated entry preserved
+    expect(result.repos[1]?.onboarding_status).toBe('pending')
+    expect(result.repos[1]?.added).toBe('2026-04-15')
+  })
+
+  // Behavioral contract: records failure outcomes too
+  it("accepts 'failure' as a valid status value", () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        {
+          owner: 'alice',
+          name: 'project',
+          added: '2026-04-17',
+          onboarding_status: 'onboarded',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+
+    const result = recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'project',
+      at: NOW,
+      status: 'failure',
+    })
+
+    expect(result.repos[0]?.last_survey_status).toBe('failure')
+  })
+
+  // Behavioral contract: typed error when the entry is missing
+  it('throws RepoEntryNotFoundError when the target repo has no entry', () => {
+    const current: ReposFile = {version: 1, repos: []}
+
+    expect(() =>
+      recordSurveyResult(current, {
+        owner: 'ghost',
+        repo: 'nowhere',
+        at: NOW,
+        status: 'success',
+      }),
+    ).toThrow(RepoEntryNotFoundError)
   })
 })
