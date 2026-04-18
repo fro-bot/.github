@@ -101,13 +101,20 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Run Fro Bot survey ingest
-        uses: fro-bot/agent@4247f5e4d1fbd1857617ebe00040f1f95be0071f # v0.40.0
+        uses: fro-bot/agent@fc1387ec5c25afed73b11b8b26c482b90b3ad9cd # v0.41.0
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
           omo-providers: ${{ secrets.OMO_PROVIDERS }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          # Write wiki updates to the workflow's working tree so the next step can
+          # commit them to the `data` branch via scripts/wiki-ingest.ts. Without
+          # `working-dir`, the agent's skill-layer defaults push a side branch +
+          # PR per survey, which serializes through knowledge/index.md and
+          # knowledge/log.md — the root cause of the N-way merge conflicts this
+          # workflow used to produce.
+          output-mode: working-dir
           prompt: |
             <persona>
             ${{ steps.persona.outputs.content }}
