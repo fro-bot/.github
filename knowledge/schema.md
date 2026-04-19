@@ -84,3 +84,22 @@ Operations: `ingest`, `query`, `lint`, `manual-edit`.
 - **Weekly lint**: scans for broken wikilinks, orphan pages, stale claims, missing cross-references, and knowledge gaps.
 - **Ingest validation**: every ingest operation validates output against this schema before committing.
 - **Index consistency**: `index.md` MUST list every page in `wiki/`. Orphan pages (in wiki but not index) are flagged by lint.
+
+## Editing the wiki
+
+The `knowledge/wiki/<subdir>/*.md` pages, `knowledge/index.md`, and `knowledge/log.md` are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This keeps `main` aligned with `data`, which is the authoritative wiki source.
+
+For intentional manual edits (correcting a factual error the agent hasn't caught, for example), land the change on `data` and let the existing promotion flow land it on `main`:
+
+```bash
+git worktree add ../fro-bot-.github-data data
+cd ../fro-bot-.github-data
+# edit the wiki page or append a manual-edit log entry
+git add knowledge/...
+git commit -m "docs(knowledge): <what changed and why>"
+git push origin data
+```
+
+The `Merge Data Branch` workflow promotes `data → main` on a weekly schedule (or run it immediately via `gh workflow run merge-data.yaml`). The promotion PR is authored by `fro-bot[bot]`, which passes the guard.
+
+This file (`knowledge/schema.md`) and `knowledge/README.md` / `knowledge/wiki/README.md` remain editable through normal PRs to `main` — the guard targets only the agent-authored content tree, not conventions or scaffolding docs.
