@@ -689,7 +689,6 @@ function baseParams(overrides: Partial<HandleReconcileParams> = {}): HandleRecon
     // Specific tests that exercise the cap override this.
     maxDispatchesPerRun: overrides.maxDispatchesPerRun ?? 0,
     dispatchSleep: overrides.dispatchSleep,
-    operatorLogins: overrides.operatorLogins ?? [],
     logger: overrides.logger ?? silentLogger(),
     workflowFile: overrides.workflowFile ?? 'survey-repo.yaml',
     workflowRef: overrides.workflowRef ?? 'main',
@@ -1519,9 +1518,13 @@ describe('handleReconcile (I/O shell)', () => {
       expect(alertCalls).toHaveLength(0)
     })
 
-    it('passes when data branch tip is authored by an operator login in RECONCILE_OPERATOR_LOGINS', async () => {
+    it('passes when data branch tip is authored by fro-bot user (PAT writes)', async () => {
+      // Fro Bot writes that go through FRO_BOT_PAT (survey-repo record-survey-result,
+      // fro-bot agent wiki-ingest) are attributed to the `fro-bot` user account. The
+      // integrity check accepts it alongside `fro-bot[bot]` because both identities
+      // belong to the same autonomous operator.
       const getBranch = vi.fn(async () => ({
-        data: {name: 'data', commit: {sha: 'op-sha', author: {login: 'marcusrbrown'}}},
+        data: {name: 'data', commit: {sha: 'pat-sha', author: {login: 'fro-bot'}}},
       }))
       const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
       const userOctokit = mockOctokit({
@@ -1536,7 +1539,6 @@ describe('handleReconcile (I/O shell)', () => {
           appOctokit: mockOctokit({getBranch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
           commitMetadata: commitMetadata as never,
-          operatorLogins: ['marcusrbrown'],
         }),
       )
 
@@ -1622,7 +1624,6 @@ describe('handleReconcile (I/O shell)', () => {
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
           commitMetadata: commitMetadata as never,
           bootstrapDataBranch: bootstrap as never,
-          operatorLogins: [], // no operators — would normally reject 'human-merger'
         }),
       )
 

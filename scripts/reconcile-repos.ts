@@ -490,7 +490,11 @@ const DEFAULT_MAX_DISPATCHES_PER_RUN = 6
 const PENDING_REVIEW_LABEL = 'reconcile:pending-review'
 const ROLLUP_LABEL = 'reconcile:rollup-pending-review'
 const INTEGRITY_ALERT_LABEL = 'reconcile:integrity-alert'
-const EXPECTED_APP_AUTHOR = 'fro-bot[bot]'
+// Fro Bot is one entity with two GitHub identities: the user account `fro-bot`
+// (FRO_BOT_PAT writes) and the app installation `fro-bot[bot]` (App-token writes).
+// Both have identical access to this repo and represent the same autonomous operator,
+// so the integrity check accepts either as legitimate.
+const EXPECTED_AUTHORS = new Set<string>(['fro-bot', 'fro-bot[bot]'])
 
 const NODE_ID_MARKER_PATTERN = /<!-- reconcile:subject:node_id=([\w-]+) -->/
 const ROLLUP_OWNER_MARKER_PATTERN = /<!-- reconcile:subject:rollup-owner=([\w-]+) -->/
@@ -557,8 +561,6 @@ export interface HandleReconcileParams {
    * real-time waits.
    */
   dispatchSleep?: (ms: number) => Promise<void>
-  /** Extra authors allowed on the data branch tip commit (beyond `fro-bot[bot]`). */
-  operatorLogins?: string[]
   logger?: ReconcileLogger
 }
 
@@ -610,7 +612,6 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const dispatchStaggerMs = params.dispatchStaggerMs ?? loadDispatchStaggerFromEnv()
   const maxDispatchesPerRun = params.maxDispatchesPerRun ?? loadMaxDispatchesPerRunFromEnv()
   const logger: ReconcileLogger = params.logger ?? {warn: message => process.stderr.write(`${message}\n`)}
-  const operatorLogins = params.operatorLogins ?? loadOperatorLoginsFromEnv()
   const readMetadata = params.readMetadata ?? readMetadataFromDisk
   const commitMetadataImpl = params.commitMetadata ?? defaultCommitMetadata
   const bootstrap = params.bootstrapDataBranch ?? defaultBootstrapDataBranch
@@ -655,7 +656,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     if (justBootstrapped) {
       integrityCheck = 'skipped-just-bootstrapped'
     } else {
-      const integrity = await verifyDataBranchIntegrity({appOctokit, owner, repo, operatorLogins})
+      const integrity = await verifyDataBranchIntegrity({appOctokit, owner, repo})
       if (!integrity.ok) {
         await fileIntegrityAlert({
           appOctokit,
@@ -669,7 +670,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
           code: 'DATA_BRANCH_TAMPER',
           message: `Unexpected author on data branch tip commit: ${integrity.authorLogin ?? 'unknown'} (sha: ${integrity.sha})`,
           remediation:
-            'Investigate who has contents:write on this repo. If legitimate, add the login to RECONCILE_OPERATOR_LOGINS and rerun.',
+            'Only `fro-bot` (PAT) and `fro-bot[bot]` (App) are allowed to write to `data`. Investigate who else has contents:write on this repo.',
         })
       }
       integrityCheck = integrity.status
@@ -688,7 +689,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
         // also re-verifies, catching any tamper that lands during the retry loop. Skipped
         // on bootstrap runs for the same reason as the initial check.
         if (!justBootstrapped) {
-          const retryIntegrity = await verifyDataBranchIntegrity({appOctokit, owner, repo, operatorLogins})
+          const retryIntegrity = await verifyDataBranchIntegrity({appOctokit, owner, repo})
           if (!retryIntegrity.ok) {
             await fileIntegrityAlert({
               appOctokit,
@@ -702,7 +703,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
               code: 'DATA_BRANCH_TAMPER',
               message: `Unexpected author on data branch tip commit during commit retry: ${retryIntegrity.authorLogin ?? 'unknown'} (sha: ${retryIntegrity.sha})`,
               remediation:
-                'Investigate who has contents:write on this repo. If legitimate, add the login to RECONCILE_OPERATOR_LOGINS and rerun.',
+                'Only `fro-bot` (PAT) and `fro-bot[bot]` (App) are allowed to write to `data`. Investigate who else has contents:write on this repo.',
             })
           }
         }
@@ -1031,7 +1032,6 @@ async function verifyDataBranchIntegrity(params: {
   appOctokit: OctokitClient
   owner: string
   repo: string
-  operatorLogins: string[]
 }): Promise<IntegrityCheckOkResult | IntegrityCheckFailResult> {
   try {
     const response = await params.appOctokit.rest.repos.getBranch({
@@ -1041,8 +1041,7 @@ async function verifyDataBranchIntegrity(params: {
     })
     const commit = response.data.commit as {sha: string; author?: {login?: string} | null}
     const authorLogin = typeof commit.author?.login === 'string' ? commit.author.login : null
-    const allowed = new Set<string>([EXPECTED_APP_AUTHOR, ...params.operatorLogins])
-    if (authorLogin !== null && allowed.has(authorLogin)) {
+    if (authorLogin !== null && EXPECTED_AUTHORS.has(authorLogin)) {
       return {ok: true, status: 'ok'}
     }
     return {ok: false, authorLogin, sha: commit.sha}
@@ -1072,11 +1071,11 @@ async function fileIntegrityAlert(params: {
         '',
         `- Tip SHA: \`${params.sha}\``,
         `- Author login: \`${params.authorLogin ?? 'unknown'}\``,
-        `- Expected: \`${EXPECTED_APP_AUTHOR}\` or an operator login in \`RECONCILE_OPERATOR_LOGINS\``,
+        '- Expected: `fro-bot` (PAT writes) or `fro-bot[bot]` (App writes). Both belong to the Fro Bot account.',
         '',
         'Next steps:',
-        '- If this is a legitimate operator commit, add the login to `RECONCILE_OPERATOR_LOGINS` and rerun.',
-        '- If unauthorized, investigate who has `contents:write` on this repository.',
+        '- Investigate who else has `contents:write` on this repository.',
+        '- If the commit is a legitimate one-off operator action, rewrite the branch tip as `fro-bot`/`fro-bot[bot]` before rerunning.',
       ].join('\n'),
       labels: [INTEGRITY_ALERT_LABEL],
     })
@@ -1469,15 +1468,6 @@ async function selfHealRollups(params: {
  */
 async function callIssuesCreate(octokit: OctokitClient, payload: IssuePayload): Promise<void> {
   await octokit.rest.issues.create(payload as unknown as Parameters<OctokitClient['rest']['issues']['create']>[0])
-}
-
-function loadOperatorLoginsFromEnv(): string[] {
-  const raw = process.env.RECONCILE_OPERATOR_LOGINS
-  if (raw === undefined || raw === '') return []
-  return raw
-    .split(',')
-    .map(s => s.trim())
-    .filter(s => s.length > 0)
 }
 
 async function createOctokitFromEnv(envVar: 'FRO_BOT_POLL_PAT' | 'GITHUB_TOKEN'): Promise<OctokitClient> {
