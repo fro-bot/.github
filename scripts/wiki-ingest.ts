@@ -723,9 +723,19 @@ async function getChangedWikiPaths(): Promise<string[]> {
  * - `M  path/to/file` — staged modification (Y = space)
  * - `A  path/to/file` — newly added (staged)
  * - `?? path/to/file` — untracked
+ * - ` D path/to/file` — worktree deletion (file gone from disk)
+ * - `D  path/to/file` — staged deletion
  *
  * Rename lines (`XY OLD -> NEW`) and submodules are out of scope — this script
  * only commits additive wiki markdown files, never renames.
+ *
+ * Deletions are filtered out. The wiki commit path's contract is additive-only,
+ * and `loadWorkingTreeWikiFiles` would crash with ENOENT trying to read a deleted
+ * path. Production incident (2026-04-19): the survey-repo workflow's
+ * `Sync wiki from data branch` step removed files that exist on main but not on
+ * data, surfacing those deletions through porcelain and crashing the ingest.
+ * Any status where X or Y is `D` signals the file is absent or being removed —
+ * skip it.
  *
  * Historical bug: a prior implementation used `line.trim()` before `line.slice(3)`,
  * which stripped the X-position space for unstaged changes and caused
@@ -734,12 +744,18 @@ async function getChangedWikiPaths(): Promise<string[]> {
  * fix: preserve the fixed 3-char prefix and only strip trailing CR for cross-platform safety.
  */
 export function parsePorcelainPaths(stdout: string): string[] {
-  return stdout
-    .split('\n')
-    .map(line => line.replace(/\r$/, ''))
-    .filter(line => line.length >= 4)
-    .map(line => line.slice(3))
-    .filter(path => path !== '')
+  return (
+    stdout
+      .split('\n')
+      .map(line => line.replace(/\r$/, ''))
+      .filter(line => line.length >= 4)
+      // Skip any status where X or Y is 'D' (deletion). The wiki commit path is
+      // additive-only; feeding deletions into `loadWorkingTreeWikiFiles` crashes
+      // with ENOENT when it tries to readFile a path no longer on disk.
+      .filter(line => !line.slice(0, 2).includes('D'))
+      .map(line => line.slice(3))
+      .filter(path => path !== '')
+  )
 }
 
 function parsePayload(raw: string): WikiIngestPayload {
