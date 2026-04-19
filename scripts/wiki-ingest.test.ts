@@ -634,6 +634,57 @@ describe('parsePorcelainPaths', () => {
     // #then only the well-formed entry is kept; short garbage is ignored
     expect(paths).toEqual(['valid/path.md'])
   })
+
+  it('skips unstaged worktree deletions (X=space, Y=D)', () => {
+    // #given a porcelain listing where an existing wiki page has been removed from the
+    // worktree (e.g. by `git restore` pulling a different branch's knowledge/ snapshot
+    // over the current checkout). Production incident: the survey-repo workflow's
+    // `Sync wiki from data branch` step removes files that exist on main but not on
+    // data, and those deletions must NOT be fed into wiki-ingest's readFile loop.
+    const stdout = [
+      ' M knowledge/wiki/repos/marcusrbrown--dotfiles.md', // agent-added content
+      ' D knowledge/wiki/entities/mise.md', // drift-induced deletion
+      '',
+    ].join('\n')
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then the deletion is filtered out; only the present file survives
+    expect(paths).toEqual(['knowledge/wiki/repos/marcusrbrown--dotfiles.md'])
+  })
+
+  it('skips staged deletions (X=D, Y=space)', () => {
+    // #given a porcelain listing with a staged deletion alongside a normal modification
+    const stdout = ['D  knowledge/wiki/entities/old-entity.md', ' M knowledge/log.md', ''].join('\n')
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then the staged deletion is filtered; the modification is preserved
+    expect(paths).toEqual(['knowledge/log.md'])
+  })
+
+  it('skips deletions in all dual-position variants (DD, AD, MD, RD, CD)', () => {
+    // #given porcelain lines covering every status combination where the file ends up
+    // absent from the worktree — each would crash readFile if it reached
+    // loadWorkingTreeWikiFiles.
+    const stdout = [
+      'DD knowledge/wiki/repos/both-deleted.md', // unmerged, both deleted
+      'AD knowledge/wiki/repos/added-then-deleted.md', // added in index, deleted in worktree
+      'MD knowledge/wiki/repos/modified-then-deleted.md', // modified in index, deleted in worktree
+      'RD knowledge/wiki/repos/renamed-then-deleted.md', // renamed in index, deleted in worktree
+      'CD knowledge/wiki/repos/copied-then-deleted.md', // copied in index, deleted in worktree
+      ' M knowledge/wiki/repos/kept.md', // normal unstaged modification
+      '',
+    ].join('\n')
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then every variant with D in either position is dropped; the surviving path remains
+    expect(paths).toEqual(['knowledge/wiki/repos/kept.md'])
+  })
 })
 
 describe('commitWikiChanges (422 surfacing)', () => {
