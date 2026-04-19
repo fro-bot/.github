@@ -1,7 +1,7 @@
 import type {ReposFile} from './schemas.ts'
 
 import {describe, expect, it} from 'vitest'
-import {addRepoEntry, recordSurveyResult, RepoEntryNotFoundError} from './repos-metadata.ts'
+import {addRepoEntry, recordSurveyResult, RepoEntryNotFoundError, resetSurveyResult} from './repos-metadata.ts'
 
 const EMPTY_REPOS: ReposFile = {version: 1, repos: []}
 const NOW = new Date('2026-04-17T12:00:00Z')
@@ -305,5 +305,117 @@ describe('recordSurveyResult', () => {
         status: 'success',
       }),
     ).toThrow(RepoEntryNotFoundError)
+  })
+})
+
+describe('resetSurveyResult', () => {
+  // Behavioral contract: clear last_survey_at + last_survey_status back to null
+  it('resets last_survey_at and last_survey_status to null on the target entry', () => {
+    // #given a repo entry marked as successfully surveyed on 2026-04-19
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        {
+          owner: 'marcusrbrown',
+          name: '.dotfiles',
+          added: '2026-04-18',
+          onboarding_status: 'pending',
+          last_survey_at: '2026-04-19',
+          last_survey_status: 'success',
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+
+    // #when the entry is reset
+    const result = resetSurveyResult(current, {owner: 'marcusrbrown', repo: '.dotfiles'})
+
+    // #then both survey fields become null; other fields are preserved exactly
+    expect(result.repos[0]).toEqual({
+      owner: 'marcusrbrown',
+      name: '.dotfiles',
+      added: '2026-04-18',
+      onboarding_status: 'pending',
+      last_survey_at: null,
+      last_survey_status: null,
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+    })
+  })
+
+  // Behavioral contract: pure function — never mutates input
+  it('returns a fresh top-level object without mutating inputs', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        {
+          owner: 'alice',
+          name: 'project',
+          added: '2026-04-17',
+          onboarding_status: 'onboarded',
+          last_survey_at: '2026-04-18',
+          last_survey_status: 'failure',
+          has_fro_bot_workflow: true,
+          has_renovate: true,
+        },
+      ],
+    }
+    const snapshot = structuredClone(current)
+
+    const result = resetSurveyResult(current, {owner: 'alice', repo: 'project'})
+
+    // #then the original object is untouched; the new object is a distinct reference
+    expect(current).toEqual(snapshot)
+    expect(result).not.toBe(current)
+    expect(result.repos).not.toBe(current.repos)
+  })
+
+  // Behavioral contract: leaves other entries untouched — surgical reset, not broadcast
+  it('leaves non-target entries exactly as they were', () => {
+    // #given two entries, one of which we will reset
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        {
+          owner: 'alice',
+          name: 'keep-me',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: '2026-04-18',
+          last_survey_status: 'success',
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+        {
+          owner: 'bob',
+          name: 'reset-me',
+          added: '2026-04-18',
+          onboarding_status: 'pending',
+          last_survey_at: '2026-04-19',
+          last_survey_status: 'success',
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+
+    // #when only the second entry is reset
+    const result = resetSurveyResult(current, {owner: 'bob', repo: 'reset-me'})
+
+    // #then the first entry is preserved verbatim, the second is reset
+    expect(result.repos[0]?.last_survey_at).toBe('2026-04-18')
+    expect(result.repos[0]?.last_survey_status).toBe('success')
+    expect(result.repos[1]?.last_survey_at).toBeNull()
+    expect(result.repos[1]?.last_survey_status).toBeNull()
+  })
+
+  // Behavioral contract: typed error when the entry is missing
+  it('throws RepoEntryNotFoundError when the target repo has no entry', () => {
+    const current: ReposFile = {version: 1, repos: []}
+
+    // #when resetting a nonexistent entry
+    // #then the shared RepoEntryNotFoundError surfaces (same typed error used by recordSurveyResult)
+    expect(() => resetSurveyResult(current, {owner: 'ghost', repo: 'nowhere'})).toThrow(RepoEntryNotFoundError)
   })
 })
