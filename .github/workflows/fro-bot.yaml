@@ -260,7 +260,7 @@ jobs:
         if: >-
           success() &&
           steps.wiki-changes.outputs.changed == 'true' &&
-          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule"]'), github.event_name)
+          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule","workflow_dispatch"]'), github.event_name)
         id: ingest-ts
         run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
@@ -268,7 +268,7 @@ jobs:
         if: >-
           success() &&
           steps.wiki-changes.outputs.changed == 'true' &&
-          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule"]'), github.event_name)
+          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule","workflow_dispatch"]'), github.event_name)
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
           WIKI_OPERATION: event
