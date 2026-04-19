@@ -12,7 +12,8 @@ on:
         description: The ref where cache entries should be deleted
         type: string
 
-permissions: {}
+permissions:
+  contents: read
 
 env:
   REF: >-
@@ -26,8 +27,6 @@ env:
 jobs:
   cleanup-cache:
     name: Cleanup cache
-    permissions:
-      actions: write
     runs-on: ubuntu-latest
     steps:
       - if: env.REF != ''
@@ -51,8 +50,6 @@ jobs:
   setup-cache:
     if: github.event_name != 'pull_request'
     name: Setup cache
-    permissions:
-      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: ⤵ Checkout Branch

@@ -12,10 +12,6 @@ permissions:
 jobs:
   merge-data:
     name: Merge data into main
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

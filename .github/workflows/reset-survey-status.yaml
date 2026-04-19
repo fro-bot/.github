@@ -25,8 +25,6 @@ concurrency:
 jobs:
   reset-survey-status:
     name: Reset last_survey_at and last_survey_status
-    permissions:
-      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

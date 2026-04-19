@@ -14,7 +14,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: survey-repo-${{ github.event.inputs.owner }}-${{ github.event.inputs.repo }}

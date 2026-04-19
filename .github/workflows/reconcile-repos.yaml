@@ -16,10 +16,6 @@ concurrency:
 jobs:
   reconcile-repos:
     name: Reconcile metadata/repos.yaml with GitHub collaborator access
-    permissions:
-      contents: write
-      actions: write
-      issues: write
     runs-on: ubuntu-latest
     # Stagger + cap keep fan-out inside this budget even at the maximum configured
     # dispatch count: 6 dispatches × 90s = 9 minutes of stagger, plus ≤1 minute of
