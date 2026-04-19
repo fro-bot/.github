@@ -52,10 +52,4 @@ jobs:
           # on the next run via the staleness gate, producing a progressive day-over-day
           # cadence instead of bursty fan-outs that exhaust upstream capacity.
           RECONCILE_MAX_DISPATCHES_PER_RUN: '6'
-          # Additional commit authors (beyond `fro-bot[bot]`) permitted on the data branch
-          # tip. Callers that write via `FRO_BOT_PAT` (record-survey-result,
-          # wiki-ingest from the Fro Bot agent) are attributed to the `fro-bot` user
-          # account. Without this allowlist, the integrity check tamper-alerts on every
-          # legitimate FRO_BOT_PAT commit.
-          RECONCILE_OPERATOR_LOGINS: fro-bot
         run: node scripts/reconcile-repos.ts
