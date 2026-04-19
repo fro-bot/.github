@@ -2,8 +2,10 @@
  * Shared helpers for `metadata/repos.yaml` mutation.
  *
  * Writers that add entries use `addRepoEntry`; writers that record survey outcomes use
- * `recordSurveyResult`. Both are pure functions that never mutate inputs. `addRepoEntry`
- * is idempotent on duplicate `owner+name` and preserves existing entries as-is.
+ * `recordSurveyResult`; operators recovering from a misclassified survey result use
+ * `resetSurveyResult` to clear `last_survey_at`/`last_survey_status` back to null. All
+ * three are pure functions that never mutate inputs. `addRepoEntry` is idempotent on
+ * duplicate `owner+name` and preserves existing entries as-is.
  */
 
 import {assertReposFile, type OnboardingStatus, type ReposFile, type SurveyStatus} from './schemas.ts'
@@ -92,6 +94,54 @@ export function recordSurveyResult(current: unknown, input: RecordSurveyResultIn
     ...match,
     last_survey_at: input.at.toISOString().slice(0, 10),
     last_survey_status: input.status,
+  }
+
+  const nextRepos = [...current.repos]
+  nextRepos[matchIndex] = updated
+
+  return {
+    ...current,
+    repos: nextRepos,
+  }
+}
+
+export interface ResetSurveyResultInput {
+  owner: string
+  repo: string
+}
+
+/**
+ * Reset `last_survey_at` and `last_survey_status` to `null` on an existing entry.
+ *
+ * Used to recover from misclassified survey outcomes — e.g. when a wiki-commit failure
+ * was recorded as `success` under an older `SURVEY_STATUS` expression, causing the
+ * reconcile staleness gate to skip the repo for 30 days despite no wiki content landing.
+ * Clearing the fields back to `null` forces reconcile to treat the repo as never-surveyed
+ * and re-dispatch it on the next cron.
+ *
+ * Throws `RepoEntryNotFoundError` when the entry is missing — callers should enumerate
+ * known contaminated entries and fail loudly on typos.
+ *
+ * Pure function: never mutates `current` in place. Returns a fresh top-level object with
+ * a fresh `repos` array.
+ */
+export function resetSurveyResult(current: unknown, input: ResetSurveyResultInput): ReposFile {
+  assertReposFile(current, 'repos')
+
+  const matchIndex = current.repos.findIndex(entry => entry.owner === input.owner && entry.name === input.repo)
+  if (matchIndex === -1) {
+    throw new RepoEntryNotFoundError(input.owner, input.repo)
+  }
+
+  const match = current.repos[matchIndex]
+  if (match === undefined) {
+    throw new RepoEntryNotFoundError(input.owner, input.repo)
+  }
+
+  const updated = {
+    ...match,
+    last_survey_at: null,
+    last_survey_status: null,
   }
 
   const nextRepos = [...current.repos]
