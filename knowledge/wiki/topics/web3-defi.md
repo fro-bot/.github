@@ -1,0 +1,63 @@
+---
+type: topic
+title: "Web3 & DeFi Development"
+created: 2026-04-18
+updated: 2026-04-18
+sources:
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
+    accessed: 2026-04-18
+tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, erc-20, erc-721]
+---
+
+# Web3 & DeFi Development
+
+Patterns, tooling, and conventions for Web3 and decentralized finance (DeFi) applications across the Fro Bot-managed ecosystem.
+
+## Repositories
+
+- [[marcusrbrown--tokentoilet]] — Token disposal and charity donation DeFi app (Next.js + Wagmi + Reown AppKit)
+
+## Wallet Integration Stack
+
+The ecosystem currently standardizes on:
+
+| Component         | Tool                                            | Notes                                    |
+| ----------------- | ----------------------------------------------- | ---------------------------------------- |
+| React hooks       | Wagmi v2                                        | Core wallet/chain interaction primitives |
+| Modal/UI          | Reown AppKit (formerly WalletConnect Web3Modal) | Wallet connection modal and UI           |
+| Query layer       | TanStack React Query                            | Async state for chain reads/writes       |
+| Supported wallets | MetaMask, WalletConnect, Coinbase Wallet        | Per test suites in tokentoilet           |
+| Chains            | Ethereum, Polygon, Arbitrum                     | Per tokentoilet README                   |
+
+## Architectural Conventions
+
+These patterns are enforced in [[marcusrbrown--tokentoilet]] via AGENTS.md and Fro Bot PR review prompts:
+
+1. **Hook abstraction layer:** Components never import wagmi or AppKit directly. A `useWallet` hook wraps all wallet state; domain hooks (`useTokenApproval`, `useTokenBalance`, etc.) wrap specific operations.
+2. **`'use client'` boundary:** All Web3 components require the RSC client directive since wallet state is inherently client-side.
+3. **Error handling:** Web3 operations use try/catch with `console.error`. Connect/disconnect operations must never throw — failures are surfaced via state, not exceptions.
+4. **Functional state updates:** `setX(prev => ...)` pattern required in useEffect to prevent stale closure bugs common in async wallet flows.
+5. **Address handling:** Checksummed addresses, validated before use.
+6. **Token approvals:** Infinite approvals flagged during review; amount validation required.
+
+## Security Patterns
+
+- **CSP:** WalletConnect, Reown, Alchemy, Infura whitelisted in Content-Security-Policy connect-src
+- **No secrets in source:** Private keys, mnemonics, RPC API keys must use environment variables, never hardcoded
+- **Reentrancy awareness:** Contract interaction patterns reviewed for reentrancy concerns
+- **Dependency review:** `actions/dependency-review-action` at moderate+ severity on PRs
+
+## Testing Patterns
+
+- Co-located test files (`*.test.ts(x)`) alongside hook/component source
+- Mocked wallet providers (wagmi, AppKit) in test setup
+- Wallet-specific test suites per connector (MetaMask, WalletConnect, Coinbase)
+- Computed property names for hook mocks to avoid ESLint warnings
+- Vitest as test runner with coverage via `@vitest/coverage-v8`
+
+## Environment Configuration
+
+- Typed env validation via `@t3-oss/env-nextjs` + Zod
+- Access via `import {env} from '@/env'`, never `process.env`
+- `SKIP_ENV_VALIDATION=true` in CI builds
