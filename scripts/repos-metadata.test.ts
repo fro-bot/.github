@@ -260,8 +260,8 @@ describe('recordSurveyResult', () => {
     // Second entry updated
     expect(result.repos[1]?.last_survey_at).toBe('2026-04-18')
     expect(result.repos[1]?.last_survey_status).toBe('success')
-    // Other fields on the updated entry preserved
-    expect(result.repos[1]?.onboarding_status).toBe('pending')
+    // Pending entry promoted to onboarded on successful survey
+    expect(result.repos[1]?.onboarding_status).toBe('onboarded')
     expect(result.repos[1]?.added).toBe('2026-04-15')
   })
 
@@ -305,6 +305,92 @@ describe('recordSurveyResult', () => {
         status: 'success',
       }),
     ).toThrow(RepoEntryNotFoundError)
+  })
+
+  // Lifecycle promotion: pending → onboarded on first successful survey
+  it('promotes onboarding_status from pending to onboarded on successful survey', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        {
+          owner: 'alice',
+          name: 'project',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+
+    const result = recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'project',
+      at: new Date('2026-04-18T05:34:00Z'),
+      status: 'success',
+    })
+
+    expect(result.repos[0]?.onboarding_status).toBe('onboarded')
+    expect(result.repos[0]?.last_survey_status).toBe('success')
+  })
+
+  // Negative: failure does NOT promote pending to onboarded
+  it('preserves pending onboarding_status on failed survey', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        {
+          owner: 'alice',
+          name: 'project',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+
+    const result = recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'project',
+      at: NOW,
+      status: 'failure',
+    })
+
+    expect(result.repos[0]?.onboarding_status).toBe('pending')
+    expect(result.repos[0]?.last_survey_status).toBe('failure')
+  })
+
+  // Negative: success on already-onboarded does not change status
+  it('does not change onboarding_status when already onboarded', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        {
+          owner: 'alice',
+          name: 'project',
+          added: '2026-04-17',
+          onboarding_status: 'onboarded',
+          last_survey_at: '2026-03-01',
+          last_survey_status: 'success',
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+
+    const result = recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'project',
+      at: NOW,
+      status: 'success',
+    })
+
+    expect(result.repos[0]?.onboarding_status).toBe('onboarded')
   })
 })
 
