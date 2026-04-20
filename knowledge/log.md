@@ -305,3 +305,9 @@ Key findings:
 - Comprehensive AGENTS.md and .github/copilot-instructions.md for AI agent conventions
 
 Sources: https://github.com/marcusrbrown/copiloting (SHA cfc8bb6d5e814c9918a6e55f4b6747c3a36e4fb1)
+
+## [2026-04-19 13:58] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@f1cecf6f7b43ad815f4d8446d0b75992293d2004
