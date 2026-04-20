@@ -14,7 +14,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
   - owner: marcusrbrown
     name: .github
@@ -30,7 +30,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
   - owner: marcusrbrown
     name: copiloting
@@ -38,7 +38,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
   - owner: marcusrbrown
     name: esphome.life
@@ -62,7 +62,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
   - owner: marcusrbrown
     name: infra
@@ -70,7 +70,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
   - owner: marcusrbrown
     name: marcusrbrown
@@ -86,7 +86,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
   - owner: marcusrbrown
     name: mrbro.dev
@@ -94,7 +94,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
   - owner: marcusrbrown
     name: renovate-config
@@ -102,7 +102,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
   - owner: marcusrbrown
     name: sparkle
@@ -118,7 +118,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
   - owner: marcusrbrown
     name: tokentoilet
@@ -126,7 +126,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
   - owner: marcusrbrown
     name: vbs
@@ -134,5 +134,5 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
