@@ -7,9 +7,10 @@ import {describe, expect, it, vi} from 'vitest'
 const wikiIngestModulePromise: Promise<{
   buildWikiIngestChanges: typeof import('./wiki-ingest.js').buildWikiIngestChanges
   commitWikiChanges: typeof import('./wiki-ingest.js').commitWikiChanges
+  parsePorcelainPaths: typeof import('./wiki-ingest.js').parsePorcelainPaths
   WikiIngestError: typeof import('./wiki-ingest.js').WikiIngestError
 }> = import(`./wiki-ingest${'.js'}`)
-const {buildWikiIngestChanges, commitWikiChanges, WikiIngestError} = await wikiIngestModulePromise
+const {buildWikiIngestChanges, commitWikiChanges, parsePorcelainPaths, WikiIngestError} = await wikiIngestModulePromise
 
 interface MockOverrides {
   getRef?: (params: {owner: string; repo: string; ref: string}) => Promise<unknown>
@@ -564,7 +565,129 @@ describe('commitWikiChanges', () => {
       vi.useRealTimers()
     }
   })
+})
 
+describe('parsePorcelainPaths', () => {
+  it('extracts paths with X=space (unstaged worktree modification)', () => {
+    // #given `git status --porcelain` output where the index position is unchanged (space)
+    // and the worktree has a modification — this is what we produce when the survey agent
+    // updates existing wiki files without staging them.
+    // Regression: earlier logic called `.trim()` first, stripping the leading X-space,
+    // then `.slice(3)` ate one character of the path. This test pins the fixed-offset parse.
+    const stdout = ' M knowledge/wiki/repos/marcusrbrown--ha-config.md\n'
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then the full path survives, no leading character dropped
+    expect(paths).toEqual(['knowledge/wiki/repos/marcusrbrown--ha-config.md'])
+  })
+
+  it('extracts paths with Y=space (staged modification) and added/untracked entries', () => {
+    // #given a mixed porcelain listing covering all status variants the wiki commit path encounters
+    const stdout = [
+      'M  knowledge/index.md', // staged modification
+      ' M knowledge/log.md', // unstaged modification
+      'A  knowledge/wiki/repos/fro-bot--agent.md', // staged add
+      '?? knowledge/wiki/topics/new-topic.md', // untracked
+      '',
+    ].join('\n')
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then every path emerges intact in input order
+    expect(paths).toEqual([
+      'knowledge/index.md',
+      'knowledge/log.md',
+      'knowledge/wiki/repos/fro-bot--agent.md',
+      'knowledge/wiki/topics/new-topic.md',
+    ])
+  })
+
+  it('strips trailing CR from windows-style line endings without touching the path', () => {
+    // #given porcelain output terminated with \r\n (e.g., from a Windows git environment)
+    const stdout = ' M knowledge/log.md\r\nA  knowledge/wiki/repos/marcusrbrown--vbs.md\r\n'
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then CRs are stripped but paths are preserved exactly
+    expect(paths).toEqual(['knowledge/log.md', 'knowledge/wiki/repos/marcusrbrown--vbs.md'])
+  })
+
+  it('returns an empty array for empty or whitespace-only stdout', () => {
+    // #given `git status --porcelain` output with no changes
+    // #when porcelain lines are parsed
+    // #then no paths are emitted (no spurious empty strings)
+    expect(parsePorcelainPaths('')).toEqual([])
+    expect(parsePorcelainPaths('\n\n\n')).toEqual([])
+  })
+
+  it('ignores malformed lines shorter than the status prefix', () => {
+    // #given a pathological input with lines that can't possibly be porcelain entries
+    const stdout = ['xy', 'ab', ' M valid/path.md', ''].join('\n')
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then only the well-formed entry is kept; short garbage is ignored
+    expect(paths).toEqual(['valid/path.md'])
+  })
+
+  it('skips unstaged worktree deletions (X=space, Y=D)', () => {
+    // #given a porcelain listing where an existing wiki page has been removed from the
+    // worktree (e.g. by `git restore` pulling a different branch's knowledge/ snapshot
+    // over the current checkout). Production incident: the survey-repo workflow's
+    // `Sync wiki from data branch` step removes files that exist on main but not on
+    // data, and those deletions must NOT be fed into wiki-ingest's readFile loop.
+    const stdout = [
+      ' M knowledge/wiki/repos/marcusrbrown--dotfiles.md', // agent-added content
+      ' D knowledge/wiki/entities/mise.md', // drift-induced deletion
+      '',
+    ].join('\n')
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then the deletion is filtered out; only the present file survives
+    expect(paths).toEqual(['knowledge/wiki/repos/marcusrbrown--dotfiles.md'])
+  })
+
+  it('skips staged deletions (X=D, Y=space)', () => {
+    // #given a porcelain listing with a staged deletion alongside a normal modification
+    const stdout = ['D  knowledge/wiki/entities/old-entity.md', ' M knowledge/log.md', ''].join('\n')
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then the staged deletion is filtered; the modification is preserved
+    expect(paths).toEqual(['knowledge/log.md'])
+  })
+
+  it('skips deletions in all dual-position variants (DD, AD, MD, RD, CD)', () => {
+    // #given porcelain lines covering every status combination where the file ends up
+    // absent from the worktree — each would crash readFile if it reached
+    // loadWorkingTreeWikiFiles.
+    const stdout = [
+      'DD knowledge/wiki/repos/both-deleted.md', // unmerged, both deleted
+      'AD knowledge/wiki/repos/added-then-deleted.md', // added in index, deleted in worktree
+      'MD knowledge/wiki/repos/modified-then-deleted.md', // modified in index, deleted in worktree
+      'RD knowledge/wiki/repos/renamed-then-deleted.md', // renamed in index, deleted in worktree
+      'CD knowledge/wiki/repos/copied-then-deleted.md', // copied in index, deleted in worktree
+      ' M knowledge/wiki/repos/kept.md', // normal unstaged modification
+      '',
+    ].join('\n')
+
+    // #when porcelain lines are parsed
+    const paths = parsePorcelainPaths(stdout)
+
+    // #then every variant with D in either position is dropped; the surviving path remains
+    expect(paths).toEqual(['knowledge/wiki/repos/kept.md'])
+  })
+})
+
+describe('commitWikiChanges (422 surfacing)', () => {
   it('does not retry 422 updateRef failures', async () => {
     const updateRef = vi
       .fn<(params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>>()

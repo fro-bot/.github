@@ -206,7 +206,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@4247f5e4d1fbd1857617ebe00040f1f95be0071f # v0.40.0
+        uses: fro-bot/agent@fc1387ec5c25afed73b11b8b26c482b90b3ad9cd # v0.41.0
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -260,7 +260,7 @@ jobs:
         if: >-
           success() &&
           steps.wiki-changes.outputs.changed == 'true' &&
-          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule"]'), github.event_name)
+          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule","workflow_dispatch"]'), github.event_name)
         id: ingest-ts
         run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
@@ -268,7 +268,7 @@ jobs:
         if: >-
           success() &&
           steps.wiki-changes.outputs.changed == 'true' &&
-          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule"]'), github.event_name)
+          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule","workflow_dispatch"]'), github.event_name)
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
           WIKI_OPERATION: event

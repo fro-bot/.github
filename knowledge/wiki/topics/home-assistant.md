@@ -6,6 +6,7 @@ updated: 2025-06-18
 tags: [home-assistant, iot, smart-home, yaml, automation]
 related:
   - marcusrbrown--ha-config
+  - github-actions-ci
 ---
 
 # Home Assistant

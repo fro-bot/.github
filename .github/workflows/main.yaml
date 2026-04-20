@@ -78,6 +78,34 @@ jobs:
       - name: 🧪 Run Tests
         run: pnpm test
 
+  test-scripts-load:
+    name: Test Scripts Load
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🧪 Load production scripts under Node strip-only
+        # Node 24's strip-only TypeScript execution only erases type annotations -- it does
+        # not transform TS-specific class constructs (parameter properties, enum, namespace).
+        # Neither `tsc --noEmit` nor Vitest exercise the strip-only parser, so those runtime
+        # errors used to surface only on scheduled workflow runs. Importing each production
+        # script here catches them at merge time instead.
+        run: |
+          for f in scripts/*.ts; do
+            case "$f" in *.test.ts) continue ;; esac
+            node -e "import('./$f').then(() => {}).catch(err => { process.stderr.write('FAIL $f: ' + (err.code || err.message) + '\\n'); process.exit(1); })"
+            echo "  ok   $f"
+          done
+
   check-workflows:
     name: Check Workflows
     permissions:
@@ -95,3 +123,27 @@ jobs:
 
       - name: ✅ Validate Workflows
         uses: rhysd/actionlint@e7d448ef7507c20fc4c88a95d0c448b848cd6127 # v1.7.8
+
+  check-wiki-authority:
+    name: Check Wiki Authority
+    # Only pull_request events carry a PR author to evaluate against the guard.
+    # Post-merge push runs on `main` are already past the gate.
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🛡 Enforce Wiki Authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-wiki-authority.ts

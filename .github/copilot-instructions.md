@@ -7,10 +7,9 @@ This is the foundational `.github` repository for Fro Bot, an AI-powered GitHub 
 ## Canonical Context (read first)
 
 1. `README.md` — repository purpose and structure
-2. `.cursorrules` — AI-development conventions and constraints
-3. `.github/workflows/main.yaml` — current CI quality gate behavior
-4. `.github/actions/setup/action.yaml` — required environment/bootstrap pattern
-5. `package.json` — authoritative scripts and package-manager contract
+2. `.github/workflows/main.yaml` — current CI quality gate behavior
+3. `.github/actions/setup/action.yaml` — required environment/bootstrap pattern
+4. `package.json` — authoritative scripts and package-manager contract
 
 Additional high-signal config:
 
@@ -33,7 +32,26 @@ If guidance conflicts, follow the order above.
 - Automation hub (`.github/workflows/`, `.github/actions/`)
 - Copilot governance hooks (`.github/hooks/`)
 - Shared repo policy/settings (`common-settings.yaml`, `.github/settings.yml`)
-- Development standards and quality gates (`.cursorrules`, TypeScript/ESLint/Prettier)
+- Development standards and quality gates (TypeScript/ESLint/Prettier)
+- Control-plane TypeScript (`scripts/*.ts`, executed with Node 24 native TS; no build step)
+- Metadata state (`metadata/*.yaml`, written programmatically to the `data` branch)
+- Knowledge wiki (`knowledge/{schema,index,log}.md` + `knowledge/wiki/`, Karpathy-style LLM-generated)
+- Character definition (`persona/`, injected into agent prompts)
+- Repo-scoped agent skills (`.agents/skills/`)
+- Brand assets (`assets/`, `branding/`) — downstream applied via the `apply-branding` workflow
+
+### Tests
+
+- Vitest runs tests colocated as `scripts/*.test.ts`.
+- Mocks use `vi.hoisted()` + `vi.mock()` for static `@octokit/rest` shims.
+- Prefer behavior-level assertions over implementation-coupled ones.
+
+### Autonomous Commits
+
+- Autonomous writes target the unprotected `data` branch (`main` has `enforce_admins: true`).
+- All metadata writes go through `scripts/commit-metadata.ts`.
+- `data → main` promotes via the `Merge Data Branch` workflow (weekly; see [`merge-data.yaml`](workflows/merge-data.yaml) for schedule).
+- Conditional auto-merge: PRs touching only `knowledge/` or `metadata/` paths are labeled for auto-merge; PRs touching code paths require human approval. See [`metadata/README.md`](../metadata/README.md) for schema, credential expectations, and commit conventions.
 
 ## Required Workflow for Every Change
 

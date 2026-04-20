@@ -14,6 +14,7 @@ branches:
         contexts:
           - Analyze (typescript)
           - Check Types
+          - Check Wiki Authority
           - Check Workflows
           - CodeQL
           - Fro Bot
@@ -21,3 +22,4 @@ branches:
           - Renovate / Renovate
           - Review Dependencies
           - Test
+          - Test Scripts Load

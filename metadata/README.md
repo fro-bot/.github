@@ -16,7 +16,7 @@ approved_inviters:
     role: string
 ```
 
-Update convention: human-maintained. Changes go through PRs to `main`.
+Update convention: human-maintained; edits land via the `data` branch (see [Editing metadata files](#editing-metadata-files) below).
 
 ### `repos.yaml`
 
@@ -102,10 +102,29 @@ PAT split summary:
 | `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)               |
 | `reconcile-repos.yaml`  | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`       |
 
+## Editing metadata files
+
+The `metadata/*.yaml` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source.
+
+For intentional manual edits (e.g., adding an entry to `allowlist.yaml`), land the change on `data` directly and let the existing promotion flow land it on `main`:
+
+```bash
+git worktree add ../fro-bot-.github-data data
+cd ../fro-bot-.github-data
+# edit the file
+git add metadata/<file>.yaml
+git commit -m "chore(metadata): <what changed and why>"
+git push origin data
+```
+
+The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data → main` promotion PR authored by `fro-bot[bot]`, which is allowed through the guard. For faster turnaround, trigger it manually via `gh workflow run merge-data.yaml`.
+
+`metadata/README.md` (this file) and other human documentation remain editable through normal PRs to `main` — the guard targets only `metadata/*.yaml`.
+
 ## Commit conventions
 
 - All programmatic metadata writes must go through `scripts/commit-metadata.ts` and target the `data` branch.
-- Manual edits go through normal PR review to `main`.
+- Manual edits to `metadata/*.yaml` also target `data` and are promoted via the `Merge Data Branch` workflow — see above.
 - Metadata files are initialized in-repo first; automation updates existing files only.
 
 ## Metrics note

@@ -6,7 +6,13 @@ on:
   issues:
     types: [edited]
   pull_request:
-    types: [edited]
+    # `opened`, `reopened`, and `synchronize` ensure the `Renovate / Renovate` required
+    # status check appears on PRs that fro-bot opens against `main` (e.g., wiki ingest
+    # PRs from survey workflows). Without these, the workflow never fires on PR
+    # creation and the required check never posts, leaving the PR blocked until
+    # someone manually edits the PR to generate an `edited` event. `edited` is kept
+    # for manual re-trigger workflows (PR body/comment edits).
+    types: [opened, reopened, synchronize, edited]
   push:
     branches-ignore: [main]
   schedule:

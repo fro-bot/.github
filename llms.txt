@@ -1,45 +1,84 @@
 # Fro Bot .github Repository
 
-> Community health files and automated control center for Fro Bot, an AI-powered GitHub bot designed to enhance repository management experience through automated tasks, code quality improvements, and streamlined collaboration.
+> Control plane for the Fro Bot GitHub account: community health files, shared repo policy, reusable actions, and the autonomous workflows that orchestrate Fro Bot across tracked repositories.
 
-Fro Bot leverages advanced AI technologies to automate repository management tasks including pull request reviews, repository monitoring with insights and recommendations, documentation maintenance, and automated repository starring for followed users. This repository contains the foundational configuration files and workflows that power Fro Bot's functionality across all managed repositories.
+Fro Bot is a trickster-helper character whose memory, decisions, and automated behavior all grow in public on GitHub. This repository is the character's brain: persona definition, allowlist, collaborator-access reconciliation, Karpathy-style knowledge wiki, and the TypeScript scripts and GitHub Actions workflows that run every autonomous cycle.
 
-The repository follows strict development standards with TypeScript, comprehensive linting via ESLint, automated formatting with Prettier, and robust CI/CD pipelines. All automation is handled through GitHub Actions with sophisticated dependency management via Renovate.
+The codebase runs on Node 24 with native TypeScript execution (strip-only, no build step), pnpm, Vitest, and ESLint. Autonomous writes go to an unprotected `data` branch that promotes into `main` via a conditional-auto-merge workflow.
 
 ## Documentation
 
-- [Main README](README.md): Primary project documentation explaining Fro Bot's purpose and capabilities
-- [Security Policy](SECURITY.md): Vulnerability reporting procedures and security guidelines
-- [License](LICENSE.md): MIT license terms and copyright information
-- [Code Owners](/.github/CODEOWNERS): Repository maintainership and review assignments
-- [Copilot Instructions](/.github/copilot-instructions.md): AI coding agent guidelines and project-specific development patterns
+- [Main README](README.md): project overview, prerequisites, local development, repository structure, and automation summary
+- [Security Policy](SECURITY.md): vulnerability disclosure, supported versions, automated security scanning
+- [License](LICENSE.md): MIT license terms
+- [Code Owners](/.github/CODEOWNERS): repository maintainership and review assignments
+- [Copilot Instructions](/.github/copilot-instructions.md): canonical AI-assistant guidance -- architecture, conventions, required verification, security constraints
 
-## Configuration
+## Character
 
-- [Package Configuration](package.json): Project metadata, dependencies, and development scripts
-- [TypeScript Config](tsconfig.json): TypeScript compiler configuration with strict mode
-- [ESLint Config](eslint.config.ts): Code linting rules and style enforcement
-- [AI Development Rules](.cursorrules): Comprehensive development standards and AI assistant behavior guidelines
-- [Editor Config](.editorconfig): Consistent coding style across editors
+- [Persona](persona/fro-bot-persona.md): trickster-helper character definition injected into every agent prompt
+- [Persona README](persona/README.md): how the persona file is loaded and when it applies
+
+## Control Plane
+
+- [Scripts directory](scripts/): TypeScript entrypoints executed with Node 24 native TS -- no build step; `.ts` import extensions required
+- [Metadata README](metadata/README.md): schemas for `metadata/*.yaml` (allowlist, repos, renovate dispatch, social cooldowns) and the `data` branch commit contract
+- [Commit helper](scripts/commit-metadata.ts): typed mutator-based writer for `metadata/*.yaml` on the `data` branch with 409-conflict retry and branch protection guards
+- [Repo reconciliation](scripts/reconcile-repos.ts): pure decision engine + thin I/O shell that syncs `metadata/repos.yaml` with actual collaborator access, with progressive dispatch pipeline (90s stagger, per-run cap, staleness gate)
+- [Invitation polling](scripts/handle-invitation.ts): scheduled poll of pending repository invitations against the allowlist, with accept/decline decisions
+- [Wiki ingest](scripts/wiki-ingest.ts): atomic multi-file commits via Git Data API with retry-on-conflict and schema validation
+- [Wiki query](scripts/wiki-query.ts): 5 KB context budget injected into every agent prompt as `<wiki_context>`
+
+## Knowledge
+
+- [Schema](knowledge/schema.md): Karpathy-style three-layer wiki conventions (raw sources → wiki → lint)
+- [Index](knowledge/index.md): catalog of wiki pages
+- [Log](knowledge/log.md): append-only chronological record of wiki operations
 
 ## Automation
 
-- [Main Workflow](/.github/workflows/main.yaml): Primary CI/CD pipeline for linting and testing
-- [Setup Action](/.github/actions/setup/action.yaml): Reusable action for environment setup and dependency installation
-- [Repository Settings](/.github/settings.yml): Automated repository configuration via Probot
-- [Renovate Configuration](/.github/renovate.json5): Automated dependency management and security updates
+- [Main CI](/.github/workflows/main.yaml): lint, type-check, test, load production scripts under Node strip-only, and actionlint workflow YAML
+- [Setup Action](/.github/actions/setup/action.yaml): reusable composite action for pnpm bootstrap and dependency caching
+- [Fro Bot agent](/.github/workflows/fro-bot.yaml): reusable agent entrypoint for issue interaction, PR review, scheduled oversight, and manual dispatch with persona injection
+- [Fro Bot autoheal](/.github/workflows/fro-bot-autoheal.yaml): self-healing oversight pass that produces daily autoheal reports
+- [Poll Invitations](/.github/workflows/poll-invitations.yaml): scheduled allowlist-gated repository invitation handler
+- [Reconcile Repos](/.github/workflows/reconcile-repos.yaml): daily reconciliation of `metadata/repos.yaml` with GitHub collaborator access, dispatches Survey Repo for onboarded repos
+- [Survey Repo](/.github/workflows/survey-repo.yaml): agent-driven survey of a target repository that ingests results into the knowledge wiki and writes outcomes back via `record-survey-result.ts`
+- [Merge Data Branch](/.github/workflows/merge-data.yaml): weekly promotion of autonomous `data`-branch commits into `main` with conditional auto-merge labels
+- [Repository Settings](/.github/settings.yml): Probot-managed repository configuration, required status checks, branch protection for `main`
 
-## Repository Management
+## Policy
 
-- [Common Settings](common-settings.yaml): Shared repository configuration template for all Fro Bot repositories
-- [CodeQL Analysis](/.github/workflows/codeql-analysis.yaml): Security vulnerability scanning automation
-- [Dependency Review](/.github/workflows/dependency-review.yaml): Automated dependency security analysis
-- [OpenSSF Scorecard](/.github/workflows/scorecard.yaml): Security posture assessment and monitoring
+- [Common Settings](common-settings.yaml): shared repository configuration template inherited by every Fro Bot-managed repo
+- [CodeQL Analysis](/.github/workflows/codeql-analysis.yaml): weekly TypeScript vulnerability scanning
+- [Dependency Review](/.github/workflows/dependency-review.yaml): PR-blocking dependency security review
+- [OpenSSF Scorecard](/.github/workflows/scorecard.yaml): weekly supply-chain security posture assessment
+- [Renovate](/.github/workflows/renovate.yaml) + [Renovate config](/.github/renovate.json5): dispatch-driven dependency updates
+
+## Agent Skills
+
+- [Agents README](.agents/README.md): how repo-scoped agent skills are organized and loaded
+- [generating-project-docs](.agents/skills/generating-project-docs/SKILL.md): skill for refreshing `README.md`, `SECURITY.md`, AI-assistant guidance, and subdirectory READMEs with inventory-driven conventions
+
+## Compound Learnings
+
+- [Doc drift cleanup pattern](docs/solutions/documentation-gaps/doc-drift-cleanup-pattern-2026-04-18.md): inventory-driven pattern for refreshing project docs across independent PRs with preview-branch conflict resolution
+- [Octokit method hallucinations](docs/solutions/runtime-errors/octokit-invitation-method-names-2026-04-17.md): handwritten `OctokitClient` interfaces silently accept hallucinated method names and drop nullability; fix by deriving types from the real SDK
+- [Node strip-only TypeScript traps](docs/solutions/runtime-errors/node-strip-only-typescript-2026-04-18.md): parameter properties, `enum`, and `namespace` pass `tsc` and Vitest but fail Node strip-only; fix with lint + CI import-smoke-test
+
+## Configuration
+
+- [Package](package.json): project metadata, scripts, pinned pnpm version, dependencies
+- [TypeScript](tsconfig.json): strict compiler configuration extending `@bfra.me/tsconfig`
+- [ESLint](eslint.config.ts): `@bfra.me/eslint-config` with `erasableSyntaxOnly: true` for strip-only compliance
+- [Tool versions](mise.toml): pinned Node and pnpm versions
+- [Editor](.editorconfig): consistent coding style across editors
 
 ## Optional
 
-- [Workspace Configuration](pnpm-workspace.yaml): pnpm monorepo workspace configuration
-- [Tool Version Management](mise.toml): Development environment tool version specifications
-- [Change Management](/.changeset/): Automated changelog and version management configuration
-- [Cache Management](/.github/workflows/manage-cache.yaml): CI/CD cache optimization workflows
-- [Issue Management](/.github/workflows/manage-issues.yaml): Automated issue lifecycle management
+- [pnpm workspace](pnpm-workspace.yaml): pnpm configuration for the repository
+- [Cache management](/.github/workflows/manage-cache.yaml): CI cache maintenance
+- [Issue management](/.github/workflows/manage-issues.yaml): auto-close of daily report issues after 3 days
+- [Apply Branding](/.github/workflows/apply-branding.yaml): applies shared brand assets to downstream repos
+- [Copilot setup steps](/.github/workflows/copilot-setup-steps.yaml): environment preparation for GitHub Copilot coding agent
+- [Update Repo Settings](/.github/workflows/update-repo-settings.yaml): applies `.github/settings.yml` via Probot

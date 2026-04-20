@@ -1,22 +1,31 @@
 # Security Policy
 
-We appreciate your efforts to responsibly disclose vulnerabilities and help us improve the security of our project.
+We appreciate your efforts to responsibly disclose vulnerabilities and help us improve the security of this project.
 
 ## Reporting a Vulnerability
 
 To report a security issue, please use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/fro-bot/.github/security/advisories/new) tab.
 
-The team will send a response indicating the next steps in handling your report. After the initial reply to your report, the team will keep you informed of the progress towards a fix and full announcement, and may ask for additional information or guidance.
+We will send a response indicating the next steps in handling your report. After the initial reply we will keep you informed of the progress towards a fix and full announcement, and may ask for additional information or guidance.
 
-Report security bugs in third-party modules to the person or team maintaining the module. You can also report a vulnerability through the [npm contact form](https://www.npmjs.com/support) by selecting "I'm reporting a security vulnerability".
+Report security bugs in third-party modules to the person or team maintaining the module.
 
 ## Supported Versions
 
-The following versions of the project are currently being supported with security updates:
+This repository is a community-health and automation control plane; it is not a versioned published package. Security updates apply to the current state of `main`.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| < 1.0   | :white_check_mark: |
+| Branch | Supported          |
+| ------ | ------------------ |
+| `main` | :white_check_mark: |
+
+## Automated Security Scanning
+
+- [CodeQL](.github/workflows/codeql-analysis.yaml) — PR + weekly vulnerability analysis
+- [Dependency Review](.github/workflows/dependency-review.yaml) — blocks PRs introducing known-vulnerable packages
+- [OpenSSF Scorecard](.github/workflows/scorecard.yaml) — weekly supply-chain posture assessment
+- [Renovate](.github/workflows/renovate.yaml) — automated dependency updates including security patches
+
+Branch protection, required checks, and secret scanning are configured in [`.github/settings.yml`](.github/settings.yml) and applied via the **Update Repo Settings** workflow.
 
 ## OpenSSF Badges
 

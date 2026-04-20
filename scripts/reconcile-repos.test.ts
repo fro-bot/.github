@@ -5,9 +5,14 @@ import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 
 import {
+  DISPATCH_DEFAULTS,
   handleReconcile,
+  isSurveyStale,
+  loadDispatchStaggerFromEnv,
+  loadMaxDispatchesPerRunFromEnv,
   ReconcileError,
   reconcileRepos,
+  SURVEY_STALENESS_MS,
   type AccessListEntry,
   type HandleReconcileParams,
   type OctokitClient,
@@ -368,12 +373,20 @@ describe('reconcileRepos', () => {
 
   describe('mixed and edge cases', () => {
     it('handles multiple simultaneous changes (new + lost + refresh) in one run', () => {
+      // Fresh surveys on both — not stale, so no re-survey dispatch from the staleness gate.
       const drift = makeEntry({
         name: 'drift-repo',
         onboarding_status: 'onboarded',
         has_renovate: false,
+        last_survey_at: '2026-04-10',
+        last_survey_status: 'success',
       })
-      const gone = makeEntry({name: 'gone-repo', onboarding_status: 'onboarded'})
+      const gone = makeEntry({
+        name: 'gone-repo',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-10',
+        last_survey_status: 'success',
+      })
 
       const result = reconcileRepos(
         makeInput({
@@ -671,7 +684,11 @@ function baseParams(overrides: Partial<HandleReconcileParams> = {}): HandleRecon
       overrides.bootstrapDataBranch ??
       (vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 'data-sha'})) as never),
     dispatchTimeoutMs: overrides.dispatchTimeoutMs ?? 100,
-    operatorLogins: overrides.operatorLogins ?? [],
+    dispatchStaggerMs: overrides.dispatchStaggerMs ?? 0,
+    // Tests default to the cap disabled so existing dispatch-count assertions remain valid.
+    // Specific tests that exercise the cap override this.
+    maxDispatchesPerRun: overrides.maxDispatchesPerRun ?? 0,
+    dispatchSleep: overrides.dispatchSleep,
     logger: overrides.logger ?? silentLogger(),
     workflowFile: overrides.workflowFile ?? 'survey-repo.yaml',
     workflowRef: overrides.workflowRef ?? 'main',
@@ -814,11 +831,14 @@ describe('handleReconcile (I/O shell)', () => {
       const existing: ReposFile = {
         version: 1,
         repos: [
+          // Fresh survey — not stale, so the test isolates the field-probe behavior.
           makeEntry({
             name: 'probe-fail-repo',
             onboarding_status: 'onboarded',
             has_fro_bot_workflow: true,
             has_renovate: true,
+            last_survey_at: '2026-04-10',
+            last_survey_status: 'success',
           }),
         ],
       }
@@ -919,6 +939,81 @@ describe('handleReconcile (I/O shell)', () => {
       expect(logger.warn).toHaveBeenCalled()
     })
 
+    it('staggers between dispatches but not before the first or after the last', async () => {
+      // Verifies the stagger contract documented in the triage for marcusrbrown/infra#144.
+      // For N dispatches we expect exactly N-1 stagger sleeps, never called before dispatch 1
+      // (to keep first-survey latency unchanged) and never after dispatch N (to avoid trailing
+      // idle time inside the 10-minute workflow job timeout).
+      const dispatchCalls: string[] = []
+      const sleepCalls: number[] = []
+      const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+        const typed = params as {inputs?: {owner: string; repo: string}}
+        dispatchCalls.push(typed.inputs?.repo ?? '?')
+      })
+      const dispatchSleep = vi.fn(async (ms: number) => {
+        sleepCalls.push(ms)
+      })
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 't'}, name: 'r1', archived: false, private: false, node_id: 'R_1'},
+            {owner: {login: 't'}, name: 'r2', archived: false, private: false, node_id: 'R_2'},
+            {owner: {login: 't'}, name: 'r3', archived: false, private: false, node_id: 'R_3'},
+            {owner: {login: 't'}, name: 'r4', archived: false, private: false, node_id: 'R_4'},
+          ],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          dispatchStaggerMs: 5000,
+          dispatchSleep,
+        }),
+      )
+
+      // Exactly 4 dispatches fired in order.
+      expect(dispatchCalls).toEqual(['r1', 'r2', 'r3', 'r4'])
+      expect(result.dispatches).toBe(4)
+      // Exactly 3 sleeps — between r1→r2, r2→r3, r3→r4. Never before r1. Never after r4.
+      expect(sleepCalls).toEqual([5000, 5000, 5000])
+      expect(dispatchSleep).toHaveBeenCalledTimes(3)
+    })
+
+    it('skips stagger entirely when dispatchStaggerMs is 0', async () => {
+      const dispatchSleep = vi.fn(async () => {
+        /* no-op */
+      })
+      const createWorkflowDispatch = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 't'}, name: 'r1', archived: false, private: false, node_id: 'R_1'},
+            {owner: {login: 't'}, name: 'r2', archived: false, private: false, node_id: 'R_2'},
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          dispatchStaggerMs: 0,
+          dispatchSleep,
+        }),
+      )
+
+      // No sleeps at all when stagger is 0 — the conditional `if (params.staggerMs > 0)`
+      // short-circuits before calling sleep. Critical for test-suite speed.
+      expect(dispatchSleep).not.toHaveBeenCalled()
+      expect(createWorkflowDispatch).toHaveBeenCalledTimes(2)
+    })
+
     it('treats a dispatch timeout as failure and continues to the next', async () => {
       const dispatchCalls: string[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
@@ -954,6 +1049,164 @@ describe('handleReconcile (I/O shell)', () => {
       expect(dispatchCalls).toEqual(['r1', 'r2', 'r3'])
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesFailed).toBe(1)
+    })
+  })
+
+  describe('dispatch prioritization and cap', () => {
+    it('dispatches repos with null last_survey_at before any previously-surveyed repo', async () => {
+      // Mixed access list: two never-surveyed (r1, r3), one already surveyed (r2).
+      // Cap of 2 forces the engine to drop one candidate; the dropped candidate MUST
+      // be the already-surveyed one because progressive runs prioritize fresh coverage.
+      const dispatchCalls: string[] = []
+      const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+        const typed = params as {inputs?: {repo: string}}
+        dispatchCalls.push(typed.inputs?.repo ?? '?')
+      })
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 't'}, name: 'r1', archived: false, private: false, node_id: 'R_1'},
+            {owner: {login: 't'}, name: 'r2', archived: false, private: false, node_id: 'R_2'},
+            {owner: {login: 't'}, name: 'r3', archived: false, private: false, node_id: 'R_3'},
+          ],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({
+            allowlist: makeAllowlist(['t']),
+            repos: {
+              version: 1,
+              repos: [
+                {
+                  // Stale survey (>30d old against NOW=2026-04-17) so r2 is a dispatch
+                  // candidate alongside the null-last-survey-at r1 and r3.
+                  owner: 't',
+                  name: 'r2',
+                  added: '2026-02-01',
+                  onboarding_status: 'onboarded',
+                  last_survey_at: '2026-02-01',
+                  last_survey_status: 'success',
+                  has_fro_bot_workflow: false,
+                  has_renovate: false,
+                },
+              ],
+            },
+          }),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          maxDispatchesPerRun: 2,
+        }),
+      )
+
+      expect(dispatchCalls).toEqual(['r1', 'r3'])
+      expect(result.dispatches).toBe(2)
+      expect(result.dispatchesDeferred).toBe(1)
+    })
+
+    it('among repos with non-null last_survey_at, dispatches oldest first', async () => {
+      // Three repos all previously surveyed: oldest (r-old), middle (r-mid), newest (r-new).
+      // Cap of 2 selects the two oldest; newest is deferred to the next run.
+      const dispatchCalls: string[] = []
+      const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+        const typed = params as {inputs?: {repo: string}}
+        dispatchCalls.push(typed.inputs?.repo ?? '?')
+      })
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 't'}, name: 'r-old', archived: false, private: false, node_id: 'R_old'},
+            {owner: {login: 't'}, name: 'r-mid', archived: false, private: false, node_id: 'R_mid'},
+            {owner: {login: 't'}, name: 'r-new', archived: false, private: false, node_id: 'R_new'},
+          ],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({
+            allowlist: makeAllowlist(['t']),
+            repos: {
+              version: 1,
+              repos: [
+                {
+                  owner: 't',
+                  name: 'r-old',
+                  added: '2026-01-01',
+                  onboarding_status: 'onboarded',
+                  last_survey_at: '2026-01-15',
+                  last_survey_status: 'success',
+                  has_fro_bot_workflow: false,
+                  has_renovate: false,
+                },
+                {
+                  owner: 't',
+                  name: 'r-mid',
+                  added: '2026-02-01',
+                  onboarding_status: 'onboarded',
+                  last_survey_at: '2026-02-15',
+                  last_survey_status: 'success',
+                  has_fro_bot_workflow: false,
+                  has_renovate: false,
+                },
+                {
+                  owner: 't',
+                  name: 'r-new',
+                  added: '2026-03-01',
+                  onboarding_status: 'onboarded',
+                  last_survey_at: '2026-03-15',
+                  last_survey_status: 'success',
+                  has_fro_bot_workflow: false,
+                  has_renovate: false,
+                },
+              ],
+            },
+          }),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          maxDispatchesPerRun: 2,
+        }),
+      )
+
+      expect(dispatchCalls).toEqual(['r-old', 'r-mid'])
+      expect(result.dispatches).toBe(2)
+      expect(result.dispatchesDeferred).toBe(1)
+    })
+
+    it('treats cap <= 0 as disabled (dispatches all eligible candidates)', async () => {
+      // Six never-surveyed repos + cap of 0 (disabled) → all six dispatch.
+      const dispatchCount = {n: 0}
+      const createWorkflowDispatch = vi.fn(async () => {
+        dispatchCount.n += 1
+      })
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: Array.from({length: 6}, (_, i) => ({
+            owner: {login: 't'},
+            name: `r${i + 1}`,
+            archived: false,
+            private: false,
+            node_id: `R_${i + 1}`,
+          })),
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          maxDispatchesPerRun: 0,
+        }),
+      )
+
+      expect(dispatchCount.n).toBe(6)
+      expect(result.dispatches).toBe(6)
+      expect(result.dispatchesDeferred).toBe(0)
     })
   })
 
@@ -1265,9 +1518,13 @@ describe('handleReconcile (I/O shell)', () => {
       expect(alertCalls).toHaveLength(0)
     })
 
-    it('passes when data branch tip is authored by an operator login in RECONCILE_OPERATOR_LOGINS', async () => {
+    it('passes when data branch tip is authored by fro-bot user (PAT writes)', async () => {
+      // Fro Bot writes that go through FRO_BOT_PAT (survey-repo record-survey-result,
+      // fro-bot agent wiki-ingest) are attributed to the `fro-bot` user account. The
+      // integrity check accepts it alongside `fro-bot[bot]` because both identities
+      // belong to the same autonomous operator.
       const getBranch = vi.fn(async () => ({
-        data: {name: 'data', commit: {sha: 'op-sha', author: {login: 'marcusrbrown'}}},
+        data: {name: 'data', commit: {sha: 'pat-sha', author: {login: 'fro-bot'}}},
       }))
       const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
       const userOctokit = mockOctokit({
@@ -1282,7 +1539,6 @@ describe('handleReconcile (I/O shell)', () => {
           appOctokit: mockOctokit({getBranch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
           commitMetadata: commitMetadata as never,
-          operatorLogins: ['marcusrbrown'],
         }),
       )
 
@@ -1368,7 +1624,6 @@ describe('handleReconcile (I/O shell)', () => {
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
           commitMetadata: commitMetadata as never,
           bootstrapDataBranch: bootstrap as never,
-          operatorLogins: [], // no operators — would normally reject 'human-merger'
         }),
       )
 
@@ -1522,6 +1777,142 @@ describe('handleReconcile (I/O shell)', () => {
         }
         if (savedApp !== undefined) process.env.GITHUB_TOKEN = savedApp
       }
+    })
+  })
+})
+
+describe('isSurveyStale', () => {
+  const JUST_BEFORE = SURVEY_STALENESS_MS - 1
+  const EXACTLY = SURVEY_STALENESS_MS
+  const JUST_AFTER = SURVEY_STALENESS_MS + 1
+
+  it('treats null as stale (never surveyed)', () => {
+    expect(isSurveyStale(null, new Date('2026-04-17T12:00:00Z'))).toBe(true)
+  })
+
+  it('treats a malformed date string as stale (recoverable corruption)', () => {
+    expect(isSurveyStale('not-a-date', new Date('2026-04-17T12:00:00Z'))).toBe(true)
+  })
+
+  it('treats exactly 30 days old as stale (inclusive boundary)', () => {
+    const anchor = new Date('2026-04-01T00:00:00Z')
+    const now = new Date(anchor.getTime() + EXACTLY)
+    expect(isSurveyStale('2026-04-01', now)).toBe(true)
+  })
+
+  it('treats just under 30 days as fresh', () => {
+    const anchor = new Date('2026-04-01T00:00:00Z')
+    const now = new Date(anchor.getTime() + JUST_BEFORE)
+    expect(isSurveyStale('2026-04-01', now)).toBe(false)
+  })
+
+  it('treats just over 30 days as stale', () => {
+    const anchor = new Date('2026-04-01T00:00:00Z')
+    const now = new Date(anchor.getTime() + JUST_AFTER)
+    expect(isSurveyStale('2026-04-01', now)).toBe(true)
+  })
+})
+
+describe('loadDispatchStaggerFromEnv', () => {
+  const ENV_KEY = 'RECONCILE_DISPATCH_STAGGER_MS'
+
+  function withEnv<T>(value: string | undefined, run: () => T): T {
+    const saved = process.env[ENV_KEY]
+    if (value === undefined) delete process.env[ENV_KEY]
+    else process.env[ENV_KEY] = value
+    try {
+      return run()
+    } finally {
+      if (saved === undefined) delete process.env[ENV_KEY]
+      else process.env[ENV_KEY] = saved
+    }
+  }
+
+  it('returns the default when unset', () => {
+    withEnv(undefined, () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(DISPATCH_DEFAULTS.staggerMs)
+    })
+  })
+
+  it('returns the default when empty string', () => {
+    withEnv('', () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(DISPATCH_DEFAULTS.staggerMs)
+    })
+  })
+
+  it('returns the default when non-numeric', () => {
+    withEnv('not-a-number', () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(DISPATCH_DEFAULTS.staggerMs)
+    })
+  })
+
+  it('returns the parsed value within bounds', () => {
+    withEnv('12345', () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(12345)
+    })
+  })
+
+  it('clamps negative values to 0', () => {
+    withEnv('-500', () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(0)
+    })
+  })
+
+  it('clamps values over 300_000 to the 300s ceiling', () => {
+    withEnv('999999', () => {
+      expect(loadDispatchStaggerFromEnv()).toBe(300_000)
+    })
+  })
+})
+
+describe('loadMaxDispatchesPerRunFromEnv', () => {
+  const ENV_KEY = 'RECONCILE_MAX_DISPATCHES_PER_RUN'
+
+  function withEnv<T>(value: string | undefined, run: () => T): T {
+    const saved = process.env[ENV_KEY]
+    if (value === undefined) delete process.env[ENV_KEY]
+    else process.env[ENV_KEY] = value
+    try {
+      return run()
+    } finally {
+      if (saved === undefined) delete process.env[ENV_KEY]
+      else process.env[ENV_KEY] = saved
+    }
+  }
+
+  it('returns the default when unset', () => {
+    withEnv(undefined, () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(DISPATCH_DEFAULTS.maxDispatchesPerRun)
+    })
+  })
+
+  it('returns the default when empty string', () => {
+    withEnv('', () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(DISPATCH_DEFAULTS.maxDispatchesPerRun)
+    })
+  })
+
+  it('returns the default when non-numeric', () => {
+    withEnv('not-a-number', () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(DISPATCH_DEFAULTS.maxDispatchesPerRun)
+    })
+  })
+
+  it('returns the parsed value as-is (positive)', () => {
+    withEnv('10', () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(10)
+    })
+  })
+
+  it('returns 0 verbatim (disables the cap in the caller)', () => {
+    withEnv('0', () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(0)
+    })
+  })
+
+  it('returns negative verbatim (disables the cap in the caller)', () => {
+    withEnv('-1', () => {
+      expect(loadMaxDispatchesPerRunFromEnv()).toBe(-1)
     })
   })
 })

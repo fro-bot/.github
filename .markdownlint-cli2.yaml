@@ -6,8 +6,8 @@ config:
   MD041: false
 
 globs:
+  - '!.agents/skills/**'
   - '!.ai/**'
-  - '!.cursorrules'
   - '!.github/copilot-instructions.md'
   - '!**/AGENTS.md'
   - '!coverage/**'

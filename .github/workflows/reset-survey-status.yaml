@@ -1,0 +1,48 @@
+---
+name: Reset Survey Status
+
+# Recovery tool: clears `last_survey_at` + `last_survey_status` to null for one or more
+# entries in `metadata/repos.yaml` on the `data` branch. Used to force reconcile to
+# re-dispatch a repo on the next cron after a misclassified survey outcome.
+#
+# Manual dispatch only. Authored by `fro-bot[bot]` via the App installation token so the
+# resulting commit on `data` passes the reconcile integrity check.
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: Comma-separated `owner/name` entries to reset (e.g. `marcusrbrown/.dotfiles,marcusrbrown/.github`).
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reset-survey-status
+  cancel-in-progress: false
+
+jobs:
+  reset-survey-status:
+    name: Reset last_survey_at and last_survey_status
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - id: get-workflow-app-token
+        name: Get Workflow Access Token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🧹 Reset survey status
+        env:
+          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          TARGETS: ${{ inputs.targets }}
+        run: node scripts/reset-survey-status.ts
