@@ -299,11 +299,24 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
 
   // Still-accessible tracked entry.
   //
-  // Periodic re-survey: onboarded entries whose `last_survey_at` is null or has reached
-  // the staleness threshold become dispatch candidates. The actual dispatch may still be
-  // deferred by the per-run cap; entries that are genuinely fresh never become candidates
-  // so they don't compete for dispatch slots.
+  // Dispatch eligibility:
+  // - `onboarded` entries whose `last_survey_at` has reached the staleness threshold or
+  //   is null become candidates for periodic re-survey.
+  // - `pending` entries that have never been successfully surveyed are candidates for
+  //   initial bootstrapping. A `pending` repo is eligible when it has no recorded success
+  //   (`last_survey_status !== 'success'`) OR when its last survey is stale. This retries
+  //   failed/never-run initial surveys without waiting 30 days, while avoiding pointless
+  //   re-dispatch of a `pending` repo whose successful survey hasn't promoted yet.
+  //
+  // The actual dispatch may still be deferred by the per-run cap; entries that are
+  // genuinely fresh never become candidates so they don't compete for dispatch slots.
+  // `pending-review` entries are excluded — they require human approval first.
   if (entry.onboarding_status === 'onboarded' && isSurveyStale(entry.last_survey_at, params.now)) {
+    dispatches.push({owner: entry.owner, repo: entry.name})
+  } else if (
+    entry.onboarding_status === 'pending' &&
+    (entry.last_survey_status !== 'success' || isSurveyStale(entry.last_survey_at, params.now))
+  ) {
     dispatches.push({owner: entry.owner, repo: entry.name})
   }
 
@@ -1003,7 +1016,15 @@ async function probeFroBotWorkflow(userOctokit: OctokitClient, owner: string, na
   }
 }
 
-const RENOVATE_CONFIG_PATHS = ['renovate.json', '.github/renovate.json', '.renovaterc.json', '.renovaterc']
+const RENOVATE_CONFIG_PATHS = [
+  'renovate.json',
+  'renovate.json5',
+  '.github/renovate.json',
+  '.github/renovate.json5',
+  '.renovaterc.json',
+  '.renovaterc.json5',
+  '.renovaterc',
+]
 
 async function probeRenovateConfig(userOctokit: OctokitClient, owner: string, name: string): Promise<boolean> {
   for (const path of RENOVATE_CONFIG_PATHS) {

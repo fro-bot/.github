@@ -90,8 +90,17 @@ export function recordSurveyResult(current: unknown, input: RecordSurveyResultIn
     throw new RepoEntryNotFoundError(input.owner, input.repo)
   }
 
+  // Promote pending → onboarded on first successful survey. This closes the
+  // bootstrapping lifecycle: pending (added) → onboarded (first success) →
+  // staleness-gated re-surveys. Without this promotion, pending repos would
+  // never reach onboarded status and the staleness gate on the onboarded path
+  // would never apply.
+  const nextStatus =
+    input.status === 'success' && match.onboarding_status === 'pending' ? 'onboarded' : match.onboarding_status
+
   const updated = {
     ...match,
+    onboarding_status: nextStatus,
     last_survey_at: input.at.toISOString().slice(0, 10),
     last_survey_status: input.status,
   }

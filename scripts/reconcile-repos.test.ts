@@ -175,8 +175,8 @@ describe('reconcileRepos', () => {
   })
 
   describe('tracked entries — still accessible', () => {
-    it('leaves a pending, still-accessible entry unchanged when no field drift', () => {
-      const entry = makeEntry({onboarding_status: 'pending', name: 'stable-repo'})
+    it('leaves a pending-review, still-accessible entry unchanged when no field drift', () => {
+      const entry = makeEntry({onboarding_status: 'pending-review', name: 'stable-repo'})
       const result = reconcileRepos(
         makeInput({
           currentRepos: {version: 1, repos: [entry]},
@@ -420,7 +420,9 @@ describe('reconcileRepos', () => {
     })
 
     it('reports all-zero counters and value-equal nextRepos when nothing changes', () => {
-      const entry = makeEntry({name: 'stable-repo', onboarding_status: 'pending'})
+      // Use pending-review: it's excluded from the dispatch gate, so this entry
+      // truly produces zero side-effects.
+      const entry = makeEntry({name: 'stable-repo', onboarding_status: 'pending-review'})
       const current: ReposFile = {version: 1, repos: [entry]}
       const result = reconcileRepos(
         makeInput({
@@ -522,6 +524,80 @@ describe('reconcileRepos', () => {
           }),
         ),
       ).toThrow(/duplicate/i)
+    })
+
+    it('dispatches pending entry with null last_survey_at (never surveyed)', () => {
+      // #given a pending entry that has never been surveyed (null survey fields)
+      const entry = makeEntry({
+        name: 'never-surveyed',
+        onboarding_status: 'pending',
+        last_survey_at: null,
+        last_survey_status: null,
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'never-surveyed'})],
+        }),
+      )
+      // #then the entry is dispatched for its initial survey
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'never-surveyed'}])
+    })
+
+    it('dispatches pending entry with failure status (failed initial survey)', () => {
+      // #given a pending entry whose initial survey failed and wrote back a failure timestamp
+      const entry = makeEntry({
+        name: 'failed-initial',
+        onboarding_status: 'pending',
+        last_survey_at: '2026-04-19',
+        last_survey_status: 'failure',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'failed-initial'})],
+        }),
+      )
+      // #then the entry is dispatched for retry (failure ≠ success, so eligible)
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'failed-initial'}])
+    })
+
+    it('does not dispatch pending-review entry (requires human approval)', () => {
+      // #given a pending-review entry with null survey fields
+      const entry = makeEntry({
+        name: 'needs-approval',
+        onboarding_status: 'pending-review',
+        last_survey_at: null,
+        last_survey_status: null,
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'needs-approval'})],
+        }),
+      )
+      // #then no dispatch — pending-review entries need human promotion first
+      expect(result.dispatches).toEqual([])
+    })
+
+    it('does not dispatch pending entry with recent successful survey', () => {
+      // #given a pending entry that was surveyed successfully recently (promotion
+      // should have moved it to onboarded, but even if it didn't, the success +
+      // non-stale combination means no re-dispatch is needed)
+      const entry = makeEntry({
+        name: 'recently-succeeded',
+        onboarding_status: 'pending',
+        last_survey_at: '2026-04-16',
+        last_survey_status: 'success',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'recently-succeeded'})],
+        }),
+      )
+      // #then no dispatch — success + within staleness window → skip
+      expect(result.dispatches).toEqual([])
     })
   })
 })
@@ -796,9 +872,11 @@ describe('handleReconcile (I/O shell)', () => {
       const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
       const createWorkflowDispatch = vi.fn(async () => undefined)
       const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
+      // Use pending-review: it's excluded from the dispatch gate, so the entry
+      // truly produces zero side-effects (no dispatches, no commits).
       const existing: ReposFile = {
         version: 1,
-        repos: [makeEntry({name: 'stable-repo', onboarding_status: 'pending'})],
+        repos: [makeEntry({name: 'stable-repo', onboarding_status: 'pending-review'})],
       }
       const userOctokit = mockOctokit({
         listForAuthenticatedUser: async () => ({
