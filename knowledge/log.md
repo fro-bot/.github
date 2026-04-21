@@ -312,29 +312,25 @@ Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.g
 
 Sources: https://github.com/fro-bot/.github@f1cecf6f7b43ad815f4d8446d0b75992293d2004
 
-## [2026-04-21 00:00] ingest | marcusrbrown/containers
+## [2026-04-21 00:00] ingest | marcusrbrown/copiloting
 
-Re-survey of `marcusrbrown/containers` (SHA `fa17128f`). Updated repo page `marcusrbrown--containers.md` additively. No new topic/entity pages required — existing `docker-containers` and `github-actions-ci` topic pages cover the cross-cutting findings; no contradictions to prior survey.
+Incremental survey of `marcusrbrown/copiloting` (latest SHA `904352923eff555699384071c1c9db87557adb44`, 2026-04-20). Updated repo page `marcusrbrown--copiloting.md` with changes since 2026-04-18 survey.
 
-Key changes since 2026-04-18 survey (SHA `e582f856`):
+Changes recorded:
 
-- `fro-bot/agent` bumped from `v0.40.0` to `v0.41.0` (2026-04-18, PR #581)
-- `actions/setup-node` bumped to `v6.4.0` (2026-04-20, PR #586)
-- `OMO_PROVIDERS` and `OPENCODE_CONFIG` secrets added to Fro Bot job (2026-04-17, PR #580)
-- Node.js base image digests rotated (multiple PRs: #576, #577, #578, #579) — digest-pin hygiene healthy
-- `pytest` updated to 9.0.3 for CVE-2025-71176 (2026-04-17, PR #571)
-- `openai` dep updated to >=2.32.0,<2.33.0 (2026-04-16, PR #574)
-- CI cache cleanup workflow hardened to gracefully handle missing cache keys (2026-04-19, PR #585)
-- Confirmed new scripts: `predictive_maintenance.py` (987 LOC, SQLite-backed analytics for template health), `ai_core.py` (620 LOC, Ollama/OpenAI/Anthropic abstraction)
-- Confirmed `templates/databases/redis/` template present with full `template.yaml` manifest (Redis 7.2, persistence, cluster mode, AOF, eviction policies)
-- AGENTS.md files confirmed at three levels: repo root, `.github/workflows/`, `scripts/` — comprehensive agent guidance including anti-pattern documentation
-- `ai_config.yaml` at repo root: Ollama is default provider for local inference; OpenAI and Anthropic disabled by default
-- `mise.toml` Node version updated to `24.15.0`
+- `fro-bot/agent` bumped through four patch/minor releases: v0.40.2 → v0.41.0 → v0.41.1 → v0.41.2 → v0.41.3 (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`)
+- `bfra-me/.github` reusable workflows updated v4.16.6 → v4.16.7 (SHA `a518e036563790803ccbd2d90d6a1eb2e08d2fa1`) — affects `renovate.yaml` and `update-repo-settings.yaml`
+- `eslint` dev dependency now at 10.2.1 (PR #771)
+- `axios` security patch merged (PR #727, 2026-04-18)
+- `prettier` at 3.8.3, `mise` tool (jdx/mise) bumped multiple times via Renovate
+- Majority of commits were lockfile maintenance (Renovate), no structural changes to repo layout, workflows logic, or Python/TS application code
 
-Sources: https://github.com/marcusrbrown/containers (SHA fa17128f14da06eb5b6ba0bea8569385857f9b3d)
+No new topic or entity pages warranted — existing `langchain.md` and `polyglot-monorepo.md` remain accurate. No new anti-patterns or stale-import resolution observed.
 
-## [2026-04-21 07:13] ingest | repo:marcusrbrown/containers
+Sources: https://github.com/marcusrbrown/copiloting (SHA 904352923eff555699384071c1c9db87557adb44)
 
-Surveyed marcusrbrown/containers and updated the control-plane wiki.
+## [2026-04-21 07:13] ingest | repo:marcusrbrown/copiloting
 
-Sources: https://github.com/marcusrbrown/containers
+Surveyed marcusrbrown/copiloting and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/copiloting
