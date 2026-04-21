@@ -2,11 +2,11 @@
 type: repo
 title: "marcusrbrown/esphome.life"
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-21
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
-    accessed: 2026-04-18
+    accessed: 2026-04-21
 tags: [esphome, iot, esp32, bluetooth-proxy, home-assistant, firmware, github-pages]
 aliases: [esphome-life, esphome.life]
 related:
