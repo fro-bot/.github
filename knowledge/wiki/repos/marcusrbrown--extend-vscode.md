@@ -2,11 +2,14 @@
 type: repo
 title: "marcusrbrown/extend-vscode"
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-21
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
     accessed: 2026-04-18
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 342872f8de739c03a0263e188395be7ab70457b6
+    accessed: 2026-04-21
 tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
 aliases: [extend-vscode]
 related:
@@ -143,3 +146,17 @@ The repo references `fro-bot/.github:common-settings.yaml` in its Probot setting
 - **Generated metadata:** `vscode-ext-gen` auto-generates TypeScript types from `package.json` contributions, eliminating string-literal drift between manifest and code.
 - **Three-target publishing:** Semantic-release publishes to VS Code Marketplace, OpenVSIX, and npm simultaneously, with rollback support per platform.
 - **No external telemetry:** Default telemetry reporter logs only to the VS Code output channel. No data leaves the machine unless a custom reporter is plugged in.
+
+## Delta Log
+
+### 2026-04-21 (SHA `342872f8` from `a4dcbbb`)
+
+Three Renovate dependency bumps merged since 2026-04-18 survey; no structural changes:
+
+| PR | Change |
+| --- | --- |
+| #480 | `type-fest` v5.5.x → v5.6.0 |
+| #479 | `actions/setup-node` → v6.4.0 (SHA `48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e`) |
+| #478 | `@vscode/vsce` → v3.9.0 |
+
+`bfra-me/.github` renovate reusable workflow now pinned at SHA `65caa6a021ae4a6597bd915f276e1ab9d75dc071` (v4.16.0). Repository structure, architecture, workflows, and publishing pipeline unchanged. **Fro Bot workflow still absent** — follow-up PR recommendation carried forward.

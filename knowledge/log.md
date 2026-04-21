@@ -312,49 +312,45 @@ Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.g
 
 Sources: https://github.com/fro-bot/.github@f1cecf6f7b43ad815f4d8446d0b75992293d2004
 
-## [2026-04-21 07:06] ingest | marcusrbrown/.dotfiles
+## [2026-04-21 00:00] ingest | marcusrbrown/copiloting
 
-Re-survey of `marcusrbrown/.dotfiles` (SHA `dbab7ad`, 122 commits ahead of prior ingest `2f2d1e6`). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
+Incremental survey of `marcusrbrown/copiloting` (latest SHA `904352923eff555699384071c1c9db87557adb44`, 2026-04-20). Updated repo page `marcusrbrown--copiloting.md` with changes since 2026-04-18 survey.
 
-Key deltas from prior survey (2026-04-18):
+Changes recorded:
 
-- **Fro Bot agent** bumped `v0.40.2` → `v0.41.3` (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`)
-- **mise tool updates**: bun 1.3.12→1.3.13, typescript 6.0.2→6.0.3, opencode-ai 1.4.11→1.14.19; new tools: `agent-browser@0.26.0`, `puppeteer@24.41.0`, `skills@1.5.1`, `ocx@2.0.7`, `@cortexkit/opencode-magic-context@0.12.0`, `@cortexkit/aft-opencode@0.14.0`, `@marcusrbrown/infra@latest`; removed: `@anthropic-ai/claude-code`, `@biomejs/biome`
-- **New `.agents/skills/`**: `test-driven-development` (SKILL.md + testing-anti-patterns.md) and `writing-skills` (SKILL.md + Anthropic best practices, Graphviz conventions, persuasion principles, subagent testing examples)
-- **OpenCode plugins expanded**: added `@cortexkit/opencode-magic-context@0.12.0` and `@cortexkit/aft-opencode@0.14.0`; MCP servers added: context7, grep_app, tavily, websearch (exa)
-- **Magic context tuned**: historian→GPT-5.4, dreamer→Claude Sonnet 4.6, Anthropic execute thresholds set to 40%, per-model token caps configured (GPT-5.4 at 140k, Codex at 210k), `pin_key_files` experimental feature enabled
-- **oh-my-openagent model routing**: sisyphus/prometheus/metis pinned to Claude Opus 4.6 max; oracle/momus/hephaestus/multimodal-looker on GPT-5.4; explore on Grok Code Fast; librarian on MiniMax M2.7
-- **Renovate**: added `prCreation: immediate`, `rebaseWhen: behind-base-branch`; automerge scope expanded to include `opencode-anthropic-oauth` and `agent-browser`
-- **main.yaml**: mise version bumped to `2026.4.18`, jdx/mise-action bumped to `v4.0.1`
-- **Removed**: `.config/bash/completion.d/serverless.bash` (dead completion script)
-- **AGENTS.md** refreshed at `90742fb` via `/init-deep`
+- `fro-bot/agent` bumped through four patch/minor releases: v0.40.2 → v0.41.0 → v0.41.1 → v0.41.2 → v0.41.3 (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`)
+- `bfra-me/.github` reusable workflows updated v4.16.6 → v4.16.7 (SHA `a518e036563790803ccbd2d90d6a1eb2e08d2fa1`) — affects `renovate.yaml` and `update-repo-settings.yaml`
+- `eslint` dev dependency now at 10.2.1 (PR #771)
+- `axios` security patch merged (PR #727, 2026-04-18)
+- `prettier` at 3.8.3, `mise` tool (jdx/mise) bumped multiple times via Renovate
+- Majority of commits were lockfile maintenance (Renovate), no structural changes to repo layout, workflows logic, or Python/TS application code
 
-No contradictions with prior ingest — all prior findings confirmed or superseded by newer data.
+No new topic or entity pages warranted — existing `langchain.md` and `polyglot-monorepo.md` remain accurate. No new anti-patterns or stale-import resolution observed.
 
-Sources: https://github.com/marcusrbrown/.dotfiles (SHA dbab7ad7d666f96e4fd0f1b2dd20937f39281a92)
+Sources: https://github.com/marcusrbrown/copiloting (SHA 904352923eff555699384071c1c9db87557adb44)
 
-## [2026-04-21 07:11] ingest | repo:marcusrbrown/.dotfiles
+## [2026-04-21 07:13] ingest | repo:marcusrbrown/copiloting
 
-Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+Surveyed marcusrbrown/copiloting and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/.dotfiles
+Sources: https://github.com/marcusrbrown/copiloting
 
-## [2026-04-21 07:12] ingest | marcusrbrown/esphome.life
+## [2026-04-21 00:00] ingest | marcusrbrown/extend-vscode
 
-Re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, same as prior ingest 2026-04-18). No structural changes detected — HEAD SHA, file tree, CI workflow, Renovate config, settings.yml, and package configs are all identical to prior ingest.
+Incremental re-survey of `marcusrbrown/extend-vscode` (SHA `342872f8`, 2026-04-20). Updated repo page `marcusrbrown--extend-vscode.md` and bumped `updated` date on topic page `vscode-extensions.md`. Index unchanged (both pages already cataloged from 2026-04-18 ingest).
 
-Delta from prior survey:
+Delta from prior survey (SHA `a4dcbbb`, 2026-04-18):
 
-- **No changes to repo content** — last push remains 2026-03-12; recent commit activity is exclusively Renovate dependency bumps (PRs #343–#347, all via `mrbro-bot[bot]`)
-- Updated `updated` and `accessed` dates in `marcusrbrown--esphome-life.md` frontmatter
-- Updated `home-assistant.md` topic page: added `marcusrbrown--esphome-life` to `related` frontmatter and to the "Repos Using Home Assistant" section
-- Updated `index.md`: enriched the esphome.life catalog entry with descriptive text
-- **Still no Fro Bot agent workflow** — recommendation for follow-up PR carried forward
+- Three Renovate dependency bumps merged: `type-fest` v5.6.0 (#480), `actions/setup-node` v6.4.0 (#479), `@vscode/vsce` v3.9.0 (#478)
+- `bfra-me/.github` renovate reusable workflow now at SHA `65caa6a021ae4a6597bd915f276e1ab9d75dc071` (v4.16.0) — down from v4.16.6 in log entry for copiloting; likely a different reusable workflow pin
+- Repository structure, architecture, dual-target build, publishing pipeline, and CI workflows all unchanged
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward from prior ingest
+- Current dependency versions confirmed: TypeScript 5.9.3, Vitest 4.1.0, tsup ^8.0.2, eslint 9.39.0, pnpm 10.33.0, VS Code engine `^1.102.0`
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA 342872f8de739c03a0263e188395be7ab70457b6)
 
-## [2026-04-21 07:15] ingest | repo:marcusrbrown/esphome.life
+## [2026-04-21 07:17] ingest | repo:marcusrbrown/extend-vscode
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/esphome.life
+Sources: https://github.com/marcusrbrown/extend-vscode
