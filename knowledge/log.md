@@ -311,3 +311,25 @@ Sources: https://github.com/marcusrbrown/copiloting (SHA cfc8bb6d5e814c9918a6e55
 Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@f1cecf6f7b43ad815f4d8446d0b75992293d2004
+
+## [2026-04-21 00:00] ingest | marcusrbrown/.github
+
+Re-survey of `marcusrbrown/.github` (SHA `be01029`, same as prior survey 2025-06-18). No repo changes detected — last push was 2026-03-12 (Renovate bump to `marcusrbrown/renovate-config#4.5.1`). Updated repo page `marcusrbrown--github.md` with additive improvements. Index unchanged (page already cataloged).
+
+Delta from prior survey:
+
+- Expanded `related` frontmatter to cross-reference all now-surveyed repos extending `common-settings.yaml` (`marcusrbrown--containers`, `marcusrbrown--mrbro-dev`, `marcusrbrown--vbs`, `marcusrbrown--infra`, `marcusrbrown--dotfiles`, `probot-settings`)
+- Verified label count: 51 labels (not just "50+"); enumerated additional domain labels (`cli-tools`, `lighthouse`, `packageManager`, `e2e`, `cta`, `engagement`, `content-transformation`, `data-generation`)
+- Corrected concurrency description: uses `${{ github.event.number || github.ref }}` — PR slot vs ref slot
+- Documented `actions/checkout@v5.0.1` SHA pin (`93cb6efe`) and `creyD/prettier_action@v4.3` SHA pin (`31355f8e`)
+- Documented `renovate.yaml` `workflow_run` trigger — Renovate gates on `main` workflow completion
+- Added Survey History table and Notable Patterns entries for SHA pinning and Renovate/CI ordering
+- **Still no Fro Bot agent workflow** — recommendation for follow-up PR carried forward
+
+Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fadc7341da26e03c)
+
+## [2026-04-21 07:11] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github

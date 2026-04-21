@@ -2,15 +2,24 @@
 type: repo
 title: "marcusrbrown/.github"
 created: 2025-06-18
-updated: 2025-06-18
+updated: 2026-04-21
 sources:
   - url: https://github.com/marcusrbrown/.github
     sha: be01029971bc8b50fbd2b660fadc7341da26e03c
     accessed: 2025-06-18
+  - url: https://github.com/marcusrbrown/.github
+    sha: be01029971bc8b50fbd2b660fadc7341da26e03c
+    accessed: 2026-04-21
 tags: [github, repository-settings, probot, community-health, prettier, renovate]
 aliases: [marcusrbrown-dotgithub]
 related:
   - marcusrbrown--ha-config
+  - marcusrbrown--containers
+  - marcusrbrown--mrbro-dev
+  - marcusrbrown--vbs
+  - marcusrbrown--infra
+  - marcusrbrown--dotfiles
+  - probot-settings
 ---
 
 # marcusrbrown/.github
@@ -83,7 +92,7 @@ The `common-settings.yaml` file is the **primary artifact** in this repo. It def
 
 ### Labels
 
-Extensive label set (50+) covering standard GitHub labels plus domain-specific labels: `github-actions`, `ci/cd`, `infrastructure`, `architecture`, `performance`, `a11y`, `renovate`, `automerge`, `technical-debt`, `code-quality`, and version-type labels (`major`, `minor`, `patch`).
+Extensive label set of **51 labels** (verified 2026-04-21) covering standard GitHub labels plus domain-specific labels: `github-actions`, `ci/cd`, `infrastructure`, `architecture`, `performance`, `a11y`, `renovate`, `automerge`, `technical-debt`, `code-quality`, and version-type labels (`major`, `minor`, `patch`). Also includes domain labels like `cli-tools`, `lighthouse`, `packageManager`, `e2e`, `cta`, `engagement`, `content-transformation`, `data-generation`.
 
 ## Settings Divergence from fro-bot/.github
 
@@ -121,12 +130,18 @@ Self-extends `common-settings.yaml` with repo-specific overrides:
 
 Minimal pipeline. Single `Lint` job:
 
-1. Checkout branch
-2. Run Prettier 3.8.1 via `creyD/prettier_action@v4.3` with `--check .`
+1. Checkout branch via `actions/checkout@93cb6efe...` (SHA-pinned, v5.0.1) — uses `github.head_ref` ref
+2. Run Prettier 3.8.1 via `creyD/prettier_action@31355f8e...` (SHA-pinned, v4.3) with `--check .`
 
 No TypeScript checking, no tests, no additional linting. Appropriate for a YAML/Markdown-only repo.
 
-**Concurrency:** `workflow-ref` pattern prevents parallel runs for the same ref.
+**Concurrency:** `${{ github.workflow }}-${{ github.event.number || github.ref }}` — distinct slots for PRs (event number) vs push/dispatch (ref).
+
+### Renovate Workflow (renovate.yaml)
+
+Triggers on: issues/PR edits (non-bot actors), push to non-main branches, hourly cron, `workflow_call`, `workflow_dispatch`, and `workflow_run` on completion of the `main` workflow. The `workflow_run` trigger gates Renovate runs to fire after successful CI — prevents Renovate from running against a broken main.
+
+Delegates fully to `bfra-me/.github` reusable workflow. Inputs: `log-level` (default `debug`) and `print-config` (enabled on push events).
 
 ### Shared Workflows
 
@@ -154,9 +169,20 @@ As a `.github` repo, these files serve as **defaults** for all `marcusrbrown` re
 
 **Recommendation:** A follow-up draft PR should add the Fro Bot agent workflow for automated PR review and triage on this repository.
 
+## Survey History
+
+| Date | SHA | Changes |
+| --- | --- | --- |
+| 2025-06-18 | `be01029` | Initial ingest |
+| 2026-04-21 | `be01029` | Re-survey — no change in repo content; additive wiki updates only (label count verified, workflow details expanded, related links extended) |
+
+Repo last pushed 2026-03-12 (Renovate bump to `marcusrbrown/renovate-config#4.5.1`). Stable since then.
+
 ## Notable Patterns
 
 - **Self-extending settings:** The `.github/settings.yml` extends from the same repo's `common-settings.yaml` — a clean pattern for testing the template against itself.
 - **bfra-me dependency:** Core workflow infrastructure (Renovate runner, settings sync) is delegated to `bfra-me/.github` reusable workflows, reducing maintenance burden.
 - **Minimal CI for minimal code:** Prettier-only CI is appropriate for a repo with no application code. No over-engineering.
 - **Template repo for personal settings:** This repo's `common-settings.yaml` is the source of truth for repository governance across Marcus's personal GitHub account.
+- **SHA-pinned actions:** Both `actions/checkout` and `creyD/prettier_action` are pinned by full commit SHA with version comments — consistent with the broader `@bfra.me` ecosystem standard.
+- **Renovate/CI ordering:** `renovate.yaml` triggers on `workflow_run` completion of `main` — Renovate never runs against a broken CI baseline.
