@@ -312,29 +312,29 @@ Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.g
 
 Sources: https://github.com/fro-bot/.github@f1cecf6f7b43ad815f4d8446d0b75992293d2004
 
-## [2026-04-21 07:06] ingest | marcusrbrown/.dotfiles
+## [2026-04-21 00:00] ingest | marcusrbrown/containers
 
-Re-survey of `marcusrbrown/.dotfiles` (SHA `dbab7ad`, 122 commits ahead of prior ingest `2f2d1e6`). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
+Re-survey of `marcusrbrown/containers` (SHA `fa17128f`). Updated repo page `marcusrbrown--containers.md` additively. No new topic/entity pages required — existing `docker-containers` and `github-actions-ci` topic pages cover the cross-cutting findings; no contradictions to prior survey.
 
-Key deltas from prior survey (2026-04-18):
+Key changes since 2026-04-18 survey (SHA `e582f856`):
 
-- **Fro Bot agent** bumped `v0.40.2` → `v0.41.3` (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`)
-- **mise tool updates**: bun 1.3.12→1.3.13, typescript 6.0.2→6.0.3, opencode-ai 1.4.11→1.14.19; new tools: `agent-browser@0.26.0`, `puppeteer@24.41.0`, `skills@1.5.1`, `ocx@2.0.7`, `@cortexkit/opencode-magic-context@0.12.0`, `@cortexkit/aft-opencode@0.14.0`, `@marcusrbrown/infra@latest`; removed: `@anthropic-ai/claude-code`, `@biomejs/biome`
-- **New `.agents/skills/`**: `test-driven-development` (SKILL.md + testing-anti-patterns.md) and `writing-skills` (SKILL.md + Anthropic best practices, Graphviz conventions, persuasion principles, subagent testing examples)
-- **OpenCode plugins expanded**: added `@cortexkit/opencode-magic-context@0.12.0` and `@cortexkit/aft-opencode@0.14.0`; MCP servers added: context7, grep_app, tavily, websearch (exa)
-- **Magic context tuned**: historian→GPT-5.4, dreamer→Claude Sonnet 4.6, Anthropic execute thresholds set to 40%, per-model token caps configured (GPT-5.4 at 140k, Codex at 210k), `pin_key_files` experimental feature enabled
-- **oh-my-openagent model routing**: sisyphus/prometheus/metis pinned to Claude Opus 4.6 max; oracle/momus/hephaestus/multimodal-looker on GPT-5.4; explore on Grok Code Fast; librarian on MiniMax M2.7
-- **Renovate**: added `prCreation: immediate`, `rebaseWhen: behind-base-branch`; automerge scope expanded to include `opencode-anthropic-oauth` and `agent-browser`
-- **main.yaml**: mise version bumped to `2026.4.18`, jdx/mise-action bumped to `v4.0.1`
-- **Removed**: `.config/bash/completion.d/serverless.bash` (dead completion script)
-- **AGENTS.md** refreshed at `90742fb` via `/init-deep`
+- `fro-bot/agent` bumped from `v0.40.0` to `v0.41.0` (2026-04-18, PR #581)
+- `actions/setup-node` bumped to `v6.4.0` (2026-04-20, PR #586)
+- `OMO_PROVIDERS` and `OPENCODE_CONFIG` secrets added to Fro Bot job (2026-04-17, PR #580)
+- Node.js base image digests rotated (multiple PRs: #576, #577, #578, #579) — digest-pin hygiene healthy
+- `pytest` updated to 9.0.3 for CVE-2025-71176 (2026-04-17, PR #571)
+- `openai` dep updated to >=2.32.0,<2.33.0 (2026-04-16, PR #574)
+- CI cache cleanup workflow hardened to gracefully handle missing cache keys (2026-04-19, PR #585)
+- Confirmed new scripts: `predictive_maintenance.py` (987 LOC, SQLite-backed analytics for template health), `ai_core.py` (620 LOC, Ollama/OpenAI/Anthropic abstraction)
+- Confirmed `templates/databases/redis/` template present with full `template.yaml` manifest (Redis 7.2, persistence, cluster mode, AOF, eviction policies)
+- AGENTS.md files confirmed at three levels: repo root, `.github/workflows/`, `scripts/` — comprehensive agent guidance including anti-pattern documentation
+- `ai_config.yaml` at repo root: Ollama is default provider for local inference; OpenAI and Anthropic disabled by default
+- `mise.toml` Node version updated to `24.15.0`
 
-No contradictions with prior ingest — all prior findings confirmed or superseded by newer data.
+Sources: https://github.com/marcusrbrown/containers (SHA fa17128f14da06eb5b6ba0bea8569385857f9b3d)
 
-Sources: https://github.com/marcusrbrown/.dotfiles (SHA dbab7ad7d666f96e4fd0f1b2dd20937f39281a92)
+## [2026-04-21 07:13] ingest | repo:marcusrbrown/containers
 
-## [2026-04-21 07:11] ingest | repo:marcusrbrown/.dotfiles
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
-Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/.dotfiles
+Sources: https://github.com/marcusrbrown/containers
