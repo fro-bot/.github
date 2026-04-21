@@ -51,9 +51,9 @@ repos:
   - owner: marcusrbrown
     name: extend-vscode
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-21
+    last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
   - owner: marcusrbrown
