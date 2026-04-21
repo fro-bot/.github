@@ -2,7 +2,7 @@
 type: topic
 title: Dotfiles Management
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-21
 tags: [dotfiles, shell, configuration, bare-git-repo, xdg]
 related:
   - marcusrbrown--dotfiles
@@ -74,9 +74,22 @@ Telemetry and analytics disabled by default for all tools that support it. This 
 
 Devcontainer configurations with custom features enable the same environment in Codespaces, VS Code Remote Containers, or any devcontainer-compatible runtime. Published images on GHCR provide instant startup without rebuilding.
 
+## AI Agent Integration in Dotfiles
+
+Marcus's dotfiles include a rich AI agent configuration layer, treating the development environment itself as an agentic platform:
+
+- **OpenCode** (`.config/opencode/`): Full plugin stack including `oh-my-openagent` (multi-agent routing), `@cortexkit/opencode-magic-context` (adaptive context), `@cortexkit/aft-opencode` (fine-tuning), and MCP servers (context7, grep_app, tavily, exa)
+- **Claude Code** (`.claude/`): Repo-scoped agents, commands, and rules
+- **Repo-scoped skills** (`.agents/skills/`): Packaged skill bundles (`test-driven-development`, `writing-skills`) for reuse across agent sessions
+- **AGENTS.md**: Canonical knowledge base for all AI agents operating in the repo
+
+This pattern — dotfiles as AI agent configuration — is distinctive: the home directory becomes the ground truth for agent personas, model routing, and skill availability across all projects.
+
 ## Related Technologies
 
 - **[[mise]]** — Polyglot tool version manager
 - **Sheldon** — Zsh plugin manager with deferred loading
 - **Starship** — Cross-shell prompt
 - **Homebrew** — macOS package manager (Brewfile for declarative installs)
+- **OpenCode** — AI coding environment with plugin architecture and MCP support
+- **oh-my-openagent** — Multi-agent routing framework for OpenCode

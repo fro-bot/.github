@@ -2,7 +2,7 @@
 type: entity
 title: mise
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-21
 tags: [mise, tool-management, runtime-versions, asdf, dev-tools]
 aliases: [rtx]
 related:
@@ -20,7 +20,7 @@ Site: https://mise.jdx.dev/
 
 ### [[marcusrbrown--dotfiles]]
 
-Primary tool version manager. Config at `.config/mise/config.toml` manages 20+ tools including Node, Python, Rust, Go, Bun, Deno, Zig, and npm-based CLI tools (TypeScript, Prettier, Claude Code, OpenCode, ast-grep, Biome, Playwright).
+Primary tool version manager. Config at `.config/mise/config.toml` manages 20+ tools including Node, Python, Rust, Go, Bun, Deno, Zig, and npm-based CLI tools (TypeScript, Prettier, OpenCode, ast-grep, agent-browser, Playwright, `@cortexkit` plugins). As of 2026-04-21, `@anthropic-ai/claude-code` and `@biomejs/biome` were removed from mise management; `puppeteer`, `ocx`, `agent-browser`, `skills`, `@cortexkit/opencode-magic-context`, and `@cortexkit/aft-opencode` added.
 
 Notable settings:
 

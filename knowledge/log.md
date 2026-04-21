@@ -312,24 +312,29 @@ Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.g
 
 Sources: https://github.com/fro-bot/.github@f1cecf6f7b43ad815f4d8446d0b75992293d2004
 
-## [2026-04-21 00:00] ingest | marcusrbrown/.github
+## [2026-04-21 07:06] ingest | marcusrbrown/.dotfiles
 
-Re-survey of `marcusrbrown/.github` (SHA `be01029`, same as prior survey 2025-06-18). No repo changes detected — last push was 2026-03-12 (Renovate bump to `marcusrbrown/renovate-config#4.5.1`). Updated repo page `marcusrbrown--github.md` with additive improvements. Index unchanged (page already cataloged).
+Re-survey of `marcusrbrown/.dotfiles` (SHA `dbab7ad`, 122 commits ahead of prior ingest `2f2d1e6`). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
 
-Delta from prior survey:
+Key deltas from prior survey (2026-04-18):
 
-- Expanded `related` frontmatter to cross-reference all now-surveyed repos extending `common-settings.yaml` (`marcusrbrown--containers`, `marcusrbrown--mrbro-dev`, `marcusrbrown--vbs`, `marcusrbrown--infra`, `marcusrbrown--dotfiles`, `probot-settings`)
-- Verified label count: 51 labels (not just "50+"); enumerated additional domain labels (`cli-tools`, `lighthouse`, `packageManager`, `e2e`, `cta`, `engagement`, `content-transformation`, `data-generation`)
-- Corrected concurrency description: uses `${{ github.event.number || github.ref }}` — PR slot vs ref slot
-- Documented `actions/checkout@v5.0.1` SHA pin (`93cb6efe`) and `creyD/prettier_action@v4.3` SHA pin (`31355f8e`)
-- Documented `renovate.yaml` `workflow_run` trigger — Renovate gates on `main` workflow completion
-- Added Survey History table and Notable Patterns entries for SHA pinning and Renovate/CI ordering
-- **Still no Fro Bot agent workflow** — recommendation for follow-up PR carried forward
+- **Fro Bot agent** bumped `v0.40.2` → `v0.41.3` (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`)
+- **mise tool updates**: bun 1.3.12→1.3.13, typescript 6.0.2→6.0.3, opencode-ai 1.4.11→1.14.19; new tools: `agent-browser@0.26.0`, `puppeteer@24.41.0`, `skills@1.5.1`, `ocx@2.0.7`, `@cortexkit/opencode-magic-context@0.12.0`, `@cortexkit/aft-opencode@0.14.0`, `@marcusrbrown/infra@latest`; removed: `@anthropic-ai/claude-code`, `@biomejs/biome`
+- **New `.agents/skills/`**: `test-driven-development` (SKILL.md + testing-anti-patterns.md) and `writing-skills` (SKILL.md + Anthropic best practices, Graphviz conventions, persuasion principles, subagent testing examples)
+- **OpenCode plugins expanded**: added `@cortexkit/opencode-magic-context@0.12.0` and `@cortexkit/aft-opencode@0.14.0`; MCP servers added: context7, grep_app, tavily, websearch (exa)
+- **Magic context tuned**: historian→GPT-5.4, dreamer→Claude Sonnet 4.6, Anthropic execute thresholds set to 40%, per-model token caps configured (GPT-5.4 at 140k, Codex at 210k), `pin_key_files` experimental feature enabled
+- **oh-my-openagent model routing**: sisyphus/prometheus/metis pinned to Claude Opus 4.6 max; oracle/momus/hephaestus/multimodal-looker on GPT-5.4; explore on Grok Code Fast; librarian on MiniMax M2.7
+- **Renovate**: added `prCreation: immediate`, `rebaseWhen: behind-base-branch`; automerge scope expanded to include `opencode-anthropic-oauth` and `agent-browser`
+- **main.yaml**: mise version bumped to `2026.4.18`, jdx/mise-action bumped to `v4.0.1`
+- **Removed**: `.config/bash/completion.d/serverless.bash` (dead completion script)
+- **AGENTS.md** refreshed at `90742fb` via `/init-deep`
 
-Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fadc7341da26e03c)
+No contradictions with prior ingest — all prior findings confirmed or superseded by newer data.
 
-## [2026-04-21 07:11] ingest | repo:marcusrbrown/.github
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA dbab7ad7d666f96e4fd0f1b2dd20937f39281a92)
 
-Surveyed marcusrbrown/.github and updated the control-plane wiki.
+## [2026-04-21 07:11] ingest | repo:marcusrbrown/.dotfiles
 
-Sources: https://github.com/marcusrbrown/.github
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles
