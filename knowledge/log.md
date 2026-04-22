@@ -395,3 +395,23 @@ Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fa
 Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
+
+## [2026-04-22 22:30] ingest | marcusrbrown/containers
+
+Incremental re-survey of `marcusrbrown/containers` (SHA `1b782ff8`, 2026-04-22). Updated repo page `marcusrbrown--containers.md`. Index unchanged (page already cataloged). No new topic/entity/comparison pages warranted — delta is digest rotations and a minor CI fix.
+
+Delta from prior survey (SHA `fa17128f`, 2026-04-21):
+
+- Multiple base image digest rotations via Renovate: Node.js Alpine (#588, #589, #590) and Debian bullseye-slim (#587)
+- Cache cleanup workflow fix: gracefully handle missing cache keys (#585, 2026-04-19)
+- Repository structure, Python automation, AI subsystem, template system, Fro Bot workflow all unchanged
+- Fro Bot agent still at `v0.41.0` (SHA `fc1387ec...`)
+- Renovate preset still `marcusrbrown/renovate-config#4.5.0`
+
+Sources: https://github.com/marcusrbrown/containers (SHA 1b782ff8b0a94615492de36f7f9b1d57e4663113)
+
+## [2026-04-22 22:00] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers

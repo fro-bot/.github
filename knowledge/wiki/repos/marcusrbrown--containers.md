@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/containers"
 created: 2026-04-18
-updated: 2026-04-21
+updated: 2026-04-22
 sources:
   - url: https://github.com/marcusrbrown/containers
     sha: e582f856844ac1dd52fc8739f1a9aa8398248e6e
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/containers
     sha: fa17128f14da06eb5b6ba0bea8569385857f9b3d
     accessed: 2026-04-21
+  - url: https://github.com/marcusrbrown/containers
+    sha: 1b782ff8b0a94615492de36f7f9b1d57e4663113
+    accessed: 2026-04-22
 tags: [docker, containers, dockerfiles, multi-arch, python, github-actions, ci-cd, security-scanning, ai, ollama, sqlite]
 aliases: [containers]
 related:
@@ -26,7 +29,7 @@ A container development ecosystem with curated Dockerfiles, Python automation sc
 - **Default branch:** `main`
 - **Primary language:** Python
 - **Created:** 2016-12-19
-- **Last push:** 2026-04-20 (as of 2026-04-21 survey)
+- **Last push:** 2026-04-22 (as of 2026-04-22 survey)
 - **Topics:** `automation`, `containers`, `docker`, `docker-compose`, `dockerfiles`, `scripts`
 - **Registries:** GHCR (`ghcr.io`), Docker Hub (`docker.io/marcusrbrown`, legacy alias `igetgames`)
 
@@ -36,10 +39,10 @@ A container development ecosystem with curated Dockerfiles, Python automation sc
 
 | Container      | Base Image                              | Size Class | Purpose                        |
 | -------------- | --------------------------------------- | ---------- | ------------------------------ |
-| `node/alpine`  | `node:24-alpine` (digest-pinned)        | ~70 MB     | Lightweight Node.js 24 runtime |
-| `node/release` | `node:24-bookworm-slim` (digest-pinned) | ~160 MB    | Full-compat Node.js 24 runtime |
+| `node/alpine`  | `node:24-alpine@sha256:d1b3b4da...` (digest-pinned) | ~70 MB     | Lightweight Node.js 24 runtime |
+| `node/release` | `node:24-bookworm-slim@sha256:03eae3e...` (digest-pinned) | ~160 MB    | Full-compat Node.js 24 runtime |
 
-Both variants use multi-architecture build args (`TARGETPLATFORM`, `TARGETARCH`), run as non-root (`node` user), use `tini` as PID 1, and include health checks on `:3000/health`. Node.js version pinned at `22.17.0` via `NODE_VERSION` build arg (note: base image is `node:24` but the `NODE_VERSION` env var reflects `22.17.0` — this reflects the Node.js version embedded in the image, not the major tag).
+Both variants use multi-architecture build args (`TARGETPLATFORM`, `TARGETARCH`), run as non-root (`node` user), use `tini` as PID 1, and include health checks on `:3000/health`. Node.js version pinned at `22.17.0` via `NODE_VERSION` build arg (note: base image is `node:24` but the `NODE_VERSION` env var reflects `22.17.0` — this reflects the Node.js version embedded in the image, not the major tag). Base image digests are rotated regularly by Renovate.
 
 ### Archived Containers
 
@@ -106,7 +109,7 @@ Minimal — only Prettier formatting via `@bfra.me/prettier-config/120-proof`. M
 
 Both active Dockerfiles follow consistent best practices:
 
-- **Syntax directive:** `# syntax=docker/dockerfile:1.23@sha256:2780b5c3...` with digest pin
+- **Syntax directive:** `# syntax=docker/dockerfile:1.23@sha256:2780b5c3...` with digest pin (Alpine: `sha256:d1b3b4da...`, Bookworm-slim: `sha256:03eae3e...`)
 - **Base image pinning:** Full `@sha256:...` digest pins on base images
 - **OCI labels:** Follows OCI Image Spec annotations (title, description, version, vendor, source, licenses, base.name, base.digest). CI-injected labels (created, revision, version) are not hardcoded — `docker/metadata-action` handles those.
 - **Build cache mounts:** `RUN --mount=type=cache` for package manager caches (`/var/cache/apk` or `/var/cache/apt`, `sharing=locked`)
@@ -132,7 +135,7 @@ Both active Dockerfiles follow consistent best practices:
 | Renovate | `renovate.yaml` | push/PR/dispatch | Dependency updates |
 | Update Repo Settings | `update-repo-settings.yaml` | push/schedule/dispatch | Probot settings sync |
 | Fro Bot | `fro-bot.yaml` | PR, issue, comment, schedule (14:30 UTC daily), dispatch | AI agent for review, triage, autohealing |
-| Cache Cleanup | `cache-cleanup.yaml` | PR close/schedule/dispatch | GHA cache management |
+| Cache Cleanup | `cache-cleanup.yaml` | PR close/schedule/dispatch | GHA cache management (graceful handling of missing cache keys) |
 
 ### Build & Publish Pipeline
 
@@ -218,3 +221,4 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 | --- | --- | --- |
 | 2026-04-18 | `e582f856` | Initial survey. Agent `v0.40.0`, `fro-bot.yaml` PR review + daily autohealing confirmed. |
 | 2026-04-21 | `fa17128f` | Agent bumped to `v0.41.0`. `actions/setup-node` bumped to v6.4.0. `OMO_PROVIDERS`/`OPENCODE_CONFIG` secrets added to Fro Bot job. Node.js base images digest-rotated. `predictive_maintenance.py` (987 LOC, SQLite analytics) and `ai_core.py` Ollama support documented. Redis template (`templates/databases/redis/`) confirmed present. AGENTS.md coverage at root, workflows, and scripts directories. `pytest` updated (CVE-2025-71176). |
+| 2026-04-22 | `1b782ff8` | Incremental re-survey. Multiple base image digest rotations via Renovate (#587–#590). Cache cleanup workflow fix: gracefully handle missing cache keys (#585). Node Alpine base image now `sha256:d1b3b4da...`, Bookworm-slim `sha256:03eae3e...`. No structural changes to repo, workflows, or Python automation layer. |
