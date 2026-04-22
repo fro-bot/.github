@@ -1,3 +1,4 @@
+import {appendFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
 
@@ -401,6 +402,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function main(): Promise<void> {
   const result = await handleInvitations()
   process.stdout.write(`${JSON.stringify(result)}\n`)
+
+  const accepted = result.processed.filter(p => p.status === 'accepted').length
+  const githubOutput = process.env.GITHUB_OUTPUT
+  if (githubOutput !== undefined && githubOutput !== '') {
+    appendFileSync(githubOutput, `invitations_accepted=${accepted}\n`)
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
