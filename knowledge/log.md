@@ -376,3 +376,22 @@ Sources: https://github.com/marcusrbrown/extend-vscode
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-04-22 19:00] ingest | marcusrbrown/.github
+
+Re-survey of `marcusrbrown/.github` (SHA `be01029`). No change detected — repo content identical to 2026-04-21 survey. Updated repo page `marcusrbrown--github.md` with new source entry and survey history row. No new topic/entity/comparison pages warranted.
+
+Key findings:
+
+- SHA unchanged (`be01029`): latest commit is `chore(deps): update marcusrbrown/renovate-config preset to v4.5.1 (#354)` from 2026-03-12
+- Repository structure, workflows, settings, and community health files all identical to prior survey
+- 3 open issues, 0 open PRs, 3 stars, 2 watchers
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+
+Sources: https://github.com/marcusrbrown/.github (SHA be01029971bc8b50fbd2b660fadc7341da26e03c)
+
+## [2026-04-22 21:56] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github

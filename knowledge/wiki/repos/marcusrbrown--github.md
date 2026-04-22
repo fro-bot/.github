@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/.github"
 created: 2025-06-18
-updated: 2026-04-21
+updated: 2026-04-22
 sources:
   - url: https://github.com/marcusrbrown/.github
     sha: be01029971bc8b50fbd2b660fadc7341da26e03c
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/.github
     sha: be01029971bc8b50fbd2b660fadc7341da26e03c
     accessed: 2026-04-21
+  - url: https://github.com/marcusrbrown/.github
+    sha: be01029971bc8b50fbd2b660fadc7341da26e03c
+    accessed: 2026-04-22
 tags: [github, repository-settings, probot, community-health, prettier, renovate]
 aliases: [marcusrbrown-dotgithub]
 related:
@@ -175,6 +178,7 @@ As a `.github` repo, these files serve as **defaults** for all `marcusrbrown` re
 | --- | --- | --- |
 | 2025-06-18 | `be01029` | Initial ingest |
 | 2026-04-21 | `be01029` | Re-survey — no change in repo content; additive wiki updates only (label count verified, workflow details expanded, related links extended) |
+| 2026-04-22 | `be01029` | Re-survey — no change since 2026-04-21; repo content identical at same SHA |
 
 Repo last pushed 2026-03-12 (Renovate bump to `marcusrbrown/renovate-config#4.5.1`). Stable since then.
 
