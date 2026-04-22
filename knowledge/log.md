@@ -349,8 +349,30 @@ Delta from prior survey (SHA `a4dcbbb`, 2026-04-18):
 
 Sources: https://github.com/marcusrbrown/extend-vscode (SHA 342872f8de739c03a0263e188395be7ab70457b6)
 
+## [2026-04-22 13:40] ingest | marcusrbrown/.dotfiles
+
+Incremental re-survey of `marcusrbrown/.dotfiles` (latest SHA `ae026c1`, 2026-04-22). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
+
+Delta from prior survey (SHA `dbab7ad`, 2026-04-21):
+
+- **OpenCode model routing overhaul:** All Anthropic direct provider endpoints migrated to GitHub Copilot hosted equivalents. Opus upgraded 4.6 → 4.7. `prometheus` agent removed. `atlas` and `hephaestus` disabled. `librarian` migrated from `opencode-go/minimax-m2.7` to `github-copilot/claude-haiku-4.5`. Category model assignments added for first time: visual-engineering (gemini-3.1-pro), ultrabrain (gpt-5.4 xhigh), deep (gpt-5.4 medium), artistry (gemini-3.1-pro), quick (gpt-5.4-mini), unspecified-low (claude-sonnet-4.6), unspecified-high (claude-opus-4.7 medium), writing (gemini-3-flash)
+- **Magic-context v0.13.0:** Historian model migrated to `github-copilot/gpt-5.4`. Added token thresholds for Copilot models (Opus 4.7 at 88K, Sonnet 4.6 at 95K, GPT-5.4 at 140K, Codex at 210K). Reduced history budget to 10%. Added temporal awareness, compaction markers, auto-drop tool age (15), historian timeout (420s)
+- **New copilot-cli skill** added (`.agents/skills/copilot-cli/`): Covers non-interactive Copilot CLI delegation, auth, permissions, model selection, JSONL output, bash-subprocess delegation pattern
+- **Renovate config:** `opencode-ai` updates now disabled alongside `@anthropic-ai/claude-code`. `opencode-anthropic-oauth` added to unstable automerge list
+- **Mise tool changes:** `@biomejs/biome` re-added at 2.4.12, `vibe-tools` added at 0.63.3, `pipx:poetry` added at 2.3.4, language servers added (`pyright`, `remark-language-server`, `typescript-language-server`), `tsx`, `rimraf`, `lolcrab` (github:mazznoer) added. `deno` bumped to 2.7.13
+- **Fro Bot workflow:** Unchanged — `fro-bot/agent@v0.41.3` (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`)
+- **Repository structure, devcontainer, Probot settings, branch protection all unchanged**
+
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA ae026c179cd91cb637443fe7d92bed75df3d6dba)
+
 ## [2026-04-21 07:17] ingest | repo:marcusrbrown/extend-vscode
 
 Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-04-22 18:48] ingest | repo:marcusrbrown/.dotfiles
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles

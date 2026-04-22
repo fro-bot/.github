@@ -2,7 +2,7 @@
 type: topic
 title: Dotfiles Management
 created: 2026-04-18
-updated: 2026-04-21
+updated: 2026-04-22
 tags: [dotfiles, shell, configuration, bare-git-repo, xdg]
 related:
   - marcusrbrown--dotfiles
@@ -78,9 +78,9 @@ Devcontainer configurations with custom features enable the same environment in 
 
 Marcus's dotfiles include a rich AI agent configuration layer, treating the development environment itself as an agentic platform:
 
-- **OpenCode** (`.config/opencode/`): Full plugin stack including `oh-my-openagent` (multi-agent routing), `@cortexkit/opencode-magic-context` (adaptive context), `@cortexkit/aft-opencode` (fine-tuning), and MCP servers (context7, grep_app, tavily, exa)
+- **OpenCode** (`.config/opencode/`): Full plugin stack including `oh-my-openagent` (multi-agent routing with category-level model assignment), `@cortexkit/opencode-magic-context` (adaptive context compaction v0.13.0), `@cortexkit/aft-opencode` (fine-tuning), and MCP servers (context7, grep_app, tavily, exa). All agents now route through Copilot-hosted models. Category-based routing assigns `gemini-3.1-pro` for visual/artistry, `gpt-5.4` for deep/ultrabrain, and `claude-opus-4.7` for unspecified-high tasks.
 - **Claude Code** (`.claude/`): Repo-scoped agents, commands, and rules
-- **Repo-scoped skills** (`.agents/skills/`): Packaged skill bundles (`test-driven-development`, `writing-skills`) for reuse across agent sessions
+- **Repo-scoped skills** (`.agents/skills/`): Packaged skill bundles (`copilot-cli`, `test-driven-development`, `writing-skills`) for reuse across agent sessions. The `copilot-cli` skill covers non-interactive invocation of GitHub Copilot CLI for agent delegation.
 - **AGENTS.md**: Canonical knowledge base for all AI agents operating in the repo
 
 This pattern — dotfiles as AI agent configuration — is distinctive: the home directory becomes the ground truth for agent personas, model routing, and skill availability across all projects.
