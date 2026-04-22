@@ -36,8 +36,8 @@ repos:
     name: copiloting
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-04-21
-    last_survey_status: success
+    last_survey_at: 2026-04-22
+    last_survey_status: failure
     has_fro_bot_workflow: true
     has_renovate: true
   - owner: marcusrbrown
