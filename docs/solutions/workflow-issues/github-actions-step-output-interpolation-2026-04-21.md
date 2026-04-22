@@ -6,6 +6,8 @@ module: github-workflows
 problem_type: workflow_issue
 component: development_workflow
 severity: medium
+last_updated: 2026-04-21
+verified: true
 applies_when:
   - Passing step output values into run: shell commands
   - Writing new workflow steps that reference ${{ steps.*.outputs.* }}
