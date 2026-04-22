@@ -1,0 +1,98 @@
+---
+name: Social Broadcast
+
+on:
+  workflow_call:
+    inputs:
+      event_type:
+        description: Event type for the journal entry (e.g. repo_survey_complete)
+        required: true
+        type: string
+      discord_message:
+        description: Discord embed description text
+        required: false
+        type: string
+        default: ''
+      discord_title:
+        description: Discord embed title
+        required: false
+        type: string
+        default: ''
+      bluesky_text:
+        description: BlueSky post text (≤ 300 graphemes; truncated if longer)
+        required: false
+        type: string
+        default: ''
+      journal_text:
+        description: In-character journal reflection text
+        required: true
+        type: string
+      journal_metadata:
+        description: JSON metadata blob for the journal entry
+        required: false
+        type: string
+        default: '{}'
+      repo:
+        description: Relevant repo slug (owner/repo) to attach to the journal entry
+        required: false
+        type: string
+        default: ''
+    secrets:
+      FRO_BOT_PAT:
+        required: true
+      DISCORD_WEBHOOK_URL:
+        required: false
+      BLUESKY_HANDLE:
+        required: false
+      BLUESKY_APP_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  broadcast:
+    name: Broadcast ${{ inputs.event_type }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 📣 Notify Discord
+        if: inputs.discord_message != ''
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_MESSAGE: ${{ inputs.discord_message }}
+          DISCORD_TITLE: ${{ inputs.discord_title }}
+        run: |
+          node scripts/discord-notify.ts \
+            --message "$DISCORD_MESSAGE" \
+            --title "$DISCORD_TITLE"
+
+      - name: 🦋 Post to Bluesky
+        if: inputs.bluesky_text != ''
+        env:
+          BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+          BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+          BLUESKY_TEXT: ${{ inputs.bluesky_text }}
+        run: node scripts/bluesky-post.ts "$BLUESKY_TEXT"
+
+      - name: 📓 Journal entry
+        env:
+          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          EVENT_TYPE: ${{ inputs.event_type }}
+          JOURNAL_TEXT: ${{ inputs.journal_text }}
+          JOURNAL_METADATA: ${{ inputs.journal_metadata }}
+          REPO: ${{ inputs.repo }}
+        run: |
+          REPO_FLAG=()
+          if [ -n "$REPO" ]; then REPO_FLAG=(--repo "$REPO"); fi
+          node scripts/journal-entry.ts \
+            --event "$EVENT_TYPE" \
+            --text "$JOURNAL_TEXT" \
+            --metadata "$JOURNAL_METADATA" \
+            "${REPO_FLAG[@]}"

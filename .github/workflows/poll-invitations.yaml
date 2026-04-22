@@ -26,6 +26,35 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: 📬 Poll invitations
+        id: poll
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_POLL_PAT }}
         run: node scripts/handle-invitation.ts
+
+      - name: 📣 Notify Discord
+        if: steps.poll.outputs.invitations_accepted > 0
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          node scripts/discord-notify.ts \
+            --message "🌐 Just joined ${{ steps.poll.outputs.invitations_accepted }} new space(s) on GitHub. The network grows ✨" \
+            --title "New Collaboration"
+
+      - name: 🦋 Post to Bluesky
+        if: steps.poll.outputs.invitations_accepted > 0
+        env:
+          BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+          BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+        run: |
+          node scripts/bluesky-post.ts \
+            "🌐 Just accepted ${{ steps.poll.outputs.invitations_accepted }} collaboration invitation(s) on GitHub. The network grows ✨ #GitHub #OpenSource"
+
+      - name: 📓 Journal — invitation accepted
+        if: steps.poll.outputs.invitations_accepted > 0
+        env:
+          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+        run: |
+          node scripts/journal-entry.ts \
+            --event invitation_accepted \
+            --text "Joined ${{ steps.poll.outputs.invitations_accepted }} new repo(s) this cycle. The web of collaboration expands." \
+            --metadata '{"count":${{ steps.poll.outputs.invitations_accepted }}}'
