@@ -38,6 +38,9 @@ on:
       OPENCODE_CONFIG:
         description: OpenCode runtime configuration
         required: true
+      DISCORD_WEBHOOK_URL:
+        description: Discord webhook URL for social notifications (optional)
+        required: false
 
 permissions:
   contents: read
