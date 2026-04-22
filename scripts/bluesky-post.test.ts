@@ -105,6 +105,28 @@ describe('postToBluesky', () => {
     expect(createdRichTexts[1]?.text).toBe(exactText)
   })
 
+  it('truncates at grapheme boundary — does not split multi-codeunit emoji', async () => {
+    // 300 ASCII + 1 multi-codeunit emoji (👍🏽 = 4 JS code units, 1 grapheme) = 301 graphemes
+    // Truncation slices at 297 graphemes + '...'; the emoji must be excluded cleanly, not split
+    const emoji = '👍🏽'
+    const longText = 'a'.repeat(300) + emoji
+    await postToBluesky({
+      text: longText,
+      handle: 'fro-bot.bsky.social',
+      appPassword: 'xxxx-xxxx-xxxx-xxxx',
+    })
+    expect(createdRichTexts).toHaveLength(2)
+    const postedText = createdRichTexts[1]?.text ?? ''
+    // Must end with suffix, not mid-cluster bytes
+    expect(postedText.endsWith('...')).toBe(true)
+    // Must not contain any part of the emoji (no split grapheme cluster)
+    expect(postedText).not.toContain(emoji)
+    expect(postedText).not.toContain('\uD83D') // no orphaned high surrogate
+    // Grapheme count must be exactly 300
+    const graphemes = [...new Intl.Segmenter().segment(postedText)]
+    expect(graphemes.length).toBe(300)
+  })
+
   it('uses custom serviceUrl when provided', async () => {
     const {CredentialSession} = await import('@atproto/api')
     const constructorSpy = vi.spyOn(CredentialSession.prototype, 'login')
