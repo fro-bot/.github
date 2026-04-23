@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/containers"
 created: 2026-04-18
-updated: 2026-04-23
+updated: 2026-04-22
 sources:
   - url: https://github.com/marcusrbrown/containers
     sha: e582f856844ac1dd52fc8739f1a9aa8398248e6e
@@ -13,9 +13,6 @@ sources:
   - url: https://github.com/marcusrbrown/containers
     sha: 1b782ff8b0a94615492de36f7f9b1d57e4663113
     accessed: 2026-04-22
-  - url: https://github.com/marcusrbrown/containers
-    sha: 1b782ff8b0a94615492de36f7f9b1d57e4663113
-    accessed: 2026-04-23
 tags: [docker, containers, dockerfiles, multi-arch, python, github-actions, ci-cd, security-scanning, ai, ollama, sqlite]
 aliases: [containers]
 related:
@@ -32,7 +29,7 @@ A container development ecosystem with curated Dockerfiles, Python automation sc
 - **Default branch:** `main`
 - **Primary language:** Python
 - **Created:** 2016-12-19
-- **Last push:** 2026-04-22 (as of 2026-04-23 survey)
+- **Last push:** 2026-04-22 (as of 2026-04-22 survey)
 - **Topics:** `automation`, `containers`, `docker`, `docker-compose`, `dockerfiles`, `scripts`
 - **Registries:** GHCR (`ghcr.io`), Docker Hub (`docker.io/marcusrbrown`, legacy alias `igetgames`)
 
@@ -225,4 +222,3 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 | 2026-04-18 | `e582f856` | Initial survey. Agent `v0.40.0`, `fro-bot.yaml` PR review + daily autohealing confirmed. |
 | 2026-04-21 | `fa17128f` | Agent bumped to `v0.41.0`. `actions/setup-node` bumped to v6.4.0. `OMO_PROVIDERS`/`OPENCODE_CONFIG` secrets added to Fro Bot job. Node.js base images digest-rotated. `predictive_maintenance.py` (987 LOC, SQLite analytics) and `ai_core.py` Ollama support documented. Redis template (`templates/databases/redis/`) confirmed present. AGENTS.md coverage at root, workflows, and scripts directories. `pytest` updated (CVE-2025-71176). |
 | 2026-04-22 | `1b782ff8` | Incremental re-survey. Multiple base image digest rotations via Renovate (#587–#590). Cache cleanup workflow fix: gracefully handle missing cache keys (#585). Node Alpine base image now `sha256:d1b3b4da...`, Bookworm-slim `sha256:03eae3e...`. No structural changes to repo, workflows, or Python automation layer. |
-| 2026-04-23 | `1b782ff8` | Re-survey. No changes detected — SHA identical to 2026-04-22 survey. Repository structure, workflows, Python automation, AI subsystem, template system, Fro Bot config, Renovate config, Probot settings all unchanged. Open issues: 8. |

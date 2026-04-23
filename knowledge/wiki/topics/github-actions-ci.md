@@ -2,11 +2,12 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-23
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - marcusrbrown--containers
   - marcusrbrown--ha-config
+  - marcusrbrown--github
 ---
 
 # GitHub Actions CI
@@ -17,6 +18,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 
 - [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
 - [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
+- [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 
 ## Common Patterns
 
@@ -39,7 +41,15 @@ Both repos extend `fro-bot/.github:common-settings.yaml` via `.github/settings.y
 Both repos extend `marcusrbrown/renovate-config` for dependency updates, with repo-specific overrides:
 
 - [[marcusrbrown--containers]] — `#4.5.0`, ignores `templates/`, disables patch updates (except TypeScript/Python), post-upgrade runs `pnpm install && pnpm format`
-- [[marcusrbrown--ha-config]] — `#4.5.7`, custom managers for pre-commit and mise, post-upgrade runs Prettier, automerge on minor/patch pip updates
+- [[marcusrbrown--ha-config]] — `#4.5.8`, custom managers for pre-commit and mise, post-upgrade runs Prettier, automerge on minor/patch pip updates
+- [[marcusrbrown--github]] — `#4.5.8`, post-upgrade runs `npx prettier@3.8.3 --no-color --write .`, PR creation set to `immediate`
+
+### Renovate Trigger Model
+
+The Renovate workflow trigger pattern varies across repos:
+
+- **Event-driven** (recommended): [[marcusrbrown--github]] uses PR events (opened/reopened/synchronize/edited), issue edits (non-bot), push to non-main, and `workflow_run` after CI success. Hourly schedule is commented out. This prevents unnecessary runs while ensuring timely updates.
+- **Schedule + event hybrid**: Most other repos use a combination of hourly cron schedules and event triggers.
 
 ### Branch Protection
 
