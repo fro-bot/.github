@@ -491,8 +491,31 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA bea3f576d7218900b9216a8a2c2947003660809b)
 
+## [2026-04-23 06:00] ingest | marcusrbrown/.dotfiles
+
+Incremental re-survey of `marcusrbrown/.dotfiles` (latest SHA `e378290`, 2026-04-23). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
+
+Delta from prior survey (SHA `ae026c1`, 2026-04-22):
+
+- **magic-context 0.13.0 → 0.14.0**: New `auto_search` experimental feature (min 20 prompt chars, threshold 0.55) and `git_commit_indexing` (365 days, 2000 commits). Token threshold key renamed `Codex` → `gpt-5.3-codex`.
+- **`UV_SYSTEM_CERTS = "true"`** added to mise `[env]` section for uv certificate handling.
+- **opencode-ai** bumped 1.14.18 → 1.14.20; **@cortexkit/aft-opencode** 0.14.0 → 0.14.1; **@ex-machina/opencode-anthropic-auth** 1.7.4 → 1.7.5.
+- **Mise action** pinned to v2026.4.19 (was v2026.4.16).
+- **Fro Bot agent** bumped v0.41.3 → v0.41.4 (SHA `28bcadb...`).
+- **bfra-me/.github** reusable workflows updated to v4.16.8.
+- **hephaestus** agent: model entry added (`gpt-5.4` medium) but remains in `disabled_agents` — no functional change.
+- Repository structure, devcontainer, Probot settings, branch protection all unchanged.
+
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA e378290905a0f25b3d0b5e17e5a5e5e77f4e8f00)
+
 ## [2026-04-23 06:26] ingest | repo:marcusrbrown/opencode-copilot-delegate
 
 Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-04-23 07:15] ingest | repo:marcusrbrown/.dotfiles
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles
