@@ -491,31 +491,22 @@ Key findings:
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA bea3f576d7218900b9216a8a2c2947003660809b)
 
-## [2026-04-23 06:00] ingest | marcusrbrown/.dotfiles
-
-Incremental re-survey of `marcusrbrown/.dotfiles` (latest SHA `e378290`, 2026-04-23). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
-
-Delta from prior survey (SHA `ae026c1`, 2026-04-22):
-
-- **magic-context 0.13.0 → 0.14.0**: New `auto_search` experimental feature (min 20 prompt chars, threshold 0.55) and `git_commit_indexing` (365 days, 2000 commits). Token threshold key renamed `Codex` → `gpt-5.3-codex`.
-- **`UV_SYSTEM_CERTS = "true"`** added to mise `[env]` section for uv certificate handling.
-- **opencode-ai** bumped 1.14.18 → 1.14.20; **@cortexkit/aft-opencode** 0.14.0 → 0.14.1; **@ex-machina/opencode-anthropic-auth** 1.7.4 → 1.7.5.
-- **Mise action** pinned to v2026.4.19 (was v2026.4.16).
-- **Fro Bot agent** bumped v0.41.3 → v0.41.4 (SHA `28bcadb...`).
-- **bfra-me/.github** reusable workflows updated to v4.16.8.
-- **hephaestus** agent: model entry added (`gpt-5.4` medium) but remains in `disabled_agents` — no functional change.
-- Repository structure, devcontainer, Probot settings, branch protection all unchanged.
-
-Sources: https://github.com/marcusrbrown/.dotfiles (SHA e378290905a0f25b3d0b5e17e5a5e5e77f4e8f00)
-
 ## [2026-04-23 06:26] ingest | repo:marcusrbrown/opencode-copilot-delegate
 
 Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
 
-## [2026-04-23 07:15] ingest | repo:marcusrbrown/.dotfiles
+## [2026-04-23 14:30] ingest | marcusrbrown/containers
 
-Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+Re-survey of `marcusrbrown/containers` (SHA `1b782ff8`, unchanged from 2026-04-22). Updated repo page `marcusrbrown--containers.md` with new source entry and survey history row. No changes to topic or entity pages — existing `docker-containers.md` and `github-actions-ci.md` remain accurate. Index unchanged (page already cataloged).
 
-Sources: https://github.com/marcusrbrown/.dotfiles
+No content changes detected in the repository — latest commit remains `1b782ff8` (Node.js digest rotation #590, 2026-04-22). All prior survey observations remain current: container structure, Python automation, AI subsystem, template system, Fro Bot workflow (v0.41.0), Renovate config (`marcusrbrown/renovate-config#4.5.0`), and Probot settings all unchanged. Open issues: 8.
+
+Sources: https://github.com/marcusrbrown/containers (SHA 1b782ff8b0a94615492de36f7f9b1d57e4663113)
+
+## [2026-04-23 07:16] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers
