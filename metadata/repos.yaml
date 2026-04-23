@@ -20,7 +20,7 @@ repos:
     name: .github
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-04-22
+    last_survey_at: 2026-04-23
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
