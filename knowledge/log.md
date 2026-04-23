@@ -415,3 +415,24 @@ Sources: https://github.com/marcusrbrown/containers (SHA 1b782ff8b0a94615492de36
 Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
+
+## [2026-04-23 00:00] ingest | marcusrbrown/copiloting
+
+Incremental re-survey of `marcusrbrown/copiloting` (SHA `dcd661f`, 2026-04-22). Updated repo page `marcusrbrown--copiloting.md`. Index unchanged (page already cataloged). No new topic/entity/comparison pages warranted — delta is dependency patches.
+
+Delta from prior survey (SHA `9043529`, 2026-04-21):
+
+- `fro-bot/agent` bumped v0.41.3 → v0.41.4 (PR #776)
+- `bfra-me/.github` reusable workflows updated v4.16.7 → v4.16.8 (PR #775)
+- `uuid` security update to v14 (PR #777)
+- `click` updated to v8.3.3 (PR #774)
+- Repository structure, application code, CI workflows, and conventions all unchanged
+- Fro Bot integration remains fully active (PR review, triage, daily maintenance, autoheal)
+
+Sources: https://github.com/marcusrbrown/copiloting (SHA dcd661f3a403edc7ffe338a742680847aca38b19)
+
+## [2026-04-23 00:50] ingest | repo:marcusrbrown/copiloting
+
+Surveyed marcusrbrown/copiloting and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/copiloting

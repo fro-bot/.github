@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/copiloting"
 created: 2026-04-18
-updated: 2026-04-21
+updated: 2026-04-23
 sources:
   - url: https://github.com/marcusrbrown/copiloting
     sha: cfc8bb6d5e814c9918a6e55f4b6747c3a36e4fb1
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/copiloting
     sha: 904352923eff555699384071c1c9db87557adb44
     accessed: 2026-04-21
+  - url: https://github.com/marcusrbrown/copiloting
+    sha: dcd661f3a403edc7ffe338a742680847aca38b19
+    accessed: 2026-04-23
 tags: [python, typescript, langchain, openai, flask, sveltekit, pnpm, poetry, ai, llm, monorepo]
 aliases: [copiloting]
 related:
@@ -116,11 +119,11 @@ Required status checks on `main`: `Fro Bot`, `Build Node.js`, `Build Python`, `R
 
 ### Shared Workflows
 
-`renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github` (v4.16.7; updated from v4.16.6 on 2026-04-19, SHA `a518e036563790803ccbd2d90d6a1eb2e08d2fa1`). Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
+`renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github` (v4.16.8; updated from v4.16.7 on 2026-04-22, SHA updated via Renovate). Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.41.3` (SHA-pinned: `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`). _Updated from v0.40.2 → v0.41.0 → v0.41.1 → v0.41.2 → v0.41.3 between 2026-04-18 and 2026-04-19._
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.41.4` (SHA-pinned: `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`). _Updated from v0.40.2 → v0.41.0 → v0.41.1 → v0.41.2 → v0.41.3 → v0.41.4 between 2026-04-18 and 2026-04-22._
 
 ### Fro Bot Capabilities in This Repo
 
@@ -177,3 +180,11 @@ Per AGENTS.md (self-documented):
 - **Python tests** (`tests/`): pytest. Tests cover app factory, auth views, config, health views, hooks, DB models.
 - **TypeScript tests** (`tests/ts/`): vitest. Config at `vitest.config.ts`, includes `tests/**/*.test.ts`.
 - `pyproject.toml` sets `pythonpath = ["course/pdf-dist"]` so tests can import the Flask app.
+
+## Survey History
+
+| Date | SHA | Delta |
+| --- | --- | --- |
+| 2026-04-18 | `cfc8bb6` | Initial survey. Created repo page, langchain topic, polyglot-monorepo topic. |
+| 2026-04-21 | `9043529` | Fro Bot agent v0.40.2 → v0.41.3. `bfra-me/.github` v4.16.6 → v4.16.7. eslint 10.2.1, axios security patch. No structural changes. |
+| 2026-04-23 | `dcd661f` | Fro Bot agent v0.41.3 → v0.41.4. `bfra-me/.github` v4.16.7 → v4.16.8. uuid security update to v14 (PR #777). click updated to v8.3.3 (PR #774). No structural changes. |
