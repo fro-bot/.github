@@ -7,7 +7,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--dotfiles]] — marcusrbrown/.dotfiles
 - [[marcusrbrown--github]] — Marcus's personal `.github` repo; GitHub defaults, community health files, and canonical Probot Settings template (`common-settings.yaml`)
 - [[marcusrbrown--containers]] — Container collection and automation framework (Dockerfiles, multi-arch builds, Python CLI, AI-powered templates, CI/CD)
-- [[marcusrbrown--copiloting]] — Polyglot AI/LLM experimentation monorepo (Python + TypeScript); LangChain tutorials, Flask + SvelteKit PDF chat app, Fro Bot agent workflows **(archival in progress)**
+- [[marcusrbrown--copiloting]] — Polyglot AI/LLM experimentation monorepo (Python + TypeScript); LangChain tutorials, Flask + SvelteKit PDF chat app, Fro Bot agent workflows
 - [[marcusrbrown--esphome-life]] — marcusrbrown/esphome.life
 - [[marcusrbrown--extend-vscode]] — VS Code extension toolkit (TypeScript, dual Node/Web targets, tsup, Vitest, semantic-release publishing)
 - [[marcusrbrown--gpt]] — Local-first GPT creation platform (React 19, TypeScript 5.9, Vite 7, LangChain, MCP, IndexedDB, Web Crypto; deployed to gpt.mrbro.dev)

@@ -497,25 +497,38 @@ Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wi
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
 
-## [2026-04-23 15:00] ingest | marcusrbrown/copiloting
+## [2026-04-23 14:30] ingest | marcusrbrown/containers
 
-Incremental re-survey of `marcusrbrown/copiloting` (SHA `113fc6d`, 2026-04-23). Updated repo page `marcusrbrown--copiloting.md` with archival status and delta. Updated `index.md` to note archival in progress. No new topic/entity/comparison pages warranted.
+Re-survey of `marcusrbrown/containers` (SHA `1b782ff8`, unchanged from 2026-04-22). Updated repo page `marcusrbrown--containers.md` with new source entry and survey history row. No changes to topic or entity pages — existing `docker-containers.md` and `github-actions-ci.md` remain accurate. Index unchanged (page already cataloged).
+
+No content changes detected in the repository — latest commit remains `1b782ff8` (Node.js digest rotation #590, 2026-04-22). All prior survey observations remain current: container structure, Python automation, AI subsystem, template system, Fro Bot workflow (v0.41.0), Renovate config (`marcusrbrown/renovate-config#4.5.0`), and Probot settings all unchanged. Open issues: 8.
+
+Sources: https://github.com/marcusrbrown/containers (SHA 1b782ff8b0a94615492de36f7f9b1d57e4663113)
+
+## [2026-04-23 07:16] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers
+
+## [2026-04-23 15:00] ingest | marcusrbrown/esphome.life
+
+Deep re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, unchanged from prior survey). Updated repo page `marcusrbrown--esphome-life.md` and entity page `esphome.md`. Index unchanged (all pages already cataloged). No changes to topic or comparison pages warranted.
 
 Key findings:
 
-- **Archival preparation in progress** — Renovate config switched from `#v4` to `:archived-repository` preset (PR #780). This is the most significant change: repo transitioning to read-only/archived state.
-- Python dependency security patches merged (PR #681)
-- `jdx/mise` updated to v2026.4.19 (PR #778); setup action mise-action now at v4.0.1
-- Fro Bot agent still v0.41.4 but with updated SHA `28bcadbf...`
-- Repository structure, application code, CI workflows, and conventions all unchanged from prior survey
-- Fro Bot integration remains configured but future efficacy uncertain once archival completes
-- Added `archived` tag to repo page frontmatter
-- Noted archival warning in CI/CD section
+- Repository unchanged since 2026-03-12 (SHA `e398c2e1e3ef8c68717df26fd67a99b5c91410d7`)
+- **Bug discovered:** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml` instead of the settings-sync reusable workflow — scheduled settings sync does not actually update repository settings
+- **Stale reusable workflow:** `bfra-me/.github` pinned at v4.4.0 (SHA `59d10aff`), significantly behind other Marcus repos (v4.16.x)
+- Added CI action pinning table to repo page (all six actions SHA-pinned with version comments)
+- 4 open issues, 0 open PRs
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+- All prior survey observations remain accurate: Olimex ESP32-PoE-ISO Bluetooth Proxies, package-based configs, partial CI coverage (1349f4 only), ESPHome 2025.12.7
 
-Sources: https://github.com/marcusrbrown/copiloting (SHA 113fc6dfd6f03963af0d09a291890a13b03ae16f)
+Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
 
-## [2026-04-23 07:19] ingest | repo:marcusrbrown/copiloting
+## [2026-04-23 07:20] ingest | repo:marcusrbrown/esphome.life
 
-Surveyed marcusrbrown/copiloting and updated the control-plane wiki.
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/copiloting
+Sources: https://github.com/marcusrbrown/esphome.life

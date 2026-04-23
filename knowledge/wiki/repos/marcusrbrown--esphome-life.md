@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
     accessed: 2026-04-23
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
+    accessed: 2026-04-23
 tags: [esphome, iot, esp32, bluetooth-proxy, home-assistant, firmware, github-pages]
 aliases: [esphome-life, esphome.life]
 related:
@@ -85,15 +88,34 @@ Defines the full device configuration:
 The CI workflow has four jobs:
 
 1. **Prepare** — Outputs the list of YAML files to build (currently only `olimex-bluetooth-proxy-1349f4.yaml`) and the repo name
-2. **Build firmware** — Matrix build using `esphome/build-action@v7.1.0` with ESPHome 2025.12.7. Uploads build artifacts
+2. **Build firmware** — Matrix build using `esphome/build-action@v7.1.0` (SHA `f93bda4`) with ESPHome 2025.12.7. Uploads build artifacts
 3. **Build** — Gate job (depends on firmware build, reports completion)
-4. **Publish** — Only on `marcusrbrown/esphome.life`. Downloads artifacts, creates a combined `manifest.json`, copies static site files, deploys to `gh-pages` branch using `JamesIves/github-pages-deploy-action@v4.8.0`
+4. **Publish** — Only on `marcusrbrown/esphome.life`. Downloads artifacts, creates a combined `manifest.json`, copies static site files, deploys to `gh-pages` branch using `JamesIves/github-pages-deploy-action@v4.8.0` (SHA `d92aa23`)
 
-Publish uses a GitHub App token (`APPLICATION_ID` / `APPLICATION_PRIVATE_KEY` secrets) and commits as `mrbro-bot[bot]`.
+Publish uses a GitHub App token (`APPLICATION_ID` / `APPLICATION_PRIVATE_KEY` secrets) via `actions/create-github-app-token@v2.2.1` and commits as `mrbro-bot[bot]`.
+
+**Action pinning (all SHA-pinned with version comments):**
+
+| Action | Version | SHA (short) |
+| --- | --- | --- |
+| `actions/checkout` | v5.0.1 | `93cb6ef` |
+| `esphome/build-action` | v7.1.0 | `f93bda4` |
+| `actions/upload-artifact` | v5.0.0 | `330a01c` |
+| `actions/download-artifact` | v6.0.0 | `018cc2c` |
+| `actions/create-github-app-token` | v2.2.1 | `29824e6` |
+| `JamesIves/github-pages-deploy-action` | v4.8.0 | `d92aa23` |
 
 ### Branch Protection
 
 Required status checks on `main`: `Prepare`, `Build`, `Publish`, `Renovate / Renovate`. Strict status checks enabled. Linear history enforced. Admin enforcement enabled. No required PR reviews.
+
+### Reusable Workflow Version
+
+Both `renovate.yaml` and `update-repo-settings.yaml` call `bfra-me/.github/.github/workflows/renovate.yaml@59d10aff` (v4.4.0). This is significantly behind the version used in other Marcus repos (v4.16.x as of 2026-04-22). A Renovate bump is expected to catch this.
+
+### Bug: update-repo-settings.yaml Calls Wrong Workflow
+
+`update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml` instead of the settings-sync reusable workflow. This means the scheduled settings sync does not actually update repository settings — it runs Renovate instead. This is a configuration error that should be fixed.
 
 ### Concurrency
 
@@ -135,3 +157,4 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 | 2026-04-18 | `83784bc` (ha-config survey, cross-reference) | Initial cross-reference from [[marcusrbrown--ha-config]] survey |
 | 2026-04-21 | `e398c2e` | Full survey; documented device configs, CI pipeline, devcontainer, Probot/Renovate settings |
 | 2026-04-23 | `e398c2e` | Re-survey; no content changes detected — repo unchanged since 2026-03-12 |
+| 2026-04-23 | `e398c2e` | Deep re-survey; discovered bug in `update-repo-settings.yaml` (calls renovate.yaml instead of settings-sync), documented stale `bfra-me/.github@v4.4.0` reusable workflow, added CI action pinning table; repo content still unchanged since 2026-03-12, 4 open issues, 0 open PRs |
