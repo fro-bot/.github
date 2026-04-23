@@ -33,6 +33,7 @@ Master catalog of all wiki pages, organized by type.
 
 ## Entities
 
+- [[esphome]] — ESPHome
 - [[mise]] — mise
 
 ## Comparisons

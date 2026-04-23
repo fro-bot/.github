@@ -436,3 +436,25 @@ Sources: https://github.com/marcusrbrown/copiloting (SHA dcd661f3a403edc7ffe338a
 Surveyed marcusrbrown/copiloting and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/copiloting
+
+## [2026-04-23 12:00] ingest | marcusrbrown/esphome.life
+
+Re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, unchanged from 2026-04-21). Updated repo page `marcusrbrown--esphome-life.md` with survey history table. Created entity page `esphome.md` for the ESPHome framework. Updated topic page `home-assistant.md` to wikilink `[[esphome]]`. Updated `index.md` to catalog the new entity page.
+
+No content changes detected in the repository — latest commit (`e398c2e`) is the Renovate dependency bump from 2026-03-12. All device configs, CI workflows, devcontainer settings, Probot settings, and Renovate configuration are identical to the prior survey.
+
+Key findings:
+
+- Repository unchanged since 2026-03-12 (SHA `e398c2e1e3ef8c68717df26fd67a99b5c91410d7`)
+- All prior survey observations remain accurate: Olimex ESP32-PoE-ISO Bluetooth Proxies, package-based configs, partial CI coverage (1349f4 only), ESPHome 2025.12.7 pinned across CI and devcontainer
+- Renovate preset still `marcusrbrown/renovate-config#4.5.1`, Probot settings extend `fro-bot/.github:common-settings.yaml`
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+- Created `[[esphome]]` entity page to support cross-referencing from `[[marcusrbrown--esphome-life]]` and `[[home-assistant]]`
+
+Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+
+## [2026-04-23 01:13] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
