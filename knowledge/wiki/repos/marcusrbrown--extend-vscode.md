@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 342872f8de739c03a0263e188395be7ab70457b6
     accessed: 2026-04-23
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 342872f8de739c03a0263e188395be7ab70457b6
+    accessed: 2026-04-23
 tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
 aliases: [extend-vscode]
 related:
@@ -167,3 +170,16 @@ Three Renovate dependency bumps merged since 2026-04-18 survey; no structural ch
 ### 2026-04-23 (SHA `342872f8`, unchanged from 2026-04-21)
 
 No changes detected since 2026-04-21 survey. The latest commit (`342872f8`) is the same SHA surveyed previously — dependency bump for `type-fest` v5.6.0 (#480). Repository structure, architecture, build tooling, CI/CD pipeline, AI context files, and Probot settings all identical to prior survey. Open issues: 9. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.
+
+### 2026-04-23 survey #2 (SHA `342872f8`, unchanged)
+
+No merged changes since prior survey. Four open Renovate PRs pending (not yet merged):
+
+| PR | Change |
+| --- | --- |
+| #466 | `typescript` → v6 |
+| #467 | `eslint` → v10 |
+| #468 | `eslint-plugin-node-dependencies` → v2 |
+| #469 | `jsdom` → v29 |
+
+All pending PRs are Renovate dependency bumps — no structural changes. Repository content, workflows, architecture, and Probot settings remain identical. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.

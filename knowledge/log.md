@@ -497,38 +497,42 @@ Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wi
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
 
-## [2026-04-23 14:30] ingest | marcusrbrown/containers
+## [2026-04-23 14:30] ingest | marcusrbrown/.github
 
-Re-survey of `marcusrbrown/containers` (SHA `1b782ff8`, unchanged from 2026-04-22). Updated repo page `marcusrbrown--containers.md` with new source entry and survey history row. No changes to topic or entity pages — existing `docker-containers.md` and `github-actions-ci.md` remain accurate. Index unchanged (page already cataloged).
+Re-survey of `marcusrbrown/.github` (SHA `4e4fd28`). Updated repo page `marcusrbrown--github.md`, topic page `probot-settings.md`, and topic page `github-actions-ci.md`. Index unchanged (all pages already cataloged).
 
-No content changes detected in the repository — latest commit remains `1b782ff8` (Node.js digest rotation #590, 2026-04-22). All prior survey observations remain current: container structure, Python automation, AI subsystem, template system, Fro Bot workflow (v0.41.0), Renovate config (`marcusrbrown/renovate-config#4.5.0`), and Probot settings all unchanged. Open issues: 8.
+Delta from prior survey (SHA `be01029`, 2026-04-22):
 
-Sources: https://github.com/marcusrbrown/containers (SHA 1b782ff8b0a94615492de36f7f9b1d57e4663113)
-
-## [2026-04-23 07:16] ingest | repo:marcusrbrown/containers
-
-Surveyed marcusrbrown/containers and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/containers
-
-## [2026-04-23 15:00] ingest | marcusrbrown/esphome.life
-
-Deep re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, unchanged from prior survey). Updated repo page `marcusrbrown--esphome-life.md` and entity page `esphome.md`. Index unchanged (all pages already cataloged). No changes to topic or comparison pages warranted.
-
-Key findings:
-
-- Repository unchanged since 2026-03-12 (SHA `e398c2e1e3ef8c68717df26fd67a99b5c91410d7`)
-- **Bug discovered:** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml` instead of the settings-sync reusable workflow — scheduled settings sync does not actually update repository settings
-- **Stale reusable workflow:** `bfra-me/.github` pinned at v4.4.0 (SHA `59d10aff`), significantly behind other Marcus repos (v4.16.x)
-- Added CI action pinning table to repo page (all six actions SHA-pinned with version comments)
-- 4 open issues, 0 open PRs
+- **Prettier upgraded:** 3.8.1 → 3.8.3 (both in CI workflow and renovate postUpgradeTasks)
+- **Renovate config preset bumped:** `marcusrbrown/renovate-config#4.5.1` → `#4.5.8`
+- **bfra-me/.github reusable workflows updated:** v4.4.0 → v4.16.8 (both renovate.yaml and update-repo-settings.yaml)
+- **renovate.yaml restructured:** Added PR trigger (opened/reopened/synchronize/edited), issue edit trigger (non-bot), workflow_call/workflow_dispatch/workflow_run triggers, conditional logic for bot filtering; hourly schedule cron commented out
+- **renovate.json5:** `prCreation` set to `'immediate'`
+- **.prettierrc.yaml:** Added `.devcontainer/**/devcontainer*.json` to tab-width-4 override
+- **Label count:** 48 labels (re-verified)
+- **Open issues:** 2 (was 3)
 - **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
-- All prior survey observations remain accurate: Olimex ESP32-PoE-ISO Bluetooth Proxies, package-based configs, partial CI coverage (1349f4 only), ESPHome 2025.12.7
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+No contradictions with prior ingest. Repository structure unchanged (same 15 files, no new paths).
 
-## [2026-04-23 07:20] ingest | repo:marcusrbrown/esphome.life
+Sources: https://github.com/marcusrbrown/.github (SHA 4e4fd28e9cc19f22324cd3037bbd53a9e2c0cf14)
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+## [2026-04-23 07:16] ingest | repo:marcusrbrown/.github
 
-Sources: https://github.com/marcusrbrown/esphome.life
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
+
+## [2026-04-23 15:30] ingest | marcusrbrown/extend-vscode
+
+Re-survey of `marcusrbrown/extend-vscode` (SHA `342872f8`, unchanged from 2026-04-21). Updated repo page `marcusrbrown--extend-vscode.md` with new source entry and delta log. Bumped `updated` date on topic page `vscode-extensions.md`. Index unchanged (both pages already cataloged).
+
+No merged changes since prior survey. Four open Renovate PRs pending: #466 (TypeScript v6), #467 (ESLint v10), #468 (eslint-plugin-node-dependencies v2), #469 (jsdom v29). Repository content, architecture, workflows, and Probot settings all identical to prior survey. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.
+
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA 342872f8de739c03a0263e188395be7ab70457b6)
+
+## [2026-04-23 07:24] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode

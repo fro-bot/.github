@@ -7,9 +7,6 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
     accessed: 2026-04-23
-  - url: https://github.com/marcusrbrown/esphome.life
-    sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
-    accessed: 2026-04-23
 tags: [esphome, iot, esp32, firmware, home-assistant, bluetooth-proxy]
 aliases: [esphome, esphome-life]
 related:
