@@ -497,28 +497,25 @@ Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wi
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
 
-## [2026-04-23 14:30] ingest | marcusrbrown/.github
+## [2026-04-23 15:00] ingest | marcusrbrown/copiloting
 
-Re-survey of `marcusrbrown/.github` (SHA `4e4fd28`). Updated repo page `marcusrbrown--github.md`, topic page `probot-settings.md`, and topic page `github-actions-ci.md`. Index unchanged (all pages already cataloged).
+Incremental re-survey of `marcusrbrown/copiloting` (SHA `113fc6d`, 2026-04-23). Updated repo page `marcusrbrown--copiloting.md` with archival status and delta. Updated `index.md` to note archival in progress. No new topic/entity/comparison pages warranted.
 
-Delta from prior survey (SHA `be01029`, 2026-04-22):
+Key findings:
 
-- **Prettier upgraded:** 3.8.1 → 3.8.3 (both in CI workflow and renovate postUpgradeTasks)
-- **Renovate config preset bumped:** `marcusrbrown/renovate-config#4.5.1` → `#4.5.8`
-- **bfra-me/.github reusable workflows updated:** v4.4.0 → v4.16.8 (both renovate.yaml and update-repo-settings.yaml)
-- **renovate.yaml restructured:** Added PR trigger (opened/reopened/synchronize/edited), issue edit trigger (non-bot), workflow_call/workflow_dispatch/workflow_run triggers, conditional logic for bot filtering; hourly schedule cron commented out
-- **renovate.json5:** `prCreation` set to `'immediate'`
-- **.prettierrc.yaml:** Added `.devcontainer/**/devcontainer*.json` to tab-width-4 override
-- **Label count:** 48 labels (re-verified)
-- **Open issues:** 2 (was 3)
-- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+- **Archival preparation in progress** — Renovate config switched from `#v4` to `:archived-repository` preset (PR #780). This is the most significant change: repo transitioning to read-only/archived state.
+- Python dependency security patches merged (PR #681)
+- `jdx/mise` updated to v2026.4.19 (PR #778); setup action mise-action now at v4.0.1
+- Fro Bot agent still v0.41.4 but with updated SHA `28bcadbf...`
+- Repository structure, application code, CI workflows, and conventions all unchanged from prior survey
+- Fro Bot integration remains configured but future efficacy uncertain once archival completes
+- Added `archived` tag to repo page frontmatter
+- Noted archival warning in CI/CD section
 
-No contradictions with prior ingest. Repository structure unchanged (same 15 files, no new paths).
+Sources: https://github.com/marcusrbrown/copiloting (SHA 113fc6dfd6f03963af0d09a291890a13b03ae16f)
 
-Sources: https://github.com/marcusrbrown/.github (SHA 4e4fd28e9cc19f22324cd3037bbd53a9e2c0cf14)
+## [2026-04-23 07:19] ingest | repo:marcusrbrown/copiloting
 
-## [2026-04-23 07:16] ingest | repo:marcusrbrown/.github
+Surveyed marcusrbrown/copiloting and updated the control-plane wiki.
 
-Surveyed marcusrbrown/.github and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/.github
+Sources: https://github.com/marcusrbrown/copiloting
