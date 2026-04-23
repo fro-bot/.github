@@ -472,3 +472,27 @@ Sources: https://github.com/marcusrbrown/extend-vscode (SHA 342872f8de739c03a026
 Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-04-23 14:00] ingest | marcusrbrown/opencode-copilot-delegate
+
+Initial survey of `marcusrbrown/opencode-copilot-delegate` (SHA `bea3f57`). Created repo page `marcusrbrown--opencode-copilot-delegate.md` and topic page `opencode-plugins.md`. Updated `index.md` to catalog both pages.
+
+Key findings:
+
+- Brand-new OpenCode plugin repo (created 2026-04-23), v0.1.0 scaffold — all source files are TODO stubs with implementation plan
+- Plugin registers three tools: `copilot_delegate`, `copilot_output`, `copilot_cancel` — delegates tasks to GitHub Copilot CLI as background subprocesses with async `<system-reminder>` completion notifications
+- TypeScript (strict, ESM), Bun runtime/build, Biome linting, Changesets for versioning — diverges from other Marcus repos (Biome vs ESLint+Prettier, Bun vs pnpm, `bun test` vs Vitest)
+- Comprehensive implementation plan at `docs/plans/2026-04-21-copilot-delegate-plugin.md` covering 11 ordered tasks with QA scenarios, risk mitigation, and documented design decisions
+- Peer dependencies on `@opencode-ai/plugin >=1.14.0` and `@opencode-ai/sdk >=1.14.0`
+- Auth precedence: `COPILOT_GITHUB_TOKEN > GH_TOKEN > GITHUB_TOKEN > ~/.copilot/auth`
+- Privacy posture: zero telemetry, token values never logged
+- **No CI/Fro Bot/Renovate on main yet** — two open PRs pending: #2 (Fro Bot workflow), #3 (Renovate onboarding)
+- Cross-references: [[marcusrbrown--dotfiles]] (copilot-cli skill update planned), [[opencode-plugins]] (first Marcus OpenCode plugin)
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA bea3f576d7218900b9216a8a2c2947003660809b)
+
+## [2026-04-23 06:26] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
