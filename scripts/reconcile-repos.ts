@@ -494,11 +494,11 @@ const DEFAULT_DISPATCH_STAGGER_MS = 90_000
  * level the single OAuth seat can sustain. Skipped candidates are dispatched on subsequent
  * runs once the staleness gate makes them eligible again.
  *
- * Default: 6 dispatches. Override via `RECONCILE_MAX_DISPATCHES_PER_RUN` env var or
+ * Default: 12 dispatches. Override via `RECONCILE_MAX_DISPATCHES_PER_RUN` env var or
  * `maxDispatchesPerRun` param. A value of 0 or negative disables the cap (dispatch all
  * eligible candidates).
  */
-const DEFAULT_MAX_DISPATCHES_PER_RUN = 6
+const DEFAULT_MAX_DISPATCHES_PER_RUN = 12
 
 const PENDING_REVIEW_LABEL = 'reconcile:pending-review'
 const ROLLUP_LABEL = 'reconcile:rollup-pending-review'
@@ -741,7 +741,27 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   //    candidates become eligible again on the next run via the staleness gate.
   const prioritizedDispatches = prioritizeDispatches(plan.dispatches, plan.nextRepos.repos)
   const dispatchCap = maxDispatchesPerRun > 0 ? maxDispatchesPerRun : prioritizedDispatches.length
-  const selectedDispatches = prioritizedDispatches.slice(0, dispatchCap)
+
+  // Rotate within the never-surveyed (null last_survey_at) leading group so that all
+  // pending repos cycle through dispatch slots across successive runs. Without rotation,
+  // repos that sort alphabetically earlier always fill the cap first, leaving later-
+  // sorting repos perpetually deferred when the cap is smaller than the null group.
+  const repoSurveyMap = new Map(plan.nextRepos.repos.map(r => [`${r.owner}/${r.name}`, r.last_survey_at]))
+  const nullGroupSize = prioritizedDispatches.filter(
+    d => (repoSurveyMap.get(`${d.owner}/${d.repo}`) ?? null) === null,
+  ).length
+  const dayOrdinal = Math.floor(now.getTime() / 86_400_000)
+  const nullOffset = nullGroupSize > 1 ? dayOrdinal % nullGroupSize : 0
+  const rotatedDispatches =
+    nullOffset > 0
+      ? [
+          ...prioritizedDispatches.slice(nullOffset, nullGroupSize),
+          ...prioritizedDispatches.slice(0, nullOffset),
+          ...prioritizedDispatches.slice(nullGroupSize),
+        ]
+      : prioritizedDispatches
+
+  const selectedDispatches = rotatedDispatches.slice(0, dispatchCap)
   const dispatchesDeferred = prioritizedDispatches.length - selectedDispatches.length
 
   const dispatchOutcome = await runDispatches({

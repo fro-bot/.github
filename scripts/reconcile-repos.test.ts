@@ -1124,7 +1124,9 @@ describe('handleReconcile (I/O shell)', () => {
         }),
       )
 
-      expect(dispatchCalls).toEqual(['r1', 'r2', 'r3'])
+      // All three repos are attempted regardless of day-rotation order; a timeout on
+      // one should not block the others from dispatching.
+      expect(dispatchCalls.slice().sort()).toEqual(['r1', 'r2', 'r3'])
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesFailed).toBe(1)
     })
@@ -1285,6 +1287,49 @@ describe('handleReconcile (I/O shell)', () => {
       expect(dispatchCount.n).toBe(6)
       expect(result.dispatches).toBe(6)
       expect(result.dispatchesDeferred).toBe(0)
+    })
+
+    it('rotates the null-group selection window daily so all never-surveyed repos eventually dispatch', async () => {
+      // Four never-surveyed repos (r-a, r-b, r-c, r-d sorted alphabetically).
+      // Cap of 2. dayOrdinal(NOW=2026-04-17) = 20560; 20560 % 4 = 0 → selects [r-a, r-b].
+      // dayOrdinal(2026-04-19) = 20562; 20562 % 4 = 2 → rotates to [r-c, r-d, r-a, r-b] → selects [r-c, r-d].
+      // This proves repos that sort later don't starve when the null group exceeds the cap.
+      const repos = ['r-a', 'r-b', 'r-c', 'r-d']
+      const makeOctokit = () =>
+        mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: repos.map(name => ({
+              owner: {login: 't'},
+              name,
+              archived: false,
+              private: false,
+              node_id: `R_${name}`,
+            })),
+          }),
+        })
+
+      const runWith = async (now: Date) => {
+        const dispatched: string[] = []
+        const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+          dispatched.push((params as {inputs?: {repo: string}}).inputs?.repo ?? '?')
+        })
+        await handleReconcile(
+          baseParams({
+            userOctokit: makeOctokit(),
+            appOctokit: mockOctokit({createWorkflowDispatch}),
+            readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+            commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+            now,
+            maxDispatchesPerRun: 2,
+          }),
+        )
+        return dispatched
+      }
+
+      // Offset 0 → first slice
+      expect(await runWith(NOW)).toEqual(['r-a', 'r-b'])
+      // Offset 2 → rotated slice; r-c and r-d get their turn
+      expect(await runWith(new Date('2026-04-19T12:00:00Z'))).toEqual(['r-c', 'r-d'])
     })
   })
 
