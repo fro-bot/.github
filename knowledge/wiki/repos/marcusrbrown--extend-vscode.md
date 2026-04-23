@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/extend-vscode"
 created: 2026-04-18
-updated: 2026-04-21
+updated: 2026-04-23
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 342872f8de739c03a0263e188395be7ab70457b6
     accessed: 2026-04-21
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 342872f8de739c03a0263e188395be7ab70457b6
+    accessed: 2026-04-23
 tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
 aliases: [extend-vscode]
 related:
@@ -160,3 +163,7 @@ Three Renovate dependency bumps merged since 2026-04-18 survey; no structural ch
 | #478 | `@vscode/vsce` → v3.9.0 |
 
 `bfra-me/.github` renovate reusable workflow now pinned at SHA `65caa6a021ae4a6597bd915f276e1ab9d75dc071` (v4.16.0). Repository structure, architecture, workflows, and publishing pipeline unchanged. **Fro Bot workflow still absent** — follow-up PR recommendation carried forward.
+
+### 2026-04-23 (SHA `342872f8`, unchanged from 2026-04-21)
+
+No changes detected since 2026-04-21 survey. The latest commit (`342872f8`) is the same SHA surveyed previously — dependency bump for `type-fest` v5.6.0 (#480). Repository structure, architecture, build tooling, CI/CD pipeline, AI context files, and Probot settings all identical to prior survey. Open issues: 9. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.

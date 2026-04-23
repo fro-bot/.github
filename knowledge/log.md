@@ -458,3 +458,17 @@ Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df
 Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/esphome.life
+
+## [2026-04-23 12:00] ingest | marcusrbrown/extend-vscode
+
+Incremental re-survey of `marcusrbrown/extend-vscode` (SHA `342872f8`, unchanged from 2026-04-21). Updated repo page `marcusrbrown--extend-vscode.md` with new source entry and delta log. No changes to topic or entity pages — `vscode-extensions.md` remains accurate. Index unchanged (page already cataloged).
+
+Delta: no repository content changes detected since prior survey. Latest commit still `342872f8` (type-fest v5.6.0 bump, #480). Open issues: 9. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.
+
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA 342872f8de739c03a0263e188395be7ab70457b6)
+
+## [2026-04-23 01:38] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode
