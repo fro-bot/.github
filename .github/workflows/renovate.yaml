@@ -1,5 +1,6 @@
 ---
-# Renovate this repository if Renovate-specific tasks are checked, if this workflow file or the Renovate configuration file is changed, or if dispatched.
+# Renovate this repository when dispatched by dispatch-renovate.yaml, on PR/push events
+# for the required status check, or on manual trigger.
 name: Renovate
 
 on:
@@ -15,8 +16,6 @@ on:
     types: [opened, reopened, synchronize, edited]
   push:
     branches-ignore: [main]
-  schedule:
-    - cron: '0 * * * *' # Run every hour
   workflow_dispatch:
     inputs:
       log-level:
@@ -51,6 +50,9 @@ jobs:
       APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
     uses: bfra-me/.github/.github/workflows/renovate.yaml@65caa6a021ae4a6597bd915f276e1ab9d75dc071 # v4.16.0
     with:
+      # Disable autodiscover — cross-repo dispatch is handled by dispatch-renovate.yaml.
+      # This workflow should only run Renovate for this repository.
+      global-config: '{"autodiscover": false}'
       log-level: ${{ inputs.log-level || 'debug' }}
       path-filters: >-
         [

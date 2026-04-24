@@ -163,26 +163,21 @@ describe('schemas — rejection cases', () => {
     expect(error.path).toContain('onboarding_status')
   })
 
-  it('rejects invalid last_dispatch_status enum', () => {
-    const bad = {
-      version: 1,
-      repos: [
-        {
-          owner: 'fro-bot',
-          name: 'test',
-          workflow_path: '.github/workflows/renovate.yaml',
-          last_dispatched_at: null,
-          last_dispatch_status: 'bogus',
-        },
-      ],
-    }
+  it('rejects non-string entry in with-renovate list', () => {
+    const bad = {repositories: {'with-renovate': ['valid', 42]}}
     expect(isRenovateFile(bad)).toBe(false)
     const error = catchSchemaError(() => assertRenovateFile(bad))
-    expect(error.path).toContain('last_dispatch_status')
+    expect(error.path).toContain('with-renovate[1]')
   })
 
-  it('rejects non-array repos in renovate file', () => {
-    const bad = {version: 1, repos: 'not-an-array'}
+  it('rejects missing repositories key in renovate file', () => {
+    const bad = {version: 1, repos: ['agent']}
+    expect(isRenovateFile(bad)).toBe(false)
+    expect(() => assertRenovateFile(bad)).toThrow(SchemaValidationError)
+  })
+
+  it('rejects non-array with-renovate in renovate file', () => {
+    const bad = {repositories: {'with-renovate': 'not-an-array'}}
     expect(isRenovateFile(bad)).toBe(false)
     expect(() => assertRenovateFile(bad)).toThrow(SchemaValidationError)
   })
