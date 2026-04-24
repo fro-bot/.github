@@ -2,15 +2,19 @@
 type: repo
 title: "marcusrbrown/infra"
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-24
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: 9306b9bef8e6d3c6f821ee0c4df99e24acb750ac
+    accessed: 2026-04-24
   - url: https://github.com/marcusrbrown/infra
     sha: 20de04713bf01294217dee4d3b64d5d7cfb2426e
     accessed: 2026-04-18
-tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, mcp, cli, typescript]
+tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, mcp, cli, typescript, conventions]
 aliases: [infra]
 related:
   - marcusrbrown--ha-config
+  - marcusrbrown--systematic
 ---
 
 # marcusrbrown/infra
@@ -22,9 +26,11 @@ Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeW
 - **Purpose:** Deploy automation, operational CLI, and infrastructure tooling
 - **Default branch:** `main`
 - **Created:** 2026-04-03
-- **Last push:** 2026-04-18
+- **Last push:** 2026-04-24
 - **Runtime:** Bun v1.0+
-- **Published package:** `@marcusrbrown/infra` v0.4.3 on npm
+- **Published package:** `@marcusrbrown/infra` v0.4.5 on npm
+- **Open issues:** 4 (2 autohealing reports, 1 rate limit investigation, 1 Dependency Dashboard)
+- **Open PRs:** 0
 - **Topics:** `bun`, `deploy`, `github-actions`, `infra`, `keeweb`
 
 ## Repository Structure
@@ -92,7 +98,9 @@ The MCP bridge (`infra mcp`) lets coding agents (Fro Bot, Copilot) call commands
 | Workflow | File | Trigger | Purpose |
 | --- | --- | --- | --- |
 | CI | `ci.yaml` | PR to `main`, dispatch | Lint + type check + test (parallel jobs) |
-| Deploy | `deploy.yaml` | Push to `main`, dispatch | Build and deploy KeeWeb and/or CLIProxyAPI (path-filtered) |
+| Deploy | `deploy.yaml` | Dispatch only | Thin orchestrator — calls both deploy-keeweb and deploy-cliproxy via `workflow_call` |
+| Deploy KeeWeb | `deploy-keeweb.yaml` | Push to `main`, dispatch, `workflow_call` | Build and deploy KeeWeb (path-filtered, `keeweb` environment) |
+| Deploy CLIProxy | `deploy-cliproxy.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy CLIProxyAPI (path-filtered, `cliproxy` environment) |
 | Release | `release.yaml` | Push to `main`, dispatch | Version and publish `@marcusrbrown/infra` via Changesets |
 | Renovate | `renovate.yaml` | Schedule, issue/PR edits, post-deploy | Automated dependency updates |
 | Renovate Changesets | `renovate-changesets.yaml` | `pull_request_target` (Renovate PRs) | Auto-create changeset files for dependency updates |
@@ -110,12 +118,15 @@ Three parallel jobs with a summary gate:
 3. **Test** — `bun test --recursive`
 4. **CI** (gate) — Fails if lint or type-check fails; test failures do not block (test job not in `needs`)
 
-### Deploy Pipeline (deploy.yaml)
+### Deploy Pipeline (Split Architecture)
 
-Uses `dorny/paths-filter` for change detection (native `paths:` breaks `workflow_dispatch`). Each app has a dedicated job gated by path filter and GitHub Environment approval:
+As of 2026-04-20 (#165), the deploy pipeline was split from a single `deploy.yaml` into dedicated per-app workflows. This ensures one app's failure doesn't block the other:
 
-- **`deploy-keeweb`** — `keeweb` environment, requires approval. Builds dist, deploys content via SSH/rsync, optionally deploys nginx config if changed. Post-deploy health check: `curl` to `https://kw.igg.ms/`.
-- **`deploy-cliproxy`** — `cliproxy` environment, requires approval. Deploys via `bun run --cwd apps/cliproxy deploy`. Post-deploy health check against management API.
+- **`deploy-keeweb.yaml`** — `keeweb` environment, triggered on push-to-main (path-filtered), dispatch, or `workflow_call`. Builds dist, deploys content via SSH/rsync, optionally deploys nginx config if changed. Post-deploy health check: `curl` to `https://kw.igg.ms/`. Secret validation step rejects early if `DEPLOY_SSH_KEY` or `DROPBOX_APP_SECRET` are missing.
+- **`deploy-cliproxy.yaml`** — `cliproxy` environment, triggered on push-to-main (path-filtered), dispatch, or `workflow_call`. Deploys via `bun run --cwd apps/cliproxy deploy`. Post-deploy health check against management API (`/v0/management/config` with management key). Secret validation for `CLIPROXY_SSH_KEY`, `CLIPROXY_MANAGEMENT_KEY`, `CLIPROXY_DOMAIN`.
+- **`deploy.yaml`** — Now a thin orchestrator (dispatch-only) that calls both deploy workflows via `workflow_call`, passing secrets explicitly.
+
+Both deploy workflows use `dorny/paths-filter` for change detection (native `paths:` breaks `workflow_dispatch`). Path filters exclude markdown, test, fixture, and snapshot files.
 
 ### Release Pipeline (release.yaml)
 
@@ -153,7 +164,7 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.40.2` (SHA-pinned). The workflow includes:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d9735d7ad2aca`). The workflow includes:
 
 - **PR review** with structured verdict format (PASS / CONDITIONAL / REJECT) and sections for blocking issues, non-blocking concerns, missing tests, and risk assessment
 - **Daily autohealing schedule** (03:30 UTC) with 7 operational categories: errored PRs, security, code quality, developer experience, deploy pipeline health, live site review (via `agent-browser`), and cross-project intelligence
@@ -165,7 +176,9 @@ The autohealing schedule monitors:
 
 - Cross-project config version drift across `marcusrbrown/containers`, `marcusrbrown/sparkle`, `marcusrbrown/gpt`, `marcusrbrown/copiloting`, `marcusrbrown/renovate-config`, `marcusrbrown/.github`
 - Live site health at `kw.igg.ms` via browser automation
-- Deploy pipeline health, security advisories, code quality, and convention compliance
+- **CLIProxy health** (added 2026-04-18, #155): `cliproxy.fro.bot` reachability (401/200 = up, 5xx = down), environment secrets, host keys, indirect OAuth token health (inferred from recent Fro Bot schedule run success/failure)
+- Deploy pipeline health for **both apps** via the split `deploy-keeweb` and `deploy-cliproxy` workflows
+- Security advisories, code quality, and convention compliance
 
 ### Required Secrets
 
@@ -204,6 +217,16 @@ Shared ecosystem with [[marcusrbrown--ha-config]]:
 - infra uses Bun as runtime; ha-config uses Python/YAML tooling
 - infra uses Changesets for npm versioning; ha-config has no publishable packages
 
+## Convention Enforcement
+
+As of 2026-04-21, structural conventions from root `AGENTS.md` are mechanically gated pre-merge:
+
+- **`packages/cli/src/conventions.test.ts`** (#161) — Bun tests that assert AGENTS.md rules at CI time. Rules marked `(enforced)` in AGENTS.md are the mechanically checked set.
+- **`(enforced)` marker drift detection** (#167) — Tests detect when `(enforced)` markers in AGENTS.md drift from the actual test assertions, and when per-app `AGENTS.md` files diverge from their directory structure.
+- Enforced rules include: only `deploy.sh` is bash, `.yaml` not `.yml` for workflows, SHA-pinned actions with version comments, no `secrets: inherit` with cross-org workflows, no `bundledDependencies`, no `any`/`@ts-ignore`/`@ts-expect-error`, no secret values in tracked config files, no `ssh-keyscan` in CI workflows.
+
+This approach avoids relying solely on human review or agent-driven linting for structural invariants — the CI gate rejects violations before merge.
+
 ## Notable Patterns
 
 - **MCP bridge:** The CLI exposes all commands as MCP tools (`infra mcp`), letting coding agents call deploy/status/config commands programmatically. This is the mechanism by which Fro Bot agents interact with infrastructure.
@@ -212,3 +235,22 @@ Shared ecosystem with [[marcusrbrown--ha-config]]:
 - **Scoped deploy user:** `deploy-kw` on the target server has write access to the site directory only, with sudo for a single activation script. Minimal privilege surface.
 - **Compound learning:** `docs/solutions/` contains solved-problem documentation with YAML frontmatter, following the compound knowledge pattern.
 - **Agent skills:** `.agents/skills/goke/SKILL.md` provides domain context for the goke CLI framework.
+- **Split deploy pipeline:** Each app deploys independently via dedicated workflows (`deploy-keeweb.yaml`, `deploy-cliproxy.yaml`), preventing cascading failures. A thin `deploy.yaml` orchestrator exists for manual dispatch of both simultaneously.
+
+## Infrastructure Components
+
+### CLIProxyAPI Stack
+
+| Component | Image | Version |
+| --- | --- | --- |
+| Caddy reverse proxy | `caddy:2.11.2-alpine` | Digest-pinned |
+| CLIProxyAPI | `eceasy/cli-proxy-api:v6.9.35` | Digest-pinned |
+
+Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest rotations with changelog context sourced from upstream repositories (`router-for-me/CLIProxyAPI`, `caddyserver/caddy`).
+
+## Survey History
+
+| Date | SHA | Key Changes |
+| --- | --- | --- |
+| 2026-04-18 | `20de047` | Initial survey — workspace structure, 9 workflows, CLI v0.4.3, Fro Bot v0.40.2 |
+| 2026-04-24 | `9306b9b` | Deploy pipeline split (#165), convention enforcement tests (#161, #167), Fro Bot v0.41.4, CLI v0.4.5, CLIProxy autohealing (#155), 11 workflows |
