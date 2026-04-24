@@ -49,19 +49,17 @@ For private repos in `pending-review`, the issue body omits the owner/repo name 
 
 ### `renovate.yaml`
 
-Repositories where Fro Bot can dispatch Renovate through `workflow_dispatch`.
+Static list of fro-bot org repositories with Renovate configs. Used by `dispatch-renovate.yaml` to determine which repos to dispatch `workflow_dispatch` events to.
 
 ```yaml
-version: 1
-repos:
-  - owner: string
-    name: string
-    workflow_path: .github/workflows/renovate.yaml
-    last_dispatched_at: ISO datetime | null
-    last_dispatch_status: success | skipped-running | failure | null
+repositories:
+  with-renovate:
+    - .github
+    - agent
+    - tokentoilet
 ```
 
-Update convention: metadata workflow and Renovate dispatch update this file programmatically on the `data` branch.
+Update convention: human-managed. Edit directly via PR — this file is not auto-managed by Fro Bot workflows.
 
 ### `social-cooldowns.yaml`
 
@@ -83,7 +81,7 @@ Update convention: social broadcast workflow updates this file programmatically 
 | ----------------------- | ------------------------------------- | ------------------ |
 | `allowlist.yaml`        | Human PR                              | n/a (human commit) |
 | `repos.yaml`            | Invitation handler, Metadata workflow | `FRO_BOT_PAT`      |
-| `renovate.yaml`         | Metadata workflow, Renovate dispatch  | `FRO_BOT_PAT`      |
+| `renovate.yaml`         | Human PR                              | n/a (human commit) |
 | `social-cooldowns.yaml` | Social broadcast                      | `FRO_BOT_PAT`      |
 
 PAT split summary:
@@ -104,9 +102,9 @@ PAT split summary:
 
 ## Editing metadata files
 
-The `metadata/*.yaml` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source.
+Auto-managed state files (`repos.yaml`, `social-cooldowns.yaml`) are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source. Human-managed config files (`allowlist.yaml`, `renovate.yaml`) are editable via normal PRs.
 
-For intentional manual edits (e.g., adding an entry to `allowlist.yaml`), land the change on `data` directly and let the existing promotion flow land it on `main`:
+For intentional manual edits to auto-managed files, land the change on `data` directly and let the existing promotion flow land it on `main`:
 
 ```bash
 git worktree add ../fro-bot-.github-data data
