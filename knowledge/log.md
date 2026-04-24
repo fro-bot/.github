@@ -537,51 +537,26 @@ Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
 
-## [2026-04-24 00:00] ingest | marcusrbrown/tokentoilet
+## [2026-04-24 12:00] ingest | marcusrbrown/.dotfiles
 
-Incremental re-survey of `marcusrbrown/tokentoilet` (SHA `97e96c1`, 2026-04-22). Updated repo page `marcusrbrown--tokentoilet.md` and topic page `web3-defi.md`. Updated `index.md` description for tokentoilet entry.
+Incremental re-survey of `marcusrbrown/.dotfiles` (SHA `ba002fb`, 2026-04-24). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
 
-Delta from prior survey (SHA `0ed90a6`, 2026-04-18):
+Delta from prior survey (SHA `ae026c1`, 2026-04-22):
 
-- **MVP ERC-20 disposal flow shipped** (PR #911, 2026-04-17) — the biggest change since initial survey. Functional token burn on Sepolia testnet via `/flush` route, `DisposalFlow` multi-step component, `NetworkGuard`, `useTokenDisposal` hook, keyed `DisposalExecutor` pattern
-- Sepolia locked as sole supported chain for v1.0 (`SUPPORTED_CHAIN_IDS: [11155111]`)
-- `NEXT_PUBLIC_SEPOLIA_RPC_URL` env var added; hardcoded Alchemy demo key removed
-- CI deploy jobs removed — Vercel GitHub integration handles all deployments
-- CI pipeline optimized (PR #889): removed time-based cache churn, reduced PR test overhead
-- Copilot setup steps workflow added (PR #890)
-- `fro-bot/agent` bumped v0.40.2 → v0.41.4 (through 5 intermediate versions)
-- `bfra-me/.github` reusable workflows updated to v4.16.8
-- Next.js 16.2.3 → 16.2.4, TypeScript 6.0.2 → 6.0.3, Prettier 3.8.2 → 3.8.3
-- `pnpm/action-setup` → v6.0.3, `actions/setup-node` → v6.4.0
-- `jsdom` → v29, `std-env` → v4, `eslint` → v10, PostCSS → v8.5.10
-- 25 open issues, 5 open PRs (all Renovate: wagmi v3, lucide-react v1, eslint-react v4, eslint-config ^0.51.0, lockfile maintenance)
-- No contradictions with prior ingest — all prior observations confirmed or superseded by MVP progress
+- **Hybrid model routing strategy:** Primary agents (sisyphus, metis) and librarian reverted from Copilot-hosted to direct Anthropic endpoints (`anthropic/claude-opus-4-6`, `anthropic/claude-haiku-4-5`). Auxiliary agents (explore, oracle, momus) remain on `github-copilot/*`. This contradicts the prior survey's finding of full Copilot migration — the system now uses a hybrid approach based on agent criticality.
+- **Magic Context v0.15.0:** Historian and Dreamer also reverted to `anthropic/claude-sonnet-4-6` (Copilot models retained as fallbacks). New features: `auto_search` (semantic context retrieval), `git_commit_indexing` (365-day history). History budget increased 10% → 15%. Memory injection budget (6000 tokens) added. Auto-drop age relaxed 15 → 30. Opus 4.7 token threshold tightened 88K → 80K.
+- **Plugin bumps:** `oh-my-openagent` 3.17.4 → 3.17.5, `@ex-machina/opencode-anthropic-auth` 1.7.4 → 1.7.5, `@cortexkit/opencode-magic-context` 0.13.0 → 0.15.0, `@cortexkit/aft-opencode` 0.14.0 → 0.15.1
+- **OpenCode default model:** `opencode-go/kimi-k2.6` now explicit in `opencode.json`. New TUI config (`tui.json`) with Catppuccin theme.
+- **Dependency bumps:** `opencode-ai` 1.14.18 → 1.14.22, `puppeteer` 24.41.0 → 24.42.0, `mise` → 2026.4.19, `fro-bot/agent` v0.41.3 → v0.41.4, `bfra-me/.github` → v4.16.8
+- **Fro Bot workflow:** Added auto-close for daily reports older than 3 days (#1475), `OPENCODE_PROMPT_ARTIFACT` env var
+- **Mise environment:** `UV_SYSTEM_CERTS = "true"` added for Python UV certificate handling
+- **oh-my-openagent:** New `git_master` config block, `auto_update: false`
+- Repository structure, devcontainer, Probot settings, branch protection all unchanged
 
-Sources: https://github.com/marcusrbrown/tokentoilet (SHA 97e96c1425a9232e5b783c680cade8505e1c8de1)
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA ba002fbc2b8d9813effca1479ab2978322608267)
 
-## [2026-04-24 07:20] ingest | repo:marcusrbrown/tokentoilet
+## [2026-04-24 07:26] ingest | repo:marcusrbrown/.dotfiles
 
-Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/tokentoilet
-
-## [2026-04-24 12:00] ingest | marcusrbrown/containers
-
-Re-survey of `marcusrbrown/containers` (SHA `1b782ff8`, unchanged from 2026-04-22). Updated repo page `marcusrbrown--containers.md` with new source entry, open work items section, and survey history row. Index unchanged (page already cataloged). No new topic/entity/comparison pages warranted — delta is zero code changes.
-
-Key findings:
-
-- SHA unchanged at `1b782ff8` since 2026-04-22 — latest commit is Node.js digest rotation (#590)
-- 3 open Copilot-authored PRs (#582–#584): AI config scaffold, pytest coverage, Express template pinning — each directly addresses a tech debt issue
-- 5 open issues: 3 tech debt (#555–#557), perpetual autohealing report (#533), Dependency Dashboard (#415)
-- No human review applied to any of the 3 Copilot PRs
-- Fro Bot agent still at `v0.41.0`, Renovate preset still `marcusrbrown/renovate-config#4.5.0`
-- All repository structure, workflows, Python automation, and configurations identical to prior survey
-
-Sources: https://github.com/marcusrbrown/containers (SHA 1b782ff8b0a94615492de36f7f9b1d57e4663113)
-
-## [2026-04-24 07:25] ingest | repo:marcusrbrown/containers
-
-Surveyed marcusrbrown/containers and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/containers
+Sources: https://github.com/marcusrbrown/.dotfiles

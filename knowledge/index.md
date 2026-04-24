@@ -16,8 +16,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--marcusrbrown]] — GitHub profile README with TypeScript-powered automation (badge generation, sponsor tracking, A/B testing, scheduled updates)
 - [[marcusrbrown--mrbro-dev]] — Marcus's developer portfolio (React 19, TypeScript, Vite 7, GitHub Pages at mrbro.dev, advanced theme system, Fro Bot agent + autoheal)
 - [[marcusrbrown--opencode-copilot-delegate]] — OpenCode plugin: delegate tasks to GitHub Copilot CLI as background subprocesses with async completion notifications
-- [[marcusrbrown--systematic]] — marcusrbrown/systematic
-- [[marcusrbrown--tokentoilet]] — Web3 DeFi token disposal app (Next.js 16, Wagmi v2, Sepolia MVP); burns unwanted ERC-20 tokens to charity
+- [[marcusrbrown--tokentoilet]] — marcusrbrown/tokentoilet
 - [[marcusrbrown--vbs]] — marcusrbrown/vbs
 
 ## Topics
