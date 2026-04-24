@@ -536,3 +536,35 @@ Sources: https://github.com/marcusrbrown/extend-vscode (SHA 342872f8de739c03a026
 Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-04-24 00:00] ingest | marcusrbrown/systematic
+
+Initial survey of `marcusrbrown/systematic` (SHA `ef02119`). Created repo page `marcusrbrown--systematic.md`. Updated topic pages `opencode-plugins.md` and `github-actions-ci.md`. Updated `index.md` to catalog the new page.
+
+Key findings:
+
+- OpenCode plugin published as `@fro.bot/systematic` on npm, latest release v2.5.1 (2026-04-21)
+- Adapted from CEP (Compound Engineering Plugin for Claude Code), now evolving independently
+- 45 bundled skills (core CE workflows, dev tools, specialized, autonomous) and 50 bundled agents across 6 categories (design, docs, document-review, research, review, workflow)
+- TypeScript (strict, ESM), Bun runtime, Biome linter — diverges from `@bfra.me/*` shared config ecosystem used by other Marcus repos
+- Three plugin hooks: config (asset merging), tool (`systematic_skill`), system.transform (bootstrap injection)
+- CLI for listing/converting assets, OCX registry for component-level distribution
+- Starlight/Astro documentation site at fro.bot/systematic
+- Semantic-release publishing with provenance; skill/agent content changes trigger patch releases
+- 9 GitHub Actions workflows, all SHA-pinned
+- **Fro Bot workflow present and active** (`fro-bot/agent@v0.41.4`): PR review with TypeScript/Bun/Biome-specific prompt (zero-class convention, plugin API security), weekly maintenance (Mon 09:00 UTC), daily autohealing (03:30 UTC, 4 categories)
+- Renovate extends `marcusrbrown/renovate-config` + `sanity-io/renovate-config:semantic-commit-type`
+- Probot settings extend `fro-bot/.github:common-settings.yaml`
+- Copilot setup steps workflow present
+- CodeQL + OpenSSF Scorecard workflows
+- Cross-references established: `opencode-copilot-delegate` (sibling plugin), `dotfiles` (consumes systematic), `copiloting` (historical CEP experimentation)
+- Added systematic CI patterns to `github-actions-ci.md` (Bun build + Node verify, Biome, semantic-release)
+- Added plugin architecture patterns to `opencode-plugins.md` (config merging, system prompt injection, skill tool, OCX registry)
+
+Sources: https://github.com/marcusrbrown/systematic (SHA ef02119abd801487dc0e53a43ac2d6b6433873ab)
+
+## [2026-04-24 07:19] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/systematic
