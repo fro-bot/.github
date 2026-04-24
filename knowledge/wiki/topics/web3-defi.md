@@ -2,12 +2,15 @@
 type: topic
 title: "Web3 & DeFi Development"
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-24
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
     accessed: 2026-04-18
-tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, erc-20, erc-721]
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 97e96c1425a9232e5b783c680cade8505e1c8de1
+    accessed: 2026-04-24
+tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721]
 ---
 
 # Web3 & DeFi Development
@@ -28,7 +31,7 @@ The ecosystem currently standardizes on:
 | Modal/UI          | Reown AppKit (formerly WalletConnect Web3Modal) | Wallet connection modal and UI           |
 | Query layer       | TanStack React Query                            | Async state for chain reads/writes       |
 | Supported wallets | MetaMask, WalletConnect, Coinbase Wallet        | Per test suites in tokentoilet           |
-| Chains            | Ethereum, Polygon, Arbitrum                     | Per tokentoilet README                   |
+| Chains (v1.0 MVP) | Sepolia testnet only                            | `SUPPORTED_CHAIN_IDS: [11155111]`; mainnet chains (Ethereum, Polygon, Arbitrum) deferred |
 
 ## Architectural Conventions
 
@@ -61,3 +64,14 @@ These patterns are enforced in [[marcusrbrown--tokentoilet]] via AGENTS.md and F
 - Typed env validation via `@t3-oss/env-nextjs` + Zod
 - Access via `import {env} from '@/env'`, never `process.env`
 - `SKIP_ENV_VALIDATION=true` in CI builds
+- `NEXT_PUBLIC_SEPOLIA_RPC_URL` for testnet RPC endpoint (replaces hardcoded Alchemy demo key as of MVP)
+
+## MVP Architecture (2026-04-17)
+
+The first functional disposal flow (PR #911 in [[marcusrbrown--tokentoilet]]) uses a burn-address mechanism on Sepolia:
+
+- **No smart contracts yet** — tokens are sent to a dead address; custom contracts (`TokenToilet.sol`, `CharitySprinkler.sol`, `ProofOfDisposal.sol`) are roadmap items
+- **Multi-step UI:** `DisposalFlow` component orchestrates token selection → network validation → approval → burn transfer
+- **`NetworkGuard`** validates the connected wallet is on Sepolia before rendering disposal UI
+- **Keyed `DisposalExecutor`** — each token gets a fresh `useTokenDisposal` hook instance via React key, preventing stale `isSuccess`/`error` state across multi-token disposals
+- **Deployment:** Vercel GitHub integration handles preview (PRs) and production (main push) — no CI deploy jobs

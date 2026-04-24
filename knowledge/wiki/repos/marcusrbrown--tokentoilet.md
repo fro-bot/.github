@@ -2,12 +2,15 @@
 type: repo
 title: "marcusrbrown/tokentoilet"
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-24
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
     accessed: 2026-04-18
-tags: [next-js, react, web3, defi, wagmi, reown-appkit, tailwindcss, vitest, storybook, vercel, typescript]
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 97e96c1425a9232e5b783c680cade8505e1c8de1
+    accessed: 2026-04-24
+tags: [next-js, react, web3, defi, wagmi, reown-appkit, tailwindcss, vitest, storybook, vercel, typescript, sepolia]
 aliases: [tokentoilet]
 related:
   - marcusrbrown--ha-config
@@ -23,12 +26,14 @@ A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens,
 - **Purpose:** Web3 DeFi token disposal and charity donation platform
 - **Default branch:** `main`
 - **Created:** 2023-07-05
-- **Last push:** 2026-04-18
+- **Last push:** 2026-04-22
 - **Homepage:** https://v0-token-toilet-mrbro-dev.vercel.app
 - **Topics:** `next-js`, `react`
 - **License:** None specified
 - **Visibility:** Public
 - **Package manager:** pnpm 10.33.0
+- **Open issues:** 25
+- **Open PRs:** 5 (all Renovate)
 
 ## Core Concept
 
@@ -37,24 +42,39 @@ Users send unwanted tokens (dust, defunct DAO governance tokens, worthless airdr
 - Token disposal with on-chain proof (NFT receipts)
 - Random token fountain (receive random tokens for charitable contributions)
 - Automatic charity donation routing
-- Multi-chain support: Ethereum, Polygon, Arbitrum
+- Multi-chain support planned: Ethereum, Polygon, Arbitrum
 
-The project is in early development — smart contracts and core disposal mechanism are not yet implemented (per roadmap).
+### MVP Status (as of 2026-04-17)
+
+The MVP ERC-20 disposal flow landed in PR #911. The application now has a functional disposal path on Sepolia testnet:
+
+- **Sepolia only for v1.0** — `SUPPORTED_CHAIN_IDS` locked to `[11155111]`; mainnet chains deferred
+- **Burn address mechanism** — tokens are sent to a burn address (no smart contract yet); custom `TokenToilet.sol` / `CharitySprinkler.sol` / `ProofOfDisposal.sol` contracts remain on the roadmap
+- **`/flush` route** — new page with multi-step `DisposalFlow` component
+- **`NetworkGuard` component** — validates the user is on Sepolia before allowing disposal
+- **`NetworkSwitcher` / `NetworkBadge`** — UI for switching to and displaying the required network
+- **`useTokenDisposal` hook** — orchestrates ERC-20 burn transfers
+- **Keyed `DisposalExecutor`** — each token gets a fresh hook instance to prevent stale state across multi-token disposals
+- **`NEXT_PUBLIC_SEPOLIA_RPC_URL`** — new env var replacing hardcoded Alchemy demo key
+- **Vercel deployment refactored** — redundant CI deploy jobs removed; Vercel GitHub integration handles preview (PRs) and production (main push) deploys; `framework: nextjs` added to `vercel.json`
+- **Docs:** `docs/brainstorms/2026-04-16-mvp-rebaseline-requirements.md` and `docs/plans/2026-04-16-001-feat-mvp-disposal-flow-plan.md` (marked completed)
+
+Still not implemented: smart contracts, NFT receipts, charity integration, token fountain, multi-chain support.
 
 ## Tech Stack
 
-| Layer      | Technology                  | Version                       |
-| ---------- | --------------------------- | ----------------------------- |
-| Framework  | Next.js (App Router)        | 16.2.3                        |
-| UI library | React                       | 19.2.5                        |
-| Language   | TypeScript                  | 6.0.2                         |
-| Web3       | Wagmi v2 + Reown AppKit     | wagmi 2.14.11 / appkit 1.7.18 |
-| Styling    | Tailwind CSS v4 (CSS-first) | 4.2.2                         |
-| Testing    | Vitest                      | 4.0.7                         |
-| Components | Storybook                   | 10.x (alpha)                  |
-| Deployment | Vercel                      | —                             |
-| State      | TanStack React Query        | 5.66.0                        |
-| Validation | Zod                         | 4.1.8                         |
+| Layer      | Technology                  | Version                        |
+| ---------- | --------------------------- | ------------------------------ |
+| Framework  | Next.js (App Router)        | 16.2.4                         |
+| UI library | React                       | 19.2.5                         |
+| Language   | TypeScript                  | 6.0.3                          |
+| Web3       | Wagmi v2 + Reown AppKit     | wagmi ^2.14.11 / appkit ^1.7.18 |
+| Styling    | Tailwind CSS v4 (CSS-first) | 4.2.2                          |
+| Testing    | Vitest                      | 4.0.7                          |
+| Components | Storybook                   | 10.x (alpha)                   |
+| Deployment | Vercel (GitHub integration) | —                              |
+| State      | TanStack React Query        | ^5.66.0                        |
+| Validation | Zod                         | ^4.1.8                         |
 
 ## Repository Structure
 
@@ -140,7 +160,7 @@ Vercel handles deployment via its GitHub integration:
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.40.2` with:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d9735d7ad2aca`) with:
 
 - **PR Review:** Structured review with Web3 security focus, mandatory verdict (PASS/CONDITIONAL/REJECT), specific review sections for blocking issues, Web3 security assessment, missing tests, risk assessment.
 - **Daily Autohealing (schedule):** Five-category sweep — errored PRs, security, code quality/hygiene, developer experience, quality gates. Produces a single summary issue per run. Respects Renovate ownership of dependency bumps.
@@ -201,14 +221,24 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | ESLint config        | `@bfra.me/eslint-config`               | N/A (YAML repo) | Same     |
 | Prettier config      | `@bfra.me/prettier-config/120-proof`   | N/A             | Same     |
 | Package manager      | pnpm                                   | N/A (YAML repo) | pnpm     |
-| Fro Bot workflow     | Present (v0.40.2)                      | **Missing**     | Present  |
+| Fro Bot workflow     | Present (v0.41.4)                      | **Missing**     | Present  |
 | Copilot setup steps  | Present                                | Not present     | Present  |
 | AGENTS.md            | Present                                | Not present     | Present  |
 
 ## Notable Observations
 
-- **Early stage:** Smart contracts, token disposal mechanism, charity integration, NFT receipts, and multi-chain support are all on the roadmap but not yet implemented. The current codebase is primarily frontend scaffolding with extensive hook architecture.
-- **Heavy test infrastructure:** Co-located tests for every hook, with wallet-specific test suites (MetaMask, WalletConnect, Coinbase). The testing investment is significant relative to the project's maturity.
+- **MVP shipped:** The ERC-20 disposal flow (PR #911) is the first functional Web3 feature — burns tokens to a dead address on Sepolia. Smart contracts, NFT receipts, charity integration, token fountain, and multi-chain support remain on the roadmap.
+- **Heavy test infrastructure:** Co-located tests for every hook, with wallet-specific test suites (MetaMask, WalletConnect, Coinbase). All chain ID references updated from mainnet to Sepolia as part of MVP.
 - **Storybook alpha:** Using Storybook 10.x / 9.x alpha releases — bleeding edge, may have stability issues.
-- **TypeScript 6:** Early adopter of TS 6.0.2, which is a very recent release.
+- **TypeScript 6:** Early adopter of TS 6.0.3.
 - **No license:** The repo has no license file specified, which is unusual for a public repository.
+- **CI optimized:** PR #889 removed time-based cache churn and reduced PR test overhead. Deploy jobs removed from CI — Vercel GitHub integration handles all deployments.
+- **Open Renovate PRs of note:** wagmi v3 (#837), lucide-react v1 (#835), `@eslint-react/eslint-plugin` v4 (#909), `@bfra.me/eslint-config` ^0.51.0 (#897) — major version bumps pending review.
+
+## Survey History
+
+| Date       | SHA       | Delta |
+| ---------- | --------- | ----- |
+| 2026-04-18 | `0ed90a6` | Initial survey — frontend scaffolding, no functional disposal flow |
+| 2026-04-18 | `0ed90a6` | Follow-up — added cross-references, Renovate/branch-protection details |
+| 2026-04-24 | `97e96c1` | MVP disposal flow shipped (PR #911), Fro Bot v0.41.4, Next.js 16.2.4, TS 6.0.3 |
