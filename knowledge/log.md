@@ -537,26 +537,51 @@ Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
 
-## [2026-04-24 12:00] ingest | marcusrbrown/.dotfiles
+## [2026-04-24 00:00] ingest | marcusrbrown/tokentoilet
 
-Incremental re-survey of `marcusrbrown/.dotfiles` (SHA `ba002fb`, 2026-04-24). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
+Incremental re-survey of `marcusrbrown/tokentoilet` (SHA `97e96c1`, 2026-04-22). Updated repo page `marcusrbrown--tokentoilet.md` and topic page `web3-defi.md`. Updated `index.md` description for tokentoilet entry.
 
-Delta from prior survey (SHA `ae026c1`, 2026-04-22):
+Delta from prior survey (SHA `0ed90a6`, 2026-04-18):
 
-- **Hybrid model routing strategy:** Primary agents (sisyphus, metis) and librarian reverted from Copilot-hosted to direct Anthropic endpoints (`anthropic/claude-opus-4-6`, `anthropic/claude-haiku-4-5`). Auxiliary agents (explore, oracle, momus) remain on `github-copilot/*`. This contradicts the prior survey's finding of full Copilot migration — the system now uses a hybrid approach based on agent criticality.
-- **Magic Context v0.15.0:** Historian and Dreamer also reverted to `anthropic/claude-sonnet-4-6` (Copilot models retained as fallbacks). New features: `auto_search` (semantic context retrieval), `git_commit_indexing` (365-day history). History budget increased 10% → 15%. Memory injection budget (6000 tokens) added. Auto-drop age relaxed 15 → 30. Opus 4.7 token threshold tightened 88K → 80K.
-- **Plugin bumps:** `oh-my-openagent` 3.17.4 → 3.17.5, `@ex-machina/opencode-anthropic-auth` 1.7.4 → 1.7.5, `@cortexkit/opencode-magic-context` 0.13.0 → 0.15.0, `@cortexkit/aft-opencode` 0.14.0 → 0.15.1
-- **OpenCode default model:** `opencode-go/kimi-k2.6` now explicit in `opencode.json`. New TUI config (`tui.json`) with Catppuccin theme.
-- **Dependency bumps:** `opencode-ai` 1.14.18 → 1.14.22, `puppeteer` 24.41.0 → 24.42.0, `mise` → 2026.4.19, `fro-bot/agent` v0.41.3 → v0.41.4, `bfra-me/.github` → v4.16.8
-- **Fro Bot workflow:** Added auto-close for daily reports older than 3 days (#1475), `OPENCODE_PROMPT_ARTIFACT` env var
-- **Mise environment:** `UV_SYSTEM_CERTS = "true"` added for Python UV certificate handling
-- **oh-my-openagent:** New `git_master` config block, `auto_update: false`
-- Repository structure, devcontainer, Probot settings, branch protection all unchanged
+- **MVP ERC-20 disposal flow shipped** (PR #911, 2026-04-17) — the biggest change since initial survey. Functional token burn on Sepolia testnet via `/flush` route, `DisposalFlow` multi-step component, `NetworkGuard`, `useTokenDisposal` hook, keyed `DisposalExecutor` pattern
+- Sepolia locked as sole supported chain for v1.0 (`SUPPORTED_CHAIN_IDS: [11155111]`)
+- `NEXT_PUBLIC_SEPOLIA_RPC_URL` env var added; hardcoded Alchemy demo key removed
+- CI deploy jobs removed — Vercel GitHub integration handles all deployments
+- CI pipeline optimized (PR #889): removed time-based cache churn, reduced PR test overhead
+- Copilot setup steps workflow added (PR #890)
+- `fro-bot/agent` bumped v0.40.2 → v0.41.4 (through 5 intermediate versions)
+- `bfra-me/.github` reusable workflows updated to v4.16.8
+- Next.js 16.2.3 → 16.2.4, TypeScript 6.0.2 → 6.0.3, Prettier 3.8.2 → 3.8.3
+- `pnpm/action-setup` → v6.0.3, `actions/setup-node` → v6.4.0
+- `jsdom` → v29, `std-env` → v4, `eslint` → v10, PostCSS → v8.5.10
+- 25 open issues, 5 open PRs (all Renovate: wagmi v3, lucide-react v1, eslint-react v4, eslint-config ^0.51.0, lockfile maintenance)
+- No contradictions with prior ingest — all prior observations confirmed or superseded by MVP progress
 
-Sources: https://github.com/marcusrbrown/.dotfiles (SHA ba002fbc2b8d9813effca1479ab2978322608267)
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 97e96c1425a9232e5b783c680cade8505e1c8de1)
 
-## [2026-04-24 07:26] ingest | repo:marcusrbrown/.dotfiles
+## [2026-04-24 07:20] ingest | repo:marcusrbrown/tokentoilet
 
-Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/.dotfiles
+Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-04-24 12:00] ingest | marcusrbrown/esphome.life
+
+Re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, unchanged from 2026-04-23). Updated repo page `marcusrbrown--esphome-life.md` with new sections: Open Issues, Known Issues (workflow bug, dependency staleness). Updated `index.md` description. Entity page `esphome.md` and topic page `home-assistant.md` unchanged — no new framework or integration findings.
+
+Key findings (new this survey):
+
+- **`update-repo-settings.yaml` workflow bug confirmed:** The reusable workflow call references `bfra-me/.github/.github/workflows/renovate.yaml` instead of `update-repo-settings.yaml`. Comparison with `ha-config` (which correctly references `update-repo-settings.yaml@v4.16.8`) confirms copy-paste error. Probot settings sync is broken — it runs Renovate instead
+- **Cross-ecosystem dependency staleness documented:** `bfra-me/.github` at v4.4.0 (peers at v4.16.8), `actions/checkout` at v5.0.1 (peers at v6.x), Renovate preset at `#4.5.1` (peers at `#4.5.8`), Prettier at 3.8.1 (peers at 3.8.3)
+- **Open issue #348** "Action Required: Fix Renovate Configuration" (2026-03-12) — Renovate self-reported config issue likely blocking automated dependency updates
+- **Open issue #8** "Uplift esphome-life" (2023-06-18) — longstanding self-improvement tracker, still open
+- 4 total open issues documented
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+
+Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+
+## [2026-04-24 07:27] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
