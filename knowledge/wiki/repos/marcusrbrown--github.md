@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/.github"
 created: 2025-06-18
-updated: 2026-04-23
+updated: 2026-04-24
 sources:
   - url: https://github.com/marcusrbrown/.github
     sha: be01029971bc8b50fbd2b660fadc7341da26e03c
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/marcusrbrown/.github
     sha: 4e4fd28e9cc19f22324cd3037bbd53a9e2c0cf14
     accessed: 2026-04-23
+  - url: https://github.com/marcusrbrown/.github
+    sha: 4e4fd28e9cc19f22324cd3037bbd53a9e2c0cf14
+    accessed: 2026-04-24
 tags: [github, repository-settings, probot, community-health, prettier, renovate]
 aliases: [marcusrbrown-dotgithub]
 related:
@@ -185,6 +188,7 @@ As a `.github` repo, these files serve as **defaults** for all `marcusrbrown` re
 | 2026-04-21 | `be01029` | Re-survey — no change in repo content; additive wiki updates only (label count verified, workflow details expanded, related links extended) |
 | 2026-04-22 | `be01029` | Re-survey — no change since 2026-04-21; repo content identical at same SHA |
 | 2026-04-23 | `4e4fd28` | Prettier 3.8.1→3.8.3, Renovate preset #4.5.1→#4.5.8, bfra-me/.github v4.4.0→v4.16.8, renovate.yaml restructured (PR+issue triggers, schedule commented out, reusable+conditional logic), prCreation set to immediate, .prettierrc.yaml expanded with .devcontainer override, label count 48 |
+| 2026-04-24 | `4e4fd28` | Re-survey — no change since 2026-04-23; repo content identical at same SHA |
 
 ## Notable Patterns
 

@@ -537,30 +537,55 @@ Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
 
-## [2026-04-24 00:00] ingest | marcusrbrown/tokentoilet
+## [2026-04-24 00:00] ingest | marcusrbrown/systematic
 
-Incremental re-survey of `marcusrbrown/tokentoilet` (SHA `97e96c1`, 2026-04-22). Updated repo page `marcusrbrown--tokentoilet.md` and topic page `web3-defi.md`. Updated `index.md` description for tokentoilet entry.
+Initial survey of `marcusrbrown/systematic` (SHA `ef02119`). Created repo page `marcusrbrown--systematic.md`. Updated topic pages `opencode-plugins.md` and `github-actions-ci.md`. Updated `index.md` to catalog the new page.
 
-Delta from prior survey (SHA `0ed90a6`, 2026-04-18):
+Key findings:
 
-- **MVP ERC-20 disposal flow shipped** (PR #911, 2026-04-17) — the biggest change since initial survey. Functional token burn on Sepolia testnet via `/flush` route, `DisposalFlow` multi-step component, `NetworkGuard`, `useTokenDisposal` hook, keyed `DisposalExecutor` pattern
-- Sepolia locked as sole supported chain for v1.0 (`SUPPORTED_CHAIN_IDS: [11155111]`)
-- `NEXT_PUBLIC_SEPOLIA_RPC_URL` env var added; hardcoded Alchemy demo key removed
-- CI deploy jobs removed — Vercel GitHub integration handles all deployments
-- CI pipeline optimized (PR #889): removed time-based cache churn, reduced PR test overhead
-- Copilot setup steps workflow added (PR #890)
-- `fro-bot/agent` bumped v0.40.2 → v0.41.4 (through 5 intermediate versions)
-- `bfra-me/.github` reusable workflows updated to v4.16.8
-- Next.js 16.2.3 → 16.2.4, TypeScript 6.0.2 → 6.0.3, Prettier 3.8.2 → 3.8.3
-- `pnpm/action-setup` → v6.0.3, `actions/setup-node` → v6.4.0
-- `jsdom` → v29, `std-env` → v4, `eslint` → v10, PostCSS → v8.5.10
-- 25 open issues, 5 open PRs (all Renovate: wagmi v3, lucide-react v1, eslint-react v4, eslint-config ^0.51.0, lockfile maintenance)
-- No contradictions with prior ingest — all prior observations confirmed or superseded by MVP progress
+- OpenCode plugin published as `@fro.bot/systematic` on npm, latest release v2.5.1 (2026-04-21)
+- Adapted from CEP (Compound Engineering Plugin for Claude Code), now evolving independently
+- 45 bundled skills (core CE workflows, dev tools, specialized, autonomous) and 50 bundled agents across 6 categories (design, docs, document-review, research, review, workflow)
+- TypeScript (strict, ESM), Bun runtime, Biome linter — diverges from `@bfra.me/*` shared config ecosystem used by other Marcus repos
+- Three plugin hooks: config (asset merging), tool (`systematic_skill`), system.transform (bootstrap injection)
+- CLI for listing/converting assets, OCX registry for component-level distribution
+- Starlight/Astro documentation site at fro.bot/systematic
+- Semantic-release publishing with provenance; skill/agent content changes trigger patch releases
+- 9 GitHub Actions workflows, all SHA-pinned
+- **Fro Bot workflow present and active** (`fro-bot/agent@v0.41.4`): PR review with TypeScript/Bun/Biome-specific prompt (zero-class convention, plugin API security), weekly maintenance (Mon 09:00 UTC), daily autohealing (03:30 UTC, 4 categories)
+- Renovate extends `marcusrbrown/renovate-config` + `sanity-io/renovate-config:semantic-commit-type`
+- Probot settings extend `fro-bot/.github:common-settings.yaml`
+- Copilot setup steps workflow present
+- CodeQL + OpenSSF Scorecard workflows
+- Cross-references established: `opencode-copilot-delegate` (sibling plugin), `dotfiles` (consumes systematic), `copiloting` (historical CEP experimentation)
+- Added systematic CI patterns to `github-actions-ci.md` (Bun build + Node verify, Biome, semantic-release)
+- Added plugin architecture patterns to `opencode-plugins.md` (config merging, system prompt injection, skill tool, OCX registry)
 
-Sources: https://github.com/marcusrbrown/tokentoilet (SHA 97e96c1425a9232e5b783c680cade8505e1c8de1)
+Sources: https://github.com/marcusrbrown/systematic (SHA ef02119abd801487dc0e53a43ac2d6b6433873ab)
 
-## [2026-04-24 07:20] ingest | repo:marcusrbrown/tokentoilet
+## [2026-04-24 07:19] ingest | repo:marcusrbrown/systematic
 
-Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/tokentoilet
+Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-04-24 12:00] ingest | marcusrbrown/.github
+
+Re-survey of `marcusrbrown/.github` (SHA `4e4fd28`, unchanged from 2026-04-23). Updated repo page `marcusrbrown--github.md` with new source entry and survey history row. No new topic/entity/comparison pages warranted — all existing pages remain accurate.
+
+Key findings:
+
+- SHA unchanged (`4e4fd28`): latest commit is `ci(renovate): expand PR trigger (#360)` from 2026-04-23
+- All 15 files, 3 workflows, settings, and community health files identical to prior survey
+- 2 open issues (#37 — move to another settings action, #214 — Dependency Dashboard), 0 open PRs
+- 3 stars, 2 watchers
+- Probot settings, Renovate config, Prettier config, branch protection all unchanged
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+
+Sources: https://github.com/marcusrbrown/.github (SHA 4e4fd28e9cc19f22324cd3037bbd53a9e2c0cf14)
+
+## [2026-04-24 07:23] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
