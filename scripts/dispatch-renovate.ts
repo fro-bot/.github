@@ -158,8 +158,6 @@ async function main(): Promise<void> {
   process.stdout.write(`${JSON.stringify(summary)}\n`)
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error)
-  process.stderr.write(`dispatch-renovate: ${message}\n`)
-  process.exitCode = 1
-})
+if (import.meta.url === `file://${process.argv[1]}`) {
+  await main()
+}
