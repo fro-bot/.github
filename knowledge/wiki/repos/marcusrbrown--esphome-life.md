@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/esphome.life"
 created: 2026-04-18
-updated: 2026-04-24
+updated: 2026-04-23
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -10,9 +10,6 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
     accessed: 2026-04-23
-  - url: https://github.com/marcusrbrown/esphome.life
-    sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
-    accessed: 2026-04-24
 tags: [esphome, iot, esp32, bluetooth-proxy, home-assistant, firmware, github-pages]
 aliases: [esphome-life, esphome.life]
 related:
@@ -123,33 +120,6 @@ The site content (`static/index.md`) is minimal — the upstream template placeh
 
 A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage.
 
-## Open Issues
-
-| # | Title | Opened | Notes |
-| --- | --- | --- | --- |
-| 8 | Uplift `esphome-life` | 2023-06-18 | Longstanding self-improvement tracker |
-| 26 | Dependency Dashboard | 2024-02-22 | Renovate dashboard |
-| 298 | Reference for BPPLUG/WIFI/WP/2 | 2025-12-10 | Community note (Feit outdoor plug) |
-| 348 | Action Required: Fix Renovate Configuration | 2026-03-12 | Renovate self-reported config issue |
-
-## Known Issues
-
-### `update-repo-settings.yaml` calls wrong reusable workflow
-
-The `update-repo-settings.yaml` workflow references `bfra-me/.github/.github/workflows/renovate.yaml` instead of `bfra-me/.github/.github/workflows/update-repo-settings.yaml`. Comparison with [[marcusrbrown--ha-config]] confirms this is a copy-paste error — ha-config correctly references `update-repo-settings.yaml`. This means the "Update Repo Settings" job is actually running Renovate instead of syncing Probot settings.
-
-### Dependency staleness
-
-The repo's last content commit is 2026-03-12 and multiple dependencies lag behind ecosystem peers. Issue #348 indicates a Renovate configuration problem that may be blocking automated updates:
-
-| Dependency | esphome.life | Ecosystem peers |
-| --- | --- | --- |
-| `bfra-me/.github` reusable workflows | v4.4.0 | v4.16.8 |
-| `actions/checkout` | v5.0.1 | v6.x |
-| `marcusrbrown/renovate-config` preset | `#4.5.1` | `#4.5.8` |
-| Prettier (post-upgrade) | 3.8.1 | 3.8.3 |
-| `actions/create-github-app-token` | v2.2.1 | current |
-
 ## Notable Patterns
 
 - **Package-based device configs:** Thin per-device YAML files pull shared configuration from a `packages/` directory via `github://` package imports. This is the standard ESPHome pattern for managing multiple devices with a shared base.
@@ -165,4 +135,3 @@ The repo's last content commit is 2026-03-12 and multiple dependencies lag behin
 | 2026-04-18 | `83784bc` (ha-config survey, cross-reference) | Initial cross-reference from [[marcusrbrown--ha-config]] survey |
 | 2026-04-21 | `e398c2e` | Full survey; documented device configs, CI pipeline, devcontainer, Probot/Renovate settings |
 | 2026-04-23 | `e398c2e` | Re-survey; no content changes detected — repo unchanged since 2026-03-12 |
-| 2026-04-24 | `e398c2e` | Re-survey; documented reusable workflow bug in `update-repo-settings.yaml`, cross-ecosystem dependency staleness, open issues breakdown, Renovate config issue |

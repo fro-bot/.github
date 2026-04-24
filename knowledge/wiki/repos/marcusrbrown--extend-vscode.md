@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/extend-vscode"
 created: 2026-04-18
-updated: 2026-04-23
+updated: 2026-04-24
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 342872f8de739c03a0263e188395be7ab70457b6
     accessed: 2026-04-23
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 342872f8de739c03a0263e188395be7ab70457b6
+    accessed: 2026-04-24
 tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
 aliases: [extend-vscode]
 related:
@@ -183,3 +186,9 @@ No merged changes since prior survey. Four open Renovate PRs pending (not yet me
 | #469 | `jsdom` → v29 |
 
 All pending PRs are Renovate dependency bumps — no structural changes. Repository content, workflows, architecture, and Probot settings remain identical. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.
+
+### 2026-04-24 (SHA `342872f8`, unchanged)
+
+No repository changes since 2026-04-21. HEAD remains at `342872f8` (type-fest v5.6.0 bump, #480). Last push: 2026-04-20. Same 4 open Renovate PRs (#466–#469) pending merge. Open issues unchanged at 5 (#142, #162, #317, #318, #319). Repo metadata: 1 star, 1 watcher, not archived, not forked.
+
+Confirmed current dependency versions: pnpm 10.33.0, VS Code engine `^1.102.0`, TypeScript (tsconfig extends `@bfra.me/tsconfig`), tsup build, Vitest testing, semantic-release publishing. Six workflows present: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.

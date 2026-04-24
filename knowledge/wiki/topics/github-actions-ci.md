@@ -2,12 +2,13 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-04-23
+updated: 2026-04-24
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - marcusrbrown--containers
   - marcusrbrown--ha-config
   - marcusrbrown--github
+  - marcusrbrown--systematic
 ---
 
 # GitHub Actions CI
@@ -19,6 +20,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
 - [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
+- [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
 
 ## Common Patterns
 
@@ -61,12 +63,15 @@ Both repos use `dorny/paths-filter` to scope CI runs to relevant file changes, r
 
 ### Fro Bot Agent
 
-| Repo                         | Fro Bot Workflow         | Schedule                    |
-| ---------------------------- | ------------------------ | --------------------------- |
-| [[marcusrbrown--containers]] | Present (`fro-bot.yaml`) | Daily 14:30 UTC autohealing |
-| [[marcusrbrown--ha-config]]  | **Not present**          | N/A                         |
+| Repo                          | Fro Bot Workflow         | Schedule                          |
+| ----------------------------- | ------------------------ | --------------------------------- |
+| [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`) | Daily 14:30 UTC autohealing       |
+| [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
+| [[marcusrbrown--ha-config]]   | **Not present**          | N/A                               |
 
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
+
+The systematic repo's Fro Bot workflow includes TypeScript/Bun/Biome-specific PR review prompts (type safety, ESM conventions, zero-class convention, plugin API breaking changes, system prompt injection security). Its autoheal covers 4 categories: errored PRs, security, health & maintenance, developer experience.
 
 ### Shared Config Heritage
 
