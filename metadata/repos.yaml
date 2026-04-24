@@ -3,9 +3,9 @@ repos:
   - owner: marcusrbrown
     name: ha-config
     added: 2026-04-17
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-24
+    last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
   - owner: marcusrbrown
