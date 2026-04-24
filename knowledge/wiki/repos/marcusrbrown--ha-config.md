@@ -2,17 +2,25 @@
 type: repo
 title: "marcusrbrown/ha-config"
 created: 2025-06-18
-updated: 2025-06-18
+updated: 2026-04-24
 sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: 83784bc3a212c10cd358be4da9425e46aa6e90f0
     accessed: 2025-06-18
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 54a67275e00ed01a52f30399065d4fe6eaa4ee54
+    accessed: 2026-04-18
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: f7ec8038cca071e36848057d00d1c165cef5f357
+    accessed: 2026-04-24
 tags: [home-assistant, home-assistant-config, yaml, esphome, iot]
 aliases: [ha-config]
 related:
-  - marcusrbrown-esphome-life
+  - marcusrbrown--esphome-life
   - marcusrbrown--marcusrbrown
   - github-actions-ci
+  - home-assistant
+  - esphome
 ---
 
 # marcusrbrown/ha-config
@@ -24,9 +32,11 @@ Marcus R. Brown's [[home-assistant]] configuration repository. Public, version-c
 - **Purpose:** Version-controlled Home Assistant configuration
 - **Default branch:** `main`
 - **Created:** 2023-07-25
-- **Last push:** 2026-04-15
+- **Last push:** 2026-04-22
 - **HA version tracked:** 2025.6.3 (pinned in `.HA_VERSION`)
 - **Topics:** `home-assistant`, `home-assistant-config`
+- **Open issues:** 1 (#427 — Dependency Dashboard)
+- **Open PRs:** 0
 
 ## Repository Structure
 
@@ -81,7 +91,7 @@ Third-party integrations installed in `custom_components/`:
 
 ### Git Submodule
 
-- `esphome` → [marcusrbrown/esphome.life](https://github.com/marcusrbrown/esphome.life) — ESPHome device configurations
+- `esphome` → [marcusrbrown/esphome.life](https://github.com/marcusrbrown/esphome.life) — [[esphome]] device configurations
 
 ## CI/CD Pipeline
 
@@ -90,17 +100,17 @@ Third-party integrations installed in `custom_components/`:
 | Workflow | File | Trigger | Purpose |
 | --- | --- | --- | --- |
 | CI | `ci.yaml` | push/PR to `main`, dispatch | Lint + config validation |
-| Renovate | `renovate.yaml` | issue/PR edit, push, dispatch, CI completion | Dependency updates |
-| Update Repo Settings | `update-repo-settings.yaml` | push to `main`, daily cron, dispatch | Probot settings sync |
+| Renovate | `renovate.yaml` | issue/PR edit, push to non-main, dispatch, CI completion | Dependency updates |
+| Update Repo Settings | `update-repo-settings.yaml` | push to `main`, daily 03:00 UTC, dispatch | Probot settings sync |
 
 ### CI Jobs (ci.yaml)
 
 The CI pipeline runs four sequential/parallel jobs:
 
-1. **YAML Lint** — `frenck/action-yamllint` validates YAML syntax
+1. **YAML Lint** — `frenck/action-yamllint@v1.5.0` validates YAML syntax
 2. **Remark Lint** — Markdown linting via `pipelinecomponents/remark-lint` (continue-on-error)
-3. **Prettier** — Format check using Prettier 3.8.2 (diff-only on PRs)
-4. **Check Home Assistant Config** — Runs `frenck/action-home-assistant` against the HA version in `.HA_VERSION` (depends on lint jobs)
+3. **Prettier** — Format check using Prettier 3.8.3 (diff-only on PRs via `creyD/prettier_action@v4.3`)
+4. **Check Home Assistant Config** — Runs `frenck/action-home-assistant@v1.4.1` against the HA version in `.HA_VERSION` (depends on lint jobs)
 
 ### Branch Protection
 
@@ -108,16 +118,27 @@ Required status checks on `main`: YAML Lint, Remark Lint, Prettier, Check Home A
 
 ### Shared Workflows
 
-Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github` (v4.16.6). Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
+Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github` (v4.16.8, SHA `bedac8bd7b81a7832ae494873da2971e5ea7a8d4`). Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
+
+### Renovate Trigger Model
+
+The Renovate workflow uses a multi-trigger pattern:
+
+- `issues: [edited]` and `pull_request: [edited]` — re-run when Renovate edits its own issues/PRs
+- `push` to non-main branches — re-run on branch updates
+- `workflow_dispatch` — manual trigger with configurable log level and print-config options
+- `workflow_run` on CI completion — triggers Renovate after successful CI on main
+
+This is the same event-driven Renovate pattern used in [[marcusrbrown--github]] and other Marcus repos, replacing the hourly cron schedule.
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.7`. Custom managers for `.pre-commit-config.yaml` (Python version + pip packages) and `mise.toml` (pre-commit via aqua). Git submodules enabled. Post-upgrade runs Prettier. Automerge on minor/patch pip updates.
-- **Pre-commit:** Managed via `mise` (aqua, v4.5.1). Hooks: trailing whitespace, EOF fixer, double-quote string fixer, requirements-txt fixer, large file check, merge conflict check, TOML/YAML validation. Excludes `custom_components/`, `www/`, `.HA_VERSION`.
+- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8`. Custom managers for `.pre-commit-config.yaml` (Python version + pip packages) and `mise.toml` (pre-commit via aqua). Git submodules enabled. Post-upgrade runs `npx prettier@3.8.3 --no-color --write .`. Automerge on minor/patch pip updates. ESPHome version updates are unseparated (major+minor+patch treated as a single update).
+- **Pre-commit:** Managed via `mise` (aqua, v4.6.0). Hooks: trailing whitespace, EOF fixer, double-quote string fixer, requirements-txt fixer, large file check, merge conflict check, TOML/YAML validation. Excludes `custom_components/`, `www/`, `.HA_VERSION`. Uses `--unsafe` YAML check to allow HA YAML extensions (`!include`, `!secret`, etc.).
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` for repository configuration sync.
 - **AI Rules:** `.cursorrules` defines HA-specific development conventions (YAML standards, package organization, security, testing).
 - **Python deps:** `esphome==2025.12.7`, `yamllint==1.38.0` (in `requirements.txt`).
-- **mise.toml:** Manages `pre-commit` tool version via aqua.
+- **mise.toml:** Manages `pre-commit` tool version via aqua (`aqua:pre-commit/pre-commit = "4.6.0"`).
 
 ## Fro Bot Integration
 
@@ -132,3 +153,12 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 - **InfluxDB metrics:** Long-term data retention via InfluxDB, separate from the default HA recorder.
 - **Multi-instance HA:** `remote_homeassistant` component suggests a multi-node HA deployment.
 - **ESPHome as submodule:** Device configs live in a separate repo (`esphome.life`), linked via git submodule rather than copied.
+- **Exclusively Renovate-driven activity:** All recent commits (20+ consecutive) are Renovate dependency bumps — no structural or config changes since the initial survey.
+
+## Survey History
+
+| Date | SHA | Key Changes |
+| --- | --- | --- |
+| 2025-06-18 | `83784bc` | Initial survey — 11 packages, 10 custom components, Prettier 3.8.2, Renovate `#4.5.7`, pre-commit 4.5.1 |
+| 2026-04-18 | `54a6727` | Prettier 3.8.3, Renovate `#4.5.8`, bfra-me/.github v4.16.6, pre-commit-hooks v6.0.0 |
+| 2026-04-24 | `f7ec803` | pre-commit 4.6.0, bfra-me/.github v4.16.8, Renovate trigger model expanded (workflow_run, push to non-main) |
