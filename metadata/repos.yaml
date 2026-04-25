@@ -76,7 +76,7 @@ repos:
     name: marcusrbrown
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-04-24
+    last_survey_at: 2026-04-25
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
