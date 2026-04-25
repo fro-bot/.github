@@ -2,11 +2,8 @@
 type: repo
 title: "marcusrbrown/gpt"
 created: 2026-04-18
-updated: 2026-04-25
+updated: 2026-04-24
 sources:
-  - url: https://github.com/marcusrbrown/gpt
-    sha: 0bb8eedf6e23bfb5715d127763fd864ab7da72cd
-    accessed: 2026-04-25
   - url: https://github.com/marcusrbrown/gpt
     sha: 0bb8eedf6e23bfb5715d127763fd864ab7da72cd
     accessed: 2026-04-24
@@ -217,24 +214,8 @@ Both workflows use `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d973
 ## Open Work Items
 
 - **PR #2165** — HeroUI v2 → v3 migration (authored by `fro-bot`, open since before 2026-04-18)
-- **PR #2320** — `eslint-plugin-react-hooks` v7.1.1 (`mrbro-bot[bot]`, pending)
-- **46 open issues** (as of 2026-04-25), 45 authored by `fro-bot`, 1 by `mrbro-bot[bot]`
-
-### Issue Accumulation Pattern
-
-The open issue count jumped from 30 (2026-04-24) to 46 (2026-04-25). Breakdown by category:
-
-| Category | Count | Notes |
-| --- | --- | --- |
-| Daily Autohealing Reports | 29 | One per day — **not** using the rolling pattern; each run opens a new issue |
-| HeroUI v3 migration | 7 | 1 master tracking + 6 component-specific migration tasks |
-| Tech debt items | 3 | E2E disabled, error handling gaps, test coverage thresholds disabled |
-| TODO items | 2 | Agent skills directory, Copilot guardrails |
-| Daily Maintenance Report | 1 | Rolling issue (working as designed) |
-| Technical Debt Analysis | 1 | Single report |
-| Dependency Dashboard | 1 | `mrbro-bot[bot]` |
-
-**Observation:** The `fro-bot-autoheal.yaml` workflow creates a new "Daily Autohealing Report" issue per run instead of appending to a rolling issue. The `fro-bot.yaml` schedule prompt explicitly specifies rolling behavior ("update a SINGLE rolling issue") and that pattern works for the Daily Maintenance Report, but the autoheal workflow lacks equivalent rolling-issue logic. This is the primary driver of issue count growth.
+- **PR #2320** — `eslint-plugin-react-hooks` v7.1.1 (Renovate, pending)
+- **30 open issues** (as of 2026-04-24)
 
 ## Survey History
 
@@ -242,4 +223,3 @@ The open issue count jumped from 30 (2026-04-24) to 46 (2026-04-25). Breakdown b
 | --- | --- | --- |
 | 2026-04-18 | `60bd62e` | Initial survey |
 | 2026-04-24 | `0bb8eed` | Dependency-only delta: `fro-bot/agent` v0.40.2→v0.41.4, `vite` 8.0.8→8.0.9, `@langchain/langgraph` 1.2.8→1.2.9, `eslint` 10.2.0→10.2.1, `uuid` v14 security patch, `@typescript/native-preview` 7.0.0-dev.20260419.1, `actions/setup-node` v6.4.0, `bfra-me/.github` v4.16.8. No structural or application code changes. |
-| 2026-04-25 | `0bb8eed` | No new commits. Open issues 30→46 (autohealing report proliferation: 29 individual issues). 2 PRs unchanged (#2165, #2320). README still references "Vite 7" while `package.json` pins 8.0.9 — minor doc drift. |
