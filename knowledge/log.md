@@ -671,16 +671,27 @@ Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
 
-## [2026-04-25 06:57] ingest | marcusrbrown/extend-vscode
+## [2026-04-25 06:57] ingest | marcusrbrown/esphome.life
 
-Re-survey of `marcusrbrown/extend-vscode` (SHA `342872f8`, unchanged from 2026-04-20). Updated repo page `marcusrbrown--extend-vscode.md` with new source entry and delta log. Bumped `updated` date on topic page `vscode-extensions.md`. Index unchanged (both pages already cataloged).
+Re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, unchanged from 2026-04-23). Updated repo page `marcusrbrown--esphome-life.md`, topic pages `github-pages.md` and `github-actions-ci.md`, and `index.md` description. No new pages created — all updates are additive to existing pages.
 
-No repository changes detected — HEAD unchanged at `342872f8` for 5 days. Same 4 open Renovate PRs (#466–#469) pending merge. Open issues: 5 (#142, #162, #317–#319). Full dependency snapshot confirmed. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.
+Delta from prior survey (SHA `e398c2e`, 2026-04-23):
 
-Sources: https://github.com/marcusrbrown/extend-vscode (SHA 342872f8de739c03a0263e188395be7ab70457b6)
+- **Repo still dormant:** No commits since 2026-03-12 (44+ days). HEAD unchanged at `e398c2e`. All 5 recent commits are Renovate dependency bumps.
+- **Open issues inventoried:** 4 open issues — #348 (Fix Renovate Configuration), #298 (community note re: Feit BPPLUG), #26 (Dependency Dashboard), #8 (Uplift esphome-life). No open PRs.
+- **Reusable workflow version lag identified:** `bfra-me/.github` reusable workflows pinned at `v4.4.0` (SHA `59d10aff`) while other ecosystem repos have updated to `v4.16.x` — significant gap.
+- **Settings workflow anomaly noted:** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml` (same path as Renovate workflow), which is anomalous compared to other repos.
+- **GitHub Pages cross-reference added:** `github-pages.md` topic page now documents the Jekyll + ESP Web Tools firmware distribution pattern as a distinct deployment type alongside the React/Vite SPA pattern.
+- **CI topic cross-reference added:** `github-actions-ci.md` now includes esphome.life in the repos list, Renovate config table, and Fro Bot agent table (not present).
+- **Index description enriched** from bare slug to descriptive summary.
+- **Stats captured:** 1 star, 2 subscribers, 0 forks, 30 total issues (4 open).
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.
+- No contradictions with prior ingest.
 
-## [2026-04-25 06:59] ingest | repo:marcusrbrown/extend-vscode
+Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
 
-Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+## [2026-04-25 07:00] ingest | repo:marcusrbrown/esphome.life
 
-Sources: https://github.com/marcusrbrown/extend-vscode
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life

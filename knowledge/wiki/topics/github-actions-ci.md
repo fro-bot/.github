@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-04-24
+updated: 2026-04-25
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - marcusrbrown--containers
@@ -10,6 +10,7 @@ related:
   - marcusrbrown--github
   - marcusrbrown--systematic
   - marcusrbrown--infra
+  - marcusrbrown--esphome-life
 ---
 
 # GitHub Actions CI
@@ -23,6 +24,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 - [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing
+- [[marcusrbrown--esphome-life]] — ESPHome firmware build matrix, Jekyll + ESP Web Tools deploy to GitHub Pages, `bfra-me/.github` reusable workflows at v4.4.0 (lagging behind v4.16.x in other repos)
 
 ## Common Patterns
 
@@ -48,6 +50,7 @@ Both repos extend `marcusrbrown/renovate-config` for dependency updates, with re
 - [[marcusrbrown--ha-config]] — `#4.5.8`, custom managers for pre-commit and mise, post-upgrade runs Prettier, automerge on minor/patch pip updates
 - [[marcusrbrown--github]] — `#4.5.8`, post-upgrade runs `npx prettier@3.8.3 --no-color --write .`, PR creation set to `immediate`
 - [[marcusrbrown--infra]] — `#4.5.8`, post-upgrade runs `bun install --ignore-scripts && bun run fix`, Docker source URLs for CLIProxyAPI/Caddy, `bfra-me/.github` digest updates disabled
+- [[marcusrbrown--esphome-life]] — `#4.5.1`, custom ESPHome package rule with loose versioning and semantic commit types, post-upgrade runs `npx prettier@3.8.1`
 
 ### Renovate Trigger Model
 
@@ -80,6 +83,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]]       | Present (`fro-bot.yaml`) | Daily 03:30 UTC autohealing (7 categories incl. CLIProxy + cross-project) |
 | [[marcusrbrown--ha-config]]   | **Not present**          | N/A                               |
+| [[marcusrbrown--esphome-life]] | **Not present**         | N/A                               |
 
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
 
