@@ -6,6 +6,7 @@ updated: 2026-04-25
 tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll]
 related:
   - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--esphome-life
 ---
 
@@ -16,6 +17,7 @@ Static site hosting via GitHub. Deployment patterns observed across the Fro Bot 
 ## Repos Using GitHub Pages
 
 - [[marcusrbrown--mrbro-dev]] — React 19 + Vite 7 portfolio, custom domain at mrbro.dev
+- [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 brand site, custom domain at marcusrbrown.com
 - [[marcusrbrown--esphome-life]] — Jekyll (slate theme) + ESP Web Tools firmware installer, deployed to `gh-pages` branch
 
 ## Deployment Patterns Observed
@@ -32,9 +34,14 @@ The pattern used in [[marcusrbrown--mrbro-dev]]:
 
 The deploy workflow runs lint and test gates before building, ensuring only validated code reaches production.
 
-### Custom Domain
+### Custom Domains
 
-mrbro.dev uses a custom domain with GitHub Pages. The Vite config sets `base: '/'` for custom domain compatibility (no path prefix needed).
+Two Marcus repos use custom domains with GitHub Pages:
+
+- **mrbro.dev** — [[marcusrbrown--mrbro-dev]], full portfolio with React Router
+- **marcusrbrown.com** — [[marcusrbrown--marcusrbrown-github-io]], single-page brand site (CNAME in `public/`)
+
+Both use Vite with `base: '/'` for custom domain compatibility (no path prefix needed).
 
 ### Jekyll + ESP Web Tools (Firmware Distribution)
 

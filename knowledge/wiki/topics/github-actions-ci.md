@@ -10,6 +10,7 @@ related:
   - marcusrbrown--github
   - marcusrbrown--systematic
   - marcusrbrown--infra
+  - marcusrbrown--marcusrbrown-github-io
 ---
 
 # GitHub Actions CI
@@ -79,6 +80,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`) | Daily 14:30 UTC autohealing       |
 | [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]]       | Present (`fro-bot.yaml`) | Daily 03:30 UTC autohealing (7 categories incl. CLIProxy + cross-project) |
+| [[marcusrbrown--marcusrbrown-github-io]] | Present (`fro-bot.yaml`) | Daily 15:30 UTC maintenance (no autoheal) |
 | [[marcusrbrown--ha-config]]   | **Not present**          | N/A                               |
 
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
