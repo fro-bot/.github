@@ -628,25 +628,45 @@ Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/infra
 
-## [2026-04-25 06:50] ingest | marcusrbrown/vbs
+## [2026-04-25 00:00] ingest | marcusrbrown/tokentoilet
 
-Incremental re-survey of `marcusrbrown/vbs` (SHA `dd10e05`, 2026-04-22). Updated repo page `marcusrbrown--vbs.md` with delta since prior survey. Updated `index.md` description. No new topic/entity/comparison pages warranted — delta is purely Renovate dependency bumps.
+Re-survey of `marcusrbrown/tokentoilet` (SHA `97e96c1`, unchanged from 2026-04-24). Updated repo page `marcusrbrown--tokentoilet.md` with new source entry and survey history row. Bumped `updated` date on topic page `web3-defi.md`. Index unchanged (both pages already cataloged).
 
-Delta from prior survey (SHA `a552e73`, 2026-04-18):
+Delta from prior survey (SHA `97e96c1`, 2026-04-24):
 
-- `fro-bot/agent` bumped v0.40.2 → v0.41.4 (through v0.41.0, v0.41.1, v0.41.2; PRs #509, #510, #512, #520)
-- `bfra-me/.github` reusable workflows updated in renovate.yaml and update-repo-settings.yaml
-- `actions/setup-node` updated to v6.4.0 (PR #514)
-- Lockfile maintenance (PR #516) and non-major dependency batch (PRs #513, #520)
-- Repository structure, architecture, CI workflows, Probot settings, Renovate config all unchanged
-- 5 open PRs: 4 automated Star Trek data updates (#454, #476, #497, #517), 1 Copilot feature (#458)
-- Daily Autohealing Reports running consistently (fro-bot authored, #506–#523)
-- No human-authored commits in delta — pure maintenance mode
+- SHA unchanged (`97e96c1`): latest commit is `chore(deps): update fro-bot/agent to v0.41.4 (#934)` from 2026-04-22
+- Recent commits since last survey are exclusively Renovate dependency bumps: `bfra-me/.github` v4.16.8 (#933), `pnpm/action-setup` v6.0.3 (#931), `actions/setup-node` v6.4.0 (#927), TypeScript v6.0.3 (#926) — all already captured in prior survey
+- Open issues: 25 → 26
+- Open PRs: 5 (all Renovate) — same major-version PRs pending: wagmi v3 (#837), lucide-react v1 (#835), `@eslint-react/eslint-plugin` v4 (#909), `@bfra.me/eslint-config` ^0.51.0 (#897). New: lockfile maintenance (#929)
+- Repository structure, application code, CI workflows, Fro Bot integration, Vercel deployment, and conventions all identical to prior survey
+- **Fro Bot workflow present** — `fro-bot/agent@v0.41.4`, no change
+- No contradictions with prior ingest
 
-Sources: https://github.com/marcusrbrown/vbs (SHA dd10e052347b5488dc09cd0d18391d67f1c21bb7)
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 97e96c1425a9232e5b783c680cade8505e1c8de1)
 
-## [2026-04-25 06:52] ingest | repo:marcusrbrown/vbs
+## [2026-04-25 06:50] ingest | repo:marcusrbrown/tokentoilet
 
-Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/vbs
+Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-04-25 12:00] ingest | marcusrbrown/.github
+
+Re-survey of `marcusrbrown/.github` (SHA `4e4fd28`, unchanged from 2026-04-24). Updated repo page `marcusrbrown--github.md` with new source entry and survey history row. No new topic/entity/comparison pages warranted — all existing pages remain accurate.
+
+Key findings:
+
+- SHA unchanged (`4e4fd28`): latest commit is `ci(renovate): expand PR trigger (#360)` from 2026-04-23
+- All 15 files, 3 workflows, settings, and community health files identical to prior survey
+- 2 open issues (#37 — move to another settings action, #214 — Dependency Dashboard), 0 open PRs
+- 3 stars, 2 watchers
+- Probot settings, Renovate config, Prettier config, branch protection all unchanged
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+
+Sources: https://github.com/marcusrbrown/.github (SHA 4e4fd28e9cc19f22324cd3037bbd53a9e2c0cf14)
+
+## [2026-04-25 06:54] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
