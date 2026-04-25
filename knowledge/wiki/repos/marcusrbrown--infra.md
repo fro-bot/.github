@@ -2,11 +2,8 @@
 type: repo
 title: "marcusrbrown/infra"
 created: 2026-04-18
-updated: 2026-04-25
+updated: 2026-04-24
 sources:
-  - url: https://github.com/marcusrbrown/infra
-    sha: 9306b9bef8e6d3c6f821ee0c4df99e24acb750ac
-    accessed: 2026-04-25
   - url: https://github.com/marcusrbrown/infra
     sha: 9306b9bef8e6d3c6f821ee0c4df99e24acb750ac
     accessed: 2026-04-24
@@ -32,7 +29,7 @@ Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeW
 - **Last push:** 2026-04-24
 - **Runtime:** Bun v1.0+
 - **Published package:** `@marcusrbrown/infra` v0.4.5 on npm
-- **Open issues:** 5 (3 autohealing reports, 1 rate limit investigation, 1 Dependency Dashboard)
+- **Open issues:** 4 (2 autohealing reports, 1 rate limit investigation, 1 Dependency Dashboard)
 - **Open PRs:** 0
 - **Topics:** `bun`, `deploy`, `github-actions`, `infra`, `keeweb`
 
@@ -257,4 +254,3 @@ Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest 
 | --- | --- | --- |
 | 2026-04-18 | `20de047` | Initial survey — workspace structure, 9 workflows, CLI v0.4.3, Fro Bot v0.40.2 |
 | 2026-04-24 | `9306b9b` | Deploy pipeline split (#165), convention enforcement tests (#161, #167), Fro Bot v0.41.4, CLI v0.4.5, CLIProxy autohealing (#155), 11 workflows |
-| 2026-04-25 | `9306b9b` | No code changes; open issues 4→5 (new autohealing report #178) |

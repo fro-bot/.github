@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/marcusrbrown"
 created: 2026-04-18
-updated: 2026-04-24
+updated: 2026-04-25
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: af78e68d510b24152531f7fdafe9bff35a58f071
+    accessed: 2026-04-25
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: af78e68d510b24152531f7fdafe9bff35a58f071
     accessed: 2026-04-24
@@ -163,7 +166,7 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | #895 | Action Required: Fix Renovate Configuration | mrbro-bot[bot] | 2026-03-12 | **Blocks all Renovate PRs** — regex parse error in `marcusrbrown/renovate-config` preset resolution |
 | #284 | Dependency Dashboard | mrbro-bot[bot] | 2024-02-22 | Standard Renovate dashboard issue |
 
-**Renovate is stalled.** Issue #895 reports an invalid regex in the Renovate preset resolution chain, preventing all dependency update PRs since 2026-03-12. The error references `marcusrbrown/renovate-config` with a malformed RE2 expression. This means dependencies have not been updated for over 6 weeks and the profile update pipeline's 6-hour schedule is the only active automation.
+**Renovate is stalled (44+ days).** Issue #895 reports an invalid regex in the Renovate preset resolution chain, preventing all dependency update PRs since 2026-03-12. The error references `marcusrbrown/renovate-config` with a malformed RE2 expression. Dependencies have not been updated in over 6 weeks. The profile update pipeline's 6-hour schedule remains the only active automation. No human intervention observed since the stall began — this repo is accumulating the widest dependency drift in the Marcus ecosystem.
 
 ## Notable Patterns
 
@@ -192,3 +195,4 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | --- | --- | --- |
 | 2026-04-18 | `af78e68` | Initial survey |
 | 2026-04-24 | `af78e68` | SHA unchanged; documented Renovate stall (issue #895), dependency drift vs ecosystem, fro-bot collaborator confirmed, open work items added |
+| 2026-04-25 | `af78e68` | SHA unchanged (44 days stale); Renovate still broken, dependency drift widening vs ecosystem, same 2 open issues, 0 open PRs, no Fro Bot workflow |
