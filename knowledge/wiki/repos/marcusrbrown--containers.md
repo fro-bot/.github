@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/containers"
 created: 2026-04-18
-updated: 2026-04-22
+updated: 2026-04-25
 sources:
   - url: https://github.com/marcusrbrown/containers
     sha: e582f856844ac1dd52fc8739f1a9aa8398248e6e
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/containers
     sha: 1b782ff8b0a94615492de36f7f9b1d57e4663113
     accessed: 2026-04-22
+  - url: https://github.com/marcusrbrown/containers
+    sha: 1b782ff8b0a94615492de36f7f9b1d57e4663113
+    accessed: 2026-04-25
 tags: [docker, containers, dockerfiles, multi-arch, python, github-actions, ci-cd, security-scanning, ai, ollama, sqlite]
 aliases: [containers]
 related:
@@ -29,7 +32,7 @@ A container development ecosystem with curated Dockerfiles, Python automation sc
 - **Default branch:** `main`
 - **Primary language:** Python
 - **Created:** 2016-12-19
-- **Last push:** 2026-04-22 (as of 2026-04-22 survey)
+- **Last push:** 2026-04-22 (unchanged as of 2026-04-25 survey)
 - **Topics:** `automation`, `containers`, `docker`, `docker-compose`, `dockerfiles`, `scripts`
 - **Registries:** GHCR (`ghcr.io`), Docker Hub (`docker.io/marcusrbrown`, legacy alias `igetgames`)
 
@@ -215,6 +218,36 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 - **Anti-pattern documentation:** AGENTS.md files explicitly list anti-patterns (do not hardcode OCI `created`/`revision` labels, do not touch `archived/`, do not run linters against `templates/`).
 - **Reproducibility boundary philosophy:** Comments in Dockerfiles explain that the base image digest is the reproducibility boundary, not individual package versions — Alpine and Debian repos rotate package versions, making pin-by-version fragile.
 
+## Open Work Items (as of 2026-04-25)
+
+### Issues (8 open)
+
+| # | Title | Author | Labels |
+| --- | --- | --- | --- |
+| #584 | Add first-class AI configuration scaffold, docs, and CLI init/validation flow | Copilot | — |
+| #583 | Add foundational pytest coverage for AI, template engine, CLI, and predictive maintenance modules | Copilot | — |
+| #582 | Pin Express template/runtime dependency versions and remove redundant argparse dependency | Copilot | — |
+| #557 | Tech Debt: Template package.json uses 'latest' for dependencies — version pinning required | fro-bot | `dependencies` |
+| #556 | Tech Debt: Missing AI configuration file and documentation | fro-bot | `documentation` |
+| #555 | Tech Debt: Add comprehensive test coverage for AI and template modules | fro-bot | `testing` |
+| #533 | Daily Autohealing Report | fro-bot | — |
+| #415 | Dependency Dashboard | mrbro-bot[bot] | — |
+
+Issues #582–#584 are Copilot-authored PRs (with matching issue numbers) that directly address the tech debt items #555–#557 filed by Fro Bot. All three remain open/unmerged since 2026-04-18.
+
+### Pull Requests (3 open)
+
+| # | Title | Author | Status |
+| --- | --- | --- | --- |
+| #584 | Add first-class AI configuration scaffold, docs, and CLI init/validation flow | Copilot | Open |
+| #583 | Add foundational pytest coverage for AI, template engine, CLI, and predictive maintenance modules | Copilot | Open |
+| #582 | Pin Express template/runtime dependency versions and remove redundant argparse dependency | Copilot | Open |
+
+## Observations & Minor Drift
+
+- **AGENTS.md / mise.toml drift:** Root AGENTS.md documents `Node.js 24.14.0` but `mise.toml` pins `24.15.0`. This is cosmetic drift — the AGENTS.md was written before the mise bump landed.
+- **Prettier version lag:** `package.json` pins Prettier at `3.8.1` while peer repos ([[marcusrbrown--ha-config]], [[marcusrbrown--copiloting]]) have moved to `3.8.3`. Renovate has patch updates disabled for most packages in this repo, which explains the lag.
+
 ## Change History (Surveys)
 
 | Date | SHA | Notable Changes |
@@ -222,3 +255,4 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 | 2026-04-18 | `e582f856` | Initial survey. Agent `v0.40.0`, `fro-bot.yaml` PR review + daily autohealing confirmed. |
 | 2026-04-21 | `fa17128f` | Agent bumped to `v0.41.0`. `actions/setup-node` bumped to v6.4.0. `OMO_PROVIDERS`/`OPENCODE_CONFIG` secrets added to Fro Bot job. Node.js base images digest-rotated. `predictive_maintenance.py` (987 LOC, SQLite analytics) and `ai_core.py` Ollama support documented. Redis template (`templates/databases/redis/`) confirmed present. AGENTS.md coverage at root, workflows, and scripts directories. `pytest` updated (CVE-2025-71176). |
 | 2026-04-22 | `1b782ff8` | Incremental re-survey. Multiple base image digest rotations via Renovate (#587–#590). Cache cleanup workflow fix: gracefully handle missing cache keys (#585). Node Alpine base image now `sha256:d1b3b4da...`, Bookworm-slim `sha256:03eae3e...`. No structural changes to repo, workflows, or Python automation layer. |
+| 2026-04-25 | `1b782ff8` | No code changes since 2026-04-22. Documented 8 open issues (3 Fro Bot tech debt, 3 Copilot PRs addressing them, 1 autohealing report, 1 Dependency Dashboard). Noted AGENTS.md Node.js version drift (24.14.0 vs mise 24.15.0) and Prettier 3.8.1 lag vs ecosystem 3.8.3. |

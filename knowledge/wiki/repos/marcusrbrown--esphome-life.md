@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/esphome.life"
 created: 2026-04-18
-updated: 2026-04-25
+updated: 2026-04-23
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -10,9 +10,6 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
     accessed: 2026-04-23
-  - url: https://github.com/marcusrbrown/esphome.life
-    sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
-    accessed: 2026-04-25
 tags: [esphome, iot, esp32, bluetooth-proxy, home-assistant, firmware, github-pages]
 aliases: [esphome-life, esphome.life]
 related:
@@ -34,8 +31,6 @@ ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forke
 - **Topics:** _(none set)_
 - **ESPHome version:** 2025.12.7 (pinned in CI workflow and devcontainer)
 - **Linked from:** [[marcusrbrown--ha-config]] as a git submodule at `esphome/`
-- **Stats:** 1 star, 2 subscribers, 0 forks
-- **Dormancy:** No commits since 2026-03-12 (44+ days as of 2026-04-25)
 
 ## Repository Structure
 
@@ -119,17 +114,6 @@ The repo deploys a static site to GitHub Pages using Jekyll (slate theme). The s
 
 The site content (`static/index.md`) is minimal — the upstream template placeholder text has not been customized.
 
-## Open Issues
-
-| # | Title | Notes |
-| --- | --- | --- |
-| #348 | Action Required: Fix Renovate Configuration | Renovate config health alert |
-| #298 | Reference for Feit BPPLUG/WIFI/WP/2 | Community-submitted note (outdoor outlet variant); informational, not a bug |
-| #26 | Dependency Dashboard | Standard Renovate tracking issue |
-| #8 | Uplift `esphome-life` | Long-standing improvement/modernization request |
-
-No open pull requests as of 2026-04-25.
-
 ## Fro Bot Integration
 
 **No Fro Bot agent workflow detected.** The repository does not contain a `fro-bot.yaml` workflow. It does extend `fro-bot/.github:common-settings.yaml` via Probot settings, confirming it is part of the Fro Bot-managed ecosystem.
@@ -143,9 +127,6 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 - **Template heritage:** The repo was generated from `esphome/esphome-project-template`. Template artifacts remain in `docs/readme.md` and `static/index.md` without customization.
 - **Ethernet-only devices:** All devices use ESP32-PoE-ISO with LAN8720 Ethernet — no Wi-Fi. This is notable for a Bluetooth Proxy setup where wired backhaul provides more reliable connectivity.
 - **Git submodule consumer:** This repo is referenced as a submodule from [[marcusrbrown--ha-config]] at the `esphome/` path, linking ESPHome device firmware to the Home Assistant configuration.
-- **Reusable workflow version lag:** `bfra-me/.github` reusable workflows are pinned at `v4.4.0` (SHA `59d10aff`), while other repos in the ecosystem have updated to `v4.16.x`. This is a significant version gap.
-- **Settings workflow anomaly:** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml` — the same reusable workflow path used by the Renovate workflow. Other repos in the ecosystem typically call a dedicated settings sync workflow. This may be a copy-paste error or an outdated pattern.
-- **GitHub Pages deployment:** Uses [[github-pages]] with Jekyll (slate theme) + ESP Web Tools for browser-based firmware flashing — a distinct pattern from the React/Vite SPA deploys used by [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--gpt]].
 
 ## Survey History
 
@@ -154,4 +135,3 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 | 2026-04-18 | `83784bc` (ha-config survey, cross-reference) | Initial cross-reference from [[marcusrbrown--ha-config]] survey |
 | 2026-04-21 | `e398c2e` | Full survey; documented device configs, CI pipeline, devcontainer, Probot/Renovate settings |
 | 2026-04-23 | `e398c2e` | Re-survey; no content changes detected — repo unchanged since 2026-03-12 |
-| 2026-04-25 | `e398c2e` | Re-survey; still dormant. Added open issues inventory, repo stats, reusable workflow version lag, settings workflow anomaly, GitHub Pages cross-reference |

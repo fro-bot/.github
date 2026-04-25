@@ -628,70 +628,73 @@ Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/infra
 
-## [2026-04-25 00:00] ingest | marcusrbrown/tokentoilet
+## [2026-04-25 06:50] ingest | marcusrbrown/vbs
 
-Re-survey of `marcusrbrown/tokentoilet` (SHA `97e96c1`, unchanged from 2026-04-24). Updated repo page `marcusrbrown--tokentoilet.md` with new source entry and survey history row. Bumped `updated` date on topic page `web3-defi.md`. Index unchanged (both pages already cataloged).
+Incremental re-survey of `marcusrbrown/vbs` (SHA `dd10e05`, 2026-04-22). Updated repo page `marcusrbrown--vbs.md` with delta since prior survey. Updated `index.md` description. No new topic/entity/comparison pages warranted — delta is purely Renovate dependency bumps.
 
-Delta from prior survey (SHA `97e96c1`, 2026-04-24):
+Delta from prior survey (SHA `a552e73`, 2026-04-18):
 
-- SHA unchanged (`97e96c1`): latest commit is `chore(deps): update fro-bot/agent to v0.41.4 (#934)` from 2026-04-22
-- Recent commits since last survey are exclusively Renovate dependency bumps: `bfra-me/.github` v4.16.8 (#933), `pnpm/action-setup` v6.0.3 (#931), `actions/setup-node` v6.4.0 (#927), TypeScript v6.0.3 (#926) — all already captured in prior survey
-- Open issues: 25 → 26
-- Open PRs: 5 (all Renovate) — same major-version PRs pending: wagmi v3 (#837), lucide-react v1 (#835), `@eslint-react/eslint-plugin` v4 (#909), `@bfra.me/eslint-config` ^0.51.0 (#897). New: lockfile maintenance (#929)
-- Repository structure, application code, CI workflows, Fro Bot integration, Vercel deployment, and conventions all identical to prior survey
-- **Fro Bot workflow present** — `fro-bot/agent@v0.41.4`, no change
-- No contradictions with prior ingest
+- `fro-bot/agent` bumped v0.40.2 → v0.41.4 (through v0.41.0, v0.41.1, v0.41.2; PRs #509, #510, #512, #520)
+- `bfra-me/.github` reusable workflows updated in renovate.yaml and update-repo-settings.yaml
+- `actions/setup-node` updated to v6.4.0 (PR #514)
+- Lockfile maintenance (PR #516) and non-major dependency batch (PRs #513, #520)
+- Repository structure, architecture, CI workflows, Probot settings, Renovate config all unchanged
+- 5 open PRs: 4 automated Star Trek data updates (#454, #476, #497, #517), 1 Copilot feature (#458)
+- Daily Autohealing Reports running consistently (fro-bot authored, #506–#523)
+- No human-authored commits in delta — pure maintenance mode
 
-Sources: https://github.com/marcusrbrown/tokentoilet (SHA 97e96c1425a9232e5b783c680cade8505e1c8de1)
+Sources: https://github.com/marcusrbrown/vbs (SHA dd10e052347b5488dc09cd0d18391d67f1c21bb7)
 
-## [2026-04-25 06:50] ingest | repo:marcusrbrown/tokentoilet
+## [2026-04-25 06:52] ingest | repo:marcusrbrown/vbs
 
-Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/tokentoilet
+Sources: https://github.com/marcusrbrown/vbs
 
-## [2026-04-25 12:00] ingest | marcusrbrown/.github
+## [2026-04-25 06:55] ingest | marcusrbrown/containers
 
-Re-survey of `marcusrbrown/.github` (SHA `4e4fd28`, unchanged from 2026-04-24). Updated repo page `marcusrbrown--github.md` with new source entry and survey history row. No new topic/entity/comparison pages warranted — all existing pages remain accurate.
+Re-survey of `marcusrbrown/containers` (SHA `1b782ff8`, unchanged from 2026-04-22). Updated repo page `marcusrbrown--containers.md` with open work items, minor drift observations, and new survey history row. No new topic/entity/comparison pages warranted — no code changes detected.
 
-Key findings:
+Delta from prior survey (SHA `1b782ff8`, 2026-04-22):
 
-- SHA unchanged (`4e4fd28`): latest commit is `ci(renovate): expand PR trigger (#360)` from 2026-04-23
-- All 15 files, 3 workflows, settings, and community health files identical to prior survey
-- 2 open issues (#37 — move to another settings action, #214 — Dependency Dashboard), 0 open PRs
-- 3 stars, 2 watchers
-- Probot settings, Renovate config, Prettier config, branch protection all unchanged
-- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+- SHA unchanged (`1b782ff8`): last push 2026-04-22
+- 8 open issues: 3 Fro Bot tech debt (#555–#557), 3 Copilot PRs addressing them (#582–#584), perpetual autohealing report (#533), Dependency Dashboard (#415)
+- 3 open Copilot-authored PRs (#582–#584) pending merge since 2026-04-18 — AI config scaffold, pytest coverage, Express template version pinning
+- Minor AGENTS.md drift: documents Node.js 24.14.0 vs mise.toml 24.15.0
+- Prettier 3.8.1 in package.json lags behind ecosystem standard 3.8.3 (Renovate patch updates disabled for most packages)
+- Repository structure, workflows, Python automation, Fro Bot integration, Dockerfiles all unchanged
 
-Sources: https://github.com/marcusrbrown/.github (SHA 4e4fd28e9cc19f22324cd3037bbd53a9e2c0cf14)
+Sources: https://github.com/marcusrbrown/containers (SHA 1b782ff8b0a94615492de36f7f9b1d57e4663113)
 
-## [2026-04-25 06:54] ingest | repo:marcusrbrown/.github
+## [2026-04-25 06:55] ingest | repo:marcusrbrown/containers
 
-Surveyed marcusrbrown/.github and updated the control-plane wiki.
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/.github
+Sources: https://github.com/marcusrbrown/containers
 
-## [2026-04-25 06:57] ingest | marcusrbrown/esphome.life
+## [2026-04-25 06:57] ingest | repo:marcusrbrown/containers
 
-Re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, unchanged from 2026-04-23). Updated repo page `marcusrbrown--esphome-life.md`, topic pages `github-pages.md` and `github-actions-ci.md`, and `index.md` description. No new pages created — all updates are additive to existing pages.
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
-Delta from prior survey (SHA `e398c2e`, 2026-04-23):
+Sources: https://github.com/marcusrbrown/containers
 
-- **Repo still dormant:** No commits since 2026-03-12 (44+ days). HEAD unchanged at `e398c2e`. All 5 recent commits are Renovate dependency bumps.
-- **Open issues inventoried:** 4 open issues — #348 (Fix Renovate Configuration), #298 (community note re: Feit BPPLUG), #26 (Dependency Dashboard), #8 (Uplift esphome-life). No open PRs.
-- **Reusable workflow version lag identified:** `bfra-me/.github` reusable workflows pinned at `v4.4.0` (SHA `59d10aff`) while other ecosystem repos have updated to `v4.16.x` — significant gap.
-- **Settings workflow anomaly noted:** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml` (same path as Renovate workflow), which is anomalous compared to other repos.
-- **GitHub Pages cross-reference added:** `github-pages.md` topic page now documents the Jekyll + ESP Web Tools firmware distribution pattern as a distinct deployment type alongside the React/Vite SPA pattern.
-- **CI topic cross-reference added:** `github-actions-ci.md` now includes esphome.life in the repos list, Renovate config table, and Fro Bot agent table (not present).
-- **Index description enriched** from bare slug to descriptive summary.
-- **Stats captured:** 1 star, 2 subscribers, 0 forks, 30 total issues (4 open).
-- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.
-- No contradictions with prior ingest.
+## [2026-04-25 07:00] ingest | marcusrbrown/gpt
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+Re-survey of `marcusrbrown/gpt` (SHA `0bb8eed`, unchanged from 2026-04-24). Updated repo page `marcusrbrown--gpt.md` with issue accumulation analysis and survey history row. No new topic/entity/comparison pages warranted — no code changes detected.
 
-## [2026-04-25 07:00] ingest | repo:marcusrbrown/esphome.life
+Delta from prior survey (SHA `0bb8eed`, 2026-04-24):
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+- SHA unchanged (`0bb8eed`): last push 2026-04-23
+- **Open issues jumped 30 → 46** — driven by `fro-bot-autoheal.yaml` creating individual "Daily Autohealing Report" issues instead of rolling a single issue. 29 such reports now open. The `fro-bot.yaml` schedule prompt correctly implements rolling-issue logic for "Daily Maintenance Report" (1 open), but the autoheal workflow lacks equivalent consolidation.
+- Additional fro-bot issues: 7 HeroUI v3 migration tasks, 3 tech debt items, 2 TODOs, 1 Technical Debt Analysis Report
+- 2 open PRs unchanged: #2165 (HeroUI v3 migration), #2320 (eslint-plugin-react-hooks v7.1.1)
+- Minor README drift: documents "Vite 7" while `package.json` pins Vite 8.0.9
+- Repository structure, workflows, application code, and all dependency versions unchanged
 
-Sources: https://github.com/marcusrbrown/esphome.life
+Sources: https://github.com/marcusrbrown/gpt (SHA 0bb8eedf6e23bfb5715d127763fd864ab7da72cd)
+
+## [2026-04-25 07:01] ingest | repo:marcusrbrown/gpt
+
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/gpt
