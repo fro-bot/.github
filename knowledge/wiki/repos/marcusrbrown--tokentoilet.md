@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/tokentoilet"
 created: 2026-04-18
-updated: 2026-04-25
+updated: 2026-04-24
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -10,9 +10,6 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 97e96c1425a9232e5b783c680cade8505e1c8de1
     accessed: 2026-04-24
-  - url: https://github.com/marcusrbrown/tokentoilet
-    sha: 97e96c1425a9232e5b783c680cade8505e1c8de1
-    accessed: 2026-04-25
 tags: [next-js, react, web3, defi, wagmi, reown-appkit, tailwindcss, vitest, storybook, vercel, typescript, sepolia]
 aliases: [tokentoilet]
 related:
@@ -35,7 +32,7 @@ A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens,
 - **License:** None specified
 - **Visibility:** Public
 - **Package manager:** pnpm 10.33.0
-- **Open issues:** 26
+- **Open issues:** 25
 - **Open PRs:** 5 (all Renovate)
 
 ## Core Concept
@@ -236,7 +233,7 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 - **TypeScript 6:** Early adopter of TS 6.0.3.
 - **No license:** The repo has no license file specified, which is unusual for a public repository.
 - **CI optimized:** PR #889 removed time-based cache churn and reduced PR test overhead. Deploy jobs removed from CI — Vercel GitHub integration handles all deployments.
-- **Open Renovate PRs of note:** wagmi v3 (#837), lucide-react v1 (#835), `@eslint-react/eslint-plugin` v4 (#909), `@bfra.me/eslint-config` ^0.51.0 (#897) — major version bumps pending review. Lockfile maintenance PR #929 also open.
+- **Open Renovate PRs of note:** wagmi v3 (#837), lucide-react v1 (#835), `@eslint-react/eslint-plugin` v4 (#909), `@bfra.me/eslint-config` ^0.51.0 (#897) — major version bumps pending review.
 
 ## Survey History
 
@@ -245,4 +242,3 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | 2026-04-18 | `0ed90a6` | Initial survey — frontend scaffolding, no functional disposal flow |
 | 2026-04-18 | `0ed90a6` | Follow-up — added cross-references, Renovate/branch-protection details |
 | 2026-04-24 | `97e96c1` | MVP disposal flow shipped (PR #911), Fro Bot v0.41.4, Next.js 16.2.4, TS 6.0.3 |
-| 2026-04-25 | `97e96c1` | No code changes — SHA unchanged, open issues 25→26, lockfile maintenance PR #929 opened |
