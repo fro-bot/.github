@@ -685,25 +685,23 @@ Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
 
-## [2026-04-25 07:01] ingest | marcusrbrown/ha-config
+## [2026-04-25 12:00] ingest | marcusrbrown/infra
 
-Re-survey of `marcusrbrown/ha-config` (SHA `f7ec803`, unchanged from 2026-04-24). Updated repo page `marcusrbrown--ha-config.md` with new source entry and survey history row. No new topic/entity/comparison pages warranted — all existing pages remain accurate.
+Re-survey of `marcusrbrown/infra` (SHA `9306b9b`, unchanged from 2026-04-24). Updated repo page `marcusrbrown--infra.md` with new source entry and survey history row. No new topic/entity/comparison pages warranted — all existing pages remain accurate.
 
-Key findings:
+Delta from prior survey (SHA `9306b9b`, 2026-04-24):
 
-- SHA unchanged (`f7ec803`): latest commit is `chore(deps): update bfra-me/.github to v4.16.8 (#765)` from 2026-04-22
-- All 15 recent commits are exclusively Renovate dependency bumps (PRs #751–#765)
-- Repository structure, packages (11), custom components (10), HA version (2025.6.3), Python deps (esphome 2025.12.7, yamllint 1.38.0) all unchanged
-- Open issues: 1 (#427 Dependency Dashboard), 0 open PRs
-- 3 stars, 3 watchers, 0 forks
-- CI pipeline (yamllint, remarklint, prettier, HA config check) and branch protection unchanged
-- Probot settings extend `fro-bot/.github:common-settings.yaml`, Renovate extends `marcusrbrown/renovate-config#4.5.8`
-- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+- SHA unchanged (`9306b9b`): latest commit is `chore(🦋📦): version packages (#170)` from 2026-04-24
+- Open issues: 4 → 5 (new autohealing report #178 from 2026-04-25, clean report: no errored PRs)
+- Open PRs: 0 (unchanged)
+- All 11 workflows, Fro Bot v0.41.4, CLI v0.4.5, deploy pipeline, conventions tests, infrastructure components all identical to prior survey
+- **Fro Bot workflow present** — no change
+- No contradictions with prior ingest
 
-Sources: https://github.com/marcusrbrown/ha-config (SHA f7ec8038cca071e36848057d00d1c165cef5f357)
+Sources: https://github.com/marcusrbrown/infra (SHA 9306b9bef8e6d3c6f821ee0c4df99e24acb750ac)
 
-## [2026-04-25 07:02] ingest | repo:marcusrbrown/ha-config
+## [2026-04-25 07:03] ingest | repo:marcusrbrown/infra
 
-Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/ha-config
+Sources: https://github.com/marcusrbrown/infra

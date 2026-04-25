@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/ha-config"
 created: 2025-06-18
-updated: 2026-04-25
+updated: 2026-04-24
 sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: 83784bc3a212c10cd358be4da9425e46aa6e90f0
@@ -13,9 +13,6 @@ sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: f7ec8038cca071e36848057d00d1c165cef5f357
     accessed: 2026-04-24
-  - url: https://github.com/marcusrbrown/ha-config
-    sha: f7ec8038cca071e36848057d00d1c165cef5f357
-    accessed: 2026-04-25
 tags: [home-assistant, home-assistant-config, yaml, esphome, iot]
 aliases: [ha-config]
 related:
@@ -35,7 +32,7 @@ Marcus R. Brown's [[home-assistant]] configuration repository. Public, version-c
 - **Purpose:** Version-controlled Home Assistant configuration
 - **Default branch:** `main`
 - **Created:** 2023-07-25
-- **Last push:** 2026-04-23 (branch push; last main commit 2026-04-22)
+- **Last push:** 2026-04-22
 - **HA version tracked:** 2025.6.3 (pinned in `.HA_VERSION`)
 - **Topics:** `home-assistant`, `home-assistant-config`
 - **Open issues:** 1 (#427 — Dependency Dashboard)
@@ -165,4 +162,3 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | 2025-06-18 | `83784bc` | Initial survey — 11 packages, 10 custom components, Prettier 3.8.2, Renovate `#4.5.7`, pre-commit 4.5.1 |
 | 2026-04-18 | `54a6727` | Prettier 3.8.3, Renovate `#4.5.8`, bfra-me/.github v4.16.6, pre-commit-hooks v6.0.0 |
 | 2026-04-24 | `f7ec803` | pre-commit 4.6.0, bfra-me/.github v4.16.8, Renovate trigger model expanded (workflow_run, push to non-main) |
-| 2026-04-25 | `f7ec803` | No change — SHA identical to prior survey. 0 open PRs, 1 open issue (#427). All configs confirmed stable. |
