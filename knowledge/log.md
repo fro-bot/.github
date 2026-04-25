@@ -627,3 +627,25 @@ Sources: https://github.com/marcusrbrown/infra (SHA 9306b9bef8e6d3c6f821ee0c4df9
 Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/infra
+
+## [2026-04-25 00:00] ingest | marcusrbrown/tokentoilet
+
+Re-survey of `marcusrbrown/tokentoilet` (SHA `97e96c1`, unchanged from 2026-04-24). Updated repo page `marcusrbrown--tokentoilet.md` with new source entry and survey history row. Bumped `updated` date on topic page `web3-defi.md`. Index unchanged (both pages already cataloged).
+
+Delta from prior survey (SHA `97e96c1`, 2026-04-24):
+
+- SHA unchanged (`97e96c1`): latest commit is `chore(deps): update fro-bot/agent to v0.41.4 (#934)` from 2026-04-22
+- Recent commits since last survey are exclusively Renovate dependency bumps: `bfra-me/.github` v4.16.8 (#933), `pnpm/action-setup` v6.0.3 (#931), `actions/setup-node` v6.4.0 (#927), TypeScript v6.0.3 (#926) — all already captured in prior survey
+- Open issues: 25 → 26
+- Open PRs: 5 (all Renovate) — same major-version PRs pending: wagmi v3 (#837), lucide-react v1 (#835), `@eslint-react/eslint-plugin` v4 (#909), `@bfra.me/eslint-config` ^0.51.0 (#897). New: lockfile maintenance (#929)
+- Repository structure, application code, CI workflows, Fro Bot integration, Vercel deployment, and conventions all identical to prior survey
+- **Fro Bot workflow present** — `fro-bot/agent@v0.41.4`, no change
+- No contradictions with prior ingest
+
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 97e96c1425a9232e5b783c680cade8505e1c8de1)
+
+## [2026-04-25 06:50] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
