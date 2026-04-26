@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/esphome.life"
 created: 2026-04-18
-updated: 2026-04-23
+updated: 2026-04-26
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
     accessed: 2026-04-23
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
+    accessed: 2026-04-26
 tags: [esphome, iot, esp32, bluetooth-proxy, home-assistant, firmware, github-pages]
 aliases: [esphome-life, esphome.life]
 related:
@@ -120,6 +123,29 @@ The site content (`static/index.md`) is minimal — the upstream template placeh
 
 A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage.
 
+## Ecosystem Version Drift
+
+As of 2026-04-26, this repo lags behind the broader Marcus ecosystem on several shared dependencies:
+
+| Dependency | esphome.life | Ecosystem latest | Delta |
+| --- | --- | --- | --- |
+| `actions/checkout` | v5.0.1 (`93cb6efe`) | v6.x | Major version behind |
+| `actions/upload-artifact` | v5.0.0 (`330a01c4`) | v5.x+ | Minor/SHA drift |
+| `bfra-me/.github` (reusable workflows) | v4.4.0 (`59d10aff`) | v4.16.8+ | 12+ minor versions behind |
+| Renovate preset | `#4.5.1` | `#4.5.8` | 7 patch versions behind |
+| Prettier (postUpgradeTasks) | 3.8.1 | 3.8.3 | 2 patch versions behind |
+
+Issue [#348](https://github.com/marcusrbrown/esphome.life/issues/348) ("Action Required: Fix Renovate Configuration", 2026-03-12) may explain stalled dependency updates — Renovate appears misconfigured or stuck, preventing the usual automated bumps that keep other Marcus repos current.
+
+## Open Issues
+
+| # | Title | Opened | Notes |
+| --- | --- | --- | --- |
+| [#348](https://github.com/marcusrbrown/esphome.life/issues/348) | Action Required: Fix Renovate Configuration | 2026-03-12 | Renovate config issue; likely blocking dependency updates |
+| [#298](https://github.com/marcusrbrown/esphome.life/issues/298) | Community reference (BPPLUG/WIFI/WP/2) | 2025-12-10 | Community note, not actionable |
+| [#26](https://github.com/marcusrbrown/esphome.life/issues/26) | Dependency Dashboard | 2024-02-22 | Renovate Dashboard |
+| [#8](https://github.com/marcusrbrown/esphome.life/issues/8) | Uplift `esphome-life` | 2023-06-18 | Long-standing modernization request |
+
 ## Notable Patterns
 
 - **Package-based device configs:** Thin per-device YAML files pull shared configuration from a `packages/` directory via `github://` package imports. This is the standard ESPHome pattern for managing multiple devices with a shared base.
@@ -135,3 +161,4 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 | 2026-04-18 | `83784bc` (ha-config survey, cross-reference) | Initial cross-reference from [[marcusrbrown--ha-config]] survey |
 | 2026-04-21 | `e398c2e` | Full survey; documented device configs, CI pipeline, devcontainer, Probot/Renovate settings |
 | 2026-04-23 | `e398c2e` | Re-survey; no content changes detected — repo unchanged since 2026-03-12 |
+| 2026-04-26 | `e398c2e` | Re-survey; SHA unchanged. Documented ecosystem version drift table, open issues (#348 Renovate config broken), 0 open PRs. Renovate stall explains why shared deps haven't bumped. Still no Fro Bot agent workflow. |
