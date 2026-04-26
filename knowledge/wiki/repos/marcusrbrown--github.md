@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/.github"
 created: 2025-06-18
-updated: 2026-04-26
+updated: 2026-04-25
 sources:
   - url: https://github.com/marcusrbrown/.github
     sha: be01029971bc8b50fbd2b660fadc7341da26e03c
@@ -22,9 +22,6 @@ sources:
   - url: https://github.com/marcusrbrown/.github
     sha: 4e4fd28e9cc19f22324cd3037bbd53a9e2c0cf14
     accessed: 2026-04-25
-  - url: https://github.com/marcusrbrown/.github
-    sha: 99906ef
-    accessed: 2026-04-26
 tags: [github, repository-settings, probot, community-health, prettier, renovate]
 aliases: [marcusrbrown-dotgithub]
 related:
@@ -46,7 +43,7 @@ Marcus R. Brown's personal `.github` repository. Provides GitHub defaults, commu
 - **Purpose:** GitHub defaults and community health files for `marcusrbrown` repositories
 - **Default branch:** `main`
 - **Created:** 2020-10-30
-- **Last push:** 2026-04-25
+- **Last push:** 2026-04-23
 - **Topics:** `github`, `repository`, `settings`
 - **License:** MIT
 - **Language:** None (YAML/Markdown only, no application code)
@@ -154,7 +151,7 @@ No TypeScript checking, no tests, no additional linting. Appropriate for a YAML/
 
 ### Renovate Workflow (renovate.yaml)
 
-Triggers on: PR events (opened, reopened, synchronize, edited), issue edits (non-bot actors only), push to non-main branches, `workflow_call`, `workflow_dispatch`, and `workflow_run` on completion of the `main` workflow. The `workflow_run` trigger gates Renovate runs to fire after successful CI — prevents Renovate from running against a broken main. Schedule trigger re-enabled at `15 */4 * * *` (every 4 hours at :15 past the hour).
+Triggers on: PR events (opened, reopened, synchronize, edited), issue edits (non-bot actors only), push to non-main branches, `workflow_call`, `workflow_dispatch`, and `workflow_run` on completion of the `main` workflow. The `workflow_run` trigger gates Renovate runs to fire after successful CI — prevents Renovate from running against a broken main. The hourly schedule trigger is commented out.
 
 Includes a conditional `if` gate: skips the job if the event is an issue edit by a bot actor, or if a `workflow_run` event didn't succeed.
 
@@ -196,7 +193,6 @@ As a `.github` repo, these files serve as **defaults** for all `marcusrbrown` re
 | 2026-04-23 | `4e4fd28` | Prettier 3.8.1→3.8.3, Renovate preset #4.5.1→#4.5.8, bfra-me/.github v4.4.0→v4.16.8, renovate.yaml restructured (PR+issue triggers, schedule commented out, reusable+conditional logic), prCreation set to immediate, .prettierrc.yaml expanded with .devcontainer override, label count 48 |
 | 2026-04-24 | `4e4fd28` | Re-survey — no change since 2026-04-23; repo content identical at same SHA |
 | 2026-04-25 | `4e4fd28` | Re-survey — no change since 2026-04-24; repo content identical at same SHA |
-| 2026-04-26 | `99906ef` | Renovate schedule trigger re-enabled at `15 */4 * * *` (every 4 hours at :15), replacing the commented-out hourly cron |
 
 ## Notable Patterns
 
@@ -206,4 +202,4 @@ As a `.github` repo, these files serve as **defaults** for all `marcusrbrown` re
 - **Template repo for personal settings:** This repo's `common-settings.yaml` is the source of truth for repository governance across Marcus's personal GitHub account.
 - **SHA-pinned actions:** Both `actions/checkout` and `creyD/prettier_action` are pinned by full commit SHA with version comments — consistent with the broader `@bfra.me` ecosystem standard.
 - **Renovate/CI ordering:** `renovate.yaml` triggers on `workflow_run` completion of `main` — Renovate never runs against a broken CI baseline.
-- **Renovate hybrid trigger model:** The `renovate.yaml` combines event-driven triggers (PR events, issue edits, push, workflow_run) with a 4-hour cron schedule (`15 */4 * * *`). The schedule was initially commented out (2026-04-23) then re-enabled (2026-04-25), landing on a 4-hour cadence rather than the original hourly frequency — a pragmatic balance between responsiveness and CI cost.
+- **Renovate event-driven trigger model:** The renovated `renovate.yaml` uses a rich trigger model (PR events, issue edits, push, workflow_run) rather than a fixed schedule. The previous hourly cron schedule is now commented out, shifting entirely to event-driven execution. This avoids unnecessary runs while ensuring timely updates.
