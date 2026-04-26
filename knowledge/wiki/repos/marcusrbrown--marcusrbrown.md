@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/marcusrbrown"
 created: 2026-04-18
-updated: 2026-04-24
+updated: 2026-04-26
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: af78e68d510b24152531f7fdafe9bff35a58f071
+    accessed: 2026-04-26
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: af78e68d510b24152531f7fdafe9bff35a58f071
     accessed: 2026-04-24
@@ -161,9 +164,8 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | # | Title | Author | Created | Notes |
 | --- | --- | --- | --- | --- |
 | #895 | Action Required: Fix Renovate Configuration | mrbro-bot[bot] | 2026-03-12 | **Blocks all Renovate PRs** — regex parse error in `marcusrbrown/renovate-config` preset resolution |
-| #284 | Dependency Dashboard | mrbro-bot[bot] | 2024-02-22 | Standard Renovate dashboard issue |
 
-**Renovate is stalled.** Issue #895 reports an invalid regex in the Renovate preset resolution chain, preventing all dependency update PRs since 2026-03-12. The error references `marcusrbrown/renovate-config` with a malformed RE2 expression. This means dependencies have not been updated for over 6 weeks and the profile update pipeline's 6-hour schedule is the only active automation.
+**Renovate is stalled.** Issue #895 reports an invalid regex in the Renovate preset resolution chain, preventing all dependency update PRs since 2026-03-12. The error references `marcusrbrown/renovate-config` with a malformed RE2 expression. As of 2026-04-26, dependencies have not been updated for 45+ days. The Dependency Dashboard issue (#284) is no longer visible in the open issues list — it may have been auto-closed or superseded by #895. The profile update pipeline's 6-hour schedule remains the only active automation. Zero open PRs confirms complete Renovate inactivity.
 
 ## Notable Patterns
 
@@ -177,14 +179,17 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 
 ## Version Comparison (vs. Ecosystem)
 
-| Dependency | This Repo | Ecosystem Latest |
-| --- | --- | --- |
-| `marcusrbrown/renovate-config` | `#4.5.1` | `#4.5.8` |
-| `bfra-me/.github` | v4.4.0 | v4.16.8 |
-| `pnpm` | 10.31.0 | 10.33.0 |
-| `Prettier` | 3.8.1 | 3.8.3 |
-| `@bfra.me/eslint-config` | 0.50.1 | ≥0.51.0 |
-| `Node.js` | 24.14.0 | 24.15.0 |
+| Dependency | This Repo | Ecosystem Latest | Drift |
+| --- | --- | --- | --- |
+| `marcusrbrown/renovate-config` | `#4.5.1` | `#4.5.8` | 7 patch versions behind |
+| `bfra-me/.github` | v4.4.0 | v4.16.8 | 12+ minor versions behind |
+| `pnpm` | 10.31.0 | 10.33.1 | 2 minor + 1 patch behind |
+| `Prettier` | 3.8.1 | 3.8.3 | 2 patch versions behind |
+| `@bfra.me/eslint-config` | 0.50.1 | ≥0.51.0 | At least 1 minor behind |
+| `Node.js` | 24.14.0 | 24.15.0 | 1 minor behind |
+| `fro-bot/agent` | **absent** | v0.42.1 | No workflow at all |
+
+Drift is accelerating — repo has been frozen at SHA `af78e68` since 2026-03-12 (45+ days). Every other Marcus repo has received regular Renovate bumps during this period.
 
 ## Survey History
 
@@ -192,3 +197,4 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | --- | --- | --- |
 | 2026-04-18 | `af78e68` | Initial survey |
 | 2026-04-24 | `af78e68` | SHA unchanged; documented Renovate stall (issue #895), dependency drift vs ecosystem, fro-bot collaborator confirmed, open work items added |
+| 2026-04-26 | `af78e68` | SHA unchanged (45+ days frozen); Renovate still stalled (#895 open); dependency drift worsened vs ecosystem (fro-bot/agent now v0.42.1, pnpm 10.33.1); 0 open PRs, 1 open issue (#895); confirmed fro-bot collaborator (write); still no Fro Bot agent workflow |
