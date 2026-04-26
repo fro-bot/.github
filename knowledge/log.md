@@ -760,31 +760,22 @@ Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
 
-## [2026-04-26 12:00] ingest | marcusrbrown/esphome.life
+## [2026-04-26 07:14] ingest | marcusrbrown/extend-vscode
 
-Re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, unchanged from 2026-03-12). Updated repo page `marcusrbrown--esphome-life.md` with ecosystem version drift analysis and open issues inventory. Updated `index.md` description. No new topic/entity/comparison pages warranted.
+Incremental re-survey of `marcusrbrown/extend-vscode` (SHA `b457a34f`, up from `342872f8`). Updated repo page `marcusrbrown--extend-vscode.md` with new source entry and delta log. Bumped `updated` date on topic page `vscode-extensions.md`. Index unchanged (both pages already cataloged).
 
-Delta from prior survey (SHA `e398c2e`, 2026-04-23):
+Delta from prior survey (SHA `342872f8`, 2026-04-25):
 
-- SHA unchanged (`e398c2e`): repo has not received a commit in 45+ days (last push 2026-03-12)
-- **Ecosystem version drift documented:** `actions/checkout` stuck at v5.0.1 (ecosystem at v6.x), `bfra-me/.github` reusable workflows at v4.4.0 (ecosystem at v4.16.8+), Renovate preset at `#4.5.1` (ecosystem at `#4.5.8`), Prettier at 3.8.1 (ecosystem at 3.8.3)
-- **Renovate appears broken:** Issue #348 "Action Required: Fix Renovate Configuration" (2026-03-12) likely explains why automated dependency bumps have stalled — other Marcus repos receive regular Renovate PRs, this one has had none since March
-- Open issues: 4 (#348 Renovate config, #298 community reference, #26 Dependency Dashboard, #8 Uplift request)
-- Open PRs: 0
-- 1 star, 2 subscribers, 0 forks
+- One Renovate dependency bump merged, breaking a 5-day dormant streak: `typescript-eslint` → v8.59.0 (#481, 2026-04-25)
+- All other dependencies, repository structure, architecture, workflows, publishing pipeline, and Probot settings unchanged
+- Same 4 open Renovate PRs (#466–#469) pending merge
+- Open issues: 5 (#142, #162, #317–#319)
 - **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
-- No contradictions with prior ingest — all prior observations confirmed
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA b457a34f032149b03dddaca99eacca14eac91367)
 
-## [2026-04-26 12:00] ingest | repo:marcusrbrown/esphome.life
+## [2026-04-26 07:16] ingest | repo:marcusrbrown/extend-vscode
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/esphome.life
-
-## [2026-04-26 07:15] ingest | repo:marcusrbrown/esphome.life
-
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/esphome.life
+Sources: https://github.com/marcusrbrown/extend-vscode
