@@ -19,7 +19,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--opencode-copilot-delegate]] — OpenCode plugin: delegate tasks to GitHub Copilot CLI as background subprocesses with async completion notifications
 - [[marcusrbrown--systematic]] — OpenCode plugin: structured engineering workflows (45 skills, 50 agents), npm `@fro.bot/systematic`, Bun + Biome + semantic-release
 - [[marcusrbrown--tokentoilet]] — Web3 DeFi token disposal app (Next.js 16, React 19, TypeScript 6, Wagmi v2, Reown AppKit, Tailwind CSS v4, Vercel)
-- [[marcusrbrown--vbs]] — Star Trek chronological viewing guide (TypeScript, Vite, D3.js, GitHub Pages, functional factory architecture)
+- [[marcusrbrown--vbs]] — marcusrbrown/vbs
 
 ## Topics
 

@@ -734,23 +734,28 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-04-26 12:00] ingest | marcusrbrown/vbs
+## [2026-04-26 12:00] ingest | marcusrbrown/.github
 
-Incremental re-survey of `marcusrbrown/vbs` (SHA `de10b9b`, 2026-04-26). Updated repo page `marcusrbrown--vbs.md` with new source entry, survey history row, and delta log. Updated `index.md` description for the vbs entry. No new topic/entity/comparison pages warranted — delta is exclusively dependency maintenance.
+Re-survey of `marcusrbrown/.github` (SHA `99906ef`, up from `4e4fd28`). Updated repo page `marcusrbrown--github.md`. No new topic/entity/comparison pages warranted.
 
-Delta from prior survey (SHA `dd10e05`, 2026-04-25):
+Delta from prior survey (SHA `4e4fd28`, 2026-04-25):
 
-- **`fro-bot/agent` bumped:** v0.41.4 → v0.42.1 (SHA `6c45d8ce66b0b69f1b80b23f283ed455deb59517`; PR #525)
-- **pnpm bumped:** 10.33.0 → 10.33.1 (PR #524)
-- Open issues: 43 (includes PRs). Daily Autohealing Reports still running consistently (latest: #526)
-- Open PRs: 5 unchanged (4 Star Trek data updates, 1 Copilot feature PR)
-- Repository structure, architecture, CI workflows, Renovate config, Probot settings all unchanged
-- No contradictions with prior ingest
+- **Renovate schedule re-enabled:** Two commits (#361, #362) re-enabled the cron schedule trigger and set it to `15 */4 * * *` (every 4 hours at :15). Previously the schedule was commented out in favor of pure event-driven execution.
+- Only file changed: `.github/workflows/renovate.yaml` (+2 / -2 lines)
+- 2 open issues (#37, #214), 0 open PRs (unchanged)
+- 3 stars, 2 watchers (unchanged)
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
 
-Sources: https://github.com/marcusrbrown/vbs (SHA de10b9b)
+Sources: https://github.com/marcusrbrown/.github (SHA 99906ef)
 
-## [2026-04-26 07:09] ingest | repo:marcusrbrown/vbs
+## [2026-04-26 12:00] ingest | repo:marcusrbrown/.github
 
-Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/vbs
+Sources: https://github.com/marcusrbrown/.github
+
+## [2026-04-26 07:11] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
