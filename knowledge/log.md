@@ -760,54 +760,52 @@ Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
 
-## [2026-04-26 12:00] ingest | marcusrbrown/esphome.life
+## [2026-04-26 07:14] ingest | marcusrbrown/extend-vscode
 
-Re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, unchanged from 2026-03-12). Updated repo page `marcusrbrown--esphome-life.md` with ecosystem version drift analysis and open issues inventory. Updated `index.md` description. No new topic/entity/comparison pages warranted.
+Incremental re-survey of `marcusrbrown/extend-vscode` (SHA `b457a34f`, up from `342872f8`). Updated repo page `marcusrbrown--extend-vscode.md` with new source entry and delta log. Bumped `updated` date on topic page `vscode-extensions.md`. Index unchanged (both pages already cataloged).
 
-Delta from prior survey (SHA `e398c2e`, 2026-04-23):
+Delta from prior survey (SHA `342872f8`, 2026-04-25):
 
-- SHA unchanged (`e398c2e`): repo has not received a commit in 45+ days (last push 2026-03-12)
-- **Ecosystem version drift documented:** `actions/checkout` stuck at v5.0.1 (ecosystem at v6.x), `bfra-me/.github` reusable workflows at v4.4.0 (ecosystem at v4.16.8+), Renovate preset at `#4.5.1` (ecosystem at `#4.5.8`), Prettier at 3.8.1 (ecosystem at 3.8.3)
-- **Renovate appears broken:** Issue #348 "Action Required: Fix Renovate Configuration" (2026-03-12) likely explains why automated dependency bumps have stalled — other Marcus repos receive regular Renovate PRs, this one has had none since March
-- Open issues: 4 (#348 Renovate config, #298 community reference, #26 Dependency Dashboard, #8 Uplift request)
-- Open PRs: 0
-- 1 star, 2 subscribers, 0 forks
+- One Renovate dependency bump merged, breaking a 5-day dormant streak: `typescript-eslint` → v8.59.0 (#481, 2026-04-25)
+- All other dependencies, repository structure, architecture, workflows, publishing pipeline, and Probot settings unchanged
+- Same 4 open Renovate PRs (#466–#469) pending merge
+- Open issues: 5 (#142, #162, #317–#319)
 - **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
-- No contradictions with prior ingest — all prior observations confirmed
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA b457a34f032149b03dddaca99eacca14eac91367)
 
-## [2026-04-26 12:00] ingest | repo:marcusrbrown/esphome.life
+## [2026-04-26 07:16] ingest | repo:marcusrbrown/extend-vscode
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/esphome.life
+Sources: https://github.com/marcusrbrown/extend-vscode
 
-## [2026-04-26 07:15] ingest | repo:marcusrbrown/esphome.life
+## [2026-04-26 12:00] ingest | marcusrbrown/infra
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+Incremental re-survey of `marcusrbrown/infra` (SHA `cd3bb16`, up from `9306b9b`). Updated repo page `marcusrbrown--infra.md` and topic page `github-actions-ci.md`. Index unchanged (both pages already cataloged).
 
-Sources: https://github.com/marcusrbrown/esphome.life
+Delta from prior survey (SHA `9306b9b`, 2026-04-25):
 
-## [2026-04-26 12:00] ingest | marcusrbrown/ha-config
-
-Re-survey of `marcusrbrown/ha-config` (SHA `f7ec803`, unchanged from 2026-04-24). Updated repo page `marcusrbrown--ha-config.md` with new source entry and survey history row. No new topic/entity/comparison pages warranted — all existing pages remain accurate.
-
-Delta from prior survey (SHA `f7ec803`, 2026-04-24):
-
-- SHA unchanged (`f7ec803`): latest commit on main is `chore(deps): update bfra-me/.github to v4.16.8 (#765)` from 2026-04-22
-- Open PRs: 0 → 1 (#766 — asyncio-mqtt v0.16.2, Renovate patch)
-- Open issues: unchanged at 1 (#427 Dependency Dashboard)
-- All 15 recent commits remain exclusively Renovate dependency bumps — no structural or config changes
-- Repository structure, packages (11), custom components (10), HA version (2025.6.3), Python deps (esphome 2025.12.7, yamllint 1.38.0), pre-commit (v4.6.0), Prettier (3.8.3), Renovate preset (#4.5.8) all unchanged
-- bfra-me/.github reusable workflows at v4.16.8, actions/checkout at v6.0.2 — current with ecosystem
-- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+- **Fro Bot agent bumped:** v0.41.4 → v0.42.1 (SHA `6c45d8ce66b0b69f1b80b23f283ed455deb59517`, #183)
+- **New autohealing category 8: Upstream Modernization Watch** (#182, 2026-04-25) — Sunday-only scan of pinned upstreams (CLIProxyAPI, Caddy, fro-bot/agent, bfra-me/.github) for config/feature adoption opportunities. Claude-only filter for CLIProxyAPI. Action policy: low-risk mechanical changes get draft PR, workflow/config changes documented in tracking issue only. Renovate still owns version bumps.
+- **CLIProxy container healthcheck switched to `/healthz`** (#181, 2026-04-25) — Docker healthcheck now uses `wget --spider http://localhost:8317/healthz` with 30s interval, 5s timeout, 3 retries, 10s start period
+- **CLI version:** 0.4.5 → 0.4.6 (Changesets release #180)
+- **CLIProxyAPI Docker tag:** v6.9.35 → v6.9.38 (#179, Renovate digest rotation)
+- **Open issues:** 5 → 4 (autohealing report #184 added, prior reports closed)
+- **Open PRs:** 0 (unchanged)
+- Repository structure, apps, deploy pipeline, conventions, branch protection all unchanged
 - No contradictions with prior ingest
 
-Sources: https://github.com/marcusrbrown/ha-config (SHA f7ec8038cca071e36848057d00d1c165cef5f357)
+Sources: https://github.com/marcusrbrown/infra (SHA cd3bb1631e67563c58df099feda5c53ea2e78d18)
 
-## [2026-04-26 07:19] ingest | repo:marcusrbrown/ha-config
+## [2026-04-26 12:00] ingest | repo:marcusrbrown/infra
 
-Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/ha-config
+Sources: https://github.com/marcusrbrown/infra
+
+## [2026-04-26 07:21] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra
