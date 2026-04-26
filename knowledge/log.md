@@ -734,42 +734,26 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-04-26 12:00] ingest | marcusrbrown/vbs
+## [2026-04-26 07:10] ingest | marcusrbrown/.dotfiles
 
-Incremental re-survey of `marcusrbrown/vbs` (SHA `de10b9b`, 2026-04-26). Updated repo page `marcusrbrown--vbs.md` with new source entry, survey history row, and delta log. Updated `index.md` description for the vbs entry. No new topic/entity/comparison pages warranted — delta is exclusively dependency maintenance.
+Incremental re-survey of `marcusrbrown/.dotfiles` (SHA `0cd5bf8`, 2026-04-26). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
 
-Delta from prior survey (SHA `dd10e05`, 2026-04-25):
+Delta from prior survey (SHA `ae026c1`, 2026-04-22), 21 commits:
 
-- **`fro-bot/agent` bumped:** v0.41.4 → v0.42.1 (SHA `6c45d8ce66b0b69f1b80b23f283ed455deb59517`; PR #525)
-- **pnpm bumped:** 10.33.0 → 10.33.1 (PR #524)
-- Open issues: 43 (includes PRs). Daily Autohealing Reports still running consistently (latest: #526)
-- Open PRs: 5 unchanged (4 Star Trek data updates, 1 Copilot feature PR)
-- Repository structure, architecture, CI workflows, Renovate config, Probot settings all unchanged
-- No contradictions with prior ingest
+- **Fro Bot agent:** v0.41.3 → v0.42.1 (PR #1488)
+- **Default OpenCode model:** Now `opencode-go/kimi-k2.6` (Kimi K2.6 via opencode-go provider — new default)
+- **⚠ Model routing reversal:** Prior survey stated all models migrated to Copilot-hosted. Now **partially reversed** — `metis`, `librarian`, `unspecified-low`, `unspecified-high` categories, and magic-context historian/dreamer all migrated back to direct `anthropic/*` provider. Current strategy is hybrid: Copilot-hosted for GPT/Gemini/Grok, direct Anthropic for Claude models
+- **Sisyphus builder agent disabled** (PR #1484: "drop dead OMO agent overrides for disabled primaries")
+- **Plugin bumps:** oh-my-openagent 3.17.4 → 3.17.5, magic-context 0.13.0 → 0.15.3, aft renamed `aft-opencode` → `aft` 0.14.0 → 0.15.5, anthropic-auth 1.7.4 → 1.7.5
+- **Magic-context gains:** `auto_search`, `git_commit_indexing` (365 days), `memory.injection_budget_tokens: 6000`. History budget increased 10% → 15%, auto-drop age doubled 15 → 30, Opus token threshold reduced 88K → 80K
+- **Mise tool bumps:** npm 11.12.1 → 11.13.0, pnpm 10.33.0 → 10.33.1, puppeteer 24.41.0 → 24.42.0, opencode-ai 1.14.18 → 1.14.25 (Renovate re-enabled)
+- **Open issues:** 19 → 5 (significant backlog cleanup)
+- No structural changes to repo layout, shell config, devcontainer, or Probot settings
 
-Sources: https://github.com/marcusrbrown/vbs (SHA de10b9b)
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA 0cd5bf8c77c7d0aef1d6d65b3e505cd32c89b42e)
 
-## [2026-04-26 07:09] ingest | repo:marcusrbrown/vbs
+## [2026-04-26 07:14] ingest | repo:marcusrbrown/.dotfiles
 
-Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/vbs
-
-## [2026-04-26 12:00] ingest | marcusrbrown/containers
-
-Incremental re-survey of `marcusrbrown/containers` (SHA `b2669956`, 2026-04-26). Updated repo page `marcusrbrown--containers.md` and topic page `github-actions-ci.md`. Index unchanged (page already cataloged). No new topic/entity/comparison pages warranted — delta is a single agent version bump.
-
-Delta from prior survey (SHA `1b782ff8`, 2026-04-22):
-
-- **`fro-bot/agent` bumped:** v0.41.0 → v0.42.1 (SHA `6c45d8ce66b0b69f1b80b23f283ed455deb59517`; PR #591, merged 2026-04-26)
-- Open issues: 8. Open PRs: 3 (all Renovate).
-- Repository structure, Python automation, AI subsystem, template system, container definitions, CI workflows, Renovate config (`#4.5.0`), Probot settings all unchanged
-- No contradictions with prior ingest
-
-Sources: https://github.com/marcusrbrown/containers (SHA b266995653662eb2676012b150efe55ff508c331)
-
-## [2026-04-26 07:13] ingest | repo:marcusrbrown/containers
-
-Surveyed marcusrbrown/containers and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/containers
+Sources: https://github.com/marcusrbrown/.dotfiles
