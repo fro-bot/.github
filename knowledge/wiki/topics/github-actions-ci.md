@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-04-24
+updated: 2026-04-26
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - marcusrbrown--containers
