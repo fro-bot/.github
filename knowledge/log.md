@@ -734,78 +734,113 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-04-26 07:10] ingest | marcusrbrown/.dotfiles
+## [2026-04-26 12:00] ingest | marcusrbrown/.github
 
-Incremental re-survey of `marcusrbrown/.dotfiles` (SHA `0cd5bf8`, 2026-04-26). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
+Re-survey of `marcusrbrown/.github` (SHA `99906ef`, up from `4e4fd28`). Updated repo page `marcusrbrown--github.md`. No new topic/entity/comparison pages warranted.
 
-Delta from prior survey (SHA `ae026c1`, 2026-04-22), 21 commits:
+Delta from prior survey (SHA `4e4fd28`, 2026-04-25):
 
-- **Fro Bot agent:** v0.41.3 → v0.42.1 (PR #1488)
-- **Default OpenCode model:** Now `opencode-go/kimi-k2.6` (Kimi K2.6 via opencode-go provider — new default)
-- **⚠ Model routing reversal:** Prior survey stated all models migrated to Copilot-hosted. Now **partially reversed** — `metis`, `librarian`, `unspecified-low`, `unspecified-high` categories, and magic-context historian/dreamer all migrated back to direct `anthropic/*` provider. Current strategy is hybrid: Copilot-hosted for GPT/Gemini/Grok, direct Anthropic for Claude models
-- **Sisyphus builder agent disabled** (PR #1484: "drop dead OMO agent overrides for disabled primaries")
-- **Plugin bumps:** oh-my-openagent 3.17.4 → 3.17.5, magic-context 0.13.0 → 0.15.3, aft renamed `aft-opencode` → `aft` 0.14.0 → 0.15.5, anthropic-auth 1.7.4 → 1.7.5
-- **Magic-context gains:** `auto_search`, `git_commit_indexing` (365 days), `memory.injection_budget_tokens: 6000`. History budget increased 10% → 15%, auto-drop age doubled 15 → 30, Opus token threshold reduced 88K → 80K
-- **Mise tool bumps:** npm 11.12.1 → 11.13.0, pnpm 10.33.0 → 10.33.1, puppeteer 24.41.0 → 24.42.0, opencode-ai 1.14.18 → 1.14.25 (Renovate re-enabled)
-- **Open issues:** 19 → 5 (significant backlog cleanup)
-- No structural changes to repo layout, shell config, devcontainer, or Probot settings
+- **Renovate schedule re-enabled:** Two commits (#361, #362) re-enabled the cron schedule trigger and set it to `15 */4 * * *` (every 4 hours at :15). Previously the schedule was commented out in favor of pure event-driven execution.
+- Only file changed: `.github/workflows/renovate.yaml` (+2 / -2 lines)
+- 2 open issues (#37, #214), 0 open PRs (unchanged)
+- 3 stars, 2 watchers (unchanged)
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
 
-Sources: https://github.com/marcusrbrown/.dotfiles (SHA 0cd5bf8c77c7d0aef1d6d65b3e505cd32c89b42e)
+Sources: https://github.com/marcusrbrown/.github (SHA 99906ef)
 
-## [2026-04-26 07:14] ingest | repo:marcusrbrown/.dotfiles
+## [2026-04-26 12:00] ingest | repo:marcusrbrown/.github
 
-Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/.dotfiles
+Sources: https://github.com/marcusrbrown/.github
 
-## [2026-04-26 12:00] ingest | marcusrbrown/gpt
+## [2026-04-26 07:11] ingest | repo:marcusrbrown/.github
 
-Incremental re-survey of `marcusrbrown/gpt` (SHA `c7980be`, 2026-04-26). Updated repo page `marcusrbrown--gpt.md`. Index unchanged (page already cataloged). No new topic/entity/comparison pages warranted — delta is exclusively Renovate dependency bumps.
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
-Delta from prior survey (SHA `0bb8eed`, 2026-04-24), 8 commits (all `mrbro-bot[bot]` / Renovate):
+Sources: https://github.com/marcusrbrown/.github
 
-- **Fro Bot agent bumped:** v0.41.4 → v0.42.1 (SHA `6c45d8ce66b0b69f1b80b23f283ed455deb59517`)
-- **Vite:** 8.0.9 → 8.0.10
-- **Vitest:** 4.1.4 → 4.1.5
-- **TailwindCSS:** 4.2.2 → 4.2.4
-- **pnpm:** 10.33.0 → 10.33.1
-- **react-router-dom:** 7.14.1 → 7.14.2
-- **LangChain.js monorepo:** `langchain` 1.3.3 → 1.3.4, `@langchain/anthropic` 1.3.26 → 1.3.27, `@langchain/core` → 1.1.41
-- **@typescript/native-preview:** updated to 7.0.0-dev.20260422.1
-- New open PR #2345 from `fro-bot`: code style enforcement (error_ naming convention, @/ import alias)
-- Open issues unchanged at 30; open PRs: 3 (#2165 HeroUI v3, #2320 eslint-plugin-react-hooks, #2345 style fixes)
-- Repository structure, application code, CI workflows (except agent version), and conventions all unchanged
+## [2026-04-26 07:14] ingest | marcusrbrown/extend-vscode
+
+Incremental re-survey of `marcusrbrown/extend-vscode` (SHA `b457a34f`, up from `342872f8`). Updated repo page `marcusrbrown--extend-vscode.md` with new source entry and delta log. Bumped `updated` date on topic page `vscode-extensions.md`. Index unchanged (both pages already cataloged).
+
+Delta from prior survey (SHA `342872f8`, 2026-04-25):
+
+- One Renovate dependency bump merged, breaking a 5-day dormant streak: `typescript-eslint` → v8.59.0 (#481, 2026-04-25)
+- All other dependencies, repository structure, architecture, workflows, publishing pipeline, and Probot settings unchanged
+- Same 4 open Renovate PRs (#466–#469) pending merge
+- Open issues: 5 (#142, #162, #317–#319)
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA b457a34f032149b03dddaca99eacca14eac91367)
+
+## [2026-04-26 07:16] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-04-26 12:00] ingest | marcusrbrown/infra
+
+Incremental re-survey of `marcusrbrown/infra` (SHA `cd3bb16`, up from `9306b9b`). Updated repo page `marcusrbrown--infra.md` and topic page `github-actions-ci.md`. Index unchanged (both pages already cataloged).
+
+Delta from prior survey (SHA `9306b9b`, 2026-04-25):
+
+- **Fro Bot agent bumped:** v0.41.4 → v0.42.1 (SHA `6c45d8ce66b0b69f1b80b23f283ed455deb59517`, #183)
+- **New autohealing category 8: Upstream Modernization Watch** (#182, 2026-04-25) — Sunday-only scan of pinned upstreams (CLIProxyAPI, Caddy, fro-bot/agent, bfra-me/.github) for config/feature adoption opportunities. Claude-only filter for CLIProxyAPI. Action policy: low-risk mechanical changes get draft PR, workflow/config changes documented in tracking issue only. Renovate still owns version bumps.
+- **CLIProxy container healthcheck switched to `/healthz`** (#181, 2026-04-25) — Docker healthcheck now uses `wget --spider http://localhost:8317/healthz` with 30s interval, 5s timeout, 3 retries, 10s start period
+- **CLI version:** 0.4.5 → 0.4.6 (Changesets release #180)
+- **CLIProxyAPI Docker tag:** v6.9.35 → v6.9.38 (#179, Renovate digest rotation)
+- **Open issues:** 5 → 4 (autohealing report #184 added, prior reports closed)
+- **Open PRs:** 0 (unchanged)
+- Repository structure, apps, deploy pipeline, conventions, branch protection all unchanged
 - No contradictions with prior ingest
 
-Sources: https://github.com/marcusrbrown/gpt (SHA c7980be10467836397381e389720122562da3c33)
+Sources: https://github.com/marcusrbrown/infra (SHA cd3bb1631e67563c58df099feda5c53ea2e78d18)
 
-## [2026-04-26 07:18] ingest | repo:marcusrbrown/gpt
+## [2026-04-26 12:00] ingest | repo:marcusrbrown/infra
 
-Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/gpt
+Sources: https://github.com/marcusrbrown/infra
 
-## [2026-04-26 12:00] ingest | marcusrbrown/marcusrbrown
+## [2026-04-26 07:21] ingest | repo:marcusrbrown/infra
 
-Re-survey of `marcusrbrown/marcusrbrown` (SHA `af78e68`, unchanged since 2026-03-12). Updated repo page `marcusrbrown--marcusrbrown.md` with new source entry, updated ecosystem version comparison, and survey history row. Updated topic page `github-actions-ci.md` to add marcusrbrown/marcusrbrown to repos list and Fro Bot Agent table. Index unchanged (page already cataloged).
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
-Delta from prior survey (SHA `af78e68`, 2026-04-24):
+Sources: https://github.com/marcusrbrown/infra
 
-- SHA unchanged (`af78e68`): repository frozen for 45+ days since last commit `chore(deps): update marcusrbrown/renovate-config preset to v4.5.1 (#894)` on 2026-03-12
-- **Renovate still stalled:** Issue #895 remains open; 0 open PRs confirms complete Renovate inactivity
-- **Dependency drift worsened:** Ecosystem moved further ahead — fro-bot/agent now v0.42.1, pnpm 10.33.1, bfra-me/.github v4.16.8, Node.js 24.15.0. This repo remains pinned at older versions across the board.
-- Dependency Dashboard issue (#284) no longer visible in open issues — may have been auto-closed
-- Confirmed collaborators: `marcusrbrown` (admin), `fro-bot` (write)
-- All 5 workflows, Probot settings, Renovate config, profile generation pipeline, and repository structure unchanged
-- **Still no Fro Bot agent workflow** — follow-up PR recommended. `fro-bot` has write access, confirming readiness for onboarding
-- Profile update pipeline (update-profile.yaml) remains the only active automation — 6-hour schedule with `muesli/readme-scribe`, sponsor tracking, badge generation
+## [2026-04-26 12:00] ingest | marcusrbrown/mrbro.dev
 
-No contradictions with prior ingest — all findings confirmed at same SHA.
+Incremental re-survey of `marcusrbrown/mrbro.dev` (SHA `d8c0e43`, up from `51f5cab`). Updated repo page `marcusrbrown--mrbro-dev.md`. No new topic/entity/comparison pages warranted — existing `github-pages.md` and `github-actions-ci.md` remain accurate. Index unchanged (page already cataloged).
 
-Sources: https://github.com/marcusrbrown/marcusrbrown (SHA af78e68d510b24152531f7fdafe9bff35a58f071)
+Delta from prior survey (SHA `51f5cab`, 2026-04-18):
 
-## [2026-04-26 07:23] ingest | repo:marcusrbrown/marcusrbrown
+- **Fro Bot agent bumped:** v0.38.0 → v0.41.3 (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`), across both `fro-bot.yaml` and `fro-bot-autoheal.yaml`
+- **`opencode-config` secret added** to both fro-bot workflows (#135, 2026-04-19)
+- **Renovate config preset bumped:** `marcusrbrown/renovate-config#4.5.7` → `#4.5.8`
+- **bfra-me/.github reusable workflows:** updated to v4.16.7 (SHA `a518e036563790803ccbd2d90d6a1eb2e08d2fa1`)
+- **Security remediations via pnpm overrides:** `basic-ftp` 5.3.0 (#136), `lodash`/`lodash-es` >=4.18.0 (#109), `brace-expansion` >=5.0.5, `path-to-regexp` >=0.1.13, `picomatch` >=4.0.4. Vite upgraded to v7.3.2 for security fix (#121)
+- **actions/setup-node** updated to v6.4.0 (#137)
+- **No `.github/settings.yml`** — Probot Settings not configured, unusual for Marcus repos. Branch protection managed via scripts instead
+- **Open issues:** 39 (majority are Daily Autohealing Reports — multiple separate daily issues open rather than rolling single issue, possible autoheal behavioral drift)
+- **Open PRs:** 4 (#85/#87 stale security fixes from fro-bot/Copilot, #142 non-major deps from Renovate, #145 fro-bot hook rename)
+- **TypeScript** still at ^5.6.3 (sibling repos have moved to v6)
+- **package.json `repository.url`** incorrectly points to `marcusrbrown.github.io.git` — copy artifact from sibling repo
+- Added `marcusrbrown--marcusrbrown-github-io` as related repo in frontmatter (sibling React+Vite GitHub Pages site)
+- No contradictions with prior survey — all findings confirmed and extended
+- Recent commits are exclusively Renovate dependency bumps and security fixes; no structural changes
 
-Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA d8c0e43a471aa41b030890122d75450b5626b981)
 
-Sources: https://github.com/marcusrbrown/marcusrbrown
+## [2026-04-26 12:00] ingest | repo:marcusrbrown/mrbro.dev
+
+Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mrbro.dev
+
+## [2026-04-26 07:26] ingest | repo:marcusrbrown/mrbro.dev
+
+Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mrbro.dev

@@ -2,7 +2,7 @@
 type: entity
 title: mise
 created: 2026-04-18
-updated: 2026-04-26
+updated: 2026-04-22
 tags: [mise, tool-management, runtime-versions, asdf, dev-tools]
 aliases: [rtx]
 related:
@@ -20,13 +20,13 @@ Site: https://mise.jdx.dev/
 
 ### [[marcusrbrown--dotfiles]]
 
-Primary tool version manager. Config at `.config/mise/config.toml` manages 30+ tools including Node, Python, Rust, Go, Bun, Deno, Zig, and npm-based CLI tools. As of 2026-04-26 (SHA `0cd5bf8`):
+Primary tool version manager. Config at `.config/mise/config.toml` manages 30+ tools including Node, Python, Rust, Go, Bun, Deno, Zig, and npm-based CLI tools. As of 2026-04-22 (SHA `ae026c1`):
 
-**Language runtimes:** Node 24.15.0, Python 3.14.4, Rust 1.95.0, Go 1.26.2, Bun 1.3.13, Deno 2.7.13, Zig 0.15.2 (with ZLS), pnpm 10.33.1, npm 11.13.0
+**Language runtimes:** Node 24.15.0, Python 3.14.4, Rust 1.95.0, Go 1.26.2, Bun 1.3.13, Deno 2.7.13, Zig 0.15.2 (with ZLS), pnpm 10.33.0, npm 11.12.1
 
-**CLI tools (npm):** TypeScript 6.0.3, Prettier 3.8.3 (with `@bfra.me/prettier-config`), ast-grep 0.40.5, Playwright 1.59.1, Puppeteer 24.42.0, agent-browser 0.26.0, skills 1.5.1, ocx 2.0.7, tsx 4.21.0, rimraf 6.1.3, vibe-tools 0.63.3
+**CLI tools (npm):** TypeScript 6.0.3, Prettier 3.8.3 (with `@bfra.me/prettier-config`), ast-grep 0.40.5, Playwright 1.59.1, Puppeteer 24.41.0, agent-browser 0.26.0, skills 1.5.1, ocx 2.0.7, tsx 4.21.0, rimraf 6.1.3, vibe-tools 0.63.3
 
-**OpenCode ecosystem (npm):** opencode-ai 1.14.25, `@cortexkit/opencode-magic-context` 0.15.3, `@cortexkit/aft` 0.15.5 (renamed from `aft-opencode`), `@marcusrbrown/infra` latest, `@anthropic-ai/claude-code` 2.1.112 (Renovate disabled), `@biomejs/biome` 2.4.12
+**OpenCode ecosystem (npm):** opencode-ai 1.14.18 (Renovate disabled), `@cortexkit/opencode-magic-context` 0.13.0, `@cortexkit/aft-opencode` 0.14.0, `@marcusrbrown/infra` latest, `@anthropic-ai/claude-code` 2.1.112 (Renovate disabled), `@biomejs/biome` 2.4.12 (re-added after prior removal)
 
 **Language servers (npm):** pyright 1.1.409, remark-language-server 3.0.0, typescript-language-server 5.1.3
 

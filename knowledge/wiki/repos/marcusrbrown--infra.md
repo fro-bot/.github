@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/infra"
 created: 2026-04-18
-updated: 2026-04-25
+updated: 2026-04-26
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: cd3bb1631e67563c58df099feda5c53ea2e78d18
+    accessed: 2026-04-26
   - url: https://github.com/marcusrbrown/infra
     sha: 9306b9bef8e6d3c6f821ee0c4df99e24acb750ac
     accessed: 2026-04-25
@@ -31,8 +34,8 @@ Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeW
 - **Created:** 2026-04-03
 - **Last push:** 2026-04-24
 - **Runtime:** Bun v1.0+
-- **Published package:** `@marcusrbrown/infra` v0.4.5 on npm
-- **Open issues:** 5 (3 autohealing reports, 1 rate limit investigation, 1 Dependency Dashboard)
+- **Published package:** `@marcusrbrown/infra` v0.4.6 on npm
+- **Open issues:** 4 (2 autohealing reports, 1 rate limit investigation, 1 Dependency Dashboard)
 - **Open PRs:** 0
 - **Topics:** `bun`, `deploy`, `github-actions`, `infra`, `keeweb`
 
@@ -167,13 +170,24 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d9735d7ad2aca`). The workflow includes:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.42.1` (SHA `6c45d8ce66b0b69f1b80b23f283ed455deb59517`). The workflow includes:
 
 - **PR review** with structured verdict format (PASS / CONDITIONAL / REJECT) and sections for blocking issues, non-blocking concerns, missing tests, and risk assessment
-- **Daily autohealing schedule** (03:30 UTC) with 7 operational categories: errored PRs, security, code quality, developer experience, deploy pipeline health, live site review (via `agent-browser`), and cross-project intelligence
+- **Daily autohealing schedule** (03:30 UTC) with 8 operational categories: errored PRs, security, code quality, developer experience, deploy pipeline health, live site review (via `agent-browser`), cross-project intelligence, and **upstream modernization watch** (Sunday-only)
 - **@mentions** in comments by OWNER/MEMBER/COLLABORATOR
 - **Custom dispatch prompts** via `workflow_dispatch`
 - Concurrency per PR/issue/discussion, non-cancelling
+
+### Upstream Modernization Watch (Category 8)
+
+Added 2026-04-25 (#182). Runs fully on **Sundays UTC** (and on manual dispatch with empty prompt); skipped on other days. Tracks release notes of pinned upstream dependencies for config or feature adoption opportunities:
+
+- `eceasy/cli-proxy-api` (upstream: `router-for-me/CLIProxyAPI`) — Claude-only filter; skips Codex, Gemini, OpenAI, Vertex, Antigravity, Kimi, Qwen, GPT-5.x changes
+- `caddy` (upstream: `caddyserver/caddy`)
+- `fro-bot/agent`
+- `bfra-me/.github` action set
+
+Action policy: low-risk mechanical changes (docker-compose, app config, AGENTS.md) get a draft PR; workflow/build-config changes are documented in a tracking issue only. At most one draft PR per scan. Never bumps pinned versions — Renovate owns that.
 
 The autohealing schedule monitors:
 
@@ -247,9 +261,11 @@ This approach avoids relying solely on human review or agent-driven linting for 
 | Component | Image | Version |
 | --- | --- | --- |
 | Caddy reverse proxy | `caddy:2.11.2-alpine` | Digest-pinned |
-| CLIProxyAPI | `eceasy/cli-proxy-api:v6.9.35` | Digest-pinned |
+| CLIProxyAPI | `eceasy/cli-proxy-api:v6.9.38` | Digest-pinned |
 
 Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest rotations with changelog context sourced from upstream repositories (`router-for-me/CLIProxyAPI`, `caddyserver/caddy`).
+
+The CLIProxyAPI container uses a Docker healthcheck (`wget --spider http://localhost:8317/healthz`) with 30s interval, 5s timeout, 3 retries, and 10s start period (switched from previous healthcheck method in #181, 2026-04-25).
 
 ## Survey History
 
@@ -258,3 +274,4 @@ Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest 
 | 2026-04-18 | `20de047` | Initial survey — workspace structure, 9 workflows, CLI v0.4.3, Fro Bot v0.40.2 |
 | 2026-04-24 | `9306b9b` | Deploy pipeline split (#165), convention enforcement tests (#161, #167), Fro Bot v0.41.4, CLI v0.4.5, CLIProxy autohealing (#155), 11 workflows |
 | 2026-04-25 | `9306b9b` | No code changes; open issues 4→5 (new autohealing report #178) |
+| 2026-04-26 | `cd3bb16` | Fro Bot v0.41.4→v0.42.1, new category 8 (Upstream Modernization Watch, #182), CLIProxy healthcheck switched to `/healthz` (#181), CLI v0.4.6, CLIProxyAPI v6.9.38 |
