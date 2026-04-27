@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-04-26
+updated: 2026-04-27
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - marcusrbrown--containers
@@ -11,6 +11,7 @@ related:
   - marcusrbrown--systematic
   - marcusrbrown--infra
   - marcusrbrown--marcusrbrown-github-io
+  - marcusrbrown--marcusrbrown
 ---
 
 # GitHub Actions CI
@@ -24,6 +25,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 - [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing
+- [[marcusrbrown--marcusrbrown]] — Profile README automation (6-hour scheduled generation via readme-scribe, sponsor/badge pipelines, markdownlint+tsc+eslint CI)
 
 ## Common Patterns
 

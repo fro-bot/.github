@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/marcusrbrown"
 created: 2026-04-18
-updated: 2026-04-24
+updated: 2026-04-27
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: af78e68d510b24152531f7fdafe9bff35a58f071
+    accessed: 2026-04-27
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: af78e68d510b24152531f7fdafe9bff35a58f071
     accessed: 2026-04-24
@@ -16,6 +19,7 @@ related:
   - marcusrbrown--ha-config
   - marcusrbrown--github
   - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-github-io
 ---
 
 # marcusrbrown/marcusrbrown
@@ -152,9 +156,11 @@ Required status checks on `main`: CI, Renovate, Prepare, Finalize. Linear histor
 
 ## Fro Bot Integration
 
-**No Fro Bot workflow detected.** The repository does not contain a `fro-bot.yaml` workflow. Automated commits are handled by `mrbro-bot[bot]`, a separate GitHub App. A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review.
+**No Fro Bot workflow detected.** The repository does not contain a `fro-bot.yaml` or `fro-bot-autoheal.yaml` workflow. Automated commits are handled by `mrbro-bot[bot]`, a separate GitHub App. A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review.
 
 The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot settings, and `fro-bot` is confirmed as a collaborator with push access — confirming the repo is part of the Fro Bot-managed ecosystem and ready for agent workflow onboarding.
+
+Sibling repos with Fro Bot integration have converged on `fro-bot/agent@v0.42.2` as of 2026-04-27 ([[marcusrbrown--dotfiles]], [[marcusrbrown--gpt]]). Repos with autoheal typically run 5–7 category sweeps covering errored PRs, security, code quality, DX, and data/content integrity.
 
 ## Open Work Items
 
@@ -163,7 +169,7 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | #895 | Action Required: Fix Renovate Configuration | mrbro-bot[bot] | 2026-03-12 | **Blocks all Renovate PRs** — regex parse error in `marcusrbrown/renovate-config` preset resolution |
 | #284 | Dependency Dashboard | mrbro-bot[bot] | 2024-02-22 | Standard Renovate dashboard issue |
 
-**Renovate is stalled.** Issue #895 reports an invalid regex in the Renovate preset resolution chain, preventing all dependency update PRs since 2026-03-12. The error references `marcusrbrown/renovate-config` with a malformed RE2 expression. This means dependencies have not been updated for over 6 weeks and the profile update pipeline's 6-hour schedule is the only active automation.
+**Renovate is stalled.** Issue #895 reports an invalid regex in the Renovate preset resolution chain, preventing all dependency update PRs since 2026-03-12. The error references `marcusrbrown/renovate-config` with a malformed RE2 expression. This means dependencies have not been updated for ~7 weeks (46 days as of 2026-04-27) and the profile update pipeline's 6-hour schedule is the only active automation. The drift is widening — sibling repos have advanced multiple major and minor versions across `bfra-me/.github`, `pnpm`, `Vitest`, and `fro-bot/agent` while this repo remains frozen.
 
 ## Notable Patterns
 
@@ -177,14 +183,16 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 
 ## Version Comparison (vs. Ecosystem)
 
-| Dependency | This Repo | Ecosystem Latest |
+| Dependency | This Repo | Ecosystem Latest (2026-04-27) |
 | --- | --- | --- |
 | `marcusrbrown/renovate-config` | `#4.5.1` | `#4.5.8` |
-| `bfra-me/.github` | v4.4.0 | v4.16.8 |
-| `pnpm` | 10.31.0 | 10.33.0 |
+| `bfra-me/.github` | v4.4.0 | v4.16.9 |
+| `pnpm` | 10.31.0 | 10.33.2 |
 | `Prettier` | 3.8.1 | 3.8.3 |
 | `@bfra.me/eslint-config` | 0.50.1 | ≥0.51.0 |
 | `Node.js` | 24.14.0 | 24.15.0 |
+| `fro-bot/agent` | _none_ | v0.42.2 |
+| `Vitest` | 4.0.18 | 4.1.5 |
 
 ## Survey History
 
@@ -192,3 +200,4 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | --- | --- | --- |
 | 2026-04-18 | `af78e68` | Initial survey |
 | 2026-04-24 | `af78e68` | SHA unchanged; documented Renovate stall (issue #895), dependency drift vs ecosystem, fro-bot collaborator confirmed, open work items added |
+| 2026-04-27 | `af78e68` | SHA unchanged (46 days dormant); updated ecosystem version comparison (bfra-me/.github v4.16.9, pnpm 10.33.2, fro-bot/agent v0.42.2, Vitest 4.1.5); added marcusrbrown-github-io to related repos; noted Renovate trigger model divergence from sibling repos |
