@@ -2,11 +2,8 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-04-27
+updated: 2026-04-25
 sources:
-  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
-    sha: a3643ae
-    accessed: 2026-04-27
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
     accessed: 2026-04-25
@@ -26,7 +23,7 @@ Personal brand site for Marcus R. Brown. Single-page React 19 portfolio deployed
 - **Purpose:** Personal brand site / landing page
 - **Default branch:** `main`
 - **Created:** 2025-07-18
-- **Last push:** 2026-04-27
+- **Last push:** 2026-04-22
 - **Homepage:** https://marcusrbrown.com
 - **License:** MIT (declared in package.json and README badge; no LICENSE file detected via API)
 - **Visibility:** Public
@@ -47,7 +44,7 @@ Personal brand site for Marcus R. Brown. Single-page React 19 portfolio deployed
 | Linting | ESLint 10 flat config (`eslint.config.ts`) | `@bfra.me/eslint-config` ^0.51.0 |
 | Formatting | Prettier | `@bfra.me/prettier-config/120-proof` |
 | Type Config | TypeScript | `@bfra.me/tsconfig` ^0.13.0 |
-| Package Manager | pnpm | 10.33.2 (enforced via `packageManager` field) |
+| Package Manager | pnpm | 10.33.0 (enforced via `packageManager` field) |
 | Node.js | >= 22.0.0 | |
 | Git Hooks | simple-git-hooks + lint-staged | |
 
@@ -100,7 +97,7 @@ Sequential: checkout, setup, lint, build, upload pages artifact (`./dist`), depl
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present and active** (`fro-bot/agent@v0.42.2`, SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`).
+**Fro Bot workflow is present and active** (`fro-bot/agent@v0.41.4`, SHA `28bcadbf`).
 
 - **Triggers:** PR events (opened, synchronize, ready_for_review, reopened, review_requested), issue/comment events (`@fro-bot` mention from OWNER/MEMBER/COLLABORATOR), daily schedule (15:30 UTC), manual dispatch
 - **PR review prompt:** Structured review targeting React 19 patterns, TypeScript strictness, pure ESM, accessibility (WCAG 2.1 AA), performance budgets (JS <500KB warning, total <2MB max), PascalCase hooks, `.yaml` extension convention. Verdict format: PASS / CONDITIONAL / REJECT with blocking/non-blocking/missing tests/risk sections.
@@ -112,7 +109,7 @@ Sequential: checkout, setup, lint, build, upload pages artifact (`./dist`), depl
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8` + `:preserveSemverRanges` + `group:allNonMajor`. Post-upgrade: `pnpm install`, `pnpm run build`, `pnpm run fix` (twice). Uses `bfra-me/.github` reusable workflow (v4.16.9). Trigger model: issue/PR edit (non-bot), push to non-main, dispatch, workflow_run after Deploy.
+- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8` + `:preserveSemverRanges` + `group:allNonMajor`. Post-upgrade: `pnpm install`, `pnpm run build`, `pnpm run fix` (twice). Uses `bfra-me/.github` reusable workflow (v4.16.8). Trigger model: issue/PR edit (non-bot), push to non-main, dispatch, workflow_run after Deploy.
 - **Git Hooks:** `simple-git-hooks` with `lint-staged` running `eslint --fix` on staged files.
 - **AGENTS.md:** Comprehensive root-level file with code map, conventions, commands, CI table, testing guide, anti-patterns. Generated 2026-03-10.
 - **Copilot instructions:** `.github/copilot-instructions.md` with stack summary and critical conventions (PascalCase hooks, strict TS, named exports, `.yaml` extension).
@@ -151,20 +148,19 @@ This repo and [[marcusrbrown--mrbro-dev]] both deploy React+Vite sites to GitHub
 | Content source | Static | GitHub API (dynamic blog/projects) |
 | Test layers | Unit + E2E + A11y | Unit + E2E + Visual regression + A11y + Lighthouse |
 | Autoheal | Not present | Present (5-category daily) |
-| Fro Bot agent version | v0.42.2 | v0.41.3 |
+| Fro Bot agent version | v0.41.4 | v0.38.0 (older) |
 
 ## Recent Activity
 
-Latest commits remain exclusively Renovate dependency bumps:
-- `a3643ae` 2026-04-27: update bfra-me/.github to v4.16.9 (#393)
-- `94542f5` 2026-04-26: update all non-major dependencies (#392)
-- `24ec5e0` 2026-04-26: update fro-bot/agent to v0.42.1 (#391)
-- `fbca40b` 2026-04-25: update pnpm to v10.33.1 (#390)
+Latest commits are exclusively Renovate dependency bumps:
 - `ec4b785` 2026-04-22: update all non-major dependencies (#389)
+- `1440a71` 2026-04-21: update pnpm/action-setup action to v6 (#382)
+- `da2cded` 2026-04-20: maintain lockfiles (#388)
+- `12ac462` 2026-04-20: update actions/setup-node action to v6.4.0 (#387)
+- `f5176f6` 2026-04-19: update all non-major dependencies (#386)
 
 ## Survey History
 
 | Date | SHA | Notes |
 | --- | --- | --- |
-| 2026-04-27 | `a3643ae` | Incremental re-survey; Fro Bot v0.41.4→v0.42.2, pnpm 10.33.0→10.33.2, bfra-me/.github v4.16.8→v4.16.9 |
 | 2026-04-25 | `ec4b785` | Initial survey |

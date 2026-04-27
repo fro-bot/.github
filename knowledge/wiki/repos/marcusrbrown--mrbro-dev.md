@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/mrbro.dev"
 created: 2026-04-18
-updated: 2026-04-26
+updated: 2026-04-27
 sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 51f5cab5c77768b761d9f0a688ac7436cc5a06f4
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: d8c0e43a471aa41b030890122d75450b5626b981
     accessed: 2026-04-26
+  - url: https://github.com/marcusrbrown/mrbro.dev
+    sha: d8c0e43a471aa41b030890122d75450b5626b981
+    accessed: 2026-04-27
 tags: [portfolio, react, typescript, vite, github-pages, blog, pnpm]
 aliases: [mrbro-dev, mrbro.dev]
 related:
@@ -30,7 +33,7 @@ Marcus R. Brown's developer portfolio website. React 19, TypeScript (strict), Vi
 - **Homepage:** https://mrbro.dev
 - **Topics:** `blog`, `developer`, `github-pages`, `portfolio`, `react`, `typescript`, `vite`
 - **License:** MIT (badge present, no LICENSE file detected via API)
-- **Open issues:** 39 (majority are Daily Autohealing Reports)
+- **Open issues:** 44 (majority are Daily Autohealing Reports — see "Autoheal Report Proliferation" below)
 - **Open PRs:** 4 (#85 and #87 stale security fixes, #142 non-major deps, #145 fro-bot hook rename)
 
 ## Tech Stack
@@ -160,7 +163,7 @@ Sequential: checkout, setup, lint, test, build (with `GITHUB_PAGES=true`), uploa
 - Enforces project conventions (PascalCase hooks, no `any`, pure ESM, pnpm only)
 - Hard boundaries: no force-push, no direct-to-main, no disabling tests
 - Outputs single "Daily Autohealing Report — YYYY-MM-DD (UTC)" issue per run
-- **Observation (2026-04-26):** Multiple separate daily report issues are open (#138, #140–#146) rather than the intended single rolling issue — possible behavioral drift in autoheal prompt compliance
+- **Observation (2026-04-26, confirmed 2026-04-27):** Multiple separate daily report issues accumulating (#138, #140–#147) rather than the intended single rolling issue — confirmed behavioral drift in autoheal prompt compliance. Issue count grew 39→44 between surveys, almost entirely autoheal reports. The autoheal prompt instructs creating/updating a single dated issue per run, but the agent is creating a new issue each day instead of reusing. This is the dominant source of issue count inflation.
 
 ## Testing Infrastructure
 
@@ -228,3 +231,4 @@ Vite upgraded to v7.3.2 for security fix (#121).
 | --- | --- | --- |
 | 2026-04-18 | `51f5cab` | Initial survey |
 | 2026-04-26 | `d8c0e43` | Agent v0.38.0→v0.41.3, Renovate #4.5.7→#4.5.8, opencode-config added, security overrides, no settings.yml noted, 39 open issues |
+| 2026-04-27 | `d8c0e43` | No code changes. Open issues 39→44 (autoheal report proliferation confirmed). Open PRs unchanged at 4. TypeScript still ^5.6.3. Autoheal behavioral drift documented. |

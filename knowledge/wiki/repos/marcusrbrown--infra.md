@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/infra"
 created: 2026-04-18
-updated: 2026-04-26
+updated: 2026-04-27
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: 938fa7c5fb1d10e844a214048e7928afe3095b79
+    accessed: 2026-04-27
   - url: https://github.com/marcusrbrown/infra
     sha: cd3bb1631e67563c58df099feda5c53ea2e78d18
     accessed: 2026-04-26
@@ -32,11 +35,11 @@ Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeW
 - **Purpose:** Deploy automation, operational CLI, and infrastructure tooling
 - **Default branch:** `main`
 - **Created:** 2026-04-03
-- **Last push:** 2026-04-24
+- **Last push:** 2026-04-27
 - **Runtime:** Bun v1.0+
 - **Published package:** `@marcusrbrown/infra` v0.4.6 on npm
-- **Open issues:** 4 (2 autohealing reports, 1 rate limit investigation, 1 Dependency Dashboard)
-- **Open PRs:** 0
+- **Open issues:** 5 (3 autohealing reports, 1 rate limit investigation, 1 Dependency Dashboard)
+- **Open PRs:** 1 (#187 — Changesets version packages, by mrbro-bot)
 - **Topics:** `bun`, `deploy`, `github-actions`, `infra`, `keeweb`
 
 ## Repository Structure
@@ -170,7 +173,7 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.42.1` (SHA `6c45d8ce66b0b69f1b80b23f283ed455deb59517`). The workflow includes:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.42.2` (SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`). The workflow includes:
 
 - **PR review** with structured verdict format (PASS / CONDITIONAL / REJECT) and sections for blocking issues, non-blocking concerns, missing tests, and risk assessment
 - **Daily autohealing schedule** (03:30 UTC) with 8 operational categories: errored PRs, security, code quality, developer experience, deploy pipeline health, live site review (via `agent-browser`), cross-project intelligence, and **upstream modernization watch** (Sunday-only)
@@ -261,7 +264,7 @@ This approach avoids relying solely on human review or agent-driven linting for 
 | Component | Image | Version |
 | --- | --- | --- |
 | Caddy reverse proxy | `caddy:2.11.2-alpine` | Digest-pinned |
-| CLIProxyAPI | `eceasy/cli-proxy-api:v6.9.38` | Digest-pinned |
+| CLIProxyAPI | `eceasy/cli-proxy-api:v6.9.39` | Digest-pinned |
 
 Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest rotations with changelog context sourced from upstream repositories (`router-for-me/CLIProxyAPI`, `caddyserver/caddy`).
 
@@ -275,3 +278,4 @@ The CLIProxyAPI container uses a Docker healthcheck (`wget --spider http://local
 | 2026-04-24 | `9306b9b` | Deploy pipeline split (#165), convention enforcement tests (#161, #167), Fro Bot v0.41.4, CLI v0.4.5, CLIProxy autohealing (#155), 11 workflows |
 | 2026-04-25 | `9306b9b` | No code changes; open issues 4→5 (new autohealing report #178) |
 | 2026-04-26 | `cd3bb16` | Fro Bot v0.41.4→v0.42.1, new category 8 (Upstream Modernization Watch, #182), CLIProxy healthcheck switched to `/healthz` (#181), CLI v0.4.6, CLIProxyAPI v6.9.38 |
+| 2026-04-27 | `938fa7c` | Fro Bot v0.42.1→v0.42.2 (#185), CLIProxyAPI v6.9.38→v6.9.39 (#186), bfra-me/.github v4.16.8→v4.16.9 (#188). Open issues 4→5, 1 open PR (version packages #187) |
