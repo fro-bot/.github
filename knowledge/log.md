@@ -844,3 +844,24 @@ Sources: https://github.com/marcusrbrown/mrbro.dev
 Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mrbro.dev
+
+## [2026-04-27 12:00] ingest | marcusrbrown/.github
+
+Incremental re-survey of `marcusrbrown/.github` (SHA `3fb30a4`, up from `99906ef`). Updated repo page `marcusrbrown--github.md` and topic page `probot-settings.md`. Index unchanged (all pages already cataloged).
+
+Delta from prior survey (SHA `99906ef`, 2026-04-26):
+
+- **bfra-me/.github reusable workflows bumped:** v4.16.8 → v4.16.9 (SHA `4b85695b1ef6f57b52e29c92c027efeec65de2be`) in both `renovate.yaml` and `update-repo-settings.yaml` (PR #363, 2026-04-27)
+- Only files changed: `.github/workflows/renovate.yaml` and `.github/workflows/update-repo-settings.yaml`
+- 2 open issues (#37 — move to another settings action, #214 — Dependency Dashboard), 0 open PRs (unchanged)
+- 3 stars, 2 watchers (unchanged)
+- Repository structure, CI pipeline, Prettier config, Renovate config, settings, and community health files all unchanged
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+
+Sources: https://github.com/marcusrbrown/.github (SHA 3fb30a4)
+
+## [2026-04-27 07:47] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
