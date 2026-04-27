@@ -845,25 +845,41 @@ Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mrbro.dev
 
-## [2026-04-27 07:49] ingest | marcusrbrown/esphome.life
+## [2026-04-27 12:00] ingest | marcusrbrown/.github
 
-Re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, unchanged from 2026-04-23). Updated repo page `marcusrbrown--esphome-life.md` with drift/action-items table, collaborator info, and open issues inventory. Bumped `updated` date on entity page `esphome.md` and topic page `home-assistant.md`. Updated `index.md` description for esphome-life entry. Index structure unchanged (all pages already cataloged).
+Incremental re-survey of `marcusrbrown/.github` (SHA `3fb30a4`, up from `99906ef`). Updated repo page `marcusrbrown--github.md` and topic page `probot-settings.md`. Index unchanged (all pages already cataloged).
 
-Delta from prior survey (SHA `e398c2e`, 2026-04-23):
+Delta from prior survey (SHA `99906ef`, 2026-04-26):
 
-- SHA unchanged (`e398c2e`): latest commit remains `chore(deps): update marcusrbrown/renovate-config preset to v4.5.1 (#347)` from 2026-03-12
-- **Open issues:** 4 (was not previously tracked in detail): #8 "Uplift esphome-life" (2023-06-18), #26 "Dependency Dashboard", #298 community reference note (2025-12-10), #348 "Action Required: Fix Renovate Configuration" (2026-03-12)
-- **Open PRs:** 0 (unchanged)
-- **Collaborators confirmed:** `marcusrbrown` (admin), `fro-bot` (write)
-- **New drift observations documented:** `bfra-me/.github` reusable workflows at v4.4.0 (ecosystem at v4.16.6+), `actions/checkout` at v5.0.1 (ecosystem at v6.x), Renovate preset at `#4.5.1` (ecosystem at `#4.5.8`), `update-repo-settings.yaml` calls `renovate.yaml` reusable workflow (likely misconfiguration)
-- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward with note that `fro-bot` already has write access
-- Repository structure, device configs, CI pipeline, devcontainer, Probot settings all unchanged
-- No contradictions with prior ingest
+- **bfra-me/.github reusable workflows bumped:** v4.16.8 → v4.16.9 (SHA `4b85695b1ef6f57b52e29c92c027efeec65de2be`) in both `renovate.yaml` and `update-repo-settings.yaml` (PR #363, 2026-04-27)
+- Only files changed: `.github/workflows/renovate.yaml` and `.github/workflows/update-repo-settings.yaml`
+- 2 open issues (#37 — move to another settings action, #214 — Dependency Dashboard), 0 open PRs (unchanged)
+- 3 stars, 2 watchers (unchanged)
+- Repository structure, CI pipeline, Prettier config, Renovate config, settings, and community health files all unchanged
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
+Sources: https://github.com/marcusrbrown/.github (SHA 3fb30a4)
 
-## [2026-04-27 07:52] ingest | repo:marcusrbrown/esphome.life
+## [2026-04-27 07:47] ingest | repo:marcusrbrown/.github
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/esphome.life
+Sources: https://github.com/marcusrbrown/.github
+
+## [2026-04-27 12:00] ingest | marcusrbrown/extend-vscode
+
+Re-survey of `marcusrbrown/extend-vscode` (SHA `b457a34f`, unchanged from 2026-04-26). Updated repo page `marcusrbrown--extend-vscode.md` with new source entry and delta log. Bumped `updated` date on topic page `vscode-extensions.md`. Index unchanged (both pages already cataloged).
+
+No repository content changes detected since prior survey. HEAD still at `b457a34f` (`typescript-eslint` v8.59.0 bump, #481). Last push: 2026-04-25T15:12:46Z. Same 4 open Renovate PRs (#466–#469) pending merge. Open issues: 5 (#142, #162, #317–#319). Repo metadata: 1 star, 1 watcher, not archived.
+
+Full dependency snapshot captured with expanded coverage (added `eslint-config-prettier`, `@vitest/ui`, `@vitest/coverage-v8`, `tsx`, `semantic-release-vsce`, `jiti`, `ovsx`, `type-fest`). All prior findings confirmed — no contradictions.
+
+**Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.
+
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA b457a34f032149b03dddaca99eacca14eac91367)
+
+## [2026-04-27 07:52] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode
