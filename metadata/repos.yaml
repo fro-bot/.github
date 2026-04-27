@@ -140,7 +140,7 @@ repos:
     name: opencode-copilot-delegate
     added: 2026-04-23
     onboarding_status: onboarded
-    last_survey_at: 2026-04-23
+    last_survey_at: 2026-04-27
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
