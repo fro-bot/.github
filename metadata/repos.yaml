@@ -3,107 +3,107 @@ repos:
   - owner: marcusrbrown
     name: ha-config
     added: 2026-04-17
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
     has_fro_bot_workflow: false
-    has_renovate: false
+    has_renovate: true
   - owner: marcusrbrown
     name: .dotfiles
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
   - owner: marcusrbrown
     name: .github
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
     has_fro_bot_workflow: false
-    has_renovate: false
+    has_renovate: true
   - owner: marcusrbrown
     name: containers
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
   - owner: marcusrbrown
     name: copiloting
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    onboarding_status: lost-access
+    last_survey_at: 2026-04-23
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
   - owner: marcusrbrown
     name: esphome.life
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
     has_fro_bot_workflow: false
-    has_renovate: false
+    has_renovate: true
   - owner: marcusrbrown
     name: extend-vscode
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
     has_fro_bot_workflow: false
-    has_renovate: false
+    has_renovate: true
   - owner: marcusrbrown
     name: gpt
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
   - owner: marcusrbrown
     name: infra
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
   - owner: marcusrbrown
     name: marcusrbrown
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
     has_fro_bot_workflow: false
-    has_renovate: false
+    has_renovate: true
   - owner: marcusrbrown
     name: marcusrbrown.github.io
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
   - owner: marcusrbrown
     name: mrbro.dev
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
   - owner: marcusrbrown
     name: renovate-config
     added: 2026-04-18
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    has_fro_bot_workflow: true
+    has_renovate: true
   - owner: marcusrbrown
     name: sparkle
     added: 2026-04-18
@@ -111,28 +111,36 @@ repos:
     last_survey_at: null
     last_survey_status: null
     has_fro_bot_workflow: false
-    has_renovate: false
+    has_renovate: true
   - owner: marcusrbrown
     name: systematic
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-24
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
   - owner: marcusrbrown
     name: tokentoilet
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-25
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
   - owner: marcusrbrown
     name: vbs
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-26
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
+  - owner: marcusrbrown
+    name: opencode-copilot-delegate
+    added: 2026-04-23
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-27
+    last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false

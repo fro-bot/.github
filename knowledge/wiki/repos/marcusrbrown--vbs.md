@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/vbs"
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-25
 sources:
+  - url: https://github.com/marcusrbrown/vbs
+    sha: dd10e052347b5488dc09cd0d18391d67f1c21bb7
+    accessed: 2026-04-25
   - url: https://github.com/marcusrbrown/vbs
     sha: a552e7335af70122f68380440c78a415a785749f
     accessed: 2026-04-18
@@ -22,7 +25,7 @@ related:
 - **Purpose:** Interactive Star Trek chronological viewing guide with progress tracking
 - **Default branch:** `main`
 - **Created:** 2025-07-18
-- **Last push:** 2026-04-17
+- **Last push:** 2026-04-22
 - **Homepage:** https://marcusrbrown.github.io/vbs/
 - **License:** MIT (declared in package.json; no LICENSE file observed at root)
 - **Topics:** `star-trek`, `viewing-guide`, `chronological`, `progress-tracker`, `local-first`
@@ -153,7 +156,7 @@ Required status checks on `main`: Build, Fro Bot, Renovate, Test. Linear history
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present and active** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.40.2`.
+**Fro Bot workflow is present and active** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d9735d7ad2aca`).
 
 ### PR Review
 
@@ -202,3 +205,27 @@ Responds to `@fro-bot` mentions in issue/PR/discussion comments from OWNER/MEMBE
 - **Streaming availability layer:** `streaming-api.ts` module with UI components for Paramount+/Netflix availability.
 - **Data-curator agent:** Dedicated `.github/agents/data-curator.agent.md` for Star Trek data management via Copilot agents.
 - **Aggressive autoheal:** The `fro-bot-autoheal.yaml` workflow is one of the most comprehensive automated maintenance configurations in the ecosystem, covering 5 categories with detailed output formatting.
+
+## Survey History
+
+| Date | SHA | Delta |
+| --- | --- | --- |
+| 2026-04-18 | `a552e73` | Initial survey — full page created |
+| 2026-04-25 | `dd10e05` | Incremental — 7 Renovate commits, agent bump v0.40.2 → v0.41.4, no structural changes |
+
+### 2026-04-25 Delta (SHA `a552e73` → `dd10e05`)
+
+7 commits, all Renovate-authored (`mrbro-bot[bot]`). No structural, architectural, or application code changes.
+
+- **`fro-bot/agent` bumped:** v0.40.2 → v0.41.4 (through v0.41.0, v0.41.1, v0.41.2 intermediates; PRs #509, #510, #512, #520)
+- **`bfra-me/.github` reusable workflows updated** in `renovate.yaml` and `update-repo-settings.yaml`
+- **`actions/setup-node` updated** to v6.4.0 (PR #514) in `.github/actions/setup-pnpm/action.yaml`
+- **Lockfile maintenance** (PR #516) and non-major dependency batch (PR #513, #520)
+- **Renovate config unchanged:** still extends `marcusrbrown/renovate-config#4.5.8` + `group:allNonMajor`
+
+Current activity (as of 2026-04-25):
+
+- **Open PRs:** 5 — four automated Star Trek data updates (#454 data-29, #476 data-30, #497 data-31, #517 data-32) and one Copilot-authored feature PR (#458, multi-track timeline visualization)
+- **Open issues:** Daily Autohealing Reports from Fro Bot (one per day, #506–#523), plus data update PR #517
+- **Fro Bot autoheal cadence:** daily reports running consistently since at least 2026-04-17, all authored by `fro-bot`
+- **No human-authored commits** in the 7-commit delta — repository is in pure maintenance/dependency-update mode

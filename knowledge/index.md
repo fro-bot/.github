@@ -14,8 +14,11 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
 - [[marcusrbrown--infra]] — Bun workspace monorepo for personal infrastructure (KeeWeb deploy, CLIProxyAPI proxy, operational CLI with MCP bridge)
 - [[marcusrbrown--marcusrbrown]] — GitHub profile README with TypeScript-powered automation (badge generation, sponsor tracking, A/B testing, scheduled updates)
+- [[marcusrbrown--marcusrbrown-github-io]] — Personal brand site (React 19, TypeScript 6, Vite 7, GitHub Pages at marcusrbrown.com, single-page with anchor-link sections)
 - [[marcusrbrown--mrbro-dev]] — Marcus's developer portfolio (React 19, TypeScript, Vite 7, GitHub Pages at mrbro.dev, advanced theme system, Fro Bot agent + autoheal)
-- [[marcusrbrown--tokentoilet]] — marcusrbrown/tokentoilet
+- [[marcusrbrown--opencode-copilot-delegate]] — OpenCode plugin: delegate tasks to GitHub Copilot CLI as background subprocesses with async completion notifications
+- [[marcusrbrown--systematic]] — OpenCode plugin: structured engineering workflows (45 skills, 50 agents), npm `@fro.bot/systematic`, Bun + Biome + semantic-release
+- [[marcusrbrown--tokentoilet]] — Web3 DeFi token disposal app (Next.js 16, React 19, TypeScript 6, Wagmi v2, Reown AppKit, Tailwind CSS v4, Vercel)
 - [[marcusrbrown--vbs]] — marcusrbrown/vbs
 
 ## Topics
@@ -26,6 +29,7 @@ Master catalog of all wiki pages, organized by type.
 - [[github-pages]] — Static site hosting via GitHub; deployment patterns and performance monitoring
 - [[home-assistant]] — Open-source home automation platform; configuration patterns, CI validation, and ecosystem notes
 - [[langchain]] — LLM application framework (Python + TypeScript); version notes and migration patterns
+- [[opencode-plugins]] — OpenCode plugin development patterns: Plugin API, async notifications, tool registration, Bun build, skill integration
 - [[polyglot-monorepo]] — Patterns for managing Python + TypeScript monorepos with independent toolchains
 - [[probot-settings]] — Repository configuration management via Probot Settings; inheritance patterns, common-settings templates, and governance across repos
 - [[vscode-extensions]] — VS Code extension development patterns, dual-target builds, and publishing tooling
@@ -33,6 +37,7 @@ Master catalog of all wiki pages, organized by type.
 
 ## Entities
 
+- [[esphome]] — ESPHome
 - [[mise]] — mise
 
 ## Comparisons

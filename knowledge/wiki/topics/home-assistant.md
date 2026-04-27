@@ -2,10 +2,11 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2025-06-18
+updated: 2026-04-23
 tags: [home-assistant, iot, smart-home, yaml, automation]
 related:
   - marcusrbrown--ha-config
+  - marcusrbrown--esphome-life
   - github-actions-ci
 ---
 
@@ -16,6 +17,7 @@ Open-source home automation platform. Core references across the Fro Bot ecosyst
 ## Repos Using Home Assistant
 
 - [[marcusrbrown--ha-config]] — Marcus's primary HA configuration (public, CI-validated)
+- [[marcusrbrown--esphome-life]] — ESPHome device firmware; linked from ha-config as a git submodule at `esphome/`
 
 ## Configuration Patterns Observed
 
@@ -37,7 +39,7 @@ ESPHome device configurations are commonly managed as a separate repository and 
 
 ## Related Technologies
 
-- **ESPHome** — ESP32/ESP8266 firmware framework, integrated with HA
+- **[ESPHome](esphome)** — ESP32/ESP8266 firmware framework, integrated with HA
 - **Z-Wave** — Mesh networking protocol for IoT devices
 - **HACS** — Home Assistant Community Store for third-party integrations
 - **InfluxDB** — Time-series database for long-term HA metrics retention

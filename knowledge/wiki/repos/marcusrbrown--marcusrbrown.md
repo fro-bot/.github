@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/marcusrbrown"
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-24
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: af78e68d510b24152531f7fdafe9bff35a58f071
+    accessed: 2026-04-24
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: af78e68d510b24152531f7fdafe9bff35a58f071
     accessed: 2026-04-18
@@ -11,6 +14,8 @@ tags: [profile-readme, typescript, github-actions, automation, badges, sponsors,
 aliases: [marcusrbrown-profile]
 related:
   - marcusrbrown--ha-config
+  - marcusrbrown--github
+  - marcusrbrown--mrbro-dev
 ---
 
 # marcusrbrown/marcusrbrown
@@ -26,6 +31,7 @@ Marcus R. Brown's GitHub profile README repository. A TypeScript-powered automat
 - **Last push:** 2026-03-12
 - **License:** MIT
 - **Topics:** `github`, `readme-profile`, `profile-readme`, `awesome-readme`, `typescript`, `markdown`
+- **Collaborators:** `marcusrbrown` (admin), `fro-bot` (push)
 
 ## Repository Structure
 
@@ -122,10 +128,10 @@ Required status checks on `main`: CI, Renovate, Prepare, Finalize. Linear histor
 - **Package manager:** pnpm 10.31.0 (enforced via `preinstall` script, `only-allow pnpm`)
 - **Node.js:** 24.14.0 (pinned in `.mise.toml`)
 - **TypeScript:** Extends `@bfra.me/tsconfig`. Path alias `@/` maps to project root.
-- **ESLint:** Extends `@bfra.me/eslint-config`. Ignores `.ai/`, `.cache/`, copilot instructions.
-- **Prettier:** `@bfra.me/prettier-config/120-proof` (120-char line width).
-- **Vitest:** Test runner with `@/` path alias. Tests in `__tests__/`.
-- **markdownlint-cli2:** Markdown linting for generated and template files.
+- **ESLint:** Extends `@bfra.me/eslint-config` (0.50.1). Ignores `.ai/`, `.cache/`, copilot instructions.
+- **Prettier:** `@bfra.me/prettier-config/120-proof` (120-char line width), v3.8.1.
+- **Vitest:** 4.0.18, test runner with `@/` path alias. Tests in `__tests__/`.
+- **markdownlint-cli2:** 0.20.0, markdown linting for generated and template files.
 - **simple-git-hooks + lint-staged:** Pre-commit hooks run ESLint fix on staged files.
 - **Renovate:** Extends `marcusrbrown/renovate-config#4.5.1` and `sanity-io/renovate-config:semantic-commit-type`. Groups markdownlint packages. Post-upgrade runs `pnpm bootstrap && pnpm fix`.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` (identical to [[marcusrbrown--ha-config]] pattern).
@@ -134,19 +140,30 @@ Required status checks on `main`: CI, Renovate, Prepare, Finalize. Linear histor
 
 ### Key Dependencies
 
-| Package                 | Version | Purpose                             |
-| ----------------------- | ------- | ----------------------------------- |
-| `@octokit/graphql`      | ^9.0.1  | GitHub GraphQL API for sponsor data |
-| `@octokit/rest`         | ^22.0.0 | GitHub REST API client              |
-| `@bfra.me/badge-config` | 0.2.0   | Badge configuration package         |
-| `vitest`                | 4.0.18  | Test runner                         |
-| `tsx`                   | ^4.20.3 | TypeScript script execution         |
+| Package                 | Version  | Purpose                             |
+| ----------------------- | -------- | ----------------------------------- |
+| `@octokit/graphql`      | ^9.0.1   | GitHub GraphQL API for sponsor data |
+| `@octokit/rest`         | ^22.0.0  | GitHub REST API client              |
+| `@octokit/types`        | ^16.0.0  | GitHub API type definitions         |
+| `@bfra.me/badge-config` | 0.2.0    | Badge configuration package         |
+| `vitest`                | 4.0.18   | Test runner                         |
+| `tsx`                   | ^4.20.3  | TypeScript script execution         |
+| `jiti`                  | 2.6.1    | TypeScript config loader            |
 
 ## Fro Bot Integration
 
 **No Fro Bot workflow detected.** The repository does not contain a `fro-bot.yaml` workflow. Automated commits are handled by `mrbro-bot[bot]`, a separate GitHub App. A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review.
 
-The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot settings, confirming it is part of the Fro Bot-managed ecosystem.
+The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot settings, and `fro-bot` is confirmed as a collaborator with push access — confirming the repo is part of the Fro Bot-managed ecosystem and ready for agent workflow onboarding.
+
+## Open Work Items
+
+| # | Title | Author | Created | Notes |
+| --- | --- | --- | --- | --- |
+| #895 | Action Required: Fix Renovate Configuration | mrbro-bot[bot] | 2026-03-12 | **Blocks all Renovate PRs** — regex parse error in `marcusrbrown/renovate-config` preset resolution |
+| #284 | Dependency Dashboard | mrbro-bot[bot] | 2024-02-22 | Standard Renovate dashboard issue |
+
+**Renovate is stalled.** Issue #895 reports an invalid regex in the Renovate preset resolution chain, preventing all dependency update PRs since 2026-03-12. The error references `marcusrbrown/renovate-config` with a malformed RE2 expression. This means dependencies have not been updated for over 6 weeks and the profile update pipeline's 6-hour schedule is the only active automation.
 
 ## Notable Patterns
 
@@ -154,5 +171,24 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 - **A/B testing for profile content:** Unusual for a profile repo. The `templates/variants/` directory and `ab-test-cli.ts` suggest active experimentation with sponsor conversion messaging.
 - **Content performance analytics:** `profile-analytics.ts` and `content-performance-tracking.ts` treat the profile README as a measurable surface.
 - **Badge automation pipeline:** Technology badges are not manually curated. `badge-detector.ts` discovers technologies, `badge-cache-manager.ts` caches results, and `shield-io-client.ts` generates the shields.
-- **Shared config ecosystem:** All tooling configs extend `@bfra.me/*` packages, keeping local config minimal. Same pattern observed in [[marcusrbrown--ha-config]] for Renovate and Probot settings.
+- **Shared config ecosystem:** All tooling configs extend `@bfra.me/*` packages, keeping local config minimal. Same pattern observed in [[marcusrbrown--ha-config]] and [[marcusrbrown--github]] for Renovate and Probot settings.
 - **`mrbro-bot[bot]` vs `fro-bot`:** This repo's automation uses `mrbro-bot[bot]` (app 137683033) for commits. Fro Bot is not yet integrated for PR review or triage.
+- **Dependency drift risk:** With Renovate stalled since 2026-03-12, this repo is accumulating dependency drift. Other Marcus repos have moved to `marcusrbrown/renovate-config#4.5.8`, `pnpm 10.33.0`, `Prettier 3.8.3`, and `bfra-me/.github` v4.16.8. This repo remains pinned at older versions across the board.
+
+## Version Comparison (vs. Ecosystem)
+
+| Dependency | This Repo | Ecosystem Latest |
+| --- | --- | --- |
+| `marcusrbrown/renovate-config` | `#4.5.1` | `#4.5.8` |
+| `bfra-me/.github` | v4.4.0 | v4.16.8 |
+| `pnpm` | 10.31.0 | 10.33.0 |
+| `Prettier` | 3.8.1 | 3.8.3 |
+| `@bfra.me/eslint-config` | 0.50.1 | ≥0.51.0 |
+| `Node.js` | 24.14.0 | 24.15.0 |
+
+## Survey History
+
+| Date | SHA | Delta |
+| --- | --- | --- |
+| 2026-04-18 | `af78e68` | Initial survey |
+| 2026-04-24 | `af78e68` | SHA unchanged; documented Renovate stall (issue #895), dependency drift vs ecosystem, fro-bot collaborator confirmed, open work items added |
