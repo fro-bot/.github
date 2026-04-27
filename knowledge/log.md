@@ -845,23 +845,24 @@ Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mrbro.dev
 
-## [2026-04-27 12:00] ingest | marcusrbrown/.github
+## [2026-04-27 00:00] ingest | marcusrbrown/containers
 
-Incremental re-survey of `marcusrbrown/.github` (SHA `3fb30a4`, up from `99906ef`). Updated repo page `marcusrbrown--github.md` and topic page `probot-settings.md`. Index unchanged (all pages already cataloged).
+Incremental re-survey of `marcusrbrown/containers` (SHA `b266995`, up from `1b782ff8`). Updated repo page `marcusrbrown--containers.md`. Bumped Fro Bot agent version in topic page `github-actions-ci.md`. Index unchanged (all pages already cataloged).
 
-Delta from prior survey (SHA `99906ef`, 2026-04-26):
+Delta from prior survey (SHA `1b782ff8`, 2026-04-22):
 
-- **bfra-me/.github reusable workflows bumped:** v4.16.8 → v4.16.9 (SHA `4b85695b1ef6f57b52e29c92c027efeec65de2be`) in both `renovate.yaml` and `update-repo-settings.yaml` (PR #363, 2026-04-27)
-- Only files changed: `.github/workflows/renovate.yaml` and `.github/workflows/update-repo-settings.yaml`
-- 2 open issues (#37 — move to another settings action, #214 — Dependency Dashboard), 0 open PRs (unchanged)
-- 3 stars, 2 watchers (unchanged)
-- Repository structure, CI pipeline, Prettier config, Renovate config, settings, and community health files all unchanged
-- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+- **Fro Bot agent bumped:** v0.41.0 → v0.42.1 (#591, 2026-04-26)
+- **Three open feature PRs** (not just Renovate): #582 (Express template dependency pins), #583 (foundational pytest coverage for AI/template/CLI/predictive-maintenance modules), #584 (first-class AI config scaffold with CLI init/validation flow and docs)
+- Repository stats: 8 open issues, 3 open PRs, 2 stars, 0 forks
+- Base image digests unchanged (Alpine `sha256:d1b3b4da...`, Bookworm-slim `sha256:03eae3e...`)
+- Renovate preset unchanged (`marcusrbrown/renovate-config#4.5.0`)
+- Python automation layer, template system, Dockerfile patterns, CI workflows, DevContainer, Probot settings all unchanged
+- No contradictions with prior ingest
 
-Sources: https://github.com/marcusrbrown/.github (SHA 3fb30a4)
+Sources: https://github.com/marcusrbrown/containers (SHA b266995653662eb2676012b150efe55ff508c331)
 
-## [2026-04-27 07:47] ingest | repo:marcusrbrown/.github
+## [2026-04-27 07:49] ingest | repo:marcusrbrown/containers
 
-Surveyed marcusrbrown/.github and updated the control-plane wiki.
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/.github
+Sources: https://github.com/marcusrbrown/containers
