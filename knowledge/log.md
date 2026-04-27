@@ -845,31 +845,25 @@ Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mrbro.dev
 
-## [2026-04-27 05:00] ingest | marcusrbrown/.dotfiles
+## [2026-04-27 07:49] ingest | marcusrbrown/esphome.life
 
-Incremental re-survey of `marcusrbrown/.dotfiles` (SHA `19905ec`, up from `ae026c1`). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
+Re-survey of `marcusrbrown/esphome.life` (SHA `e398c2e`, unchanged from 2026-04-23). Updated repo page `marcusrbrown--esphome-life.md` with drift/action-items table, collaborator info, and open issues inventory. Bumped `updated` date on entity page `esphome.md` and topic page `home-assistant.md`. Updated `index.md` description for esphome-life entry. Index structure unchanged (all pages already cataloged).
 
-Delta from prior survey (SHA `ae026c1`, 2026-04-22):
+Delta from prior survey (SHA `e398c2e`, 2026-04-23):
 
-- **Fro Bot agent bumped:** v0.41.3 → v0.42.2 (SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`)
-- **Fro Bot workflow:** Added auto-close step for daily maintenance reports older than 3 days (#1475)
-- **OpenCode default model set:** `opencode-go/kimi-k2.6` (previously unset)
-- **OpenCode plugin bumps:** `@ex-machina/opencode-anthropic-auth` 1.7.4→1.7.5, `oh-my-openagent` 3.17.4→3.17.5, `@cortexkit/opencode-magic-context` 0.13.0→0.15.3, `@cortexkit/aft-opencode` 0.14.0→0.16.1 (renamed to `@cortexkit/aft` in mise)
-- **New config files:** `aft.jsonc` (AFT cross-project scope, experimental search/semantic), `tui.json` (Catppuccin theme, TUI plugin list)
-- **oh-my-openagent model routing overhaul:** Partial reversion from all-Copilot-hosted — `metis`, `librarian`, `unspecified-low`, `unspecified-high` reverted to direct `anthropic/*` endpoints. `metis` and `unspecified-high` upgraded to `max` variant. `sisyphus` newly disabled. `sisyphus_agent` config removed. `auto_update: false` and `git_master` config added.
-- **Magic-context config changes:** Historian and Dreamer migrated back to `anthropic/claude-sonnet-4-6`. History budget 10%→15%. Auto-drop age 15→30. Opus 4.7 token threshold lowered 88K→80K. New experimental features: `auto_search`, `git_commit_indexing`. New `memory.injection_budget_tokens: 6000`. Plugin version 0.13.0→0.15.3.
-- **Copilot-cli skill updated:** Branched on `opencode-copilot-delegate` plugin (#1495)
-- **Mise tool bumps:** pnpm 10.33.0→10.33.2, npm 11.12.1→11.13.0, opencode-ai 1.14.18→1.14.28 (Renovate re-enabled), puppeteer 24.41.0→24.42.0, biome 2.4.12→2.4.13
-- **bfra-me/.github:** Updated to v4.16.9
-- **Open issues:** 19→5
-- **Stars:** 15
+- SHA unchanged (`e398c2e`): latest commit remains `chore(deps): update marcusrbrown/renovate-config preset to v4.5.1 (#347)` from 2026-03-12
+- **Open issues:** 4 (was not previously tracked in detail): #8 "Uplift esphome-life" (2023-06-18), #26 "Dependency Dashboard", #298 community reference note (2025-12-10), #348 "Action Required: Fix Renovate Configuration" (2026-03-12)
+- **Open PRs:** 0 (unchanged)
+- **Collaborators confirmed:** `marcusrbrown` (admin), `fro-bot` (write)
+- **New drift observations documented:** `bfra-me/.github` reusable workflows at v4.4.0 (ecosystem at v4.16.6+), `actions/checkout` at v5.0.1 (ecosystem at v6.x), Renovate preset at `#4.5.1` (ecosystem at `#4.5.8`), `update-repo-settings.yaml` calls `renovate.yaml` reusable workflow (likely misconfiguration)
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward with note that `fro-bot` already has write access
+- Repository structure, device configs, CI pipeline, devcontainer, Probot settings all unchanged
+- No contradictions with prior ingest
 
-No contradictions with prior ingest — all prior findings confirmed and extended.
+Sources: https://github.com/marcusrbrown/esphome.life (SHA e398c2e1e3ef8c68717df26fd67a99b5c91410d7)
 
-Sources: https://github.com/marcusrbrown/.dotfiles (SHA 19905ec660eddea4ed91ab1278cabf88c2233ef1)
+## [2026-04-27 07:52] ingest | repo:marcusrbrown/esphome.life
 
-## [2026-04-27 07:50] ingest | repo:marcusrbrown/.dotfiles
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
-Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/.dotfiles
+Sources: https://github.com/marcusrbrown/esphome.life
