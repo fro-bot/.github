@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/.github"
 created: 2025-06-18
-updated: 2026-04-27
+updated: 2026-04-26
 sources:
   - url: https://github.com/marcusrbrown/.github
     sha: be01029971bc8b50fbd2b660fadc7341da26e03c
@@ -25,9 +25,6 @@ sources:
   - url: https://github.com/marcusrbrown/.github
     sha: 99906ef
     accessed: 2026-04-26
-  - url: https://github.com/marcusrbrown/.github
-    sha: 3fb30a4
-    accessed: 2026-04-27
 tags: [github, repository-settings, probot, community-health, prettier, renovate]
 aliases: [marcusrbrown-dotgithub]
 related:
@@ -49,7 +46,7 @@ Marcus R. Brown's personal `.github` repository. Provides GitHub defaults, commu
 - **Purpose:** GitHub defaults and community health files for `marcusrbrown` repositories
 - **Default branch:** `main`
 - **Created:** 2020-10-30
-- **Last push:** 2026-04-27
+- **Last push:** 2026-04-25
 - **Topics:** `github`, `repository`, `settings`
 - **License:** MIT
 - **Language:** None (YAML/Markdown only, no application code)
@@ -141,7 +138,7 @@ Self-extends `common-settings.yaml` with repo-specific overrides:
 | Workflow | File | Trigger | Purpose |
 | --- | --- | --- | --- |
 | main | `main.yaml` | push, PR, dispatch | Prettier format check |
-| Renovate | `renovate.yaml` | PR (opened/reopened/synchronize/edited), issue edit, push (non-main), schedule (every 4h), workflow_call, workflow_dispatch, workflow_run (after main) | Dependency updates |
+| Renovate | `renovate.yaml` | PR (opened/reopened/synchronize/edited), issue edit, push (non-main), workflow_call, workflow_dispatch, workflow_run (after main) | Dependency updates |
 | Update Repo Settings | `update-repo-settings.yaml` | push to main, daily cron (02:55 UTC), dispatch | Probot settings sync |
 
 ### CI Details (main.yaml)
@@ -165,7 +162,7 @@ Delegates fully to `bfra-me/.github` reusable workflow. Inputs: `log-level` (def
 
 ### Shared Workflows
 
-Both `renovate.yaml` and `update-repo-settings.yaml` use reusable workflows from `bfra-me/.github` at SHA `4b85695b1ef6f57b52e29c92c027efeec65de2be` (v4.16.9). Authentication via `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App credentials).
+Both `renovate.yaml` and `update-repo-settings.yaml` use reusable workflows from `bfra-me/.github` at SHA `bedac8bd7b81a7832ae494873da2971e5ea7a8d4` (v4.16.8). Authentication via `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App credentials).
 
 ## Developer Tooling
 
@@ -200,7 +197,6 @@ As a `.github` repo, these files serve as **defaults** for all `marcusrbrown` re
 | 2026-04-24 | `4e4fd28` | Re-survey — no change since 2026-04-23; repo content identical at same SHA |
 | 2026-04-25 | `4e4fd28` | Re-survey — no change since 2026-04-24; repo content identical at same SHA |
 | 2026-04-26 | `99906ef` | Renovate schedule trigger re-enabled at `15 */4 * * *` (every 4 hours at :15), replacing the commented-out hourly cron |
-| 2026-04-27 | `3fb30a4` | `bfra-me/.github` reusable workflows bumped v4.16.8 → v4.16.9 (SHA `4b85695b`) in both `renovate.yaml` and `update-repo-settings.yaml` |
 
 ## Notable Patterns
 

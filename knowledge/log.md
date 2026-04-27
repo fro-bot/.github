@@ -845,41 +845,55 @@ Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mrbro.dev
 
-## [2026-04-27 12:00] ingest | marcusrbrown/.github
+## [2026-04-27 05:00] ingest | marcusrbrown/.dotfiles
 
-Incremental re-survey of `marcusrbrown/.github` (SHA `3fb30a4`, up from `99906ef`). Updated repo page `marcusrbrown--github.md` and topic page `probot-settings.md`. Index unchanged (all pages already cataloged).
+Incremental re-survey of `marcusrbrown/.dotfiles` (SHA `19905ec`, up from `ae026c1`). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
 
-Delta from prior survey (SHA `99906ef`, 2026-04-26):
+Delta from prior survey (SHA `ae026c1`, 2026-04-22):
 
-- **bfra-me/.github reusable workflows bumped:** v4.16.8 → v4.16.9 (SHA `4b85695b1ef6f57b52e29c92c027efeec65de2be`) in both `renovate.yaml` and `update-repo-settings.yaml` (PR #363, 2026-04-27)
-- Only files changed: `.github/workflows/renovate.yaml` and `.github/workflows/update-repo-settings.yaml`
-- 2 open issues (#37 — move to another settings action, #214 — Dependency Dashboard), 0 open PRs (unchanged)
-- 3 stars, 2 watchers (unchanged)
-- Repository structure, CI pipeline, Prettier config, Renovate config, settings, and community health files all unchanged
-- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+- **Fro Bot agent bumped:** v0.41.3 → v0.42.2 (SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`)
+- **Fro Bot workflow:** Added auto-close step for daily maintenance reports older than 3 days (#1475)
+- **OpenCode default model set:** `opencode-go/kimi-k2.6` (previously unset)
+- **OpenCode plugin bumps:** `@ex-machina/opencode-anthropic-auth` 1.7.4→1.7.5, `oh-my-openagent` 3.17.4→3.17.5, `@cortexkit/opencode-magic-context` 0.13.0→0.15.3, `@cortexkit/aft-opencode` 0.14.0→0.16.1 (renamed to `@cortexkit/aft` in mise)
+- **New config files:** `aft.jsonc` (AFT cross-project scope, experimental search/semantic), `tui.json` (Catppuccin theme, TUI plugin list)
+- **oh-my-openagent model routing overhaul:** Partial reversion from all-Copilot-hosted — `metis`, `librarian`, `unspecified-low`, `unspecified-high` reverted to direct `anthropic/*` endpoints. `metis` and `unspecified-high` upgraded to `max` variant. `sisyphus` newly disabled. `sisyphus_agent` config removed. `auto_update: false` and `git_master` config added.
+- **Magic-context config changes:** Historian and Dreamer migrated back to `anthropic/claude-sonnet-4-6`. History budget 10%→15%. Auto-drop age 15→30. Opus 4.7 token threshold lowered 88K→80K. New experimental features: `auto_search`, `git_commit_indexing`. New `memory.injection_budget_tokens: 6000`. Plugin version 0.13.0→0.15.3.
+- **Copilot-cli skill updated:** Branched on `opencode-copilot-delegate` plugin (#1495)
+- **Mise tool bumps:** pnpm 10.33.0→10.33.2, npm 11.12.1→11.13.0, opencode-ai 1.14.18→1.14.28 (Renovate re-enabled), puppeteer 24.41.0→24.42.0, biome 2.4.12→2.4.13
+- **bfra-me/.github:** Updated to v4.16.9
+- **Open issues:** 19→5
+- **Stars:** 15
 
-Sources: https://github.com/marcusrbrown/.github (SHA 3fb30a4)
+No contradictions with prior ingest — all prior findings confirmed and extended.
 
-## [2026-04-27 07:47] ingest | repo:marcusrbrown/.github
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA 19905ec660eddea4ed91ab1278cabf88c2233ef1)
 
-Surveyed marcusrbrown/.github and updated the control-plane wiki.
+## [2026-04-27 07:50] ingest | repo:marcusrbrown/.dotfiles
 
-Sources: https://github.com/marcusrbrown/.github
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
-## [2026-04-27 12:00] ingest | marcusrbrown/extend-vscode
+Sources: https://github.com/marcusrbrown/.dotfiles
 
-Re-survey of `marcusrbrown/extend-vscode` (SHA `b457a34f`, unchanged from 2026-04-26). Updated repo page `marcusrbrown--extend-vscode.md` with new source entry and delta log. Bumped `updated` date on topic page `vscode-extensions.md`. Index unchanged (both pages already cataloged).
+## [2026-04-27 08:00] ingest | marcusrbrown/gpt
 
-No repository content changes detected since prior survey. HEAD still at `b457a34f` (`typescript-eslint` v8.59.0 bump, #481). Last push: 2026-04-25T15:12:46Z. Same 4 open Renovate PRs (#466–#469) pending merge. Open issues: 5 (#142, #162, #317–#319). Repo metadata: 1 star, 1 watcher, not archived.
+Incremental re-survey of `marcusrbrown/gpt` (SHA `aaf2d45`, up from `0bb8eed`). Updated repo page `marcusrbrown--gpt.md`. Fixed stale Vite version in `index.md` (7→8). No new topic/entity/comparison pages warranted — existing cross-cutting pages remain accurate.
 
-Full dependency snapshot captured with expanded coverage (added `eslint-config-prettier`, `@vitest/ui`, `@vitest/coverage-v8`, `tsx`, `semantic-release-vsce`, `jiti`, `ovsx`, `type-fest`). All prior findings confirmed — no contradictions.
+Delta from prior survey (SHA `0bb8eed`, 2026-04-24):
 
-**Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward.
+- **Code quality fix (#2345, 2026-04-26):** Fro Bot authored commit adopting `error_` naming convention and `@/` import alias across 9 source files (components, contexts, pages, services). First non-dependency code change since initial survey.
+- **New open PR #2352:** Further `@/` import alias enforcement in production code (fro-bot authored)
+- **Fro Bot agent bumped:** v0.41.4 → v0.42.2 (SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`), across both `fro-bot.yaml` and `fro-bot-autoheal.yaml`
+- **bfra-me/.github reusable workflows:** v4.16.8 → v4.16.9
+- **Dependency bumps:** `vite` 8.0.9→8.0.10, `langchain` 1.3.3→1.3.4, `@langchain/anthropic` 1.3.26→1.3.27, `react-router-dom` 7.14.1→7.14.2, `vitest` 4.1.4→4.1.5, `tailwindcss` 4.2.2→4.2.4, `@typescript/native-preview` →7.0.0-dev.20260423.1, `pnpm` 10.33.0→10.33.2, `openai` 6.34.0 (new in deps)
+- **Open issues:** 30 (unchanged from prior survey)
+- **Open PRs:** 3 (#2352 new import alias fix, #2320 eslint-plugin-react-hooks, #2165 HeroUI v3 migration)
+- Repository structure, architecture, workflows, Probot settings, and conventions all unchanged
+- No contradictions with prior ingest
 
-Sources: https://github.com/marcusrbrown/extend-vscode (SHA b457a34f032149b03dddaca99eacca14eac91367)
+Sources: https://github.com/marcusrbrown/gpt (SHA aaf2d458beefbb6059655df8c7dc6e31cf006f98)
 
-## [2026-04-27 07:52] ingest | repo:marcusrbrown/extend-vscode
+## [2026-04-27 07:54] ingest | repo:marcusrbrown/gpt
 
-Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/extend-vscode
+Sources: https://github.com/marcusrbrown/gpt
