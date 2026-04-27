@@ -29,6 +29,7 @@
   },
   "prettier": "@bfra.me/prettier-config/120-proof",
   "dependencies": {
+    "@atproto/api": "^0.19.9",
     "@octokit/rest": "^22.0.1",
     "yaml": "^2.6.0"
   },

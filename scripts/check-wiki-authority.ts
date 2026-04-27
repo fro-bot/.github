@@ -18,17 +18,18 @@ const FROBOT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
  *   `repos/`, `topics/`, `entities/`, and `comparisons/` subdirectories per the
  *   Karpathy schema. Top-level `knowledge/wiki/README.md` is human scaffolding.
  * - `knowledge/index.md` and `knowledge/log.md` are auto-maintained catalog and journal
- * - `metadata/*.yaml` are autonomous state files (repos.yaml, allowlist.yaml, etc.)
+ * - `metadata/repos.yaml` and `metadata/social-cooldowns.yaml` are autonomous state
  *
- * Human-editable siblings (`knowledge/schema.md`, `knowledge/README.md`,
- * `knowledge/wiki/README.md`, `metadata/README.md`) are intentionally NOT covered —
- * they carry conventions and docs that humans should own.
+ * Human-editable config files (`metadata/allowlist.yaml`, `metadata/renovate.yaml`)
+ * and docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
+ * `metadata/README.md`) are intentionally NOT covered.
  */
 const GUARDED_PATTERNS: readonly RegExp[] = [
   /^knowledge\/wiki\/[^/]+\/.+\.md$/,
   /^knowledge\/index\.md$/,
   /^knowledge\/log\.md$/,
-  /^metadata\/[^/]+\.yaml$/,
+  /^metadata\/repos\.yaml$/,
+  /^metadata\/social-cooldowns\.yaml$/,
 ]
 
 export interface GuardInput {

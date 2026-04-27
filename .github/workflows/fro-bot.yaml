@@ -38,6 +38,9 @@ on:
       OPENCODE_CONFIG:
         description: OpenCode runtime configuration
         required: true
+      DISCORD_WEBHOOK_URL:
+        description: Discord webhook URL for social notifications (optional)
+        required: false
 
 permissions:
   contents: read
@@ -206,7 +209,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@fc1387ec5c25afed73b11b8b26c482b90b3ad9cd # v0.41.0
+        uses: fro-bot/agent@6c45d8ce66b0b69f1b80b23f283ed455deb59517 # v0.42.1
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -277,3 +280,22 @@ jobs:
           WIKI_COMMIT_MESSAGE: 'feat(knowledge): ingest ${{ github.event_name }} context for ${{ github.repository }}'
           WIKI_SOURCES: '[{"url":"https://github.com/${{ github.repository }}","sha":"${{ github.sha }}","accessed":"${{ steps.ingest-ts.outputs.now }}"}]'
         run: node scripts/wiki-ingest.ts
+
+      - name: 📓 Journal — daily oversight
+        if: success() && github.event_name == 'schedule'
+        env:
+          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+        run: |
+          node scripts/journal-entry.ts \
+            --event daily_oversight \
+            --text "Ran scheduled oversight on ${{ github.repository }}. Reviewed PRs, issues, and wiki state. Keeping the signal clean." \
+            --metadata '{"trigger":"schedule","repo":"${{ github.repository }}"}'
+
+      - name: 📣 Notify Discord — daily oversight
+        if: success() && github.event_name == 'schedule'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          node scripts/discord-notify.ts \
+            --message "Daily oversight complete on **${{ github.repository }}**. PRs reviewed, wiki updated, signal maintained 🛰️" \
+            --title "Daily Oversight"

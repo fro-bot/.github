@@ -181,12 +181,28 @@ describe('checkWikiAuthority', () => {
       expect(result).toEqual({ok: false, blockedFiles: ['knowledge/wiki/comparisons/x-vs-y.md']})
     })
 
-    it('blocks hypothetical future metadata/*.yaml files', () => {
-      // #given a new yaml file that could be added to metadata/ in future
+    it('allows human-editable config files in metadata/', () => {
+      // #given a human author touching config metadata (not auto-managed state)
       // #when the guard evaluates the PR
-      // #then the single-segment glob covers it without needing a guard update
+      // #then the edit is allowed — allowlist.yaml and renovate.yaml are human-managed
+      expect(checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/allowlist.yaml']})).toEqual({ok: true})
+      expect(checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/renovate.yaml']})).toEqual({ok: true})
+    })
+
+    it('allows unknown metadata/*.yaml files (guard uses explicit list)', () => {
+      // #given a new yaml file added to metadata/ in the future
+      // #when the guard evaluates the PR
+      // #then the edit is allowed — only repos.yaml and social-cooldowns.yaml are guarded
       const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/new-thing.yaml']})
-      expect(result).toEqual({ok: false, blockedFiles: ['metadata/new-thing.yaml']})
+      expect(result).toEqual({ok: true})
+    })
+
+    it('blocks metadata/social-cooldowns.yaml for human authors', () => {
+      // #given a human author touching auto-managed social cooldown state
+      // #when the guard evaluates the PR
+      // #then the edit is blocked — social-cooldowns.yaml is auto-managed
+      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/social-cooldowns.yaml']})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/social-cooldowns.yaml']})
     })
 
     it('does not block metadata/<subdir>/*.yaml (single-segment glob by design)', () => {

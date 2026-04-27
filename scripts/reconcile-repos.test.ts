@@ -175,8 +175,8 @@ describe('reconcileRepos', () => {
   })
 
   describe('tracked entries — still accessible', () => {
-    it('leaves a pending, still-accessible entry unchanged when no field drift', () => {
-      const entry = makeEntry({onboarding_status: 'pending', name: 'stable-repo'})
+    it('leaves a pending-review, still-accessible entry unchanged when no field drift', () => {
+      const entry = makeEntry({onboarding_status: 'pending-review', name: 'stable-repo'})
       const result = reconcileRepos(
         makeInput({
           currentRepos: {version: 1, repos: [entry]},
@@ -420,7 +420,9 @@ describe('reconcileRepos', () => {
     })
 
     it('reports all-zero counters and value-equal nextRepos when nothing changes', () => {
-      const entry = makeEntry({name: 'stable-repo', onboarding_status: 'pending'})
+      // Use pending-review: it's excluded from the dispatch gate, so this entry
+      // truly produces zero side-effects.
+      const entry = makeEntry({name: 'stable-repo', onboarding_status: 'pending-review'})
       const current: ReposFile = {version: 1, repos: [entry]}
       const result = reconcileRepos(
         makeInput({
@@ -522,6 +524,80 @@ describe('reconcileRepos', () => {
           }),
         ),
       ).toThrow(/duplicate/i)
+    })
+
+    it('dispatches pending entry with null last_survey_at (never surveyed)', () => {
+      // #given a pending entry that has never been surveyed (null survey fields)
+      const entry = makeEntry({
+        name: 'never-surveyed',
+        onboarding_status: 'pending',
+        last_survey_at: null,
+        last_survey_status: null,
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'never-surveyed'})],
+        }),
+      )
+      // #then the entry is dispatched for its initial survey
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'never-surveyed'}])
+    })
+
+    it('dispatches pending entry with failure status (failed initial survey)', () => {
+      // #given a pending entry whose initial survey failed and wrote back a failure timestamp
+      const entry = makeEntry({
+        name: 'failed-initial',
+        onboarding_status: 'pending',
+        last_survey_at: '2026-04-19',
+        last_survey_status: 'failure',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'failed-initial'})],
+        }),
+      )
+      // #then the entry is dispatched for retry (failure ≠ success, so eligible)
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'failed-initial'}])
+    })
+
+    it('does not dispatch pending-review entry (requires human approval)', () => {
+      // #given a pending-review entry with null survey fields
+      const entry = makeEntry({
+        name: 'needs-approval',
+        onboarding_status: 'pending-review',
+        last_survey_at: null,
+        last_survey_status: null,
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'needs-approval'})],
+        }),
+      )
+      // #then no dispatch — pending-review entries need human promotion first
+      expect(result.dispatches).toEqual([])
+    })
+
+    it('does not dispatch pending entry with recent successful survey', () => {
+      // #given a pending entry that was surveyed successfully recently (promotion
+      // should have moved it to onboarded, but even if it didn't, the success +
+      // non-stale combination means no re-dispatch is needed)
+      const entry = makeEntry({
+        name: 'recently-succeeded',
+        onboarding_status: 'pending',
+        last_survey_at: '2026-04-16',
+        last_survey_status: 'success',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'recently-succeeded'})],
+        }),
+      )
+      // #then no dispatch — success + within staleness window → skip
+      expect(result.dispatches).toEqual([])
     })
   })
 })
@@ -796,9 +872,11 @@ describe('handleReconcile (I/O shell)', () => {
       const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
       const createWorkflowDispatch = vi.fn(async () => undefined)
       const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
+      // Use pending-review: it's excluded from the dispatch gate, so the entry
+      // truly produces zero side-effects (no dispatches, no commits).
       const existing: ReposFile = {
         version: 1,
-        repos: [makeEntry({name: 'stable-repo', onboarding_status: 'pending'})],
+        repos: [makeEntry({name: 'stable-repo', onboarding_status: 'pending-review'})],
       }
       const userOctokit = mockOctokit({
         listForAuthenticatedUser: async () => ({
@@ -1046,7 +1124,9 @@ describe('handleReconcile (I/O shell)', () => {
         }),
       )
 
-      expect(dispatchCalls).toEqual(['r1', 'r2', 'r3'])
+      // All three repos are attempted regardless of day-rotation order; a timeout on
+      // one should not block the others from dispatching.
+      expect(dispatchCalls.slice().sort()).toEqual(['r1', 'r2', 'r3'])
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesFailed).toBe(1)
     })
@@ -1207,6 +1287,49 @@ describe('handleReconcile (I/O shell)', () => {
       expect(dispatchCount.n).toBe(6)
       expect(result.dispatches).toBe(6)
       expect(result.dispatchesDeferred).toBe(0)
+    })
+
+    it('rotates the null-group selection window daily so all never-surveyed repos eventually dispatch', async () => {
+      // Four never-surveyed repos (r-a, r-b, r-c, r-d sorted alphabetically).
+      // Cap of 2. dayOrdinal(NOW=2026-04-17) = 20560; 20560 % 4 = 0 → selects [r-a, r-b].
+      // dayOrdinal(2026-04-19) = 20562; 20562 % 4 = 2 → rotates to [r-c, r-d, r-a, r-b] → selects [r-c, r-d].
+      // This proves repos that sort later don't starve when the null group exceeds the cap.
+      const repos = ['r-a', 'r-b', 'r-c', 'r-d']
+      const makeOctokit = () =>
+        mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: repos.map(name => ({
+              owner: {login: 't'},
+              name,
+              archived: false,
+              private: false,
+              node_id: `R_${name}`,
+            })),
+          }),
+        })
+
+      const runWith = async (now: Date) => {
+        const dispatched: string[] = []
+        const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+          dispatched.push((params as {inputs?: {repo: string}}).inputs?.repo ?? '?')
+        })
+        await handleReconcile(
+          baseParams({
+            userOctokit: makeOctokit(),
+            appOctokit: mockOctokit({createWorkflowDispatch}),
+            readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+            commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+            now,
+            maxDispatchesPerRun: 2,
+          }),
+        )
+        return dispatched
+      }
+
+      // Offset 0 → first slice
+      expect(await runWith(NOW)).toEqual(['r-a', 'r-b'])
+      // Offset 2 → rotated slice; r-c and r-d get their turn
+      expect(await runWith(new Date('2026-04-19T12:00:00Z'))).toEqual(['r-c', 'r-d'])
     })
   })
 

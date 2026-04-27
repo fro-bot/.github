@@ -102,7 +102,7 @@ jobs:
 
       - name: Run Fro Bot survey ingest
         id: survey-agent
-        uses: fro-bot/agent@fc1387ec5c25afed73b11b8b26c482b90b3ad9cd # v0.41.0
+        uses: fro-bot/agent@6c45d8ce66b0b69f1b80b23f283ed455deb59517 # v0.42.1
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
@@ -176,3 +176,29 @@ jobs:
             ${{ (steps.survey-agent.conclusion == 'success' && (steps.wiki-commit.conclusion == 'success' ||
             steps.wiki-commit.conclusion == 'skipped')) && 'success' || 'failure' }}
         run: node scripts/record-survey-result.ts
+
+  broadcast:
+    name: Broadcast survey complete
+    needs: survey-repo
+    if: needs.survey-repo.result == 'success'
+    uses: ./.github/workflows/social-broadcast.yaml
+    with:
+      event_type: repo_survey_complete
+      discord_message: >-
+        Just finished surveying **${{ github.event.inputs.owner }}/${{ github.event.inputs.repo }}**.
+        New knowledge ingested into the wiki ✨
+      discord_title: Repo Survey Complete
+      bluesky_text: >-
+        📡 Just surveyed ${{ github.event.inputs.owner }}/${{ github.event.inputs.repo }} and locked in new insights.
+        The wiki grows. #GitHub #OpenSource
+      journal_text: >-
+        Surveyed ${{ github.event.inputs.owner }}/${{ github.event.inputs.repo }} and persisted what I learned.
+        Each repo leaves a mark on the map.
+      journal_metadata: >-
+        {"owner":"${{ github.event.inputs.owner }}","repo":"${{ github.event.inputs.repo }}"}
+      repo: ${{ github.event.inputs.owner }}/${{ github.event.inputs.repo }}
+    secrets:
+      FRO_BOT_PAT: ${{ secrets.FRO_BOT_PAT }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+      BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}

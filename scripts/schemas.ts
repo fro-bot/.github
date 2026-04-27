@@ -38,19 +38,10 @@ export type OnboardingStatus = 'pending' | 'onboarded' | 'failed' | 'lost-access
 export type SurveyStatus = 'success' | 'failure'
 
 export interface RenovateFile {
-  version: 1
-  repos: RenovateRepoEntry[]
+  repositories: {
+    'with-renovate': string[]
+  }
 }
-
-export interface RenovateRepoEntry {
-  owner: string
-  name: string
-  workflow_path: string
-  last_dispatched_at: string | null
-  last_dispatch_status: RenovateDispatchStatus | null
-}
-
-export type RenovateDispatchStatus = 'success' | 'skipped-running' | 'failure'
 
 export interface SocialCooldownsFile {
   version: 1
@@ -171,48 +162,22 @@ function isSurveyStatus(value: unknown): value is SurveyStatus {
 
 export function isRenovateFile(value: unknown): value is RenovateFile {
   if (!isRecord(value)) return false
-  if (value.version !== 1) return false
-  if (!Array.isArray(value.repos)) return false
-  return value.repos.every(isRenovateRepoEntry)
+  if (!isRecord(value.repositories)) return false
+  return (
+    Array.isArray(value.repositories['with-renovate']) &&
+    value.repositories['with-renovate'].every((v: unknown) => typeof v === 'string')
+  )
 }
 
 export function assertRenovateFile(value: unknown, path = 'renovate'): asserts value is RenovateFile {
   if (!isRecord(value)) throw new SchemaValidationError(path, 'expected object')
-  if (value.version !== 1) throw new SchemaValidationError(`${path}.version`, 'expected 1')
-  if (!Array.isArray(value.repos)) throw new SchemaValidationError(`${path}.repos`, 'expected array')
-  value.repos.forEach((entry, index) => {
-    assertRenovateRepoEntry(entry, `${path}.repos[${index}]`)
-  })
-}
-
-function isRenovateRepoEntry(value: unknown): value is RenovateRepoEntry {
-  return (
-    isRecord(value) &&
-    typeof value.owner === 'string' &&
-    typeof value.name === 'string' &&
-    typeof value.workflow_path === 'string' &&
-    (value.last_dispatched_at === null || typeof value.last_dispatched_at === 'string') &&
-    (value.last_dispatch_status === null || isRenovateDispatchStatus(value.last_dispatch_status))
-  )
-}
-
-function assertRenovateRepoEntry(value: unknown, path: string): asserts value is RenovateRepoEntry {
-  if (!isRecord(value)) throw new SchemaValidationError(path, 'expected object')
-  if (typeof value.owner !== 'string') throw new SchemaValidationError(`${path}.owner`, 'expected string')
-  if (typeof value.name !== 'string') throw new SchemaValidationError(`${path}.name`, 'expected string')
-  if (typeof value.workflow_path !== 'string')
-    throw new SchemaValidationError(`${path}.workflow_path`, 'expected string')
-  if (value.last_dispatched_at !== null && typeof value.last_dispatched_at !== 'string')
-    throw new SchemaValidationError(`${path}.last_dispatched_at`, 'expected string or null')
-  if (value.last_dispatch_status !== null && !isRenovateDispatchStatus(value.last_dispatch_status))
-    throw new SchemaValidationError(
-      `${path}.last_dispatch_status`,
-      'expected one of: success, skipped-running, failure, or null',
-    )
-}
-
-function isRenovateDispatchStatus(value: unknown): value is RenovateDispatchStatus {
-  return value === 'success' || value === 'skipped-running' || value === 'failure'
+  if (!isRecord(value.repositories)) throw new SchemaValidationError(`${path}.repositories`, 'expected object')
+  if (!Array.isArray(value.repositories['with-renovate']))
+    throw new SchemaValidationError(`${path}.repositories.with-renovate`, 'expected array of strings')
+  for (const [index, entry] of value.repositories['with-renovate'].entries()) {
+    if (typeof entry !== 'string')
+      throw new SchemaValidationError(`${path}.repositories.with-renovate[${index}]`, 'expected string')
+  }
 }
 
 export function isSocialCooldownsFile(value: unknown): value is SocialCooldownsFile {

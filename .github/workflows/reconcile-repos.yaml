@@ -18,10 +18,10 @@ jobs:
     name: Reconcile metadata/repos.yaml with GitHub collaborator access
     runs-on: ubuntu-latest
     # Stagger + cap keep fan-out inside this budget even at the maximum configured
-    # dispatch count: 6 dispatches × 90s = 9 minutes of stagger, plus ≤1 minute of
-    # pre-dispatch work (access list, probes, commit). 15 minutes provides headroom
+    # dispatch count: 12 dispatches × 90s stagger = ~16.5 minutes, plus ≤1 minute of
+    # pre-dispatch work (access list, probes, commit). 25 minutes provides headroom
     # for GitHub API jitter without permitting a truly-stuck run.
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - id: get-workflow-app-token
         name: Get Workflow Access Token
@@ -47,5 +47,5 @@ jobs:
           # Cap dispatches per reconcile run. Candidates beyond the cap are eligible again
           # on the next run via the staleness gate, producing a progressive day-over-day
           # cadence instead of bursty fan-outs that exhaust upstream capacity.
-          RECONCILE_MAX_DISPATCHES_PER_RUN: '6'
+          RECONCILE_MAX_DISPATCHES_PER_RUN: '12'
         run: node scripts/reconcile-repos.ts
