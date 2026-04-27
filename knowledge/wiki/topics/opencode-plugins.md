@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-04-24
+updated: 2026-04-27
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
     accessed: 2026-04-24
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: 02cac9c024744a290c9257d5c740d2a83e2c8e42
+    accessed: 2026-04-27
 tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents]
 ---
 
@@ -113,14 +116,18 @@ Rather than registering one tool per skill, systematic registers a single `syste
 | Skill tool | Single tool with dynamic skill loading (avoids tool namespace pollution) | [[marcusrbrown--systematic]] |
 | OCX registry | Component-level distribution via ocx CLI with named profiles | [[marcusrbrown--systematic]] |
 
+## Process Tree Management
+
+[[marcusrbrown--opencode-copilot-delegate]] uses `fkill` 10.0.3 for cross-platform process tree cleanup. Key pattern: `fkill(pid, { force: false, forceAfterTimeout: 2000, waitForExit: 5000 })` with `.catch()` guards on all kill calls in abort handlers. On macOS, `tree: true` is Windows-only, so the plugin targets the entire process group via `fkill(-pid)` with subprocesses spawned `detached: true`.
+
 ## Marcus's Plugin Repos
 
-| Repo | npm Package | Purpose | Stack |
-|------|-------------|---------|-------|
-| [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (45 skills, 50 agents) | Bun, Biome, semantic-release |
-| [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses | Bun, Biome, Changesets |
+| Repo | npm Package | Purpose | Stack | Status |
+|------|-------------|---------|-------|--------|
+| [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (45 skills, 50 agents) | Bun, Biome, semantic-release | Active, v2.5.1+ |
+| [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses | Bun, Biome, Changesets | Active, v0.1.0 |
 
-Both plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's OpenCode plugin repos.
+Both plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's OpenCode plugin repos. Both use `mise.toml` to pin Bun and tool versions.
 
 ## Related Pages
 

@@ -907,24 +907,33 @@ Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/infra
 
-## [2026-04-27 12:00] ingest | marcusrbrown/mrbro.dev
+## [2026-04-27 12:00] ingest | marcusrbrown/opencode-copilot-delegate
 
-Re-survey of `marcusrbrown/mrbro.dev` (SHA `d8c0e43`, unchanged from 2026-04-26). Updated repo page `marcusrbrown--mrbro-dev.md` with new source entry and survey history row. No new topic/entity/comparison pages warranted — all existing pages remain accurate. Index unchanged (page already cataloged).
+Incremental re-survey of `marcusrbrown/opencode-copilot-delegate` (SHA `02cac9c`, up from `bea3f57`). Updated repo page `marcusrbrown--opencode-copilot-delegate.md` and topic page `opencode-plugins.md`. Index unchanged (both pages already cataloged).
 
-Delta from prior survey (SHA `d8c0e43`, 2026-04-26):
+Delta from prior survey (SHA `bea3f57`, 2026-04-23):
 
-- SHA unchanged (`d8c0e43`): no new commits merged to default branch since prior survey
-- **Open issues:** 39 → 44 — increase is entirely autoheal report proliferation (#141–#147 are separate daily reports)
-- **Open PRs:** 4 (unchanged) — #85/#87 stale security fixes, #142 Renovate non-major, #145 fro-bot hook rename
-- **Autoheal behavioral drift confirmed:** The autoheal prompt mandates a single dated issue per run (`Daily Autohealing Report — YYYY-MM-DD`), but the agent creates a new issue each day instead of reusing/updating. Seven separate autohealing report issues accumulated (#141–#147). This is the primary contributor to issue count inflation. The daily maintenance report (#13) correctly uses the rolling-issue pattern — the divergence is autoheal-specific.
-- Fro Bot agent still at v0.41.3 (SHA `36c9850c`), TypeScript still ^5.6.3, Renovate preset #4.5.8
-- Repository structure, tech stack, CI/CD, deploy pipeline, testing infrastructure, conventions all unchanged
-- No contradictions with prior ingest
+- **Implementation complete:** All `src/` files are now working code, not TODO stubs. The 11-task implementation plan has been executed.
+- **CI active on main:** `ci.yaml` runs lint (Biome), typecheck, build, and unit tests. Required status check for branch protection.
+- **Fro Bot merged and active:** `fro-bot.yaml` with `fro-bot/agent@v0.42.2` (SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`). PR review (structured verdict) + daily autohealing (16:00 UTC, 4-category sweep, perpetual single-issue strategy). Required status check.
+- **Renovate active:** Extends `marcusrbrown/renovate-config#4.5.8`, post-upgrade runs bun install + fix + build.
+- **Release pipeline:** Changesets via `changesets/action@v1.7.0`, GitHub App token auth, npm provenance.
+- **Update Repo Settings workflow added:** Probot settings sync extending `fro-bot/.github:common-settings.yaml`
+- **Copilot Setup Steps workflow added**
+- **Biome upgraded:** 1.9.4 → 2.4.13 (major version bump)
+- **TypeScript:** Now at ^6.0.3 (was unspecified version in scaffold)
+- **Runtime dependency added:** `fkill` 10.0.3 for cross-platform process tree kill
+- **Mise tooling added:** Bun 1.3.13, opencode-ai 1.14.27, @github/copilot 1.0.36
+- **Branch protection configured:** Required checks (Fro Bot, CI, Renovate), enforce admins, linear history
+- **3 open issues:** #38 (integration tests not in CI), #26 (Daily Autohealing Report), #25 (Dependency Dashboard)
+- **0 open PRs** (all onboarding PRs merged)
+- **`docs/solutions/` directory added** for documented solutions with YAML frontmatter
+- Added `fkill` process tree management pattern to `opencode-plugins.md` topic page
 
-Sources: https://github.com/marcusrbrown/mrbro.dev (SHA d8c0e43a471aa41b030890122d75450b5626b981)
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 02cac9c024744a290c9257d5c740d2a83e2c8e42)
 
-## [2026-04-27 08:02] ingest | repo:marcusrbrown/mrbro.dev
+## [2026-04-27 08:04] ingest | repo:marcusrbrown/opencode-copilot-delegate
 
-Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/mrbro.dev
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
