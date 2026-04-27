@@ -2,11 +2,8 @@
 type: repo
 title: "marcusrbrown/gpt"
 created: 2026-04-18
-updated: 2026-04-27
+updated: 2026-04-24
 sources:
-  - url: https://github.com/marcusrbrown/gpt
-    sha: aaf2d458beefbb6059655df8c7dc6e31cf006f98
-    accessed: 2026-04-27
   - url: https://github.com/marcusrbrown/gpt
     sha: 0bb8eedf6e23bfb5715d127763fd864ab7da72cd
     accessed: 2026-04-24
@@ -29,28 +26,28 @@ Local-first, privacy-focused GPT creation and management platform. Mirrors core 
 - **Purpose:** Create, customize, and interact with AI assistants locally
 - **Default branch:** `main`
 - **Created:** 2023-12-01
-- **Last push:** 2026-04-27
+- **Last push:** 2026-04-23
 - **Homepage:** https://gpt.mrbro.dev (GitHub Pages)
 - **License:** MIT
 - **Topics:** `gpt`, `transformers`, `nlp`, `chatgpt`, `gpt-4`
 - **Node.js:** 24.15.0 (`.tool-versions`)
-- **Package manager:** pnpm 10.33.2
+- **Package manager:** pnpm 10.33.0
 
 ## Tech Stack
 
 | Layer | Technology | Notes |
 | --- | --- | --- |
 | Framework | React 19.2.5, TypeScript 5.9.3 | Strict mode, `@/` import alias |
-| Build | Vite 8.0.10, `@vitejs/plugin-react-swc` | `tsgo` (`@typescript/native-preview` 7.0.0-dev.20260423.1) for type-checking |
-| Styling | TailwindCSS 4.2.4, HeroUI 2.8.10 | Semantic design tokens only, no hardcoded colors |
+| Build | Vite 8.0.9, `@vitejs/plugin-react-swc` | `tsgo` (`@typescript/native-preview` 7.0.0-dev) for type-checking |
+| Styling | TailwindCSS 4.2.2, HeroUI 2.8.10 | Semantic design tokens only, no hardcoded colors |
 | Storage | IndexedDB via Dexie 4.4.2 | Local-first; no localStorage for structured data |
 | Security | Web Crypto API (AES-GCM, PBKDF2) | Client-side encryption for API keys |
-| AI | LangChain 1.3.4, `@langchain/openai` 1.4.4, `@langchain/anthropic` 1.3.27, `@langchain/langgraph` 1.2.9 | Provider-abstracted via `BaseLLMProvider` |
+| AI | LangChain 1.3.3, `@langchain/openai` 1.4.4, `@langchain/anthropic` 1.3.26, `@langchain/langgraph` 1.2.9 | Provider-abstracted via `BaseLLMProvider` |
 | MCP | `@modelcontextprotocol/sdk` 1.29.0 | Tool integration via Model Context Protocol |
 | Editor | Monaco Editor (`@monaco-editor/react` 4.7.0) | In-app code/prompt editing |
-| Routing | React Router DOM 7.14.2 | Route-level lazy loading |
+| Routing | React Router DOM 7.14.1 | Route-level lazy loading |
 | Validation | Zod 4.3.6 | Zod-first: define schema, infer type |
-| Testing | Vitest 4.1.5, Playwright 1.59.1, axe-core | Unit, E2E, accessibility, visual, performance |
+| Testing | Vitest 4.1.4, Playwright 1.59.1, axe-core | Unit, E2E, accessibility, visual, performance |
 | Linting | ESLint 10.2.1, `@bfra.me/eslint-config` 0.50.1, Prettier 3.8.3 | `@bfra.me/prettier-config/120-proof` (120-char lines) |
 
 ## Architecture
@@ -181,7 +178,7 @@ Vite build injects a CSP `<meta>` tag restricting:
    - Issue/discussion triage (triggered by `@fro-bot` mention from OWNER/MEMBER/COLLABORATOR)
    - Daily maintenance (15:30 UTC cron → rolling "Daily Maintenance Report" issue)
    - Manual dispatch with custom prompts
-    - Uses `fro-bot/agent@v0.42.2`
+    - Uses `fro-bot/agent@v0.41.4`
 
 2. **`fro-bot-autoheal.yaml`** — Daily autohealing (03:30 UTC cron):
    - Fixes failing CI on open PRs
@@ -191,7 +188,7 @@ Vite build injects a CSP `<meta>` tag restricting:
    - Quality gate verification (lint, test, build, accessibility, E2E)
    - Output: single "Daily Autohealing Report" issue
 
-Both workflows use `fro-bot/agent@v0.42.2` (SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`) with `OPENCODE_AUTH_JSON`, `FRO_BOT_PAT`, `FRO_BOT_MODEL`, and `OMO_PROVIDERS` secrets/vars.
+Both workflows use `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d9735d7ad2aca`) with `OPENCODE_AUTH_JSON`, `FRO_BOT_PAT`, `FRO_BOT_MODEL`, and `OMO_PROVIDERS` secrets/vars.
 
 ## Conventions (from AGENTS.md)
 
@@ -216,10 +213,9 @@ Both workflows use `fro-bot/agent@v0.42.2` (SHA `94d8a156570d68d2461ab496b589e63
 
 ## Open Work Items
 
-- **PR #2352** — `@/` import alias enforcement across production code (authored by `fro-bot`, open)
-- **PR #2320** — `eslint-plugin-react-hooks` v7.1.1 (Renovate, pending)
 - **PR #2165** — HeroUI v2 → v3 migration (authored by `fro-bot`, open since before 2026-04-18)
-- **30 open issues** (as of 2026-04-27)
+- **PR #2320** — `eslint-plugin-react-hooks` v7.1.1 (Renovate, pending)
+- **30 open issues** (as of 2026-04-24)
 
 ## Survey History
 
@@ -227,4 +223,3 @@ Both workflows use `fro-bot/agent@v0.42.2` (SHA `94d8a156570d68d2461ab496b589e63
 | --- | --- | --- |
 | 2026-04-18 | `60bd62e` | Initial survey |
 | 2026-04-24 | `0bb8eed` | Dependency-only delta: `fro-bot/agent` v0.40.2→v0.41.4, `vite` 8.0.8→8.0.9, `@langchain/langgraph` 1.2.8→1.2.9, `eslint` 10.2.0→10.2.1, `uuid` v14 security patch, `@typescript/native-preview` 7.0.0-dev.20260419.1, `actions/setup-node` v6.4.0, `bfra-me/.github` v4.16.8. No structural or application code changes. |
-| 2026-04-27 | `aaf2d45` | Code quality fix: `error_` naming convention + `@/` import alias adoption across 9 source files (#2345, authored by fro-bot). Dependencies: `fro-bot/agent` v0.41.4→v0.42.2, `vite` 8.0.9→8.0.10, `langchain` 1.3.3→1.3.4, `@langchain/anthropic` 1.3.26→1.3.27, `react-router-dom` 7.14.1→7.14.2, `vitest` 4.1.4→4.1.5, `tailwindcss` 4.2.2→4.2.4, `pnpm` 10.33.0→10.33.2, `bfra-me/.github` v4.16.8→v4.16.9. New open PR #2352 (import alias enforcement). |

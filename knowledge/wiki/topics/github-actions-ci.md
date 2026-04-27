@@ -11,7 +11,6 @@ related:
   - marcusrbrown--systematic
   - marcusrbrown--infra
   - marcusrbrown--marcusrbrown-github-io
-  - marcusrbrown--marcusrbrown
 ---
 
 # GitHub Actions CI
@@ -25,7 +24,6 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 - [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing
-- [[marcusrbrown--marcusrbrown]] — Profile README automation (6-hour scheduled generation via readme-scribe, sponsor/badge pipelines, markdownlint+tsc+eslint CI)
 
 ## Common Patterns
 
@@ -82,7 +80,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`) | Daily 14:30 UTC autohealing       |
 | [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]]       | Present (`fro-bot.yaml`) | Daily 03:30 UTC autohealing (8 categories incl. CLIProxy + cross-project + upstream modernization watch on Sundays) |
-| [[marcusrbrown--marcusrbrown-github-io]] | Present (`fro-bot.yaml`) | Daily 15:30 UTC maintenance (no autoheal) |
+| [[marcusrbrown--marcusrbrown-github-io]] | Present (`fro-bot.yaml`, v0.42.2) | Daily 15:30 UTC maintenance (no autoheal) |
 | [[marcusrbrown--ha-config]]   | **Not present**          | N/A                               |
 
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
