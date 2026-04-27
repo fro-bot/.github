@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/ha-config"
 created: 2025-06-18
-updated: 2026-04-27
+updated: 2026-04-24
 sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: 83784bc3a212c10cd358be4da9425e46aa6e90f0
@@ -13,9 +13,6 @@ sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: f7ec8038cca071e36848057d00d1c165cef5f357
     accessed: 2026-04-24
-  - url: https://github.com/marcusrbrown/ha-config
-    sha: dee203e7eb0bc1faae1541d9a62602dab13d1e9a
-    accessed: 2026-04-27
 tags: [home-assistant, home-assistant-config, yaml, esphome, iot]
 aliases: [ha-config]
 related:
@@ -35,11 +32,11 @@ Marcus R. Brown's [[home-assistant]] configuration repository. Public, version-c
 - **Purpose:** Version-controlled Home Assistant configuration
 - **Default branch:** `main`
 - **Created:** 2023-07-25
-- **Last push:** 2026-04-27
+- **Last push:** 2026-04-22
 - **HA version tracked:** 2025.6.3 (pinned in `.HA_VERSION`)
 - **Topics:** `home-assistant`, `home-assistant-config`
-- **Open issues:** 2 (#427 — Dependency Dashboard, #768 — unknown)
-- **Open PRs:** 1 (#766 — asyncio-mqtt v0.16.2)
+- **Open issues:** 1 (#427 — Dependency Dashboard)
+- **Open PRs:** 0
 
 ## Repository Structure
 
@@ -121,7 +118,7 @@ Required status checks on `main`: YAML Lint, Remark Lint, Prettier, Check Home A
 
 ### Shared Workflows
 
-Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github` (v4.16.9, SHA `4b85695b1ef6f57b52e29c92c027efeec65de2be`). Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
+Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github` (v4.16.8, SHA `bedac8bd7b81a7832ae494873da2971e5ea7a8d4`). Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
 
 ### Renovate Trigger Model
 
@@ -165,4 +162,3 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | 2025-06-18 | `83784bc` | Initial survey — 11 packages, 10 custom components, Prettier 3.8.2, Renovate `#4.5.7`, pre-commit 4.5.1 |
 | 2026-04-18 | `54a6727` | Prettier 3.8.3, Renovate `#4.5.8`, bfra-me/.github v4.16.6, pre-commit-hooks v6.0.0 |
 | 2026-04-24 | `f7ec803` | pre-commit 4.6.0, bfra-me/.github v4.16.8, Renovate trigger model expanded (workflow_run, push to non-main) |
-| 2026-04-27 | `dee203e` | bfra-me/.github v4.16.9, 1 open PR (#766 asyncio-mqtt), open issues 2 |

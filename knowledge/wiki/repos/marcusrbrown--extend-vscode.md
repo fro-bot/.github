@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/extend-vscode"
 created: 2026-04-18
-updated: 2026-04-26
+updated: 2026-04-27
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -25,6 +25,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: b457a34f032149b03dddaca99eacca14eac91367
     accessed: 2026-04-26
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: b457a34f032149b03dddaca99eacca14eac91367
+    accessed: 2026-04-27
 tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
 aliases: [extend-vscode]
 related:
@@ -235,5 +238,24 @@ One Renovate dependency bump merged since 2026-04-25 survey — breaks the 5-day
 | #481 | `typescript-eslint` v8.58.x → v8.59.0 |
 
 Updated dependency snapshot: `typescript-eslint` now at 8.59.0. All other dependencies, repository structure, architecture, workflows, publishing pipeline, and Probot settings unchanged. Same 4 open Renovate PRs (#466–#469) pending merge. Open issues: 5 (#142, #162, #317–#319). Repo metadata: 1 star, 1 watcher, not archived.
+
+**Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward. Six workflows present: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`.
+
+### 2026-04-27 (SHA `b457a34f`, unchanged from 2026-04-25)
+
+No repository changes since 2026-04-25 push. HEAD remains at `b457a34f` (`typescript-eslint` v8.59.0 bump, #481). Last push: 2026-04-25T15:12:46Z.
+
+Open Renovate PRs (unchanged):
+
+| PR | Change |
+| --- | --- |
+| #466 | `typescript` → v6 |
+| #467 | `eslint` → v10 |
+| #468 | `eslint-plugin-node-dependencies` → v2 |
+| #469 | `jsdom` → v29 |
+
+Open issues (5): #142 (Uplift `vscode-bash`), #162 (Dependency Dashboard), #317–#319 (Advanced Testing Infrastructure Phases 3–5).
+
+Confirmed full dependency snapshot: `@bfra.me/eslint-config` 0.51.0, `@bfra.me/tsconfig` 0.13.0, `@playwright/test` 1.59.0, `@types/vscode` 1.115.0, `eslint` 9.39.0, `eslint-config-prettier` 10.1.1, `prettier` 3.8.0, `typescript` 5.9.3, `typescript-eslint` 8.59.0, `vitest` 4.1.0, `@vitest/coverage-v8` 4.1.0, `@vitest/ui` 4.1.0, `@vscode/vsce` 3.9.0, `tsup` ^8.0.2, `tsx` 4.21.0, `semantic-release` 25.0.1, `semantic-release-vsce` 6.1.0, `vscode-ext-gen` 1.6.0, `jsdom` 27.4.0, `type-fest` 5.6.0, `jiti` 2.6.1, `ovsx` 0.10.5. Package manager: pnpm 10.33.0. VS Code engine: `^1.102.0`. Node target: 18 (tsup). Renovate extends `marcusrbrown/renovate-config#4.5.0` + `sanity-io/renovate-config`. Probot settings extend `fro-bot/.github:common-settings.yaml`.
 
 **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward. Six workflows present: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`.
