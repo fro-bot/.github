@@ -77,7 +77,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 
 | Repo                          | Fro Bot Workflow         | Schedule                          |
 | ----------------------------- | ------------------------ | --------------------------------- |
-| [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`, v0.42.1) | Daily 14:30 UTC autohealing       |
+| [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`) | Daily 14:30 UTC autohealing       |
 | [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]]       | Present (`fro-bot.yaml`) | Daily 03:30 UTC autohealing (8 categories incl. CLIProxy + cross-project + upstream modernization watch on Sundays) |
 | [[marcusrbrown--marcusrbrown-github-io]] | Present (`fro-bot.yaml`) | Daily 15:30 UTC maintenance (no autoheal) |

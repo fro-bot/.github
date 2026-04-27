@@ -845,24 +845,31 @@ Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mrbro.dev
 
-## [2026-04-27 00:00] ingest | marcusrbrown/containers
+## [2026-04-27 05:00] ingest | marcusrbrown/.dotfiles
 
-Incremental re-survey of `marcusrbrown/containers` (SHA `b266995`, up from `1b782ff8`). Updated repo page `marcusrbrown--containers.md`. Bumped Fro Bot agent version in topic page `github-actions-ci.md`. Index unchanged (all pages already cataloged).
+Incremental re-survey of `marcusrbrown/.dotfiles` (SHA `19905ec`, up from `ae026c1`). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Index unchanged (all pages already cataloged).
 
-Delta from prior survey (SHA `1b782ff8`, 2026-04-22):
+Delta from prior survey (SHA `ae026c1`, 2026-04-22):
 
-- **Fro Bot agent bumped:** v0.41.0 → v0.42.1 (#591, 2026-04-26)
-- **Three open feature PRs** (not just Renovate): #582 (Express template dependency pins), #583 (foundational pytest coverage for AI/template/CLI/predictive-maintenance modules), #584 (first-class AI config scaffold with CLI init/validation flow and docs)
-- Repository stats: 8 open issues, 3 open PRs, 2 stars, 0 forks
-- Base image digests unchanged (Alpine `sha256:d1b3b4da...`, Bookworm-slim `sha256:03eae3e...`)
-- Renovate preset unchanged (`marcusrbrown/renovate-config#4.5.0`)
-- Python automation layer, template system, Dockerfile patterns, CI workflows, DevContainer, Probot settings all unchanged
-- No contradictions with prior ingest
+- **Fro Bot agent bumped:** v0.41.3 → v0.42.2 (SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`)
+- **Fro Bot workflow:** Added auto-close step for daily maintenance reports older than 3 days (#1475)
+- **OpenCode default model set:** `opencode-go/kimi-k2.6` (previously unset)
+- **OpenCode plugin bumps:** `@ex-machina/opencode-anthropic-auth` 1.7.4→1.7.5, `oh-my-openagent` 3.17.4→3.17.5, `@cortexkit/opencode-magic-context` 0.13.0→0.15.3, `@cortexkit/aft-opencode` 0.14.0→0.16.1 (renamed to `@cortexkit/aft` in mise)
+- **New config files:** `aft.jsonc` (AFT cross-project scope, experimental search/semantic), `tui.json` (Catppuccin theme, TUI plugin list)
+- **oh-my-openagent model routing overhaul:** Partial reversion from all-Copilot-hosted — `metis`, `librarian`, `unspecified-low`, `unspecified-high` reverted to direct `anthropic/*` endpoints. `metis` and `unspecified-high` upgraded to `max` variant. `sisyphus` newly disabled. `sisyphus_agent` config removed. `auto_update: false` and `git_master` config added.
+- **Magic-context config changes:** Historian and Dreamer migrated back to `anthropic/claude-sonnet-4-6`. History budget 10%→15%. Auto-drop age 15→30. Opus 4.7 token threshold lowered 88K→80K. New experimental features: `auto_search`, `git_commit_indexing`. New `memory.injection_budget_tokens: 6000`. Plugin version 0.13.0→0.15.3.
+- **Copilot-cli skill updated:** Branched on `opencode-copilot-delegate` plugin (#1495)
+- **Mise tool bumps:** pnpm 10.33.0→10.33.2, npm 11.12.1→11.13.0, opencode-ai 1.14.18→1.14.28 (Renovate re-enabled), puppeteer 24.41.0→24.42.0, biome 2.4.12→2.4.13
+- **bfra-me/.github:** Updated to v4.16.9
+- **Open issues:** 19→5
+- **Stars:** 15
 
-Sources: https://github.com/marcusrbrown/containers (SHA b266995653662eb2676012b150efe55ff508c331)
+No contradictions with prior ingest — all prior findings confirmed and extended.
 
-## [2026-04-27 07:49] ingest | repo:marcusrbrown/containers
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA 19905ec660eddea4ed91ab1278cabf88c2233ef1)
 
-Surveyed marcusrbrown/containers and updated the control-plane wiki.
+## [2026-04-27 07:50] ingest | repo:marcusrbrown/.dotfiles
 
-Sources: https://github.com/marcusrbrown/containers
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles

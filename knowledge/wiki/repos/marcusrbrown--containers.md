@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/containers"
 created: 2026-04-18
-updated: 2026-04-27
+updated: 2026-04-22
 sources:
   - url: https://github.com/marcusrbrown/containers
     sha: e582f856844ac1dd52fc8739f1a9aa8398248e6e
@@ -13,9 +13,6 @@ sources:
   - url: https://github.com/marcusrbrown/containers
     sha: 1b782ff8b0a94615492de36f7f9b1d57e4663113
     accessed: 2026-04-22
-  - url: https://github.com/marcusrbrown/containers
-    sha: b266995653662eb2676012b150efe55ff508c331
-    accessed: 2026-04-27
 tags: [docker, containers, dockerfiles, multi-arch, python, github-actions, ci-cd, security-scanning, ai, ollama, sqlite]
 aliases: [containers]
 related:
@@ -32,7 +29,7 @@ A container development ecosystem with curated Dockerfiles, Python automation sc
 - **Default branch:** `main`
 - **Primary language:** Python
 - **Created:** 2016-12-19
-- **Last push:** 2026-04-26 (as of 2026-04-27 survey)
+- **Last push:** 2026-04-22 (as of 2026-04-22 survey)
 - **Topics:** `automation`, `containers`, `docker`, `docker-compose`, `dockerfiles`, `scripts`
 - **Registries:** GHCR (`ghcr.io`), Docker Hub (`docker.io/marcusrbrown`, legacy alias `igetgames`)
 
@@ -180,11 +177,11 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 - `docker/metadata-action` — `v5.10.0`
 - `dorny/paths-filter` — `v3.0.2` (SHA `de90cc6f...`)
 - `aquasecurity/trivy-action` — `0.35.0`
-- `fro-bot/agent` — `v0.42.1` (SHA `6c45d8ce...`) _(bumped from v0.41.0 on 2026-04-26)_
+- `fro-bot/agent` — `v0.41.0` (SHA `fc1387ec...`) _(bumped from v0.40.0 on 2026-04-18)_
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.42.1` with:
+**Fro Bot workflow present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.41.0` with:
 
 - **PR Review:** Container-specific review prompt focusing on Dockerfile best practices, multi-arch correctness, Python quality, Actions security, and breaking changes. Structured verdict format (PASS/CONDITIONAL/REJECT). Black/isort/Prettier style nits explicitly excluded.
 - **Daily Schedule (14:30 UTC):** Autohealing routine — fixes errored PRs, addresses security alerts, updates major dependency versions, ensures linting consistency. Manages a single perpetual "Daily Autohealing Report" issue instead of creating new daily issues.
@@ -218,14 +215,6 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 - **Anti-pattern documentation:** AGENTS.md files explicitly list anti-patterns (do not hardcode OCI `created`/`revision` labels, do not touch `archived/`, do not run linters against `templates/`).
 - **Reproducibility boundary philosophy:** Comments in Dockerfiles explain that the base image digest is the reproducibility boundary, not individual package versions — Alpine and Debian repos rotate package versions, making pin-by-version fragile.
 
-## In-Flight Work (as of 2026-04-27)
-
-Three open PRs represent active development beyond Renovate maintenance:
-
-- **#584** — First-class `ai_config.yaml` scaffold with CLI init/validation flow and documentation. Would formalize the AI configuration contract already described in `ai_config.yaml`.
-- **#583** — Foundational pytest coverage for the AI subsystem, template engine, CLI, and predictive maintenance modules. Addresses the known gap in test coverage for the Python automation layer.
-- **#582** — Pin Express template/runtime dependency versions and remove redundant `argparse` dependency from `pyproject.toml`.
-
 ## Change History (Surveys)
 
 | Date | SHA | Notable Changes |
@@ -233,4 +222,3 @@ Three open PRs represent active development beyond Renovate maintenance:
 | 2026-04-18 | `e582f856` | Initial survey. Agent `v0.40.0`, `fro-bot.yaml` PR review + daily autohealing confirmed. |
 | 2026-04-21 | `fa17128f` | Agent bumped to `v0.41.0`. `actions/setup-node` bumped to v6.4.0. `OMO_PROVIDERS`/`OPENCODE_CONFIG` secrets added to Fro Bot job. Node.js base images digest-rotated. `predictive_maintenance.py` (987 LOC, SQLite analytics) and `ai_core.py` Ollama support documented. Redis template (`templates/databases/redis/`) confirmed present. AGENTS.md coverage at root, workflows, and scripts directories. `pytest` updated (CVE-2025-71176). |
 | 2026-04-22 | `1b782ff8` | Incremental re-survey. Multiple base image digest rotations via Renovate (#587–#590). Cache cleanup workflow fix: gracefully handle missing cache keys (#585). Node Alpine base image now `sha256:d1b3b4da...`, Bookworm-slim `sha256:03eae3e...`. No structural changes to repo, workflows, or Python automation layer. |
-| 2026-04-27 | `b2669956` | Incremental re-survey. `fro-bot/agent` bumped v0.41.0 → v0.42.1 (#591). Three open feature PRs: #582 (Express template dependency pins), #583 (foundational pytest coverage for AI/template/CLI/predictive-maintenance), #584 (first-class AI config scaffold, docs, CLI init/validation). 8 open issues, 2 stars, 0 forks. Base image digests, Renovate config, Python automation, template system all unchanged. |
