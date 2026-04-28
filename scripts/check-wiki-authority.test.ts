@@ -181,20 +181,28 @@ describe('checkWikiAuthority', () => {
       expect(result).toEqual({ok: false, blockedFiles: ['knowledge/wiki/comparisons/x-vs-y.md']})
     })
 
-    it('allows human-editable config files in metadata/', () => {
-      // #given a human author touching config metadata (not auto-managed state)
+    it('blocks metadata/allowlist.yaml for human authors (data-branch promotion required)', () => {
+      // #given a human author touching the allowlist
       // #when the guard evaluates the PR
-      // #then the edit is allowed — allowlist.yaml and renovate.yaml are human-managed
-      expect(checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/allowlist.yaml']})).toEqual({ok: true})
-      expect(checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/renovate.yaml']})).toEqual({ok: true})
+      // #then the edit is blocked — even human-curated allowlist edits land via data branch
+      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/allowlist.yaml']})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/allowlist.yaml']})
     })
 
-    it('allows unknown metadata/*.yaml files (guard uses explicit list)', () => {
+    it('blocks metadata/renovate.yaml for human authors (auto-managed by metadata workflow)', () => {
+      // #given a human author touching the renovate dispatch list
+      // #when the guard evaluates the PR
+      // #then the edit is blocked — renovate.yaml is rebuilt by the metadata workflow
+      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/renovate.yaml']})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/renovate.yaml']})
+    })
+
+    it('blocks hypothetical future metadata/*.yaml files (guard is path-glob, not explicit list)', () => {
       // #given a new yaml file added to metadata/ in the future
       // #when the guard evaluates the PR
-      // #then the edit is allowed — only repos.yaml and social-cooldowns.yaml are guarded
+      // #then the edit is blocked by default — new metadata files inherit the data-branch contract
       const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/new-thing.yaml']})
-      expect(result).toEqual({ok: true})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/new-thing.yaml']})
     })
 
     it('blocks metadata/social-cooldowns.yaml for human authors', () => {
