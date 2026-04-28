@@ -938,35 +938,37 @@ Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wi
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
 
-## [2026-04-28 12:00] ingest | marcusrbrown/sparkle
+## [2026-04-28 00:00] ingest | marcusrbrown/renovate-config
 
-Initial survey of `marcusrbrown/sparkle` (SHA `770356b`). Created repo page `marcusrbrown--sparkle.md`. Updated topic page `github-actions-ci.md` with sparkle CI patterns, Renovate config, and Fro Bot status. Updated `index.md` to catalog the new page.
+Initial survey of `marcusrbrown/renovate-config` (SHA `bf13a82`). Created repo page `marcusrbrown--renovate-config.md`. Updated topic page `github-actions-ci.md` (added to repos list, Renovate config section, and Fro Bot agent table). Updated `index.md` to catalog the new page. No new topic/entity/comparison pages created — existing pages cover all cross-cutting concerns.
 
 Key findings:
 
-- TypeScript monorepo playground, public, oldest in Marcus's portfolio (created 2020-11-26), actively maintained
-- pnpm workspaces + Turborepo 2.9.6 build orchestration with fine-grained task dependency graph (`build:types` → `build:utils` → `build:theme` → `build:config` → `build:ui`)
-- 8 workspace packages: `@sparkle/ui` (React + Radix UI + Tailwind CSS component library), `@sparkle/theme` (cross-platform design tokens), `@sparkle/types`, `@sparkle/utils`, `@sparkle/config`, `@sparkle/error-testing`, `@sparkle/storybook`, `test-utils`
-- 2 apps: `fro-jive` (Expo/React Native mobile — unique in portfolio), `moo-dang` (WASM web shell)
-- `@sparkle/docs` — Astro Starlight documentation site deployed to GitHub Pages at sparkle.mrbro.dev, with automated TypeDoc/JSDoc extraction and PR creation via `regenerate-docs.yaml`
-- CI pipeline: Setup → Check (monorepo, types, Turbo, deps, lint) → Build; 6 workflows total
-- Node.js 24.15.0, pnpm 10.33.2, TypeScript 5.9.3, React 19.2.5
-- Shared `@bfra.me/*` config ecosystem: eslint-config 0.51.0, prettier-config 0.16.8 (`120-proof`), tsconfig 0.13.0
-- Probot settings extend `fro-bot/.github:common-settings.yaml`
-- Renovate extends `marcusrbrown/renovate-config#4.5.8` + `sanity-io/renovate-config:semantic-commit-type`, with React Native grouping rules
-- `simple-git-hooks` + `nano-staged` (unique — other repos use `lint-staged`)
-- Changesets for versioning; `mrbro-bot[bot]` authors doc regeneration PRs
-- AI context: `.github/copilot-instructions.md`, `.ai/` directory (analysis, audit, notes, plan, review, security)
-- Zig support present (21KB Zig source, CI optionally installs Zig)
-- **No Fro Bot agent workflow detected** — follow-up PR recommended
-- **No Copilot Setup Steps workflow** — present in sibling repos
-- **No root AGENTS.md** — present in sibling repos
-- 5 open issues, 1 star, 1 fork, 2 watchers, GitHub Pages enabled
+- Canonical dependency-update policy repo consumed by every `marcusrbrown/*` and `fro-bot/*` repository (16 known downstream consumers documented)
+- Three preset files: `default.json` (primary, extends `bfra-me/renovate-config#5.2.1`), `onboarding.json` (new repo bootstrap), `archived-repository.json` (archived repo minimal policy)
+- Self-referential Renovate config in `.github/renovate.json5` — uses `local>marcusrbrown/renovate-config` with custom regex manager tracking `bfra-me/renovate-config` preset pin
+- `default.json` key policies: no rate limiting, semver range preservation, npm unpublish safety, GitHub Action digest pinning, immediate PR creation for own-org packages with zero minimum release age
+- semantic-release pipeline with bare semver tags and major version branch updates (`v4`, `v5`, etc.) enabling downstream `#v4` floating pins
+- Latest release: `4.5.8` (2026-04-17), Node.js 24.15.0, pnpm 10.33.2
+- ESLint via `@bfra.me/eslint-config` (single re-export, no local overrides), Prettier via `@bfra.me/prettier-config/120-proof`
+- **Fro Bot workflow present and active** (`fro-bot/agent@v0.42.2`): Renovate-domain-specific PR review (schema compliance, backward compat, downstream PR storm risk), daily maintenance at 15:30 UTC
+- **Fro Bot Autoheal present** (daily 03:30 UTC): 5-category sweep — errored PRs, security, config validation & preset quality, developer experience, bfra-me ecosystem health
+- Probot settings extend `fro-bot/.github:common-settings.yaml`, branch protection requires Analyze, CodeQL, Fro Bot, Lint, Release, Renovate checks
+- Comprehensive AGENTS.md with Renovate preset authoring patterns and testing strategies
+- 7 workflows total: main.yaml (lint + release), fro-bot.yaml, fro-bot-autoheal.yaml, renovate.yaml (reusable from bfra-me), codeql-analysis.yaml, scorecard.yaml, update-repo-settings.yaml
+- Consumer version pins vary: most on `#4.5.8`, `copiloting` on floating `#v4`, `containers`/`extend-vscode` on older `#4.5.0`
+- 46 open issues, 0 stars — issue count likely reflects dependency dashboard + autohealing reports
 
-Sources: https://github.com/marcusrbrown/sparkle (SHA 770356b3c83cec08a666960eab9c5fb4e1ab2a85)
+Sources: https://github.com/marcusrbrown/renovate-config (SHA bf13a82fca143cd0cdcc9c5f12ef56c2b5196c20)
 
-## [2026-04-28 07:46] ingest | repo:marcusrbrown/sparkle
+## [2026-04-28 00:00] ingest | repo:marcusrbrown/renovate-config
 
-Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/sparkle
+Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-04-28 07:48] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
