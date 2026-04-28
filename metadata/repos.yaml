@@ -99,9 +99,9 @@ repos:
   - owner: marcusrbrown
     name: renovate-config
     added: 2026-04-18
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    onboarding_status: onboarded
+    last_survey_at: 2026-04-28
+    last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
   - owner: marcusrbrown
