@@ -1,15 +1,21 @@
 /**
- * Metadata refresh for the fro-bot org.
+ * Metadata refresh for the fro-bot account.
  *
- * Scans the fro-bot org for repositories containing `.github/workflows/renovate.yaml`
- * and writes the sorted list to `metadata/renovate.yaml` on the `data` branch.
- * Mirrors the bfra-me/.github update-metadata pattern.
+ * Scans the repositories accessible to the Fro Bot GitHub App installation,
+ * filters to those owned by the configured account containing
+ * `.github/workflows/renovate.yaml`, and writes the sorted list to
+ * `metadata/renovate.yaml` on the `data` branch. Mirrors the bfra-me/.github
+ * update-metadata pattern.
  *
  * Architecture:
  *   - buildRenovateFile(names): pure shape builder — sole owner of sort + dedupe.
- *   - discoverRenovateRepos(octokit, org): async I/O — list org repos, probe each.
- *     Returns repos in discovery order; canonicalization happens in buildRenovateFile.
+ *   - discoverRenovateRepos(octokit, owner): async I/O — list installation repos
+ *     filtered to the target owner, probe each. Returns repos in discovery order;
+ *     canonicalization happens in buildRenovateFile.
  *   - main(): thin shell — token, octokit, discover, commitMetadata.
+ *
+ * Uses `apps.listReposAccessibleToInstallation` so the call works whether the
+ * Fro Bot account is a User (current) or an Organization (future migration).
  */
 
 import type {Octokit, RestEndpointMethodTypes} from '@octokit/rest'
@@ -21,12 +27,13 @@ import {commitMetadata} from './commit-metadata.ts'
 
 export type OctokitClient = Octokit
 
-const DEFAULT_ORG = 'fro-bot'
+const DEFAULT_OWNER = 'fro-bot'
 const RENOVATE_WORKFLOW_PATH = '.github/workflows/renovate.yaml'
 const RENOVATE_METADATA_PATH = 'metadata/renovate.yaml'
 
 // Derived from the real Octokit response so SDK drift becomes a compile error.
-type OrgRepoListing = RestEndpointMethodTypes['repos']['listForOrg']['response']['data'][number]
+type InstallationRepo =
+  RestEndpointMethodTypes['apps']['listReposAccessibleToInstallation']['response']['data']['repositories'][number]
 
 // ─── Pure engine ────────────────────────────────────────────────────────────
 
@@ -43,18 +50,18 @@ export function buildRenovateFile(repoNames: string[]): RenovateFile {
 // ─── Async discovery engine ─────────────────────────────────────────────────
 
 /**
- * Discover org repos that contain a Renovate workflow at the canonical path.
- * Skips archived repos and forks (neither should be receiving Renovate dispatches).
- * 404 from the probe means "no Renovate workflow"; non-404 errors propagate with
- * repo context so failures point at the offending repo.
+ * Discover repos under `owner` that contain a Renovate workflow at the canonical path.
+ * Lists repos via the App installation's accessible-repositories endpoint, filters to
+ * the target owner, then skips archived repos and forks (neither should be receiving
+ * Renovate dispatches). 404 from the probe means "no Renovate workflow"; non-404
+ * errors propagate with repo context so failures point at the offending repo.
  */
-export async function discoverRenovateRepos(octokit: OctokitClient, org: string): Promise<string[]> {
-  const repos: OrgRepoListing[] = await octokit.paginate(octokit.rest.repos.listForOrg, {
-    org,
-    type: 'all',
+export async function discoverRenovateRepos(octokit: OctokitClient, owner: string): Promise<string[]> {
+  const allRepos: InstallationRepo[] = await octokit.paginate(octokit.rest.apps.listReposAccessibleToInstallation, {
     per_page: 100,
   })
 
+  const repos = allRepos.filter(r => r.owner.login === owner)
   const found: string[] = []
 
   for (const repo of repos) {
@@ -62,14 +69,14 @@ export async function discoverRenovateRepos(octokit: OctokitClient, org: string)
 
     try {
       await octokit.rest.repos.getContent({
-        owner: org,
+        owner,
         repo: repo.name,
         path: RENOVATE_WORKFLOW_PATH,
       })
       found.push(repo.name)
     } catch (error: unknown) {
       if (isNotFoundError(error)) continue
-      throw new Error(`update-metadata: probe failed for ${org}/${repo.name} (${formatErrorStatus(error)})`, {
+      throw new Error(`update-metadata: probe failed for ${owner}/${repo.name} (${formatErrorStatus(error)})`, {
         cause: error,
       })
     }
@@ -105,14 +112,14 @@ async function main(): Promise<void> {
   if (token === undefined || token === '') throw new Error('GITHUB_TOKEN is required')
 
   const octokit = new Octokit({auth: token})
-  const org = process.env.UPDATE_METADATA_ORG ?? DEFAULT_ORG
+  const owner = process.env.UPDATE_METADATA_OWNER ?? DEFAULT_OWNER
 
-  const detected = await discoverRenovateRepos(octokit, org)
+  const detected = await discoverRenovateRepos(octokit, owner)
   const next = buildRenovateFile(detected)
 
   const result = await commitMetadata({
     path: RENOVATE_METADATA_PATH,
-    message: `chore(metadata): refresh renovate.yaml from ${org} org scan`,
+    message: `chore(metadata): refresh renovate.yaml from ${owner} account scan`,
     octokit,
     async mutator() {
       return next
@@ -120,7 +127,7 @@ async function main(): Promise<void> {
   })
 
   const summary = {
-    org,
+    owner,
     detected: detected.length,
     committed: result.committed,
     attempts: result.attempts,
