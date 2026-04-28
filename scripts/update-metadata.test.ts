@@ -8,14 +8,15 @@ import {beforeEach, describe, expect, it, vi} from 'vitest'
 // Then: returns a RenovateFile with names sorted and deduplicated
 
 // BDD: discoverRenovateRepos
-// Given: an Octokit client and a target org
+// Given: an Octokit client and a target owner
 // When: discoverRenovateRepos is called
-// Then: lists org repos (excluding archived and forks), probes each for
-//       .github/workflows/renovate.yaml, returns matching names in discovery order
+// Then: lists installation-accessible repos, filters to owner (excluding archived
+//       and forks), probes each for .github/workflows/renovate.yaml, returns
+//       matching names in discovery order
 
 const {mocks, mockOctokit} = vi.hoisted(() => {
   const mocks = {
-    listForOrg: vi.fn(),
+    listReposAccessibleToInstallation: vi.fn(),
     getContent: vi.fn(),
     paginate: vi.fn(),
   }
@@ -24,14 +25,27 @@ const {mocks, mockOctokit} = vi.hoisted(() => {
     mockOctokit: {
       paginate: mocks.paginate,
       rest: {
+        apps: {
+          listReposAccessibleToInstallation: mocks.listReposAccessibleToInstallation,
+        },
         repos: {
-          listForOrg: mocks.listForOrg,
           getContent: mocks.getContent,
         },
       },
     } as unknown as OctokitClient,
   }
 })
+
+// Test fixture builder so each repo carries the realistic owner/archived/fork shape
+// returned by `apps.listReposAccessibleToInstallation`.
+function repo(name: string, opts?: {owner?: string; archived?: boolean; fork?: boolean}) {
+  return {
+    name,
+    archived: opts?.archived ?? false,
+    fork: opts?.fork ?? false,
+    owner: {login: opts?.owner ?? 'fro-bot'},
+  }
+}
 
 describe('buildRenovateFile', () => {
   it('wraps names in the renovate.yaml schema shape', async () => {
@@ -77,16 +91,12 @@ describe('discoverRenovateRepos', () => {
   })
 
   it('returns repos containing .github/workflows/renovate.yaml in discovery order', async () => {
-    // #given an org with three repos and two of them have a Renovate workflow
-    // #when discoverRenovateRepos is called
-    // #then it returns matching names in the order paginate yielded them (sort happens in buildRenovateFile)
+    // #given the installation lists three fro-bot repos and two have a Renovate workflow
+    // #when discoverRenovateRepos is called for fro-bot
+    // #then it returns matching names in pagination order (sort happens in buildRenovateFile)
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
-    mocks.paginate.mockResolvedValueOnce([
-      {name: 'agent', archived: false, fork: false},
-      {name: '.github', archived: false, fork: false},
-      {name: 'tokentoilet', archived: false, fork: false},
-    ])
-    // probe order matches input order; resolve = present (200), reject 404 = absent
+    mocks.paginate.mockResolvedValueOnce([repo('agent'), repo('.github'), repo('tokentoilet')])
+    // probe order matches input order; resolve = present, reject 404 = absent
     mocks.getContent.mockResolvedValueOnce({status: 200})
     mocks.getContent.mockResolvedValueOnce({status: 200})
     mocks.getContent.mockRejectedValueOnce(Object.assign(new Error('Not Found'), {status: 404}))
@@ -95,31 +105,43 @@ describe('discoverRenovateRepos', () => {
     expect(result).toEqual(['agent', '.github'])
   })
 
-  it('calls paginate with listForOrg and the correct org/type/per_page options', async () => {
-    // #given a target org
+  it('calls paginate against listReposAccessibleToInstallation with per_page=100', async () => {
+    // #given a target owner
     // #when discoverRenovateRepos is called
-    // #then paginate receives the listForOrg method plus org/type/per_page=100 so private+public+forks are enumerated
+    // #then paginate uses the App installation listing endpoint (works for users and orgs)
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
     mocks.paginate.mockResolvedValueOnce([])
 
-    await discoverRenovateRepos(mockOctokit, 'other-org')
+    await discoverRenovateRepos(mockOctokit, 'fro-bot')
     expect(mocks.paginate).toHaveBeenCalledTimes(1)
-    expect(mocks.paginate).toHaveBeenCalledWith(mocks.listForOrg, {
-      org: 'other-org',
-      type: 'all',
-      per_page: 100,
-    })
+    expect(mocks.paginate).toHaveBeenCalledWith(mocks.listReposAccessibleToInstallation, {per_page: 100})
+  })
+
+  it('filters out repos owned by accounts other than the target owner', async () => {
+    // #given the installation lists repos under multiple owners
+    // #when discoverRenovateRepos is called for fro-bot
+    // #then repos owned by anyone other than fro-bot are skipped (no probe call)
+    const {discoverRenovateRepos} = await import('./update-metadata.ts')
+    mocks.paginate.mockResolvedValueOnce([
+      repo('agent', {owner: 'fro-bot'}),
+      repo('config', {owner: 'marcusrbrown'}),
+      repo('.github', {owner: 'fro-bot'}),
+    ])
+    mocks.getContent.mockResolvedValueOnce({status: 200})
+    mocks.getContent.mockResolvedValueOnce({status: 200})
+
+    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot')
+    expect(result).toEqual(['agent', '.github'])
+    expect(mocks.getContent).toHaveBeenCalledTimes(2)
+    expect(mocks.getContent).not.toHaveBeenCalledWith(expect.objectContaining({repo: 'config'}))
   })
 
   it('skips archived repos (no probe call for them)', async () => {
-    // #given an archived repo in the org listing
+    // #given an archived repo in the listing
     // #when discoverRenovateRepos is called
     // #then no probe is issued for the archived repo and it is excluded from output
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
-    mocks.paginate.mockResolvedValueOnce([
-      {name: 'archived-repo', archived: true, fork: false},
-      {name: 'agent', archived: false, fork: false},
-    ])
+    mocks.paginate.mockResolvedValueOnce([repo('archived-repo', {archived: true}), repo('agent')])
     mocks.getContent.mockResolvedValueOnce({status: 200})
 
     const result = await discoverRenovateRepos(mockOctokit, 'fro-bot')
@@ -129,14 +151,11 @@ describe('discoverRenovateRepos', () => {
   })
 
   it('skips forks (no probe call for them)', async () => {
-    // #given a forked repo in the org listing
+    // #given a forked repo in the listing
     // #when discoverRenovateRepos is called
     // #then no probe is issued for the fork and it is excluded from output
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
-    mocks.paginate.mockResolvedValueOnce([
-      {name: 'forked-repo', archived: false, fork: true},
-      {name: 'agent', archived: false, fork: false},
-    ])
+    mocks.paginate.mockResolvedValueOnce([repo('forked-repo', {fork: true}), repo('agent')])
     mocks.getContent.mockResolvedValueOnce({status: 200})
 
     const result = await discoverRenovateRepos(mockOctokit, 'fro-bot')
@@ -149,7 +168,7 @@ describe('discoverRenovateRepos', () => {
     // #when discoverRenovateRepos is called
     // #then the repo is omitted from the result without throwing
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
-    mocks.paginate.mockResolvedValueOnce([{name: 'no-renovate', archived: false, fork: false}])
+    mocks.paginate.mockResolvedValueOnce([repo('no-renovate')])
     mocks.getContent.mockRejectedValueOnce(Object.assign(new Error('Not Found'), {status: 404}))
 
     const result = await discoverRenovateRepos(mockOctokit, 'fro-bot')
@@ -159,21 +178,21 @@ describe('discoverRenovateRepos', () => {
   it('rethrows non-404 errors with repo context so the offending repo is identifiable', async () => {
     // #given a repo whose probe returns 500
     // #when discoverRenovateRepos is called
-    // #then the error wraps the original with org/repo and status context, and exposes the original via cause
+    // #then the error wraps the original with owner/repo and status context, and exposes the original via cause
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
-    mocks.paginate.mockResolvedValueOnce([{name: 'broken-repo', archived: false, fork: false}])
+    mocks.paginate.mockResolvedValueOnce([repo('broken-repo')])
     const original = Object.assign(new Error('Server Error'), {status: 500})
     mocks.getContent.mockRejectedValueOnce(original)
 
     await expect(discoverRenovateRepos(mockOctokit, 'fro-bot')).rejects.toThrow(/fro-bot\/broken-repo.*status=500/)
     // Re-run to inspect the cause chain (the previous expect consumed the rejection).
-    mocks.paginate.mockResolvedValueOnce([{name: 'broken-repo', archived: false, fork: false}])
+    mocks.paginate.mockResolvedValueOnce([repo('broken-repo')])
     mocks.getContent.mockRejectedValueOnce(original)
     await expect(discoverRenovateRepos(mockOctokit, 'fro-bot')).rejects.toMatchObject({cause: original})
   })
 
   it('propagates paginate rejections without probing any repos', async () => {
-    // #given the org listing call itself fails
+    // #given the installation listing call itself fails
     // #when discoverRenovateRepos is called
     // #then the error propagates and no per-repo probes happen
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
@@ -183,8 +202,8 @@ describe('discoverRenovateRepos', () => {
     expect(mocks.getContent).not.toHaveBeenCalled()
   })
 
-  it('returns an empty array when org has no repos', async () => {
-    // #given an empty org listing
+  it('returns an empty array when the installation has no repos', async () => {
+    // #given an empty installation listing
     // #when discoverRenovateRepos is called
     // #then it returns []
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
@@ -200,7 +219,7 @@ describe('discoverRenovateRepos', () => {
     // #when discoverRenovateRepos is called
     // #then it probes exactly the canonical path under the correct owner/repo
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
-    mocks.paginate.mockResolvedValueOnce([{name: 'agent', archived: false, fork: false}])
+    mocks.paginate.mockResolvedValueOnce([repo('agent')])
     mocks.getContent.mockResolvedValueOnce({status: 200})
 
     await discoverRenovateRepos(mockOctokit, 'fro-bot')
