@@ -1,0 +1,38 @@
+---
+name: Update Metadata
+
+on:
+  schedule:
+    - cron: '30 4 * * *' # Daily at 04:30 UTC (between hourly Poll Invitations and 05:17 Reconcile Repos)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-metadata
+  cancel-in-progress: false
+
+jobs:
+  update-metadata:
+    name: Refresh metadata/renovate.yaml from fro-bot org scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - id: get-workflow-app-token
+        name: Get Workflow Access Token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🔄 Update metadata
+        env:
+          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+        run: node scripts/update-metadata.ts
