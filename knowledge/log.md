@@ -937,3 +937,36 @@ Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 02cac9c0
 Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-04-28 12:00] ingest | marcusrbrown/sparkle
+
+Initial survey of `marcusrbrown/sparkle` (SHA `770356b`). Created repo page `marcusrbrown--sparkle.md`. Updated topic page `github-actions-ci.md` with sparkle CI patterns, Renovate config, and Fro Bot status. Updated `index.md` to catalog the new page.
+
+Key findings:
+
+- TypeScript monorepo playground, public, oldest in Marcus's portfolio (created 2020-11-26), actively maintained
+- pnpm workspaces + Turborepo 2.9.6 build orchestration with fine-grained task dependency graph (`build:types` → `build:utils` → `build:theme` → `build:config` → `build:ui`)
+- 8 workspace packages: `@sparkle/ui` (React + Radix UI + Tailwind CSS component library), `@sparkle/theme` (cross-platform design tokens), `@sparkle/types`, `@sparkle/utils`, `@sparkle/config`, `@sparkle/error-testing`, `@sparkle/storybook`, `test-utils`
+- 2 apps: `fro-jive` (Expo/React Native mobile — unique in portfolio), `moo-dang` (WASM web shell)
+- `@sparkle/docs` — Astro Starlight documentation site deployed to GitHub Pages at sparkle.mrbro.dev, with automated TypeDoc/JSDoc extraction and PR creation via `regenerate-docs.yaml`
+- CI pipeline: Setup → Check (monorepo, types, Turbo, deps, lint) → Build; 6 workflows total
+- Node.js 24.15.0, pnpm 10.33.2, TypeScript 5.9.3, React 19.2.5
+- Shared `@bfra.me/*` config ecosystem: eslint-config 0.51.0, prettier-config 0.16.8 (`120-proof`), tsconfig 0.13.0
+- Probot settings extend `fro-bot/.github:common-settings.yaml`
+- Renovate extends `marcusrbrown/renovate-config#4.5.8` + `sanity-io/renovate-config:semantic-commit-type`, with React Native grouping rules
+- `simple-git-hooks` + `nano-staged` (unique — other repos use `lint-staged`)
+- Changesets for versioning; `mrbro-bot[bot]` authors doc regeneration PRs
+- AI context: `.github/copilot-instructions.md`, `.ai/` directory (analysis, audit, notes, plan, review, security)
+- Zig support present (21KB Zig source, CI optionally installs Zig)
+- **No Fro Bot agent workflow detected** — follow-up PR recommended
+- **No Copilot Setup Steps workflow** — present in sibling repos
+- **No root AGENTS.md** — present in sibling repos
+- 5 open issues, 1 star, 1 fork, 2 watchers, GitHub Pages enabled
+
+Sources: https://github.com/marcusrbrown/sparkle (SHA 770356b3c83cec08a666960eab9c5fb4e1ab2a85)
+
+## [2026-04-28 07:46] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
