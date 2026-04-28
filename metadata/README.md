@@ -77,12 +77,12 @@ Update convention: social broadcast workflow updates this file programmatically 
 
 ## Credential expectations
 
-| File                    | Updated by                            | Credential                       |
-| ----------------------- | ------------------------------------- | -------------------------------- |
-| `allowlist.yaml`        | Human edit on `data` branch           | n/a (human commit on `data`)     |
-| `repos.yaml`            | Invitation handler, Daily reconcile   | `FRO_BOT_PAT` / app token        |
-| `renovate.yaml`         | Daily metadata workflow               | app token (`fro-bot[bot]`)       |
-| `social-cooldowns.yaml` | Social broadcast                      | `FRO_BOT_PAT`                    |
+| File                    | Updated by                          | Credential                   |
+| ----------------------- | ----------------------------------- | ---------------------------- |
+| `allowlist.yaml`        | Human edit on `data` branch         | n/a (human commit on `data`) |
+| `repos.yaml`            | Invitation handler, Daily reconcile | `FRO_BOT_PAT` / app token    |
+| `renovate.yaml`         | Daily metadata workflow             | app token (`fro-bot[bot]`)   |
+| `social-cooldowns.yaml` | Social broadcast                    | `FRO_BOT_PAT`                |
 
 PAT split summary:
 
