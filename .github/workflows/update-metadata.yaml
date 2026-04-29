@@ -1,21 +1,21 @@
 ---
-name: Dispatch Renovate
+name: Update Metadata
 
 on:
   schedule:
-    - cron: '30 */4 * * *' # Every 4 hours at :30 (06:30, 10:30, 14:30, 18:30, 22:30, 02:30 UTC)
+    - cron: '30 4 * * *' # Daily at 04:30 UTC (between hourly Poll Invitations and 05:17 Reconcile Repos)
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: dispatch-renovate
+  group: update-metadata
   cancel-in-progress: false
 
 jobs:
-  dispatch-renovate:
-    name: Dispatch Renovate to tracked repos
+  update-metadata:
+    name: Refresh metadata/renovate.yaml from fro-bot org scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -33,7 +33,7 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      - name: 🔄 Dispatch Renovate
+      - name: 🔄 Update metadata
         env:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
-        run: node scripts/dispatch-renovate.ts
+        run: node scripts/update-metadata.ts
