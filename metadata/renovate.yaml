@@ -1,3 +1,4 @@
 repositories:
   with-renovate:
     - .github
+    - agent
