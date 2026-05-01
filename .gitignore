@@ -22,3 +22,6 @@ dist
 # Test output
 coverage
 .vitest-cache
+
+# Local agent artifacts
+.context/
