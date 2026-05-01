@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/sparkle"
 created: 2026-04-28
-updated: 2026-04-30
+updated: 2026-05-01
 sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: 770356b3c83cec08a666960eab9c5fb4e1ab2a85
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: 712ab1bc2fdcd59ec9b8a2d71ad6d9ca88a023c5
     accessed: 2026-04-30
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: 712ab1bc2fdcd59ec9b8a2d71ad6d9ca88a023c5
+    accessed: 2026-05-01
 tags: [typescript, react, react-native, monorepo, design-system, storybook, tailwindcss, radix-ui, turborepo, expo, vite, astro, github-pages, zig, wasm]
 aliases: [sparkle]
 related:
@@ -36,7 +39,7 @@ related:
 - **Package manager:** pnpm 10.33.2
 - **Node.js:** 24.15.0 (pinned via `.node-version`)
 - **Stars:** 1, **Forks:** 1, **Watchers:** 2
-- **Open issues:** 5, **Has GitHub Pages:** yes
+- **Open issues:** 5, **Open PRs:** 2, **Has GitHub Pages:** yes
 
 ## Tech Stack
 
@@ -220,9 +223,23 @@ Missing Fro Bot capabilities:
 | Copilot setup steps | **Missing** | Present in most active repos |
 | AGENTS.md | **Missing (root)** | Present in most active repos |
 
+## Open PRs and Issues
+
+### Open PRs (2)
+
+- **#1604** — `fix(deps): update dependency astro to v6 [SECURITY]` (Renovate, security)
+- **#1507** — `chore(dev): update dependency @storybook/test-runner to v0.24.3` (Renovate)
+
+### Open Issues (5)
+
+- **#876** — [Feature] Astro Starlight Documentation - Phase 6: Deployment and CI/CD
+- **#212** — Dependency Dashboard
+- **#57** — Uplift `sparkle`
+
 ## Survey History
 
 | Date | SHA | Delta |
 | --- | --- | --- |
 | 2026-04-28 | `770356b` | Initial survey — full page created |
 | 2026-04-30 | `712ab1b` | Re-survey — Renovate preset bumped `#4.5.8` → `#4.5.9`, `bfra-me/.github` reusable workflows bumped to v4.16.11, lockfile maintenance. No structural changes. |
+| 2026-05-01 | `712ab1b` | Re-survey — SHA unchanged. Open PRs: 2 (including Astro v6 security update #1604). Open issues: 5. No structural changes. Still no Fro Bot agent workflow. |
