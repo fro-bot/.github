@@ -973,28 +973,24 @@ Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
 
-## [2026-04-30 18:49] ingest | marcusrbrown/renovate-config
+## [2026-04-30 21:00] ingest | marcusrbrown/sparkle
 
-Incremental re-survey of `marcusrbrown/renovate-config` (SHA `eecda77`, up from `bf13a82`). Updated repo page `marcusrbrown--renovate-config.md`. Index unchanged (page already cataloged). No new topic/entity/comparison pages warranted.
+Re-survey of `marcusrbrown/sparkle` (SHA `712ab1b`, up from `770356b`). Updated repo page `marcusrbrown--sparkle.md`. Updated topic page `github-actions-ci.md` to include sparkle in repos list, Renovate config section, and Fro Bot agent table. Added sparkle to `index.md` (was missing from catalog despite existing page). No new topic/entity/comparison pages created.
 
-Delta from prior survey (SHA `bf13a82`, 2026-04-28):
+Delta from prior survey (SHA `770356b`, 2026-04-28):
 
-- **Major version bump to v5.0.0** (2026-04-30): Breaking change — `group:allNonMajor` added to default extends, grouping all non-major dependency updates into a single PR per consumer repo. `:disableRateLimiting` removed, restoring default rate limits. Schedule override (`at any time`) removed.
-- **v4.5.9** (2026-04-30): Re-enabled rate limiting and removed schedule override (last v4 release before the v5 break).
-- **v5.0.1** (2026-04-30): Fix ensuring specific package rules (semantic-release grouping, own-project fast-track) override the broad `group:allNonMajor` preset.
-- **Fro Bot agent bumped:** v0.42.2 → v0.42.4 (SHA `c749e07137c53bba55d86d3dcb5f36babd8bc0c1`)
-- **bfra-me/.github reusable workflows:** bumped to v4.16.11
-- **Open issues:** 46 → 30
-- **Release pipeline now creates `v5` branch** in addition to existing `v4`
-- All downstream consumers on exact v4 pins are insulated from v5 breaking changes. `marcusrbrown--copiloting` on `#v4` floating pin is also insulated (points to v4 branch, not v5).
-- Added v5 migration impact section and recent release history table to repo page
-- Added `marcusrbrown--sparkle` to related repos (consumer pin TBD from future survey)
-- No contradictions with prior ingest — all prior findings confirmed and extended
+- **Renovate config preset bumped:** `marcusrbrown/renovate-config#4.5.8` → `#4.5.9` (#1614, 2026-04-30)
+- **bfra-me/.github reusable workflows bumped:** v4.16.9 → v4.16.11 (#1612, #1613, 2026-04-30) — affects `renovate.yaml` and `update-repo-settings.yaml`
+- **Lockfile maintenance:** #1611 (2026-04-27)
+- Repository structure, architecture, workspace packages, CI pipeline, documentation pipeline, Probot settings, conventions all unchanged
+- **Still no Fro Bot agent workflow** — follow-up PR recommended
+- Open issues: 5 (#57 Uplift sparkle, #212 Dependency Dashboard, #876 Astro Phase 6, #1507 Storybook test-runner, #1604 Astro v6 security update)
+- Recent commits are exclusively Renovate dependency bumps — no structural changes since prior survey
 
-Sources: https://github.com/marcusrbrown/renovate-config (SHA eecda7763e588c770a502b3a0b0c257f73c912c8)
+Sources: https://github.com/marcusrbrown/sparkle (SHA 712ab1bc2fdcd59ec9b8a2d71ad6d9ca88a023c5)
 
-## [2026-05-01 03:54] ingest | repo:marcusrbrown/renovate-config
+## [2026-05-01 03:55] ingest | repo:marcusrbrown/sparkle
 
-Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/renovate-config
+Sources: https://github.com/marcusrbrown/sparkle

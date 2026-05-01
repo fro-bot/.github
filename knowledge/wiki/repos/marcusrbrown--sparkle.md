@@ -2,18 +2,22 @@
 type: repo
 title: "marcusrbrown/sparkle"
 created: 2026-04-28
-updated: 2026-04-28
+updated: 2026-04-30
 sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: 770356b3c83cec08a666960eab9c5fb4e1ab2a85
     accessed: 2026-04-28
-tags: [typescript, react, react-native, monorepo, design-system, storybook, tailwindcss, radix-ui, turborepo, expo, vite, astro, github-pages]
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: 712ab1bc2fdcd59ec9b8a2d71ad6d9ca88a023c5
+    accessed: 2026-04-30
+tags: [typescript, react, react-native, monorepo, design-system, storybook, tailwindcss, radix-ui, turborepo, expo, vite, astro, github-pages, zig, wasm]
 aliases: [sparkle]
 related:
   - github-actions-ci
   - marcusrbrown--mrbro-dev
   - marcusrbrown--gpt
   - marcusrbrown--tokentoilet
+  - marcusrbrown--vbs
 ---
 
 # marcusrbrown/sparkle
@@ -25,7 +29,7 @@ related:
 - **Purpose:** Experimental playground for modern TypeScript monorepo patterns, cross-platform UI, and design system tooling
 - **Default branch:** `main`
 - **Created:** 2020-11-26
-- **Last push:** 2026-04-27
+- **Last push:** 2026-04-30
 - **Homepage:** https://sparkle.mrbro.dev (Astro Starlight docs site on GitHub Pages)
 - **License:** MIT
 - **Topics:** `typescript`, `playground`, `next-js`, `react`, `vite`
@@ -177,7 +181,7 @@ Missing Fro Bot capabilities:
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8` + `sanity-io/renovate-config:semantic-commit-type` + `:preserveSemverRanges`. Post-upgrade runs `pnpm bootstrap && pnpm fix`. React Native package grouping rules. Automerge on unstable minor/patch for `@astrojs/check` and `typedoc`. PR creation: `immediate`.
+- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.9` + `sanity-io/renovate-config:semantic-commit-type` + `:preserveSemverRanges`. Post-upgrade runs `pnpm bootstrap && pnpm fix`. React Native package grouping rules. Automerge on unstable minor/patch for `@astrojs/check` and `typedoc`. PR creation: `immediate`.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` — confirmed Fro Bot ecosystem membership.
 - **Git hooks:** `simple-git-hooks` runs `nano-staged` on pre-commit. nano-staged runs `eslint --fix` on TS/JS/CSS/MD/JSON/YAML and `sort-package-json` on package.json files.
 - **Monorepo validation:** `@manypkg/cli` checks workspace consistency. `scripts/validate-dependencies.ts` validates deps. `scripts/validate-turbo.ts` validates Turbo config. `scripts/validate-build.ts` validates build output.
@@ -204,7 +208,7 @@ Missing Fro Bot capabilities:
 | Feature | Sparkle | Portfolio Standard |
 | --- | --- | --- |
 | Probot settings | `fro-bot/.github:common-settings.yaml` | Same |
-| Renovate preset | `marcusrbrown/renovate-config#4.5.8` | Same |
+| Renovate preset | `marcusrbrown/renovate-config#4.5.9` | Same |
 | ESLint config | `@bfra.me/eslint-config` 0.51.0 | Same (version varies) |
 | Prettier config | `@bfra.me/prettier-config` 0.16.8 (`120-proof`) | Same |
 | TS config | `@bfra.me/tsconfig` 0.13.0 | Same |
@@ -221,3 +225,4 @@ Missing Fro Bot capabilities:
 | Date | SHA | Delta |
 | --- | --- | --- |
 | 2026-04-28 | `770356b` | Initial survey — full page created |
+| 2026-04-30 | `712ab1b` | Re-survey — Renovate preset bumped `#4.5.8` → `#4.5.9`, `bfra-me/.github` reusable workflows bumped to v4.16.11, lockfile maintenance. No structural changes. |
