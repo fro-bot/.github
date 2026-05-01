@@ -972,3 +972,29 @@ Sources: https://github.com/marcusrbrown/renovate-config
 Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-04-30 18:49] ingest | marcusrbrown/renovate-config
+
+Incremental re-survey of `marcusrbrown/renovate-config` (SHA `eecda77`, up from `bf13a82`). Updated repo page `marcusrbrown--renovate-config.md`. Index unchanged (page already cataloged). No new topic/entity/comparison pages warranted.
+
+Delta from prior survey (SHA `bf13a82`, 2026-04-28):
+
+- **Major version bump to v5.0.0** (2026-04-30): Breaking change — `group:allNonMajor` added to default extends, grouping all non-major dependency updates into a single PR per consumer repo. `:disableRateLimiting` removed, restoring default rate limits. Schedule override (`at any time`) removed.
+- **v4.5.9** (2026-04-30): Re-enabled rate limiting and removed schedule override (last v4 release before the v5 break).
+- **v5.0.1** (2026-04-30): Fix ensuring specific package rules (semantic-release grouping, own-project fast-track) override the broad `group:allNonMajor` preset.
+- **Fro Bot agent bumped:** v0.42.2 → v0.42.4 (SHA `c749e07137c53bba55d86d3dcb5f36babd8bc0c1`)
+- **bfra-me/.github reusable workflows:** bumped to v4.16.11
+- **Open issues:** 46 → 30
+- **Release pipeline now creates `v5` branch** in addition to existing `v4`
+- All downstream consumers on exact v4 pins are insulated from v5 breaking changes. `marcusrbrown--copiloting` on `#v4` floating pin is also insulated (points to v4 branch, not v5).
+- Added v5 migration impact section and recent release history table to repo page
+- Added `marcusrbrown--sparkle` to related repos (consumer pin TBD from future survey)
+- No contradictions with prior ingest — all prior findings confirmed and extended
+
+Sources: https://github.com/marcusrbrown/renovate-config (SHA eecda7763e588c770a502b3a0b0c257f73c912c8)
+
+## [2026-05-01 03:54] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
