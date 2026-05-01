@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/renovate-config — Shareable Renovate Configuration Presets"
 created: 2026-04-28
-updated: 2026-04-28
+updated: 2026-05-01
 sources:
+  - url: https://github.com/marcusrbrown/renovate-config
+    sha: eecda77
+    accessed: 2026-05-01
   - url: https://github.com/marcusrbrown/renovate-config
     sha: bf13a82fca143cd0cdcc9c5f12ef56c2b5196c20
     accessed: 2026-04-28
@@ -26,6 +29,7 @@ related:
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--esphome-life
+  - marcusrbrown--sparkle
 ---
 
 # marcusrbrown/renovate-config
@@ -42,12 +46,12 @@ Shareable [Renovate](https://docs.renovatebot.com/) configuration presets for Ma
 | Language | JavaScript (config-only; no application code) |
 | Created | 2022-05-03 |
 | Default branch | `main` |
-| Latest release | `4.5.8` (2026-04-17) |
+| Latest release | `5.0.1` (2026-04-30) |
 | Node.js | 24.15.0 (`.node-version`) |
 | Package manager | pnpm 10.33.2 |
 | Topics | renovate, renovate-config, renovate-preset, renovatebot, renovate-by-githubaction, semantic-release |
-| Open issues | 46 |
-| Stars / Watchers / Forks | 0 / 0 / 0 |
+| Open issues | 49 |
+| Stars / Watchers / Forks | 0 / 2 / 0 |
 
 ## Preset Architecture
 
@@ -55,16 +59,21 @@ Three preset files define the Renovate policy surface:
 
 ### `default.json` — Primary Preset
 
-The main preset extended by downstream repos via `github>marcusrbrown/renovate-config` (or pinned to a release, e.g., `#4.5.8`).
+The main preset extended by downstream repos via `github>marcusrbrown/renovate-config` (or pinned to a release, e.g., `#5.0.1`).
 
 Extends:
 - `github>bfra-me/renovate-config#5.2.1` — base config from the bfra-me organization
 - `github>bfra-me/renovate-config:fro-bot.json5#5.2.1` — Fro Bot-specific overrides from bfra-me
 - `:assignAndReview(marcusrbrown)` — auto-assign PRs to Marcus
-- `:disableRateLimiting` — no hourly/concurrent PR caps
 - `:preserveSemverRanges` — keep `^`/`~` ranges as-is
+- `group:allNonMajor` — **[NEW in v5.0.0]** groups all non-major dependency updates into a single PR per repo
 - `npm:unpublishSafe` — wait for npm unpublish window before updating
 - `helpers:pinGitHubActionDigestsToSemver` — pin GitHub Actions by digest with semver tag comments
+
+**v5.0.0 breaking changes (2026-04-30):**
+- **Removed** `:disableRateLimiting` — rate limiting is now re-enabled (default Renovate limits apply). This was first done in v4.5.9 as a bugfix, then the non-major grouping in v5.0.0 made the removal permanent.
+- **Added** `group:allNonMajor` — all patch/minor/digest/pin updates are grouped into a single PR per repo instead of individual PRs. Major updates remain separate.
+- **v5.0.1 fix:** Ensures specific package rules (own-project fast-track, semantic-release grouping) override the preset-level `group:allNonMajor` grouping.
 
 Key package rules:
 - **semantic-release grouping:** Groups major updates of `semantic-release` and `conventional-changelog-conventionalcommits` with `semanticCommitType: feat`
@@ -72,8 +81,6 @@ Key package rules:
 - **Source URL fast-track:** Same immediate/no-age treatment for packages sourced from `github.com/bfra-me`, `github.com/fro-bot`, or `github.com/marcusrbrown`
 - **Self-reference labeling:** Commits touching `marcusrbrown/renovate-config` use topic `{{{depName}}} preset`
 - **Minimum version floor:** Consumers of this preset must be on `>=4.0.0`
-
-Schedule: `at any time` (no restriction).
 
 Suppresses `prIgnoreNotification`.
 
@@ -110,8 +117,8 @@ Uses `semantic-release` with conventional commits:
 
 - Analyzed types: `feat` (minor), `fix` (patch), `build` (patch), `ci/renovate` (minor), `docs/readme.md` (patch)
 - Plugins: commit-analyzer, release-notes-generator, npm (private — no publish), GitHub releases, `semantic-release-export-data`
-- Tag format: `${version}` (bare semver, e.g., `4.5.8`)
-- On release: pushes/creates a major version branch (`v4`, `v5`, etc.) pointing to the release SHA — enables downstream `#v4` pins
+- Tag format: `${version}` (bare semver, e.g., `5.0.1`)
+- On release: pushes/creates a major version branch (`v4`, `v5`, etc.) pointing to the release SHA — enables downstream `#v5` pins
 - Release commits authored by `mrbro-bot[bot]` (app ID 137683033)
 - GitHub App token used for release pushes (`APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` secrets)
 
@@ -136,7 +143,7 @@ Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.9`
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present and active** — `fro-bot.yaml` with `fro-bot/agent@v0.42.2` (SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`).
+**Fro Bot workflow present and active** — `fro-bot.yaml` with `fro-bot/agent@v0.42.4` (SHA `c749e07137c53bba55d86d3dcb5f36babd8bc0c1`).
 
 Trigger surface:
 - Issue comments, PR review comments, discussion comments (mentioning `@fro-bot`)
@@ -221,11 +228,13 @@ This preset is the dependency-update policy backbone of the entire `marcusrbrown
 | [[marcusrbrown--systematic]] | extends + `sanity-io/renovate-config:semantic-commit-type` | — |
 | [[marcusrbrown--opencode-copilot-delegate]] | `#4.5.8` | bun install + fix + build |
 | [[marcusrbrown--esphome-life]] | `#4.5.1` | — |
+| [[marcusrbrown--sparkle]] | `#4.5.9` | — |
 
-Notable: `marcusrbrown--copiloting` pins to the floating `#v4` major branch rather than a specific release. `marcusrbrown--containers` and `marcusrbrown--extend-vscode` are on the older `#4.5.0` pin.
+Notable: with the v5.0.0 release (2026-04-30), downstream consumers pinned to floating major branches (e.g., `#v4`) will not automatically pick up v5 changes — they must explicitly update to `#v5` or a specific `#5.x.y` pin. `marcusrbrown--copiloting` uses floating `#v4`. `marcusrbrown--containers` and `marcusrbrown--extend-vscode` are on the older `#4.5.0` pin. `marcusrbrown--sparkle` was the first to pick up `#4.5.9` before v5.0.0 landed.
 
 ## Survey History
 
 | Date | SHA | Notes |
 | --- | --- | --- |
+| 2026-05-01 | `eecda77` | Re-survey: v5.0.0 breaking change (group:allNonMajor), v4.5.9, v5.0.1, agent v0.42.4 |
 | 2026-04-28 | `bf13a82` | Initial survey |
