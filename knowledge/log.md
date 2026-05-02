@@ -937,3 +937,82 @@ Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 02cac9c0
 Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-04-28 00:00] ingest | marcusrbrown/renovate-config
+
+Initial survey of `marcusrbrown/renovate-config` (SHA `bf13a82`). Created repo page `marcusrbrown--renovate-config.md`. Updated topic page `github-actions-ci.md` (added to repos list, Renovate config section, and Fro Bot agent table). Updated `index.md` to catalog the new page. No new topic/entity/comparison pages created — existing pages cover all cross-cutting concerns.
+
+Key findings:
+
+- Canonical dependency-update policy repo consumed by every `marcusrbrown/*` and `fro-bot/*` repository (16 known downstream consumers documented)
+- Three preset files: `default.json` (primary, extends `bfra-me/renovate-config#5.2.1`), `onboarding.json` (new repo bootstrap), `archived-repository.json` (archived repo minimal policy)
+- Self-referential Renovate config in `.github/renovate.json5` — uses `local>marcusrbrown/renovate-config` with custom regex manager tracking `bfra-me/renovate-config` preset pin
+- `default.json` key policies: no rate limiting, semver range preservation, npm unpublish safety, GitHub Action digest pinning, immediate PR creation for own-org packages with zero minimum release age
+- semantic-release pipeline with bare semver tags and major version branch updates (`v4`, `v5`, etc.) enabling downstream `#v4` floating pins
+- Latest release: `4.5.8` (2026-04-17), Node.js 24.15.0, pnpm 10.33.2
+- ESLint via `@bfra.me/eslint-config` (single re-export, no local overrides), Prettier via `@bfra.me/prettier-config/120-proof`
+- **Fro Bot workflow present and active** (`fro-bot/agent@v0.42.2`): Renovate-domain-specific PR review (schema compliance, backward compat, downstream PR storm risk), daily maintenance at 15:30 UTC
+- **Fro Bot Autoheal present** (daily 03:30 UTC): 5-category sweep — errored PRs, security, config validation & preset quality, developer experience, bfra-me ecosystem health
+- Probot settings extend `fro-bot/.github:common-settings.yaml`, branch protection requires Analyze, CodeQL, Fro Bot, Lint, Release, Renovate checks
+- Comprehensive AGENTS.md with Renovate preset authoring patterns and testing strategies
+- 7 workflows total: main.yaml (lint + release), fro-bot.yaml, fro-bot-autoheal.yaml, renovate.yaml (reusable from bfra-me), codeql-analysis.yaml, scorecard.yaml, update-repo-settings.yaml
+- Consumer version pins vary: most on `#4.5.8`, `copiloting` on floating `#v4`, `containers`/`extend-vscode` on older `#4.5.0`
+- 46 open issues, 0 stars — issue count likely reflects dependency dashboard + autohealing reports
+
+Sources: https://github.com/marcusrbrown/renovate-config (SHA bf13a82fca143cd0cdcc9c5f12ef56c2b5196c20)
+
+## [2026-04-28 00:00] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-04-28 07:48] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-04-30 21:00] ingest | marcusrbrown/sparkle
+
+Re-survey of `marcusrbrown/sparkle` (SHA `712ab1b`, up from `770356b`). Updated repo page `marcusrbrown--sparkle.md`. Updated topic page `github-actions-ci.md` to include sparkle in repos list, Renovate config section, and Fro Bot agent table. Added sparkle to `index.md` (was missing from catalog despite existing page). No new topic/entity/comparison pages created.
+
+Delta from prior survey (SHA `770356b`, 2026-04-28):
+
+- **Renovate config preset bumped:** `marcusrbrown/renovate-config#4.5.8` → `#4.5.9` (#1614, 2026-04-30)
+- **bfra-me/.github reusable workflows bumped:** v4.16.9 → v4.16.11 (#1612, #1613, 2026-04-30) — affects `renovate.yaml` and `update-repo-settings.yaml`
+- **Lockfile maintenance:** #1611 (2026-04-27)
+- Repository structure, architecture, workspace packages, CI pipeline, documentation pipeline, Probot settings, conventions all unchanged
+- **Still no Fro Bot agent workflow** — follow-up PR recommended
+- Open issues: 5 (#57 Uplift sparkle, #212 Dependency Dashboard, #876 Astro Phase 6, #1507 Storybook test-runner, #1604 Astro v6 security update)
+- Recent commits are exclusively Renovate dependency bumps — no structural changes since prior survey
+
+Sources: https://github.com/marcusrbrown/sparkle (SHA 712ab1bc2fdcd59ec9b8a2d71ad6d9ca88a023c5)
+
+## [2026-05-01 03:55] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-05-01 12:00] ingest | marcusrbrown/sparkle
+
+Re-survey of `marcusrbrown/sparkle` (SHA `712ab1b`, unchanged from 2026-04-30). Updated repo page `marcusrbrown--sparkle.md` with new source entry, survey history row, and open PRs/issues section. Index unchanged (page already cataloged). No new topic/entity/comparison pages warranted.
+
+Delta from prior survey (SHA `712ab1b`, 2026-04-30):
+
+- SHA unchanged (`712ab1b`): latest commit is `chore(deps): update marcusrbrown/renovate-config preset to v4.5.9 (#1614)` from 2026-04-30
+- Open PRs: 2 — #1604 (Astro v6 security update, Renovate) and #1507 (Storybook test-runner bump, Renovate)
+- Open issues: 5 — #57 (Uplift sparkle), #212 (Dependency Dashboard), #876 (Astro Phase 6), plus 2 Renovate PRs reflected as issues
+- All prior survey observations confirmed: workspace layout, build graph, tech stack, CI pipeline, documentation pipeline, Probot settings, developer tooling, conventions
+- Renovate preset at `#4.5.9`, `bfra-me/.github` at v4.16.11, pnpm 10.33.2, Node 24.15.0, TypeScript 5.9.3
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward
+- No contradictions with prior ingest
+
+Sources: https://github.com/marcusrbrown/sparkle (SHA 712ab1bc2fdcd59ec9b8a2d71ad6d9ca88a023c5)
+
+## [2026-05-01 07:43] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
