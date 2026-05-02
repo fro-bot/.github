@@ -22,7 +22,7 @@ jobs:
       - name: ⤵ Checkout Branch
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: 📦 Setup
         uses: ./.github/actions/setup
@@ -32,7 +32,7 @@ jobs:
         continue-on-error: true
         run: |
           if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch origin data
+            git fetch --depth=1 origin data
             git restore --source FETCH_HEAD --worktree -- knowledge
           else
             printf '%s\n' 'cannot lint wiki snapshot: origin/data is unavailable' >&2
@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload wiki lint artifact
         if: always()
-        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: wiki-lint-report
           path: wiki-lint-report.md

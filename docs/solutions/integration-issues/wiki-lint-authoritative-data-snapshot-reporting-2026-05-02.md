@@ -94,8 +94,13 @@ function collectPageTargets(pages: readonly ParsedPage[]): Set<string> {
   for (const page of pages) {
     targets.add(page.slug)
 
-    for (const alias of collectAliases(page.frontmatter.aliases)) {
-      targets.add(alias)
+    const aliases = page.frontmatter.aliases
+    if (Array.isArray(aliases)) {
+      for (const alias of aliases) {
+        if (typeof alias === 'string' && alias.trim() !== '') {
+          targets.add(alias)
+        }
+      }
     }
   }
 
