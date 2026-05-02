@@ -17,19 +17,19 @@ const FROBOT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
  * - `knowledge/wiki/<subdir>/*.md` is agent-authored content — pages live in
  *   `repos/`, `topics/`, `entities/`, and `comparisons/` subdirectories per the
  *   Karpathy schema. Top-level `knowledge/wiki/README.md` is human scaffolding.
- * - `knowledge/index.md` and `knowledge/log.md` are auto-maintained catalog and journal
- * - `metadata/repos.yaml` and `metadata/social-cooldowns.yaml` are autonomous state
+ * - `knowledge/index.md` and `knowledge/log.md` are auto-maintained catalog and journal.
+ * - `metadata/*.yaml` are all auto-managed state. Manual edits to allowlist.yaml or
+ *   any other metadata YAML still land via the `data` branch and are promoted by the
+ *   `Merge Data Branch` workflow under the `fro-bot[bot]` identity.
  *
- * Human-editable config files (`metadata/allowlist.yaml`, `metadata/renovate.yaml`)
- * and docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
+ * Docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
  * `metadata/README.md`) are intentionally NOT covered.
  */
 const GUARDED_PATTERNS: readonly RegExp[] = [
   /^knowledge\/wiki\/[^/]+\/.+\.md$/,
   /^knowledge\/index\.md$/,
   /^knowledge\/log\.md$/,
-  /^metadata\/repos\.yaml$/,
-  /^metadata\/social-cooldowns\.yaml$/,
+  /^metadata\/[^/]+\.yaml$/,
 ]
 
 export interface GuardInput {

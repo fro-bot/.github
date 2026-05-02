@@ -49,7 +49,7 @@ For private repos in `pending-review`, the issue body omits the owner/repo name 
 
 ### `renovate.yaml`
 
-Static list of fro-bot org repositories with Renovate configs. Used by `dispatch-renovate.yaml` to determine which repos to dispatch `workflow_dispatch` events to.
+Auto-discovered list of fro-bot org repositories with Renovate workflows. Used by `dispatch-renovate.yaml` to determine which repos to dispatch `workflow_dispatch` events to.
 
 ```yaml
 repositories:
@@ -59,7 +59,7 @@ repositories:
     - tokentoilet
 ```
 
-Update convention: human-managed. Edit directly via PR — this file is not auto-managed by Fro Bot workflows.
+Update convention: the `Update Metadata` workflow (`update-metadata.yaml`) scans the fro-bot org daily for repos containing `.github/workflows/renovate.yaml` and writes the sorted list to this file on the `data` branch via `commitMetadata`. No-op when nothing changed.
 
 ### `social-cooldowns.yaml`
 
@@ -77,12 +77,12 @@ Update convention: social broadcast workflow updates this file programmatically 
 
 ## Credential expectations
 
-| File                    | Updated by                            | Credential         |
-| ----------------------- | ------------------------------------- | ------------------ |
-| `allowlist.yaml`        | Human PR                              | n/a (human commit) |
-| `repos.yaml`            | Invitation handler, Metadata workflow | `FRO_BOT_PAT`      |
-| `renovate.yaml`         | Human PR                              | n/a (human commit) |
-| `social-cooldowns.yaml` | Social broadcast                      | `FRO_BOT_PAT`      |
+| File                    | Updated by                          | Credential                   |
+| ----------------------- | ----------------------------------- | ---------------------------- |
+| `allowlist.yaml`        | Human edit on `data` branch         | n/a (human commit on `data`) |
+| `repos.yaml`            | Invitation handler, Daily reconcile | `FRO_BOT_PAT` / app token    |
+| `renovate.yaml`         | Daily metadata workflow             | app token (`fro-bot[bot]`)   |
+| `social-cooldowns.yaml` | Social broadcast                    | `FRO_BOT_PAT`                |
 
 PAT split summary:
 
@@ -99,12 +99,13 @@ PAT split summary:
 | `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only                                                 |
 | `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)               |
 | `reconcile-repos.yaml`  | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`       |
+| `update-metadata.yaml`  | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`                            |
 
 ## Editing metadata files
 
-Auto-managed state files (`repos.yaml`, `social-cooldowns.yaml`) are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source. Human-managed config files (`allowlist.yaml`, `renovate.yaml`) are editable via normal PRs.
+All `metadata/*.yaml` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source for metadata state.
 
-For intentional manual edits to auto-managed files, land the change on `data` directly and let the existing promotion flow land it on `main`:
+For intentional manual edits to any metadata file (including `allowlist.yaml`), land the change on `data` directly and let the existing promotion flow land it on `main`:
 
 ```bash
 git worktree add ../fro-bot-.github-data data
