@@ -36,6 +36,7 @@ If guidance conflicts, follow the order above.
 - Control-plane TypeScript (`scripts/*.ts`, executed with Node 24 native TS; no build step)
 - Metadata state (`metadata/*.yaml`, written programmatically to the `data` branch)
 - Knowledge wiki (`knowledge/{schema,index,log}.md` + `knowledge/wiki/`, Karpathy-style LLM-generated)
+- Documented solutions (`docs/solutions/`, categorized learnings and fixes with YAML frontmatter for searchability)
 - Character definition (`persona/`, injected into agent prompts)
 - Repo-scoped agent skills (`.agents/skills/`)
 - Brand assets (`assets/`, `branding/`) — downstream applied via the `apply-branding` workflow
@@ -55,7 +56,7 @@ If guidance conflicts, follow the order above.
 
 ## Required Workflow for Every Change
 
-1. Read nearby files and match existing style/patterns.
+1. Read nearby files and match existing style/patterns. In documented areas, also search `docs/solutions/` for relevant prior learnings using frontmatter like `module`, `tags`, and `problem_type`.
 2. Implement the smallest safe diff.
 3. Run verification commands locally.
 4. Update docs when behavior or usage changes.
