@@ -72,6 +72,7 @@ This plan turns the repo into a control plane where Fro Bot is a character first
   2. The persistent compounding wiki lives under `knowledge/wiki/`
   3. `knowledge/schema.md` defines page taxonomy, frontmatter rules, naming, and cross-reference conventions
 - **Wiki uses hybrid ingest**: Survey ingest on invite acceptance, event-driven incremental ingest from meaningful interactions, and a weekly lint pass. This is the compounding mechanism for R10-R11
+- **Wiki lint v1 is detect/report only**: The weekly lint pass inspects the authoritative wiki state on `data`, classifies findings by confidence, and reports them without opening a fix branch or autonomously editing wiki content
 - **`data` branch is the autonomous write surface**: Knowledge and metadata updates land on `data`, not `main`. `main` retains `enforce_admins: true`. A scheduled weekly PR merges `data` back into `main`
 - **Data branch merge is conditional**: If the weekly `data` → `main` PR changes only `knowledge/` and `metadata/`, auto-merge is enabled. If any other path changes, the PR is labeled `needs-review` and waits for human approval
 - **Commit strategy differs by scope**: Single-file metadata updates use GitHub Contents API with retry-with-refetch through `scripts/commit-metadata.ts`. Multi-file wiki ingest uses git-based atomic commits on `data` so no partial wiki state lands across `index.md`, `log.md`, and multiple wiki pages
@@ -83,6 +84,8 @@ This plan turns the repo into a control plane where Fro Bot is a character first
 - **Social broadcast is hybrid by design**: Deterministic allowlists and cooldowns decide when a post is eligible. Once eligible, the agent generates the actual Discord embed copy or BlueSky post in persona voice
 - **Explicit secret passing replaces blanket inheritance**: Caller workflows pass only the specific secrets they need into reusable workflows
 - **Surveyed repos are untrusted input**: Survey and ingest cap source breadth, validate outputs against schema and safety rules, and isolate writes to the control-plane repo’s `data` branch
+- **Wiki lint reads `data`, not `main`**: `main` is only the promoted view of knowledge. Weekly lint must inspect the `data` snapshot that `fro-bot.yaml` restores before agent work
+- **Wiki lint findings are split by confidence**: Broken links, orphan pages, index drift, and missing required frontmatter are deterministic integrity findings. Stale claims, missing cross-references, and knowledge gaps are advisory signals until their thresholds are proven in live use
 
 ## Open Questions
 
@@ -99,10 +102,12 @@ This plan turns the repo into a control plane where Fro Bot is a character first
 
 ### Deferred to Implementation
 
-- Exact prompt wording for `INGEST_PROMPT`, `WIKI_QUERY_PROMPT`, `WIKI_LINT_PROMPT`, and `SOCIAL_POST_PROMPT`
+- Exact prompt wording for `INGEST_PROMPT`, `WIKI_QUERY_PROMPT`, and `SOCIAL_POST_PROMPT`
 - BlueSky session caching strategy beyond per-run login
 - Journal issue title/template polish once the core event loop is live
 - Fine-grained stale-claim thresholds for wiki lint after real repository activity is observed
+- Whether a later Unit 17 follow-up should escalate deterministic findings or execution failures into control-plane issues instead of keeping v1 workflow-only
+- Whether a later Unit 17 follow-up should auto-propose deterministic wiki repairs after v1 signal quality is proven
 
 ## High-Level Technical Design
 
@@ -864,50 +869,58 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 - [ ] **Unit 17: Wiki Lint Weekly**
 
-**Goal:** Perform a weekly health check of the wiki and propose fixes through a dedicated branch.
+**Goal:** Perform a weekly detect/report health check of the authoritative wiki state on `data`.
 
 **Requirements:** R10, R11
 
-**Dependencies:** Units 6, 8, 10
+**Dependencies:** Units 5, 6, 8
 
 **Files:**
 
 - Create: `.github/workflows/wiki-lint.yaml`
 - Create: `scripts/wiki-lint.ts`
+- Create: `scripts/wiki-lint.test.ts`
 
 **Approach:**
 
 - Scheduled workflow runs Sundays at 20:00 UTC
-- `wiki-lint.ts` scans `knowledge/wiki/` for broken wikilinks, stale claims, orphan pages, missing cross-references, and knowledge gaps
-- Lint findings become input to an agent maintenance prompt that proposes fixes on a `fro-bot/wiki-lint` branch
-- Resulting fixes are opened as a draft PR for review
-- Lint results are appended to `knowledge/log.md`
+- Workflow checks out the repo, runs `./.github/actions/setup`, and restores `knowledge/` from `origin/data` before linting so findings reflect the authoritative wiki snapshot rather than stale `main`
+- `wiki-lint.ts` scans `knowledge/wiki/`, `knowledge/index.md`, and schema-required frontmatter for the weekly categories already defined in `knowledge/schema.md`: broken wikilinks, orphan pages, stale claims, missing cross-references, and knowledge gaps
+- Findings are classified into deterministic integrity findings (broken links, orphan pages, index drift, missing required frontmatter) and advisory findings (stale claims, missing cross-references, knowledge gaps)
+- V1 is detect/report only: no fix branch, no draft PR, and no autonomous wiki edits triggered by lint findings
+- Every run emits a workflow summary and durable artifact report. Clean runs are successful no-ops with zero repo writes. Findings produce reports without mutating the wiki. Execution failures are reported separately from wiki findings
+- V1 reporting stops at the workflow surface: summary plus artifact only. Findings do not open or update control-plane issues unless a later follow-up explicitly adds that escalation path
+- `knowledge/log.md` logging stays explicit and low-churn in v1: only finding-bearing or failed lint runs may justify a durable log write later; clean runs do not create commits just to record that lint passed
 
 **Patterns to follow:**
 
-- Wiki maintenance flow modeled after the weekly wiki prompt pattern in `fro-bot/agent`
+- Scheduled maintenance workflow shape in `.github/workflows/reconcile-repos.yaml`
+- `data`-first wiki restore pattern already used in `.github/workflows/fro-bot.yaml`
+- Weekly lint categories and staleness threshold already defined in `knowledge/schema.md`
 
 **Test scenarios:**
 
-- Weekly lint produces a report when issues are present
-- Draft PR is created for actionable fixes
-- `knowledge/log.md` records lint operations
+- Clean fixtures produce zero findings and no repo writes
+- Broken-link, orphan-page, index-drift, and missing-frontmatter fixtures produce deterministic findings
+- Advisory checks are labeled non-blocking and remain distinct from deterministic integrity failures
+- Workflow reads the `data` snapshot rather than the checkout’s default `main` state
+- Execution failures are reported distinctly from successful runs with findings
 
 **Verification:**
 
-- Weekly workflow produces lint output
-- Draft PR is created when actionable issues exist
-- Log entries exist for lint runs
+- Weekly workflow produces a lint summary and artifact report on every run
+- Clean runs succeed without writing to `data` or `main`
+- Findings are grouped by deterministic vs advisory classification and reflect the `data` snapshot
 
 ## System-Wide Impact
 
 - **Interaction graph**: Invitation polling feeds onboarding state, survey ingest seeds the wiki, event handling queries the wiki before execution, event ingest compounds the wiki afterward, and scheduled autonomy workflows keep Renovate, metadata, and wiki hygiene current
 - **State lifecycle**: Structured metadata files are updated individually through `scripts/commit-metadata.ts`; wiki changes are written atomically through git commits on `data`; the weekly merge workflow reconciles autonomous state into `main`
-- **Knowledge lifecycle**: Knowledge now compounds instead of resetting. Unit 8 creates the initial repo pages and related topic/entity/comparison pages. Unit 10 grows them incrementally from later interactions. Unit 17 cleans drift and gaps on a schedule
+- **Knowledge lifecycle**: Knowledge now compounds instead of resetting. Unit 8 creates the initial repo pages and related topic/entity/comparison pages. Unit 10 grows them incrementally from later interactions. Unit 17 adds non-blocking weekly observability over that state so drift and gaps become visible before promotion without becoming a second mutation path
 - **Error propagation**: Failures remain isolated per workflow. Invitation polling does not block event handling. Social posting failure does not block agent output. Wiki lint failures do not block metadata refresh or Renovate dispatch. Merge failures are surfaced through journal issues instead of silently accumulating
-- **Cross-reference impact**: Because page creation spans repo, topic, entity, and comparison pages, schema enforcement in Unit 6 and linting in Unit 17 become system-level safety rails rather than optional hygiene
+- **Cross-reference impact**: Because page creation spans repo, topic, entity, and comparison pages, schema enforcement in Unit 6 and linting in Unit 17 become system-level safety rails rather than optional hygiene. Deterministic integrity findings protect the graph structure; advisory findings inform follow-up work without pretending subjectivity is a hard failure
 - **Trust boundaries**: `FRO_BOT_POLL_PAT` is exposed only to polling and survey-read workflows. `FRO_BOT_PAT` is reserved for control-plane writes and proposal flows. No workflow should combine untrusted repo content ingestion with broad write credentials to external repos
-- **End-to-end operating path**: Invite accepted → repo starred → survey dispatch → atomic wiki ingest on `data` → event handling with persona and wiki context → journal entry → optional social broadcast → weekly merge-back to `main`
+- **End-to-end operating path**: Invite accepted → repo starred → survey dispatch → atomic wiki ingest on `data` → event handling with persona and wiki context → journal entry → optional social broadcast → weekly wiki lint against `data` → weekly merge-back to `main`
 
 ## Risks & Dependencies
 
@@ -916,6 +929,10 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 - **Wiki ingest atomicity**: Multi-file wiki updates could otherwise land partially and create torn state. Mitigate by using git-based atomic commits on `data` with replay-on-conflict behavior
 - **Wiki query token budget**: Aggressive wiki retrieval could bloat prompts and degrade agent performance. Mitigate with a hard 5 KB cap and type-priority ranking for returned pages
 - **Wiki content poisoning via adversarial repos**: Even capped inputs can contain malicious framing. Mitigate with schema validation, safety checks on generated patches, and explicit contradiction logging rather than blind replacement of prior knowledge
+- **Wiki lint false positives**: Heuristic checks can erode trust if they read like hard failures. Mitigate by separating deterministic integrity findings from advisory findings, labeling severity clearly, and keeping v1 non-blocking
+- **Authority skew during lint**: Linting `main` instead of `data` would report stale or wrong findings. Mitigate by making `origin/data` restore an explicit Unit 17 workflow step and verifying against that snapshot
+- **Churn from clean lint runs**: Writing a durable log entry for every clean weekly run would create meaningless commits and noisy `data` promotions. Mitigate by treating clean runs as successful no-ops and deferring durable log writes unless findings or failures justify them
+- **Implicit promotion gating**: Wiki lint could accidentally become a hidden gate on `merge-data`. Mitigate by stating explicitly that Unit 17 v1 is non-blocking and observational only
 - **API rate limits**: Invitation polling, metadata scanning, and Renovate dispatch all consume GitHub quota. Mitigate by journaling low-quota warnings, backing off non-critical work, and keeping polling cadence conservative
 - **Social channel degradation**: BlueSky or Discord may fail independently. Mitigate with per-channel retry logic, partial-failure tolerance, and journaled fallback reporting
 - **Merge drift on `data`**: If weekly merge-back fails repeatedly, autonomous state can diverge from `main`. Mitigate with stale-divergence journal alerts and a hard human review path for any PR that touches non-knowledge or non-metadata files
