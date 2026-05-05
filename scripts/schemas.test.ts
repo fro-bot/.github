@@ -8,6 +8,7 @@ import {
   assertReposFile,
   assertSocialCooldownsFile,
   isAllowlistFile,
+  isDiscoveryChannel,
   isRenovateFile,
   isReposFile,
   isSocialCooldownsFile,
@@ -94,6 +95,8 @@ describe('schemas — rejection cases', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -115,6 +118,8 @@ describe('schemas — rejection cases', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -135,6 +140,8 @@ describe('schemas — rejection cases', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -155,12 +162,165 @@ describe('schemas — rejection cases', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
     expect(isReposFile(bad)).toBe(false)
     const error = catchSchemaError(() => assertReposFile(bad))
     expect(error.path).toContain('onboarding_status')
+  })
+
+  it('accepts owned discovery_channel + populated next_survey_eligible_at', () => {
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'agent',
+          added: '2026-05-05',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'owned',
+          next_survey_eligible_at: '2026-05-19',
+        },
+      ],
+    }
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('accepts contrib discovery_channel', () => {
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: 'bfra-me',
+          name: '.github',
+          added: '2026-05-05',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: true,
+          has_renovate: true,
+          discovery_channel: 'contrib',
+          next_survey_eligible_at: null,
+        },
+      ],
+    }
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('rejects unknown discovery_channel value', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'partner',
+          next_survey_eligible_at: null,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('discovery_channel')
+  })
+
+  it('rejects null discovery_channel', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: null,
+          next_survey_eligible_at: null,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('discovery_channel')
+  })
+
+  it('accepts legacy entries missing discovery_channel and next_survey_eligible_at', () => {
+    // #given a legacy entry from before the cadence migration landed
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+    // #when the schema validates it
+    // #then it accepts the entry; downstream code defaults missing channel to 'collab'
+    // and missing eligible-at to immediately-eligible until the cadence migration runs
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('rejects next_survey_eligible_at as a number', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: 42,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('next_survey_eligible_at')
+  })
+
+  it('isDiscoveryChannel accepts the three valid values', () => {
+    expect(isDiscoveryChannel('collab')).toBe(true)
+    expect(isDiscoveryChannel('owned')).toBe(true)
+    expect(isDiscoveryChannel('contrib')).toBe(true)
+  })
+
+  it('isDiscoveryChannel rejects invalid values', () => {
+    expect(isDiscoveryChannel('partner')).toBe(false)
+    expect(isDiscoveryChannel('')).toBe(false)
+    expect(isDiscoveryChannel(null)).toBe(false)
+    expect(isDiscoveryChannel(undefined)).toBe(false)
+    expect(isDiscoveryChannel(42)).toBe(false)
   })
 
   it('rejects non-string entry in with-renovate list', () => {

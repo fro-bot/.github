@@ -26,7 +26,43 @@ describe('addRepoEntry', () => {
       last_survey_status: null,
       has_fro_bot_workflow: false,
       has_renovate: false,
+      discovery_channel: 'collab',
+      next_survey_eligible_at: null,
     })
+  })
+
+  // Cadence-and-discovery: defaults discovery_channel to 'collab' when not specified
+  it("defaults discovery_channel to 'collab' when not specified", () => {
+    const result = addRepoEntry(EMPTY_REPOS, {owner: 'alice', repo: 'project', now: NOW})
+    expect(result.repos[0]?.discovery_channel).toBe('collab')
+  })
+
+  // Cadence-and-discovery: defaults next_survey_eligible_at to null (never-surveyed = immediately eligible)
+  it('defaults next_survey_eligible_at to null', () => {
+    const result = addRepoEntry(EMPTY_REPOS, {owner: 'alice', repo: 'project', now: NOW})
+    expect(result.repos[0]?.next_survey_eligible_at).toBeNull()
+  })
+
+  // Cadence-and-discovery: accepts and persists owned channel for fro-bot org repos
+  it("accepts 'owned' discovery_channel for fro-bot org repos", () => {
+    const result = addRepoEntry(EMPTY_REPOS, {
+      owner: 'fro-bot',
+      repo: 'agent',
+      now: NOW,
+      discovery_channel: 'owned',
+    })
+    expect(result.repos[0]?.discovery_channel).toBe('owned')
+  })
+
+  // Cadence-and-discovery: accepts and persists contrib channel for cross-org repos
+  it("accepts 'contrib' discovery_channel for cross-org repos", () => {
+    const result = addRepoEntry(EMPTY_REPOS, {
+      owner: 'bfra-me',
+      repo: '.github',
+      now: NOW,
+      discovery_channel: 'contrib',
+    })
+    expect(result.repos[0]?.discovery_channel).toBe('contrib')
   })
 
   // Extended behavior: accepts pending-review status
@@ -67,6 +103,8 @@ describe('addRepoEntry', () => {
           last_survey_status: 'success',
           has_fro_bot_workflow: true,
           has_renovate: true,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -88,6 +126,8 @@ describe('addRepoEntry', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -140,6 +180,8 @@ describe('addRepoEntry', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
         {
           owner: 'bob',
@@ -150,6 +192,8 @@ describe('addRepoEntry', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -176,6 +220,8 @@ describe('recordSurveyResult', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -205,6 +251,8 @@ describe('recordSurveyResult', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -234,6 +282,8 @@ describe('recordSurveyResult', () => {
           last_survey_status: 'success',
           has_fro_bot_workflow: true,
           has_renovate: true,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
         {
           owner: 'bob',
@@ -244,6 +294,8 @@ describe('recordSurveyResult', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -279,6 +331,8 @@ describe('recordSurveyResult', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -321,6 +375,8 @@ describe('recordSurveyResult', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -350,6 +406,8 @@ describe('recordSurveyResult', () => {
           last_survey_status: null,
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -379,6 +437,8 @@ describe('recordSurveyResult', () => {
           last_survey_status: 'success',
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -410,6 +470,8 @@ describe('resetSurveyResult', () => {
           last_survey_status: 'success',
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -427,6 +489,8 @@ describe('resetSurveyResult', () => {
       last_survey_status: null,
       has_fro_bot_workflow: false,
       has_renovate: false,
+      discovery_channel: 'collab',
+      next_survey_eligible_at: null,
     })
   })
 
@@ -444,6 +508,8 @@ describe('resetSurveyResult', () => {
           last_survey_status: 'failure',
           has_fro_bot_workflow: true,
           has_renovate: true,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }
@@ -472,6 +538,8 @@ describe('resetSurveyResult', () => {
           last_survey_status: 'success',
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
         {
           owner: 'bob',
@@ -482,6 +550,8 @@ describe('resetSurveyResult', () => {
           last_survey_status: 'success',
           has_fro_bot_workflow: false,
           has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
         },
       ],
     }

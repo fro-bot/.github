@@ -207,7 +207,8 @@ async function processInvitation(params: {
       octokit: params.octokit,
       path: params.reposPath,
       message: `chore(metadata): add ${repoOwner}/${repoName} from invitation polling`,
-      mutator: current => addRepoEntry(current, {owner: repoOwner, repo: repoName, now: params.now}),
+      mutator: current =>
+        addRepoEntry(current, {owner: repoOwner, repo: repoName, now: params.now, discovery_channel: 'collab'}),
     })
     await params.octokit.rest.actions.createWorkflowDispatch({
       owner: params.owner,

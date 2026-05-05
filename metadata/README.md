@@ -20,7 +20,7 @@ Update convention: human-maintained; edits land via the `data` branch (see [Edit
 
 ### `repos.yaml`
 
-Collaborator repositories where Fro Bot is active.
+Repositories where Fro Bot is active. Surfaced through three discovery channels: collaborator invitations on user accounts, fro-bot's own org, and operator-allowlisted cross-org repos.
 
 ```yaml
 version: 1
@@ -33,6 +33,8 @@ repos:
     last_survey_status: success | failure | null
     has_fro_bot_workflow: boolean
     has_renovate: boolean
+    discovery_channel: collab | owned | contrib
+    next_survey_eligible_at: ISO date | null
 ```
 
 Update convention: invitation handler, metadata workflow, and daily reconcile update this file programmatically on the `data` branch.
@@ -46,6 +48,16 @@ Onboarding status values:
 - `pending-review` — repo was discovered via collaborator access from an owner not listed in `allowlist.yaml`. A GitHub issue labeled `reconcile:pending-review` tracks each one; the entry stays in this state until an operator promotes it (approve and change status to `pending`) or removes it.
 
 For private repos in `pending-review`, the issue body omits the owner/repo name and identifies the subject via its GitHub `node_id`. Public-repo `pending-review` issues include the full `owner/repo`. The control-plane repo is public, so issue bodies never leak private repo names.
+
+Discovery channel values:
+
+- `collab` — repo surfaced via a collaborator invitation accepted by `poll-invitations.yaml`. Default channel for newcomers when none is specified.
+- `owned` — repo surfaced via fro-bot's own org enumeration (`apps.listReposAccessibleToInstallation`). Skips `fro-bot/.github` unconditionally.
+- `contrib` — repo surfaced via the operator-curated allowlist in `allowlist.yaml` (`approved_contrib_orgs` / `approved_contrib_repos`), with a successful probe for `.github/workflows/fro-bot.yaml` proving fro-bot is invoked there.
+
+The channel is sticky after first write — neither reconcile nor any other writer auto-rewrites it. Operators re-classify by editing `metadata/repos.yaml` on the `data` branch directly.
+
+`next_survey_eligible_at` is the ISO date at which an entry becomes eligible for re-survey, computed at survey-completion time as `last_survey_at + base_interval[channel] + jitter(owner, name, last_survey_at)`. `null` means never-surveyed (treat as immediately eligible).
 
 ### `renovate.yaml`
 
