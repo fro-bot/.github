@@ -148,8 +148,8 @@ repos:
     name: poly
     added: 2026-05-05
     onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    last_survey_at: 2026-05-05
+    last_survey_status: failure
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: collab
