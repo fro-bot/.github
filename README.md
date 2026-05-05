@@ -14,41 +14,41 @@
 
 ## Overview
 
-Fro Bot is an AI-powered GitHub bot designed to enhance repository management through intelligent automation. This repository serves as the foundational control center containing community health files, shared configurations, and automation workflows that power Fro Bot's functionality across all managed repositories.
+Fro Bot is an AI-powered GitHub bot for repository review, maintenance, and control-plane automation. This repository is the org-level control center: community health files, shared configuration, workflow definitions, metadata state, the knowledge wiki, and agent guidance for managed repositories.
 
 **What Fro Bot Does:**
 
-- Reviews pull requests and provides intelligent feedback
-- Monitors repository activity and offers insights and recommendations
-- Maintains documentation and keeps links up to date
-- Automatically stars repositories contributed to by followed users
-- Enforces consistent repository settings and security policies
+- Reviews pull requests and triages issues under the `@fro-bot` identity
+- Accepts allowlisted collaborator invitations, stars onboarded repositories, and tracks them in auditable metadata
+- Ingests collaborator repositories into the knowledge wiki and lints the authoritative snapshot from `data`
+- Dispatches Renovate across tracked repos and refreshes org metadata on schedule
+- Enforces consistent repository settings, branch protections, and community-health defaults
 
 ## Features
 
 🤖 **AI-Powered Automation**
 
-- Intelligent pull request reviews with contextual feedback
-- Automated documentation maintenance and link verification
-- Smart repository monitoring with actionable insights
+- Pull request review, issue triage, and scheduled oversight via the Fro Bot agent workflows
+- Repo-ingest, journal, and social-broadcast plumbing for autonomous status updates
+- Knowledge capture through the Karpathy-style wiki and `docs/solutions/` learnings
 
 🔧 **Repository Management**
 
-- Centralized community health files (README, SECURITY, CODEOWNERS)
-- Automated repository settings synchronization via Probot
-- Consistent development environment configuration
+- Centralized community health files (`README.md`, `SECURITY.md`, `LICENSE.md`)
+- Automated repository settings synchronization via Probot Settings
+- Auditable control-plane state in `metadata/*.yaml` on the `data` branch
 
 🚀 **CI/CD Integration**
 
-- Comprehensive GitHub Actions workflows for quality assurance
-- Automated dependency management with Renovate
-- Security scanning with CodeQL and OpenSSF Scorecard
+- GitHub Actions workflows for CI, reconcile/onboarding, metadata promotion, and wiki linting
+- Automated dependency management with Renovate plus tracked-repo dispatch
+- Security scanning with CodeQL, Dependency Review, and OpenSSF Scorecard
 
 ⚙️ **Development Standards**
 
-- Strict TypeScript configuration with comprehensive linting
-- Automated code formatting and style enforcement
-- AI development guidelines and best practices
+- Node 24 native TypeScript scripts with strict type-checking and strip-only compatibility checks
+- ESLint + Prettier enforcement and colocated Vitest coverage for `scripts/*.ts`
+- Canonical AI-assistant guidance in [`.github/copilot-instructions.md`](.github/copilot-instructions.md)
 
 ## Branding
 
@@ -113,7 +113,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 2. **Install dependencies:**
 
    ```bash
-   pnpm install
+   pnpm bootstrap
    ```
 
 3. **Run quality checks:**
@@ -150,7 +150,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ├── .github/                # GitHub-specific configurations
 │   ├── actions/setup/      # Composite bootstrap action
 │   ├── hooks/              # Copilot governance hooks
-│   ├── workflows/          # 16 GitHub Actions workflows (see Automation)
+│   ├── workflows/          # 21 GitHub Actions workflows (see Automation)
 │   ├── copilot-instructions.md  # Canonical AI-assistant guidance
 │   ├── renovate.json5      # Dependency management config
 │   └── settings.yml        # Repository settings via Probot
@@ -202,7 +202,7 @@ Quality gates:
 | **Scorecard**           | OpenSSF supply-chain security posture                   | Push to main, weekly       |
 | **Copilot Setup Steps** | Environment bootstrap for GitHub Copilot coding agent   | PR/push touching the file  |
 
-Fro Bot agent:
+Fro Bot control plane:
 
 | Workflow | Purpose | Trigger |
 | --- | --- | --- |
@@ -212,6 +212,11 @@ Fro Bot agent:
 | **Reconcile Repos** | Reconcile collaborator access against `metadata/repos.yaml`; dispatch surveys for stale repos | Daily 05:17 UTC, dispatch |
 | **Survey Repo** | Ingest a repository into the knowledge wiki | Dispatch (by Reconcile Repos) |
 | **Merge Data Branch** | Promote autonomous `data`-branch commits to `main` | Sunday 22:00 UTC, dispatch |
+| **Update Metadata** | Refresh `metadata/renovate.yaml` from the fro-bot org scan | Daily 04:30 UTC, dispatch |
+| **Dispatch Renovate** | Dispatch Renovate runs across repos tracked in `metadata/renovate.yaml` | Every 4 hours at `:30`, dispatch |
+| **Reset Survey Status** | Manually clear stale survey state for one or more tracked repos on `data` | Manual dispatch |
+| **Wiki Lint** | Lint the authoritative wiki snapshot restored from `origin/data` | Sunday 20:00 UTC, dispatch |
+| **Social Broadcast** | Reusable Discord, Bluesky, and journal fan-out for Fro Bot events | Reusable `workflow_call` |
 
 Repository management:
 
@@ -236,11 +241,11 @@ Fro Bot uses [Probot Settings](https://probot.github.io/apps/settings/) to synch
 
 ### Control Plane State
 
-Runtime state lives in version-controlled YAML under [`metadata/`](metadata/) (allowlist, tracked repos, Renovate targets, social cooldowns). See [`metadata/README.md`](metadata/README.md) for schemas and update conventions. Autonomous writes target the unprotected `data` branch and promote to `main` via the **Merge Data Branch** workflow.
+Runtime state lives in version-controlled YAML under [`metadata/`](metadata/) (allowlist, tracked repos, Renovate targets, social cooldowns). See [`metadata/README.md`](metadata/README.md) for schemas and update conventions. Autonomous writes target the unprotected `data` branch and promote to `main` via the **Merge Data Branch** workflow. `Update Metadata`, invitation handling, reconcile, social cooldown writes, and wiki ingest all follow that model.
 
 ### Knowledge Wiki
 
-Fro Bot maintains a [Karpathy-style LLM wiki](knowledge/) (`schema.md`, `index.md`, `log.md`, plus `wiki/{repos,topics,entities,comparisons}/`) that compounds cross-repo knowledge. The **Survey Repo** workflow ingests repositories into the wiki; **Reconcile Repos** schedules those surveys.
+Fro Bot maintains a [Karpathy-style LLM wiki](knowledge/) (`schema.md`, `index.md`, `log.md`, plus `wiki/{repos,topics,entities,comparisons}/`) that compounds cross-repo knowledge. The **Survey Repo** workflow ingests repositories into the wiki; **Reconcile Repos** schedules those surveys; **Wiki Lint** validates the authoritative snapshot restored from `origin/data` before reporting findings.
 
 ## Development
 
