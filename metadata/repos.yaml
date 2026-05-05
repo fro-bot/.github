@@ -144,3 +144,13 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
+  - owner: marcusrbrown
+    name: poly
+    added: 2026-05-05
+    onboarding_status: pending
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: false
+    discovery_channel: collab
+    next_survey_eligible_at: null
