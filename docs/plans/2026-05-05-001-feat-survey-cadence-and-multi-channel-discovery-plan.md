@@ -194,9 +194,9 @@ The pure engine boundary stays clean. New I/O (owned + contrib enumeration) live
 
 - [x] **Unit 1: Schema migration — `discovery_channel` + `next_survey_eligible_at`**
 
-**Goal:** Extend `RepoEntry` with the two new fields (optional during the rollout window) and the `DiscoveryChannel` union. Add runtime guards that accept legacy entries missing the new fields. Migrate `metadata/repos.yaml` on `main` with deterministic jitter so eligibility-day distribution stays inside the 12-dispatch cap. No reconcile behavior change yet — migration consumers and writers come in Unit 4. This unit lands cleanly and unblocks everything else without breaking the `data` branch.
+**Goal:** Extend `RepoEntry` with the two new fields (optional during the rollout window) and the `DiscoveryChannel` union. Add runtime guards that accept legacy entries missing the new fields. No reconcile behavior change yet — migration consumers, writers, and the data-branch backfill come in Unit 4. This unit lands cleanly and unblocks everything else without breaking the `data` branch.
 
-**Requirements:** R1, R2, R4, R9.
+**Requirements:** R1, R2 (partial — schema only; data backfill in Unit 4).
 
 **Dependencies:** None.
 
@@ -205,7 +205,6 @@ The pure engine boundary stays clean. New I/O (owned + contrib enumeration) live
 - Modify: `scripts/schemas.ts` — add `DiscoveryChannel`, extend `RepoEntry` with the two new fields as **optional** (`discovery_channel?: DiscoveryChannel`, `next_survey_eligible_at?: string | null`), update `isRepoEntry`/`assertRepoEntry` to accept missing values. Unit 4 tightens to required after data-branch migration.
 - Modify: `scripts/repos-metadata.ts` — extend `addRepoEntry`'s literal to write `discovery_channel` (defaulting from a new optional `discovery_channel?: DiscoveryChannel` field on `AddRepoEntryInput`, falling back to `'collab'`) and `next_survey_eligible_at: null`. New entries always carry both fields.
 - Modify: `scripts/handle-invitation.ts` — pass `discovery_channel: 'collab'` to the existing `addRepoEntry` call so the collab path explicitly tags its newcomers.
-- Modify: `metadata/repos.yaml` — one-time content migration. Each entry with a non-null `last_survey_at` gets `next_survey_eligible_at = last_survey_at + 30d + jitter(owner, name, last_survey_at)` where `jitter` is `sha256(${owner}/${name}@${last_survey_at}).readUInt32BE(0) % 4` (0–3 days). All entries get `discovery_channel: collab`. Avoids cap-12 starvation that a flat +30d migration would create.
 - Modify: `scripts/schemas.test.ts` — extend tests for new fields + channel guard. Includes a "legacy entry missing both fields is accepted" test that pins the loose-then-tight contract.
 - Modify: `scripts/repos-metadata.test.ts` — extend `addRepoEntry` tests for the new field default and the optional channel input.
 - Modify: `scripts/handle-invitation.test.ts` — round-trip via `assertReposFile` to verify the mutator output carries `discovery_channel: 'collab'`.
@@ -217,13 +216,12 @@ The pure engine boundary stays clean. New I/O (owned + contrib enumeration) live
 - Extend `RepoEntry` with `discovery_channel?: DiscoveryChannel` and `next_survey_eligible_at?: string | null` — both **optional during rollout**. JSDoc on each field calls out the loose-then-tight pattern: legacy entries without channel default to `'collab'`; missing eligible-at is treated as immediately eligible.
 - Add `isDiscoveryChannel(value: unknown): value is DiscoveryChannel` helper following the existing `isOnboardingStatus` pattern.
 - Update `isRepoEntry` and `assertRepoEntry` to accept `undefined` for both new fields. `null` for `discovery_channel` still rejects (only `undefined` or one of the three literals).
-- Migrate `metadata/repos.yaml` on `main` with jitter so the 18 entries spread across multiple eligibility days (max same-day eligibility ≤ cap of 12).
-- `addRepoEntry` always emits both fields with defaults so new entries are never legacy-shaped. Migration applies only to entries that pre-date Unit 1.
+- `addRepoEntry` always emits both fields with defaults so new entries are never legacy-shaped. Backfill of pre-existing entries is Unit 4's responsibility — it runs `migrateRepoEntry` via the autonomous `data`-branch path under `fro-bot[bot]` identity, satisfying the wiki authority guard.
 - Schema doc in `metadata/README.md` adds the two new fields, explains channel semantics + when each fires, documents the loose-then-tight rollout.
 
-**Why optional, not required:** Tight required schema would break the `data` branch on first autonomous write. `data` retains 17 legacy entries with no new fields; `handle-invitation` / `reconcile` / survey scripts call `assertReposFile` inside their commit mutators, so a tight schema fails the mutator and crashes the run. Optional fields let Unit 1 land cleanly while Unit 4 lands the data-branch migration via `migrateRepoEntry`. Unit 4 then tightens to required as part of its same-PR scope.
+**Why no `metadata/repos.yaml` change in this PR:** `metadata/*.yaml` is auto-managed and protected by the `Check Wiki Authority` CI guard — only PRs opened by `fro-bot` / `fro-bot[bot]` can land changes to those files. The legitimate path is `data`-branch writes by an autonomous workflow, then promotion via the weekly merge-data PR. Unit 4's `migrateRepoEntry` is the autonomous workflow that does this; it computes the same `last_survey_at + 30d + jitter` formula on the `data` branch and lets the merge-data cron promote the result to `main`. Doing the migration manually in Unit 1's PR would either fail the guard or require disabling it — both wrong.
 
-**Why jitter on the migration:** A flat `+30d` migration produces 13 entries with `next_survey_eligible_at: 2026-05-27` against a per-run cap of 12. The `oldestFirst` tiebreak is alphabetical, deterministically excluding the 13th repo every cycle — permanent starvation. Deterministic 0–3 day jitter spreads the eligibility set across 7 days, max same-day is 6, well under the cap.
+**Why optional, not required:** Tight required schema would break the `data` branch on first autonomous write. `data` retains 17 legacy entries with no new fields; `handle-invitation` / `reconcile` / survey scripts call `assertReposFile` inside their commit mutators, so a tight schema fails the mutator and crashes the run. Optional fields let Unit 1 land cleanly while Unit 4 lands the data-branch migration via `migrateRepoEntry`. Unit 4 then tightens to required as part of its same-PR scope.
 
 **Patterns to follow:**
 
@@ -246,9 +244,10 @@ The pure engine boundary stays clean. New I/O (owned + contrib enumeration) live
 - `pnpm test` clean (new tests + all existing schema tests still pass).
 - `pnpm lint` clean.
 - `metadata/README.md` reflects the new fields + describes the loose-then-tight rollout.
-- `metadata/repos.yaml` jittered eligibility distribution: max same-day ≤ 6 (verified at migration time), well under the 12-dispatch cap.
 
 **Note on `ReconcileSummary.migrated`:** The original plan added a `migrated: number` counter to `ReconcileSummary` in this unit. It was removed during ce:review (5-reviewer agreement: the field is dead state without Unit 4's `migrateRepoEntry` producer, and the unguarded counter would cause silent no-op classification when the producer arrives). The counter ships with Unit 4, atomically with its writer.
+
+**Note on jitter:** Earlier drafts of this unit migrated `metadata/repos.yaml` directly with a deterministic 0–3 day jitter to avoid cap-12 starvation on 2026-05-27. The migration was removed from this unit (see "Why no `metadata/repos.yaml` change in this PR" above); the same jitter formula moves to Unit 4's `migrateRepoEntry`, which produces the same end state via the autonomous `data`-branch path.
 
 ---
 
