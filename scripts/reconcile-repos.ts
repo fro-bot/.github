@@ -123,6 +123,10 @@ export interface ReconcileSummary {
   pendingReview: number
   regained: number
   lostAccess: number
+  /**
+   * Number of entries whose probed fields (`has_fro_bot_workflow`, `has_renovate`) drifted
+   * from the live signal and were rewritten this run. Steady-state field-probe drift only.
+   */
   refreshed: number
   unchanged: number
 }

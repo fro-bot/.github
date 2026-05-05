@@ -32,10 +32,28 @@ export interface RepoEntry {
   last_survey_status: SurveyStatus | null
   has_fro_bot_workflow: boolean
   has_renovate: boolean
+  /**
+   * Which channel surfaced this entry. Sticky after first write — reconcile never auto-rewrites it.
+   * Operators can re-classify by editing `metadata/repos.yaml` on the `data` branch directly.
+   *
+   * Optional during the rollout window: legacy entries without a channel are treated as `'collab'`
+   * by default. The cadence migration path will tighten this to required after `data` is migrated.
+   */
+  discovery_channel?: DiscoveryChannel
+  /**
+   * ISO date (YYYY-MM-DD) at which this entry becomes eligible for re-survey, or `null` for
+   * entries that have never been surveyed (treat as immediately eligible).
+   *
+   * Optional during the rollout window: legacy entries without an eligibility date are treated
+   * as immediately eligible. The cadence migration path will tighten this to required after
+   * `data` is migrated.
+   */
+  next_survey_eligible_at?: string | null
 }
 
 export type OnboardingStatus = 'pending' | 'onboarded' | 'failed' | 'lost-access' | 'pending-review'
 export type SurveyStatus = 'success' | 'failure'
+export type DiscoveryChannel = 'collab' | 'owned' | 'contrib'
 
 export interface RenovateFile {
   repositories: {
@@ -122,7 +140,11 @@ function isRepoEntry(value: unknown): value is RepoEntry {
     (value.last_survey_at === null || typeof value.last_survey_at === 'string') &&
     (value.last_survey_status === null || isSurveyStatus(value.last_survey_status)) &&
     typeof value.has_fro_bot_workflow === 'boolean' &&
-    typeof value.has_renovate === 'boolean'
+    typeof value.has_renovate === 'boolean' &&
+    (value.discovery_channel === undefined || isDiscoveryChannel(value.discovery_channel)) &&
+    (value.next_survey_eligible_at === undefined ||
+      value.next_survey_eligible_at === null ||
+      typeof value.next_survey_eligible_at === 'string')
   )
 }
 
@@ -144,6 +166,14 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
     throw new SchemaValidationError(`${path}.has_fro_bot_workflow`, 'expected boolean')
   if (typeof value.has_renovate !== 'boolean')
     throw new SchemaValidationError(`${path}.has_renovate`, 'expected boolean')
+  if (value.discovery_channel !== undefined && !isDiscoveryChannel(value.discovery_channel))
+    throw new SchemaValidationError(`${path}.discovery_channel`, 'expected one of: collab, owned, contrib (or omitted)')
+  if (
+    value.next_survey_eligible_at !== undefined &&
+    value.next_survey_eligible_at !== null &&
+    typeof value.next_survey_eligible_at !== 'string'
+  )
+    throw new SchemaValidationError(`${path}.next_survey_eligible_at`, 'expected string, null, or omitted')
 }
 
 function isOnboardingStatus(value: unknown): value is OnboardingStatus {
@@ -158,6 +188,10 @@ function isOnboardingStatus(value: unknown): value is OnboardingStatus {
 
 function isSurveyStatus(value: unknown): value is SurveyStatus {
   return value === 'success' || value === 'failure'
+}
+
+export function isDiscoveryChannel(value: unknown): value is DiscoveryChannel {
+  return value === 'collab' || value === 'owned' || value === 'contrib'
 }
 
 export function isRenovateFile(value: unknown): value is RenovateFile {

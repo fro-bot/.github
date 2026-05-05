@@ -8,7 +8,13 @@
  * duplicate `owner+name` and preserves existing entries as-is.
  */
 
-import {assertReposFile, type OnboardingStatus, type ReposFile, type SurveyStatus} from './schemas.ts'
+import {
+  assertReposFile,
+  type DiscoveryChannel,
+  type OnboardingStatus,
+  type ReposFile,
+  type SurveyStatus,
+} from './schemas.ts'
 
 export interface AddRepoEntryInput {
   owner: string
@@ -20,6 +26,16 @@ export interface AddRepoEntryInput {
    * not in `metadata/allowlist.yaml`.
    */
   onboarding_status?: OnboardingStatus
+  /**
+   * Which discovery channel surfaced this newcomer. Defaults to `'collab'` to match the
+   * original invitation-acceptance path. Reconcile passes `'owned'` for fro-bot org repos
+   * discovered via the App's installation enumeration, and `'contrib'` for repos surfaced
+   * through `metadata/allowlist.yaml`'s `approved_contrib_*` lists.
+   *
+   * Sticky after first write — neither reconcile nor any other writer auto-rewrites this
+   * field. Operators re-classify by editing `metadata/repos.yaml` on the `data` branch.
+   */
+  discovery_channel?: DiscoveryChannel
 }
 
 /**
@@ -51,6 +67,8 @@ export function addRepoEntry(current: unknown, input: AddRepoEntryInput): ReposF
         last_survey_status: null,
         has_fro_bot_workflow: false,
         has_renovate: false,
+        discovery_channel: input.discovery_channel ?? 'collab',
+        next_survey_eligible_at: null,
       },
     ],
   }

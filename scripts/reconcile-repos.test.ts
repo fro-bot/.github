@@ -51,6 +51,8 @@ function makeEntry(overrides: Partial<RepoEntry> = {}): RepoEntry {
     last_survey_status: null,
     has_fro_bot_workflow: false,
     has_renovate: false,
+    discovery_channel: 'collab',
+    next_survey_eligible_at: null,
     ...overrides,
   }
 }
@@ -1172,6 +1174,8 @@ describe('handleReconcile (I/O shell)', () => {
                   last_survey_status: 'success',
                   has_fro_bot_workflow: false,
                   has_renovate: false,
+                  discovery_channel: 'collab',
+                  next_survey_eligible_at: null,
                 },
               ],
             },
@@ -1222,6 +1226,8 @@ describe('handleReconcile (I/O shell)', () => {
                   last_survey_status: 'success',
                   has_fro_bot_workflow: false,
                   has_renovate: false,
+                  discovery_channel: 'collab',
+                  next_survey_eligible_at: null,
                 },
                 {
                   owner: 't',
@@ -1232,6 +1238,8 @@ describe('handleReconcile (I/O shell)', () => {
                   last_survey_status: 'success',
                   has_fro_bot_workflow: false,
                   has_renovate: false,
+                  discovery_channel: 'collab',
+                  next_survey_eligible_at: null,
                 },
                 {
                   owner: 't',
@@ -1242,6 +1250,8 @@ describe('handleReconcile (I/O shell)', () => {
                   last_survey_status: 'success',
                   has_fro_bot_workflow: false,
                   has_renovate: false,
+                  discovery_channel: 'collab',
+                  next_survey_eligible_at: null,
                 },
               ],
             },
