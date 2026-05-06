@@ -116,10 +116,11 @@ repos:
     name: systematic
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-04-24
+    last_survey_at: 2026-05-06
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
+    next_survey_eligible_at: 2026-06-05
   - owner: marcusrbrown
     name: tokentoilet
     added: 2026-04-18
