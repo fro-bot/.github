@@ -315,11 +315,11 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   // The actual dispatch may still be deferred by the per-run cap; entries that are
   // genuinely fresh never become candidates so they don't compete for dispatch slots.
   // `pending-review` entries are excluded — they require human approval first.
-  if (entry.onboarding_status === 'onboarded' && isSurveyStale(entry.last_survey_at, params.now)) {
+  if (entry.onboarding_status === 'onboarded' && isEligibleForSurvey(entry.next_survey_eligible_at, params.now)) {
     dispatches.push({owner: entry.owner, repo: entry.name})
   } else if (
     entry.onboarding_status === 'pending' &&
-    (entry.last_survey_status !== 'success' || isSurveyStale(entry.last_survey_at, params.now))
+    (entry.last_survey_status !== 'success' || isEligibleForSurvey(entry.next_survey_eligible_at, params.now))
   ) {
     dispatches.push({owner: entry.owner, repo: entry.name})
   }
@@ -363,12 +363,40 @@ export const SURVEY_STALENESS_MS = 30 * 24 * 60 * 60 * 1000
  * A null `last_survey_at` signals "never surveyed" and is always stale. A malformed date
  * string is also treated as stale so recoverable metadata corruption doesn't silently
  * suppress coverage.
+ *
+ * @deprecated Use {@link isEligibleForSurvey} for new dispatch decisions. The fixed-30d
+ * model is being replaced by per-channel eligibility via `next_survey_eligible_at`,
+ * computed by `recordSurveyResult` from the channel's base interval plus deterministic
+ * jitter. This export is preserved only for the migration path that backfills
+ * `next_survey_eligible_at` from `last_survey_at` on legacy entries; once the migration
+ * is complete this function will be removed.
  */
 export function isSurveyStale(lastSurveyAt: string | null, now: Date): boolean {
   if (lastSurveyAt === null) return true
   const lastMs = Date.parse(`${lastSurveyAt}T00:00:00Z`)
   if (!Number.isFinite(lastMs)) return true
   return now.getTime() - lastMs >= SURVEY_STALENESS_MS
+}
+
+/**
+ * Return true when the entry should be a candidate for the next survey dispatch under
+ * the cadence-engine model.
+ *
+ * Boundary semantics: an entry whose `next_survey_eligible_at` is exactly today (UTC
+ * midnight) is eligible. The same inclusive-boundary contract as {@link isSurveyStale} —
+ * the daily cron's "now" reaches the eligibility instant exactly once and dispatch fires
+ * on that run.
+ *
+ * A null `next_survey_eligible_at` signals "never computed" and is always eligible
+ * (matching the semantics of a never-surveyed entry under the legacy model). A
+ * malformed date string is also treated as eligible so recoverable metadata corruption
+ * doesn't silently suppress coverage.
+ */
+export function isEligibleForSurvey(nextSurveyEligibleAt: string | null | undefined, now: Date): boolean {
+  if (nextSurveyEligibleAt === null || nextSurveyEligibleAt === undefined) return true
+  const eligibleMs = Date.parse(`${nextSurveyEligibleAt}T00:00:00Z`)
+  if (!Number.isFinite(eligibleMs)) return true
+  return now.getTime() >= eligibleMs
 }
 
 interface RawIssue {

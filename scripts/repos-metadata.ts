@@ -8,6 +8,8 @@
  * duplicate `owner+name` and preserves existing entries as-is.
  */
 
+import {createHash} from 'node:crypto'
+
 import {
   assertReposFile,
   type DiscoveryChannel,
@@ -15,6 +17,69 @@ import {
   type ReposFile,
   type SurveyStatus,
 } from './schemas.ts'
+
+/**
+ * Per-channel base survey interval, in days. The actual eligibility date adds a
+ * deterministic jitter of 0..{@link JITTER_MAX_DAYS} days on top.
+ *
+ * - `collab` (30d): operator-invited collaborator repos
+ * - `owned` (14d): repos in the fro-bot org itself; tightest cadence so the agent's own
+ *   surface area stays current
+ * - `contrib` (21d): cross-org repos surfaced via `metadata/allowlist.yaml`
+ */
+export const CHANNEL_INTERVAL_DAYS = {
+  collab: 30,
+  owned: 14,
+  contrib: 21,
+} as const satisfies Record<DiscoveryChannel, number>
+
+/**
+ * Maximum jitter added to a base interval, in days. The actual jitter for a given
+ * `(owner, repo, baseDate)` triple is in `[0, JITTER_MAX_DAYS]` and is deterministic.
+ */
+export const JITTER_MAX_DAYS = 3
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
+export interface ComputeNextEligibleAtInput {
+  owner: string
+  repo: string
+  channel: DiscoveryChannel
+  baseDate: Date
+}
+
+/**
+ * Compute the ISO date (YYYY-MM-DD, UTC) when a repo becomes eligible for its next
+ * survey, given the base date (typically `last_survey_at`), the discovery channel
+ * (which sets the base interval), and the repo identifiers (which seed jitter).
+ *
+ * Formula: `baseDate + CHANNEL_INTERVAL_DAYS[channel] + jitter` days, where jitter is
+ * derived deterministically from `${owner}/${repo}@${baseDate-as-YYYY-MM-DD-UTC}`
+ * via SHA-256 → first 4 bytes as big-endian uint32 → modulo `(JITTER_MAX_DAYS + 1)`.
+ *
+ * Midnight stability: the jitter seed is the YYYY-MM-DD slice of `baseDate` in UTC,
+ * NOT the full Date. Two calls with `baseDate` values 1 ms apart on the same UTC day
+ * produce identical outputs; calls on opposite sides of UTC midnight may differ
+ * because the seed string itself differs. This contract is required so within-process
+ * `commitMetadata` 409 retries (the mutator re-runs against the same `at` value) write
+ * the same eligibility date. Cross-process retries (e.g., human re-trigger after
+ * `CONFLICT_EXHAUSTED`) capture the retry's clock, so eligibility may shift by 1 day if
+ * the retry crosses UTC midnight; callers that need cross-process stability should pin
+ * `at` to a logical instant such as the original workflow's `github.run_started_at`.
+ */
+export function computeNextEligibleAt(input: ComputeNextEligibleAtInput): string {
+  const surveyDateString = input.baseDate.toISOString().slice(0, 10)
+  const seed = `${input.owner}/${input.repo}@${surveyDateString}`
+  const hash = createHash('sha256').update(seed).digest()
+  const uint32 = hash.readUInt32BE(0)
+  const jitterDays = uint32 % (JITTER_MAX_DAYS + 1)
+
+  const baseMs = Date.parse(`${surveyDateString}T00:00:00Z`)
+  const offsetDays = CHANNEL_INTERVAL_DAYS[input.channel] + jitterDays
+  const eligibleMs = baseMs + offsetDays * MS_PER_DAY
+
+  return new Date(eligibleMs).toISOString().slice(0, 10)
+}
 
 export interface AddRepoEntryInput {
   owner: string
@@ -116,11 +181,25 @@ export function recordSurveyResult(current: unknown, input: RecordSurveyResultIn
   const nextStatus =
     input.status === 'success' && match.onboarding_status === 'pending' ? 'onboarded' : match.onboarding_status
 
+  // Compute the next-eligible date using the entry's discovery channel. The cadence
+  // model writes this on every survey outcome — both success and failure — so a failed
+  // survey doesn't immediately re-dispatch on the next reconcile cron (which would burn
+  // dispatch slots while the underlying problem persists). Channel defaults to 'collab'
+  // when the field is absent on a legacy entry that hasn't been migrated yet.
+  const channel: DiscoveryChannel = match.discovery_channel ?? 'collab'
+  const nextEligibleAt = computeNextEligibleAt({
+    owner: input.owner,
+    repo: input.repo,
+    channel,
+    baseDate: input.at,
+  })
+
   const updated = {
     ...match,
     onboarding_status: nextStatus,
     last_survey_at: input.at.toISOString().slice(0, 10),
     last_survey_status: input.status,
+    next_survey_eligible_at: nextEligibleAt,
   }
 
   const nextRepos = [...current.repos]
@@ -138,13 +217,23 @@ export interface ResetSurveyResultInput {
 }
 
 /**
- * Reset `last_survey_at` and `last_survey_status` to `null` on an existing entry.
+ * Reset survey-tracking fields to `null` on an existing entry, forcing reconcile to
+ * treat the repo as never-surveyed and re-dispatch on the next cron.
+ *
+ * Clears three fields:
+ * - `last_survey_at` (legacy staleness signal)
+ * - `last_survey_status` (legacy success/failure marker)
+ * - `next_survey_eligible_at` (cadence-engine eligibility gate)
+ *
+ * All three must be cleared together. Under the cadence model, `next_survey_eligible_at`
+ * is the authoritative dispatch gate (see `isEligibleForSurvey` in `reconcile-repos.ts`);
+ * leaving it populated would cause `classifyTracked` to silently skip the entry even
+ * after reset, defeating the recovery contract.
  *
  * Used to recover from misclassified survey outcomes — e.g. when a wiki-commit failure
  * was recorded as `success` under an older `SURVEY_STATUS` expression, causing the
- * reconcile staleness gate to skip the repo for 30 days despite no wiki content landing.
- * Clearing the fields back to `null` forces reconcile to treat the repo as never-surveyed
- * and re-dispatch it on the next cron.
+ * dispatch gate to skip the repo for the full cadence window despite no wiki content
+ * landing.
  *
  * Throws `RepoEntryNotFoundError` when the entry is missing — callers should enumerate
  * known contaminated entries and fail loudly on typos.
@@ -169,6 +258,7 @@ export function resetSurveyResult(current: unknown, input: ResetSurveyResultInpu
     ...match,
     last_survey_at: null,
     last_survey_status: null,
+    next_survey_eligible_at: null,
   }
 
   const nextRepos = [...current.repos]
