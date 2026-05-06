@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/tokentoilet"
 created: 2026-04-18
-updated: 2026-04-25
+updated: 2026-05-06
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 97e96c1425a9232e5b783c680cade8505e1c8de1
     accessed: 2026-04-25
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 0aa1d9a02f1a8ba5cbd95818fb6157318cf9f20b
+    accessed: 2026-05-06
 tags: [next-js, react, web3, defi, wagmi, reown-appkit, tailwindcss, vitest, storybook, vercel, typescript, sepolia]
 aliases: [tokentoilet]
 related:
@@ -29,14 +32,14 @@ A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens,
 - **Purpose:** Web3 DeFi token disposal and charity donation platform
 - **Default branch:** `main`
 - **Created:** 2023-07-05
-- **Last push:** 2026-04-22
+- **Last push:** 2026-05-06
 - **Homepage:** https://v0-token-toilet-mrbro-dev.vercel.app
 - **Topics:** `next-js`, `react`
 - **License:** None specified
 - **Visibility:** Public
-- **Package manager:** pnpm 10.33.0
-- **Open issues:** 26
-- **Open PRs:** 5 (all Renovate)
+- **Package manager:** pnpm 10.33.2
+- **Open issues:** 30
+- **Open PRs:** 6 (5 Renovate, 1 Copilot security fix)
 
 ## Core Concept
 
@@ -72,7 +75,7 @@ Still not implemented: smart contracts, NFT receipts, charity integration, token
 | UI library | React                       | 19.2.5                         |
 | Language   | TypeScript                  | 6.0.3                          |
 | Web3       | Wagmi v2 + Reown AppKit     | wagmi ^2.14.11 / appkit ^1.7.18 |
-| Styling    | Tailwind CSS v4 (CSS-first) | 4.2.2                          |
+| Styling    | Tailwind CSS v4 (CSS-first) | 4.2.4                          |
 | Testing    | Vitest                      | 4.0.7                          |
 | Components | Storybook                   | 10.x (alpha)                   |
 | Deployment | Vercel (GitHub integration) | —                              |
@@ -163,7 +166,7 @@ Vercel handles deployment via its GitHub integration:
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d9735d7ad2aca`) with:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.42.6` (SHA `80b2c18bb1c70df96b3f150c7827c13ca0e35655`) with:
 
 - **PR Review:** Structured review with Web3 security focus, mandatory verdict (PASS/CONDITIONAL/REJECT), specific review sections for blocking issues, Web3 security assessment, missing tests, risk assessment.
 - **Daily Autohealing (schedule):** Five-category sweep — errored PRs, security, code quality/hygiene, developer experience, quality gates. Produces a single summary issue per run. Respects Renovate ownership of dependency bumps.
@@ -224,7 +227,7 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | ESLint config        | `@bfra.me/eslint-config`               | N/A (YAML repo) | Same     |
 | Prettier config      | `@bfra.me/prettier-config/120-proof`   | N/A             | Same     |
 | Package manager      | pnpm                                   | N/A (YAML repo) | pnpm     |
-| Fro Bot workflow     | Present (v0.41.4)                      | **Missing**     | Present  |
+| Fro Bot workflow     | Present (v0.42.6)                      | **Missing**     | Present  |
 | Copilot setup steps  | Present                                | Not present     | Present  |
 | AGENTS.md            | Present                                | Not present     | Present  |
 
@@ -236,7 +239,8 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 - **TypeScript 6:** Early adopter of TS 6.0.3.
 - **No license:** The repo has no license file specified, which is unusual for a public repository.
 - **CI optimized:** PR #889 removed time-based cache churn and reduced PR test overhead. Deploy jobs removed from CI — Vercel GitHub integration handles all deployments.
-- **Open Renovate PRs of note:** wagmi v3 (#837), lucide-react v1 (#835), `@eslint-react/eslint-plugin` v4 (#909), `@bfra.me/eslint-config` ^0.51.0 (#897) — major version bumps pending review. Lockfile maintenance PR #929 also open.
+- **Open PRs of note:** wagmi v3 (#837), lucide-react v1 (#835), `@bfra.me/eslint-config` ^0.51.0 (#897), postcss v8.5.13 (#974) — major/minor version bumps pending review. Lockfile maintenance PR #929 open. Copilot-authored security overrides PR #941 (postcss/axios + setState-in-effect lint fix) also open.
+- **Copilot coding agent active:** PR #941 authored by GitHub Copilot, indicating Copilot agent has write access and is producing fix branches (`copilot/fix-lint-issues`, `copilot/address-review-concerns`, `copilot/resolve-daily-autohealing-report-2026-04-26`).
 
 ## Survey History
 
@@ -246,3 +250,4 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | 2026-04-18 | `0ed90a6` | Follow-up — added cross-references, Renovate/branch-protection details |
 | 2026-04-24 | `97e96c1` | MVP disposal flow shipped (PR #911), Fro Bot v0.41.4, Next.js 16.2.4, TS 6.0.3 |
 | 2026-04-25 | `97e96c1` | No code changes — SHA unchanged, open issues 25→26, lockfile maintenance PR #929 opened |
+| 2026-05-06 | `0aa1d9a` | Dependency bumps only: Fro Bot v0.41.4→v0.42.6, pnpm 10.33.0→10.33.2, tailwindcss 4.2.2→4.2.4, postcss→8.5.12. Open issues 26→30. Copilot agent branches observed. |

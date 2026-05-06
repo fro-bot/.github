@@ -1017,29 +1017,28 @@ Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
 
-## [2026-05-06 00:00] ingest | marcusrbrown/poly
+## [2026-05-06 12:00] ingest | marcusrbrown/tokentoilet
 
-Initial survey of `marcusrbrown/poly` (SHA `5cdc962`). Created repo page `marcusrbrown--poly.md`. Updated topic page `web3-defi.md` with prediction markets section and cross-reference. Updated `index.md` to catalog the new page.
+Incremental re-survey of `marcusrbrown/tokentoilet` (SHA `0aa1d9a`, up from `97e96c1`). Updated repo page `marcusrbrown--tokentoilet.md` and topic page `web3-defi.md`. Index unchanged (both pages already cataloged).
 
-Key findings:
+Delta from prior survey (SHA `97e96c1`, 2026-04-25):
 
-- Private two-person collab (Marcus + @thejustinwalsh) for a Polymarket bot — first prediction markets project in the portfolio
-- Dual-purpose: Obsidian vault (tracked `.obsidian/` config) + code repo — unique pattern among Marcus's repos
-- Two-phase strategy: Phase 1 arbitrage (cross-outcome, cross-market, cross-venue), Phase 2 market making extending `warproxxx/poly-maker`
-- 3 ADRs: arb-first strategy, sops+age encrypted config, Polymarket Safe wallet topology (signature type 2)
-- 4 strategy files: cross-market arb, cross-outcome arb, cross-venue arb, market making
-- 3 research notes: Polymarket CLOB API, poly-maker walkthrough, dappboris DeepWiki notes
-- Security: sops+age encryption for secrets, machine-level gitleaks and gitignore defenses from dotfiles
-- `src/` is scaffold only (`.gitkeep`) — production code has not landed; Python planned per AGENTS.md
-- 6 total commits, all from 2026-05-05/06 — very early stage
-- `fro-bot` is a collaborator with write access
-- **No `.github/` directory exists** — no CI, no Fro Bot agent workflow, no Renovate, no Probot settings — follow-up PR recommended
-- Visibility: private, license: proprietary (all rights reserved)
+- **Fro Bot agent bumped:** v0.41.4 → v0.42.6 (SHA `80b2c18bb1c70df96b3f150c7827c13ca0e35655`) — four intermediate releases (v0.42.1, v0.42.2, v0.42.5, v0.42.6)
+- **pnpm bumped:** 10.33.0 → 10.33.2 (#937, #943)
+- **Tailwind CSS bumped:** 4.2.2 → 4.2.4 (#938)
+- **postcss bumped:** 8.5.10 → 8.5.12 (#951, #952)
+- **pnpm/action-setup updated:** v6.0.3 → v6.0.5 (#966)
+- **Open issues:** 26 → 30 (net gain from autohealing reports)
+- **Open PRs:** 6 (wagmi v3 #837, lucide-react v1 #835, eslint-config #897, lockfile maintenance #929, Copilot security fix #941, postcss #974). `@eslint-react/eslint-plugin` v4 (#909) no longer in open PRs
+- **Copilot coding agent active:** PR #941 authored by GitHub Copilot (security overrides for postcss/axios + setState-in-effect lint fix). Three Copilot branches observed: `copilot/fix-lint-issues`, `copilot/address-review-concerns`, `copilot/resolve-daily-autohealing-report-2026-04-26`
+- All commits since prior survey are exclusively Renovate dependency bumps — no structural changes, no application code changes
+- Repository structure, MVP disposal flow, CI pipeline, Vercel deployment, conventions all unchanged
+- No contradictions with prior ingest
 
-Sources: https://github.com/marcusrbrown/poly (SHA 5cdc962c29c24279722ca8eab389742163497962)
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 0aa1d9a02f1a8ba5cbd95818fb6157318cf9f20b)
 
-## [2026-05-06 07:50] ingest | repo:marcusrbrown/poly
+## [2026-05-06 07:52] ingest | repo:marcusrbrown/tokentoilet
 
-Surveyed marcusrbrown/poly and updated the control-plane wiki.
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/poly
+Sources: https://github.com/marcusrbrown/tokentoilet
