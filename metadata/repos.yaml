@@ -75,10 +75,11 @@ repos:
     name: infra
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-04-27
-    last_survey_status: success
+    last_survey_at: 2026-05-06
+    last_survey_status: failure
     has_fro_bot_workflow: true
     has_renovate: true
+    next_survey_eligible_at: 2026-06-07
   - owner: marcusrbrown
     name: marcusrbrown
     added: 2026-04-18
