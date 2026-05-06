@@ -356,3 +356,70 @@ describe('schemas — rejection cases', () => {
     expect(error.message).toContain(error.path)
   })
 })
+
+describe('AllowlistFile — approved_contrib_orgs + approved_contrib_repos', () => {
+  it('accepts a populated allowlist with both contrib arrays', () => {
+    const ok = {
+      version: 1,
+      approved_inviters: [{username: 'marcusrbrown', added: '2026-04-15', role: 'owner'}],
+      approved_contrib_orgs: ['bfra-me'],
+      approved_contrib_repos: ['some-org/foo', 'other-org/bar'],
+    }
+    expect(isAllowlistFile(ok)).toBe(true)
+    expect(() => assertAllowlistFile(ok)).not.toThrow()
+  })
+
+  it('accepts an allowlist with empty contrib arrays', () => {
+    const ok = {
+      version: 1,
+      approved_inviters: [],
+      approved_contrib_orgs: [],
+      approved_contrib_repos: [],
+    }
+    expect(isAllowlistFile(ok)).toBe(true)
+    expect(() => assertAllowlistFile(ok)).not.toThrow()
+  })
+
+  it('accepts a legacy allowlist missing both contrib fields (backward-compat)', () => {
+    // Existing metadata/allowlist.yaml predates contrib channel; loaders must accept it.
+    const ok = {version: 1, approved_inviters: []}
+    expect(isAllowlistFile(ok)).toBe(true)
+    expect(() => assertAllowlistFile(ok)).not.toThrow()
+  })
+
+  it('rejects approved_contrib_orgs containing non-string entry', () => {
+    const bad = {
+      version: 1,
+      approved_inviters: [],
+      approved_contrib_orgs: ['bfra-me', 42],
+      approved_contrib_repos: [],
+    }
+    expect(isAllowlistFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertAllowlistFile(bad))
+    expect(error.path).toContain('approved_contrib_orgs')
+  })
+
+  it('rejects approved_contrib_repos containing entry without owner/repo slash', () => {
+    const bad = {
+      version: 1,
+      approved_inviters: [],
+      approved_contrib_orgs: [],
+      approved_contrib_repos: ['just-a-name'],
+    }
+    expect(isAllowlistFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertAllowlistFile(bad))
+    expect(error.path).toContain('approved_contrib_repos')
+  })
+
+  it('rejects approved_contrib_orgs that is not an array', () => {
+    const bad = {
+      version: 1,
+      approved_inviters: [],
+      approved_contrib_orgs: 'bfra-me',
+      approved_contrib_repos: [],
+    }
+    expect(isAllowlistFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertAllowlistFile(bad))
+    expect(error.path).toContain('approved_contrib_orgs')
+  })
+})
