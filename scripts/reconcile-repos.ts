@@ -36,6 +36,9 @@
  * contract, whole-state replacement would silently drop concurrently-added entries.
  */
 
+import type {RestEndpointMethodTypes} from '@octokit/rest'
+
+import {Buffer} from 'node:buffer'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
 import {Octokit} from '@octokit/rest'
@@ -56,10 +59,29 @@ import {
   assertAllowlistFile,
   assertReposFile,
   type AllowlistFile,
+  type DiscoveryChannel,
   type OnboardingStatus,
   type RepoEntry,
   type ReposFile,
 } from './schemas.ts'
+
+/**
+ * Whether a discovery-channel + access-list combination is pre-trusted (skips the
+ * `pending-review` issue path that exists for non-allowlisted collab newcomers).
+ *
+ * Trust derivation:
+ * - `owned` — fro-bot's own org repos, trusted by ownership.
+ * - `contrib` — surfaced via `metadata/allowlist.yaml` allowlist + content-verified probe.
+ * - `collab` — collab access AND owner is in `approved_inviters`. Otherwise pending-review.
+ *
+ * Load-bearing for the security boundary: the same predicate runs at Pass 2 newcomer
+ * insertion AND the regain transition. Extracted to one place so a future change to the
+ * trust contract can't drift between the two sites.
+ */
+function isTrustedChannel(channel: DiscoveryChannel, owner: string, allowlistedOwners: Set<string>): boolean {
+  if (channel === 'owned' || channel === 'contrib') return true
+  return allowlistedOwners.has(owner)
+}
 
 export interface AccessListEntry {
   owner: string
@@ -92,6 +114,14 @@ export interface ReconcileInput {
   allowlist: AllowlistFile
   /** Map key format: `${owner}/${name}` (exact). Populated only for still-accessible tracked repos. */
   fieldProbes: Map<string, FieldProbe>
+  /**
+   * Map key format: `${owner}/${name}` (exact). Records which discovery channel surfaced
+   * each access-list entry. Missing keys default to `'collab'` so existing single-channel
+   * callers (collab-only) and tests work unchanged. The shell builds this map by tagging
+   * `/user/repos` results as `'collab'`, fro-bot org repos as `'owned'`, and allowlist-
+   * surfaced contrib repos as `'contrib'`.
+   */
+  accessChannelByKey?: Map<string, DiscoveryChannel>
   now: Date
 }
 
@@ -147,6 +177,7 @@ export interface ReconcileResult {
  */
 export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   const {currentRepos, accessList, perRepoStatus, allowlist, fieldProbes, now} = input
+  const accessChannelByKey = input.accessChannelByKey ?? new Map<string, DiscoveryChannel>()
 
   validateAccessList(accessList)
 
@@ -173,6 +204,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       entry,
       key,
       accessByKey,
+      accessChannelByKey,
       perRepoStatus,
       fieldProbes,
       allowlistedOwners,
@@ -191,17 +223,23 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     if (trackedKeys.has(key)) continue
     if (access.archived) continue // untracked + archived: no history worth capturing; skip silently.
 
-    const allowlisted = allowlistedOwners.has(access.owner)
-    const status: OnboardingStatus = allowlisted ? 'pending' : 'pending-review'
+    // Channel determines the trust path. Owned (we own the repo) and contrib (operator
+    // explicitly listed it in metadata/allowlist.yaml's approved_contrib_*) are
+    // pre-trusted — they bypass the pending-review issue path that exists for
+    // non-allowlisted collab newcomers. See `isTrustedChannel` for the predicate.
+    const channel = accessChannelByKey.get(key) ?? 'collab'
+    const trusted = isTrustedChannel(channel, access.owner, allowlistedOwners)
+    const status: OnboardingStatus = trusted ? 'pending' : 'pending-review'
 
     next = addRepoEntry(next, {
       owner: access.owner,
       repo: access.name,
       now,
       onboarding_status: status,
+      discovery_channel: channel,
     })
 
-    if (allowlisted) {
+    if (trusted) {
       summary.added += 1
       dispatches.push({owner: access.owner, repo: access.name})
     } else {
@@ -230,6 +268,7 @@ interface ClassifyTrackedParams {
   entry: RepoEntry
   key: string
   accessByKey: Map<string, AccessListEntry>
+  accessChannelByKey: Map<string, DiscoveryChannel>
   perRepoStatus: Map<string, RepoStatusProbe>
   fieldProbes: Map<string, FieldProbe>
   allowlistedOwners: Set<string>
@@ -283,11 +322,16 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   }
 
   if (entry.onboarding_status === 'lost-access') {
-    // Regain: entry was lost-access and is now back in the access list.
-    const allowlisted = allowlistedOwners.has(entry.owner)
-    const nextStatus: OnboardingStatus = allowlisted ? 'pending' : 'pending-review'
+    // Regain: entry was lost-access and is now back in the access list. Trust path
+    // mirrors Pass 2's newcomer logic via `isTrustedChannel`. Channel resolution
+    // prefers the entry's stored channel (sticky); falls back to the live access-list
+    // channel for legacy pre-Unit-3 entries that have no recorded channel; ultimately
+    // defaults to `collab` if neither source has it.
+    const channel = entry.discovery_channel ?? params.accessChannelByKey.get(key) ?? 'collab'
+    const trusted = isTrustedChannel(channel, entry.owner, allowlistedOwners)
+    const nextStatus: OnboardingStatus = trusted ? 'pending' : 'pending-review'
     summary.regained += 1
-    if (allowlisted) {
+    if (trusted) {
       dispatches.push({owner: entry.owner, repo: entry.name})
     } else {
       rawIssues.push({
@@ -675,8 +719,24 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const allowlist = await loadAllowlist(readMetadata, allowlistPath)
   const currentRepos = await loadRepos(readMetadata, reposPath)
 
-  // 3. Enumerate /user/repos (access list).
-  const accessList = await fetchAccessList(userOctokit)
+  // 3. Enumerate the access list across three discovery channels:
+  //    - collab:  `/user/repos?affiliation=collaborator` via the user PAT (`fetchAccessList`)
+  //    - owned:   fro-bot org repos via the App installation (`fetchOwnedRepos`)
+  //    - contrib: operator-allowlisted cross-org repos via the App, gated on a structural
+  //               `uses: fro-bot/agent@<ref>` check in `.github/workflows/fro-bot.yaml`
+  //               (`fetchContribRepos`). v1 supports `approved_contrib_repos` only;
+  //               `approved_contrib_orgs` is not yet enumerated (per-installation token
+  //               infrastructure required, deferred to a future plan).
+  //    Merge with collab > owned > contrib precedence so a collab entry wins on overlap and
+  //    `validateAccessList` (which rejects duplicates) doesn't throw.
+  const collabAccess = await fetchAccessList(userOctokit)
+  const ownedAccess = await fetchOwnedRepos(appOctokit, owner, logger)
+  const contribAccess = await fetchContribRepos(appOctokit, allowlist, logger)
+  const {accessList, accessChannelByKey} = mergeAccessChannels({
+    collab: collabAccess,
+    owned: ownedAccess,
+    contrib: contribAccess,
+  })
 
   // 4. For each tracked entry missing from the access list, probe `GET /repos/{o}/{r}`.
   const perRepoStatus = await fetchPerRepoStatus(userOctokit, currentRepos, accessList)
@@ -687,7 +747,15 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const probesFailed = fieldProbeOutcome.failed
 
   // 6. Run the pure engine to produce the change plan.
-  const plan = reconcileRepos({currentRepos, accessList, perRepoStatus, allowlist, fieldProbes, now})
+  const plan = reconcileRepos({
+    currentRepos,
+    accessList,
+    perRepoStatus,
+    allowlist,
+    fieldProbes,
+    accessChannelByKey,
+    now,
+  })
 
   const hasChanges = planHasChanges(plan)
   let integrityCheck: 'ok' | 'skipped-no-data-branch' | 'skipped-just-bootstrapped' = 'ok'
@@ -758,6 +826,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
           perRepoStatus,
           allowlist,
           fieldProbes,
+          accessChannelByKey,
           now,
         })
         return rerun.nextRepos
@@ -1089,6 +1158,299 @@ async function probeRenovateConfig(userOctokit: OctokitClient, owner: string, na
     }
   }
   return false
+}
+
+//
+// ─── Discovery channels (owned + contrib) ───────────────────────────────────
+//
+
+/**
+ * fro-bot/.github is excluded from the owned-channel discovery pass. The control-plane
+ * repo is the agent's own home and writing wiki content about itself produces a circular
+ * journal that pollutes the wiki.
+ */
+const OWNED_SELF_EXCLUDE = 'fro-bot/.github'
+const FRO_BOT_WORKFLOW_PATH = '.github/workflows/fro-bot.yaml'
+
+// Derived from the real Octokit response so SDK drift becomes a compile error.
+type InstallationRepo =
+  RestEndpointMethodTypes['apps']['listReposAccessibleToInstallation']['response']['data']['repositories'][number]
+
+/**
+ * Verify that a `.github/workflows/fro-bot.yaml` file actually invokes the `fro-bot/agent`
+ * action via a `uses:` directive. Forge resistance: parses the workflow as YAML and walks
+ * its job/step structure, checking only `uses:` values. Comments, `name:` strings, `run:`
+ * shell, and `with:` inputs are ignored — they're not action sources.
+ *
+ * Accepted patterns (any `uses:` value matching one of these):
+ * - `fro-bot/agent@<ref>`                                        (direct action)
+ * - `fro-bot/agent/<sub/path>/...@<ref>`                         (action's reusable workflow)
+ *
+ * The `<ref>` may be a SHA, semver tag (`v0.42.1`), or branch (`main`). Variants like
+ * `fro-bot/agent-fork@main` or `not-fro-bot/agent@main` are rejected — the path must be
+ * exactly `fro-bot/agent` (or a sub-path under it).
+ *
+ * Returns false for empty files, non-YAML content, and YAML that has no qualifying
+ * `uses:` value. Errors during parsing fail closed.
+ */
+export function containsFroBotAgentReference(yamlText: string): boolean {
+  if (yamlText.length === 0) return false
+  let parsed: unknown
+  try {
+    parsed = parse(yamlText)
+  } catch {
+    return false
+  }
+  if (!isRecord(parsed)) return false
+  const jobs = parsed.jobs
+  if (!isRecord(jobs)) return false
+  for (const job of Object.values(jobs)) {
+    if (!isRecord(job)) continue
+    // Reusable workflow call: `jobs.<id>.uses: fro-bot/agent/.github/workflows/...@ref`
+    if (typeof job.uses === 'string' && isFroBotAgentUses(job.uses)) return true
+    // Step-level uses: `jobs.<id>.steps[*].uses: fro-bot/agent@ref`
+    if (Array.isArray(job.steps)) {
+      for (const step of job.steps) {
+        if (isRecord(step) && typeof step.uses === 'string' && isFroBotAgentUses(step.uses)) {
+          return true
+        }
+      }
+    }
+  }
+  return false
+}
+
+/**
+ * A `uses:` value points at the fro-bot agent when its path component is exactly
+ * `fro-bot/agent` or `fro-bot/agent/<anything>`, followed by an `@<ref>`. Rejects
+ * `fro-bot/agent-fork`, `not-fro-bot/agent`, and any other typo-squat or substring spoof.
+ */
+function isFroBotAgentUses(value: string): boolean {
+  // Split on the first `@` so the path and ref can be checked independently — keeps
+  // the regex simple and avoids backtracking concerns from chained quantifiers.
+  const atIndex = value.indexOf('@')
+  if (atIndex < 1) return false // no `@`, or value starts with `@`
+  const path = value.slice(0, atIndex)
+  const ref = value.slice(atIndex + 1)
+  if (ref.length === 0) return false
+  if (/\s/.test(ref)) return false
+  if (path === 'fro-bot/agent') return true
+  if (!path.startsWith('fro-bot/agent/')) return false
+  // sub-path must be non-empty and contain no whitespace
+  const subPath = path.slice('fro-bot/agent/'.length)
+  return subPath.length > 0 && !/\s/.test(subPath)
+}
+
+/**
+ * Discover repos owned by `owner` that the App installation can reach. Skips archived,
+ * forks, and the self-exclude constant. Owned repos are pre-trusted (we own them), so the
+ * caller does NOT probe `fro-bot.yaml` content for these — owned trust comes from
+ * ownership, not from a workflow signal.
+ *
+ * Errors during enumeration log a structured warn and return an empty list rather than
+ * blocking the reconcile run. Cross-channel discovery is best-effort; collab access is
+ * the authoritative signal for repo presence.
+ */
+async function fetchOwnedRepos(
+  appOctokit: OctokitClient,
+  owner: string,
+  logger: ReconcileLogger,
+): Promise<AccessListEntry[]> {
+  let allRepos: InstallationRepo[]
+  try {
+    allRepos = await appOctokit.paginate(appOctokit.rest.apps.listReposAccessibleToInstallation, {
+      per_page: 100,
+    })
+  } catch (error: unknown) {
+    const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
+    logger.warn(`reconcile: owned-channel enumeration failed (status=${status}); continuing without owned repos.`)
+    return []
+  }
+
+  const entries: AccessListEntry[] = []
+  for (const repo of allRepos) {
+    if (repo.owner.login !== owner) continue
+    if (repo.archived) continue
+    if (repo.fork) continue
+    const key = `${owner}/${repo.name}`
+    if (key === OWNED_SELF_EXCLUDE) continue
+    entries.push({
+      owner,
+      name: repo.name,
+      archived: false,
+      private: repo.private,
+      node_id: repo.node_id,
+    })
+  }
+  return entries
+}
+
+/**
+ * Discover contrib-channel repos surfaced via `metadata/allowlist.yaml`'s
+ * `approved_contrib_repos`. For each `owner/name`, fetch repo metadata, skip
+ * archived/forks, then verify the trust signal by parsing
+ * `.github/workflows/fro-bot.yaml` and checking that a `uses:` directive points at
+ * `fro-bot/agent` (see `containsFroBotAgentReference` for the structural check).
+ *
+ * 403 (App not installed in the target repo's org) and 404 (no signal file or repo
+ * unreachable) result in silent omission with a structured warn that distinguishes the
+ * two — collapsing them masks installation drift. 5xx and other transient errors also
+ * log + omit.
+ *
+ * `approved_contrib_orgs` is intentionally NOT enumerated in v1: the
+ * `apps.listReposAccessibleToInstallation` endpoint is per-installation, not per-org, so
+ * cross-org enumeration would require minting a separate App installation token per org.
+ * Until that infrastructure lands, operators surface contrib repos one-at-a-time via
+ * `approved_contrib_repos`. A non-empty `approved_contrib_orgs` triggers a structured
+ * warn so the operator knows the field is being ignored.
+ */
+async function fetchContribRepos(
+  appOctokit: OctokitClient,
+  allowlist: AllowlistFile,
+  logger: ReconcileLogger,
+): Promise<AccessListEntry[]> {
+  if (allowlist.approved_contrib_orgs !== undefined && allowlist.approved_contrib_orgs.length > 0) {
+    logger.warn(
+      `reconcile: approved_contrib_orgs is not yet supported (requires per-org App installation tokens); ` +
+        `${allowlist.approved_contrib_orgs.length} org(s) ignored. Use approved_contrib_repos to surface specific repos.`,
+    )
+  }
+
+  const directRepos = allowlist.approved_contrib_repos ?? []
+  const seen = new Set<string>()
+  const entries: AccessListEntry[] = []
+
+  for (const ownerRepo of directRepos) {
+    const slashIndex = ownerRepo.indexOf('/')
+    if (slashIndex === -1) continue
+    const directOwner = ownerRepo.slice(0, slashIndex)
+    const directName = ownerRepo.slice(slashIndex + 1)
+    const key = `${directOwner}/${directName}`
+    if (seen.has(key)) continue
+    const meta = await probeContribRepoMetadata(appOctokit, directOwner, directName, logger)
+    if (meta === null) continue
+    if (meta.archived || meta.fork) continue
+    const probe = await probeContribWorkflow(appOctokit, directOwner, directName, logger)
+    if (probe === null) continue
+    if (!containsFroBotAgentReference(probe)) continue
+    entries.push({
+      owner: directOwner,
+      name: directName,
+      archived: false,
+      private: meta.private,
+      node_id: meta.node_id,
+    })
+    seen.add(key)
+  }
+
+  return entries
+}
+
+/**
+ * Fetch repo metadata (private flag, node_id, archived, fork) for a contrib direct-probe
+ * entry. Returns null when the repo is unreachable (404 = doesn't exist, 403 = App not
+ * installed). Distinguishes the two for operator-grade logging — silently collapsing 403
+ * to 404 would mask installation drift, the silent-failure mode that
+ * `docs/solutions/runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md` warns
+ * about.
+ */
+async function probeContribRepoMetadata(
+  appOctokit: OctokitClient,
+  owner: string,
+  name: string,
+  logger: ReconcileLogger,
+): Promise<{private: boolean; node_id: string; archived: boolean; fork: boolean} | null> {
+  try {
+    const response = await appOctokit.rest.repos.get({owner, repo: name})
+    return {
+      private: response.data.private === true,
+      node_id: response.data.node_id,
+      archived: response.data.archived === true,
+      fork: response.data.fork === true,
+    }
+  } catch (error: unknown) {
+    if (isApiStatus(error, 404)) return null
+    if (isApiStatus(error, 403)) {
+      logger.warn(`reconcile: contrib-repo ${owner}/${name} returned 403 (App not installed in org); omitting.`)
+      return null
+    }
+    const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
+    logger.warn(`reconcile: contrib-repo ${owner}/${name} probe failed (status=${status}); omitting.`)
+    return null
+  }
+}
+
+/**
+ * Fetch the raw `.github/workflows/fro-bot.yaml` content for a candidate contrib repo.
+ * Returns null when the file is missing (404), the App lacks access (403), or the response
+ * is malformed. 403 is logged distinctly from 404 — the same forge-resistance + drift-
+ * visibility contract as `probeContribRepoMetadata`.
+ */
+async function probeContribWorkflow(
+  appOctokit: OctokitClient,
+  owner: string,
+  name: string,
+  logger: ReconcileLogger,
+): Promise<string | null> {
+  try {
+    const response = await appOctokit.rest.repos.getContent({
+      owner,
+      repo: name,
+      path: FRO_BOT_WORKFLOW_PATH,
+    })
+    // getContent returns a discriminated union — the file variant is the only one with
+    // a base64-encoded `content` field. Narrow on `type === 'file'` to let TypeScript
+    // pick the right branch without `as` casts.
+    const {data} = response
+    if (Array.isArray(data) || data.type !== 'file') return null
+    if (data.encoding !== 'base64') return null
+    return Buffer.from(data.content, 'base64').toString('utf8')
+  } catch (error: unknown) {
+    if (isApiStatus(error, 404)) return null
+    if (isApiStatus(error, 403)) {
+      logger.warn(`reconcile: contrib-repo ${owner}/${name} workflow probe returned 403 (App not installed); omitting.`)
+      return null
+    }
+    const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
+    logger.warn(`reconcile: contrib-repo ${owner}/${name} workflow probe failed (status=${status}); omitting.`)
+    return null
+  }
+}
+
+/**
+ * Merge per-channel access lists into the canonical access list + channel map. Precedence
+ * is `collab > owned > contrib`: when the same `owner/name` appears in multiple channels,
+ * the highest-precedence channel wins so `validateAccessList` (which rejects duplicate
+ * keys) sees a single entry.
+ */
+export function mergeAccessChannels(input: {
+  collab: AccessListEntry[]
+  owned: AccessListEntry[]
+  contrib: AccessListEntry[]
+}): {accessList: AccessListEntry[]; accessChannelByKey: Map<string, DiscoveryChannel>} {
+  const accessByKey = new Map<string, AccessListEntry>()
+  const channelByKey = new Map<string, DiscoveryChannel>()
+
+  // Order matters: collab first wins overlap with owned/contrib; owned wins over contrib.
+  for (const entry of input.collab) {
+    const key = repoKey(entry.owner, entry.name)
+    accessByKey.set(key, entry)
+    channelByKey.set(key, 'collab')
+  }
+  for (const entry of input.owned) {
+    const key = repoKey(entry.owner, entry.name)
+    if (accessByKey.has(key)) continue
+    accessByKey.set(key, entry)
+    channelByKey.set(key, 'owned')
+  }
+  for (const entry of input.contrib) {
+    const key = repoKey(entry.owner, entry.name)
+    if (accessByKey.has(key)) continue
+    accessByKey.set(key, entry)
+    channelByKey.set(key, 'contrib')
+  }
+
+  return {accessList: Array.from(accessByKey.values()), accessChannelByKey: channelByKey}
 }
 
 interface IntegrityCheckOkResult {

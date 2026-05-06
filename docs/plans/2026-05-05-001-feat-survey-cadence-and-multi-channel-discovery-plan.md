@@ -304,7 +304,7 @@ The pure engine boundary stays clean. New I/O (owned + contrib enumeration) live
 
 ---
 
-- [ ] **Unit 3: Allowlist surface for contrib + I/O shell discovery passes**
+- [x] **Unit 3: Allowlist surface for contrib + I/O shell discovery passes**
 
 **Goal:** Extend `metadata/allowlist.yaml` schema with `approved_contrib_orgs` + `approved_contrib_repos`. Add owned-channel and contrib-channel discovery passes to the reconcile I/O shell. Both passes feed into the existing `accessList` and flow through `reconcileRepos` unchanged.
 

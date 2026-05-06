@@ -6,7 +6,7 @@ This directory contains the Fro Bot control plane's public, versioned, auditable
 
 ### `allowlist.yaml`
 
-Approved inviters whose collaboration invitations Fro Bot may accept.
+Operator-curated trust surface: who Fro Bot accepts invitations from, plus which cross-org repos can surface via the `contrib` discovery channel.
 
 ```yaml
 version: 1
@@ -14,7 +14,19 @@ approved_inviters:
   - username: string
     added: ISO date
     role: string
+# Optional. Empty/missing = no contrib-channel discovery.
+approved_contrib_orgs:
+  - string  # GitHub org login (e.g., "bfra-me")
+# Optional. Empty/missing = no contrib-channel direct probes.
+approved_contrib_repos:
+  - string  # "owner/name" (e.g., "bfra-me/.github")
 ```
+
+- `approved_inviters` — collaboration invitations from these usernames are auto-accepted by `poll-invitations.yaml`.
+- `approved_contrib_repos` — direct list of `owner/name` strings probed individually for `.github/workflows/fro-bot.yaml`. The probe parses the workflow as YAML and checks that a job-level or step-level `uses:` value points at `fro-bot/agent` (or a sub-path under it). The Fro Bot App must be installed on each named repo first.
+- `approved_contrib_orgs` — **not yet supported in v1.** Cross-org enumeration requires minting per-installation App tokens, which is deferred to a future plan. A non-empty value triggers a warn and is otherwise ignored. Until that infrastructure lands, surface specific cross-org repos via `approved_contrib_repos`.
+
+The content probe is the trust signal: file presence alone is forge-able, but a structural `uses: fro-bot/agent@<ref>` directive proves the operator of that repo opted in. Comments, `name:` strings, `run:` shell, and `with:` inputs that mention `fro-bot/agent` are not action sources and do not pass the check.
 
 Update convention: human-maintained; edits land via the `data` branch (see [Editing metadata files](#editing-metadata-files) below).
 
