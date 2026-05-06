@@ -125,10 +125,11 @@ repos:
     name: tokentoilet
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-04-25
+    last_survey_at: 2026-05-06
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
+    next_survey_eligible_at: 2026-06-08
   - owner: marcusrbrown
     name: vbs
     added: 2026-04-18
