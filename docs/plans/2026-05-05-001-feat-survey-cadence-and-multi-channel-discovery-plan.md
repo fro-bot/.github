@@ -251,7 +251,7 @@ The pure engine boundary stays clean. New I/O (owned + contrib enumeration) live
 
 ---
 
-- [ ] **Unit 2: Cadence engine — eligibility check + jitter helper**
+- [x] **Unit 2: Cadence engine — eligibility check + jitter helper**
 
 **Goal:** Replace `isSurveyStale` with `isEligibleForSurvey` that consults `next_survey_eligible_at`. Add `computeNextEligibleAt` helper to `repos-metadata.ts`. Wire `recordSurveyResult` to set the new field on every survey outcome. This unit makes the cadence model real for entries that already have the new field; Unit 4's migration handles the legacy path.
 

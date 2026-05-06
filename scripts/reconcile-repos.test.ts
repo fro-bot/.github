@@ -7,6 +7,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   DISPATCH_DEFAULTS,
   handleReconcile,
+  isEligibleForSurvey,
   isSurveyStale,
   loadDispatchStaggerFromEnv,
   loadMaxDispatchesPerRunFromEnv,
@@ -375,19 +376,23 @@ describe('reconcileRepos', () => {
 
   describe('mixed and edge cases', () => {
     it('handles multiple simultaneous changes (new + lost + refresh) in one run', () => {
-      // Fresh surveys on both — not stale, so no re-survey dispatch from the staleness gate.
+      // Fresh surveys on both — next_survey_eligible_at is in the future (post-NOW), so
+      // the cadence gate excludes them. NOW = 2026-04-17; eligibility 2026-05-09 keeps
+      // them out of the dispatch list.
       const drift = makeEntry({
         name: 'drift-repo',
         onboarding_status: 'onboarded',
         has_renovate: false,
         last_survey_at: '2026-04-10',
         last_survey_status: 'success',
+        next_survey_eligible_at: '2026-05-09',
       })
       const gone = makeEntry({
         name: 'gone-repo',
         onboarding_status: 'onboarded',
         last_survey_at: '2026-04-10',
         last_survey_status: 'success',
+        next_survey_eligible_at: '2026-05-09',
       })
 
       const result = reconcileRepos(
@@ -585,12 +590,13 @@ describe('reconcileRepos', () => {
     it('does not dispatch pending entry with recent successful survey', () => {
       // #given a pending entry that was surveyed successfully recently (promotion
       // should have moved it to onboarded, but even if it didn't, the success +
-      // non-stale combination means no re-dispatch is needed)
+      // not-yet-eligible combination means no re-dispatch is needed)
       const entry = makeEntry({
         name: 'recently-succeeded',
         onboarding_status: 'pending',
         last_survey_at: '2026-04-16',
         last_survey_status: 'success',
+        next_survey_eligible_at: '2026-05-15',
       })
       const result = reconcileRepos(
         makeInput({
@@ -598,8 +604,32 @@ describe('reconcileRepos', () => {
           accessList: [makeAccess({name: 'recently-succeeded'})],
         }),
       )
-      // #then no dispatch — success + within staleness window → skip
+      // #then no dispatch — success + not-yet-eligible → skip
       expect(result.dispatches).toEqual([])
+    })
+
+    // Integration: full reconcileRepos pipeline through isEligibleForSurvey with a
+    // past eligibility date. Pins the wiring at classifyTracked:318/322 — proves the
+    // helper is actually consulted on the dispatch path, not just exercised in unit-test
+    // isolation. Without this, a future refactor that drops the isEligibleForSurvey call
+    // from classifyTracked would still pass all standalone helper tests.
+    it('dispatches an onboarded entry whose next_survey_eligible_at has passed', () => {
+      // #given an onboarded entry whose eligibility was 2 weeks ago (NOW = 2026-04-17)
+      const entry = makeEntry({
+        name: 'overdue-repo',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-03-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-04-03',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'overdue-repo'})],
+        }),
+      )
+      // #then the entry is dispatched (eligibility passed)
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'overdue-repo'}])
     })
   })
 })
@@ -911,7 +941,8 @@ describe('handleReconcile (I/O shell)', () => {
       const existing: ReposFile = {
         version: 1,
         repos: [
-          // Fresh survey — not stale, so the test isolates the field-probe behavior.
+          // Fresh survey — next_survey_eligible_at in the future, so the test isolates
+          // the field-probe behavior from the cadence dispatch gate.
           makeEntry({
             name: 'probe-fail-repo',
             onboarding_status: 'onboarded',
@@ -919,6 +950,7 @@ describe('handleReconcile (I/O shell)', () => {
             has_renovate: true,
             last_survey_at: '2026-04-10',
             last_survey_status: 'success',
+            next_survey_eligible_at: '2026-05-09',
           }),
         ],
       }
@@ -1943,6 +1975,33 @@ describe('isSurveyStale', () => {
     const anchor = new Date('2026-04-01T00:00:00Z')
     const now = new Date(anchor.getTime() + JUST_AFTER)
     expect(isSurveyStale('2026-04-01', now)).toBe(true)
+  })
+})
+
+describe('isEligibleForSurvey', () => {
+  // Cadence model: null next_survey_eligible_at means "never computed" → always eligible
+  it('returns true when next_survey_eligible_at is null (never surveyed)', () => {
+    expect(isEligibleForSurvey(null, new Date('2026-05-01T12:00:00Z'))).toBe(true)
+  })
+
+  // Cadence model: a malformed eligible-at string treated as eligible (don't lose coverage)
+  it('returns true when next_survey_eligible_at is a malformed date string', () => {
+    expect(isEligibleForSurvey('not-a-date', new Date('2026-05-01T12:00:00Z'))).toBe(true)
+  })
+
+  // Boundary: now equals eligible-at → eligible (inclusive boundary)
+  it('returns true when now equals next_survey_eligible_at (inclusive boundary)', () => {
+    expect(isEligibleForSurvey('2026-05-01', new Date('2026-05-01T00:00:00Z'))).toBe(true)
+  })
+
+  // Boundary: now is one day before eligible-at → not eligible
+  it('returns false when now is one day before next_survey_eligible_at', () => {
+    expect(isEligibleForSurvey('2026-05-01', new Date('2026-04-30T23:59:59Z'))).toBe(false)
+  })
+
+  // Boundary: now is one day after eligible-at → eligible
+  it('returns true when now is one day after next_survey_eligible_at', () => {
+    expect(isEligibleForSurvey('2026-05-01', new Date('2026-05-02T00:00:00Z'))).toBe(true)
   })
 })
 
