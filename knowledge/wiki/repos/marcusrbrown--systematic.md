@@ -2,11 +2,14 @@
 type: repo
 title: "marcusrbrown/systematic"
 created: 2026-04-24
-updated: 2026-04-24
+updated: 2026-05-06
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
     accessed: 2026-04-24
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 420ef650215a9ca8cefa01f125e02434e351952e
+    accessed: 2026-05-06
 tags: [opencode, plugin, ai, workflow, typescript, bun, biome, semantic-release, npm]
 related:
   - marcusrbrown--opencode-copilot-delegate
@@ -25,13 +28,13 @@ OpenCode plugin providing structured engineering workflows for AI-powered develo
 | Attribute       | Value                                                |
 | --------------- | ---------------------------------------------------- |
 | Created         | 2026-01-24                                           |
-| Last push       | 2026-04-22                                           |
-| Latest release  | v2.5.1 (2026-04-21)                                 |
+| Last push       | 2026-05-06                                           |
+| Latest release  | v2.7.3 (2026-05-05)                                 |
 | Language        | TypeScript (strict, ESM)                             |
 | Runtime         | Bun                                                  |
 | License         | MIT                                                  |
-| Stars           | 12                                                   |
-| Open issues     | 5                                                    |
+| Stars           | 14                                                   |
+| Open issues     | 4                                                    |
 | Homepage        | https://fro.bot/systematic                           |
 | npm             | `@fro.bot/systematic`                                |
 | Default branch  | main                                                 |
@@ -61,6 +64,7 @@ The plugin implements three OpenCode hooks:
 | `bootstrap.ts`     | System prompt injection                         |
 | `converter.ts`     | CEP-to-OpenCode content conversion (CLI)        |
 | `frontmatter.ts`   | YAML frontmatter parsing                        |
+| `plugin-singleton.ts`| Factory deduplication across opencode.json sources (v2.7.2) |
 | `validation.ts`    | Agent config validation and type guards         |
 | `skills.ts`        | Skill discovery (highest centrality in codebase)|
 | `agents.ts`        | Agent discovery (category from subdirectory)    |
@@ -70,7 +74,7 @@ The plugin implements three OpenCode hooks:
 
 ### Bundled Assets
 
-- **45 skills** in `skills/` — Core CE workflows (`ce:brainstorm`, `ce:plan`, `ce:review`, `ce:work`, `ce:compound`, `ce:ideate`), development tools (`agent-browser`, `frontend-design`, `git-worktree`, `orchestrating-swarms`), specialized skills (`dhh-rails-style`, `dspy-ruby`, `gemini-imagegen`, `proof`, `rclone`), autonomous workflows (`lfg`, `slfg`)
+- **46 skills** in `skills/` — Core CE workflows (`ce:brainstorm`, `ce:plan`, `ce:review`, `ce:work`, `ce:compound`, `ce:ideate`), development tools (`agent-browser`, `frontend-design`, `git-worktree`, `orchestrating-swarms`), specialized skills (`dhh-rails-style`, `dspy-ruby`, `gemini-imagegen`, `proof`, `rclone`), autonomous workflows (`lfg`, `slfg`). Skill authoring guardrails added in v2.7.0 (#325).
 - **50 agents** in `agents/` across 6 categories: `design/`, `docs/`, `document-review/`, `research/`, `review/`, `workflow/`
 - **OCX registry** in `registry/` — Component-level installation via `ocx` CLI with named profiles (`omo`, `standalone`)
 
@@ -131,7 +135,7 @@ Required status checks: Build, Docs Build, Fro Bot, Typecheck, Lint, Test, Regis
 
 **Fully active.** Three workflow files:
 
-- `fro-bot.yaml` — `fro-bot/agent@v0.41.4` (SHA `28bcadbf`)
+- `fro-bot.yaml` — `fro-bot/agent@v0.42.7` (SHA `30a8e428`)
   - PR review with TypeScript/Bun/Biome-specific prompt (type safety, ESM conventions, no classes, breaking change detection, security implications for prompt injection)
   - Weekly maintenance report (rolling issue, 28-day window)
   - `@fro-bot` mention responses (OWNER/MEMBER/COLLABORATOR gated)
@@ -178,8 +182,29 @@ Extends `fro-bot/.github:common-settings.yaml` — same pattern as [[marcusrbrow
 - **[[marcusrbrown--gpt]]**, **[[marcusrbrown--vbs]]** — Repos where Fro Bot agents use systematic-provided skills and agents during PR review and maintenance.
 - **`fro-bot/.github`** — This repo. Runs systematic as a plugin in the Fro Bot agent workflow. Systematic's `systematic_skill` tool is available in every Fro Bot agent session.
 
+## Release History (since v2.5.1)
+
+| Version | Date       | Key change                                              |
+| ------- | ---------- | ------------------------------------------------------- |
+| v2.6.0  | 2026-04-25 | OCX V2 schema migration, content-integrity CI gate, single-export entry point fix |
+| v2.6.1  | 2026-04-28 | Import 13 missing skill reference sub-files; sub-file integrity gate |
+| v2.7.0  | 2026-04-30 | Skill authoring guardrails (#325)                       |
+| v2.7.1  | 2026-05-01 | Stabilize system prompt prefix (#329)                   |
+| v2.7.2  | 2026-05-04 | Deduplicate factory registration across opencode.json sources (#335) |
+| v2.7.3  | 2026-05-05 | Omit `model` field from all 50 bundled agents (#336, upstream fix for sst/opencode#17888) |
+
+## Open Issues / PRs
+
+| # | Title | Type |
+|---|-------|------|
+| #327 | build(dev): pin dependencies | PR (Renovate) |
+| #157 | Weekly Maintenance Report | Issue |
+| #153 | Daily Autohealing Report | Issue |
+| #15  | Dependency Dashboard | Issue (Renovate) |
+
 ## Survey History
 
 | Date       | SHA        | Delta                    |
 | ---------- | ---------- | ------------------------ |
 | 2026-04-24 | `ef02119`  | Initial survey           |
+| 2026-05-06 | `420ef65`  | 28 commits, v2.5.1→v2.7.3, skills 45→46, agent v0.41.4→v0.42.7, plugin-singleton.ts added, OCX V2, content-integrity gate, skill guardrails, model field removal |

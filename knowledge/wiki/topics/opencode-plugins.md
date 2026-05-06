@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-04-27
+updated: 2026-05-06
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: 02cac9c024744a290c9257d5c740d2a83e2c8e42
     accessed: 2026-04-27
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 420ef650215a9ca8cefa01f125e02434e351952e
+    accessed: 2026-05-06
 tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents]
 ---
 
@@ -114,7 +117,9 @@ Rather than registering one tool per skill, systematic registers a single `syste
 | Config merging | Discover bundled assets (skills/agents) and merge into OpenCode config via config hook | [[marcusrbrown--systematic]] |
 | System prompt injection | Inject bootstrap content into system prompts via `system.transform` hook | [[marcusrbrown--systematic]] |
 | Skill tool | Single tool with dynamic skill loading (avoids tool namespace pollution) | [[marcusrbrown--systematic]] |
-| OCX registry | Component-level distribution via ocx CLI with named profiles | [[marcusrbrown--systematic]] |
+| OCX registry | Component-level distribution via ocx CLI with named profiles (V2 schema since v2.6.0) | [[marcusrbrown--systematic]] |
+| Factory deduplication | Singleton guard preventing duplicate plugin registration across multiple opencode.json sources | [[marcusrbrown--systematic]] |
+| Content integrity gate | CI-enforced validation that all skill/agent sub-files are properly imported and shipped | [[marcusrbrown--systematic]] |
 
 ## Process Tree Management
 
@@ -124,14 +129,14 @@ Rather than registering one tool per skill, systematic registers a single `syste
 
 | Repo | npm Package | Purpose | Stack | Status |
 |------|-------------|---------|-------|--------|
-| [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (45 skills, 50 agents) | Bun, Biome, semantic-release | Active, v2.5.1+ |
+| [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (46 skills, 50 agents) | Bun, Biome, semantic-release | Active, v2.7.3 |
 | [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses | Bun, Biome, Changesets | Active, v0.1.0 |
 
 Both plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's OpenCode plugin repos. Both use `mise.toml` to pin Bun and tool versions.
 
 ## Related Pages
 
-- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows with 45 skills and 50 agents
+- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows with 46 skills and 50 agents
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)

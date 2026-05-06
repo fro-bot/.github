@@ -1016,3 +1016,36 @@ Sources: https://github.com/marcusrbrown/sparkle (SHA 712ab1bc2fdcd59ec9b8a2d71a
 Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-05-06 12:00] ingest | marcusrbrown/systematic
+
+Incremental re-survey of `marcusrbrown/systematic` (SHA `420ef65`, up from `ef02119`). Updated repo page `marcusrbrown--systematic.md` and topic page `opencode-plugins.md`. Updated `index.md` to reflect current version. No new topic/entity/comparison pages warranted.
+
+Delta from prior survey (SHA `ef02119`, 2026-04-24):
+
+- **5 releases shipped:** v2.5.1 → v2.7.3 (28 commits)
+- **v2.6.0:** OCX V2 schema migration (#315), content-integrity CI gate (#313), single-export entry point fix (#309), TypeScript v6 (#311), Playwright install fix in docs workflow (#312)
+- **v2.6.1:** Imported 13 missing skill reference sub-files; sub-file integrity gate added (#319)
+- **v2.7.0:** Skill authoring guardrails (#325) — new feature release
+- **v2.7.1:** Stabilized system prompt prefix (#329)
+- **v2.7.2:** Factory deduplication across opencode.json sources (#335) — new `plugin-singleton.ts` module
+- **v2.7.3:** Removed `model` field from all 50 bundled agents (#336) — upstream fix for sst/opencode#17888
+- **Skills:** 45 → 46
+- **New source module:** `plugin-singleton.ts` for singleton guard on plugin factory registration
+- **Fro Bot agent bumped:** v0.41.4 → v0.42.7 (SHA `30a8e428`)
+- **bfra-me/.github reusable workflows:** v4.16.8 → v4.16.12
+- **Stars:** 12 → 14; **Open issues:** 5 → 4
+- **Open PRs:** 1 (#327 — Renovate pin dependencies)
+- **AGENTS.md hierarchy refreshed** (#314, #328) with current counts and code map
+- **Manual Phase 0 probe templates** added (#321) for empirical hypothesis validation
+- **Plan status reconciliation** (#337) — retroactive plan documentation
+- Renovate config, Probot settings, branch protection, CI workflow structure all unchanged
+- No contradictions with prior ingest
+
+Sources: https://github.com/marcusrbrown/systematic (SHA 420ef650215a9ca8cefa01f125e02434e351952e)
+
+## [2026-05-06 07:50] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/systematic
