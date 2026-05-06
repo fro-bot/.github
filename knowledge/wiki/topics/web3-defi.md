@@ -2,7 +2,7 @@
 type: topic
 title: "Web3 & DeFi Development"
 created: 2026-04-18
-updated: 2026-04-25
+updated: 2026-05-06
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -13,7 +13,7 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 97e96c1425a9232e5b783c680cade8505e1c8de1
     accessed: 2026-04-25
-tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721]
+tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721, polymarket, prediction-markets, arbitrage]
 ---
 
 # Web3 & DeFi Development
@@ -23,6 +23,7 @@ Patterns, tooling, and conventions for Web3 and decentralized finance (DeFi) app
 ## Repositories
 
 - [[marcusrbrown--tokentoilet]] — Token disposal and charity donation DeFi app (Next.js + Wagmi + Reown AppKit)
+- [[marcusrbrown--poly]] — Polymarket bot (arbitrage + market making); private collab, Obsidian vault + code (early stage, 2026-05-05)
 
 ## Wallet Integration Stack
 
@@ -68,6 +69,18 @@ These patterns are enforced in [[marcusrbrown--tokentoilet]] via AGENTS.md and F
 - Access via `import {env} from '@/env'`, never `process.env`
 - `SKIP_ENV_VALIDATION=true` in CI builds
 - `NEXT_PUBLIC_SEPOLIA_RPC_URL` for testnet RPC endpoint (replaces hardcoded Alchemy demo key as of MVP)
+
+## Prediction Markets (Polymarket)
+
+A second Web3 sub-domain entered the ecosystem with [[marcusrbrown--poly]] (2026-05-05). Key differences from the tokentoilet DeFi pattern:
+
+- **Protocol:** Polymarket CLOB API (not EVM smart contracts in v1)
+- **Strategy:** Algorithmic trading — arbitrage first, market-making second
+- **Stack:** Python (planned), sops+age for secrets, Obsidian vault for research — no React/Next.js frontend
+- **Wallet topology:** Polymarket Safe (signature type 2, per ADR-0003)
+- **Collaboration model:** Two-person dev collab (Marcus + @thejustinwalsh), not solo + Fro Bot
+
+This represents a fundamentally different Web3 surface — server-side trading bots vs. client-side DeFi UIs.
 
 ## MVP Architecture (2026-04-17)
 
