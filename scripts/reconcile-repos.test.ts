@@ -1490,6 +1490,22 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     expect(result.get('fro-bot/weird-repo')).toEqual({status: 'malformed'})
   })
 
+  it('HTTP 200 with empty node_id → malformed (matches schema constraint)', async () => {
+    // The schema's runtime guard requires node_id.length > 0. Accepting an empty string
+    // here would defer the failure to assertReposFile with a less actionable error path.
+    // Match the schema constraint at probe time.
+    const reposGet = vi.fn(async () => ({
+      data: {private: false, node_id: ''} as RepoGetResponse,
+    }))
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'empty-id-repo'), [], logger)
+
+    expect(result.get('fro-bot/empty-id-repo')).toEqual({status: 'malformed'})
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('malformed repos.get response'))
+  })
+
   it('HTTP 422 (other 4xx) → throws ReconcileError', async () => {
     expect.assertions(1)
     const reposGet = vi.fn(async () => {

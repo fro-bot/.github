@@ -390,6 +390,12 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     switch (probe.status) {
       case 'still-accessible': {
         // Transient inconsistency between the access-list enumeration and the per-repo probe.
+        // The probe carries fresh `private`/`node_id` from `repos.get`, but we deliberately
+        // discard them: the access-list snapshot is the system of record for visibility, and
+        // writing privacy fields from a probe that disagrees with it would propagate the
+        // inconsistency rather than wait for it to resolve. The next cron's enumeration will
+        // either re-include the entry (writing fresh fields via the field-refresh path) or
+        // produce a consistent classification. Sticky preservation is the conservative choice.
         summary.unchanged += 1
         return entry
       }
@@ -1268,7 +1274,14 @@ export async function fetchPerRepoStatus(
     try {
       const response = await userOctokit.rest.repos.get({owner: entry.owner, repo: entry.name})
       // Reachable (200) but we weren't in /user/repos → access was revoked.
-      if (typeof response.data?.private !== 'boolean' || typeof response.data?.node_id !== 'string') {
+      // Empty `node_id` on a 200 also classifies as malformed: the schema's own constraint
+      // is `node_id.length > 0`, so accepting an empty string here would only defer the
+      // failure to `assertReposFile` with a less-actionable error message.
+      if (
+        typeof response.data?.private !== 'boolean' ||
+        typeof response.data?.node_id !== 'string' ||
+        response.data.node_id.length === 0
+      ) {
         logger.warn(
           `reconcile: malformed repos.get response (node_id=${entry.node_id ?? 'unknown'}); sticky-preserving prior state`,
         )
@@ -2219,7 +2232,13 @@ function isGitHubRateLimit(error: unknown): boolean {
   const response = isRecord(error.response) ? error.response : undefined
   const headers = response !== undefined && isRecord(response.headers) ? response.headers : undefined
   if (headers !== undefined) {
+    // `Retry-After`: presence alone signals rate-limit. GitHub only sets this header on
+    // rate-limit and unavailable-for-legal-reasons responses; any value (seconds or HTTP
+    // date) means "back off."
     if (headers['retry-after'] !== undefined) return true
+    // `x-ratelimit-remaining`: present on every response with a number-as-string value
+    // (e.g. "4998"). Only the literal "0" signals exhausted budget; non-zero values are
+    // not rate-limit signals. Octokit normalizes header values to strings.
     if (headers['x-ratelimit-remaining'] === '0') return true
   }
   // Body messages — Octokit surfaces these via `error.message` or the response data.
