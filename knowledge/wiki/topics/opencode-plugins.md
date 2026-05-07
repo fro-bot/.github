@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-05-06
+updated: 2026-05-07
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 420ef650215a9ca8cefa01f125e02434e351952e
     accessed: 2026-05-06
+  - url: https://github.com/fro-bot/agent
+    sha: ef6b9525583d13f9443b80e6ceffff8af978410a
+    accessed: 2026-05-07
 tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents]
 ---
 
@@ -134,8 +137,13 @@ Rather than registering one tool per skill, systematic registers a single `syste
 
 Both plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's OpenCode plugin repos. Both use `mise.toml` to pin Bun and tool versions.
 
+## Agent Harness Integration
+
+[[fro-bot--agent]] is the GitHub Action that orchestrates OpenCode execution in CI. During setup (`src/services/setup/`), it auto-installs Bun, OpenCode, and oMo, then injects [[marcusrbrown--systematic]] as an OpenCode plugin via `systematic-config.ts`. The action uses `@opencode-ai/sdk` for agent execution, making it the delivery vehicle that connects the plugin ecosystem to GitHub's event model. Pinned tool versions (OpenCode, oMo, Bun, Systematic) are tracked via custom Renovate regex managers in `src/shared/constants.ts`.
+
 ## Related Pages
 
+- [[fro-bot--agent]] — GitHub Action harness that auto-installs and configures OpenCode + oMo + Systematic in CI
 - [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows with 46 skills and 50 agents
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin

@@ -1069,29 +1069,32 @@ Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
 
-## [2026-05-07 08:04] ingest | fro-bot/fro-bot.github.io
+## [2026-05-07 12:00] ingest | fro-bot/agent
 
-Initial survey of `fro-bot/fro-bot.github.io` (SHA `3e44653`). Created repo page `fro-bot--fro-bot-github-io.md`. Updated topic page `github-pages.md` to include the repo in the custom domains section. Updated `index.md` to catalog the new page. No new topic/entity/comparison pages created.
+Initial survey of `fro-bot/agent` (SHA `ef6b952`). Created repo page `fro-bot--agent.md`. Updated topic pages `github-actions-ci.md` (added to repos list, Fro Bot Agent table) and `opencode-plugins.md` (added Agent Harness Integration section, added to Related Pages). Updated `index.md` to catalog the new page. No new topic/entity/comparison pages created — existing pages cover all cross-cutting concerns.
 
 Key findings:
 
-- Org-level GitHub Pages custom domain holder for the `fro-bot` organization, serving `fro.bot`
-- Entire repository is a single CNAME file — no application code, no workflows, no README, no license
-- Single commit by Fro Bot on 2026-02-09 creating the CNAME record
-- GitHub Pages configured with legacy build type (main branch, root path), TLS certificate approved for `fro.bot` and `www.fro.bot`
-- **HTTPS enforcement not enabled** — security gap
-- `fro.bot/systematic` served via this domain (Starlight docs for `@fro.bot/systematic`)
-- Sole collaborator: `fro-bot`
-- 1 open issue (#1): Enable code scanning (CodeQL / Scorecard) for coverage parity
-- **No Fro Bot agent workflow** — follow-up PR recommended for minimal issue triage and settings oversight
-- **No Probot Settings** — branch protection not managed, inconsistent with ecosystem pattern
-- **No Renovate** — reasonable given zero dependencies
-- First `fro-bot/*` org repo surveyed (all prior wiki pages are `marcusrbrown/*` repos)
+- Core GitHub Action harness powering all Fro Bot-managed repositories (11 known downstream consumers)
+- TypeScript (strict, ESM-only), Node 24, pnpm 10.33.2 workspace monorepo: `apps/action` (GitHub Action entry points) + `packages/runtime` (shared library)
+- tsdown bundler (Rolldown-based) with custom license collector and hidden-Unicode escape plugins; `dist/` committed
+- Four-layer architecture: shared (L0) → services (L1) → features (L2) → harness (L3), ~145 source files, ~15k lines
+- **Persistent session memory** via GitHub Actions cache (branch-scoped) + optional S3-compatible write-through backup (AWS S3, R2, B2, MinIO)
+- 7 event triggers (issue_comment, PR review comment, discussion_comment, issues, pull_request, schedule, workflow_dispatch) routed through `NormalizedEvent` discriminated union
+- `@opencode-ai/sdk` for agent execution; auto-installs Bun, OpenCode, oMo; injects `@fro.bot/systematic` plugin
+- 19 RFCs documenting architecture decisions
+- **Fro Bot workflow present and self-hosted** — daily DMR (15:30 UTC), weekly wiki update (Sun 20:00 UTC), full trigger coverage
+- Three-branch release flow: `main` → `next` → `release`, semantic-release with conventional commits, `v0` major tracking branch
+- Latest release: v0.42.8 (2026-05-06), active release cadence (~10 releases in 12 days: v0.42.0 through v0.42.8)
+- CI: 9 workflows, path-filtered, dist/ drift detection, live action integration test, CodeQL, Scorecard
+- Renovate extends `github>fro-bot/.github` with 4 custom regex managers for pinned tool versions in `src/shared/constants.ts`
+- Probot settings extend `fro-bot/.github:common-settings.yaml`; branch protection on `main` with 10 required status checks
+- Downstream version lag documented: repos range from v0.40.2 to v0.42.8
 
-Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+Sources: https://github.com/fro-bot/agent (SHA ef6b9525583d13f9443b80e6ceffff8af978410a)
 
-## [2026-05-07 08:06] ingest | repo:fro-bot/fro-bot.github.io
+## [2026-05-07 08:06] ingest | repo:fro-bot/agent
 
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+Surveyed fro-bot/agent and updated the control-plane wiki.
 
-Sources: https://github.com/fro-bot/fro-bot.github.io
+Sources: https://github.com/fro-bot/agent
