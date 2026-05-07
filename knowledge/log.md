@@ -1069,30 +1069,27 @@ Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
 
-## [2026-05-07 08:05] ingest | fro-bot/systematic
+## [2026-05-07 12:00] ingest | marcusrbrown/poly
 
-Initial survey of `fro-bot/systematic` (SHA `73fa108`). Created repo page `fro-bot--systematic.md`. Updated topic pages `github-pages.md` (added Starlight/Astro cross-repo deploy pattern) and `opencode-plugins.md` (added documentation deployment section). Updated `index.md` to catalog the new page.
+Initial survey of `marcusrbrown/poly` (SHA `e4abf26`). Created repo page `marcusrbrown--poly.md` and topic page `polymarket-trading.md`. Updated topic page `web3-defi.md` to cross-reference poly. Updated `index.md` to catalog both new pages.
 
 Key findings:
 
-- **Not a fork** of `marcusrbrown/systematic` — standalone repo serving as the documentation deployment target
-- Default branch is `gh-pages` (no `main` branch); contains only built Starlight/Astro static site output
-- GitHub Pages serves at `https://fro.bot/systematic/` via legacy build type from `gh-pages` branch
-- All commits authored by `fro-bot[bot]` with provenance messages linking source SHA from `marcusrbrown/systematic`
-- Deploy cadence tracks `@fro.bot/systematic` releases — 7 deployments observed from 2026-03-27 to 2026-05-05
-- OCX registry served via `.well-known/ocx.json` pointing to `/systematic/index.json` (V2 schema)
-- `components/` directory contains per-agent/skill pages for OCX component browsing
-- Sole collaborator: `fro-bot`
-- 2 open issues: #1 (CodeQL/Scorecard parity), #2 (Renovate onboarding PR from `renovate/configure` branch)
-- **No Fro Bot agent workflow** — expected and appropriate for a static output repo; source repo has full coverage
-- Renovate not yet active; onboarding PR extends `bfra-me/renovate-config` but has limited utility for a repo with no dependencies
-- No license file specified (inherits context from source repo which is MIT)
-- Cross-repo deploy pattern documented in `github-pages.md`: source builds in `marcusrbrown/systematic`, pushes to `fro-bot/systematic:gh-pages`, served by GitHub Pages
+- Private Python repo + Obsidian vault for a Polymarket trading bot; 2-person dev collab
+- **Phase 1 (arbitrage) disqualified** by four structurally-related experiments on 2026-05-06: cross-outcome, cross-market basket, temporal monotonicity, depth-aware edge — all returned 0 net-positive opportunities. Root cause: 1¢ minimum tick + active market makers eliminate snapshot arb
+- **Phase 2 (market making) active** via ADR-0004: pivoting to extend `warproxxx/poly-maker` with adverse-selection mitigation focus. Three-stage gating: paper-trade (14 days) → micro-canary ($500–$1K, 4 weeks) → scale. Explicit failure-mode commitment: Stage 1 or 2 failure → shelve Polymarket
+- **ADR-0005 (Proposed)** defines full stack: Python 3.12 + uv, src-layout single `poly` package, SQLite (integer money types, WAL mode), asyncio with isolated heartbeat task, `OrderSubmitter`/`FillIngester` capability injection for safe stage transitions, ruff + mypy strict + pytest
+- `src/` is still a placeholder (`.gitkeep`) — Stage 0 scaffolding is the next work unit per ADR-0005
+- 5 ADRs, 4 strategies (3 shelved arb + 1 active market-making), 4 experiments, 2 runbooks (wallet-bootstrap, encrypted-config-bootstrap)
+- SOPS + age for encrypted config (`secrets/secrets.enc.yaml`), single age recipient key
+- **No `.github/` directory at all** — no workflows, no CI, no Renovate, no Probot settings, no Fro Bot agent workflow. Intentionally deferred per ADR-0005 until deployable code exists. Follow-up draft PR should be proposed to add `fro-bot.yaml`
+- Significant ecosystem divergence from typical Marcus repos: Python (not TypeScript), uv (not pnpm), ruff+mypy (not ESLint+Prettier), pytest (not Vitest), private/proprietary (not MIT)
+- Created `polymarket-trading.md` topic page to capture venue mechanics, arb findings, market-making patterns, and Python SDK ecosystem — separating Polymarket-specific knowledge from the general `web3-defi.md` topic
 
-Sources: https://github.com/fro-bot/systematic (SHA 73fa108)
+Sources: https://github.com/marcusrbrown/poly (SHA e4abf2671a3efdc989a177d29adea641dbe52a9e)
 
-## [2026-05-07 08:07] ingest | repo:fro-bot/systematic
+## [2026-05-07 08:10] ingest | repo:marcusrbrown/poly
 
-Surveyed fro-bot/systematic and updated the control-plane wiki.
+Surveyed marcusrbrown/poly and updated the control-plane wiki.
 
-Sources: https://github.com/fro-bot/systematic
+Sources: https://github.com/marcusrbrown/poly
