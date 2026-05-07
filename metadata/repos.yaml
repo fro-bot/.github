@@ -155,8 +155,8 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-  - owner: marcusrbrown
-    name: poly
+  - owner: '[REDACTED]'
+    name: 'R_kgDOSVJgdw'
     added: 2026-05-05
     onboarding_status: onboarded
     last_survey_at: 2026-05-06
