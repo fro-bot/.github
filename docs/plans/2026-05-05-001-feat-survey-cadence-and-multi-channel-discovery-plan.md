@@ -406,7 +406,7 @@ The pure engine boundary stays clean. New I/O (owned + contrib enumeration) live
 
 ---
 
-- [ ] **Unit 5: Per-channel observability**
+- [x] **Unit 5: Per-channel observability**
 
 **Goal:** Extend the reconcile JSON output with per-channel counters and add an info-level log line on first survey for new-channel entries. Operator can now answer "how much did each channel contribute today?" by reading the JSON output alone.
 

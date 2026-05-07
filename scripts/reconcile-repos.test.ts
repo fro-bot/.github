@@ -1,5 +1,5 @@
 import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
-import type {AllowlistFile, RepoEntry, ReposFile} from './schemas.ts'
+import type {AllowlistFile, DiscoveryChannel, RepoEntry, ReposFile} from './schemas.ts'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
@@ -42,6 +42,14 @@ function makeAccess(overrides: Partial<AccessListEntry> = {}): AccessListEntry {
     private: false,
     node_id: 'R_default',
     ...overrides,
+  }
+}
+
+function emptyChannelStats() {
+  return {
+    collab: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+    owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+    contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
   }
 }
 
@@ -102,6 +110,12 @@ describe('reconcileRepos', () => {
         refreshed: 0,
         migrated: 0,
         unchanged: 0,
+        // dispatched/deferred populated by the I/O shell, not the engine
+        byChannel: {
+          collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
+          owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+          contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+        },
       })
     })
 
@@ -428,6 +442,12 @@ describe('reconcileRepos', () => {
         refreshed: 1,
         migrated: 0,
         unchanged: 0,
+        // dispatched/deferred populated by the I/O shell, not the engine
+        byChannel: {
+          collab: {tracked: 3, dispatched: 0, deferred: 0, lostAccess: 1},
+          owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+          contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+        },
       })
     })
 
@@ -454,6 +474,11 @@ describe('reconcileRepos', () => {
         refreshed: 0,
         migrated: 0,
         unchanged: 1,
+        byChannel: {
+          collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
+          owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+          contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+        },
       })
     })
 
@@ -471,6 +496,7 @@ describe('reconcileRepos', () => {
         refreshed: 0,
         migrated: 0,
         unchanged: 0,
+        byChannel: emptyChannelStats(),
       })
     })
 
@@ -1025,8 +1051,14 @@ function makeReadMetadata(
   }
 }
 
-function silentLogger(): {warn: ReturnType<typeof vi.fn<(message: string) => void>>} {
-  return {warn: vi.fn<(message: string) => void>()}
+function silentLogger(): {
+  warn: ReturnType<typeof vi.fn<(message: string) => void>>
+  info: ReturnType<typeof vi.fn<(message: string) => void>>
+} {
+  return {
+    warn: vi.fn<(message: string) => void>(),
+    info: vi.fn<(message: string) => void>(),
+  }
 }
 
 function baseParams(overrides: Partial<HandleReconcileParams> = {}): HandleReconcileParams {
@@ -2490,6 +2522,141 @@ jobs:
       expect(result.dispatches).toBe(3)
     })
   })
+
+  describe('per-channel observability', () => {
+    it('emits first-survey info log for never-surveyed owned entries only', async () => {
+      // GIVEN one owned entry with last_survey_at: null already onboarded
+      const entry: RepoEntry = {
+        owner: 'fro-bot',
+        name: 'agent',
+        added: '2026-05-01',
+        onboarding_status: 'onboarded',
+        last_survey_at: null,
+        last_survey_status: null,
+        has_fro_bot_workflow: true,
+        has_renovate: false,
+        discovery_channel: 'owned',
+        next_survey_eligible_at: null,
+      }
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: vi.fn(async () => ({
+          data: [{owner: {login: 'fro-bot'}, name: 'agent', archived: false, private: false, node_id: 'R_a'}],
+        })),
+      })
+      const logger = silentLogger()
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({repos: {version: 1, repos: [entry]}}),
+          logger,
+        }),
+      )
+
+      const infoCalls = logger.info.mock.calls.flat()
+      expect(infoCalls).toContain('reconcile: first survey for new owned entry: fro-bot/agent')
+    })
+
+    it('does NOT emit first-survey info log for collab newcomers', async () => {
+      // GIVEN a collab newcomer (allowlisted owner, fresh dispatch)
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: vi.fn(async () => ({
+          data: [
+            {owner: {login: 'marcusrbrown'}, name: 'collab-newcomer', archived: false, private: false, node_id: 'R_c'},
+          ],
+        })),
+      })
+      const logger = silentLogger()
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({
+            repos: {version: 1, repos: []},
+            allowlist: makeAllowlist(['marcusrbrown']),
+          }),
+          logger,
+        }),
+      )
+
+      const infoCalls = logger.info.mock.calls.flat()
+      expect(infoCalls.some((c: string) => c.includes('first survey for new collab'))).toBe(false)
+    })
+
+    it('does NOT re-emit first-survey log when an owned entry already has a last_survey_at', async () => {
+      // GIVEN an owned entry that has already been surveyed once
+      const entry: RepoEntry = {
+        owner: 'fro-bot',
+        name: 'agent',
+        added: '2026-05-01',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01', // previously surveyed
+        last_survey_status: 'success',
+        has_fro_bot_workflow: true,
+        has_renovate: false,
+        discovery_channel: 'owned',
+        next_survey_eligible_at: '2026-04-20', // eligible (past)
+      }
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: vi.fn(async () => ({
+          data: [{owner: {login: 'fro-bot'}, name: 'agent', archived: false, private: false, node_id: 'R_a'}],
+        })),
+      })
+      const logger = silentLogger()
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({repos: {version: 1, repos: [entry]}}),
+          logger,
+        }),
+      )
+
+      const infoCalls = logger.info.mock.calls.flat()
+      expect(infoCalls.some((c: string) => c.includes('first survey for new'))).toBe(false)
+    })
+
+    it('populates byChannel.dispatched and byChannel.deferred after cap selection', async () => {
+      // GIVEN 3 collab entries that are all eligible, with maxDispatchesPerRun=2
+      const entries: RepoEntry[] = ['a', 'b', 'c'].map(name => ({
+        owner: 'marcusrbrown',
+        name,
+        added: '2026-01-01',
+        onboarding_status: 'onboarded',
+        last_survey_at: null,
+        last_survey_status: null,
+        has_fro_bot_workflow: false,
+        has_renovate: false,
+        discovery_channel: 'collab',
+        next_survey_eligible_at: null,
+      }))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: vi.fn(async () => ({
+          data: entries.map(e => ({
+            owner: {login: e.owner},
+            name: e.name,
+            archived: false,
+            private: false,
+            node_id: `R_${e.name}`,
+          })),
+        })),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({repos: {version: 1, repos: entries}}),
+          maxDispatchesPerRun: 2,
+        }),
+      )
+
+      // 2 dispatched, 1 deferred — all collab
+      expect(result.summary.byChannel.collab.dispatched).toBe(2)
+      expect(result.summary.byChannel.collab.deferred).toBe(1)
+      expect(result.summary.byChannel.owned.dispatched).toBe(0)
+      expect(result.summary.byChannel.contrib.dispatched).toBe(0)
+    })
+  })
 })
 
 describe('migrateRepoEntry', () => {
@@ -2673,6 +2840,7 @@ describe('formatCommitMessage', () => {
         refreshed: 2,
         migrated: 0,
         unchanged: 0,
+        byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 2 refreshes')
   })
@@ -2687,6 +2855,7 @@ describe('formatCommitMessage', () => {
         refreshed: 0,
         migrated: 18,
         unchanged: 0,
+        byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
   })
@@ -2701,6 +2870,7 @@ describe('formatCommitMessage', () => {
         refreshed: 1,
         migrated: 18,
         unchanged: 0,
+        byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 1 refreshes, +18 migrated')
   })
@@ -3086,5 +3256,81 @@ describe('mergeAccessChannels (precedence + dedup)', () => {
         now: NOW,
       }),
     ).not.toThrow()
+  })
+})
+
+describe('reconcileRepos byChannel summary', () => {
+  it('counts tracked entries per channel', () => {
+    // GIVEN 3 entries: 2 collab, 1 owned (no access changes, no probe drift)
+    const entries = [
+      makeEntry({owner: 'marcusrbrown', name: 'a', discovery_channel: 'collab'}),
+      makeEntry({owner: 'marcusrbrown', name: 'b', discovery_channel: 'collab'}),
+      makeEntry({owner: 'fro-bot', name: 'agent', discovery_channel: 'owned'}),
+    ]
+    const accessList = entries.map(e => makeAccess({owner: e.owner, name: e.name, node_id: `R_${e.name}`}))
+    const channelMap = new Map<string, DiscoveryChannel>(
+      entries.map(e => [`${e.owner}/${e.name}`, e.discovery_channel ?? 'collab']),
+    )
+    const fieldProbes = new Map(
+      entries.map(e => [
+        `${e.owner}/${e.name}`,
+        {has_fro_bot_workflow: e.has_fro_bot_workflow, has_renovate: e.has_renovate},
+      ]),
+    )
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: entries},
+        accessList,
+        accessChannelByKey: channelMap,
+        fieldProbes,
+      }),
+    )
+
+    expect(result.summary.byChannel.collab.tracked).toBe(2)
+    expect(result.summary.byChannel.owned.tracked).toBe(1)
+    expect(result.summary.byChannel.contrib.tracked).toBe(0)
+  })
+
+  it('counts lost-access transitions per channel', () => {
+    // GIVEN one onboarded contrib entry that is no longer in the access list
+    const lost = makeEntry({
+      owner: 'bfra-me',
+      name: 'gone-repo',
+      onboarding_status: 'onboarded',
+      discovery_channel: 'contrib',
+    })
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [lost]},
+        accessList: [],
+        perRepoStatus: new Map([['bfra-me/gone-repo', {status: 'archived'}]]),
+      }),
+    )
+
+    expect(result.summary.byChannel.contrib.lostAccess).toBe(1)
+    expect(result.summary.byChannel.collab.lostAccess).toBe(0)
+    expect(result.summary.byChannel.owned.lostAccess).toBe(0)
+  })
+
+  it('counts newcomers per channel (added entries inherit channel from accessChannelByKey)', () => {
+    const channelMap = new Map<string, DiscoveryChannel>([
+      ['fro-bot/agent', 'owned'],
+      ['bfra-me/works', 'contrib'],
+    ])
+    const result = reconcileRepos(
+      makeInput({
+        accessList: [
+          makeAccess({owner: 'fro-bot', name: 'agent', node_id: 'R_a'}),
+          makeAccess({owner: 'bfra-me', name: 'works', node_id: 'R_w'}),
+        ],
+        accessChannelByKey: channelMap,
+      }),
+    )
+
+    expect(result.summary.byChannel.owned.tracked).toBe(1)
+    expect(result.summary.byChannel.contrib.tracked).toBe(1)
+    expect(result.summary.byChannel.collab.tracked).toBe(0)
   })
 })

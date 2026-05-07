@@ -148,6 +148,26 @@ export interface PerOwnerRollupIssue {
 
 export type IssueQueueEntry = PerRepoIssue | PerOwnerRollupIssue
 
+/**
+ * Per-channel breakdown of reconcile activity for one run. Operators read these to
+ * answer "how much did each channel contribute today?" without aggregating manually.
+ *
+ * - `tracked`: entries on `nextRepos` carrying this channel after the run.
+ * - `dispatched`: dispatches actually fired this run (post-cap, post-rotation).
+ * - `deferred`: dispatch candidates excluded by the per-run cap. Sums to
+ *   `dispatchesDeferred` across all channels.
+ * - `lostAccess`: entries that flipped to `lost-access` this run.
+ *
+ * The shell populates `dispatched` and `deferred` after cap selection. The engine
+ * populates `tracked` and `lostAccess`.
+ */
+export interface ChannelStats {
+  tracked: number
+  dispatched: number
+  deferred: number
+  lostAccess: number
+}
+
 export interface ReconcileSummary {
   added: number
   pendingReview: number
@@ -166,6 +186,12 @@ export interface ReconcileSummary {
    */
   migrated: number
   unchanged: number
+  /**
+   * Per-channel activity breakdown. See {@link ChannelStats} for field semantics. The
+   * engine populates `tracked` and `lostAccess`; the shell populates `dispatched` and
+   * `deferred` after cap selection.
+   */
+  byChannel: Record<DiscoveryChannel, ChannelStats>
 }
 
 export interface ReconcileResult {
@@ -199,6 +225,11 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     refreshed: 0,
     migrated: 0,
     unchanged: 0,
+    byChannel: {
+      collab: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+      owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+      contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+    },
   }
   const dispatches: DispatchRequest[] = []
   const rawIssues: RawIssue[] = []
@@ -264,6 +295,15 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
 
   const issues = buildIssueQueue(rawIssues)
 
+  // Populate per-channel tracked counts after both passes complete. Counts entries
+  // present on `next.repos` post-classification (excludes lost-access entries via the
+  // existing flow — `lost-access` entries remain in repos, only their onboarding_status
+  // changes, so they still count as tracked). The plan defines `tracked` as entries
+  // currently in `metadata/repos.yaml` for that channel, regardless of survey status.
+  for (const entry of next.repos) {
+    summary.byChannel[entry.discovery_channel ?? 'collab'].tracked += 1
+  }
+
   // Zero-change optimization: preserve currentRepos reference identity for cheap `===` probe.
   if (isNoOp(summary, dispatches, issues)) {
     return {nextRepos: currentRepos, dispatches, issues, summary}
@@ -325,6 +365,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
       return entry
     }
     summary.lostAccess += 1
+    summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
     return {...entry, onboarding_status: 'lost-access'}
   }
 
@@ -335,6 +376,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
       return entry
     }
     summary.lostAccess += 1
+    summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
     return {...entry, onboarding_status: 'lost-access'}
   }
 
@@ -647,6 +689,7 @@ export class ReconcileError extends Error {
 
 export interface ReconcileLogger {
   warn: (message: string) => void
+  info: (message: string) => void
 }
 
 export interface HandleReconcileParams {
@@ -732,7 +775,10 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const dispatchTimeoutMs = params.dispatchTimeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS
   const dispatchStaggerMs = params.dispatchStaggerMs ?? loadDispatchStaggerFromEnv()
   const maxDispatchesPerRun = params.maxDispatchesPerRun ?? loadMaxDispatchesPerRunFromEnv()
-  const logger: ReconcileLogger = params.logger ?? {warn: message => process.stderr.write(`${message}\n`)}
+  const logger: ReconcileLogger = params.logger ?? {
+    warn: message => process.stderr.write(`${message}\n`),
+    info: message => process.stdout.write(`${message}\n`),
+  }
   const readMetadata = params.readMetadata ?? readMetadataFromDisk
   const commitMetadataImpl = params.commitMetadata ?? defaultCommitMetadata
   const bootstrap = params.bootstrapDataBranch ?? defaultBootstrapDataBranch
@@ -897,6 +943,21 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const selectedDispatches = rotatedDispatches.slice(0, dispatchCap)
   const dispatchesDeferred = prioritizedDispatches.length - selectedDispatches.length
 
+  // Index entries by key so the dispatch loop and the byChannel breakdown can resolve
+  // per-dispatch channel + last_survey_at without scanning nextRepos repeatedly.
+  const entryByKey = new Map(plan.nextRepos.repos.map(r => [`${r.owner}/${r.name}`, r]))
+
+  // Populate per-channel dispatch + deferred counts. The selected slice fires this run;
+  // the deferred slice (rotatedDispatches[dispatchCap..]) waits for next run.
+  for (const d of selectedDispatches) {
+    const entry = entryByKey.get(`${d.owner}/${d.repo}`)
+    plan.summary.byChannel[entry?.discovery_channel ?? 'collab'].dispatched += 1
+  }
+  for (const d of rotatedDispatches.slice(dispatchCap)) {
+    const entry = entryByKey.get(`${d.owner}/${d.repo}`)
+    plan.summary.byChannel[entry?.discovery_channel ?? 'collab'].deferred += 1
+  }
+
   const dispatchOutcome = await runDispatches({
     staggerMs: dispatchStaggerMs,
     sleep: params.dispatchSleep,
@@ -908,6 +969,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     dispatches: selectedDispatches,
     timeoutMs: dispatchTimeoutMs,
     logger,
+    entryByKey,
   })
 
   // 10. Issue-creation loop (serial, non-blocking on failure).
@@ -1574,6 +1636,12 @@ async function runDispatches(params: {
   staggerMs: number
   logger: ReconcileLogger
   /**
+   * Per-key index of repos in `nextRepos` so the dispatch loop can resolve channel +
+   * last_survey_at without scanning. Used to emit the first-survey-of-channel info log
+   * for owned and contrib entries that have never been surveyed.
+   */
+  entryByKey: Map<string, RepoEntry>
+  /**
    * Sleep implementation. Injected for test speed — production uses `setTimeout`-backed
    * Promise; tests pass a no-op or a deterministic fake clock.
    */
@@ -1585,6 +1653,21 @@ async function runDispatches(params: {
   for (let i = 0; i < params.dispatches.length; i += 1) {
     const dispatch = params.dispatches[i]
     if (dispatch === undefined) continue
+
+    // First-survey-of-channel observability: emit an info line when an owned or contrib
+    // entry is being surveyed for the first time. Collab is intentionally excluded —
+    // the milestone matters less for the historical channel that's been around since
+    // the original collab-only design. Owned entries are auto-discovered (so seeing
+    // them flow through to first survey is meaningful), and contrib entries are
+    // operator-curated (so first-survey is the moment the trust signal was honored).
+    const entry = params.entryByKey.get(`${dispatch.owner}/${dispatch.repo}`)
+    if (entry !== undefined && entry.last_survey_at === null) {
+      const channel = entry.discovery_channel ?? 'collab'
+      if (channel === 'owned' || channel === 'contrib') {
+        params.logger.info(`reconcile: first survey for new ${channel} entry: ${dispatch.owner}/${dispatch.repo}`)
+      }
+    }
+
     // Stagger BETWEEN dispatches only — never before the first, never after the last.
     // This keeps the first survey's kickoff latency unchanged and avoids trailing idle time.
     if (i > 0 && params.staggerMs > 0) {
