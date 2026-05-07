@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/vbs"
 created: 2026-04-18
-updated: 2026-04-25
+updated: 2026-05-07
 sources:
+  - url: https://github.com/marcusrbrown/vbs
+    sha: b3c415bc4e0e25dd4e5ca8ccdc5ae7aaac9cbdec
+    accessed: 2026-05-07
   - url: https://github.com/marcusrbrown/vbs
     sha: dd10e052347b5488dc09cd0d18391d67f1c21bb7
     accessed: 2026-04-25
@@ -25,18 +28,18 @@ related:
 - **Purpose:** Interactive Star Trek chronological viewing guide with progress tracking
 - **Default branch:** `main`
 - **Created:** 2025-07-18
-- **Last push:** 2026-04-22
+- **Last push:** 2026-05-07
 - **Homepage:** https://marcusrbrown.github.io/vbs/
 - **License:** MIT (declared in package.json; no LICENSE file observed at root)
 - **Topics:** `star-trek`, `viewing-guide`, `chronological`, `progress-tracker`, `local-first`
-- **Package manager:** pnpm 10.33.0
+- **Package manager:** pnpm 10.33.2
 - **Node.js:** 22.x
 
 ## Tech Stack
 
 | Layer             | Technology                                                                        |
 | ----------------- | --------------------------------------------------------------------------------- |
-| Language          | TypeScript 5.9 (strict mode, `erasableSyntaxOnly`, `verbatimModuleSyntax`)        |
+| Language          | TypeScript 5.9 (strict mode, `erasableSyntaxOnly`, `verbatimModuleSyntax`, `noUncheckedSideEffectImports`) |
 | Build             | Vite 7.x (base `/vbs/`, source maps, manual chunk for data module)                |
 | Runtime           | Vanilla TS — no framework, functional factories with closures                     |
 | Visualization     | D3 7.x (production dependency)                                                    |
@@ -84,7 +87,7 @@ vbs/
 │   ├── style.css                # Global Star Trek theme
 │   ├── data/
 │   │   └── star-trek-data.ts    # Comprehensive dataset (~570 lines)
-│   ├── modules/                 # Core business logic (27 files)
+│   ├── modules/                 # Core business logic (28 files)
 │   │   ├── types.ts             # Central type definitions + event maps
 │   │   ├── progress.ts          # Progress tracking factory
 │   │   ├── search.ts            # Search/filtering factory
@@ -92,19 +95,22 @@ vbs/
 │   │   ├── storage.ts           # Import/export functionality
 │   │   ├── events.ts            # EventEmitter implementation
 │   │   ├── episode-tracker.ts   # Episode-level tracking
+│   │   ├── episodes.ts          # Episode data module
 │   │   ├── error-handler.ts     # Error boundary utilities
+│   │   ├── external-api-types.ts # External API type definitions
 │   │   ├── logger.ts            # Structured logging
 │   │   ├── preferences.ts       # User preferences
+│   │   ├── progress-validation.ts # Progress data validation
 │   │   ├── themes.ts            # Theme management
 │   │   ├── settings-manager.ts  # Settings UI
-│   │   ├── metadata-*.ts        # Metadata enrichment subsystem (6 files)
+│   │   ├── metadata-*.ts        # Metadata enrichment subsystem (5 files)
 │   │   ├── streaming-api.ts     # Streaming availability
 │   │   ├── cache-warming.ts     # Cache pre-population
 │   │   ├── conflict-resolution.ts
 │   │   ├── migration.ts         # Data migration
 │   │   ├── version-manager.ts   # Version tracking
 │   │   └── timeline-viz.ts      # D3 timeline visualization
-│   ├── components/              # UI components (11 .ts + 11 .css)
+│   ├── components/              # UI components (12 .ts + 12 .css)
 │   │   ├── metadata-*.ts/css    # Metadata UI components
 │   │   ├── streaming-*.ts/css   # Streaming UI components
 │   │   ├── timeline-*.ts/css    # Timeline visualization controls
@@ -152,11 +158,11 @@ vbs/
 
 ### Branch Protection
 
-Required status checks on `main`: Build, Fro Bot, Renovate, Test. Linear history enforced, admin enforcement enabled, no required PR reviews.
+Required status checks on `main`: Build, Fro Bot, Renovate / Renovate, Test. Linear history enforced, admin enforcement enabled, no required PR reviews.
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present and active** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d9735d7ad2aca`).
+**Fro Bot workflow is present and active** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.42.8` (SHA `fee26493b0f82a9a00241fe24fb0aede8174d1d2`).
 
 ### PR Review
 
@@ -188,7 +194,7 @@ Responds to `@fro-bot` mentions in issue/PR/discussion comments from OWNER/MEMBE
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8` + `group:allNonMajor`. Post-upgrade tasks run `pnpm install` + `pnpm fix`. Rebase when behind base branch.
+- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.9` + `group:allNonMajor`. Post-upgrade tasks run `pnpm install` + `pnpm fix`. Rebase when behind base branch.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` — confirms membership in the Fro Bot-managed ecosystem.
 - **Git hooks:** `simple-git-hooks` runs `lint-staged` on pre-commit. Lint-staged runs `eslint --fix` on TS/JS/CSS/MD/JSON/YAML files.
 - **AI context:** Root `AGENTS.md`, `src/modules/AGENTS.md`, `src/components/AGENTS.md`, `.ai/` directory, `llms.txt`, `.github/copilot-instructions.md`, `.github/agents/` (data-curator agent).
@@ -212,6 +218,26 @@ Responds to `@fro-bot` mentions in issue/PR/discussion comments from OWNER/MEMBE
 | --- | --- | --- |
 | 2026-04-18 | `a552e73` | Initial survey — full page created |
 | 2026-04-25 | `dd10e05` | Incremental — 7 Renovate commits, agent bump v0.40.2 → v0.41.4, no structural changes |
+| 2026-05-07 | `b3c415b` | Incremental — 15 Renovate commits, agent bump v0.41.4 → v0.42.8, Renovate preset #4.5.8 → #4.5.9 |
+
+### 2026-05-07 Delta (SHA `dd10e05` → `b3c415b`)
+
+15 commits since prior survey, all Renovate-authored (`mrbro-bot[bot]`). No structural, architectural, or application code changes.
+
+- **`fro-bot/agent` bumped:** v0.41.4 → v0.42.8 (through v0.42.1, v0.42.4, v0.42.5, v0.42.6, v0.42.7 intermediates; PRs #525, #535, #540, #542, #544, and final non-major batch #549)
+- **Renovate config preset bumped:** `marcusrbrown/renovate-config#4.5.8` → `#4.5.9` (PR #537)
+- **`bfra-me/.github` reusable workflows updated:** v4.16.8 → v4.16.12 (PRs #528, #536, #543)
+- **pnpm bumped:** 10.33.0 → 10.33.2 (PRs #524, via non-major batches)
+- **Non-major dependency batches:** #527, #533, #549 (eslint, vitest, prettier, lint-staged, codecov-action, etc.)
+- **Lockfile maintenance** included in batch PRs
+
+Current activity (as of 2026-05-07):
+
+- **Open PRs:** 7 — six automated Star Trek data updates (#454 data-29, #476 data-30, #497 data-31, #517 data-32, #530 data-33, #546 data-34) and one Copilot-authored feature PR (#458, multi-track timeline visualization)
+- **Open issues:** 30 (majority are Daily Autohealing Reports from Fro Bot; net growth from ~23 to 30 since prior survey)
+- **Fro Bot autoheal cadence:** daily reports running consistently, all authored by `fro-bot`
+- **No human-authored commits** in the 15-commit delta — repository remains in pure maintenance/dependency-update mode
+- **Accumulating data-update PRs:** 6 weekly data PRs stacking up unmerged (data-29 through data-34), suggesting review bottleneck or intentional batching
 
 ### 2026-04-25 Delta (SHA `a552e73` → `dd10e05`)
 
@@ -222,10 +248,3 @@ Responds to `@fro-bot` mentions in issue/PR/discussion comments from OWNER/MEMBE
 - **`actions/setup-node` updated** to v6.4.0 (PR #514) in `.github/actions/setup-pnpm/action.yaml`
 - **Lockfile maintenance** (PR #516) and non-major dependency batch (PR #513, #520)
 - **Renovate config unchanged:** still extends `marcusrbrown/renovate-config#4.5.8` + `group:allNonMajor`
-
-Current activity (as of 2026-04-25):
-
-- **Open PRs:** 5 — four automated Star Trek data updates (#454 data-29, #476 data-30, #497 data-31, #517 data-32) and one Copilot-authored feature PR (#458, multi-track timeline visualization)
-- **Open issues:** Daily Autohealing Reports from Fro Bot (one per day, #506–#523), plus data update PR #517
-- **Fro Bot autoheal cadence:** daily reports running consistently since at least 2026-04-17, all authored by `fro-bot`
-- **No human-authored commits** in the 7-commit delta — repository is in pure maintenance/dependency-update mode

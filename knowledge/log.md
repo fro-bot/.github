@@ -1042,3 +1042,29 @@ Sources: https://github.com/marcusrbrown/tokentoilet (SHA 0aa1d9a02f1a8ba5cbd958
 Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-05-07 06:00] ingest | marcusrbrown/vbs
+
+Incremental re-survey of `marcusrbrown/vbs` (SHA `b3c415b`, up from `dd10e05`). Updated repo page `marcusrbrown--vbs.md`. Index unchanged (page already cataloged). No new topic/entity/comparison pages warranted — delta is exclusively Renovate dependency bumps.
+
+Delta from prior survey (SHA `dd10e05`, 2026-04-25):
+
+- **`fro-bot/agent` bumped:** v0.41.4 → v0.42.8 (through v0.42.1, v0.42.4, v0.42.5, v0.42.6, v0.42.7; SHA `fee26493b0f82a9a00241fe24fb0aede8174d1d2`)
+- **Renovate config preset bumped:** `marcusrbrown/renovate-config#4.5.8` → `#4.5.9` (PR #537)
+- **`bfra-me/.github` reusable workflows:** v4.16.8 → v4.16.12 (PRs #528, #536, #543)
+- **pnpm bumped:** 10.33.0 → 10.33.2
+- **Non-major dependency batches:** eslint, vitest, prettier, lint-staged, codecov-action, and others via PRs #527, #533, #549
+- **Open PRs:** 7 (6 stacking Star Trek data updates #454–#546, 1 Copilot feature PR #458)
+- **Open issues:** 30 (net growth from ~23, majority autohealing reports)
+- **Accumulating data-update PRs:** 6 unmerged weekly data PRs (data-29 through data-34) — possible review bottleneck
+- All 15 commits since prior survey are Renovate-authored; no structural or application code changes
+- Repository structure, architecture, CI pipeline, conventions, Fro Bot integration all unchanged
+- No contradictions with prior ingest
+
+Sources: https://github.com/marcusrbrown/vbs (SHA b3c415bc4e0e25dd4e5ca8ccdc5ae7aaac9cbdec)
+
+## [2026-05-07 04:05] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs
