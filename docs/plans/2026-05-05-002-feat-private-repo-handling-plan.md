@@ -284,7 +284,7 @@ persona/
 
 ## Implementation Units
 
-- [ ] **Unit 0: Enumerate existing leaks and remediate per operator decision**
+- [x] **Unit 0: Enumerate existing leaks and remediate per operator decision**
 
 **Goal:** Enumerate every existing leak surface for currently-tracked private repos (today: only `marcusrbrown/poly`); present operator with per-surface remediate/accept decision; execute the chosen action.
 
