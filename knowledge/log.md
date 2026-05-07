@@ -1068,3 +1068,30 @@ Sources: https://github.com/marcusrbrown/vbs (SHA b3c415bc4e0e25dd4e5ca8ccdc5ae7
 Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
+
+## [2026-05-07 08:04] ingest | fro-bot/fro-bot.github.io
+
+Initial survey of `fro-bot/fro-bot.github.io` (SHA `3e44653`). Created repo page `fro-bot--fro-bot-github-io.md`. Updated topic page `github-pages.md` to include the repo in the custom domains section. Updated `index.md` to catalog the new page. No new topic/entity/comparison pages created.
+
+Key findings:
+
+- Org-level GitHub Pages custom domain holder for the `fro-bot` organization, serving `fro.bot`
+- Entire repository is a single CNAME file — no application code, no workflows, no README, no license
+- Single commit by Fro Bot on 2026-02-09 creating the CNAME record
+- GitHub Pages configured with legacy build type (main branch, root path), TLS certificate approved for `fro.bot` and `www.fro.bot`
+- **HTTPS enforcement not enabled** — security gap
+- `fro.bot/systematic` served via this domain (Starlight docs for `@fro.bot/systematic`)
+- Sole collaborator: `fro-bot`
+- 1 open issue (#1): Enable code scanning (CodeQL / Scorecard) for coverage parity
+- **No Fro Bot agent workflow** — follow-up PR recommended for minimal issue triage and settings oversight
+- **No Probot Settings** — branch protection not managed, inconsistent with ecosystem pattern
+- **No Renovate** — reasonable given zero dependencies
+- First `fro-bot/*` org repo surveyed (all prior wiki pages are `marcusrbrown/*` repos)
+
+Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+
+## [2026-05-07 08:06] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
