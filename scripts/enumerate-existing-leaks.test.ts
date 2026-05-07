@@ -5,6 +5,7 @@ import {describe, expect, it} from 'vitest'
 import {
   enumerateLeaks,
   formatLeakReport,
+  parsePrivateArgs,
   type EnumerateLeaksInput,
   type PrivateRepoMapping,
 } from './enumerate-existing-leaks.ts'
@@ -303,5 +304,64 @@ describe('formatLeakReport', () => {
     expect(report).toContain('workflow-run')
     expect(report).toContain('25395917616')
     expect(report).toContain('DELETE')
+  })
+})
+
+describe('parsePrivateArgs', () => {
+  it('parses a single well-formed --private mapping', () => {
+    const result = parsePrivateArgs(['--private', 'R_kgDOPpoLY1:marcusrbrown/poly'])
+    expect(result).toEqual([{node_id: 'R_kgDOPpoLY1', owner: 'marcusrbrown', name: 'poly'}])
+  })
+
+  it('parses multiple --private flags into an ordered list', () => {
+    const result = parsePrivateArgs(['--private', 'R_a:org-a/repo-a', '--private', 'R_b:org-b/repo-b'])
+    expect(result).toEqual([
+      {node_id: 'R_a', owner: 'org-a', name: 'repo-a'},
+      {node_id: 'R_b', owner: 'org-b', name: 'repo-b'},
+    ])
+  })
+
+  it('returns an empty array when no --private flags are present', () => {
+    expect(parsePrivateArgs(['--branch', 'origin/data'])).toEqual([])
+  })
+
+  it('throws when --private is the last arg with no value', () => {
+    // Real edge case: operator types `--private` and forgets the value. Without
+    // this guard the parser would silently skip the flag.
+    expect(() => parsePrivateArgs(['--private'])).toThrow(/requires a value/)
+  })
+
+  it('throws when the value lacks a colon separator', () => {
+    expect(() => parsePrivateArgs(['--private', 'no-colon-here'])).toThrow(/node_id:owner\/name/)
+  })
+
+  it('throws when the value lacks a slash after the colon', () => {
+    expect(() => parsePrivateArgs(['--private', 'node_id:no-slash'])).toThrow(/node_id:owner\/name/)
+  })
+
+  it('throws when the slash appears before the colon', () => {
+    // 'org/name:nodeid' is a common typo — operator inverts the order. Catch it
+    // explicitly so the error message points at the right shape.
+    expect(() => parsePrivateArgs(['--private', 'org/name:nodeid'])).toThrow(/node_id:owner\/name/)
+  })
+
+  it('throws when any segment is empty', () => {
+    expect(() => parsePrivateArgs(['--private', ':owner/name'])).toThrow(/empty segment/)
+    expect(() => parsePrivateArgs(['--private', 'nodeid:/name'])).toThrow(/empty segment/)
+    expect(() => parsePrivateArgs(['--private', 'nodeid:owner/'])).toThrow(/empty segment/)
+  })
+
+  it('skips non-matching flags and only consumes --private', () => {
+    // Operator may pass --branch interleaved with --private; the parser should
+    // ignore unrelated flags rather than misinterpreting their values.
+    const result = parsePrivateArgs(['--branch', 'origin/data', '--private', 'R_a:org/repo', '--help'])
+    expect(result).toEqual([{node_id: 'R_a', owner: 'org', name: 'repo'}])
+  })
+
+  it('handles node_id values containing letters, digits, and underscores', () => {
+    // GraphQL node IDs use base64-like prefixes (R_kgDO...) plus arbitrary suffixes.
+    // The parser must accept the full character set the API can return.
+    const result = parsePrivateArgs(['--private', 'R_kgDO_AbCdEf123-_:owner/repo'])
+    expect(result[0]?.node_id).toBe('R_kgDO_AbCdEf123-_')
   })
 })

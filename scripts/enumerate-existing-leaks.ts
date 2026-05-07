@@ -53,9 +53,10 @@ export interface EnumerateLeaksInput {
  * `owner/name` appears, and emit a structured remediation list.
  *
  * Detection rules:
- * - **commit-subject**: case-insensitive match of `owner/name` as a contiguous token in
- *   the commit subject. Substring matches inside other words are excluded by anchoring
- *   on the slash character — so `polymorphism` doesn't match `poly`.
+ * - **commit-subject**: case-insensitive `includes` match of the canonical `owner/name`
+ *   string (slash included). The slash itself prevents substring collisions inside
+ *   single-word names — `marcusrbrown/poly` won't match `polymorphism`, because the
+ *   search term contains `/` and `polymorphism` does not.
  * - **workflow-run**: matches when the run's `inputs.owner` and `inputs.repo` both
  *   equal the canonical pair (case-sensitive — GitHub stores logins canonically), OR
  *   when the run's display name contains `owner/name` as a substring.
@@ -72,7 +73,8 @@ export function enumerateLeaks(input: EnumerateLeaksInput): LeakSurface[] {
     const canonical = `${priv.owner}/${priv.name}`
     const canonicalLower = canonical.toLowerCase()
 
-    // commit-subject — slash-anchored case-insensitive token match.
+    // commit-subject — case-insensitive `includes` of `owner/name` (the slash in the
+    // search term is what prevents single-word substring collisions).
     for (const commit of input.commitLog) {
       if (commit.subject.toLowerCase().includes(canonicalLower)) {
         surfaces.push({
@@ -113,7 +115,7 @@ export function enumerateLeaks(input: EnumerateLeaksInput): LeakSurface[] {
           description: `metadata/repos.yaml entry names ${canonical} canonically (not yet redacted)`,
           remediation: {
             action: 'redact-entry',
-            command: `# Author a one-shot PR (operator identity, not bot) that sets owner='[REDACTED]' and name='${priv.node_id}' on this entry. The check-wiki-authority guard skips author=marcusrbrown for explicit operator rewrites.`,
+            command: `# Dispatch fro-bot to commit a redacted entry to the data branch directly (autonomous commits skip the PR-time wiki-authority guard). Set owner='[REDACTED]' and name='${priv.node_id}'. The next merge-data PR (fro-bot-authored) promotes the redacted form to main.`,
           },
         })
       }
@@ -190,9 +192,10 @@ interface CliInput {
 /**
  * Parse `--private node_id:owner/name` arguments into structured mappings. Each flag
  * may appear multiple times. The `node_id` segment is required because it's needed
- * for the redact-entry remediation command output.
+ * for the redact-entry remediation command output. Exported for direct unit testing
+ * of the operator-input contract.
  */
-function parsePrivateArgs(argv: readonly string[]): PrivateRepoMapping[] {
+export function parsePrivateArgs(argv: readonly string[]): PrivateRepoMapping[] {
   const mappings: PrivateRepoMapping[] = []
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] !== '--private') continue
@@ -252,13 +255,23 @@ async function gatherWorkflowRuns(): Promise<{id: number; name: string; inputs: 
       ],
       {encoding: 'utf8'},
     )
-    return stdout
+    const runs = stdout
       .split('\n')
       .filter(line => line.length > 0)
       .map(line => {
         const parsed = JSON.parse(line) as {id: number; name: string}
         return {id: parsed.id, name: parsed.name, inputs: {}}
       })
+    // Page cap: per_page=100 is the GitHub API maximum without explicit pagination.
+    // If we got exactly 100 results, older runs may exist that this scan didn't see.
+    // Surface this so the operator knows a clean report from this script is bounded
+    // to the most recent 100 runs and they may need to manually inspect older history.
+    if (runs.length === 100) {
+      process.stderr.write(
+        'enumerate-existing-leaks: hit the 100-run page cap on workflow run history; older runs (if any) were not scanned.\n',
+      )
+    }
+    return runs
   } catch (error: unknown) {
     process.stderr.write(
       `enumerate-existing-leaks: failed to fetch workflow runs (${(error as Error).message}); continuing without them.\n`,
@@ -351,7 +364,15 @@ async function main(): Promise<void> {
   // tree (typically main). Useful values: `origin/data` to catch entries that have
   // not yet promoted via the weekly merge-data PR.
   const branchIdx = argv.indexOf('--branch')
-  const metadataRef = branchIdx === -1 ? undefined : argv[branchIdx + 1]
+  let metadataRef: string | undefined
+  if (branchIdx !== -1) {
+    const branchValue = argv[branchIdx + 1]
+    if (branchValue === undefined || branchValue.startsWith('--')) {
+      process.stderr.write('enumerate-existing-leaks: --branch flag requires a git ref value (e.g. origin/data)\n')
+      process.exit(1)
+    }
+    metadataRef = branchValue
+  }
 
   const repoRoot = process.cwd()
   const mainBranch = 'main'
