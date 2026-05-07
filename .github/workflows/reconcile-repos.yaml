@@ -29,9 +29,13 @@ jobs:
         with:
           app-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          # Scope the token to the whole installation, not just this repo, so cross-org
+          # contrib probes (`scripts/reconcile-repos.ts`) and any future App calls outside
+          # this repo can succeed. Mirrors update-metadata.yaml and dispatch-renovate.yaml.
+          owner: ${{ github.repository_owner }}
 
       - name: ⤵ Checkout Branch
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: 📦 Setup
         uses: ./.github/actions/setup

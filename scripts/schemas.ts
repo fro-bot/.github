@@ -10,6 +10,18 @@
 export interface AllowlistFile {
   version: 1
   approved_inviters: ApprovedInviter[]
+  /**
+   * Operator-curated list of GitHub org logins. Repos under these orgs that contain
+   * `.github/workflows/fro-bot.yaml` are eligible to surface via the `contrib` channel.
+   * Optional during the rollout window; loaders treat missing as `[]` for backward compat.
+   */
+  approved_contrib_orgs?: string[]
+  /**
+   * Operator-curated list of `owner/name` strings. Each named repo is probed for
+   * `.github/workflows/fro-bot.yaml` and surfaced via the `contrib` channel when present.
+   * Optional during the rollout window; loaders treat missing as `[]` for backward compat.
+   */
+  approved_contrib_repos?: string[]
 }
 
 export interface ApprovedInviter {
@@ -32,10 +44,28 @@ export interface RepoEntry {
   last_survey_status: SurveyStatus | null
   has_fro_bot_workflow: boolean
   has_renovate: boolean
+  /**
+   * Which channel surfaced this entry. Sticky after first write — reconcile never auto-rewrites it.
+   * Operators can re-classify by editing `metadata/repos.yaml` on the `data` branch directly.
+   *
+   * Optional during the rollout window: legacy entries without a channel are treated as `'collab'`
+   * by default. The cadence migration path will tighten this to required after `data` is migrated.
+   */
+  discovery_channel?: DiscoveryChannel
+  /**
+   * ISO date (YYYY-MM-DD) at which this entry becomes eligible for re-survey, or `null` for
+   * entries that have never been surveyed (treat as immediately eligible).
+   *
+   * Optional during the rollout window: legacy entries without an eligibility date are treated
+   * as immediately eligible. The cadence migration path will tighten this to required after
+   * `data` is migrated.
+   */
+  next_survey_eligible_at?: string | null
 }
 
 export type OnboardingStatus = 'pending' | 'onboarded' | 'failed' | 'lost-access' | 'pending-review'
 export type SurveyStatus = 'success' | 'failure'
+export type DiscoveryChannel = 'collab' | 'owned' | 'contrib'
 
 export interface RenovateFile {
   repositories: {
@@ -53,6 +83,18 @@ export interface SocialCooldownEntry {
   repo?: string
 }
 
+/**
+ * GitHub identifier rules for `owner/name`:
+ * - Owner: 1-39 chars, alphanumeric or hyphens, no leading/trailing hyphen, no consecutive
+ *   hyphens. Same rule applies to user logins and org logins.
+ * - Repo: 1-100 chars, alphanumeric, hyphens, underscores, periods. Cannot be `.` or `..`.
+ *
+ * The pattern enforces both pieces. Defense-in-depth on operator-curated input — Octokit
+ * URL-encodes path params correctly, but rejecting invalid identifiers at parse time keeps
+ * typos and shell metachars out of `metadata/allowlist.yaml` entirely.
+ */
+const CONTRIB_REPO_PATTERN = /^[A-Z\d](?:[A-Z\d]|-(?=[A-Z\d])){0,38}\/(?!\.{1,2}$)[\w.-]{1,100}$/i
+
 export class SchemaValidationError extends Error {
   readonly path: string
 
@@ -67,7 +109,16 @@ export function isAllowlistFile(value: unknown): value is AllowlistFile {
   if (!isRecord(value)) return false
   if (value.version !== 1) return false
   if (!Array.isArray(value.approved_inviters)) return false
-  return value.approved_inviters.every(isApprovedInviter)
+  if (!value.approved_inviters.every(isApprovedInviter)) return false
+  if (value.approved_contrib_orgs !== undefined) {
+    if (!Array.isArray(value.approved_contrib_orgs)) return false
+    if (!value.approved_contrib_orgs.every(v => typeof v === 'string')) return false
+  }
+  if (value.approved_contrib_repos !== undefined) {
+    if (!Array.isArray(value.approved_contrib_repos)) return false
+    if (!value.approved_contrib_repos.every(v => typeof v === 'string' && CONTRIB_REPO_PATTERN.test(v))) return false
+  }
+  return true
 }
 
 export function assertAllowlistFile(value: unknown, path = 'allowlist'): asserts value is AllowlistFile {
@@ -78,6 +129,30 @@ export function assertAllowlistFile(value: unknown, path = 'allowlist'): asserts
   value.approved_inviters.forEach((entry, index) => {
     assertApprovedInviter(entry, `${path}.approved_inviters[${index}]`)
   })
+  if (value.approved_contrib_orgs !== undefined) {
+    if (!Array.isArray(value.approved_contrib_orgs))
+      throw new SchemaValidationError(`${path}.approved_contrib_orgs`, 'expected array of strings or omitted')
+    value.approved_contrib_orgs.forEach((entry, index) => {
+      if (typeof entry !== 'string')
+        throw new SchemaValidationError(`${path}.approved_contrib_orgs[${index}]`, 'expected string')
+    })
+  }
+  if (value.approved_contrib_repos !== undefined) {
+    if (!Array.isArray(value.approved_contrib_repos))
+      throw new SchemaValidationError(
+        `${path}.approved_contrib_repos`,
+        'expected array of "owner/name" strings or omitted',
+      )
+    value.approved_contrib_repos.forEach((entry, index) => {
+      if (typeof entry !== 'string')
+        throw new SchemaValidationError(`${path}.approved_contrib_repos[${index}]`, 'expected string')
+      if (!CONTRIB_REPO_PATTERN.test(entry))
+        throw new SchemaValidationError(
+          `${path}.approved_contrib_repos[${index}]`,
+          'expected GitHub "owner/name" identifier (e.g., "bfra-me/.github")',
+        )
+    })
+  }
 }
 
 function isApprovedInviter(value: unknown): value is ApprovedInviter {
@@ -122,7 +197,11 @@ function isRepoEntry(value: unknown): value is RepoEntry {
     (value.last_survey_at === null || typeof value.last_survey_at === 'string') &&
     (value.last_survey_status === null || isSurveyStatus(value.last_survey_status)) &&
     typeof value.has_fro_bot_workflow === 'boolean' &&
-    typeof value.has_renovate === 'boolean'
+    typeof value.has_renovate === 'boolean' &&
+    (value.discovery_channel === undefined || isDiscoveryChannel(value.discovery_channel)) &&
+    (value.next_survey_eligible_at === undefined ||
+      value.next_survey_eligible_at === null ||
+      typeof value.next_survey_eligible_at === 'string')
   )
 }
 
@@ -144,6 +223,14 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
     throw new SchemaValidationError(`${path}.has_fro_bot_workflow`, 'expected boolean')
   if (typeof value.has_renovate !== 'boolean')
     throw new SchemaValidationError(`${path}.has_renovate`, 'expected boolean')
+  if (value.discovery_channel !== undefined && !isDiscoveryChannel(value.discovery_channel))
+    throw new SchemaValidationError(`${path}.discovery_channel`, 'expected one of: collab, owned, contrib (or omitted)')
+  if (
+    value.next_survey_eligible_at !== undefined &&
+    value.next_survey_eligible_at !== null &&
+    typeof value.next_survey_eligible_at !== 'string'
+  )
+    throw new SchemaValidationError(`${path}.next_survey_eligible_at`, 'expected string, null, or omitted')
 }
 
 function isOnboardingStatus(value: unknown): value is OnboardingStatus {
@@ -158,6 +245,10 @@ function isOnboardingStatus(value: unknown): value is OnboardingStatus {
 
 function isSurveyStatus(value: unknown): value is SurveyStatus {
   return value === 'success' || value === 'failure'
+}
+
+export function isDiscoveryChannel(value: unknown): value is DiscoveryChannel {
+  return value === 'collab' || value === 'owned' || value === 'contrib'
 }
 
 export function isRenovateFile(value: unknown): value is RenovateFile {

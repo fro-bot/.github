@@ -1,0 +1,61 @@
+---
+name: Wiki Lint
+
+on:
+  schedule:
+    - cron: '0 20 * * 0' # Every Sunday at 20:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wiki-lint
+  cancel-in-progress: false
+
+jobs:
+  wiki-lint:
+    name: Lint authoritative wiki snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: Restore wiki from data branch
+        id: restore-wiki
+        continue-on-error: true
+        run: |
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch --depth=1 origin data
+            git restore --source FETCH_HEAD --worktree -- knowledge
+          else
+            printf '%s\n' 'cannot lint wiki snapshot: origin/data is unavailable' >&2
+            exit 1
+          fi
+
+      - name: Run wiki lint
+        if: steps.restore-wiki.outcome == 'success'
+        env:
+          WIKI_LINT_REPORT_PATH: wiki-lint-report.md
+        run: node scripts/wiki-lint.ts
+
+      - name: Report restore failure
+        if: steps.restore-wiki.outcome == 'failure'
+        env:
+          WIKI_LINT_REPORT_PATH: wiki-lint-report.md
+          WIKI_LINT_FAILURE_MESSAGE: 'cannot lint wiki snapshot: origin/data is unavailable'
+        run: node scripts/wiki-lint.ts
+
+      - name: Upload wiki lint artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wiki-lint-report
+          path: wiki-lint-report.md
+          retention-days: 7

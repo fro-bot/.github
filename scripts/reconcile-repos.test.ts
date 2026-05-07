@@ -1,18 +1,22 @@
 import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
-import type {AllowlistFile, RepoEntry, ReposFile} from './schemas.ts'
+import type {AllowlistFile, DiscoveryChannel, RepoEntry, ReposFile} from './schemas.ts'
+import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
 import {describe, expect, it, vi} from 'vitest'
 
 import {
+  containsFroBotAgentReference,
   DISPATCH_DEFAULTS,
+  formatCommitMessage,
   handleReconcile,
-  isSurveyStale,
+  isEligibleForSurvey,
   loadDispatchStaggerFromEnv,
   loadMaxDispatchesPerRunFromEnv,
+  mergeAccessChannels,
+  migrateRepoEntry,
   ReconcileError,
   reconcileRepos,
-  SURVEY_STALENESS_MS,
   type AccessListEntry,
   type HandleReconcileParams,
   type OctokitClient,
@@ -41,6 +45,14 @@ function makeAccess(overrides: Partial<AccessListEntry> = {}): AccessListEntry {
   }
 }
 
+function emptyChannelStats() {
+  return {
+    collab: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+    owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+    contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+  }
+}
+
 function makeEntry(overrides: Partial<RepoEntry> = {}): RepoEntry {
   return {
     owner: 'fro-bot',
@@ -51,6 +63,8 @@ function makeEntry(overrides: Partial<RepoEntry> = {}): RepoEntry {
     last_survey_status: null,
     has_fro_bot_workflow: false,
     has_renovate: false,
+    discovery_channel: 'collab',
+    next_survey_eligible_at: null,
     ...overrides,
   }
 }
@@ -94,7 +108,14 @@ describe('reconcileRepos', () => {
         regained: 0,
         lostAccess: 0,
         refreshed: 0,
+        migrated: 0,
         unchanged: 0,
+        // dispatched/deferred populated by the I/O shell, not the engine
+        byChannel: {
+          collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
+          owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+          contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+        },
       })
     })
 
@@ -373,19 +394,23 @@ describe('reconcileRepos', () => {
 
   describe('mixed and edge cases', () => {
     it('handles multiple simultaneous changes (new + lost + refresh) in one run', () => {
-      // Fresh surveys on both — not stale, so no re-survey dispatch from the staleness gate.
+      // Fresh surveys on both — next_survey_eligible_at is in the future (post-NOW), so
+      // the cadence gate excludes them. NOW = 2026-04-17; eligibility 2026-05-09 keeps
+      // them out of the dispatch list.
       const drift = makeEntry({
         name: 'drift-repo',
         onboarding_status: 'onboarded',
         has_renovate: false,
         last_survey_at: '2026-04-10',
         last_survey_status: 'success',
+        next_survey_eligible_at: '2026-05-09',
       })
       const gone = makeEntry({
         name: 'gone-repo',
         onboarding_status: 'onboarded',
         last_survey_at: '2026-04-10',
         last_survey_status: 'success',
+        next_survey_eligible_at: '2026-05-09',
       })
 
       const result = reconcileRepos(
@@ -415,7 +440,14 @@ describe('reconcileRepos', () => {
         regained: 0,
         lostAccess: 1,
         refreshed: 1,
+        migrated: 0,
         unchanged: 0,
+        // dispatched/deferred populated by the I/O shell, not the engine
+        byChannel: {
+          collab: {tracked: 3, dispatched: 0, deferred: 0, lostAccess: 1},
+          owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+          contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+        },
       })
     })
 
@@ -440,7 +472,13 @@ describe('reconcileRepos', () => {
         regained: 0,
         lostAccess: 0,
         refreshed: 0,
+        migrated: 0,
         unchanged: 1,
+        byChannel: {
+          collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
+          owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+          contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
+        },
       })
     })
 
@@ -456,7 +494,9 @@ describe('reconcileRepos', () => {
         regained: 0,
         lostAccess: 0,
         refreshed: 0,
+        migrated: 0,
         unchanged: 0,
+        byChannel: emptyChannelStats(),
       })
     })
 
@@ -583,12 +623,13 @@ describe('reconcileRepos', () => {
     it('does not dispatch pending entry with recent successful survey', () => {
       // #given a pending entry that was surveyed successfully recently (promotion
       // should have moved it to onboarded, but even if it didn't, the success +
-      // non-stale combination means no re-dispatch is needed)
+      // not-yet-eligible combination means no re-dispatch is needed)
       const entry = makeEntry({
         name: 'recently-succeeded',
         onboarding_status: 'pending',
         last_survey_at: '2026-04-16',
         last_survey_status: 'success',
+        next_survey_eligible_at: '2026-05-15',
       })
       const result = reconcileRepos(
         makeInput({
@@ -596,8 +637,246 @@ describe('reconcileRepos', () => {
           accessList: [makeAccess({name: 'recently-succeeded'})],
         }),
       )
-      // #then no dispatch — success + within staleness window → skip
+      // #then no dispatch — success + not-yet-eligible → skip
       expect(result.dispatches).toEqual([])
+    })
+
+    // Integration: full reconcileRepos pipeline through isEligibleForSurvey with a
+    // past eligibility date. Pins the wiring at classifyTracked:318/322 — proves the
+    // helper is actually consulted on the dispatch path, not just exercised in unit-test
+    // isolation. Without this, a future refactor that drops the isEligibleForSurvey call
+    // from classifyTracked would still pass all standalone helper tests.
+    it('dispatches an onboarded entry whose next_survey_eligible_at has passed', () => {
+      // #given an onboarded entry whose eligibility was 2 weeks ago (NOW = 2026-04-17)
+      const entry = makeEntry({
+        name: 'overdue-repo',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-03-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-04-03',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'overdue-repo'})],
+        }),
+      )
+      // #then the entry is dispatched (eligibility passed)
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'overdue-repo'}])
+    })
+  })
+
+  describe('discovery channels (owned + contrib)', () => {
+    // Owned and contrib are pre-trusted: owned because we own the repo, contrib because
+    // the operator named it explicitly in metadata/allowlist.yaml. Both bypass the
+    // pending-review issue path that exists for non-allowlisted collab newcomers.
+
+    it('tags an owned newcomer with discovery_channel: owned and dispatches as pending', () => {
+      // #given an accessible repo from the fro-bot owned channel, not yet tracked
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [makeAccess({owner: 'fro-bot', name: 'agent', node_id: 'R_agent'})],
+          accessChannelByKey: new Map([['fro-bot/agent', 'owned']]),
+        }),
+      )
+
+      // #then it's added as pending with discovery_channel: owned, dispatch queued, no issue
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'fro-bot',
+        name: 'agent',
+        onboarding_status: 'pending',
+        discovery_channel: 'owned',
+      })
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'agent'}])
+      expect(result.issues).toEqual([])
+      expect(result.summary.added).toBe(1)
+      expect(result.summary.pendingReview).toBe(0)
+    })
+
+    it('tags a contrib newcomer with discovery_channel: contrib and dispatches as pending', () => {
+      // #given a contrib repo surfaced via the allowlist's approved_contrib_orgs
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [makeAccess({owner: 'bfra-me', name: '.github', node_id: 'R_bfra_gh'})],
+          accessChannelByKey: new Map([['bfra-me/.github', 'contrib']]),
+        }),
+      )
+
+      // #then dispatched with discovery_channel: contrib; no pending-review issue
+      expect(result.nextRepos.repos[0]?.discovery_channel).toBe('contrib')
+      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: '.github'}])
+      expect(result.issues).toEqual([])
+      expect(result.summary.added).toBe(1)
+      expect(result.summary.pendingReview).toBe(0)
+    })
+
+    it('falls back to discovery_channel: collab when accessChannelByKey is missing the entry', () => {
+      // #given a collab access list (channel map missing the key — preserves existing behavior)
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [makeAccess({owner: 'marcusrbrown', name: 'new-repo'})],
+          allowlist: makeAllowlist(['marcusrbrown']),
+          // accessChannelByKey not supplied — defaults to all-collab
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]?.discovery_channel).toBe('collab')
+      expect(result.dispatches).toEqual([{owner: 'marcusrbrown', repo: 'new-repo'}])
+    })
+
+    it('skips pending-review for owned newcomers from a non-allowlisted owner', () => {
+      // #given an owned-channel newcomer with empty allowlist
+      // #then it bypasses the allowlist gate (owned is always trusted)
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [makeAccess({owner: 'fro-bot', name: 'agent', node_id: 'R_agent'})],
+          accessChannelByKey: new Map([['fro-bot/agent', 'owned']]),
+          allowlist: makeAllowlist([]), // intentionally empty
+        }),
+      )
+
+      expect(result.summary.added).toBe(1)
+      expect(result.summary.pendingReview).toBe(0)
+      expect(result.dispatches).toHaveLength(1)
+      expect(result.issues).toEqual([])
+    })
+
+    it('skips pending-review for contrib newcomers regardless of approved_inviters', () => {
+      // #given a contrib newcomer whose owner is not in approved_inviters
+      // #then dispatched directly; allowlist-via-channel-map is sufficient trust
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [makeAccess({owner: 'bfra-me', name: 'renovate-action', node_id: 'R_bfra_ren'})],
+          accessChannelByKey: new Map([['bfra-me/renovate-action', 'contrib']]),
+          allowlist: makeAllowlist([]),
+        }),
+      )
+
+      expect(result.summary.added).toBe(1)
+      expect(result.summary.pendingReview).toBe(0)
+      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: 'renovate-action'}])
+      expect(result.issues).toEqual([])
+    })
+
+    it('preserves discovery_channel on tracked owned entries through field refresh', () => {
+      // #given a tracked owned entry whose probed fields drift
+      const entry = makeEntry({
+        owner: 'fro-bot',
+        name: 'agent',
+        onboarding_status: 'onboarded',
+        discovery_channel: 'owned',
+        next_survey_eligible_at: '2026-05-01', // not yet eligible
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({owner: 'fro-bot', name: 'agent', node_id: 'R_agent'})],
+          accessChannelByKey: new Map([['fro-bot/agent', 'owned']]),
+          fieldProbes: new Map([['fro-bot/agent', {has_fro_bot_workflow: true, has_renovate: true}]]),
+        }),
+      )
+
+      // #then channel is preserved (sticky); fields refresh
+      expect(result.nextRepos.repos[0]?.discovery_channel).toBe('owned')
+      expect(result.nextRepos.repos[0]?.has_fro_bot_workflow).toBe(true)
+      expect(result.nextRepos.repos[0]?.has_renovate).toBe(true)
+      expect(result.summary.refreshed).toBe(1)
+    })
+
+    it('flips a contrib entry to lost-access when the access list drops it', () => {
+      // #given a tracked contrib entry no longer surfaced (e.g., fro-bot.yaml was deleted)
+      const entry = makeEntry({
+        owner: 'bfra-me',
+        name: '.github',
+        onboarding_status: 'onboarded',
+        discovery_channel: 'contrib',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [], // not in any channel's access list anymore
+          perRepoStatus: new Map([['bfra-me/.github', {status: 'revoked'}]]),
+        }),
+      )
+
+      // #then status flips to lost-access; channel is preserved
+      expect(result.nextRepos.repos[0]?.onboarding_status).toBe('lost-access')
+      expect(result.nextRepos.repos[0]?.discovery_channel).toBe('contrib')
+      expect(result.summary.lostAccess).toBe(1)
+    })
+
+    it('regains a contrib entry when the access list resurfaces it', () => {
+      // #given a lost-access contrib entry that re-appears via access list
+      const entry = makeEntry({
+        owner: 'bfra-me',
+        name: '.github',
+        onboarding_status: 'lost-access',
+        discovery_channel: 'contrib',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({owner: 'bfra-me', name: '.github', node_id: 'R_bfra_gh'})],
+          accessChannelByKey: new Map([['bfra-me/.github', 'contrib']]),
+        }),
+      )
+
+      // #then regained as pending; dispatched directly (contrib is trusted, no issue)
+      expect(result.nextRepos.repos[0]?.onboarding_status).toBe('pending')
+      expect(result.summary.regained).toBe(1)
+      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: '.github'}])
+      expect(result.issues).toEqual([])
+    })
+
+    it('regains an owned entry without filing a pending-review issue', () => {
+      const entry = makeEntry({
+        owner: 'fro-bot',
+        name: 'systematic',
+        onboarding_status: 'lost-access',
+        discovery_channel: 'owned',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({owner: 'fro-bot', name: 'systematic', node_id: 'R_sys'})],
+          accessChannelByKey: new Map([['fro-bot/systematic', 'owned']]),
+          allowlist: makeAllowlist([]), // owner not in approved_inviters; channel trust suffices
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]?.onboarding_status).toBe('pending')
+      expect(result.summary.regained).toBe(1)
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'systematic'}])
+      expect(result.issues).toEqual([])
+    })
+
+    it('handles a mixed access list with collab + owned + contrib in one pass', () => {
+      // #given access entries spanning all three channels
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [
+            makeAccess({owner: 'marcusrbrown', name: 'collab-repo'}),
+            makeAccess({owner: 'fro-bot', name: 'agent', node_id: 'R_agent'}),
+            makeAccess({owner: 'bfra-me', name: '.github', node_id: 'R_bfra_gh'}),
+          ],
+          accessChannelByKey: new Map([
+            ['fro-bot/agent', 'owned'],
+            ['bfra-me/.github', 'contrib'],
+            // marcusrbrown/collab-repo intentionally absent — defaults to collab
+          ]),
+          allowlist: makeAllowlist(['marcusrbrown']),
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(3)
+      expect(result.summary.added).toBe(3)
+      expect(result.summary.pendingReview).toBe(0)
+      expect(result.dispatches).toHaveLength(3)
+      const byName = new Map(result.nextRepos.repos.map(r => [r.name, r.discovery_channel]))
+      expect(byName.get('collab-repo')).toBe('collab')
+      expect(byName.get('agent')).toBe('owned')
+      expect(byName.get('.github')).toBe('contrib')
     })
   })
 })
@@ -673,6 +952,30 @@ function notFoundGetBranch(): (params: unknown) => Promise<never> {
   }
 }
 
+/**
+ * Build a getContent mock that returns base64-encoded fro-bot.yaml content for
+ * specific repos and 404 for everything else. Used by the discovery-channels
+ * integration tests to verify forge-resistance + content-probe behavior end-to-end.
+ */
+function contentByRepo(
+  byOwnerName: Map<string, string>,
+): (params: {owner: string; repo: string; path: string}) => Promise<unknown> {
+  return async ({owner, repo, path}) => {
+    if (path !== '.github/workflows/fro-bot.yaml') {
+      throw apiError(404, 'Not Found')
+    }
+    const content = byOwnerName.get(`${owner}/${repo}`)
+    if (content === undefined) throw apiError(404, 'Not Found')
+    return {
+      data: {
+        type: 'file',
+        encoding: 'base64',
+        content: Buffer.from(content, 'utf8').toString('base64'),
+      },
+    }
+  }
+}
+
 function mockOctokit(overrides: OctokitMockOverrides = {}): OctokitClient {
   const defaultListForAuthenticatedUser: (opts: unknown) => Promise<{data: AccessListApiEntry[]}> = async () => ({
     data: [],
@@ -719,6 +1022,14 @@ function mockOctokit(overrides: OctokitMockOverrides = {}): OctokitClient {
       actions: {
         createWorkflowDispatch: overrides.createWorkflowDispatch ?? (async () => undefined),
       },
+      apps: {
+        // Stub for the App-installation enumeration used by fetchOwnedRepos. Returns
+        // an empty `data` array so the default paginate (which unwraps `response.data`)
+        // produces an empty list, matching the production behavior of paginate
+        // automatically extracting the `repositories` array from this endpoint.
+        // Tests that need real owned-repo behavior pass `paginate: appPaginate(fixtures)`.
+        listReposAccessibleToInstallation: async () => ({data: []}),
+      },
       issues: {
         create: overrides.issuesCreate ?? (async () => ({data: {number: 1}})),
         update: overrides.issuesUpdate ?? (async () => ({data: {}})),
@@ -740,8 +1051,14 @@ function makeReadMetadata(
   }
 }
 
-function silentLogger(): {warn: ReturnType<typeof vi.fn<(message: string) => void>>} {
-  return {warn: vi.fn<(message: string) => void>()}
+function silentLogger(): {
+  warn: ReturnType<typeof vi.fn<(message: string) => void>>
+  info: ReturnType<typeof vi.fn<(message: string) => void>>
+} {
+  return {
+    warn: vi.fn<(message: string) => void>(),
+    info: vi.fn<(message: string) => void>(),
+  }
 }
 
 function baseParams(overrides: Partial<HandleReconcileParams> = {}): HandleReconcileParams {
@@ -909,7 +1226,8 @@ describe('handleReconcile (I/O shell)', () => {
       const existing: ReposFile = {
         version: 1,
         repos: [
-          // Fresh survey — not stale, so the test isolates the field-probe behavior.
+          // Fresh survey — next_survey_eligible_at in the future, so the test isolates
+          // the field-probe behavior from the cadence dispatch gate.
           makeEntry({
             name: 'probe-fail-repo',
             onboarding_status: 'onboarded',
@@ -917,6 +1235,7 @@ describe('handleReconcile (I/O shell)', () => {
             has_renovate: true,
             last_survey_at: '2026-04-10',
             last_survey_status: 'success',
+            next_survey_eligible_at: '2026-05-09',
           }),
         ],
       }
@@ -1172,6 +1491,8 @@ describe('handleReconcile (I/O shell)', () => {
                   last_survey_status: 'success',
                   has_fro_bot_workflow: false,
                   has_renovate: false,
+                  discovery_channel: 'collab',
+                  next_survey_eligible_at: null,
                 },
               ],
             },
@@ -1222,6 +1543,8 @@ describe('handleReconcile (I/O shell)', () => {
                   last_survey_status: 'success',
                   has_fro_bot_workflow: false,
                   has_renovate: false,
+                  discovery_channel: 'collab',
+                  next_survey_eligible_at: null,
                 },
                 {
                   owner: 't',
@@ -1232,6 +1555,8 @@ describe('handleReconcile (I/O shell)', () => {
                   last_survey_status: 'success',
                   has_fro_bot_workflow: false,
                   has_renovate: false,
+                  discovery_channel: 'collab',
+                  next_survey_eligible_at: null,
                 },
                 {
                   owner: 't',
@@ -1242,6 +1567,8 @@ describe('handleReconcile (I/O shell)', () => {
                   last_survey_status: 'success',
                   has_fro_bot_workflow: false,
                   has_renovate: false,
+                  discovery_channel: 'collab',
+                  next_survey_eligible_at: null,
                 },
               ],
             },
@@ -1902,37 +2229,677 @@ describe('handleReconcile (I/O shell)', () => {
       }
     })
   })
+
+  describe('discovery channels (owned + contrib through full pipeline)', () => {
+    // These tests exercise fetchOwnedRepos and fetchContribRepos via handleReconcile,
+    // not just the engine. The mock `paginate` returns the owned-org repo list; the
+    // mock `getContent` serves fro-bot.yaml content for contrib probes.
+
+    interface InstallationRepoFixture {
+      owner: {login: string}
+      name: string
+      archived: boolean
+      fork: boolean
+      private: boolean
+      node_id: string
+    }
+
+    function makeInstallationRepo(overrides: Partial<InstallationRepoFixture> = {}): InstallationRepoFixture {
+      return {
+        owner: {login: 'fro-bot'},
+        name: 'agent',
+        archived: false,
+        fork: false,
+        private: false,
+        node_id: 'R_inst',
+        ...overrides,
+      }
+    }
+
+    /**
+     * App-side paginate mock for `apps.listReposAccessibleToInstallation`. Always
+     * returns the supplied installation repo list regardless of which function the
+     * shell passes in. The real Octokit paginate auto-extracts `data.repositories`;
+     * tests bypass that machinery and provide the unwrapped list directly.
+     */
+    function appPaginate(
+      installationRepos: InstallationRepoFixture[],
+    ): (fn: unknown, opts: unknown) => Promise<unknown[]> {
+      return async () => installationRepos
+    }
+    // `contentByRepo` is hoisted to module scope (see top of file).
+
+    const TRUSTED_WORKFLOW = `name: Fro Bot
+on: [issues, pull_request]
+jobs:
+  agent:
+    uses: fro-bot/agent/.github/workflows/fro-bot.yaml@v0.42.1
+`
+
+    const SPOOFED_WORKFLOW = `name: not-the-agent
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "fro-bot/agent is great"
+`
+
+    it('owned channel: surfaces fro-bot org repos with discovery_channel: owned, skips fro-bot/.github', async () => {
+      // #given the App installation enumeration returns 4 fro-bot repos including .github
+      const installationRepos = [
+        makeInstallationRepo({name: 'agent', node_id: 'R_agent'}),
+        makeInstallationRepo({name: 'systematic', node_id: 'R_systematic'}),
+        makeInstallationRepo({name: 'fro-bot.github.io', node_id: 'R_pages'}),
+        makeInstallationRepo({name: '.github', node_id: 'R_self_excluded'}),
+      ]
+
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+
+      // #when reconcile runs
+      const result = await handleReconcile(
+        baseParams({
+          appOctokit: mockOctokit({paginate: appPaginate(installationRepos)}),
+          readMetadata: makeReadMetadata(),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      // #then 3 owned repos are surfaced (.github excluded), all with channel=owned
+      expect(result.summary.added).toBe(3)
+      expect(result.dispatches).toBe(3)
+      expect(result.summary.pendingReview).toBe(0) // owned bypasses pending-review
+    })
+
+    it('owned channel: skips archived and forked repos', async () => {
+      const installationRepos = [
+        makeInstallationRepo({name: 'agent', node_id: 'R_agent'}),
+        makeInstallationRepo({name: 'archive-test', node_id: 'R_arch', archived: true}),
+        makeInstallationRepo({name: 'fork-test', node_id: 'R_fork', fork: true}),
+      ]
+
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+
+      const result = await handleReconcile(
+        baseParams({
+          appOctokit: mockOctokit({paginate: appPaginate(installationRepos)}),
+          readMetadata: makeReadMetadata(),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      // Only `agent` should survive both filters
+      expect(result.summary.added).toBe(1)
+    })
+
+    it('contrib channel: surfaces approved_contrib_repos with content-verified fro-bot.yaml', async () => {
+      // #given allowlist with two contrib repos
+      const allowlist: AllowlistFile = {
+        version: 1,
+        approved_inviters: [],
+        approved_contrib_repos: ['bfra-me/.github', 'other-org/no-workflow'],
+      }
+
+      // #and bfra-me/.github has a trusted workflow; other-org/no-workflow has none
+      const contentMap = new Map([['bfra-me/.github', TRUSTED_WORKFLOW]])
+
+      // reposGet drives both probeContribRepoMetadata (for contrib) and the per-repo
+      // status probe (for tracked entries). We need to handle both.
+      const reposGet = async ({owner, repo}: {owner: string; repo: string}) => {
+        if (owner === 'bfra-me' && repo === '.github') {
+          return {data: {archived: false, fork: false, private: false, node_id: 'R_bfra_gh'} as RepoGetResponse}
+        }
+        if (owner === 'other-org' && repo === 'no-workflow') {
+          return {data: {archived: false, fork: false, private: false, node_id: 'R_other'} as RepoGetResponse}
+        }
+        return {data: {archived: false, private: false, node_id: 'R_default'} as RepoGetResponse}
+      }
+
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+
+      const result = await handleReconcile(
+        baseParams({
+          appOctokit: mockOctokit({
+            paginate: appPaginate([]), // no owned repos
+            getContent: contentByRepo(contentMap),
+            reposGet,
+          }),
+          readMetadata: makeReadMetadata({allowlist}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      // Only bfra-me/.github passes content verification
+      expect(result.summary.added).toBe(1)
+      expect(result.summary.pendingReview).toBe(0) // contrib bypasses pending-review
+    })
+
+    it('contrib channel: rejects repos with spoofed fro-bot.yaml (forge resistance)', async () => {
+      // #given allowlist names a repo whose fro-bot.yaml only mentions fro-bot/agent
+      // in a non-uses position (run: echo)
+      const allowlist: AllowlistFile = {
+        version: 1,
+        approved_inviters: [],
+        approved_contrib_repos: ['attacker-org/spoof-repo'],
+      }
+
+      const contentMap = new Map([['attacker-org/spoof-repo', SPOOFED_WORKFLOW]])
+
+      const reposGet = async ({owner, repo}: {owner: string; repo: string}) => {
+        if (owner === 'attacker-org' && repo === 'spoof-repo') {
+          return {
+            data: {archived: false, fork: false, private: false, node_id: 'R_attacker'} as RepoGetResponse,
+          }
+        }
+        return {data: {archived: false, private: false, node_id: 'R_default'} as RepoGetResponse}
+      }
+
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+
+      const result = await handleReconcile(
+        baseParams({
+          appOctokit: mockOctokit({
+            paginate: appPaginate([]),
+            getContent: contentByRepo(contentMap),
+            reposGet,
+          }),
+          readMetadata: makeReadMetadata({allowlist}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      // Spoofed workflow is rejected; nothing is added
+      expect(result.summary.added).toBe(0)
+    })
+
+    it('contrib channel: distinguishes 403 (App not installed) from 404 (no signal file) in warn logs', async () => {
+      const allowlist: AllowlistFile = {
+        version: 1,
+        approved_inviters: [],
+        approved_contrib_repos: ['locked-org/private-repo', 'open-org/no-workflow'],
+      }
+
+      const reposGet = async ({owner}: {owner: string; repo: string}) => {
+        if (owner === 'locked-org') throw apiError(403, 'Forbidden')
+        if (owner === 'open-org') {
+          return {data: {archived: false, fork: false, private: false, node_id: 'R_open'} as RepoGetResponse}
+        }
+        return {data: {archived: false, private: false, node_id: 'R_default'} as RepoGetResponse}
+      }
+
+      const logger = silentLogger()
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+
+      await handleReconcile(
+        baseParams({
+          appOctokit: mockOctokit({
+            paginate: appPaginate([]),
+            reposGet,
+            // open-org/no-workflow has no fro-bot.yaml — getContent throws 404 by default
+          }),
+          readMetadata: makeReadMetadata({allowlist}),
+          commitMetadata: commitMetadata as never,
+          logger,
+        }),
+      )
+
+      // 403 logs distinctly from 404
+      const warnMessages = logger.warn.mock.calls.map(call => call[0])
+      const has403Warn = warnMessages.some(m => /locked-org\/private-repo.*403.*App not installed/.test(m))
+      expect(has403Warn).toBe(true)
+    })
+
+    it('contrib channel: warns when approved_contrib_orgs is set (v1 ignores it)', async () => {
+      const allowlist: AllowlistFile = {
+        version: 1,
+        approved_inviters: [],
+        approved_contrib_orgs: ['bfra-me'],
+        approved_contrib_repos: [],
+      }
+
+      const logger = silentLogger()
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+
+      await handleReconcile(
+        baseParams({
+          appOctokit: mockOctokit({paginate: appPaginate([])}),
+          readMetadata: makeReadMetadata({allowlist}),
+          commitMetadata: commitMetadata as never,
+          logger,
+        }),
+      )
+
+      const warnMessages = logger.warn.mock.calls.map(call => call[0])
+      const hasOrgsWarn = warnMessages.some(m => m.includes('approved_contrib_orgs is not yet supported'))
+      expect(hasOrgsWarn).toBe(true)
+    })
+
+    it('mixed pipeline: collab + owned + contrib all surface with correct channels', async () => {
+      // #given collab access list, owned installation repos, and contrib allowlist
+      const collabRepos: AccessListApiEntry[] = [
+        {owner: {login: 'marcusrbrown'}, name: 'collab-repo', archived: false, private: false, node_id: 'R_collab'},
+      ]
+
+      const installationRepos = [makeInstallationRepo({name: 'agent', node_id: 'R_agent'})]
+
+      const allowlist: AllowlistFile = {
+        version: 1,
+        approved_inviters: [{username: 'marcusrbrown', added: '2026-01-01', role: 'owner'}],
+        approved_contrib_repos: ['bfra-me/.github'],
+      }
+
+      const reposGet = async ({owner, repo}: {owner: string; repo: string}) => {
+        if (owner === 'bfra-me' && repo === '.github') {
+          return {data: {archived: false, fork: false, private: false, node_id: 'R_bfra'} as RepoGetResponse}
+        }
+        return {data: {archived: false, private: false, node_id: 'R_default'} as RepoGetResponse}
+      }
+
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({data: collabRepos}),
+      })
+
+      const appOctokit = mockOctokit({
+        paginate: appPaginate(installationRepos),
+        getContent: contentByRepo(new Map([['bfra-me/.github', TRUSTED_WORKFLOW]])),
+        reposGet,
+      })
+
+      const commitMetadata = vi.fn(async () => ({committed: true, sha: 's', attempts: 1}))
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit,
+          readMetadata: makeReadMetadata({allowlist}),
+          commitMetadata: commitMetadata as never,
+        }),
+      )
+
+      // 3 entries: collab + owned + contrib
+      expect(result.summary.added).toBe(3)
+      expect(result.summary.pendingReview).toBe(0)
+      expect(result.dispatches).toBe(3)
+    })
+  })
+
+  describe('per-channel observability', () => {
+    it('emits first-survey info log for never-surveyed owned entries only', async () => {
+      // GIVEN one owned entry with last_survey_at: null already onboarded
+      const entry: RepoEntry = {
+        owner: 'fro-bot',
+        name: 'agent',
+        added: '2026-05-01',
+        onboarding_status: 'onboarded',
+        last_survey_at: null,
+        last_survey_status: null,
+        has_fro_bot_workflow: true,
+        has_renovate: false,
+        discovery_channel: 'owned',
+        next_survey_eligible_at: null,
+      }
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: vi.fn(async () => ({
+          data: [{owner: {login: 'fro-bot'}, name: 'agent', archived: false, private: false, node_id: 'R_a'}],
+        })),
+      })
+      const logger = silentLogger()
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({repos: {version: 1, repos: [entry]}}),
+          logger,
+        }),
+      )
+
+      const infoCalls = logger.info.mock.calls.flat()
+      expect(infoCalls).toContain('reconcile: first survey for new owned entry: fro-bot/agent')
+    })
+
+    it('does NOT emit first-survey info log for collab newcomers', async () => {
+      // GIVEN a collab newcomer (allowlisted owner, fresh dispatch)
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: vi.fn(async () => ({
+          data: [
+            {owner: {login: 'marcusrbrown'}, name: 'collab-newcomer', archived: false, private: false, node_id: 'R_c'},
+          ],
+        })),
+      })
+      const logger = silentLogger()
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({
+            repos: {version: 1, repos: []},
+            allowlist: makeAllowlist(['marcusrbrown']),
+          }),
+          logger,
+        }),
+      )
+
+      const infoCalls = logger.info.mock.calls.flat()
+      expect(infoCalls.some((c: string) => c.includes('first survey for new collab'))).toBe(false)
+    })
+
+    it('does NOT re-emit first-survey log when an owned entry already has a last_survey_at', async () => {
+      // GIVEN an owned entry that has already been surveyed once
+      const entry: RepoEntry = {
+        owner: 'fro-bot',
+        name: 'agent',
+        added: '2026-05-01',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01', // previously surveyed
+        last_survey_status: 'success',
+        has_fro_bot_workflow: true,
+        has_renovate: false,
+        discovery_channel: 'owned',
+        next_survey_eligible_at: '2026-04-20', // eligible (past)
+      }
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: vi.fn(async () => ({
+          data: [{owner: {login: 'fro-bot'}, name: 'agent', archived: false, private: false, node_id: 'R_a'}],
+        })),
+      })
+      const logger = silentLogger()
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({repos: {version: 1, repos: [entry]}}),
+          logger,
+        }),
+      )
+
+      const infoCalls = logger.info.mock.calls.flat()
+      expect(infoCalls.some((c: string) => c.includes('first survey for new'))).toBe(false)
+    })
+
+    it('populates byChannel.dispatched and byChannel.deferred after cap selection', async () => {
+      // GIVEN 3 collab entries that are all eligible, with maxDispatchesPerRun=2
+      const entries: RepoEntry[] = ['a', 'b', 'c'].map(name => ({
+        owner: 'marcusrbrown',
+        name,
+        added: '2026-01-01',
+        onboarding_status: 'onboarded',
+        last_survey_at: null,
+        last_survey_status: null,
+        has_fro_bot_workflow: false,
+        has_renovate: false,
+        discovery_channel: 'collab',
+        next_survey_eligible_at: null,
+      }))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: vi.fn(async () => ({
+          data: entries.map(e => ({
+            owner: {login: e.owner},
+            name: e.name,
+            archived: false,
+            private: false,
+            node_id: `R_${e.name}`,
+          })),
+        })),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({repos: {version: 1, repos: entries}}),
+          maxDispatchesPerRun: 2,
+        }),
+      )
+
+      // 2 dispatched, 1 deferred — all collab
+      expect(result.summary.byChannel.collab.dispatched).toBe(2)
+      expect(result.summary.byChannel.collab.deferred).toBe(1)
+      expect(result.summary.byChannel.owned.dispatched).toBe(0)
+      expect(result.summary.byChannel.contrib.dispatched).toBe(0)
+    })
+  })
 })
 
-describe('isSurveyStale', () => {
-  const JUST_BEFORE = SURVEY_STALENESS_MS - 1
-  const EXACTLY = SURVEY_STALENESS_MS
-  const JUST_AFTER = SURVEY_STALENESS_MS + 1
+describe('migrateRepoEntry', () => {
+  // Backfills new schema fields on legacy entries that predate the cadence rollout.
+  // Returns the input by reference when both fields are already populated (idempotent).
 
-  it('treats null as stale (never surveyed)', () => {
-    expect(isSurveyStale(null, new Date('2026-04-17T12:00:00Z'))).toBe(true)
+  it('backfills discovery_channel as collab and computes next_survey_eligible_at from last_survey_at', () => {
+    // GIVEN a legacy entry with last_survey_at populated and both new fields missing
+    const legacy = makeEntry({
+      last_survey_at: '2026-04-27',
+      discovery_channel: undefined,
+      next_survey_eligible_at: undefined,
+    })
+
+    // WHEN migrating
+    const migrated = migrateRepoEntry(legacy, NOW)
+
+    // THEN both fields are populated (channel = collab, eligibility = baseDate + 30d + jitter)
+    expect(migrated.discovery_channel).toBe('collab')
+    expect(migrated.next_survey_eligible_at).toMatch(/^2026-05-(2[7-9]|30)$/)
+    // AND nothing else changed
+    expect({
+      ...migrated,
+      discovery_channel: legacy.discovery_channel,
+      next_survey_eligible_at: legacy.next_survey_eligible_at,
+    }).toEqual(legacy)
   })
 
-  it('treats a malformed date string as stale (recoverable corruption)', () => {
-    expect(isSurveyStale('not-a-date', new Date('2026-04-17T12:00:00Z'))).toBe(true)
+  it('leaves next_survey_eligible_at null when last_survey_at is null', () => {
+    const legacy = makeEntry({
+      last_survey_at: null,
+      discovery_channel: undefined,
+      next_survey_eligible_at: undefined,
+    })
+
+    const migrated = migrateRepoEntry(legacy, NOW)
+
+    expect(migrated.discovery_channel).toBe('collab')
+    expect(migrated.next_survey_eligible_at).toBe(null)
   })
 
-  it('treats exactly 30 days old as stale (inclusive boundary)', () => {
-    const anchor = new Date('2026-04-01T00:00:00Z')
-    const now = new Date(anchor.getTime() + EXACTLY)
-    expect(isSurveyStale('2026-04-01', now)).toBe(true)
+  it('treats malformed last_survey_at as never-surveyed (next_survey_eligible_at = null)', () => {
+    const legacy = makeEntry({
+      last_survey_at: 'not-a-date',
+      discovery_channel: undefined,
+      next_survey_eligible_at: undefined,
+    })
+
+    const migrated = migrateRepoEntry(legacy, NOW)
+
+    expect(migrated.discovery_channel).toBe('collab')
+    expect(migrated.next_survey_eligible_at).toBe(null)
   })
 
-  it('treats just under 30 days as fresh', () => {
-    const anchor = new Date('2026-04-01T00:00:00Z')
-    const now = new Date(anchor.getTime() + JUST_BEFORE)
-    expect(isSurveyStale('2026-04-01', now)).toBe(false)
+  it('returns the input by reference when both fields are already populated (idempotent)', () => {
+    const fresh = makeEntry({
+      last_survey_at: '2026-04-27',
+      discovery_channel: 'owned',
+      next_survey_eligible_at: '2026-05-15',
+    })
+
+    const migrated = migrateRepoEntry(fresh, NOW)
+
+    expect(migrated).toBe(fresh) // referential equality
   })
 
-  it('treats just over 30 days as stale', () => {
-    const anchor = new Date('2026-04-01T00:00:00Z')
-    const now = new Date(anchor.getTime() + JUST_AFTER)
-    expect(isSurveyStale('2026-04-01', now)).toBe(true)
+  it('backfills only the missing field when only one is absent', () => {
+    // GIVEN an entry with channel set (e.g. by addRepoEntry default) but eligibility missing
+    const partial = makeEntry({
+      last_survey_at: '2026-04-27',
+      discovery_channel: 'owned',
+      next_survey_eligible_at: undefined,
+    })
+
+    const migrated = migrateRepoEntry(partial, NOW)
+
+    // THEN channel is preserved (not overwritten with 'collab')
+    expect(migrated.discovery_channel).toBe('owned')
+    // AND eligibility is computed using the existing channel's interval (owned = 14d)
+    expect(migrated.next_survey_eligible_at).toMatch(/^2026-05-(1[1-4])$/)
+  })
+})
+
+describe('reconcileRepos legacy migration', () => {
+  it('migrates legacy entries on first reconcile run and bumps summary.migrated', () => {
+    // GIVEN a tracked entry missing both new fields and an unchanged access list
+    const legacy = makeEntry({
+      owner: 'marcusrbrown',
+      name: 'legacy-repo',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-04-01',
+      discovery_channel: undefined,
+      next_survey_eligible_at: undefined,
+    })
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [legacy]},
+        accessList: [makeAccess({owner: 'marcusrbrown', name: 'legacy-repo', node_id: 'R_legacy'})],
+        fieldProbes: new Map([['marcusrbrown/legacy-repo', {has_fro_bot_workflow: false, has_renovate: false}]]),
+      }),
+    )
+
+    // THEN summary.migrated counts the migration
+    expect(result.summary.migrated).toBe(1)
+    // AND the entry now carries both new fields
+    expect(result.nextRepos.repos[0]?.discovery_channel).toBe('collab')
+    // last_survey_at: 2026-04-01 + collab 30d + jitter[0..3] → 2026-05-01..04
+    expect(result.nextRepos.repos[0]?.next_survey_eligible_at).toMatch(/^2026-05-0[1-4]$/)
+  })
+
+  it('subsequent reconcile run on already-migrated state has summary.migrated === 0', () => {
+    // GIVEN an entry that has both new fields set (post-migration steady state)
+    const migrated = makeEntry({
+      owner: 'marcusrbrown',
+      name: 'migrated-repo',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-04-01',
+      discovery_channel: 'collab',
+      next_survey_eligible_at: '2026-05-01',
+    })
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [migrated]},
+        accessList: [makeAccess({owner: 'marcusrbrown', name: 'migrated-repo', node_id: 'R_mig'})],
+        fieldProbes: new Map([['marcusrbrown/migrated-repo', {has_fro_bot_workflow: false, has_renovate: false}]]),
+      }),
+    )
+
+    expect(result.summary.migrated).toBe(0)
+    // AND nextRepos referential identity preserved (no-op fast path)
+    expect(result.nextRepos.repos[0]).toBe(migrated)
+  })
+
+  it('a migration-only run (no other changes) is NOT a no-op — produces a real commit plan', () => {
+    // GIVEN 18 legacy entries, all access still healthy, no field-probe drift
+    const legacyEntries = Array.from({length: 18}, (_, i) =>
+      makeEntry({
+        owner: 'marcusrbrown',
+        name: `legacy-${i.toString().padStart(2, '0')}`,
+        onboarding_status: 'onboarded',
+        last_survey_at: null, // never-surveyed → not eligible-storm
+        discovery_channel: undefined,
+        next_survey_eligible_at: undefined,
+      }),
+    )
+    const accessList = legacyEntries.map((e, i) => makeAccess({owner: e.owner, name: e.name, node_id: `R_l${i}`}))
+    const fieldProbes = new Map(
+      legacyEntries.map(e => [`${e.owner}/${e.name}`, {has_fro_bot_workflow: false, has_renovate: false}]),
+    )
+    const initial = {version: 1, repos: legacyEntries} as const
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: initial,
+        accessList,
+        fieldProbes,
+      }),
+    )
+
+    // THEN migrated counter is 18
+    expect(result.summary.migrated).toBe(18)
+    // AND the run is NOT classified as no-op (must produce a commit so the migration persists)
+    expect(result.nextRepos.repos).not.toBe(initial.repos)
+    // AND every entry is now populated
+    for (const entry of result.nextRepos.repos) {
+      expect(entry.discovery_channel).toBe('collab')
+    }
+  })
+})
+
+describe('formatCommitMessage', () => {
+  it('emits the steady-state format when summary.migrated === 0', () => {
+    expect(
+      formatCommitMessage({
+        added: 1,
+        pendingReview: 0,
+        regained: 0,
+        lostAccess: 0,
+        refreshed: 2,
+        migrated: 0,
+        unchanged: 0,
+        byChannel: emptyChannelStats(),
+      }),
+    ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 2 refreshes')
+  })
+
+  it('appends the +N migrated suffix when summary.migrated > 0', () => {
+    expect(
+      formatCommitMessage({
+        added: 0,
+        pendingReview: 0,
+        regained: 0,
+        lostAccess: 0,
+        refreshed: 0,
+        migrated: 18,
+        unchanged: 0,
+        byChannel: emptyChannelStats(),
+      }),
+    ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
+  })
+
+  it('includes the migrated suffix alongside other non-zero counters', () => {
+    expect(
+      formatCommitMessage({
+        added: 1,
+        pendingReview: 0,
+        regained: 0,
+        lostAccess: 0,
+        refreshed: 1,
+        migrated: 18,
+        unchanged: 0,
+        byChannel: emptyChannelStats(),
+      }),
+    ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 1 refreshes, +18 migrated')
+  })
+})
+
+describe('isEligibleForSurvey', () => {
+  // Cadence model: null next_survey_eligible_at means "never computed" → always eligible
+  it('returns true when next_survey_eligible_at is null (never surveyed)', () => {
+    expect(isEligibleForSurvey(null, new Date('2026-05-01T12:00:00Z'))).toBe(true)
+  })
+
+  // Cadence model: a malformed eligible-at string treated as eligible (don't lose coverage)
+  it('returns true when next_survey_eligible_at is a malformed date string', () => {
+    expect(isEligibleForSurvey('not-a-date', new Date('2026-05-01T12:00:00Z'))).toBe(true)
+  })
+
+  // Boundary: now equals eligible-at → eligible (inclusive boundary)
+  it('returns true when now equals next_survey_eligible_at (inclusive boundary)', () => {
+    expect(isEligibleForSurvey('2026-05-01', new Date('2026-05-01T00:00:00Z'))).toBe(true)
+  })
+
+  // Boundary: now is one day before eligible-at → not eligible
+  it('returns false when now is one day before next_survey_eligible_at', () => {
+    expect(isEligibleForSurvey('2026-05-01', new Date('2026-04-30T23:59:59Z'))).toBe(false)
+  })
+
+  // Boundary: now is one day after eligible-at → eligible
+  it('returns true when now is one day after next_survey_eligible_at', () => {
+    expect(isEligibleForSurvey('2026-05-01', new Date('2026-05-02T00:00:00Z'))).toBe(true)
   })
 })
 
@@ -2037,5 +3004,333 @@ describe('loadMaxDispatchesPerRunFromEnv', () => {
     withEnv('-1', () => {
       expect(loadMaxDispatchesPerRunFromEnv()).toBe(-1)
     })
+  })
+})
+
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// Pure helper tests for discovery-channel shell logic
+// ─────────────────────────────────────────────────────────────────────────────
+//
+
+describe('containsFroBotAgentReference (forge resistance)', () => {
+  it('accepts a workflow that calls fro-bot/agent with a version tag', () => {
+    const yaml = `name: Fro Bot
+on: [issues, pull_request]
+jobs:
+  agent:
+    uses: fro-bot/agent/.github/workflows/fro-bot.yaml@v0.42.1
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(true)
+  })
+
+  it('accepts a workflow that calls fro-bot/agent at main', () => {
+    const yaml = `jobs:
+  agent:
+    uses: fro-bot/agent/.github/workflows/fro-bot.yaml@main
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(true)
+  })
+
+  it('accepts a workflow that calls fro-bot/agent at a SHA', () => {
+    const yaml = `jobs:
+  agent:
+    uses: fro-bot/agent@6c45d8ce66b0b69f1b80b23f283ed455deb59517
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(true)
+  })
+
+  it('rejects an empty string', () => {
+    expect(containsFroBotAgentReference('')).toBe(false)
+  })
+
+  it('rejects a workflow that does not reference fro-bot/agent', () => {
+    const yaml = `name: foo
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(false)
+  })
+
+  it('rejects a workflow that mentions fro-bot but not fro-bot/agent', () => {
+    // Forge attempt: drop the literal string `fro-bot` somewhere in a workflow file
+    // without actually invoking the agent action. Should not pass.
+    const yaml = `name: not-the-agent
+on: [push]
+jobs:
+  spoof:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "fro-bot is cool"
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(false)
+  })
+
+  it('rejects a YAML referencing fro-bot/something-else', () => {
+    const yaml = `jobs:
+  agent:
+    uses: fro-bot/something-else@main
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(false)
+  })
+
+  it('rejects fro-bot/agent appearing only in a comment', () => {
+    // Adversarial: spoof attempt via comment-only reference. The agent isn't actually
+    // invoked anywhere — the comment is just text the parser ignores.
+    const yaml = `# uses: fro-bot/agent@main (someday maybe)
+name: spoof
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo not-the-agent
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(false)
+  })
+
+  it('rejects fro-bot/agent appearing only in a string value (name field)', () => {
+    // Adversarial: spoof via string literal in a non-uses position.
+    const yaml = `name: 'fro-bot/agent (just kidding)'
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(false)
+  })
+
+  it('rejects fro-bot/agent appearing only in a run: shell command', () => {
+    // Adversarial: spoof via run-shell content.
+    const yaml = `name: spoof
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "fro-bot/agent is cool"
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(false)
+  })
+
+  it('rejects fro-bot/agent appearing only in a with: input value', () => {
+    // Adversarial: spoof via `with:` action input.
+    const yaml = `name: spoof
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: fro-bot/agent
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(false)
+  })
+
+  it('rejects fro-bot/agent-fork (typo-squat via shared prefix)', () => {
+    // Adversarial: a different action whose path happens to start with `fro-bot/agent`.
+    // The structural check requires exact path match, not substring.
+    const yaml = `jobs:
+  agent:
+    uses: fro-bot/agent-fork@main
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(false)
+  })
+
+  it('rejects not-fro-bot/agent (typo-squat via owner)', () => {
+    const yaml = `jobs:
+  agent:
+    uses: not-fro-bot/agent@main
+`
+    expect(containsFroBotAgentReference(yaml)).toBe(false)
+  })
+
+  it('rejects malformed YAML (parse failure fails closed)', () => {
+    expect(containsFroBotAgentReference(': not\nvalid: : yaml :\n - -')).toBe(false)
+  })
+
+  it('rejects a YAML scalar (no jobs structure)', () => {
+    expect(containsFroBotAgentReference('just a string')).toBe(false)
+  })
+})
+
+function makeMergeEntry(owner: string, name: string): AccessListEntry {
+  return {owner, name, archived: false, private: false, node_id: `R_${owner}_${name}`}
+}
+
+describe('mergeAccessChannels (precedence + dedup)', () => {
+  // Local alias to keep test bodies short without recreating the helper per-test.
+  const entry = makeMergeEntry
+
+  it('returns empty results when all channels are empty', () => {
+    const result = mergeAccessChannels({collab: [], owned: [], contrib: []})
+    expect(result.accessList).toEqual([])
+    expect(result.accessChannelByKey.size).toBe(0)
+  })
+
+  it('tags collab-only entries with collab channel', () => {
+    const result = mergeAccessChannels({collab: [entry('marcusrbrown', 'foo')], owned: [], contrib: []})
+    expect(result.accessList).toHaveLength(1)
+    expect(result.accessChannelByKey.get('marcusrbrown/foo')).toBe('collab')
+  })
+
+  it('tags owned-only entries with owned channel', () => {
+    const result = mergeAccessChannels({collab: [], owned: [entry('fro-bot', 'agent')], contrib: []})
+    expect(result.accessList).toHaveLength(1)
+    expect(result.accessChannelByKey.get('fro-bot/agent')).toBe('owned')
+  })
+
+  it('tags contrib-only entries with contrib channel', () => {
+    const result = mergeAccessChannels({collab: [], owned: [], contrib: [entry('bfra-me', '.github')]})
+    expect(result.accessList).toHaveLength(1)
+    expect(result.accessChannelByKey.get('bfra-me/.github')).toBe('contrib')
+  })
+
+  it('collab wins over owned for the same key', () => {
+    // #given the same owner/name appears in both collab and owned
+    const result = mergeAccessChannels({
+      collab: [entry('fro-bot', 'agent')],
+      owned: [entry('fro-bot', 'agent')],
+      contrib: [],
+    })
+    // #then collab wins; only one entry; no duplicate keys
+    expect(result.accessList).toHaveLength(1)
+    expect(result.accessChannelByKey.get('fro-bot/agent')).toBe('collab')
+  })
+
+  it('owned wins over contrib for the same key', () => {
+    const result = mergeAccessChannels({
+      collab: [],
+      owned: [entry('shared', 'repo')],
+      contrib: [entry('shared', 'repo')],
+    })
+    expect(result.accessList).toHaveLength(1)
+    expect(result.accessChannelByKey.get('shared/repo')).toBe('owned')
+  })
+
+  it('collab wins over both owned and contrib for the same key', () => {
+    const result = mergeAccessChannels({
+      collab: [entry('shared', 'repo')],
+      owned: [entry('shared', 'repo')],
+      contrib: [entry('shared', 'repo')],
+    })
+    expect(result.accessList).toHaveLength(1)
+    expect(result.accessChannelByKey.get('shared/repo')).toBe('collab')
+  })
+
+  it('preserves all three channels when keys are distinct', () => {
+    const result = mergeAccessChannels({
+      collab: [entry('marcusrbrown', 'collab')],
+      owned: [entry('fro-bot', 'agent')],
+      contrib: [entry('bfra-me', '.github')],
+    })
+    expect(result.accessList).toHaveLength(3)
+    expect(result.accessChannelByKey.get('marcusrbrown/collab')).toBe('collab')
+    expect(result.accessChannelByKey.get('fro-bot/agent')).toBe('owned')
+    expect(result.accessChannelByKey.get('bfra-me/.github')).toBe('contrib')
+  })
+
+  it('produces an accessList that passes validateAccessList (no duplicates)', () => {
+    // #given overlapping channels
+    const result = mergeAccessChannels({
+      collab: [entry('shared', 'repo'), entry('marcusrbrown', 'foo')],
+      owned: [entry('shared', 'repo'), entry('fro-bot', 'agent')],
+      contrib: [entry('bfra-me', '.github')],
+    })
+    // #then reconcileRepos accepts it without throwing on the duplicate-key check
+    expect(() =>
+      reconcileRepos({
+        currentRepos: {version: 1, repos: []},
+        accessList: result.accessList,
+        accessChannelByKey: result.accessChannelByKey,
+        perRepoStatus: new Map(),
+        allowlist: makeAllowlist(['marcusrbrown']),
+        fieldProbes: new Map(),
+        now: NOW,
+      }),
+    ).not.toThrow()
+  })
+})
+
+describe('reconcileRepos byChannel summary', () => {
+  it('counts tracked entries per channel', () => {
+    // GIVEN 3 entries: 2 collab, 1 owned (no access changes, no probe drift)
+    const entries = [
+      makeEntry({owner: 'marcusrbrown', name: 'a', discovery_channel: 'collab'}),
+      makeEntry({owner: 'marcusrbrown', name: 'b', discovery_channel: 'collab'}),
+      makeEntry({owner: 'fro-bot', name: 'agent', discovery_channel: 'owned'}),
+    ]
+    const accessList = entries.map(e => makeAccess({owner: e.owner, name: e.name, node_id: `R_${e.name}`}))
+    const channelMap = new Map<string, DiscoveryChannel>(
+      entries.map(e => [`${e.owner}/${e.name}`, e.discovery_channel ?? 'collab']),
+    )
+    const fieldProbes = new Map(
+      entries.map(e => [
+        `${e.owner}/${e.name}`,
+        {has_fro_bot_workflow: e.has_fro_bot_workflow, has_renovate: e.has_renovate},
+      ]),
+    )
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: entries},
+        accessList,
+        accessChannelByKey: channelMap,
+        fieldProbes,
+      }),
+    )
+
+    expect(result.summary.byChannel.collab.tracked).toBe(2)
+    expect(result.summary.byChannel.owned.tracked).toBe(1)
+    expect(result.summary.byChannel.contrib.tracked).toBe(0)
+  })
+
+  it('counts lost-access transitions per channel', () => {
+    // GIVEN one onboarded contrib entry that is no longer in the access list
+    const lost = makeEntry({
+      owner: 'bfra-me',
+      name: 'gone-repo',
+      onboarding_status: 'onboarded',
+      discovery_channel: 'contrib',
+    })
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [lost]},
+        accessList: [],
+        perRepoStatus: new Map([['bfra-me/gone-repo', {status: 'archived'}]]),
+      }),
+    )
+
+    expect(result.summary.byChannel.contrib.lostAccess).toBe(1)
+    expect(result.summary.byChannel.collab.lostAccess).toBe(0)
+    expect(result.summary.byChannel.owned.lostAccess).toBe(0)
+  })
+
+  it('counts newcomers per channel (added entries inherit channel from accessChannelByKey)', () => {
+    const channelMap = new Map<string, DiscoveryChannel>([
+      ['fro-bot/agent', 'owned'],
+      ['bfra-me/works', 'contrib'],
+    ])
+    const result = reconcileRepos(
+      makeInput({
+        accessList: [
+          makeAccess({owner: 'fro-bot', name: 'agent', node_id: 'R_a'}),
+          makeAccess({owner: 'bfra-me', name: 'works', node_id: 'R_w'}),
+        ],
+        accessChannelByKey: channelMap,
+      }),
+    )
+
+    expect(result.summary.byChannel.owned.tracked).toBe(1)
+    expect(result.summary.byChannel.contrib.tracked).toBe(1)
+    expect(result.summary.byChannel.collab.tracked).toBe(0)
   })
 })

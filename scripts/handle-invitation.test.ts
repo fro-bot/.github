@@ -1,6 +1,11 @@
+import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
 import type {OctokitClient} from './handle-invitation.ts'
+
 import {describe, expect, it, vi} from 'vitest'
 import {handleInvitations, InvitationHandlingError} from './handle-invitation.ts'
+import {assertReposFile} from './schemas.ts'
+
+type CommitMetadataMock = (params: CommitMetadataParams) => Promise<CommitMetadataResult>
 
 function mockOctokit(overrides?: {
   listInvitationsForAuthenticatedUser?: () => Promise<{
@@ -76,7 +81,11 @@ describe('handleInvitations', () => {
     const acceptInvitation = vi.fn(async () => undefined)
     const starRepoForAuthenticatedUser = vi.fn(async () => undefined)
     const createWorkflowDispatch = vi.fn(async () => undefined)
-    const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({
+      committed: true,
+      sha: 'commit-sha',
+      attempts: 1,
+    }))
     const octokit = mockOctokit({
       listInvitationsForAuthenticatedUser: async () => ({
         data: [
@@ -137,6 +146,18 @@ describe('handleInvitations', () => {
       inputs: {owner: 'fro-bot', repo: 'hello-world'},
     })
     expect(commitMetadata).toHaveBeenCalledOnce()
+
+    // #and the mutator persists discovery_channel: 'collab' so the entry surfaces
+    // through the collab channel in reconcile reports
+    const commitCall = commitMetadata.mock.calls[0]?.[0]
+    const mutator = commitCall?.mutator
+    expect(typeof mutator).toBe('function')
+    if (typeof mutator === 'function') {
+      const newReposFile = mutator({version: 1, repos: []})
+      assertReposFile(newReposFile)
+      expect(newReposFile.repos[0]?.discovery_channel).toBe('collab')
+      expect(newReposFile.repos[0]?.next_survey_eligible_at).toBeNull()
+    }
   })
 
   it('skips invitations from unapproved inviters', async () => {
