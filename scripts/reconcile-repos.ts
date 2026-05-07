@@ -95,11 +95,27 @@ export interface AccessListEntry {
   node_id: string
 }
 
+/**
+ * Result of probing a single tracked repo's status via `GET /repos/{owner}/{name}`.
+ *
+ * - `deleted`          — HTTP 404 (repo gone).
+ * - `archived`         — Pass‑1 detection from the access-list `archived` field (not a probe result).
+ * - `revoked`          - HTTP 451 (DMCA/takedown) or HTTP 403 (blocked/suspended), or the
+ *                        repo exists (HTTP 200) but the entry is not in the access list.
+ * - `still-accessible` — HTTP 200 with valid body; the entry is in the access list (produced
+ *                        by the field‑probe pass, not `fetchPerRepoStatus`).
+ * - `transient`        — HTTP 5xx or network error; could not determine status this run.
+ *                        Sticky‑preserve the prior state.
+ * - `malformed`        — HTTP 200 but the response body is missing `private` (boolean) or
+ *                        `node_id` (string). Sticky‑preserve the prior state and log a diagnostic.
+ */
 export type RepoStatusProbe =
   | {status: 'deleted'}
   | {status: 'archived'}
   | {status: 'revoked'}
   | {status: 'still-accessible'; private: boolean; node_id: string}
+  | {status: 'transient'; httpStatus?: number}
+  | {status: 'malformed'}
 
 export interface FieldProbe {
   has_fro_bot_workflow: boolean
@@ -187,6 +203,21 @@ export interface ReconcileSummary {
   migrated: number
   unchanged: number
   /**
+   * Number of tracked entries whose probe returned a `transient` classification this run
+   * (HTTP 5xx, network error, or rate-limit). The entry's prior privacy state is
+   * sticky-preserved; no fields are written. A non-zero value paired with a quiet
+   * `refreshed`/`lostAccess` indicates the run took the sticky-preserve path on probe
+   * failures rather than completing classification — distinguishes a healthy quiet day
+   * from an API-incident silent-degradation day.
+   */
+  transient: number
+  /**
+   * Number of tracked entries whose probe returned `malformed` (HTTP 200 with an
+   * unusable response body) this run. Sticky-preserved like `transient`. Persistent
+   * non-zero values across runs suggest an upstream API contract change worth investigating.
+   */
+  malformed: number
+  /**
    * Per-channel activity breakdown. See {@link ChannelStats} for field semantics. The
    * engine populates `tracked` and `lostAccess`; the shell populates `dispatched` and
    * `deferred` after cap selection.
@@ -225,6 +256,8 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     refreshed: 0,
     migrated: 0,
     unchanged: 0,
+    transient: 0,
+    malformed: 0,
     byChannel: {
       collab: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
       owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -354,19 +387,56 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
       summary.unchanged += 1
       return entry
     }
-    if (probe.status === 'still-accessible') {
-      // Transient inconsistency between the access-list enumeration and the per-repo probe.
-      summary.unchanged += 1
-      return entry
+    switch (probe.status) {
+      case 'still-accessible': {
+        // Transient inconsistency between the access-list enumeration and the per-repo probe.
+        // The probe carries fresh `private`/`node_id` from `repos.get`, but we deliberately
+        // discard them: the access-list snapshot is the system of record for visibility, and
+        // writing privacy fields from a probe that disagrees with it would propagate the
+        // inconsistency rather than wait for it to resolve. The next cron's enumeration will
+        // either re-include the entry (writing fresh fields via the field-refresh path) or
+        // produce a consistent classification. Sticky preservation is the conservative choice.
+        summary.unchanged += 1
+        return entry
+      }
+      case 'transient': {
+        // Could not classify this run; preserve sticky state. `...entry` keeps prior
+        // private/node_id (or absence thereof) intact — no field is introduced or cleared.
+        // Bumps both `unchanged` (so the run-summary line still adds up) and `transient`
+        // (so a 5xx storm is visible as a non-zero counter rather than indistinguishable
+        // from a healthy quiet day).
+        summary.unchanged += 1
+        summary.transient += 1
+        return entry
+      }
+      case 'malformed': {
+        // Same shape as transient; separate counter distinguishes upstream API contract
+        // anomalies (200 with unusable body) from infrastructure-level transients.
+        summary.unchanged += 1
+        summary.malformed += 1
+        return entry
+      }
+      case 'deleted':
+      case 'archived':
+      case 'revoked': {
+        // Flip to lost-access unless already there. Fail-safe: write `private: true`
+        // because we cannot reach the repo to confirm visibility. `...entry` preserves
+        // prior `node_id` if any (no fresh source available on this branch).
+        if (entry.onboarding_status === 'lost-access') {
+          summary.unchanged += 1
+          return entry
+        }
+        summary.lostAccess += 1
+        summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
+        return {...entry, onboarding_status: 'lost-access', private: true}
+      }
+      default: {
+        // Exhaustiveness guard. Adding a new RepoStatusProbe variant must update the
+        // switch above instead of silently falling through to lost-access.
+        const exhaustive: never = probe
+        throw new Error(`reconcile: unhandled RepoStatusProbe variant: ${JSON.stringify(exhaustive)}`)
+      }
     }
-    // deleted / archived / revoked — flip to lost-access unless already there.
-    if (entry.onboarding_status === 'lost-access') {
-      summary.unchanged += 1
-      return entry
-    }
-    summary.lostAccess += 1
-    summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
-    return {...entry, onboarding_status: 'lost-access'}
   }
 
   if (access.archived) {
@@ -377,7 +447,12 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     }
     summary.lostAccess += 1
     summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
-    return {...entry, onboarding_status: 'lost-access'}
+    return {
+      ...entry,
+      onboarding_status: 'lost-access',
+      private: true,
+      node_id: access.node_id,
+    }
   }
 
   if (entry.onboarding_status === 'lost-access') {
@@ -401,7 +476,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
         node_id: access.node_id,
       })
     }
-    return {...entry, onboarding_status: nextStatus}
+    return {...entry, onboarding_status: nextStatus, private: access.private, node_id: access.node_id}
   }
 
   // Still-accessible tracked entry.
@@ -427,14 +502,27 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     dispatches.push({owner: entry.owner, repo: entry.name})
   }
 
-  // Field refresh: apply probe results when they disagree with tracked fields.
+  // Field refresh: apply probe results when they disagree with tracked fields,
+  // and write live private/node_id from the access list when they differ.
   const probe = fieldProbes.get(key)
+  const accessPrivate = access.private
+  const accessNodeId = access.node_id
+
   if (probe === undefined) {
-    // No probe data — preserve existing field values (do not overwrite with undefined).
-    summary.unchanged += 1
-    return entry
+    // No field probe — but access list still has private/node_id. Apply if changed.
+    if (entry.private === accessPrivate && entry.node_id === accessNodeId) {
+      summary.unchanged += 1
+      return entry
+    }
+    summary.refreshed += 1
+    return {...entry, private: accessPrivate, node_id: accessNodeId}
   }
-  if (probe.has_fro_bot_workflow === entry.has_fro_bot_workflow && probe.has_renovate === entry.has_renovate) {
+
+  const fieldsMatch =
+    probe.has_fro_bot_workflow === entry.has_fro_bot_workflow && probe.has_renovate === entry.has_renovate
+  const privacyMatch = entry.private === accessPrivate && entry.node_id === accessNodeId
+
+  if (fieldsMatch && privacyMatch) {
     summary.unchanged += 1
     return entry
   }
@@ -443,6 +531,8 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     ...entry,
     has_fro_bot_workflow: probe.has_fro_bot_workflow,
     has_renovate: probe.has_renovate,
+    private: accessPrivate,
+    node_id: accessNodeId,
   }
 }
 
@@ -817,7 +907,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   })
 
   // 4. For each tracked entry missing from the access list, probe `GET /repos/{o}/{r}`.
-  const perRepoStatus = await fetchPerRepoStatus(userOctokit, currentRepos, accessList)
+  const perRepoStatus = await fetchPerRepoStatus(userOctokit, currentRepos, accessList, logger)
 
   // 5. Field probes for still-accessible tracked entries.
   const fieldProbeOutcome = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
@@ -1159,10 +1249,22 @@ async function fetchAccessList(userOctokit: OctokitClient): Promise<AccessListEn
   }
 }
 
-async function fetchPerRepoStatus(
+/**
+ * Probes each tracked entry that no longer appears in the access list and classifies
+ * the result into one of the {@link RepoStatusProbe} states. Never throws on
+ * classifiable errors (404/451/403/5xx/network/malformed); only unclassified 4xx
+ * responses propagate as `ReconcileError` to surface unexpected GitHub-side changes.
+ *
+ * Exported only for unit tests. The sole production caller is `handleReconcile` in
+ * this same file.
+ *
+ * @internal
+ */
+export async function fetchPerRepoStatus(
   userOctokit: OctokitClient,
   currentRepos: ReposFile,
   accessList: AccessListEntry[],
+  logger: {warn: (message: string) => void},
 ): Promise<Map<string, RepoStatusProbe>> {
   const accessKeys = new Set(accessList.map(a => `${a.owner}/${a.name}`))
   const map = new Map<string, RepoStatusProbe>()
@@ -1170,12 +1272,56 @@ async function fetchPerRepoStatus(
     const key = `${entry.owner}/${entry.name}`
     if (accessKeys.has(key)) continue
     try {
-      await userOctokit.rest.repos.get({owner: entry.owner, repo: entry.name})
+      const response = await userOctokit.rest.repos.get({owner: entry.owner, repo: entry.name})
       // Reachable (200) but we weren't in /user/repos → access was revoked.
+      // Empty `node_id` on a 200 also classifies as malformed: the schema's own constraint
+      // is `node_id.length > 0`, so accepting an empty string here would only defer the
+      // failure to `assertReposFile` with a less-actionable error message.
+      if (
+        typeof response.data?.private !== 'boolean' ||
+        typeof response.data?.node_id !== 'string' ||
+        response.data.node_id.length === 0
+      ) {
+        logger.warn(
+          `reconcile: malformed repos.get response (node_id=${entry.node_id ?? 'unknown'}); sticky-preserving prior state`,
+        )
+        map.set(key, {status: 'malformed'})
+        continue
+      }
       map.set(key, {status: 'revoked'})
     } catch (error: unknown) {
       if (isApiStatus(error, 404)) {
         map.set(key, {status: 'deleted'})
+        continue
+      }
+      // Rate-limit detection runs before the bare 403/451 → revoked branch. GitHub's
+      // primary rate-limit returns 429; secondary returns 403 with rate-limit headers
+      // or message. Misclassifying these as revoked cascades false lost-access flips.
+      if (isGitHubRateLimit(error)) {
+        const status = isRecord(error) && typeof error.status === 'number' ? error.status : undefined
+        logger.warn(
+          `reconcile: GitHub rate-limit (status=${status ?? 'unknown'}) probing tracked entry (node_id=${entry.node_id ?? 'unknown'}); sticky-preserving prior state`,
+        )
+        map.set(key, status === undefined ? {status: 'transient'} : {status: 'transient', httpStatus: status})
+        continue
+      }
+      if (isApiStatus(error, 451) || isApiStatus(error, 403)) {
+        map.set(key, {status: 'revoked'})
+        continue
+      }
+      if (isRecord(error) && typeof error.status === 'number' && error.status >= 500 && error.status < 600) {
+        logger.warn(
+          `reconcile: transient API error (${error.status}) probing tracked entry (node_id=${entry.node_id ?? 'unknown'}); sticky-preserving prior state`,
+        )
+        map.set(key, {status: 'transient', httpStatus: error.status})
+        continue
+      }
+      // Network errors and unclassified errors — also transient.
+      if (isRecord(error) && typeof error.status !== 'number') {
+        logger.warn(
+          `reconcile: network error probing tracked entry (node_id=${entry.node_id ?? 'unknown'}); sticky-preserving prior state`,
+        )
+        map.set(key, {status: 'transient'})
         continue
       }
       throw toApiError(error, `probing repo status for tracked entry`)
@@ -2067,6 +2213,43 @@ function isApiStatus(error: unknown, status: number): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Distinguish a rate-limited 403/429 from a genuinely access-revoked 403. GitHub's
+ * primary rate-limit returns 429; secondary rate-limits and abuse detection return 403
+ * with one of: a `Retry-After` header, `x-ratelimit-remaining: 0`, or a body message
+ * containing "rate limit" / "abuse detection". Treating these as `revoked` would cascade
+ * false lost-access flips and amplify the rate-limit problem on the next cron's regain
+ * dispatches; classifying as `transient` lets sticky preservation hold while the next
+ * run retries naturally.
+ */
+function isGitHubRateLimit(error: unknown): boolean {
+  if (!isRecord(error)) return false
+  if (error.status === 429) return true
+  if (error.status !== 403) return false
+  // Octokit RequestError exposes the response payload via `error.response`.
+  const response = isRecord(error.response) ? error.response : undefined
+  const headers = response !== undefined && isRecord(response.headers) ? response.headers : undefined
+  if (headers !== undefined) {
+    // `Retry-After`: presence alone signals rate-limit. GitHub only sets this header on
+    // rate-limit and unavailable-for-legal-reasons responses; any value (seconds or HTTP
+    // date) means "back off."
+    if (headers['retry-after'] !== undefined) return true
+    // `x-ratelimit-remaining`: present on every response with a number-as-string value
+    // (e.g. "4998"). Only the literal "0" signals exhausted budget; non-zero values are
+    // not rate-limit signals. Octokit normalizes header values to strings.
+    if (headers['x-ratelimit-remaining'] === '0') return true
+  }
+  // Body messages — Octokit surfaces these via `error.message` or the response data.
+  const messageSource =
+    typeof error.message === 'string'
+      ? error.message
+      : response !== undefined && isRecord(response.data) && typeof response.data.message === 'string'
+        ? response.data.message
+        : ''
+  const message = messageSource.toLowerCase()
+  return message.includes('rate limit') || message.includes('abuse detection') || message.includes('secondary rate')
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

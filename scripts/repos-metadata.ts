@@ -111,6 +111,11 @@ export interface AddRepoEntryInput {
  *
  * Pure function: never mutates `current` in place. When adding, returns a fresh top-level
  * object with a fresh `repos` array.
+ *
+ * Privacy fields (`private`, `node_id`) are intentionally omitted at creation time and
+ * populated on the next reconcile pass via the access-list / probe merge in
+ * `classifyTracked`. Treat absence as "not yet observed" — downstream consumers must
+ * default to fail-safe (treat-as-private) for entries lacking `private`.
  */
 export function addRepoEntry(current: unknown, input: AddRepoEntryInput): ReposFile {
   assertReposFile(current, 'repos')

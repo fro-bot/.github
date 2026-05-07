@@ -326,7 +326,7 @@ persona/
 
 ---
 
-- [ ] **Unit 1: Schema fields for `private` and `node_id`**
+- [x] **Unit 1: Schema fields for `private` and `node_id`**
 
 **Goal:** Add optional `private?: boolean` and `node_id?: string` to `RepoEntry`. Loose-then-tight; no runtime behavior change yet.
 
@@ -361,7 +361,7 @@ persona/
 
 ---
 
-- [ ] **Unit 2: 5-state probe with sticky preservation**
+- [x] **Unit 2: 5-state probe with sticky preservation**
 
 **Goal:** Reconcile probe distinguishes 5 states (public, private, access-lost, transient, malformed) with explicit semantics. Indeterminate responses preserve prior `private` value (sticky); access-lost fails closed.
 
