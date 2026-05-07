@@ -54,7 +54,7 @@ import {
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
-import {addRepoEntry} from './repos-metadata.ts'
+import {addRepoEntry, computeNextEligibleAt} from './repos-metadata.ts'
 import {
   assertAllowlistFile,
   assertReposFile,
@@ -158,6 +158,13 @@ export interface ReconcileSummary {
    * from the live signal and were rewritten this run. Steady-state field-probe drift only.
    */
   refreshed: number
+  /**
+   * Number of legacy entries backfilled this run (missing `discovery_channel` or
+   * `next_survey_eligible_at` populated by {@link migrateRepoEntry}). Distinct from
+   * `refreshed` so operators can tell one-time migration commits from steady-state
+   * field-probe drift. Drops to zero on the next run after migration completes.
+   */
+  migrated: number
   unchanged: number
 }
 
@@ -190,6 +197,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     regained: 0,
     lostAccess: 0,
     refreshed: 0,
+    migrated: 0,
     unchanged: 0,
   }
   const dispatches: DispatchRequest[] = []
@@ -285,8 +293,17 @@ interface ClassifyTrackedParams {
  * pattern (see `processInvitation` in `handle-invitation.ts`).
  */
 function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
-  const {entry, key, accessByKey, perRepoStatus, fieldProbes, allowlistedOwners, summary, dispatches, rawIssues} =
-    params
+  const {accessByKey, perRepoStatus, fieldProbes, allowlistedOwners, summary, dispatches, rawIssues, now} = params
+
+  // Backfill new schema fields on legacy entries before any other logic. Idempotent on
+  // already-populated entries (returns by reference) so steady-state runs don't bump the
+  // migrated counter or break the no-op fast path.
+  const migrated = migrateRepoEntry(params.entry, now)
+  if (migrated !== params.entry) {
+    summary.migrated += 1
+  }
+  const entry = migrated
+  const key = params.key
   const access = accessByKey.get(key)
 
   if (access === undefined) {
@@ -388,38 +405,53 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
 }
 
 /**
- * Staleness threshold for survey re-dispatch. Entries are stale (and therefore candidates
- * for re-survey) when `last_survey_at` is null or when the elapsed time since
- * `last_survey_at` is 30 days or more. `last_survey_at` is an ISO calendar date, so
- * "elapsed time" is measured from midnight UTC of that date.
+ * Backfill the new cadence schema fields (`discovery_channel`, `next_survey_eligible_at`)
+ * on legacy entries that predate Unit 1's schema extension. Idempotent: returns the input
+ * by reference when both fields are already populated.
  *
- * Exposed for test-only boundary pinning; production callers use the full reconcile flow.
+ * Default channel is `'collab'` because every entry that existed before Unit 3's
+ * cross-channel discovery shipped came from collaborator invitations.
+ *
+ * Eligibility computation honors the entry's resolved channel — if `discovery_channel`
+ * is already set (e.g. by `addRepoEntry`'s default in Unit 1's loose-then-tight rollout
+ * window) but `next_survey_eligible_at` is missing, we use that channel's base interval,
+ * not collab's. This matters once Unit 3 ships, because owned-channel entries with a
+ * surfacing date but no eligibility must use the 14-day interval, not the 30-day one.
+ *
+ * Pure (no allocation when both fields are populated). Safe to call inside the mutator
+ * closure that 409-retries through `commitMetadata`.
  */
-export const SURVEY_STALENESS_MS = 30 * 24 * 60 * 60 * 1000
+export function migrateRepoEntry(entry: RepoEntry, _now: Date): RepoEntry {
+  const needsChannel = entry.discovery_channel === undefined
+  const needsEligibility = entry.next_survey_eligible_at === undefined
+  if (!needsChannel && !needsEligibility) return entry
 
-/**
- * Return true when the entry should be a candidate for the next survey dispatch.
- *
- * Boundary semantics: an entry surveyed exactly {@link SURVEY_STALENESS_MS} ago is stale
- * (inclusive threshold). This keeps the daily cron predictable — a repo last surveyed at
- * midnight UTC on day D is re-eligible at the day-D+30 cron run, not day-D+31.
- *
- * A null `last_survey_at` signals "never surveyed" and is always stale. A malformed date
- * string is also treated as stale so recoverable metadata corruption doesn't silently
- * suppress coverage.
- *
- * @deprecated Use {@link isEligibleForSurvey} for new dispatch decisions. The fixed-30d
- * model is being replaced by per-channel eligibility via `next_survey_eligible_at`,
- * computed by `recordSurveyResult` from the channel's base interval plus deterministic
- * jitter. This export is preserved only for the migration path that backfills
- * `next_survey_eligible_at` from `last_survey_at` on legacy entries; once the migration
- * is complete this function will be removed.
- */
-export function isSurveyStale(lastSurveyAt: string | null, now: Date): boolean {
-  if (lastSurveyAt === null) return true
-  const lastMs = Date.parse(`${lastSurveyAt}T00:00:00Z`)
-  if (!Number.isFinite(lastMs)) return true
-  return now.getTime() - lastMs >= SURVEY_STALENESS_MS
+  const channel: DiscoveryChannel = entry.discovery_channel ?? 'collab'
+  let nextSurveyEligibleAt: string | null = entry.next_survey_eligible_at ?? null
+  if (needsEligibility) {
+    if (entry.last_survey_at === null) {
+      nextSurveyEligibleAt = null
+    } else {
+      const baseMs = Date.parse(`${entry.last_survey_at}T00:00:00Z`)
+      if (Number.isFinite(baseMs)) {
+        nextSurveyEligibleAt = computeNextEligibleAt({
+          owner: entry.owner,
+          repo: entry.name,
+          channel,
+          baseDate: new Date(baseMs),
+        })
+      } else {
+        // Malformed last_survey_at — treat as never-surveyed for cadence purposes.
+        nextSurveyEligibleAt = null
+      }
+    }
+  }
+
+  return {
+    ...entry,
+    discovery_channel: channel,
+    next_survey_eligible_at: nextSurveyEligibleAt,
+  }
 }
 
 /**
@@ -427,9 +459,8 @@ export function isSurveyStale(lastSurveyAt: string | null, now: Date): boolean {
  * the cadence-engine model.
  *
  * Boundary semantics: an entry whose `next_survey_eligible_at` is exactly today (UTC
- * midnight) is eligible. The same inclusive-boundary contract as {@link isSurveyStale} —
- * the daily cron's "now" reaches the eligibility instant exactly once and dispatch fires
- * on that run.
+ * midnight) is eligible. The daily cron's "now" reaches the eligibility instant exactly
+ * once and dispatch fires on that run.
  *
  * A null `next_survey_eligible_at` signals "never computed" and is always eligible
  * (matching the semantics of a never-surveyed entry under the legacy model). A
@@ -499,6 +530,7 @@ function isNoOp(summary: ReconcileSummary, dispatches: DispatchRequest[], issues
     summary.regained === 0 &&
     summary.lostAccess === 0 &&
     summary.refreshed === 0 &&
+    summary.migrated === 0 &&
     dispatches.length === 0 &&
     issues.length === 0
   )
@@ -983,13 +1015,20 @@ function planHasChanges(plan: ReconcileResult): boolean {
     summary.regained > 0 ||
     summary.lostAccess > 0 ||
     summary.refreshed > 0 ||
+    summary.migrated > 0 ||
     plan.dispatches.length > 0 ||
     plan.issues.length > 0
   )
 }
 
-function formatCommitMessage(summary: ReconcileSummary): string {
-  return `chore(reconcile): +${summary.added} new, ${summary.pendingReview} pending-review, ${summary.lostAccess} lost-access, ${summary.refreshed} refreshes`
+/**
+ * Format the reconcile commit message. The `+N migrated` suffix appears only when
+ * `summary.migrated > 0` so steady-state runs keep the existing format and operators
+ * can spot the one-time migration commit easily.
+ */
+export function formatCommitMessage(summary: ReconcileSummary): string {
+  const base = `chore(reconcile): +${summary.added} new, ${summary.pendingReview} pending-review, ${summary.lostAccess} lost-access, ${summary.refreshed} refreshes`
+  return summary.migrated > 0 ? `${base}, +${summary.migrated} migrated` : base
 }
 
 async function loadAllowlist(readMetadata: (path: string) => Promise<unknown>, path: string): Promise<AllowlistFile> {

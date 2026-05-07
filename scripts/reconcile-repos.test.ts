@@ -8,15 +8,15 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   containsFroBotAgentReference,
   DISPATCH_DEFAULTS,
+  formatCommitMessage,
   handleReconcile,
   isEligibleForSurvey,
-  isSurveyStale,
   loadDispatchStaggerFromEnv,
   loadMaxDispatchesPerRunFromEnv,
   mergeAccessChannels,
+  migrateRepoEntry,
   ReconcileError,
   reconcileRepos,
-  SURVEY_STALENESS_MS,
   type AccessListEntry,
   type HandleReconcileParams,
   type OctokitClient,
@@ -100,6 +100,7 @@ describe('reconcileRepos', () => {
         regained: 0,
         lostAccess: 0,
         refreshed: 0,
+        migrated: 0,
         unchanged: 0,
       })
     })
@@ -425,6 +426,7 @@ describe('reconcileRepos', () => {
         regained: 0,
         lostAccess: 1,
         refreshed: 1,
+        migrated: 0,
         unchanged: 0,
       })
     })
@@ -450,6 +452,7 @@ describe('reconcileRepos', () => {
         regained: 0,
         lostAccess: 0,
         refreshed: 0,
+        migrated: 0,
         unchanged: 1,
       })
     })
@@ -466,6 +469,7 @@ describe('reconcileRepos', () => {
         regained: 0,
         lostAccess: 0,
         refreshed: 0,
+        migrated: 0,
         unchanged: 0,
       })
     })
@@ -2488,35 +2492,217 @@ jobs:
   })
 })
 
-describe('isSurveyStale', () => {
-  const JUST_BEFORE = SURVEY_STALENESS_MS - 1
-  const EXACTLY = SURVEY_STALENESS_MS
-  const JUST_AFTER = SURVEY_STALENESS_MS + 1
+describe('migrateRepoEntry', () => {
+  // Backfills new schema fields on legacy entries that predate the cadence rollout.
+  // Returns the input by reference when both fields are already populated (idempotent).
 
-  it('treats null as stale (never surveyed)', () => {
-    expect(isSurveyStale(null, new Date('2026-04-17T12:00:00Z'))).toBe(true)
+  it('backfills discovery_channel as collab and computes next_survey_eligible_at from last_survey_at', () => {
+    // GIVEN a legacy entry with last_survey_at populated and both new fields missing
+    const legacy = makeEntry({
+      last_survey_at: '2026-04-27',
+      discovery_channel: undefined,
+      next_survey_eligible_at: undefined,
+    })
+
+    // WHEN migrating
+    const migrated = migrateRepoEntry(legacy, NOW)
+
+    // THEN both fields are populated (channel = collab, eligibility = baseDate + 30d + jitter)
+    expect(migrated.discovery_channel).toBe('collab')
+    expect(migrated.next_survey_eligible_at).toMatch(/^2026-05-(2[7-9]|30)$/)
+    // AND nothing else changed
+    expect({
+      ...migrated,
+      discovery_channel: legacy.discovery_channel,
+      next_survey_eligible_at: legacy.next_survey_eligible_at,
+    }).toEqual(legacy)
   })
 
-  it('treats a malformed date string as stale (recoverable corruption)', () => {
-    expect(isSurveyStale('not-a-date', new Date('2026-04-17T12:00:00Z'))).toBe(true)
+  it('leaves next_survey_eligible_at null when last_survey_at is null', () => {
+    const legacy = makeEntry({
+      last_survey_at: null,
+      discovery_channel: undefined,
+      next_survey_eligible_at: undefined,
+    })
+
+    const migrated = migrateRepoEntry(legacy, NOW)
+
+    expect(migrated.discovery_channel).toBe('collab')
+    expect(migrated.next_survey_eligible_at).toBe(null)
   })
 
-  it('treats exactly 30 days old as stale (inclusive boundary)', () => {
-    const anchor = new Date('2026-04-01T00:00:00Z')
-    const now = new Date(anchor.getTime() + EXACTLY)
-    expect(isSurveyStale('2026-04-01', now)).toBe(true)
+  it('treats malformed last_survey_at as never-surveyed (next_survey_eligible_at = null)', () => {
+    const legacy = makeEntry({
+      last_survey_at: 'not-a-date',
+      discovery_channel: undefined,
+      next_survey_eligible_at: undefined,
+    })
+
+    const migrated = migrateRepoEntry(legacy, NOW)
+
+    expect(migrated.discovery_channel).toBe('collab')
+    expect(migrated.next_survey_eligible_at).toBe(null)
   })
 
-  it('treats just under 30 days as fresh', () => {
-    const anchor = new Date('2026-04-01T00:00:00Z')
-    const now = new Date(anchor.getTime() + JUST_BEFORE)
-    expect(isSurveyStale('2026-04-01', now)).toBe(false)
+  it('returns the input by reference when both fields are already populated (idempotent)', () => {
+    const fresh = makeEntry({
+      last_survey_at: '2026-04-27',
+      discovery_channel: 'owned',
+      next_survey_eligible_at: '2026-05-15',
+    })
+
+    const migrated = migrateRepoEntry(fresh, NOW)
+
+    expect(migrated).toBe(fresh) // referential equality
   })
 
-  it('treats just over 30 days as stale', () => {
-    const anchor = new Date('2026-04-01T00:00:00Z')
-    const now = new Date(anchor.getTime() + JUST_AFTER)
-    expect(isSurveyStale('2026-04-01', now)).toBe(true)
+  it('backfills only the missing field when only one is absent', () => {
+    // GIVEN an entry with channel set (e.g. by addRepoEntry default) but eligibility missing
+    const partial = makeEntry({
+      last_survey_at: '2026-04-27',
+      discovery_channel: 'owned',
+      next_survey_eligible_at: undefined,
+    })
+
+    const migrated = migrateRepoEntry(partial, NOW)
+
+    // THEN channel is preserved (not overwritten with 'collab')
+    expect(migrated.discovery_channel).toBe('owned')
+    // AND eligibility is computed using the existing channel's interval (owned = 14d)
+    expect(migrated.next_survey_eligible_at).toMatch(/^2026-05-(1[1-4])$/)
+  })
+})
+
+describe('reconcileRepos legacy migration', () => {
+  it('migrates legacy entries on first reconcile run and bumps summary.migrated', () => {
+    // GIVEN a tracked entry missing both new fields and an unchanged access list
+    const legacy = makeEntry({
+      owner: 'marcusrbrown',
+      name: 'legacy-repo',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-04-01',
+      discovery_channel: undefined,
+      next_survey_eligible_at: undefined,
+    })
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [legacy]},
+        accessList: [makeAccess({owner: 'marcusrbrown', name: 'legacy-repo', node_id: 'R_legacy'})],
+        fieldProbes: new Map([['marcusrbrown/legacy-repo', {has_fro_bot_workflow: false, has_renovate: false}]]),
+      }),
+    )
+
+    // THEN summary.migrated counts the migration
+    expect(result.summary.migrated).toBe(1)
+    // AND the entry now carries both new fields
+    expect(result.nextRepos.repos[0]?.discovery_channel).toBe('collab')
+    // last_survey_at: 2026-04-01 + collab 30d + jitter[0..3] → 2026-05-01..04
+    expect(result.nextRepos.repos[0]?.next_survey_eligible_at).toMatch(/^2026-05-0[1-4]$/)
+  })
+
+  it('subsequent reconcile run on already-migrated state has summary.migrated === 0', () => {
+    // GIVEN an entry that has both new fields set (post-migration steady state)
+    const migrated = makeEntry({
+      owner: 'marcusrbrown',
+      name: 'migrated-repo',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-04-01',
+      discovery_channel: 'collab',
+      next_survey_eligible_at: '2026-05-01',
+    })
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [migrated]},
+        accessList: [makeAccess({owner: 'marcusrbrown', name: 'migrated-repo', node_id: 'R_mig'})],
+        fieldProbes: new Map([['marcusrbrown/migrated-repo', {has_fro_bot_workflow: false, has_renovate: false}]]),
+      }),
+    )
+
+    expect(result.summary.migrated).toBe(0)
+    // AND nextRepos referential identity preserved (no-op fast path)
+    expect(result.nextRepos.repos[0]).toBe(migrated)
+  })
+
+  it('a migration-only run (no other changes) is NOT a no-op — produces a real commit plan', () => {
+    // GIVEN 18 legacy entries, all access still healthy, no field-probe drift
+    const legacyEntries = Array.from({length: 18}, (_, i) =>
+      makeEntry({
+        owner: 'marcusrbrown',
+        name: `legacy-${i.toString().padStart(2, '0')}`,
+        onboarding_status: 'onboarded',
+        last_survey_at: null, // never-surveyed → not eligible-storm
+        discovery_channel: undefined,
+        next_survey_eligible_at: undefined,
+      }),
+    )
+    const accessList = legacyEntries.map((e, i) => makeAccess({owner: e.owner, name: e.name, node_id: `R_l${i}`}))
+    const fieldProbes = new Map(
+      legacyEntries.map(e => [`${e.owner}/${e.name}`, {has_fro_bot_workflow: false, has_renovate: false}]),
+    )
+    const initial = {version: 1, repos: legacyEntries} as const
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: initial,
+        accessList,
+        fieldProbes,
+      }),
+    )
+
+    // THEN migrated counter is 18
+    expect(result.summary.migrated).toBe(18)
+    // AND the run is NOT classified as no-op (must produce a commit so the migration persists)
+    expect(result.nextRepos.repos).not.toBe(initial.repos)
+    // AND every entry is now populated
+    for (const entry of result.nextRepos.repos) {
+      expect(entry.discovery_channel).toBe('collab')
+    }
+  })
+})
+
+describe('formatCommitMessage', () => {
+  it('emits the steady-state format when summary.migrated === 0', () => {
+    expect(
+      formatCommitMessage({
+        added: 1,
+        pendingReview: 0,
+        regained: 0,
+        lostAccess: 0,
+        refreshed: 2,
+        migrated: 0,
+        unchanged: 0,
+      }),
+    ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 2 refreshes')
+  })
+
+  it('appends the +N migrated suffix when summary.migrated > 0', () => {
+    expect(
+      formatCommitMessage({
+        added: 0,
+        pendingReview: 0,
+        regained: 0,
+        lostAccess: 0,
+        refreshed: 0,
+        migrated: 18,
+        unchanged: 0,
+      }),
+    ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
+  })
+
+  it('includes the migrated suffix alongside other non-zero counters', () => {
+    expect(
+      formatCommitMessage({
+        added: 1,
+        pendingReview: 0,
+        regained: 0,
+        lostAccess: 0,
+        refreshed: 1,
+        migrated: 18,
+        unchanged: 0,
+      }),
+    ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 1 refreshes, +18 migrated')
   })
 })
 
