@@ -21,7 +21,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--sparkle]] — TypeScript playground monorepo; cross-platform design system (React + React Native/Expo), component library (Radix + Tailwind), Astro Starlight docs, Turborepo, WASM web shell
 - [[marcusrbrown--systematic]] — OpenCode plugin: structured engineering workflows (45 skills, 50 agents), npm `@fro.bot/systematic`, Bun + Biome + semantic-release
 - [[marcusrbrown--tokentoilet]] — Web3 DeFi token disposal app (Next.js 16, React 19, TypeScript 6, Wagmi v2, Reown AppKit, Tailwind CSS v4, Vercel)
-- [[marcusrbrown--vbs]] — marcusrbrown/vbs
+- [[marcusrbrown--vbs]] — Star Trek chronological viewing guide (TypeScript, Vite, D3.js, functional factories, GitHub Pages, Fro Bot active)
 
 ## Topics
 

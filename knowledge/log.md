@@ -1016,3 +1016,55 @@ Sources: https://github.com/marcusrbrown/sparkle (SHA 712ab1bc2fdcd59ec9b8a2d71a
 Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-05-06 12:00] ingest | marcusrbrown/tokentoilet
+
+Incremental re-survey of `marcusrbrown/tokentoilet` (SHA `0aa1d9a`, up from `97e96c1`). Updated repo page `marcusrbrown--tokentoilet.md` and topic page `web3-defi.md`. Index unchanged (both pages already cataloged).
+
+Delta from prior survey (SHA `97e96c1`, 2026-04-25):
+
+- **Fro Bot agent bumped:** v0.41.4 → v0.42.6 (SHA `80b2c18bb1c70df96b3f150c7827c13ca0e35655`) — four intermediate releases (v0.42.1, v0.42.2, v0.42.5, v0.42.6)
+- **pnpm bumped:** 10.33.0 → 10.33.2 (#937, #943)
+- **Tailwind CSS bumped:** 4.2.2 → 4.2.4 (#938)
+- **postcss bumped:** 8.5.10 → 8.5.12 (#951, #952)
+- **pnpm/action-setup updated:** v6.0.3 → v6.0.5 (#966)
+- **Open issues:** 26 → 30 (net gain from autohealing reports)
+- **Open PRs:** 6 (wagmi v3 #837, lucide-react v1 #835, eslint-config #897, lockfile maintenance #929, Copilot security fix #941, postcss #974). `@eslint-react/eslint-plugin` v4 (#909) no longer in open PRs
+- **Copilot coding agent active:** PR #941 authored by GitHub Copilot (security overrides for postcss/axios + setState-in-effect lint fix). Three Copilot branches observed: `copilot/fix-lint-issues`, `copilot/address-review-concerns`, `copilot/resolve-daily-autohealing-report-2026-04-26`
+- All commits since prior survey are exclusively Renovate dependency bumps — no structural changes, no application code changes
+- Repository structure, MVP disposal flow, CI pipeline, Vercel deployment, conventions all unchanged
+- No contradictions with prior ingest
+
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 0aa1d9a02f1a8ba5cbd95818fb6157318cf9f20b)
+
+## [2026-05-06 07:52] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-05-07 06:00] ingest | marcusrbrown/vbs
+
+Incremental re-survey of `marcusrbrown/vbs` (SHA `b3c415b`, up from `dd10e05`). Updated repo page `marcusrbrown--vbs.md`. Index unchanged (page already cataloged). No new topic/entity/comparison pages warranted — delta is exclusively Renovate dependency bumps.
+
+Delta from prior survey (SHA `dd10e05`, 2026-04-25):
+
+- **`fro-bot/agent` bumped:** v0.41.4 → v0.42.8 (through v0.42.1, v0.42.4, v0.42.5, v0.42.6, v0.42.7; SHA `fee26493b0f82a9a00241fe24fb0aede8174d1d2`)
+- **Renovate config preset bumped:** `marcusrbrown/renovate-config#4.5.8` → `#4.5.9` (PR #537)
+- **`bfra-me/.github` reusable workflows:** v4.16.8 → v4.16.12 (PRs #528, #536, #543)
+- **pnpm bumped:** 10.33.0 → 10.33.2
+- **Non-major dependency batches:** eslint, vitest, prettier, lint-staged, codecov-action, and others via PRs #527, #533, #549
+- **Open PRs:** 7 (6 stacking Star Trek data updates #454–#546, 1 Copilot feature PR #458)
+- **Open issues:** 30 (net growth from ~23, majority autohealing reports)
+- **Accumulating data-update PRs:** 6 unmerged weekly data PRs (data-29 through data-34) — possible review bottleneck
+- All 15 commits since prior survey are Renovate-authored; no structural or application code changes
+- Repository structure, architecture, CI pipeline, conventions, Fro Bot integration all unchanged
+- No contradictions with prior ingest
+
+Sources: https://github.com/marcusrbrown/vbs (SHA b3c415bc4e0e25dd4e5ca8ccdc5ae7aaac9cbdec)
+
+## [2026-05-07 04:05] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs
