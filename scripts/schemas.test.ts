@@ -323,6 +323,249 @@ describe('schemas — rejection cases', () => {
     expect(isDiscoveryChannel(42)).toBe(false)
   })
 
+  it('accepts entry with private: true and node_id', () => {
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: 'marcusrbrown',
+          name: 'poly',
+          added: '2026-05-05',
+          onboarding_status: 'onboarded',
+          last_survey_at: '2026-05-06',
+          last_survey_status: 'success',
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: '2026-06-08',
+          private: true,
+          node_id: 'R_kgDOSVJgdw',
+        },
+      ],
+    }
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('accepts entry with private: false and node_id', () => {
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'agent',
+          added: '2026-05-05',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'owned',
+          next_survey_eligible_at: null,
+          private: false,
+          node_id: 'R_kgDOPublic',
+        },
+      ],
+    }
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('accepts redacted entry shape (private: true, owner: [REDACTED], name: <node_id>)', () => {
+    // #given a private entry already in its always-redacted form
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: '[REDACTED]',
+          name: 'R_kgDOSVJgdw',
+          added: '2026-05-05',
+          onboarding_status: 'onboarded',
+          last_survey_at: '2026-05-06',
+          last_survey_status: 'success',
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: '2026-06-08',
+          private: true,
+          node_id: 'R_kgDOSVJgdw',
+        },
+      ],
+    }
+    // #when the schema validates the entry
+    // #then it accepts because owner and name are still strings;
+    // the schema does not enforce semantic shape
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('accepts legacy entries missing private and node_id', () => {
+    // #given a legacy entry from before the privacy migration
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+        },
+      ],
+    }
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('rejects null private', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          private: null,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('private')
+  })
+
+  it('rejects numeric private', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          private: 1,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('private')
+  })
+
+  it('rejects string private (not boolean)', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          private: 'yes',
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('private')
+  })
+
+  it('rejects null node_id', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          node_id: null,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('node_id')
+  })
+
+  it('rejects empty-string node_id', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          node_id: '',
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('node_id')
+  })
+
+  it('rejects numeric node_id', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          node_id: 12345,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('node_id')
+  })
+
   it('rejects non-string entry in with-renovate list', () => {
     const bad = {repositories: {'with-renovate': ['valid', 42]}}
     expect(isRenovateFile(bad)).toBe(false)
