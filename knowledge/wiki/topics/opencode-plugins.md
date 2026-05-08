@@ -134,9 +134,15 @@ Rather than registering one tool per skill, systematic registers a single `syste
 
 Both plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's OpenCode plugin repos. Both use `mise.toml` to pin Bun and tool versions.
 
+## Documentation Deployment
+
+[[marcusrbrown--systematic]] deploys its Starlight/Astro docs site to a separate repo ([[fro-bot--systematic]]) rather than using the source repo's GitHub Pages. The docs site at **fro.bot/systematic/** also serves the OCX component registry (`.well-known/ocx.json` → `/systematic/index.json`), enabling `ocx` CLI to install individual skills and agents by URL. See [[github-pages]] for the cross-repo deploy pattern.
+
 ## Related Pages
 
 - [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows with 46 skills and 50 agents
+- [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
+- [[github-pages]] — GitHub Pages deployment patterns including cross-repo Starlight deploy

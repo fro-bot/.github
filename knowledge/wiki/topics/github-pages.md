@@ -2,12 +2,13 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-04-25
-tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll]
+updated: 2026-05-07
+tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll, astro, starlight]
 related:
   - marcusrbrown--mrbro-dev
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--esphome-life
+  - fro-bot--systematic
 ---
 
 # GitHub Pages
@@ -19,6 +20,7 @@ Static site hosting via GitHub. Deployment patterns observed across the Fro Bot 
 - [[marcusrbrown--mrbro-dev]] — React 19 + Vite 7 portfolio, custom domain at mrbro.dev
 - [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 brand site, custom domain at marcusrbrown.com
 - [[marcusrbrown--esphome-life]] — Jekyll (slate theme) + ESP Web Tools firmware installer, deployed to `gh-pages` branch
+- [[fro-bot--systematic]] — Starlight/Astro docs site for `@fro.bot/systematic`, deployed to `gh-pages` branch at fro.bot/systematic/
 
 ## Deployment Patterns Observed
 
@@ -55,6 +57,19 @@ The pattern used in [[marcusrbrown--esphome-life]]:
 6. The site uses `esp-web-tools@8.0.3` to provide browser-based USB firmware flashing
 
 This pattern is distinct from the SPA deploy pattern — it serves firmware binaries alongside a minimal Jekyll site rather than a JS application bundle.
+
+### Starlight/Astro Cross-Repo Deploy
+
+The pattern used in [[marcusrbrown--systematic]] → [[fro-bot--systematic]]:
+
+1. Astro/Starlight docs site lives in the source repo (`marcusrbrown/systematic/docs/`)
+2. A `docs.yaml` workflow in the source repo builds the site and pushes output to a separate repo (`fro-bot/systematic:gh-pages`)
+3. GitHub Pages serves the `gh-pages` branch at `fro.bot/systematic/`
+4. All commits on the target repo are authored by `fro-bot[bot]` with provenance messages linking back to the source SHA
+5. `.nojekyll` disables Jekyll processing; Pagefind provides client-side search
+6. `.well-known/ocx.json` serves the OCX component registry, enabling `ocx` CLI to install skills/agents from the docs URL
+
+This cross-repo pattern separates the docs deployment surface from the source repo, keeping the source repo's Pages available for other uses and giving the docs site its own URL under the `fro-bot` org.
 
 ## Performance Monitoring
 

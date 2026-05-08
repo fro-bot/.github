@@ -1068,3 +1068,27 @@ Sources: https://github.com/marcusrbrown/vbs (SHA b3c415bc4e0e25dd4e5ca8ccdc5ae7
 Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
+
+## [2026-05-08 12:00] ingest | fro-bot/agent
+
+Re-survey of `fro-bot/agent` (SHA `ef6b952`, unchanged from 2026-05-07). Updated repo page `fro-bot--agent.md` with additive detail. Updated `index.md` entry description. No new topic/entity/comparison pages warranted.
+
+Delta from prior survey (SHA `ef6b952`, 2026-05-07):
+
+- SHA unchanged (`ef6b952`): latest commit is `fix(deps): update dependency @aws-sdk/client-s3 to v3.1040.0 (#595)` from 2026-05-04
+- **Structural discrepancy found:** `src/services/` contains `artifact/` (upload.ts, upload.test.ts, index.ts) — not `object-store/` as documented in AGENTS.md and prior survey's architecture table. S3 object-store code may have been refactored or consolidated elsewhere. Noted as contradiction in page.
+- **Workspace package detail added:** `@fro-bot/action` (apps/action) depends on `@fro-bot/runtime` (packages/runtime) via workspace protocol. Runtime exports `@bfra.me/es` and `@opencode-ai/sdk` as direct deps.
+- **Documentation artifacts cataloged:** `docs/` contains 7 subdirectories (audits, brainstorms, examples, ideation, plans, solutions, wiki). `FEATURES.md` documents v1.4 MVP with 73 features across 12 categories. `PRD.md` and `RFCS.md` also present at repo root.
+- **pnpm-workspace.yaml security overrides documented:** 11 package overrides for supply-chain hardening.
+- 7 open issues, 0 stars, 0 forks, latest release v0.42.8 (2026-05-06)
+- All 15 recent commits are Renovate dependency bumps — no structural changes since initial survey
+- No contradictions with prior ingest beyond the `artifact/` vs `object-store/` discrepancy
+- **Fro Bot workflow present and self-hosted** — unchanged
+
+Sources: https://github.com/fro-bot/agent (SHA ef6b9525583d13f9443b80e6ceffff8af978410a)
+
+## [2026-05-08 15:02] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent

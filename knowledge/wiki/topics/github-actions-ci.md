@@ -2,9 +2,10 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-04-30
+updated: 2026-05-07
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
+  - fro-bot--agent
   - marcusrbrown--containers
   - marcusrbrown--ha-config
   - marcusrbrown--github
@@ -21,6 +22,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 
 ## Repos Using GitHub Actions
 
+- [[fro-bot--agent]] — Path-filtered Setup → Lint, Build (dist/ drift detection), Test, Test Action (live self-referencing PR review), Dependency Review, Release (semantic-release via `next` → `release` PR flow), CodeQL, Scorecard
 - [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
 - [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
@@ -83,6 +85,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 
 | Repo                          | Fro Bot Workflow         | Schedule                          |
 | ----------------------------- | ------------------------ | --------------------------------- |
+| [[fro-bot--agent]]            | Present (`fro-bot.yaml`, self-hosted) | Daily 15:30 UTC DMR, Weekly Sun 20:00 UTC wiki update |
 | [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`) | Daily 14:30 UTC autohealing       |
 | [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]]       | Present (`fro-bot.yaml`) | Daily 03:30 UTC autohealing (8 categories incl. CLIProxy + cross-project + upstream modernization watch on Sundays) |

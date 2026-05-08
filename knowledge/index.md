@@ -4,6 +4,9 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
+- [[fro-bot--agent]] — GitHub Action harness for OpenCode + oMo agents with persistent session state; core runtime powering Fro Bot's PR review, issue triage, scheduled maintenance, and wiki-update capabilities across all managed repos
+- [[fro-bot--fro-bot-github-io]] — fro-bot/fro-bot.github.io
+- [[fro-bot--systematic]] — fro-bot/systematic
 - [[marcusrbrown--dotfiles]] — marcusrbrown/.dotfiles
 - [[marcusrbrown--github]] — Marcus's personal `.github` repo; GitHub defaults, community health files, and canonical Probot Settings template (`common-settings.yaml`)
 - [[marcusrbrown--containers]] — Container collection and automation framework (Dockerfiles, multi-arch builds, Python CLI, AI-powered templates, CI/CD)

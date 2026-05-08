@@ -9,6 +9,9 @@ repos:
     has_fro_bot_workflow: false
     has_renovate: true
     next_survey_eligible_at: 2026-06-06
+    discovery_channel: collab
+    private: false
+    node_id: R_kgDOJ_bMaQ
   - owner: marcusrbrown
     name: .dotfiles
     added: 2026-04-18
@@ -18,6 +21,9 @@ repos:
     has_fro_bot_workflow: true
     has_renovate: true
     next_survey_eligible_at: 2026-06-07
+    discovery_channel: collab
+    private: false
+    node_id: MDEwOlJlcG9zaXRvcnkxODY5MTU0
   - owner: marcusrbrown
     name: .github
     added: 2026-04-18
@@ -27,6 +33,9 @@ repos:
     has_fro_bot_workflow: false
     has_renovate: true
     next_survey_eligible_at: 2026-06-05
+    discovery_channel: collab
+    private: false
+    node_id: MDEwOlJlcG9zaXRvcnkzMDg1MzMxOTg=
   - owner: marcusrbrown
     name: containers
     added: 2026-04-18
@@ -36,6 +45,9 @@ repos:
     has_fro_bot_workflow: true
     has_renovate: true
     next_survey_eligible_at: 2026-06-07
+    discovery_channel: collab
+    private: false
+    node_id: MDEwOlJlcG9zaXRvcnk3Njg3NTEzMg==
   - owner: marcusrbrown
     name: copiloting
     added: 2026-04-18
@@ -44,6 +56,8 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
+    discovery_channel: collab
+    next_survey_eligible_at: 2026-05-25
   - owner: marcusrbrown
     name: esphome.life
     added: 2026-04-18
@@ -53,6 +67,9 @@ repos:
     has_fro_bot_workflow: false
     has_renovate: true
     next_survey_eligible_at: 2026-06-05
+    discovery_channel: collab
+    private: false
+    node_id: R_kgDOIZmGgg
   - owner: marcusrbrown
     name: extend-vscode
     added: 2026-04-18
@@ -62,6 +79,9 @@ repos:
     has_fro_bot_workflow: false
     has_renovate: true
     next_survey_eligible_at: 2026-06-06
+    discovery_channel: collab
+    private: false
+    node_id: MDEwOlJlcG9zaXRvcnkzMTMzNjg1OTU=
   - owner: marcusrbrown
     name: gpt
     added: 2026-04-18
@@ -71,6 +91,9 @@ repos:
     has_fro_bot_workflow: true
     has_renovate: true
     next_survey_eligible_at: 2026-06-07
+    discovery_channel: collab
+    private: false
+    node_id: R_kgDOK0Z5CA
   - owner: marcusrbrown
     name: infra
     added: 2026-04-18
@@ -80,6 +103,9 @@ repos:
     has_fro_bot_workflow: true
     has_renovate: true
     next_survey_eligible_at: 2026-06-07
+    discovery_channel: collab
+    private: false
+    node_id: R_kgDOR4g8TA
   - owner: marcusrbrown
     name: marcusrbrown
     added: 2026-04-18
@@ -88,6 +114,10 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
+    discovery_channel: collab
+    next_survey_eligible_at: 2026-05-29
+    private: false
+    node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
   - owner: marcusrbrown
     name: marcusrbrown.github.io
     added: 2026-04-18
@@ -96,6 +126,10 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
+    discovery_channel: collab
+    next_survey_eligible_at: 2026-05-27
+    private: false
+    node_id: R_kgDOPOkk2A
   - owner: marcusrbrown
     name: mrbro.dev
     added: 2026-04-18
@@ -104,6 +138,10 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
+    discovery_channel: collab
+    next_survey_eligible_at: 2026-05-30
+    private: false
+    node_id: R_kgDORgYjdA
   - owner: marcusrbrown
     name: renovate-config
     added: 2026-04-18
@@ -112,6 +150,10 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
+    discovery_channel: collab
+    next_survey_eligible_at: 2026-06-03
+    private: false
+    node_id: R_kgDOHRfvyQ
   - owner: marcusrbrown
     name: sparkle
     added: 2026-04-18
@@ -120,6 +162,10 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
+    discovery_channel: collab
+    next_survey_eligible_at: 2026-06-02
+    private: false
+    node_id: MDEwOlJlcG9zaXRvcnkzMTYxMDA5ODY=
   - owner: marcusrbrown
     name: systematic
     added: 2026-04-18
@@ -129,6 +175,9 @@ repos:
     has_fro_bot_workflow: true
     has_renovate: true
     next_survey_eligible_at: 2026-06-05
+    discovery_channel: collab
+    private: false
+    node_id: R_kgDORAJegA
   - owner: marcusrbrown
     name: tokentoilet
     added: 2026-04-18
@@ -138,6 +187,9 @@ repos:
     has_fro_bot_workflow: true
     has_renovate: true
     next_survey_eligible_at: 2026-06-08
+    discovery_channel: collab
+    private: false
+    node_id: R_kgDOJ3rINw
   - owner: marcusrbrown
     name: vbs
     added: 2026-04-18
@@ -147,6 +199,9 @@ repos:
     has_fro_bot_workflow: true
     has_renovate: true
     next_survey_eligible_at: 2026-06-06
+    discovery_channel: collab
+    private: false
+    node_id: R_kgDOPOixzg
   - owner: marcusrbrown
     name: opencode-copilot-delegate
     added: 2026-04-23
@@ -155,13 +210,55 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
+    discovery_channel: collab
+    next_survey_eligible_at: 2026-05-27
+    private: false
+    node_id: R_kgDOSKIp0Q
   - owner: '[REDACTED]'
     name: R_kgDOSVJgdw
     added: 2026-05-05
-    onboarding_status: onboarded
+    onboarding_status: pending
     last_survey_at: 2026-05-06
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: collab
     next_survey_eligible_at: 2026-06-08
+    private: true
+    node_id: R_kgDOSVJgdw
+  - owner: fro-bot
+    name: agent
+    added: 2026-05-07
+    onboarding_status: onboarded
+    last_survey_at: 2026-05-08
+    last_survey_status: success
+    has_fro_bot_workflow: false
+    has_renovate: false
+    discovery_channel: owned
+    next_survey_eligible_at: 2026-05-22
+    private: false
+    node_id: R_kgDOQyTMEw
+  - owner: fro-bot
+    name: fro-bot.github.io
+    added: 2026-05-07
+    onboarding_status: onboarded
+    last_survey_at: 2026-05-08
+    last_survey_status: success
+    has_fro_bot_workflow: false
+    has_renovate: false
+    discovery_channel: owned
+    next_survey_eligible_at: 2026-05-24
+    private: false
+    node_id: R_kgDORLxXng
+  - owner: fro-bot
+    name: systematic
+    added: 2026-05-07
+    onboarding_status: onboarded
+    last_survey_at: 2026-05-08
+    last_survey_status: success
+    has_fro_bot_workflow: false
+    has_renovate: false
+    discovery_channel: owned
+    next_survey_eligible_at: 2026-05-22
+    private: false
+    node_id: R_kgDORLx6ew
