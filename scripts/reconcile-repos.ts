@@ -54,7 +54,7 @@ import {
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
-import {addRepoEntry, computeNextEligibleAt} from './repos-metadata.ts'
+import {addRepoEntry, computeNextEligibleAt, normalizeRepoEntryForStorage} from './repos-metadata.ts'
 import {
   assertAllowlistFile,
   assertReposFile,
@@ -246,6 +246,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   validateAccessList(accessList)
 
   const accessByKey = indexAccessList(accessList)
+  const accessByNodeId = indexAccessListByNodeId(accessList)
   const allowlistedOwners = new Set(allowlist.approved_inviters.map(i => i.username))
 
   const summary: ReconcileSummary = {
@@ -276,6 +277,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       entry,
       key,
       accessByKey,
+      accessByNodeId,
       accessChannelByKey,
       perRepoStatus,
       fieldProbes,
@@ -328,12 +330,15 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       owner: access.owner,
       repo: access.name,
       now,
+      private: access.private,
+      node_id: access.node_id,
       onboarding_status: status,
       discovery_channel: channel,
     })
 
     if (trusted) {
       summary.added += 1
+      if (access.private) continue
       dispatches.push({owner: access.owner, repo: access.name})
     } else {
       summary.pendingReview += 1
@@ -370,6 +375,7 @@ interface ClassifyTrackedParams {
   entry: RepoEntry
   key: string
   accessByKey: Map<string, AccessListEntry>
+  accessByNodeId: Map<string, AccessListEntry>
   accessChannelByKey: Map<string, DiscoveryChannel>
   perRepoStatus: Map<string, RepoStatusProbe>
   fieldProbes: Map<string, FieldProbe>
@@ -387,7 +393,17 @@ interface ClassifyTrackedParams {
  * pattern (see `processInvitation` in `handle-invitation.ts`).
  */
 function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
-  const {accessByKey, perRepoStatus, fieldProbes, allowlistedOwners, summary, dispatches, rawIssues, now} = params
+  const {
+    accessByKey,
+    accessByNodeId,
+    perRepoStatus,
+    fieldProbes,
+    allowlistedOwners,
+    summary,
+    dispatches,
+    rawIssues,
+    now,
+  } = params
 
   // Backfill new schema fields on legacy entries before any other logic. Idempotent on
   // already-populated entries (returns by reference) so steady-state runs don't bump the
@@ -398,9 +414,20 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   }
   const entry = migrated
   const key = params.key
-  const access = accessByKey.get(key)
+  const access = accessForTrackedEntry(entry, key, accessByKey, accessByNodeId)
+  const accessKey = access === undefined ? key : repoKey(access.owner, access.name)
 
   if (access === undefined) {
+    if (entry.owner === '[REDACTED]' && storedRepoNodeId(entry) !== undefined) {
+      if (entry.onboarding_status === 'lost-access') {
+        summary.unchanged += 1
+        return entry
+      }
+      summary.lostAccess += 1
+      summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
+      return normalizeLostAccessEntry(entry)
+    }
+
     // Not in the access list — probe decides lost-access vs transient inconsistency.
     const probe = perRepoStatus.get(key)
     if (probe === undefined) {
@@ -449,7 +476,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
         }
         summary.lostAccess += 1
         summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
-        return {...entry, onboarding_status: 'lost-access', private: true}
+        return normalizeLostAccessEntry(entry)
       }
       default: {
         // Exhaustiveness guard. Adding a new RepoStatusProbe variant must update the
@@ -469,11 +496,29 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     summary.lostAccess += 1
     summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
     return {
-      ...entry,
+      ...normalizeRepoEntryForStorage(entry, {
+        owner: access.owner,
+        repo: access.name,
+        private: true,
+        node_id: access.node_id,
+      }),
       onboarding_status: 'lost-access',
+    }
+  }
+
+  if (access.private && entry.onboarding_status !== 'lost-access') {
+    const normalized = normalizeRepoEntryForStorage(entry, {
+      owner: access.owner,
+      repo: access.name,
       private: true,
       node_id: access.node_id,
+    })
+    if (normalized === entry) {
+      summary.unchanged += 1
+      return entry
     }
+    summary.refreshed += 1
+    return normalized
   }
 
   if (entry.onboarding_status === 'lost-access') {
@@ -482,22 +527,32 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     // prefers the entry's stored channel (sticky); falls back to the live access-list
     // channel for legacy pre-Unit-3 entries that have no recorded channel; ultimately
     // defaults to `collab` if neither source has it.
-    const channel = entry.discovery_channel ?? params.accessChannelByKey.get(key) ?? 'collab'
-    const trusted = isTrustedChannel(channel, entry.owner, allowlistedOwners)
+    const channel = entry.discovery_channel ?? params.accessChannelByKey.get(accessKey) ?? 'collab'
+    const trusted = isTrustedChannel(channel, access.owner, allowlistedOwners)
     const nextStatus: OnboardingStatus = trusted ? 'pending' : 'pending-review'
     summary.regained += 1
     if (trusted) {
-      dispatches.push({owner: entry.owner, repo: entry.name})
+      if (!access.private) {
+        dispatches.push({owner: access.owner, repo: access.name})
+      }
     } else {
       rawIssues.push({
-        owner: entry.owner,
-        repo: entry.name,
+        owner: access.owner,
+        repo: access.name,
         reason: 'unsolicited-regain',
         private: access.private,
         node_id: access.node_id,
       })
     }
-    return {...entry, onboarding_status: nextStatus, private: access.private, node_id: access.node_id}
+    return {
+      ...normalizeRepoEntryForStorage(entry, {
+        owner: access.owner,
+        repo: access.name,
+        private: access.private,
+        node_id: access.node_id,
+      }),
+      onboarding_status: nextStatus,
+    }
   }
 
   // Still-accessible tracked entry.
@@ -515,28 +570,30 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   // genuinely fresh never become candidates so they don't compete for dispatch slots.
   // `pending-review` entries are excluded — they require human approval first.
   if (entry.onboarding_status === 'onboarded' && isEligibleForSurvey(entry.next_survey_eligible_at, params.now)) {
-    dispatches.push({owner: entry.owner, repo: entry.name})
+    dispatches.push({owner: access.owner, repo: access.name})
   } else if (
     entry.onboarding_status === 'pending' &&
     (entry.last_survey_status !== 'success' || isEligibleForSurvey(entry.next_survey_eligible_at, params.now))
   ) {
-    dispatches.push({owner: entry.owner, repo: entry.name})
+    dispatches.push({owner: access.owner, repo: access.name})
   }
 
   // Field refresh: apply probe results when they disagree with tracked fields,
   // and write live private/node_id from the access list when they differ.
-  const probe = fieldProbes.get(key)
+  const probe = fieldProbes.get(key) ?? fieldProbes.get(accessKey)
   const accessPrivate = access.private
   const accessNodeId = access.node_id
+  const storageInput = {owner: access.owner, repo: access.name, private: accessPrivate, node_id: accessNodeId}
 
   if (probe === undefined) {
     // No field probe — but access list still has private/node_id. Apply if changed.
-    if (entry.private === accessPrivate && entry.node_id === accessNodeId) {
+    const normalized = normalizeRepoEntryForStorage(entry, storageInput)
+    if (normalized === entry) {
       summary.unchanged += 1
       return entry
     }
     summary.refreshed += 1
-    return {...entry, private: accessPrivate, node_id: accessNodeId}
+    return normalized
   }
 
   const fieldsMatch =
@@ -548,13 +605,11 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     return entry
   }
   summary.refreshed += 1
-  return {
-    ...entry,
+  return normalizeRepoEntryForStorage({
+    ...normalizeRepoEntryForStorage(entry, storageInput),
     has_fro_bot_workflow: probe.has_fro_bot_workflow,
     has_renovate: probe.has_renovate,
-    private: accessPrivate,
-    node_id: accessNodeId,
-  }
+  })
 }
 
 /**
@@ -651,18 +706,32 @@ function buildIssueQueue(raw: RawIssue[]): IssueQueueEntry[] {
 
   const issues: IssueQueueEntry[] = []
   for (const bucket of groups.values()) {
-    if (bucket.length >= 2) {
-      const first = bucket[0]
+    const privateEntries = bucket.filter(item => item.private)
+    const publicEntries = bucket.filter(item => !item.private)
+
+    if (publicEntries.length >= 2) {
+      const first = publicEntries[0]
       if (first === undefined) continue // unreachable; satisfies noUncheckedIndexedAccess
       issues.push({
         kind: 'per-owner-rollup',
         owner: first.owner,
         reason: first.reason,
-        entries: bucket.map(item => ({repo: item.repo, private: item.private, node_id: item.node_id})),
+        entries: publicEntries.map(item => ({repo: item.repo, private: item.private, node_id: item.node_id})),
       })
-      continue
+    } else {
+      for (const item of publicEntries) {
+        issues.push({
+          kind: 'per-repo',
+          owner: item.owner,
+          repo: item.repo,
+          reason: item.reason,
+          private: item.private,
+          node_id: item.node_id,
+        })
+      }
     }
-    for (const item of bucket) {
+
+    for (const item of privateEntries) {
       issues.push({
         kind: 'per-repo',
         owner: item.owner,
@@ -695,6 +764,40 @@ function indexAccessList(accessList: AccessListEntry[]): Map<string, AccessListE
     map.set(repoKey(entry.owner, entry.name), entry)
   }
   return map
+}
+
+function indexAccessListByNodeId(accessList: AccessListEntry[]): Map<string, AccessListEntry> {
+  const map = new Map<string, AccessListEntry>()
+  for (const entry of accessList) {
+    map.set(entry.node_id, entry)
+  }
+  return map
+}
+
+function storedRepoNodeId(entry: RepoEntry): string | undefined {
+  if (entry.node_id !== undefined) return entry.node_id
+  if (entry.owner === '[REDACTED]') return entry.name
+  return undefined
+}
+
+function accessForTrackedEntry(
+  entry: RepoEntry,
+  key: string,
+  accessByKey: Map<string, AccessListEntry>,
+  accessByNodeId: Map<string, AccessListEntry>,
+): AccessListEntry | undefined {
+  return accessByKey.get(key) ?? accessByNodeId.get(storedRepoNodeId(entry) ?? '')
+}
+
+function normalizeLostAccessEntry(entry: RepoEntry): RepoEntry {
+  const nodeId = storedRepoNodeId(entry)
+  if (nodeId === undefined) {
+    return {...entry, onboarding_status: 'lost-access', private: true}
+  }
+  return {
+    ...normalizeRepoEntryForStorage(entry, {private: true, node_id: nodeId}),
+    onboarding_status: 'lost-access',
+  }
 }
 
 function validateAccessList(accessList: AccessListEntry[]): void {
@@ -1288,10 +1391,14 @@ export async function fetchPerRepoStatus(
   logger: {warn: (message: string) => void},
 ): Promise<Map<string, RepoStatusProbe>> {
   const accessKeys = new Set(accessList.map(a => `${a.owner}/${a.name}`))
+  const accessNodeIds = new Set(accessList.map(a => a.node_id))
   const map = new Map<string, RepoStatusProbe>()
   for (const entry of currentRepos.repos) {
     const key = `${entry.owner}/${entry.name}`
     if (accessKeys.has(key)) continue
+    const nodeId = storedRepoNodeId(entry)
+    if (nodeId !== undefined && accessNodeIds.has(nodeId)) continue
+    if (entry.owner === '[REDACTED]') continue
     try {
       const response = await userOctokit.rest.repos.get({owner: entry.owner, repo: entry.name})
       // Reachable (200) but we weren't in /user/repos → access was revoked.
@@ -1357,14 +1464,16 @@ async function fetchFieldProbes(
   accessList: AccessListEntry[],
   logger: ReconcileLogger,
 ): Promise<{probes: Map<string, FieldProbe>; failed: number}> {
-  const accessKeys = new Set(accessList.filter(a => a.archived === false).map(a => `${a.owner}/${a.name}`))
+  const accessByKey = indexAccessList(accessList.filter(a => a.archived === false))
+  const accessByNodeId = indexAccessListByNodeId(accessList.filter(a => a.archived === false))
   const map = new Map<string, FieldProbe>()
   let failed = 0
   for (const entry of currentRepos.repos) {
     const key = `${entry.owner}/${entry.name}`
-    if (!accessKeys.has(key)) continue // only probe still-accessible tracked entries
+    const access = accessForTrackedEntry(entry, key, accessByKey, accessByNodeId)
+    if (access === undefined) continue // only probe still-accessible tracked entries
     try {
-      const probe = await probeSingleRepo(userOctokit, entry.owner, entry.name)
+      const probe = await probeSingleRepo(userOctokit, access.owner, access.name)
       map.set(key, probe)
     } catch (error: unknown) {
       // Non-blocking: omit from map so reconcileRepos treats as no-field-change.
@@ -2050,11 +2159,15 @@ async function autoCloseStaleIssues(params: {
   const pendingReviewNodeIds = new Set<string>()
   const pendingReviewOwners = new Map<string, number>()
   const accessByKey = new Map(params.accessList.map(a => [`${a.owner}/${a.name}`, a]))
+  const accessByNodeId = indexAccessListByNodeId(params.accessList)
   for (const entry of params.nextRepos.repos) {
     if (entry.onboarding_status !== 'pending-review') continue
-    const access = accessByKey.get(`${entry.owner}/${entry.name}`)
-    if (access !== undefined) pendingReviewNodeIds.add(access.node_id)
-    pendingReviewOwners.set(entry.owner, (pendingReviewOwners.get(entry.owner) ?? 0) + 1)
+    const nodeId = storedRepoNodeId(entry)
+    const access = accessByKey.get(`${entry.owner}/${entry.name}`) ?? accessByNodeId.get(nodeId ?? '')
+    const reviewNodeId = access?.node_id ?? nodeId
+    if (reviewNodeId !== undefined) pendingReviewNodeIds.add(reviewNodeId)
+    const reviewOwner = access?.owner ?? entry.owner
+    pendingReviewOwners.set(reviewOwner, (pendingReviewOwners.get(reviewOwner) ?? 0) + 1)
   }
 
   let closed = 0

@@ -256,7 +256,7 @@ scripts/
   schemas.test.ts                    MODIFY
   repos-metadata.ts                  MODIFY (Unit 3: redacted-form writes in all mutators)
   repos-metadata.test.ts             MODIFY
-  reconcile-repos.ts                 MODIFY (Units 2, 5, 9: 5-state probe, dispatch gate, transition detection)
+  reconcile-repos.ts                 MODIFY (Units 2, 3, 5, 9: 5-state probe, redacted newcomer write inputs, dispatch gate, transition detection)
   reconcile-repos.test.ts            MODIFY
   handle-invitation.ts               MODIFY (Unit 4: read `private` from invitation, write redacted, redacted commit message)
   handle-invitation.test.ts          MODIFY
@@ -405,7 +405,7 @@ persona/
 
 ---
 
-- [ ] **Unit 3: Always-redacted writes in mutators**
+- [x] **Unit 3: Always-redacted writes in mutators**
 
 **Goal:** Modify all three mutators (`addRepoEntry`, `recordSurveyResult`, `resetSurveyResult`) to write redacted form for `private: true` entries. The redacted form (`owner: '[REDACTED]'`, `name: <node_id>`, `private: true`, `node_id: <actual>`) is what lands on `data` immediately. No "redact in transit" lifecycle.
 
@@ -416,6 +416,9 @@ persona/
 **Files:**
 - Modify: `scripts/repos-metadata.ts`
 - Modify: `scripts/repos-metadata.test.ts`
+- Modify: `scripts/reconcile-repos.ts` (pass access-list privacy fields into `addRepoEntry`)
+- Modify: `scripts/reconcile-repos.test.ts`
+- Add/modify: survey result/reset CLI tests for node-ID target handling
 
 **Execution note:** Test-first. The mutators' contract change is the highest-risk part of this plan — each mutator gets RED tests for the redacted-form output before implementation.
 
