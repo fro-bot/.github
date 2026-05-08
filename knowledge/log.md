@@ -1069,27 +1069,26 @@ Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
 
-## [2026-05-08 12:00] ingest | fro-bot/systematic
+## [2026-05-08 12:00] ingest | fro-bot/agent
 
-Re-survey of `fro-bot/systematic` (SHA `73fa108`, unchanged from 2026-05-07). Updated repo page `fro-bot--systematic.md` with new source entry, OCX registry component count (101), and source repo activity note. Updated `index.md` description for the repo entry. No new topic/entity/comparison pages warranted.
+Re-survey of `fro-bot/agent` (SHA `ef6b952`, unchanged from 2026-05-07). Updated repo page `fro-bot--agent.md` with additive detail. Updated `index.md` entry description. No new topic/entity/comparison pages warranted.
 
-Delta from prior survey (SHA `73fa108`, 2026-05-07):
+Delta from prior survey (SHA `ef6b952`, 2026-05-07):
 
-- SHA unchanged (`73fa108`): latest commit is `Deploy docs from marcusrbrown/systematic@072e755` from 2026-05-05
-- Open issues: 2 (unchanged — #1 CodeQL/Scorecard request, #2 Renovate onboarding PR)
-- Open PRs: 1 (#2 Renovate, unchanged)
-- Branches: 2 (`gh-pages`, `renovate/configure`), unchanged
-- Active workflows: `pages-build-deployment`, `Dependency Graph` only — no custom workflows
-- Collaborators: `fro-bot` only (push access)
-- OCX registry at v2.7.3 contains 101 components (newly documented)
-- Source repo (`marcusrbrown/systematic`) has 3 new commits since last deploy (plan docs, dep bumps) but no release — deployed site remains at v2.7.3
-- **No Fro Bot agent workflow** — still expected; static build output repo needs no agent coverage
-- No contradictions with prior ingest
+- SHA unchanged (`ef6b952`): latest commit is `fix(deps): update dependency @aws-sdk/client-s3 to v3.1040.0 (#595)` from 2026-05-04
+- **Structural discrepancy found:** `src/services/` contains `artifact/` (upload.ts, upload.test.ts, index.ts) — not `object-store/` as documented in AGENTS.md and prior survey's architecture table. S3 object-store code may have been refactored or consolidated elsewhere. Noted as contradiction in page.
+- **Workspace package detail added:** `@fro-bot/action` (apps/action) depends on `@fro-bot/runtime` (packages/runtime) via workspace protocol. Runtime exports `@bfra.me/es` and `@opencode-ai/sdk` as direct deps.
+- **Documentation artifacts cataloged:** `docs/` contains 7 subdirectories (audits, brainstorms, examples, ideation, plans, solutions, wiki). `FEATURES.md` documents v1.4 MVP with 73 features across 12 categories. `PRD.md` and `RFCS.md` also present at repo root.
+- **pnpm-workspace.yaml security overrides documented:** 11 package overrides for supply-chain hardening.
+- 7 open issues, 0 stars, 0 forks, latest release v0.42.8 (2026-05-06)
+- All 15 recent commits are Renovate dependency bumps — no structural changes since initial survey
+- No contradictions with prior ingest beyond the `artifact/` vs `object-store/` discrepancy
+- **Fro Bot workflow present and self-hosted** — unchanged
 
-Sources: https://github.com/fro-bot/systematic (SHA 73fa1080776da6e5d7661e7b779d23a10f5e5290)
+Sources: https://github.com/fro-bot/agent (SHA ef6b9525583d13f9443b80e6ceffff8af978410a)
 
-## [2026-05-08 14:49] ingest | repo:fro-bot/systematic
+## [2026-05-08 15:02] ingest | repo:fro-bot/agent
 
-Surveyed fro-bot/systematic and updated the control-plane wiki.
+Surveyed fro-bot/agent and updated the control-plane wiki.
 
-Sources: https://github.com/fro-bot/systematic
+Sources: https://github.com/fro-bot/agent

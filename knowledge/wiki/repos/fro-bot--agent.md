@@ -2,12 +2,15 @@
 type: repo
 title: "fro-bot/agent"
 created: 2026-05-07
-updated: 2026-05-07
+updated: 2026-05-08
 sources:
   - url: https://github.com/fro-bot/agent
     sha: ef6b9525583d13f9443b80e6ceffff8af978410a
+    accessed: 2026-05-08
+  - url: https://github.com/fro-bot/agent
+    sha: ef6b9525583d13f9443b80e6ceffff8af978410a
     accessed: 2026-05-07
-tags: [github-actions, agent, opencode, omo, typescript, persistent-memory, ci-cd, fro-bot, semantic-release]
+tags: [github-actions, agent, opencode, omo, typescript, persistent-memory, ci-cd, fro-bot, semantic-release, pnpm-workspace, monorepo]
 related:
   - marcusrbrown--systematic
   - marcusrbrown--opencode-copilot-delegate
@@ -66,9 +69,11 @@ The codebase follows a strict four-layer dependency hierarchy (~145 source files
 | Layer | Directory        | Responsibility                                                                 |
 | ----- | ---------------- | ------------------------------------------------------------------------------ |
 | 0     | `src/shared/`    | Pure types, utils, constants — no external deps                                |
-| 1     | `src/services/`  | External adapters: GitHub client, cache, session persistence, setup, object-store, artifact |
+| 1     | `src/services/`  | External adapters: GitHub client, cache, session persistence, setup, artifact upload |
 | 2     | `src/features/`  | Business logic: agent execution, triggers/routing, comments, reviews, attachments, delegated branch/PR ops, observability |
 | 3     | `src/harness/`   | Workflow composition: entry points, phase orchestration, config parsing         |
+
+**Note (2026-05-08):** The AGENTS.md lists `object-store/` in Layer 1 services, but the actual directory listing shows `artifact/` instead (containing `upload.ts`, `upload.test.ts`, `index.ts`). The S3-compatible object-store functionality may have been refactored or the AGENTS.md is stale relative to the current directory structure. S3 backup configuration remains in the action inputs, so the capability likely moved elsewhere (possibly into `services/session/` or `services/cache/`).
 
 Entry points (`src/main.ts`, `src/post.ts`) are thin delegates to `src/harness/run.ts` and `src/harness/post.ts`.
 
@@ -212,6 +217,24 @@ Branch protection on `main`: enforce admins, linear history, 1 required reviewer
 
 `v0` and `release` branches: force-push allowed, no PR reviews, no required checks.
 
+## Documentation Artifacts
+
+The `docs/` directory contains extensive planning and operational artifacts:
+
+| Subdirectory       | Purpose                                                        |
+| ------------------ | -------------------------------------------------------------- |
+| `docs/audits/`     | Audit records                                                  |
+| `docs/brainstorms/`| Brainstorm notes and explorations                              |
+| `docs/examples/`   | Reference workflow examples (e.g., `fro-bot.yaml` template)    |
+| `docs/ideation/`   | Ideation documents for future features                         |
+| `docs/plans/`      | Architecture plans and design docs                             |
+| `docs/solutions/`  | Documented solutions with YAML frontmatter (bugs, patterns)    |
+| `docs/wiki/`       | Self-hosted Obsidian-style project wiki (maintained by agent)  |
+
+A `FEATURES.md` at repo root documents v1.4 MVP with 73 features across 12 categories (GitHub interactions, Discord agent, memory/persistence, setup, SDK execution, context/prompt, security, observability, error handling, configuration, additional triggers, delegated work tools).
+
+A `PRD.md` contains the full product requirements document. `RFCS.md` indexes the 19 RFC architecture decision records.
+
 ## Ecosystem Role
 
 This is the **central runtime** consumed by all Fro Bot-managed repositories. Every repo with a `fro-bot.yaml` workflow depends on `fro-bot/agent` as a GitHub Action reference (e.g., `fro-bot/agent@v0.42.8`). The action auto-installs and configures [[marcusrbrown--systematic]] as an OpenCode plugin, connecting the agent to 45+ skills and 50 agents.
@@ -244,8 +267,20 @@ Version lag varies: some repos trail by several patch releases due to Renovate c
 
 **Present and self-hosted.** `fro-bot.yaml` uses `./` (self-reference during CI test) and `fro-bot/agent@v0.42.x` (in the actual fro-bot.yaml). Full trigger coverage: comment mentions, issue events, PR reviews, daily DMR, weekly wiki, manual dispatch.
 
+## Workspace Packages
+
+| Package             | Path                | Dependencies                           | Purpose                              |
+| ------------------- | ------------------- | -------------------------------------- | ------------------------------------ |
+| `@fro-bot/action`   | `apps/action/`      | `@fro-bot/runtime` (workspace)         | GitHub Action entry points (private) |
+| `@fro-bot/runtime`  | `packages/runtime/` | `@bfra.me/es`, `@opencode-ai/sdk`     | Shared runtime library (private)     |
+
+Root `package.json` (`@fro-bot/agent-workspace`) holds all external production deps and dev deps. Workspace protocol links `@fro-bot/action` → `@fro-bot/runtime`. The runtime exports source-level TypeScript (no pre-built dist; consumed via workspace protocol).
+
+pnpm workspace config (`pnpm-workspace.yaml`) enables `autoInstallPeers`, `shamefullyHoist`, `shellEmulator`, and carries security-focused overrides for `brace-expansion`, `fast-xml-parser`, `flatted`, `handlebars`, `lodash`/`lodash-es`, `picomatch`, `tar`, `undici`, `yaml`, and pins `vite` to 8.0.10.
+
 ## Survey History
 
 | Date       | SHA        | Key changes                                          |
 | ---------- | ---------- | ---------------------------------------------------- |
+| 2026-05-08 | `ef6b952`  | Re-survey: additive detail (workspace packages, docs structure, artifact/object-store discrepancy) |
 | 2026-05-07 | `ef6b952`  | Initial survey                                       |
