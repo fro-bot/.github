@@ -1,7 +1,7 @@
 import process from 'node:process'
 
 import {commitMetadata} from './commit-metadata.ts'
-import {RepoEntryNotFoundError, resetSurveyResult} from './repos-metadata.ts'
+import {RepoEntryNotFoundError, resetSurveyResult, type ResetSurveyResultInput} from './repos-metadata.ts'
 
 /**
  * Reset `last_survey_at` and `last_survey_status` to `null` for one or more entries in
@@ -13,9 +13,8 @@ import {RepoEntryNotFoundError, resetSurveyResult} from './repos-metadata.ts'
  * re-dispatch on the next cron instead of waiting the default 30 days.
  *
  * Inputs (env vars):
- *   TARGETS           — comma-separated list of `owner/name` entries (e.g.
- *                       `marcusrbrown/.dotfiles,marcusrbrown/.github`). Whitespace around
- *                       entries and repeated commas are ignored.
+ *   TARGETS           — comma-separated list of `owner/name` or `node_id:<id>` entries.
+ *                       Whitespace around entries and repeated commas are ignored.
  *   GITHUB_TOKEN      — App installation token with `contents:write` on the control-plane
  *                       repo (minted via `actions/create-github-app-token`). Required so
  *                       the commit on `data` is authored by `fro-bot[bot]` and passes the
@@ -34,25 +33,30 @@ async function main(): Promise<void> {
   const [controlPlaneOwner, controlPlaneRepo] = splitControlPlane(requiredEnv('GITHUB_REPOSITORY'))
 
   const results: {
-    owner: string
-    name: string
+    target: string
     committed: boolean
     attempts: number
     sha?: string
   }[] = []
 
-  for (const {owner, name} of targets) {
+  for (const targetInput of targets) {
+    const target = formatResetSurveyTarget(targetInput)
     const result = await commitMetadata({
       owner: controlPlaneOwner,
       repo: controlPlaneRepo,
       path: 'metadata/repos.yaml',
-      message: `chore(recovery): reset survey status for ${owner}/${name}`,
-      mutator: (current: unknown) => resetSurveyResult(current, {owner, repo: name}),
+      message: `chore(recovery): reset survey status for ${target}`,
+      mutator: (current: unknown) =>
+        resetSurveyResult(current, {
+          owner: targetInput.owner,
+          repo: targetInput.name,
+          private: targetInput.private,
+          node_id: targetInput.node_id,
+        }),
     })
 
     results.push({
-      owner,
-      name,
+      target,
       committed: result.committed,
       attempts: result.attempts,
       ...(result.committed ? {sha: result.sha} : {}),
@@ -62,7 +66,7 @@ async function main(): Promise<void> {
   process.stdout.write(`${JSON.stringify({targets: results.length, results}, null, 2)}\n`)
 }
 
-function parseTargets(raw: string): {owner: string; name: string}[] {
+export function parseTargets(raw: string): ResetSurveyTarget[] {
   const entries = raw
     .split(',')
     .map(entry => entry.trim())
@@ -73,12 +77,32 @@ function parseTargets(raw: string): {owner: string; name: string}[] {
   }
 
   return entries.map(entry => {
+    if (entry.startsWith('node_id:')) {
+      const nodeId = entry.slice('node_id:'.length)
+      if (nodeId === '') {
+        throw new Error(`TARGETS node_id entry must include a value, got '${entry}'`)
+      }
+      return {owner: '[REDACTED]', name: nodeId, private: true, node_id: nodeId}
+    }
+
     const [owner, name] = entry.split('/')
     if (owner === undefined || name === undefined || owner === '' || name === '') {
       throw new Error(`TARGETS entry must be 'owner/name', got '${entry}'`)
     }
     return {owner, name}
   })
+}
+
+export type ResetSurveyTarget = Pick<ResetSurveyResultInput, 'owner' | 'private' | 'node_id'> & {name: string}
+
+export function formatResetSurveyTarget(target: ResetSurveyTarget): string {
+  if (target.private === true) {
+    if (target.node_id === undefined) {
+      throw new Error('node_id is required for private repos')
+    }
+    return target.node_id
+  }
+  return `${target.owner}/${target.name}`
 }
 
 function splitControlPlane(raw: string): [string, string] {

@@ -61,6 +61,24 @@ export interface RepoEntry {
    * `data` is migrated.
    */
   next_survey_eligible_at?: string | null
+  /**
+   * Whether this repo is private. Authoritative input for the privacy posture: when `true`,
+   * autonomous mutators write the entry in always-redacted form (`owner: '[REDACTED]'`,
+   * `name: <node_id>`) so canonical identifiers never reach `main`. Populated by reconcile's
+   * 5-state probe; preserved across transient/malformed responses (sticky).
+   *
+   * Optional during the rollout window: legacy entries from before the privacy migration
+   * have no value, and downstream code defaults absent to "treat as private until probe
+   * confirms otherwise" (fail-safe). Tightened to required after `data` is migrated.
+   */
+  private?: boolean
+  /**
+   * GitHub GraphQL global node ID (e.g. `R_kgDO...`). Stable across owner/name renames and
+   * doubles as the redacted name when `private: true`. Populated by reconcile's probe.
+   *
+   * Optional during the rollout window for the same reason as `private`. Tightened later.
+   */
+  node_id?: string
 }
 
 export type OnboardingStatus = 'pending' | 'onboarded' | 'failed' | 'lost-access' | 'pending-review'
@@ -201,7 +219,9 @@ function isRepoEntry(value: unknown): value is RepoEntry {
     (value.discovery_channel === undefined || isDiscoveryChannel(value.discovery_channel)) &&
     (value.next_survey_eligible_at === undefined ||
       value.next_survey_eligible_at === null ||
-      typeof value.next_survey_eligible_at === 'string')
+      typeof value.next_survey_eligible_at === 'string') &&
+    (value.private === undefined || typeof value.private === 'boolean') &&
+    (value.node_id === undefined || (typeof value.node_id === 'string' && value.node_id.length > 0))
   )
 }
 
@@ -231,6 +251,10 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
     typeof value.next_survey_eligible_at !== 'string'
   )
     throw new SchemaValidationError(`${path}.next_survey_eligible_at`, 'expected string, null, or omitted')
+  if (value.private !== undefined && typeof value.private !== 'boolean')
+    throw new SchemaValidationError(`${path}.private`, 'expected boolean or omitted')
+  if (value.node_id !== undefined && (typeof value.node_id !== 'string' || value.node_id.length === 0))
+    throw new SchemaValidationError(`${path}.node_id`, 'expected non-empty string or omitted')
 }
 
 function isOnboardingStatus(value: unknown): value is OnboardingStatus {

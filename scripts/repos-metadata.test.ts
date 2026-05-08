@@ -1,4 +1,4 @@
-import type {ReposFile} from './schemas.ts'
+import type {RepoEntry, ReposFile} from './schemas.ts'
 
 import {describe, expect, it} from 'vitest'
 import {
@@ -11,6 +11,24 @@ import {
 
 const EMPTY_REPOS: ReposFile = {version: 1, repos: []}
 const NOW = new Date('2026-04-17T12:00:00Z')
+const PRIVATE_NODE_ID = 'R_kgDOPRIVATE'
+const PUBLIC_NODE_ID = 'R_kgDOPUBLIC'
+
+function repoEntry(overrides: Partial<RepoEntry> = {}): RepoEntry {
+  return {
+    owner: 'alice',
+    name: 'project',
+    added: '2026-04-17',
+    onboarding_status: 'pending',
+    last_survey_at: null,
+    last_survey_status: null,
+    has_fro_bot_workflow: false,
+    has_renovate: false,
+    discovery_channel: 'collab',
+    next_survey_eligible_at: null,
+    ...overrides,
+  }
+}
 
 describe('addRepoEntry', () => {
   // Behavioral contract: default onboarding_status is 'pending'
@@ -35,6 +53,56 @@ describe('addRepoEntry', () => {
       discovery_channel: 'collab',
       next_survey_eligible_at: null,
     })
+  })
+
+  // Privacy contract: public repos keep canonical owner/name while carrying node_id.
+  it('writes canonical form when adding a public repo with node_id', () => {
+    const result = addRepoEntry(EMPTY_REPOS, {
+      owner: 'alice',
+      repo: 'project',
+      now: NOW,
+      private: false,
+      node_id: PUBLIC_NODE_ID,
+    })
+
+    expect(result.repos[0]).toMatchObject({
+      owner: 'alice',
+      name: 'project',
+      private: false,
+      node_id: PUBLIC_NODE_ID,
+    })
+  })
+
+  // Privacy contract: private repos are redacted before they reach metadata/repos.yaml.
+  it('writes redacted form when adding a private repo with node_id', () => {
+    const result = addRepoEntry(EMPTY_REPOS, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      now: NOW,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+    })
+
+    expect(result.repos[0]).toMatchObject({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+    })
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+  })
+
+  // Privacy contract: a private entry cannot be persisted without a redaction key.
+  it('throws when adding a private repo without node_id', () => {
+    expect(() =>
+      addRepoEntry(EMPTY_REPOS, {
+        owner: 'private-owner',
+        repo: 'secret-repo',
+        now: NOW,
+        private: true,
+      }),
+    ).toThrow('node_id is required for private repos')
   })
 
   // Cadence-and-discovery: defaults discovery_channel to 'collab' when not specified
@@ -116,6 +184,69 @@ describe('addRepoEntry', () => {
     }
     const result = addRepoEntry(existing, {owner: 'alice', repo: 'project', now: NOW})
     expect(result).toBe(existing)
+  })
+
+  // Privacy contract: node_id is the stable key for redacted entries.
+  it('does not add a duplicate when a redacted entry already exists with the same node_id', () => {
+    const existingEntry = repoEntry({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+    })
+    const current: ReposFile = {version: 1, repos: [existingEntry]}
+
+    const result = addRepoEntry(current, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      now: NOW,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+    })
+
+    expect(result.repos).toHaveLength(1)
+    expect(result.repos[0]).toEqual(existingEntry)
+  })
+
+  // Privacy contract: a formerly canonical entry is redacted when the same node_id flips private.
+  it('redacts an existing canonical entry when the matching node_id is added as private', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        repoEntry({
+          owner: 'private-owner',
+          name: 'secret-repo',
+          added: '2026-05-05',
+          onboarding_status: 'onboarded',
+          last_survey_at: '2026-05-06',
+          last_survey_status: 'success',
+          private: false,
+          node_id: PRIVATE_NODE_ID,
+        }),
+      ],
+    }
+
+    const result = addRepoEntry(current, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      now: NOW,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+    })
+
+    expect(result.repos).toHaveLength(1)
+    expect(result.repos[0]).toMatchObject({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      added: '2026-05-05',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-05-06',
+      last_survey_status: 'success',
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+    })
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
   })
 
   // Behavioral contract: idempotency ignores requested status (existing entry preserved)
@@ -241,6 +372,81 @@ describe('recordSurveyResult', () => {
 
     expect(result.repos[0]?.last_survey_at).toBe('2026-04-18')
     expect(result.repos[0]?.last_survey_status).toBe('success')
+  })
+
+  // Privacy contract: public entries stay canonical while survey outcomes update.
+  it('preserves canonical form when recording a public repo survey result by node_id', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({private: false, node_id: PUBLIC_NODE_ID})],
+    }
+
+    const result = recordSurveyResult(current, {
+      owner: 'alice',
+      repo: 'project',
+      node_id: PUBLIC_NODE_ID,
+      private: false,
+      at: NOW,
+      status: 'success',
+    })
+
+    expect(result.repos[0]).toMatchObject({
+      owner: 'alice',
+      name: 'project',
+      private: false,
+      node_id: PUBLIC_NODE_ID,
+      last_survey_at: '2026-04-17',
+      last_survey_status: 'success',
+    })
+  })
+
+  // Privacy contract: redacted entries are found by node_id and stay redacted.
+  it('preserves redacted form when recording a private repo survey result by node_id', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        repoEntry({
+          owner: '[REDACTED]',
+          name: PRIVATE_NODE_ID,
+          private: true,
+          node_id: PRIVATE_NODE_ID,
+        }),
+      ],
+    }
+
+    const result = recordSurveyResult(current, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      node_id: PRIVATE_NODE_ID,
+      private: true,
+      at: new Date('2026-05-07T05:17:00Z'),
+      status: 'success',
+    })
+
+    expect(result.repos[0]).toMatchObject({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-05-07',
+      last_survey_status: 'success',
+    })
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+  })
+
+  // Privacy contract: a private update cannot identify the target without node_id.
+  it('throws when recording a private repo survey result without node_id', () => {
+    expect(() =>
+      recordSurveyResult(EMPTY_REPOS, {
+        owner: 'private-owner',
+        repo: 'secret-repo',
+        private: true,
+        at: NOW,
+        status: 'success',
+      }),
+    ).toThrow('node_id is required for private repos')
   })
 
   // Behavioral contract: pure — original input unchanged
@@ -498,6 +704,55 @@ describe('resetSurveyResult', () => {
       discovery_channel: 'collab',
       next_survey_eligible_at: null,
     })
+  })
+
+  // Privacy contract: redacted entries are found by node_id and stay redacted during reset.
+  it('preserves redacted form when resetting a private repo by node_id', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        repoEntry({
+          owner: '[REDACTED]',
+          name: PRIVATE_NODE_ID,
+          private: true,
+          node_id: PRIVATE_NODE_ID,
+          onboarding_status: 'onboarded',
+          last_survey_at: '2026-05-07',
+          last_survey_status: 'success',
+          next_survey_eligible_at: '2026-06-07',
+        }),
+      ],
+    }
+
+    const result = resetSurveyResult(current, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      node_id: PRIVATE_NODE_ID,
+      private: true,
+    })
+
+    expect(result.repos[0]).toMatchObject({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      last_survey_at: null,
+      last_survey_status: null,
+      next_survey_eligible_at: null,
+    })
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+  })
+
+  // Privacy contract: a private reset cannot identify the target without node_id.
+  it('throws when resetting a private repo without node_id', () => {
+    expect(() =>
+      resetSurveyResult(EMPTY_REPOS, {
+        owner: 'private-owner',
+        repo: 'secret-repo',
+        private: true,
+      }),
+    ).toThrow('node_id is required for private repos')
   })
 
   // Behavioral contract: pure function — never mutates input

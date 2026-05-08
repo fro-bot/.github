@@ -8,6 +8,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   containsFroBotAgentReference,
   DISPATCH_DEFAULTS,
+  fetchPerRepoStatus,
   formatCommitMessage,
   handleReconcile,
   isEligibleForSurvey,
@@ -21,6 +22,7 @@ import {
   type HandleReconcileParams,
   type OctokitClient,
   type ReconcileInput,
+  type RepoStatusProbe,
 } from './reconcile-repos.ts'
 import {addRepoEntry} from './repos-metadata.ts'
 import {assertReposFile} from './schemas.ts'
@@ -42,6 +44,13 @@ function makeAccess(overrides: Partial<AccessListEntry> = {}): AccessListEntry {
     private: false,
     node_id: 'R_default',
     ...overrides,
+  }
+}
+
+function reposFileWith(owner: string, name: string): ReposFile {
+  return {
+    version: 1,
+    repos: [makeEntry({owner, name})],
   }
 }
 
@@ -109,6 +118,8 @@ describe('reconcileRepos', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 0,
+        transient: 0,
+        malformed: 0,
         unchanged: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
@@ -147,12 +158,156 @@ describe('reconcileRepos', () => {
       expect(result.summary.pendingReview).toBe(1)
     })
 
+    it('writes redacted metadata for a private newcomer from the access list', () => {
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_kgDOPRIVATE', private: true}),
+          ],
+          allowlist: makeAllowlist(['private-owner']),
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+        onboarding_status: 'pending',
+      })
+      expect(JSON.stringify(result.nextRepos)).not.toContain('private-owner')
+      expect(JSON.stringify(result.nextRepos)).not.toContain('secret-repo')
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.added).toBe(1)
+    })
+
+    it('redacts an existing canonical entry when access-list visibility flips private', () => {
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'private-owner',
+                name: 'secret-repo',
+                private: false,
+                node_id: 'R_kgDOPRIVATE',
+                last_survey_status: 'success',
+                next_survey_eligible_at: '2026-12-31',
+              }),
+            ],
+          },
+          accessList: [
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_kgDOPRIVATE', private: true}),
+          ],
+          allowlist: makeAllowlist(['private-owner']),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+      })
+      expect(JSON.stringify(result.nextRepos)).not.toContain('private-owner')
+      expect(JSON.stringify(result.nextRepos)).not.toContain('secret-repo')
+      expect(result.summary.refreshed).toBe(1)
+    })
+
+    it('matches redacted tracked entries to canonical access-list entries by node_id', () => {
+      const tracked = makeEntry({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+        onboarding_status: 'onboarded',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-12-31',
+      })
+
+      const currentRepos: ReposFile = {version: 1, repos: [tracked]}
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos,
+          accessList: [
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_kgDOPRIVATE', private: true}),
+          ],
+          allowlist: makeAllowlist(['private-owner']),
+        }),
+      )
+
+      expect(result.nextRepos).toBe(currentRepos)
+      expect(result.nextRepos.repos).toEqual([tracked])
+      expect(result.summary.lostAccess).toBe(0)
+      expect(result.summary.unchanged).toBe(1)
+    })
+
+    it('regains a redacted private lost-access entry without dispatching it', () => {
+      const tracked = makeEntry({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+        onboarding_status: 'lost-access',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [tracked]},
+          accessList: [
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_kgDOPRIVATE', private: true}),
+          ],
+          allowlist: makeAllowlist(['private-owner']),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+        onboarding_status: 'pending',
+      })
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.regained).toBe(1)
+    })
+
+    it('fail-closes a redacted private tracked entry missing from the access list', () => {
+      const tracked = makeEntry({
+        owner: '[REDACTED]',
+        name: 'R_missing',
+        private: true,
+        node_id: 'R_missing',
+        onboarding_status: 'onboarded',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [tracked]},
+          accessList: [],
+          perRepoStatus: new Map(),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_missing',
+        private: true,
+        node_id: 'R_missing',
+        onboarding_status: 'lost-access',
+      })
+      expect(result.summary.lostAccess).toBe(1)
+      expect(result.summary.unchanged).toBe(0)
+    })
+
     it('rolls up ≥2 non-allowlisted newcomers from the same owner into a single issue', () => {
       const result = reconcileRepos(
         makeInput({
           accessList: [
             makeAccess({owner: 'stranger', name: 'repo-a', node_id: 'R_a', private: false}),
-            makeAccess({owner: 'stranger', name: 'repo-b', node_id: 'R_b', private: true}),
+            makeAccess({owner: 'stranger', name: 'repo-b', node_id: 'R_b', private: false}),
           ],
           allowlist: makeAllowlist([]),
         }),
@@ -167,7 +322,7 @@ describe('reconcileRepos', () => {
           reason: 'unsolicited-new',
           entries: [
             {repo: 'repo-a', private: false, node_id: 'R_a'},
-            {repo: 'repo-b', private: true, node_id: 'R_b'},
+            {repo: 'repo-b', private: false, node_id: 'R_b'},
           ],
         },
       ])
@@ -193,11 +348,112 @@ describe('reconcileRepos', () => {
       expect(result.summary.added).toBe(1)
       expect(result.summary.pendingReview).toBe(2)
     })
+
+    it('suppresses a newcomer whose node_id matches an existing tracked entry (re-discovery via renamed/redacted entry)', () => {
+      // GIVEN a tracked entry with a known node_id under one identity
+      // AND an accessList result with the same node_id but a different owner/name
+      // (e.g. after Phase 0 redaction renamed owner/name on an entry but the
+      //  reconcile cron rediscovers the canonical owner/name from /user/repos)
+      // WHEN reconciling
+      const tracked = makeEntry({
+        owner: '[REDACTED]',
+        name: 'R_kgDOSVJgdw',
+        node_id: 'R_kgDOSVJgdw',
+        private: true,
+        onboarding_status: 'lost-access',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [tracked]},
+          accessList: [makeAccess({owner: 'marcusrbrown', name: 'poly', node_id: 'R_kgDOSVJgdw', private: true})],
+          allowlist: makeAllowlist(['marcusrbrown']),
+        }),
+      )
+
+      // THEN the newcomer is NOT added (suppressed by node_id match)
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_kgDOSVJgdw',
+        node_id: 'R_kgDOSVJgdw',
+        private: true,
+        onboarding_status: 'pending',
+      })
+      expect(result.dispatches).toEqual([])
+      expect(result.issues).toEqual([])
+      expect(result.summary.added).toBe(0)
+      expect(result.summary.pendingReview).toBe(0)
+      expect(result.summary.regained).toBe(1)
+    })
+
+    it('suppresses a newcomer whose node_id matches a redacted entry that lacks a node_id field (legacy redaction)', () => {
+      // GIVEN a Phase-0-redacted entry where owner='[REDACTED]' and name=node_id
+      // (legacy shape: the redacted entry has no separate node_id field)
+      // AND the canonical name surfaces in accessList with the matching node_id
+      // WHEN reconciling
+      // Build a redacted entry shape WITHOUT node_id (legacy Phase 0 shape:
+      // node_id lives in `name`, no separate field). makeEntry sets node_id by
+      // default, so build the entry inline rather than destructuring it away.
+      const redactedNoNodeId: RepoEntry = {
+        owner: '[REDACTED]',
+        name: 'R_kgDOSVJgdw',
+        added: '2026-05-05',
+        onboarding_status: 'lost-access',
+        last_survey_at: null,
+        last_survey_status: null,
+        has_fro_bot_workflow: false,
+        has_renovate: false,
+        private: true,
+        discovery_channel: 'collab',
+        next_survey_eligible_at: null,
+      }
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [redactedNoNodeId]},
+          accessList: [makeAccess({owner: 'marcusrbrown', name: 'poly', node_id: 'R_kgDOSVJgdw', private: true})],
+          allowlist: makeAllowlist(['marcusrbrown']),
+        }),
+      )
+
+      // THEN the newcomer is suppressed by name-as-node_id fallback for redacted entries
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.dispatches).toEqual([])
+      expect(result.issues).toEqual([])
+      expect(result.summary.added).toBe(0)
+    })
+
+    it('does NOT suppress a newcomer whose node_id matches no existing entry', () => {
+      // GIVEN a tracked entry with a known node_id
+      // AND an accessList result with a different node_id
+      // WHEN reconciling
+      const tracked = makeEntry({name: 'existing', node_id: 'R_existing'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [tracked]},
+          accessList: [
+            makeAccess({name: 'existing', node_id: 'R_existing'}),
+            makeAccess({owner: 'marcusrbrown', name: 'genuinely-new', node_id: 'R_new'}),
+          ],
+          allowlist: makeAllowlist(['marcusrbrown']),
+        }),
+      )
+
+      // THEN the genuinely-new newcomer is added normally (the tracked entry's
+      // own first-survey dispatch is incidental and not what this test cares about)
+      expect(result.nextRepos.repos).toHaveLength(2)
+      expect(result.dispatches).toContainEqual({owner: 'marcusrbrown', repo: 'genuinely-new'})
+      expect(result.summary.added).toBe(1)
+    })
   })
 
   describe('tracked entries — still accessible', () => {
     it('leaves a pending-review, still-accessible entry unchanged when no field drift', () => {
-      const entry = makeEntry({onboarding_status: 'pending-review', name: 'stable-repo'})
+      const entry = makeEntry({
+        onboarding_status: 'pending-review',
+        name: 'stable-repo',
+        private: false,
+        node_id: 'R_default',
+      })
       const result = reconcileRepos(
         makeInput({
           currentRepos: {version: 1, repos: [entry]},
@@ -280,6 +536,7 @@ describe('reconcileRepos', () => {
       expect(result.nextRepos.repos[0]).toEqual({
         ...entry,
         onboarding_status: 'lost-access',
+        private: true,
       })
       expect(result.summary.lostAccess).toBe(1)
     })
@@ -325,6 +582,34 @@ describe('reconcileRepos', () => {
       expect(result.summary.unchanged).toBe(1)
       expect(result.summary.lostAccess).toBe(0)
     })
+
+    it('treats tracked repo absent from access list with probe=transient — no change', () => {
+      const entry = makeEntry({name: 'flaky-repo', onboarding_status: 'onboarded'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          perRepoStatus: new Map([['fro-bot/flaky-repo', {status: 'transient', httpStatus: 502}]]),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toEqual(entry)
+      expect(result.summary.unchanged).toBe(1)
+      expect(result.summary.lostAccess).toBe(0)
+    })
+
+    it('treats tracked repo absent from access list with probe=malformed — no change', () => {
+      const entry = makeEntry({name: 'broken-repo', onboarding_status: 'onboarded'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          perRepoStatus: new Map([['fro-bot/broken-repo', {status: 'malformed'}]]),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toEqual(entry)
+      expect(result.summary.unchanged).toBe(1)
+      expect(result.summary.lostAccess).toBe(0)
+    })
   })
 
   describe('tracked entries — regained access', () => {
@@ -351,6 +636,8 @@ describe('reconcileRepos', () => {
       expect(result.nextRepos.repos[0]).toEqual({
         ...entry,
         onboarding_status: 'pending',
+        private: false,
+        node_id: 'R_default',
       })
       expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'returned-repo'}])
       expect(result.issues).toEqual([])
@@ -376,6 +663,8 @@ describe('reconcileRepos', () => {
       expect(result.nextRepos.repos[0]).toEqual({
         ...entry,
         onboarding_status: 'pending-review',
+        private: false,
+        node_id: 'R_sus',
       })
       expect(result.dispatches).toEqual([])
       expect(result.issues).toEqual([
@@ -389,6 +678,387 @@ describe('reconcileRepos', () => {
         },
       ])
       expect(result.summary.regained).toBe(1)
+    })
+  })
+
+  describe('private/node_id merge from access list and probes', () => {
+    it('writes private:false and node_id from access list for a public still-accessible repo (no prior fields)', () => {
+      const entry = makeEntry({name: 'pub-repo'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'pub-repo', private: false, node_id: 'R_pub'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        name: 'pub-repo',
+        private: false,
+        node_id: 'R_pub',
+      })
+      expect(result.summary.refreshed).toBe(1)
+      expect(result.summary.unchanged).toBe(0)
+    })
+
+    it('writes private:true and node_id from access list for a private still-accessible repo (no prior fields)', () => {
+      const entry = makeEntry({name: 'priv-repo'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'priv-repo', private: true, node_id: 'R_priv'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_priv',
+        private: true,
+        node_id: 'R_priv',
+      })
+      expect(result.summary.refreshed).toBe(1)
+      expect(result.summary.unchanged).toBe(0)
+    })
+
+    it('treats matching private/node_id as idempotent — no refresh bump', () => {
+      const entry = makeEntry({owner: '[REDACTED]', name: 'R_priv', private: true, node_id: 'R_priv'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'stable', private: true, node_id: 'R_priv'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toEqual(entry)
+      expect(result.summary.unchanged).toBe(1)
+      expect(result.summary.refreshed).toBe(0)
+    })
+
+    it('bumps refreshed on public→private transition (same node_id)', () => {
+      const entry = makeEntry({name: 'flip-repo', private: false, node_id: 'R_x'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'flip-repo', private: true, node_id: 'R_x'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_x',
+        private: true,
+        node_id: 'R_x',
+      })
+      expect(result.summary.refreshed).toBe(1)
+      // No transition signal here; that's covered by a later unit.
+    })
+
+    it('applies fail-safe private:true on probe-decided lost-access (deleted, had prior private:false)', () => {
+      const entry = makeEntry({name: 'deleted-repo', private: false, node_id: 'R_del'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          perRepoStatus: new Map([['fro-bot/deleted-repo', {status: 'deleted'}]]),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_del',
+        onboarding_status: 'lost-access',
+        private: true,
+        node_id: 'R_del',
+      })
+      expect(result.summary.lostAccess).toBe(1)
+    })
+
+    it('applies fail-safe private:true on probe-decided lost-access (revoked, no prior private field)', () => {
+      const entry = makeEntry({name: 'revoked-repo'}) // no private, no node_id
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          perRepoStatus: new Map([['fro-bot/revoked-repo', {status: 'revoked'}]]),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        name: 'revoked-repo',
+        onboarding_status: 'lost-access',
+        private: true,
+      })
+      // No prior node_id, so the entry should not have node_id introduced
+      expect(result.nextRepos.repos[0]).not.toHaveProperty('node_id')
+      expect(result.summary.lostAccess).toBe(1)
+    })
+
+    it('applies fail-safe private:true on archived access-lost (overrides access.private:false)', () => {
+      const entry = makeEntry({name: 'archived-repo', onboarding_status: 'onboarded'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'archived-repo', archived: true, private: false, node_id: 'R_arch'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_arch',
+        onboarding_status: 'lost-access',
+        private: true, // fail-safe overrides access.private:false
+        node_id: 'R_arch',
+      })
+      expect(result.summary.lostAccess).toBe(1)
+    })
+
+    it('preserves sticky private on transient probe (entry had prior private:true)', () => {
+      const entry = makeEntry({name: 'flaky-repo', private: true, node_id: 'R_flaky'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          perRepoStatus: new Map([['fro-bot/flaky-repo', {status: 'transient', httpStatus: 502}]]),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toEqual(entry)
+      expect(result.nextRepos.repos[0]?.private).toBe(true)
+      expect(result.summary.unchanged).toBe(1)
+      expect(result.summary.lostAccess).toBe(0)
+    })
+
+    it('preserves sticky absent-private on malformed probe (no prior private field)', () => {
+      const entry = makeEntry({name: 'broken-repo'}) // no private, no node_id
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          perRepoStatus: new Map([['fro-bot/broken-repo', {status: 'malformed'}]]),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toEqual(entry)
+      expect(result.nextRepos.repos[0]).not.toHaveProperty('private')
+      expect(result.summary.unchanged).toBe(1)
+    })
+
+    it('regain writes live private/node_id from access list (overrides sticky)', () => {
+      const entry = makeEntry({
+        name: 'returned-repo',
+        onboarding_status: 'lost-access',
+        private: true,
+        node_id: 'R_old',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'returned-repo', private: false, node_id: 'R_new'})],
+          allowlist: makeAllowlist(['fro-bot']),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        name: 'returned-repo',
+        onboarding_status: 'pending',
+        private: false,
+        node_id: 'R_new',
+      })
+      expect(result.summary.regained).toBe(1)
+    })
+
+    it('integration: mixed states produce correct per-entry private/node_id', () => {
+      // Three entries:
+      // 1. still-accessible — entry has private:false, access has private:true (changed)
+      // 2. access-lost via probe (deleted) — entry has private:false, expect fail-safe true
+      // 3. regain — entry was lost-access with private:true, access shows private:false
+      const stillAccessible = makeEntry({
+        name: 'still-ok',
+        private: false,
+        node_id: 'R_ok',
+      })
+      const gone = makeEntry({
+        name: 'gone-repo',
+        private: false,
+        node_id: 'R_gone',
+      })
+      const returning = makeEntry({
+        name: 'returning-repo',
+        onboarding_status: 'lost-access',
+        private: true,
+        node_id: 'R_stale',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [stillAccessible, gone, returning]},
+          accessList: [
+            makeAccess({name: 'still-ok', private: true, node_id: 'R_ok'}), // privacy flipped
+            makeAccess({name: 'returning-repo', private: false, node_id: 'R_fresh'}),
+          ],
+          perRepoStatus: new Map([['fro-bot/gone-repo', {status: 'deleted'}]]),
+          allowlist: makeAllowlist(['fro-bot']),
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(3)
+      const byName = new Map(result.nextRepos.repos.map(r => [r.name, r]))
+      const byNodeId = new Map(result.nextRepos.repos.map(r => [r.node_id, r]))
+
+      // still-accessible: writes live access data (private:true)
+      expect(byNodeId.get('R_ok')).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_ok',
+        onboarding_status: 'onboarded',
+        private: true,
+        node_id: 'R_ok',
+      })
+
+      // access-lost: fail-safe private:true, preserves prior node_id
+      expect(byNodeId.get('R_gone')).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_gone',
+        onboarding_status: 'lost-access',
+        private: true,
+        node_id: 'R_gone',
+      })
+
+      // regain: writes live access data (private:false overrides sticky private:true)
+      expect(byName.get('returning-repo')).toMatchObject({
+        onboarding_status: 'pending',
+        private: false,
+        node_id: 'R_fresh',
+      })
+    })
+
+    it('preserves absent private on transient probe with no prior privacy state', () => {
+      // Symmetric to the malformed-no-prior test above. Transient must not introduce
+      // a private:false default; legacy entries must remain absent until a real probe lands.
+      const entry = makeEntry({name: 'transient-legacy'})
+      // Confirm the fixture is genuinely without `private`/`node_id`.
+      expect(entry).not.toHaveProperty('private')
+      expect(entry).not.toHaveProperty('node_id')
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [],
+          perRepoStatus: new Map([['fro-bot/transient-legacy', {status: 'transient', httpStatus: 502}]]),
+        }),
+      )
+
+      const next = result.nextRepos.repos[0]
+      expect(next).not.toHaveProperty('private')
+      expect(next).not.toHaveProperty('node_id')
+      expect(result.summary.unchanged).toBe(1)
+      expect(result.summary.lostAccess).toBe(0)
+    })
+
+    it('integration: all 5 probe states in one run produce correct per-entry shape', () => {
+      // Extends the 3-state integration above to exercise transient + malformed alongside
+      // still-accessible / deleted / regain in a single reconcile pass. Plan scenario #11
+      // explicitly requires "all 5 probe states in one run."
+      const stillOk = makeEntry({name: 'still-ok-five', private: false, node_id: 'R_ok'})
+      const goneDeleted = makeEntry({name: 'gone-five', private: false, node_id: 'R_gone'})
+      const transientPriorPrivate = makeEntry({name: 'flaky-five', private: true, node_id: 'R_flaky'})
+      const malformedLegacy = makeEntry({name: 'malformed-five'})
+      const returning = makeEntry({
+        name: 'returning-five',
+        onboarding_status: 'lost-access',
+        private: true,
+        node_id: 'R_stale',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {
+            version: 1,
+            repos: [stillOk, goneDeleted, transientPriorPrivate, malformedLegacy, returning],
+          },
+          accessList: [
+            makeAccess({name: 'still-ok-five', private: false, node_id: 'R_ok'}),
+            makeAccess({name: 'returning-five', private: false, node_id: 'R_fresh'}),
+          ],
+          perRepoStatus: new Map([
+            ['fro-bot/gone-five', {status: 'deleted'}],
+            ['fro-bot/flaky-five', {status: 'transient', httpStatus: 503}],
+            ['fro-bot/malformed-five', {status: 'malformed'}],
+          ]),
+          allowlist: makeAllowlist(['fro-bot']),
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(5)
+      const byName = new Map(result.nextRepos.repos.map(r => [r.name, r]))
+      const byNodeId = new Map(result.nextRepos.repos.map(r => [r.node_id, r]))
+
+      // still-accessible: live access data, idempotent (no refresh because nothing changed).
+      expect(byName.get('still-ok-five')).toEqual(stillOk)
+
+      // deleted: fail-safe private:true, preserves prior node_id.
+      expect(byNodeId.get('R_gone')).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_gone',
+        onboarding_status: 'lost-access',
+        private: true,
+        node_id: 'R_gone',
+      })
+
+      // transient + prior private:true: sticky-preserved (no flip, no field churn).
+      expect(byName.get('flaky-five')).toEqual(transientPriorPrivate)
+
+      // malformed + legacy (no prior private): sticky-preserve absence, no fields introduced.
+      expect(byName.get('malformed-five')).not.toHaveProperty('private')
+      expect(byName.get('malformed-five')).not.toHaveProperty('node_id')
+
+      // regain: writes live access data over sticky.
+      expect(byName.get('returning-five')).toMatchObject({
+        onboarding_status: 'pending',
+        private: false,
+        node_id: 'R_fresh',
+      })
+
+      // Summary shape: 1 lost-access (gone), 3 unchanged (still-ok + flaky + malformed),
+      // 1 added/refresh delta from regain.
+      expect(result.summary.lostAccess).toBe(1)
+      expect(result.summary.unchanged).toBeGreaterThanOrEqual(3)
+    })
+
+    it('bumps summary.transient and summary.malformed independently when probes degrade', () => {
+      // Distinct counters let operators distinguish API-incident days (sustained transient)
+      // from upstream contract anomalies (sustained malformed) without cross-referencing
+      // warn logs in the Actions UI.
+      const flaky = makeEntry({name: 'flaky-counter', private: true, node_id: 'R_flaky'})
+      const malformedEntry = makeEntry({name: 'malformed-counter', private: false, node_id: 'R_malf'})
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [flaky, malformedEntry]},
+          accessList: [],
+          perRepoStatus: new Map([
+            ['fro-bot/flaky-counter', {status: 'transient', httpStatus: 502}],
+            ['fro-bot/malformed-counter', {status: 'malformed'}],
+          ]),
+        }),
+      )
+
+      expect(result.summary.transient).toBe(1)
+      expect(result.summary.malformed).toBe(1)
+      expect(result.summary.unchanged).toBe(2)
+      expect(result.summary.lostAccess).toBe(0)
+    })
+
+    it('throws on unknown probe state — exhaustiveness guard', () => {
+      // RepoStatusProbe is a discriminated union with a default branch that asserts the
+      // probe variant has been narrowed to `never`. Adding a new variant later without
+      // updating the switch must fail loudly rather than silently flipping to lost-access.
+      const entry = makeEntry({name: 'novel-state'})
+      const bogusProbe = {status: 'cosmic-ray-bit-flip'} as unknown as RepoStatusProbe
+
+      expect(() =>
+        reconcileRepos(
+          makeInput({
+            currentRepos: {version: 1, repos: [entry]},
+            accessList: [],
+            perRepoStatus: new Map([['fro-bot/novel-state', bogusProbe]]),
+          }),
+        ),
+      ).toThrow(/unhandled RepoStatusProbe variant/)
     })
   })
 
@@ -441,6 +1111,8 @@ describe('reconcileRepos', () => {
         lostAccess: 1,
         refreshed: 1,
         migrated: 0,
+        transient: 0,
+        malformed: 0,
         unchanged: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
@@ -453,8 +1125,14 @@ describe('reconcileRepos', () => {
 
     it('reports all-zero counters and value-equal nextRepos when nothing changes', () => {
       // Use pending-review: it's excluded from the dispatch gate, so this entry
-      // truly produces zero side-effects.
-      const entry = makeEntry({name: 'stable-repo', onboarding_status: 'pending-review'})
+      // truly produces zero side-effects. Add matching private/node_id so the
+      // privacy field check is also a no-op.
+      const entry = makeEntry({
+        name: 'stable-repo',
+        onboarding_status: 'pending-review',
+        private: false,
+        node_id: 'R_default',
+      })
       const current: ReposFile = {version: 1, repos: [entry]}
       const result = reconcileRepos(
         makeInput({
@@ -473,6 +1151,8 @@ describe('reconcileRepos', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 0,
+        transient: 0,
+        malformed: 0,
         unchanged: 1,
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -495,6 +1175,8 @@ describe('reconcileRepos', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 0,
+        transient: 0,
+        malformed: 0,
         unchanged: 0,
         byChannel: emptyChannelStats(),
       })
@@ -502,7 +1184,8 @@ describe('reconcileRepos', () => {
 
     it('merges safely on concurrent-writer retry: entry added between calls is preserved', () => {
       // GIVEN an initial currentRepos@v1 reconciled once
-      const entryA = makeEntry({name: 'a-repo', onboarding_status: 'pending'})
+      // Add matching private/node_id so the privacy field check is also a no-op.
+      const entryA = makeEntry({name: 'a-repo', onboarding_status: 'pending', private: false, node_id: 'R_default'})
       const v1: ReposFile = {version: 1, repos: [entryA]}
       const accessList = [makeAccess({name: 'a-repo'})]
       reconcileRepos(makeInput({currentRepos: v1, accessList}))
@@ -525,7 +1208,14 @@ describe('reconcileRepos', () => {
 
       const direct = addRepoEntry(
         {version: 1, repos: []},
-        {owner: 'trusted', repo: 'parity-repo', now: NOW, onboarding_status: 'pending'},
+        {
+          owner: 'trusted',
+          repo: 'parity-repo',
+          now: NOW,
+          private: false,
+          node_id: 'R_parity',
+          onboarding_status: 'pending',
+        },
       )
 
       // Schema-validated on both sides, then structural equality
@@ -883,6 +1573,239 @@ describe('reconcileRepos', () => {
 
 //
 // ─────────────────────────────────────────────────────────────────────────────
+// fetchPerRepoStatus — 5-state classification unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+//
+
+describe('fetchPerRepoStatus 5-state classification', () => {
+  it('HTTP 200 with valid body, entry not in access list → revoked', async () => {
+    const reposGet = vi.fn(async () => ({
+      data: {private: true, node_id: 'R_test'} as RepoGetResponse,
+    }))
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'secret-repo'), [], logger)
+
+    expect(result.get('fro-bot/secret-repo')).toEqual({status: 'revoked'})
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('does not probe a redacted entry that is present in the access list by node_id', async () => {
+    const reposGet = vi.fn(async () => {
+      throw new Error('should not probe redacted identity')
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [
+        makeEntry({
+          owner: '[REDACTED]',
+          name: 'R_kgDOPRIVATE',
+          private: true,
+          node_id: 'R_kgDOPRIVATE',
+        }),
+      ],
+    }
+    const accessList = [makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_kgDOPRIVATE'})]
+
+    const result = await fetchPerRepoStatus(userOctokit, currentRepos, accessList, logger)
+
+    expect(result.size).toBe(0)
+    expect(reposGet).not.toHaveBeenCalled()
+  })
+
+  it('HTTP 404 → deleted', async () => {
+    const reposGet = vi.fn(async () => {
+      throw apiError(404, 'Not Found')
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'gone-repo'), [], logger)
+
+    expect(result.get('fro-bot/gone-repo')).toEqual({status: 'deleted'})
+  })
+
+  it('HTTP 451 → revoked', async () => {
+    const reposGet = vi.fn(async () => {
+      throw apiError(451, 'Unavailable For Legal Reasons')
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'taken-down-repo'), [], logger)
+
+    expect(result.get('fro-bot/taken-down-repo')).toEqual({status: 'revoked'})
+  })
+
+  it('HTTP 403 → revoked', async () => {
+    const reposGet = vi.fn(async () => {
+      throw apiError(403, 'Forbidden')
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'blocked-repo'), [], logger)
+
+    expect(result.get('fro-bot/blocked-repo')).toEqual({status: 'revoked'})
+  })
+
+  it('HTTP 429 → transient (primary rate-limit, not revoked)', async () => {
+    const reposGet = vi.fn(async () => {
+      throw apiError(429, 'Too Many Requests')
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'rate-limited'), [], logger)
+
+    expect(result.get('fro-bot/rate-limited')).toEqual({status: 'transient', httpStatus: 429})
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('rate-limit'))
+  })
+
+  it('HTTP 403 with Retry-After header → transient (secondary rate-limit, not revoked)', async () => {
+    const reposGet = vi.fn(async () => {
+      throw Object.assign(new Error('Forbidden'), {
+        status: 403,
+        response: {headers: {'retry-after': '60'}},
+      })
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'secondary-limited'), [], logger)
+
+    expect(result.get('fro-bot/secondary-limited')).toEqual({status: 'transient', httpStatus: 403})
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('rate-limit'))
+  })
+
+  it('HTTP 403 with x-ratelimit-remaining: 0 → transient (rate-limit signal in headers)', async () => {
+    const reposGet = vi.fn(async () => {
+      throw Object.assign(new Error('API rate limit exceeded'), {
+        status: 403,
+        response: {headers: {'x-ratelimit-remaining': '0'}},
+      })
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'header-limited'), [], logger)
+
+    expect(result.get('fro-bot/header-limited')).toEqual({status: 'transient', httpStatus: 403})
+  })
+
+  it('HTTP 403 with rate-limit message body → transient (rate-limit signal in body)', async () => {
+    const reposGet = vi.fn(async () => {
+      throw Object.assign(new Error('You have triggered an abuse detection mechanism'), {
+        status: 403,
+      })
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'abuse-flagged'), [], logger)
+
+    expect(result.get('fro-bot/abuse-flagged')).toEqual({status: 'transient', httpStatus: 403})
+  })
+
+  it('HTTP 502 → transient with httpStatus', async () => {
+    const reposGet = vi.fn(async () => {
+      throw apiError(502, 'Bad Gateway')
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'flaky-repo'), [], logger)
+
+    expect(result.get('fro-bot/flaky-repo')).toEqual({status: 'transient', httpStatus: 502})
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('transient API error (502)'))
+  })
+
+  it('HTTP 503 → transient with httpStatus', async () => {
+    const reposGet = vi.fn(async () => {
+      throw apiError(503, 'Service Unavailable')
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'overloaded-repo'), [], logger)
+
+    expect(result.get('fro-bot/overloaded-repo')).toEqual({status: 'transient', httpStatus: 503})
+  })
+
+  it('network error → transient without httpStatus', async () => {
+    const reposGet = vi.fn(async () => {
+      throw new Error('ECONNRESET')
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'offline-repo'), [], logger)
+
+    expect(result.get('fro-bot/offline-repo')).toEqual({status: 'transient'})
+    expect(result.get('fro-bot/offline-repo')).not.toHaveProperty('httpStatus')
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('network error'))
+  })
+
+  it('HTTP 200 with malformed body (empty data) → malformed', async () => {
+    const reposGet = vi.fn(async () => ({
+      data: {} as RepoGetResponse,
+    }))
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'broken-repo'), [], logger)
+
+    expect(result.get('fro-bot/broken-repo')).toEqual({status: 'malformed'})
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('malformed repos.get response'))
+  })
+
+  it('HTTP 200 malformed body with private as non-boolean → malformed', async () => {
+    const reposGet = vi.fn(async () => ({
+      data: {private: 'not-a-bool', node_id: 'R_ok'} as unknown as RepoGetResponse,
+    }))
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'weird-repo'), [], logger)
+
+    expect(result.get('fro-bot/weird-repo')).toEqual({status: 'malformed'})
+  })
+
+  it('HTTP 200 with empty node_id → malformed (matches schema constraint)', async () => {
+    // The schema's runtime guard requires node_id.length > 0. Accepting an empty string
+    // here would defer the failure to assertReposFile with a less actionable error path.
+    // Match the schema constraint at probe time.
+    const reposGet = vi.fn(async () => ({
+      data: {private: false, node_id: ''} as RepoGetResponse,
+    }))
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'empty-id-repo'), [], logger)
+
+    expect(result.get('fro-bot/empty-id-repo')).toEqual({status: 'malformed'})
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('malformed repos.get response'))
+  })
+
+  it('HTTP 422 (other 4xx) → throws ReconcileError', async () => {
+    expect.assertions(1)
+    const reposGet = vi.fn(async () => {
+      throw apiError(422, 'Unprocessable')
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    await expect(fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'weird-repo'), [], logger)).rejects.toThrow(
+      ReconcileError,
+    )
+  })
+})
+
+//
+// ─────────────────────────────────────────────────────────────────────────────
 // Unit 3 — I/O shell tests for `handleReconcile`
 // ─────────────────────────────────────────────────────────────────────────────
 //
@@ -1191,9 +2114,12 @@ describe('handleReconcile (I/O shell)', () => {
       const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
       // Use pending-review: it's excluded from the dispatch gate, so the entry
       // truly produces zero side-effects (no dispatches, no commits).
+      // Add matching private/node_id matching the mock access-list entry below.
       const existing: ReposFile = {
         version: 1,
-        repos: [makeEntry({name: 'stable-repo', onboarding_status: 'pending-review'})],
+        repos: [
+          makeEntry({name: 'stable-repo', onboarding_status: 'pending-review', private: false, node_id: 'R_stable'}),
+        ],
       }
       const userOctokit = mockOctokit({
         listForAuthenticatedUser: async () => ({
@@ -1233,6 +2159,8 @@ describe('handleReconcile (I/O shell)', () => {
             onboarding_status: 'onboarded',
             has_fro_bot_workflow: true,
             has_renovate: true,
+            private: false,
+            node_id: 'R_x',
             last_survey_at: '2026-04-10',
             last_survey_status: 'success',
             next_survey_eligible_at: '2026-05-09',
@@ -1711,6 +2639,41 @@ describe('handleReconcile (I/O shell)', () => {
       expect(params?.body).toContain('R_priv')
     })
 
+    it('does not roll up private pending-review issues by owner', async () => {
+      const issuesCreate = vi.fn(async (_params: unknown) => ({data: {number: 10}}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'stranger'}, name: 'secret-a', archived: false, private: true, node_id: 'R_priv_a'},
+            {owner: {login: 'stranger'}, name: 'secret-b', archived: false, private: true, node_id: 'R_priv_b'},
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate}),
+          readMetadata: makeReadMetadata({}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        }),
+      )
+
+      expect(issuesCreate).toHaveBeenCalledTimes(2)
+      const payloads = issuesCreate.mock.calls.map(call => call[0]) as unknown as {
+        title: string
+        body: string
+        labels: string[]
+      }[]
+      for (const params of payloads) {
+        expect(params.title).not.toContain('stranger')
+        expect(params.title).not.toContain('secret-')
+        expect(params.body).not.toContain('stranger')
+        expect(params.body).not.toContain('secret-')
+        expect(params.labels).not.toContain('reconcile:rollup-pending-review')
+      }
+    })
+
     it('continues through remaining issues when one issue creation fails', async () => {
       let created = 0
       const issuesCreate = vi.fn(async () => {
@@ -1830,6 +2793,57 @@ describe('handleReconcile (I/O shell)', () => {
               archived: false,
               private: false,
               node_id: 'R_sus',
+            },
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesListForRepo, issuesUpdate}),
+          readMetadata: makeReadMetadata({repos: existing}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      expect(issuesUpdate).not.toHaveBeenCalled()
+    })
+
+    it('does NOT auto-close a private pending-review issue whose redacted subject is still pending-review', async () => {
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({
+            owner: '[REDACTED]',
+            name: 'R_priv',
+            private: true,
+            node_id: 'R_priv',
+            onboarding_status: 'pending-review',
+          }),
+        ],
+      }
+      const issuesUpdate = vi.fn(async () => ({data: {}}))
+      const issuesListForRepo = vi.fn(async () => ({
+        data: [
+          {
+            number: 8,
+            title: 'Unsolicited collaborator grant: private repo',
+            body: '<!-- reconcile:subject:node_id=R_priv -->',
+            state: 'open' as const,
+            labels: [{name: 'reconcile:pending-review'}],
+          },
+        ],
+      }))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {
+              owner: {login: 'stranger'},
+              name: 'secret-repo',
+              archived: false,
+              private: true,
+              node_id: 'R_priv',
             },
           ],
         }),
@@ -2777,6 +3791,8 @@ describe('reconcileRepos legacy migration', () => {
       last_survey_at: '2026-04-01',
       discovery_channel: 'collab',
       next_survey_eligible_at: '2026-05-01',
+      private: false,
+      node_id: 'R_mig',
     })
 
     const result = reconcileRepos(
@@ -2839,6 +3855,8 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 2,
         migrated: 0,
+        transient: 0,
+        malformed: 0,
         unchanged: 0,
         byChannel: emptyChannelStats(),
       }),
@@ -2854,6 +3872,8 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 18,
+        transient: 0,
+        malformed: 0,
         unchanged: 0,
         byChannel: emptyChannelStats(),
       }),
@@ -2869,6 +3889,8 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 1,
         migrated: 18,
+        transient: 0,
+        malformed: 0,
         unchanged: 0,
         byChannel: emptyChannelStats(),
       }),
