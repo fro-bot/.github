@@ -158,12 +158,156 @@ describe('reconcileRepos', () => {
       expect(result.summary.pendingReview).toBe(1)
     })
 
+    it('writes redacted metadata for a private newcomer from the access list', () => {
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_kgDOPRIVATE', private: true}),
+          ],
+          allowlist: makeAllowlist(['private-owner']),
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+        onboarding_status: 'pending',
+      })
+      expect(JSON.stringify(result.nextRepos)).not.toContain('private-owner')
+      expect(JSON.stringify(result.nextRepos)).not.toContain('secret-repo')
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.added).toBe(1)
+    })
+
+    it('redacts an existing canonical entry when access-list visibility flips private', () => {
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'private-owner',
+                name: 'secret-repo',
+                private: false,
+                node_id: 'R_kgDOPRIVATE',
+                last_survey_status: 'success',
+                next_survey_eligible_at: '2026-12-31',
+              }),
+            ],
+          },
+          accessList: [
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_kgDOPRIVATE', private: true}),
+          ],
+          allowlist: makeAllowlist(['private-owner']),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+      })
+      expect(JSON.stringify(result.nextRepos)).not.toContain('private-owner')
+      expect(JSON.stringify(result.nextRepos)).not.toContain('secret-repo')
+      expect(result.summary.refreshed).toBe(1)
+    })
+
+    it('matches redacted tracked entries to canonical access-list entries by node_id', () => {
+      const tracked = makeEntry({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+        onboarding_status: 'onboarded',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-12-31',
+      })
+
+      const currentRepos: ReposFile = {version: 1, repos: [tracked]}
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos,
+          accessList: [
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_kgDOPRIVATE', private: true}),
+          ],
+          allowlist: makeAllowlist(['private-owner']),
+        }),
+      )
+
+      expect(result.nextRepos).toBe(currentRepos)
+      expect(result.nextRepos.repos).toEqual([tracked])
+      expect(result.summary.lostAccess).toBe(0)
+      expect(result.summary.unchanged).toBe(1)
+    })
+
+    it('regains a redacted private lost-access entry without dispatching it', () => {
+      const tracked = makeEntry({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+        onboarding_status: 'lost-access',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [tracked]},
+          accessList: [
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_kgDOPRIVATE', private: true}),
+          ],
+          allowlist: makeAllowlist(['private-owner']),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+        onboarding_status: 'pending',
+      })
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.regained).toBe(1)
+    })
+
+    it('fail-closes a redacted private tracked entry missing from the access list', () => {
+      const tracked = makeEntry({
+        owner: '[REDACTED]',
+        name: 'R_missing',
+        private: true,
+        node_id: 'R_missing',
+        onboarding_status: 'onboarded',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [tracked]},
+          accessList: [],
+          perRepoStatus: new Map(),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_missing',
+        private: true,
+        node_id: 'R_missing',
+        onboarding_status: 'lost-access',
+      })
+      expect(result.summary.lostAccess).toBe(1)
+      expect(result.summary.unchanged).toBe(0)
+    })
+
     it('rolls up ≥2 non-allowlisted newcomers from the same owner into a single issue', () => {
       const result = reconcileRepos(
         makeInput({
           accessList: [
             makeAccess({owner: 'stranger', name: 'repo-a', node_id: 'R_a', private: false}),
-            makeAccess({owner: 'stranger', name: 'repo-b', node_id: 'R_b', private: true}),
+            makeAccess({owner: 'stranger', name: 'repo-b', node_id: 'R_b', private: false}),
           ],
           allowlist: makeAllowlist([]),
         }),
@@ -178,7 +322,7 @@ describe('reconcileRepos', () => {
           reason: 'unsolicited-new',
           entries: [
             {repo: 'repo-a', private: false, node_id: 'R_a'},
-            {repo: 'repo-b', private: true, node_id: 'R_b'},
+            {repo: 'repo-b', private: false, node_id: 'R_b'},
           ],
         },
       ])
@@ -228,11 +372,18 @@ describe('reconcileRepos', () => {
 
       // THEN the newcomer is NOT added (suppressed by node_id match)
       expect(result.nextRepos.repos).toHaveLength(1)
-      expect(result.nextRepos.repos[0]).toBe(tracked)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_kgDOSVJgdw',
+        node_id: 'R_kgDOSVJgdw',
+        private: true,
+        onboarding_status: 'pending',
+      })
       expect(result.dispatches).toEqual([])
       expect(result.issues).toEqual([])
       expect(result.summary.added).toBe(0)
       expect(result.summary.pendingReview).toBe(0)
+      expect(result.summary.regained).toBe(1)
     })
 
     it('suppresses a newcomer whose node_id matches a redacted entry that lacks a node_id field (legacy redaction)', () => {
@@ -559,7 +710,8 @@ describe('reconcileRepos', () => {
       )
 
       expect(result.nextRepos.repos[0]).toMatchObject({
-        name: 'priv-repo',
+        owner: '[REDACTED]',
+        name: 'R_priv',
         private: true,
         node_id: 'R_priv',
       })
@@ -568,7 +720,7 @@ describe('reconcileRepos', () => {
     })
 
     it('treats matching private/node_id as idempotent — no refresh bump', () => {
-      const entry = makeEntry({name: 'stable', private: true, node_id: 'R_priv'})
+      const entry = makeEntry({owner: '[REDACTED]', name: 'R_priv', private: true, node_id: 'R_priv'})
       const result = reconcileRepos(
         makeInput({
           currentRepos: {version: 1, repos: [entry]},
@@ -591,7 +743,8 @@ describe('reconcileRepos', () => {
       )
 
       expect(result.nextRepos.repos[0]).toMatchObject({
-        name: 'flip-repo',
+        owner: '[REDACTED]',
+        name: 'R_x',
         private: true,
         node_id: 'R_x',
       })
@@ -609,7 +762,8 @@ describe('reconcileRepos', () => {
       )
 
       expect(result.nextRepos.repos[0]).toMatchObject({
-        name: 'deleted-repo',
+        owner: '[REDACTED]',
+        name: 'R_del',
         onboarding_status: 'lost-access',
         private: true,
         node_id: 'R_del',
@@ -646,7 +800,8 @@ describe('reconcileRepos', () => {
       )
 
       expect(result.nextRepos.repos[0]).toMatchObject({
-        name: 'archived-repo',
+        owner: '[REDACTED]',
+        name: 'R_arch',
         onboarding_status: 'lost-access',
         private: true, // fail-safe overrides access.private:false
         node_id: 'R_arch',
@@ -743,16 +898,21 @@ describe('reconcileRepos', () => {
 
       expect(result.nextRepos.repos).toHaveLength(3)
       const byName = new Map(result.nextRepos.repos.map(r => [r.name, r]))
+      const byNodeId = new Map(result.nextRepos.repos.map(r => [r.node_id, r]))
 
       // still-accessible: writes live access data (private:true)
-      expect(byName.get('still-ok')).toMatchObject({
+      expect(byNodeId.get('R_ok')).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_ok',
         onboarding_status: 'onboarded',
         private: true,
         node_id: 'R_ok',
       })
 
       // access-lost: fail-safe private:true, preserves prior node_id
-      expect(byName.get('gone-repo')).toMatchObject({
+      expect(byNodeId.get('R_gone')).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_gone',
         onboarding_status: 'lost-access',
         private: true,
         node_id: 'R_gone',
@@ -825,12 +985,15 @@ describe('reconcileRepos', () => {
 
       expect(result.nextRepos.repos).toHaveLength(5)
       const byName = new Map(result.nextRepos.repos.map(r => [r.name, r]))
+      const byNodeId = new Map(result.nextRepos.repos.map(r => [r.node_id, r]))
 
       // still-accessible: live access data, idempotent (no refresh because nothing changed).
       expect(byName.get('still-ok-five')).toEqual(stillOk)
 
       // deleted: fail-safe private:true, preserves prior node_id.
-      expect(byName.get('gone-five')).toMatchObject({
+      expect(byNodeId.get('R_gone')).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_gone',
         onboarding_status: 'lost-access',
         private: true,
         node_id: 'R_gone',
@@ -1045,7 +1208,14 @@ describe('reconcileRepos', () => {
 
       const direct = addRepoEntry(
         {version: 1, repos: []},
-        {owner: 'trusted', repo: 'parity-repo', now: NOW, onboarding_status: 'pending'},
+        {
+          owner: 'trusted',
+          repo: 'parity-repo',
+          now: NOW,
+          private: false,
+          node_id: 'R_parity',
+          onboarding_status: 'pending',
+        },
       )
 
       // Schema-validated on both sides, then structural equality
@@ -1419,6 +1589,31 @@ describe('fetchPerRepoStatus 5-state classification', () => {
 
     expect(result.get('fro-bot/secret-repo')).toEqual({status: 'revoked'})
     expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('does not probe a redacted entry that is present in the access list by node_id', async () => {
+    const reposGet = vi.fn(async () => {
+      throw new Error('should not probe redacted identity')
+    })
+    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [
+        makeEntry({
+          owner: '[REDACTED]',
+          name: 'R_kgDOPRIVATE',
+          private: true,
+          node_id: 'R_kgDOPRIVATE',
+        }),
+      ],
+    }
+    const accessList = [makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_kgDOPRIVATE'})]
+
+    const result = await fetchPerRepoStatus(userOctokit, currentRepos, accessList, logger)
+
+    expect(result.size).toBe(0)
+    expect(reposGet).not.toHaveBeenCalled()
   })
 
   it('HTTP 404 → deleted', async () => {
@@ -2444,6 +2639,41 @@ describe('handleReconcile (I/O shell)', () => {
       expect(params?.body).toContain('R_priv')
     })
 
+    it('does not roll up private pending-review issues by owner', async () => {
+      const issuesCreate = vi.fn(async (_params: unknown) => ({data: {number: 10}}))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'stranger'}, name: 'secret-a', archived: false, private: true, node_id: 'R_priv_a'},
+            {owner: {login: 'stranger'}, name: 'secret-b', archived: false, private: true, node_id: 'R_priv_b'},
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate}),
+          readMetadata: makeReadMetadata({}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        }),
+      )
+
+      expect(issuesCreate).toHaveBeenCalledTimes(2)
+      const payloads = issuesCreate.mock.calls.map(call => call[0]) as unknown as {
+        title: string
+        body: string
+        labels: string[]
+      }[]
+      for (const params of payloads) {
+        expect(params.title).not.toContain('stranger')
+        expect(params.title).not.toContain('secret-')
+        expect(params.body).not.toContain('stranger')
+        expect(params.body).not.toContain('secret-')
+        expect(params.labels).not.toContain('reconcile:rollup-pending-review')
+      }
+    })
+
     it('continues through remaining issues when one issue creation fails', async () => {
       let created = 0
       const issuesCreate = vi.fn(async () => {
@@ -2563,6 +2793,57 @@ describe('handleReconcile (I/O shell)', () => {
               archived: false,
               private: false,
               node_id: 'R_sus',
+            },
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesListForRepo, issuesUpdate}),
+          readMetadata: makeReadMetadata({repos: existing}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      expect(issuesUpdate).not.toHaveBeenCalled()
+    })
+
+    it('does NOT auto-close a private pending-review issue whose redacted subject is still pending-review', async () => {
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({
+            owner: '[REDACTED]',
+            name: 'R_priv',
+            private: true,
+            node_id: 'R_priv',
+            onboarding_status: 'pending-review',
+          }),
+        ],
+      }
+      const issuesUpdate = vi.fn(async () => ({data: {}}))
+      const issuesListForRepo = vi.fn(async () => ({
+        data: [
+          {
+            number: 8,
+            title: 'Unsolicited collaborator grant: private repo',
+            body: '<!-- reconcile:subject:node_id=R_priv -->',
+            state: 'open' as const,
+            labels: [{name: 'reconcile:pending-review'}],
+          },
+        ],
+      }))
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {
+              owner: {login: 'stranger'},
+              name: 'secret-repo',
+              archived: false,
+              private: true,
+              node_id: 'R_priv',
             },
           ],
         }),
