@@ -2,11 +2,14 @@
 type: repo
 title: "fro-bot/systematic"
 created: 2026-05-07
-updated: 2026-05-07
+updated: 2026-05-08
 sources:
   - url: https://github.com/fro-bot/systematic
     sha: 73fa108
     accessed: 2026-05-07
+  - url: https://github.com/fro-bot/systematic
+    sha: 73fa1080776da6e5d7661e7b779d23a10f5e5290
+    accessed: 2026-05-08
 tags: [documentation, github-pages, astro, starlight, opencode, plugin, ocx]
 related:
   - marcusrbrown--systematic
@@ -62,6 +65,8 @@ The `gh-pages` branch contains the built Starlight/Astro static site:
 ## OCX Registry
 
 The `.well-known/ocx.json` file points to the OCX component registry at `/systematic/index.json`. This enables the `ocx` CLI to discover and install individual skills and agents from the documentation site URL. The registry uses V2 schema (since `@fro.bot/systematic` v2.6.0).
+
+As of v2.7.3 the registry contains **101 components** (46 skills + 50 agents + derived entries).
 
 ## Branches
 
@@ -120,8 +125,13 @@ Based on commit history, deployments track releases of `@fro.bot/systematic`:
 | 2026-04-25 | `581f357`   | v2.6.0         |
 | 2026-03-27 | `d0fcffa`   | (pre-survey)   |
 
+## Source Repo Activity
+
+The source repo ([[marcusrbrown--systematic]]) has continued to receive commits after the latest docs deploy (v2.7.3, 2026-05-05). As of 2026-05-08 the source HEAD is `916a6cb` (3 commits ahead: ce-work-beta graduation plan, CodeQL action bump, non-major dep batch). None of these triggered a release or docs deploy — the deployed site remains at v2.7.3.
+
 ## Survey History
 
 | Date       | SHA        | Delta                    |
 | ---------- | ---------- | ------------------------ |
 | 2026-05-07 | `73fa108`  | Initial survey           |
+| 2026-05-08 | `73fa108`  | Re-survey: no change. Added OCX component count (101), source repo activity note. Last push still 2026-05-05. |

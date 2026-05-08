@@ -2,10 +2,9 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-05-08
+updated: 2026-05-07
 tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll, astro, starlight]
 related:
-  - fro-bot--fro-bot-github-io
   - marcusrbrown--mrbro-dev
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--esphome-life
@@ -18,7 +17,6 @@ Static site hosting via GitHub. Deployment patterns observed across the Fro Bot 
 
 ## Repos Using GitHub Pages
 
-- [[fro-bot--fro-bot-github-io]] — Org-level custom domain holder, serves `fro.bot` via CNAME (legacy build, no application code)
 - [[marcusrbrown--mrbro-dev]] — React 19 + Vite 7 portfolio, custom domain at mrbro.dev
 - [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 brand site, custom domain at marcusrbrown.com
 - [[marcusrbrown--esphome-life]] — Jekyll (slate theme) + ESP Web Tools firmware installer, deployed to `gh-pages` branch
@@ -40,13 +38,12 @@ The deploy workflow runs lint and test gates before building, ensuring only vali
 
 ### Custom Domains
 
-Three repos use custom domains with GitHub Pages:
+Two Marcus repos use custom domains with GitHub Pages:
 
-- **fro.bot** — [[fro-bot--fro-bot-github-io]], org-level domain holder (CNAME file only, legacy build). Subpaths like `fro.bot/systematic/` are served by other repos deploying to `gh-pages` branches under the `fro-bot` org.
 - **mrbro.dev** — [[marcusrbrown--mrbro-dev]], full portfolio with React Router
 - **marcusrbrown.com** — [[marcusrbrown--marcusrbrown-github-io]], single-page brand site (CNAME in `public/`)
 
-The Vite-based sites use `base: '/'` for custom domain compatibility (no path prefix needed).
+Both use Vite with `base: '/'` for custom domain compatibility (no path prefix needed).
 
 ### Jekyll + ESP Web Tools (Firmware Distribution)
 

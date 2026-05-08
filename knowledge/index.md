@@ -5,8 +5,8 @@ Master catalog of all wiki pages, organized by type.
 ## Repos
 
 - [[fro-bot--agent]] — fro-bot/agent
-- [[fro-bot--fro-bot-github-io]] — Org-level GitHub Pages custom domain holder; single CNAME file serving `fro.bot`
-- [[fro-bot--systematic]] — fro-bot/systematic
+- [[fro-bot--fro-bot-github-io]] — fro-bot/fro-bot.github.io
+- [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`; Starlight/Astro static site at fro.bot/systematic/, OCX component registry (101 components)
 - [[marcusrbrown--dotfiles]] — marcusrbrown/.dotfiles
 - [[marcusrbrown--github]] — Marcus's personal `.github` repo; GitHub defaults, community health files, and canonical Probot Settings template (`common-settings.yaml`)
 - [[marcusrbrown--containers]] — Container collection and automation framework (Dockerfiles, multi-arch builds, Python CLI, AI-powered templates, CI/CD)

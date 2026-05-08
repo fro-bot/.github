@@ -1069,28 +1069,27 @@ Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
 
-## [2026-05-08 14:45] ingest | fro-bot/fro-bot.github.io
+## [2026-05-08 12:00] ingest | fro-bot/systematic
 
-Re-survey of `fro-bot/fro-bot.github.io` (SHA `3e44653`, unchanged from 2026-05-07). Updated repo page `fro-bot--fro-bot-github-io.md` with new source entry and survey history row. Updated topic page `github-pages.md` to include fro-bot.github.io in repos list, custom domains section, and related frontmatter. Enriched `index.md` entry description.
+Re-survey of `fro-bot/systematic` (SHA `73fa108`, unchanged from 2026-05-07). Updated repo page `fro-bot--systematic.md` with new source entry, OCX registry component count (101), and source repo activity note. Updated `index.md` description for the repo entry. No new topic/entity/comparison pages warranted.
 
-Key findings:
+Delta from prior survey (SHA `73fa108`, 2026-05-07):
 
-- SHA unchanged (`3e44653`): single commit from 2026-02-09 (Create CNAME)
-- Repository contents identical: single `CNAME` file containing `fro.bot`
-- GitHub Pages config unchanged: legacy build from `main:/`, custom domain `fro.bot`, TLS cert approved (expires 2026-07-09)
-- **HTTPS enforcement still not enabled** — recommendation carried forward
-- Open issues: 1 (#1 — Enable code scanning)
-- Open PRs: 0
-- Collaborators: `fro-bot` (sole)
-- 0 stars, 0 watchers
-- **No Fro Bot agent workflow** — recommendation for follow-up PR carried forward
-- **No Probot Settings, Renovate, README, or license** — all gaps previously documented, unchanged
+- SHA unchanged (`73fa108`): latest commit is `Deploy docs from marcusrbrown/systematic@072e755` from 2026-05-05
+- Open issues: 2 (unchanged — #1 CodeQL/Scorecard request, #2 Renovate onboarding PR)
+- Open PRs: 1 (#2 Renovate, unchanged)
+- Branches: 2 (`gh-pages`, `renovate/configure`), unchanged
+- Active workflows: `pages-build-deployment`, `Dependency Graph` only — no custom workflows
+- Collaborators: `fro-bot` only (push access)
+- OCX registry at v2.7.3 contains 101 components (newly documented)
+- Source repo (`marcusrbrown/systematic`) has 3 new commits since last deploy (plan docs, dep bumps) but no release — deployed site remains at v2.7.3
+- **No Fro Bot agent workflow** — still expected; static build output repo needs no agent coverage
 - No contradictions with prior ingest
 
-Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+Sources: https://github.com/fro-bot/systematic (SHA 73fa1080776da6e5d7661e7b779d23a10f5e5290)
 
-## [2026-05-08 14:48] ingest | repo:fro-bot/fro-bot.github.io
+## [2026-05-08 14:49] ingest | repo:fro-bot/systematic
 
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+Surveyed fro-bot/systematic and updated the control-plane wiki.
 
-Sources: https://github.com/fro-bot/fro-bot.github.io
+Sources: https://github.com/fro-bot/systematic
