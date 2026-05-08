@@ -289,10 +289,31 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
 
   let next: ReposFile = {...currentRepos, repos: nextEntries}
 
+  // Build the set of node_ids that any tracked entry already represents. This
+  // guards against re-discovery: when a private repo's owner/name has been
+  // redacted, the next /user/repos enumeration returns the canonical owner/name
+  // again. Without this set, Pass 2 would treat that as a brand-new newcomer
+  // and re-add a sibling entry under the canonical identity, undoing the
+  // redaction. The set covers two shapes:
+  //   1. Modern entries with `node_id` populated (post-Unit-2 reconciles).
+  //   2. Legacy redacted entries where `owner === '[REDACTED]'` and the
+  //      `node_id` lives in the `name` field (Phase 0 redaction shape, before
+  //      a separate `node_id` field was populated on redacted entries).
+  const knownNodeIds = new Set<string>()
+  for (const entry of nextEntries) {
+    if (entry.node_id !== undefined) {
+      knownNodeIds.add(entry.node_id)
+    }
+    if (entry.owner === '[REDACTED]') {
+      knownNodeIds.add(entry.name)
+    }
+  }
+
   // Pass 2 — add newcomers (accessible repos not yet tracked).
   for (const access of accessList) {
     const key = repoKey(access.owner, access.name)
     if (trackedKeys.has(key)) continue
+    if (knownNodeIds.has(access.node_id)) continue // tracked under a different (likely redacted) identity.
     if (access.archived) continue // untracked + archived: no history worth capturing; skip silently.
 
     // Channel determines the trust path. Owned (we own the repo) and contrib (operator

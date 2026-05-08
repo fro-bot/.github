@@ -204,6 +204,95 @@ describe('reconcileRepos', () => {
       expect(result.summary.added).toBe(1)
       expect(result.summary.pendingReview).toBe(2)
     })
+
+    it('suppresses a newcomer whose node_id matches an existing tracked entry (re-discovery via renamed/redacted entry)', () => {
+      // GIVEN a tracked entry with a known node_id under one identity
+      // AND an accessList result with the same node_id but a different owner/name
+      // (e.g. after Phase 0 redaction renamed owner/name on an entry but the
+      //  reconcile cron rediscovers the canonical owner/name from /user/repos)
+      // WHEN reconciling
+      const tracked = makeEntry({
+        owner: '[REDACTED]',
+        name: 'R_kgDOSVJgdw',
+        node_id: 'R_kgDOSVJgdw',
+        private: true,
+        onboarding_status: 'lost-access',
+      })
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [tracked]},
+          accessList: [makeAccess({owner: 'marcusrbrown', name: 'poly', node_id: 'R_kgDOSVJgdw', private: true})],
+          allowlist: makeAllowlist(['marcusrbrown']),
+        }),
+      )
+
+      // THEN the newcomer is NOT added (suppressed by node_id match)
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toBe(tracked)
+      expect(result.dispatches).toEqual([])
+      expect(result.issues).toEqual([])
+      expect(result.summary.added).toBe(0)
+      expect(result.summary.pendingReview).toBe(0)
+    })
+
+    it('suppresses a newcomer whose node_id matches a redacted entry that lacks a node_id field (legacy redaction)', () => {
+      // GIVEN a Phase-0-redacted entry where owner='[REDACTED]' and name=node_id
+      // (legacy shape: the redacted entry has no separate node_id field)
+      // AND the canonical name surfaces in accessList with the matching node_id
+      // WHEN reconciling
+      // Build a redacted entry shape WITHOUT node_id (legacy Phase 0 shape:
+      // node_id lives in `name`, no separate field). makeEntry sets node_id by
+      // default, so build the entry inline rather than destructuring it away.
+      const redactedNoNodeId: RepoEntry = {
+        owner: '[REDACTED]',
+        name: 'R_kgDOSVJgdw',
+        added: '2026-05-05',
+        onboarding_status: 'lost-access',
+        last_survey_at: null,
+        last_survey_status: null,
+        has_fro_bot_workflow: false,
+        has_renovate: false,
+        private: true,
+        discovery_channel: 'collab',
+        next_survey_eligible_at: null,
+      }
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [redactedNoNodeId]},
+          accessList: [makeAccess({owner: 'marcusrbrown', name: 'poly', node_id: 'R_kgDOSVJgdw', private: true})],
+          allowlist: makeAllowlist(['marcusrbrown']),
+        }),
+      )
+
+      // THEN the newcomer is suppressed by name-as-node_id fallback for redacted entries
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.dispatches).toEqual([])
+      expect(result.issues).toEqual([])
+      expect(result.summary.added).toBe(0)
+    })
+
+    it('does NOT suppress a newcomer whose node_id matches no existing entry', () => {
+      // GIVEN a tracked entry with a known node_id
+      // AND an accessList result with a different node_id
+      // WHEN reconciling
+      const tracked = makeEntry({name: 'existing', node_id: 'R_existing'})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [tracked]},
+          accessList: [
+            makeAccess({name: 'existing', node_id: 'R_existing'}),
+            makeAccess({owner: 'marcusrbrown', name: 'genuinely-new', node_id: 'R_new'}),
+          ],
+          allowlist: makeAllowlist(['marcusrbrown']),
+        }),
+      )
+
+      // THEN the genuinely-new newcomer is added normally (the tracked entry's
+      // own first-survey dispatch is incidental and not what this test cares about)
+      expect(result.nextRepos.repos).toHaveLength(2)
+      expect(result.dispatches).toContainEqual({owner: 'marcusrbrown', repo: 'genuinely-new'})
+      expect(result.summary.added).toBe(1)
+    })
   })
 
   describe('tracked entries — still accessible', () => {
