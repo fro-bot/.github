@@ -230,12 +230,12 @@ repos:
     name: agent
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-05-07
+    last_survey_at: 2026-05-08
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: owned
-    next_survey_eligible_at: 2026-05-21
+    next_survey_eligible_at: 2026-05-22
     private: false
     node_id: R_kgDOQyTMEw
   - owner: fro-bot
