@@ -5,7 +5,7 @@ Master catalog of all wiki pages, organized by type.
 ## Repos
 
 - [[fro-bot--agent]] — fro-bot/agent
-- [[fro-bot--fro-bot-github-io]] — fro-bot/fro-bot.github.io
+- [[fro-bot--fro-bot-github-io]] — Org-level GitHub Pages custom domain holder; single CNAME file serving `fro.bot`
 - [[fro-bot--systematic]] — fro-bot/systematic
 - [[marcusrbrown--dotfiles]] — marcusrbrown/.dotfiles
 - [[marcusrbrown--github]] — Marcus's personal `.github` repo; GitHub defaults, community health files, and canonical Probot Settings template (`common-settings.yaml`)

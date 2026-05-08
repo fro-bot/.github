@@ -1068,3 +1068,29 @@ Sources: https://github.com/marcusrbrown/vbs (SHA b3c415bc4e0e25dd4e5ca8ccdc5ae7
 Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
+
+## [2026-05-08 14:45] ingest | fro-bot/fro-bot.github.io
+
+Re-survey of `fro-bot/fro-bot.github.io` (SHA `3e44653`, unchanged from 2026-05-07). Updated repo page `fro-bot--fro-bot-github-io.md` with new source entry and survey history row. Updated topic page `github-pages.md` to include fro-bot.github.io in repos list, custom domains section, and related frontmatter. Enriched `index.md` entry description.
+
+Key findings:
+
+- SHA unchanged (`3e44653`): single commit from 2026-02-09 (Create CNAME)
+- Repository contents identical: single `CNAME` file containing `fro.bot`
+- GitHub Pages config unchanged: legacy build from `main:/`, custom domain `fro.bot`, TLS cert approved (expires 2026-07-09)
+- **HTTPS enforcement still not enabled** — recommendation carried forward
+- Open issues: 1 (#1 — Enable code scanning)
+- Open PRs: 0
+- Collaborators: `fro-bot` (sole)
+- 0 stars, 0 watchers
+- **No Fro Bot agent workflow** — recommendation for follow-up PR carried forward
+- **No Probot Settings, Renovate, README, or license** — all gaps previously documented, unchanged
+- No contradictions with prior ingest
+
+Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+
+## [2026-05-08 14:48] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io

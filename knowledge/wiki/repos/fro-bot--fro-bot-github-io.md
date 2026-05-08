@@ -2,8 +2,11 @@
 type: repo
 title: fro-bot/fro-bot.github.io
 created: 2026-05-07
-updated: 2026-05-07
+updated: 2026-05-08
 sources:
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-05-08
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-05-07
@@ -120,3 +123,4 @@ Given this repo has no application code and a single static file, most of these 
 | Date       | SHA       | Delta                          |
 | ---------- | --------- | ------------------------------ |
 | 2026-05-07 | `3e44653` | Initial survey. Single-file repo, CNAME-only domain holder for `fro.bot`. |
+| 2026-05-08 | `3e44653` | Re-survey. No changes — SHA, contents, Pages config, open issues, collaborators all identical. TLS cert confirmed valid (expires 2026-07-09). HTTPS enforcement still not enabled. |
