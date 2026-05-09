@@ -5,6 +5,11 @@ const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
 const DEFAULT_MAIN_BRANCH = 'main'
 const DEFAULT_DATA_BRANCH = 'data'
+const DEFAULT_RESTORE_MESSAGE = 'chore(data): restore data branch'
+const FRO_BOT_BOT_AUTHOR = {
+  name: 'fro-bot[bot]',
+  email: '109017866+fro-bot[bot]@users.noreply.github.com',
+}
 
 type OctokitConstructor = new (params: {auth: string}) => OctokitClient
 
@@ -82,20 +87,57 @@ export async function bootstrapDataBranch(params: DataBranchBootstrapParams = {}
     throw toBootstrapApiError(error, `reading ${mainBranch} branch head`)
   }
 
+  let baseCommit: Awaited<ReturnType<OctokitClient['rest']['git']['getCommit']>>
+  try {
+    baseCommit = await octokit.rest.git.getCommit({owner, repo, commit_sha: main.data.commit.sha})
+  } catch (error: unknown) {
+    throw toBootstrapApiError(error, `reading ${mainBranch} commit tree`)
+  }
+
+  let restoreCommit: Awaited<ReturnType<OctokitClient['rest']['git']['createCommit']>>
+  try {
+    restoreCommit = await octokit.rest.git.createCommit({
+      owner,
+      repo,
+      message: DEFAULT_RESTORE_MESSAGE,
+      tree: baseCommit.data.tree.sha,
+      parents: [main.data.commit.sha],
+      author: FRO_BOT_BOT_AUTHOR,
+      committer: FRO_BOT_BOT_AUTHOR,
+    })
+  } catch (error: unknown) {
+    throw toBootstrapApiError(error, `creating ${dataBranch} restore commit`)
+  }
+
   try {
     const response = await octokit.rest.git.createRef({
       owner,
       repo,
       ref: `refs/heads/${dataBranch}`,
-      sha: main.data.commit.sha,
+      sha: restoreCommit.data.sha,
     })
 
     return {
       created: true,
       ref: response.data.ref,
-      sha: main.data.commit.sha,
+      sha: restoreCommit.data.sha,
     }
   } catch (error: unknown) {
+    if (isApiErrorStatus(error, 422)) {
+      let existing: Awaited<ReturnType<OctokitClient['rest']['repos']['getBranch']>>
+      try {
+        existing = await octokit.rest.repos.getBranch({owner, repo, branch: dataBranch})
+      } catch (raceLookupError: unknown) {
+        throw toBootstrapApiError(raceLookupError, `creating ${dataBranch} from ${mainBranch}`)
+      }
+
+      return {
+        created: false,
+        ref: `refs/heads/${existing.data.name}`,
+        sha: existing.data.commit.sha,
+      }
+    }
+
     throw toBootstrapApiError(error, `creating ${dataBranch} from ${mainBranch}`)
   }
 }

@@ -39,7 +39,9 @@ function mockOctokit(overrides?: MockOverrides): OctokitClient {
       repos: {
         getBranch:
           overrides?.getBranch ??
-          (async () => ({data: {name: 'data', protected: false, protection: {enabled: false}}})),
+          (async ({branch}: {branch: string}) => ({
+            data: {name: branch, protected: false, protection: {enabled: false}, commit: {sha: `${branch}-sha`}},
+          })),
         getContent:
           overrides?.getContent ??
           (async () => ({
@@ -225,7 +227,7 @@ describe('commitMetadata API', () => {
 
   it('refuses protected: true branches (PROTECTED_BRANCH)', async () => {
     const octokit = mockOctokit({
-      getBranch: async () => ({data: {name: 'data', protected: true}}),
+      getBranch: async () => ({data: {name: 'data', protected: true, commit: {sha: 'data-sha'}}}),
     })
     const error = await commitMetadata({
       path: 'metadata/repos.yaml',
@@ -239,7 +241,9 @@ describe('commitMetadata API', () => {
 
   it('refuses protection.enabled branches (PROTECTED_BRANCH)', async () => {
     const octokit = mockOctokit({
-      getBranch: async () => ({data: {name: 'data', protected: false, protection: {enabled: true}}}),
+      getBranch: async () => ({
+        data: {name: 'data', protected: false, protection: {enabled: true}, commit: {sha: 'data-sha'}},
+      }),
     })
     const error = await commitMetadata({
       path: 'metadata/repos.yaml',
@@ -345,6 +349,164 @@ describe('commitMetadata API', () => {
     expect(result.sha).toBe('commit-sha-789')
     expect(result.attempts).toBe(1)
     expect(createSpy).toHaveBeenCalledOnce()
+  })
+
+  it('bootstraps the data branch before reading metadata', async () => {
+    const calls: string[] = []
+    const createSpy = vi.fn(async () => ({data: {commit: {sha: 'commit-sha-789'}}}))
+    const bootstrapDataBranch = vi.fn(async () => {
+      calls.push('bootstrap')
+      return {created: false, ref: 'refs/heads/data', sha: 'data-sha'}
+    })
+    const octokit = mockOctokit({
+      getBranch: async ({branch}: {branch: string}) => {
+        calls.push(`getBranch:${branch}`)
+        return {data: {name: branch, protected: false, protection: {enabled: false}}}
+      },
+      getContent: async () => {
+        calls.push('getContent')
+        return {data: {type: 'file' as const, sha: 'abc123', content: encode({version: 1}), encoding: 'base64'}}
+      },
+      createOrUpdateFileContents: createSpy,
+    })
+
+    await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'update version',
+      mutator: () => ({version: 2}),
+      octokit,
+      bootstrapDataBranch,
+    })
+
+    expect(bootstrapDataBranch).toHaveBeenCalledWith({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      dataBranch: 'data',
+    })
+    expect(calls).toEqual(['bootstrap', 'getBranch:data', 'getContent'])
+    expect(createSpy).toHaveBeenCalledOnce()
+  })
+
+  it('does not bootstrap when writing to an explicitly allowed non-data branch', async () => {
+    const bootstrapDataBranch = vi.fn(async () => {
+      throw new Error('bootstrap should not run')
+    })
+    const createSpy = vi.fn(async () => ({data: {commit: {sha: 'commit-sha-789'}}}))
+    const octokit = mockOctokit({createOrUpdateFileContents: createSpy})
+
+    const result = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      branch: 'test-branch',
+      allowUnsafeBranch: true,
+      message: 'update version',
+      mutator: () => ({version: 2}),
+      octokit,
+      bootstrapDataBranch,
+    })
+
+    expect(result.committed).toBe(true)
+    expect(bootstrapDataBranch).not.toHaveBeenCalled()
+    expect(createSpy).toHaveBeenCalledOnce()
+  })
+
+  it('rebootstraps and retries when data disappears after the initial bootstrap', async () => {
+    const calls: string[] = []
+    const bootstrapDataBranch = vi.fn(async () => {
+      calls.push('bootstrap')
+      return {created: false, ref: 'refs/heads/data', sha: 'data-sha'}
+    })
+    const createSpy = vi.fn(async () => ({data: {commit: {sha: 'commit-sha-789'}}}))
+    const octokit = mockOctokit({
+      getBranch: vi
+        .fn<NonNullable<MockOverrides['getBranch']>>()
+        .mockRejectedValueOnce(Object.assign(new Error('Not Found'), {status: 404}))
+        .mockResolvedValue({
+          data: {name: 'data', protected: false, protection: {enabled: false}, commit: {sha: 'data-sha'}},
+        }),
+      createOrUpdateFileContents: createSpy,
+    })
+
+    const result = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'update version',
+      maxRetries: 2,
+      mutator: () => ({version: 2}),
+      octokit,
+      bootstrapDataBranch,
+    })
+
+    expect(result.committed).toBe(true)
+    expect(bootstrapDataBranch).toHaveBeenCalledTimes(2)
+    expect(calls).toEqual(['bootstrap', 'bootstrap'])
+    expect(createSpy).toHaveBeenCalledOnce()
+  })
+
+  it('rebootstraps and retries when data disappears before reading metadata content', async () => {
+    const calls: string[] = []
+    const bootstrapDataBranch = vi.fn(async () => {
+      calls.push('bootstrap')
+      return {created: false, ref: 'refs/heads/data', sha: 'data-sha'}
+    })
+    const createSpy = vi.fn(async () => ({data: {commit: {sha: 'commit-sha-789'}}}))
+    const getBranch = vi
+      .fn<NonNullable<MockOverrides['getBranch']>>()
+      .mockResolvedValueOnce({
+        data: {name: 'data', protected: false, protection: {enabled: false}, commit: {sha: 'data-sha'}},
+      })
+      .mockResolvedValue({
+        data: {name: 'data', protected: false, protection: {enabled: false}, commit: {sha: 'data-sha'}},
+      })
+    const getContent = vi
+      .fn<NonNullable<MockOverrides['getContent']>>()
+      .mockRejectedValueOnce(Object.assign(new Error('Not Found'), {status: 404}))
+      .mockResolvedValue({
+        data: {type: 'file' as const, sha: 'abc123', content: encode({version: 1}), encoding: 'base64'},
+      })
+    const octokit = mockOctokit({
+      getBranch,
+      getContent,
+      createOrUpdateFileContents: createSpy,
+    })
+
+    const result = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'update version',
+      maxRetries: 2,
+      mutator: () => ({version: 2}),
+      octokit,
+      bootstrapDataBranch,
+    })
+
+    expect(result.committed).toBe(true)
+    expect(bootstrapDataBranch).toHaveBeenCalledTimes(2)
+    expect(getBranch).toHaveBeenCalledTimes(2)
+    expect(getContent).toHaveBeenCalledTimes(2)
+    expect(createSpy).toHaveBeenCalledOnce()
+  })
+
+  it('stops before metadata reads and writes when bootstrap fails', async () => {
+    const bootstrapDataBranch = vi.fn(async () => {
+      throw new Error('bootstrap failed')
+    })
+    const getBranch = vi.fn<NonNullable<MockOverrides['getBranch']>>()
+    const getContent = vi.fn<NonNullable<MockOverrides['getContent']>>()
+    const createSpy = vi.fn<NonNullable<MockOverrides['createOrUpdateFileContents']>>()
+    const octokit = mockOctokit({getBranch, getContent, createOrUpdateFileContents: createSpy})
+
+    await expect(
+      commitMetadata({
+        path: 'metadata/repos.yaml',
+        message: 'update version',
+        mutator: () => ({version: 2}),
+        octokit,
+        bootstrapDataBranch,
+      }),
+    ).rejects.toThrow('bootstrap failed')
+
+    expect(getBranch).not.toHaveBeenCalled()
+    expect(getContent).not.toHaveBeenCalled()
+    expect(createSpy).not.toHaveBeenCalled()
   })
 
   it('serializes redacted metadata values in Prettier-compatible single quotes', async () => {

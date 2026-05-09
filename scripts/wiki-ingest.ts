@@ -7,6 +7,11 @@ import process from 'node:process'
 import {promisify} from 'node:util'
 
 import {parse} from 'yaml'
+import {
+  bootstrapDataBranch as defaultBootstrapDataBranch,
+  type DataBranchBootstrapParams,
+  type DataBranchBootstrapResult,
+} from './data-branch-bootstrap.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
@@ -58,6 +63,11 @@ export interface CommitWikiChangesParams {
   files: Record<string, string>
   octokit?: OctokitClient
   maxRetries?: number
+  /**
+   * Idempotent data-branch bootstrap. Called before data-branch writes so wiki
+   * ingest recovers when GitHub deletes the `data` source ref after promotion.
+   */
+  bootstrapDataBranch?: (params: DataBranchBootstrapParams) => Promise<DataBranchBootstrapResult>
 }
 
 export interface CommitWikiChangesResult {
@@ -78,6 +88,7 @@ export type WikiIngestErrorCode =
   | 'INVALID_FRONTMATTER'
   | 'INVALID_WIKILINK'
   | 'INVALID_RETRIES'
+  | 'PROTECTED_BRANCH'
   | 'MISSING_TOKEN'
   | 'OCTOKIT_LOAD_FAILED'
   | 'CONFLICT_EXHAUSTED'
@@ -172,9 +183,22 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
   }
 
   const octokit = params.octokit ?? (await createOctokitFromEnv())
+  rejectProtectedWikiBranchName(branch)
+
+  const shouldBootstrapDataBranch = branch === DEFAULT_BRANCH
+  const bootstrap = params.bootstrapDataBranch ?? defaultBootstrapDataBranch
+  const bootstrapDataBranch = async (): Promise<void> => {
+    await bootstrap({octokit, owner, repo, dataBranch: branch})
+  }
+
+  if (shouldBootstrapDataBranch) {
+    await bootstrapDataBranch()
+  }
 
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     try {
+      await assertWritableWikiBranch(octokit, owner, repo, branch)
+
       const head = await octokit.rest.git.getRef({owner, repo, ref: `heads/${branch}`})
       const commit = await octokit.rest.git.getCommit({owner, repo, commit_sha: head.data.object.sha})
 
@@ -214,6 +238,11 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
 
       return {committed: true, commitSha: createdCommit.data.sha, attempts: attempt}
     } catch (error: unknown) {
+      if (shouldBootstrapDataBranch && isApiErrorStatus(error, 404) && attempt < maxRetries) {
+        await bootstrapDataBranch()
+        continue
+      }
+
       if (isConflictError(error) && attempt < maxRetries) {
         await delayConflictRetry(attempt)
         continue
@@ -233,6 +262,34 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
   }
 
   throw new Error('wiki ingest reached an unreachable retry state')
+}
+
+function rejectProtectedWikiBranchName(branch: string): void {
+  if (branch === 'main') {
+    throw new WikiIngestError({
+      code: 'PROTECTED_BRANCH',
+      message: 'wiki ingest refuses to write to main; use the data branch',
+      remediation: 'Target the data branch. Promotions to main must go through the data-branch merge PR.',
+    })
+  }
+}
+
+async function assertWritableWikiBranch(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<void> {
+  const response = await octokit.rest.repos.getBranch({owner, repo, branch})
+
+  if (response.data.protected === true || response.data.protection?.enabled === true) {
+    throw new WikiIngestError({
+      code: 'PROTECTED_BRANCH',
+      message: `wiki ingest refuses to write to protected branch "${branch}"`,
+      remediation:
+        'Autonomous wiki writes must land on an unprotected branch. Review the ruleset or target the data branch.',
+    })
+  }
 }
 
 async function createOctokitFromEnv(): Promise<OctokitClient> {
@@ -613,6 +670,10 @@ function isWikiPageType(value: unknown): value is WikiPageType {
 
 function isConflictError(error: unknown): boolean {
   return isRecord(error) && error.status === 409
+}
+
+function isApiErrorStatus(error: unknown, status: number): boolean {
+  return isRecord(error) && error.status === status
 }
 
 async function delayConflictRetry(attempt: number): Promise<void> {
