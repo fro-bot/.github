@@ -399,6 +399,7 @@ function serializeYaml(value: unknown): string {
   const serialized = stringify(value, {
     indent: 2,
     lineWidth: 0,
+    singleQuote: true,
   })
 
   return serialized.endsWith('\n') ? serialized : `${serialized}\n`
