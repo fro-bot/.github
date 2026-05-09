@@ -214,7 +214,7 @@ repos:
     next_survey_eligible_at: 2026-05-27
     private: false
     node_id: R_kgDOSKIp0Q
-  - owner: "[REDACTED]"
+  - owner: '[REDACTED]'
     name: R_kgDOSVJgdw
     added: 2026-05-05
     onboarding_status: pending
