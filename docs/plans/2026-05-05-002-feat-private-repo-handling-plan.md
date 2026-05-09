@@ -506,9 +506,9 @@ persona/
 - Modify: `scripts/reconcile-repos.test.ts`
 
 **Approach:**
-- In `classifyTracked`: privacy gate runs FIRST. If `entry.private !== false`, skip and increment `summary.skippedPrivate`. The eligibility gate (cadence) runs only on entries that passed the privacy gate.
+- In `classifyTracked`: compute survey eligibility first, then skip and increment `summary.skippedPrivate` only when an otherwise-dispatchable repo is not definitively public in both stored metadata and the live access list.
 - Skipped entries do NOT update `last_survey_at` or `last_survey_status`
-- `summary.skippedPrivate` is exposed in JSON output; commit messages may include the count (`+N skipped private`) but never names
+- `summary.skippedPrivate` is exposed in JSON output only; public commit messages do not include skipped-private counts or names
 
 **Patterns to follow:**
 - Existing `summary.unchanged`, `summary.dispatched` counters
@@ -521,7 +521,7 @@ persona/
 - Edge case: 13 onboarded public repos + 1 private repo with cap=12 → 12 public dispatched; private skipped (proves no displacement)
 - Edge case: gate ordering — private repo with `next_survey_eligible_at` in the past (eligible) is still skipped (privacy first)
 - Happy path: all entries public → `summary.skippedPrivate: 0`; commit message omits the counter
-- Happy path: at least one private skip → commit message includes `+N skipped private`; no names
+- Edge case: at least one private skip → JSON output includes `summary.skippedPrivate`; commit message still omits the counter
 
 **Verification:**
 - New tests pass

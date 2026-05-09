@@ -798,6 +798,11 @@ function indexAccessNodePrivacy(accessList: AccessListEntry[]): Map<string, Acce
   return map
 }
 
+/**
+ * Fails closed for privacy and dispatch planning. Duplicate node_id rows are
+ * treated as private even when every row reports public visibility because the
+ * canonical owner/repo identity is ambiguous.
+ */
 function accessPrivateForStorage(access: AccessListEntry, accessNodePrivacy: Map<string, AccessNodePrivacy>): boolean {
   const nodePrivacy = accessNodePrivacy.get(access.node_id)
   return access.private !== false || nodePrivacy?.hasNonPublic === true || (nodePrivacy?.count ?? 0) > 1
