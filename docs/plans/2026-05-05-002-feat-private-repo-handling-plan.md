@@ -493,7 +493,7 @@ persona/
 
 ---
 
-- [ ] **Unit 5: Reconcile dispatch gate (defense in depth, ordered)**
+- [x] **Unit 5: Reconcile dispatch gate (defense in depth, ordered)**
 
 **Goal:** Reconcile skips Survey Repo dispatch for entries where `private !== false`. Skip happens inside `classifyTracked` BEFORE the eligibility gate (cadence Unit 2). `summary.skippedPrivate` aggregate counter; no per-repo names in any public surface.
 

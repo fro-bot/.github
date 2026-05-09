@@ -120,6 +120,7 @@ describe('reconcileRepos', () => {
         migrated: 0,
         transient: 0,
         malformed: 0,
+        skippedPrivate: 0,
         unchanged: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
@@ -180,6 +181,82 @@ describe('reconcileRepos', () => {
       expect(JSON.stringify(result.nextRepos)).not.toContain('secret-repo')
       expect(result.dispatches).toEqual([])
       expect(result.summary.added).toBe(1)
+    })
+
+    it('does not dispatch a duplicate public alias for a private node_id seen earlier in the same pass', () => {
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_duplicate_private', private: true}),
+            makeAccess({owner: 'marcusrbrown', name: 'public-alias', node_id: 'R_duplicate_private', private: false}),
+          ],
+          allowlist: makeAllowlist(['private-owner', 'marcusrbrown']),
+        }),
+      )
+
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.added).toBe(1)
+      expect(result.summary.skippedPrivate).toBe(1)
+      expect(result.nextRepos.repos).toEqual([
+        expect.objectContaining({
+          owner: '[REDACTED]',
+          name: 'R_duplicate_private',
+          private: true,
+          node_id: 'R_duplicate_private',
+        }),
+      ])
+    })
+
+    it('does not dispatch a duplicate public alias before a later private row for the same node_id', () => {
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [
+            makeAccess({owner: 'marcusrbrown', name: 'public-alias', node_id: 'R_public_first', private: false}),
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_public_first', private: true}),
+          ],
+          allowlist: makeAllowlist(['marcusrbrown', 'private-owner']),
+        }),
+      )
+
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.added).toBe(1)
+      expect(result.summary.skippedPrivate).toBe(1)
+      expect(result.nextRepos.repos).toEqual([
+        expect.objectContaining({
+          owner: '[REDACTED]',
+          name: 'R_public_first',
+          private: true,
+          node_id: 'R_public_first',
+        }),
+      ])
+    })
+
+    it('treats a newcomer with missing privacy as private before dispatching', () => {
+      const access = {
+        owner: 'marcusrbrown',
+        name: 'unknown-privacy',
+        archived: false,
+        node_id: 'R_missing_private',
+      } as unknown as AccessListEntry
+
+      const result = reconcileRepos(
+        makeInput({
+          accessList: [access],
+          allowlist: makeAllowlist(['marcusrbrown']),
+        }),
+      )
+
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.added).toBe(1)
+      expect(result.summary.skippedPrivate).toBe(1)
+      expect(result.nextRepos.repos).toEqual([
+        expect.objectContaining({
+          owner: '[REDACTED]',
+          name: 'R_missing_private',
+          private: true,
+          node_id: 'R_missing_private',
+        }),
+      ])
     })
 
     it('redacts an existing canonical entry when access-list visibility flips private', () => {
@@ -272,6 +349,30 @@ describe('reconcileRepos', () => {
       })
       expect(result.dispatches).toEqual([])
       expect(result.summary.regained).toBe(1)
+      expect(result.summary.skippedPrivate).toBe(1)
+    })
+
+    it('dispatches a regained repo when the live access list proves it is public again', () => {
+      const tracked = makeEntry({
+        owner: 'fro-bot',
+        name: 'back-again',
+        private: true,
+        node_id: 'R_public_again',
+        onboarding_status: 'lost-access',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [tracked]},
+          accessList: [makeAccess({name: 'back-again', node_id: 'R_public_again', private: false})],
+          allowlist: makeAllowlist(['fro-bot']),
+          accessChannelByKey: new Map([['fro-bot/back-again', 'owned']]),
+        }),
+      )
+
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'back-again'}])
+      expect(result.summary.regained).toBe(1)
+      expect(result.summary.skippedPrivate).toBe(0)
     })
 
     it('fail-closes a redacted private tracked entry missing from the access list', () => {
@@ -618,6 +719,8 @@ describe('reconcileRepos', () => {
       const entry = makeEntry({
         name: 'returned-repo',
         onboarding_status: 'lost-access',
+        private: false,
+        node_id: 'R_default',
         last_survey_at: '2026-01-10',
         last_survey_status: 'success',
         has_fro_bot_workflow: true,
@@ -1070,6 +1173,8 @@ describe('reconcileRepos', () => {
       const drift = makeEntry({
         name: 'drift-repo',
         onboarding_status: 'onboarded',
+        private: false,
+        node_id: 'R_default',
         has_renovate: false,
         last_survey_at: '2026-04-10',
         last_survey_status: 'success',
@@ -1113,6 +1218,7 @@ describe('reconcileRepos', () => {
         migrated: 0,
         transient: 0,
         malformed: 0,
+        skippedPrivate: 0,
         unchanged: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
@@ -1153,6 +1259,7 @@ describe('reconcileRepos', () => {
         migrated: 0,
         transient: 0,
         malformed: 0,
+        skippedPrivate: 0,
         unchanged: 1,
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1177,6 +1284,7 @@ describe('reconcileRepos', () => {
         migrated: 0,
         transient: 0,
         malformed: 0,
+        skippedPrivate: 0,
         unchanged: 0,
         byChannel: emptyChannelStats(),
       })
@@ -1261,6 +1369,8 @@ describe('reconcileRepos', () => {
       const entry = makeEntry({
         name: 'never-surveyed',
         onboarding_status: 'pending',
+        private: false,
+        node_id: 'R_default',
         last_survey_at: null,
         last_survey_status: null,
       })
@@ -1279,6 +1389,8 @@ describe('reconcileRepos', () => {
       const entry = makeEntry({
         name: 'failed-initial',
         onboarding_status: 'pending',
+        private: false,
+        node_id: 'R_default',
         last_survey_at: '2026-04-19',
         last_survey_status: 'failure',
       })
@@ -1341,6 +1453,8 @@ describe('reconcileRepos', () => {
       const entry = makeEntry({
         name: 'overdue-repo',
         onboarding_status: 'onboarded',
+        private: false,
+        node_id: 'R_default',
         last_survey_at: '2026-03-01',
         last_survey_status: 'success',
         next_survey_eligible_at: '2026-04-03',
@@ -1353,6 +1467,113 @@ describe('reconcileRepos', () => {
       )
       // #then the entry is dispatched (eligibility passed)
       expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'overdue-repo'}])
+    })
+
+    it('skips an eligible private tracked entry before the survey eligibility gate', () => {
+      const entry = makeEntry({
+        owner: '[REDACTED]',
+        name: 'R_private',
+        private: true,
+        node_id: 'R_private',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-02-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-04-01',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_private', private: true})],
+        }),
+      )
+
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.skippedPrivate).toBe(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        last_survey_at: '2026-02-01',
+        last_survey_status: 'success',
+      })
+      expect(JSON.stringify(result)).not.toContain('private-owner')
+      expect(JSON.stringify(result)).not.toContain('secret-repo')
+    })
+
+    it('skips an eligible stored-public entry when the live access list reports private', () => {
+      const entry = makeEntry({
+        name: 'visibility-flipped',
+        private: false,
+        node_id: 'R_visibility_flipped',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-02-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-04-01',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'visibility-flipped', node_id: 'R_visibility_flipped', private: true})],
+        }),
+      )
+
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.skippedPrivate).toBe(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_visibility_flipped',
+        private: true,
+        node_id: 'R_visibility_flipped',
+      })
+    })
+
+    it('does not count private tracked entries that are not survey-eligible as skipped dispatches', () => {
+      const entry = makeEntry({
+        owner: '[REDACTED]',
+        name: 'R_private_fresh',
+        private: true,
+        node_id: 'R_private_fresh',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-05-01',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [
+            makeAccess({owner: 'private-owner', name: 'secret-repo', node_id: 'R_private_fresh', private: true}),
+          ],
+        }),
+      )
+
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.skippedPrivate).toBe(0)
+    })
+
+    it('skips an entry with unknown privacy before refreshing it to public', () => {
+      const entry = makeEntry({
+        name: 'legacy-repo',
+        onboarding_status: 'pending',
+        last_survey_at: null,
+        last_survey_status: null,
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({name: 'legacy-repo', private: false, node_id: 'R_legacy'})],
+        }),
+      )
+
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.skippedPrivate).toBe(1)
+      expect(result.summary.refreshed).toBe(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        name: 'legacy-repo',
+        private: false,
+        node_id: 'R_legacy',
+      })
     })
   })
 
@@ -1503,6 +1724,8 @@ describe('reconcileRepos', () => {
         name: '.github',
         onboarding_status: 'lost-access',
         discovery_channel: 'contrib',
+        private: false,
+        node_id: 'R_bfra_gh',
       })
       const result = reconcileRepos(
         makeInput({
@@ -1525,6 +1748,8 @@ describe('reconcileRepos', () => {
         name: 'systematic',
         onboarding_status: 'lost-access',
         discovery_channel: 'owned',
+        private: false,
+        node_id: 'R_sys',
       })
       const result = reconcileRepos(
         makeInput({
@@ -2420,6 +2645,8 @@ describe('handleReconcile (I/O shell)', () => {
                   has_fro_bot_workflow: false,
                   has_renovate: false,
                   discovery_channel: 'collab',
+                  private: false,
+                  node_id: 'R_2',
                   next_survey_eligible_at: null,
                 },
               ],
@@ -2433,6 +2660,80 @@ describe('handleReconcile (I/O shell)', () => {
       expect(dispatchCalls).toEqual(['r1', 'r3'])
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesDeferred).toBe(1)
+    })
+
+    it('does not let private entries displace public dispatches under the cap', async () => {
+      const dispatchCalls: string[] = []
+      const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+        const typed = params as {inputs?: {repo: string}}
+        dispatchCalls.push(typed.inputs?.repo ?? '?')
+      })
+      const publicRepos = Array.from({length: 13}, (_, index) => `public-${String(index + 1).padStart(2, '0')}`)
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            ...publicRepos.map(name => ({
+              owner: {login: 'trusted'},
+              name,
+              archived: false,
+              private: false,
+              node_id: `R_${name}`,
+            })),
+            {
+              owner: {login: 'trusted'},
+              name: 'private-repo',
+              archived: false,
+              private: true,
+              node_id: 'R_private',
+            },
+          ],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['trusted'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          maxDispatchesPerRun: 12,
+        }),
+      )
+
+      expect(dispatchCalls).toHaveLength(12)
+      expect(dispatchCalls).not.toContain('private-repo')
+      expect(dispatchCalls.every(name => name.startsWith('public-'))).toBe(true)
+      expect(result.summary.skippedPrivate).toBe(1)
+      expect(result.dispatches).toBe(12)
+      expect(result.dispatchesDeferred).toBe(1)
+    })
+
+    it('treats access-list entries with missing private as private and skips dispatch', async () => {
+      const createWorkflowDispatch = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {
+              owner: {login: 'trusted'},
+              name: 'unknown-privacy',
+              archived: false,
+              node_id: 'R_unknown_privacy',
+            } as unknown as AccessListApiEntry,
+          ],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['trusted'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        }),
+      )
+
+      expect(createWorkflowDispatch).not.toHaveBeenCalled()
+      expect(result.summary.skippedPrivate).toBe(1)
     })
 
     it('among repos with non-null last_survey_at, dispatches oldest first', async () => {
@@ -2472,6 +2773,8 @@ describe('handleReconcile (I/O shell)', () => {
                   has_fro_bot_workflow: false,
                   has_renovate: false,
                   discovery_channel: 'collab',
+                  private: false,
+                  node_id: 'R_old',
                   next_survey_eligible_at: null,
                 },
                 {
@@ -2484,6 +2787,8 @@ describe('handleReconcile (I/O shell)', () => {
                   has_fro_bot_workflow: false,
                   has_renovate: false,
                   discovery_channel: 'collab',
+                  private: false,
+                  node_id: 'R_mid',
                   next_survey_eligible_at: null,
                 },
                 {
@@ -2496,6 +2801,8 @@ describe('handleReconcile (I/O shell)', () => {
                   has_fro_bot_workflow: false,
                   has_renovate: false,
                   discovery_channel: 'collab',
+                  private: false,
+                  node_id: 'R_new',
                   next_survey_eligible_at: null,
                 },
               ],
@@ -3550,6 +3857,8 @@ jobs:
         has_fro_bot_workflow: true,
         has_renovate: false,
         discovery_channel: 'owned',
+        private: false,
+        node_id: 'R_a',
         next_survey_eligible_at: null,
       }
       const userOctokit = mockOctokit({
@@ -3642,6 +3951,8 @@ jobs:
         has_fro_bot_workflow: false,
         has_renovate: false,
         discovery_channel: 'collab',
+        private: false,
+        node_id: `R_${name}`,
         next_survey_eligible_at: null,
       }))
       const userOctokit = mockOctokit({
@@ -3857,6 +4168,7 @@ describe('formatCommitMessage', () => {
         migrated: 0,
         transient: 0,
         malformed: 0,
+        skippedPrivate: 0,
         unchanged: 0,
         byChannel: emptyChannelStats(),
       }),
@@ -3874,10 +4186,29 @@ describe('formatCommitMessage', () => {
         migrated: 18,
         transient: 0,
         malformed: 0,
+        skippedPrivate: 0,
         unchanged: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
+  })
+
+  it('keeps skipped-private counts out of public commit messages', () => {
+    expect(
+      formatCommitMessage({
+        added: 0,
+        pendingReview: 0,
+        regained: 0,
+        lostAccess: 0,
+        refreshed: 1,
+        migrated: 0,
+        transient: 0,
+        malformed: 0,
+        skippedPrivate: 2,
+        unchanged: 0,
+        byChannel: emptyChannelStats(),
+      }),
+    ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 1 refreshes')
   })
 
   it('includes the migrated suffix alongside other non-zero counters', () => {
@@ -3891,6 +4222,7 @@ describe('formatCommitMessage', () => {
         migrated: 18,
         transient: 0,
         malformed: 0,
+        skippedPrivate: 0,
         unchanged: 0,
         byChannel: emptyChannelStats(),
       }),
