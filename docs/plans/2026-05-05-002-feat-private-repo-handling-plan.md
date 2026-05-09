@@ -451,7 +451,7 @@ persona/
 
 ---
 
-- [ ] **Unit 4: Poll-invitations gate and autonomous commit-message redaction**
+- [x] **Unit 4: Poll-invitations gate and autonomous commit-message redaction**
 
 **Goal:** `handle-invitation.ts` reads the invitation's `private` flag and writes a redacted entry when private. All autonomous commit messages from `addRepoEntry`, `recordSurveyResult`, `resetSurveyResult`, and any future mutator path use `node_id` (not `owner/repo`) for private repos.
 
@@ -462,14 +462,14 @@ persona/
 **Files:**
 - Modify: `scripts/handle-invitation.ts`
 - Modify: `scripts/handle-invitation.test.ts`
-- Modify: `scripts/record-survey-result.ts`
-- Modify: `scripts/reset-survey-status.ts`
-- Modify: `.github/workflows/poll-invitations.yaml` (run name uses `node_id` for in-flight log surface)
+- Verify existing private-aware commit targets in `scripts/record-survey-result.ts`
+- Verify existing private-aware commit targets in `scripts/reset-survey-status.ts`
+- Modify: `.github/workflows/poll-invitations.yaml` (notifications consume an explicit public-only invitation count)
 
 **Approach:**
 - `handle-invitation.ts`: extract `private` and `node_id` from the invitation API response; pass to `addRepoEntry` so the redacted form is written.
-- Commit messages: when an entry is `private: true`, the commit message uses `chore(metadata): accept invitation <node_id>` instead of `chore(metadata): add <owner>/<repo> from invitation polling`. Same pattern for survey-result and reset paths.
-- `poll-invitations.yaml` job name: `Poll invitations: <node_id>` for the matched invitation (instead of `Poll invitations: <owner>/<repo>`). The dispatch input echo at API-call time cannot be suppressed; mitigation is that the workflow only ever sees `node_id` post-resolution.
+- Commit messages: when an entry is `private: true`, the commit message uses `chore(metadata): accept invitation <node_id>` instead of `chore(metadata): add <owner>/<repo> from invitation polling`. Survey-result and reset paths already use the same `node_id` target formatting from earlier private-metadata work.
+- `poll-invitations.yaml`: use a public-only invitation count output for Discord, Bluesky, and journal notifications so accepted private invitations do not trigger public social surfaces.
 
 **Patterns to follow:**
 - Existing commit-message structure in `addRepoEntry`/`recordSurveyResult`/`resetSurveyResult`
@@ -483,6 +483,8 @@ persona/
 - Edge case: invitation API response missing `node_id` → script fails explicitly (cannot proceed without the key)
 - Edge case: invitation for private repo whose API response is malformed → script logs a structured error and skips the invitation (does not write a half-redacted entry)
 - Integration: full poll-invitations run with mixed public/private invitations produces correct redacted/canonical entries and commit messages
+- Regression: public-looking invitation rechecked after acceptance as private writes redacted metadata and skips survey dispatch
+- Regression: private skipped invitations and malformed privacy payloads without `node_id` never expose canonical owner/name
 
 **Verification:**
 - New tests pass
@@ -491,7 +493,7 @@ persona/
 
 ---
 
-- [ ] **Unit 5: Reconcile dispatch gate (defense in depth, ordered)**
+- [x] **Unit 5: Reconcile dispatch gate (defense in depth, ordered)**
 
 **Goal:** Reconcile skips Survey Repo dispatch for entries where `private !== false`. Skip happens inside `classifyTracked` BEFORE the eligibility gate (cadence Unit 2). `summary.skippedPrivate` aggregate counter; no per-repo names in any public surface.
 
@@ -504,9 +506,9 @@ persona/
 - Modify: `scripts/reconcile-repos.test.ts`
 
 **Approach:**
-- In `classifyTracked`: privacy gate runs FIRST. If `entry.private !== false`, skip and increment `summary.skippedPrivate`. The eligibility gate (cadence) runs only on entries that passed the privacy gate.
+- In `classifyTracked`: compute survey eligibility first, then skip and increment `summary.skippedPrivate` only when an otherwise-dispatchable repo is not definitively public in both stored metadata and the live access list.
 - Skipped entries do NOT update `last_survey_at` or `last_survey_status`
-- `summary.skippedPrivate` is exposed in JSON output; commit messages may include the count (`+N skipped private`) but never names
+- `summary.skippedPrivate` is exposed in JSON output only; public commit messages do not include skipped-private counts or names
 
 **Patterns to follow:**
 - Existing `summary.unchanged`, `summary.dispatched` counters
@@ -519,7 +521,7 @@ persona/
 - Edge case: 13 onboarded public repos + 1 private repo with cap=12 → 12 public dispatched; private skipped (proves no displacement)
 - Edge case: gate ordering — private repo with `next_survey_eligible_at` in the past (eligible) is still skipped (privacy first)
 - Happy path: all entries public → `summary.skippedPrivate: 0`; commit message omits the counter
-- Happy path: at least one private skip → commit message includes `+N skipped private`; no names
+- Edge case: at least one private skip → JSON output includes `summary.skippedPrivate`; commit message still omits the counter
 
 **Verification:**
 - New tests pass

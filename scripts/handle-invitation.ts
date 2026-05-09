@@ -30,6 +30,8 @@ export interface RepositoryInvitation {
   } | null
   repository: {
     name: string
+    node_id?: unknown
+    private?: unknown
     owner: {
       login: string
     }
@@ -99,6 +101,8 @@ export type InvitationHandlingErrorCode =
   | 'RATE_LIMITED'
   | 'TRANSIENT_FAILURE'
   | 'API_ERROR'
+
+const REDACTED_OWNER = '[REDACTED]'
 
 export class InvitationHandlingError extends Error {
   readonly code: InvitationHandlingErrorCode
@@ -175,6 +179,8 @@ async function processInvitation(params: {
   const inviter = params.invitation.inviter?.login ?? null
   const repoOwner = params.invitation.repository.owner.login
   const repoName = params.invitation.repository.name
+  const repoPrivacy = invitationRepositoryPrivacy(params.invitation)
+  let displayTarget = invitationDisplayTarget(repoPrivacy, repoOwner, repoName)
 
   // Skip invitations where GitHub has nulled the inviter (deleted account). We can't allowlist-check
   // an unknown inviter, so treat it as a skip rather than failing the whole poll.
@@ -182,8 +188,8 @@ async function processInvitation(params: {
     return {
       invitationId: params.invitation.id,
       inviter: null,
-      owner: repoOwner,
-      repo: repoName,
+      owner: displayTarget.owner,
+      repo: displayTarget.repo,
       status: 'skipped',
       reason: 'inviter-unknown',
     }
@@ -193,51 +199,220 @@ async function processInvitation(params: {
     return {
       invitationId: params.invitation.id,
       inviter,
-      owner: repoOwner,
-      repo: repoName,
+      owner: displayTarget.owner,
+      repo: displayTarget.repo,
       status: 'skipped',
       reason: 'inviter-not-allowlisted',
     }
   }
 
   try {
+    if (repoPrivacy.kind === 'private-without-node') {
+      throw new Error('Private invitation is missing repository.node_id')
+    }
+    if (repoPrivacy.kind === 'malformed') {
+      throw new Error('Invitation repository.private must be boolean when present')
+    }
+    if (repoPrivacy.kind === 'missing-private') {
+      throw new Error('Invitation repository.private is required')
+    }
+    if (repoPrivacy.kind === 'missing-node') {
+      throw new Error('Invitation repository.node_id is required')
+    }
+    if (repoPrivacy.kind !== 'public' && repoPrivacy.kind !== 'private') {
+      throw new Error('Invitation repository privacy is not usable')
+    }
+
     await acceptInvitation(params.octokit, params.invitation.id)
+    const acceptedPrivacy = await acceptedInvitationRepositoryPrivacy(params.octokit, repoOwner, repoName, repoPrivacy)
+    displayTarget = invitationDisplayTarget(acceptedPrivacy, repoOwner, repoName)
     await params.octokit.rest.activity.starRepoForAuthenticatedUser({owner: repoOwner, repo: repoName})
+    const entryInput = {
+      owner: repoOwner,
+      repo: repoName,
+      now: params.now,
+      discovery_channel: 'collab' as const,
+      ...(acceptedPrivacy.kind === 'private'
+        ? {private: true, node_id: acceptedPrivacy.nodeId}
+        : {private: false, node_id: acceptedPrivacy.nodeId}),
+    }
     await params.commitMetadata({
       octokit: params.octokit,
       path: params.reposPath,
-      message: `chore(metadata): add ${repoOwner}/${repoName} from invitation polling`,
-      mutator: current =>
-        addRepoEntry(current, {owner: repoOwner, repo: repoName, now: params.now, discovery_channel: 'collab'}),
+      message: invitationCommitMessage(displayTarget),
+      mutator: current => addRepoEntry(current, entryInput),
     })
-    await params.octokit.rest.actions.createWorkflowDispatch({
-      owner: params.owner,
-      repo: params.repo,
-      workflow_id: params.workflowFile,
-      ref: params.workflowRef,
-      inputs: {owner: repoOwner, repo: repoName},
-    })
+    if (acceptedPrivacy.kind !== 'private') {
+      await params.octokit.rest.actions.createWorkflowDispatch({
+        owner: params.owner,
+        repo: params.repo,
+        workflow_id: params.workflowFile,
+        ref: params.workflowRef,
+        inputs: {owner: repoOwner, repo: repoName},
+      })
+    }
 
     return {
       invitationId: params.invitation.id,
       inviter,
-      owner: repoOwner,
-      repo: repoName,
+      owner: displayTarget.owner,
+      repo: displayTarget.repo,
       status: 'accepted',
     }
   } catch (error: unknown) {
     const normalized = normalizePerInvitationError(error)
+    const message =
+      displayTarget.owner === REDACTED_OWNER
+        ? sanitizePrivateInvitationError(normalized.message, displayTarget.repo)
+        : normalized.message
 
     return {
       invitationId: params.invitation.id,
       inviter,
-      owner: repoOwner,
-      repo: repoName,
+      owner: displayTarget.owner,
+      repo: displayTarget.repo,
       status: 'failed',
       errorCode: normalized.code,
-      message: normalized.message,
+      message,
     }
   }
+}
+
+async function acceptedInvitationRepositoryPrivacy(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  invitationPrivacy: PublicInvitationRepositoryPrivacy | PrivateInvitationRepositoryPrivacy,
+): Promise<PublicInvitationRepositoryPrivacy | PrivateInvitationRepositoryPrivacy> {
+  if (invitationPrivacy.kind === 'private') {
+    return invitationPrivacy
+  }
+
+  try {
+    const response = await octokit.rest.repos.get({owner, repo})
+    const privateFlag = response.data.private
+    const nodeId =
+      typeof response.data.node_id === 'string' && response.data.node_id !== ''
+        ? response.data.node_id
+        : invitationPrivacy.nodeId
+
+    if (privateFlag === false) {
+      return {kind: 'public', nodeId: invitationPrivacy.nodeId}
+    }
+
+    return {kind: 'private', nodeId}
+  } catch {
+    return {kind: 'private', nodeId: invitationPrivacy.nodeId}
+  }
+}
+
+interface PublicInvitationRepositoryPrivacy {
+  kind: 'public'
+  nodeId: string
+}
+
+interface PrivateInvitationRepositoryPrivacy {
+  kind: 'private'
+  nodeId: string
+}
+
+interface PrivateWithoutNodeInvitationRepositoryPrivacy {
+  kind: 'private-without-node'
+}
+
+interface MissingNodeInvitationRepositoryPrivacy {
+  kind: 'missing-node'
+}
+
+type InvitationRepositoryPrivacy =
+  | PublicInvitationRepositoryPrivacy
+  | PrivateInvitationRepositoryPrivacy
+  | PrivateWithoutNodeInvitationRepositoryPrivacy
+  | MissingNodeInvitationRepositoryPrivacy
+
+interface MalformedInvitationRepositoryPrivacy {
+  kind: 'malformed' | 'missing-private'
+  nodeId?: string
+}
+
+function invitationRepositoryPrivacy(
+  invitation: RepositoryInvitation,
+): InvitationRepositoryPrivacy | MalformedInvitationRepositoryPrivacy {
+  if (invitation.repository.private !== undefined && typeof invitation.repository.private !== 'boolean') {
+    return {
+      kind: 'malformed',
+      ...(typeof invitation.repository.node_id === 'string' && invitation.repository.node_id !== ''
+        ? {nodeId: invitation.repository.node_id}
+        : {}),
+    }
+  }
+
+  if (invitation.repository.private === undefined) {
+    return {
+      kind: 'missing-private',
+      ...(typeof invitation.repository.node_id === 'string' && invitation.repository.node_id !== ''
+        ? {nodeId: invitation.repository.node_id}
+        : {}),
+    }
+  }
+
+  const nodeId = invitation.repository.node_id
+  if (typeof nodeId !== 'string' || nodeId === '') {
+    return invitation.repository.private === true ? {kind: 'private-without-node'} : {kind: 'missing-node'}
+  }
+
+  if (invitation.repository.private !== true) {
+    return {kind: 'public', nodeId}
+  }
+
+  return {kind: 'private', nodeId}
+}
+
+function invitationDisplayTarget(
+  privacy: InvitationRepositoryPrivacy | MalformedInvitationRepositoryPrivacy,
+  owner: string,
+  repo: string,
+): {owner: string; repo: string} {
+  if (privacy.kind === 'private') {
+    return {owner: REDACTED_OWNER, repo: privacy.nodeId}
+  }
+  if (privacy.kind === 'private-without-node' || privacy.kind === 'malformed' || privacy.kind === 'missing-private') {
+    return {
+      owner: REDACTED_OWNER,
+      repo:
+        (privacy.kind === 'malformed' || privacy.kind === 'missing-private') && privacy.nodeId !== undefined
+          ? privacy.nodeId
+          : REDACTED_OWNER,
+    }
+  }
+  return {owner, repo}
+}
+
+function invitationCommitMessage(target: {owner: string; repo: string}): string {
+  if (target.owner === REDACTED_OWNER) {
+    return `chore(metadata): accept invitation ${target.repo}`
+  }
+  return `chore(metadata): add ${target.owner}/${target.repo} from invitation polling`
+}
+
+export function countPublicAcceptedInvitations(processed: readonly InvitationProcessResult[]): number {
+  return processed.filter(result => result.status === 'accepted' && result.owner !== REDACTED_OWNER).length
+}
+
+export function formatInvitationGithubOutput(processed: readonly InvitationProcessResult[]): string {
+  return `public_invitations_accepted=${countPublicAcceptedInvitations(processed)}\n`
+}
+
+function sanitizePrivateInvitationError(message: string, nodeIdOrRedacted: string): string {
+  if (
+    message === 'Private invitation is missing repository.node_id' ||
+    message === 'Invitation repository.private must be boolean when present' ||
+    message === 'Invitation repository.private is required'
+  ) {
+    return message
+  }
+
+  return `Private invitation handling failed for ${nodeIdOrRedacted}`
 }
 
 async function pollInvitations(octokit: OctokitClient): Promise<RepositoryInvitation[]> {
@@ -404,10 +579,9 @@ async function main(): Promise<void> {
   const result = await handleInvitations()
   process.stdout.write(`${JSON.stringify(result)}\n`)
 
-  const accepted = result.processed.filter(p => p.status === 'accepted').length
   const githubOutput = process.env.GITHUB_OUTPUT
   if (githubOutput !== undefined && githubOutput !== '') {
-    appendFileSync(githubOutput, `invitations_accepted=${accepted}\n`)
+    appendFileSync(githubOutput, formatInvitationGithubOutput(result.processed))
   }
 }
 

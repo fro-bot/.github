@@ -347,6 +347,59 @@ describe('commitMetadata API', () => {
     expect(createSpy).toHaveBeenCalledOnce()
   })
 
+  it('serializes redacted metadata values in Prettier-compatible single quotes', async () => {
+    let serialized = ''
+    const createSpy = vi.fn<NonNullable<MockOverrides['createOrUpdateFileContents']>>(async params => {
+      serialized = Buffer.from(params.content, 'base64').toString('utf8')
+      return {data: {commit: {sha: 'commit-sha-789'}}}
+    })
+    const octokit = mockOctokit({createOrUpdateFileContents: createSpy})
+
+    await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'redacted formatting',
+      mutator: () => ({repos: [{owner: '[REDACTED]', name: 'R_private', private: true}]}),
+      octokit,
+    })
+
+    expect(createSpy).toHaveBeenCalledOnce()
+    expect(serialized).toContain("owner: '[REDACTED]'")
+    expect(serialized).not.toContain('owner: "[REDACTED]"')
+  })
+
+  it('commits Prettier-compatible normalization when parsed metadata is unchanged', async () => {
+    let serialized = ''
+    const createSpy = vi.fn<NonNullable<MockOverrides['createOrUpdateFileContents']>>(async params => {
+      serialized = Buffer.from(params.content, 'base64').toString('utf8')
+      return {data: {commit: {sha: 'commit-sha-789'}}}
+    })
+    const octokit = mockOctokit({
+      getContent: async () => ({
+        data: {
+          type: 'file' as const,
+          sha: 'abc123',
+          content: Buffer.from('repos:\n  - owner: "[REDACTED]"\n    name: R_private\n    private: true\n').toString(
+            'base64',
+          ),
+          encoding: 'base64',
+        },
+      }),
+      createOrUpdateFileContents: createSpy,
+    })
+
+    const result = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'redacted formatting',
+      mutator: current => current,
+      octokit,
+    })
+
+    expect(result.committed).toBe(true)
+    expect(createSpy).toHaveBeenCalledOnce()
+    expect(serialized).toContain("owner: '[REDACTED]'")
+    expect(serialized).not.toContain('owner: "[REDACTED]"')
+  })
+
   it('retries on 409 conflict then succeeds', async () => {
     let callCount = 0
     const createSpy = vi.fn(async () => {

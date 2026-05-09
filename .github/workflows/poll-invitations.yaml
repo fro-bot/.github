@@ -32,30 +32,30 @@ jobs:
         run: node scripts/handle-invitation.ts
 
       - name: 📣 Notify Discord
-        if: steps.poll.outputs.invitations_accepted > 0
+        if: steps.poll.outputs.public_invitations_accepted > 0
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.invitations_accepted }}
+          INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.public_invitations_accepted }}
         run: |
           node scripts/discord-notify.ts \
             --message "🌐 Just joined ${INVITATIONS_ACCEPTED} new space(s) on GitHub. The network grows ✨" \
             --title "New Collaboration"
 
       - name: 🦋 Post to Bluesky
-        if: steps.poll.outputs.invitations_accepted > 0
+        if: steps.poll.outputs.public_invitations_accepted > 0
         env:
           BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
           BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
-          INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.invitations_accepted }}
+          INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.public_invitations_accepted }}
         run: |
           node scripts/bluesky-post.ts \
             "🌐 Just accepted ${INVITATIONS_ACCEPTED} collaboration invitation(s) on GitHub. The network grows ✨ #GitHub #OpenSource"
 
       - name: 📓 Journal — invitation accepted
-        if: steps.poll.outputs.invitations_accepted > 0
+        if: steps.poll.outputs.public_invitations_accepted > 0
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
-          INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.invitations_accepted }}
+          INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.public_invitations_accepted }}
         run: |
           node scripts/journal-entry.ts \
             --event invitation_accepted \

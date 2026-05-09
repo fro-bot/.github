@@ -1,16 +1,22 @@
 import type {CommitMetadataParams, CommitMetadataResult} from './commit-metadata.ts'
-import type {OctokitClient} from './handle-invitation.ts'
+import type {OctokitClient, RepositoryInvitation} from './handle-invitation.ts'
 
 import {describe, expect, it, vi} from 'vitest'
-import {handleInvitations, InvitationHandlingError} from './handle-invitation.ts'
+import {
+  countPublicAcceptedInvitations,
+  formatInvitationGithubOutput,
+  handleInvitations,
+  InvitationHandlingError,
+} from './handle-invitation.ts'
 import {assertReposFile} from './schemas.ts'
 
 type CommitMetadataMock = (params: CommitMetadataParams) => Promise<CommitMetadataResult>
 
 function mockOctokit(overrides?: {
   listInvitationsForAuthenticatedUser?: () => Promise<{
-    data: Invitation[]
+    data: RepositoryInvitation[]
   }>
+  getRepo?: (params: {owner: string; repo: string}) => Promise<{data: {node_id?: unknown; private?: unknown}}>
   acceptInvitationForAuthenticatedUser?: (params: {invitation_id: number}) => Promise<void>
   starRepoForAuthenticatedUser?: (params: {owner: string; repo: string}) => Promise<void>
   createWorkflowDispatch?: (params: {
@@ -31,6 +37,11 @@ function mockOctokit(overrides?: {
           data: {type: 'file' as const, sha: 'repos-sha', content: 'dmVyc2lvbjogMQpyZXBvczogW10K', encoding: 'base64'},
         }),
         createOrUpdateFileContents: async () => ({data: {commit: {sha: 'metadata-commit-sha'}}}),
+        get:
+          overrides?.getRepo ??
+          (async ({owner, repo}: {owner: string; repo: string}) => ({
+            data: {node_id: `R_${owner}_${repo}`, private: false},
+          })),
         listInvitationsForAuthenticatedUser:
           overrides?.listInvitationsForAuthenticatedUser ??
           (async () => ({
@@ -63,17 +74,15 @@ function mockOctokit(overrides?: {
   } as unknown as OctokitClient
 }
 
-interface Invitation {
-  id: number
-  inviter: {
-    login: string
-  }
-  repository: {
-    name: string
-    owner: {
-      login: string
+async function readTestMetadata(path: string): Promise<unknown> {
+  if (path === 'metadata/allowlist.yaml') {
+    return {
+      version: 1,
+      approved_inviters: [{username: 'marcusrbrown', added: '2025-04-15', role: 'owner'}],
     }
   }
+
+  return {version: 1, repos: []}
 }
 
 describe('handleInvitations', () => {
@@ -94,6 +103,8 @@ describe('handleInvitations', () => {
             inviter: {login: 'marcusrbrown'},
             repository: {
               name: 'hello-world',
+              node_id: 'R_kgDOPUBLIC',
+              private: false,
               owner: {login: 'fro-bot'},
             },
           },
@@ -115,16 +126,7 @@ describe('handleInvitations', () => {
       workflowRef: 'main',
       commitMetadata,
       bootstrapDataBranch: vi.fn(async () => ({})),
-      readMetadata: async (path: string) => {
-        if (path === 'metadata/allowlist.yaml') {
-          return {
-            version: 1,
-            approved_inviters: [{username: 'marcusrbrown', added: '2025-04-15', role: 'owner'}],
-          }
-        }
-
-        return {version: 1, repos: []}
-      },
+      readMetadata: readTestMetadata,
     })
 
     // #then it accepts, stars, records metadata, and dispatches the survey
@@ -150,6 +152,7 @@ describe('handleInvitations', () => {
     // #and the mutator persists discovery_channel: 'collab' so the entry surfaces
     // through the collab channel in reconcile reports
     const commitCall = commitMetadata.mock.calls[0]?.[0]
+    expect(commitCall?.message).toBe('chore(metadata): add fro-bot/hello-world from invitation polling')
     const mutator = commitCall?.mutator
     expect(typeof mutator).toBe('function')
     if (typeof mutator === 'function') {
@@ -157,7 +160,500 @@ describe('handleInvitations', () => {
       assertReposFile(newReposFile)
       expect(newReposFile.repos[0]?.discovery_channel).toBe('collab')
       expect(newReposFile.repos[0]?.next_survey_eligible_at).toBeNull()
+      expect(newReposFile.repos[0]?.private).toBe(false)
+      expect(newReposFile.repos[0]?.node_id).toBe('R_kgDOPUBLIC')
     }
+  })
+
+  it('fails closed when a public-looking invitation becomes private after acceptance', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const starRepoForAuthenticatedUser = vi.fn(async () => undefined)
+    const createWorkflowDispatch = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 113,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'flipped-repo',
+              node_id: 'R_kgDOFLIPPED',
+              private: false,
+              owner: {login: 'private-owner'},
+            },
+          },
+        ],
+      }),
+      getRepo: async () => ({data: {node_id: 'R_kgDOFLIPPED', private: true}}),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+      starRepoForAuthenticatedUser,
+      createWorkflowDispatch,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed).toEqual([
+      {
+        invitationId: 113,
+        inviter: 'marcusrbrown',
+        owner: '[REDACTED]',
+        repo: 'R_kgDOFLIPPED',
+        status: 'accepted',
+      },
+    ])
+    expect(acceptInvitation).toHaveBeenCalledWith({invitation_id: 113})
+    expect(starRepoForAuthenticatedUser).toHaveBeenCalledWith({owner: 'private-owner', repo: 'flipped-repo'})
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+    expect(commitMetadata).toHaveBeenCalledOnce()
+    expect(commitMetadata.mock.calls[0]?.[0].message).toBe('chore(metadata): accept invitation R_kgDOFLIPPED')
+    const mutator = commitMetadata.mock.calls[0]?.[0].mutator
+    expect(typeof mutator).toBe('function')
+    if (typeof mutator === 'function') {
+      const newReposFile = mutator({version: 1, repos: []})
+      assertReposFile(newReposFile)
+      expect(newReposFile.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_kgDOFLIPPED',
+        private: true,
+        node_id: 'R_kgDOFLIPPED',
+      })
+      expect(JSON.stringify(newReposFile)).not.toContain('private-owner')
+      expect(JSON.stringify(newReposFile)).not.toContain('flipped-repo')
+    }
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('flipped-repo')
+  })
+
+  it('fails public invitations that are missing node_id before accepting them', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 112,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'public-repo',
+              private: false,
+              owner: {login: 'fro-bot'},
+            },
+          },
+        ],
+      }),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed).toEqual([
+      {
+        invitationId: 112,
+        inviter: 'marcusrbrown',
+        owner: 'fro-bot',
+        repo: 'public-repo',
+        status: 'failed',
+        errorCode: 'API_ERROR',
+        message: 'Invitation repository.node_id is required',
+      },
+    ])
+    expect(acceptInvitation).not.toHaveBeenCalled()
+    expect(commitMetadata).not.toHaveBeenCalled()
+  })
+
+  it('accepts private invitations without writing canonical names to public surfaces', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const starRepoForAuthenticatedUser = vi.fn(async () => undefined)
+    const createWorkflowDispatch = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({
+      committed: true,
+      sha: 'commit-sha',
+      attempts: 1,
+    }))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 107,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'secret-repo',
+              node_id: 'R_kgDOPRIVATE',
+              private: true,
+              owner: {login: 'private-owner'},
+            },
+          },
+        ],
+      }),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+      starRepoForAuthenticatedUser,
+      createWorkflowDispatch,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed).toEqual([
+      {
+        invitationId: 107,
+        inviter: 'marcusrbrown',
+        owner: '[REDACTED]',
+        repo: 'R_kgDOPRIVATE',
+        status: 'accepted',
+      },
+    ])
+    expect(acceptInvitation).toHaveBeenCalledWith({invitation_id: 107})
+    expect(starRepoForAuthenticatedUser).toHaveBeenCalledWith({owner: 'private-owner', repo: 'secret-repo'})
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+    expect(commitMetadata).toHaveBeenCalledOnce()
+
+    const commitCall = commitMetadata.mock.calls[0]?.[0]
+    expect(commitCall?.message).toBe('chore(metadata): accept invitation R_kgDOPRIVATE')
+    const mutator = commitCall?.mutator
+    expect(typeof mutator).toBe('function')
+    if (typeof mutator === 'function') {
+      const newReposFile = mutator({version: 1, repos: []})
+      assertReposFile(newReposFile)
+      expect(newReposFile.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_kgDOPRIVATE',
+        private: true,
+        node_id: 'R_kgDOPRIVATE',
+        discovery_channel: 'collab',
+      })
+      expect(JSON.stringify(newReposFile)).not.toContain('private-owner')
+      expect(JSON.stringify(newReposFile)).not.toContain('secret-repo')
+    }
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+  })
+
+  it('redacts private invitation failure messages from downstream API calls', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const starRepoForAuthenticatedUser = vi.fn(async () => {
+      throw new Error('failed to star private-owner/secret-repo')
+    })
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 111,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'secret-repo',
+              node_id: 'R_kgDOPRIVATE',
+              private: true,
+              owner: {login: 'private-owner'},
+            },
+          },
+        ],
+      }),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+      starRepoForAuthenticatedUser,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed).toEqual([
+      {
+        invitationId: 111,
+        inviter: 'marcusrbrown',
+        owner: '[REDACTED]',
+        repo: 'R_kgDOPRIVATE',
+        status: 'failed',
+        errorCode: 'API_ERROR',
+        message: 'Private invitation handling failed for R_kgDOPRIVATE',
+      },
+    ])
+    expect(commitMetadata).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+  })
+
+  it('fails private invitations that are missing node_id before accepting them', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 108,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'secret-repo',
+              private: true,
+              owner: {login: 'private-owner'},
+            },
+          },
+        ],
+      }),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed).toEqual([
+      {
+        invitationId: 108,
+        inviter: 'marcusrbrown',
+        owner: '[REDACTED]',
+        repo: '[REDACTED]',
+        status: 'failed',
+        errorCode: 'API_ERROR',
+        message: 'Private invitation is missing repository.node_id',
+      },
+    ])
+    expect(acceptInvitation).not.toHaveBeenCalled()
+    expect(commitMetadata).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+  })
+
+  it('fails invitations with malformed private fields before accepting them', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 109,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'secret-repo',
+              node_id: 'R_kgDOPRIVATE',
+              private: 'yes',
+              owner: {login: 'private-owner'},
+            },
+          },
+        ],
+      }),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed).toEqual([
+      {
+        invitationId: 109,
+        inviter: 'marcusrbrown',
+        owner: '[REDACTED]',
+        repo: 'R_kgDOPRIVATE',
+        status: 'failed',
+        errorCode: 'API_ERROR',
+        message: 'Invitation repository.private must be boolean when present',
+      },
+    ])
+    expect(acceptInvitation).not.toHaveBeenCalled()
+    expect(commitMetadata).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+  })
+
+  it('redacts malformed visibility payloads without node_id', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 114,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'secret-repo',
+              private: 'yes',
+              owner: {login: 'private-owner'},
+            },
+          },
+        ],
+      }),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed).toEqual([
+      {
+        invitationId: 114,
+        inviter: 'marcusrbrown',
+        owner: '[REDACTED]',
+        repo: '[REDACTED]',
+        status: 'failed',
+        errorCode: 'API_ERROR',
+        message: 'Invitation repository.private must be boolean when present',
+      },
+    ])
+    expect(acceptInvitation).not.toHaveBeenCalled()
+    expect(commitMetadata).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+  })
+
+  it('fails invitations with missing private fields before accepting them', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 110,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'unknown-visibility',
+              node_id: 'R_kgDOUNKNOWN',
+              owner: {login: 'private-owner'},
+            },
+          },
+        ],
+      }),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed).toEqual([
+      {
+        invitationId: 110,
+        inviter: 'marcusrbrown',
+        owner: '[REDACTED]',
+        repo: 'R_kgDOUNKNOWN',
+        status: 'failed',
+        errorCode: 'API_ERROR',
+        message: 'Invitation repository.private is required',
+      },
+    ])
+    expect(acceptInvitation).not.toHaveBeenCalled()
+    expect(commitMetadata).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('unknown-visibility')
+  })
+
+  it('redacts missing visibility payloads without node_id', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 116,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'unknown-visibility',
+              owner: {login: 'private-owner'},
+            },
+          },
+        ],
+      }),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed).toEqual([
+      {
+        invitationId: 116,
+        inviter: 'marcusrbrown',
+        owner: '[REDACTED]',
+        repo: '[REDACTED]',
+        status: 'failed',
+        errorCode: 'API_ERROR',
+        message: 'Invitation repository.private is required',
+      },
+    ])
+    expect(acceptInvitation).not.toHaveBeenCalled()
+    expect(commitMetadata).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('unknown-visibility')
   })
 
   it('skips invitations from unapproved inviters', async () => {
@@ -171,6 +667,8 @@ describe('handleInvitations', () => {
             inviter: {login: 'random-user'},
             repository: {
               name: 'unknown-repo',
+              node_id: 'R_kgDOUNKNOWNPUBLIC',
+              private: false,
               owner: {login: 'someone-else'},
             },
           },
@@ -190,16 +688,7 @@ describe('handleInvitations', () => {
       workflowRef: 'main',
       commitMetadata,
       bootstrapDataBranch: vi.fn(async () => ({})),
-      readMetadata: async (path: string) => {
-        if (path === 'metadata/allowlist.yaml') {
-          return {
-            version: 1,
-            approved_inviters: [{username: 'marcusrbrown', added: '2025-04-15', role: 'owner'}],
-          }
-        }
-
-        return {version: 1, repos: []}
-      },
+      readMetadata: readTestMetadata,
     })
 
     // #then it skips the invitation and returns a skipped result
@@ -217,6 +706,55 @@ describe('handleInvitations', () => {
     expect(commitMetadata).not.toHaveBeenCalled()
   })
 
+  it('redacts skipped private invitations from unapproved inviters', async () => {
+    const acceptInvitation = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 115,
+            inviter: {login: 'random-user'},
+            repository: {
+              name: 'secret-repo',
+              node_id: 'R_kgDOPRIVATE',
+              private: true,
+              owner: {login: 'private-owner'},
+            },
+          },
+        ],
+      }),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed).toEqual([
+      {
+        invitationId: 115,
+        inviter: 'random-user',
+        owner: '[REDACTED]',
+        repo: 'R_kgDOPRIVATE',
+        status: 'skipped',
+        reason: 'inviter-not-allowlisted',
+      },
+    ])
+    expect(acceptInvitation).not.toHaveBeenCalled()
+    expect(commitMetadata).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+  })
+
   it('continues processing when one invitation fails', async () => {
     const acceptInvitation = vi
       .fn<(params: {invitation_id: number}) => Promise<void>>()
@@ -231,12 +769,12 @@ describe('handleInvitations', () => {
           {
             id: 103,
             inviter: {login: 'marcusrbrown'},
-            repository: {name: 'broken-repo', owner: {login: 'fro-bot'}},
+            repository: {name: 'broken-repo', node_id: 'R_kgDOBROKEN', private: false, owner: {login: 'fro-bot'}},
           },
           {
             id: 104,
             inviter: {login: 'marcusrbrown'},
-            repository: {name: 'healthy-repo', owner: {login: 'fro-bot'}},
+            repository: {name: 'healthy-repo', node_id: 'R_kgDOHEALTHY', private: false, owner: {login: 'fro-bot'}},
           },
         ],
       }),
@@ -255,16 +793,7 @@ describe('handleInvitations', () => {
       workflowFile: 'survey.yaml',
       workflowRef: 'main',
       commitMetadata,
-      readMetadata: async (path: string) => {
-        if (path === 'metadata/allowlist.yaml') {
-          return {
-            version: 1,
-            approved_inviters: [{username: 'marcusrbrown', added: '2025-04-15', role: 'owner'}],
-          }
-        }
-
-        return {version: 1, repos: []}
-      },
+      readMetadata: readTestMetadata,
     })
 
     // #then other invitations still complete successfully
@@ -295,7 +824,12 @@ describe('handleInvitations', () => {
           {
             id: 105,
             inviter: {login: 'marcusrbrown'},
-            repository: {name: 'already-accepted', owner: {login: 'fro-bot'}},
+            repository: {
+              name: 'already-accepted',
+              node_id: 'R_kgDOACCEPTED',
+              private: false,
+              owner: {login: 'fro-bot'},
+            },
           },
         ],
       }),
@@ -314,16 +848,7 @@ describe('handleInvitations', () => {
       workflowFile: 'survey.yaml',
       workflowRef: 'main',
       commitMetadata,
-      readMetadata: async (path: string) => {
-        if (path === 'metadata/allowlist.yaml') {
-          return {
-            version: 1,
-            approved_inviters: [{username: 'marcusrbrown', added: '2025-04-15', role: 'owner'}],
-          }
-        }
-
-        return {version: 1, repos: []}
-      },
+      readMetadata: readTestMetadata,
     })
 
     // #then it treats the invite as successful instead of erroring
@@ -357,16 +882,7 @@ describe('handleInvitations', () => {
       workflowFile: 'survey.yaml',
       workflowRef: 'main',
       commitMetadata: vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1})),
-      readMetadata: async (path: string) => {
-        if (path === 'metadata/allowlist.yaml') {
-          return {
-            version: 1,
-            approved_inviters: [{username: 'marcusrbrown', added: '2025-04-15', role: 'owner'}],
-          }
-        }
-
-        return {version: 1, repos: []}
-      },
+      readMetadata: readTestMetadata,
     }).catch((error: unknown) => error)
 
     // #then it surfaces a structured error with remediation
@@ -385,7 +901,7 @@ describe('handleInvitations', () => {
             id: 106,
             // GitHub returns inviter: null when the inviting user's account has been deleted.
             inviter: null as unknown as {login: string},
-            repository: {name: 'orphaned-repo', owner: {login: 'fro-bot'}},
+            repository: {name: 'orphaned-repo', node_id: 'R_kgDOORPHANED', private: false, owner: {login: 'fro-bot'}},
           },
         ],
       }),
@@ -403,16 +919,7 @@ describe('handleInvitations', () => {
       workflowRef: 'main',
       commitMetadata,
       bootstrapDataBranch: vi.fn(async () => ({})),
-      readMetadata: async (path: string) => {
-        if (path === 'metadata/allowlist.yaml') {
-          return {
-            version: 1,
-            approved_inviters: [{username: 'marcusrbrown', added: '2025-04-15', role: 'owner'}],
-          }
-        }
-
-        return {version: 1, repos: []}
-      },
+      readMetadata: readTestMetadata,
     })
 
     // #then it skips the invitation with inviter-unknown instead of throwing
@@ -446,20 +953,41 @@ describe('handleInvitations', () => {
       workflowFile: 'survey.yaml',
       workflowRef: 'main',
       commitMetadata,
-      readMetadata: async (path: string) => {
-        if (path === 'metadata/allowlist.yaml') {
-          return {
-            version: 1,
-            approved_inviters: [{username: 'marcusrbrown', added: '2025-04-15', role: 'owner'}],
-          }
-        }
-
-        return {version: 1, repos: []}
-      },
+      readMetadata: readTestMetadata,
     })
 
     // #then it becomes a no-op
     expect(result).toEqual({processed: []})
     expect(commitMetadata).not.toHaveBeenCalled()
+  })
+})
+
+describe('countPublicAcceptedInvitations', () => {
+  it('excludes private accepted invitations from public notification counts', () => {
+    expect(
+      countPublicAcceptedInvitations([
+        {invitationId: 1, inviter: 'marcusrbrown', owner: 'fro-bot', repo: 'public-repo', status: 'accepted'},
+        {invitationId: 2, inviter: 'marcusrbrown', owner: '[REDACTED]', repo: 'R_kgDOPRIVATE', status: 'accepted'},
+        {
+          invitationId: 3,
+          inviter: 'marcusrbrown',
+          owner: 'fro-bot',
+          repo: 'skipped-repo',
+          status: 'skipped',
+          reason: 'inviter-not-allowlisted',
+        },
+      ]),
+    ).toBe(1)
+  })
+})
+
+describe('formatInvitationGithubOutput', () => {
+  it('writes an explicit public invitation count output', () => {
+    expect(
+      formatInvitationGithubOutput([
+        {invitationId: 1, inviter: 'marcusrbrown', owner: 'fro-bot', repo: 'public-repo', status: 'accepted'},
+        {invitationId: 2, inviter: 'marcusrbrown', owner: '[REDACTED]', repo: 'R_kgDOPRIVATE', status: 'accepted'},
+      ]),
+    ).toBe('public_invitations_accepted=1\n')
   })
 })

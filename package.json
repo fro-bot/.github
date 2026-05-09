@@ -45,16 +45,17 @@
     "eslint-plugin-erasable-syntax-only": "0.4.0",
     "eslint-plugin-node-dependencies": "2.2.0",
     "eslint-plugin-prettier": "5.5.0",
-    "jiti": "2.6.1",
+    "jiti": "2.7.0",
     "prettier": "3.8.1",
     "typescript": "6.0.3",
     "vitest": "4.1.4"
   },
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@11.0.6",
   "pnpm": {
     "overrides": {
       "ajv@8": "8.20.0",
       "brace-expansion": ">=5.0.5",
+      "fast-uri": ">=3.1.2",
       "flatted": ">=3.4.2",
       "minimatch": ">=10.2.3",
       "picomatch": ">=4.0.4",
