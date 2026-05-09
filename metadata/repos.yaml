@@ -214,7 +214,7 @@ repos:
     next_survey_eligible_at: 2026-05-27
     private: false
     node_id: R_kgDOSKIp0Q
-  - owner: '[REDACTED]'
+  - owner: "[REDACTED]"
     name: R_kgDOSVJgdw
     added: 2026-05-05
     onboarding_status: pending
@@ -232,8 +232,8 @@ repos:
     onboarding_status: onboarded
     last_survey_at: 2026-05-08
     last_survey_status: success
-    has_fro_bot_workflow: false
-    has_renovate: false
+    has_fro_bot_workflow: true
+    has_renovate: true
     discovery_channel: owned
     next_survey_eligible_at: 2026-05-22
     private: false
