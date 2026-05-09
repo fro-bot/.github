@@ -3,6 +3,11 @@ import {Buffer} from 'node:buffer'
 import process from 'node:process'
 
 import {parse, stringify} from 'yaml'
+import {
+  bootstrapDataBranch as defaultBootstrapDataBranch,
+  type DataBranchBootstrapParams,
+  type DataBranchBootstrapResult,
+} from './data-branch-bootstrap.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
@@ -67,6 +72,12 @@ export interface CommitMetadataParams {
    * Production callers should always use the data branch.
    */
   allowUnsafeBranch?: boolean
+  /**
+   * Idempotent data-branch bootstrap. Called before data-branch writes so
+   * shared metadata writers recover when GitHub deletes the `data` source ref
+   * after a promotion PR is merged.
+   */
+  bootstrapDataBranch?: (params: DataBranchBootstrapParams) => Promise<DataBranchBootstrapResult>
 }
 
 export interface CommitMetadataResult {
@@ -158,29 +169,39 @@ export async function commitMetadata(params: CommitMetadataParams): Promise<Comm
 
   const octokit = params.octokit ?? (await createOctokitFromEnv())
 
-  await assertWritableBranch(octokit, owner, repo, branch)
+  const shouldBootstrapDataBranch = branch === DEFAULT_BRANCH
+  const bootstrap = params.bootstrapDataBranch ?? defaultBootstrapDataBranch
+  const bootstrapDataBranch = async (): Promise<void> => {
+    await bootstrap({octokit, owner, repo, dataBranch: branch})
+  }
+
+  if (shouldBootstrapDataBranch) {
+    await bootstrapDataBranch()
+  }
 
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
-    const current = await readExistingMetadataFile({
-      octokit,
-      owner,
-      repo,
-      branch,
-      path: params.path,
-    })
-
-    const next = await params.mutator(current.parsed)
-    const nextSerialized = serializeYaml(next)
-
-    // Authoritative unchanged-content check: compare serialized text, not
-    // deep-equal on objects. This catches (a) in-place mutations that return
-    // the same reference, (b) key-order or whitespace changes that would
-    // otherwise commit identical data.
-    if (nextSerialized === current.serialized) {
-      return {committed: false, attempts: attempt}
-    }
-
     try {
+      await assertWritableBranch(octokit, owner, repo, branch)
+
+      const current = await readExistingMetadataFile({
+        octokit,
+        owner,
+        repo,
+        branch,
+        path: params.path,
+      })
+
+      const next = await params.mutator(current.parsed)
+      const nextSerialized = serializeYaml(next)
+
+      // Authoritative unchanged-content check: compare serialized text, not
+      // deep-equal on objects. This catches (a) in-place mutations that return
+      // the same reference, (b) key-order or whitespace changes that would
+      // otherwise commit identical data.
+      if (nextSerialized === current.serialized) {
+        return {committed: false, attempts: attempt}
+      }
+
       const response = await octokit.rest.repos.createOrUpdateFileContents({
         owner,
         repo,
@@ -197,6 +218,11 @@ export async function commitMetadata(params: CommitMetadataParams): Promise<Comm
         attempts: attempt,
       }
     } catch (error: unknown) {
+      if (shouldBootstrapDataBranch && isRecoverableDataBranchMissingError(error) && attempt < maxRetries) {
+        await bootstrapDataBranch()
+        continue
+      }
+
       if (isConflictError(error) && attempt < maxRetries) {
         continue
       }
@@ -407,6 +433,14 @@ function serializeYaml(value: unknown): string {
 
 function isConflictError(error: unknown): boolean {
   return isRecord(error) && typeof error.status === 'number' && error.status === 409
+}
+
+function isApiErrorStatus(error: unknown, status: number): boolean {
+  return isRecord(error) && typeof error.status === 'number' && error.status === status
+}
+
+function isRecoverableDataBranchMissingError(error: unknown): boolean {
+  return isApiErrorStatus(error, 404) || (error instanceof CommitMetadataError && error.code === 'MISSING_FILE')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
