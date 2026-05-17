@@ -248,7 +248,7 @@ async function processInvitation(params: {
         repo: params.repo,
         workflow_id: params.workflowFile,
         ref: params.workflowRef,
-        inputs: {owner: repoOwner, repo: repoName},
+        inputs: {node_id: acceptedPrivacy.nodeId},
       })
     }
 
@@ -297,11 +297,20 @@ async function acceptedInvitationRepositoryPrivacy(
         : invitationPrivacy.nodeId
 
     if (privateFlag === false) {
-      return {kind: 'public', nodeId: invitationPrivacy.nodeId}
+      return {kind: 'public', nodeId}
     }
 
     return {kind: 'private', nodeId}
-  } catch {
+  } catch (error: unknown) {
+    // Fail closed on transient refresh failures (rate limit, network blip) — a public
+    // invitation may be temporarily classified as private until reconcile probes it. Log
+    // diagnostics so the failure mode is observable; omit owner/repo to avoid training
+    // future leak paths even though this branch is the public-only refresh case.
+    const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
+    const kind = error instanceof Error ? error.name : 'unknown'
+    process.stderr.write(
+      `handle-invitation: repos.get privacy refresh failed (status=${status}, kind=${kind}); treating invitation as private.\n`,
+    )
     return {kind: 'private', nodeId: invitationPrivacy.nodeId}
   }
 }

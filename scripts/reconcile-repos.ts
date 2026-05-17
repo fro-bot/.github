@@ -149,6 +149,14 @@ export interface ReconcileInput {
 export interface DispatchRequest {
   owner: string
   repo: string
+  /**
+   * GitHub GraphQL `node_id` of the target repository. Surfaced to `workflow_dispatch`
+   * inputs as the sole identifier — the Survey Repo workflow resolves it back to
+   * `owner/repo` via GraphQL after verifying `isPrivate === false`. Keeping `owner`
+   * and `repo` here for internal telemetry (logger info lines, prioritization) is
+   * fine; only the `inputs` payload is a public surface.
+   */
+  node_id: string
 }
 
 export interface PerRepoIssue {
@@ -229,6 +237,22 @@ export interface ReconcileSummary {
    */
   skippedPrivate: number
   /**
+   * Number of floor candidates added to the dispatch pool. May exceed the count that
+   * actually dispatched if the per-run cap cut some — operators interpreting this
+   * alongside `dispatches` should remember the engine produces this count before cap
+   * enforcement (which lives in the I/O shell).
+   *
+   * This is a global counter and does NOT split per-channel. The floor is a global
+   * property of the run, not a per-channel property; {@link byChannel} tracks activity
+   * by discovery channel but the floor's contribution is not attributed to any single
+   * channel. The design decision is captured in the implementation plan's "Deferred to
+   * Implementation" section.
+   *
+   * Zero on quiet days when the threshold met or exceeded {@link FLOOR_MIN}, and on
+   * droughts where every tracked repo is inside {@link FLOOR_MIN_GAP_DAYS}.
+   */
+  flooredDispatches: number
+  /**
    * Per-channel activity breakdown. See {@link ChannelStats} for field semantics. The
    * engine populates `tracked` and `lostAccess`; the shell populates `dispatched` and
    * `deferred` after cap selection.
@@ -241,6 +265,69 @@ export interface ReconcileResult {
   dispatches: DispatchRequest[]
   issues: IssueQueueEntry[]
   summary: ReconcileSummary
+}
+
+/**
+ * Minimum number of dispatches the reconcile engine targets per run. When the threshold
+ * gate (per-channel `next_survey_eligible_at`) yields fewer than this many candidates,
+ * the floor fires and tops up the dispatch list with the oldest-surveyed tracked repos
+ * that pass the same fail-closed privacy gate.
+ *
+ * The floor exists because the channel-cycle math (collab=30d, owned=14d, contrib=21d)
+ * inevitably clusters into multi-day silences when populations bunch. Without a floor,
+ * the wiki goes quiet for ~20 days at a time. With it, continuous knowledge growth is
+ * decoupled from cluster timing.
+ *
+ * The floor is additive — threshold remains the ceiling, the per-run cap
+ * ({@link DEFAULT_MAX_DISPATCHES_PER_RUN}) still bounds the upper end, and the dispatch
+ * stagger still applies. See `docs/plans/2026-05-17-001-feat-survey-cadence-minimum-floor-plan.md`.
+ */
+const FLOOR_MIN = 2
+
+/**
+ * Minimum gap (in days) between any two surveys of the same repo when the floor fires.
+ * A tracked repo surveyed within this window is excluded from the floor pool so the
+ * floor cannot ping-pong the same repo on consecutive days.
+ *
+ * Strict-greater-than semantics: a repo surveyed exactly `FLOOR_MIN_GAP_DAYS` days ago
+ * (down to the day boundary) is still inside the gap; only repos surveyed more than
+ * `FLOOR_MIN_GAP_DAYS` days ago are eligible.
+ */
+const FLOOR_MIN_GAP_DAYS = 7
+
+/**
+ * Format the floor-fired telemetry message.
+ *
+ * Extracted so the message shape can be unit-tested independently of the I/O shell.
+ * Security invariant: the message must contain only aggregate counts — no owner, repo
+ * name, or node_id (see docs/solutions/security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md).
+ */
+export function formatFloorTelemetry(flooredDispatches: number, thresholdYield: number): string {
+  return `floor fired: dispatched ${flooredDispatches} of FLOOR_MIN=${FLOOR_MIN} (threshold yielded ${thresholdYield})`
+}
+
+/**
+ * Compare two dispatch candidates by survey freshness for oldest-first ordering.
+ *
+ * Rules (identical to the comparator inside {@link prioritizeDispatches}):
+ * 1. `null` (never surveyed) sorts before any date string.
+ * 2. Earlier date strings sort before later ones (ascending `last_survey_at`).
+ * 3. Tiebreak: lexicographic on the pre-computed `repoKey` strings.
+ *
+ * Accepts primitives so it can be used from both the floor sort (which operates on
+ * `{entry: RepoEntry; access: AccessListEntry}[]`) and `prioritizeDispatches` (which
+ * operates on `DispatchRequest[]`).
+ */
+function compareBySurveyFreshness(
+  leftAt: string | null,
+  rightAt: string | null,
+  leftKey: string,
+  rightKey: string,
+): number {
+  if (leftAt === null && rightAt !== null) return -1
+  if (rightAt === null && leftAt !== null) return 1
+  if (leftAt !== null && rightAt !== null && leftAt !== rightAt) return leftAt.localeCompare(rightAt)
+  return leftKey.localeCompare(rightKey)
 }
 
 /**
@@ -272,6 +359,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     transient: 0,
     malformed: 0,
     skippedPrivate: 0,
+    flooredDispatches: 0,
     byChannel: {
       collab: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
       owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -357,7 +445,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       if (accessPrivate) {
         summary.skippedPrivate += 1
       } else {
-        dispatches.push({owner: access.owner, repo: access.name})
+        dispatches.push({owner: access.owner, repo: access.name, node_id: access.node_id})
       }
     } else {
       summary.pendingReview += 1
@@ -368,6 +456,90 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
         private: accessPrivate,
         node_id: access.node_id,
       })
+    }
+  }
+
+  // Pass 2.5 — minimum-dispatch floor.
+  //
+  // When the threshold gate yielded fewer than FLOOR_MIN dispatches, top up the list
+  // with the oldest-surveyed tracked repos that pass the same fail-closed privacy
+  // gate as the threshold path. This decouples continuous wiki growth from cluster
+  // timing: when channel-cycle math bunches eligibility into one week per cycle, the
+  // floor still dispatches FLOOR_MIN repos per run on the off-cycle days.
+  //
+  // The floor adds to `dispatches` only; cap enforcement, rotation, and per-channel
+  // counting happen in the I/O shell as today. Floor dispatches look identical to
+  // threshold dispatches downstream — intentional, the floor is transparent.
+  if (dispatches.length < FLOOR_MIN) {
+    const slotsNeeded = FLOOR_MIN - dispatches.length
+    const dispatchedKeys = new Set(dispatches.map(d => repoKey(d.owner, d.repo)))
+    const nowMs = now.getTime()
+
+    const floorCandidates: {entry: RepoEntry; access: AccessListEntry}[] = []
+    for (const entry of next.repos) {
+      // Same eligibility universe as the threshold gate, minus the
+      // `next_survey_eligible_at` check — the floor's whole job is to fire when the
+      // threshold has held repos back.
+      if (entry.onboarding_status !== 'onboarded' && entry.onboarding_status !== 'pending') continue
+      if (entry.onboarding_status === 'pending' && entry.last_survey_status === 'success') {
+        // Mirrors the threshold gate's `pending` branch: a successful pending repo
+        // waits for its eligibility timestamp; the floor doesn't override that.
+        continue
+      }
+
+      const key = repoKey(entry.owner, entry.name)
+      if (dispatchedKeys.has(key)) continue
+
+      // Fail-closed privacy: stored AND live access-list must agree on public, and the
+      // node-level fail-closed rule (duplicate node_id, non-public alias) must clear.
+      // Mirrors the `wouldDispatchIfPublic && !skippedPrivate` branch in classifyTracked.
+      const access = accessForTrackedEntry(entry, key, accessByKey, accessByNodeId)
+      if (access === undefined) continue
+      const accessPrivate = accessPrivateForStorage(access, accessNodePrivacy)
+      if (entry.private !== false || accessPrivate) continue
+
+      // Gap-days: strict greater-than on whole-day count. A repo surveyed exactly
+      // FLOOR_MIN_GAP_DAYS days ago is still inside the gap; only repos surveyed
+      // strictly more than FLOOR_MIN_GAP_DAYS days ago are eligible.
+      //
+      // We compare calendar-day counts (Math.floor of ms / 86_400_000) rather than
+      // raw milliseconds so that the boundary is stable regardless of the time-of-day
+      // component of `now`. E.g. NOW=2026-04-17T12:00:00Z and last_survey_at=2026-04-10
+      // yields daysAgo=7 (not 7.5), which is NOT strictly greater than FLOOR_MIN_GAP_DAYS=7,
+      // so the repo is correctly excluded. last_survey_at=2026-04-09 yields daysAgo=8 → IN.
+      // `null` last_survey_at counts as never-surveyed = always past the gap.
+      if (entry.last_survey_at !== null) {
+        const surveyedMs = Date.parse(`${entry.last_survey_at}T00:00:00Z`)
+        if (!Number.isFinite(surveyedMs)) continue
+        const daysAgo = Math.floor((nowMs - surveyedMs) / 86_400_000)
+        if (daysAgo <= FLOOR_MIN_GAP_DAYS) continue
+      }
+
+      floorCandidates.push({entry, access})
+    }
+
+    // Oldest-first: null `last_survey_at` (never surveyed) before any date, then
+    // ascending by date, tiebreak on owner/name for determinism. Matches the existing
+    // `prioritizeDispatches` ordering used by the threshold path.
+    floorCandidates.sort((left, right) =>
+      compareBySurveyFreshness(
+        left.entry.last_survey_at,
+        right.entry.last_survey_at,
+        repoKey(left.entry.owner, left.entry.name),
+        repoKey(right.entry.owner, right.entry.name),
+      ),
+    )
+
+    for (const {entry, access} of floorCandidates.slice(0, slotsNeeded)) {
+      // Defensive dedup against duplicate next.repos rows (data corruption). If the same
+      // owner/name appears twice in the floor pool, skip the second occurrence rather than
+      // dispatching the same repo twice. FLOOR_MIN is not met in that run — acceptable;
+      // data corruption is a separate concern the floor should not mask.
+      const key = repoKey(entry.owner, entry.name)
+      if (dispatchedKeys.has(key)) continue
+      dispatchedKeys.add(key)
+      dispatches.push({owner: access.owner, repo: access.name, node_id: access.node_id})
+      summary.flooredDispatches += 1
     }
   }
 
@@ -542,7 +714,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
       if (accessPrivate) {
         summary.skippedPrivate += 1
       } else {
-        dispatches.push({owner: access.owner, repo: access.name})
+        dispatches.push({owner: access.owner, repo: access.name, node_id: access.node_id})
       }
     } else {
       rawIssues.push({
@@ -588,7 +760,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   if (wouldDispatchIfPublic && (entry.private !== false || accessPrivate)) {
     summary.skippedPrivate += 1
   } else if (wouldDispatchIfPublic) {
-    dispatches.push({owner: access.owner, repo: access.name})
+    dispatches.push({owner: access.owner, repo: access.name, node_id: access.node_id})
   }
 
   // Field refresh: apply probe results when they disagree with tracked fields,
@@ -1083,6 +1255,23 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     now,
   })
 
+  // Floor telemetry — counts-only, no per-repo identifiers (security invariant: see
+  // docs/solutions/security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md).
+  // Telemetry is best-effort: a logger failure must never abort the scheduled reconcile
+  // run, since the substantive engine work (classification, dispatch planning) has
+  // already completed by this point.
+  if (plan.summary.flooredDispatches > 0) {
+    const thresholdYield = plan.dispatches.length - plan.summary.flooredDispatches
+    try {
+      logger.warn(formatFloorTelemetry(plan.summary.flooredDispatches, thresholdYield))
+    } catch (error) {
+      // Telemetry is best-effort; substantive engine work has already completed by this
+      // point. A breadcrumb to stderr preserves visibility of programmer errors (e.g. a
+      // future refactor that makes `logger` undefined) without aborting the scheduled run.
+      console.error('reconcile: floor telemetry emission failed', error)
+    }
+  }
+
   const hasChanges = planHasChanges(plan)
   let integrityCheck: 'ok' | 'skipped-no-data-branch' | 'skipped-just-bootstrapped' = 'ok'
   let committed = false
@@ -1282,15 +1471,7 @@ function prioritizeDispatches(dispatches: DispatchRequest[], nextRepos: ReposFil
     const rightKey = `${right.owner}/${right.repo}`
     const leftAt = lookup.get(leftKey) ?? null
     const rightAt = lookup.get(rightKey) ?? null
-
-    // Null (never surveyed) comes before any date.
-    if (leftAt === null && rightAt !== null) return -1
-    if (rightAt === null && leftAt !== null) return 1
-    if (leftAt !== null && rightAt !== null && leftAt !== rightAt) {
-      return leftAt.localeCompare(rightAt)
-    }
-    // Deterministic tiebreak.
-    return leftKey.localeCompare(rightKey)
+    return compareBySurveyFreshness(leftAt, rightAt, leftKey, rightKey)
   })
 }
 
@@ -1994,7 +2175,12 @@ async function runDispatches(params: {
             repo: params.repo,
             workflow_id: params.workflowFile,
             ref: params.workflowRef,
-            inputs: {owner: dispatch.owner, repo: dispatch.repo},
+            // The only identifier exposed to the public workflow_dispatch surface is
+            // the GraphQL node_id. The Survey Repo workflow's first step resolves it
+            // back to owner/repo via App-token GraphQL and aborts unless the repo is
+            // definitively public. owner/repo are kept on DispatchRequest for internal
+            // telemetry (logger, prioritization) but never reach the Actions API.
+            inputs: {node_id: dispatch.node_id},
           }),
         params.timeoutMs,
       )

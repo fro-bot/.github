@@ -530,7 +530,7 @@ persona/
 
 ---
 
-- [ ] **Unit 6: Survey Repo workflow gate with `node_id` inputs**
+- [x] **Unit 6: Survey Repo workflow gate with `node_id` inputs**
 
 **Goal:** `survey-repo.yaml` accepts `node_id` (not `owner/repo`) as input. First job step resolves `node_id` → `owner/repo` via App token AND verifies `private: false`. Aborts on any error or `private: true`. Concurrency group, run name, and dispatch input echoes use `node_id`.
 

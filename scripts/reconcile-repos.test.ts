@@ -10,6 +10,7 @@ import {
   DISPATCH_DEFAULTS,
   fetchPerRepoStatus,
   formatCommitMessage,
+  formatFloorTelemetry,
   handleReconcile,
   isEligibleForSurvey,
   loadDispatchStaggerFromEnv,
@@ -22,6 +23,7 @@ import {
   type HandleReconcileParams,
   type OctokitClient,
   type ReconcileInput,
+  type ReconcileLogger,
   type RepoStatusProbe,
 } from './reconcile-repos.ts'
 import {addRepoEntry} from './repos-metadata.ts'
@@ -109,7 +111,7 @@ describe('reconcileRepos', () => {
         name: 'new-repo',
         onboarding_status: 'pending',
       })
-      expect(result.dispatches).toEqual([{owner: 'marcusrbrown', repo: 'new-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'marcusrbrown', repo: 'new-repo', node_id: 'R_new'}])
       expect(result.issues).toEqual([])
       expect(result.summary).toEqual({
         added: 1,
@@ -122,6 +124,7 @@ describe('reconcileRepos', () => {
         malformed: 0,
         skippedPrivate: 0,
         unchanged: 0,
+        flooredDispatches: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -370,7 +373,7 @@ describe('reconcileRepos', () => {
         }),
       )
 
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'back-again'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'back-again', node_id: 'R_public_again'}])
       expect(result.summary.regained).toBe(1)
       expect(result.summary.skippedPrivate).toBe(0)
     })
@@ -442,7 +445,7 @@ describe('reconcileRepos', () => {
         }),
       )
 
-      expect(result.dispatches).toEqual([{owner: 'trusted', repo: 'ok-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'trusted', repo: 'ok-repo', node_id: 'R_ok'}])
       expect(result.issues).toHaveLength(1)
       expect(result.issues[0]?.kind).toBe('per-owner-rollup')
       expect(result.issues.filter(i => i.kind === 'per-repo')).toEqual([])
@@ -542,7 +545,7 @@ describe('reconcileRepos', () => {
       // THEN the genuinely-new newcomer is added normally (the tracked entry's
       // own first-survey dispatch is incidental and not what this test cares about)
       expect(result.nextRepos.repos).toHaveLength(2)
-      expect(result.dispatches).toContainEqual({owner: 'marcusrbrown', repo: 'genuinely-new'})
+      expect(result.dispatches).toContainEqual({owner: 'marcusrbrown', repo: 'genuinely-new', node_id: 'R_new'})
       expect(result.summary.added).toBe(1)
     })
   })
@@ -742,7 +745,7 @@ describe('reconcileRepos', () => {
         private: false,
         node_id: 'R_default',
       })
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'returned-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'returned-repo', node_id: 'R_default'}])
       expect(result.issues).toEqual([])
       expect(result.summary.regained).toBe(1)
     })
@@ -1207,7 +1210,7 @@ describe('reconcileRepos', () => {
       expect(byName.get('drift-repo')?.onboarding_status).toBe('onboarded')
       expect(byName.get('gone-repo')?.onboarding_status).toBe('lost-access')
       expect(byName.get('fresh-repo')?.onboarding_status).toBe('pending')
-      expect(result.dispatches).toEqual([{owner: 'trusted', repo: 'fresh-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'trusted', repo: 'fresh-repo', node_id: 'R_fresh'}])
       expect(result.issues).toEqual([])
       expect(result.summary).toEqual({
         added: 1,
@@ -1220,6 +1223,7 @@ describe('reconcileRepos', () => {
         malformed: 0,
         skippedPrivate: 0,
         unchanged: 0,
+        flooredDispatches: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 3, dispatched: 0, deferred: 0, lostAccess: 1},
@@ -1261,6 +1265,7 @@ describe('reconcileRepos', () => {
         malformed: 0,
         skippedPrivate: 0,
         unchanged: 1,
+        flooredDispatches: 0,
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
           owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1286,6 +1291,7 @@ describe('reconcileRepos', () => {
         malformed: 0,
         skippedPrivate: 0,
         unchanged: 0,
+        flooredDispatches: 0,
         byChannel: emptyChannelStats(),
       })
     })
@@ -1381,7 +1387,7 @@ describe('reconcileRepos', () => {
         }),
       )
       // #then the entry is dispatched for its initial survey
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'never-surveyed'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'never-surveyed', node_id: 'R_default'}])
     })
 
     it('dispatches pending entry with failure status (failed initial survey)', () => {
@@ -1401,7 +1407,7 @@ describe('reconcileRepos', () => {
         }),
       )
       // #then the entry is dispatched for retry (failure ≠ success, so eligible)
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'failed-initial'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'failed-initial', node_id: 'R_default'}])
     })
 
     it('does not dispatch pending-review entry (requires human approval)', () => {
@@ -1466,7 +1472,7 @@ describe('reconcileRepos', () => {
         }),
       )
       // #then the entry is dispatched (eligibility passed)
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'overdue-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'overdue-repo', node_id: 'R_default'}])
     })
 
     it('skips an eligible private tracked entry before the survey eligibility gate', () => {
@@ -1552,10 +1558,16 @@ describe('reconcileRepos', () => {
     })
 
     it('skips an entry with unknown privacy before refreshing it to public', () => {
+      // The threshold gate checks the stored `entry.private` (pre-normalization) and skips
+      // the entry when it is not explicitly `false`. Pass 1 then normalizes `private` to the
+      // live access-list value. The floor (Pass 2.5) operates on the post-normalization state,
+      // so it would dispatch this entry if it were also past the floor gap. We set
+      // `last_survey_at` to a recent date to keep it inside the gap and isolate the test to
+      // the threshold gate's privacy-skip behavior.
       const entry = makeEntry({
         name: 'legacy-repo',
         onboarding_status: 'pending',
-        last_survey_at: null,
+        last_survey_at: '2026-04-15', // within FLOOR_MIN_GAP_DAYS of NOW (2026-04-17); floor excludes it
         last_survey_status: null,
       })
 
@@ -1599,7 +1611,7 @@ describe('reconcileRepos', () => {
         onboarding_status: 'pending',
         discovery_channel: 'owned',
       })
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'agent'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'agent', node_id: 'R_agent'}])
       expect(result.issues).toEqual([])
       expect(result.summary.added).toBe(1)
       expect(result.summary.pendingReview).toBe(0)
@@ -1616,7 +1628,7 @@ describe('reconcileRepos', () => {
 
       // #then dispatched with discovery_channel: contrib; no pending-review issue
       expect(result.nextRepos.repos[0]?.discovery_channel).toBe('contrib')
-      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: '.github'}])
+      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: '.github', node_id: 'R_bfra_gh'}])
       expect(result.issues).toEqual([])
       expect(result.summary.added).toBe(1)
       expect(result.summary.pendingReview).toBe(0)
@@ -1633,7 +1645,7 @@ describe('reconcileRepos', () => {
       )
 
       expect(result.nextRepos.repos[0]?.discovery_channel).toBe('collab')
-      expect(result.dispatches).toEqual([{owner: 'marcusrbrown', repo: 'new-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'marcusrbrown', repo: 'new-repo', node_id: 'R_default'}])
     })
 
     it('skips pending-review for owned newcomers from a non-allowlisted owner', () => {
@@ -1666,7 +1678,7 @@ describe('reconcileRepos', () => {
 
       expect(result.summary.added).toBe(1)
       expect(result.summary.pendingReview).toBe(0)
-      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: 'renovate-action'}])
+      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: 'renovate-action', node_id: 'R_bfra_ren'}])
       expect(result.issues).toEqual([])
     })
 
@@ -1738,7 +1750,7 @@ describe('reconcileRepos', () => {
       // #then regained as pending; dispatched directly (contrib is trusted, no issue)
       expect(result.nextRepos.repos[0]?.onboarding_status).toBe('pending')
       expect(result.summary.regained).toBe(1)
-      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: '.github'}])
+      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: '.github', node_id: 'R_bfra_gh'}])
       expect(result.issues).toEqual([])
     })
 
@@ -1762,7 +1774,7 @@ describe('reconcileRepos', () => {
 
       expect(result.nextRepos.repos[0]?.onboarding_status).toBe('pending')
       expect(result.summary.regained).toBe(1)
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'systematic'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'systematic', node_id: 'R_sys'}])
       expect(result.issues).toEqual([])
     })
 
@@ -2497,8 +2509,8 @@ describe('handleReconcile (I/O shell)', () => {
       const dispatchCalls: string[] = []
       const sleepCalls: number[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-        const typed = params as {inputs?: {owner: string; repo: string}}
-        dispatchCalls.push(typed.inputs?.repo ?? '?')
+        const typed = params as {inputs?: {node_id: string}}
+        dispatchCalls.push(typed.inputs?.node_id ?? '?')
       })
       const dispatchSleep = vi.fn(async (ms: number) => {
         sleepCalls.push(ms)
@@ -2525,10 +2537,12 @@ describe('handleReconcile (I/O shell)', () => {
         }),
       )
 
-      // Exactly 4 dispatches fired in order.
-      expect(dispatchCalls).toEqual(['r1', 'r2', 'r3', 'r4'])
+      // Exactly 4 dispatches fired in order — asserted by node_id (the only identifier
+      // the workflow_dispatch payload now exposes).
+      expect(dispatchCalls).toEqual(['R_1', 'R_2', 'R_3', 'R_4'])
       expect(result.dispatches).toBe(4)
-      // Exactly 3 sleeps — between r1→r2, r2→r3, r3→r4. Never before r1. Never after r4.
+      // Exactly 3 sleeps — between dispatches 1→2, 2→3, 3→4. Never before the first.
+      // Never after the last.
       expect(sleepCalls).toEqual([5000, 5000, 5000])
       expect(dispatchSleep).toHaveBeenCalledTimes(3)
     })
@@ -2567,10 +2581,10 @@ describe('handleReconcile (I/O shell)', () => {
     it('treats a dispatch timeout as failure and continues to the next', async () => {
       const dispatchCalls: string[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-        const typed = params as {inputs?: {owner: string; repo: string}}
-        const name = typed.inputs?.repo ?? '?'
-        dispatchCalls.push(name)
-        if (name === 'r2') {
+        const typed = params as {inputs?: {node_id: string}}
+        const id = typed.inputs?.node_id ?? '?'
+        dispatchCalls.push(id)
+        if (id === 'R_2') {
           await new Promise(() => {
             /* never resolves — simulates hang */
           })
@@ -2598,9 +2612,42 @@ describe('handleReconcile (I/O shell)', () => {
 
       // All three repos are attempted regardless of day-rotation order; a timeout on
       // one should not block the others from dispatching.
-      expect(dispatchCalls.slice().sort()).toEqual(['r1', 'r2', 'r3'])
+      expect(dispatchCalls.slice().sort()).toEqual(['R_1', 'R_2', 'R_3'])
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesFailed).toBe(1)
+    })
+
+    it('dispatch payload carries node_id only — never owner/repo', async () => {
+      // Survey Repo workflow accepts node_id as its sole input. The dispatch call site
+      // MUST pass {inputs: {node_id}} so the workflow's first step can resolve and
+      // verify the repo via GraphQL before exposing any owner/name to subsequent steps
+      // or public run surfaces (run name, concurrency group, log lines).
+      const dispatchPayloads: Record<string, unknown>[] = []
+      const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+        const typed = params as {inputs?: Record<string, unknown>}
+        if (typed.inputs !== undefined) dispatchPayloads.push(typed.inputs)
+      })
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 't'}, name: 'public-repo', archived: false, private: false, node_id: 'R_kgDOPUBLIC'}],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        }),
+      )
+
+      expect(dispatchPayloads).toHaveLength(1)
+      expect(dispatchPayloads[0]).toEqual({node_id: 'R_kgDOPUBLIC'})
+      // Defense-in-depth: owner/repo must not leak into the public workflow_dispatch
+      // inputs surface, even alongside node_id. The workflow itself resolves the identity.
+      expect(dispatchPayloads[0]).not.toHaveProperty('owner')
+      expect(dispatchPayloads[0]).not.toHaveProperty('repo')
     })
   })
 
@@ -2611,8 +2658,8 @@ describe('handleReconcile (I/O shell)', () => {
       // be the already-surveyed one because progressive runs prioritize fresh coverage.
       const dispatchCalls: string[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-        const typed = params as {inputs?: {repo: string}}
-        dispatchCalls.push(typed.inputs?.repo ?? '?')
+        const typed = params as {inputs?: {node_id: string}}
+        dispatchCalls.push(typed.inputs?.node_id ?? '?')
       })
       const userOctokit = mockOctokit({
         listForAuthenticatedUser: async () => ({
@@ -2657,7 +2704,7 @@ describe('handleReconcile (I/O shell)', () => {
         }),
       )
 
-      expect(dispatchCalls).toEqual(['r1', 'r3'])
+      expect(dispatchCalls).toEqual(['R_1', 'R_3'])
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesDeferred).toBe(1)
     })
@@ -2665,8 +2712,8 @@ describe('handleReconcile (I/O shell)', () => {
     it('does not let private entries displace public dispatches under the cap', async () => {
       const dispatchCalls: string[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-        const typed = params as {inputs?: {repo: string}}
-        dispatchCalls.push(typed.inputs?.repo ?? '?')
+        const typed = params as {inputs?: {node_id: string}}
+        dispatchCalls.push(typed.inputs?.node_id ?? '?')
       })
       const publicRepos = Array.from({length: 13}, (_, index) => `public-${String(index + 1).padStart(2, '0')}`)
       const userOctokit = mockOctokit({
@@ -2701,8 +2748,8 @@ describe('handleReconcile (I/O shell)', () => {
       )
 
       expect(dispatchCalls).toHaveLength(12)
-      expect(dispatchCalls).not.toContain('private-repo')
-      expect(dispatchCalls.every(name => name.startsWith('public-'))).toBe(true)
+      expect(dispatchCalls).not.toContain('R_private')
+      expect(dispatchCalls.every(id => id.startsWith('R_public-'))).toBe(true)
       expect(result.summary.skippedPrivate).toBe(1)
       expect(result.dispatches).toBe(12)
       expect(result.dispatchesDeferred).toBe(1)
@@ -2741,8 +2788,8 @@ describe('handleReconcile (I/O shell)', () => {
       // Cap of 2 selects the two oldest; newest is deferred to the next run.
       const dispatchCalls: string[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-        const typed = params as {inputs?: {repo: string}}
-        dispatchCalls.push(typed.inputs?.repo ?? '?')
+        const typed = params as {inputs?: {node_id: string}}
+        dispatchCalls.push(typed.inputs?.node_id ?? '?')
       })
       const userOctokit = mockOctokit({
         listForAuthenticatedUser: async () => ({
@@ -2813,7 +2860,7 @@ describe('handleReconcile (I/O shell)', () => {
         }),
       )
 
-      expect(dispatchCalls).toEqual(['r-old', 'r-mid'])
+      expect(dispatchCalls).toEqual(['R_old', 'R_mid'])
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesDeferred).toBe(1)
     })
@@ -2873,7 +2920,7 @@ describe('handleReconcile (I/O shell)', () => {
       const runWith = async (now: Date) => {
         const dispatched: string[] = []
         const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-          dispatched.push((params as {inputs?: {repo: string}}).inputs?.repo ?? '?')
+          dispatched.push((params as {inputs?: {node_id: string}}).inputs?.node_id ?? '?')
         })
         await handleReconcile(
           baseParams({
@@ -2889,9 +2936,9 @@ describe('handleReconcile (I/O shell)', () => {
       }
 
       // Offset 0 → first slice
-      expect(await runWith(NOW)).toEqual(['r-a', 'r-b'])
+      expect(await runWith(NOW)).toEqual(['R_r-a', 'R_r-b'])
       // Offset 2 → rotated slice; r-c and r-d get their turn
-      expect(await runWith(new Date('2026-04-19T12:00:00Z'))).toEqual(['r-c', 'r-d'])
+      expect(await runWith(new Date('2026-04-19T12:00:00Z'))).toEqual(['R_r-c', 'R_r-d'])
     })
   })
 
@@ -4170,6 +4217,7 @@ describe('formatCommitMessage', () => {
         malformed: 0,
         skippedPrivate: 0,
         unchanged: 0,
+        flooredDispatches: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 2 refreshes')
@@ -4188,6 +4236,7 @@ describe('formatCommitMessage', () => {
         malformed: 0,
         skippedPrivate: 0,
         unchanged: 0,
+        flooredDispatches: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
@@ -4206,6 +4255,7 @@ describe('formatCommitMessage', () => {
         malformed: 0,
         skippedPrivate: 2,
         unchanged: 0,
+        flooredDispatches: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 1 refreshes')
@@ -4224,6 +4274,7 @@ describe('formatCommitMessage', () => {
         malformed: 0,
         skippedPrivate: 0,
         unchanged: 0,
+        flooredDispatches: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 1 refreshes, +18 migrated')
@@ -4686,5 +4737,668 @@ describe('reconcileRepos byChannel summary', () => {
     expect(result.summary.byChannel.owned.tracked).toBe(1)
     expect(result.summary.byChannel.contrib.tracked).toBe(1)
     expect(result.summary.byChannel.collab.tracked).toBe(0)
+  })
+})
+
+function accessFor(entry: RepoEntry, overrides: Partial<AccessListEntry> = {}): AccessListEntry {
+  return makeAccess({
+    owner: entry.owner,
+    name: entry.name,
+    node_id: entry.node_id ?? `R_${entry.name}`,
+    private: false,
+    ...overrides,
+  })
+}
+
+describe('reconcileRepos minimum-dispatch floor', () => {
+  // Floor tests use NOW = 2026-04-17T12:00:00Z. Helper dates:
+  // - FUTURE_ELIGIBLE: 2026-06-15 (well past today; threshold never fires)
+  // - PAST_8D:        2026-04-09 (8 days before NOW; outside the 7-day floor gap)
+  // - PAST_5D:        2026-04-12 (5 days before NOW; inside the 7-day floor gap)
+  // - PAST_7D_EXACT:  2026-04-10 (7 days before NOW; boundary case)
+  // - PAST_30D:       2026-03-18 (30 days before NOW; very old)
+  const FUTURE_ELIGIBLE = '2026-06-15'
+  const PAST_8D = '2026-04-09'
+  const PAST_5D = '2026-04-12'
+  const PAST_7D_EXACT = '2026-04-10'
+  const PAST_30D = '2026-03-18'
+
+  function trackedEntry(overrides: Partial<RepoEntry>): RepoEntry {
+    return makeEntry({
+      onboarding_status: 'onboarded',
+      last_survey_status: 'success',
+      next_survey_eligible_at: FUTURE_ELIGIBLE,
+      private: false,
+      ...overrides,
+    })
+  }
+
+  // 1. Happy — threshold yields 2+, floor not needed (flooredDispatches: 0).
+  it('does not fire the floor when threshold already meets FLOOR_MIN', () => {
+    const a = trackedEntry({owner: 'fro-bot', name: 'agent', node_id: 'R_agent', next_survey_eligible_at: null})
+    const b = trackedEntry({owner: 'fro-bot', name: 'systematic', node_id: 'R_sys', next_survey_eligible_at: null})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [a, b]},
+        accessList: [accessFor(a), accessFor(b)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(2)
+    expect(result.summary.flooredDispatches).toBe(0)
+  })
+
+  // 2. Happy — threshold yields 0, floor finds 2 (flooredDispatches: 2).
+  it('fires the floor to add 2 dispatches when threshold yields 0', () => {
+    const a = trackedEntry({owner: 'fro-bot', name: 'a-repo', node_id: 'R_a', last_survey_at: PAST_30D})
+    const b = trackedEntry({owner: 'fro-bot', name: 'b-repo', node_id: 'R_b', last_survey_at: PAST_8D})
+    const c = trackedEntry({owner: 'fro-bot', name: 'c-repo', node_id: 'R_c', last_survey_at: PAST_8D})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [a, b, c]},
+        accessList: [accessFor(a), accessFor(b), accessFor(c)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(2)
+    expect(result.summary.flooredDispatches).toBe(2)
+    // Oldest-first: a-repo (PAST_30D) wins, then deterministic tiebreak between b-repo/c-repo.
+    expect(result.dispatches[0]?.repo).toBe('a-repo')
+    expect(result.dispatches[1]?.repo).toBe('b-repo')
+  })
+
+  // 3. Happy — threshold yields 1, floor adds 1 (flooredDispatches: 1).
+  it('tops up to FLOOR_MIN by adding 1 floor dispatch when threshold yields 1', () => {
+    const eligible = trackedEntry({
+      owner: 'fro-bot',
+      name: 'eligible',
+      node_id: 'R_eligible',
+      next_survey_eligible_at: null,
+    })
+    const floored = trackedEntry({
+      owner: 'fro-bot',
+      name: 'floored',
+      node_id: 'R_floored',
+      last_survey_at: PAST_30D,
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [eligible, floored]},
+        accessList: [accessFor(eligible), accessFor(floored)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(2)
+    expect(result.summary.flooredDispatches).toBe(1)
+    expect(result.dispatches.map(d => d.repo).sort()).toEqual(['eligible', 'floored'])
+  })
+
+  // 4. Edge — threshold yields exactly 2, floor stays asleep.
+  it('does not fire the floor when threshold yields exactly FLOOR_MIN', () => {
+    const a = trackedEntry({owner: 'fro-bot', name: 'a', node_id: 'R_a', next_survey_eligible_at: null})
+    const b = trackedEntry({owner: 'fro-bot', name: 'b', node_id: 'R_b', next_survey_eligible_at: null})
+    const c = trackedEntry({owner: 'fro-bot', name: 'c', node_id: 'R_c', last_survey_at: PAST_30D})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [a, b, c]},
+        accessList: [accessFor(a), accessFor(b), accessFor(c)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(2)
+    expect(result.summary.flooredDispatches).toBe(0)
+    expect(result.dispatches.map(d => d.repo).sort()).toEqual(['a', 'b'])
+  })
+
+  // 5. Edge — threshold yields 0, floor pool empty (all surveyed within gap).
+  it('reports zero floor dispatches when every candidate is within FLOOR_MIN_GAP_DAYS', () => {
+    const a = trackedEntry({owner: 'fro-bot', name: 'a', node_id: 'R_a', last_survey_at: PAST_5D})
+    const b = trackedEntry({owner: 'fro-bot', name: 'b', node_id: 'R_b', last_survey_at: PAST_5D})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [a, b]},
+        accessList: [accessFor(a), accessFor(b)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(0)
+    expect(result.summary.flooredDispatches).toBe(0)
+  })
+
+  // 6. Edge — threshold yields 0, floor finds 1 only (tiny population).
+  it('takes what it can when fewer than FLOOR_MIN candidates pass the floor filter', () => {
+    const eligible = trackedEntry({owner: 'fro-bot', name: 'aged', node_id: 'R_aged', last_survey_at: PAST_30D})
+    const recent = trackedEntry({owner: 'fro-bot', name: 'recent', node_id: 'R_recent', last_survey_at: PAST_5D})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [eligible, recent]},
+        accessList: [accessFor(eligible), accessFor(recent)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(1)
+    expect(result.summary.flooredDispatches).toBe(1)
+    expect(result.dispatches[0]?.repo).toBe('aged')
+  })
+
+  // 7. Edge — null last_survey_at sorts before any date in the floor pool.
+  it('floors null-last_survey_at candidates before any dated candidate', () => {
+    const dated = trackedEntry({owner: 'fro-bot', name: 'dated', node_id: 'R_dated', last_survey_at: PAST_30D})
+    const neverSurveyed = trackedEntry({
+      owner: 'fro-bot',
+      name: 'never',
+      node_id: 'R_never',
+      last_survey_at: null,
+      last_survey_status: null,
+      next_survey_eligible_at: FUTURE_ELIGIBLE,
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [dated, neverSurveyed]},
+        accessList: [accessFor(dated), accessFor(neverSurveyed)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(2)
+    expect(result.summary.flooredDispatches).toBe(2)
+    // Null surveys first.
+    expect(result.dispatches[0]?.repo).toBe('never')
+    expect(result.dispatches[1]?.repo).toBe('dated')
+  })
+
+  // 8. Cap interaction — floor adds to the dispatch list; cap enforcement happens in
+  // the I/O shell. The pure function's contract is: dispatches.length === threshold +
+  // floorTaken. Cap-induced deferral is exercised by existing dispatch-loop tests.
+  it('adds floor entries to dispatches without bounding by per-run cap (cap belongs to the I/O shell)', () => {
+    const repos = Array.from({length: 15}, (_, i) =>
+      trackedEntry({
+        owner: 'fro-bot',
+        name: `repo-${String(i).padStart(2, '0')}`,
+        node_id: `R_${i}`,
+        last_survey_at: PAST_30D,
+      }),
+    )
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos},
+        accessList: repos.map(r => accessFor(r)),
+      }),
+    )
+    // Threshold yields 0 (all are within their next_survey_eligible_at window). Floor
+    // adds up to FLOOR_MIN = 2.
+    expect(result.dispatches).toHaveLength(2)
+    expect(result.summary.flooredDispatches).toBe(2)
+  })
+
+  // 9a. Edge — gap-days boundary, 7 days exact = OUT (inside gap).
+  it('treats a repo surveyed exactly FLOOR_MIN_GAP_DAYS ago as inside the floor gap (excluded)', () => {
+    const boundary = trackedEntry({
+      owner: 'fro-bot',
+      name: 'boundary',
+      node_id: 'R_boundary',
+      last_survey_at: PAST_7D_EXACT,
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [boundary]},
+        accessList: [accessFor(boundary)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(0)
+    expect(result.summary.flooredDispatches).toBe(0)
+  })
+
+  // 9b. Edge — gap-days boundary, 8 days = IN (outside gap).
+  it('treats a repo surveyed FLOOR_MIN_GAP_DAYS+1 days ago as past the floor gap (included)', () => {
+    const past = trackedEntry({owner: 'fro-bot', name: 'past', node_id: 'R_past', last_survey_at: PAST_8D})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [past]},
+        accessList: [accessFor(past)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(1)
+    expect(result.summary.flooredDispatches).toBe(1)
+  })
+
+  // 10. Error — `private: true` excluded from floor.
+  it('excludes a tracked private repo from the floor pool', () => {
+    const privateRepo = trackedEntry({
+      owner: '[REDACTED]',
+      name: 'R_private',
+      node_id: 'R_private',
+      last_survey_at: PAST_30D,
+      private: true,
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [privateRepo]},
+        accessList: [accessFor(privateRepo, {owner: 'private-owner', name: 'real-name', private: true})],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(0)
+    expect(result.summary.flooredDispatches).toBe(0)
+  })
+
+  // 11. Error — privacy fail-closed: no access list entry → floor excludes the repo.
+  //
+  // NOTE: A stored `private: undefined` entry cannot reach Pass 2.5 with that field
+  // intact when an access list entry is present — Pass 1's `normalizeRepoEntryForStorage`
+  // always writes the live `private` boolean from the access list onto the entry. The
+  // original scenario (stored undefined + access-list public) is therefore unreachable.
+  //
+  // The closest reachable analog for "unknown privacy" is a tracked entry whose access
+  // list entry is absent entirely (e.g. the repo was removed from the access list between
+  // runs but hasn't been classified as lost-access yet). In that case
+  // `accessForTrackedEntry` returns `undefined` and the floor skips the entry via the
+  // `if (access === undefined) continue` guard — the same fail-closed outcome.
+  it('excludes a tracked repo that has no access list entry from the floor pool (fail-closed)', () => {
+    const noAccess = trackedEntry({
+      owner: 'fro-bot',
+      name: 'no-access',
+      node_id: 'R_no_access',
+      last_survey_at: PAST_30D,
+      private: false,
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [noAccess]},
+        // Access list intentionally empty — entry has no live access record.
+        accessList: [],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(0)
+    expect(result.summary.flooredDispatches).toBe(0)
+  })
+
+  // 12. Error — access list flags private though stored private:false → excluded.
+  it('excludes a tracked repo whose live access-list privacy flips to private', () => {
+    const stored = trackedEntry({
+      owner: 'fro-bot',
+      name: 'flipped',
+      node_id: 'R_flip',
+      last_survey_at: PAST_30D,
+      private: false,
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [stored]},
+        accessList: [accessFor(stored, {private: true})],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(0)
+    expect(result.summary.flooredDispatches).toBe(0)
+  })
+
+  // 13. Error — node-level duplicate alias triggers fail-closed exclusion.
+  it('excludes a tracked repo when the access list has a duplicate node_id with a private alias', () => {
+    const stored = trackedEntry({
+      owner: 'fro-bot',
+      name: 'aliased',
+      node_id: 'R_alias',
+      last_survey_at: PAST_30D,
+      private: false,
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [stored]},
+        accessList: [
+          accessFor(stored),
+          makeAccess({owner: 'shadow', name: 'private-alias', node_id: 'R_alias', private: true}),
+        ],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(0)
+    expect(result.summary.flooredDispatches).toBe(0)
+  })
+
+  // 14. Error — `pending-review` excluded from floor.
+  it('excludes pending-review entries from the floor pool', () => {
+    const pending = trackedEntry({
+      owner: 'stranger',
+      name: 'sus-repo',
+      node_id: 'R_sus',
+      onboarding_status: 'pending-review',
+      last_survey_at: PAST_30D,
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [pending]},
+        accessList: [accessFor(pending)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(0)
+    expect(result.summary.flooredDispatches).toBe(0)
+  })
+
+  // 15. Error — `lost-access` excluded from floor (no longer in access list).
+  it('excludes lost-access entries from the floor pool', () => {
+    const lost = trackedEntry({
+      owner: 'fro-bot',
+      name: 'gone',
+      node_id: 'R_gone',
+      onboarding_status: 'lost-access',
+      last_survey_at: PAST_30D,
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [lost]},
+        accessList: [],
+        perRepoStatus: new Map([['fro-bot/gone', {status: 'archived'}]]),
+      }),
+    )
+    expect(result.dispatches).toHaveLength(0)
+    expect(result.summary.flooredDispatches).toBe(0)
+  })
+
+  // 16. Adversarial — duplicate metadata rows dispatch the same repo only once (Finding #6).
+  it('dispatches a duplicate-row repo only once even when both rows pass the floor filter', () => {
+    // Simulate data corruption: same owner/name appears twice in next.repos.
+    // Both rows pass all floor filters (public, onboarded, past gap). The dedup guard
+    // inside the floor accept loop must prevent a double-dispatch.
+    const dup = trackedEntry({owner: 'fro-bot', name: 'dup-repo', node_id: 'R_dup', last_survey_at: PAST_30D})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [dup, dup]},
+        accessList: [accessFor(dup)],
+      }),
+    )
+    expect(result.dispatches).toHaveLength(1)
+    expect(result.summary.flooredDispatches).toBe(1)
+    expect(result.dispatches[0]?.repo).toBe('dup-repo')
+  })
+
+  // 17. Ordering — floor + threshold merge: both sources contribute to the dispatch pool.
+  //
+  // Scenario: 1 threshold-eligible repo (last_survey_at: 2026-04-15, newer) and
+  // 1 floor-eligible repo (last_survey_at: 2026-04-01, older). Cap=12 (high enough
+  // to fit both). The engine appends threshold dispatches first, then floor dispatches
+  // (append order, not globally sorted). Final oldest-first ordering across both sources
+  // is applied by `prioritizeDispatches` in the I/O shell (tested via handleReconcile
+  // integration tests). This test verifies the engine correctly identifies both repos
+  // as dispatch candidates and attributes the floor contribution accurately.
+  it('merged threshold+floor dispatch pool contains both repos with correct flooredDispatches count', () => {
+    // threshold-eligible: next_survey_eligible_at=null → threshold fires
+    const thresholdRepo = trackedEntry({
+      owner: 'fro-bot',
+      name: 'threshold-repo',
+      node_id: 'R_threshold',
+      next_survey_eligible_at: null,
+      last_survey_at: '2026-04-15', // newer
+    })
+    // floor-eligible: next_survey_eligible_at in future → threshold skips; floor picks up
+    const floorEligible = trackedEntry({
+      owner: 'fro-bot',
+      name: 'floor-repo',
+      node_id: 'R_floor',
+      next_survey_eligible_at: FUTURE_ELIGIBLE,
+      last_survey_at: '2026-04-01', // older (> FLOOR_MIN_GAP_DAYS from NOW=2026-04-17)
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [thresholdRepo, floorEligible]},
+        accessList: [accessFor(thresholdRepo), accessFor(floorEligible)],
+      }),
+    )
+    // Both repos dispatched (cap=12 default is high enough).
+    expect(result.dispatches).toHaveLength(2)
+    // 1 came from threshold, 1 from floor.
+    expect(result.summary.flooredDispatches).toBe(1)
+    // Both repos are present in the dispatch pool (order is append-order at engine level;
+    // final oldest-first sort is applied by prioritizeDispatches in the I/O shell).
+    expect(result.dispatches.map(d => d.repo)).toContain('threshold-repo')
+    expect(result.dispatches.map(d => d.repo)).toContain('floor-repo')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// formatFloorTelemetry — unit tests for the floor log message helper (Finding #2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('formatFloorTelemetry', () => {
+  // Test A: message emitted with correct counts when floor fires.
+  it('returns the expected message string for given counts', () => {
+    expect(formatFloorTelemetry(2, 0)).toBe('floor fired: dispatched 2 of FLOOR_MIN=2 (threshold yielded 0)')
+  })
+
+  // Test B: message contains no per-repo identifiers (security invariant).
+  it('contains no owner/repo shape or node_id prefix in the message', () => {
+    const msg = formatFloorTelemetry(1, 3)
+    // No slash-separated owner/repo shape.
+    expect(msg).not.toMatch(/\//)
+    // No node_id-shaped token (R_ followed by a lowercase letter or digit, as in R_alpha, R_1).
+    // FLOOR_MIN contains "R_M" (uppercase M) which is not a node_id pattern.
+    expect(msg).not.toMatch(/R_[a-z\d]/)
+    // Matches the strict counts-only pattern.
+    expect(msg).toMatch(/^floor fired: dispatched \d+ of FLOOR_MIN=\d+ \(threshold yielded \d+\)$/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// handleReconcile — floor integration tests (Findings #1, #2, #3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Dates relative to NOW = 2026-04-17T12:00:00Z
+const FLOOR_FUTURE_ELIGIBLE = '2026-06-15' // threshold never fires for these repos
+const FLOOR_PAST_30D = '2026-03-18' // 30 days ago — well past the 7-day floor gap
+
+/** Build a minimal tracked-repo row for the repos.yaml fixture. */
+function floorRepo(
+  name: string,
+  nodeId: string,
+  overrides: {last_survey_at?: string | null; next_survey_eligible_at?: string | null} = {},
+): RepoEntry {
+  return {
+    owner: 'fro-bot',
+    name,
+    added: '2026-01-01',
+    onboarding_status: 'onboarded',
+    last_survey_at: 'last_survey_at' in overrides ? (overrides.last_survey_at ?? null) : FLOOR_PAST_30D,
+    last_survey_status: 'success',
+    has_fro_bot_workflow: false,
+    has_renovate: false,
+    discovery_channel: 'collab',
+    private: false,
+    node_id: nodeId,
+    next_survey_eligible_at: overrides.next_survey_eligible_at ?? FLOOR_FUTURE_ELIGIBLE,
+  }
+}
+
+/** Build an access-list API entry for a floor repo. */
+function floorAccess(name: string, nodeId: string) {
+  return {owner: {login: 'fro-bot'}, name, archived: false, private: false, node_id: nodeId}
+}
+
+describe('handleReconcile floor integration', () => {
+  // Finding #1 — cap+floor interaction at the I/O shell level.
+  //
+  // Scenario: 0 threshold-eligible repos + 5 floor-eligible repos + cap=1.
+  // FLOOR_MIN=2, so floor fires (0 < 2) and adds 2 candidates (slotsNeeded=2).
+  // Cap=1 cuts the combined pool from 2 → 1 dispatched.
+  // Expected: 1 dispatched (oldest floor candidate), flooredDispatches=2,
+  //           dispatchesDeferred=1 (the second floor candidate cut by cap).
+  it('cap+floor interaction: 0 threshold + 5 floor + cap=1 → 1 dispatched, 2 floored, 1 deferred', async () => {
+    // 5 floor-eligible repos: next_survey_eligible_at is in the future (threshold skips them),
+    // last_survey_at varies so we can assert the oldest wins after sort.
+    const floorRepos = [
+      floorRepo('floor-oldest', 'R_f1', {next_survey_eligible_at: FLOOR_FUTURE_ELIGIBLE, last_survey_at: '2026-01-01'}),
+      floorRepo('floor-second', 'R_f2', {next_survey_eligible_at: FLOOR_FUTURE_ELIGIBLE, last_survey_at: '2026-01-15'}),
+      floorRepo('floor-third', 'R_f3', {next_survey_eligible_at: FLOOR_FUTURE_ELIGIBLE, last_survey_at: '2026-02-01'}),
+      floorRepo('floor-fourth', 'R_f4', {next_survey_eligible_at: FLOOR_FUTURE_ELIGIBLE, last_survey_at: '2026-02-15'}),
+      floorRepo('floor-fifth', 'R_f5', {next_survey_eligible_at: FLOOR_FUTURE_ELIGIBLE, last_survey_at: '2026-03-01'}),
+    ]
+
+    const dispatchCalls: string[] = []
+    const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+      const typed = params as {inputs?: {node_id: string}}
+      dispatchCalls.push(typed.inputs?.node_id ?? '?')
+    })
+
+    const result = await handleReconcile(
+      baseParams({
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: floorRepos.map(r => floorAccess(r.name, r.node_id ?? '')),
+          }),
+        }),
+        appOctokit: mockOctokit({createWorkflowDispatch}),
+        readMetadata: makeReadMetadata({
+          allowlist: makeAllowlist(['fro-bot']),
+          repos: {version: 1, repos: floorRepos},
+        }),
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        // Cap=1: floor adds 2 (FLOOR_MIN=2), cap cuts to 1.
+        maxDispatchesPerRun: 1,
+      }),
+    )
+
+    // Floor fired and added FLOOR_MIN=2 candidates to the dispatch pool.
+    expect(result.summary.flooredDispatches).toBe(2)
+    // Cap=1 cuts the pool from 2 → 1 dispatched.
+    expect(result.dispatches).toBe(1)
+    // 1 floor candidate was deferred by the cap (2 in pool - 1 dispatched = 1).
+    expect(result.dispatchesDeferred).toBe(1)
+    // The surviving dispatch is the oldest floor candidate (floor sort is oldest-first).
+    expect(dispatchCalls).toEqual(['R_f1'])
+  })
+
+  // Finding #2 — logger.warn called with correct message when floor fires.
+  it('emits logger.warn with correct floor telemetry when floor fires', async () => {
+    // 2 floor-eligible repos, threshold yields 0.
+    const a = floorRepo('a-repo', 'R_a')
+    const b = floorRepo('b-repo', 'R_b')
+    const logger = silentLogger()
+
+    await handleReconcile(
+      baseParams({
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [floorAccess('a-repo', 'R_a'), floorAccess('b-repo', 'R_b')],
+          }),
+        }),
+        appOctokit: mockOctokit(),
+        readMetadata: makeReadMetadata({
+          allowlist: makeAllowlist(['fro-bot']),
+          repos: {version: 1, repos: [a, b]},
+        }),
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        logger,
+      }),
+    )
+
+    // logger.warn called exactly once.
+    expect(logger.warn).toHaveBeenCalledOnce()
+    // Message matches the expected format: 2 floored, threshold yielded 0.
+    expect(logger.warn).toHaveBeenCalledWith('floor fired: dispatched 2 of FLOOR_MIN=2 (threshold yielded 0)')
+  })
+
+  // Finding #2 — logger.warn NOT called when floor does not fire.
+  it('does not emit logger.warn when floor does not fire', async () => {
+    // 2 threshold-eligible repos → floor stays asleep.
+    const logger = silentLogger()
+
+    await handleReconcile(
+      baseParams({
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {owner: {login: 'fro-bot'}, name: 'r1', archived: false, private: false, node_id: 'R_r1'},
+              {owner: {login: 'fro-bot'}, name: 'r2', archived: false, private: false, node_id: 'R_r2'},
+            ],
+          }),
+        }),
+        appOctokit: mockOctokit(),
+        readMetadata: makeReadMetadata({allowlist: makeAllowlist(['fro-bot'])}),
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        logger,
+      }),
+    )
+
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  // Finding #2b — telemetry swallow: handleReconcile resolves successfully when logger.warn throws.
+  //
+  // The try/catch around logger.warn is best-effort; a throwing logger must not abort the run.
+  // This test verifies the catch scope is correct and that non-logger exceptions are not swallowed.
+  it('resolves successfully when logger.warn throws (telemetry swallow)', async () => {
+    const a = floorRepo('a-repo', 'R_a')
+    const b = floorRepo('b-repo', 'R_b')
+    const throwingLogger: ReconcileLogger = {
+      warn: () => {
+        throw new Error('logger down')
+      },
+      info: () => {},
+    }
+
+    // Should resolve without throwing even though logger.warn throws.
+    await expect(
+      handleReconcile(
+        baseParams({
+          userOctokit: mockOctokit({
+            listForAuthenticatedUser: async () => ({
+              data: [floorAccess('a-repo', 'R_a'), floorAccess('b-repo', 'R_b')],
+            }),
+          }),
+          appOctokit: mockOctokit(),
+          readMetadata: makeReadMetadata({
+            allowlist: makeAllowlist(['fro-bot']),
+            repos: {version: 1, repos: [a, b]},
+          }),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          logger: throwingLogger,
+        }),
+      ),
+    ).resolves.toBeDefined()
+  })
+
+  // Finding #3 — null-group rotation still works when floor contributes null-last_survey_at repos.
+  //
+  // Scenario: 2 never-surveyed repos, both floor-eligible (next_survey_eligible_at in future),
+  // cap=1. Floor fires (0 threshold < FLOOR_MIN=2), adds both repos (slotsNeeded=2).
+  // Across 2 simulated runs with day ordinals mod 2 = 0 and 1, both repos must get
+  // a turn at the head of the rotation — no single repo always wins.
+  it('null-group rotation cycles all 2 never-surveyed floor repos across 2 runs with cap=1', async () => {
+    const repos = [
+      floorRepo('alpha', 'R_alpha', {last_survey_at: null, next_survey_eligible_at: FLOOR_FUTURE_ELIGIBLE}),
+      floorRepo('beta', 'R_beta', {last_survey_at: null, next_survey_eligible_at: FLOOR_FUTURE_ELIGIBLE}),
+    ]
+
+    // Pick 2 `now` values whose day ordinals are 0 and 1 mod 2.
+    // Day ordinal = Math.floor(now.getTime() / 86_400_000).
+    // 2026-04-16T12:00:00Z → ordinal 20194 (mod 2 = 0)
+    // 2026-04-17T12:00:00Z → ordinal 20195 (mod 2 = 1)
+    const nows = [
+      new Date('2026-04-16T12:00:00Z'), // ordinal mod 2 = 0
+      new Date('2026-04-17T12:00:00Z'), // ordinal mod 2 = 1
+    ]
+
+    const firstDispatched: string[] = []
+
+    for (const now of nows) {
+      const dispatchCalls: string[] = []
+      const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+        const typed = params as {inputs?: {node_id: string}}
+        dispatchCalls.push(typed.inputs?.node_id ?? '?')
+      })
+
+      await handleReconcile(
+        baseParams({
+          now,
+          userOctokit: mockOctokit({
+            listForAuthenticatedUser: async () => ({
+              data: repos.map(r => floorAccess(r.name, r.node_id ?? '')),
+            }),
+          }),
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({
+            allowlist: makeAllowlist(['fro-bot']),
+            repos: {version: 1, repos},
+          }),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          // Cap=1: floor adds 2 (FLOOR_MIN=2), rotation picks 1 per run.
+          maxDispatchesPerRun: 1,
+        }),
+      )
+
+      // Record which repo was dispatched first (head of rotation).
+      firstDispatched.push(dispatchCalls[0] ?? '?')
+    }
+
+    // Both repos must appear as the first-dispatched across the 2 runs.
+    expect(new Set(firstDispatched).size).toBe(2)
   })
 })

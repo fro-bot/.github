@@ -13,6 +13,7 @@ const wikiIngestModulePromise: Promise<{
 const {buildWikiIngestChanges, commitWikiChanges, parsePorcelainPaths, WikiIngestError} = await wikiIngestModulePromise
 
 interface MockOverrides {
+  getBranch?: (params: {owner: string; repo: string; branch: string}) => Promise<unknown>
   getRef?: (params: {owner: string; repo: string; ref: string}) => Promise<unknown>
   getCommit?: (params: {owner: string; repo: string; commit_sha: string}) => Promise<unknown>
   createBlob?: (params: {owner: string; repo: string; content: string; encoding: 'utf-8'}) => Promise<unknown>
@@ -35,6 +36,11 @@ interface MockOverrides {
 function createOctokitMock(overrides?: MockOverrides): OctokitClient {
   return {
     rest: {
+      repos: {
+        getBranch:
+          overrides?.getBranch ??
+          (async ({branch}: {branch: string}) => ({data: {name: branch, commit: {sha: `${branch}-sha`}}})),
+      },
       git: {
         getRef: overrides?.getRef ?? (async () => ({data: {object: {sha: 'head-sha'}}})),
         getCommit:
@@ -502,6 +508,191 @@ describe('commitWikiChanges', () => {
     expect(createTree).toHaveBeenCalledTimes(2)
     expect(createCommit).toHaveBeenCalledTimes(2)
     expect(updateRef).toHaveBeenCalledTimes(2)
+  })
+
+  it('bootstraps the data branch before reading the wiki head ref', async () => {
+    const calls: string[] = []
+    const bootstrapDataBranch = vi.fn(async () => {
+      calls.push('bootstrap')
+      return {created: false, ref: 'refs/heads/data', sha: 'data-sha'}
+    })
+    const octokit = createOctokitMock({
+      getRef: async () => {
+        calls.push('getRef')
+        return {data: {object: {sha: 'head-sha'}}}
+      },
+    })
+
+    await commitWikiChanges({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'data',
+      message: 'feat(knowledge): ingest survey for fro-bot/agent',
+      files: {'knowledge/index.md': '# Wiki Index\n'},
+      bootstrapDataBranch,
+    })
+
+    expect(bootstrapDataBranch).toHaveBeenCalledWith({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      dataBranch: 'data',
+    })
+    expect(calls.slice(0, 2)).toEqual(['bootstrap', 'getRef'])
+  })
+
+  it('does not bootstrap when writing to a non-data branch', async () => {
+    const bootstrapDataBranch = vi.fn(async () => {
+      throw new Error('bootstrap should not run')
+    })
+
+    const result = await commitWikiChanges({
+      octokit: createOctokitMock(),
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'test-branch',
+      message: 'feat(knowledge): write to test branch',
+      files: {'knowledge/index.md': '# Wiki Index\n'},
+      bootstrapDataBranch,
+    })
+
+    expect(result.committed).toBe(true)
+    expect(bootstrapDataBranch).not.toHaveBeenCalled()
+  })
+
+  it('rejects main before creating wiki git objects', async () => {
+    const createBlob = vi.fn<NonNullable<MockOverrides['createBlob']>>()
+    const createTree = vi.fn<NonNullable<MockOverrides['createTree']>>()
+    const createCommit = vi.fn<NonNullable<MockOverrides['createCommit']>>()
+    const updateRef = vi.fn<NonNullable<MockOverrides['updateRef']>>()
+
+    const error = await commitWikiChanges({
+      octokit: createOctokitMock({createBlob, createTree, createCommit, updateRef}),
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'main',
+      message: 'feat(knowledge): reject protected target',
+      files: {'knowledge/index.md': '# Wiki Index\n'},
+    }).catch((error: unknown) => error)
+
+    expect(error).toBeInstanceOf(WikiIngestError)
+    expect((error as InstanceType<typeof WikiIngestError>).code).toBe('PROTECTED_BRANCH')
+    expect(createBlob).not.toHaveBeenCalled()
+    expect(createTree).not.toHaveBeenCalled()
+    expect(createCommit).not.toHaveBeenCalled()
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
+  it('rejects a protected wiki target before creating git objects', async () => {
+    const createBlob = vi.fn<NonNullable<MockOverrides['createBlob']>>()
+    const createTree = vi.fn<NonNullable<MockOverrides['createTree']>>()
+    const createCommit = vi.fn<NonNullable<MockOverrides['createCommit']>>()
+    const updateRef = vi.fn<NonNullable<MockOverrides['updateRef']>>()
+
+    const error = await commitWikiChanges({
+      octokit: createOctokitMock({
+        getBranch: async () => ({data: {name: 'protected-data', protected: true, protection: {enabled: false}}}),
+        createBlob,
+        createTree,
+        createCommit,
+        updateRef,
+      }),
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'protected-data',
+      message: 'feat(knowledge): reject protected target',
+      files: {'knowledge/index.md': '# Wiki Index\n'},
+    }).catch((error: unknown) => error)
+
+    expect(error).toBeInstanceOf(WikiIngestError)
+    expect((error as InstanceType<typeof WikiIngestError>).code).toBe('PROTECTED_BRANCH')
+    expect(createBlob).not.toHaveBeenCalled()
+    expect(createTree).not.toHaveBeenCalled()
+    expect(createCommit).not.toHaveBeenCalled()
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
+  it('rejects a wiki target with enabled branch protection before creating git objects', async () => {
+    const createBlob = vi.fn<NonNullable<MockOverrides['createBlob']>>()
+    const createTree = vi.fn<NonNullable<MockOverrides['createTree']>>()
+    const createCommit = vi.fn<NonNullable<MockOverrides['createCommit']>>()
+    const updateRef = vi.fn<NonNullable<MockOverrides['updateRef']>>()
+
+    const error = await commitWikiChanges({
+      octokit: createOctokitMock({
+        getBranch: async () => ({data: {name: 'protected-data', protected: false, protection: {enabled: true}}}),
+        createBlob,
+        createTree,
+        createCommit,
+        updateRef,
+      }),
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'protected-data',
+      message: 'feat(knowledge): reject protected target',
+      files: {'knowledge/index.md': '# Wiki Index\n'},
+    }).catch((error: unknown) => error)
+
+    expect(error).toBeInstanceOf(WikiIngestError)
+    expect((error as InstanceType<typeof WikiIngestError>).code).toBe('PROTECTED_BRANCH')
+    expect(createBlob).not.toHaveBeenCalled()
+    expect(createTree).not.toHaveBeenCalled()
+    expect(createCommit).not.toHaveBeenCalled()
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
+  it('stops before wiki ref reads and writes when bootstrap fails', async () => {
+    const bootstrapDataBranch = vi.fn(async () => {
+      throw new Error('bootstrap failed')
+    })
+    const getRef = vi.fn<NonNullable<MockOverrides['getRef']>>()
+    const createBlob = vi.fn<NonNullable<MockOverrides['createBlob']>>()
+    const updateRef = vi.fn<NonNullable<MockOverrides['updateRef']>>()
+
+    await expect(
+      commitWikiChanges({
+        octokit: createOctokitMock({getRef, createBlob, updateRef}),
+        owner: 'fro-bot',
+        repo: '.github',
+        branch: 'data',
+        message: 'feat(knowledge): stop on bootstrap failure',
+        files: {'knowledge/index.md': '# Wiki Index\n'},
+        bootstrapDataBranch,
+      }),
+    ).rejects.toThrow('bootstrap failed')
+
+    expect(getRef).not.toHaveBeenCalled()
+    expect(createBlob).not.toHaveBeenCalled()
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
+  it('rebootstraps and retries when data disappears before reading the wiki head ref', async () => {
+    const calls: string[] = []
+    const bootstrapDataBranch = vi.fn(async () => {
+      calls.push('bootstrap')
+      return {created: false, ref: 'refs/heads/data', sha: 'data-sha'}
+    })
+    const getRef = vi
+      .fn<NonNullable<MockOverrides['getRef']>>()
+      .mockRejectedValueOnce(Object.assign(new Error('Not Found'), {status: 404}))
+      .mockResolvedValue({data: {object: {sha: 'head-sha'}}})
+
+    const result = await commitWikiChanges({
+      octokit: createOctokitMock({getRef}),
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'data',
+      message: 'feat(knowledge): retry after missing data branch',
+      files: {'knowledge/index.md': '# Wiki Index\n'},
+      maxRetries: 2,
+      bootstrapDataBranch,
+    })
+
+    expect(result.committed).toBe(true)
+    expect(result.attempts).toBe(2)
+    expect(bootstrapDataBranch).toHaveBeenCalledTimes(2)
+    expect(calls).toEqual(['bootstrap', 'bootstrap'])
   })
 
   it('backs off exponentially before retrying a 409 ref conflict', async () => {

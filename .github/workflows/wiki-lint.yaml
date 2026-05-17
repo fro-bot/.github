@@ -34,6 +34,7 @@ jobs:
           if git ls-remote --exit-code origin data >/dev/null 2>&1; then
             git fetch --depth=1 origin data
             git restore --source FETCH_HEAD --worktree -- knowledge
+            echo "data_sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
           else
             printf '%s\n' 'cannot lint wiki snapshot: origin/data is unavailable' >&2
             exit 1
@@ -43,12 +44,15 @@ jobs:
         if: steps.restore-wiki.outcome == 'success'
         env:
           WIKI_LINT_REPORT_PATH: wiki-lint-report.md
+          WIKI_LINT_JSON_PATH: wiki-lint-report.json
+          WIKI_LINT_SNAPSHOT_SHA: ${{ steps.restore-wiki.outputs.data_sha }}
         run: node scripts/wiki-lint.ts
 
       - name: Report restore failure
         if: steps.restore-wiki.outcome == 'failure'
         env:
           WIKI_LINT_REPORT_PATH: wiki-lint-report.md
+          WIKI_LINT_JSON_PATH: wiki-lint-report.json
           WIKI_LINT_FAILURE_MESSAGE: 'cannot lint wiki snapshot: origin/data is unavailable'
         run: node scripts/wiki-lint.ts
 
@@ -57,5 +61,45 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wiki-lint-report
-          path: wiki-lint-report.md
+          path: |
+            wiki-lint-report.md
+            wiki-lint-report.json
           retention-days: 7
+
+  wiki-lint-issue-sync:
+    name: Sync wiki lint issues
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: wiki-lint
+    if: always()
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: Download wiki lint artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: wiki-lint-report
+
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          permission-issues: write
+          permission-contents: read
+
+      - name: Sync wiki lint issues
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          WIKI_LINT_JSON_PATH: wiki-lint-report.json
+        run: node scripts/wiki-lint-issues.ts

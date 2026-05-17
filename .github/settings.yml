@@ -23,3 +23,14 @@ branches:
           - Review Dependencies
           - Test
           - Test Scripts Load
+
+labels:
+  - name: wiki-lint
+    color: '#5319e7'
+    description: Applied to every wiki-lint issue
+  - name: wiki-lint-finding
+    color: '#fbca04'
+    description: Deterministic wiki lint finding
+  - name: wiki-lint-failure
+    color: '#b60205'
+    description: Wiki lint execution failure
