@@ -237,13 +237,19 @@ export interface ReconcileSummary {
    */
   skippedPrivate: number
   /**
-   * Number of dispatches added by the minimum-dispatch floor this run. The floor fires
-   * when threshold-driven dispatches fall below {@link FLOOR_MIN}, picking the oldest-
-   * surveyed tracked repos that pass the same fail-closed privacy gate the threshold
-   * uses. A non-zero value means the engine drove continuous wiki growth on a day the
-   * threshold model alone would have idled. Zero on quiet days when threshold met or
-   * exceeded the floor, and on droughts where every tracked repo is inside
-   * {@link FLOOR_MIN_GAP_DAYS}.
+   * Number of floor candidates added to the dispatch pool. May exceed the count that
+   * actually dispatched if the per-run cap cut some — operators interpreting this
+   * alongside `dispatches` should remember the engine produces this count before cap
+   * enforcement (which lives in the I/O shell).
+   *
+   * This is a global counter and does NOT split per-channel. The floor is a global
+   * property of the run, not a per-channel property; {@link byChannel} tracks activity
+   * by discovery channel but the floor's contribution is not attributed to any single
+   * channel. The design decision is captured in the implementation plan's "Deferred to
+   * Implementation" section.
+   *
+   * Zero on quiet days when the threshold met or exceeded {@link FLOOR_MIN}, and on
+   * droughts where every tracked repo is inside {@link FLOOR_MIN_GAP_DAYS}.
    */
   flooredDispatches: number
   /**
@@ -1258,8 +1264,11 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     const thresholdYield = plan.dispatches.length - plan.summary.flooredDispatches
     try {
       logger.warn(formatFloorTelemetry(plan.summary.flooredDispatches, thresholdYield))
-    } catch {
-      // Swallow logger failures — telemetry is non-critical observability.
+    } catch (error) {
+      // Telemetry is best-effort; substantive engine work has already completed by this
+      // point. A breadcrumb to stderr preserves visibility of programmer errors (e.g. a
+      // future refactor that makes `logger` undefined) without aborting the scheduled run.
+      console.error('reconcile: floor telemetry emission failed', error)
     }
   }
 
