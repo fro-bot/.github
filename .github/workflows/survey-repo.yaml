@@ -89,13 +89,17 @@ jobs:
             exit 1
           }
 
-          is_private=$(printf '%s' "$response" | jq -r '.data.node.isPrivate // "null"')
-          name_with_owner=$(printf '%s' "$response" | jq -r '.data.node.nameWithOwner // ""')
-
-          if [ -z "$name_with_owner" ] || [ "$is_private" = "null" ] || [ "$is_private" != "false" ]; then
+          name_with_owner=$(printf '%s' "$response" | jq -er '
+            .data.node
+            | select(type == "object")
+            | select(.isPrivate == false)
+            | select((.nameWithOwner | type) == "string")
+            | select(.nameWithOwner != "")
+            | .nameWithOwner
+          ') || {
             printf 'Aborting: %s is not definitively public\n' "$NODE_ID" >&2
             exit 1
-          fi
+          }
 
           resolved_owner="${name_with_owner%%/*}"
           resolved_repo="${name_with_owner#*/}"
@@ -203,9 +207,7 @@ jobs:
             exit 1
           }
 
-          is_private=$(printf '%s' "$response" | jq -r '.data.node.isPrivate // "null"')
-
-          if [ "$is_private" != "false" ]; then
+          if ! printf '%s' "$response" | jq -e '.data.node.isPrivate == false' >/dev/null; then
             printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
             exit 1
           fi
