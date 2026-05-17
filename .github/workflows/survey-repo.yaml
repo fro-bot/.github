@@ -171,7 +171,7 @@ jobs:
 
       - name: Detect wiki survey changes
         id: wiki-changes
-        if: always() && !cancelled()
+        if: ${{ !cancelled() }}
         run: |
           git diff --no-ext-diff -- knowledge/index.md knowledge/log.md knowledge/wiki > "$RUNNER_TEMP/wiki-current.diff"
           current_hash=$(shasum -a 256 "$RUNNER_TEMP/wiki-current.diff" | cut -d ' ' -f1)
@@ -188,7 +188,7 @@ jobs:
 
       - name: 🔒 Recheck visibility
         id: recheck
-        if: always() && !cancelled() && steps.survey-agent.conclusion != 'skipped'
+        if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' }}
         env:
           NODE_ID: ${{ inputs.node_id }}
           GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
@@ -243,7 +243,7 @@ jobs:
       # the agent made no changes) counts as success, not failure, because the agent
       # completed cleanly.
       - name: Record survey result
-        if: always() && !cancelled() && steps.survey-agent.conclusion != 'skipped' && steps.recheck.conclusion == 'success'
+        if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' && steps.recheck.conclusion == 'success' }}
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
           REPO_OWNER: ${{ steps.resolve.outputs.owner }}

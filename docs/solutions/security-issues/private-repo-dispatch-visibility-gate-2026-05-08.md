@@ -128,6 +128,7 @@ Review any future `workflow_dispatch` inputs as public artifacts. If an input wo
 ## Related Issues
 
 - PR: https://github.com/fro-bot/.github/pull/3265
+- Related (workflow-side counterpart): `docs/solutions/security-issues/survey-workflow-side-privacy-gate-2026-05-16.md` — operationalizes this doc's closing prevention rule by enforcing the same privacy invariant inside the Survey Repo workflow itself (opaque `node_id` input, GraphQL resolve+verify, recheck before persistence)
 - Related: `docs/solutions/best-practices/loose-then-tight-schema-migration-pattern-2026-05-05.md`
 - Related: `docs/solutions/runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md`
 - Related: `docs/solutions/integration-issues/wiki-lint-authoritative-data-snapshot-reporting-2026-05-02.md`
