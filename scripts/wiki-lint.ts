@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto'
 import {appendFile, readdir, readFile, writeFile} from 'node:fs/promises'
 import {join} from 'node:path'
 import process from 'node:process'
@@ -32,6 +33,59 @@ export interface WikiLintResult {
   readonly advisoryFindings: readonly WikiLintFinding[]
   readonly summary: string
   readonly report: string
+  readonly pages: readonly WikiLintPageInfo[]
+}
+
+export interface WikiLintPageInfo {
+  readonly path: string
+  readonly updated: string | null
+}
+
+export interface WikiLintJsonFinding {
+  readonly kind: WikiLintFindingKind
+  readonly severity: 'deterministic' | 'advisory'
+  readonly path: string
+  readonly target: string | null
+  readonly message: string
+  readonly fingerprint: string
+}
+
+export interface WikiLintFreshnessEntry {
+  readonly path: string
+  readonly updated: string | null
+  readonly days_stale: number | null
+  readonly stale_threshold_days: number
+}
+
+export interface WikiLintCounts {
+  readonly findings_total: number
+  readonly findings_deterministic: number
+  readonly findings_advisory: number
+  readonly pages_scanned: number
+  readonly pages_stale: number
+}
+
+export interface WikiLintJsonReport {
+  readonly schema_version: number
+  readonly fingerprint_version: number
+  readonly status: 'clean' | 'findings' | 'execution-failure'
+  readonly scan_complete: boolean
+  readonly snapshot_sha: string | null
+  readonly generated_at: string
+  readonly failure_class: 'snapshot-restore' | 'lint-execution' | null
+  readonly repair_eligible: boolean
+  readonly findings: readonly WikiLintJsonFinding[]
+  readonly freshness: readonly WikiLintFreshnessEntry[]
+  readonly counts: WikiLintCounts
+}
+
+export interface BuildWikiLintJsonReportParams {
+  readonly result: WikiLintResult
+  readonly status: 'clean' | 'findings' | 'execution-failure'
+  readonly scanComplete: boolean
+  readonly snapshotSha: string | null
+  readonly generatedAt: string
+  readonly failureClass: 'snapshot-restore' | 'lint-execution' | null
 }
 
 export interface LintWikiSnapshotParams {
@@ -42,6 +96,9 @@ export interface LintWikiSnapshotParams {
 export interface WriteWikiLintOutputsParams {
   readonly result: WikiLintResult
   readonly reportPath: string
+  readonly jsonPath?: string
+  readonly snapshotSha?: string | null
+  readonly generatedAt?: string
   readonly githubStepSummaryPath?: string
   readonly githubOutputPath?: string
 }
@@ -49,11 +106,14 @@ export interface WriteWikiLintOutputsParams {
 export interface WriteWikiLintOutputsResult {
   readonly status: 'clean' | 'findings'
   readonly reportPath: string
+  readonly jsonPath: string
 }
 
 export interface WriteWikiLintFailureOutputsParams {
   readonly message: string
   readonly reportPath: string
+  readonly jsonPath?: string
+  readonly failureClass?: 'snapshot-restore' | 'lint-execution'
   readonly githubStepSummaryPath?: string
   readonly githubOutputPath?: string
 }
@@ -61,11 +121,14 @@ export interface WriteWikiLintFailureOutputsParams {
 export interface WriteWikiLintFailureOutputsResult {
   readonly status: 'execution-failure'
   readonly reportPath: string
+  readonly jsonPath: string
 }
 
 export interface RunWikiLintParams {
   readonly rootDir?: string
   readonly reportPath: string
+  readonly jsonPath?: string
+  readonly snapshotSha?: string | null
   readonly githubStepSummaryPath?: string
   readonly githubOutputPath?: string
   readonly now?: Date
@@ -82,6 +145,80 @@ interface ParsedPage {
   readonly body: string
   readonly frontmatter: Record<string, unknown>
   readonly frontmatterError?: string
+}
+
+export function buildWikiLintJsonReport(params: BuildWikiLintJsonReportParams): WikiLintJsonReport {
+  const {result, status, scanComplete, snapshotSha, generatedAt, failureClass} = params
+
+  const deterministicFindings: WikiLintJsonFinding[] = result.deterministicFindings.map(f => ({
+    kind: f.kind,
+    severity: 'deterministic' as const,
+    path: f.path,
+    target: f.target ?? null,
+    message: f.message,
+    fingerprint: computeFingerprint(f.kind, f.path, f.target ?? null),
+  }))
+
+  const advisoryFindings: WikiLintJsonFinding[] = result.advisoryFindings.map(f => ({
+    kind: f.kind,
+    severity: 'advisory' as const,
+    path: f.path,
+    target: f.target ?? null,
+    message: f.message,
+    fingerprint: computeFingerprint(f.kind, f.path, f.target ?? null),
+  }))
+
+  const allFindings = [...deterministicFindings, ...advisoryFindings]
+
+  const freshnessNow = new Date(generatedAt)
+  const freshness: WikiLintFreshnessEntry[] = result.pages.map(page => {
+    const daysStale = computeDaysStale(page.updated, freshnessNow)
+    return {
+      path: page.path,
+      updated: page.updated,
+      days_stale: daysStale,
+      stale_threshold_days: STALE_DAYS,
+    }
+  })
+
+  const pagesStale = freshness.filter(f => f.days_stale !== null && f.days_stale >= STALE_DAYS).length
+
+  return {
+    schema_version: 1,
+    fingerprint_version: 1,
+    status,
+    scan_complete: scanComplete,
+    snapshot_sha: snapshotSha,
+    generated_at: generatedAt,
+    failure_class: failureClass,
+    repair_eligible: scanComplete && status === 'findings',
+    findings: allFindings,
+    freshness,
+    counts: {
+      findings_total: allFindings.length,
+      findings_deterministic: deterministicFindings.length,
+      findings_advisory: advisoryFindings.length,
+      pages_scanned: result.pages.length,
+      pages_stale: pagesStale,
+    },
+  }
+}
+
+function computeFingerprint(kind: string, path: string, target: string | null): string {
+  const input = `${kind}\u0000${path}\u0000${target ?? ''}`
+  return createHash('sha256').update(input).digest('hex').slice(0, 16)
+}
+
+function computeDaysStale(updated: string | null, now: Date): number | null {
+  if (updated === null || updated === '') {
+    return null
+  }
+  const updatedDate = new Date(`${updated}T00:00:00Z`)
+  if (Number.isNaN(updatedDate.getTime())) {
+    return null
+  }
+  const ageMs = now.getTime() - updatedDate.getTime()
+  return Math.floor(ageMs / (24 * 60 * 60 * 1000))
 }
 
 export function lintWikiSnapshot(params: LintWikiSnapshotParams): WikiLintResult {
@@ -194,12 +331,18 @@ export function lintWikiSnapshot(params: LintWikiSnapshotParams): WikiLintResult
 
   const report = reportSections.join('\n')
 
+  const pageInfos: WikiLintPageInfo[] = pages.map(page => ({
+    path: page.path,
+    updated: hasNonEmptyString(page.frontmatter.updated) ? String(page.frontmatter.updated) : null,
+  }))
+
   return {
     ok: deterministicFindings.length === 0,
     deterministicFindings,
     advisoryFindings,
     summary,
     report,
+    pages: pageInfos,
   }
 }
 
@@ -211,6 +354,20 @@ export async function writeWikiLintOutputs(params: WriteWikiLintOutputsParams): 
 
   await writeFile(params.reportPath, `${params.result.report}\n`, 'utf8')
 
+  const resolvedJsonPath = params.jsonPath ?? process.env.WIKI_LINT_JSON_PATH ?? 'wiki-lint-report.json'
+  const generatedAt = params.generatedAt ?? new Date().toISOString()
+  const snapshotSha = params.snapshotSha ?? null
+
+  const jsonReport = buildWikiLintJsonReport({
+    result: params.result,
+    status,
+    scanComplete: true,
+    snapshotSha,
+    generatedAt,
+    failureClass: null,
+  })
+  await writeFile(resolvedJsonPath, `${JSON.stringify(jsonReport, null, 2)}\n`, 'utf8')
+
   if (params.githubStepSummaryPath !== undefined && params.githubStepSummaryPath !== '') {
     await appendFile(params.githubStepSummaryPath, `${params.result.summary}\n`, 'utf8')
   }
@@ -220,7 +377,7 @@ export async function writeWikiLintOutputs(params: WriteWikiLintOutputsParams): 
     await appendFile(params.githubOutputPath, `${lines.join('\n')}\n`, 'utf8')
   }
 
-  return {status, reportPath: params.reportPath}
+  return {status, reportPath: params.reportPath, jsonPath: resolvedJsonPath}
 }
 
 export async function writeWikiLintFailureOutputs(
@@ -231,6 +388,28 @@ export async function writeWikiLintFailureOutputs(
 
   await writeFile(params.reportPath, `${report}\n`, 'utf8')
 
+  const resolvedJsonPath = params.jsonPath ?? process.env.WIKI_LINT_JSON_PATH ?? 'wiki-lint-report.json'
+  const failureClass = params.failureClass ?? 'lint-execution'
+
+  const emptyResult: WikiLintResult = {
+    ok: false,
+    deterministicFindings: [],
+    advisoryFindings: [],
+    summary: '',
+    report: '',
+    pages: [],
+  }
+
+  const jsonReport = buildWikiLintJsonReport({
+    result: emptyResult,
+    status: 'execution-failure',
+    scanComplete: false,
+    snapshotSha: null,
+    generatedAt: new Date().toISOString(),
+    failureClass,
+  })
+  await writeFile(resolvedJsonPath, `${JSON.stringify(jsonReport, null, 2)}\n`, 'utf8')
+
   if (params.githubStepSummaryPath !== undefined && params.githubStepSummaryPath !== '') {
     await appendFile(params.githubStepSummaryPath, `${summary}\n`, 'utf8')
   }
@@ -240,7 +419,7 @@ export async function writeWikiLintFailureOutputs(
     await appendFile(params.githubOutputPath, `${lines.join('\n')}\n`, 'utf8')
   }
 
-  return {status: 'execution-failure', reportPath: params.reportPath}
+  return {status: 'execution-failure', reportPath: params.reportPath, jsonPath: resolvedJsonPath}
 }
 
 export async function runWikiLint(params: RunWikiLintParams): Promise<RunWikiLintResult> {
@@ -250,6 +429,8 @@ export async function runWikiLint(params: RunWikiLintParams): Promise<RunWikiLin
   const outputs = await writeWikiLintOutputs({
     result,
     reportPath: params.reportPath,
+    jsonPath: params.jsonPath,
+    snapshotSha: params.snapshotSha,
     githubStepSummaryPath: params.githubStepSummaryPath,
     githubOutputPath: params.githubOutputPath,
   })
@@ -407,12 +588,16 @@ function isStale(updated: unknown, now: Date): boolean {
 
 async function main(): Promise<void> {
   const reportPath = process.env.WIKI_LINT_REPORT_PATH ?? 'wiki-lint-report.md'
+  const jsonPath = process.env.WIKI_LINT_JSON_PATH ?? 'wiki-lint-report.json'
   const failureMessage = process.env.WIKI_LINT_FAILURE_MESSAGE
+  const snapshotSha = process.env.WIKI_LINT_SNAPSHOT_SHA ?? null
 
   if (failureMessage !== undefined && failureMessage !== '') {
     await writeWikiLintFailureOutputs({
       message: failureMessage,
       reportPath,
+      jsonPath,
+      failureClass: 'snapshot-restore',
       githubStepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
       githubOutputPath: process.env.GITHUB_OUTPUT,
     })
@@ -423,6 +608,8 @@ async function main(): Promise<void> {
   try {
     const result = await runWikiLint({
       reportPath,
+      jsonPath,
+      snapshotSha,
       githubStepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
       githubOutputPath: process.env.GITHUB_OUTPUT,
     })
@@ -433,6 +620,8 @@ async function main(): Promise<void> {
     await writeWikiLintFailureOutputs({
       message,
       reportPath,
+      jsonPath,
+      failureClass: 'lint-execution',
       githubStepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
       githubOutputPath: process.env.GITHUB_OUTPUT,
     })
