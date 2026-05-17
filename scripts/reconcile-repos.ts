@@ -149,6 +149,14 @@ export interface ReconcileInput {
 export interface DispatchRequest {
   owner: string
   repo: string
+  /**
+   * GitHub GraphQL `node_id` of the target repository. Surfaced to `workflow_dispatch`
+   * inputs as the sole identifier — the Survey Repo workflow resolves it back to
+   * `owner/repo` via GraphQL after verifying `isPrivate === false`. Keeping `owner`
+   * and `repo` here for internal telemetry (logger info lines, prioritization) is
+   * fine; only the `inputs` payload is a public surface.
+   */
+  node_id: string
 }
 
 export interface PerRepoIssue {
@@ -357,7 +365,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       if (accessPrivate) {
         summary.skippedPrivate += 1
       } else {
-        dispatches.push({owner: access.owner, repo: access.name})
+        dispatches.push({owner: access.owner, repo: access.name, node_id: access.node_id})
       }
     } else {
       summary.pendingReview += 1
@@ -542,7 +550,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
       if (accessPrivate) {
         summary.skippedPrivate += 1
       } else {
-        dispatches.push({owner: access.owner, repo: access.name})
+        dispatches.push({owner: access.owner, repo: access.name, node_id: access.node_id})
       }
     } else {
       rawIssues.push({
@@ -588,7 +596,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   if (wouldDispatchIfPublic && (entry.private !== false || accessPrivate)) {
     summary.skippedPrivate += 1
   } else if (wouldDispatchIfPublic) {
-    dispatches.push({owner: access.owner, repo: access.name})
+    dispatches.push({owner: access.owner, repo: access.name, node_id: access.node_id})
   }
 
   // Field refresh: apply probe results when they disagree with tracked fields,
@@ -1994,7 +2002,12 @@ async function runDispatches(params: {
             repo: params.repo,
             workflow_id: params.workflowFile,
             ref: params.workflowRef,
-            inputs: {owner: dispatch.owner, repo: dispatch.repo},
+            // The only identifier exposed to the public workflow_dispatch surface is
+            // the GraphQL node_id. The Survey Repo workflow's first step resolves it
+            // back to owner/repo via App-token GraphQL and aborts unless the repo is
+            // definitively public. owner/repo are kept on DispatchRequest for internal
+            // telemetry (logger, prioritization) but never reach the Actions API.
+            inputs: {node_id: dispatch.node_id},
           }),
         params.timeoutMs,
       )

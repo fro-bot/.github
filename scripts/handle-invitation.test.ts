@@ -110,6 +110,7 @@ describe('handleInvitations', () => {
           },
         ],
       }),
+      getRepo: async () => ({data: {node_id: 'R_kgDOPUBLIC', private: false}}),
       acceptInvitationForAuthenticatedUser: acceptInvitation,
       starRepoForAuthenticatedUser,
       createWorkflowDispatch,
@@ -145,7 +146,7 @@ describe('handleInvitations', () => {
       repo: '.github',
       workflow_id: 'survey.yaml',
       ref: 'main',
-      inputs: {owner: 'fro-bot', repo: 'hello-world'},
+      inputs: {node_id: 'R_kgDOPUBLIC'},
     })
     expect(commitMetadata).toHaveBeenCalledOnce()
 
@@ -233,6 +234,58 @@ describe('handleInvitations', () => {
     }
     expect(JSON.stringify(result)).not.toContain('private-owner')
     expect(JSON.stringify(result)).not.toContain('flipped-repo')
+  })
+
+  it('uses the refreshed node_id from repos.get when accepting a still-public invitation', async () => {
+    // #given an invitation that carries node_id A, but repos.get returns node_id B
+    // (e.g. the repo was deleted and recreated between invitation send and acceptance)
+    // #then the dispatch and metadata use node_id B (authoritative post-acceptance value)
+    const acceptInvitation = vi.fn(async () => undefined)
+    const starRepoForAuthenticatedUser = vi.fn(async () => undefined)
+    const createWorkflowDispatch = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 121,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'recreated-repo',
+              node_id: 'R_kgDO_STALE_A',
+              private: false,
+              owner: {login: 'fro-bot'},
+            },
+          },
+        ],
+      }),
+      getRepo: async () => ({data: {node_id: 'R_kgDO_FRESH_B', private: false}}),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+      starRepoForAuthenticatedUser,
+      createWorkflowDispatch,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed[0]?.status).toBe('accepted')
+    // Dispatch and metadata must use the FRESH node_id, not the stale one from the invitation
+    expect(createWorkflowDispatch).toHaveBeenCalledWith(expect.objectContaining({inputs: {node_id: 'R_kgDO_FRESH_B'}}))
+    const mutator = commitMetadata.mock.calls[0]?.[0].mutator
+    if (typeof mutator === 'function') {
+      const newReposFile = mutator({version: 1, repos: []})
+      assertReposFile(newReposFile)
+      expect(newReposFile.repos[0]).toMatchObject({node_id: 'R_kgDO_FRESH_B'})
+    }
   })
 
   it('fails public invitations that are missing node_id before accepting them', async () => {

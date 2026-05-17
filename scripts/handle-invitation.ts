@@ -248,7 +248,7 @@ async function processInvitation(params: {
         repo: params.repo,
         workflow_id: params.workflowFile,
         ref: params.workflowRef,
-        inputs: {owner: repoOwner, repo: repoName},
+        inputs: {node_id: acceptedPrivacy.nodeId},
       })
     }
 
@@ -297,7 +297,7 @@ async function acceptedInvitationRepositoryPrivacy(
         : invitationPrivacy.nodeId
 
     if (privateFlag === false) {
-      return {kind: 'public', nodeId: invitationPrivacy.nodeId}
+      return {kind: 'public', nodeId}
     }
 
     return {kind: 'private', nodeId}
