@@ -39,6 +39,8 @@ version: 1
 repos:
   - owner: string
     name: string
+    node_id: string
+    private: boolean
     added: ISO date
     onboarding_status: pending | onboarded | failed | lost-access | pending-review
     last_survey_at: ISO datetime | null
@@ -48,6 +50,11 @@ repos:
     discovery_channel: collab | owned | contrib
     next_survey_eligible_at: ISO date | null
 ```
+
+Field notes:
+
+- `node_id` — GitHub GraphQL node ID for the repository. Used as the manual dispatch identifier: `gh workflow run survey-repo.yaml -f node_id=<node_id>`. Also used as the privacy-safe identifier in `pending-review` issue bodies for private repos.
+- `private` — whether the repository is private. Entries with `private: true` have `owner` and `name` redacted to `[REDACTED]` in public-facing contexts; the `node_id` is used as the subject identifier instead.
 
 Update convention: invitation handler, metadata workflow, and daily reconcile update this file programmatically on the `data` branch.
 

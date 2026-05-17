@@ -210,7 +210,7 @@ Fro Bot control plane:
 | **Fro Bot Autoheal** | Scheduled self-repair pass | Daily 03:30 UTC, dispatch |
 | **Poll Invitations** | Accept allowlisted collaboration invitations | Every 15 minutes, dispatch |
 | **Reconcile Repos** | Reconcile collaborator access against `metadata/repos.yaml`; dispatch surveys for stale repos | Daily 05:17 UTC, dispatch |
-| **Survey Repo** | Ingest a repository into the knowledge wiki | Dispatch (by Reconcile Repos) |
+| **Survey Repo** | Ingest a repository into the knowledge wiki; dispatched by Reconcile Repos or manually via `gh workflow run survey-repo.yaml -f node_id=<node_id>` | Dispatch (by Reconcile Repos) |
 | **Merge Data Branch** | Promote autonomous `data`-branch commits to `main` | Sunday 22:00 UTC, dispatch |
 | **Update Metadata** | Refresh `metadata/renovate.yaml` from the fro-bot org scan | Daily 04:30 UTC, dispatch |
 | **Dispatch Renovate** | Dispatch Renovate runs across repos tracked in `metadata/renovate.yaml` | Every 4 hours at `:30`, dispatch |
@@ -246,6 +246,18 @@ Runtime state lives in version-controlled YAML under [`metadata/`](metadata/) (a
 ### Knowledge Wiki
 
 Fro Bot maintains a [Karpathy-style LLM wiki](knowledge/) (`schema.md`, `index.md`, `log.md`, plus `wiki/{repos,topics,entities,comparisons}/`) that compounds cross-repo knowledge. The **Survey Repo** workflow ingests repositories into the wiki; **Reconcile Repos** schedules those surveys; **Wiki Lint** validates the authoritative snapshot restored from `origin/data` before reporting findings.
+
+To manually re-survey a repo, pass its GitHub GraphQL `node_id` as the dispatch input:
+
+```bash
+# Look up the node_id
+gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){id}}' --jq '.data.repository.id'
+
+# Dispatch the survey
+gh workflow run survey-repo.yaml -f node_id=<node_id>
+```
+
+The `node_id` for each tracked repo is stored in `metadata/repos.yaml` on the `data` branch.
 
 ## Development
 

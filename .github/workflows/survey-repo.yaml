@@ -1,15 +1,23 @@
 ---
 name: Survey Repo
 
+run-name: Survey Repo
+
+# Manual dispatch contract:
+#   Use:    gh workflow run survey-repo.yaml -f node_id=<repository GraphQL node_id>
+#   Was:    gh workflow run survey-repo.yaml -f owner=<owner> -f repo=<repo>  # removed
+#
+# Look up node_id with:
+#   gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){id}}' --jq '.data.repository.id'
+#
+# Job outputs (consumed by the broadcast job below):
+#   owner — repository owner, only set after the resolve step verifies isPrivate === false
+#   repo  — repository name, same guarantee
 on:
   workflow_dispatch:
     inputs:
-      owner:
-        description: Repository owner to survey
-        required: true
-        type: string
-      repo:
-        description: Repository name to survey
+      node_id:
+        description: GitHub repository node_id; resolves to owner/repo internally after privacy verification
         required: true
         type: string
 
@@ -17,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: survey-repo-${{ github.event.inputs.owner }}-${{ github.event.inputs.repo }}
+  group: survey-repo-${{ inputs.node_id }}
   cancel-in-progress: false
 
 env:
@@ -47,6 +55,10 @@ jobs:
   survey-repo:
     name: Survey Repo
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      owner: ${{ steps.resolve.outputs.owner }}
+      repo: ${{ steps.resolve.outputs.repo }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -55,6 +67,44 @@ jobs:
 
       - name: 📦 Setup
         uses: ./.github/actions/setup
+
+      - name: 🔒 Resolve and verify
+        id: resolve
+        env:
+          NODE_ID: ${{ inputs.node_id }}
+          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+        run: |
+          if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
+            printf 'Aborting: dispatch input shape invalid\n' >&2
+            exit 1
+          fi
+
+          # shellcheck disable=SC2016
+          gql_query='query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner isPrivate } } }'
+          response=$(gh api graphql \
+            -F id="$NODE_ID" \
+            -f query="$gql_query" \
+            2>/dev/null) || {
+            printf 'GraphQL lookup failed for node_id: %s\n' "$NODE_ID" >&2
+            exit 1
+          }
+
+          is_private=$(printf '%s' "$response" | jq -r '.data.node.isPrivate // "null"')
+          name_with_owner=$(printf '%s' "$response" | jq -r '.data.node.nameWithOwner // ""')
+
+          if [ -z "$name_with_owner" ] || [ "$is_private" = "null" ] || [ "$is_private" != "false" ]; then
+            printf 'Aborting: %s is not definitively public\n' "$NODE_ID" >&2
+            exit 1
+          fi
+
+          resolved_owner="${name_with_owner%%/*}"
+          resolved_repo="${name_with_owner#*/}"
+
+          {
+            printf 'owner=%s\n' "$resolved_owner"
+            printf 'repo=%s\n' "$resolved_repo"
+            printf 'node_id=%s\n' "$NODE_ID"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Sync wiki from data branch
         run: |
@@ -82,8 +132,8 @@ jobs:
       - name: Resolve ingest prompt
         id: ingest-prompt
         env:
-          TARGET_OWNER: ${{ github.event.inputs.owner }}
-          TARGET_REPO: ${{ github.event.inputs.repo }}
+          TARGET_OWNER: ${{ steps.resolve.outputs.owner }}
+          TARGET_REPO: ${{ steps.resolve.outputs.repo }}
           PROMPT_TEMPLATE: ${{ env.INGEST_PROMPT }}
         run: |
           delimiter="EOF_$(openssl rand -hex 8)"
@@ -136,9 +186,35 @@ jobs:
         id: ts
         run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
+      - name: 🔒 Recheck visibility
+        id: recheck
+        if: always() && !cancelled() && steps.survey-agent.conclusion != 'skipped'
+        env:
+          NODE_ID: ${{ inputs.node_id }}
+          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+        run: |
+          # shellcheck disable=SC2016
+          gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
+          response=$(gh api graphql \
+            -F id="$NODE_ID" \
+            -f query="$gql_query" \
+            2>/dev/null) || {
+            printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
+            exit 1
+          }
+
+          is_private=$(printf '%s' "$response" | jq -r '.data.node.isPrivate // "null"')
+
+          if [ "$is_private" != "false" ]; then
+            printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
+            exit 1
+          fi
+
+          echo "private=false" >> "$GITHUB_OUTPUT"
+
       - name: Commit wiki ingest to data branch
         id: wiki-commit
-        if: steps.wiki-changes.outputs.changed == 'true'
+        if: steps.wiki-changes.outputs.changed == 'true' && steps.recheck.conclusion == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
           WIKI_OPERATION: survey
@@ -167,11 +243,13 @@ jobs:
       # the agent made no changes) counts as success, not failure, because the agent
       # completed cleanly.
       - name: Record survey result
-        if: always() && !cancelled() && steps.survey-agent.conclusion != 'skipped'
+        if: always() && !cancelled() && steps.survey-agent.conclusion != 'skipped' && steps.recheck.conclusion == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
-          REPO_OWNER: ${{ github.event.inputs.owner }}
-          REPO_NAME: ${{ github.event.inputs.repo }}
+          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
+          REPO_NAME: ${{ steps.resolve.outputs.repo }}
+          REPO_NODE_ID: ${{ inputs.node_id }}
+          REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
           SURVEY_STATUS:
             ${{ (steps.survey-agent.conclusion == 'success' && (steps.wiki-commit.conclusion == 'success' ||
             steps.wiki-commit.conclusion == 'skipped')) && 'success' || 'failure' }}
@@ -185,18 +263,18 @@ jobs:
     with:
       event_type: repo_survey_complete
       discord_message: >-
-        Just finished surveying **${{ github.event.inputs.owner }}/${{ github.event.inputs.repo }}**.
+        Just finished surveying **${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }}**.
         New knowledge ingested into the wiki ✨
       discord_title: Repo Survey Complete
       bluesky_text: >-
-        📡 Just surveyed ${{ github.event.inputs.owner }}/${{ github.event.inputs.repo }} and locked in new insights.
+        📡 Just surveyed ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }} and locked in new insights.
         The wiki grows. #GitHub #OpenSource
       journal_text: >-
-        Surveyed ${{ github.event.inputs.owner }}/${{ github.event.inputs.repo }} and persisted what I learned.
+        Surveyed ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }} and persisted what I learned.
         Each repo leaves a mark on the map.
       journal_metadata: >-
-        {"owner":"${{ github.event.inputs.owner }}","repo":"${{ github.event.inputs.repo }}"}
-      repo: ${{ github.event.inputs.owner }}/${{ github.event.inputs.repo }}
+        {"owner":"${{ needs.survey-repo.outputs.owner }}","repo":"${{ needs.survey-repo.outputs.repo }}"}
+      repo: ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }}
     secrets:
       FRO_BOT_PAT: ${{ secrets.FRO_BOT_PAT }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

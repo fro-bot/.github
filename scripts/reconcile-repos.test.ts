@@ -109,7 +109,7 @@ describe('reconcileRepos', () => {
         name: 'new-repo',
         onboarding_status: 'pending',
       })
-      expect(result.dispatches).toEqual([{owner: 'marcusrbrown', repo: 'new-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'marcusrbrown', repo: 'new-repo', node_id: 'R_new'}])
       expect(result.issues).toEqual([])
       expect(result.summary).toEqual({
         added: 1,
@@ -370,7 +370,7 @@ describe('reconcileRepos', () => {
         }),
       )
 
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'back-again'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'back-again', node_id: 'R_public_again'}])
       expect(result.summary.regained).toBe(1)
       expect(result.summary.skippedPrivate).toBe(0)
     })
@@ -442,7 +442,7 @@ describe('reconcileRepos', () => {
         }),
       )
 
-      expect(result.dispatches).toEqual([{owner: 'trusted', repo: 'ok-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'trusted', repo: 'ok-repo', node_id: 'R_ok'}])
       expect(result.issues).toHaveLength(1)
       expect(result.issues[0]?.kind).toBe('per-owner-rollup')
       expect(result.issues.filter(i => i.kind === 'per-repo')).toEqual([])
@@ -542,7 +542,7 @@ describe('reconcileRepos', () => {
       // THEN the genuinely-new newcomer is added normally (the tracked entry's
       // own first-survey dispatch is incidental and not what this test cares about)
       expect(result.nextRepos.repos).toHaveLength(2)
-      expect(result.dispatches).toContainEqual({owner: 'marcusrbrown', repo: 'genuinely-new'})
+      expect(result.dispatches).toContainEqual({owner: 'marcusrbrown', repo: 'genuinely-new', node_id: 'R_new'})
       expect(result.summary.added).toBe(1)
     })
   })
@@ -742,7 +742,7 @@ describe('reconcileRepos', () => {
         private: false,
         node_id: 'R_default',
       })
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'returned-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'returned-repo', node_id: 'R_default'}])
       expect(result.issues).toEqual([])
       expect(result.summary.regained).toBe(1)
     })
@@ -1207,7 +1207,7 @@ describe('reconcileRepos', () => {
       expect(byName.get('drift-repo')?.onboarding_status).toBe('onboarded')
       expect(byName.get('gone-repo')?.onboarding_status).toBe('lost-access')
       expect(byName.get('fresh-repo')?.onboarding_status).toBe('pending')
-      expect(result.dispatches).toEqual([{owner: 'trusted', repo: 'fresh-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'trusted', repo: 'fresh-repo', node_id: 'R_fresh'}])
       expect(result.issues).toEqual([])
       expect(result.summary).toEqual({
         added: 1,
@@ -1381,7 +1381,7 @@ describe('reconcileRepos', () => {
         }),
       )
       // #then the entry is dispatched for its initial survey
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'never-surveyed'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'never-surveyed', node_id: 'R_default'}])
     })
 
     it('dispatches pending entry with failure status (failed initial survey)', () => {
@@ -1401,7 +1401,7 @@ describe('reconcileRepos', () => {
         }),
       )
       // #then the entry is dispatched for retry (failure ≠ success, so eligible)
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'failed-initial'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'failed-initial', node_id: 'R_default'}])
     })
 
     it('does not dispatch pending-review entry (requires human approval)', () => {
@@ -1466,7 +1466,7 @@ describe('reconcileRepos', () => {
         }),
       )
       // #then the entry is dispatched (eligibility passed)
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'overdue-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'overdue-repo', node_id: 'R_default'}])
     })
 
     it('skips an eligible private tracked entry before the survey eligibility gate', () => {
@@ -1599,7 +1599,7 @@ describe('reconcileRepos', () => {
         onboarding_status: 'pending',
         discovery_channel: 'owned',
       })
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'agent'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'agent', node_id: 'R_agent'}])
       expect(result.issues).toEqual([])
       expect(result.summary.added).toBe(1)
       expect(result.summary.pendingReview).toBe(0)
@@ -1616,7 +1616,7 @@ describe('reconcileRepos', () => {
 
       // #then dispatched with discovery_channel: contrib; no pending-review issue
       expect(result.nextRepos.repos[0]?.discovery_channel).toBe('contrib')
-      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: '.github'}])
+      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: '.github', node_id: 'R_bfra_gh'}])
       expect(result.issues).toEqual([])
       expect(result.summary.added).toBe(1)
       expect(result.summary.pendingReview).toBe(0)
@@ -1633,7 +1633,7 @@ describe('reconcileRepos', () => {
       )
 
       expect(result.nextRepos.repos[0]?.discovery_channel).toBe('collab')
-      expect(result.dispatches).toEqual([{owner: 'marcusrbrown', repo: 'new-repo'}])
+      expect(result.dispatches).toEqual([{owner: 'marcusrbrown', repo: 'new-repo', node_id: 'R_default'}])
     })
 
     it('skips pending-review for owned newcomers from a non-allowlisted owner', () => {
@@ -1666,7 +1666,7 @@ describe('reconcileRepos', () => {
 
       expect(result.summary.added).toBe(1)
       expect(result.summary.pendingReview).toBe(0)
-      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: 'renovate-action'}])
+      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: 'renovate-action', node_id: 'R_bfra_ren'}])
       expect(result.issues).toEqual([])
     })
 
@@ -1738,7 +1738,7 @@ describe('reconcileRepos', () => {
       // #then regained as pending; dispatched directly (contrib is trusted, no issue)
       expect(result.nextRepos.repos[0]?.onboarding_status).toBe('pending')
       expect(result.summary.regained).toBe(1)
-      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: '.github'}])
+      expect(result.dispatches).toEqual([{owner: 'bfra-me', repo: '.github', node_id: 'R_bfra_gh'}])
       expect(result.issues).toEqual([])
     })
 
@@ -1762,7 +1762,7 @@ describe('reconcileRepos', () => {
 
       expect(result.nextRepos.repos[0]?.onboarding_status).toBe('pending')
       expect(result.summary.regained).toBe(1)
-      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'systematic'}])
+      expect(result.dispatches).toEqual([{owner: 'fro-bot', repo: 'systematic', node_id: 'R_sys'}])
       expect(result.issues).toEqual([])
     })
 
@@ -2497,8 +2497,8 @@ describe('handleReconcile (I/O shell)', () => {
       const dispatchCalls: string[] = []
       const sleepCalls: number[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-        const typed = params as {inputs?: {owner: string; repo: string}}
-        dispatchCalls.push(typed.inputs?.repo ?? '?')
+        const typed = params as {inputs?: {node_id: string}}
+        dispatchCalls.push(typed.inputs?.node_id ?? '?')
       })
       const dispatchSleep = vi.fn(async (ms: number) => {
         sleepCalls.push(ms)
@@ -2525,10 +2525,12 @@ describe('handleReconcile (I/O shell)', () => {
         }),
       )
 
-      // Exactly 4 dispatches fired in order.
-      expect(dispatchCalls).toEqual(['r1', 'r2', 'r3', 'r4'])
+      // Exactly 4 dispatches fired in order — asserted by node_id (the only identifier
+      // the workflow_dispatch payload now exposes).
+      expect(dispatchCalls).toEqual(['R_1', 'R_2', 'R_3', 'R_4'])
       expect(result.dispatches).toBe(4)
-      // Exactly 3 sleeps — between r1→r2, r2→r3, r3→r4. Never before r1. Never after r4.
+      // Exactly 3 sleeps — between dispatches 1→2, 2→3, 3→4. Never before the first.
+      // Never after the last.
       expect(sleepCalls).toEqual([5000, 5000, 5000])
       expect(dispatchSleep).toHaveBeenCalledTimes(3)
     })
@@ -2567,10 +2569,10 @@ describe('handleReconcile (I/O shell)', () => {
     it('treats a dispatch timeout as failure and continues to the next', async () => {
       const dispatchCalls: string[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-        const typed = params as {inputs?: {owner: string; repo: string}}
-        const name = typed.inputs?.repo ?? '?'
-        dispatchCalls.push(name)
-        if (name === 'r2') {
+        const typed = params as {inputs?: {node_id: string}}
+        const id = typed.inputs?.node_id ?? '?'
+        dispatchCalls.push(id)
+        if (id === 'R_2') {
           await new Promise(() => {
             /* never resolves — simulates hang */
           })
@@ -2598,9 +2600,42 @@ describe('handleReconcile (I/O shell)', () => {
 
       // All three repos are attempted regardless of day-rotation order; a timeout on
       // one should not block the others from dispatching.
-      expect(dispatchCalls.slice().sort()).toEqual(['r1', 'r2', 'r3'])
+      expect(dispatchCalls.slice().sort()).toEqual(['R_1', 'R_2', 'R_3'])
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesFailed).toBe(1)
+    })
+
+    it('dispatch payload carries node_id only — never owner/repo', async () => {
+      // Survey Repo workflow accepts node_id as its sole input. The dispatch call site
+      // MUST pass {inputs: {node_id}} so the workflow's first step can resolve and
+      // verify the repo via GraphQL before exposing any owner/name to subsequent steps
+      // or public run surfaces (run name, concurrency group, log lines).
+      const dispatchPayloads: Record<string, unknown>[] = []
+      const createWorkflowDispatch = vi.fn(async (params: unknown) => {
+        const typed = params as {inputs?: Record<string, unknown>}
+        if (typed.inputs !== undefined) dispatchPayloads.push(typed.inputs)
+      })
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [{owner: {login: 't'}, name: 'public-repo', archived: false, private: false, node_id: 'R_kgDOPUBLIC'}],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({createWorkflowDispatch}),
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        }),
+      )
+
+      expect(dispatchPayloads).toHaveLength(1)
+      expect(dispatchPayloads[0]).toEqual({node_id: 'R_kgDOPUBLIC'})
+      // Defense-in-depth: owner/repo must not leak into the public workflow_dispatch
+      // inputs surface, even alongside node_id. The workflow itself resolves the identity.
+      expect(dispatchPayloads[0]).not.toHaveProperty('owner')
+      expect(dispatchPayloads[0]).not.toHaveProperty('repo')
     })
   })
 
@@ -2611,8 +2646,8 @@ describe('handleReconcile (I/O shell)', () => {
       // be the already-surveyed one because progressive runs prioritize fresh coverage.
       const dispatchCalls: string[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-        const typed = params as {inputs?: {repo: string}}
-        dispatchCalls.push(typed.inputs?.repo ?? '?')
+        const typed = params as {inputs?: {node_id: string}}
+        dispatchCalls.push(typed.inputs?.node_id ?? '?')
       })
       const userOctokit = mockOctokit({
         listForAuthenticatedUser: async () => ({
@@ -2657,7 +2692,7 @@ describe('handleReconcile (I/O shell)', () => {
         }),
       )
 
-      expect(dispatchCalls).toEqual(['r1', 'r3'])
+      expect(dispatchCalls).toEqual(['R_1', 'R_3'])
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesDeferred).toBe(1)
     })
@@ -2665,8 +2700,8 @@ describe('handleReconcile (I/O shell)', () => {
     it('does not let private entries displace public dispatches under the cap', async () => {
       const dispatchCalls: string[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-        const typed = params as {inputs?: {repo: string}}
-        dispatchCalls.push(typed.inputs?.repo ?? '?')
+        const typed = params as {inputs?: {node_id: string}}
+        dispatchCalls.push(typed.inputs?.node_id ?? '?')
       })
       const publicRepos = Array.from({length: 13}, (_, index) => `public-${String(index + 1).padStart(2, '0')}`)
       const userOctokit = mockOctokit({
@@ -2701,8 +2736,8 @@ describe('handleReconcile (I/O shell)', () => {
       )
 
       expect(dispatchCalls).toHaveLength(12)
-      expect(dispatchCalls).not.toContain('private-repo')
-      expect(dispatchCalls.every(name => name.startsWith('public-'))).toBe(true)
+      expect(dispatchCalls).not.toContain('R_private')
+      expect(dispatchCalls.every(id => id.startsWith('R_public-'))).toBe(true)
       expect(result.summary.skippedPrivate).toBe(1)
       expect(result.dispatches).toBe(12)
       expect(result.dispatchesDeferred).toBe(1)
@@ -2741,8 +2776,8 @@ describe('handleReconcile (I/O shell)', () => {
       // Cap of 2 selects the two oldest; newest is deferred to the next run.
       const dispatchCalls: string[] = []
       const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-        const typed = params as {inputs?: {repo: string}}
-        dispatchCalls.push(typed.inputs?.repo ?? '?')
+        const typed = params as {inputs?: {node_id: string}}
+        dispatchCalls.push(typed.inputs?.node_id ?? '?')
       })
       const userOctokit = mockOctokit({
         listForAuthenticatedUser: async () => ({
@@ -2813,7 +2848,7 @@ describe('handleReconcile (I/O shell)', () => {
         }),
       )
 
-      expect(dispatchCalls).toEqual(['r-old', 'r-mid'])
+      expect(dispatchCalls).toEqual(['R_old', 'R_mid'])
       expect(result.dispatches).toBe(2)
       expect(result.dispatchesDeferred).toBe(1)
     })
@@ -2873,7 +2908,7 @@ describe('handleReconcile (I/O shell)', () => {
       const runWith = async (now: Date) => {
         const dispatched: string[] = []
         const createWorkflowDispatch = vi.fn(async (params: unknown) => {
-          dispatched.push((params as {inputs?: {repo: string}}).inputs?.repo ?? '?')
+          dispatched.push((params as {inputs?: {node_id: string}}).inputs?.node_id ?? '?')
         })
         await handleReconcile(
           baseParams({
@@ -2889,9 +2924,9 @@ describe('handleReconcile (I/O shell)', () => {
       }
 
       // Offset 0 → first slice
-      expect(await runWith(NOW)).toEqual(['r-a', 'r-b'])
+      expect(await runWith(NOW)).toEqual(['R_r-a', 'R_r-b'])
       // Offset 2 → rotated slice; r-c and r-d get their turn
-      expect(await runWith(new Date('2026-04-19T12:00:00Z'))).toEqual(['r-c', 'r-d'])
+      expect(await runWith(new Date('2026-04-19T12:00:00Z'))).toEqual(['R_r-c', 'R_r-d'])
     })
   })
 
