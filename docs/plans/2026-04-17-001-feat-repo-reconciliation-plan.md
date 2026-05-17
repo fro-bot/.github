@@ -1,8 +1,9 @@
 ---
 title: Repo Reconciliation
 type: feat
-status: active
+status: complete
 date: 2026-04-17
+completed: 2026-04-17
 deepened: 2026-04-17
 origin: docs/brainstorms/2026-04-17-repo-reconciliation-requirements.md
 ---
@@ -135,7 +136,7 @@ Per-repo classification decision table:
 
 ## Implementation Units
 
-- [ ] **Unit 1: Extend schema and extract shared `addRepoEntry` helper**
+- [x] **Unit 1: Extend schema and extract shared `addRepoEntry` helper**
 
 **Goal:** Land the two prerequisites reconcile needs before Unit 2: (a) extend `OnboardingStatus` enum + guard to include `lost-access` and `pending-review`; (b) lift `addRepoEntry` from `scripts/handle-invitation.ts` into a shared module so reconcile can produce entries with the exact same shape.
 
@@ -181,7 +182,7 @@ Per-repo classification decision table:
 
 ---
 
-- [ ] **Unit 2: Pure reconciliation engine (`reconcileRepos`)**
+- [x] **Unit 2: Pure reconciliation engine (`reconcileRepos`)**
 
 **Goal:** Implement `reconcileRepos(inputs) → changePlan` as a pure function with exhaustive tests covering every entry in the classification decision table.
 
@@ -239,7 +240,7 @@ Per-repo classification decision table:
 
 ---
 
-- [ ] **Unit 3: I/O shell — Octokit wiring, `commitMetadata` integration, dispatch + issue loop**
+- [x] **Unit 3: I/O shell — Octokit wiring, `commitMetadata` integration, dispatch + issue loop**
 
 **Goal:** Implement the outer layer that fetches inputs, invokes `reconcileRepos`, commits via `commitMetadata`, then walks the dispatch and issue queues sequentially with non-blocking failure. Expose a CLI entrypoint (`if (import.meta.url === …) { await main() }`) mirroring other scripts.
 
@@ -312,7 +313,7 @@ Per-repo classification decision table:
 
 ---
 
-- [ ] **Unit 4: Scheduled workflow (`reconcile-repos.yaml`)**
+- [x] **Unit 4: Scheduled workflow (`reconcile-repos.yaml`)**
 
 **Goal:** Ship the scheduled cron + manual dispatch workflow that mints the app token, runs `scripts/reconcile-repos.ts` with both credentials available, and reports the JSON summary in the run log.
 
