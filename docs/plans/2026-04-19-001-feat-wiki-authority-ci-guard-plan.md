@@ -1,8 +1,9 @@
 ---
 title: 'feat: Wiki authority CI guard'
 type: feat
-status: active
+status: complete
 date: 2026-04-19
+completed: 2026-04-19
 ---
 
 # feat: Wiki authority CI guard
@@ -94,7 +95,7 @@ Not required. This is a well-patterned CI guard, and the codebase has two direct
 
 ## Implementation Units
 
-- [ ] **Unit 1: Pure guard function + CLI script**
+- [x] **Unit 1: Pure guard function + CLI script**
 
 **Goal:** Implement the wiki-authority decision function and a thin CLI that wires it to PR event context.
 
@@ -149,7 +150,7 @@ Not required. This is a well-patterned CI guard, and the codebase has two direct
 - `pnpm lint` and `pnpm check-types` clean on the new file.
 - Smoke-test the CLI locally by invoking it with a synthetic `GITHUB_EVENT_PATH` JSON and observing exit status + message.
 
-- [ ] **Unit 2: Wire guard into CI + required status check**
+- [x] **Unit 2: Wire guard into CI + required status check**
 
 **Goal:** Add the `check-wiki-authority` job to `main.yaml` and register it in `settings.yml` so branch protection enforces it.
 
@@ -180,7 +181,7 @@ Test expectation: none — this unit is YAML config with no behavioral logic to 
 - On the Unit 2 PR itself, the new `check-wiki-authority` job runs, evaluates `{author: <user>, files: ['.github/workflows/main.yaml', '.github/settings.yml']}`, and passes (neither file is guarded).
 - After merge, `Update Repo Settings` workflow applies the new required check to branch protection. A subsequent test PR touching `metadata/repos.yaml` under a non-Fro-Bot author must fail the check and block merge.
 
-- [ ] **Unit 3: Document operator workflow**
+- [x] **Unit 3: Document operator workflow**
 
 **Goal:** Document the policy so future operators know the correct workflow for one-off wiki or metadata edits.
 

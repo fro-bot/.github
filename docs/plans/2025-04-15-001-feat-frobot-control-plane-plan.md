@@ -1,8 +1,9 @@
 ---
 title: "feat: Fro Bot Autonomous Control Plane"
 type: feat
-status: active
+status: complete
 date: 2026-04-15
+completed: 2026-04-28
 origin: docs/brainstorms/2025-04-15-frobot-control-plane-requirements.md
 deepened: 2025-04-15
 ---
@@ -625,7 +626,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ### Phase 3: Social Voice + Journal
 
-- [ ] **Unit 11: Discord Notification Script**
+- [x] **Unit 11: Discord Notification Script**
 
 **Goal:** Provide a reusable TypeScript module for posting rich Discord embeds from any workflow.
 
@@ -661,7 +662,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 12: BlueSky Post Script**
+- [x] **Unit 12: BlueSky Post Script**
 
 **Goal:** Provide a reusable TypeScript module for BlueSky posting.
 
@@ -700,7 +701,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 13: Journal System**
+- [x] **Unit 13: Journal System**
 
 **Goal:** Maintain a running in-character activity journal in GitHub Issues.
 
@@ -740,7 +741,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 14: Social Broadcast Integration**
+- [x] **Unit 14: Social Broadcast Integration**
 
 **Goal:** Wire Discord and BlueSky posting into the control plane with hybrid curation.
 
@@ -786,7 +787,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ### Phase 4: Scheduled Autonomy
 
-- [ ] **Unit 15: Renovate Smart Dispatch**
+- [x] **Unit 15: Renovate Smart Dispatch**
 
 **Goal:** Dispatch Renovate across tracked repos with deduplication and no unnecessary approval gate.
 
@@ -826,7 +827,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 16: Metadata Update Workflow**
+- [x] **Unit 16: Metadata Update Workflow**
 
 **Goal:** Periodically scan collaborator repos and refresh metadata state.
 
@@ -867,7 +868,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 
 ---
 
-- [ ] **Unit 17: Wiki Lint Weekly**
+- [x] **Unit 17: Wiki Lint Weekly**
 
 **Goal:** Perform a weekly detect/report health check of the authoritative wiki state on `data`.
 

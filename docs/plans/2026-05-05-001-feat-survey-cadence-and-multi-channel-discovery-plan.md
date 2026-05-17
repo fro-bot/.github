@@ -1,8 +1,9 @@
 ---
 title: 'feat: Survey cadence + multi-channel discovery'
 type: feat
-status: active
+status: complete
 date: 2026-05-05
+completed: 2026-05-06
 origin: docs/brainstorms/2026-05-04-survey-cadence-and-multi-channel-discovery-requirements.md
 deepened: 2026-05-05
 ---
