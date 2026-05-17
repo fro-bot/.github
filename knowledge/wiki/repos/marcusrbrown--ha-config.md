@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/ha-config"
 created: 2025-06-18
-updated: 2026-04-24
+updated: 2026-05-17
 sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: 83784bc3a212c10cd358be4da9425e46aa6e90f0
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: f7ec8038cca071e36848057d00d1c165cef5f357
     accessed: 2026-04-24
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: f80fbc124c0765b8685c3cd98fe3d8eff832e872
+    accessed: 2026-05-17
 tags: [home-assistant, home-assistant-config, yaml, esphome, iot]
 aliases: [ha-config]
 related:
@@ -32,10 +35,10 @@ Marcus R. Brown's [[home-assistant]] configuration repository. Public, version-c
 - **Purpose:** Version-controlled Home Assistant configuration
 - **Default branch:** `main`
 - **Created:** 2023-07-25
-- **Last push:** 2026-04-22
-- **HA version tracked:** 2025.6.3 (pinned in `.HA_VERSION`)
+- **Last push:** 2026-05-16 (`f80fbc1`)
+- **HA version tracked:** 2025.6.3 (pinned in `.HA_VERSION`; unchanged since initial survey — a notable drift between code and the broader HA release cadence)
 - **Topics:** `home-assistant`, `home-assistant-config`
-- **Open issues:** 1 (#427 — Dependency Dashboard)
+- **Open issues:** 3 (#427 Dependency Dashboard, #766 asyncio-mqtt v0.16.2, #777 esphome v2026)
 - **Open PRs:** 0
 
 ## Repository Structure
@@ -118,7 +121,7 @@ Required status checks on `main`: YAML Lint, Remark Lint, Prettier, Check Home A
 
 ### Shared Workflows
 
-Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github` (v4.16.8, SHA `bedac8bd7b81a7832ae494873da2971e5ea7a8d4`). Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
+Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github`. As of 2026-05-17 both are pinned to **v4.16.17** (SHA `5cb8bc230d36f005cd2de807fe408b428a44c4d5`), up from v4.16.8 in the prior survey. Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
 
 ### Renovate Trigger Model
 
@@ -133,7 +136,7 @@ This is the same event-driven Renovate pattern used in [[marcusrbrown--github]] 
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8`. Custom managers for `.pre-commit-config.yaml` (Python version + pip packages) and `mise.toml` (pre-commit via aqua). Git submodules enabled. Post-upgrade runs `npx prettier@3.8.3 --no-color --write .`. Automerge on minor/patch pip updates. ESPHome version updates are unseparated (major+minor+patch treated as a single update).
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.0` (bumped from `#4.5.8` on 2026-05-16 via PR #776, crossing a major preset version). Custom managers for `.pre-commit-config.yaml` (Python version + pip packages) and `mise.toml` (pre-commit via aqua). Git submodules enabled. Post-upgrade runs `npx prettier@3.8.3 --no-color --write .`. Automerge on minor/patch pip updates. ESPHome version updates are unseparated (major+minor+patch treated as a single update).
 - **Pre-commit:** Managed via `mise` (aqua, v4.6.0). Hooks: trailing whitespace, EOF fixer, double-quote string fixer, requirements-txt fixer, large file check, merge conflict check, TOML/YAML validation. Excludes `custom_components/`, `www/`, `.HA_VERSION`. Uses `--unsafe` YAML check to allow HA YAML extensions (`!include`, `!secret`, etc.).
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` for repository configuration sync.
 - **AI Rules:** `.cursorrules` defines HA-specific development conventions (YAML standards, package organization, security, testing).
@@ -162,3 +165,4 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | 2025-06-18 | `83784bc` | Initial survey — 11 packages, 10 custom components, Prettier 3.8.2, Renovate `#4.5.7`, pre-commit 4.5.1 |
 | 2026-04-18 | `54a6727` | Prettier 3.8.3, Renovate `#4.5.8`, bfra-me/.github v4.16.6, pre-commit-hooks v6.0.0 |
 | 2026-04-24 | `f7ec803` | pre-commit 4.6.0, bfra-me/.github v4.16.8, Renovate trigger model expanded (workflow_run, push to non-main) |
+| 2026-05-17 | `f80fbc1` | Renovate preset major bump `marcusrbrown/renovate-config#4.5.8 → #5.2.0` (PR #776), bfra-me/.github reusable workflows v4.16.8 → v4.16.17, open Renovate PRs queued for esphome v2026 (#777) and asyncio-mqtt v0.16.2 (#766). No package/custom-component additions; `.HA_VERSION` still 2025.6.3. |

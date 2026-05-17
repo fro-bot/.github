@@ -4,11 +4,11 @@ repos:
     name: ha-config
     added: 2026-04-17
     onboarding_status: onboarded
-    last_survey_at: 2026-05-06
-    last_survey_status: failure
+    last_survey_at: 2026-05-17
+    last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
-    next_survey_eligible_at: 2026-06-06
+    next_survey_eligible_at: 2026-06-18
     discovery_channel: collab
     private: false
     node_id: R_kgDOJ_bMaQ
@@ -220,8 +220,8 @@ repos:
     onboarding_status: pending
     last_survey_at: 2026-05-06
     last_survey_status: success
-    has_fro_bot_workflow: false
-    has_renovate: false
+    has_fro_bot_workflow: true
+    has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: 2026-06-08
     private: true
@@ -262,3 +262,15 @@ repos:
     next_survey_eligible_at: 2026-05-22
     private: false
     node_id: R_kgDORLx6ew
+  - owner: '[REDACTED]'
+    name: R_kgDOSZ9x-w
+    added: 2026-05-13
+    onboarding_status: pending
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: false
+    discovery_channel: collab
+    next_survey_eligible_at: null
+    private: true
+    node_id: R_kgDOSZ9x-w
