@@ -1,7 +1,7 @@
 ---
 title: feat: Add post-v1 wiki-lint escalation and repair flows
 type: feat
-status: active
+status: complete
 date: 2026-05-02
 deepened: 2026-05-02
 ---
@@ -135,7 +135,7 @@ flowchart TB
 
 ## Implementation Units
 
-- [ ] **Unit 1: Add versioned `wiki-lint` JSON output and finding fingerprints**
+- [x] **Unit 1: Add versioned `wiki-lint` JSON output and finding fingerprints**
 
 **Goal:** Extend `wiki-lint`'s artifact contract so downstream automation can consume structured status, snapshot metadata, and stable finding fingerprints without scraping markdown.
 
@@ -181,7 +181,7 @@ flowchart TB
 
 ---
 
-- [ ] **Unit 2: Add durable issue lifecycle for deterministic findings and execution failures**
+- [x] **Unit 2: Add durable issue lifecycle for deterministic findings and execution failures**
 
 **Goal:** Turn `wiki-lint` findings into durable operator-facing issues that dedupe, reopen, update, and close automatically instead of forcing humans to poll artifacts manually.
 
