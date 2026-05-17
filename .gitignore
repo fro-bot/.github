@@ -25,3 +25,7 @@ coverage
 
 # Local agent artifacts
 .context/
+
+# Wiki lint local artifacts (CI uploads them to actions/upload-artifact; never tracked in git)
+wiki-lint-report.md
+wiki-lint-report.json
