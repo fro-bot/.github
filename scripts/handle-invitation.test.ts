@@ -288,6 +288,62 @@ describe('handleInvitations', () => {
     }
   })
 
+  it('preserves the invitation node_id when repos.get omits it on refresh', async () => {
+    // #given an invitation that carries node_id A and a repos.get that returns
+    // public=true but with an empty/missing node_id (a degenerate API response shape)
+    // #then the fallback at acceptedInvitationRepositoryPrivacy preserves the
+    // invitation's node_id rather than dispatching with an empty identifier
+    const acceptInvitation = vi.fn(async () => undefined)
+    const starRepoForAuthenticatedUser = vi.fn(async () => undefined)
+    const createWorkflowDispatch = vi.fn(async () => undefined)
+    const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
+    const octokit = mockOctokit({
+      listInvitationsForAuthenticatedUser: async () => ({
+        data: [
+          {
+            id: 122,
+            inviter: {login: 'marcusrbrown'},
+            repository: {
+              name: 'sparse-refresh',
+              node_id: 'R_kgDO_INVITATION',
+              private: false,
+              owner: {login: 'fro-bot'},
+            },
+          },
+        ],
+      }),
+      // repos.get returns public confirmation but no node_id — fallback must preserve invitation value
+      getRepo: async () => ({data: {node_id: '', private: false}}),
+      acceptInvitationForAuthenticatedUser: acceptInvitation,
+      starRepoForAuthenticatedUser,
+      createWorkflowDispatch,
+    })
+
+    const result = await handleInvitations({
+      octokit,
+      allowlistPath: 'metadata/allowlist.yaml',
+      reposPath: 'metadata/repos.yaml',
+      now: new Date('2026-04-16T12:00:00.000Z'),
+      workflowFile: 'survey.yaml',
+      workflowRef: 'main',
+      commitMetadata,
+      bootstrapDataBranch: vi.fn(async () => ({})),
+      readMetadata: readTestMetadata,
+    })
+
+    expect(result.processed[0]?.status).toBe('accepted')
+    // Dispatch uses the invitation's node_id — never an empty string from the sparse refresh
+    expect(createWorkflowDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({inputs: {node_id: 'R_kgDO_INVITATION'}}),
+    )
+    const mutator = commitMetadata.mock.calls[0]?.[0].mutator
+    if (typeof mutator === 'function') {
+      const newReposFile = mutator({version: 1, repos: []})
+      assertReposFile(newReposFile)
+      expect(newReposFile.repos[0]).toMatchObject({node_id: 'R_kgDO_INVITATION'})
+    }
+  })
+
   it('fails public invitations that are missing node_id before accepting them', async () => {
     const acceptInvitation = vi.fn(async () => undefined)
     const commitMetadata = vi.fn<CommitMetadataMock>(async () => ({committed: true, sha: 'commit-sha', attempts: 1}))
