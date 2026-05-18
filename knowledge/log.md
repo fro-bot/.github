@@ -1112,3 +1112,27 @@ Sources: https://github.com/marcusrbrown/ha-config (SHA f80fbc124c0765b8685c3cd9
 Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/ha-config
+
+## [2026-05-18 08:55] ingest | repo:marcusrbrown/marcusrbrown
+
+Re-surveyed `marcusrbrown/marcusrbrown` at SHA `de594cd` (delta from prior `af78e68`). Updated `marcusrbrown--marcusrbrown.md` additively — frontmatter SHA + accessed date, `Last push` 2026-03-12 → 2026-05-18, retained prior version comparison table as historical snapshot, added 2026-05-18 snapshot table, added "Renovate Thaw" section, refreshed Open Work Items, appended survey history row.
+
+Key deltas since 2026-04-24:
+
+- **Renovate is unstalled.** Issue #895 closed 2026-05-14T06:25:44Z after Marcus shipped #897 bumping the `marcusrbrown/renovate-config` preset 4.5.1 → 5.2.0, which fixed the malformed RE2 regex. 18 Renovate PRs flushed the backlog over four days.
+- `bfra-me/.github` reusable workflows: v4.4.0 → v4.16.18 (matches ecosystem head)
+- `pnpm` 10.31.0 → 10.33.4; `Node.js` 24.14.0 → 24.15.0; `Prettier` 3.8.1 → 3.8.3
+- `vitest`/`@vitest/ui` 4.0.18 → 4.1.6; `tsx` 4.20.3 → 4.22.0; `jiti` 2.6.1 → 2.7.0 (now constrained `<2.8.0`)
+- New pinned dev deps via #907 sweep: `@bfra.me/prettier-config` 0.16.9, `@bfra.me/tsconfig` 0.13.1, `@types/node` 24.12.4
+- **Trailing item:** `@bfra.me/eslint-config` still 0.50.1 vs ecosystem ≥0.51.0 — Renovate has not opened a PR; worth verifying pin/range
+- **Still no Fro Bot workflow** in `.github/workflows/` (cleanup-cache, main, renovate, update-profile, update-repo-settings). Follow-up draft PR remains warranted.
+
+No new topic, entity, or comparison pages required — all touched concepts already covered by [[github-actions-ci]], [[probot-settings]], and the existing repo cross-references. `index.md` entry unchanged (description still accurate).
+
+Sources: https://github.com/marcusrbrown/marcusrbrown (SHA de594cdd416b60d92caba6684492659620a22439)
+
+## [2026-05-18 08:56] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown

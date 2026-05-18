@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/marcusrbrown"
 created: 2026-04-18
-updated: 2026-04-24
+updated: 2026-05-18
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: de594cdd416b60d92caba6684492659620a22439
+    accessed: 2026-05-18
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: af78e68d510b24152531f7fdafe9bff35a58f071
     accessed: 2026-04-24
@@ -28,7 +31,7 @@ Marcus R. Brown's GitHub profile README repository. A TypeScript-powered automat
 - **Default branch:** `main`
 - **Language:** TypeScript
 - **Created:** 2020-12-09
-- **Last push:** 2026-03-12
+- **Last push:** 2026-05-18
 - **License:** MIT
 - **Topics:** `github`, `readme-profile`, `profile-readme`, `awesome-readme`, `typescript`, `markdown`
 - **Collaborators:** `marcusrbrown` (admin), `fro-bot` (push)
@@ -177,6 +180,27 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 
 ## Version Comparison (vs. Ecosystem)
 
+### 2026-05-18 snapshot (post-thaw)
+
+| Dependency | This Repo | Ecosystem Latest | Delta vs 2026-04-24 |
+| --- | --- | --- | --- |
+| `marcusrbrown/renovate-config` | `#5.2.0` | `#5.2.0` | `#4.5.1` → `#5.2.0` (major bump; preset regex fixed) |
+| `bfra-me/.github` | v4.16.18 | v4.16.18 | v4.4.0 → v4.16.18 |
+| `pnpm` | 10.33.4 | 10.33.4 | 10.31.0 → 10.33.4 |
+| `Prettier` | 3.8.3 | 3.8.3 | 3.8.1 → 3.8.3 |
+| `@bfra.me/prettier-config` | 0.16.9 | 0.16.9 | (newly pinned) |
+| `@bfra.me/tsconfig` | 0.13.1 | 0.13.1 | (newly pinned) |
+| `@bfra.me/eslint-config` | 0.50.1 | ≥0.51.0 | unchanged — still trailing |
+| `Node.js` | 24.15.0 | 24.15.0 | 24.14.0 → 24.15.0 |
+| `vitest` / `@vitest/ui` | 4.1.6 | 4.1.6 | 4.0.18 → 4.1.6 |
+| `tsx` | 4.22.0 | 4.22.0 | 4.20.3 → 4.22.0 |
+| `jiti` | 2.7.0 (`<2.8.0`) | 2.x | 2.6.1 → 2.7.0 |
+| `@types/node` | 24.12.4 | 24.12.4 | (newly pinned) |
+| `lint-staged` | 16.4.0 | 16.4.0 | unchanged |
+| `simple-git-hooks` | 2.13.1 | 2.13.1 | unchanged |
+
+### 2026-04-24 snapshot (pre-thaw, retained for history)
+
 | Dependency | This Repo | Ecosystem Latest |
 | --- | --- | --- |
 | `marcusrbrown/renovate-config` | `#4.5.1` | `#4.5.8` |
@@ -186,9 +210,38 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | `@bfra.me/eslint-config` | 0.50.1 | ≥0.51.0 |
 | `Node.js` | 24.14.0 | 24.15.0 |
 
+## 2026-05-18 Update: Renovate Thaw
+
+The Renovate stall documented on 2026-04-24 has cleared. Issue #895 closed 2026-05-14T06:25:44Z. Marcus shipped #897 (`ci(renovate): update marcusrbrown/renovate-config preset to 5.2.0`) at 2026-05-14T06:20:01Z, which fixed the malformed RE2 regex in the preset chain. Within the same hour, Renovate flushed the backlog:
+
+- #900: chore(deps) update all non-major dependencies
+- #901: prettier → 3.8.3
+- #902: jiti → `<2.8.0`
+- #904 / #908: vitest monorepo → 4.1.5 → 4.1.6
+- #898/#905: pin + bump `@bfra.me/prettier-config` to 0.16.7 → 0.16.8 → 0.16.9 (#910)
+- #899/#906/#911: pin + bump `@bfra.me/tsconfig` to 0.12.2 → 0.13.0 → 0.13.1
+- #907: chore(dev) pin dependencies (added `@types/node` 24.12.4)
+- #909: `@types/node` → 24.12.4
+- #912 → #915: rolling `bfra-me/.github` v4.16.17 → v4.16.18
+- #913 / #914: tsx 4.21.1 → 4.22.0
+
+The 6-week dependency drift documented previously is largely gone. Outstanding trailing item: `@bfra.me/eslint-config` is still pinned at 0.50.1 while the ecosystem advanced past 0.51.0 — Renovate has not opened a PR for this, suggesting either a deliberate pin or a missing range allowance. Worth verifying before next survey.
+
+The "newly pinned" rows above reflect #907's pin sweep: previously caret-ranged dev deps were locked to exact versions, aligning with the rest of the ecosystem.
+
+### Updated Open Work Items
+
+| # | Title | Author | State | Notes |
+| --- | --- | --- | --- | --- |
+| #284 | Dependency Dashboard | mrbro-bot[bot] | open | Standard Renovate dashboard issue |
+| #895 | Action Required: Fix Renovate Configuration | mrbro-bot[bot] | **closed** 2026-05-14 | Resolved by #897 (preset → 5.2.0) |
+
+Backlog is back to baseline. The profile update pipeline (every 6 hours) and Renovate are both healthy.
+
 ## Survey History
 
 | Date | SHA | Delta |
 | --- | --- | --- |
 | 2026-04-18 | `af78e68` | Initial survey |
 | 2026-04-24 | `af78e68` | SHA unchanged; documented Renovate stall (issue #895), dependency drift vs ecosystem, fro-bot collaborator confirmed, open work items added |
+| 2026-05-18 | `de594cd` | Renovate thaw confirmed (#895 closed, preset → 5.2.0 via #897); 18 dependency PRs landed 2026-05-14 → 2026-05-18; bumped `bfra-me/.github` v4.4.0 → v4.16.18, `pnpm` 10.31.0 → 10.33.4, `vitest` 4.0.18 → 4.1.6, `tsx` 4.20.3 → 4.22.0, `Node.js` 24.14.0 → 24.15.0, `Prettier` 3.8.1 → 3.8.3; new pinned deps added (`@bfra.me/prettier-config` 0.16.9, `@bfra.me/tsconfig` 0.13.1, `@types/node` 24.12.4); `@bfra.me/eslint-config` 0.50.1 still trailing; no Fro Bot workflow yet — follow-up PR still warranted |
