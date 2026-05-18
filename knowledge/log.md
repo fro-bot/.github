@@ -1092,3 +1092,23 @@ Sources: https://github.com/fro-bot/agent (SHA ef6b9525583d13f9443b80e6ceffff8af
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-05-17 04:30] ingest | marcusrbrown/ha-config
+
+Re-survey of `marcusrbrown/ha-config` (SHA `f80fbc1`, up from `f7ec803` on 2026-04-24). Updated `marcusrbrown--ha-config.md` additively with a fourth survey row; appended a pin-drift note to topic page `home-assistant.md`. No structural changes to packages (still 11) or custom_components (still 10).
+
+Deltas since prior survey:
+
+- Renovate preset crossed a major boundary: `marcusrbrown/renovate-config#4.5.8 → #5.2.0` (PR #776, merged 2026-05-16)
+- Reusable workflows from `bfra-me/.github` advanced v4.16.8 → v4.16.17 (pinned SHA `5cb8bc230d36f005cd2de807fe408b428a44c4d5`) for both `renovate.yaml` and `update-repo-settings.yaml`
+- Open issue count 1 → 3: Renovate has queued #777 (esphome v2026 major) and #766 (asyncio-mqtt v0.16.2) in addition to the dashboard
+- `.HA_VERSION` still pinned at `2025.6.3` across three surveys spanning ~11 months — flagged as a CI pin-drift footgun on the [[home-assistant]] topic page
+- Fro Bot agent workflow still absent — follow-up draft PR remains warranted
+
+Sources: https://github.com/marcusrbrown/ha-config (SHA f80fbc124c0765b8685c3cd98fe3d8eff832e872)
+
+## [2026-05-17 21:19] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/ha-config

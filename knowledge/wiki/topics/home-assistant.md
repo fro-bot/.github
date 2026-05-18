@@ -2,7 +2,7 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2026-04-23
+updated: 2026-05-17
 tags: [home-assistant, iot, smart-home, yaml, automation]
 related:
   - marcusrbrown--ha-config
@@ -28,6 +28,8 @@ The preferred pattern splits configuration by domain into `packages/` directory 
 ### CI Validation
 
 Home Assistant configs can be validated in CI using `frenck/action-home-assistant`, which runs the HA config check against a specific HA version pinned in `.HA_VERSION`. This catches YAML errors, missing integrations, and breaking changes before merge.
+
+**Pin-drift footgun:** validating against a frozen `.HA_VERSION` only catches problems that exist in *that* version. Observed in [[marcusrbrown--ha-config]], where `.HA_VERSION` has remained at `2025.6.3` across three surveys (2025-06 → 2026-05) while pip-resolved deps like `esphome` advance. The CI passes, but the config is not validated against current upstream HA.
 
 ### Custom Components
 
