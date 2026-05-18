@@ -1113,26 +1113,28 @@ Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/ha-config
 
-## [2026-05-18 08:55] ingest | repo:marcusrbrown/marcusrbrown
+## [2026-05-18 08:56] ingest | marcusrbrown/marcusrbrown.github.io
 
-Re-surveyed `marcusrbrown/marcusrbrown` at SHA `de594cd` (delta from prior `af78e68`). Updated `marcusrbrown--marcusrbrown.md` additively — frontmatter SHA + accessed date, `Last push` 2026-03-12 → 2026-05-18, retained prior version comparison table as historical snapshot, added 2026-05-18 snapshot table, added "Renovate Thaw" section, refreshed Open Work Items, appended survey history row.
+Incremental re-survey of `marcusrbrown/marcusrbrown.github.io` (SHA `4cd8198`, up from `ec4b785` on 2026-04-25). Additive update to repo page `marcusrbrown--marcusrbrown-github-io.md`. Index unchanged (page already cataloged with accurate description). No new topic/entity/comparison pages warranted — `github-pages.md` and `github-actions-ci.md` already cover the cross-cutting concerns observed here.
 
-Key deltas since 2026-04-24:
+Deltas since prior survey:
 
-- **Renovate is unstalled.** Issue #895 closed 2026-05-14T06:25:44Z after Marcus shipped #897 bumping the `marcusrbrown/renovate-config` preset 4.5.1 → 5.2.0, which fixed the malformed RE2 regex. 18 Renovate PRs flushed the backlog over four days.
-- `bfra-me/.github` reusable workflows: v4.4.0 → v4.16.18 (matches ecosystem head)
-- `pnpm` 10.31.0 → 10.33.4; `Node.js` 24.14.0 → 24.15.0; `Prettier` 3.8.1 → 3.8.3
-- `vitest`/`@vitest/ui` 4.0.18 → 4.1.6; `tsx` 4.20.3 → 4.22.0; `jiti` 2.6.1 → 2.7.0 (now constrained `<2.8.0`)
-- New pinned dev deps via #907 sweep: `@bfra.me/prettier-config` 0.16.9, `@bfra.me/tsconfig` 0.13.1, `@types/node` 24.12.4
-- **Trailing item:** `@bfra.me/eslint-config` still 0.50.1 vs ecosystem ≥0.51.0 — Renovate has not opened a PR; worth verifying pin/range
-- **Still no Fro Bot workflow** in `.github/workflows/` (cleanup-cache, main, renovate, update-profile, update-repo-settings). Follow-up draft PR remains warranted.
+- **Fro Bot agent bumped seven times in three weeks:** v0.41.4 → v0.42.6 → v0.42.7 → v0.43.0 → v0.43.1 → v0.43.2 → v0.43.3 → **v0.44.0** (current, pinned via SHA `b030b53b1b47b1bed77a581222706c900cc63b0e`)
+- **Autoheal integrated into `fro-bot.yaml` itself (PR #407, 2026-05-14)** — added as a second cron (`30 3 * * *`) and a `workflow_dispatch` `mode` input (review/maintenance/autoheal). Architecturally distinct from the sibling-repo pattern that uses a separate `fro-bot-autoheal.yaml`.
+- **Autoheal prompt has 8 categories** (Errored PRs, Security, Code Quality, DX, Production Site Review, Quality Gates Verification, Cross-Project Intelligence Inbound, Upstream Modernization Watch Sundays-only) vs 5 in [[marcusrbrown--vbs]] / [[marcusrbrown--mrbro-dev]]
+- **Renovate preset major-version jump:** `marcusrbrown/renovate-config#4.5.8 → #5.2.0` (PR #406, 2026-05-16). Same upgrade dropped the `fast-uri` security override mid-PR and had to be restored to clear `pnpm audit` failures from GHSA-q3j6-qgpj-74h6 / GHSA-v39h-62p7-jpjc.
+- **New files:** `lhci.config.js` at repo root (Lighthouse CI config, no dedicated workflow yet) and `TESTING.md` (15KB testing doc)
+- **New script:** `analyze-build` (`tsx scripts/analyze-build.ts`) for bundle analysis (PR #410)
+- **`bfra-me/.github` reusable workflows:** v4.16.8 → v4.16.17
+- **pnpm:** 10.33.0 → 10.33.4 (#404)
+- **Open issues:** 2 → 4 (added autoheal report #409 and coverage flag #411)
+- Two earlier "missing" gaps are now closed: autoheal (integrated as mode) and performance (lhci config present). Two remain: no Probot `settings.yml`, no CodeQL/Scorecard.
+- First observed instance of `fro-bot` co-authoring a direct commit in this repo (PR #406 security fix)
 
-No new topic, entity, or comparison pages required — all touched concepts already covered by [[github-actions-ci]], [[probot-settings]], and the existing repo cross-references. `index.md` entry unchanged (description still accurate).
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4cd8198991618f216b940b6a6c13e1a09fd7979d)
 
-Sources: https://github.com/marcusrbrown/marcusrbrown (SHA de594cdd416b60d92caba6684492659620a22439)
+## [2026-05-18 08:58] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-## [2026-05-18 08:56] ingest | repo:marcusrbrown/marcusrbrown
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
-Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/marcusrbrown
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
