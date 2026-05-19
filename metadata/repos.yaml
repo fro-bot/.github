@@ -301,7 +301,7 @@ repos:
   - owner: bfra-me
     name: renovate-action
     added: 2026-05-18
-    onboarding_status: pending-review
+    onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
     has_fro_bot_workflow: false
