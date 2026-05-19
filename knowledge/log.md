@@ -1138,3 +1138,25 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4cd81989916
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-05-19 00:00] ingest | marcusrbrown/marcusrbrown
+
+Re-survey of `marcusrbrown/marcusrbrown` (SHA `de594cd`, unchanged from 2026-05-18). Updated repo page `marcusrbrown--marcusrbrown.md` additively with a new section answering the open `@bfra.me/eslint-config` trailing-pin question from the prior survey. Index unchanged.
+
+Delta from prior survey (SHA `de594cd`, 2026-05-18):
+
+- SHA unchanged — no new merged commits on `main` since `chore(deps): update bfra-me/.github to v4.16.18 (#915)` on 2026-05-18T01:22:42Z
+- **PR #903 confirmed open** (`chore(dev): update dependency @bfra.me/eslint-config to v0.51.1`, opened 2026-05-14T06:30:08Z by mrbro-bot[bot]) — answers the prior survey's open question: Renovate *did* file a PR for the trailing 0.50.1 → 0.51.1 minor bump; it just hasn't merged yet, likely awaiting manual review of new lint rules
+- Open issues: 2 (#284 Dependency Dashboard, #903 PR); 1 open PR (#903)
+- Workflows unchanged: `cleanup-cache.yaml`, `main.yaml`, `renovate.yaml`, `update-profile.yaml`, `update-repo-settings.yaml` — **still no `fro-bot.yaml`**, follow-up recommendation carried forward
+- package.json snapshot reconfirmed: pnpm 10.33.4, prettier 3.8.3, vitest 4.1.6, tsx 4.22.0, `@bfra.me/prettier-config` 0.16.9, `@bfra.me/tsconfig` 0.13.1, `@bfra.me/eslint-config` 0.50.1 (pending #903)
+
+No contradictions with prior ingest. No new topic/entity/comparison pages warranted.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown (SHA de594cdd416b60d92caba6684492659620a22439)
+
+## [2026-05-19 08:42] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown

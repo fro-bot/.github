@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/marcusrbrown"
 created: 2026-04-18
-updated: 2026-05-18
+updated: 2026-05-19
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: de594cdd416b60d92caba6684492659620a22439
+    accessed: 2026-05-19
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: de594cdd416b60d92caba6684492659620a22439
     accessed: 2026-05-18
@@ -234,9 +237,16 @@ The "newly pinned" rows above reflect #907's pin sweep: previously caret-ranged 
 | # | Title | Author | State | Notes |
 | --- | --- | --- | --- | --- |
 | #284 | Dependency Dashboard | mrbro-bot[bot] | open | Standard Renovate dashboard issue |
+| #903 | chore(dev): update dependency @bfra.me/eslint-config to v0.51.1 | mrbro-bot[bot] | open (PR) | Opened 2026-05-14; resolves the `@bfra.me/eslint-config` trailing-pin gap flagged in prior survey |
 | #895 | Action Required: Fix Renovate Configuration | mrbro-bot[bot] | **closed** 2026-05-14 | Resolved by #897 (preset → 5.2.0) |
 
 Backlog is back to baseline. The profile update pipeline (every 6 hours) and Renovate are both healthy.
+
+## 2026-05-19 Update: ESLint-Config Pin Question Answered
+
+The `@bfra.me/eslint-config` trailing-pin question from the 2026-05-18 survey has resolved: Renovate **did** open a PR — #903 (`chore(dev): update dependency @bfra.me/eslint-config to v0.51.1`) was filed by `mrbro-bot[bot]` at 2026-05-14T06:30:08Z, contemporaneous with the rest of the post-thaw flush. As of 2026-05-19 it remains open and unmerged. So the gap isn't a missing range allowance — it's an unmerged PR. Likely waiting on a manual review pass (the bump crosses a 0.50 → 0.51 minor that probably surfaces new lint rules).
+
+No SHA change on `main` since 2026-05-18 (`de594cd` holds). No new merged commits, no new workflows, no Fro Bot workflow yet.
 
 ## Survey History
 
@@ -245,3 +255,4 @@ Backlog is back to baseline. The profile update pipeline (every 6 hours) and Ren
 | 2026-04-18 | `af78e68` | Initial survey |
 | 2026-04-24 | `af78e68` | SHA unchanged; documented Renovate stall (issue #895), dependency drift vs ecosystem, fro-bot collaborator confirmed, open work items added |
 | 2026-05-18 | `de594cd` | Renovate thaw confirmed (#895 closed, preset → 5.2.0 via #897); 18 dependency PRs landed 2026-05-14 → 2026-05-18; bumped `bfra-me/.github` v4.4.0 → v4.16.18, `pnpm` 10.31.0 → 10.33.4, `vitest` 4.0.18 → 4.1.6, `tsx` 4.20.3 → 4.22.0, `Node.js` 24.14.0 → 24.15.0, `Prettier` 3.8.1 → 3.8.3; new pinned deps added (`@bfra.me/prettier-config` 0.16.9, `@bfra.me/tsconfig` 0.13.1, `@types/node` 24.12.4); `@bfra.me/eslint-config` 0.50.1 still trailing; no Fro Bot workflow yet — follow-up PR still warranted |
+| 2026-05-19 | `de594cd` | SHA unchanged; PR #903 (`@bfra.me/eslint-config` → 0.51.1) confirmed open since 2026-05-14 — resolves the "is Renovate even allowed to bump this?" question from prior survey (it is; the PR just hasn't merged yet, plausibly awaiting manual lint-rule review); no new merged commits, no Fro Bot workflow added, profile-update pipeline and Renovate both still healthy |
