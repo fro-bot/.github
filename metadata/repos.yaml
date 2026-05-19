@@ -122,7 +122,7 @@ repos:
     name: marcusrbrown.github.io
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-18
+    last_survey_at: 2026-05-19
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
