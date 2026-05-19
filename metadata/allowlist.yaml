@@ -9,3 +9,11 @@ approved_inviters:
   - username: mrbro-bot[bot]
     added: 2026-04-17
     role: bot
+# Cross-org repos surfaced via the `contrib` discovery channel.
+# Each entry is probed for `.github/workflows/fro-bot.yaml` invoking `fro-bot/agent`.
+# The Fro Bot App must be installed on the owning account before adding entries.
+approved_contrib_repos:
+  - bfra-me/.github
+  - bfra-me/ha-addon-repository
+  - bfra-me/renovate-action
+  - bfra-me/works
