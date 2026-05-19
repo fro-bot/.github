@@ -1139,24 +1139,22 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-05-19 00:00] ingest | marcusrbrown/marcusrbrown
+## [2026-05-19 00:00] ingest | marcusrbrown/marcusrbrown.github.io
 
-Re-survey of `marcusrbrown/marcusrbrown` (SHA `de594cd`, unchanged from 2026-05-18). Updated repo page `marcusrbrown--marcusrbrown.md` additively with a new section answering the open `@bfra.me/eslint-config` trailing-pin question from the prior survey. Index unchanged.
+No-op re-survey of `marcusrbrown/marcusrbrown.github.io` (SHA `4cd8198`, unchanged since 2026-05-18). Additive update to repo page only — appended a survey-history row and a third source entry. Index unchanged (page already cataloged). No topic/entity/comparison pages touched.
 
-Delta from prior survey (SHA `de594cd`, 2026-05-18):
+Findings:
 
-- SHA unchanged — no new merged commits on `main` since `chore(deps): update bfra-me/.github to v4.16.18 (#915)` on 2026-05-18T01:22:42Z
-- **PR #903 confirmed open** (`chore(dev): update dependency @bfra.me/eslint-config to v0.51.1`, opened 2026-05-14T06:30:08Z by mrbro-bot[bot]) — answers the prior survey's open question: Renovate *did* file a PR for the trailing 0.50.1 → 0.51.1 minor bump; it just hasn't merged yet, likely awaiting manual review of new lint rules
-- Open issues: 2 (#284 Dependency Dashboard, #903 PR); 1 open PR (#903)
-- Workflows unchanged: `cleanup-cache.yaml`, `main.yaml`, `renovate.yaml`, `update-profile.yaml`, `update-repo-settings.yaml` — **still no `fro-bot.yaml`**, follow-up recommendation carried forward
-- package.json snapshot reconfirmed: pnpm 10.33.4, prettier 3.8.3, vitest 4.1.6, tsx 4.22.0, `@bfra.me/prettier-config` 0.16.9, `@bfra.me/tsconfig` 0.13.1, `@bfra.me/eslint-config` 0.50.1 (pending #903)
+- HEAD unchanged at `4cd8198` (`chore(deps): update all non-major dependencies (#416)`, 2026-05-18). Last push 2026-05-18T09:41:00Z.
+- Open issues: 4 (#411 test branch coverage <80%, #409 Daily Autohealing Report, #260 Daily Maintenance Report, #6 Dependency Dashboard) — identical to 2026-05-18.
+- Open PRs: 0. Recent activity window since prior survey is empty (no new Renovate batches landed).
+- Fro Bot workflow file inspected directly: agent still pinned at `fro-bot/agent@b030b53b1b47b1bed77a581222706c900cc63b0e # v0.44.0`. `AUTOHEAL_CRON='30 3 * * *'` and `MAINTENANCE_CRON='30 15 * * *'` env vars confirm the single-file three-mode design described in the prior survey is intact.
+- No contradictions with prior ingest. Two known gaps remain: no Probot `settings.yml`, no CodeQL/Scorecard workflows.
 
-No contradictions with prior ingest. No new topic/entity/comparison pages warranted.
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4cd8198991618f216b940b6a6c13e1a09fd7979d)
 
-Sources: https://github.com/marcusrbrown/marcusrbrown (SHA de594cdd416b60d92caba6684492659620a22439)
+## [2026-05-19 08:43] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-## [2026-05-19 08:42] ingest | repo:marcusrbrown/marcusrbrown
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
-Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/marcusrbrown
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io

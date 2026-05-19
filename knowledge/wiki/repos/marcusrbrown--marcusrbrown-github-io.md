@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-05-18
+updated: 2026-05-19
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 4cd8198991618f216b940b6a6c13e1a09fd7979d
     accessed: 2026-05-18
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 4cd8198991618f216b940b6a6c13e1a09fd7979d
+    accessed: 2026-05-19
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page]
 aliases: [marcusrbrown-github-io, marcusrbrown.com]
 related:
@@ -208,3 +211,4 @@ The earlier survey's "Missing Compared to Other Marcus Repos" section is partial
 | --- | --- | --- |
 | 2026-04-25 | `ec4b785` | Initial survey |
 | 2026-05-18 | `4cd8198` | Delta: agent v0.41.4 → v0.44.0, autoheal integrated as workflow mode (PR #407), Renovate preset v4 → v5 (PR #406, fast-uri override regression+fix), `lhci.config.js` and `TESTING.md` added |
+| 2026-05-19 | `4cd8198` | No-op re-survey: HEAD unchanged since 2026-05-18. Open issues steady at 4 (#411, #409, #260, #6), 0 open PRs. Fro Bot agent pin verified at `b030b53b...` (v0.44.0). All prior findings hold. |
