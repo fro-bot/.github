@@ -3258,6 +3258,56 @@ describe('handleReconcile (I/O shell)', () => {
       expect(params?.labels).toContain('reconcile:rollup-pending-review')
     })
 
+    it('regression: does not duplicate rollup when listForRepo lags behind same-run create', async () => {
+      // Reproduces the 2026-05-18 race (run 26023380395, issues #3307 + #3308):
+      //
+      // Setup: bfra-me grants access to 2 repos in this run (NOT pre-existing in metadata).
+      // Pass 1 of reconcileRepos adds both as `pending-review` + pushes 2 rawIssues.
+      // buildIssueQueue groups them into a single `per-owner-rollup` for bfra-me.
+      // plan.issues therefore contains that rollup → currentRunRollupOwners = {'bfra-me'}.
+      //
+      // runIssueQueue (step 10) creates the rollup via issuesCreate.
+      // issuesListForRepo returns [] — simulating eventual-consistency lag.
+      // selfHealRollups (step 12) sees empty existingRollupOwners from the API, but the fix
+      // unions currentRunRollupOwners in, so bfra-me is already "known" → no second create.
+      //
+      // Without the fix, selfHealRollups would see bfra-me has 2 pending-review entries and
+      // no existing rollup, and would call issuesCreate a second time.
+
+      // currentRepos starts EMPTY — bfra-me grants are new this run.
+      const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+      // Simulate eventual-consistency lag: listForRepo returns empty even though step 10 just created a rollup.
+      const issuesListForRepo = vi.fn(async () => ({data: []}))
+
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'bfra-me'}, name: '.github', archived: false, private: false, node_id: 'R_bfra_1'},
+            {
+              owner: {login: 'bfra-me'},
+              name: 'ha-addon-repository',
+              archived: false,
+              private: false,
+              node_id: 'R_bfra_2',
+            },
+          ],
+        }),
+      })
+
+      await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
+          // Empty repos + no bfra-me in allowlist → both repos classified as unsolicited-new
+          readMetadata: makeReadMetadata({repos: {version: 1, repos: []}, allowlist: makeAllowlist([])}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      // runIssueQueue (step 10) creates exactly 1 rollup; selfHealRollups (step 12) must NOT
+      // create a second one even though listForRepo returned empty.
+      expect(issuesCreate).toHaveBeenCalledOnce()
+    })
     it('does not file a new rollup when an open rollup issue already exists for that owner', async () => {
       const existing: ReposFile = {
         version: 1,

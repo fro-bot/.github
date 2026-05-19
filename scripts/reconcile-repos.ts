@@ -1429,6 +1429,14 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   })
 
   // 12. Self-healing rollup re-file.
+  // Build the set of rollup owners attempted by runIssueQueue this run. We use "attempted"
+  // (not "succeeded") so that even a transient create failure suppresses self-heal for this
+  // run — a failed create is safer to retry on the next cron than to risk a duplicate now.
+  // The GitHub Issues listing API has eventual-consistency lag: a rollup POSTed in step 10
+  // may not appear in a subsequent listForRepo call, causing selfHealRollups to re-create it.
+  const currentRunRollupOwners = new Set(
+    plan.issues.filter(issue => issue.kind === 'per-owner-rollup').map(issue => issue.owner),
+  )
   const healedRollups = await selfHealRollups({
     appOctokit,
     owner,
@@ -1437,6 +1445,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     accessList,
     allowlist,
     logger,
+    currentRunRollupOwners,
   })
 
   return {
@@ -2450,6 +2459,7 @@ async function selfHealRollups(params: {
   accessList: AccessListEntry[]
   allowlist: AllowlistFile
   logger: ReconcileLogger
+  currentRunRollupOwners: ReadonlySet<string>
 }): Promise<number> {
   const allowlistedOwners = new Set(params.allowlist.approved_inviters.map(i => i.username))
   const pendingReviewByOwner = new Map<string, RepoEntry[]>()
@@ -2479,6 +2489,12 @@ async function selfHealRollups(params: {
       const body = issue.body ?? ''
       const match = ROLLUP_OWNER_MARKER_PATTERN.exec(body)
       if (match?.[1] !== undefined) existingRollupOwners.add(match[1])
+    }
+    // Union with owners whose rollups were attempted in this same reconcile run.
+    // The GitHub Issues listing API has eventual-consistency lag: a rollup created
+    // in step 10 may not appear in this listing, causing a duplicate to be filed here.
+    for (const owner of params.currentRunRollupOwners) {
+      existingRollupOwners.add(owner)
     }
   } catch (error: unknown) {
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
