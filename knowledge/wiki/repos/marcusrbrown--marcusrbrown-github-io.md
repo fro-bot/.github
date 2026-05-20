@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-05-19
+updated: 2026-05-20
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 4cd8198991618f216b940b6a6c13e1a09fd7979d
     accessed: 2026-05-19
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 4cd8198991618f216b940b6a6c13e1a09fd7979d
+    accessed: 2026-05-20
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page]
 aliases: [marcusrbrown-github-io, marcusrbrown.com]
 related:
@@ -183,7 +186,7 @@ Earlier window (2026-04-25 survey baseline): `ec4b785` and prior were exclusivel
 
 Material changes since the 2026-04-25 survey at `ec4b785`. The site's structure and tech stack are unchanged; the interesting motion is in CI/CD and the Fro Bot integration.
 
-- **Fro Bot agent bumped four times in three weeks:** v0.41.4 → v0.42.6 (PR #400) → v0.42.7 (#402) → v0.43.0 (#407) → v0.43.1 (#412) → v0.43.2 (#414) → v0.43.3 (#415) → **v0.44.0** (current, pinned via SHA `b030b53b1b47b1bed77a581222706c900cc63b0e`). Tracks the agent release cadence aggressively — same posture as [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--gpt]].
+- **Fro Bot agent bumped four times in three weeks:** v0.41.4 → v0.42.6 (PR #400) → v0.42.7 (#402) → v0.43.0 (#407) → v0.43.1 (#412) → v0.43.2 (#414) → v0.43.3 (#415) → **v0.44.0** (current on `main`, pinned via SHA `b030b53b1b47b1bed77a581222706c900cc63b0e`). PR #417 is in flight to v0.44.1 (open as of 2026-05-20). Tracks the agent release cadence aggressively — same posture as [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--gpt]].
 - **Autoheal collapsed into the Fro Bot workflow itself (PR #407, 2026-05-14):** The earlier "no autoheal" gap noted in the prior survey was closed by integrating autoheal as a second cron (`30 3 * * *`) and a `workflow_dispatch` `mode` input (`review` / `maintenance` / `autoheal`, default `autoheal`) inside the existing `fro-bot.yaml` — not by adding a separate `fro-bot-autoheal.yaml` like the sibling repos. One file, three modes, branched by event + input.
 - **Autoheal prompt has 8 categories** (vs. 5 in [[marcusrbrown--vbs]] and [[marcusrbrown--mrbro-dev]]): 1) Errored PRs, 2) Security, 3) Code Quality & Repo Hygiene, 4) Developer Experience, 5) Production Site Review, 6) Quality Gates Verification, 7) Cross-Project Intelligence (Inbound), 8) Upstream Modernization Watch (Sundays UTC only — `IS_SUNDAY_UTC` propagated via step output, not `GITHUB_ENV`).
 - **Maintenance prompt now perpetual-single-issue:** Rolling 14-day window collapsed into a perpetual maintenance issue with archive logic and cross-project intelligence ingestion.
@@ -212,3 +215,4 @@ The earlier survey's "Missing Compared to Other Marcus Repos" section is partial
 | 2026-04-25 | `ec4b785` | Initial survey |
 | 2026-05-18 | `4cd8198` | Delta: agent v0.41.4 → v0.44.0, autoheal integrated as workflow mode (PR #407), Renovate preset v4 → v5 (PR #406, fast-uri override regression+fix), `lhci.config.js` and `TESTING.md` added |
 | 2026-05-19 | `4cd8198` | No-op re-survey: HEAD unchanged since 2026-05-18. Open issues steady at 4 (#411, #409, #260, #6), 0 open PRs. Fro Bot agent pin verified at `b030b53b...` (v0.44.0). All prior findings hold. |
+| 2026-05-20 | `4cd8198` | No-op re-survey: HEAD still unchanged. Renovate PR #417 (fro-bot/agent v0.44.0 → v0.44.1, branch `renovate/all-minor-patch`) is open and will likely merge under `:automergePatch`. Open issues steady at 4 (#411, #409, #260, #6); open PRs now 1 (#417). `package.json` confirms `packageManager: pnpm@10.33.4`, `@types/node ^24.0.0`, React 19 / TypeScript ^6.0.0 / Vite ^7.0.6 / Vitest ^4.0.0 stack unchanged. No structural drift since 2026-05-18. |

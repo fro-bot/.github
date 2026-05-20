@@ -1159,23 +1159,23 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-05-20 ingest] ingest | marcusrbrown/marcusrbrown
+## [2026-05-20 08:39] ingest | marcusrbrown/marcusrbrown.github.io
 
-Incremental delta survey of `marcusrbrown/marcusrbrown` (SHA `0a3c202`, up from `de594cd` on 2026-05-18). Additive update to `marcusrbrown--marcusrbrown.md`: appended a 2026-05-20 survey-history row, a new "2026-05-20 Update" section, and corrected the eslint-config row in the post-thaw table. Index entry updated to flag the missing Fro Bot workflow.
+No-op re-survey at SHA `4cd8198` — still HEAD, unchanged since 2026-05-18. Additive update to the repo page: appended a 2026-05-20 row to the Survey History table, added an in-flight note for fro-bot/agent v0.44.1 (PR #417) to the agent-cadence bullet, refreshed frontmatter `updated:` and appended a fourth source entry. Index entry updated for freshness; no topic, entity, or comparison pages required edits.
 
 Findings:
 
-- HEAD advanced to `0a3c2027228e6715e392a1cbc027f06596a02baf` (`chore(dev): update dependency tsx to v4.22.1 (#916)`, 2026-05-20T05:42:59Z).
-- Single new merge since prior survey: #916 (tsx 4.22.0 → 4.22.1).
-- **Contradiction with 2026-05-18 note:** that survey claimed Renovate had not opened a PR for `@bfra.me/eslint-config` past 0.50.1. PR #903 (`→ v0.51.1`) was in fact opened on 2026-05-14T06:30:08Z and is still open. Logged the correction in-page rather than rewriting prior text, per schema rule on contradictions.
-- Workflow file pins on `main` unchanged: `bfra-me/.github` v4.16.18 (`update-repo-settings.yaml`), `actions/checkout@v6.0.2`, `actions/create-github-app-token@v2.2.2`, `dorny/paths-filter@v3.0.3`, `muesli/readme-scribe@d2f6ab3`, `EndBug/add-and-commit@v9.1.4`. Renovate preset still `marcusrbrown/renovate-config#5.2.0`.
-- Fro Bot workflow still absent. Confirmed workflows: `cleanup-cache.yaml`, `main.yaml`, `renovate.yaml`, `update-profile.yaml`, `update-repo-settings.yaml`. Follow-up draft PR to add a Fro Bot agent workflow remains warranted.
-- No new topic/entity/comparison pages justified — deltas are version-pin level, fully covered by [[github-actions-ci]] patterns already captured.
+- HEAD: `4cd8198` (`chore(deps): update all non-major dependencies (#416)`, 2026-05-18). Last push 2026-05-19T09:37:26Z (no commits since 05-18; the push timestamp moved without a HEAD change — likely a tag or branch update).
+- Open issues: 4 (#411, #409, #260, #6) — unchanged.
+- Open PRs: 1 — **#417** `chore(deps): update fro-bot/agent to v0.44.1` on `renovate/all-minor-patch`, labeled `automerge` / `dependencies` / `github-actions` / `renovate` / `patch` / `action`. Will land under the existing automerge policy without human review.
+- `package.json` re-verified: `packageManager: pnpm@10.33.4`, `engines.node >=22.0.0`, `engines.pnpm ^10.28.2`, React `^19.0.0`, TypeScript `^6.0.0`, Vite `^7.0.6`, Vitest `^4.0.0`, `@types/node ^24.0.0`. No drift from prior survey.
+- Fro Bot workflow head re-read: `inputs.mode` choice list `[review, maintenance, autoheal]` default `autoheal`, autoheal cron `30 3 * * *`, maintenance cron `30 15 * * *`. Single-file three-mode design intact.
+- No structural drift. Two known gaps still open: no Probot `settings.yml`, no CodeQL/Scorecard workflows.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown (SHA 0a3c2027228e6715e392a1cbc027f06596a02baf)
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4cd8198991618f216b940b6a6c13e1a09fd7979d)
 
-## [2026-05-20 08:39] ingest | repo:marcusrbrown/marcusrbrown
+## [2026-05-20 08:40] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
