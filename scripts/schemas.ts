@@ -256,6 +256,8 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
     throw new SchemaValidationError(`${path}.private`, 'expected boolean or omitted')
   if (value.node_id !== undefined && (typeof value.node_id !== 'string' || value.node_id.length === 0))
     throw new SchemaValidationError(`${path}.node_id`, 'expected non-empty string or omitted')
+  // Render sites embed node_id in shell commands (see renderVisibilityTransitionIssue in scripts/reconcile-repos.ts);
+  // keep this pattern restrictive to GitHub's base64ish node-id format.
   if (value.node_id !== undefined && typeof value.node_id === 'string' && !/^[\w\-+/=]+$/.test(value.node_id))
     throw new SchemaValidationError(`${path}.node_id`, String.raw`expected safe node_id matching ^[\w\-+/=]+$`)
 }

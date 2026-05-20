@@ -2525,6 +2525,8 @@ export function renderIssuePayload(issue: IssueQueueEntry, owner: string, repo: 
 }
 
 function renderVisibilityTransitionIssue(issue: VisibilityTransitionIssue, owner: string, repo: string): IssuePayload {
+  // node_id is validated against /^[\w\-+/=]+$/ at the schema layer (scripts/schemas.ts assertRepoEntry),
+  // so this template can safely interpolate without shell-quoting.
   const title = `[INTEGRITY] Visibility transition for ${issue.node_id}`
   const body = [
     `<!-- reconcile:subject:node_id=${issue.node_id} -->`,

@@ -5784,7 +5784,8 @@ describe('renderIssuePayload (visibility-transition rendering)', () => {
     const payload: IssuePayload = renderIssuePayload(issue, 'fro-bot', '.github')
     // The body must never contain a wiki canonical slug (owner--repo format).
     // The gh api command uses "--field" which is fine; we check for the slug pattern specifically.
-    expect(payload.body).not.toMatch(/[\w.-]+--[\w.-]+/)
+    expect(payload.body).not.toMatch(/[\w.-]+--[\w.-]+/) // canonical owner--repo slug
+    expect(payload.body).not.toMatch(/(?!owner\/repo)\b\w[\w-]*\/[\w.-]+/) // generic owner/repo slash form (excludes prose placeholder "owner/repo")
   })
 
   it('body does NOT contain a resolved owner/repo slug (no canonical identity leak)', () => {
