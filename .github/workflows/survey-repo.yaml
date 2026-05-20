@@ -81,13 +81,18 @@ jobs:
 
           # shellcheck disable=SC2016
           gql_query='query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner isPrivate } } }'
-          response=$(gh api graphql \
-            -F id="$NODE_ID" \
-            -f query="$gql_query" \
-            2>/dev/null) || {
+          # Capture stderr to a temp file so a failure surfaces the real gh/GitHub error
+          # (auth, permission, rate limit, network) instead of a generic abort line.
+          gh_stderr=$(mktemp)
+          if ! response=$(gh api graphql -F id="$NODE_ID" -f query="$gql_query" 2>"$gh_stderr"); then
             printf 'GraphQL lookup failed for node_id: %s\n' "$NODE_ID" >&2
+            printf '--- gh stderr ---\n' >&2
+            cat "$gh_stderr" >&2
+            printf '--- end gh stderr ---\n' >&2
+            rm -f "$gh_stderr"
             exit 1
-          }
+          fi
+          rm -f "$gh_stderr"
 
           name_with_owner=$(printf '%s' "$response" | jq -er '
             .data.node
