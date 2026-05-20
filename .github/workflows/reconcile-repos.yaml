@@ -40,6 +40,18 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      # Survey writebacks (`recordSurveyResult`) and onboarding writes land on the `data`
+      # branch, but the workflow's checkout pulls scripts from the default branch (`main`).
+      # Overlay the authoritative `metadata/` tree from `data` so reconcile plans against
+      # live state instead of whatever `main` last reflected.
+      - name: ⤵ Overlay metadata from data branch
+        env:
+          GH_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin data
+          git checkout origin/data -- metadata/
+
       - name: 🔁 Reconcile repos
         env:
           FRO_BOT_POLL_PAT: ${{ secrets.FRO_BOT_POLL_PAT }}
