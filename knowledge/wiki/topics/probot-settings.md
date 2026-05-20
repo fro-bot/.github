@@ -9,6 +9,7 @@ related:
   - marcusrbrown--ha-config
   - bfra-me--github
   - bfra-me--ha-addon-repository
+  - bfra-me--works
 ---
 
 # Probot Settings
@@ -64,10 +65,20 @@ The `fro-bot/.github` repository (this repo) has its own `common-settings.yaml` 
 - `update-repository-settings` is shipped as a local custom action in
   this repo and consumed by `update-repo-settings.yaml`
 
-[[bfra-me--ha-addon-repository]] and other `bfra-me/*` repos extend
-this template; most `marcusrbrown/*` repos extend the `fro-bot/.github`
-template instead. Reconciling which org template is canonical for what
-audience is an open follow-up.
+[[bfra-me--ha-addon-repository]], [[bfra-me--works]], and other
+`bfra-me/*` repos extend this template; most `marcusrbrown/*` repos
+extend the `fro-bot/.github` template instead. Reconciling which org
+template is canonical for what audience is an open follow-up.
+
+The [[bfra-me--works]] settings file is a representative example of how
+`bfra-me/*` repos compose the org template: it extends
+`.github:common-settings.yaml` and overrides `repository.{name,
+description, topics}` plus a 12-check branch-protection list (`Analyze`,
+`Build`, `CI`, `CodeQL`, `Create Renovate Changeset`, `Fro Bot`,
+`Lint`, `Prepare`, `Renovate / Renovate`, `Review Dependencies`,
+`Test`, `Workspace Analysis`) with `enforce_admins: true`,
+`required_linear_history: true`, and `required_pull_request_reviews:
+null` — matching the org-template posture (checks over reviewers).
 
 ## Settings Sync Workflow
 
