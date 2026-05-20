@@ -110,12 +110,12 @@ repos:
     name: marcusrbrown
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-19
+    last_survey_at: 2026-05-20
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-06-18
+    next_survey_eligible_at: 2026-06-21
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
   - owner: marcusrbrown
