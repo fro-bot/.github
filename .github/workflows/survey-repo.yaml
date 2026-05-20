@@ -86,9 +86,11 @@ jobs:
           gh_stderr=$(mktemp)
           if ! response=$(gh api graphql -F id="$NODE_ID" -f query="$gql_query" 2>"$gh_stderr"); then
             printf 'GraphQL lookup failed for node_id: %s\n' "$NODE_ID" >&2
-            printf '--- gh stderr ---\n' >&2
+            # Use %s format so leading dashes in the marker are treated as arguments,
+            # not options (bash builtin printf otherwise rejects '---...' as an option).
+            printf '%s\n' '--- gh stderr ---' >&2
             cat "$gh_stderr" >&2
-            printf '--- end gh stderr ---\n' >&2
+            printf '%s\n' '--- end gh stderr ---' >&2
             rm -f "$gh_stderr"
             exit 1
           fi
