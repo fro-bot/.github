@@ -81,7 +81,6 @@ export interface ResolvedEntry {
 
 export interface SlugResolutionResult {
   resolved: ResolvedEntry[]
-  failures: string[] // node_ids that failed — always empty on success; throws if non-empty
 }
 
 type FailureMode = 'subprocess-threw' | 'node-null'
@@ -111,13 +110,18 @@ export function resolveCanonicalSlugs(entries: readonly {node_id: string}[]): Sl
 
   for (const entry of entries) {
     try {
-      const stdout = execFileSync('gh', ['api', 'graphql', '-F', `nodeId=${entry.node_id}`, '-f', `query=${query}`], {
-        encoding: 'utf8',
-        stdio: ['inherit', 'pipe', 'pipe'],
-      })
+      const stdout = execFileSync(
+        'gh',
+        ['api', 'graphql', '--field', `nodeId=${entry.node_id}`, '-f', `query=${query}`],
+        {
+          encoding: 'utf8',
+          stdio: ['inherit', 'pipe', 'pipe'],
+        },
+      )
       const parsed: unknown = JSON.parse(stdout)
       if (isGraphQLRepoNameResponse(parsed)) {
         // Normalize to lowercase at storage; convert "owner/repo" → "owner--repo"
+        // GitHub's nameWithOwner is always `owner/repo` with exactly one slash — single-match replace is intentional.
         const slug = parsed.data.node.nameWithOwner.replace('/', '--').toLowerCase()
         resolved.push({node_id: entry.node_id, canonicalSlug: slug})
       } else if (isGraphQLNodeNullResponse(parsed)) {
@@ -142,7 +146,7 @@ export function resolveCanonicalSlugs(entries: readonly {node_id: string}[]): Sl
     )
   }
 
-  return {resolved, failures: []}
+  return {resolved}
 }
 
 // ---------------------------------------------------------------------------
