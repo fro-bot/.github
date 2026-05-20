@@ -28,6 +28,18 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      - name: ⤵ Fetch data branch for privacy check
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: data
+          path: data-branch-check
+
+      - name: 🔒 Block private wiki pages
+        env:
+          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+        working-directory: data-branch-check
+        run: node ../scripts/check-wiki-private-presence.ts
+
       - name: 🔀 Open weekly data merge PR
         env:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
