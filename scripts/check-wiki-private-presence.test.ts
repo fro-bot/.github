@@ -220,9 +220,68 @@ describe('resolveCanonicalSlugs', () => {
     mockExecFileSync.mockImplementation(() => {
       throw new Error('gh: HTTP 401')
     })
-    expect(() => resolveCanonicalSlugs([{node_id: 'R_kgDOABCDEF'}, {node_id: 'R_kgDOXYZ123'}])).toThrow(
-      /R_kgDOABCDEF.*R_kgDOXYZ123|R_kgDOXYZ123.*R_kgDOABCDEF/,
-    )
+    let err: unknown
+    try {
+      resolveCanonicalSlugs([{node_id: 'R_kgDOABCDEF'}, {node_id: 'R_kgDOXYZ123'}])
+    } catch (error) {
+      err = error
+    }
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toMatch(/R_kgDOABCDEF/)
+    expect((err as Error).message).toMatch(/R_kgDOXYZ123/)
+  })
+
+  it('throws with node-null mode when GraphQL returns data.node: null (Test #1)', () => {
+    // #given GraphQL returns null for the node (repo deleted or App lost access)
+    // #when resolveCanonicalSlugs is called
+    // #then it throws identifying the failure as node-null (not subprocess-threw)
+    mockExecFileSync.mockReturnValue(JSON.stringify({data: {node: null}}))
+    expect(() => resolveCanonicalSlugs([{node_id: 'R_kgDOABCDEF'}])).toThrow(/node-null/)
+  })
+
+  it('distinguishes subprocess-threw from node-null in the error message (NBC #2)', () => {
+    // #given one entry throws subprocess and another returns node: null
+    // #when resolveCanonicalSlugs is called
+    // #then the error message labels each failure with its mode
+    mockExecFileSync
+      .mockImplementationOnce(() => {
+        throw new Error('gh: HTTP 401')
+      })
+      .mockReturnValueOnce(JSON.stringify({data: {node: null}}))
+    let err: unknown
+    try {
+      resolveCanonicalSlugs([{node_id: 'R_kgDOABCDEF'}, {node_id: 'R_kgDOXYZ123'}])
+    } catch (error) {
+      err = error
+    }
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toMatch(/subprocess-threw/)
+    expect((err as Error).message).toMatch(/R_kgDOABCDEF/)
+    expect((err as Error).message).toMatch(/node-null/)
+    expect((err as Error).message).toMatch(/R_kgDOXYZ123/)
+  })
+
+  it('normalizes canonicalSlug to lowercase at storage (NBC #3)', () => {
+    // #given GitHub returns a mixed-case nameWithOwner
+    // #when resolveCanonicalSlugs is called
+    // #then the stored canonicalSlug is lowercased
+    mockExecFileSync.mockReturnValue(JSON.stringify({data: {node: {nameWithOwner: 'MarcusRBrown/Poly'}}}))
+    const result = resolveCanonicalSlugs([{node_id: 'R_kgDOABCDEF'}])
+    expect(result.resolved[0]?.canonicalSlug).toBe('marcusrbrown--poly')
+  })
+
+  it.each([
+    ['bfra-me/works', 'bfra-me--works'],
+    ['marcusrbrown/ha-config', 'marcusrbrown--ha-config'],
+    ['bfra-me/.github', 'bfra-me--.github'],
+    ['MarcusRBrown/Poly', 'marcusrbrown--poly'],
+  ])('converts nameWithOwner %s → slug %s (Test #2)', (nameWithOwner, expectedSlug) => {
+    // #given GraphQL returns a nameWithOwner with various owner/repo shapes
+    // #when resolveCanonicalSlugs is called
+    // #then the canonicalSlug is correctly lowercased and slash-replaced
+    mockExecFileSync.mockReturnValue(JSON.stringify({data: {node: {nameWithOwner}}}))
+    const result = resolveCanonicalSlugs([{node_id: 'R_kgDOABCDEF'}])
+    expect(result.resolved[0]?.canonicalSlug).toBe(expectedSlug)
   })
 })
 

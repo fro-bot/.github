@@ -49,7 +49,7 @@ export function detectPrivateWikiLeaks(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Type guard for GraphQL response (P2 #6 — no unsafe casts at JSON boundary)
+// Type guards for GraphQL response (no unsafe casts at JSON boundary)
 // ---------------------------------------------------------------------------
 
 function isGraphQLRepoNameResponse(value: unknown): value is {data: {node: {nameWithOwner: string}}} {
@@ -62,8 +62,16 @@ function isGraphQLRepoNameResponse(value: unknown): value is {data: {node: {name
   return typeof node.nameWithOwner === 'string' && node.nameWithOwner.length > 0
 }
 
+function isGraphQLNodeNullResponse(value: unknown): value is {data: {node: null}} {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  if (typeof v.data !== 'object' || v.data === null) return false
+  const data = v.data as Record<string, unknown>
+  return data.node === null
+}
+
 // ---------------------------------------------------------------------------
-// resolveCanonicalSlugs — exported for testing; fail-closed (P1 #2)
+// resolveCanonicalSlugs — exported for testing; fail-closed
 // ---------------------------------------------------------------------------
 
 export interface ResolvedEntry {
@@ -76,46 +84,65 @@ export interface SlugResolutionResult {
   failures: string[] // node_ids that failed — always empty on success; throws if non-empty
 }
 
+type FailureMode = 'subprocess-threw' | 'node-null'
+
+interface ResolutionFailure {
+  node_id: string
+  mode: FailureMode
+}
+
 /**
  * Resolve canonical slugs for all private entries via GraphQL.
  *
- * Fail-closed: if ANY entry's slug cannot be resolved (API error, lost access,
- * deleted repo), throws with the list of failing node_ids. The caller must not
- * proceed — a canonical leak could slip through undetected.
+ * Uses parameterized `-F nodeId=` to avoid injection via crafted node_id values.
+ *
+ * Fail-closed: if ANY entry's slug cannot be resolved, throws with each failure
+ * labeled by mode so operators can act without guessing:
+ *   [subprocess-threw] — network/rate-limit/auth issue
+ *   [node-null]        — repo deleted or App lost access
  *
  * Captures all subprocess output; never echoes to stdout/stderr.
  */
 export function resolveCanonicalSlugs(entries: readonly {node_id: string}[]): SlugResolutionResult {
   const resolved: ResolvedEntry[] = []
-  const failures: string[] = []
+  const failures: ResolutionFailure[] = []
+
+  const query = 'query($nodeId: ID!) { node(id: $nodeId) { ... on Repository { nameWithOwner } } }'
 
   for (const entry of entries) {
     try {
-      const stdout = execFileSync(
-        'gh',
-        ['api', 'graphql', '-f', `query={ node(id: "${entry.node_id}") { ... on Repository { nameWithOwner } } }`],
-        {encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe']},
-      )
+      const stdout = execFileSync('gh', ['api', 'graphql', '-F', `nodeId=${entry.node_id}`, '-f', `query=${query}`], {
+        encoding: 'utf8',
+        stdio: ['inherit', 'pipe', 'pipe'],
+      })
       const parsed: unknown = JSON.parse(stdout)
       if (isGraphQLRepoNameResponse(parsed)) {
-        // Convert "owner/repo" → "owner--repo" (wiki slug convention)
-        resolved.push({node_id: entry.node_id, canonicalSlug: parsed.data.node.nameWithOwner.replace('/', '--')})
+        // Normalize to lowercase at storage; convert "owner/repo" → "owner--repo"
+        const slug = parsed.data.node.nameWithOwner.replace('/', '--').toLowerCase()
+        resolved.push({node_id: entry.node_id, canonicalSlug: slug})
+      } else if (isGraphQLNodeNullResponse(parsed)) {
+        failures.push({node_id: entry.node_id, mode: 'node-null'})
       } else {
-        // Unexpected response shape — treat as failure
-        failures.push(entry.node_id)
+        // Unexpected response shape — treat as subprocess-level failure
+        failures.push({node_id: entry.node_id, mode: 'subprocess-threw'})
       }
     } catch {
-      failures.push(entry.node_id)
+      failures.push({node_id: entry.node_id, mode: 'subprocess-threw'})
     }
   }
 
   if (failures.length > 0) {
+    const lines = failures.map(f => {
+      const hint =
+        f.mode === 'node-null' ? 'investigate repo lifecycle/App access' : 'investigate network/rate-limit/auth'
+      return `  [${f.mode}] ${f.node_id} (${hint})`
+    })
     throw new Error(
-      `check-wiki-private-presence: cannot verify private wiki presence — ${failures.length} private ${failures.length === 1 ? 'entry' : 'entries'} failed slug resolution: ${failures.join(', ')}. Investigate token scope / repo access before re-running.`,
+      `check-wiki-private-presence: cannot verify private wiki presence (${failures.length} ${failures.length === 1 ? 'entry' : 'entries'} unresolved):\n${lines.join('\n')}`,
     )
   }
 
-  return {resolved, failures}
+  return {resolved, failures: []}
 }
 
 // ---------------------------------------------------------------------------
