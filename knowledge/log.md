@@ -1158,3 +1158,24 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4cd81989916
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-05-20 ingest] ingest | marcusrbrown/marcusrbrown
+
+Incremental delta survey of `marcusrbrown/marcusrbrown` (SHA `0a3c202`, up from `de594cd` on 2026-05-18). Additive update to `marcusrbrown--marcusrbrown.md`: appended a 2026-05-20 survey-history row, a new "2026-05-20 Update" section, and corrected the eslint-config row in the post-thaw table. Index entry updated to flag the missing Fro Bot workflow.
+
+Findings:
+
+- HEAD advanced to `0a3c2027228e6715e392a1cbc027f06596a02baf` (`chore(dev): update dependency tsx to v4.22.1 (#916)`, 2026-05-20T05:42:59Z).
+- Single new merge since prior survey: #916 (tsx 4.22.0 → 4.22.1).
+- **Contradiction with 2026-05-18 note:** that survey claimed Renovate had not opened a PR for `@bfra.me/eslint-config` past 0.50.1. PR #903 (`→ v0.51.1`) was in fact opened on 2026-05-14T06:30:08Z and is still open. Logged the correction in-page rather than rewriting prior text, per schema rule on contradictions.
+- Workflow file pins on `main` unchanged: `bfra-me/.github` v4.16.18 (`update-repo-settings.yaml`), `actions/checkout@v6.0.2`, `actions/create-github-app-token@v2.2.2`, `dorny/paths-filter@v3.0.3`, `muesli/readme-scribe@d2f6ab3`, `EndBug/add-and-commit@v9.1.4`. Renovate preset still `marcusrbrown/renovate-config#5.2.0`.
+- Fro Bot workflow still absent. Confirmed workflows: `cleanup-cache.yaml`, `main.yaml`, `renovate.yaml`, `update-profile.yaml`, `update-repo-settings.yaml`. Follow-up draft PR to add a Fro Bot agent workflow remains warranted.
+- No new topic/entity/comparison pages justified — deltas are version-pin level, fully covered by [[github-actions-ci]] patterns already captured.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown (SHA 0a3c2027228e6715e392a1cbc027f06596a02baf)
+
+## [2026-05-20 08:39] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown

@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/marcusrbrown"
 created: 2026-04-18
-updated: 2026-05-18
+updated: 2026-05-20
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: 0a3c2027228e6715e392a1cbc027f06596a02baf
+    accessed: 2026-05-20
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: de594cdd416b60d92caba6684492659620a22439
     accessed: 2026-05-18
@@ -190,7 +193,7 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | `Prettier` | 3.8.3 | 3.8.3 | 3.8.1 → 3.8.3 |
 | `@bfra.me/prettier-config` | 0.16.9 | 0.16.9 | (newly pinned) |
 | `@bfra.me/tsconfig` | 0.13.1 | 0.13.1 | (newly pinned) |
-| `@bfra.me/eslint-config` | 0.50.1 | ≥0.51.0 | unchanged — still trailing |
+| `@bfra.me/eslint-config` | 0.50.1 | 0.51.1 | unchanged on `main` — Renovate PR #903 (→ v0.51.1) **open** since 2026-05-14, awaiting merge (correction to 2026-05-18 note) |
 | `Node.js` | 24.15.0 | 24.15.0 | 24.14.0 → 24.15.0 |
 | `vitest` / `@vitest/ui` | 4.1.6 | 4.1.6 | 4.0.18 → 4.1.6 |
 | `tsx` | 4.22.0 | 4.22.0 | 4.20.3 → 4.22.0 |
@@ -238,6 +241,21 @@ The "newly pinned" rows above reflect #907's pin sweep: previously caret-ranged 
 
 Backlog is back to baseline. The profile update pipeline (every 6 hours) and Renovate are both healthy.
 
+## 2026-05-20 Update: Minor Drift, eslint-config PR Surfaced
+
+SHA advanced `de594cd` → `0a3c202`. Single new merge: #916 (`tsx` 4.22.0 → 4.22.1) at 2026-05-20T05:43:00Z. Open PRs increased from 0 to 1.
+
+**Contradiction with prior survey:** The 2026-05-18 note read "`@bfra.me/eslint-config` 0.50.1 still trailing while ecosystem advanced past 0.51.0 — Renovate has not opened a PR for this." That was incorrect at time of writing — Renovate had in fact opened PR #903 on 2026-05-14T06:30:08Z (the same wave that flushed the rest of the backlog). The PR has remained open and unmerged for six days, which suggests either Marcus is intentionally holding it for a manual review (eslint config changes tend to ripple), or it slipped past the merge queue. Either way, the trailing position on `main` is now an explicit choice, not a missed Renovate run.
+
+### Open Work Items (2026-05-20)
+
+| # | Title | Author | State | Notes |
+| --- | --- | --- | --- | --- |
+| #284 | Dependency Dashboard | mrbro-bot[bot] | open | Standard Renovate dashboard issue |
+| #903 | chore(dev): update dependency @bfra.me/eslint-config to v0.51.1 | mrbro-bot[bot] | **open** since 2026-05-14 | Lone trailing dep; first config-touching Renovate PR not auto-merged since thaw |
+
+Fro Bot workflow gap is unchanged — no `fro-bot.yaml` present in `.github/workflows/`. Confirmed workflows on `main` remain: `cleanup-cache.yaml`, `main.yaml`, `renovate.yaml`, `update-profile.yaml`, `update-repo-settings.yaml`. Follow-up to draft a Fro Bot agent workflow PR is still outstanding.
+
 ## Survey History
 
 | Date | SHA | Delta |
@@ -245,3 +263,4 @@ Backlog is back to baseline. The profile update pipeline (every 6 hours) and Ren
 | 2026-04-18 | `af78e68` | Initial survey |
 | 2026-04-24 | `af78e68` | SHA unchanged; documented Renovate stall (issue #895), dependency drift vs ecosystem, fro-bot collaborator confirmed, open work items added |
 | 2026-05-18 | `de594cd` | Renovate thaw confirmed (#895 closed, preset → 5.2.0 via #897); 18 dependency PRs landed 2026-05-14 → 2026-05-18; bumped `bfra-me/.github` v4.4.0 → v4.16.18, `pnpm` 10.31.0 → 10.33.4, `vitest` 4.0.18 → 4.1.6, `tsx` 4.20.3 → 4.22.0, `Node.js` 24.14.0 → 24.15.0, `Prettier` 3.8.1 → 3.8.3; new pinned deps added (`@bfra.me/prettier-config` 0.16.9, `@bfra.me/tsconfig` 0.13.1, `@types/node` 24.12.4); `@bfra.me/eslint-config` 0.50.1 still trailing; no Fro Bot workflow yet — follow-up PR still warranted |
+| 2026-05-20 | `0a3c202` | Minor delta: #916 merged `tsx` 4.22.0 → 4.22.1; PR #903 (`@bfra.me/eslint-config` v0.50.1 → v0.51.1) is OPEN since 2026-05-14 — **contradicts** the 2026-05-18 note that Renovate had not opened a PR for the trailing eslint-config; the PR exists but is unmerged. Workflow refs unchanged (`bfra-me/.github` v4.16.18, renovate preset #5.2.0). No Fro Bot workflow yet; `update-profile.yaml` still uses `mrbro-bot[bot]` (app 137683033) for commits. Single open dependency PR + dashboard issue #284 — backlog still healthy. |
