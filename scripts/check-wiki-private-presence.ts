@@ -93,7 +93,7 @@ interface ResolutionFailure {
 /**
  * Resolve canonical slugs for all private entries via GraphQL.
  *
- * Uses parameterized `-F nodeId=` to avoid injection via crafted node_id values.
+ * Uses parameterized `--field nodeId=` to avoid injection via crafted node_id values.
  *
  * Fail-closed: if ANY entry's slug cannot be resolved, throws with each failure
  * labeled by mode so operators can act without guessing:

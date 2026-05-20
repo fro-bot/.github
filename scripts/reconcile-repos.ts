@@ -608,9 +608,8 @@ interface ClassifyTrackedParams {
  * that is initial categorization, not a flip. Private-to-public transitions emit no alert;
  * the next mutator write recanonicalizes the entry.
  *
- * Dedup is handled at the I/O layer (`runVisibilityTransitionIssues`) — this function
- * always pushes when the flip is detected, and the async dedup step suppresses duplicates
- * before creating the GitHub issue.
+ * Dedup is handled inline in `runIssueQueue` — this function always pushes when the flip
+ * is detected, and the async dedup step suppresses duplicates before creating the GitHub issue.
  */
 function maybeQueueVisibilityTransition(params: {
   storedPrivate: boolean | undefined
@@ -1245,7 +1244,9 @@ export interface HandleReconcileResult {
   perRepoIssues: number
   /** Count of successfully-created rollup issues (from plan + self-healing). */
   rollupIssues: number
-  /** Count of issue-creation failures across per-repo + rollup. */
+  /** Count of successfully-created visibility-transition integrity-alert issues. */
+  visibilityTransitionIssues: number
+  /** Count of issue-creation failures across per-repo + rollup + visibility-transition. */
   issuesFailed: number
   /** Count of stale `reconcile:pending-review` issues auto-closed this run. */
   closedStaleIssues: number
@@ -1537,6 +1538,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     dispatchesDeferred,
     perRepoIssues: issueOutcome.perRepoSucceeded,
     rollupIssues: issueOutcome.rollupSucceeded + healedRollups,
+    visibilityTransitionIssues: issueOutcome.visibilityTransitionSucceeded,
     issuesFailed: issueOutcome.failed,
     closedStaleIssues,
     probesFailed,
@@ -2346,44 +2348,132 @@ async function dispatchWithTimeout<T>(work: () => Promise<T>, timeoutMs: number)
   }
 }
 
+// Derived from Octokit's paginated list-for-repo response element type.
+type ListForRepoResponseItem = RestEndpointMethodTypes['issues']['listForRepo']['response']['data'][number]
+
 async function runIssueQueue(params: {
   appOctokit: OctokitClient
   owner: string
   repo: string
   issues: IssueQueueEntry[]
   logger: ReconcileLogger
-}): Promise<{perRepoSucceeded: number; rollupSucceeded: number; failed: number}> {
+}): Promise<{
+  perRepoSucceeded: number
+  rollupSucceeded: number
+  visibilityTransitionSucceeded: number
+  failed: number
+}> {
   let perRepoSucceeded = 0
   let rollupSucceeded = 0
+  let visibilityTransitionSucceeded = 0
   let failed = 0
   for (const issue of params.issues) {
     try {
       if (issue.kind === 'visibility-transition') {
         // Dedup: skip if an open issue with the same node_id already exists.
-        const existing = (await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
-          owner: params.owner,
-          repo: params.repo,
-          state: 'open',
-          labels: VISIBILITY_TRANSITION_LABEL,
-          per_page: 100,
-        })) as unknown as OpenIssueEntry[]
-        const alreadyOpen = existing.some(i => (i.title ?? '').includes(issue.node_id))
+        // Fail-open: if paginate throws, treat as "no existing issue found" and proceed
+        // to create — better to risk a duplicate than to silently drop the alert.
+        let existing: ListForRepoResponseItem[] = []
+        try {
+          existing = await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
+            owner: params.owner,
+            repo: params.repo,
+            state: 'open',
+            labels: VISIBILITY_TRANSITION_LABEL,
+            per_page: 100,
+          })
+        } catch (listError: unknown) {
+          const status = isRecord(listError) && typeof listError.status === 'number' ? listError.status : 'unknown'
+          params.logger.warn(
+            `reconcile: dedup list failed for visibility-transition (status=${status}); proceeding with issue creation.`,
+          )
+        }
+        // Exact-title match: the title is fully derived from node_id, so exact equality
+        // is functionally equivalent to marker extraction and cheaper (no body fetch needed).
+        const expectedTitle = `[INTEGRITY] Visibility transition for ${issue.node_id}`
+        const alreadyOpen = existing.some(i => i.title === expectedTitle)
         if (alreadyOpen) continue
+
+        // Pre-flight label creation: ensure both labels exist before calling issues.create.
+        // Defends against the Update-Repo-Settings propagation race on first run.
+        await ensureLabelExists(params.appOctokit, params.owner, params.repo, VISIBILITY_TRANSITION_LABEL, {
+          color: 'f97316',
+          description: 'Tracked repo transitioned from public to private',
+          logger: params.logger,
+        })
+        await ensureLabelExists(params.appOctokit, params.owner, params.repo, INTEGRITY_ALERT_LABEL, {
+          color: 'b60205',
+          description: 'Reconcile integrity alert requiring operator action',
+          logger: params.logger,
+        })
       }
       const payload = renderIssuePayload(issue, params.owner, params.repo)
       await callIssuesCreate(params.appOctokit, payload)
-      if (issue.kind === 'per-repo') perRepoSucceeded += 1
-      else rollupSucceeded += 1
+      switch (issue.kind) {
+        case 'per-repo': {
+          perRepoSucceeded += 1
+          break
+        }
+        case 'per-owner-rollup': {
+          rollupSucceeded += 1
+          break
+        }
+        case 'visibility-transition': {
+          visibilityTransitionSucceeded += 1
+          break
+        }
+        default: {
+          // Exhaustiveness guard: adding a new IssueQueueEntry kind must update the switch above.
+          const exhaustive: never = issue
+          throw new Error(`runIssueQueue: unhandled issue kind: ${JSON.stringify(exhaustive)}`)
+        }
+      }
     } catch (error: unknown) {
       failed += 1
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
       params.logger.warn(`reconcile: issue creation failed (status=${status}); continuing.`)
     }
   }
-  return {perRepoSucceeded, rollupSucceeded, failed}
+  return {perRepoSucceeded, rollupSucceeded, visibilityTransitionSucceeded, failed}
 }
 
-interface IssuePayload {
+/**
+ * Ensure a label exists in the repo. If it doesn't (404), create it. If creation 422s
+ * (race with another writer), proceed silently — the label already exists. Any other
+ * error is logged and swallowed so a label failure never blocks issue creation.
+ */
+async function ensureLabelExists(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  name: string,
+  meta: {color: string; description: string; logger: ReconcileLogger},
+): Promise<void> {
+  try {
+    await octokit.rest.issues.getLabel({owner, repo, name})
+    return // label already exists
+  } catch (getError: unknown) {
+    if (!isApiStatus(getError, 404)) {
+      // Non-404 on the get — log and proceed; don't block issue creation.
+      const status = isRecord(getError) && typeof getError.status === 'number' ? getError.status : 'unknown'
+      meta.logger.warn(`reconcile: label check failed for "${name}" (status=${status}); proceeding without pre-flight.`)
+      return
+    }
+  }
+  // Label not found — create it.
+  try {
+    await octokit.rest.issues.createLabel({owner, repo, name, color: meta.color, description: meta.description})
+  } catch (createError: unknown) {
+    if (isApiStatus(createError, 422)) {
+      // Race with another writer (e.g. Update-Repo-Settings) — label now exists; proceed.
+      return
+    }
+    const status = isRecord(createError) && typeof createError.status === 'number' ? createError.status : 'unknown'
+    meta.logger.warn(`reconcile: label creation failed for "${name}" (status=${status}); proceeding without label.`)
+  }
+}
+
+export interface IssuePayload {
   owner: string
   repo: string
   title: string
@@ -2391,7 +2481,7 @@ interface IssuePayload {
   labels: string[]
 }
 
-function renderIssuePayload(issue: IssueQueueEntry, owner: string, repo: string): IssuePayload {
+export function renderIssuePayload(issue: IssueQueueEntry, owner: string, repo: string): IssuePayload {
   if (issue.kind === 'per-repo') {
     return renderPerRepoIssue(issue, owner, repo)
   }
@@ -2410,7 +2500,13 @@ function renderVisibilityTransitionIssue(issue: VisibilityTransitionIssue, owner
     '',
     `- Node ID: \`${issue.node_id}\``,
     '',
-    'The repository name is omitted because this issue stream is public. Use the operator tool (`scripts/resolve-private.ts`) to look up the canonical owner/repo by node ID and identify any wiki pages that may need manual review.',
+    'To look up the canonical owner/repo by node ID, run:',
+    '',
+    '```sh',
+    `gh api graphql --field nodeId='${issue.node_id}' -f query='query($nodeId: ID!) { node(id: $nodeId) { ... on Repository { nameWithOwner isPrivate } } }'`,
+    '```',
+    '',
+    'If the response contains `"node": null`, the canonical name is not retrievable from your token\'s scope (repo may be deleted or your token lacks access).',
     '',
     'This issue requires manual operator action. It will not be auto-closed.',
   ].join('\n')
