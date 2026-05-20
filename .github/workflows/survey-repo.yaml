@@ -68,11 +68,24 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      # The privacy gate's only question is "is this node a public repository?" That
+      # is a public read, but it must work for repos in any org the dispatch lands
+      # on — including orgs whose policy forbids long-lived fine-grained PATs (e.g.
+      # bfra-me requires ≤366d). An installation token minted for the calling repo's
+      # owner sidesteps PAT policy entirely while still permitting public-read GraphQL.
+      - name: Mint App token for privacy gate
+        id: gate-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: 🔒 Resolve and verify
         id: resolve
         env:
           NODE_ID: ${{ inputs.node_id }}
-          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          GH_TOKEN: ${{ steps.gate-token.outputs.token }}
         run: |
           if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
             printf 'Aborting: dispatch input shape invalid\n' >&2
@@ -202,7 +215,7 @@ jobs:
         if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' }}
         env:
           NODE_ID: ${{ inputs.node_id }}
-          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          GH_TOKEN: ${{ steps.gate-token.outputs.token }}
         run: |
           # shellcheck disable=SC2016
           gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
