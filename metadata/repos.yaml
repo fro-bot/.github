@@ -313,9 +313,9 @@ repos:
   - owner: bfra-me
     name: works
     added: 2026-05-18
-    onboarding_status: pending
+    onboarding_status: onboarded
     last_survey_at: 2026-05-20
-    last_survey_status: failure
+    last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
