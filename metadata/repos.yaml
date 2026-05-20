@@ -280,8 +280,8 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    has_fro_bot_workflow: true
+    has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: null
     private: false
@@ -292,8 +292,8 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    has_fro_bot_workflow: true
+    has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: null
     private: false
@@ -304,8 +304,8 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    has_fro_bot_workflow: true
+    has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: null
     private: false
@@ -316,8 +316,8 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    has_fro_bot_workflow: true
+    has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: null
     private: false
