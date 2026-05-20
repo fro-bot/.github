@@ -37,6 +37,11 @@ on:
         required: false
         type: string
         default: ''
+      private:
+        description: Whether the broadcast concerns a private repo (skips external Discord and Bluesky posts when true; journal still fires)
+        required: false
+        type: boolean
+        default: true
     secrets:
       FRO_BOT_PAT:
         required: true
@@ -63,7 +68,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: 📣 Notify Discord
-        if: inputs.discord_message != ''
+        if: inputs.discord_message != '' && inputs.private != true
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_MESSAGE: ${{ inputs.discord_message }}
@@ -74,7 +79,7 @@ jobs:
             --title "$DISCORD_TITLE"
 
       - name: 🦋 Post to Bluesky
-        if: inputs.bluesky_text != ''
+        if: inputs.bluesky_text != '' && inputs.private != true
         env:
           BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
           BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}

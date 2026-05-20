@@ -277,6 +277,9 @@ jobs:
       journal_metadata: >-
         {"owner":"${{ needs.survey-repo.outputs.owner }}","repo":"${{ needs.survey-repo.outputs.repo }}"}
       repo: ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }}
+      # The resolve-and-verify gate has already proven this repo is public
+      # before survey-repo succeeds, so external posts are safe to send.
+      private: false
     secrets:
       FRO_BOT_PAT: ${{ secrets.FRO_BOT_PAT }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
