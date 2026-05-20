@@ -221,7 +221,8 @@ function isRepoEntry(value: unknown): value is RepoEntry {
       value.next_survey_eligible_at === null ||
       typeof value.next_survey_eligible_at === 'string') &&
     (value.private === undefined || typeof value.private === 'boolean') &&
-    (value.node_id === undefined || (typeof value.node_id === 'string' && value.node_id.length > 0))
+    (value.node_id === undefined ||
+      (typeof value.node_id === 'string' && value.node_id.length > 0 && /^[\w\-+/=]+$/.test(value.node_id)))
   )
 }
 
@@ -255,6 +256,8 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
     throw new SchemaValidationError(`${path}.private`, 'expected boolean or omitted')
   if (value.node_id !== undefined && (typeof value.node_id !== 'string' || value.node_id.length === 0))
     throw new SchemaValidationError(`${path}.node_id`, 'expected non-empty string or omitted')
+  if (value.node_id !== undefined && typeof value.node_id === 'string' && !/^[\w\-+/=]+$/.test(value.node_id))
+    throw new SchemaValidationError(`${path}.node_id`, String.raw`expected safe node_id matching ^[\w\-+/=]+$`)
 }
 
 function isOnboardingStatus(value: unknown): value is OnboardingStatus {

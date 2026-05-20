@@ -2396,19 +2396,40 @@ async function runIssueQueue(params: {
 
         // Pre-flight label creation: ensure both labels exist before calling issues.create.
         // Defends against the Update-Repo-Settings propagation race on first run.
-        await ensureLabelExists(params.appOctokit, params.owner, params.repo, VISIBILITY_TRANSITION_LABEL, {
-          color: 'f97316',
-          description: 'Tracked repo transitioned from public to private',
-          logger: params.logger,
-        })
-        await ensureLabelExists(params.appOctokit, params.owner, params.repo, INTEGRITY_ALERT_LABEL, {
-          color: 'b60205',
-          description: 'Reconcile integrity alert requiring operator action',
-          logger: params.logger,
-        })
+        // Returns only the labels that are confirmed usable; failures exclude that label.
+        const confirmedLabels = await ensureLabelsExist(
+          params.appOctokit,
+          params.owner,
+          params.repo,
+          [
+            {
+              name: VISIBILITY_TRANSITION_LABEL,
+              color: 'f97316',
+              description: 'Tracked repo transitioned from public to private',
+            },
+            {
+              name: INTEGRITY_ALERT_LABEL,
+              color: 'b60205',
+              description: 'Reconcile integrity alert requiring operator action',
+            },
+          ],
+          params.logger,
+        )
+        const payload = renderIssuePayload(issue, params.owner, params.repo)
+        const filteredPayload: IssuePayload = {
+          ...payload,
+          labels: payload.labels.filter(l => confirmedLabels.has(l)),
+        }
+        if (filteredPayload.labels.length === 0) {
+          params.logger.warn(
+            `reconcile: all labels unconfirmed for visibility-transition issue (node_id=${issue.node_id}); shipping unlabeled.`,
+          )
+        }
+        await callIssuesCreate(params.appOctokit, filteredPayload)
+      } else {
+        const payload = renderIssuePayload(issue, params.owner, params.repo)
+        await callIssuesCreate(params.appOctokit, payload)
       }
-      const payload = renderIssuePayload(issue, params.owner, params.repo)
-      await callIssuesCreate(params.appOctokit, payload)
       switch (issue.kind) {
         case 'per-repo': {
           perRepoSucceeded += 1
@@ -2438,39 +2459,51 @@ async function runIssueQueue(params: {
 }
 
 /**
- * Ensure a label exists in the repo. If it doesn't (404), create it. If creation 422s
- * (race with another writer), proceed silently — the label already exists. Any other
- * error is logged and swallowed so a label failure never blocks issue creation.
+ * Ensure a set of labels exist in the repo. For each label:
+ * - If it exists (getLabel succeeds): confirmed.
+ * - If 404: attempt createLabel.
+ *   - createLabel succeeds or 422 (race — already created): confirmed.
+ *   - createLabel other failure: excluded from returned set (log and continue).
+ * - getLabel non-404 failure: excluded from returned set (log and continue).
+ *
+ * Returns a Set<string> of confirmed-usable label names. The caller MUST filter
+ * the issue payload to only these labels before calling issues.create.
  */
-async function ensureLabelExists(
+async function ensureLabelsExist(
   octokit: OctokitClient,
   owner: string,
   repo: string,
-  name: string,
-  meta: {color: string; description: string; logger: ReconcileLogger},
-): Promise<void> {
-  try {
-    await octokit.rest.issues.getLabel({owner, repo, name})
-    return // label already exists
-  } catch (getError: unknown) {
-    if (!isApiStatus(getError, 404)) {
-      // Non-404 on the get — log and proceed; don't block issue creation.
-      const status = isRecord(getError) && typeof getError.status === 'number' ? getError.status : 'unknown'
-      meta.logger.warn(`reconcile: label check failed for "${name}" (status=${status}); proceeding without pre-flight.`)
-      return
+  labels: readonly {name: string; color: string; description: string}[],
+  logger: ReconcileLogger,
+): Promise<Set<string>> {
+  const confirmed = new Set<string>()
+  for (const {name, color, description} of labels) {
+    try {
+      await octokit.rest.issues.getLabel({owner, repo, name})
+      confirmed.add(name)
+      continue
+    } catch (getError: unknown) {
+      if (!isApiStatus(getError, 404)) {
+        const status = isRecord(getError) && typeof getError.status === 'number' ? getError.status : 'unknown'
+        logger.warn(`reconcile: label check failed for "${name}" (status=${status}); excluding from issue labels.`)
+        continue
+      }
+    }
+    // Label not found (404) — create it.
+    try {
+      await octokit.rest.issues.createLabel({owner, repo, name, color, description})
+      confirmed.add(name)
+    } catch (createError: unknown) {
+      if (isApiStatus(createError, 422)) {
+        // Race with another writer (e.g. Update-Repo-Settings) — label now exists; include it.
+        confirmed.add(name)
+      } else {
+        const status = isRecord(createError) && typeof createError.status === 'number' ? createError.status : 'unknown'
+        logger.warn(`reconcile: label creation failed for "${name}" (status=${status}); excluding from issue labels.`)
+      }
     }
   }
-  // Label not found — create it.
-  try {
-    await octokit.rest.issues.createLabel({owner, repo, name, color: meta.color, description: meta.description})
-  } catch (createError: unknown) {
-    if (isApiStatus(createError, 422)) {
-      // Race with another writer (e.g. Update-Repo-Settings) — label now exists; proceed.
-      return
-    }
-    const status = isRecord(createError) && typeof createError.status === 'number' ? createError.status : 'unknown'
-    meta.logger.warn(`reconcile: label creation failed for "${name}" (status=${status}); proceeding without label.`)
-  }
+  return confirmed
 }
 
 export interface IssuePayload {

@@ -566,6 +566,67 @@ describe('schemas — rejection cases', () => {
     expect(error.path).toContain('node_id')
   })
 
+  it('rejects node_id containing shell metacharacters (defense-in-depth for operator copy-paste safety)', () => {
+    // node_id must match ^[A-Za-z0-9_\-+/=]+$ — shell metacharacters are rejected at parse time
+    // so they can never reach the issue body's inline gh api graphql command.
+    // Base64 chars (+, /, =) are allowed since legacy GitHub node IDs use standard base64.
+    const shellMetaIds = ["R_kgDO'injected", 'R_kgDO`cmd`', 'R_kgDO$VAR', 'R_kgDO;evil', 'R_kgDO with space']
+    for (const nodeId of shellMetaIds) {
+      const bad = {
+        version: 1,
+        repos: [
+          {
+            owner: 'fro-bot',
+            name: 'test',
+            added: '2026-04-17',
+            onboarding_status: 'pending',
+            last_survey_at: null,
+            last_survey_status: null,
+            has_fro_bot_workflow: false,
+            has_renovate: false,
+            node_id: nodeId,
+          },
+        ],
+      }
+      expect(isReposFile(bad)).toBe(false)
+      const error = catchSchemaError(() => assertReposFile(bad))
+      expect(error.path).toContain('node_id')
+    }
+  })
+
+  it('accepts node_id with valid GitHub node_id characters (alphanumeric, underscore, hyphen, and legacy base64)', () => {
+    // New-style: URL-safe base64 (A-Za-z0-9_-)
+    // Legacy-style: standard base64 (A-Za-z0-9+/=) — real entries in metadata/repos.yaml
+    const validIds = [
+      'R_kgDOSVJgdw',
+      'I_kwDOBxyz123',
+      'PR_kwDO-abc_XYZ',
+      'MDEwOlJlcG9zaXRvcnkxODY5MTU0', // legacy base64, no padding
+      'MDEwOlJlcG9zaXRvcnkzMDg1MzMxOTg=', // legacy base64, = padding
+      'MDEwOlJlcG9zaXRvcnk3Njg3NTEzMg==', // legacy base64, == padding
+    ]
+    for (const nodeId of validIds) {
+      const ok = {
+        version: 1,
+        repos: [
+          {
+            owner: 'fro-bot',
+            name: 'test',
+            added: '2026-04-17',
+            onboarding_status: 'pending',
+            last_survey_at: null,
+            last_survey_status: null,
+            has_fro_bot_workflow: false,
+            has_renovate: false,
+            node_id: nodeId,
+          },
+        ],
+      }
+      expect(isReposFile(ok)).toBe(true)
+      expect(() => assertReposFile(ok)).not.toThrow()
+    }
+  })
+
   it('rejects non-string entry in with-renovate list', () => {
     const bad = {repositories: {'with-renovate': ['valid', 42]}}
     expect(isRenovateFile(bad)).toBe(false)

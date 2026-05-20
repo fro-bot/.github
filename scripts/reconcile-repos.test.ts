@@ -5677,11 +5677,19 @@ describe('handleReconcile visibility-transition durability', () => {
     expect(issuesCreate).toHaveBeenCalledOnce()
   })
 
-  it('label 404 → createLabel is called, then issues.create succeeds', async () => {
-    const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
-    const issuesCreateLabel = vi.fn(async () => ({data: {name: 'reconcile:visibility-transition'}}))
+  it('label 404 → createLabel is called before issues.create (call order verified)', async () => {
+    const callOrder: string[] = []
     const issuesGetLabel = vi.fn(async (_params: unknown) => {
+      callOrder.push('getLabel')
       throw Object.assign(new Error('Not Found'), {status: 404})
+    })
+    const issuesCreateLabel = vi.fn(async () => {
+      callOrder.push('createLabel')
+      return {data: {name: 'label'}}
+    })
+    const issuesCreate = vi.fn(async () => {
+      callOrder.push('create')
+      return {data: {number: 99}}
     })
 
     await handleReconcile(
@@ -5692,11 +5700,15 @@ describe('handleReconcile visibility-transition durability', () => {
       }),
     )
 
-    expect(issuesCreateLabel).toHaveBeenCalled()
+    // Both labels must be checked (and created) before the single issues.create call.
+    // Two getLabel + two createLabel (one per label) then one create.
+    expect(callOrder).toEqual(['getLabel', 'createLabel', 'getLabel', 'createLabel', 'create'])
+    expect(issuesCreateLabel).toHaveBeenCalledTimes(2)
     expect(issuesCreate).toHaveBeenCalledOnce()
   })
 
-  it('label createLabel 422 → issues.create is still called (graceful label failure)', async () => {
+  it('createLabel 422 (race) → label IS included in issues.create payload', async () => {
+    // 422 means another writer already created the label — it now exists, so include it.
     const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
     const issuesGetLabel = vi.fn(async (_params: unknown) => {
       throw Object.assign(new Error('Not Found'), {status: 404})
@@ -5714,6 +5726,37 @@ describe('handleReconcile visibility-transition durability', () => {
     )
 
     expect(issuesCreate).toHaveBeenCalledOnce()
+    // Both labels should be present — 422 means the label exists (race), so it's confirmed usable.
+    const calls = issuesCreate.mock.calls as unknown as [{labels?: string[]}][]
+    expect(calls[0]?.[0]?.labels).toContain('reconcile:integrity-alert')
+    expect(calls[0]?.[0]?.labels).toContain('reconcile:visibility-transition')
+  })
+
+  it('createLabel 500 (transient) → label is EXCLUDED from issues.create payload', async () => {
+    // 500 means the label creation genuinely failed — exclude it, but still ship the issue.
+    const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+    const issuesGetLabel = vi.fn(async (_params: unknown) => {
+      throw Object.assign(new Error('Not Found'), {status: 404})
+    })
+    const issuesCreateLabel = vi.fn(async (_params: unknown) => {
+      throw Object.assign(new Error('Internal Server Error'), {status: 500})
+    })
+
+    await handleReconcile(
+      makeTransitionParams({
+        issuesCreate,
+        issuesGetLabel,
+        issuesCreateLabel,
+      }),
+    )
+
+    expect(issuesCreate).toHaveBeenCalledOnce()
+    // Both labels failed (500) — neither should be in the payload.
+    expect(issuesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        labels: [],
+      }),
+    )
   })
 })
 
@@ -5741,7 +5784,7 @@ describe('renderIssuePayload (visibility-transition rendering)', () => {
     const payload: IssuePayload = renderIssuePayload(issue, 'fro-bot', '.github')
     // The body must never contain a wiki canonical slug (owner--repo format).
     // The gh api command uses "--field" which is fine; we check for the slug pattern specifically.
-    expect(payload.body).not.toMatch(/\w+--\w+/)
+    expect(payload.body).not.toMatch(/[\w.-]+--[\w.-]+/)
   })
 
   it('body does NOT contain a resolved owner/repo slug (no canonical identity leak)', () => {
@@ -5823,5 +5866,68 @@ describe('handleReconcile visibility-transition dedup', () => {
     )
     // issues.create was NOT called because the dedup found an existing open issue
     expect(issuesCreate).not.toHaveBeenCalled()
+  })
+
+  it('issues.create IS called when existing title is a strict prefix of the new title (exact-title dedup, not substring)', async () => {
+    // RED-against-old-code proof: old substring dedup would suppress this alert because
+    // 'R_kgDOZAAAA' is a substring of 'R_kgDOZAAAAA'. New exact-title dedup must NOT suppress it.
+    const VICTIM_NODE_ID = 'R_kgDOZAAAA'
+    const LONGER_NODE_ID = `${VICTIM_NODE_ID}A` // one extra char — different repo
+    const issuesCreate = vi.fn(async () => ({data: {number: 42}}))
+
+    const paginateMock = vi.fn(async (_fn: unknown, opts: {labels?: string; state?: string}) => {
+      if (opts.labels === 'reconcile:visibility-transition' && opts.state === 'open') {
+        // Return an issue for the LONGER node_id — not the victim
+        return [
+          {
+            number: 1,
+            title: `[INTEGRITY] Visibility transition for ${LONGER_NODE_ID}`,
+            body: null,
+            labels: [{name: 'reconcile:visibility-transition'}],
+          },
+        ]
+      }
+      return []
+    })
+
+    await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'victim-repo',
+                node_id: VICTIM_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'victim-repo',
+                archived: false,
+                private: true,
+                node_id: VICTIM_NODE_ID,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // Exact-title dedup: the existing issue title does NOT match the victim's expected title,
+    // so issues.create MUST be called. Old substring code would have suppressed this.
+    expect(issuesCreate).toHaveBeenCalledOnce()
   })
 })
