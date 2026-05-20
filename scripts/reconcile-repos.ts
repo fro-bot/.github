@@ -175,7 +175,19 @@ export interface PerOwnerRollupIssue {
   reason: 'unsolicited-new' | 'unsolicited-regain'
 }
 
-export type IssueQueueEntry = PerRepoIssue | PerOwnerRollupIssue
+/**
+ * Visibility-transition integrity alert. Queued when a tracked entry's stored `private`
+ * flag flips from `false` to `true` (including via `access-lost`, which fails closed as
+ * private per Unit 2 semantics). Title and body use `node_id` only — no `owner/repo` —
+ * because this issue stream is public. Operators look up the canonical name locally via
+ * the operator tool.
+ */
+export interface VisibilityTransitionIssue {
+  kind: 'visibility-transition'
+  node_id: string
+}
+
+export type IssueQueueEntry = PerRepoIssue | PerOwnerRollupIssue | VisibilityTransitionIssue
 
 /**
  * Per-channel breakdown of reconcile activity for one run. Operators read these to
@@ -252,6 +264,14 @@ export interface ReconcileSummary {
    * droughts where every tracked repo is inside {@link FLOOR_MIN_GAP_DAYS}.
    */
   flooredDispatches: number
+  /**
+   * Number of tracked entries whose stored `private` flag flipped from `false` to `true`
+   * (including via `access-lost`, which fails closed as private) this run. Each transition
+   * queues a `reconcile:visibility-transition` integrity-alert issue for manual operator
+   * review. Private-to-public transitions emit no alert; the next mutator write
+   * recanonicalizes the entry.
+   */
+  visibilityTransitions: number
   /**
    * Per-channel activity breakdown. See {@link ChannelStats} for field semantics. The
    * engine populates `tracked` and `lostAccess`; the shell populates `dispatched` and
@@ -360,6 +380,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     malformed: 0,
     skippedPrivate: 0,
     flooredDispatches: 0,
+    visibilityTransitions: 0,
     byChannel: {
       collab: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
       owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -368,6 +389,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   }
   const dispatches: DispatchRequest[] = []
   const rawIssues: RawIssue[] = []
+  const transitionIssues: VisibilityTransitionIssue[] = []
 
   // Pass 1 — classify every tracked entry against the access list and probes.
   const trackedKeys = new Set<string>()
@@ -387,6 +409,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       summary,
       dispatches,
       rawIssues,
+      transitionIssues,
       now,
     })
   })
@@ -543,7 +566,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     }
   }
 
-  const issues = buildIssueQueue(rawIssues)
+  const issues: IssueQueueEntry[] = [...buildIssueQueue(rawIssues), ...transitionIssues]
 
   // Populate per-channel tracked counts after both passes complete. Counts entries
   // present on `next.repos` post-classification (excludes lost-access entries via the
@@ -575,7 +598,33 @@ interface ClassifyTrackedParams {
   summary: ReconcileSummary
   dispatches: DispatchRequest[]
   rawIssues: RawIssue[]
+  transitionIssues: VisibilityTransitionIssue[]
   now: Date
+}
+
+/**
+ * Queue a visibility-transition integrity alert when a tracked entry's stored `private`
+ * flag flips from `false` to `true`. Newcomers (no stored `private` field) are excluded —
+ * that is initial categorization, not a flip. Private-to-public transitions emit no alert;
+ * the next mutator write recanonicalizes the entry.
+ *
+ * Dedup is handled at the I/O layer (`runVisibilityTransitionIssues`) — this function
+ * always pushes when the flip is detected, and the async dedup step suppresses duplicates
+ * before creating the GitHub issue.
+ */
+function maybeQueueVisibilityTransition(params: {
+  storedPrivate: boolean | undefined
+  newPrivate: boolean
+  node_id: string | undefined
+  summary: ReconcileSummary
+  transitionIssues: VisibilityTransitionIssue[]
+}): void {
+  // Only fire on false → true. Newcomers (undefined) are excluded.
+  if (params.storedPrivate !== false) return
+  if (!params.newPrivate) return
+  if (params.node_id === undefined) return
+  params.summary.visibilityTransitions += 1
+  params.transitionIssues.push({kind: 'visibility-transition', node_id: params.node_id})
 }
 
 /**
@@ -595,6 +644,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     summary,
     dispatches,
     rawIssues,
+    transitionIssues,
     now,
   } = params
 
@@ -618,6 +668,13 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
       }
       summary.lostAccess += 1
       summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
+      maybeQueueVisibilityTransition({
+        storedPrivate: entry.private,
+        newPrivate: true,
+        node_id: storedRepoNodeId(entry),
+        summary,
+        transitionIssues,
+      })
       return normalizeLostAccessEntry(entry)
     }
 
@@ -669,6 +726,13 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
         }
         summary.lostAccess += 1
         summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
+        maybeQueueVisibilityTransition({
+          storedPrivate: entry.private,
+          newPrivate: true,
+          node_id: storedRepoNodeId(entry),
+          summary,
+          transitionIssues,
+        })
         return normalizeLostAccessEntry(entry)
       }
       default: {
@@ -688,6 +752,13 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     }
     summary.lostAccess += 1
     summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
+    maybeQueueVisibilityTransition({
+      storedPrivate: entry.private,
+      newPrivate: true,
+      node_id: access.node_id,
+      summary,
+      transitionIssues,
+    })
     return {
       ...normalizeRepoEntryForStorage(entry, {
         owner: access.owner,
@@ -756,6 +827,15 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
       (entry.last_survey_status !== 'success' || isEligibleForSurvey(entry.next_survey_eligible_at, params.now)))
 
   const accessPrivate = accessPrivateForStorage(access, accessNodePrivacy)
+
+  // Detect public-to-private visibility flip for still-accessible entries.
+  maybeQueueVisibilityTransition({
+    storedPrivate: entry.private,
+    newPrivate: accessPrivate,
+    node_id: access.node_id,
+    summary,
+    transitionIssues,
+  })
 
   if (wouldDispatchIfPublic && (entry.private !== false || accessPrivate)) {
     summary.skippedPrivate += 1
@@ -1073,6 +1153,7 @@ const DEFAULT_MAX_DISPATCHES_PER_RUN = 12
 const PENDING_REVIEW_LABEL = 'reconcile:pending-review'
 const ROLLUP_LABEL = 'reconcile:rollup-pending-review'
 const INTEGRITY_ALERT_LABEL = 'reconcile:integrity-alert'
+const VISIBILITY_TRANSITION_LABEL = 'reconcile:visibility-transition'
 // Fro Bot is one entity with two GitHub identities: the user account `fro-bot`
 // (FRO_BOT_PAT writes) and the app installation `fro-bot[bot]` (App-token writes).
 // Both have identical access to this repo and represent the same autonomous operator,
@@ -2277,6 +2358,18 @@ async function runIssueQueue(params: {
   let failed = 0
   for (const issue of params.issues) {
     try {
+      if (issue.kind === 'visibility-transition') {
+        // Dedup: skip if an open issue with the same node_id already exists.
+        const existing = (await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
+          owner: params.owner,
+          repo: params.repo,
+          state: 'open',
+          labels: VISIBILITY_TRANSITION_LABEL,
+          per_page: 100,
+        })) as unknown as OpenIssueEntry[]
+        const alreadyOpen = existing.some(i => (i.title ?? '').includes(issue.node_id))
+        if (alreadyOpen) continue
+      }
       const payload = renderIssuePayload(issue, params.owner, params.repo)
       await callIssuesCreate(params.appOctokit, payload)
       if (issue.kind === 'per-repo') perRepoSucceeded += 1
@@ -2302,7 +2395,26 @@ function renderIssuePayload(issue: IssueQueueEntry, owner: string, repo: string)
   if (issue.kind === 'per-repo') {
     return renderPerRepoIssue(issue, owner, repo)
   }
+  if (issue.kind === 'visibility-transition') {
+    return renderVisibilityTransitionIssue(issue, owner, repo)
+  }
   return renderRollupIssue(issue, owner, repo)
+}
+
+function renderVisibilityTransitionIssue(issue: VisibilityTransitionIssue, owner: string, repo: string): IssuePayload {
+  const title = `[INTEGRITY] Visibility transition for ${issue.node_id}`
+  const body = [
+    `<!-- reconcile:subject:node_id=${issue.node_id} -->`,
+    '',
+    'A tracked repository has transitioned from **public** to **private** (or access was lost, which fails closed as private).',
+    '',
+    `- Node ID: \`${issue.node_id}\``,
+    '',
+    'The repository name is omitted because this issue stream is public. Use the operator tool (`scripts/resolve-private.ts`) to look up the canonical owner/repo by node ID and identify any wiki pages that may need manual review.',
+    '',
+    'This issue requires manual operator action. It will not be auto-closed.',
+  ].join('\n')
+  return {owner, repo, title, body, labels: [INTEGRITY_ALERT_LABEL, VISIBILITY_TRANSITION_LABEL]}
 }
 
 function renderPerRepoIssue(issue: PerRepoIssue, owner: string, repo: string): IssuePayload {

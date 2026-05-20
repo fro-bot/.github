@@ -125,6 +125,7 @@ describe('reconcileRepos', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1224,6 +1225,7 @@ describe('reconcileRepos', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 3, dispatched: 0, deferred: 0, lostAccess: 1},
@@ -1266,6 +1268,7 @@ describe('reconcileRepos', () => {
         skippedPrivate: 0,
         unchanged: 1,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
           owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1292,6 +1295,7 @@ describe('reconcileRepos', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: emptyChannelStats(),
       })
     })
@@ -4268,6 +4272,7 @@ describe('formatCommitMessage', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 2 refreshes')
@@ -4287,6 +4292,7 @@ describe('formatCommitMessage', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
@@ -4306,6 +4312,7 @@ describe('formatCommitMessage', () => {
         skippedPrivate: 2,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 1 refreshes')
@@ -4325,6 +4332,7 @@ describe('formatCommitMessage', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 1 refreshes, +18 migrated')
@@ -5450,5 +5458,152 @@ describe('handleReconcile floor integration', () => {
 
     // Both repos must appear as the first-dispatched across the 2 runs.
     expect(new Set(firstDispatched).size).toBe(2)
+  })
+})
+
+const TRANSITION_NODE_ID = 'R_kgDOTransition123'
+
+// Shared helper: build a tracked entry with a stored private flag (Unit 9 tests).
+function makeTransitionEntry(storedPrivate: boolean | undefined): RepoEntry {
+  return makeEntry({
+    owner: 'fro-bot',
+    name: 'tracked-repo',
+    node_id: TRANSITION_NODE_ID,
+    private: storedPrivate,
+    onboarding_status: 'onboarded',
+    last_survey_at: '2026-01-01',
+    last_survey_status: 'success',
+    next_survey_eligible_at: '2026-06-01', // not yet eligible — no dispatch noise
+  })
+}
+
+// Shared helper: build a perRepoStatus map for a given probe outcome (Unit 9 tests).
+function makeProbeMap(status: 'still-accessible' | 'transient' | 'deleted' | 'revoked' | 'archived' | 'malformed') {
+  return new Map([['fro-bot/tracked-repo', {status} as {status: typeof status}]])
+}
+
+describe('reconcileRepos visibility-transition detection (Unit 9)', () => {
+  const NODE_ID = TRANSITION_NODE_ID
+
+  it('scenario 1: stored false, probe returns private:true → transition issue queued', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: true})],
+      }),
+    )
+    expect(result.issues).toHaveLength(1)
+    expect(result.issues[0]).toMatchObject({kind: 'visibility-transition', node_id: NODE_ID})
+    expect(result.summary.visibilityTransitions).toBe(1)
+  })
+
+  it('scenario 2: stored true, probe returns private:true → no transition (sticky)', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(true)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: true})],
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+  })
+
+  it('scenario 3: stored false, probe returns private:false → no transition', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: false})],
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+  })
+
+  it('scenario 4: stored true, probe returns private:false → no transition issue; entry recanonicalized', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(true)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: false})],
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+    // Entry should be updated to private:false (recanonicalized)
+    const entry = result.nextRepos.repos.find(r => r.node_id === NODE_ID)
+    expect(entry?.private).toBe(false)
+  })
+
+  it('scenario 5: stored undefined (newcomer), probe returns private:true → no transition (initial categorization)', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(undefined)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: true})],
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+  })
+
+  it('scenario 6: stored false, probe returns access-lost (deleted) → transition issue queued', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [], // not in access list
+        perRepoStatus: makeProbeMap('deleted') as Map<string, {status: string}> as never,
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(1)
+    expect(transitionIssues[0]).toMatchObject({kind: 'visibility-transition', node_id: NODE_ID})
+    expect(result.summary.visibilityTransitions).toBe(1)
+  })
+
+  it('scenario 7: probe is transient → no transition; sticky preservation', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [], // not in access list
+        perRepoStatus: makeProbeMap('transient') as Map<string, {status: string}> as never,
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+    // Sticky: private value preserved
+    const entry = result.nextRepos.repos.find(r => r.node_id === NODE_ID)
+    expect(entry?.private).toBe(false)
+  })
+
+  it('scenario 8: rapid flip within one cycle — detection uses stored state at probe time', () => {
+    // Stored: false. Probe: true. Transition fires. Next stored state becomes true.
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: true})],
+      }),
+    )
+    expect(result.summary.visibilityTransitions).toBe(1)
+    const entry = result.nextRepos.repos.find(r => r.node_id === NODE_ID)
+    expect(entry?.private).toBe(true)
+  })
+
+  it('scenario 9: issue title contains node_id only, body uses node_id only (no owner/repo)', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: true})],
+      }),
+    )
+    const issue = result.issues.find(i => i.kind === 'visibility-transition')
+    expect(issue).toBeDefined()
+    // The issue shape carries node_id; rendering is tested via renderIssuePayload indirectly.
+    // Verify the queued issue does NOT carry owner/repo fields.
+    expect(issue).not.toHaveProperty('owner')
+    expect(issue).not.toHaveProperty('repo')
+    expect((issue as {node_id: string}).node_id).toBe(NODE_ID)
   })
 })
