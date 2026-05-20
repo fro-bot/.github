@@ -7,7 +7,7 @@ tags: [probot, github, repository-settings, automation, governance]
 related:
   - marcusrbrown--github
   - marcusrbrown--ha-config
-  - bfra-me--renovate-action
+  - bfra-me--github
   - bfra-me--ha-addon-repository
 ---
 
@@ -46,6 +46,28 @@ The `fro-bot/.github` repository (this repo) has its own `common-settings.yaml` 
 - Required PR reviews (1 approver, dismiss stale, code owner reviews, last push approval)
 - `fro-bot` as admin, `marcusrbrown` as push
 - Fewer, more focused labels
+
+### bfra-me/.github (Bfra-Me Org Template)
+
+[[bfra-me--github]] ships a **third** `common-settings.yaml` for the
+`@bfra-me` org. Surveyed 2026-05-20 (SHA `a81be4c`):
+
+- Repo-level: `is_template: true`, `has_projects: false`, `has_wiki: false`,
+  squash-only merging, auto-merge enabled, branch deletion on merge,
+  `allow_update_branch: true`, squash commit title `COMMIT_OR_PR_TITLE`
+- Branch protection (`main`): 12 required status checks (Advanced
+  Security Analysis, CodeQL, Container Scan, Create Renovate Changeset,
+  Fro Bot, GitGuardian Scan, License Scan, Quality Check, Release,
+  Renovate, Review Dependencies, Triage), strict mode, linear history,
+  admin enforcement, `required_approving_review_count: 0` — governance
+  leans on status checks rather than human reviewers
+- `update-repository-settings` is shipped as a local custom action in
+  this repo and consumed by `update-repo-settings.yaml`
+
+[[bfra-me--ha-addon-repository]] and other `bfra-me/*` repos extend
+this template; most `marcusrbrown/*` repos extend the `fro-bot/.github`
+template instead. Reconciling which org template is canonical for what
+audience is an open follow-up.
 
 ## Settings Sync Workflow
 

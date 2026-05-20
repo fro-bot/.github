@@ -12,7 +12,6 @@ related:
   - marcusrbrown--ha-config
   - marcusrbrown--esphome-life
   - marcusrbrown--containers
-  - bfra-me--renovate-action
   - home-assistant
   - docker-containers
   - github-actions-ci

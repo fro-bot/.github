@@ -14,8 +14,7 @@ related:
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--renovate-config
   - marcusrbrown--sparkle
-  - bfra-me--renovate-action
-  - bfra-me--ha-addon-repository
+  - bfra-me--github
 ---
 
 # GitHub Actions CI
@@ -32,8 +31,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
-- [[bfra-me--renovate-action]] — Composite action self-test via `uses: ./`, dist/ drift verification, main→release branch fast-forward + semantic-release, single-workflow three-mode Fro Bot dispatch
-- [[bfra-me--ha-addon-repository]] — HA add-on multi-arch Docker builds with cosign, `frenck/action-addon-linter` matrix, single perpetual `Daily Autohealing Report` issue pattern
+- [[bfra-me--github]] — Org control center; 17 workflows including `main.yaml` (Quality Check), `fro-bot.yaml` (per-repo persona), `fro-bot-autoheal-org.yaml` (weekday org-wide sweep), `renovate.yaml` + `trigger-org-renovate.yaml` (self-hosted Renovate fan-out), and three custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). Source of the reusable workflows that `marcusrbrown/*` repos consume.
 
 ## Common Patterns
 

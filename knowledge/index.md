@@ -4,8 +4,8 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
+- [[bfra-me--github]] — Org control center for `@bfra-me`; pnpm/TypeScript monorepo with 3 custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`), 17 workflows, org-wide Fro Bot autoheal (weekdays), canonical `bfra-me/.github:common-settings.yaml`, Fro Bot agent v0.44.2
 - [[bfra-me--ha-addon-repository]] — Template repository for a Home Assistant add-on repository (bfra-me org); multi-arch Docker builds via `home-assistant/builder`, GHCR publishing with cosign, Fro Bot agent v0.43.1 with add-on-aware review/autoheal
-- [[bfra-me--renovate-action]] — Composite GitHub Action `bfra-me/renovate-action@v9` running self-hosted Renovate v43 in Docker with GitHub App auth; canonical bfra-me dependency-update runner, single-workflow three-mode Fro Bot at agent v0.44.2, Docker execution deprecated for v10
 - [[fro-bot--agent]] — GitHub Action harness for OpenCode + oMo agents with persistent session state; core runtime powering Fro Bot's PR review, issue triage, scheduled maintenance, and wiki-update capabilities across all managed repos
 - [[fro-bot--fro-bot-github-io]] — fro-bot/fro-bot.github.io
 - [[fro-bot--systematic]] — fro-bot/systematic
