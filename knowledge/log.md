@@ -1179,3 +1179,31 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4cd81989916
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-05-20 09:55] ingest | bfra-me/ha-addon-repository
+
+Initial survey of `bfra-me/ha-addon-repository` (SHA `0a163c3f`). Created repo page `bfra-me--ha-addon-repository.md`. Updated topic page `home-assistant.md` to wikilink the new repo and document multi-arch add-on builds + `frenck/action-addon-linter` sibling-tool relationship. Updated `index.md` to catalog the new page.
+
+Key findings:
+
+- GitHub template repo (`is_template: true`) under bfra-me org — blueprint for HA add-on collections. Apache-2.0. Created 2022-10-08.
+- Single example add-on (`example/`, slug `example`, v1.2.2): four arches (`armhf`/`armv7`/`aarch64`/`amd64`), s6-overlay (`init: false`), AppArmor profile, OCI labels, tempio binary install from `home-assistant/tempio` releases.
+- HA base images split: Alpine 3.23 for 64-bit, 3.22 for 32-bit ARM (upstream lag). Dockerfile uses `ARG BUILD_FROM=...@sha256:...` so Renovate rotates the digest via custom Dockerfile manager; `build.yaml` deliberately uses tag-only with `pinDigests: false`.
+- Four workflows, all SHA-pinned actions: `main.yaml` (prepare→lint-addon (frenck/action-addon-linter v2.21.0) + Prettier 3.8.3 → build-addon matrix with `home-assistant/builder@2026.03.2`, `--cosign`, `id-token: write` to GHCR), `fro-bot.yaml`, `renovate.yaml` (reusable `bfra-me/.github` v4.16.16), `update-repo-settings.yaml` (v4.16.16, daily 14:15 UTC).
+- **Fro Bot agent present and active:** `fro-bot/agent@v0.43.1`. Add-on-aware PR review prompt (Dockerfile pinning, config/build.yaml validity, bashio/shellcheck, AppArmor integrity, breaking interface changes, translation completeness) with structured `PASS|CONDITIONAL|REJECT` verdict. Daily 15:30 UTC autoheal sweep across four categories (errored PRs, security, health & maintenance, DX).
+- **Distinctive Fro Bot pattern:** maintains a single perpetual issue titled exactly `Daily Autohealing Report` with prepended dated update sections — diverges from sibling repos that create new issues per cycle.
+- Renovate extends `bfra-me/renovate-config#5.2.1` + `:enablePreCommit` — **different preset family** from the rest of the surveyed ecosystem (which uses `marcusrbrown/renovate-config#4.5.x`). Custom managers for `build.yaml` arch keys, `Dockerfile` `ARG BUILD_FROM=...@sha256:...`, and Alpine packages via repology (`alpine_3_20/{pkg}`). Python capped at `<=3.13`.
+- Probot settings extend `.github:common-settings.yaml` (resolves to bfra-me org `.github`, not Marcus's). Branch protection requires `Prepare`, `Lint`, `Build`, `Renovate / Renovate`, `Fro Bot`; strict + linear history + enforce-admins + 1 reviewer with stale-review dismissal.
+- Tooling: Node 22.11.0, Python 3.13.13 via `.tool-versions`. Devcontainer, pre-commit, markdownlint-cli2, Prettier, Cursor rules all configured.
+- 5 open issues, 0 open PRs at survey time.
+- No CodeQL/Scorecard/Trivy — security delegated to Renovate + autoheal sweep. Reasonable for a template.
+
+Cross-ecosystem relationship: this is the add-on build/publish counterpart to [[marcusrbrown--ha-config]] (which consumes add-ons & integrations). The two `frenck/action-*` tools are siblings: `action-addon-linter` validates the add-on contract here; `action-home-assistant` validates running configs there.
+
+Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+
+## [2026-05-20 16:13] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository

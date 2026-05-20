@@ -4,6 +4,7 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
+- [[bfra-me--ha-addon-repository]] — Template repository for a Home Assistant add-on repository (bfra-me org); multi-arch Docker builds via `home-assistant/builder`, GHCR publishing with cosign, Fro Bot agent v0.43.1 with add-on-aware review/autoheal
 - [[fro-bot--agent]] — GitHub Action harness for OpenCode + oMo agents with persistent session state; core runtime powering Fro Bot's PR review, issue triage, scheduled maintenance, and wiki-update capabilities across all managed repos
 - [[fro-bot--fro-bot-github-io]] — fro-bot/fro-bot.github.io
 - [[fro-bot--systematic]] — fro-bot/systematic
