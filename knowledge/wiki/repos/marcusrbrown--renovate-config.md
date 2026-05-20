@@ -26,6 +26,7 @@ related:
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--esphome-life
+  - bfra-me--renovate-action
 ---
 
 # marcusrbrown/renovate-config

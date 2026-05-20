@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-05-07
+updated: 2026-05-20
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - fro-bot--agent
@@ -14,6 +14,8 @@ related:
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--renovate-config
   - marcusrbrown--sparkle
+  - bfra-me--renovate-action
+  - bfra-me--ha-addon-repository
 ---
 
 # GitHub Actions CI
@@ -30,6 +32,8 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
+- [[bfra-me--renovate-action]] — Composite action self-test via `uses: ./`, dist/ drift verification, main→release branch fast-forward + semantic-release, single-workflow three-mode Fro Bot dispatch
+- [[bfra-me--ha-addon-repository]] — HA add-on multi-arch Docker builds with cosign, `frenck/action-addon-linter` matrix, single perpetual `Daily Autohealing Report` issue pattern
 
 ## Common Patterns
 

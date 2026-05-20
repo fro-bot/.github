@@ -2,11 +2,13 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-04-27
+updated: 2026-05-20
 tags: [probot, github, repository-settings, automation, governance]
 related:
   - marcusrbrown--github
   - marcusrbrown--ha-config
+  - bfra-me--renovate-action
+  - bfra-me--ha-addon-repository
 ---
 
 # Probot Settings

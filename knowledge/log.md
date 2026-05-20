@@ -1207,3 +1207,35 @@ Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103
 Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/ha-addon-repository
+
+## [2026-05-20 16:23] ingest | bfra-me/renovate-action
+
+Initial survey of `bfra-me/renovate-action` (SHA `bc9c4591`, v9.90.0 released 2026-05-20). Created repo page `bfra-me--renovate-action.md`. Updated topic pages `github-actions-ci.md` and `probot-settings.md`. Updated repo pages `marcusrbrown--renovate-config.md` and `bfra-me--ha-addon-repository.md` with reverse cross-references. Updated `index.md` to catalog the new repo.
+
+Key findings:
+
+- Composite GitHub Action (`bfra-me/renovate-action@v9`) that runs **self-hosted Renovate v43.186.2** in a Docker container (`ghcr.io/renovatebot/renovate:43.186.2`) under `renovatebot/github-action@v46.1.4` with GitHub App authentication. This is the **execution surface** for Renovate across the bfra-me org; complements [[marcusrbrown--renovate-config]] which provides the policy presets.
+- Action logic lives in `action.yaml` shell steps and `docker/entrypoint.sh`, not in TypeScript. The `src/`/`dist/` scaffold is a `@actions/core` wait utility (placeholder); CI still verifies dist drift because `pnpm build` is part of the contract.
+- Inputs: `renovate-app-id`, `renovate-app-private-key` (required); plus `autodiscover`, `autodiscover-filter`, `branch`, `cache`, `dry-run`, `execution-mode` (v9 scaffolding only — container is the only supported value), `global-config` (JSON deep-merge), `log-level`, `print-config`.
+- **Security boundary on global-config merge:** Bash functions `validate_json()` + `merge_global_config()` deep-merge user JSON with base `zzglobal_config`. Protected fields (`allowedCommands`, `platform`, `gitAuthor`, `gitIgnoredAuthors`, `cacheDir`, `repositoryCache`) are either restored from base after merge (`allowedCommands`) or overridden by explicit `RENOVATE_*` env vars in the Renovate step. `validate_json` warns on dangerous-field attempts; runtime env block is the real guard.
+- **Branching model:** `main` → `release` (semantic-release runs from `release`, fast-forwarded from `main` via `git merge --no-ff -Xtheirs`) → semver tags + `v9` major-version branch for downstream `@v9` pins. Latest release `9.90.0`.
+- **Eight workflows**, all SHA-pinned: `main.yaml` (setup → check → test + self-test via `uses: ./` → build with dist drift → build-docs → deploy-pages → release), `fro-bot.yaml`, `renovate.yaml` (self-managed, not via reusable workflow), `update-repo-settings.yaml`, `codeql-analysis.yaml` (TypeScript, Wednesdays), `scorecard.yaml` (Tuesdays + branch_protection_rule), `dependency-review.yaml`, `copilot-setup-steps.yaml`.
+- **Fro Bot pattern divergence:** single workflow with mode-dispatch (`workflow_dispatch` input `mode: review|maintenance|autoheal`, plus inline Bash that resolves mode from event type and cron schedule). Three inline prompts live in the workflow `env:` block. **Two perpetual rolling issues** (`Daily Maintenance Report` + `Daily Autohealing Report`). Mirrors the `marcusrbrown--marcusrbrown-github-io` "single-file three-mode" evolution.
+- **Fro Bot agent version:** `v0.44.2` (SHA `b97877b2`) — **newest in the surveyed ecosystem** at this time. Likely canary for agent updates before they propagate to Marcus's repos.
+- **Renovate config (`.github/renovate.json5`):** extends `bfra-me/.github:internal.json5#v4.16.18` + `sanity-io/renovate-config:semantic-commit-type`. Notable: `bfra-me/renovate-config` pinned with `updatePinnedDependencies: false` except for majors. Renovate ecosystem patches **disabled** (noise reduction); majors emit `feat(deps)!:`. `postUpgradeTasks` runs bootstrap+build+fix. `platformAutomerge: true`. Different preset family from both [[marcusrbrown--renovate-config]] (#4.5.x) and [[bfra-me--ha-addon-repository]] (#5.2.1).
+- **Probot settings extend `.github:common-settings.yaml`** which resolves to **`bfra-me/.github`**, not Marcus's `.github`. Branch protection on `main` requires 11 status checks including Build, Check, Test, Setup, Fro Bot, CodeQL, Analyze, Review Dependencies, Renovate / Renovate, Deploy to GitHub Pages, Release. `release` branch is fast-forward target only (no required checks). Teams: actioneers (push), services (maintain), owners (admin).
+- **Tooling:** Node 24.15.0, pnpm 10.33.4, TypeScript 6.0.3, ESLint 10.4.0 with `@bfra.me/eslint-config@0.51.1`, Prettier 3.8.3 with `@bfra.me/prettier-config/120-proof`, tsup 8.5.1, Vitest 4.1.6, semantic-release 25.0.3. Only runtime dep is `@actions/core@3.0.1`.
+- **Docker execution deprecation:** v9 ships a `::warning::` and v10 will remove Docker mode. No replacement implementation present yet; likely migration to npm-installed Renovate (the `BINARY_SOURCE=install` env var is already set on `renovatebot/github-action`).
+- **README-vs-code contradiction:** v9 release notes claim "Analytics features removed" but `docker/entrypoint.sh` still contains `record_docker_metric`, `record_failure`, and `/tmp/renovate-analytics` plumbing. Likely dead code from v8 era — candidate for an autoheal "stale TODO" finding.
+- `gitIgnoredAuthors` explicitly includes `fro-bot[bot]` (`109017866+fro-bot[bot]@users.noreply.github.com`) so Fro Bot autoheal commits don't seed Renovate's rebase-detection logic.
+- 60 open issues at survey (typical for a long-lived Renovate dependency-dashboard repo), 0 open PRs, 2 stars.
+
+Cross-ecosystem relationship: this is the **runner** that complements [[marcusrbrown--renovate-config]]'s **policy**. It's used by `bfra-me/.github`'s reusable Renovate workflow, which in turn is consumed indirectly by virtually every Marcus repo through their `.github/workflows/renovate.yaml`. Sibling to [[bfra-me--ha-addon-repository]] under the bfra-me org.
+
+Sources: https://github.com/bfra-me/renovate-action (SHA bc9c45917d3f7b33962d3ba44b11d58d9f6c2647)
+
+## [2026-05-20 16:27] ingest | repo:bfra-me/renovate-action
+
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/renovate-action
