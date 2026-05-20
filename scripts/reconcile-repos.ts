@@ -175,7 +175,19 @@ export interface PerOwnerRollupIssue {
   reason: 'unsolicited-new' | 'unsolicited-regain'
 }
 
-export type IssueQueueEntry = PerRepoIssue | PerOwnerRollupIssue
+/**
+ * Visibility-transition integrity alert. Queued when a tracked entry's stored `private`
+ * flag flips from `false` to `true` (including via `access-lost`, which fails closed as
+ * private per Unit 2 semantics). Title and body use `node_id` only — no `owner/repo` —
+ * because this issue stream is public. Operators look up the canonical name locally via
+ * the operator tool.
+ */
+export interface VisibilityTransitionIssue {
+  kind: 'visibility-transition'
+  node_id: string
+}
+
+export type IssueQueueEntry = PerRepoIssue | PerOwnerRollupIssue | VisibilityTransitionIssue
 
 /**
  * Per-channel breakdown of reconcile activity for one run. Operators read these to
@@ -252,6 +264,14 @@ export interface ReconcileSummary {
    * droughts where every tracked repo is inside {@link FLOOR_MIN_GAP_DAYS}.
    */
   flooredDispatches: number
+  /**
+   * Number of tracked entries whose stored `private` flag flipped from `false` to `true`
+   * (including via `access-lost`, which fails closed as private) this run. Each transition
+   * queues a `reconcile:visibility-transition` integrity-alert issue for manual operator
+   * review. Private-to-public transitions emit no alert; the next mutator write
+   * recanonicalizes the entry.
+   */
+  visibilityTransitions: number
   /**
    * Per-channel activity breakdown. See {@link ChannelStats} for field semantics. The
    * engine populates `tracked` and `lostAccess`; the shell populates `dispatched` and
@@ -360,6 +380,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     malformed: 0,
     skippedPrivate: 0,
     flooredDispatches: 0,
+    visibilityTransitions: 0,
     byChannel: {
       collab: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
       owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -368,6 +389,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   }
   const dispatches: DispatchRequest[] = []
   const rawIssues: RawIssue[] = []
+  const transitionIssues: VisibilityTransitionIssue[] = []
 
   // Pass 1 — classify every tracked entry against the access list and probes.
   const trackedKeys = new Set<string>()
@@ -387,6 +409,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       summary,
       dispatches,
       rawIssues,
+      transitionIssues,
       now,
     })
   })
@@ -543,7 +566,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     }
   }
 
-  const issues = buildIssueQueue(rawIssues)
+  const issues: IssueQueueEntry[] = [...buildIssueQueue(rawIssues), ...transitionIssues]
 
   // Populate per-channel tracked counts after both passes complete. Counts entries
   // present on `next.repos` post-classification (excludes lost-access entries via the
@@ -575,7 +598,32 @@ interface ClassifyTrackedParams {
   summary: ReconcileSummary
   dispatches: DispatchRequest[]
   rawIssues: RawIssue[]
+  transitionIssues: VisibilityTransitionIssue[]
   now: Date
+}
+
+/**
+ * Queue a visibility-transition integrity alert when a tracked entry's stored `private`
+ * flag flips from `false` to `true`. Newcomers (no stored `private` field) are excluded —
+ * that is initial categorization, not a flip. Private-to-public transitions emit no alert;
+ * the next mutator write recanonicalizes the entry.
+ *
+ * Dedup is handled inline in `runIssueQueue` — this function always pushes when the flip
+ * is detected, and the async dedup step suppresses duplicates before creating the GitHub issue.
+ */
+function maybeQueueVisibilityTransition(params: {
+  storedPrivate: boolean | undefined
+  newPrivate: boolean
+  node_id: string | undefined
+  summary: ReconcileSummary
+  transitionIssues: VisibilityTransitionIssue[]
+}): void {
+  // Only fire on false → true. Newcomers (undefined) are excluded.
+  if (params.storedPrivate !== false) return
+  if (!params.newPrivate) return
+  if (params.node_id === undefined) return
+  params.summary.visibilityTransitions += 1
+  params.transitionIssues.push({kind: 'visibility-transition', node_id: params.node_id})
 }
 
 /**
@@ -595,6 +643,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     summary,
     dispatches,
     rawIssues,
+    transitionIssues,
     now,
   } = params
 
@@ -618,6 +667,13 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
       }
       summary.lostAccess += 1
       summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
+      maybeQueueVisibilityTransition({
+        storedPrivate: entry.private,
+        newPrivate: true,
+        node_id: storedRepoNodeId(entry),
+        summary,
+        transitionIssues,
+      })
       return normalizeLostAccessEntry(entry)
     }
 
@@ -669,6 +725,13 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
         }
         summary.lostAccess += 1
         summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
+        maybeQueueVisibilityTransition({
+          storedPrivate: entry.private,
+          newPrivate: true,
+          node_id: storedRepoNodeId(entry),
+          summary,
+          transitionIssues,
+        })
         return normalizeLostAccessEntry(entry)
       }
       default: {
@@ -688,6 +751,13 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     }
     summary.lostAccess += 1
     summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
+    maybeQueueVisibilityTransition({
+      storedPrivate: entry.private,
+      newPrivate: true,
+      node_id: access.node_id,
+      summary,
+      transitionIssues,
+    })
     return {
       ...normalizeRepoEntryForStorage(entry, {
         owner: access.owner,
@@ -756,6 +826,15 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
       (entry.last_survey_status !== 'success' || isEligibleForSurvey(entry.next_survey_eligible_at, params.now)))
 
   const accessPrivate = accessPrivateForStorage(access, accessNodePrivacy)
+
+  // Detect public-to-private visibility flip for still-accessible entries.
+  maybeQueueVisibilityTransition({
+    storedPrivate: entry.private,
+    newPrivate: accessPrivate,
+    node_id: access.node_id,
+    summary,
+    transitionIssues,
+  })
 
   if (wouldDispatchIfPublic && (entry.private !== false || accessPrivate)) {
     summary.skippedPrivate += 1
@@ -1073,6 +1152,7 @@ const DEFAULT_MAX_DISPATCHES_PER_RUN = 12
 const PENDING_REVIEW_LABEL = 'reconcile:pending-review'
 const ROLLUP_LABEL = 'reconcile:rollup-pending-review'
 const INTEGRITY_ALERT_LABEL = 'reconcile:integrity-alert'
+const VISIBILITY_TRANSITION_LABEL = 'reconcile:visibility-transition'
 // Fro Bot is one entity with two GitHub identities: the user account `fro-bot`
 // (FRO_BOT_PAT writes) and the app installation `fro-bot[bot]` (App-token writes).
 // Both have identical access to this repo and represent the same autonomous operator,
@@ -1164,7 +1244,9 @@ export interface HandleReconcileResult {
   perRepoIssues: number
   /** Count of successfully-created rollup issues (from plan + self-healing). */
   rollupIssues: number
-  /** Count of issue-creation failures across per-repo + rollup. */
+  /** Count of successfully-created visibility-transition integrity-alert issues. */
+  visibilityTransitionIssues: number
+  /** Count of issue-creation failures across per-repo + rollup + visibility-transition. */
   issuesFailed: number
   /** Count of stale `reconcile:pending-review` issues auto-closed this run. */
   closedStaleIssues: number
@@ -1456,6 +1538,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     dispatchesDeferred,
     perRepoIssues: issueOutcome.perRepoSucceeded,
     rollupIssues: issueOutcome.rollupSucceeded + healedRollups,
+    visibilityTransitionIssues: issueOutcome.visibilityTransitionSucceeded,
     issuesFailed: issueOutcome.failed,
     closedStaleIssues,
     probesFailed,
@@ -2265,32 +2348,165 @@ async function dispatchWithTimeout<T>(work: () => Promise<T>, timeoutMs: number)
   }
 }
 
+// Derived from Octokit's paginated list-for-repo response element type.
+type ListForRepoResponseItem = RestEndpointMethodTypes['issues']['listForRepo']['response']['data'][number]
+
 async function runIssueQueue(params: {
   appOctokit: OctokitClient
   owner: string
   repo: string
   issues: IssueQueueEntry[]
   logger: ReconcileLogger
-}): Promise<{perRepoSucceeded: number; rollupSucceeded: number; failed: number}> {
+}): Promise<{
+  perRepoSucceeded: number
+  rollupSucceeded: number
+  visibilityTransitionSucceeded: number
+  failed: number
+}> {
   let perRepoSucceeded = 0
   let rollupSucceeded = 0
+  let visibilityTransitionSucceeded = 0
   let failed = 0
   for (const issue of params.issues) {
     try {
-      const payload = renderIssuePayload(issue, params.owner, params.repo)
-      await callIssuesCreate(params.appOctokit, payload)
-      if (issue.kind === 'per-repo') perRepoSucceeded += 1
-      else rollupSucceeded += 1
+      if (issue.kind === 'visibility-transition') {
+        // Dedup: skip if an open issue with the same node_id already exists.
+        // Fail-open: if paginate throws, treat as "no existing issue found" and proceed
+        // to create — better to risk a duplicate than to silently drop the alert.
+        let existing: ListForRepoResponseItem[] = []
+        try {
+          existing = await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
+            owner: params.owner,
+            repo: params.repo,
+            state: 'open',
+            labels: VISIBILITY_TRANSITION_LABEL,
+            per_page: 100,
+          })
+        } catch (listError: unknown) {
+          const status = isRecord(listError) && typeof listError.status === 'number' ? listError.status : 'unknown'
+          params.logger.warn(
+            `reconcile: dedup list failed for visibility-transition (status=${status}); proceeding with issue creation.`,
+          )
+        }
+        // Exact-title match: the title is fully derived from node_id, so exact equality
+        // is functionally equivalent to marker extraction and cheaper (no body fetch needed).
+        const expectedTitle = `[INTEGRITY] Visibility transition for ${issue.node_id}`
+        const alreadyOpen = existing.some(i => i.title === expectedTitle)
+        if (alreadyOpen) continue
+
+        // Pre-flight label creation: ensure both labels exist before calling issues.create.
+        // Defends against the Update-Repo-Settings propagation race on first run.
+        // Returns only the labels that are confirmed usable; failures exclude that label.
+        const confirmedLabels = await ensureLabelsExist(
+          params.appOctokit,
+          params.owner,
+          params.repo,
+          [
+            {
+              name: VISIBILITY_TRANSITION_LABEL,
+              color: 'f97316',
+              description: 'Tracked repo transitioned from public to private',
+            },
+            {
+              name: INTEGRITY_ALERT_LABEL,
+              color: 'b60205',
+              description: 'Reconcile integrity alert requiring operator action',
+            },
+          ],
+          params.logger,
+        )
+        const payload = renderIssuePayload(issue, params.owner, params.repo)
+        const filteredPayload: IssuePayload = {
+          ...payload,
+          labels: payload.labels.filter(l => confirmedLabels.has(l)),
+        }
+        if (filteredPayload.labels.length === 0) {
+          params.logger.warn(
+            `reconcile: all labels unconfirmed for visibility-transition issue (node_id=${issue.node_id}); shipping unlabeled.`,
+          )
+        }
+        await callIssuesCreate(params.appOctokit, filteredPayload)
+      } else {
+        const payload = renderIssuePayload(issue, params.owner, params.repo)
+        await callIssuesCreate(params.appOctokit, payload)
+      }
+      switch (issue.kind) {
+        case 'per-repo': {
+          perRepoSucceeded += 1
+          break
+        }
+        case 'per-owner-rollup': {
+          rollupSucceeded += 1
+          break
+        }
+        case 'visibility-transition': {
+          visibilityTransitionSucceeded += 1
+          break
+        }
+        default: {
+          // Exhaustiveness guard: adding a new IssueQueueEntry kind must update the switch above.
+          const exhaustive: never = issue
+          throw new Error(`runIssueQueue: unhandled issue kind: ${JSON.stringify(exhaustive)}`)
+        }
+      }
     } catch (error: unknown) {
       failed += 1
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
       params.logger.warn(`reconcile: issue creation failed (status=${status}); continuing.`)
     }
   }
-  return {perRepoSucceeded, rollupSucceeded, failed}
+  return {perRepoSucceeded, rollupSucceeded, visibilityTransitionSucceeded, failed}
 }
 
-interface IssuePayload {
+/**
+ * Ensure a set of labels exist in the repo. For each label:
+ * - If it exists (getLabel succeeds): confirmed.
+ * - If 404: attempt createLabel.
+ *   - createLabel succeeds or 422 (race — already created): confirmed.
+ *   - createLabel other failure: excluded from returned set (log and continue).
+ * - getLabel non-404 failure: excluded from returned set (log and continue).
+ *
+ * Returns a Set<string> of confirmed-usable label names. The caller MUST filter
+ * the issue payload to only these labels before calling issues.create.
+ */
+async function ensureLabelsExist(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  labels: readonly {name: string; color: string; description: string}[],
+  logger: ReconcileLogger,
+): Promise<Set<string>> {
+  const confirmed = new Set<string>()
+  for (const {name, color, description} of labels) {
+    try {
+      await octokit.rest.issues.getLabel({owner, repo, name})
+      confirmed.add(name)
+      continue
+    } catch (getError: unknown) {
+      if (!isApiStatus(getError, 404)) {
+        const status = isRecord(getError) && typeof getError.status === 'number' ? getError.status : 'unknown'
+        logger.warn(`reconcile: label check failed for "${name}" (status=${status}); excluding from issue labels.`)
+        continue
+      }
+    }
+    // Label not found (404) — create it.
+    try {
+      await octokit.rest.issues.createLabel({owner, repo, name, color, description})
+      confirmed.add(name)
+    } catch (createError: unknown) {
+      if (isApiStatus(createError, 422)) {
+        // Race with another writer (e.g. Update-Repo-Settings) — label now exists; include it.
+        confirmed.add(name)
+      } else {
+        const status = isRecord(createError) && typeof createError.status === 'number' ? createError.status : 'unknown'
+        logger.warn(`reconcile: label creation failed for "${name}" (status=${status}); excluding from issue labels.`)
+      }
+    }
+  }
+  return confirmed
+}
+
+export interface IssuePayload {
   owner: string
   repo: string
   title: string
@@ -2298,11 +2514,38 @@ interface IssuePayload {
   labels: string[]
 }
 
-function renderIssuePayload(issue: IssueQueueEntry, owner: string, repo: string): IssuePayload {
+export function renderIssuePayload(issue: IssueQueueEntry, owner: string, repo: string): IssuePayload {
   if (issue.kind === 'per-repo') {
     return renderPerRepoIssue(issue, owner, repo)
   }
+  if (issue.kind === 'visibility-transition') {
+    return renderVisibilityTransitionIssue(issue, owner, repo)
+  }
   return renderRollupIssue(issue, owner, repo)
+}
+
+function renderVisibilityTransitionIssue(issue: VisibilityTransitionIssue, owner: string, repo: string): IssuePayload {
+  // node_id is validated against /^[\w\-+/=]+$/ at the schema layer (scripts/schemas.ts assertRepoEntry),
+  // so this template can safely interpolate without shell-quoting.
+  const title = `[INTEGRITY] Visibility transition for ${issue.node_id}`
+  const body = [
+    `<!-- reconcile:subject:node_id=${issue.node_id} -->`,
+    '',
+    'A tracked repository has transitioned from **public** to **private** (or access was lost, which fails closed as private).',
+    '',
+    `- Node ID: \`${issue.node_id}\``,
+    '',
+    'To look up the canonical owner/repo by node ID, run:',
+    '',
+    '```sh',
+    `gh api graphql --field nodeId='${issue.node_id}' -f query='query($nodeId: ID!) { node(id: $nodeId) { ... on Repository { nameWithOwner isPrivate } } }'`,
+    '```',
+    '',
+    'If the response contains `"node": null`, the canonical name is not retrievable from your token\'s scope (repo may be deleted or your token lacks access).',
+    '',
+    'This issue requires manual operator action. It will not be auto-closed.',
+  ].join('\n')
+  return {owner, repo, title, body, labels: [INTEGRITY_ALERT_LABEL, VISIBILITY_TRANSITION_LABEL]}
 }
 
 function renderPerRepoIssue(issue: PerRepoIssue, owner: string, repo: string): IssuePayload {

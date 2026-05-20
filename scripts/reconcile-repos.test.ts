@@ -19,12 +19,15 @@ import {
   migrateRepoEntry,
   ReconcileError,
   reconcileRepos,
+  renderIssuePayload,
   type AccessListEntry,
   type HandleReconcileParams,
+  type IssuePayload,
   type OctokitClient,
   type ReconcileInput,
   type ReconcileLogger,
   type RepoStatusProbe,
+  type VisibilityTransitionIssue,
 } from './reconcile-repos.ts'
 import {addRepoEntry} from './repos-metadata.ts'
 import {assertReposFile} from './schemas.ts'
@@ -125,6 +128,7 @@ describe('reconcileRepos', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1224,6 +1228,7 @@ describe('reconcileRepos', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 3, dispatched: 0, deferred: 0, lostAccess: 1},
@@ -1266,6 +1271,7 @@ describe('reconcileRepos', () => {
         skippedPrivate: 0,
         unchanged: 1,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
           owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1292,6 +1298,7 @@ describe('reconcileRepos', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: emptyChannelStats(),
       })
     })
@@ -2059,6 +2066,8 @@ interface OctokitMockOverrides {
   issuesCreate?: (params: unknown) => Promise<{data: {number: number}}>
   issuesUpdate?: (params: unknown) => Promise<unknown>
   issuesListForRepo?: (params: unknown) => Promise<{data: IssueListEntry[]}>
+  issuesGetLabel?: (params: unknown) => Promise<{data: {name: string}}>
+  issuesCreateLabel?: (params: unknown) => Promise<{data: {name: string}}>
 }
 
 interface AccessListApiEntry {
@@ -2194,6 +2203,8 @@ function mockOctokit(overrides: OctokitMockOverrides = {}): OctokitClient {
         create: overrides.issuesCreate ?? (async () => ({data: {number: 1}})),
         update: overrides.issuesUpdate ?? (async () => ({data: {}})),
         listForRepo: overrides.issuesListForRepo ?? (async () => ({data: [] as IssueListEntry[]})),
+        getLabel: overrides.issuesGetLabel ?? (async () => ({data: {name: 'label'}})),
+        createLabel: overrides.issuesCreateLabel ?? (async () => ({data: {name: 'label'}})),
       },
     },
   } as unknown as OctokitClient
@@ -4268,6 +4279,7 @@ describe('formatCommitMessage', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 2 refreshes')
@@ -4287,6 +4299,7 @@ describe('formatCommitMessage', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
@@ -4306,6 +4319,7 @@ describe('formatCommitMessage', () => {
         skippedPrivate: 2,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 1 refreshes')
@@ -4325,6 +4339,7 @@ describe('formatCommitMessage', () => {
         skippedPrivate: 0,
         unchanged: 0,
         flooredDispatches: 0,
+        visibilityTransitions: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 1 refreshes, +18 migrated')
@@ -5450,5 +5465,470 @@ describe('handleReconcile floor integration', () => {
 
     // Both repos must appear as the first-dispatched across the 2 runs.
     expect(new Set(firstDispatched).size).toBe(2)
+  })
+})
+
+const TRANSITION_NODE_ID = 'R_kgDOTransition123'
+
+// Shared helper: build a tracked entry with a stored private flag (Unit 9 tests).
+function makeTransitionEntry(storedPrivate: boolean | undefined): RepoEntry {
+  return makeEntry({
+    owner: 'fro-bot',
+    name: 'tracked-repo',
+    node_id: TRANSITION_NODE_ID,
+    private: storedPrivate,
+    onboarding_status: 'onboarded',
+    last_survey_at: '2026-01-01',
+    last_survey_status: 'success',
+    next_survey_eligible_at: '2026-06-01', // not yet eligible — no dispatch noise
+  })
+}
+
+// Shared helper: build a perRepoStatus map for a given probe outcome (Unit 9 tests).
+function makeProbeMap(status: RepoStatusProbe['status']): Map<string, RepoStatusProbe> {
+  return new Map([['fro-bot/tracked-repo', {status} as RepoStatusProbe]])
+}
+
+describe('reconcileRepos visibility-transition detection (Unit 9)', () => {
+  const NODE_ID = TRANSITION_NODE_ID
+
+  it('scenario 1: stored false, probe returns private:true → transition issue queued', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: true})],
+      }),
+    )
+    expect(result.issues).toHaveLength(1)
+    expect(result.issues[0]).toMatchObject({kind: 'visibility-transition', node_id: NODE_ID})
+    expect(result.summary.visibilityTransitions).toBe(1)
+  })
+
+  it('scenario 2: stored true, probe returns private:true → no transition (sticky)', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(true)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: true})],
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+  })
+
+  it('scenario 3: stored false, probe returns private:false → no transition', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: false})],
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+  })
+
+  it('scenario 4: stored true, probe returns private:false → no transition issue; entry recanonicalized', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(true)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: false})],
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+    // Entry should be updated to private:false (recanonicalized)
+    const entry = result.nextRepos.repos.find(r => r.node_id === NODE_ID)
+    expect(entry?.private).toBe(false)
+  })
+
+  it('scenario 5: stored undefined (newcomer), probe returns private:true → no transition (initial categorization)', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(undefined)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: true})],
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+  })
+
+  it('scenario 6: stored false, probe returns access-lost (deleted) → transition issue queued', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [], // not in access list
+        perRepoStatus: makeProbeMap('deleted'),
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(1)
+    expect(transitionIssues[0]).toMatchObject({kind: 'visibility-transition', node_id: NODE_ID})
+    expect(result.summary.visibilityTransitions).toBe(1)
+  })
+
+  it('scenario 7: probe is transient → no transition; sticky preservation', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [], // not in access list
+        perRepoStatus: makeProbeMap('transient'),
+      }),
+    )
+    const transitionIssues = result.issues.filter(i => i.kind === 'visibility-transition')
+    expect(transitionIssues).toHaveLength(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+    // Sticky: private value preserved
+    const entry = result.nextRepos.repos.find(r => r.node_id === NODE_ID)
+    expect(entry?.private).toBe(false)
+  })
+
+  it('scenario 8: rapid flip within one cycle — detection uses stored state at probe time', () => {
+    // Stored: false. Probe: true. Transition fires. Next stored state becomes true.
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: true})],
+      }),
+    )
+    expect(result.summary.visibilityTransitions).toBe(1)
+    const entry = result.nextRepos.repos.find(r => r.node_id === NODE_ID)
+    expect(entry?.private).toBe(true)
+  })
+
+  it('scenario 9: issue title contains node_id only, body uses node_id only (no owner/repo)', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
+        accessList: [makeAccess({owner: 'fro-bot', name: 'tracked-repo', node_id: NODE_ID, private: true})],
+      }),
+    )
+    const issue = result.issues.find(i => i.kind === 'visibility-transition')
+    expect(issue).toBeDefined()
+    // The issue shape carries node_id; rendering is tested via renderIssuePayload indirectly.
+    // Verify the queued issue does NOT carry owner/repo fields.
+    expect(issue).not.toHaveProperty('owner')
+    expect(issue).not.toHaveProperty('repo')
+    expect((issue as {node_id: string}).node_id).toBe(NODE_ID)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST P1-#1 + P1-#2 — Durability: fail-open dedup + label pre-flight
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition durability', () => {
+  const DUR_NODE_ID = 'R_kgDODurability1'
+
+  function makeTransitionParams(overrides: Partial<OctokitMockOverrides> = {}): HandleReconcileParams {
+    return baseParams({
+      appOctokit: mockOctokit({
+        issuesCreate: async () => ({data: {number: 99}}),
+        ...overrides,
+      }),
+      readMetadata: makeReadMetadata({
+        repos: {
+          version: 1,
+          repos: [
+            makeEntry({
+              owner: 'fro-bot',
+              name: 'dur-repo',
+              node_id: DUR_NODE_ID,
+              private: false,
+              onboarding_status: 'onboarded',
+            }),
+          ],
+        },
+      }),
+      userOctokit: mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {
+              owner: {login: 'fro-bot'},
+              name: 'dur-repo',
+              archived: false,
+              private: true,
+              node_id: DUR_NODE_ID,
+            },
+          ],
+        }),
+      }),
+    })
+  }
+
+  it('paginate throws → issues.create is still called (fail-open dedup)', async () => {
+    const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+    const paginateMock = vi.fn(async (_fn: unknown, opts: {labels?: string}) => {
+      if (opts.labels === 'reconcile:visibility-transition') {
+        throw Object.assign(new Error('network error'), {status: 503})
+      }
+      return []
+    })
+
+    await handleReconcile(
+      makeTransitionParams({
+        paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+        issuesCreate,
+      }),
+    )
+
+    expect(issuesCreate).toHaveBeenCalledOnce()
+  })
+
+  it('label 404 → createLabel is called before issues.create (call order verified)', async () => {
+    const callOrder: string[] = []
+    const issuesGetLabel = vi.fn(async (_params: unknown) => {
+      callOrder.push('getLabel')
+      throw Object.assign(new Error('Not Found'), {status: 404})
+    })
+    const issuesCreateLabel = vi.fn(async () => {
+      callOrder.push('createLabel')
+      return {data: {name: 'label'}}
+    })
+    const issuesCreate = vi.fn(async () => {
+      callOrder.push('create')
+      return {data: {number: 99}}
+    })
+
+    await handleReconcile(
+      makeTransitionParams({
+        issuesCreate,
+        issuesGetLabel,
+        issuesCreateLabel,
+      }),
+    )
+
+    // Both labels must be checked (and created) before the single issues.create call.
+    // Two getLabel + two createLabel (one per label) then one create.
+    expect(callOrder).toEqual(['getLabel', 'createLabel', 'getLabel', 'createLabel', 'create'])
+    expect(issuesCreateLabel).toHaveBeenCalledTimes(2)
+    expect(issuesCreate).toHaveBeenCalledOnce()
+  })
+
+  it('createLabel 422 (race) → label IS included in issues.create payload', async () => {
+    // 422 means another writer already created the label — it now exists, so include it.
+    const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+    const issuesGetLabel = vi.fn(async (_params: unknown) => {
+      throw Object.assign(new Error('Not Found'), {status: 404})
+    })
+    const issuesCreateLabel = vi.fn(async (_params: unknown) => {
+      throw Object.assign(new Error('Unprocessable Entity'), {status: 422})
+    })
+
+    await handleReconcile(
+      makeTransitionParams({
+        issuesCreate,
+        issuesGetLabel,
+        issuesCreateLabel,
+      }),
+    )
+
+    expect(issuesCreate).toHaveBeenCalledOnce()
+    // Both labels should be present — 422 means the label exists (race), so it's confirmed usable.
+    const calls = issuesCreate.mock.calls as unknown as [{labels?: string[]}][]
+    expect(calls[0]?.[0]?.labels).toContain('reconcile:integrity-alert')
+    expect(calls[0]?.[0]?.labels).toContain('reconcile:visibility-transition')
+  })
+
+  it('createLabel 500 (transient) → label is EXCLUDED from issues.create payload', async () => {
+    // 500 means the label creation genuinely failed — exclude it, but still ship the issue.
+    const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+    const issuesGetLabel = vi.fn(async (_params: unknown) => {
+      throw Object.assign(new Error('Not Found'), {status: 404})
+    })
+    const issuesCreateLabel = vi.fn(async (_params: unknown) => {
+      throw Object.assign(new Error('Internal Server Error'), {status: 500})
+    })
+
+    await handleReconcile(
+      makeTransitionParams({
+        issuesCreate,
+        issuesGetLabel,
+        issuesCreateLabel,
+      }),
+    )
+
+    expect(issuesCreate).toHaveBeenCalledOnce()
+    // Both labels failed (500) — neither should be in the payload.
+    expect(issuesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        labels: [],
+      }),
+    )
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST #12 — Rendering regression pin (R15 privacy guarantee)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('renderIssuePayload (visibility-transition rendering)', () => {
+  const TEST_NODE_ID = 'R_kgDOZZ_REPLACED'
+
+  it('title is exactly [INTEGRITY] Visibility transition for <node_id>', () => {
+    const issue: VisibilityTransitionIssue = {kind: 'visibility-transition', node_id: TEST_NODE_ID}
+    const payload: IssuePayload = renderIssuePayload(issue, 'fro-bot', '.github')
+    expect(payload.title).toBe(`[INTEGRITY] Visibility transition for ${TEST_NODE_ID}`)
+  })
+
+  it('body contains the node_id', () => {
+    const issue: VisibilityTransitionIssue = {kind: 'visibility-transition', node_id: TEST_NODE_ID}
+    const payload: IssuePayload = renderIssuePayload(issue, 'fro-bot', '.github')
+    expect(payload.body).toContain(TEST_NODE_ID)
+  })
+
+  it('body does NOT contain canonical-slug separator pattern "owner--repo" (R15 privacy regression pin)', () => {
+    const issue: VisibilityTransitionIssue = {kind: 'visibility-transition', node_id: TEST_NODE_ID}
+    const payload: IssuePayload = renderIssuePayload(issue, 'fro-bot', '.github')
+    // The body must never contain a wiki canonical slug (owner--repo format).
+    // The gh api command uses "--field" which is fine; we check for the slug pattern specifically.
+    expect(payload.body).not.toMatch(/[\w.-]+--[\w.-]+/) // canonical owner--repo slug
+    expect(payload.body).not.toMatch(/(?!owner\/repo)\b\w[\w-]*\/[\w.-]+/) // generic owner/repo slash form (excludes prose placeholder "owner/repo")
+  })
+
+  it('body does NOT contain a resolved owner/repo slug (no canonical identity leak)', () => {
+    const issue: VisibilityTransitionIssue = {kind: 'visibility-transition', node_id: TEST_NODE_ID}
+    const payload: IssuePayload = renderIssuePayload(issue, 'fro-bot', '.github')
+    // The body must not contain a resolved owner/repo slug like "fro-bot/tracked-repo".
+    // The gh api command in the body uses "nameWithOwner" as a field name, not a value — that's fine.
+    expect(payload.body).not.toContain('fro-bot/tracked-repo')
+    expect(payload.body).not.toContain('fro-bot/.github')
+  })
+
+  it('labels are exactly [reconcile:integrity-alert, reconcile:visibility-transition]', () => {
+    const issue: VisibilityTransitionIssue = {kind: 'visibility-transition', node_id: TEST_NODE_ID}
+    const payload: IssuePayload = renderIssuePayload(issue, 'fro-bot', '.github')
+    expect(payload.labels).toEqual(['reconcile:integrity-alert', 'reconcile:visibility-transition'])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST #13 — Dedup branch coverage (existing open issue suppresses create)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition dedup', () => {
+  const TEST_NODE_ID = 'R_kgDODedup999'
+  const EXPECTED_TITLE = `[INTEGRITY] Visibility transition for ${TEST_NODE_ID}`
+
+  it('does NOT call issues.create when an open issue with matching title already exists', async () => {
+    const issuesCreate = vi.fn(async () => ({data: {number: 42}}))
+
+    // paginate returns one open issue whose title matches the expected dedup title
+    const paginateMock = vi.fn(async (_fn: unknown, opts: {labels?: string; state?: string}) => {
+      if (opts.labels === 'reconcile:visibility-transition' && opts.state === 'open') {
+        return [{number: 1, title: EXPECTED_TITLE, body: null, labels: [{name: 'reconcile:visibility-transition'}]}]
+      }
+      return []
+    })
+
+    await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'tracked-repo',
+                node_id: TEST_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        // Provide an access list entry showing the repo is now private → triggers transition
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'tracked-repo',
+                archived: false,
+                private: true,
+                node_id: TEST_NODE_ID,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // paginate was called with the visibility-transition label filter
+    expect(paginateMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({labels: 'reconcile:visibility-transition', state: 'open'}),
+    )
+    // issues.create was NOT called because the dedup found an existing open issue
+    expect(issuesCreate).not.toHaveBeenCalled()
+  })
+
+  it('issues.create IS called when existing title is a strict prefix of the new title (exact-title dedup, not substring)', async () => {
+    // RED-against-old-code proof: old substring dedup would suppress this alert because
+    // 'R_kgDOZAAAA' is a substring of 'R_kgDOZAAAAA'. New exact-title dedup must NOT suppress it.
+    const VICTIM_NODE_ID = 'R_kgDOZAAAA'
+    const LONGER_NODE_ID = `${VICTIM_NODE_ID}A` // one extra char — different repo
+    const issuesCreate = vi.fn(async () => ({data: {number: 42}}))
+
+    const paginateMock = vi.fn(async (_fn: unknown, opts: {labels?: string; state?: string}) => {
+      if (opts.labels === 'reconcile:visibility-transition' && opts.state === 'open') {
+        // Return an issue for the LONGER node_id — not the victim
+        return [
+          {
+            number: 1,
+            title: `[INTEGRITY] Visibility transition for ${LONGER_NODE_ID}`,
+            body: null,
+            labels: [{name: 'reconcile:visibility-transition'}],
+          },
+        ]
+      }
+      return []
+    })
+
+    await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'victim-repo',
+                node_id: VICTIM_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'victim-repo',
+                archived: false,
+                private: true,
+                node_id: VICTIM_NODE_ID,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // Exact-title dedup: the existing issue title does NOT match the victim's expected title,
+    // so issues.create MUST be called. Old substring code would have suppressed this.
+    expect(issuesCreate).toHaveBeenCalledOnce()
   })
 })

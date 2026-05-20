@@ -200,7 +200,7 @@ describe('resolveCanonicalSlugs', () => {
     mockExecFileSync.mockReturnValue(JSON.stringify({data: {node: {nameWithOwner: 'acme/secret'}}}))
     const result = resolveCanonicalSlugs([{node_id: 'R_kgDOABCDEF'}])
     expect(result.resolved).toEqual([{node_id: 'R_kgDOABCDEF', canonicalSlug: 'acme--secret'}])
-    expect(result.failures).toEqual([])
+    expect(Object.keys(result)).not.toContain('failures')
   })
 
   it('throws (fails closed) when GraphQL resolution fails for any entry', () => {

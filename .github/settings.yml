@@ -34,3 +34,9 @@ labels:
   - name: wiki-lint-failure
     color: '#b60205'
     description: Wiki lint execution failure
+  - name: reconcile:integrity-alert
+    color: '#e11d48'
+    description: Integrity alert requiring manual operator review
+  - name: reconcile:visibility-transition
+    color: '#f97316'
+    description: Tracked repo transitioned from public to private
