@@ -22,7 +22,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--infra]] — Bun workspace monorepo for personal infrastructure (KeeWeb deploy, CLIProxyAPI proxy, operational CLI with MCP bridge)
 - [[marcusrbrown--marcusrbrown]] — GitHub profile README with TypeScript-powered automation (badge generation, sponsor tracking, A/B testing, scheduled updates)
 - [[marcusrbrown--marcusrbrown-github-io]] — Personal brand site (React 19, TypeScript 6, Vite 7, GitHub Pages at marcusrbrown.com, single-page with anchor-link sections; Fro Bot single-file three-mode workflow at agent v0.44.0, v0.44.1 in flight)
-- [[marcusrbrown--mrbro-dev]] — Marcus's developer portfolio (React 19, TypeScript, Vite 7, GitHub Pages at mrbro.dev, advanced theme system, Fro Bot agent + autoheal)
+- [[marcusrbrown--mrbro-dev]] — Marcus's developer portfolio (React 19, TypeScript 5.9, Vite 7, GitHub Pages at mrbro.dev, advanced theme system; single-file three-mode Fro Bot workflow at agent v0.43.0; Renovate preset on `marcusrbrown/renovate-config#5.2.0`)
 - [[marcusrbrown--opencode-copilot-delegate]] — OpenCode plugin: delegate tasks to GitHub Copilot CLI as background subprocesses with async completion notifications
 - [[marcusrbrown--renovate-config]] — Shareable Renovate configuration presets: canonical dependency-update policy for all `marcusrbrown/*` and `fro-bot/*` repositories
 - [[marcusrbrown--sparkle]] — TypeScript playground monorepo; cross-platform design system (React + React Native/Expo), component library (Radix + Tailwind), Astro Starlight docs, Turborepo, WASM web shell

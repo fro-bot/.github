@@ -1258,3 +1258,29 @@ Sources: https://github.com/bfra-me/works (SHA ef14b26085dab318fffad1b6c3062292f
 Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-05-21 00:00] ingest | marcusrbrown/mrbro.dev
+
+Re-survey of `marcusrbrown/mrbro.dev` (SHA `88f7a4a`, latest commit `chore(dev): pin dependency @lhci/cli to 0.15.1 (#174)` from 2026-05-18). Updated repo page `marcusrbrown--mrbro-dev.md` additively. Updated `index.md` summary line. No new topic/entity/comparison pages warranted — all cross-cutting topics (github-pages, github-actions-ci) already cover the patterns.
+
+Delta from prior survey (SHA `d8c0e43`, 2026-04-26):
+
+- **Workflow consolidation:** `fro-bot-autoheal.yaml` removed; single `fro-bot.yaml` now carries all three modes (review / maintenance / autoheal) selectable via `workflow_dispatch.inputs.mode`. Two cron schedules in one file: 03:30 UTC autoheal, 15:30 UTC maintenance. Matches the single-file three-mode pattern previously observed in [[marcusrbrown--marcusrbrown-github-io]] — convergence across the React+Vite portfolio repos.
+- **Fro Bot agent bumped:** v0.41.3 → v0.43.0 (SHA `1563f2987343b5e8d30ba818920d0ac563c617fa`).
+- **Renovate preset major bump:** `marcusrbrown/renovate-config#4.5.8` → `#5.2.0`. First repo in this wiki observed on the v5 preset line.
+- **Open issue backlog drained:** 39 → 8. The autoheal/maintenance prompts mandate single perpetual rolling issues; this is now reflected on the repo (#13 Maintenance, #162 Autoheal). Prior drift of multiple separate daily report issues has self-corrected.
+- **Open PRs:** 4, all `chore(dev): pin dependency …` Renovate pins (#168, #172, #173, #175).
+- **Dependency snapshot:** TypeScript 5.6 → 5.9.3 (still pre-v6, divergent from tokentoilet/marcusrbrown.github.io). Vitest 4.1.4, pnpm 10.33.4, Node `>=22.6.0`, Vite 7.3.2.
+- **New pnpm overrides:** `fast-uri ≥3.1.2`, `ip-address ≥10.1.1`, `uuid ≥14.0.0` — incremental security remediations on top of the prior basic-ftp/brace-expansion/lodash/path-to-regexp/picomatch set.
+- **Still no `.github/settings.yml`** — branch protection continues to be managed via `scripts/configure-branch-protection.ts` rather than Probot. Diverges from the rest of Marcus's portfolio.
+- **PR review prompt** is repo-specific and unchanged in structure: PASS/CONDITIONAL/REJECT verdict, four mandatory sections, hard "review only" boundary.
+
+No contradictions with prior ingest — the workflow consolidation is captured additively with both the historical two-file form and the current single-file form preserved.
+
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 88f7a4adf497fe9bb772f27b05216d4e0235af3e)
+
+## [2026-05-21 08:48] ingest | repo:marcusrbrown/mrbro.dev
+
+Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mrbro.dev
