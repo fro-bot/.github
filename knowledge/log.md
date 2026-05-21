@@ -1259,28 +1259,33 @@ Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
 
-## [2026-05-21 00:00] ingest | marcusrbrown/mrbro.dev
+## [2026-05-21 04:30] ingest | marcusrbrown/opencode-copilot-delegate
 
-Re-survey of `marcusrbrown/mrbro.dev` (SHA `88f7a4a`, latest commit `chore(dev): pin dependency @lhci/cli to 0.15.1 (#174)` from 2026-05-18). Updated repo page `marcusrbrown--mrbro-dev.md` additively. Updated `index.md` summary line. No new topic/entity/comparison pages warranted — all cross-cutting topics (github-pages, github-actions-ci) already cover the patterns.
+Incremental re-survey of `marcusrbrown/opencode-copilot-delegate` (SHA `2744ce7`, v0.12.0 on npm, up from `02cac9c` / v0.1.0 on 2026-04-27). Additively rewrote repo page `marcusrbrown--opencode-copilot-delegate.md` to absorb 11 minor releases. Updated topic page `opencode-plugins.md` with hard-won loader/runtime gotchas surfaced across those releases. Updated `index.md` description. Index unchanged in structure (page already cataloged).
 
-Delta from prior survey (SHA `d8c0e43`, 2026-04-26):
+Key deltas since prior survey (v0.1.0 → v0.12.0):
 
-- **Workflow consolidation:** `fro-bot-autoheal.yaml` removed; single `fro-bot.yaml` now carries all three modes (review / maintenance / autoheal) selectable via `workflow_dispatch.inputs.mode`. Two cron schedules in one file: 03:30 UTC autoheal, 15:30 UTC maintenance. Matches the single-file three-mode pattern previously observed in [[marcusrbrown--marcusrbrown-github-io]] — convergence across the React+Vite portfolio repos.
-- **Fro Bot agent bumped:** v0.41.3 → v0.43.0 (SHA `1563f2987343b5e8d30ba818920d0ac563c617fa`).
-- **Renovate preset major bump:** `marcusrbrown/renovate-config#4.5.8` → `#5.2.0`. First repo in this wiki observed on the v5 preset line.
-- **Open issue backlog drained:** 39 → 8. The autoheal/maintenance prompts mandate single perpetual rolling issues; this is now reflected on the repo (#13 Maintenance, #162 Autoheal). Prior drift of multiple separate daily report issues has self-corrected.
-- **Open PRs:** 4, all `chore(dev): pin dependency …` Renovate pins (#168, #172, #173, #175).
-- **Dependency snapshot:** TypeScript 5.6 → 5.9.3 (still pre-v6, divergent from tokentoilet/marcusrbrown.github.io). Vitest 4.1.4, pnpm 10.33.4, Node `>=22.6.0`, Vite 7.3.2.
-- **New pnpm overrides:** `fast-uri ≥3.1.2`, `ip-address ≥10.1.1`, `uuid ≥14.0.0` — incremental security remediations on top of the prior basic-ftp/brace-expansion/lodash/path-to-regexp/picomatch set.
-- **Still no `.github/settings.yml`** — branch protection continues to be managed via `scripts/configure-branch-protection.ts` rather than Probot. Diverges from the rest of Marcus's portfolio.
-- **PR review prompt** is repo-specific and unchanged in structure: PASS/CONDITIONAL/REJECT verdict, four mandatory sections, hard "review only" boundary.
+- **Fourth tool added (v0.12.0):** `copilot_resume` wraps `copilot --resume=<target>` with UUID validation against the local session store, automatic workspace-path reuse from prior plugin tasks whose session ID matches, CLI no-match-error normalization, and path-injection rejection. `TaskState`/`OutputEnvelope` gain `origin: spawn|resume|connect` discriminator and surface the upstream Copilot session UUID as `copilot_session_id` on the envelope.
+- **Two-half plugin architecture (v0.10.0+):** Server plugin remains the default; opt-in `./tui` export adds `/copilot-status` via `@opentui/solid`. `package.json` declares `oc-plugin: [server, tui]`. Build target split — server `target: node` (Node-loadable, CI-gated), TUI `target: bun`.
+- **Public-surface hardening (v0.12.0):** Plugin entry now exports only `default`; helper moved to `src/lib/rpc-cleanup.ts`. CI gate between Build and Unit tests asserts the export shape using `node --input-type=module -e "import(...)"`. Tests/package-exports.test.ts mirrors locally. References the Systematic v2.5.0/v2.12.1 regression class.
+- **Orphan subprocess reaper (v0.2.0+):** PID-file identity-gated reaper for foreign-instance subprocesses, hardened across v0.3.0 (streaming worker pool, combined `ps` query), v0.4.0 (configurable timeouts + cooperative `AbortSignal` cancellation, `timedOut: boolean` in `ReapResult`), v0.8.0 (race-safe truncate/unlink helpers), v0.9.0 (`O_NOFOLLOW` + symlinked-parent-dir rejection against same-user attacks). All runtime warnings now share `[copilot-delegate]` prefix.
+- **Per-process plugin singleton (v0.8.0 → v0.11.0):** `globalThis` Symbol guard; **duplicate invocations now return empty hooks `{}`** to prevent double-registration when both user-level and project-level `opencode.json` list the plugin. Diverges from Systematic PR #352 (per-load registration) because this plugin's `doInit` binds a TCP port + writes a PID file — re-running would race on exclusive resources.
+- **TUI slash command (v0.12.0):** Feature-detects `api.keymap.registerLayer` (OpenCode 1.14.44+) vs `api.command.register` (1.14.41 fallback) vs neither (defensive warn). Mirrors Magic Context dual-path pattern from commit 5fe1c4f.
+- **Per-parameter tool description survival (v0.5.0–v0.7.0):** Agent discovery rewritten — `BUILTIN_AGENTS` constant removed since standalone `@github/copilot` CLI ships zero of those legacy names. Tool schemas patched via `_zod.toJSONSchema` override in `src/lib/normalize-tool-arg-schemas.ts` so descriptions survive the host-zod ≠ plugin-zod module boundary. `zod` pinned `^4.3.0` direct + `overrides` to dodge dual-zod TS2883.
+- **TUI re-entrancy fix (v0.10.1):** Pressing Escape on `/copilot-status` previously froze the TUI via re-entrant dialog close handling.
+- **Observability (v0.9.0):** `killProcessTree` classifies fkill failures by probing the process *group* (`process.kill(-pid, 0)`); ESRCH suppressed, others preserve original throw. `notifyCompletion` fallback `client.app.log` wrapped in try/catch with structured SDK shape so synchronous SDK throws can't escape the documented "never throws" contract.
+- **`setStatus` lifecycle tightening (v0.8.0):** Terminal → non-terminal transitions explicitly forbidden; closes an unintended resurrection path no caller exercised but the prior contract permitted.
+- **Toolchain:** Bun 1.3.13 → 1.3.14, Biome 2.4.13 → 2.4.15, mise pins `opencode-ai` 1.14.27 → 1.15.4 and `@github/copilot` 1.0.36 → 1.0.48. `@opencode-ai/plugin` peer narrowed `>=1.14.0` → `>=1.14.41` (v0.12.0). `@opencode-ai/sdk` peer dep removed (v0.6.0) — was never imported.
+- **CI/automation:** Fro Bot agent `v0.42.2` → `v0.44.3` (SHA `b928e797`). Renovate preset `marcusrbrown/renovate-config#4.5.8` → `#5.2.0` (major bump). 6 workflows unchanged. Branch protection unchanged. Probot settings still extend `.github:common-settings.yaml`.
+- **Tests:** Grew from ~6 to 21 unit files plus integration. New coverage: pid-file, orphan-reaper, continuity-checks, continuity-validation, plugin-singleton, rpc-server, rpc-contract, rpc-cleanup, normalize-tool-arg-schemas, package-exports, resume, task-status, task-registry, cancel-helper. Integration suite still gated out of CI per #38.
+- **Open issues unchanged:** 3 (#38 integration tests, #26 daily autoheal report, #25 dep dashboard). 4 open PRs (3 Renovate, 1 Fro Bot self-correction #134 tightening `@types/node` LTS rule).
 
-No contradictions with prior ingest — the workflow consolidation is captured additively with both the historical two-file form and the current single-file form preserved.
+No contradictions with prior ingest. The 2026-04-23 "TODO stubs" claim was already resolved by the 2026-04-27 survey; the page now reflects the full 11-release hardening arc on top of that foundation.
 
-Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 88f7a4adf497fe9bb772f27b05216d4e0235af3e)
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 2744ce7fc07660baa4f17bfff3656141888261cf)
 
-## [2026-05-21 08:48] ingest | repo:marcusrbrown/mrbro.dev
+## [2026-05-21 08:54] ingest | repo:marcusrbrown/opencode-copilot-delegate
 
-Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/mrbro.dev
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
