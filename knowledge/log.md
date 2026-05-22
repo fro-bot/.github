@@ -1289,3 +1289,27 @@ Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 2744ce7f
 Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-05-22 07:00] ingest | repo:fro-bot/agent
+
+Re-surveyed `fro-bot/agent` at SHA `8632cf4` / release `v0.44.3` (from prior `ef6b952` / `v0.42.8` @ 2026-05-08). Updated `knowledge/wiki/repos/fro-bot--agent.md` additively and refreshed `knowledge/index.md`.
+
+Notable changes since last survey:
+
+- **New `packages/gateway`** — Long-running Discord daemon (`@fro-bot/gateway`). Uses `discord.js` 14.26.4 and `effect` 3.21.2. Effect is sandboxed to the gateway; `apps/action` and `packages/runtime` stay on hand-rolled `Result<T, E>` from `@bfra.me/es`. The Result→Effect boundary lives in a single adapter file (`runtime-effect.ts`).
+- **New `deploy/` Docker stack** — Compose v2 stack with three services: `gateway`, `workspace` (v1 placeholder; real agent in Unit 7), `mitmproxy` (fail-closed egress allowlist). File-based secrets, dual S3 auth (explicit pair or SDK default chain).
+- **`enable-omo` action input added** — oMo is now opt-in (default `false`). Previously auto-installed alongside OpenCode. The `agent` input default likewise moved from `sisyphus` to unset (uses OpenCode build agent).
+- **`services/object-store/` is gone** from the action's src tree. The runtime adapter in the gateway wraps S3 sync helpers from `@fro-bot/runtime`, suggesting the object-store primitives migrated into the runtime package. The action's `AGENTS.md` (dated 2026-03-29, commit `045cac8`) is now stale relative to this layout — flagged as a known contradiction; no overwrite of historical 2026-05-08 note.
+- **Dep bumps:** `@opencode-ai/sdk` 1.14.30→1.14.41, `tsdown` 0.21.10→0.22.0, `vitest` 4.1.5→4.1.6, `eslint` 10.2.1→10.3.0, `@aws-sdk/client-s3` 3.1040→3.1045, `vite` pin 8.0.10→8.0.13, pnpm 10.33.2→10.33.4.
+- **Health signals:** open issues 7→2 (significant triage), stars 0→1.
+- **New `.agents/skills/` and `RULES.md`** at repo root. RULES.md formalizes the documentation hierarchy as PRD > RFCs > FEATURES.md > RULES.md.
+
+The repo's self-hosted Fro Bot workflow remains intact (PR review, daily DMR @ 15:30 UTC, weekly wiki @ Sun 20:00 UTC, manual dispatch). Workflow now pins `fro-bot/agent@v0` (major) rather than a patch pin.
+
+Sources: https://github.com/fro-bot/agent (SHA 8632cf4706b10f7350284c3f0480dd620f2a30b7)
+
+## [2026-05-22 08:38] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent
