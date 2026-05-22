@@ -1290,26 +1290,27 @@ Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wi
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
 
-## [2026-05-22 07:00] ingest | repo:fro-bot/agent
+## [2026-05-22 08:36] ingest | fro-bot/systematic
 
-Re-surveyed `fro-bot/agent` at SHA `8632cf4` / release `v0.44.3` (from prior `ef6b952` / `v0.42.8` @ 2026-05-08). Updated `knowledge/wiki/repos/fro-bot--agent.md` additively and refreshed `knowledge/index.md`.
+Re-surveyed `fro-bot/systematic` (gh-pages SHA `12cae87`, source SHA `dae829a` of [[marcusrbrown--systematic]]). Additively updated [[fro-bot--systematic]] to reflect changes since the 2026-05-07 initial survey:
 
-Notable changes since last survey:
+- **Registry advanced v2.7.3 → v2.20.6.** `index.json` now lists 103 components vs ~96 at prior survey: 51 agents (+ unknown delta), 47 skills, **2 bundles** and **2 profiles** (new V2 component types now materialized in the deployed artifact), and 1 plugin entry. The bundle/profile component types are net-new in this survey window.
+- **Hosted JSON Schema is now a public contract.** `schemas/latest/` and `schemas/v2/systematic-config.schema.json` are served. `$id` on the v2 file is `https://fro.bot/systematic/schemas/v2/systematic-config.schema.json`, which makes that URL the canonical pinned reference for IDE autocomplete on `systematic.json` / `systematic.jsonc`. Draft-07. Top-level keys: `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`. Loader does not fetch or validate against it — it exists purely to flip on editor support. Renaming or restructuring these URLs silently breaks every consumer that pinned them, so the deploy target has effectively grown a third consumer contract on top of the rendered docs and the OCX registry.
+- **New static files** — `404.html` (Starlight not-found page) and `og-image.png` (Open Graph share image).
+- **Deploy cadence intensified.** Multiple deploys per day during active source-repo windows (e.g., five on 2026-05-21 between 18:27 and 23:12 UTC), suggesting CI fans out per merged commit rather than per release tag. Captured the last 10 deploys with both `gh-pages` and source SHAs to make rollback diagnostics easier.
+- **Branches, issues, PRs unchanged in structure.** `gh-pages` (default) + `renovate/configure`. Issue #1 (CodeQL/Scorecard parity) still open; PR #2 (Renovate onboarding) still open and unmerged — Renovate has minimal applicability to a static-HTML repo, so the noise concern from the prior survey still stands.
+- **No Fro Bot workflow** in this repo. Same conclusion as 2026-05-07: not warranted; the source repo [[marcusrbrown--systematic]] holds the agent integration. Recorded explicitly in the repo page so the constraint check passes without a follow-up draft PR.
 
-- **New `packages/gateway`** — Long-running Discord daemon (`@fro-bot/gateway`). Uses `discord.js` 14.26.4 and `effect` 3.21.2. Effect is sandboxed to the gateway; `apps/action` and `packages/runtime` stay on hand-rolled `Result<T, E>` from `@bfra.me/es`. The Result→Effect boundary lives in a single adapter file (`runtime-effect.ts`).
-- **New `deploy/` Docker stack** — Compose v2 stack with three services: `gateway`, `workspace` (v1 placeholder; real agent in Unit 7), `mitmproxy` (fail-closed egress allowlist). File-based secrets, dual S3 auth (explicit pair or SDK default chain).
-- **`enable-omo` action input added** — oMo is now opt-in (default `false`). Previously auto-installed alongside OpenCode. The `agent` input default likewise moved from `sisyphus` to unset (uses OpenCode build agent).
-- **`services/object-store/` is gone** from the action's src tree. The runtime adapter in the gateway wraps S3 sync helpers from `@fro-bot/runtime`, suggesting the object-store primitives migrated into the runtime package. The action's `AGENTS.md` (dated 2026-03-29, commit `045cac8`) is now stale relative to this layout — flagged as a known contradiction; no overwrite of historical 2026-05-08 note.
-- **Dep bumps:** `@opencode-ai/sdk` 1.14.30→1.14.41, `tsdown` 0.21.10→0.22.0, `vitest` 4.1.5→4.1.6, `eslint` 10.2.1→10.3.0, `@aws-sdk/client-s3` 3.1040→3.1045, `vite` pin 8.0.10→8.0.13, pnpm 10.33.2→10.33.4.
-- **Health signals:** open issues 7→2 (significant triage), stars 0→1.
-- **New `.agents/skills/` and `RULES.md`** at repo root. RULES.md formalizes the documentation hierarchy as PRD > RFCs > FEATURES.md > RULES.md.
+Cross-page updates:
+- Added a "Hosted JSON Schema is now a public contract" note to [[opencode-plugins]] under "Documentation Deployment" so the schema-URL stability constraint is discoverable from the topic side, not just the repo page.
+- Refreshed the [[fro-bot--systematic]] entry in `index.md` from the placeholder one-liner to a substantive descriptor matching schema convention.
 
-The repo's self-hosted Fro Bot workflow remains intact (PR review, daily DMR @ 15:30 UTC, weekly wiki @ Sun 20:00 UTC, manual dispatch). Workflow now pins `fro-bot/agent@v0` (major) rather than a patch pin.
+No contradictions with the 2026-05-07 ingest. All prior content preserved; survey-history table extended with the new row.
 
-Sources: https://github.com/fro-bot/agent (SHA 8632cf4706b10f7350284c3f0480dd620f2a30b7)
+Sources: https://github.com/fro-bot/systematic (SHA 12cae87)
 
-## [2026-05-22 08:38] ingest | repo:fro-bot/agent
+## [2026-05-22 08:39] ingest | repo:fro-bot/systematic
 
-Surveyed fro-bot/agent and updated the control-plane wiki.
+Surveyed fro-bot/systematic and updated the control-plane wiki.
 
-Sources: https://github.com/fro-bot/agent
+Sources: https://github.com/fro-bot/systematic

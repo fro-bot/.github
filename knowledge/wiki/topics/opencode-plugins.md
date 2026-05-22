@@ -19,7 +19,10 @@ sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: 2744ce7fc07660baa4f17bfff3656141888261cf
     accessed: 2026-05-21
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton]
+  - url: https://github.com/fro-bot/systematic
+    sha: 12cae87
+    accessed: 2026-05-22
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema]
 ---
 
 # OpenCode Plugin Development
@@ -247,6 +250,13 @@ Both plugins document the divergence inline with cross-references to each other'
 ## Documentation Deployment
 
 [[marcusrbrown--systematic]] deploys its Starlight/Astro docs site to a separate repo ([[fro-bot--systematic]]) rather than using the source repo's GitHub Pages. The docs site at **fro.bot/systematic/** also serves the OCX component registry (`.well-known/ocx.json` → `/systematic/index.json`), enabling `ocx` CLI to install individual skills and agents by URL. See [[github-pages]] for the cross-repo deploy pattern.
+
+As of the 2026-05-22 [[fro-bot--systematic]] survey, the same docs site is now the canonical host for the user config JSON Schema:
+
+- `https://fro.bot/systematic/schemas/v2/systematic-config.schema.json` — pinned `$id`, intended for `"$schema"` references in `systematic.json` / `systematic.jsonc` for IDE autocomplete (VSCode, Zed, IntelliJ).
+- `https://fro.bot/systematic/schemas/latest/systematic-config.schema.json` — moving pointer for "current".
+
+Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. Treat both URLs as public API; renaming or restructuring them silently breaks autocomplete for every consumer that pinned them. The same docs deploy now drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
 
 ## Related Pages
 

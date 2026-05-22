@@ -8,9 +8,9 @@ Master catalog of all wiki pages, organized by type.
 - [[bfra-me--ha-addon-repository]] — Template repository for a Home Assistant add-on repository (bfra-me org); multi-arch Docker builds via `home-assistant/builder`, GHCR publishing with cosign, Fro Bot agent v0.43.1 with add-on-aware review/autoheal
 - [[bfra-me--renovate-action]] — bfra-me/renovate-action
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo (pnpm 10, TS 6, ESM); 8 published packages (`eslint-config`, `prettier-config`, `tsconfig`, `es`, `create`, `badge-config`, `doc-sync`, `semantic-release`, `workspace-analyzer`) + Astro Starlight docs; 11 workflows; Fro Bot agent v0.44.2 with three-mode single-file workflow (PR review / Daily Maintenance Report / Daily Autohealing Report)
-- [[fro-bot--agent]] — GitHub Action harness for OpenCode (oMo now opt-in) with persistent session state; v0.44.3 ships a new long-running Discord gateway daemon (`packages/gateway`, Effect 3.x) and a Docker Compose deploy stack (gateway + workspace + mitmproxy egress allowlist); core runtime powering Fro Bot's PR review, issue triage, scheduled maintenance, and wiki-update capabilities across all managed repos
+- [[fro-bot--agent]] — GitHub Action harness for OpenCode + oMo agents with persistent session state; core runtime powering Fro Bot's PR review, issue triage, scheduled maintenance, and wiki-update capabilities across all managed repos
 - [[fro-bot--fro-bot-github-io]] — fro-bot/fro-bot.github.io
-- [[fro-bot--systematic]] — fro-bot/systematic
+- [[fro-bot--systematic]] — Built docs + OCX registry deployment target for `@fro.bot/systematic` at fro.bot/systematic/; `gh-pages`-only repo (no Fro Bot workflow needed); now also hosts the pinned JSON Schema for `systematic.json` user config at `/schemas/v2/`; registry advanced to v2.20.6 with 103 components (51 agents, 47 skills, 2 bundles, 2 profiles, 1 plugin)
 - [[marcusrbrown--dotfiles]] — marcusrbrown/.dotfiles
 - [[marcusrbrown--github]] — Marcus's personal `.github` repo; GitHub defaults, community health files, and canonical Probot Settings template (`common-settings.yaml`)
 - [[marcusrbrown--containers]] — Container collection and automation framework (Dockerfiles, multi-arch builds, Python CLI, AI-powered templates, CI/CD)
