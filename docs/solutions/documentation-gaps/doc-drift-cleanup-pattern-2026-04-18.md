@@ -10,7 +10,7 @@ last_updated: 2026-04-18
 module: README.md, SECURITY.md, .github/copilot-instructions.md, metadata/README.md
 tags:
   [documentation, drift, readme, security-policy, copilot-instructions, agent-skills, inventory, pr-sequencing]
-verified: true
+verified: 2026-04-18
 ---
 
 ## Context

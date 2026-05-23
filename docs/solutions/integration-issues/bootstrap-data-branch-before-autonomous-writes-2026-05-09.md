@@ -7,7 +7,7 @@ problem_type: integration_issue
 component: tooling
 severity: high
 last_updated: 2026-05-09
-verified: true
+verified: 2026-05-09
 symptoms:
   - GitHub deleted the data source branch after a data-to-main promotion PR was squash-merged.
   - Autonomous metadata and wiki writers could not safely write to the missing data branch.

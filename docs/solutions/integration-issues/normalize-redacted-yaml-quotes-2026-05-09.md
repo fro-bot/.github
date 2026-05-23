@@ -7,7 +7,7 @@ problem_type: integration_issue
 component: tooling
 severity: medium
 last_updated: 2026-05-09
-verified: true
+verified: 2026-05-09
 symptoms:
   - Scheduled Reconcile Repos succeeded but wrote metadata/repos.yaml with double-quoted redacted owner values.
   - Main-branch lint expected single-quoted redacted values.

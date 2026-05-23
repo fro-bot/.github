@@ -10,7 +10,7 @@ date: 2026-04-17
 last_updated: 2026-04-17
 module: scripts/handle-invitation.ts
 tags: [octokit, github-api, invitation-api, runtime-error, ai-hallucination, type-safety, handwritten-interface]
-verified: true
+verified: 2026-04-17
 ---
 
 ## Problem

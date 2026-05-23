@@ -18,7 +18,7 @@ tags:
   - race-condition
   - data-branch
   - workflow-recovery
-verified: true
+verified: 2026-05-02
 symptoms:
   - Duplicate-PR 422 responses could be misrouted instead of reusing the existing data -> main PR
   - mergeable_state: unknown could leave a promotion PR behind main without attempting updateBranch

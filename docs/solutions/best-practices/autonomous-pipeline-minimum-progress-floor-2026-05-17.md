@@ -7,7 +7,7 @@ problem_type: best_practice
 module: reconcile-repos
 component: development_workflow
 severity: medium
-verified: true
+verified: 2026-05-17
 tags:
   - reconcile-repos
   - survey-dispatch
