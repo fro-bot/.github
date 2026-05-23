@@ -288,20 +288,12 @@ jobs:
         Just finished surveying **${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }}**.
         New knowledge ingested into the wiki ✨
       discord_title: Repo Survey Complete
-      bluesky_text: >-
-        📡 Just surveyed ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }} and locked in new insights.
-        The wiki grows. #GitHub #OpenSource
-      journal_text: >-
-        Surveyed ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }} and persisted what I learned.
-        Each repo leaves a mark on the map.
-      journal_metadata: >-
-        {"owner":"${{ needs.survey-repo.outputs.owner }}","repo":"${{ needs.survey-repo.outputs.repo }}"}
-      repo: ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }}
+      # bluesky_text intentionally omitted — Bluesky step in social-broadcast.yaml
+      # is currently gated off via `if: false`. When revived, restore copy here.
       # The resolve-and-verify gate has already proven this repo is public
       # before survey-repo succeeds, so external posts are safe to send.
       private: false
     secrets:
-      FRO_BOT_PAT: ${{ secrets.FRO_BOT_PAT }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
       BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
