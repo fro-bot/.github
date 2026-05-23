@@ -1314,3 +1314,26 @@ Sources: https://github.com/fro-bot/systematic (SHA 12cae87)
 Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
+
+## [2026-05-23 07:48] ingest | repo:marcusrbrown/sparkle
+
+Re-surveyed `marcusrbrown/sparkle` at SHA `e757fa66aa223f4ccb8af16838d937562b97f713` (pushed 2026-05-22). Fourth survey; additive update to [[marcusrbrown--sparkle]]. No structural shifts since 2026-05-01 — same monorepo layout (8 packages + 2 apps + docs + scripts), same 6 workflows, same lack of a Fro Bot agent workflow.
+
+Drift captured:
+
+- **Renovate major-bump:** `marcusrbrown/renovate-config#4.5.9` → `#5.2.0`. Matches the portfolio-wide cutover already noted in [[marcusrbrown--opencode-copilot-delegate]] and elsewhere — Sparkle is now aligned with the rest of the ecosystem on the v5 line.
+- **Toolchain pin bumps:** pnpm 10.33.2 → 10.33.4, Node 24.15.0 → 24.16.0, Turborepo 2.9.6 → 2.9.14, `@bfra.me/eslint-config` 0.51.0 → 0.51.1, `@bfra.me/prettier-config` 0.16.8 → 0.16.9, `@bfra.me/tsconfig` 0.13.0 → 0.13.1. TypeScript 5.9.3 held.
+- **PR churn:** #1507 (`@storybook/test-runner` v0.24.3) closed; #1646 opened at v0.24.4. #1604 (Astro v6 SECURITY) still open across three surveys — a stale security update that an autoheal workflow would normally chase. Worth flagging as evidence for the still-open follow-up to add Fro Bot capabilities here.
+- **Issues:** 5 → 3 open. #876 (Astro Starlight Phase 6: Deployment + CI/CD), #212 (Dependency Dashboard), #57 (Uplift `sparkle`) remain.
+
+Constraint check: **No Fro Bot workflow detected** (no `fro-bot.yaml`, no `fro-bot-autoheal.yaml` in `.github/workflows/`). Confirmed for the fourth consecutive survey. The "Fro Bot Integration" section on the repo page already documents this gap and the proposed follow-up draft PR — no additional repo-page edit needed beyond the survey-history row.
+
+No contradictions with prior surveys. All deltas captured additively. `index.md` entry already substantive; left as-is.
+
+Sources: https://github.com/marcusrbrown/sparkle (SHA e757fa66aa223f4ccb8af16838d937562b97f713)
+
+## [2026-05-23 07:49] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
