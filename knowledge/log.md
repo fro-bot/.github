@@ -1315,25 +1315,29 @@ Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
 
-## [2026-05-23 07:48] ingest | repo:marcusrbrown/sparkle
+## [2026-05-23 00:00] ingest | marcusrbrown/renovate-config
 
-Re-surveyed `marcusrbrown/sparkle` at SHA `e757fa66aa223f4ccb8af16838d937562b97f713` (pushed 2026-05-22). Fourth survey; additive update to [[marcusrbrown--sparkle]]. No structural shifts since 2026-05-01 — same monorepo layout (8 packages + 2 apps + docs + scripts), same 6 workflows, same lack of a Fro Bot agent workflow.
+Incremental re-survey of `marcusrbrown/renovate-config` (SHA `3478c88`, up from `bf13a82` on 2026-04-28). Additively updated repo page `marcusrbrown--renovate-config.md` and topic page `github-actions-ci.md`. Refreshed `index.md` entry description. No new topic/entity/comparison pages warranted — the v5 jump and autoheal architecture shift slot into existing pages.
 
-Drift captured:
+Deltas since prior survey:
 
-- **Renovate major-bump:** `marcusrbrown/renovate-config#4.5.9` → `#5.2.0`. Matches the portfolio-wide cutover already noted in [[marcusrbrown--opencode-copilot-delegate]] and elsewhere — Sparkle is now aligned with the rest of the ecosystem on the v5 line.
-- **Toolchain pin bumps:** pnpm 10.33.2 → 10.33.4, Node 24.15.0 → 24.16.0, Turborepo 2.9.6 → 2.9.14, `@bfra.me/eslint-config` 0.51.0 → 0.51.1, `@bfra.me/prettier-config` 0.16.8 → 0.16.9, `@bfra.me/tsconfig` 0.13.0 → 0.13.1. TypeScript 5.9.3 held.
-- **PR churn:** #1507 (`@storybook/test-runner` v0.24.3) closed; #1646 opened at v0.24.4. #1604 (Astro v6 SECURITY) still open across three surveys — a stale security update that an autoheal workflow would normally chase. Worth flagging as evidence for the still-open follow-up to add Fro Bot capabilities here.
-- **Issues:** 5 → 3 open. #876 (Astro Starlight Phase 6: Deployment + CI/CD), #212 (Dependency Dashboard), #57 (Uplift `sparkle`) remain.
+- **Major-version boundary crossed:** v4.5.8 → v5.2.0 (seven releases: 4.5.9, 5.0.1, 5.0.2, 5.1.0, 5.1.1, 5.2.0, plus 5.0.1 intermediate). Breaking change: minimum allowed version floor raised `>=4.0.0` → `>=5.0.0`.
+- **`default.json` policy changes:** Added `group:allNonMajor` to extends; dropped `:disableRateLimiting` (now defers to bfra-me base preset defaults); added a new packageRule that ungroups 0.x packages (`matchCurrentVersion: /^0\./` → `groupName: null`) as the safety valve against PR storms from unstable libs.
+- **Autoheal consolidated into `fro-bot.yaml`:** The separate `fro-bot-autoheal.yaml` is gone. Single-file design with one daily schedule (15:30 UTC) covers PR review + maintenance + autoheal. Mirrors the architecture observed in [[marcusrbrown--marcusrbrown-github-io]] (which uses a `mode` enum dispatch input) and the rolling-perpetual-issue pattern in [[bfra-me--ha-addon-repository]] / [[bfra-me--works]].
+- **Autoheal categories went from 5 → 6.** Removed: "bfra-me Ecosystem Health" (folded into category 5 Cross-Project Intelligence Inbound, which now surveys `yield-farmer`, `poly`, `marcusrbrown/.github`, `bfra-me/renovate-config`, `fro-bot/agent`). Added: category 6 **Upstream Modernization Watch (Sundays only)**, gated by `IS_SUNDAY_UTC` env var via a preflight `date -u +%u` step. At-most-one-draft-PR-per-scan policy; never bumps pinned versions (Renovate-owned).
+- **Fro Bot agent:** v0.42.2 → v0.44.3 (SHA `b928e79729f01b563feabee26a0525a3b48501a6`).
+- **Toolchain:** pnpm 10.33.2 → 11.1.3 (major), lint-staged 16.4.0 → 17.0.5 (major), eslint 10.2.1 → 10.4.0, `@bfra.me/eslint-config` 0.51.0 → 0.51.1, `@bfra.me/prettier-config` → 0.16.9.
+- **pnpm overrides added** for supply-chain hardening: `fast-uri >=3.1.2`, `flatted >=3.4.2`, `handlebars >=4.7.9`, `lodash-es >=4.18.0`, `picomatch@2 ^2.3.2`, `picomatch@4 ^4.0.4`. None existed at prior survey.
+- **Open issues:** 46 → 6. The single-perpetual-issue strategy in the autoheal prompt consolidates and auto-closes dated daily reports — explains the cleanup.
+- **Open PRs:** 0 → 1 (#1311 picomatch@2 v4 by mrbro-bot, awaiting v5 floor consumer migrations).
+- **Downstream v4→v5 migration wave:** [[marcusrbrown--ha-config]], [[marcusrbrown--marcusrbrown-github-io]], and [[marcusrbrown--opencode-copilot-delegate]] all bumped to `#5.2.0` (per their respective wiki pages); no consumer required manual config overrides for the breaking change. Holdouts on v4.x: `containers`, `extend-vscode`, `marcusrbrown`, `esphome-life`, `copiloting` (floating `#v4`), `gpt`, `dotfiles`, `vbs`, `mrbro-dev`, `tokentoilet`, `infra`, `github`, `marcusrbrown`, `sparkle`.
+- Probot settings, branch protection, CodeQL/Scorecard, semantic-release pipeline (bare semver tags, major-branch updates), self-referential Renovate config all unchanged.
+- No contradictions with prior ingest. The 2026-04-28 page already correctly described v4.5.8 state; the new survey row extends survey history without overwriting.
 
-Constraint check: **No Fro Bot workflow detected** (no `fro-bot.yaml`, no `fro-bot-autoheal.yaml` in `.github/workflows/`). Confirmed for the fourth consecutive survey. The "Fro Bot Integration" section on the repo page already documents this gap and the proposed follow-up draft PR — no additional repo-page edit needed beyond the survey-history row.
+Sources: https://github.com/marcusrbrown/renovate-config (SHA 3478c88753d113b21c7cf10d9e58fd2f9be7e96a)
 
-No contradictions with prior surveys. All deltas captured additively. `index.md` entry already substantive; left as-is.
+## [2026-05-23 07:51] ingest | repo:marcusrbrown/renovate-config
 
-Sources: https://github.com/marcusrbrown/sparkle (SHA e757fa66aa223f4ccb8af16838d937562b97f713)
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
-## [2026-05-23 07:49] ingest | repo:marcusrbrown/sparkle
-
-Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/sparkle
+Sources: https://github.com/marcusrbrown/renovate-config
