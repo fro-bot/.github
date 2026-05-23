@@ -140,11 +140,27 @@ run-name: Survey Repo  # static; do NOT echo inputs.node_id
     NODE_ID: ${{ inputs.node_id }}
     GH_TOKEN: ${{ steps.gate-token.outputs.token }}
   run: |
-    # ... same shape-validate + GraphQL check as resolve, neutral abort on any failure ...
+    # shellcheck disable=SC2016
+    gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
+    # NOTE: recheck currently swallows stderr with 2>/dev/null — see follow-up
+    # below. Resolve step (above) uses the tempfile-capture pattern instead.
+    response=$(gh api graphql \
+      -F id="$NODE_ID" \
+      -f query="$gql_query" \
+      2>/dev/null) || {
+      printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
+      exit 1
+    }
+
+    if ! printf '%s' "$response" | jq -e '.data.node.isPrivate == false' >/dev/null; then
+      printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
+      exit 1
+    fi
+
     echo "private=false" >> "$GITHUB_OUTPUT"  # only reached on the confirmed-public path
 ```
 
-The recheck still swallows `gh api` stderr with `2>/dev/null` — that's tracked as a follow-up (issue #3345) to apply the same tempfile-capture pattern from step 2. Until then, recheck failures are diagnostically opaque; if the recheck starts failing, the first investigation step is to copy the resolve-step pattern locally and resubmit a diagnostic dispatch.
+The recheck snippet above intentionally shows production verbatim, including the `2>/dev/null` that the resolve step (in section 2) no longer uses. The asymmetry is real: resolve was hardened during the 2026-05-20 diagnostic loop (PRs #3344/#3346), recheck has not yet received the same tempfile-capture treatment. Tracked as follow-up issue #3345. Until #3345 lands, recheck failures are diagnostically opaque; if the recheck starts failing, the first investigation step is to copy the resolve-step pattern locally and resubmit a diagnostic dispatch with stderr captured.
 
 **4. Route every persistence and external-emit step through the recheck-success gate.** This is the load-bearing detail. The recheck is only as useful as the breadth of its gating:
 
