@@ -10,7 +10,7 @@ date: 2026-04-19
 last_updated: 2026-04-19
 module: scripts/wiki-ingest.ts
 tags: [workflow, github-actions, wiki-ingest, porcelain, silent-failure, status-classification, additive-pipeline, autonomous, reconcile]
-verified: true
+verified: 2026-04-19
 ---
 
 ## Problem

@@ -19,7 +19,7 @@ applies_when:
   - data migration must lag schema landing safely
 created: 2026-05-05
 last_updated: 2026-05-05
-verified: true
+verified: 2026-05-05
 ---
 
 ## Context

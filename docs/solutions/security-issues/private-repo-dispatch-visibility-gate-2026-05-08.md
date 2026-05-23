@@ -20,7 +20,7 @@ tags:
   - redaction
   - node-id
   - fail-closed
-verified: true
+verified: 2026-05-08
 symptoms:
   - Survey dispatch planning could include canonical owner/name for private, unknown, or visibility-conflicting repos.
   - Duplicate access-list rows sharing a node_id could allow a public-looking alias to dispatch before private visibility was considered.

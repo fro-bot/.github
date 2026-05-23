@@ -6,7 +6,7 @@ problem_type: workflow_issue
 component: development_workflow
 module: github-actions-workflows
 severity: high
-verified: true
+verified: 2026-05-17
 tags:
   - jq
   - shell-parsing
