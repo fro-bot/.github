@@ -5,7 +5,7 @@ on:
   workflow_call:
     inputs:
       event_type:
-        description: Event type for the journal entry (e.g. repo_survey_complete)
+        description: Event type for the broadcast (e.g. repo_survey_complete) — used for concurrency shaping
         required: true
         type: string
       discord_message:
@@ -19,32 +19,18 @@ on:
         type: string
         default: ''
       bluesky_text:
-        description: BlueSky post text (≤ 300 graphemes; truncated if longer)
-        required: false
-        type: string
-        default: ''
-      journal_text:
-        description: In-character journal reflection text
-        required: true
-        type: string
-      journal_metadata:
-        description: JSON metadata blob for the journal entry
-        required: false
-        type: string
-        default: '{}'
-      repo:
-        description: Relevant repo slug (owner/repo) to attach to the journal entry
+        description: BlueSky post text (≤ 300 graphemes; truncated if longer). Currently a no-op — Bluesky step is gated off pending re-evaluation; kept for forward compatibility.
         required: false
         type: string
         default: ''
       private:
-        description: Whether the broadcast concerns a private repo (skips external Discord and Bluesky posts when true; journal still fires)
+        description: Whether the broadcast concerns a private repo (skips external Discord post when true)
         required: false
         type: boolean
         default: true
     secrets:
       FRO_BOT_PAT:
-        required: true
+        required: false
       DISCORD_WEBHOOK_URL:
         required: false
       BLUESKY_HANDLE:
@@ -78,26 +64,13 @@ jobs:
             --message "$DISCORD_MESSAGE" \
             --title "$DISCORD_TITLE"
 
+      # Bluesky posting is disabled pending re-evaluation of social channels.
+      # The script (scripts/bluesky-post.ts) is intentionally retained for future
+      # reactivation; only the step invocation here is gated off via `if: false`.
       - name: 🦋 Post to Bluesky
-        if: inputs.bluesky_text != '' && inputs.private != true
+        if: false && inputs.bluesky_text != '' && inputs.private != true
         env:
           BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
           BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
           BLUESKY_TEXT: ${{ inputs.bluesky_text }}
         run: node scripts/bluesky-post.ts "$BLUESKY_TEXT"
-
-      - name: 📓 Journal entry
-        env:
-          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
-          EVENT_TYPE: ${{ inputs.event_type }}
-          JOURNAL_TEXT: ${{ inputs.journal_text }}
-          JOURNAL_METADATA: ${{ inputs.journal_metadata }}
-          REPO: ${{ inputs.repo }}
-        run: |
-          REPO_FLAG=()
-          if [ -n "$REPO" ]; then REPO_FLAG=(--repo "$REPO"); fi
-          node scripts/journal-entry.ts \
-            --event "$EVENT_TYPE" \
-            --text "$JOURNAL_TEXT" \
-            --metadata "$JOURNAL_METADATA" \
-            "${REPO_FLAG[@]}"
