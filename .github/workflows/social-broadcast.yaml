@@ -29,8 +29,6 @@ on:
         type: boolean
         default: true
     secrets:
-      FRO_BOT_PAT:
-        required: false
       DISCORD_WEBHOOK_URL:
         required: false
       BLUESKY_HANDLE:

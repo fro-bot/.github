@@ -288,9 +288,8 @@ jobs:
         Just finished surveying **${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }}**.
         New knowledge ingested into the wiki ✨
       discord_title: Repo Survey Complete
-      bluesky_text: >-
-        📡 Just surveyed ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }} and locked in new insights.
-        The wiki grows. #GitHub #OpenSource
+      # bluesky_text intentionally omitted — Bluesky step in social-broadcast.yaml
+      # is currently gated off via `if: false`. When revived, restore copy here.
       # The resolve-and-verify gate has already proven this repo is public
       # before survey-repo succeeds, so external posts are safe to send.
       private: false
