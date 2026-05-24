@@ -1341,3 +1341,32 @@ Sources: https://github.com/marcusrbrown/renovate-config (SHA 3478c88753d113b21c
 Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-05-24 00:00] ingest | fro-bot/fro-bot.github.io
+
+No-op re-survey of `fro-bot/fro-bot.github.io` (SHA `3e44653`, unchanged since the initial commit on 2026-02-09). Additive update to repo page only — appended a 2026-05-24 row to the Survey History table, refreshed frontmatter `updated:`, and appended a second source entry. Refreshed the `index.md` entry from the placeholder one-liner to a substantive descriptor matching schema convention. No topic, entity, or comparison pages touched.
+
+Findings:
+
+- HEAD unchanged at `3e44653` (`Create CNAME` by Fro Bot, 2026-02-09T02:38:53Z). Repository has been static for 105 days. `pushedAt: 2026-02-09T02:38:54Z`.
+- Single file in tree: `CNAME` (8 bytes, content: `fro.bot`). No README, no `.github` directory, no workflows, no settings.yml.
+- Pages config re-verified via `gh api repos/.../pages`: legacy build type, source `main:/`, custom domain `fro.bot`, HTTPS cert state `approved` (covers `fro.bot` + `www.fro.bot`, expires 2026-07-09), `https_enforced: false`, `protected_domain_state: unverified`, `custom_404: false`.
+- Branch protection on `main`: still disabled (`enforcement_level: off`). No `settings.yml` to manage it via Probot.
+- Open issues: 1 — #1 `Enable code scanning (CodeQL / Scorecard) for coverage parity` (opened 2026-03-09 by `fro-bot`), unchanged. Open PRs: 0.
+- Sole collaborator: `fro-bot` (admin + maintain + triage + push + pull).
+- **No Fro Bot agent workflow** present in this repo — already documented on the page and explicitly noted per task constraint. A follow-up draft PR for at least a minimal Fro Bot workflow (issue triage + settings oversight) remains recommended; HTTPS-enforcement toggle, Probot settings extending `fro-bot/.github:common-settings.yaml`, and a README are the other three open recommendations from the prior survey, all still applicable.
+- No contradictions with prior ingest. No structural drift. All four "Missing Ecosystem Integration" recommendations carried forward verbatim.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+
+## [2026-05-24 00:00] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
+
+## [2026-05-24 08:05] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
