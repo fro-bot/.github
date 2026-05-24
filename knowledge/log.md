@@ -1342,31 +1342,34 @@ Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
 
-## [2026-05-24 00:00] ingest | fro-bot/fro-bot.github.io
+## [2026-05-24 12:00] ingest | marcusrbrown/.dotfiles
 
-No-op re-survey of `fro-bot/fro-bot.github.io` (SHA `3e44653`, unchanged since the initial commit on 2026-02-09). Additive update to repo page only — appended a 2026-05-24 row to the Survey History table, refreshed frontmatter `updated:`, and appended a second source entry. Refreshed the `index.md` entry from the placeholder one-liner to a substantive descriptor matching schema convention. No topic, entity, or comparison pages touched.
+Incremental re-survey of `marcusrbrown/.dotfiles` (SHA `0bb24f0`, 2026-05-24). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Updated `index.md` entry with current state summary. No new pages created — existing topic/entity coverage remains accurate.
 
-Findings:
+Delta from prior survey (SHA `ae026c1`, 2026-04-22):
 
-- HEAD unchanged at `3e44653` (`Create CNAME` by Fro Bot, 2026-02-09T02:38:53Z). Repository has been static for 105 days. `pushedAt: 2026-02-09T02:38:54Z`.
-- Single file in tree: `CNAME` (8 bytes, content: `fro.bot`). No README, no `.github` directory, no workflows, no settings.yml.
-- Pages config re-verified via `gh api repos/.../pages`: legacy build type, source `main:/`, custom domain `fro.bot`, HTTPS cert state `approved` (covers `fro.bot` + `www.fro.bot`, expires 2026-07-09), `https_enforced: false`, `protected_domain_state: unverified`, `custom_404: false`.
-- Branch protection on `main`: still disabled (`enforcement_level: off`). No `settings.yml` to manage it via Probot.
-- Open issues: 1 — #1 `Enable code scanning (CodeQL / Scorecard) for coverage parity` (opened 2026-03-09 by `fro-bot`), unchanged. Open PRs: 0.
-- Sole collaborator: `fro-bot` (admin + maintain + triage + push + pull).
-- **No Fro Bot agent workflow** present in this repo — already documented on the page and explicitly noted per task constraint. A follow-up draft PR for at least a minimal Fro Bot workflow (issue triage + settings oversight) remains recommended; HTTPS-enforcement toggle, Probot settings extending `fro-bot/.github:common-settings.yaml`, and a README are the other three open recommendations from the prior survey, all still applicable.
-- No contradictions with prior ingest. No structural drift. All four "Missing Ecosystem Integration" recommendations carried forward verbatim.
+- **Fro Bot agent v0.41.3 → v0.44.3** (SHA `b928e79`). Workflow gains a dedicated `Close stale daily reports` step on `schedule` triggers — auto-closes `fro-bot`-authored daily reports older than 3 days with cross-platform `date -u -d` / `-v-3d` fallback. Schedule prompt re-shaped: Developer Experience category is now report-only ("Formatting is handled manually by the repo owner"). Hard guard against querying Dependabot/vulnerability-alert APIs added (PAT 404 by design on user-owned repos).
+- **Renovate preset 4.5.8 → 5.2.0** — crossed the v4→v5 boundary documented in [[marcusrbrown--renovate-config]] (2026-05-13). Joins the migration wave noted in the renovate-config wiki entry.
+- **New Renovate custom manager** for pinned npm plugin versions inside `.config/opencode/opencode.json` and `tui.json` — matches `"name@x.y.z"` patterns so OpenCode plugins now flow through Renovate. Automerge list expanded to include `fro-bot/agent`, `ast-grep`, and `opencode-copilot-delegate`.
+- **OpenCode plugin stack overhaul:**
+  - `oh-my-openagent@3.17.4` → `oh-my-opencode-slim@1.1.1` (replacement, new config file `oh-my-opencode-slim.jsonc`)
+  - `@ex-machina/opencode-anthropic-auth@1.7.4` → `@cortexkit/opencode-anthropic-auth@1.2.2` (vendor switch)
+  - `@cortexkit/opencode-magic-context` 0.13.0 → 0.21.8
+  - `@cortexkit/aft-opencode` 0.14.0 → 0.29.1
+  - `@franlol/opencode-md-table-formatter` removed
+  - **New**: `opencode-copilot-delegate@0.12.0` (consumes [[marcusrbrown--opencode-copilot-delegate]] sibling repo — first dotfiles release pulling it out of v0.1.0 scaffold)
+  - `@fro.bot/systematic` pinned at 2.23.4 (was floating `latest`)
+- **Custom OpenAI provider models** (`openai/gpt-5.5`, `openai/gpt-5.5-fast`) declared in `opencode.json` for the first time — 272K context, 32K output.
+- **Magic-context reshape:** historian migrated to custom `openai/gpt-5.5-fast` (with Copilot/Anthropic now fallbacks only). Dreamer reverted to direct `anthropic/claude-sonnet-4-6` with `inject_docs: true`, pinned key files, user memories. Sidekick disabled. Token thresholds dropped from 4 entries to 2. Percentage thresholds tightened for Anthropic Sonnet/Opus (40% → 55%); new `openai/gpt-5.5` entry at 80%. Experimental block now centers on `auto_search` and `git_commit_indexing`.
+- **mise tool deltas:** Node 24.15.0 → 24.16.0, Python 3.14.4 → 3.14.5, Go 1.26.2 → 1.26.3, Bun 1.3.13 → 1.3.14, Deno 2.7.13 → 2.8.0, pnpm 10.33.0 → 11.2.1 (major), npm 11.12.1 → 11.15.0, ZLS 0.15.0 → 0.16.0, ast-grep 0.40.5 → 0.42.3, Playwright 1.59.1 → 1.60.0, Puppeteer 24.41.0 → 25.0.4, agent-browser 0.26.0 → 0.27.0, ocx 2.0.7 → 2.0.11, opencode-ai 1.14.18 → 1.15.5, tsx 4.21.0 → 4.22.3, biome 2.4.12 → 2.4.15, cargo-binstall 1.15.5 → 1.19.1, typescript-language-server 5.1.3 → 5.2.0, poetry 2.3.4 → 2.4.1. **New:** `@github/copilot@1.0.51` (GitHub Copilot CLI), `aqua:gitleaks/gitleaks@8.30.1` (secret scanner). **Removed from `[tools]`:** `@cortexkit/opencode-magic-context`, `@cortexkit/aft-opencode` (moved to OpenCode plugin slot), `remark-language-server`, `lolcrab`.
+- **New repo-scoped skill:** `.agents/skills/agent-browser/` — joins copilot-cli, test-driven-development, and writing-skills.
+- **Repo metadata:** primary language is now TypeScript (212K) over Shell (55K) — driven by growth in `.config/opencode/`, agent skills, and devcontainer features. Open issues 19 → 4. Stars 18 (new field).
+- Probot settings, devcontainer architecture, bare-repo pattern, branch protection, GPG signing, XDG layout, and Brewfile all unchanged.
 
-Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA 0bb24f05e29fbd4c70eb9dca9611055e7bef7c5f)
 
-## [2026-05-24 00:00] ingest | repo:fro-bot/fro-bot.github.io
+## [2026-05-24 08:08] ingest | repo:marcusrbrown/.dotfiles
 
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
-Sources: https://github.com/fro-bot/fro-bot.github.io
-
-## [2026-05-24 08:05] ingest | repo:fro-bot/fro-bot.github.io
-
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
-
-Sources: https://github.com/fro-bot/fro-bot.github.io
+Sources: https://github.com/marcusrbrown/.dotfiles
