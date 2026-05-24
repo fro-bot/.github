@@ -4,6 +4,16 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  ajv@8: 8.20.0
+  brace-expansion: '>=5.0.5'
+  fast-uri: '>=3.1.2'
+  flatted: '>=3.4.2'
+  minimatch: '>=10.2.3'
+  picomatch: '>=4.0.4'
+  undici: '>=7.24.0'
+  yaml: '>=2.8.3'
+
 importers:
 
   .:
@@ -15,7 +25,7 @@ importers:
         specifier: ^22.0.1
         version: 22.0.1
       yaml:
-        specifier: ^2.6.0
+        specifier: '>=2.8.3'
         version: 2.9.0
     devDependencies:
       '@bfra.me/eslint-config':
@@ -1196,7 +1206,7 @@ packages:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
     engines: {node: '>=12.0.0'}
     peerDependencies:
-      picomatch: ^3 || ^4
+      picomatch: '>=4.0.4'
     peerDependenciesMeta:
       picomatch:
         optional: true
@@ -1997,7 +2007,7 @@ packages:
       sugarss: ^5.0.0
       terser: ^5.16.0
       tsx: ^4.8.1
-      yaml: ^2.4.2
+      yaml: '>=2.8.3'
     peerDependenciesMeta:
       '@types/node':
         optional: true
