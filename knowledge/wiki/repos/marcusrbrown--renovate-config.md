@@ -222,7 +222,7 @@ This preset is the dependency-update policy backbone of the entire `marcusrbrown
 | --- | --- | --- |
 | [[marcusrbrown--ha-config]] | `#5.2.0` (crossed v4→v5 boundary on 2026-05-16 via #776) | Prettier |
 | [[marcusrbrown--github]] | `#4.5.8` | `npx prettier --write .` |
-| [[marcusrbrown--containers]] | `#5.2.0` (crossed v4→v5 boundary on 2026-05-20 via #608) | `poetry lock && pnpm install && pnpm format` (added `poetry lock` 2026-05-14, #596) |
+| [[marcusrbrown--containers]] | `#4.5.0` | `pnpm install && pnpm format` |
 | [[marcusrbrown--dotfiles]] | `#4.5.8` | — |
 | [[marcusrbrown--gpt]] | `#4.5.8` | — |
 | [[marcusrbrown--vbs]] | `#4.5.9` | `pnpm install && pnpm fix` |
@@ -238,9 +238,9 @@ This preset is the dependency-update policy backbone of the entire `marcusrbrown
 | [[marcusrbrown--esphome-life]] | `#4.5.1` | — |
 | [[marcusrbrown--sparkle]] | `#4.5.9` | — |
 
-**v4→v5 migration wave** (since 2026-04-28): `ha-config`, `marcusrbrown.github.io`, `opencode-copilot-delegate`, and now `containers` have all bumped to `#5.2.0` and survived the breaking change (`group:allNonMajor` extends, `>=5.0.0` floor, dropped `:disableRateLimiting`). Migrations were straightforward Renovate-authored PRs — no consumer required manual config overrides. `containers` notably extended its `postUpgradeTasks` with `poetry lock` in the same window (2026-05-14, #596), keeping the Poetry lockfile in sync after dependency bumps.
+**v4→v5 migration wave** (since 2026-04-28): `ha-config`, `marcusrbrown.github.io`, and `opencode-copilot-delegate` have all bumped to `#5.2.0` and survived the breaking change (`group:allNonMajor` extends, `>=5.0.0` floor, dropped `:disableRateLimiting`). Migrations were straightforward Renovate-authored PRs — no consumer required manual config overrides.
 
-**Outstanding v4 holdouts:** `extend-vscode` (still `#4.5.0`), `marcusrbrown` (`#4.5.1`), `esphome-life` (`#4.5.1`), `copiloting` (floating `#v4`), plus a long tail still on `#4.5.8`/`#4.5.9`. None will be force-bumped — Renovate routes the upgrade as a major PR per repo, and each consumer's preset pin policy decides timing.
+**Outstanding v4 holdouts:** `containers` and `extend-vscode` (still `#4.5.0`), `marcusrbrown` (`#4.5.1`), `esphome-life` (`#4.5.1`), `copiloting` (floating `#v4`), plus a long tail still on `#4.5.8`/`#4.5.9`. None will be force-bumped — Renovate routes the upgrade as a major PR per repo, and each consumer's preset pin policy decides timing.
 
 **Pre-survey concern resolved:** the prior survey flagged the `bf13a82` SHA against a `#4.5.8` release. The repo has since shipped seven releases (`5.0.1`, `5.0.2`, `5.1.0`, `5.1.1`, `5.2.0`, plus a 4.5.9 patch).
 

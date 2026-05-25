@@ -2,7 +2,7 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-05-20
+updated: 2026-05-25
 tags: [probot, github, repository-settings, automation, governance]
 related:
   - marcusrbrown--github
@@ -87,7 +87,7 @@ Repos using Probot Settings typically include an `update-repo-settings.yaml` wor
 - **Trigger:** Push to main, daily cron, manual dispatch
 - **Implementation:** Reusable workflow from `bfra-me/.github`
 - **Auth:** GitHub App via `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets
-- **Reusable workflow version:** `bfra-me/.github` v4.16.9 (as of 2026-04-27 in [[marcusrbrown--github]])
+- **Reusable workflow version:** `bfra-me/.github` v4.16.20 (as of 2026-05-25 in [[marcusrbrown--github]]; bumped from v4.16.9 via 11 sequential Renovate PRs over four weeks — example of dependency-only churn dominating a config-only repo)
 
 ## Common Configuration Patterns
 
