@@ -1373,3 +1373,30 @@ Sources: https://github.com/marcusrbrown/.dotfiles (SHA 0bb24f05e29fbd4c70eb9dca
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-05-25 12:00] ingest | marcusrbrown/containers
+
+Incremental re-survey of `marcusrbrown/containers` (SHA `6f8a1014`, up from `1b782ff8` on 2026-04-22). Additively updated repo page `marcusrbrown--containers.md` with a new Delta section and survey-history row. Updated topic page `docker-containers.md` to reflect the Dockerfile syntax v1.23 → v1.24 bump and reproducibility-boundary rationale. Updated [[marcusrbrown--renovate-config]] consumer table (containers crossed v4→v5 boundary, added `poetry lock` to postUpgradeTasks). Updated `index.md` description.
+
+Deltas since prior survey:
+
+- **Renovate preset crossed v4→v5 boundary:** `marcusrbrown/renovate-config#4.5.0` → `#5.2.0` (PR #608, 2026-05-20). Joins `ha-config`, `marcusrbrown.github.io`, and `opencode-copilot-delegate` in the v5 migration wave tracked on [[marcusrbrown--renovate-config]]. Removes `containers` from the v4 holdouts list.
+- **Fro Bot agent advanced four releases:** v0.41.0 → v0.42.1 (#591) → v0.43.0 (#603) → v0.44.0 (#609, SHA `b030b53b...`). Workflow structure, structured PR review prompt, and daily autohealing categories unchanged.
+- **`docker/dockerfile` syntax directive:** v1.23 → v1.24 (#604, 2026-05-13).
+- **urllib3 security floor:** explicit `urllib3 >=2.7.0` dependency added to `pyproject.toml` (#602, CVE patch, 2026-05-13).
+- **`poetry lock` added to Renovate postUpgradeTasks** (#596, 2026-05-14): now runs `poetry lock && pnpm install && pnpm format` after dependency bumps, keeping the Poetry lockfile in sync. Previously a manual reconciliation step.
+- **`openai` dependency tracked aggressively:** five bumps across May (#592, #594, #595, #597) — 2.33 → 2.34 → 2.35.1 → 2.36.
+- **Express template/runtime dependency pinning** (#582, 2026-04-29) and redundant `argparse` dep removed.
+- **Continuous Node.js base image digest rotation cadence** through Renovate PRs #599–#618.
+- **Open PRs:** 6 (4 mrbro-bot Renovate, 2 long-standing copilot-swe-agent PRs from 2026-04-18: #583 pytest coverage for AI subsystem, #584 AI configuration scaffold + CLI init/validation flow — both still unmerged, touching the AI subsystem documented in the repo page).
+- **No structural changes:** repo layout, workflows (11 total), Python automation entry points (10), template system, AI subsystem architecture, Dockerfile patterns, CI pipeline, branch protection, mise toolchain (Node 24.15.0, pnpm 10.33.0, Poetry, pre-commit, Python 3.13), and developer tooling all identical to prior surveys.
+
+No contradictions with prior ingests. Period activity was: Renovate-driven dependency hygiene, the v4→v5 Renovate preset boundary crossing (the headline durable change for cross-repo cataloging), and steady Fro Bot agent version cadence.
+
+Sources: https://github.com/marcusrbrown/containers (SHA 6f8a10145eb743f71896bac881b269e403e5672e)
+
+## [2026-05-25 09:15] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers
