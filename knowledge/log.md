@@ -1395,3 +1395,29 @@ Sources: https://github.com/marcusrbrown/.github (SHA 0b780fdba1b5b0ae6280aaaf28
 Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
+
+## [2026-05-26 08:44] ingest | marcusrbrown/esphome.life
+
+Re-survey of `marcusrbrown/esphome.life` (SHA `fc5adc2`, up from `e398c2e`). Updated repo page `marcusrbrown--esphome-life.md`, bumped entity page `esphome.md` with new source/SHA, and refreshed the catalog entry in `index.md` (replaced placeholder description with a real summary).
+
+Delta from prior survey (SHA `e398c2e`, 2026-04-23):
+
+- **Renovate preset crossed the v4 → v5 boundary** on 2026-05-14 (PR #349): `marcusrbrown/renovate-config#4.5.1` → `#5.2.0`. Consistent with the v5 migration tracked on [[marcusrbrown--renovate-config]].
+- **`bfra-me/.github` reusable workflows:** v4.4.0 → v4.16.20 over a series of Renovate PRs (#341 through #355), now pinned at SHA `dc366698`. Affects both `renovate.yaml` and `update-repo-settings.yaml`.
+- **`esphome/build-action`:** v7.1.0 → v7.2.0 in `ci.yaml`. Other CI action pins refreshed: `actions/checkout@v5.0.1`, `actions/upload-artifact@v5.0.0`, `actions/create-github-app-token@v2.2.2`, `actions/download-artifact@v6.0.0`.
+- **Prettier:** 3.8.1 → 3.8.3 in `postUpgradeTasks` (PR #351).
+- **Repo structure unchanged:** Same two device YAML files, same `packages/`, same `static/`, same `docs/` template artifact, same `.devcontainer.json` pinning `ptr727/esphome-nonroot:2025.12.7`.
+- **ESPHome version pin frozen:** 2025.12.7 unchanged across four surveys spanning 2026-04 → 2026-05. Two-month quiet stretch for an actively-developed framework. Noted on `esphome.md`.
+- **All commits Renovate-authored:** Every commit since the 2026-03-12 baseline has been a dependency bump merged by `mrbro-bot[bot]`. No human-authored changes to device configs, workflows, or static site.
+- **Surfaced footgun:** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.20` — same reusable workflow path as `renovate.yaml`, rather than a settings-sync-specific workflow. Looks like a copy-paste leak. On its face the daily settings-sync cron would be running Renovate. Documented on the repo page as a follow-up; not patched in this ingest (working-dir mode, knowledge-only constraint).
+- **Still no Fro Bot agent workflow.** Recommendation carried forward across four surveys.
+
+No contradictions with prior wiki content. All updates additive: new source/SHA entries, new survey-history row, refreshed action versions, footgun note, and a catalog summary replacing the placeholder text.
+
+Sources: https://github.com/marcusrbrown/esphome.life (SHA fc5adc212a7a1556bdaa9a1b30d3cf8a9e8cc584)
+
+## [2026-05-26 08:48] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
