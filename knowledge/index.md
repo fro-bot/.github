@@ -15,8 +15,8 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--github]] — Marcus's personal `.github` repo; GitHub defaults, community health files, and canonical Probot Settings template (`common-settings.yaml`); Prettier-only CI, `bfra-me/.github` reusable workflows pinned at v4.16.20, Renovate preset on v4.5.9 (v4 holdout), no Fro Bot workflow yet
 - [[marcusrbrown--containers]] — Container collection and automation framework (Dockerfiles, multi-arch builds, Python CLI, AI-powered templates, CI/CD)
 - [[marcusrbrown--copiloting]] — Polyglot AI/LLM experimentation monorepo (Python + TypeScript); LangChain tutorials, Flask + SvelteKit PDF chat app, Fro Bot agent workflows
-- [[marcusrbrown--esphome-life]] — ESPHome firmware definitions for Olimex ESP32-PoE-ISO Bluetooth Proxies feeding [[marcusrbrown--ha-config]]; CI builds via `esphome/build-action@v7.2.0` + GitHub Pages deploy with ESP Web Tools; Renovate preset crossed v4 → v5 (`#5.2.0`), `bfra-me/.github` at v4.16.20; still no Fro Bot agent workflow; ESPHome 2025.12.7 pinned for 2+ months
-- [[marcusrbrown--extend-vscode]] — VS Code extension toolkit (TypeScript, dual Node/Web targets, tsup, Vitest, semantic-release publishing)
+- [[marcusrbrown--esphome-life]] — marcusrbrown/esphome.life
+- [[marcusrbrown--extend-vscode]] — VS Code extension toolkit (TypeScript, dual Node/Web targets, tsup, Vitest, semantic-release to Marketplace+OpenVSIX+npm); Renovate preset crossed v4→v5 (#5.2.0) on 2026-05-14, eslint v10 / jsdom v29 / eslint-plugin-node-dependencies v2 majors landed end of April, `typescript` v6 (#466) remains the sole pending major; **still no Fro Bot agent workflow**
 - [[marcusrbrown--gpt]] — Local-first GPT creation platform (React 19, TypeScript 5.9, Vite 7, LangChain, MCP, IndexedDB, Web Crypto; deployed to gpt.mrbro.dev)
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
 - [[marcusrbrown--infra]] — Bun workspace monorepo for personal infrastructure (KeeWeb deploy, CLIProxyAPI proxy, operational CLI with MCP bridge)

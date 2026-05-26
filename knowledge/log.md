@@ -1396,28 +1396,25 @@ Surveyed marcusrbrown/.github and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.github
 
-## [2026-05-26 08:44] ingest | marcusrbrown/esphome.life
+## [2026-05-26 08:49] ingest | marcusrbrown/extend-vscode
 
-Re-survey of `marcusrbrown/esphome.life` (SHA `fc5adc2`, up from `e398c2e`). Updated repo page `marcusrbrown--esphome-life.md`, bumped entity page `esphome.md` with new source/SHA, and refreshed the catalog entry in `index.md` (replaced placeholder description with a real summary).
+Re-survey of `marcusrbrown/extend-vscode` (SHA `516a9eb4`, up from `b457a34f`). Updated repo page `marcusrbrown--extend-vscode.md`, bumped `updated` date on topic page `vscode-extensions.md`, refreshed `index.md` summary line. Added `marcusrbrown--renovate-config` to the repo page's `related` frontmatter.
 
-Delta from prior survey (SHA `e398c2e`, 2026-04-23):
+Delta from prior survey (SHA `b457a34f`, 2026-04-27):
 
-- **Renovate preset crossed the v4 → v5 boundary** on 2026-05-14 (PR #349): `marcusrbrown/renovate-config#4.5.1` → `#5.2.0`. Consistent with the v5 migration tracked on [[marcusrbrown--renovate-config]].
-- **`bfra-me/.github` reusable workflows:** v4.4.0 → v4.16.20 over a series of Renovate PRs (#341 through #355), now pinned at SHA `dc366698`. Affects both `renovate.yaml` and `update-repo-settings.yaml`.
-- **`esphome/build-action`:** v7.1.0 → v7.2.0 in `ci.yaml`. Other CI action pins refreshed: `actions/checkout@v5.0.1`, `actions/upload-artifact@v5.0.0`, `actions/create-github-app-token@v2.2.2`, `actions/download-artifact@v6.0.0`.
-- **Prettier:** 3.8.1 → 3.8.3 in `postUpgradeTasks` (PR #351).
-- **Repo structure unchanged:** Same two device YAML files, same `packages/`, same `static/`, same `docs/` template artifact, same `.devcontainer.json` pinning `ptr727/esphome-nonroot:2025.12.7`.
-- **ESPHome version pin frozen:** 2025.12.7 unchanged across four surveys spanning 2026-04 → 2026-05. Two-month quiet stretch for an actively-developed framework. Noted on `esphome.md`.
-- **All commits Renovate-authored:** Every commit since the 2026-03-12 baseline has been a dependency bump merged by `mrbro-bot[bot]`. No human-authored changes to device configs, workflows, or static site.
-- **Surfaced footgun:** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.20` — same reusable workflow path as `renovate.yaml`, rather than a settings-sync-specific workflow. Looks like a copy-paste leak. On its face the daily settings-sync cron would be running Renovate. Documented on the repo page as a follow-up; not patched in this ingest (working-dir mode, knowledge-only constraint).
-- **Still no Fro Bot agent workflow.** Recommendation carried forward across four surveys.
+- **Renovate preset crossed v4 → v5 boundary** (PR #487, 2026-05-14): `marcusrbrown/renovate-config#4.5.0` → `#5.2.0`. extend-vscode is now on the v5 line documented in [[marcusrbrown--renovate-config]] (`group:allNonMajor` + 0.x ungrouping policy). This is the headline structural shift since the prior survey.
+- **Three major-version PRs that had been pending since 2026-04-23 closed end of April:** `eslint` v10 (#467, 2026-04-30), `eslint-plugin-node-dependencies` v2 (#468, 2026-04-30), `jsdom` v29 (#469, 2026-04-29). Only `typescript` v6 (#466) remains outstanding as the sole pending major.
+- **`tsup` pinning drift corrected** (#488, 2026-05-14): bumped from `^8.0.2` range to pinned `8.5.1`. The repo's devDependency block now uses exact pins uniformly — a useful invariant for future contributors.
+- **Other patches merged 2026-04-29 → 2026-05-21:** Node.js → v24.16.0 (`.node-version`, #493), `eslint` → 10.4.0 (#492), `tsx` → 4.22.0 (#491), `@types/vscode` → 1.118.0 (#490, prior #483 → 1.116.0), `@playwright/test` → 1.60.0 (#489), `jiti` → 2.7.0 (#486), `eslint-plugin-no-only-tests` → 3.4.0 (#484), `jsdom` → 29.1.0 (#482).
+- **Repository structure, build (tsup dual-target), CI workflows (six unchanged), publishing pipeline (Marketplace + OpenVSIX + npm via semantic-release), Probot settings (`fro-bot/.github:common-settings.yaml`), and branch protection (`Renovate / Renovate`, `Run Checks`, linear history, admin enforcement) all unchanged.**
+- **Open issues:** 5 (#142, #162, #317–#319) — unchanged. **Open PRs:** 1 (#466, `typescript` v6).
+- **Still no Fro Bot agent workflow.** Follow-up PR recommendation carried forward across now five+ surveys — extend-vscode and `marcusrbrown/.github` remain the two main holdouts in Marcus's portfolio without `fro-bot.yaml`.
+- No contradictions with prior wiki content. All updates additive.
 
-No contradictions with prior wiki content. All updates additive: new source/SHA entries, new survey-history row, refreshed action versions, footgun note, and a catalog summary replacing the placeholder text.
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA 516a9eb442f97212f45d890e65fb7d7642566206)
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA fc5adc212a7a1556bdaa9a1b30d3cf8a9e8cc584)
+## [2026-05-26 08:49] ingest | repo:marcusrbrown/extend-vscode
 
-## [2026-05-26 08:48] ingest | repo:marcusrbrown/esphome.life
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/esphome.life
+Sources: https://github.com/marcusrbrown/extend-vscode
