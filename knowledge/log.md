@@ -1418,3 +1418,27 @@ Sources: https://github.com/marcusrbrown/extend-vscode (SHA 516a9eb442f97212f45d
 Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-05-27 06:00] ingest | marcusrbrown/gpt
+
+Incremental re-survey of `marcusrbrown/gpt` (SHA `aac01035`, up from `0bb8eed` on 2026-04-24). Updated repo page `marcusrbrown--gpt.md`, topic page `langchain.md`, and `index.md` summary line. No new topic/entity/comparison pages created — existing pages absorb the delta.
+
+Delta from prior survey (SHA `0bb8eed`, 2026-04-24):
+
+- **Renovate preset crossed v4 → v5 boundary** (PR #2435, 2026-05-13): `marcusrbrown/renovate-config#4.5.8` → `#5.2.0`. gpt joins extend-vscode, dotfiles, and other portfolio repos on the v5 line (`group:allNonMajor` + 0.x ungrouping policy from [[marcusrbrown--renovate-config]]).
+- **Fro Bot agent advanced through 8 releases:** v0.41.4 → v0.42.5/.6/.7/.8/.9/.10 → v0.43.0/.1/.3 → v0.44.3 → v0.45.0 (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`). PRs #2374, #2377, #2383, #2396, #2420, #2428, #2429, #2449, #2454, #2465.
+- **Workflow consolidation:** `fro-bot-autoheal.yaml` folded into `fro-bot.yaml` as an `autoheal` mode. The single workflow now handles all three modes (review / maintenance / autoheal) via `workflow_dispatch` input + dual cron schedules (03:30 UTC autoheal, 15:30 UTC maintenance). Matches the three-mode single-file pattern in [[marcusrbrown--marcusrbrown-github-io]].
+- **LangChain.js monorepo bumps:** `langchain` 1.3.3 → 1.4.2, `@langchain/core` 1.1.48 newly enumerated, `@langchain/openai` 1.4.4 → 1.4.7, `@langchain/anthropic` 1.3.26 → 1.4.0, `@langchain/langgraph` 1.2.9 → 1.3.2. Updated [[langchain]] topic page to position gpt as the modern 1.x reference consumer (contrast with copiloting's pre-modular 0.0.212 pin).
+- **Build/lint stack patches:** Vite 8.0.9 → 8.0.14, TailwindCSS 4.2.2 → 4.3.0, React Router 7.14.1 → 7.15.1, Zod 4.3.6 → 4.4.3, Vitest 4.1.4 → 4.1.7, `@vitest/eslint-plugin` 1.6.18 newly added (#2480), ESLint 10.2.1 → 10.4.0, `@bfra.me/prettier-config` → 0.16.9, `@bfra.me/tsconfig` → 0.13.1, `@typescript/native-preview` → 7.0.0-dev.20260523.1, Playwright 1.59.1 → 1.60.0.
+- **Toolchain bumps:** Node 24.15.0 → 24.16.0 (#2468), pnpm 10.33.0 → 10.33.4 (#2402, #2412), `bfra-me/.github` reusable workflows v4.16.8 → v4.16.19 (#2379, #2395, #2419, #2433, #2434, #2466), `actions/create-github-app-token` v3.2.0 (#2430), Renovate preset preliminary bump to v4.5.9 (#2368) before the v5 cross.
+- **Repository structure, application architecture, RFC set (13), `BaseLLMProvider` abstraction, CSP, IndexedDB/Web Crypto layer, AGENTS.md hierarchy, and Probot settings all unchanged.** No new source files, no new directories, no behavior-affecting code changes — exclusively dependency hygiene and the workflow consolidation.
+- **Open issues:** 21 (down from 30). **Open PRs:** 3 (long-running #2165 HeroUI v3 migration, #2320 React monorepo, #2440 `@bfra.me/eslint-config` v0.51.1).
+- No contradictions with prior wiki content. All updates additive.
+
+Sources: https://github.com/marcusrbrown/gpt (SHA aac010356a3e0d7fd21a5883b98d0cdf6229ed60)
+
+## [2026-05-27 08:58] ingest | repo:marcusrbrown/gpt
+
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/gpt

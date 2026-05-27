@@ -17,7 +17,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--copiloting]] — Polyglot AI/LLM experimentation monorepo (Python + TypeScript); LangChain tutorials, Flask + SvelteKit PDF chat app, Fro Bot agent workflows
 - [[marcusrbrown--esphome-life]] — marcusrbrown/esphome.life
 - [[marcusrbrown--extend-vscode]] — VS Code extension toolkit (TypeScript, dual Node/Web targets, tsup, Vitest, semantic-release to Marketplace+OpenVSIX+npm); Renovate preset crossed v4→v5 (#5.2.0) on 2026-05-14, eslint v10 / jsdom v29 / eslint-plugin-node-dependencies v2 majors landed end of April, `typescript` v6 (#466) remains the sole pending major; **still no Fro Bot agent workflow**
-- [[marcusrbrown--gpt]] — Local-first GPT creation platform (React 19, TypeScript 5.9, Vite 7, LangChain, MCP, IndexedDB, Web Crypto; deployed to gpt.mrbro.dev)
+- [[marcusrbrown--gpt]] — Local-first GPT creation platform (React 19, TypeScript 5.9, Vite 8.0.14, LangChain.js 1.4.2 / `@langchain/core` 1.1.48, MCP 1.29, IndexedDB via Dexie, Web Crypto AES-GCM/PBKDF2; deployed to gpt.mrbro.dev). Fro Bot agent v0.45.0 on consolidated three-mode single-file workflow; Renovate preset crossed v4→v5.2.0 on 2026-05-13
 - [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
 - [[marcusrbrown--infra]] — Bun workspace monorepo for personal infrastructure (KeeWeb deploy, CLIProxyAPI proxy, operational CLI with MCP bridge)
 - [[marcusrbrown--marcusrbrown]] — GitHub profile README with TypeScript-powered automation (badge generation, sponsor tracking, A/B testing, scheduled updates)
