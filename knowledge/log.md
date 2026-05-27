@@ -1419,26 +1419,32 @@ Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
 
-## [2026-05-27 06:00] ingest | marcusrbrown/gpt
+## [2026-05-27 08:58] ingest | marcusrbrown/infra
 
-Incremental re-survey of `marcusrbrown/gpt` (SHA `aac01035`, up from `0bb8eed` on 2026-04-24). Updated repo page `marcusrbrown--gpt.md`, topic page `langchain.md`, and `index.md` summary line. No new topic/entity/comparison pages created — existing pages absorb the delta.
+Incremental survey of `marcusrbrown/infra` at SHA `2f9bafd6cdb03d9ed28ee336d99d5f7bf09a3dfb` (push 2026-05-26). Updated repo page `marcusrbrown--infra.md` and topic page `github-actions-ci.md`. Updated `index.md` catalog entry. No new pages created — existing `github-actions-ci.md` already captures the split-deploy pattern and conventions-test pattern this repo pioneered.
 
-Delta from prior survey (SHA `0bb8eed`, 2026-04-24):
+Delta from prior survey (SHA `938fa7c`, 2026-04-27):
 
-- **Renovate preset crossed v4 → v5 boundary** (PR #2435, 2026-05-13): `marcusrbrown/renovate-config#4.5.8` → `#5.2.0`. gpt joins extend-vscode, dotfiles, and other portfolio repos on the v5 line (`group:allNonMajor` + 0.x ungrouping policy from [[marcusrbrown--renovate-config]]).
-- **Fro Bot agent advanced through 8 releases:** v0.41.4 → v0.42.5/.6/.7/.8/.9/.10 → v0.43.0/.1/.3 → v0.44.3 → v0.45.0 (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`). PRs #2374, #2377, #2383, #2396, #2420, #2428, #2429, #2449, #2454, #2465.
-- **Workflow consolidation:** `fro-bot-autoheal.yaml` folded into `fro-bot.yaml` as an `autoheal` mode. The single workflow now handles all three modes (review / maintenance / autoheal) via `workflow_dispatch` input + dual cron schedules (03:30 UTC autoheal, 15:30 UTC maintenance). Matches the three-mode single-file pattern in [[marcusrbrown--marcusrbrown-github-io]].
-- **LangChain.js monorepo bumps:** `langchain` 1.3.3 → 1.4.2, `@langchain/core` 1.1.48 newly enumerated, `@langchain/openai` 1.4.4 → 1.4.7, `@langchain/anthropic` 1.3.26 → 1.4.0, `@langchain/langgraph` 1.2.9 → 1.3.2. Updated [[langchain]] topic page to position gpt as the modern 1.x reference consumer (contrast with copiloting's pre-modular 0.0.212 pin).
-- **Build/lint stack patches:** Vite 8.0.9 → 8.0.14, TailwindCSS 4.2.2 → 4.3.0, React Router 7.14.1 → 7.15.1, Zod 4.3.6 → 4.4.3, Vitest 4.1.4 → 4.1.7, `@vitest/eslint-plugin` 1.6.18 newly added (#2480), ESLint 10.2.1 → 10.4.0, `@bfra.me/prettier-config` → 0.16.9, `@bfra.me/tsconfig` → 0.13.1, `@typescript/native-preview` → 7.0.0-dev.20260523.1, Playwright 1.59.1 → 1.60.0.
-- **Toolchain bumps:** Node 24.15.0 → 24.16.0 (#2468), pnpm 10.33.0 → 10.33.4 (#2402, #2412), `bfra-me/.github` reusable workflows v4.16.8 → v4.16.19 (#2379, #2395, #2419, #2433, #2434, #2466), `actions/create-github-app-token` v3.2.0 (#2430), Renovate preset preliminary bump to v4.5.9 (#2368) before the v5 cross.
-- **Repository structure, application architecture, RFC set (13), `BaseLLMProvider` abstraction, CSP, IndexedDB/Web Crypto layer, AGENTS.md hierarchy, and Probot settings all unchanged.** No new source files, no new directories, no behavior-affecting code changes — exclusively dependency hygiene and the workflow consolidation.
-- **Open issues:** 21 (down from 30). **Open PRs:** 3 (long-running #2165 HeroUI v3 migration, #2320 React monorepo, #2440 `@bfra.me/eslint-config` v0.51.1).
-- No contradictions with prior wiki content. All updates additive.
+- **Major new app: `apps/gateway/`** (Fro Bot Discord client + workspace runner + mitmproxy stack at `gateway.fro.bot`, added #264 on 2026-05-18). Upstream `fro-bot/agent` pinned via `apps/gateway/upstream.json` at `v0.44.2`. Three-service Docker Compose deployment. Secrets materialized via SSH stdin only (never argv); checksum-after-success invariant in `/opt/gateway/.secrets-checksum` prevents silent stale-credential states. Discord registration poll has ~90s budget with 429-aware backoff and token-sanitized error surfaces.
+- **New `packages/shared/`** (#290, 2026-05-23): shared DigitalOcean droplet helpers (`ssh`, `scp`, `validateDoctl`, `dropletExists`, `pinHostKeys`, etc.) consumed by `apps/cliproxy` and `apps/gateway` provision scripts. Private (`@marcusrbrown/infra-shared`, never published).
+- **New workflow** `deploy-gateway.yaml` — third per-app deploy workflow in the split pipeline pattern (12 workflows total, up from 11). The thin `deploy.yaml` orchestrator now coordinates all three apps.
+- **Fro Bot agent** v0.42.2 → v0.44.3 across multiple bumps (#251, #252, #274, #281, #282).
+- **Renovate preset:** v4 → v5 major boundary crossed at 2026-05-17 (#242). Now extends `marcusrbrown/renovate-config#5.2.0` + `group:allNonMajor` for safer grouping.
+- **Major dependency bumps:** TypeScript 6.0.3, ESLint 10.4.0, `@bfra.me/eslint-config` 0.51.1, `@bfra.me/tsconfig` 0.13.1, Changesets 2.31.0.
+- **CLI v0.4.6 → v0.7.0** with MCP fidelity refactor for status-only commands (#296), gateway commands (status/deploy/logs/backup/restore), parsing of `docker compose ps` NDJSON output (#278), and OpenAI provider opt-in for `cliproxy setup --harness opencode` (#307). Codex device-code OAuth login added (#303).
+- **CLIProxyAPI:** v6.9.39 → v6.10.9 (digest-pinned). Caddy: 2.11.2-alpine → 2.11.3-alpine.
+- **Gateway hardening:** ControlMaster SSH multiplexing for deploys (#277), pinned droplet host keys in `.github/known_hosts` (#272), `validateGatewayHost` rejects `-`-prefixed values pre-SSH-invocation, no-argv-for-secrets invariant.
+- **Operational documentation:** new Discord token-lifecycle runbook (#284, `docs/runbooks/`); plan reconciliation for cliproxy deployment + conventions tests (#253); compound learning entry for gateway first-deploy 5-wave cascade (#280, `docs/solutions/`).
+- **Convention enforcement extended:** `predicate-quantifier:every` rule on `dorny/paths-filter` with negations (#254).
+- **AGENTS.md updates:** Root expanded to cover gateway alongside keeweb + cliproxy; new per-app `apps/gateway/AGENTS.md` and `packages/shared/AGENTS.md`.
+- **Open issues:** 5 → 38 (mostly tracked plan work + autohealing reports + Dependency Dashboard); **open PRs:** 1 → 0.
 
-Sources: https://github.com/marcusrbrown/gpt (SHA aac010356a3e0d7fd21a5883b98d0cdf6229ed60)
+No contradictions with prior surveys — all earlier findings remain accurate, the repo has expanded additively.
 
-## [2026-05-27 08:58] ingest | repo:marcusrbrown/gpt
+Sources: https://github.com/marcusrbrown/infra (SHA 2f9bafd6cdb03d9ed28ee336d99d5f7bf09a3dfb)
 
-Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+## [2026-05-27 08:59] ingest | repo:marcusrbrown/infra
 
-Sources: https://github.com/marcusrbrown/gpt
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra

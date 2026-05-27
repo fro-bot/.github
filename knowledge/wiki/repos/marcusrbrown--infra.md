@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/infra"
 created: 2026-04-18
-updated: 2026-04-27
+updated: 2026-05-27
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: 2f9bafd6cdb03d9ed28ee336d99d5f7bf09a3dfb
+    accessed: 2026-05-27
   - url: https://github.com/marcusrbrown/infra
     sha: 938fa7c5fb1d10e844a214048e7928afe3095b79
     accessed: 2026-04-27
@@ -19,28 +22,30 @@ sources:
   - url: https://github.com/marcusrbrown/infra
     sha: 20de04713bf01294217dee4d3b64d5d7cfb2426e
     accessed: 2026-04-18
-tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, mcp, cli, typescript, conventions]
+tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, gateway, mcp, cli, typescript, conventions, discord]
 aliases: [infra]
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--systematic
+  - fro-bot--agent
 ---
 
 # marcusrbrown/infra
 
-Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), and an operational CLI with MCP bridge.
+Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), the [[fro-bot--agent]] Discord gateway deployment, and an operational CLI with MCP bridge.
 
 ## Overview
 
 - **Purpose:** Deploy automation, operational CLI, and infrastructure tooling
 - **Default branch:** `main`
 - **Created:** 2026-04-03
-- **Last push:** 2026-04-27
+- **Last push:** 2026-05-26
 - **Runtime:** Bun v1.0+
-- **Published package:** `@marcusrbrown/infra` v0.4.6 on npm
-- **Open issues:** 5 (3 autohealing reports, 1 rate limit investigation, 1 Dependency Dashboard)
-- **Open PRs:** 1 (#187 — Changesets version packages, by mrbro-bot)
+- **Published package:** `@marcusrbrown/infra` v0.7.0 on npm
+- **Open issues:** 38 (mostly tracked work + autohealing reports + Dependency Dashboard)
+- **Open PRs:** 0
 - **Topics:** `bun`, `deploy`, `github-actions`, `infra`, `keeweb`
+- **License:** MIT
 
 ## Repository Structure
 
@@ -52,10 +57,13 @@ Bun workspace monorepo with `apps/*` and `packages/*` workspaces.
 | --------------------- | ---------------------------------------------------------------------- |
 | `apps/keeweb/`        | KeeWeb v1.18.7 static site deploy automation (`kw.igg.ms`)             |
 | `apps/cliproxy/`      | CLIProxyAPI Docker Compose stack behind Caddy (`cliproxy.fro.bot`)     |
+| `apps/gateway/`       | Fro Bot Discord gateway + workspace runner + mitmproxy (`gateway.fro.bot`) |
 | `packages/cli/`       | `@marcusrbrown/infra` CLI — health checks, deploy triggers, MCP bridge |
+| `packages/shared/`    | Shared TypeScript helpers for DigitalOcean droplet provisioning (private) |
 | `docs/brainstorms/`   | Requirements and brainstorm documents                                  |
 | `docs/plans/`         | Implementation plans                                                   |
 | `docs/solutions/`     | Compound learning docs (solved problems with YAML frontmatter)         |
+| `docs/runbooks/`      | Operator day-2 procedures (e.g., Discord token lifecycle)              |
 | `.agents/skills/`     | Agent skill context packets (goke)                                     |
 | `.opencode/commands/` | OpenCode slash commands                                                |
 | `.changeset/`         | Changesets config for versioning                                       |
@@ -78,6 +86,19 @@ Self-hosted [KeeWeb](https://keeweb.info) v1.18.7 password manager at `kw.igg.ms
 - Runs on a DigitalOcean droplet provisioned via `bun run --cwd apps/cliproxy provision`
 - Deploy uploads compose files and restarts the stack (idempotent, preserves runtime `config.yaml` unless `--force-config`)
 - Management API for runtime config, API key distribution, and login
+- Multi-provider login support: Claude (default), OpenAI/Codex via device-code OAuth (added #303, 2026-05-24), OpenAI provider opt-in for `cliproxy setup --harness opencode` (#307, 2026-05-26)
+
+#### Fro Bot Gateway (`apps/gateway`)
+
+Fro Bot Discord client + workspace runner stack at `gateway.fro.bot`. Three-service Docker Compose deployment: gateway daemon, workspace executor, and mitmproxy egress filter. Upstream source is `fro-bot/agent`, pinned via `apps/gateway/upstream.json` (currently `v0.44.2`). No public HTTP surface — outbound to Discord and S3 only. Added in #264 (2026-05-18).
+
+- Provisioned on a dedicated DigitalOcean droplet (`s-1vcpu-2gb`, `nyc1`, tagged `gateway`)
+- **Secret materialization via SSH stdin only** — never via argv. 7 required + 2 optional secret files written atomically under `/opt/gateway/deploy/secrets/`; compose maps each to `/run/secrets/<snake_case>` and exposes via `${NAME}_FILE` env vars
+- **Checksum-after-success invariant:** `/opt/gateway/.secrets-checksum` is written only after compose up + Discord command registration both succeed. Mid-rotation failures leave the old checksum so the next deploy force-recreates containers
+- **Registration poll:** ~90s budget against `GET /applications/{app_id}/guilds/{guild_id}/commands`; 429 honors `Retry-After` without counting against attempts; 401/403/404 abort with token-sanitized errors
+- **mitmproxy CA** lives in the `mitmproxy-certs` named volume; backup/restore via `gateway backup --include-ca` / `gateway restore --input FILE --include-ca` (tarball must contain exactly `mitmproxy-ca-cert.pem` + `mitmproxy-ca.pem`)
+- **Host hardening:** `validateGatewayHost` rejects `-`-prefixed values before any SSH invocation (SSH treats `-`-prefixed hostnames as flags, including `-oProxyCommand=`); host keys pinned in `.github/known_hosts` (commit `cf0500af`, 2026-05-19)
+- **Deploy SSH multiplexing** via ControlMaster (#277, 2026-05-20) to amortize handshake cost across the multi-step deploy
 
 ### CLI (`packages/cli`)
 
@@ -96,6 +117,11 @@ Published as `@marcusrbrown/infra` on npm. Built with [goke](https://github.com/
 | `infra cliproxy login`  | OAuth authentication with Claude subscription (SSH + TTY)                |
 | `infra cliproxy setup`  | Interactive onboarding wizard for connecting a repo to CLIProxyAPI       |
 | `infra cliproxy open`   | Launch CLIProxyAPI terminal dashboard via SSH                            |
+| `infra gateway status`  | SSH + `docker compose ps` (NDJSON parsed, #278) — service states, healthchecks |
+| `infra gateway deploy`  | Trigger gateway deploy workflow (remote, default) or `--local` (requires `SSH_AUTH_SOCK`) |
+| `infra gateway logs <svc> [--tail N]` | Stream `docker compose logs` for `gateway`/`workspace`/`mitmproxy`; `--allow-ci` required in headless contexts |
+| `infra gateway backup --include-ca`   | Pull mitmproxy CA tarball; local file created with mode 0600 via `O_EXCL\|O_CREAT` (no chmod race) |
+| `infra gateway restore --input FILE --include-ca` | Validate tarball locally, upload to unguessable `mktemp` path, extract, restart, byte-equal confirm |
 | `infra mcp`             | Start stdio MCP server exposing all CLI commands as tools                |
 
 The MCP bridge (`infra mcp`) lets coding agents (Fro Bot, Copilot) call commands programmatically via the [Model Context Protocol](https://modelcontextprotocol.io).
@@ -107,9 +133,10 @@ The MCP bridge (`infra mcp`) lets coding agents (Fro Bot, Copilot) call commands
 | Workflow | File | Trigger | Purpose |
 | --- | --- | --- | --- |
 | CI | `ci.yaml` | PR to `main`, dispatch | Lint + type check + test (parallel jobs) |
-| Deploy | `deploy.yaml` | Dispatch only | Thin orchestrator — calls both deploy-keeweb and deploy-cliproxy via `workflow_call` |
+| Deploy | `deploy.yaml` | Dispatch only | Thin orchestrator — calls all per-app deploy workflows via `workflow_call` |
 | Deploy KeeWeb | `deploy-keeweb.yaml` | Push to `main`, dispatch, `workflow_call` | Build and deploy KeeWeb (path-filtered, `keeweb` environment) |
 | Deploy CLIProxy | `deploy-cliproxy.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy CLIProxyAPI (path-filtered, `cliproxy` environment) |
+| Deploy Gateway | `deploy-gateway.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy Fro Bot gateway stack (path-filtered, `gateway` environment) |
 | Release | `release.yaml` | Push to `main`, dispatch | Version and publish `@marcusrbrown/infra` via Changesets |
 | Renovate | `renovate.yaml` | Schedule, issue/PR edits, post-deploy | Automated dependency updates |
 | Renovate Changesets | `renovate-changesets.yaml` | `pull_request_target` (Renovate PRs) | Auto-create changeset files for dependency updates |
@@ -149,15 +176,16 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 
 | Tool | Config | Notes |
 | --- | --- | --- |
-| ESLint | `eslint.config.ts` via `@bfra.me/eslint-config` ^0.51.0 | Flat config; ignores `.agents/`, `.opencode/`, `docs/`, `dist/` |
-| Prettier | `@bfra.me/prettier-config/120-proof` ^0.16.0 | 120-char line width |
-| TypeScript | `tsconfig.json` via `@bfra.me/tsconfig` ^0.13.0 | Target ESNext, Bundler resolution, Bun types, noEmit |
-| Git hooks | `simple-git-hooks` + `lint-staged` | `eslint --fix` on staged files |
+| ESLint | `eslint.config.ts` via `@bfra.me/eslint-config` 0.51.1 | Flat config; ignores `.agents/`, `.opencode/`, `docs/`, `dist/` |
+| Prettier | `@bfra.me/prettier-config/120-proof` ^0.16.0 (Prettier 3.8.3) | 120-char line width |
+| TypeScript | `tsconfig.json` via `@bfra.me/tsconfig` 0.13.1 | Target ESNext, Bundler resolution, Bun types, noEmit |
+| Git hooks | `simple-git-hooks` 2.13.1 + `lint-staged` 16.4.0 | `eslint --fix` on staged files |
 | CLI framework | `goke` ^6.8.0 + Zod ^4.3.6 | Space-separated subcommands |
 | Prompts | `@clack/prompts` ^1.2.0 | Scoped to `cliproxy setup` wizard |
-| Changesets | `@changesets/cli` ^2.30.0 | Versioning for `@marcusrbrown/infra` CLI package |
-| Renovate | Extends `marcusrbrown/renovate-config#4.5.8` | Post-upgrade: `bun install` + `bun run fix`. Docker source URLs for CLIProxyAPI and Caddy |
+| Changesets | `@changesets/cli` 2.31.0 + `@svitejs/changesets-changelog-github-compact` | Versioning for `@marcusrbrown/infra` CLI package |
+| Renovate | Extends `marcusrbrown/renovate-config#5.2.0` + `group:allNonMajor` | v4→v5 crossed 2026-05-17 (#242). Post-upgrade: `bun install --ignore-scripts` + `bun run fix`. Docker source URLs for CLIProxyAPI and Caddy. `bfra-me/.github` digest updates disabled |
 | Probot Settings | Extends `fro-bot/.github:common-settings.yaml` | Repository configuration sync |
+| TypeScript runtime | TypeScript 6.0.3, ESLint 10.4.0 | Both crossed major boundaries in this survey window |
 
 ### Key Dependencies
 
@@ -173,7 +201,7 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.42.2` (SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`). The workflow includes:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.44.3` (bumped from v0.42.2 through v0.43.x to v0.44.3 over 2026-05-17 → 2026-05-20). The workflow includes:
 
 - **PR review** with structured verdict format (PASS / CONDITIONAL / REJECT) and sections for blocking issues, non-blocking concerns, missing tests, and risk assessment
 - **Daily autohealing schedule** (03:30 UTC) with 8 operational categories: errored PRs, security, code quality, developer experience, deploy pipeline health, live site review (via `agent-browser`), cross-project intelligence, and **upstream modernization watch** (Sunday-only)
@@ -206,6 +234,8 @@ The autohealing schedule monitors:
 
 **`cliproxy` environment:** `CLIPROXY_SSH_KEY`, `CLIPROXY_MANAGEMENT_KEY`, `CLIPROXY_DOMAIN`
 
+**`gateway` environment:** `GATEWAY_SSH_KEY`, `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`, `DISCORD_GUILD_ID`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_REGION`, `GATEWAY_HOST`; optional: `S3_ENDPOINT`, `OBJECT_STORE_HOSTS`, `AWS_SESSION_TOKEN`
+
 **Repository secrets:** `APPLICATION_ID`, `APPLICATION_PRIVATE_KEY`, `DIGITALOCEAN_ACCESS_TOKEN`, `FRO_BOT_PAT`, `NPM_TOKEN`, `OMO_PROVIDERS`, `OPENCODE_AUTH_JSON`, `OPENCODE_CONFIG`
 
 **Repository variables:** `FRO_BOT_MODEL`
@@ -222,7 +252,11 @@ The autohealing schedule monitors:
 - **CI Node pin:** Workflows running `bun run lint` or `bunx tsc` must pin Node 24 via `actions/setup-node` (ESLint shebang uses system Node; ubuntu-latest ships Node 20 without ES2024 APIs).
 - **Lockfile:** `bun.lock` (text format) committed; `bun.lockb` (binary) is not used.
 - **Config safety:** `config/config.json` template has empty `dropboxSecret`; real value injected at build time. Never overwrite `config.yaml` on cliproxy server (runtime API keys live there).
-- **Host keys:** Pinned in `.github/known_hosts`. Never use `ssh-keyscan`.
+- **Host keys:** Pinned in `.github/known_hosts`. Never use `ssh-keyscan` in CI. Provisioning scripts may use it locally via the shared `pinHostKeys` helper in `packages/shared/server/droplet-helpers.ts`.
+- **Gateway secrets:** Never pass gateway secret bytes via argv — `writeRemoteFile` pipes through SSH stdin only; `--body <value>` patterns are banned.
+- **Gateway host validation:** Never skip `validateGatewayHost` — required before any SSH invocation against the gateway droplet.
+- **CA rotation:** Never restart the gateway in-place to rotate the mitmproxy CA — workspaces lose trust in the egress proxy. Restore from backup instead.
+- **`bundledDependencies`:** Banned (enforced). Bun's `.bun/` symlink layout creates `../../` paths that npm rejects with E415.
 
 ## Cross-Repository Patterns
 
@@ -263,12 +297,22 @@ This approach avoids relying solely on human review or agent-driven linting for 
 
 | Component | Image | Version |
 | --- | --- | --- |
-| Caddy reverse proxy | `caddy:2.11.2-alpine` | Digest-pinned |
-| CLIProxyAPI | `eceasy/cli-proxy-api:v6.9.39` | Digest-pinned |
+| Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned |
+| CLIProxyAPI | `eceasy/cli-proxy-api:v6.10.9` | Digest-pinned |
 
 Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest rotations with changelog context sourced from upstream repositories (`router-for-me/CLIProxyAPI`, `caddyserver/caddy`).
 
-The CLIProxyAPI container uses a Docker healthcheck (`wget --spider http://localhost:8317/healthz`) with 30s interval, 5s timeout, 3 retries, and 10s start period (switched from previous healthcheck method in #181, 2026-04-25).
+The CLIProxyAPI container uses a Docker healthcheck (`wget --spider http://localhost:8317/healthz`) with 30s interval, 5s timeout, 3 retries, and 10s start period.
+
+### Fro Bot Gateway Stack
+
+| Component | Source | Notes |
+| --- | --- | --- |
+| Gateway daemon | `fro-bot/agent@v0.44.2` (pinned in `apps/gateway/upstream.json`) | Cloned + reset on the droplet each deploy |
+| Workspace executor | Same source | Runs inside the same Compose stack |
+| mitmproxy | Per upstream compose | Starts first; certificate in `mitmproxy-certs` named volume |
+
+Compose stack lives at `/opt/gateway/` on the droplet. Source materialization is `git clone || git fetch && git reset --hard && git clean -xfd` to the pinned SHA, isolated from `/opt/gateway/.secrets-checksum` so checksum survives `git clean -xfd`.
 
 ## Survey History
 
@@ -279,3 +323,4 @@ The CLIProxyAPI container uses a Docker healthcheck (`wget --spider http://local
 | 2026-04-25 | `9306b9b` | No code changes; open issues 4→5 (new autohealing report #178) |
 | 2026-04-26 | `cd3bb16` | Fro Bot v0.41.4→v0.42.1, new category 8 (Upstream Modernization Watch, #182), CLIProxy healthcheck switched to `/healthz` (#181), CLI v0.4.6, CLIProxyAPI v6.9.38 |
 | 2026-04-27 | `938fa7c` | Fro Bot v0.42.1→v0.42.2 (#185), CLIProxyAPI v6.9.38→v6.9.39 (#186), bfra-me/.github v4.16.8→v4.16.9 (#188). Open issues 4→5, 1 open PR (version packages #187) |
+| 2026-05-27 | `2f9bafd` | **Major expansion.** New `apps/gateway/` (Fro Bot Discord stack at `gateway.fro.bot`, #264, 2026-05-18); new `packages/shared/` for droplet provisioning helpers (#290). 12 workflows (added `deploy-gateway.yaml`). Fro Bot agent v0.42.2 → v0.44.3 (multiple bumps). Renovate preset bumped major v4→v5 (#242, `marcusrbrown/renovate-config#5.2.0`) with `group:allNonMajor`. TypeScript 6.0.3, ESLint 10.4.0, `@bfra.me/eslint-config` 0.51.1. CLI v0.4.6 → v0.7.0; MCP fidelity refactor for status-only commands (#296). CLIProxy: OpenAI/Codex device-code OAuth login (#303), OpenAI provider opt-in for `cliproxy setup --harness opencode` (#307); CLIProxyAPI v6.10.9, Caddy 2.11.3-alpine. Gateway hardening: ControlMaster multiplexing (#277), pinned droplet host keys (#272), checksum-after-success secret rotation. Discord token-lifecycle runbook (#284). Open issues 5→38, 0 open PRs. |
