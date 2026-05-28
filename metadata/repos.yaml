@@ -325,12 +325,12 @@ repos:
   - owner: marcusrbrown
     name: cortexkit_anthropic-auth
     added: 2026-05-28
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
+    onboarding_status: onboarded
+    last_survey_at: 2026-05-28
+    last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: collab
-    next_survey_eligible_at: null
+    next_survey_eligible_at: 2026-06-29
     private: false
     node_id: R_kgDOSmhCGA
