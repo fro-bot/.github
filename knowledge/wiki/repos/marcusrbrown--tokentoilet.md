@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/tokentoilet"
 created: 2026-04-18
-updated: 2026-05-06
+updated: 2026-05-28
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0aa1d9a02f1a8ba5cbd95818fb6157318cf9f20b
     accessed: 2026-05-06
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: db6dbcc2d289d23377d3d80b19d5e4273008a1b2
+    accessed: 2026-05-28
 tags: [next-js, react, web3, defi, wagmi, reown-appkit, tailwindcss, vitest, storybook, vercel, typescript, sepolia]
 aliases: [tokentoilet]
 related:
@@ -37,9 +40,9 @@ A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens,
 - **Topics:** `next-js`, `react`
 - **License:** None specified
 - **Visibility:** Public
-- **Package manager:** pnpm 10.33.2
-- **Open issues:** 30
-- **Open PRs:** 6 (5 Renovate, 1 Copilot security fix)
+- **Package manager:** pnpm 11.3.0 (was 10.33.2 as of 2026-05-06; crossed v10→v11 on 2026-05-23)
+- **Open issues:** 3 (down from 30 — significant triage between 2026-05-06 and 2026-05-28)
+- **Open PRs:** 1 (single Renovate `@bfra.me/eslint-config` v0.51.1 bump)
 
 ## Core Concept
 
@@ -71,16 +74,18 @@ Still not implemented: smart contracts, NFT receipts, charity integration, token
 
 | Layer      | Technology                  | Version                        |
 | ---------- | --------------------------- | ------------------------------ |
-| Framework  | Next.js (App Router)        | 16.2.4                         |
-| UI library | React                       | 19.2.5                         |
+| Framework  | Next.js (App Router)        | 16.2.6                         |
+| UI library | React                       | 19.2.6                         |
 | Language   | TypeScript                  | 6.0.3                          |
-| Web3       | Wagmi v2 + Reown AppKit     | wagmi ^2.14.11 / appkit ^1.7.18 |
-| Styling    | Tailwind CSS v4 (CSS-first) | 4.2.4                          |
-| Testing    | Vitest                      | 4.0.7                          |
-| Components | Storybook                   | 10.x (alpha)                   |
+| Web3       | Wagmi v3 + Reown AppKit     | wagmi ^3.0.0 / appkit ^1.7.18 (v2→v3 boundary crossed) |
+| Styling    | Tailwind CSS v4 (CSS-first) | 4.3.0                          |
+| Testing    | Vitest                      | 4.1.7                          |
+| Components | Storybook                   | 10.4.1 (mixed with stale 9.0.0-alpha.* addons) |
 | Deployment | Vercel (GitHub integration) | —                              |
 | State      | TanStack React Query        | ^5.66.0                        |
 | Validation | Zod                         | ^4.1.8                         |
+| Build      | Vite (dev tooling)          | 8.0.14                         |
+| Lint       | ESLint                      | 10.4.0                         |
 
 ## Repository Structure
 
@@ -166,7 +171,7 @@ Vercel handles deployment via its GitHub integration:
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.42.6` (SHA `80b2c18bb1c70df96b3f150c7827c13ca0e35655`) with:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.45.0` (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`, bumped from v0.42.6 on 2026-05-28 path) with:
 
 - **PR Review:** Structured review with Web3 security focus, mandatory verdict (PASS/CONDITIONAL/REJECT), specific review sections for blocking issues, Web3 security assessment, missing tests, risk assessment.
 - **Daily Autohealing (schedule):** Five-category sweep — errored PRs, security, code quality/hygiene, developer experience, quality gates. Produces a single summary issue per run. Respects Renovate ownership of dependency bumps.
@@ -189,7 +194,7 @@ The Fro Bot workflow conditionals filter out: fork PRs, bot-authored PRs/issues,
 - **ESLint:** `@bfra.me/eslint-config` with React, Next.js, and Prettier plugins.
 - **Bundle analysis:** `@next/bundle-analyzer` available via `NEXT_BUILD_ENV_ANALYZE=true`.
 - **Environment:** `@t3-oss/env-nextjs` + Zod for typed environment validation. Access via `import {env} from '@/env'`, never `process.env`.
-- **Renovate:** Via reusable workflow, extends `marcusrbrown/renovate-config#4.5.8`. Post-upgrade tasks run `pnpm install` + `pnpm run fix`. Custom rule: `lucide-react` minor automerge monthly. Same preset ecosystem as [[marcusrbrown--ha-config]] and [[marcusrbrown--vbs]].
+- **Renovate:** Via reusable workflow, extends `marcusrbrown/renovate-config#5.2.0` (v4→v5 boundary crossed between surveys, aligning with [[marcusrbrown--renovate-config]] v5.2.0 release). Post-upgrade tasks run `pnpm install` + `pnpm run fix`. Custom rule: `lucide-react` 0.x minor automerge monthly. Same preset ecosystem as [[marcusrbrown--ha-config]] and [[marcusrbrown--vbs]].
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` via `bfra-me/.github` reusable workflow. Branch protection requires: Build, Build Storybook, Lint, Renovate, Security Audit, Test. Linear history enforced, admin enforcement enabled, no required PR reviews.
 
 ## Architecture Patterns
@@ -223,11 +228,11 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | Pattern              | tokentoilet                            | ha-config       | vbs      |
 | -------------------- | -------------------------------------- | --------------- | -------- |
 | Probot settings base | `fro-bot/.github:common-settings.yaml` | Same            | Same     |
-| Renovate preset      | `marcusrbrown/renovate-config#4.5.8`   | `#4.5.8`        | `#4.5.8` |
+| Renovate preset      | `marcusrbrown/renovate-config#5.2.0`   | `#4.5.8`        | `#4.5.8` |
 | ESLint config        | `@bfra.me/eslint-config`               | N/A (YAML repo) | Same     |
 | Prettier config      | `@bfra.me/prettier-config/120-proof`   | N/A             | Same     |
-| Package manager      | pnpm                                   | N/A (YAML repo) | pnpm     |
-| Fro Bot workflow     | Present (v0.42.6)                      | **Missing**     | Present  |
+| Package manager      | pnpm 11.3.0                            | N/A (YAML repo) | pnpm     |
+| Fro Bot workflow     | Present (v0.45.0)                      | **Missing**     | Present  |
 | Copilot setup steps  | Present                                | Not present     | Present  |
 | AGENTS.md            | Present                                | Not present     | Present  |
 
@@ -251,3 +256,14 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | 2026-04-24 | `97e96c1` | MVP disposal flow shipped (PR #911), Fro Bot v0.41.4, Next.js 16.2.4, TS 6.0.3 |
 | 2026-04-25 | `97e96c1` | No code changes — SHA unchanged, open issues 25→26, lockfile maintenance PR #929 opened |
 | 2026-05-06 | `0aa1d9a` | Dependency bumps only: Fro Bot v0.41.4→v0.42.6, pnpm 10.33.0→10.33.2, tailwindcss 4.2.2→4.2.4, postcss→8.5.12. Open issues 26→30. Copilot agent branches observed. |
+| 2026-05-28 | `db6dbcc` | **Three majors crossed**: wagmi v2→v3, pnpm v10→v11 (11.3.0), Renovate preset v4→v5 (#5.2.0). Fro Bot v0.42.6→v0.45.0. Next.js 16.2.4→16.2.6, React 19.2.5→19.2.6, tailwindcss 4.2.4→4.3.0, postcss→8.5.15 (qs advisory patched, stale `pnpm.overrides` removed in #1064), vitest 4.0.7→4.1.7, vite→8.0.14, eslint→10.4.0. Fro Bot prompt updated (PR #1067) to port silent-outage workflow-health heuristics from marcusrbrown/marcusrbrown. Open issues 30→3, open PRs 6→1 — triage sweep. |
+
+## Notable Deltas (2026-05-28)
+
+- **wagmi v2 → v3:** The `wagmi: "^3.0.0"` major bump landed. This unblocks newer connector APIs but is a non-trivial upgrade — the open PR #837 from prior surveys is now merged or superseded. The `useWallet` abstraction layer is the firewall here: components should be unaffected as long as the hook surface stayed stable.
+- **Renovate preset v4 → v5:** Aligns this repo with the `marcusrbrown/renovate-config#5.2.0` cutover documented in [[marcusrbrown--renovate-config]] (group-all-non-major behavior, 0.x ungrouping safety valve).
+- **pnpm v10 → v11:** `packageManager` line updated to `pnpm@11.3.0`. No reported lockfile incompatibilities in subsequent commits.
+- **Fro Bot prompt port:** PR #1067 ("port Fro Bot prompt improvements from marcusrbrown/marcusrbrown") added workflow-health heuristics — flag any workflow where >50% of expected runs failed in the last 7 days, or where scheduled runs produced zero successful auto-generated commits. Direct lesson from the 1.5-year silent outage caught in [[marcusrbrown--marcusrbrown]] in May 2026.
+- **Open-issue triage:** Drop from 30 → 3 open issues across three weeks indicates either an aggressive cleanup pass or autoheal-driven closure. Open PRs collapsed similarly (6 → 1).
+- **postcss security:** PR #1064 patched the `qs` advisory and removed stale `pnpm.overrides`. Worth noting the security category of the autoheal prompt is doing its job.
+- **Storybook version drift:** A handful of `@storybook/*` packages remain pinned at `9.0.0-alpha.*` while the core monorepo moved to `10.4.1`. Mixed pinning is a known footgun for Storybook — addons compiled against the 9.0 alpha API may not load cleanly under 10.x. Candidate for a focused upgrade PR.

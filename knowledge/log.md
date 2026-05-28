@@ -1474,3 +1474,29 @@ Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 517d38596
 Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+
+## [2026-05-28 09:00] ingest | marcusrbrown/tokentoilet
+
+Incremental re-survey of `marcusrbrown/tokentoilet` (SHA `db6dbcc`, 2026-05-28). Updated repo page `marcusrbrown--tokentoilet.md` and topic page `web3-defi.md`. Updated `index.md` entry. No new pages required.
+
+Delta from prior survey (SHA `0aa1d9a`, 2026-05-06) — three majors crossed in three weeks:
+
+- **wagmi v2 → v3:** `wagmi: "^3.0.0"` major bump landed. The `useWallet` abstraction layer absorbed the shape change — components unaffected. Pattern validated as the right firewall for major Web3 dependency churn.
+- **pnpm v10 → v11:** `packageManager` now `pnpm@11.3.0` (intermediate stops at 11.2.0, 11.2.2). No lockfile incompatibilities observed in subsequent commits.
+- **Renovate preset v4 → v5:** Now `marcusrbrown/renovate-config#5.2.0`, aligning with the cutover documented in [[marcusrbrown--renovate-config]].
+- **Fro Bot agent v0.42.6 → v0.45.0** (SHA `8aac0fc3...`).
+- **Fro Bot prompt port (PR #1067):** Workflow-health heuristics ported from marcusrbrown/marcusrbrown — flag any workflow where >50% of expected runs failed in the last 7 days, or where scheduled runs produced zero successful auto-generated commits. Direct lesson from the 1.5-year silent outage in [[marcusrbrown--marcusrbrown]] caught in May 2026.
+- **postcss security:** PR #1064 patched `qs` advisory, removed stale `pnpm.overrides`. postcss → 8.5.15.
+- **Minor bumps:** Next.js 16.2.4→16.2.6, React 19.2.5→19.2.6, tailwindcss 4.2.4→4.3.0, vitest 4.0.7→4.1.7, vite→8.0.14, eslint→10.4.0.
+- **Triage sweep:** Open issues 30 → 3, open PRs 6 → 1. Significant cleanup since 2026-05-06.
+- **Storybook drift noted:** Core monorepo at 10.4.1 but some `@storybook/*` addons still pinned at `9.0.0-alpha.*`. Candidate for a focused upgrade PR.
+
+No contradictions with prior ingest — all major bumps are forward motion. Fro Bot workflow remains present and active.
+
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA db6dbcc2d289d23377d3d80b19d5e4273008a1b2)
+
+## [2026-05-28 09:01] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/tokentoilet

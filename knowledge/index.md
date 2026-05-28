@@ -28,7 +28,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--renovate-config]] — Shareable Renovate configuration presets: canonical dependency-update policy for all `marcusrbrown/*` and `fro-bot/*` repos; v5.2.0 (v4→v5 boundary crossed 2026-05-13 with `group:allNonMajor` + 0.x ungrouping safety valve), Fro Bot v0.44.3 with autoheal merged into `fro-bot.yaml` and a new Sundays-only Upstream Modernization Watch category
 - [[marcusrbrown--sparkle]] — TypeScript playground monorepo; cross-platform design system (React + React Native/Expo), component library (Radix + Tailwind), Astro Starlight docs, Turborepo, WASM web shell
 - [[marcusrbrown--systematic]] — OpenCode plugin: structured engineering workflows (45 skills, 50 agents), npm `@fro.bot/systematic`, Bun + Biome + semantic-release
-- [[marcusrbrown--tokentoilet]] — Web3 DeFi token disposal app (Next.js 16, React 19, TypeScript 6, Wagmi v2, Reown AppKit, Tailwind CSS v4, Vercel)
+- [[marcusrbrown--tokentoilet]] — Web3 DeFi token disposal app (Next.js 16.2.6, React 19.2.6, TypeScript 6.0.3, **Wagmi v3** as of 2026-05-28, Reown AppKit, Tailwind CSS v4.3.0, Vercel); pnpm crossed v10→v11 (11.3.0), Renovate preset crossed v4→v5 (#5.2.0), Fro Bot v0.45.0 with workflow-health silent-outage heuristic ported from marcusrbrown/marcusrbrown; open issues triaged 30→3
 - [[marcusrbrown--vbs]] — Star Trek chronological viewing guide (TypeScript, Vite, D3.js, functional factories, GitHub Pages, Fro Bot active)
 
 ## Topics
