@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-05-21
+updated: 2026-05-28
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -22,7 +22,10 @@ sources:
   - url: https://github.com/fro-bot/systematic
     sha: 12cae87
     accessed: 2026-05-22
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema]
+  - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+    sha: 517d38596432429a8fc5f78612edc80a1c3f3dc6
+    accessed: 2026-05-28
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock]
 ---
 
 # OpenCode Plugin Development
@@ -137,8 +140,20 @@ Rather than registering one tool per skill, systematic registers a single `syste
 |------|-------------|---------|-------|--------|
 | [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (46 skills, 50 agents) | Bun, Biome, semantic-release | Active, v2.7.3 |
 | [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses; opt-in `/copilot-status` TUI half | Bun, Biome, Changesets | Active, v0.12.0 (4 tools: delegate/output/cancel/resume) |
+| [[marcusrbrown--cortexkit-anthropic-auth]] | `@marcusrbrown/opencode-anthropic-auth` + `@marcusrbrown/anthropic-auth-core` | Claude Pro/Max OAuth, fallback accounts, quota routing, prompt-cache controls, optional Cloudflare Worker relay; OpenCode + Pi share the same core | Bun, Biome, Lefthook, monorepo workspaces | Active fork, `1.2.2-mb.2` (fork of `cortexkit/anthropic-auth`); Pi package private in fork |
 
-Both plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's OpenCode plugin repos. Both use `mise.toml` to pin Bun and tool versions.
+All three plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's OpenCode plugin repos. All use `mise.toml` to pin Bun and tool versions.
+
+## Cross-Process OAuth Refresh Locking
+
+[[marcusrbrown--cortexkit-anthropic-auth]] documents a well-tuned pattern for OAuth refresh across multiple OpenCode processes sharing a single auth sidecar:
+
+1. **Jittered background refresh timers** so concurrent processes do not all hit the OAuth endpoint at the same due timestamp (`1.2.2`).
+2. **Cross-process atomic filesystem lock** so a process cannot steal a lock while another is still initializing it (`1.1.3`, hardened in `1.2.2`). Without this, two processes can each successfully refresh, but the second consumes a rotated refresh token and the first loser ends up with `invalid_grant`.
+3. **Wait-and-rejoin** on contention: when a main OAuth refresh is already in progress, followers wait briefly and re-read OpenCode auth so they join the successful token rotation instead of failing immediately.
+4. **Refresh endpoint failover**: as of `1.2.1`, refresh moved from `platform.claude.com` to `https://api.anthropic.com/v1/oauth/token` after the former returned OAuth `429` repeatedly during proactive refresh.
+
+This is a useful reference pattern for any OpenCode plugin that shares per-user credentials across multiple agent processes.
 
 ## Two-Half Plugin Pattern (server + TUI)
 
@@ -263,6 +278,7 @@ Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_s
 - [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows with 46 skills and 50 agents
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
+- [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
 - [[github-pages]] — GitHub Pages deployment patterns including cross-repo Starlight deploy

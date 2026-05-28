@@ -1448,3 +1448,29 @@ Sources: https://github.com/marcusrbrown/infra (SHA 2f9bafd6cdb03d9ed28ee336d99d
 Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/infra
+
+## [2026-05-28 04:51] ingest | marcusrbrown/cortexkit_anthropic-auth
+
+Initial survey of `marcusrbrown/cortexkit_anthropic-auth` at SHA `517d385` (default branch `marcusrbrown/main`). Created repo page `marcusrbrown--cortexkit-anthropic-auth.md`. Updated `opencode-plugins.md` topic (added repo to plugin table, new "Cross-Process OAuth Refresh Locking" section, frontmatter source/tags refresh). Updated `index.md` to catalog the new repo page.
+
+Key findings:
+
+- Public fork of `cortexkit/anthropic-auth`. Bun workspace monorepo with `core`, `opencode`, `pi`, `e2e-tests` packages. MIT, TypeScript 6.0.3, Bun 1.3.14 (mise), Biome 2.4.15, Lefthook 2.1.6.
+- Two packages published from the fork under `@marcusrbrown/*` at `1.2.2-mb.2`: `anthropic-auth-core` (shared) and `opencode-anthropic-auth` (plugin + CLI). Pi package `@cortexkit/pi-anthropic-auth` is `private: true` in this fork — release contract explicitly excludes it.
+- Provides Claude Pro/Max OAuth for OpenCode (`/connect anthropic`) and Pi (`/login anthropic`) with fallback accounts, quota-aware routing (5h/7d Claude quota gates with `failClosedOnUnknownQuota` default), persistent 1-hour prompt cache controls (`/claude-cache`, `/claude-cachekeep`), fast mode toggle (`/claude-fast`), live quota visibility (`/claude-quota`), request dumps (`/claude-dump`), and an optional user-owned Cloudflare Worker relay.
+- Sidecar config: `~/.config/opencode/anthropic-auth.json` (env `OPENCODE_ANTHROPIC_AUTH_FILE`) for OpenCode; `~/.pi/agent/anthropic-auth.json` (env `PI_ANTHROPIC_AUTH_FILE`, `PI_AGENT_DIR`) for Pi. Same JSON schema across both agents.
+- Release-path hardening worth carrying forward: jittered background OAuth refresh (`1.2.2`), cross-process atomic refresh lock to prevent rotated-refresh-token races and `invalid_grant` losers (`1.1.3`/`1.2.2`), wait-and-rejoin on contention, refresh endpoint failover to `api.anthropic.com/v1/oauth/token` after `platform.claude.com` returned OAuth `429` repeatedly (`1.2.1`).
+- Workflows: `ci.yml` (PR-only: typecheck, build, test, Biome format/lint, SHA-pinned actions) and `release.yaml` (tag/dispatch with tag-commit integrity check, version-keyed concurrency, OIDC trusted publishing + provenance, no `NPM_TOKEN`, no `mb` dist-tag lane, `npm publish --tag latest`, no CI manifest mutation — manifests must already match the release version per `version-sync.mjs --validate`).
+- Dependabot (not Renovate) — `enable-beta-ecosystems: true`, weekly bun + github-actions. Deliberate divergence from the rest of Marcus's ecosystem.
+- Captures (`captures/`) are gitignored — mitmproxy HTTPS interception of Claude Code / OpenCode system prompts. PII-sensitive; any PR touching them should be flagged.
+- **No Fro Bot workflow detected.** Noted on the repo page; follow-up draft PR should propose a Fro-Bot config tuned for release-sensitive, OAuth-sensitive repos (review/triage scope only — must not touch version-sync or the OIDC publish path).
+
+No contradictions with existing wiki content. Additive updates only.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 517d38596432429a8fc5f78612edc80a1c3f3dc6)
+
+## [2026-05-28 04:54] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
