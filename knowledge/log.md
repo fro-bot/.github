@@ -1475,28 +1475,32 @@ Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wik
 
 Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
 
-## [2026-05-28 09:00] ingest | marcusrbrown/tokentoilet
+## [2026-05-28 09:04] ingest | marcusrbrown/systematic
 
-Incremental re-survey of `marcusrbrown/tokentoilet` (SHA `db6dbcc`, 2026-05-28). Updated repo page `marcusrbrown--tokentoilet.md` and topic page `web3-defi.md`. Updated `index.md` entry. No new pages required.
+Incremental re-survey of `marcusrbrown/systematic` (SHA `9b75707`, 2026-05-28). Updated repo page `marcusrbrown--systematic.md`, bumped opencode-plugins topic page source set, and refreshed index entry. No new topic/entity/comparison pages warranted — all cross-cuts already cataloged.
 
-Delta from prior survey (SHA `0aa1d9a`, 2026-05-06) — three majors crossed in three weeks:
+Delta from prior survey (SHA `420ef650`, 2026-05-06):
 
-- **wagmi v2 → v3:** `wagmi: "^3.0.0"` major bump landed. The `useWallet` abstraction layer absorbed the shape change — components unaffected. Pattern validated as the right firewall for major Web3 dependency churn.
-- **pnpm v10 → v11:** `packageManager` now `pnpm@11.3.0` (intermediate stops at 11.2.0, 11.2.2). No lockfile incompatibilities observed in subsequent commits.
-- **Renovate preset v4 → v5:** Now `marcusrbrown/renovate-config#5.2.0`, aligning with the cutover documented in [[marcusrbrown--renovate-config]].
-- **Fro Bot agent v0.42.6 → v0.45.0** (SHA `8aac0fc3...`).
-- **Fro Bot prompt port (PR #1067):** Workflow-health heuristics ported from marcusrbrown/marcusrbrown — flag any workflow where >50% of expected runs failed in the last 7 days, or where scheduled runs produced zero successful auto-generated commits. Direct lesson from the 1.5-year silent outage in [[marcusrbrown--marcusrbrown]] caught in May 2026.
-- **postcss security:** PR #1064 patched `qs` advisory, removed stale `pnpm.overrides`. postcss → 8.5.15.
-- **Minor bumps:** Next.js 16.2.4→16.2.6, React 19.2.5→19.2.6, tailwindcss 4.2.4→4.3.0, vitest 4.0.7→4.1.7, vite→8.0.14, eslint→10.4.0.
-- **Triage sweep:** Open issues 30 → 3, open PRs 6 → 1. Significant cleanup since 2026-05-06.
-- **Storybook drift noted:** Core monorepo at 10.4.1 but some `@storybook/*` addons still pinned at `9.0.0-alpha.*`. Candidate for a focused upgrade PR.
+- ~80 commits, v2.7.3 → v2.24.0 (17 minor + many patch releases). Repo is post-launch-surface-cleanup era.
+- **Bundled assets:** skills 46 → 47 (new: `release-notes-narrative` project-scoped; `test-driven-development` + `writing-skills` + `writing-systematic-skills` imported from obra/superpowers in #394). Agents 50 → 51 (review category now 28). Deprecation surface marks `orchestrating-swarms` and `claude-permissions-optimizer` (#401).
+- **Workflow consolidation (#446):** `fro-bot.yaml` and `fro-bot-autoheal.yaml` merged into a single workflow with three operating modes (review, maintenance, autoheal) routed via an inline `PROMPT` ternary on `event_name × mode × cron`. Workflow count 9 → 8.
+- **Fro Bot agent:** v0.42.7 → v0.45.0 (SHA `8aac0fc3`).
+- **Release-notes-narrative pipeline (v2.22–v2.23):** New project-scoped skill (#429) dispatched via `@semantic-release/exec` successCmd (#430), with extracted shell script (#432), bash-escaped Lodash render (#431), timestamp-based run identification (#434), and `correlation-id` input on `fro-bot.yaml` (#433).
+- **Source-tree changes:** `plugin-singleton.ts` removed (its semantics folded into the broader factory layer). New modules: `config-schema.ts` (Zod schema for `systematic.json`), `config.ts` (Zod per-issue diagnostics), `skill-catalog.ts` (bootstrap injection of available skills, #365), `bundled-names.ts` (typed bundled-name validation, #384), `agent-colors.ts`, `agent-overlays.ts` (memoized per OpencodeClient, #383; empty-cache to unknown, #378), `model-availability.ts` (discovery-before-validation, #372, #376), `source-model-defaults.ts`.
+- **Zod config schema arc (v2.14–v2.17):** Typed `systematic.json` validation with per-issue diagnostics, IDE autocomplete via published JSON Schema at `fro.bot/systematic/schemas/v2/`, factory pattern construction (#393), schema-drift CI gate.
+- **Overlay hardening (v2.20.x):** Empty-cache and empty-discovery collapse to unknown status, per-client memoization, project-local Systematic overrides global Systematic output (#370).
+- **Documentation modernization:** Architecture (#422), main-loop, philosophy (#421), launch-surface (README, home, Quick Start, config docs — #428), design-iterator and docs aligned with Impeccable design laws (#418, #419). New `docs:verify` script for local CI-parity pre-checks (#445).
+- **OpenCode dep bumped through:** v1.14.49 → v1.15.10. Starlight to ^0.39.0 (#444). `@semantic-release/exec` pinned at 7.1.0 (#435).
+- **Open issues:** 4 → 3 (renovate PR #327 from prior survey is merged). 0 open PRs at survey time.
+- **Stars:** 14 → 22. **Fork count:** 1.
+- **Renovate config + Probot settings:** Unchanged in intent. Renovate adds OpenCode group name (#425).
+- **Fro Bot integration:** Fully active (no follow-up needed for missing workflow). Inline documentation added in #450 (PROMPT routing precedence — the release-notes-narrative automation depends on `workflow_dispatch` `prompt` taking precedence over mode default) and #451 (fork-guard asymmetry across PR-adjacent event types — only `issue_comment` needs explicit API-query because `github.event.pull_request` is null on that path).
+- **No contradictions** with prior survey; `plugin-singleton.ts` was noted as added in v2.7.2 and is now folded into the broader factory layer (durable singleton semantics preserved via config-handler entry point).
 
-No contradictions with prior ingest — all major bumps are forward motion. Fro Bot workflow remains present and active.
+Sources: https://github.com/marcusrbrown/systematic (SHA 9b7570782190d540b4d57abdd94cf7ca8e1984f1)
 
-Sources: https://github.com/marcusrbrown/tokentoilet (SHA db6dbcc2d289d23377d3d80b19d5e4273008a1b2)
+## [2026-05-28 09:05] ingest | repo:marcusrbrown/systematic
 
-## [2026-05-28 09:01] ingest | repo:marcusrbrown/tokentoilet
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
-Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/tokentoilet
+Sources: https://github.com/marcusrbrown/systematic

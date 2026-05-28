@@ -25,7 +25,10 @@ sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
     sha: 517d38596432429a8fc5f78612edc80a1c3f3dc6
     accessed: 2026-05-28
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock]
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 9b7570782190d540b4d57abdd94cf7ca8e1984f1
+    accessed: 2026-05-28
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface]
 ---
 
 # OpenCode Plugin Development
