@@ -1505,36 +1505,25 @@ Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
 
-## [2026-05-29 08:53] ingest | marcusrbrown/vbs
+## [2026-05-29 08:55] ingest | marcusrbrown/ha-config
 
-Incremental re-survey of `marcusrbrown/vbs` (SHA `69db16a`, 2026-05-29). Updated repo page `marcusrbrown--vbs.md` and refreshed index entry. No new topic/entity/comparison pages warranted — workflow consolidation and Renovate v5 patterns are already cataloged on the ecosystem topic pages.
+Re-survey of `marcusrbrown/ha-config` (SHA `33cca05`, 12 days after prior survey). Updated repo page additively with a fourth survey row; updated `index.md` summary; no topic-page edits required (the `home-assistant` page's `.HA_VERSION` pin-drift footgun callout is already accurate and only deepens with the additional staleness).
 
-Delta from prior survey (SHA `b3c415b`, 2026-05-07):
+Key findings:
 
-- 32 commits over 22 days. Three non-Renovate commits broke the prior pure-maintenance pattern.
-- **Workflow consolidation (PR #564, 2026-05-14, Fro Bot-authored):** `fro-bot.yaml` + `fro-bot-autoheal.yaml` merged into a single workflow with `mode = review | maintenance | autoheal | both` dispatch input and dual cron schedules (03:30 UTC autoheal, 15:30 UTC maintenance). Matches the pattern landed in `marcusrbrown/systematic` (#446) and `marcusrbrown/marcusrbrown.github.io`. Workflow count: 8 → 7.
-- **Multi-track timeline merged (PR #458, Copilot):** The long-standing open Copilot feature PR landed — D3 multi-track timeline differentiating event types.
-- **Data automation stabilized (PR #574, Copilot):** "Perpetual PRs and CI-safe artifact generation" — replaces the stacking-weekly-PR pattern (the 6 backed-up data-29..data-34 PRs noted in the prior survey) with a single recurring PR surface. PR #571 fixed a missing `notes` field in generated season items.
-- **Renovate preset v4 → v5 (PR #567):** `marcusrbrown/renovate-config#4.5.9` → `#5.2.0`. Crosses the same v4→v5 boundary now adopted across the ecosystem.
-- **`fro-bot/agent` trail:** v0.42.8 → v0.42.10 → v0.43.0 → v0.43.2 → v0.43.3 → v0.44.1 → v0.44.2 → v0.44.3 → v0.46.0 (9 bumps, PRs #560, #561, #578, #579, #582, #583, #584, #590).
-- **bfra-me/.github reusable workflows:** v4.16.12 → v4.16.21 (#565, #566, #585, #589).
-- **pnpm:** 10.33.2 → 10.33.4 (#551, #554).
-- **Bfra-me tooling pinned:** eslint-config v0.51.0 (#568), prettier-config 0.16.8 (#569), tsconfig v0.13.0 (#570), prettier 3.8.3 (#576).
-- **Open PRs:** 7 → 1. **Open issues:** 30 → 14. Backlog burn is real — autoheal + maintenance modes now operating against triage rather than accumulating reports.
-- **Stars:** 1. **License file at root:** still absent (license declared only in `package.json`).
+- Structural surface unchanged: still 11 packages, 10 custom components, ESPHome submodule, no Fro Bot workflow.
+- `.HA_VERSION` still pinned at `2025.6.3` — now ~11 months stale; the package-based config is being validated against a frozen HA release while pip-resolved deps advance freely.
+- Pure Renovate churn since 2026-05-17: `bfra-me/.github` reusable workflow v4.16.17 → v4.16.21 (four patch bumps in 11 days), `pipelinecomponents/remark-lint` digest pin `829aa31` (#790), four esphome submodule digest updates (#782, #784, #786, #787, #789).
+- Same 3 open issues (#427 Dependency Dashboard, #766 asyncio-mqtt v0.16.2, #777 esphome v2026), same 0 open PRs.
+- New observation: `mrbro-bot[bot]` (GitHub ID `137683033`) is co-authoring some recent Renovate merges (e.g. #790). First sighting of a non-fro-bot automation actor on this repo — worth tracking on subsequent passes.
+- **No Fro Bot workflow** for the fourth consecutive survey. Persistence across nearly a year suggests this is intentional: the repo is Renovate-only autopilot and doesn't need PR review or triage automation since virtually all merges are bot-authored.
 
-**Contradictions:** Prior page claimed 8 workflow files; current count is 7 after the autoheal fold-in. Resolved additively — table row struck through with the PR reference, structure tree annotated, prose updated.
+No contradictions with prior surveys.
 
-Sources: https://github.com/marcusrbrown/vbs (SHA 69db16a73245372a9a1b1c6c32d0a70fd0a22185)
+Sources: https://github.com/marcusrbrown/ha-config (SHA 33cca0534ca2b0dbbb7db4235912c1f225458beb)
 
-## [2026-05-29 08:53] ingest | repo:marcusrbrown/vbs
+## [2026-05-29 08:57] ingest | repo:marcusrbrown/ha-config
 
-Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/vbs
-
-## [2026-05-29 08:56] ingest | repo:marcusrbrown/vbs
-
-Surveyed marcusrbrown/vbs and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/vbs
+Sources: https://github.com/marcusrbrown/ha-config

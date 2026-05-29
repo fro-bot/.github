@@ -19,7 +19,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--esphome-life]] — marcusrbrown/esphome.life
 - [[marcusrbrown--extend-vscode]] — VS Code extension toolkit (TypeScript, dual Node/Web targets, tsup, Vitest, semantic-release to Marketplace+OpenVSIX+npm); Renovate preset crossed v4→v5 (#5.2.0) on 2026-05-14, eslint v10 / jsdom v29 / eslint-plugin-node-dependencies v2 majors landed end of April, `typescript` v6 (#466) remains the sole pending major; **still no Fro Bot agent workflow**
 - [[marcusrbrown--gpt]] — Local-first GPT creation platform (React 19, TypeScript 5.9, Vite 7, LangChain, MCP, IndexedDB, Web Crypto; deployed to gpt.mrbro.dev)
-- [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome)
+- [[marcusrbrown--ha-config]] — Marcus's Home Assistant configuration (public, CI-validated, package-based HA setup with custom components and ESPHome); 11 packages, 10 custom components, `.HA_VERSION` pinned at 2025.6.3 (11-month freeze), Renovate-only autopilot with bfra-me/.github reusable workflows at v4.16.21, still no Fro Bot workflow after four surveys, new `mrbro-bot[bot]` co-author seen on recent merges
 - [[marcusrbrown--infra]] — Bun workspace monorepo for personal infrastructure (KeeWeb deploy, CLIProxyAPI proxy, Fro Bot Discord gateway, operational CLI with MCP bridge); 12 workflows, CLI v0.7.0, Fro Bot agent v0.44.3, Renovate preset v5.2.0, TypeScript 6, ESLint 10
 - [[marcusrbrown--marcusrbrown]] — GitHub profile README with TypeScript-powered automation (badge generation, sponsor tracking, A/B testing, scheduled updates)
 - [[marcusrbrown--marcusrbrown-github-io]] — Personal brand site (React 19, TypeScript 6, Vite 7, GitHub Pages at marcusrbrown.com, single-page with anchor-link sections; Fro Bot single-file three-mode workflow at agent v0.44.0, v0.44.1 in flight)
@@ -29,7 +29,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--sparkle]] — TypeScript playground monorepo; cross-platform design system (React + React Native/Expo), component library (Radix + Tailwind), Astro Starlight docs, Turborepo, WASM web shell
 - [[marcusrbrown--systematic]] — OpenCode plugin: structured engineering workflows (47 skills, 51 agents) at v2.24.0; Bun + Biome + Zod-typed `systematic.json` config schema + semantic-release; `fro-bot.yaml` and `fro-bot-autoheal.yaml` consolidated into a single three-mode workflow (#446), agent v0.45.0; new `release-notes-narrative` skill drives automated narrative releases via `@semantic-release/exec`
 - [[marcusrbrown--tokentoilet]] — Web3 DeFi token disposal app (Next.js 16, React 19, TypeScript 6, Wagmi v2, Reown AppKit, Tailwind CSS v4, Vercel)
-- [[marcusrbrown--vbs]] — Star Trek chronological viewing guide (TypeScript, Vite, D3.js, functional factories, GitHub Pages); 2026-05-29 survey: workflow consolidation merged (PR #564, autoheal folded into `fro-bot.yaml` with `mode` dispatch input), Renovate preset crossed v4→v5 (#567), multi-track timeline merged (#458), data automation moved to perpetual-PR model (#574), agent v0.42.8 → v0.46.0, PR backlog cleared (7 → 1)
+- [[marcusrbrown--vbs]] — Star Trek chronological viewing guide (TypeScript, Vite, D3.js, functional factories, GitHub Pages, Fro Bot active)
 
 ## Topics
 

@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/ha-config"
 created: 2025-06-18
-updated: 2026-05-17
+updated: 2026-05-29
 sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: 83784bc3a212c10cd358be4da9425e46aa6e90f0
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: f80fbc124c0765b8685c3cd98fe3d8eff832e872
     accessed: 2026-05-17
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 33cca0534ca2b0dbbb7db4235912c1f225458beb
+    accessed: 2026-05-29
 tags: [home-assistant, home-assistant-config, yaml, esphome, iot]
 aliases: [ha-config]
 related:
@@ -35,8 +38,8 @@ Marcus R. Brown's [[home-assistant]] configuration repository. Public, version-c
 - **Purpose:** Version-controlled Home Assistant configuration
 - **Default branch:** `main`
 - **Created:** 2023-07-25
-- **Last push:** 2026-05-16 (`f80fbc1`)
-- **HA version tracked:** 2025.6.3 (pinned in `.HA_VERSION`; unchanged since initial survey — a notable drift between code and the broader HA release cadence)
+- **Last push:** 2026-05-28 (`33cca05`)
+- **HA version tracked:** 2025.6.3 (pinned in `.HA_VERSION`; unchanged since initial survey — a notable drift between code and the broader HA release cadence, now ~11 months stale)
 - **Topics:** `home-assistant`, `home-assistant-config`
 - **Open issues:** 3 (#427 Dependency Dashboard, #766 asyncio-mqtt v0.16.2, #777 esphome v2026)
 - **Open PRs:** 0
@@ -121,7 +124,7 @@ Required status checks on `main`: YAML Lint, Remark Lint, Prettier, Check Home A
 
 ### Shared Workflows
 
-Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github`. As of 2026-05-17 both are pinned to **v4.16.17** (SHA `5cb8bc230d36f005cd2de807fe408b428a44c4d5`), up from v4.16.8 in the prior survey. Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
+Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github`. As of 2026-05-29 both are pinned to **v4.16.21** (SHA `165ed192e9969365ec079b36e3f42a443bb75647`), up from v4.16.17 in the prior survey — four patch bumps absorbed in eleven days (#781 v4.16.18 → #783 v4.16.19 → #785 v4.16.20 → #788 v4.16.21), all Renovate-authored. Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
 
 ### Renovate Trigger Model
 
@@ -145,9 +148,11 @@ This is the same event-driven Renovate pattern used in [[marcusrbrown--github]] 
 
 ## Fro Bot Integration
 
-**No Fro Bot workflow detected.** The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration. A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage.
+**No Fro Bot workflow detected** (confirmed across four consecutive surveys: 2025-06, 2026-04 ×2, 2026-05). The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration. A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage. The persistence of this gap across nearly a year suggests it is not on the maintenance critical path — Marcus is treating ha-config as a Renovate-only autopilot repo, with no PR-review or triage agent needed since virtually all merges are bot-authored.
 
 The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot settings, confirming it is part of the Fro Bot-managed ecosystem.
+
+A separate write-author (`mrbro-bot[bot]`, GitHub ID 137683033) is co-authoring some recent Renovate commits (e.g. #790), which is the first observation of a non-fro-bot maintenance actor on this repository. Worth tracking whether `mrbro-bot` is a parallel automation identity or a stand-in for the personal account.
 
 ## Notable Patterns
 
@@ -166,3 +171,4 @@ The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot set
 | 2026-04-18 | `54a6727` | Prettier 3.8.3, Renovate `#4.5.8`, bfra-me/.github v4.16.6, pre-commit-hooks v6.0.0 |
 | 2026-04-24 | `f7ec803` | pre-commit 4.6.0, bfra-me/.github v4.16.8, Renovate trigger model expanded (workflow_run, push to non-main) |
 | 2026-05-17 | `f80fbc1` | Renovate preset major bump `marcusrbrown/renovate-config#4.5.8 → #5.2.0` (PR #776), bfra-me/.github reusable workflows v4.16.8 → v4.16.17, open Renovate PRs queued for esphome v2026 (#777) and asyncio-mqtt v0.16.2 (#766). No package/custom-component additions; `.HA_VERSION` still 2025.6.3. |
+| 2026-05-29 | `33cca05` | Pure Renovate churn since prior survey: bfra-me/.github v4.16.17 → v4.16.21 (four patch bumps in 11 days), `pipelinecomponents/remark-lint` digest pinned to `829aa31` (#790), esphome submodule digest advanced four times (#782, #784, #786, #787, #789). Co-author `mrbro-bot[bot]` appears on recent Renovate merges — first sighting of a non-fro-bot automation identity on this repo. Same 3 open issues, same 0 open PRs, same `.HA_VERSION` 2025.6.3, same 11 packages, same 10 custom components. No structural drift. Still no Fro Bot workflow. |
