@@ -29,7 +29,7 @@ Master catalog of all wiki pages, organized by type.
 - [[marcusrbrown--sparkle]] — TypeScript playground monorepo; cross-platform design system (React + React Native/Expo), component library (Radix + Tailwind), Astro Starlight docs, Turborepo, WASM web shell
 - [[marcusrbrown--systematic]] — OpenCode plugin: structured engineering workflows (47 skills, 51 agents) at v2.24.0; Bun + Biome + Zod-typed `systematic.json` config schema + semantic-release; `fro-bot.yaml` and `fro-bot-autoheal.yaml` consolidated into a single three-mode workflow (#446), agent v0.45.0; new `release-notes-narrative` skill drives automated narrative releases via `@semantic-release/exec`
 - [[marcusrbrown--tokentoilet]] — Web3 DeFi token disposal app (Next.js 16, React 19, TypeScript 6, Wagmi v2, Reown AppKit, Tailwind CSS v4, Vercel)
-- [[marcusrbrown--vbs]] — Star Trek chronological viewing guide (TypeScript, Vite, D3.js, functional factories, GitHub Pages, Fro Bot active)
+- [[marcusrbrown--vbs]] — Star Trek chronological viewing guide (TypeScript, Vite, D3.js, functional factories, GitHub Pages); 2026-05-29 survey: workflow consolidation merged (PR #564, autoheal folded into `fro-bot.yaml` with `mode` dispatch input), Renovate preset crossed v4→v5 (#567), multi-track timeline merged (#458), data automation moved to perpetual-PR model (#574), agent v0.42.8 → v0.46.0, PR backlog cleared (7 → 1)
 
 ## Topics
 

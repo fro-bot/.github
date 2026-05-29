@@ -1504,3 +1504,37 @@ Sources: https://github.com/marcusrbrown/systematic (SHA 9b7570782190d540b4d57ab
 Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-05-29 08:53] ingest | marcusrbrown/vbs
+
+Incremental re-survey of `marcusrbrown/vbs` (SHA `69db16a`, 2026-05-29). Updated repo page `marcusrbrown--vbs.md` and refreshed index entry. No new topic/entity/comparison pages warranted — workflow consolidation and Renovate v5 patterns are already cataloged on the ecosystem topic pages.
+
+Delta from prior survey (SHA `b3c415b`, 2026-05-07):
+
+- 32 commits over 22 days. Three non-Renovate commits broke the prior pure-maintenance pattern.
+- **Workflow consolidation (PR #564, 2026-05-14, Fro Bot-authored):** `fro-bot.yaml` + `fro-bot-autoheal.yaml` merged into a single workflow with `mode = review | maintenance | autoheal | both` dispatch input and dual cron schedules (03:30 UTC autoheal, 15:30 UTC maintenance). Matches the pattern landed in `marcusrbrown/systematic` (#446) and `marcusrbrown/marcusrbrown.github.io`. Workflow count: 8 → 7.
+- **Multi-track timeline merged (PR #458, Copilot):** The long-standing open Copilot feature PR landed — D3 multi-track timeline differentiating event types.
+- **Data automation stabilized (PR #574, Copilot):** "Perpetual PRs and CI-safe artifact generation" — replaces the stacking-weekly-PR pattern (the 6 backed-up data-29..data-34 PRs noted in the prior survey) with a single recurring PR surface. PR #571 fixed a missing `notes` field in generated season items.
+- **Renovate preset v4 → v5 (PR #567):** `marcusrbrown/renovate-config#4.5.9` → `#5.2.0`. Crosses the same v4→v5 boundary now adopted across the ecosystem.
+- **`fro-bot/agent` trail:** v0.42.8 → v0.42.10 → v0.43.0 → v0.43.2 → v0.43.3 → v0.44.1 → v0.44.2 → v0.44.3 → v0.46.0 (9 bumps, PRs #560, #561, #578, #579, #582, #583, #584, #590).
+- **bfra-me/.github reusable workflows:** v4.16.12 → v4.16.21 (#565, #566, #585, #589).
+- **pnpm:** 10.33.2 → 10.33.4 (#551, #554).
+- **Bfra-me tooling pinned:** eslint-config v0.51.0 (#568), prettier-config 0.16.8 (#569), tsconfig v0.13.0 (#570), prettier 3.8.3 (#576).
+- **Open PRs:** 7 → 1. **Open issues:** 30 → 14. Backlog burn is real — autoheal + maintenance modes now operating against triage rather than accumulating reports.
+- **Stars:** 1. **License file at root:** still absent (license declared only in `package.json`).
+
+**Contradictions:** Prior page claimed 8 workflow files; current count is 7 after the autoheal fold-in. Resolved additively — table row struck through with the PR reference, structure tree annotated, prose updated.
+
+Sources: https://github.com/marcusrbrown/vbs (SHA 69db16a73245372a9a1b1c6c32d0a70fd0a22185)
+
+## [2026-05-29 08:53] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs
+
+## [2026-05-29 08:56] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs
