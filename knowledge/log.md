@@ -1527,3 +1527,27 @@ Sources: https://github.com/marcusrbrown/ha-config (SHA 33cca0534ca2b0dbbb7db423
 Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/ha-config
+
+## [2026-05-30 08:00] ingest | repo:bfra-me/.github
+
+Re-survey of `bfra-me/.github` (SHA `510bcb1`, 10 days after initial survey). Updated repo page additively with a second survey row; updated `index.md` summary line. No new topic, entity, or comparison pages required — the three-source Probot settings reconciliation follow-up from 2026-05-20 remains open and is best deferred to a [[probot-settings]]-focused pass rather than expanded here.
+
+Key findings:
+
+- Structural surface unchanged: same 17 workflows, same 3 custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`), same Probot settings model, same monorepo layout, same AGENTS.md conventions.
+- Pure version churn since 2026-05-20: `@bfra.me/.github` v4.16.18 → v4.16.21 (3 changesets publishes), Node 24.15.0 → 24.16.0 (#2207), `fro-bot/agent` v0.44.2 → v0.46.1 in 4 hops (v0.44.3 #2201 → v0.45.0 #2216 → v0.46.0 #2223 → v0.46.1 #2225 on 2026-05-30).
+- `bfra-me/renovate-action` advanced v9.90 → v9.99 in 10 bumps over 10 days — the highest-velocity dependency in this repo. The v9.99 → v10.0 boundary is one cron away.
+- pnpm pinned at 10.33.4 (unchanged), TypeScript 6.0.3 (unchanged), strict mode preserved.
+- Open issues 5 → 6, no open PRs as of survey.
+- Fro Bot pin observation: this repo is now ahead of [[fro-bot--agent]]'s last self-surveyed release (v0.44.3 on 2026-05-22). It also leads [[marcusrbrown--vbs]] (v0.46.0). The agent has shipped v0.45.x, v0.46.0, and v0.46.1 between surveys — the [[fro-bot--agent]] page is overdue for a re-survey.
+- No new structural follow-ups. The 2026-05-20 open question (reconcile `marcusrbrown/.github`, `fro-bot/.github`, and `bfra-me/.github` `common-settings.yaml` sources on the [[probot-settings]] topic page) remains the only outstanding item.
+
+No contradictions with prior survey.
+
+Sources: https://github.com/bfra-me/.github (SHA 510bcb1cb8707601ed7387a3fe16a91790111270)
+
+## [2026-05-30 08:02] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github

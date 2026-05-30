@@ -4,7 +4,7 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
-- [[bfra-me--github]] — Org control center for `@bfra-me`; pnpm/TypeScript monorepo with 3 custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`), 17 workflows, org-wide Fro Bot autoheal (weekdays), canonical `bfra-me/.github:common-settings.yaml`, Fro Bot agent v0.44.2
+- [[bfra-me--github]] — Org control center for `@bfra-me`; pnpm/TypeScript monorepo with 3 custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`), 17 workflows, org-wide Fro Bot autoheal (weekdays), canonical `bfra-me/.github:common-settings.yaml`, Fro Bot agent v0.46.1 (bumped from v0.44.2 in 4 hops since 2026-05-20), Node 24.16.0, `@bfra.me/.github` v4.16.21
 - [[bfra-me--ha-addon-repository]] — Template repository for a Home Assistant add-on repository (bfra-me org); multi-arch Docker builds via `home-assistant/builder`, GHCR publishing with cosign, Fro Bot agent v0.43.1 with add-on-aware review/autoheal
 - [[bfra-me--renovate-action]] — bfra-me/renovate-action
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo (pnpm 10, TS 6, ESM); 8 published packages (`eslint-config`, `prettier-config`, `tsconfig`, `es`, `create`, `badge-config`, `doc-sync`, `semantic-release`, `workspace-analyzer`) + Astro Starlight docs; 11 workflows; Fro Bot agent v0.44.2 with three-mode single-file workflow (PR review / Daily Maintenance Report / Daily Autohealing Report)
