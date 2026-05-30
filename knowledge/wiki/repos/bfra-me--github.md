@@ -2,14 +2,11 @@
 type: repo
 title: bfra-me/.github
 created: 2026-05-20
-updated: 2026-05-30
+updated: 2026-05-20
 sources:
   - url: https://github.com/bfra-me/.github
     sha: a81be4c5d5c93824fdcc426418c9433d5e5bd9be
     accessed: 2026-05-20
-  - url: https://github.com/bfra-me/.github
-    sha: 510bcb1cb8707601ed7387a3fe16a91790111270
-    accessed: 2026-05-30
 tags: [bfra-me, dotgithub, monorepo, pnpm, typescript, github-actions, probot, renovate, template]
 related:
   - bfra-me--ha-addon-repository
@@ -41,12 +38,12 @@ license/secret/container scanning).
 - **License:** MIT
 - **Default branch:** `main`
 - **Created:** 2022-03-17
-- **Last push:** 2026-05-30 (was 2026-05-20)
-- **Package version:** `@bfra.me/.github` v4.16.21 (was v4.16.18 on 2026-05-20)
-- **Node:** 24.16.0 (`.node-version`; bumped from 24.15.0 via #2207)
+- **Last push:** 2026-05-20
+- **Package version:** `@bfra.me/.github` v4.16.18 (private root)
+- **Node:** 24.15.0 (`.node-version`)
 - **Package manager:** pnpm 10.33.4
 - **TypeScript:** 6.0.3, strict
-- **Open issues / PRs:** 6 / — (2026-05-30; was 5 / 1 on 2026-05-20)
+- **Open issues / PRs:** 5 / 1 (2026-05-20)
 
 ## Layout
 
@@ -65,7 +62,6 @@ license/secret/container scanning).
 │   ├── labeler.yaml
 │   ├── renovate.json5
 │   └── settings.yml
-├── .changeset/                          # Manually-authored changesets (renovate auto-creates per dep update)
 ├── workflow-templates/                  # Org-wide templates (.yaml + .properties.json pairs)
 ├── scripts/                             # tsx utilities: release, build perf, workspace validation
 ├── docs/
@@ -79,7 +75,7 @@ license/secret/container scanning).
 ├── eslint.config.ts
 ├── internal.json5                       # Renovate internal config extended by .github/renovate.json5
 ├── mise.toml                            # Adds ./node_modules/.bin to PATH
-├── package.json                         # `@bfra.me/.github` v4.16.21
+├── package.json                         # `@bfra.me/.github` v4.16.18
 ├── pnpm-workspace.yaml
 ├── tsconfig.json / tsconfig.build.json / tsconfig.eslint.json
 └── vitest.config.ts
@@ -142,9 +138,8 @@ Notable surface area:
 This repo **is** a Fro Bot workflow host, and it also _runs_ the org-wide
 autoheal sweep. As of HEAD it pins:
 
-- `fro-bot/agent@9a2d4b08196d3d5ad70692b655311e18ed6b2726 # v0.46.1`
-  (bumped via Renovate, PR #2225 on 2026-05-30; previously v0.44.2 PR #2200,
-  v0.44.3 #2201, v0.45.0 #2216, v0.46.0 #2223)
+- `fro-bot/agent@b97877b202095e5faf046c1f9d7a18891720a73b # v0.44.2`
+  (bumped via Renovate, PR #2200)
 
 ### `fro-bot.yaml` (per-repo)
 
@@ -292,4 +287,3 @@ action can detect it as a published package.
 | Date       | SHA        | Notes                                                                      |
 | ---------- | ---------- | -------------------------------------------------------------------------- |
 | 2026-05-20 | `a81be4c`  | Initial survey. `fro-bot/agent@v0.44.2` (PR #2200). 17 workflows, 3 custom actions. |
-| 2026-05-30 | `510bcb1`  | Re-survey. No structural drift: same 17 workflows, same 3 custom actions, same Probot settings model. Pure version churn since last visit — `@bfra.me/.github` v4.16.18→v4.16.21 (3 changesets publishes), Node 24.15.0→24.16.0 (#2207), `fro-bot/agent` v0.44.2→v0.46.1 in 4 hops (v0.44.3 #2201 → v0.45.0 #2216 → v0.46.0 #2223 → v0.46.1 #2225), `bfra-me/renovate-action` walked v9.90→v9.99 (10 bumps in 10 days; high-velocity dependency). pnpm still 10.33.4, TS still 6.0.3. No new structural follow-ups; the three-source Probot settings reconciliation question from 2026-05-20 remains open. |

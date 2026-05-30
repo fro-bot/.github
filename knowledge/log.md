@@ -1528,26 +1528,23 @@ Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/ha-config
 
-## [2026-05-30 08:00] ingest | repo:bfra-me/.github
+## [2026-05-30 08:01] ingest | bfra-me/ha-addon-repository
 
-Re-survey of `bfra-me/.github` (SHA `510bcb1`, 10 days after initial survey). Updated repo page additively with a second survey row; updated `index.md` summary line. No new topic, entity, or comparison pages required — the three-source Probot settings reconciliation follow-up from 2026-05-20 remains open and is best deferred to a [[probot-settings]]-focused pass rather than expanded here.
+No-op re-survey of `bfra-me/ha-addon-repository` (SHA `0a163c3f`, unchanged from 2026-05-20). HEAD on `main` has been dormant for 14 days while Renovate accumulates queued PRs on side branches. Additive update only: appended a 2026-05-30 row to the Survey History table, added a `Drift Watch` section noting two emerging signals, refreshed frontmatter `updated:` date, appended a second source entry. Updated `index.md` description with the queued v0.46.1 Fro Bot bump for freshness. No topic, entity, or comparison pages required edits.
 
-Key findings:
+Findings:
 
-- Structural surface unchanged: same 17 workflows, same 3 custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`), same Probot settings model, same monorepo layout, same AGENTS.md conventions.
-- Pure version churn since 2026-05-20: `@bfra.me/.github` v4.16.18 → v4.16.21 (3 changesets publishes), Node 24.15.0 → 24.16.0 (#2207), `fro-bot/agent` v0.44.2 → v0.46.1 in 4 hops (v0.44.3 #2201 → v0.45.0 #2216 → v0.46.0 #2223 → v0.46.1 #2225 on 2026-05-30).
-- `bfra-me/renovate-action` advanced v9.90 → v9.99 in 10 bumps over 10 days — the highest-velocity dependency in this repo. The v9.99 → v10.0 boundary is one cron away.
-- pnpm pinned at 10.33.4 (unchanged), TypeScript 6.0.3 (unchanged), strict mode preserved.
-- Open issues 5 → 6, no open PRs as of survey.
-- Fro Bot pin observation: this repo is now ahead of [[fro-bot--agent]]'s last self-surveyed release (v0.44.3 on 2026-05-22). It also leads [[marcusrbrown--vbs]] (v0.46.0). The agent has shipped v0.45.x, v0.46.0, and v0.46.1 between surveys — the [[fro-bot--agent]] page is overdue for a re-survey.
-- No new structural follow-ups. The 2026-05-20 open question (reconcile `marcusrbrown/.github`, `fro-bot/.github`, and `bfra-me/.github` `common-settings.yaml` sources on the [[probot-settings]] topic page) remains the only outstanding item.
+- HEAD unchanged at `0a163c3f` (`chore(deps): update dependency prettier to v3.8.3 (#551)`, 2026-05-16). `pushedAt` is 2026-05-30 because Renovate keeps re-pushing side branches, but `main` itself is stationary.
+- Open issues: 5 → 6 (#554 `Daily Autohealing Report` continues to accrue dated update sections under the perpetual-issue pattern; #4 Dependency Dashboard unchanged).
+- Open PRs: 0 → 4, all Renovate, all unmerged: #556 (`bfra-me/.github` reusable v4.16.16 → v4.16.21), #557 (`fro-bot/agent` v0.43.1 → v0.46.1 — three minor versions of agent runtime missed), #558 (HA `amd64-base:3.23` digest rotation to `4b7bff6`), #559 (`docker/login-action` v4.2.0).
+- Workflow content inspected: `fro-bot.yaml` still pins `fro-bot/agent@v0.43.1`. `SCHEDULE_PROMPT` env literal still hardcodes "bfra-me/.github reusable workflow version (currently v4.16.6)" — a stale comment relative to the actual `uses:` pin at v4.16.16. Self-corrects via the agent's live SHA comparison, but worth parameterising on next workflow edit.
+- No structural drift to workflows, settings, the `example/` add-on, or the Renovate config family (`bfra-me/renovate-config#5.2.1`).
+- Cross-ecosystem note: this repo lags the agent fleet by 3 minor versions and the `bfra-me/.github` reusable by 5 patch versions. The four queued Renovate PRs cover that drift entirely — bottleneck is review/merge cadence, not Renovate coverage.
 
-No contradictions with prior survey.
+Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
 
-Sources: https://github.com/bfra-me/.github (SHA 510bcb1cb8707601ed7387a3fe16a91790111270)
+## [2026-05-30 08:03] ingest | repo:bfra-me/ha-addon-repository
 
-## [2026-05-30 08:02] ingest | repo:bfra-me/.github
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
 
-Surveyed bfra-me/.github and updated the control-plane wiki.
-
-Sources: https://github.com/bfra-me/.github
+Sources: https://github.com/bfra-me/ha-addon-repository

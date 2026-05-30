@@ -2,11 +2,14 @@
 type: repo
 title: bfra-me/ha-addon-repository
 created: 2026-05-20
-updated: 2026-05-20
+updated: 2026-05-30
 sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: 0a163c3fa8846704103658142fa742f40d165743
     accessed: 2026-05-20
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: 0a163c3fa8846704103658142fa742f40d165743
+    accessed: 2026-05-30
 tags: [home-assistant, addon, hassio, template, docker, multi-arch, bfra-me]
 related:
   - marcusrbrown--ha-config
@@ -170,3 +173,9 @@ The two `frenck/action-*` tools are siblings serving the two sides of the HA dev
 | Date | SHA | Notes |
 |---|---|---|
 | 2026-05-20 | `0a163c3f` | Initial survey. Fro Bot agent v0.43.1, four workflows, example add-on at v1.2.2, HA base images Alpine 3.22/3.23, Node 22.11.0, Python 3.13.13. |
+| 2026-05-30 | `0a163c3f` | HEAD unchanged on `main` for 14 days. Open issues 5 → 6 (new `Daily Autohealing Report` entry from the perpetual issue pattern). 4 open Renovate PRs queued and unmerged: #556 (`bfra-me/.github` v4.16.16 → v4.16.21), #557 (`fro-bot/agent` v0.43.1 → v0.46.1, 3-minor-version jump), #558 (HA `amd64-base:3.23` digest rotation), #559 (`docker/login-action` v4.2.0). The `SCHEDULE_PROMPT` block still references `bfra-me/.github` "currently v4.16.6" — that's a stale comment relative to the actual workflow import at v4.16.16, and worth updating when #556 lands. No content drift on workflows, settings, or the `example/` add-on. |
+
+## Drift Watch
+
+- **Stale comment in `fro-bot.yaml`:** The `SCHEDULE_PROMPT` env literal hardcodes "bfra-me/.github reusable workflow version (currently v4.16.6)" while the actual `uses:` pin in `renovate.yaml` and `update-repo-settings.yaml` is at v4.16.16, with v4.16.21 queued in PR #556. The agent self-corrects via the live SHA comparison it's instructed to do, but the literal will keep drifting until someone parameterises it or relies entirely on dynamic lookup.
+- **Fro Bot agent lag:** Repo is at v0.43.1; ecosystem (e.g., `marcusrbrown/dotfiles`, `marcusrbrown/systematic`) has moved through v0.44.x → v0.45.0 and Renovate has v0.46.1 queued. PR #557 alone covers three minor versions — worth a targeted review before merge in case any of v0.44 / v0.45 introduced workflow input changes that need surfacing in `fro-bot.yaml`.
