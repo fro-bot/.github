@@ -1548,3 +1548,25 @@ Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103
 Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/ha-addon-repository
+
+## [2026-05-31 00:30] ingest | bfra-me/works
+
+Incremental re-survey of `bfra-me/works` (SHA `cd4a52d`, 2026-05-31; prior `ef14b26`, 2026-05-20). Updated repo page `bfra-me--works.md` and index entry. No new topic/entity/comparison pages warranted — deltas are agent pin advances and dependency bumps, not structural.
+
+Delta:
+
+- **Fro Bot agent:** v0.44.2 → v0.46.1 (#3503) → v0.47.0 (#3510), both merged 2026-05-30. PR #3491 ("Fix Fro Bot mode/prompt resolution for dispatch and reusable runs") patched the inline shell mode-resolution block for `workflow_dispatch` and `workflow_call` paths just ahead of the v0.47.0 bump.
+- **bfra-me/.github reusable workflows + Renovate baseline:** v4.16.18 → v4.16.21 (both `renovate.yaml` workflow ref and `internal.json5#v4.16.21` extends).
+- **pnpm:** 10.33.4 → 10.34.1 (via #3511 then #3514).
+- **Published package versions:** All 9 unchanged (`@bfra.me/badge-config@0.2.0`, `create@0.7.14`, `doc-sync@0.1.9`, `es@0.1.0`, `eslint-config@0.51.1`, `prettier-config@0.16.9`, `semantic-release@0.3.7`, `tsconfig@0.13.1`, `workspace-analyzer@0.2.8` — last release still 2026-05-16).
+- **Workflow inventory, package layout, Probot settings, branch protection (12 required checks), build/release pipeline:** identical.
+- **Open issues:** 38 (unchanged). **Open PRs:** 1 → 2.
+- No contradictions with prior ingest. `bfra-me/works` is currently the bleeding-edge agent adopter; sibling [[bfra-me--github]] and [[bfra-me--ha-addon-repository]] should be re-surveyed to confirm whether they have followed to v0.47.0.
+
+Sources: https://github.com/bfra-me/works (SHA cd4a52d7d9ad59c8770784d9411d688e9a7d50db)
+
+## [2026-05-31 08:27] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works
