@@ -54,9 +54,9 @@ repos:
 Field notes:
 
 - `node_id` — GitHub GraphQL node ID for the repository. Used as the manual dispatch identifier: `gh workflow run survey-repo.yaml -f node_id=<node_id>`. Also used as the privacy-safe identifier in `pending-review` issue bodies for private repos.
-- `private` — whether the repository is private. Entries with `private: true` have `owner` and `name` redacted to `[REDACTED]` in public-facing contexts; the `node_id` is used as the subject identifier instead.
+- `private` — whether the repository is private. Entries with `private: true` are stored redacted: `owner` and `name` are replaced with `<node_id>` and canonical identifiers never reach `main`. The `node_id` is used as the subject identifier in issue bodies and workflow dispatch. Redacted entries appear on `main` as part of normal promotion — this is by design, not a privacy leak. They must not be deleted from `main` as hygiene (see [Sole-writer rule and privacy boundary](#sole-writer-rule-and-privacy-boundary) below).
 
-Update convention: invitation handler, metadata workflow, and daily reconcile update this file programmatically on the `data` branch.
+Sole-writer rule: `repos.yaml` is written exclusively on the `data` branch — by the invitation handler, daily reconcile, and survey workflows running under the fro-bot identity. `main` never edits this file directly. The sole path from `data` to `main` is the weekly `data → main` promotion PR; manual hygiene edits to `repos.yaml` on a `main`-targeting feature branch are prohibited because they create a both-sides mutation that conflicts the promotion. If a private repo entry is deleted or access is lost, leave its redacted entry in `repos.yaml` as-is — the promotion privacy gate tolerates dead orphans (it grandfathers pages already present on `main` and blocks only newly-promoted unattributable pages).
 
 Onboarding status values:
 
@@ -77,6 +77,10 @@ Discovery channel values:
 The channel is sticky after first write — neither reconcile nor any other writer auto-rewrites it. Operators re-classify by editing `metadata/repos.yaml` on the `data` branch directly.
 
 `next_survey_eligible_at` is the ISO date at which an entry becomes eligible for re-survey, computed at survey-completion time as `last_survey_at + base_interval[channel] + jitter(owner, name, last_survey_at)`. `null` means never-surveyed (treat as immediately eligible).
+
+### Sole-writer rule and privacy boundary
+
+Redacted private entries (`name: <node_id>`, `private: true`) on the public `main` branch are an explicit, auditable trust decision, not an oversight. A bare `node_id` exposes only that _a_ private repo exists in fro-bot's access graph, plus a stable opaque identifier and lifecycle timing (added/surveyed dates). Resolving a `node_id` to `owner/repo` requires API access that itself gates on the repo's privacy; a reader without that access learns only that some private repo exists. Canonical `owner/repo`, repo name, and all wiki content stay off `main`. This is an accepted residual risk — existence and timing may be inferred, never identity or content.
 
 ### `renovate.yaml`
 
@@ -135,6 +139,8 @@ PAT split summary:
 ## Editing metadata files
 
 All `metadata/*.yaml` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source for metadata state.
+
+`repos.yaml` carries an additional sole-writer invariant: changes to it on `main` must originate only from the `data` promotion branch. A direct edit to `repos.yaml` on a non-promotion branch is prohibited even if fro-bot-authored. Any exception requires an explicit override and is treated as an emergency measure, not routine workflow — the invariant exists precisely to prevent the both-sides mutation that causes promotion conflicts.
 
 For intentional manual edits to any metadata file (including `allowlist.yaml`), land the change on `data` directly and let the existing promotion flow land it on `main`:
 

@@ -87,7 +87,7 @@ Operations: `ingest`, `query`, `lint`, `manual-edit`.
 
 ## Editing the wiki
 
-The `knowledge/wiki/<subdir>/*.md` pages, `knowledge/index.md`, and `knowledge/log.md` are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This keeps `main` aligned with `data`, which is the authoritative wiki source.
+The `knowledge/wiki/<subdir>/*.md` pages, `knowledge/index.md`, and `knowledge/log.md` are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This keeps `main` aligned with `data`, which is the authoritative wiki source. The same data-authoritative invariant applies to `metadata/repos.yaml`: it is written only on `data` and promoted to `main` — `main` is never the origin of edits to either the wiki content tree or `repos.yaml` outside of a promotion PR.
 
 For intentional manual edits (correcting a factual error the agent hasn't caught, for example), land the change on `data` and let the existing promotion flow land it on `main`:
 

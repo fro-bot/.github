@@ -34,6 +34,7 @@ const GUARDED_PATTERNS: readonly RegExp[] = [
 
 export interface GuardInput {
   readonly author: string
+  readonly headRef: string
   readonly files: readonly string[]
 }
 
@@ -53,6 +54,15 @@ export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly bl
  */
 export function checkWikiAuthority(input: GuardInput): GuardResult {
   if (FROBOT_AUTHORS.has(input.author)) {
+    // metadata/repos.yaml may only arrive via the `data` promotion branch.
+    // Any other head branch from a fro-bot identity is the prohibited both-sides mutation.
+    // The `headRef !== 'data'` bypass is safe to gate on a branch name only because a
+    // fro-bot identity never originates from a fork — fork PRs carry an external author and
+    // fall through to the GUARDED_PATTERNS check below, so a fork naming its branch `data`
+    // cannot reach this allow path.
+    if (input.files.includes('metadata/repos.yaml') && input.headRef !== 'data') {
+      return {ok: false, blockedFiles: ['metadata/repos.yaml']}
+    }
     return {ok: true}
   }
   const blockedFiles = input.files.filter(f => GUARDED_PATTERNS.some(p => p.test(f)))
@@ -94,29 +104,48 @@ interface PullRequestEventPayload {
   readonly pull_request?: {
     readonly number?: number
     readonly user?: {readonly login?: string} | null
+    readonly head?: {readonly ref?: string} | null
+    readonly base?: {readonly repo?: {readonly full_name?: string} | null} | null
   }
 }
 
-async function readPullRequestContext(eventPath: string): Promise<{prNumber: number; author: string}> {
+async function readPullRequestContext(
+  eventPath: string,
+): Promise<{prNumber: number; author: string; headRef: string; fullName: string | null}> {
   const raw = await readFile(eventPath, 'utf8')
   const parsed = JSON.parse(raw) as PullRequestEventPayload
   const prNumber = parsed.pull_request?.number
   const author = parsed.pull_request?.user?.login
+  const headRef = parsed.pull_request?.head?.ref
   if (typeof prNumber !== 'number' || typeof author !== 'string' || author === '') {
     throw new Error(
       `check-wiki-authority: event payload missing pull_request.number or pull_request.user.login (path=${eventPath})`,
     )
   }
-  return {prNumber, author}
+  if (typeof headRef !== 'string' || headRef === '') {
+    throw new Error(`check-wiki-authority: event payload missing pull_request.head.ref (path=${eventPath})`)
+  }
+  const rawFullName = parsed.pull_request?.base?.repo?.full_name
+  const fullName = typeof rawFullName === 'string' && rawFullName.length > 0 ? rawFullName : null
+  return {prNumber, author, headRef, fullName}
 }
 
-function fetchChangedFiles(prNumber: number): string[] {
-  // `gh pr view` with --json files returns paginated results. For PRs under GitHub's
-  // default per-file soft limit this single-page view is sufficient; if it ever proves
-  // insufficient, swap to `gh api --paginate /repos/{owner}/{repo}/pulls/{n}/files`.
-  const stdout = execFileSync('gh', ['pr', 'view', String(prNumber), '--json', 'files', '--jq', '.files[].path'], {
-    encoding: 'utf8',
-  })
+/**
+ * Fetch the complete list of changed files for a pull request using the paginated GitHub API.
+ *
+ * Uses `gh api --paginate` so files beyond GitHub's first-page soft limit are always included.
+ * `{fullName}` is the `owner/repo` string sourced from the event payload's
+ * `pull_request.base.repo.full_name` field; falls back to `gh repo view` when the payload
+ * does not carry it (e.g. re-triggered workflows).
+ *
+ * Exported for unit testing.
+ */
+export function fetchChangedFiles(prNumber: number, fullName: string): string[] {
+  const stdout = execFileSync(
+    'gh',
+    ['api', '--paginate', `/repos/${fullName}/pulls/${prNumber}/files`, '--jq', '.[].filename'],
+    {encoding: 'utf8'},
+  )
   return stdout.split('\n').filter(line => line.length > 0)
 }
 
@@ -129,9 +158,12 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const {prNumber, author} = await readPullRequestContext(eventPath)
-  const files = fetchChangedFiles(prNumber)
-  const result = checkWikiAuthority({author, files})
+  const {prNumber, author, headRef, fullName: eventFullName} = await readPullRequestContext(eventPath)
+  const fullName =
+    eventFullName ??
+    execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {encoding: 'utf8'}).trim()
+  const files = fetchChangedFiles(prNumber, fullName)
+  const result = checkWikiAuthority({author, headRef, files})
 
   if (result.ok) {
     process.stdout.write(`check-wiki-authority: ok (author=${author}, files_checked=${files.length})\n`)

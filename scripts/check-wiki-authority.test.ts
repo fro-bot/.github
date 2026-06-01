@@ -1,6 +1,15 @@
-import {describe, expect, it} from 'vitest'
+import {describe, expect, it, vi} from 'vitest'
 
-import {checkWikiAuthority, formatBlockMessage} from './check-wiki-authority.ts'
+import {checkWikiAuthority, fetchChangedFiles, formatBlockMessage} from './check-wiki-authority.ts'
+
+// Hoisted mock for execFileSync — must precede any import that might trigger the module.
+const {mockExecFileSync} = vi.hoisted(() => ({
+  mockExecFileSync: vi.fn(),
+}))
+
+vi.mock('node:child_process', () => ({
+  execFileSync: mockExecFileSync,
+}))
 
 describe('checkWikiAuthority', () => {
   describe('author is an allowed Fro Bot identity', () => {
@@ -8,7 +17,7 @@ describe('checkWikiAuthority', () => {
       // #given the App installation author touching metadata/repos.yaml
       // #when the guard evaluates the PR
       // #then the edit is allowed (fro-bot[bot] is the promotion-PR identity)
-      const result = checkWikiAuthority({author: 'fro-bot[bot]', files: ['metadata/repos.yaml']})
+      const result = checkWikiAuthority({author: 'fro-bot[bot]', headRef: 'data', files: ['metadata/repos.yaml']})
       expect(result).toEqual({ok: true})
     })
 
@@ -18,6 +27,7 @@ describe('checkWikiAuthority', () => {
       // #then the edit is allowed (fro-bot and fro-bot[bot] are one operator)
       const result = checkWikiAuthority({
         author: 'fro-bot',
+        headRef: 'data',
         files: ['knowledge/wiki/topics/home-assistant.md'],
       })
       expect(result).toEqual({ok: true})
@@ -29,12 +39,69 @@ describe('checkWikiAuthority', () => {
       // #then every guarded path is allowed under the Fro Bot identity
       const result = checkWikiAuthority({
         author: 'fro-bot[bot]',
+        headRef: 'data',
         files: [
           'knowledge/wiki/repos/marcusrbrown--x.md',
           'metadata/allowlist.yaml',
           'knowledge/index.md',
           'knowledge/log.md',
         ],
+      })
+      expect(result).toEqual({ok: true})
+    })
+
+    it('allows fro-bot from data branch editing metadata/repos.yaml (promotion path)', () => {
+      // #given fro-bot on the `data` branch touching metadata/repos.yaml
+      // #when the guard evaluates the PR
+      // #then the edit is allowed — this is the legitimate promotion path
+      const result = checkWikiAuthority({author: 'fro-bot', headRef: 'data', files: ['metadata/repos.yaml']})
+      expect(result).toEqual({ok: true})
+    })
+
+    it('blocks fro-bot editing metadata/repos.yaml from a non-data branch (both-sides mutation)', () => {
+      // #given fro-bot on a feature branch (not `data`) touching metadata/repos.yaml
+      // #when the guard evaluates the PR
+      // #then the edit is blocked — this is the prohibited both-sides mutation pattern (#3394)
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'fix/something',
+        files: ['metadata/repos.yaml'],
+      })
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+    })
+
+    it('blocks fro-bot[bot] editing metadata/repos.yaml from a non-data branch', () => {
+      // #given fro-bot[bot] on a non-data branch touching metadata/repos.yaml
+      // #when the guard evaluates the PR
+      // #then the edit is blocked — repos.yaml can only come from `data`
+      const result = checkWikiAuthority({
+        author: 'fro-bot[bot]',
+        headRef: 'feature/something',
+        files: ['metadata/repos.yaml'],
+      })
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+    })
+
+    it('allows fro-bot editing metadata/allowlist.yaml from a non-data branch (only repos.yaml has head rule)', () => {
+      // #given fro-bot on a feature branch touching a metadata yaml that is NOT repos.yaml
+      // #when the guard evaluates the PR
+      // #then the edit is allowed — only repos.yaml carries the head-ref restriction
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'fix/something',
+        files: ['metadata/allowlist.yaml'],
+      })
+      expect(result).toEqual({ok: true})
+    })
+
+    it('allows fro-bot on data branch editing other guarded files (wiki, index, log)', () => {
+      // #given fro-bot on `data` touching wiki and knowledge files (not repos.yaml)
+      // #when the guard evaluates the PR
+      // #then the edit is allowed — unchanged behavior for other guarded files
+      const result = checkWikiAuthority({
+        author: 'fro-bot',
+        headRef: 'data',
+        files: ['knowledge/wiki/topics/x.md', 'knowledge/index.md', 'knowledge/log.md'],
       })
       expect(result).toEqual({ok: true})
     })
@@ -45,7 +112,7 @@ describe('checkWikiAuthority', () => {
       // #given a human PR touching only application code and top-level docs
       // #when the guard evaluates the PR
       // #then the edit is allowed (no guarded paths present)
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['README.md', 'src/foo.ts']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['README.md', 'src/foo.ts']})
       expect(result).toEqual({ok: true})
     })
 
@@ -53,7 +120,7 @@ describe('checkWikiAuthority', () => {
       // #given a PR whose file list is empty (edge case)
       // #when the guard evaluates the PR
       // #then the guard does not fire (nothing to check)
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: []})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: []})
       expect(result).toEqual({ok: true})
     })
 
@@ -61,7 +128,7 @@ describe('checkWikiAuthority', () => {
       // #given the Karpathy-style conventions doc edited by a human
       // #when the guard evaluates the PR
       // #then the edit is allowed (schema is intentionally outside the guard)
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['knowledge/schema.md']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/schema.md']})
       expect(result).toEqual({ok: true})
     })
 
@@ -69,7 +136,7 @@ describe('checkWikiAuthority', () => {
       // #given a human edit to the knowledge directory's README
       // #when the guard evaluates the PR
       // #then the edit is allowed (READMEs are human-editable)
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['knowledge/README.md']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/README.md']})
       expect(result).toEqual({ok: true})
     })
 
@@ -77,7 +144,7 @@ describe('checkWikiAuthority', () => {
       // #given a human edit to the wiki directory's README
       // #when the guard evaluates the PR
       // #then the edit is allowed (README is outside the auto-managed wiki content)
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['knowledge/wiki/README.md']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/wiki/README.md']})
       expect(result).toEqual({ok: true})
     })
 
@@ -85,7 +152,7 @@ describe('checkWikiAuthority', () => {
       // #given a human edit to the metadata directory's README
       // #when the guard evaluates the PR
       // #then the edit is allowed (only *.yaml files in metadata/ are guarded)
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/README.md']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/README.md']})
       expect(result).toEqual({ok: true})
     })
   })
@@ -95,7 +162,7 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching an auto-managed metadata yaml
       // #when the guard evaluates the PR
       // #then the edit is blocked and the file is listed
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/repos.yaml']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.yaml']})
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
 
@@ -105,6 +172,7 @@ describe('checkWikiAuthority', () => {
       // #then the edit is blocked
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
+        headRef: 'main',
         files: ['knowledge/wiki/topics/home-assistant.md'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['knowledge/wiki/topics/home-assistant.md']})
@@ -114,7 +182,7 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching the wiki catalog
       // #when the guard evaluates the PR
       // #then the edit is blocked
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['knowledge/index.md']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/index.md']})
       expect(result).toEqual({ok: false, blockedFiles: ['knowledge/index.md']})
     })
 
@@ -122,7 +190,7 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching the append-only wiki log
       // #when the guard evaluates the PR
       // #then the edit is blocked
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['knowledge/log.md']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/log.md']})
       expect(result).toEqual({ok: false, blockedFiles: ['knowledge/log.md']})
     })
 
@@ -132,6 +200,7 @@ describe('checkWikiAuthority', () => {
       // #then blockedFiles contains only the guarded file, not the code file
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
+        headRef: 'main',
         files: ['src/foo.ts', 'metadata/repos.yaml'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
@@ -142,7 +211,7 @@ describe('checkWikiAuthority', () => {
       // #when the guard evaluates the PR
       // #then blockedFiles lists every guarded path in the original order
       const files = ['metadata/repos.yaml', 'knowledge/wiki/repos/x.md', 'knowledge/index.md', 'knowledge/log.md']
-      const result = checkWikiAuthority({author: 'marcusrbrown', files})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files})
       expect(result).toEqual({ok: false, blockedFiles: files})
     })
 
@@ -152,6 +221,7 @@ describe('checkWikiAuthority', () => {
       // #then the edit is blocked — only fro-bot and fro-bot[bot] are authorized
       const result = checkWikiAuthority({
         author: 'github-actions[bot]',
+        headRef: 'main',
         files: ['metadata/repos.yaml'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
@@ -161,10 +231,7 @@ describe('checkWikiAuthority', () => {
       // #given a random bot identity touching a guarded file
       // #when the guard evaluates the PR
       // #then the edit is blocked — the guard fails closed on unknown identities
-      const result = checkWikiAuthority({
-        author: 'dependabot[bot]',
-        files: ['metadata/repos.yaml'],
-      })
+      const result = checkWikiAuthority({author: 'dependabot[bot]', headRef: 'main', files: ['metadata/repos.yaml']})
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
   })
@@ -176,6 +243,7 @@ describe('checkWikiAuthority', () => {
       // #then the knowledge/wiki/** glob matches at any depth
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
+        headRef: 'main',
         files: ['knowledge/wiki/comparisons/x-vs-y.md'],
       })
       expect(result).toEqual({ok: false, blockedFiles: ['knowledge/wiki/comparisons/x-vs-y.md']})
@@ -185,7 +253,7 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching the allowlist
       // #when the guard evaluates the PR
       // #then the edit is blocked — even human-curated allowlist edits land via data branch
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/allowlist.yaml']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/allowlist.yaml']})
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/allowlist.yaml']})
     })
 
@@ -193,7 +261,7 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching the renovate dispatch list
       // #when the guard evaluates the PR
       // #then the edit is blocked — renovate.yaml is rebuilt by the metadata workflow
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/renovate.yaml']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/renovate.yaml']})
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/renovate.yaml']})
     })
 
@@ -201,7 +269,7 @@ describe('checkWikiAuthority', () => {
       // #given a new yaml file added to metadata/ in the future
       // #when the guard evaluates the PR
       // #then the edit is blocked by default — new metadata files inherit the data-branch contract
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/new-thing.yaml']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/new-thing.yaml']})
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/new-thing.yaml']})
     })
 
@@ -209,7 +277,11 @@ describe('checkWikiAuthority', () => {
       // #given a human author touching auto-managed social cooldown state
       // #when the guard evaluates the PR
       // #then the edit is blocked — social-cooldowns.yaml is auto-managed
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/social-cooldowns.yaml']})
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        files: ['metadata/social-cooldowns.yaml'],
+      })
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/social-cooldowns.yaml']})
     })
 
@@ -217,7 +289,7 @@ describe('checkWikiAuthority', () => {
       // #given a hypothetical nested metadata file
       // #when the guard evaluates the PR
       // #then the edit is NOT blocked — if nested metadata is added later, the glob is revisited
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/subdir/x.yaml']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/subdir/x.yaml']})
       expect(result).toEqual({ok: true})
     })
 
@@ -225,7 +297,7 @@ describe('checkWikiAuthority', () => {
       // #given a yaml file with the non-canonical .yml extension
       // #when the guard evaluates the PR
       // #then the edit is NOT blocked — the repo convention is *.yaml, and guard matches that literally
-      const result = checkWikiAuthority({author: 'marcusrbrown', files: ['metadata/repos.yml']})
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.yml']})
       expect(result).toEqual({ok: true})
     })
 
@@ -235,6 +307,7 @@ describe('checkWikiAuthority', () => {
       // #then the edit is NOT blocked — anchored regexes only match the canonical prefixes
       const result = checkWikiAuthority({
         author: 'marcusrbrown',
+        headRef: 'main',
         files: ['docs/knowledge/index.md', 'backup/metadata/repos.yaml', 'src/knowledge/wiki/x.md'],
       })
       expect(result).toEqual({ok: true})
@@ -278,5 +351,53 @@ describe('formatBlockMessage', () => {
     // #then the output is a non-trivial string the CI log can surface
     const msg = formatBlockMessage({ok: false, blockedFiles: ['metadata/repos.yaml']})
     expect(msg.length).toBeGreaterThan(50)
+  })
+})
+
+describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
+  it('calls gh api --paginate with the correct endpoint and returns filenames', () => {
+    // #given execFileSync returns a newline-separated list of filenames (as gh --paginate would)
+    mockExecFileSync.mockReturnValue('scripts/foo.ts\nmetadata/repos.yaml\nknowledge/index.md\n')
+
+    // #when fetchChangedFiles is called with prNumber and fullName
+    const files = fetchChangedFiles(42, 'fro-bot/.github')
+
+    // #then it uses gh api --paginate (not gh pr view) and returns all filenames
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'gh',
+      ['api', '--paginate', '/repos/fro-bot/.github/pulls/42/files', '--jq', '.[].filename'],
+      {encoding: 'utf8'},
+    )
+    expect(files).toEqual(['scripts/foo.ts', 'metadata/repos.yaml', 'knowledge/index.md'])
+  })
+
+  it('includes metadata/repos.yaml from a paginated response not on the first page (guard bypass prevented)', () => {
+    // #given execFileSync returns filenames where metadata/repos.yaml appears later
+    // (simulating it being beyond the first page of a large PR — --paginate merges it all)
+    const paginatedOutput = [
+      'scripts/a.ts',
+      'scripts/b.ts',
+      // ... imagine 300 files above, then:
+      'metadata/repos.yaml',
+    ].join('\n')
+    mockExecFileSync.mockReturnValue(`${paginatedOutput}\n`)
+
+    const files = fetchChangedFiles(99, 'fro-bot/.github')
+
+    // #then metadata/repos.yaml is present in the result (not dropped by single-page limit)
+    expect(files).toContain('metadata/repos.yaml')
+
+    // #and a non-data-branch human author is correctly blocked
+    const guardResult = checkWikiAuthority({author: 'marcusrbrown', headRef: 'feature/x', files})
+    expect(guardResult).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+  })
+
+  it('filters empty lines from the output', () => {
+    // #given output with trailing newline (common from shell tools)
+    mockExecFileSync.mockReturnValue('foo.ts\n\nbar.ts\n')
+
+    const files = fetchChangedFiles(1, 'owner/repo')
+
+    expect(files).toEqual(['foo.ts', 'bar.ts'])
   })
 })
