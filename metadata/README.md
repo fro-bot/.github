@@ -82,6 +82,19 @@ The channel is sticky after first write — neither reconcile nor any other writ
 
 Redacted private entries (`name: <node_id>`, `private: true`) on the public `main` branch are an explicit, auditable trust decision, not an oversight. A bare `node_id` exposes only that _a_ private repo exists in fro-bot's access graph, plus a stable opaque identifier and lifecycle timing (added/surveyed dates). Resolving a `node_id` to `owner/repo` requires API access that itself gates on the repo's privacy; a reader without that access learns only that some private repo exists. Canonical `owner/repo`, repo name, and all wiki content stay off `main`. This is an accepted residual risk — existence and timing may be inferred, never identity or content.
 
+### Privacy gates and operator tooling
+
+A private repo's existence, name, or content must never reach a public surface. Several layers enforce this:
+
+- **Redacted-on-write** — the mutators that write `repos.yaml` (`addRepoEntry`, `recordSurveyResult`, `resetSurveyResult`) store `private: true` entries with `owner: '[REDACTED]'` and `name: <node_id>`. Canonical identifiers never land on `data` or `main`.
+- **Dispatch gate** — daily reconcile skips Survey Repo dispatch for any entry that is not definitively public.
+- **Workflow resolution gate** — `survey-repo.yaml` takes a `node_id` input and resolves it to `owner/repo` only after verifying the repo is public; a private (or inaccessible) `node_id` aborts the run before any name reaches a log, run name, or concurrency key.
+- **Social gate** — `social-broadcast.yaml` defaults `private: true`, so a caller that omits the flag skips external posts (fail-safe).
+- **Merge-ceremony gate** — the `data → main` promotion blocks if a wiki page would promote that can't be attributed to a known-public repo.
+- **CI guard** — the `Check Private Leak` job (`scripts/check-private-leak.ts`) scans every PR's added lines for any private repo's canonical `owner/name`, resolved from `data`'s `node_id` values via the GitHub API. A match fails the check and names only the offending file path, never the leaked name. Operator override: a PR titled `[allow-private-leak] …` authored by `marcusrbrown` passes with a logged transparency comment.
+
+**Operator lookup** — to map a redacted `node_id` back to its `owner/repo` (the convenience a plain `grep` of `repos.yaml` used to provide), run `GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts`. It reads `repos.yaml`, resolves each private entry's `node_id` via the GitHub API, and prints a `node_id → owner/name` table to stdout. It never writes to the working tree and is invoked by no workflow.
+
 ### `renovate.yaml`
 
 Auto-discovered list of fro-bot org repositories with Renovate workflows. Used by `dispatch-renovate.yaml` to determine which repos to dispatch `workflow_dispatch` events to.
@@ -126,21 +139,24 @@ PAT split summary:
 
 ### Workflow secret mapping
 
-| Workflow                | Secrets passed (explicit, not inherited)                                |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `fro-bot.yaml`          | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG` |
-| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`)                            |
-| `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                            |
-| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only                                                 |
-| `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)               |
-| `reconcile-repos.yaml`  | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`       |
-| `update-metadata.yaml`  | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`                            |
+| Workflow | Secrets passed (explicit, not inherited) |
+| --- | --- |
+| `fro-bot.yaml` | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG` |
+| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`) |
+| `apply-branding.yaml` | Same 4 (via reusable call to `fro-bot.yaml`) |
+| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only |
+| `merge-data.yaml` | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions) |
+| `reconcile-repos.yaml` | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` |
+| `update-metadata.yaml` | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` |
+| `main.yaml` (Check Private Leak) | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` (resolves `node_id`s to verify the diff) |
 
 ## Editing metadata files
 
 All `metadata/*.yaml` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source for metadata state.
 
 `repos.yaml` carries an additional sole-writer invariant: changes to it on `main` must originate only from the `data` promotion branch. A direct edit to `repos.yaml` on a non-promotion branch is prohibited even if fro-bot-authored. Any exception requires an explicit override and is treated as an emergency measure, not routine workflow — the invariant exists precisely to prevent the both-sides mutation that causes promotion conflicts.
+
+A second CI job, `Check Private Leak` (`scripts/check-private-leak.ts`), runs on every PR to `main` and fails if the diff introduces a private repo's canonical `owner/name` (see [Privacy gates and operator tooling](#privacy-gates-and-operator-tooling)). It scans added lines only, so the redaction of an existing entry does not trip it.
 
 For intentional manual edits to any metadata file (including `allowlist.yaml`), land the change on `data` directly and let the existing promotion flow land it on `main`:
 
