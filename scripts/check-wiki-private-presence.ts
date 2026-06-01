@@ -70,6 +70,43 @@ function isGraphQLNodeNullResponse(value: unknown): value is {data: {node: null}
   return data.node === null
 }
 
+/**
+ * Detect a GraphQL NOT_FOUND signal in captured subprocess output.
+ *
+ * `gh api graphql` exits non-zero whenever the response carries a top-level
+ * `errors` array — including the benign "Could not resolve to a node with the
+ * global id" NOT_FOUND that accompanies `data.node: null`. When that happens,
+ * execFileSync throws before we can parse `data.node`, so the body is only
+ * reachable via the thrown error's captured stdout/stderr. This classifies
+ * such a throw as a node-lifecycle failure rather than a transport failure.
+ */
+export function isNotFoundSignal(text: string): boolean {
+  if (text.length === 0) return false
+  // Try structured parse first: top-level errors[].type === 'NOT_FOUND' or data.node: null.
+  try {
+    const parsed: unknown = JSON.parse(text)
+    if (typeof parsed === 'object' && parsed !== null) {
+      const obj = parsed as Record<string, unknown>
+      if (Array.isArray(obj.errors) && obj.errors.some(e => isNotFoundError(e))) return true
+      if (isGraphQLNodeNullResponse(parsed)) return true
+    }
+  } catch {
+    // Not JSON (e.g. plain `gh:` stderr line) — fall through to substring match.
+  }
+  return /Could not resolve to a node with the global id/i.test(text) || /"type":\s*"NOT_FOUND"/i.test(text)
+}
+
+function isNotFoundError(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && (value as Record<string, unknown>).type === 'NOT_FOUND'
+}
+
+function capturedOutput(error: unknown): string {
+  if (typeof error !== 'object' || error === null) return ''
+  const e = error as {stdout?: unknown; stderr?: unknown; message?: unknown}
+  const parts = [e.stdout, e.stderr, e.message].map(p => (typeof p === 'string' ? p : ''))
+  return parts.join('\n')
+}
+
 // ---------------------------------------------------------------------------
 // resolveCanonicalSlugs — exported for testing; fail-closed
 // ---------------------------------------------------------------------------
@@ -130,8 +167,12 @@ export function resolveCanonicalSlugs(entries: readonly {node_id: string}[]): Sl
         // Unexpected response shape — treat as subprocess-level failure
         failures.push({node_id: entry.node_id, mode: 'subprocess-threw'})
       }
-    } catch {
-      failures.push({node_id: entry.node_id, mode: 'subprocess-threw'})
+    } catch (error) {
+      // `gh api graphql` exits non-zero on NOT_FOUND even though the body is a
+      // valid `data.node: null`. Inspect captured output so a deleted repo / lost
+      // App access is classified as node-null, not a transport failure.
+      const mode: FailureMode = isNotFoundSignal(capturedOutput(error)) ? 'node-null' : 'subprocess-threw'
+      failures.push({node_id: entry.node_id, mode})
     }
   }
 
