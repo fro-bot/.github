@@ -257,3 +257,84 @@ describe('makeRealResolver', () => {
     expect(mockExecFileSync).toHaveBeenCalledTimes(3) // 1 initial + 2 retries
   })
 })
+
+// ---------------------------------------------------------------------------
+// FIX #8: resolvePrivateEntries — malformed nameWithOwner → error
+// ---------------------------------------------------------------------------
+
+describe('resolvePrivateEntries — nameWithOwner validation (FIX #8)', () => {
+  it('returns status:error for a nameWithOwner without a slash', async () => {
+    // #given a resolver that returns a malformed nameWithOwner (no slash)
+    const badResolver = vi.fn().mockResolvedValue({nameWithOwner: 'noSlashHere'})
+    const {resolvePrivateEntries} = await import('./resolve-private.ts')
+    const fakeFile = {
+      version: 1 as const,
+      repos: [
+        {
+          owner: '[REDACTED]',
+          name: 'x',
+          private: true,
+          node_id: 'R_bad',
+          added: '2024-01-01',
+          onboarding_status: 'onboarded' as const,
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+    const results = await resolvePrivateEntries(fakeFile, badResolver)
+    expect(results[0]).toEqual({node_id: 'R_bad', status: 'error'})
+  })
+
+  it('returns status:error for a nameWithOwner with an empty owner segment', async () => {
+    // #given a nameWithOwner that starts with /
+    const badResolver = vi.fn().mockResolvedValue({nameWithOwner: '/just-name'})
+    const {resolvePrivateEntries} = await import('./resolve-private.ts')
+    const fakeFile = {
+      version: 1 as const,
+      repos: [
+        {
+          owner: '[REDACTED]',
+          name: 'x',
+          private: true,
+          node_id: 'R_bad2',
+          added: '2024-01-01',
+          onboarding_status: 'onboarded' as const,
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+    const results = await resolvePrivateEntries(fakeFile, badResolver)
+    expect(results[0]).toEqual({node_id: 'R_bad2', status: 'error'})
+  })
+
+  it('returns status:resolved for a well-formed nameWithOwner', async () => {
+    // #given a resolver that returns a correct nameWithOwner
+    const goodResolver = vi.fn().mockResolvedValue({nameWithOwner: 'org/repo'})
+    const {resolvePrivateEntries} = await import('./resolve-private.ts')
+    const fakeFile = {
+      version: 1 as const,
+      repos: [
+        {
+          owner: '[REDACTED]',
+          name: 'x',
+          private: true,
+          node_id: 'R_good',
+          added: '2024-01-01',
+          onboarding_status: 'onboarded' as const,
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+        },
+      ],
+    }
+    const results = await resolvePrivateEntries(fakeFile, goodResolver)
+    expect(results[0]).toEqual({node_id: 'R_good', owner: 'org', name: 'repo', status: 'resolved'})
+  })
+})

@@ -1,27 +1,21 @@
+import type {NodeIdResolver, RetryOptions} from './private-repo-resolution.ts'
 import type {ReposFile} from './schemas.ts'
-import {execFileSync} from 'node:child_process'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
 
 import {parse as parseYaml} from 'yaml'
+import {makeGhNodeIdResolver} from './private-repo-resolution.ts'
 import {assertReposFile} from './schemas.ts'
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
-export type NodeIdResolver = (
-  nodeId: string,
-) => Promise<{nameWithOwner: string} | {error: 'access-lost'} | {error: 'error'}>
+export type {NodeIdResolver, NodeIdResolverResult, RetryOptions} from './private-repo-resolution.ts'
 
 export type ResolvedEntry =
   | {node_id: string; owner: string; name: string; status: 'resolved'}
   | {node_id: string; status: 'access-lost' | 'error'}
-
-export interface RetryOptions {
-  maxRetries: number
-  baseDelayMs: number
-}
 
 // ---------------------------------------------------------------------------
 // Pure function
@@ -41,8 +35,15 @@ export async function resolvePrivateEntries(file: ReposFile, resolver: NodeIdRes
       const result = await resolver(nodeId)
 
       if ('nameWithOwner' in result) {
-        const [owner, name] = result.nameWithOwner.split('/')
-        return {node_id: nodeId, owner: owner ?? '', name: name ?? '', status: 'resolved'} satisfies ResolvedEntry
+        // FIX #8: validate nameWithOwner has exactly two non-empty segments.
+        const parts = result.nameWithOwner.split('/')
+        if (parts.length !== 2 || parts[0] === '' || parts[1] === '') {
+          return {node_id: nodeId, status: 'error'} satisfies ResolvedEntry
+        }
+        // Safe: length and emptiness checked above.
+        const owner = parts[0] as string
+        const name = parts[1] as string
+        return {node_id: nodeId, owner, name, status: 'resolved'} satisfies ResolvedEntry
       }
 
       return {node_id: nodeId, status: result.error} satisfies ResolvedEntry
@@ -69,78 +70,17 @@ export function requireToken(env: Record<string, string | undefined>): string {
 }
 
 // ---------------------------------------------------------------------------
-// Real resolver (shells out to `gh`)
+// Real resolver (delegates to shared module)
 // ---------------------------------------------------------------------------
-
-const GRAPHQL_QUERY = 'query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner } } }'
-
-function isRateLimitError(err: unknown): boolean {
-  if (err instanceof Error) {
-    return /rate.?limit/i.test(err.message)
-  }
-  return false
-}
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
 
 /**
  * Builds the real NodeIdResolver that shells out to `gh api graphql`.
  * Accepts optional RetryOptions to control retry/backoff behavior (useful in tests).
+ *
+ * Delegates to `makeGhNodeIdResolver` from `./private-repo-resolution.ts`.
  */
-export function makeRealResolver(
-  token: string,
-  retryOptions: RetryOptions = {maxRetries: 3, baseDelayMs: 2000},
-): NodeIdResolver {
-  return async (nodeId: string) => {
-    let attempt = 0
-
-    while (true) {
-      try {
-        const stdout = execFileSync('gh', ['api', 'graphql', '-f', `query=${GRAPHQL_QUERY}`, '-f', `id=${nodeId}`], {
-          encoding: 'utf8',
-          env: {...process.env, GH_TOKEN: token},
-        })
-
-        const parsed = JSON.parse(stdout) as unknown
-
-        if (
-          typeof parsed === 'object' &&
-          parsed !== null &&
-          'data' in parsed &&
-          typeof (parsed as Record<string, unknown>).data === 'object'
-        ) {
-          const data = (parsed as {data: Record<string, unknown>}).data
-          const node = data.node
-
-          if (node === null || node === undefined) {
-            return {error: 'access-lost'}
-          }
-
-          if (typeof node === 'object' && 'nameWithOwner' in node) {
-            const nameWithOwner = (node as {nameWithOwner: unknown}).nameWithOwner
-            if (typeof nameWithOwner === 'string') {
-              return {nameWithOwner}
-            }
-          }
-
-          // node exists but no nameWithOwner (unexpected shape)
-          return {error: 'access-lost'}
-        }
-
-        return {error: 'error'}
-      } catch (error: unknown) {
-        if (isRateLimitError(error) && attempt < retryOptions.maxRetries) {
-          attempt++
-          const delayMs = retryOptions.baseDelayMs * 2 ** (attempt - 1)
-          await sleep(delayMs)
-          continue
-        }
-        return {error: 'error'}
-      }
-    }
-  }
+export function makeRealResolver(token: string, retryOptions?: RetryOptions): NodeIdResolver {
+  return makeGhNodeIdResolver(token, retryOptions)
 }
 
 // ---------------------------------------------------------------------------
@@ -173,11 +113,11 @@ async function main(): Promise<void> {
 
   const filePath = process.argv[2] ?? 'metadata/repos.yaml'
   const raw = await readFile(filePath, 'utf8')
-  const parsed = parseYaml(raw) as unknown
+  const parsed: unknown = parseYaml(raw)
 
   assertReposFile(parsed)
 
-  const resolver = makeRealResolver(token)
+  const resolver = makeGhNodeIdResolver(token)
   const results = await resolvePrivateEntries(parsed, resolver)
 
   process.stdout.write(formatTable(results))

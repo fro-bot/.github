@@ -4,7 +4,9 @@ import {readFile} from 'node:fs/promises'
 import process from 'node:process'
 
 import {parse as parseYaml} from 'yaml'
+import {isRecord, makeGhNodeIdResolver} from './private-repo-resolution.ts'
 import {assertReposFile} from './schemas.ts'
+import {computeRepoSlug} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,12 +34,18 @@ const OPERATOR_LOGIN = 'marcusrbrown'
 // ---------------------------------------------------------------------------
 
 /**
- * Scan the added lines of a unified diff for case-insensitive substring matches against
- * a list of private repository names.
+ * Scan the unified diff for case-insensitive substring matches against a list of
+ * private repository tokens (canonical `owner/name`, slug `owner--name`, etc.).
  *
- * - Only `+` lines are scanned (excluding `+++` headers).
- * - Returns which FILES contained a match, never which name matched.
- * - Override: if `override.titlePrefixed && override.isOperator` → bypass and return `{ok:true}`.
+ * Three leak surfaces are scanned:
+ * 1. **File paths of newly-added files** — detected via `--- /dev/null` header immediately
+ *    before the `+++ b/<path>` line.
+ * 2. **Rename/copy destination paths** — detected via `rename to <path>` / `copy to <path>`
+ *    extended headers, and via `diff --git a/X b/Y` when X ≠ Y (rename without content change).
+ * 3. **Added content lines** — `+` lines (excluding `+++` headers).
+ *
+ * Returns which FILES contained a match, never which token matched.
+ * Override: if `override.titlePrefixed && override.isOperator` → bypass and return `{ok:true}`.
  */
 export function checkPrivateLeak(
   privateNames: readonly string[],
@@ -58,30 +66,70 @@ export function checkPrivateLeak(
 
   const matchedFiles: string[] = []
   let currentFile: string | null = null
+  // True when the preceding `---` line was `/dev/null` (new file being added).
+  let checkPathAsNew = false
+
+  /** Check a path as a new disclosure surface and record it if it matches. */
+  const checkPath = (path: string): void => {
+    const pathLower = path.toLowerCase()
+    if (lowerNames.some(n => pathLower.includes(n)) && !matchedFiles.includes(path)) {
+      matchedFiles.push(path)
+    }
+  }
 
   for (const line of diff.split('\n')) {
     // Track current file from diff headers.
     if (line.startsWith('diff --git ')) {
-      // Extract b/ path: `diff --git a/foo b/foo` → `foo`
       const match = /^diff --git a\/.+ b\/(.+)$/.exec(line)
-      currentFile = match !== null && match[1] !== undefined ? match[1] : null
+      if (match !== null && match[1] !== undefined) {
+        const bPath = match[1]
+        // Derive a-path by removing the known prefix and suffix.
+        const aPath = line.slice('diff --git a/'.length, line.length - ` b/${bPath}`.length)
+        currentFile = bPath
+        checkPathAsNew = false
+        // If a-path ≠ b-path this is a rename/copy; b-path is a new disclosure surface.
+        // Handles renames with no content change (no subsequent ---/+++ in some git configs).
+        if (aPath !== bPath) {
+          checkPath(bPath)
+        }
+      } else {
+        currentFile = null
+        checkPathAsNew = false
+      }
       continue
     }
 
-    // Skip --- and +++ header lines.
-    if (line.startsWith('---') || line.startsWith('+++')) {
+    // Extended headers: `rename to <path>` and `copy to <path>` — destination is new disclosure.
+    if (line.startsWith('rename to ') || line.startsWith('copy to ')) {
+      const destPath = line.startsWith('rename to ') ? line.slice('rename to '.length) : line.slice('copy to '.length)
+      if (destPath !== '') {
+        checkPath(destPath)
+      }
       continue
     }
 
-    // Only scan added lines.
+    // `--- /dev/null` signals a new-file addition; any other `--- ` is a modification/deletion.
+    if (line.startsWith('--- ')) {
+      checkPathAsNew = line === '--- /dev/null'
+      continue
+    }
+
+    // `+++` header: if this is a new file, also check the path itself as a leak surface.
+    if (line.startsWith('+++')) {
+      if (checkPathAsNew && currentFile !== null) {
+        checkPath(currentFile)
+      }
+      checkPathAsNew = false
+      continue
+    }
+
+    // Only scan added content lines.
     if (!line.startsWith('+')) {
       continue
     }
 
     const content = line.slice(1).toLowerCase()
-    const hasMatch = lowerNames.some(name => content.includes(name))
-
-    if (hasMatch && currentFile !== null && !matchedFiles.includes(currentFile)) {
+    if (currentFile !== null && lowerNames.some(n => content.includes(n)) && !matchedFiles.includes(currentFile)) {
       matchedFiles.push(currentFile)
     }
   }
@@ -97,23 +145,25 @@ export function checkPrivateLeak(
 // CLI helpers
 // ---------------------------------------------------------------------------
 
-interface PullRequestEventPayload {
-  readonly pull_request?: {
-    readonly number?: number
-    readonly title?: string
-    readonly user?: {readonly login?: string} | null
-    readonly base?: {readonly repo?: {readonly full_name?: string} | null} | null
-  }
-}
-
 async function readPullRequestContext(
   eventPath: string,
 ): Promise<{prNumber: number; title: string; author: string; fullName: string | null}> {
   const raw = await readFile(eventPath, 'utf8')
-  const parsed = JSON.parse(raw) as PullRequestEventPayload
-  const prNumber = parsed.pull_request?.number
-  const title = parsed.pull_request?.title
-  const author = parsed.pull_request?.user?.login
+  const parsed: unknown = JSON.parse(raw)
+
+  if (!isRecord(parsed)) {
+    throw new Error(`check-private-leak: event payload is not an object (path=${eventPath})`)
+  }
+
+  const pr = isRecord(parsed.pull_request) ? parsed.pull_request : undefined
+  const prNumber = pr === undefined ? undefined : pr.number
+  const title = pr === undefined ? undefined : pr.title
+  const user = pr !== undefined && isRecord(pr.user) ? pr.user : undefined
+  const author = typeof user?.login === 'string' ? user.login : undefined
+  const base = pr !== undefined && isRecord(pr.base) ? pr.base : undefined
+  const repo = base !== undefined && isRecord(base.repo) ? base.repo : undefined
+  const rawFullName = repo === undefined ? undefined : repo.full_name
+
   if (typeof prNumber !== 'number' || typeof author !== 'string' || author === '') {
     throw new Error(
       `check-private-leak: event payload missing pull_request.number or pull_request.user.login (path=${eventPath})`,
@@ -122,7 +172,6 @@ async function readPullRequestContext(
   if (typeof title !== 'string') {
     throw new TypeError(`check-private-leak: event payload missing pull_request.title (path=${eventPath})`)
   }
-  const rawFullName = parsed.pull_request?.base?.repo?.full_name
   const fullName = typeof rawFullName === 'string' && rawFullName.length > 0 ? rawFullName : null
   return {prNumber, title, author, fullName}
 }
@@ -139,47 +188,13 @@ function fetchPrivateNodeIds(fullName: string): string[] {
 
   // GitHub API returns base64 with potential embedded newlines.
   const yamlText = Buffer.from(encoded.replaceAll('\n', ''), 'base64').toString('utf8')
-  const parsed = parseYaml(yamlText) as unknown
+  const parsed: unknown = parseYaml(yamlText)
   assertReposFile(parsed)
   const repos = parsed.repos
 
   return repos
     .filter(r => r.private === true && typeof r.node_id === 'string' && r.node_id.length > 0)
     .map(r => r.node_id as string)
-}
-
-/**
- * Resolve a single node_id → nameWithOwner via GraphQL.
- * Returns null on failure (logs node_id only, never the name).
- */
-function resolveNodeId(nodeId: string): string | null {
-  try {
-    const stdout = execFileSync(
-      'gh',
-      [
-        'api',
-        'graphql',
-        '-f',
-        `query=query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner } } }`,
-        '-f',
-        `id=${nodeId}`,
-        '--jq',
-        '.data.node.nameWithOwner',
-      ],
-      {encoding: 'utf8'},
-    ).trim()
-
-    // If the node doesn't resolve (not a Repository, deleted, etc.) jq returns "null".
-    if (stdout === 'null' || stdout === '') {
-      process.stderr.write(`check-private-leak: could not resolve node_id=${nodeId} (no nameWithOwner)\n`)
-      return null
-    }
-
-    return stdout
-  } catch {
-    process.stderr.write(`check-private-leak: failed to resolve node_id=${nodeId}\n`)
-    return null
-  }
 }
 
 /**
@@ -205,7 +220,7 @@ function postOverrideComment(prNumber: number, author: string): void {
 // CLI entrypoint
 // ---------------------------------------------------------------------------
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const eventPath = process.env.GITHUB_EVENT_PATH
   if (eventPath === undefined || eventPath === '') {
     process.stderr.write(
@@ -219,34 +234,83 @@ async function main(): Promise<void> {
     eventFullName ??
     execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {encoding: 'utf8'}).trim()
 
-  // Resolve private names from data branch.
+  // Resolve private node_ids from data branch.
   const privateNodeIds = fetchPrivateNodeIds(fullName)
   if (privateNodeIds.length === 0) {
     process.stdout.write('check-private-leak: no private entries found in metadata/repos.yaml — skipping scan\n')
     return
   }
 
-  const privateNames: string[] = []
-  for (const nodeId of privateNodeIds) {
-    const name = resolveNodeId(nodeId)
-    if (name !== null) {
-      privateNames.push(name)
-    }
-  }
-
-  if (privateNames.length === 0) {
-    process.stdout.write('check-private-leak: all private node_ids failed to resolve — cannot scan, skipping\n')
-    return
-  }
-
-  // Eval override.
+  // FIX #1: evaluate override BEFORE deciding to fail-closed.
   const titlePrefixed = title.startsWith('[allow-private-leak]')
   const isOperator = author === OPERATOR_LOGIN
   const override: OverrideOptions = {titlePrefixed, isOperator}
 
+  // Resolve each node_id → nameWithOwner, tracking successes and failures separately.
+  const resolver = makeGhNodeIdResolver()
+  const resolvedNames: string[] = []
+  const failedNodeIds: string[] = []
+
+  for (const nodeId of privateNodeIds) {
+    const result = await resolver(nodeId)
+    if ('nameWithOwner' in result) {
+      resolvedNames.push(result.nameWithOwner)
+    } else if (result.error === 'access-lost') {
+      // access-lost = repo gone = no current content to leak; safe to skip.
+      // transient error = unknown state = must fail closed.
+      process.stderr.write(`check-private-leak: node_id=${nodeId} access-lost (deleted/no-access), skipping\n`)
+    } else {
+      // 'error' class: transient/auth/rate-limit/unknown — fail closed.
+      // Log only node_id + coarse error class; never echo raw gh stderr (may contain owner/name).
+      failedNodeIds.push(nodeId)
+      process.stderr.write(`check-private-leak: could not resolve node_id=${nodeId} (error)\n`)
+    }
+  }
+
+  // FIX #1: fail-closed if ANY node_id failed to resolve, unless override is active.
+  if (failedNodeIds.length > 0) {
+    if (titlePrefixed && isOperator) {
+      // Operator override allows proceeding even during a GitHub outage.
+      process.stderr.write(
+        `check-private-leak: ⚠️  resolution failed for node_id(s): ${failedNodeIds.join(', ')} — operator override active, proceeding with ${resolvedNames.length} resolved name(s)\n`,
+      )
+    } else {
+      // Fail closed: cannot guarantee a complete scan.
+      process.stderr.write(
+        `check-private-leak: FAILED — could not resolve private node_id(s): ${failedNodeIds.join(', ')}\n`,
+      )
+      process.stderr.write(
+        'check-private-leak: cannot guarantee a complete scan — refusing to pass the PR without full resolution\n',
+      )
+      process.exit(1)
+    }
+  }
+
+  // Build the full set of tokens to scan for.
+  // For each resolved nameWithOwner (owner/name), include:
+  //   - canonical form:  owner/name
+  //   - wiki slug form:  owner--slug  (e.g. computeRepoSlug('org', 'repo') → 'org--repo')
+  // Bare name (without owner) is intentionally excluded: short names like 'go', 'api', 'web'
+  // substring-match unrelated content and cause false-positive blocks on clean PRs.
+  // Both tokens above carry the owner prefix, so they remain specific.
+  const privateTokens: string[] = []
+  for (const nameWithOwner of resolvedNames) {
+    const slashIndex = nameWithOwner.indexOf('/')
+    if (slashIndex < 1) continue
+    const owner = nameWithOwner.slice(0, slashIndex)
+    const name = nameWithOwner.slice(slashIndex + 1)
+    if (owner === '' || name === '') continue
+    privateTokens.push(nameWithOwner) // canonical: owner/name
+    try {
+      privateTokens.push(computeRepoSlug(owner, name)) // wiki slug: owner--slug
+    } catch {
+      // computeRepoSlug throws on empty segments — skip slug form if it can't be computed
+    }
+  }
+
   // Fetch diff and evaluate.
   const diff = fetchPrDiff(prNumber)
-  const result = checkPrivateLeak(privateNames, diff, override)
+  const result = checkPrivateLeak(privateTokens, diff, override)
 
   if (result.ok) {
     if (titlePrefixed && isOperator) {
@@ -259,7 +323,7 @@ async function main(): Promise<void> {
         process.stderr.write('check-private-leak: could not post override transparency comment\n')
       }
     }
-    process.stdout.write(`check-private-leak: ok (scanned ${privateNames.length} private name(s))\n`)
+    process.stdout.write(`check-private-leak: ok (scanned ${resolvedNames.length} private name(s))\n`)
     return
   }
 
@@ -269,7 +333,11 @@ async function main(): Promise<void> {
   for (const file of result.matchedFiles) {
     process.stderr.write(`  - ${file}\n`)
   }
-  process.stderr.write('\nTo look up the private repository locally, run: node scripts/resolve-private.ts <node_id>\n')
+  // FIX #5: corrected remediation command (resolve-private takes a file path, not a node_id).
+  process.stderr.write(
+    '\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts metadata/repos.yaml\n',
+  )
+  process.stderr.write('  (This prints a node_id → owner/name table for all private entries.)\n')
   process.stderr.write('To bypass (operator only): prefix the PR title with [allow-private-leak] and re-run.\n')
   process.exit(1)
 }
