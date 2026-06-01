@@ -35,6 +35,13 @@ export interface MergeDataPrResult {
   staleAlertIssueNumber: number | null
   conflicted: boolean
   conflictAlertIssueNumber: number | null
+  /**
+   * True when the mergeable-state FETCH itself failed with a retryable error (timeout/5xx/rate-limit)
+   * and we could not determine whether the PR is born-conflicted.
+   * Distinct from a successfully-fetched `mergeable_state === 'unknown'` (GitHub still computing),
+   * which is not an alarm condition. When true, callers should treat the run as non-clean (exit non-zero).
+   */
+  mergeabilityUnavailable: boolean
 }
 
 /**
@@ -102,6 +109,7 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
       staleAlertIssueNumber: null,
       conflicted: false,
       conflictAlertIssueNumber: null,
+      mergeabilityUnavailable: false,
     }
   }
 
@@ -136,8 +144,11 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
     await addLabel({octokit, owner, repo, issueNumber: existingPullRequest.number, label})
 
     const conflicted = mergeableState === 'dirty'
-    const conflictAlertIssueNumber = conflicted
-      ? await maybeCreateConflictAlert({
+    const mergeabilityUnavailable = mergeableState === 'unavailable'
+    let conflictAlertIssueNumber: number | null = null
+    if (conflicted) {
+      try {
+        conflictAlertIssueNumber = await maybeCreateConflictAlert({
           octokit,
           owner,
           repo,
@@ -146,7 +157,13 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
           headBranch,
           baseBranch,
         })
-      : null
+      } catch (error: unknown) {
+        if (!isRetryableGitHubApiError(error)) throw error
+        logger.warn(
+          `${formatApiWarning(error, `creating conflict alert for PR #${existingPullRequest.number}`)}; next run will retry the alert.`,
+        )
+      }
+    }
 
     return {
       createdPullRequest: true,
@@ -157,6 +174,7 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
       staleAlertIssueNumber,
       conflicted,
       conflictAlertIssueNumber,
+      mergeabilityUnavailable,
     }
   }
 
@@ -180,8 +198,11 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
     await addLabel({octokit, owner, repo, issueNumber: pullRequest.data.number, label})
 
     const conflicted = mergeableState === 'dirty'
-    const conflictAlertIssueNumber = conflicted
-      ? await maybeCreateConflictAlert({
+    const mergeabilityUnavailable = mergeableState === 'unavailable'
+    let conflictAlertIssueNumber: number | null = null
+    if (conflicted) {
+      try {
+        conflictAlertIssueNumber = await maybeCreateConflictAlert({
           octokit,
           owner,
           repo,
@@ -190,7 +211,13 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
           headBranch,
           baseBranch,
         })
-      : null
+      } catch (error: unknown) {
+        if (!isRetryableGitHubApiError(error)) throw error
+        logger.warn(
+          `${formatApiWarning(error, `creating conflict alert for PR #${pullRequest.data.number}`)}; next run will retry the alert.`,
+        )
+      }
+    }
 
     return {
       createdPullRequest: true,
@@ -201,6 +228,7 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
       staleAlertIssueNumber,
       conflicted,
       conflictAlertIssueNumber,
+      mergeabilityUnavailable,
     }
   } catch (error: unknown) {
     if (isAlreadyExistsPullRequestError(error)) {
@@ -223,8 +251,11 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
         await addLabel({octokit, owner, repo, issueNumber: pullRequest.number, label})
 
         const conflicted = mergeableState === 'dirty'
-        const conflictAlertIssueNumber = conflicted
-          ? await maybeCreateConflictAlert({
+        const mergeabilityUnavailable = mergeableState === 'unavailable'
+        let conflictAlertIssueNumber: number | null = null
+        if (conflicted) {
+          try {
+            conflictAlertIssueNumber = await maybeCreateConflictAlert({
               octokit,
               owner,
               repo,
@@ -233,7 +264,13 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
               headBranch,
               baseBranch,
             })
-          : null
+          } catch (error: unknown) {
+            if (!isRetryableGitHubApiError(error)) throw error
+            logger.warn(
+              `${formatApiWarning(error, `creating conflict alert for PR #${pullRequest.number}`)}; next run will retry the alert.`,
+            )
+          }
+        }
 
         return {
           createdPullRequest: true,
@@ -244,6 +281,7 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
           staleAlertIssueNumber,
           conflicted,
           conflictAlertIssueNumber,
+          mergeabilityUnavailable,
         }
       }
     }
@@ -268,6 +306,7 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
       staleAlertIssueNumber,
       conflicted: false,
       conflictAlertIssueNumber: null,
+      mergeabilityUnavailable: false,
     }
   }
 }
@@ -292,7 +331,7 @@ async function maybeUpdateBehindPullRequest(params: {
       `${formatApiWarning(error, `fetching PR #${params.pullRequestNumber}`)}; continuing because the PR already exists and a later run can retry the branch update.`,
     )
 
-    return null
+    return 'unavailable'
   }
 
   if (pullRequest.data.mergeable_state === 'unknown') {
@@ -811,7 +850,7 @@ async function main(): Promise<void> {
   const result = await mergeDataPr()
   process.stdout.write(`${JSON.stringify(result)}\n`)
 
-  if (result.conflicted) {
+  if (result.conflicted || result.mergeabilityUnavailable) {
     process.exitCode = 1
   }
 }

@@ -1059,4 +1059,97 @@ describe('mergeDataPr', () => {
     expect((error as MergeDataPrError).code).toBe('API_ERROR')
     expect((error as MergeDataPrError).message).toContain('Compare failed')
   })
+
+  it('reports mergeabilityUnavailable when the mergeable-state fetch fails on a retryable error', async () => {
+    const createIssue = vi.fn(async () => ({
+      data: {number: 111, html_url: 'https://github.com/fro-bot/.github/issues/111'},
+    }))
+    const octokit = mockOctokit({
+      // #given the mergeability fetch fails with a retryable 503
+      getPullRequest: async () => {
+        throw Object.assign(new Error('Service Unavailable'), {status: 503})
+      },
+      createIssue,
+    })
+
+    // #when the promotion PR exists but its state could not be determined
+    const result = await mergeDataPr({octokit, logger: mockLogger(), now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then the run signals unavailable (so main() exits non-zero) without false-alarming as conflicted
+    expect(result.mergeabilityUnavailable).toBe(true)
+    expect(result.conflicted).toBe(false)
+    expect(result.conflictAlertIssueNumber).toBeNull()
+    expect(createIssue).not.toHaveBeenCalled()
+  })
+
+  it('reports mergeabilityUnavailable: false for a clean mergeable PR', async () => {
+    const octokit = mockOctokit({
+      getPullRequest: async () => ({data: {mergeable_state: 'clean', head: {sha: 'data-commit-sha'}}}),
+    })
+
+    // #when the promotion PR is cleanly mergeable
+    const result = await mergeDataPr({octokit, now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then mergeability was determined, so it is not flagged unavailable
+    expect(result.mergeabilityUnavailable).toBe(false)
+    expect(result.conflicted).toBe(false)
+  })
+
+  it('reports mergeabilityUnavailable: false when mergeable_state stays unknown after retries', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const getPullRequest = vi.fn(async () => ({
+        data: {mergeable_state: 'unknown', head: {sha: 'data-commit-sha'}},
+      }))
+      const octokit = mockOctokit({getPullRequest})
+
+      // #when GitHub is still computing mergeability (fetched, but unknown)
+      const resultPromise = mergeDataPr({octokit, logger: mockLogger(), now: new Date('2026-04-16T00:00:00.000Z')})
+      await vi.runAllTimersAsync()
+      const result = await resultPromise
+
+      // #then fetched-unknown is a no-false-alarm case, distinct from fetch-failure
+      expect(result.mergeabilityUnavailable).toBe(false)
+      expect(result.conflicted).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps conflicted: true with a null alert when conflict-alert creation fails retryably', async () => {
+    const octokit = mockOctokit({
+      getPullRequest: async () => ({data: {mergeable_state: 'dirty', head: {sha: 'data-commit-sha'}}}),
+      // #given alert creation fails with a retryable error
+      createIssue: async () => {
+        throw Object.assign(new Error('Service Unavailable'), {status: 503})
+      },
+    })
+
+    // #when the promotion PR is born-conflicted but the alert cannot be created this run
+    const result = await mergeDataPr({octokit, logger: mockLogger(), now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then the dirty signal is preserved (exit non-zero) and the next run retries the alert
+    expect(result.conflicted).toBe(true)
+    expect(result.conflictAlertIssueNumber).toBeNull()
+  })
+
+  it('rethrows when conflict-alert creation fails with a non-retryable error', async () => {
+    const octokit = mockOctokit({
+      getPullRequest: async () => ({data: {mergeable_state: 'dirty', head: {sha: 'data-commit-sha'}}}),
+      // #given alert creation fails with a non-retryable error
+      createIssue: async () => {
+        throw Object.assign(new Error('Validation failed'), {status: 422})
+      },
+    })
+
+    // #when the merge PR script runs
+    const error = await mergeDataPr({octokit, logger: mockLogger(), now: new Date('2026-04-16T00:00:00.000Z')}).catch(
+      (error: unknown) => error,
+    )
+
+    // #then the non-retryable failure surfaces instead of being swallowed
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toContain('Validation failed')
+  })
 })
