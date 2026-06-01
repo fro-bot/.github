@@ -166,10 +166,11 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      # Resolution uses the Fro Bot user PAT, not an org App token: tracked private repos
-      # are owned by external accounts where Fro Bot has collaborator (user) access, which
-      # the org installation token cannot resolve. The PAT carries that collaborator read.
+      # Resolution uses the classic poll PAT, not an org App token or fine-grained PAT:
+      # tracked private repos are owned by external accounts where Fro Bot has collaborator
+      # (user) access. Only the classic PAT's broad `repo` scope can read those cross-account
+      # private repos; the org installation token and fine-grained PATs cannot.
       - name: 🔒 Check Private Leak
         env:
-          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          GH_TOKEN: ${{ secrets.FRO_BOT_POLL_PAT }}
         run: node scripts/check-private-leak.ts
