@@ -61,11 +61,13 @@ describe('checkPrivateLeak — pure function', () => {
   // Scenario 2: diff introduces a private owner/name in a wiki page → fail
   it('fails when a private name appears in an added line of a wiki file', () => {
     // #given a private name and a diff that adds a line containing it
-    const diff = makeDiff('knowledge/wiki/repos/marcusrbrown--poly.md', ['See also marcusrbrown/poly for details.'])
+    const diff = makeDiff('knowledge/wiki/repos/testowner--private-fixture.md', [
+      'See also testowner/private-fixture for details.',
+    ])
     // #when evaluated against that private name
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, override)
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, override)
     // #then the check fails and reports the FILE path, not the name
-    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/marcusrbrown--poly.md']})
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/testowner--private-fixture.md']})
   })
 
   // Scenario 3: redaction PR (only removes canonical names) → pass
@@ -76,17 +78,17 @@ describe('checkPrivateLeak — pure function', () => {
       '--- a/knowledge/wiki/topics/rust.md',
       '+++ b/knowledge/wiki/topics/rust.md',
       '@@ -1 +1,0 @@',
-      '-See also marcusrbrown/poly for details.',
+      '-See also testowner/private-fixture for details.',
     ].join('\n')
     // #when evaluated against that private name
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, override)
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, override)
     // #then the check passes — only added lines are scanned
     expect(result).toEqual({ok: true})
   })
 
   // Scenario 4: empty diff → pass
   it('passes when the diff is empty', () => {
-    const result = checkPrivateLeak(['marcusrbrown/poly'], '', override)
+    const result = checkPrivateLeak(['testowner/private-fixture'], '', override)
     expect(result).toEqual({ok: true})
   })
 
@@ -95,7 +97,7 @@ describe('checkPrivateLeak — pure function', () => {
     // #given a diff that adds the raw node_id (not the owner/name)
     const diff = makeDiff('docs/some-doc.md', ['Repository node_id: R_kgDOABCDEFG'])
     // #when evaluated against the private NAME (not the node_id)
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, override)
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, override)
     // #then the check passes — only the name is scanned, not node_ids
     expect(result).toEqual({ok: true})
   })
@@ -110,12 +112,12 @@ describe('checkPrivateLeak — pure function', () => {
     expect(result).toEqual({ok: true})
   })
 
-  // Scenario 7: case sensitivity: diff has MARCUSRBROWN/POLY → fail
+  // Scenario 7: case sensitivity: diff has TESTOWNER/PRIVATE-FIXTURE → fail
   it('fails on case-insensitive match (UPPERCASED name in diff)', () => {
     // #given a private name in lowercase and the diff adds it in uppercase
-    const diff = makeDiff('knowledge/wiki/repos/test.md', ['Check MARCUSRBROWN/POLY out'])
+    const diff = makeDiff('knowledge/wiki/repos/test.md', ['Check TESTOWNER/PRIVATE-FIXTURE out'])
     // #when evaluated case-insensitively
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, override)
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, override)
     // #then the check fails
     expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/test.md']})
   })
@@ -134,9 +136,9 @@ describe('checkPrivateLeak — pure function', () => {
       '--- a/knowledge/wiki/topics/rust.md',
       '+++ b/knowledge/wiki/topics/rust.md',
       '@@ -1,0 +1 @@',
-      '+See marcusrbrown/poly for more.',
+      '+See testowner/private-fixture for more.',
     ].join('\n')
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, override)
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, override)
     // #then the name addition triggers a fail
     expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/rust.md']})
   })
@@ -144,9 +146,9 @@ describe('checkPrivateLeak — pure function', () => {
   // Scenario 9: override: title [allow-private-leak]... + author marcusrbrown → pass with logged warning
   it('honors override when title is prefixed and author is the operator', () => {
     // #given a diff with a private name added
-    const diff = makeDiff('knowledge/wiki/repos/test.md', ['See marcusrbrown/poly'])
+    const diff = makeDiff('knowledge/wiki/repos/test.md', ['See testowner/private-fixture'])
     // #when override is active (title prefixed + operator)
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, {titlePrefixed: true, isOperator: true})
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, {titlePrefixed: true, isOperator: true})
     // #then the check passes despite the match
     expect(result).toEqual({ok: true})
   })
@@ -154,9 +156,9 @@ describe('checkPrivateLeak — pure function', () => {
   // Scenario 10: override: title prefixed but author fro-bot[bot] → NOT honored, fails normally
   it('does NOT honor override when title is prefixed but author is not the operator', () => {
     // #given a diff with a private name added
-    const diff = makeDiff('knowledge/wiki/repos/test.md', ['See marcusrbrown/poly'])
+    const diff = makeDiff('knowledge/wiki/repos/test.md', ['See testowner/private-fixture'])
     // #when title is prefixed but author is not the operator
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, {titlePrefixed: true, isOperator: false})
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, {titlePrefixed: true, isOperator: false})
     // #then the check fails normally
     expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/test.md']})
   })
@@ -164,8 +166,8 @@ describe('checkPrivateLeak — pure function', () => {
   // Scenario 11: comment containing a private name added → fail
   it('fails when a code comment in an added line contains the private name', () => {
     // #given a diff adding a TS comment with the private name
-    const diff = makeDiff('scripts/foo.ts', ['// TODO: remove marcusrbrown/poly reference'])
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, override)
+    const diff = makeDiff('scripts/foo.ts', ['// TODO: remove testowner/private-fixture reference'])
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, override)
     // #then the check fails — substring match doesn't care about comment vs code
     expect(result).toEqual({ok: false, matchedFiles: ['scripts/foo.ts']})
   })
@@ -174,14 +176,14 @@ describe('checkPrivateLeak — pure function', () => {
   it('does not match on the +++ diff header line', () => {
     // #given a diff where the file path itself contains a private name (edge case)
     const diff = [
-      'diff --git a/knowledge/wiki/repos/marcusrbrown--poly.md b/knowledge/wiki/repos/marcusrbrown--poly.md',
-      '--- a/knowledge/wiki/repos/marcusrbrown--poly.md',
-      '+++ b/knowledge/wiki/repos/marcusrbrown--poly.md',
+      'diff --git a/knowledge/wiki/repos/testowner--private-fixture.md b/knowledge/wiki/repos/testowner--private-fixture.md',
+      '--- a/knowledge/wiki/repos/testowner--private-fixture.md',
+      '+++ b/knowledge/wiki/repos/testowner--private-fixture.md',
       '@@ -1 +1 @@',
       '+Some unrelated content',
     ].join('\n')
     // #when evaluating against a name not present in the added content
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, override)
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, override)
     // #then the check passes — +++ header is skipped, body line has no match
     expect(result).toEqual({ok: true})
   })
@@ -199,9 +201,9 @@ describe('checkPrivateLeak — pure function', () => {
       '--- a/knowledge/wiki/topics/rust.md',
       '+++ b/knowledge/wiki/topics/rust.md',
       '@@ -1,0 +1 @@',
-      '+See marcusrbrown/poly for more.',
+      '+See testowner/private-fixture for more.',
     ].join('\n')
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, override)
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, override)
     expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/rust.md']})
   })
 })
@@ -216,17 +218,17 @@ describe('checkPrivateLeak — path-based detection (new files)', () => {
   it('FAILS when a new file is added with a slug-named path (--- /dev/null)', () => {
     // #given a new file being added whose path contains the slug form of a private repo
     const diff = [
-      'diff --git a/knowledge/wiki/repos/marcusrbrown--poly.md b/knowledge/wiki/repos/marcusrbrown--poly.md',
+      'diff --git a/knowledge/wiki/repos/testowner--private-fixture.md b/knowledge/wiki/repos/testowner--private-fixture.md',
       'new file mode 100644',
       '--- /dev/null',
-      '+++ b/knowledge/wiki/repos/marcusrbrown--poly.md',
+      '+++ b/knowledge/wiki/repos/testowner--private-fixture.md',
       '@@ -0,0 +1 @@',
       '+Some unrelated content',
     ].join('\n')
     // #when evaluated with the slug token in privateNames
-    const result = checkPrivateLeak(['marcusrbrown--poly'], diff, override)
+    const result = checkPrivateLeak(['testowner--private-fixture'], diff, override)
     // #then the path itself is the leak — check fails
-    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/marcusrbrown--poly.md']})
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/testowner--private-fixture.md']})
   })
 
   it('FAILS when added content line contains the slug form (owner--slug)', () => {
@@ -236,39 +238,39 @@ describe('checkPrivateLeak — path-based detection (new files)', () => {
       '--- a/knowledge/wiki/topics/rust.md',
       '+++ b/knowledge/wiki/topics/rust.md',
       '@@ -1,0 +1 @@',
-      '+See marcusrbrown--poly for details.',
+      '+See testowner--private-fixture for details.',
     ].join('\n')
-    const result = checkPrivateLeak(['marcusrbrown--poly'], diff, override)
+    const result = checkPrivateLeak(['testowner--private-fixture'], diff, override)
     expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/rust.md']})
   })
 
   it('passes when a file with a slug-named path is DELETED (not added)', () => {
     // #given a deletion diff for a slug-named wiki page
     const diff = [
-      'diff --git a/knowledge/wiki/repos/marcusrbrown--poly.md b/knowledge/wiki/repos/marcusrbrown--poly.md',
+      'diff --git a/knowledge/wiki/repos/testowner--private-fixture.md b/knowledge/wiki/repos/testowner--private-fixture.md',
       'deleted file mode 100644',
-      '--- a/knowledge/wiki/repos/marcusrbrown--poly.md',
+      '--- a/knowledge/wiki/repos/testowner--private-fixture.md',
       '+++ /dev/null',
       '@@ -1 +0,0 @@',
       '-old content',
     ].join('\n')
     // #when evaluated with the slug token — deletion does not add disclosure
-    const result = checkPrivateLeak(['marcusrbrown--poly'], diff, override)
+    const result = checkPrivateLeak(['testowner--private-fixture'], diff, override)
     expect(result).toEqual({ok: true})
   })
 
   it('passes when a slug-named file is MODIFIED (not new) — path not flagged', () => {
     // #given a modification diff for a slug-named wiki page (already existed)
     const diff = [
-      'diff --git a/knowledge/wiki/repos/marcusrbrown--poly.md b/knowledge/wiki/repos/marcusrbrown--poly.md',
-      '--- a/knowledge/wiki/repos/marcusrbrown--poly.md',
-      '+++ b/knowledge/wiki/repos/marcusrbrown--poly.md',
+      'diff --git a/knowledge/wiki/repos/testowner--private-fixture.md b/knowledge/wiki/repos/testowner--private-fixture.md',
+      '--- a/knowledge/wiki/repos/testowner--private-fixture.md',
+      '+++ b/knowledge/wiki/repos/testowner--private-fixture.md',
       '@@ -1 +1 @@',
       '-old line',
       '+new unrelated content',
     ].join('\n')
     // #when the slug token is not in the added content, check passes
-    const result = checkPrivateLeak(['marcusrbrown--poly'], diff, override)
+    const result = checkPrivateLeak(['testowner--private-fixture'], diff, override)
     expect(result).toEqual({ok: true})
   })
 
@@ -279,9 +281,9 @@ describe('checkPrivateLeak — path-based detection (new files)', () => {
       '--- a/knowledge/wiki/topics/rust.md',
       '+++ b/knowledge/wiki/topics/rust.md',
       '@@ -1,0 +1 @@',
-      '+See marcusrbrown/poly for more.',
+      '+See testowner/private-fixture for more.',
     ].join('\n')
-    const result = checkPrivateLeak(['marcusrbrown/poly'], diff, override)
+    const result = checkPrivateLeak(['testowner/private-fixture'], diff, override)
     expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/rust.md']})
   })
 })
@@ -296,43 +298,43 @@ describe('checkPrivateLeak — rename/copy path detection (Round-3 FIX #1)', () 
   it('FAILS when a file is renamed to a private-slug path via `rename to` header', () => {
     // #given a rename diff where the destination path contains the private slug
     const diff = [
-      'diff --git a/knowledge/wiki/repos/old-public.md b/knowledge/wiki/repos/marcusrbrown--poly.md',
+      'diff --git a/knowledge/wiki/repos/old-public.md b/knowledge/wiki/repos/testowner--private-fixture.md',
       'similarity index 100%',
       'rename from knowledge/wiki/repos/old-public.md',
-      'rename to knowledge/wiki/repos/marcusrbrown--poly.md',
+      'rename to knowledge/wiki/repos/testowner--private-fixture.md',
     ].join('\n')
-    const result = checkPrivateLeak(['marcusrbrown--poly'], diff, override)
+    const result = checkPrivateLeak(['testowner--private-fixture'], diff, override)
     // #then the destination path is the leak surface
-    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/marcusrbrown--poly.md']})
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/testowner--private-fixture.md']})
   })
 
   it('FAILS when a file is copied to a private-slug path via `copy to` header', () => {
     // #given a copy diff where the destination path contains the private slug
     const diff = [
-      'diff --git a/knowledge/wiki/repos/template.md b/knowledge/wiki/repos/marcusrbrown--poly.md',
+      'diff --git a/knowledge/wiki/repos/template.md b/knowledge/wiki/repos/testowner--private-fixture.md',
       'similarity index 100%',
       'copy from knowledge/wiki/repos/template.md',
-      'copy to knowledge/wiki/repos/marcusrbrown--poly.md',
+      'copy to knowledge/wiki/repos/testowner--private-fixture.md',
     ].join('\n')
-    const result = checkPrivateLeak(['marcusrbrown--poly'], diff, override)
-    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/marcusrbrown--poly.md']})
+    const result = checkPrivateLeak(['testowner--private-fixture'], diff, override)
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/testowner--private-fixture.md']})
   })
 
   it('FAILS on rename-with-edits diff (has --- and +++ headers) to a private-slug path', () => {
     // #given a rename diff that also has content edits (produces ---/+++ headers)
     const diff = [
-      'diff --git a/knowledge/wiki/repos/old-name.md b/knowledge/wiki/repos/marcusrbrown--poly.md',
+      'diff --git a/knowledge/wiki/repos/old-name.md b/knowledge/wiki/repos/testowner--private-fixture.md',
       'similarity index 60%',
       'rename from knowledge/wiki/repos/old-name.md',
-      'rename to knowledge/wiki/repos/marcusrbrown--poly.md',
+      'rename to knowledge/wiki/repos/testowner--private-fixture.md',
       '--- a/knowledge/wiki/repos/old-name.md',
-      '+++ b/knowledge/wiki/repos/marcusrbrown--poly.md',
+      '+++ b/knowledge/wiki/repos/testowner--private-fixture.md',
       '@@ -1 +1 @@',
       '-old content',
       '+updated content',
     ].join('\n')
-    const result = checkPrivateLeak(['marcusrbrown--poly'], diff, override)
-    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/marcusrbrown--poly.md']})
+    const result = checkPrivateLeak(['testowner--private-fixture'], diff, override)
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/testowner--private-fixture.md']})
   })
 
   it('PASSES when a file is renamed to a non-private path', () => {
@@ -343,7 +345,7 @@ describe('checkPrivateLeak — rename/copy path detection (Round-3 FIX #1)', () 
       'rename from docs/old.md',
       'rename to docs/new-public-name.md',
     ].join('\n')
-    const result = checkPrivateLeak(['marcusrbrown--poly', 'marcusrbrown/poly'], diff, override)
+    const result = checkPrivateLeak(['testowner--private-fixture', 'testowner/private-fixture'], diff, override)
     expect(result).toEqual({ok: true})
   })
 
@@ -351,13 +353,13 @@ describe('checkPrivateLeak — rename/copy path detection (Round-3 FIX #1)', () 
     // #given only the diff --git header with differing paths and no ---/+++ lines
     // (rename without content change in some git configs; `rename to` is still present)
     const diff = [
-      'diff --git a/knowledge/wiki/repos/old.md b/knowledge/wiki/repos/marcusrbrown--poly.md',
+      'diff --git a/knowledge/wiki/repos/old.md b/knowledge/wiki/repos/testowner--private-fixture.md',
       'similarity index 100%',
       'rename from knowledge/wiki/repos/old.md',
-      'rename to knowledge/wiki/repos/marcusrbrown--poly.md',
+      'rename to knowledge/wiki/repos/testowner--private-fixture.md',
     ].join('\n')
-    const result = checkPrivateLeak(['marcusrbrown--poly'], diff, override)
-    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/marcusrbrown--poly.md']})
+    const result = checkPrivateLeak(['testowner--private-fixture'], diff, override)
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/testowner--private-fixture.md']})
   })
 })
 
