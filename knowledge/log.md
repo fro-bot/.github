@@ -1570,3 +1570,23 @@ Sources: https://github.com/bfra-me/works (SHA cd4a52d7d9ad59c8770784d9411d688e9
 Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-06-01 10:35] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Dependency-drift re-survey of `marcusrbrown/marcusrbrown.github.io` (SHA `1a428e2`, 2026-06-01; prior `4cd8198`, 2026-05-20). Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (frontmatter, Fro Bot version, comparison table, new delta-log section, survey-history row) and its index entry. No new topic/entity/comparison pages warranted — the deltas are agent pin advances and dependency bumps, not structural.
+
+Delta:
+
+- **Fro Bot agent v0.44.0 → v0.48.1** across six bumps (#417 v0.44.1, #420 v0.46.0, #421 v0.46.1, #424 v0.48.0); `main` pin now `fro-bot/agent@80f1fa11d8e25280d388947c0a28875ed18cdc25 # v0.48.1`, folded in with non-major batch #425. The in-flight PR #417 from the 2026-05-20 survey has merged.
+- **pnpm** 10.33.4 → 10.34.1 (#423); **`bfra-me/.github`** v4.16.17 → v4.16.21 (#419).
+- Core stack unchanged: React ^19, TypeScript ^6, Vite ^7.0.6, Vitest ^4, `@types/node ^24`. Security overrides `fast-uri >=3.1.2` / `flatted >=3.4.2` intact.
+- Workflow inventory (ci, copilot-setup-steps, deploy, fro-bot, renovate), single-file three-mode Fro Bot design, and crons (`30 3` autoheal / `30 15` maintenance) all unchanged.
+- Open issues steady at 4 (#411, #409, #260, #6); 0 open PRs. Standing gaps hold: no Probot `settings.yml`, no CodeQL/Scorecard. No contradictions with prior ingests.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 1a428e231d4d3be7de40bbc016192cc14cb5190b)
+
+## [2026-06-01 10:36] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
