@@ -148,7 +148,7 @@ PAT split summary:
 | `merge-data.yaml` | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions) |
 | `reconcile-repos.yaml` | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` |
 | `update-metadata.yaml` | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` |
-| `main.yaml` (Check Private Leak) | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` (resolves `node_id`s to verify the diff) |
+| `main.yaml` (Check Private Leak) | `FRO_BOT_PAT` (resolves `node_id`s via Fro Bot's collaborator access to verify the diff) |
 
 ## Editing metadata files
 

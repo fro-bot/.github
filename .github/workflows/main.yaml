@@ -155,7 +155,6 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-      pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -167,15 +166,10 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      - name: 🔑 Mint App Token
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          app-id: ${{ secrets.APPLICATION_ID }}
-          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
+      # Resolution uses the Fro Bot user PAT, not an org App token: tracked private repos
+      # are owned by external accounts where Fro Bot has collaborator (user) access, which
+      # the org installation token cannot resolve. The PAT carries that collaborator read.
       - name: 🔒 Check Private Leak
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
         run: node scripts/check-private-leak.ts
