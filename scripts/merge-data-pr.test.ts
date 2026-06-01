@@ -945,6 +945,102 @@ describe('mergeDataPr', () => {
     )
   })
 
+  it('reports conflicted: false for a clean mergeable PR', async () => {
+    const createIssue = vi.fn(async () => ({
+      data: {number: 111, html_url: 'https://github.com/fro-bot/.github/issues/111'},
+    }))
+    const octokit = mockOctokit({
+      getPullRequest: async () => ({data: {mergeable_state: 'clean', head: {sha: 'data-commit-sha'}}}),
+      createIssue,
+    })
+
+    // #when the promotion PR is cleanly mergeable
+    const result = await mergeDataPr({octokit, now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then conflicted is false and no alert issue is created
+    expect(result.conflicted).toBe(false)
+    expect(result.conflictAlertIssueNumber).toBeNull()
+    expect(createIssue).not.toHaveBeenCalled()
+  })
+
+  it('reports conflicted: true and creates a conflict alert when mergeable_state is dirty', async () => {
+    let createIssueParams: CreateIssueParams | undefined
+    const createIssue = vi.fn(async (params: CreateIssueParams) => {
+      createIssueParams = params
+      return {data: {number: 111, html_url: 'https://github.com/fro-bot/.github/issues/111'}}
+    })
+    const octokit = mockOctokit({
+      getPullRequest: async () => ({data: {mergeable_state: 'dirty', head: {sha: 'data-commit-sha'}}}),
+      createIssue,
+    })
+
+    // #when the promotion PR is born-conflicted
+    const result = await mergeDataPr({octokit, now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then it sets conflicted and creates an alert issue
+    expect(result.conflicted).toBe(true)
+    expect(result.conflictAlertIssueNumber).toBe(111)
+    expect(createIssueParams).toBeDefined()
+    if (createIssueParams == null) throw new Error('expected conflict alert issue parameters')
+    expect(createIssueParams.owner).toBe('fro-bot')
+    expect(createIssueParams.repo).toBe('.github')
+    expect(createIssueParams.title).toContain('Conflicted data promotion PR:')
+    expect(createIssueParams.body).toContain('42') // PR number in body
+    expect(createIssueParams.body).toContain('data')
+    expect(createIssueParams.body).toContain('main')
+  })
+
+  it('reports conflicted: false when mergeable_state stays unknown after retries', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const createIssue = vi.fn(async () => ({
+        data: {number: 111, html_url: 'https://github.com/fro-bot/.github/issues/111'},
+      }))
+      const getPullRequest = vi.fn(async () => ({
+        data: {mergeable_state: 'unknown', head: {sha: 'data-commit-sha'}},
+      }))
+      const octokit = mockOctokit({getPullRequest, createIssue})
+
+      const resultPromise = mergeDataPr({octokit, logger: mockLogger(), now: new Date('2026-04-16T00:00:00.000Z')})
+      await vi.runAllTimersAsync()
+      const result = await resultPromise
+
+      // #then it does not false-alarm on unknown mergeability
+      expect(result.conflicted).toBe(false)
+      expect(result.conflictAlertIssueNumber).toBeNull()
+      expect(createIssue).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('deduplicates conflict alert when one is already open', async () => {
+    const createIssue = vi.fn(async () => ({
+      data: {number: 111, html_url: 'https://github.com/fro-bot/.github/issues/111'},
+    }))
+    const listForRepo = vi.fn(async () => ({
+      data: [{number: 100, title: 'Conflicted data promotion PR: data -> main (PR #42)', state: 'open' as const}],
+    }))
+    const octokit = mockOctokit({
+      getPullRequest: async () => ({data: {mergeable_state: 'dirty', head: {sha: 'data-commit-sha'}}}),
+      createIssue,
+      listForRepo,
+    })
+
+    // #given an existing conflict alert is already open
+    // #when the merge PR script runs again
+    const result = await mergeDataPr({octokit, now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then conflicted is still true but no duplicate issue is created
+    expect(result.conflicted).toBe(true)
+    expect(result.conflictAlertIssueNumber).toBeNull()
+    expect(createIssue).not.toHaveBeenCalled()
+    expect(listForRepo).toHaveBeenCalledWith(
+      expect.objectContaining({owner: 'fro-bot', repo: '.github', state: 'open'}),
+    )
+  })
+
   it('throws a structured error on non-conflict API failures', async () => {
     const octokit = mockOctokit({
       compareCommitsWithBasehead: async () => {
