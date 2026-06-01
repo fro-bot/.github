@@ -214,18 +214,6 @@ repos:
     next_survey_eligible_at: 2026-06-23
     private: false
     node_id: R_kgDOSKIp0Q
-  - owner: '[REDACTED]'
-    name: R_kgDOSVJgdw
-    added: 2026-05-05
-    onboarding_status: pending
-    last_survey_at: 2026-05-06
-    last_survey_status: success
-    has_fro_bot_workflow: true
-    has_renovate: true
-    discovery_channel: collab
-    next_survey_eligible_at: 2026-06-08
-    private: true
-    node_id: R_kgDOSVJgdw
   - owner: fro-bot
     name: agent
     added: 2026-05-07
@@ -262,18 +250,6 @@ repos:
     next_survey_eligible_at: 2026-06-08
     private: false
     node_id: R_kgDORLx6ew
-  - owner: '[REDACTED]'
-    name: R_kgDOSZ9x-w
-    added: 2026-05-13
-    onboarding_status: pending
-    last_survey_at: null
-    last_survey_status: null
-    has_fro_bot_workflow: true
-    has_renovate: false
-    discovery_channel: collab
-    next_survey_eligible_at: null
-    private: true
-    node_id: R_kgDOSZ9x-w
   - owner: bfra-me
     name: .github
     added: 2026-05-18
