@@ -1,6 +1,11 @@
 import {describe, expect, it, vi} from 'vitest'
 
-import {detectPrivateWikiLeaks, loadWikiFilenames, resolveCanonicalSlugs} from './check-wiki-private-presence.ts'
+import {
+  detectPrivateWikiLeaks,
+  isNotFoundSignal,
+  loadWikiFilenames,
+  resolveCanonicalSlugs,
+} from './check-wiki-private-presence.ts'
 
 // Hoisted mocks — vitest transforms these to the top of the module at compile time,
 // so they take effect before any imports regardless of source order.
@@ -239,6 +244,35 @@ describe('resolveCanonicalSlugs', () => {
     expect(() => resolveCanonicalSlugs([{node_id: 'R_kgDOABCDEF'}])).toThrow(/node-null/)
   })
 
+  it('classifies a non-zero gh exit carrying NOT_FOUND as node-null, not subprocess-threw', () => {
+    // #given gh api graphql exits non-zero but the captured stdout is a valid NOT_FOUND body
+    //        (repo deleted or App lost access — data.node: null with a top-level errors array)
+    // #when resolveCanonicalSlugs is called
+    // #then the failure is classified node-null so operators investigate repo lifecycle, not transport
+    mockExecFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('gh: Could not resolve to a node with the global id of "R_kgDOSVJgdw".'), {
+        status: 1,
+        stdout: JSON.stringify({
+          data: {node: null},
+          errors: [{type: 'NOT_FOUND', message: 'Could not resolve to a node with the global id'}],
+        }),
+        stderr: 'gh: Could not resolve to a node with the global id',
+      })
+    })
+    expect(() => resolveCanonicalSlugs([{node_id: 'R_kgDOSVJgdw'}])).toThrow(/node-null/)
+    expect(() => resolveCanonicalSlugs([{node_id: 'R_kgDOSVJgdw'}])).not.toThrow(/subprocess-threw/)
+  })
+
+  it('still classifies a genuine transport error (HTTP 401, no body) as subprocess-threw', () => {
+    // #given gh throws with no NOT_FOUND signal in any captured stream
+    // #when resolveCanonicalSlugs is called
+    // #then the failure remains subprocess-threw (network/rate-limit/auth)
+    mockExecFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('gh: HTTP 401'), {status: 1, stdout: '', stderr: 'gh: HTTP 401'})
+    })
+    expect(() => resolveCanonicalSlugs([{node_id: 'R_kgDOABCDEF'}])).toThrow(/subprocess-threw/)
+  })
+
   it('distinguishes subprocess-threw from node-null in the error message (NBC #2)', () => {
     // #given one entry throws subprocess and another returns node: null
     // #when resolveCanonicalSlugs is called
@@ -282,6 +316,32 @@ describe('resolveCanonicalSlugs', () => {
     mockExecFileSync.mockReturnValue(JSON.stringify({data: {node: {nameWithOwner}}}))
     const result = resolveCanonicalSlugs([{node_id: 'R_kgDOABCDEF'}])
     expect(result.resolved[0]?.canonicalSlug).toBe(expectedSlug)
+  })
+})
+
+describe('isNotFoundSignal', () => {
+  it('returns false for empty input', () => {
+    expect(isNotFoundSignal('')).toBe(false)
+  })
+
+  it('detects a structured top-level NOT_FOUND error', () => {
+    expect(isNotFoundSignal(JSON.stringify({data: {node: null}, errors: [{type: 'NOT_FOUND'}]}))).toBe(true)
+  })
+
+  it('detects data.node: null even without an errors array', () => {
+    expect(isNotFoundSignal(JSON.stringify({data: {node: null}}))).toBe(true)
+  })
+
+  it('detects the plain-text gh NOT_FOUND line (non-JSON stderr)', () => {
+    expect(isNotFoundSignal('gh: Could not resolve to a node with the global id of "R_kgDOSVJgdw".')).toBe(true)
+  })
+
+  it('returns false for an unrelated transport error', () => {
+    expect(isNotFoundSignal('gh: HTTP 401 Unauthorized')).toBe(false)
+  })
+
+  it('returns false for a successful repository response', () => {
+    expect(isNotFoundSignal(JSON.stringify({data: {node: {nameWithOwner: 'acme/secret'}}}))).toBe(false)
   })
 })
 
