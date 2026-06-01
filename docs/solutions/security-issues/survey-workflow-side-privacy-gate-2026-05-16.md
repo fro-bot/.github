@@ -6,8 +6,8 @@ component: tooling
 module: .github/workflows/survey-repo.yaml
 severity: high
 date: 2026-05-16
-last_updated: 2026-05-16
-verified: true
+last_updated: 2026-05-23
+verified: 2026-05-16
 related_components:
   - development_workflow
   - documentation
@@ -68,14 +68,22 @@ on:
 run-name: Survey Repo  # static; do NOT echo inputs.node_id
 ```
 
-**2. Resolve and verify as the first step**, before any other step exposes identity:
+**2. Mint an App installation token for the gate's GraphQL lookup, then resolve and verify as the first step** before any other step exposes identity. The gate's only question is "is this node a public repository?" — that's a public read, but it must work for repos in any org the dispatch lands on, including orgs whose policy forbids long-lived fine-grained PATs (e.g., bfra-me requires ≤366d lifetime; see `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` for the diagnostic loop that surfaced this). An installation token minted for the calling repo's owner sidesteps PAT policy entirely while still permitting public-read GraphQL:
 
 ```yaml
+- name: Mint App token for privacy gate
+  id: gate-token
+  uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+  with:
+    app-id: ${{ secrets.APPLICATION_ID }}
+    private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+    owner: ${{ github.repository_owner }}
+
 - name: 🔒 Resolve and verify
   id: resolve
   env:
     NODE_ID: ${{ inputs.node_id }}
-    GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+    GH_TOKEN: ${{ steps.gate-token.outputs.token }}
   run: |
     # Shape validation BEFORE any GraphQL or log — fail with neutral message
     if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
@@ -85,18 +93,32 @@ run-name: Survey Repo  # static; do NOT echo inputs.node_id
 
     # shellcheck disable=SC2016
     gql_query='query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner isPrivate } } }'
-    response=$(gh api graphql -F id="$NODE_ID" -f query="$gql_query" 2>/dev/null) || {
+    # Capture stderr to a temp file so failures surface the real gh/GitHub error
+    # (auth, permission, rate limit, network) instead of a generic abort line.
+    gh_stderr=$(mktemp)
+    if ! response=$(gh api graphql -F id="$NODE_ID" -f query="$gql_query" 2>"$gh_stderr"); then
       printf 'GraphQL lookup failed for node_id: %s\n' "$NODE_ID" >&2
-      exit 1
-    }
-
-    is_private=$(printf '%s' "$response" | jq -r '.data.node.isPrivate // "null"')
-    name_with_owner=$(printf '%s' "$response" | jq -r '.data.node.nameWithOwner // ""')
-
-    if [ -z "$name_with_owner" ] || [ "$is_private" != "false" ]; then
-      printf 'Aborting: %s is not definitively public\n' "$NODE_ID" >&2
+      # Use %s format so leading dashes in the marker are treated as arguments,
+      # not options (bash builtin printf rejects '---...' as an option).
+      printf '%s\n' '--- gh stderr ---' >&2
+      cat "$gh_stderr" >&2
+      printf '%s\n' '--- end gh stderr ---' >&2
+      rm -f "$gh_stderr"
       exit 1
     fi
+    rm -f "$gh_stderr"
+
+    name_with_owner=$(printf '%s' "$response" | jq -er '
+      .data.node
+      | select(type == "object")
+      | select(.isPrivate == false)
+      | select((.nameWithOwner | type) == "string")
+      | select(.nameWithOwner != "")
+      | .nameWithOwner
+    ') || {
+      printf 'Aborting: %s is not definitively public\n' "$NODE_ID" >&2
+      exit 1
+    }
 
     resolved_owner="${name_with_owner%%/*}"
     resolved_repo="${name_with_owner#*/}"
@@ -104,22 +126,41 @@ run-name: Survey Repo  # static; do NOT echo inputs.node_id
     {
       printf 'owner=%s\n' "$resolved_owner"
       printf 'repo=%s\n' "$resolved_repo"
+      printf 'node_id=%s\n' "$NODE_ID"
     } >> "$GITHUB_OUTPUT"
 ```
 
-**3. Recheck visibility before any persistence or external emit**, scoped to every survey (not just wiki-changed):
+**3. Recheck visibility before any persistence or external emit**, scoped to every survey (not just wiki-changed), reusing the App token from step 2:
 
 ```yaml
 - name: 🔒 Recheck visibility
   id: recheck
-  if: always() && !cancelled() && steps.survey-agent.conclusion != 'skipped'
+  if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' }}
   env:
     NODE_ID: ${{ inputs.node_id }}
-    GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+    GH_TOKEN: ${{ steps.gate-token.outputs.token }}
   run: |
-    # ... same shape-validate + GraphQL check as resolve, neutral abort on any failure ...
+    # shellcheck disable=SC2016
+    gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
+    # NOTE: recheck currently swallows stderr with 2>/dev/null — see follow-up
+    # below. Resolve step (above) uses the tempfile-capture pattern instead.
+    response=$(gh api graphql \
+      -F id="$NODE_ID" \
+      -f query="$gql_query" \
+      2>/dev/null) || {
+      printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
+      exit 1
+    }
+
+    if ! printf '%s' "$response" | jq -e '.data.node.isPrivate == false' >/dev/null; then
+      printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
+      exit 1
+    fi
+
     echo "private=false" >> "$GITHUB_OUTPUT"  # only reached on the confirmed-public path
 ```
+
+The recheck snippet above intentionally shows production verbatim, including the `2>/dev/null` that the resolve step (in section 2) no longer uses. The asymmetry is real: resolve was hardened during the 2026-05-20 diagnostic loop (PRs #3344/#3346), recheck has not yet received the same tempfile-capture treatment. Tracked as follow-up issue #3345. Until #3345 lands, recheck failures are diagnostically opaque; if the recheck starts failing, the first investigation step is to copy the resolve-step pattern locally and resubmit a diagnostic dispatch with stderr captured.
 
 **4. Route every persistence and external-emit step through the recheck-success gate.** This is the load-bearing detail. The recheck is only as useful as the breadth of its gating:
 
@@ -198,18 +239,26 @@ The breadth of the recheck gate matters as much as its existence. Routing the re
 
 ## Prevention
 
-1. **Treat any `workflow_dispatch` input as a public artifact.** If it would be unsafe on a GitHub Actions run page, it must be opaque (e.g., a GraphQL node_id) or redacted before dispatch.
-2. **Never interpolate raw inputs into `run-name`, concurrency keys, or log lines until they're verified.** Use static run-names, opaque concurrency keys, and shape-validated values only.
-3. **Validate input shape BEFORE any external call or log statement.** A failed validation must not echo the invalid input — neutral abort messages only.
-4. **When a multi-step workflow persists state or emits to external surfaces, gate EVERY persistence and emit step on the verification step's success — not just the most obvious one.** Recheck-before-wiki is necessary but not sufficient; the metadata write and broadcast are also persistence/emit paths. List every step that writes outside the runner, gate them all.
-5. **Caller dispatch payloads should carry the minimum identity needed.** Internal telemetry fields (owner/repo for logging, prioritization) belong on internal types, not in `workflow_dispatch.inputs`.
-6. **When refreshing identity from a downstream API (`repos.get`, GraphQL), use the refreshed value, not the pre-refresh original.** Stale identifiers — especially from invitation payloads — can dispatch under the wrong repo.
-7. **Test the contract directly.** At least one test should assert the exact `inputs:` shape the caller sends to `createWorkflowDispatch`, separate from logic tests. Contract drift is invisible to behavior tests until it leaks.
-8. **Make fail-closed paths observable.** Silent `catch {}` that downgrades to a safe default is correct but mute. Write a structured stderr line carrying error status and kind (no canonical identifiers) so transient failures are visible in CI logs.
+1. **Public-read GraphQL gates use App installation tokens, not user PATs.** Fine-grained PATs hit per-org lifetime policies (e.g., bfra-me's 366d cap) that surface as 401s on cross-org node lookups; App tokens auto-rotate and sidestep that class of footguns. The gate's only question is "is this node a public repository?" — a question App tokens answer for any public repo regardless of installation membership. Reserve PATs for steps that need user identity (commit author, invitation accept, star).
+2. **Treat any `workflow_dispatch` input as a public artifact.** If it would be unsafe on a GitHub Actions run page, it must be opaque (e.g., a GraphQL node_id) or redacted before dispatch.
+3. **Never interpolate raw inputs into `run-name`, concurrency keys, or log lines until they're verified.** Use static run-names, opaque concurrency keys, and shape-validated values only.
+4. **Validate input shape BEFORE any external call or log statement.** A failed validation must not echo the invalid input — neutral abort messages only.
+5. **When a multi-step workflow persists state or emits to external surfaces, gate EVERY persistence and emit step on the verification step's success — not just the most obvious one.** Recheck-before-wiki is necessary but not sufficient; the metadata write and broadcast are also persistence/emit paths. List every step that writes outside the runner, gate them all.
+6. **Caller dispatch payloads should carry the minimum identity needed.** Internal telemetry fields (owner/repo for logging, prioritization) belong on internal types, not in `workflow_dispatch.inputs`.
+7. **When refreshing identity from a downstream API (`repos.get`, GraphQL), use the refreshed value, not the pre-refresh original.** Stale identifiers — especially from invitation payloads — can dispatch under the wrong repo.
+8. **Test the contract directly.** At least one test should assert the exact `inputs:` shape the caller sends to `createWorkflowDispatch`, separate from logic tests. Contract drift is invisible to behavior tests until it leaks.
+9. **Make fail-closed paths observable.** Silent `catch {}` that downgrades to a safe default is correct but mute. Write a structured stderr line carrying error status and kind (no canonical identifiers) so transient failures are visible in CI logs.
+10. **Capture `gh api` stderr to a tempfile, not `2>/dev/null`.** Workflow gates that swallow the underlying API error force every future investigation to start from zero. Use `2>"$gh_stderr"` + `cat "$gh_stderr" >&2` between marker lines on failure. See `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` for the bash-builtin-`printf` marker pattern.
 
 ## Related Issues
 
-- PR: https://github.com/fro-bot/.github/pull/3293 — this PR
+- PR: https://github.com/fro-bot/.github/pull/3293 — original landing PR for this gate
+- PR: https://github.com/fro-bot/.github/pull/3344 — stderr capture pattern (`2>"$gh_stderr"` + tempfile + marker dump)
+- PR: https://github.com/fro-bot/.github/pull/3346 — bash-builtin `printf` marker fix (use `'%s\n' '--- text ---'`)
+- PR: https://github.com/fro-bot/.github/pull/3347 — App-token mint for cross-org public-read gate
+- Follow-up: https://github.com/fro-bot/.github/issues/3345 — apply tempfile-capture pattern to recheck step
+- Follow-up: https://github.com/fro-bot/.github/issues/3349 — App-token expiry race + cross-org install assumption documentation
 - Related (engine-side counterpart): `docs/solutions/security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md` — engine-side dispatch planning gate; this doc captures the workflow-side enforcement that fulfills its closing prevention rule
+- Related (diagnostic discipline): `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` — the three-PR investigation that surfaced the stderr-swallowing, printf-marker, and App-token issues fixed inline above
 - Compliance: `docs/solutions/workflow-issues/github-actions-step-output-interpolation-2026-04-21.md` — env-var-only shell expansion pattern used in every new `run:` block
 - Compliance: `docs/solutions/runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md` — aggregate status semantics in `Survey Repo`; same principle of "downstream steps must check upstream conclusions, not assume agent success"

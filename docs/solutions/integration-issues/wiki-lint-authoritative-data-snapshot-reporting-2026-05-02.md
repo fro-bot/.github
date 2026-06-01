@@ -19,7 +19,7 @@ tags:
   - wikilinks
   - artifacts
   - report-only
-verified: true
+verified: 2026-05-02
 symptoms:
   - Weekly wiki checks would be wrong if they linted the checked-out branch instead of the authoritative `data` snapshot
   - Alias-backed wikilinks could false-positive as broken references

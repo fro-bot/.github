@@ -23,7 +23,7 @@ tags:
     lint-rule,
     ci-smoke-test,
   ]
-verified: true
+verified: 2026-04-18
 ---
 
 ## Problem

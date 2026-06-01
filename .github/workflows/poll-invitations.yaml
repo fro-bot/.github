@@ -41,8 +41,11 @@ jobs:
             --message "🌐 Just joined ${INVITATIONS_ACCEPTED} new space(s) on GitHub. The network grows ✨" \
             --title "New Collaboration"
 
+      # Bluesky posting is disabled pending re-evaluation of social channels.
+      # The script (scripts/bluesky-post.ts) is intentionally retained for future
+      # reactivation; only the step invocation here is gated off via `if: false`.
       - name: 🦋 Post to Bluesky
-        if: steps.poll.outputs.public_invitations_accepted > 0
+        if: false && steps.poll.outputs.public_invitations_accepted > 0
         env:
           BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
           BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
@@ -50,14 +53,3 @@ jobs:
         run: |
           node scripts/bluesky-post.ts \
             "🌐 Just accepted ${INVITATIONS_ACCEPTED} collaboration invitation(s) on GitHub. The network grows ✨ #GitHub #OpenSource"
-
-      - name: 📓 Journal — invitation accepted
-        if: steps.poll.outputs.public_invitations_accepted > 0
-        env:
-          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
-          INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.public_invitations_accepted }}
-        run: |
-          node scripts/journal-entry.ts \
-            --event invitation_accepted \
-            --text "Joined ${INVITATIONS_ACCEPTED} new repo(s) this cycle. The web of collaboration expands." \
-            --metadata "{\"count\":${INVITATIONS_ACCEPTED}}"

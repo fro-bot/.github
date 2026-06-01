@@ -28,6 +28,24 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      # Two checkouts: scripts live on main, the wiki/metadata being promoted live on data.
+      # The privacy check below runs from the data subtree to gate the actual merge content.
+      - name: ⤵ Fetch data branch for privacy check
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: data
+          path: data-branch-check
+
+      # Use main's metadata/repos.yaml as the authoritative private-repo list so
+      # stale orphan entries on the data branch cannot block the privacy gate.
+      - name: 🔒 Block private wiki pages
+        env:
+          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+        working-directory: data-branch-check
+        run: |
+          cp ../metadata/repos.yaml metadata/repos.yaml
+          node ../scripts/check-wiki-private-presence.ts
+
       - name: 🔀 Open weekly data merge PR
         env:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}

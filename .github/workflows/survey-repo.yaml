@@ -68,11 +68,24 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      # The privacy gate's only question is "is this node a public repository?" That
+      # is a public read, but it must work for repos in any org the dispatch lands
+      # on — including orgs whose policy forbids long-lived fine-grained PATs (e.g.
+      # bfra-me requires ≤366d). An installation token minted for the calling repo's
+      # owner sidesteps PAT policy entirely while still permitting public-read GraphQL.
+      - name: Mint App token for privacy gate
+        id: gate-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: 🔒 Resolve and verify
         id: resolve
         env:
           NODE_ID: ${{ inputs.node_id }}
-          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          GH_TOKEN: ${{ steps.gate-token.outputs.token }}
         run: |
           if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
             printf 'Aborting: dispatch input shape invalid\n' >&2
@@ -81,13 +94,20 @@ jobs:
 
           # shellcheck disable=SC2016
           gql_query='query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner isPrivate } } }'
-          response=$(gh api graphql \
-            -F id="$NODE_ID" \
-            -f query="$gql_query" \
-            2>/dev/null) || {
+          # Capture stderr to a temp file so a failure surfaces the real gh/GitHub error
+          # (auth, permission, rate limit, network) instead of a generic abort line.
+          gh_stderr=$(mktemp)
+          if ! response=$(gh api graphql -F id="$NODE_ID" -f query="$gql_query" 2>"$gh_stderr"); then
             printf 'GraphQL lookup failed for node_id: %s\n' "$NODE_ID" >&2
+            # Use %s format so leading dashes in the marker are treated as arguments,
+            # not options (bash builtin printf otherwise rejects '---...' as an option).
+            printf '%s\n' '--- gh stderr ---' >&2
+            cat "$gh_stderr" >&2
+            printf '%s\n' '--- end gh stderr ---' >&2
+            rm -f "$gh_stderr"
             exit 1
-          }
+          fi
+          rm -f "$gh_stderr"
 
           name_with_owner=$(printf '%s' "$response" | jq -er '
             .data.node
@@ -156,7 +176,7 @@ jobs:
 
       - name: Run Fro Bot survey ingest
         id: survey-agent
-        uses: fro-bot/agent@1563f2987343b5e8d30ba818920d0ac563c617fa # v0.43.0
+        uses: fro-bot/agent@80f1fa11d8e25280d388947c0a28875ed18cdc25 # v0.48.1
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
@@ -195,7 +215,7 @@ jobs:
         if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' }}
         env:
           NODE_ID: ${{ inputs.node_id }}
-          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          GH_TOKEN: ${{ steps.gate-token.outputs.token }}
         run: |
           # shellcheck disable=SC2016
           gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
@@ -268,17 +288,12 @@ jobs:
         Just finished surveying **${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }}**.
         New knowledge ingested into the wiki ✨
       discord_title: Repo Survey Complete
-      bluesky_text: >-
-        📡 Just surveyed ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }} and locked in new insights.
-        The wiki grows. #GitHub #OpenSource
-      journal_text: >-
-        Surveyed ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }} and persisted what I learned.
-        Each repo leaves a mark on the map.
-      journal_metadata: >-
-        {"owner":"${{ needs.survey-repo.outputs.owner }}","repo":"${{ needs.survey-repo.outputs.repo }}"}
-      repo: ${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }}
+      # bluesky_text intentionally omitted — Bluesky step in social-broadcast.yaml
+      # is currently gated off via `if: false`. When revived, restore copy here.
+      # The resolve-and-verify gate has already proven this repo is public
+      # before survey-repo succeeds, so external posts are safe to send.
+      private: false
     secrets:
-      FRO_BOT_PAT: ${{ secrets.FRO_BOT_PAT }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
       BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
