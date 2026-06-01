@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/gpt"
 created: 2026-04-18
-updated: 2026-04-24
+updated: 2026-05-27
 sources:
+  - url: https://github.com/marcusrbrown/gpt
+    sha: aac010356a3e0d7fd21a5883b98d0cdf6229ed60
+    accessed: 2026-05-27
   - url: https://github.com/marcusrbrown/gpt
     sha: 0bb8eedf6e23bfb5715d127763fd864ab7da72cd
     accessed: 2026-04-24
@@ -26,29 +29,29 @@ Local-first, privacy-focused GPT creation and management platform. Mirrors core 
 - **Purpose:** Create, customize, and interact with AI assistants locally
 - **Default branch:** `main`
 - **Created:** 2023-12-01
-- **Last push:** 2026-04-23
+- **Last push:** 2026-05-27
 - **Homepage:** https://gpt.mrbro.dev (GitHub Pages)
 - **License:** MIT
 - **Topics:** `gpt`, `transformers`, `nlp`, `chatgpt`, `gpt-4`
-- **Node.js:** 24.15.0 (`.tool-versions`)
-- **Package manager:** pnpm 10.33.0
+- **Node.js:** 24.16.0 (`.tool-versions`) — bumped from 24.15.0 on 2026-05-19 (PR #2468)
+- **Package manager:** pnpm 10.33.4 — bumped from 10.33.0 via PRs #2402, #2412
 
 ## Tech Stack
 
 | Layer | Technology | Notes |
 | --- | --- | --- |
 | Framework | React 19.2.5, TypeScript 5.9.3 | Strict mode, `@/` import alias |
-| Build | Vite 8.0.9, `@vitejs/plugin-react-swc` | `tsgo` (`@typescript/native-preview` 7.0.0-dev) for type-checking |
-| Styling | TailwindCSS 4.2.2, HeroUI 2.8.10 | Semantic design tokens only, no hardcoded colors |
+| Build | Vite 8.0.14, `@vitejs/plugin-react-swc` 4.3.1 | `tsgo` (`@typescript/native-preview` 7.0.0-dev.20260523.1) for type-checking |
+| Styling | TailwindCSS 4.3.0, HeroUI 2.8.10 | Semantic design tokens only, no hardcoded colors |
 | Storage | IndexedDB via Dexie 4.4.2 | Local-first; no localStorage for structured data |
 | Security | Web Crypto API (AES-GCM, PBKDF2) | Client-side encryption for API keys |
-| AI | LangChain 1.3.3, `@langchain/openai` 1.4.4, `@langchain/anthropic` 1.3.26, `@langchain/langgraph` 1.2.9 | Provider-abstracted via `BaseLLMProvider` |
+| AI | LangChain 1.4.2, `@langchain/core` 1.1.48, `@langchain/openai` 1.4.7, `@langchain/anthropic` 1.4.0, `@langchain/langgraph` 1.3.2 | Provider-abstracted via `BaseLLMProvider` |
 | MCP | `@modelcontextprotocol/sdk` 1.29.0 | Tool integration via Model Context Protocol |
 | Editor | Monaco Editor (`@monaco-editor/react` 4.7.0) | In-app code/prompt editing |
-| Routing | React Router DOM 7.14.1 | Route-level lazy loading |
-| Validation | Zod 4.3.6 | Zod-first: define schema, infer type |
-| Testing | Vitest 4.1.4, Playwright 1.59.1, axe-core | Unit, E2E, accessibility, visual, performance |
-| Linting | ESLint 10.2.1, `@bfra.me/eslint-config` 0.50.1, Prettier 3.8.3 | `@bfra.me/prettier-config/120-proof` (120-char lines) |
+| Routing | React Router DOM 7.15.1 | Route-level lazy loading |
+| Validation | Zod 4.4.3 | Zod-first: define schema, infer type |
+| Testing | Vitest 4.1.7, `@vitest/eslint-plugin` 1.6.18, Playwright 1.60.0, axe-core | Unit, E2E, accessibility, visual, performance |
+| Linting | ESLint 10.4.0, `@bfra.me/eslint-config` 0.50.1, Prettier 3.8.3 | `@bfra.me/prettier-config/120-proof` (120-char lines); `@bfra.me/tsconfig` 0.13.1 |
 
 ## Architecture
 
@@ -126,9 +129,8 @@ Deno Jupyter notebooks in `notebooks/agents/`:
 | Workflow | File | Trigger | Purpose |
 | --- | --- | --- | --- |
 | Main | `main.yaml` | push/PR to `main`, dispatch | Lint + test + build + deploy |
-| Fro Bot | `fro-bot.yaml` | PR, issues, comments, schedule, dispatch | AI PR review, triage, daily maintenance |
-| Fro Bot Autoheal | `fro-bot-autoheal.yaml` | daily cron (03:30 UTC), dispatch | Automated repo healing (fix failing PRs, security, code quality) |
-| Renovate | `renovate.yaml` | — | Dependency updates |
+| Fro Bot | `fro-bot.yaml` | PR, issues, comments, schedule (03:30 + 15:30 UTC), dispatch | Three-mode single-file workflow: review / maintenance / autoheal |
+| Renovate | `renovate.yaml` | — | Dependency updates (via `bfra-me/.github` reusable workflow) |
 | Update Repo Settings | `update-repo-settings.yaml` | push to `main`, schedule, dispatch | Probot settings sync |
 | Test Coverage | `test-coverage.yaml` | — | Coverage reporting |
 | Test Accessibility | `test-accessibility.yaml` | — | WCAG 2.1 AA audit |
@@ -137,6 +139,8 @@ Deno Jupyter notebooks in `notebooks/agents/`:
 | Cache Cleanup | `cache-cleanup.yaml` | — | Actions cache maintenance |
 | Copilot Setup | `copilot-setup-steps.yaml` | — | GitHub Copilot coding agent bootstrap |
 | E2E Tests | `test-e2e.yaml.disabled` | — | E2E tests (currently disabled) |
+
+**Note:** The prior `fro-bot-autoheal.yaml` has been folded into `fro-bot.yaml` as an `autoheal` mode (PR review → `pull_request`, maintenance/autoheal → cron). This matches the consolidated three-mode pattern adopted across the ecosystem.
 
 ### Main CI Jobs
 
@@ -161,7 +165,7 @@ Vite build injects a CSP `<meta>` tag restricting:
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8`. Groups LangChain.js monorepo packages. Automerges unstable minor updates of `lucide-react` (monthly) and select LangChain/TailwindCSS packages. Post-upgrade runs bootstrap, fix, and build.
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.0` — **crossed the v4 → v5 boundary on 2026-05-13 (PR #2435)**. Groups LangChain.js monorepo packages. Automerges unstable minor updates of `lucide-react` (monthly) and select LangChain/TailwindCSS packages via `bfra-me/renovate-config:automerge.json5#5.2.1`. Post-upgrade runs bootstrap, fix, and build. `pnpm.overrides` pins `fast-uri>=3.1.2`, `langsmith>=0.6.0`, `path-to-regexp>=8.4.0`.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` for repository configuration sync.
 - **Git Hooks:** `simple-git-hooks` with `lint-staged` running ESLint with auto-fix on staged files.
 - **AGENTS.md hierarchy:** Root AGENTS.md plus directory-level guides in `src/`, `tests/`, `scripts/`, `notebooks/`, `docs/`, `.github/`, `RFCs/`, `.ai/`. Comprehensive conventions for AI-assisted development.
@@ -178,7 +182,7 @@ Vite build injects a CSP `<meta>` tag restricting:
    - Issue/discussion triage (triggered by `@fro-bot` mention from OWNER/MEMBER/COLLABORATOR)
    - Daily maintenance (15:30 UTC cron → rolling "Daily Maintenance Report" issue)
    - Manual dispatch with custom prompts
-    - Uses `fro-bot/agent@v0.41.4`
+    - Uses `fro-bot/agent@v0.45.0` (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`) as of 2026-05-27 — bumped through v0.42.x → v0.43.x → v0.44.3 → v0.45.0 over the survey window
 
 2. **`fro-bot-autoheal.yaml`** — Daily autohealing (03:30 UTC cron):
    - Fixes failing CI on open PRs
@@ -188,7 +192,9 @@ Vite build injects a CSP `<meta>` tag restricting:
    - Quality gate verification (lint, test, build, accessibility, E2E)
    - Output: single "Daily Autohealing Report" issue
 
-Both workflows use `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d9735d7ad2aca`) with `OPENCODE_AUTH_JSON`, `FRO_BOT_PAT`, `FRO_BOT_MODEL`, and `OMO_PROVIDERS` secrets/vars.
+Both workflows use `fro-bot/agent@v0.45.0` (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`) with `OPENCODE_AUTH_JSON`, `FRO_BOT_PAT`, `FRO_BOT_MODEL`, and `OMO_PROVIDERS` secrets/vars.
+
+**Note (2026-05-27 survey):** The two-workflow split observed in prior surveys has consolidated. `fro-bot.yaml` now handles all three modes (review / maintenance / autoheal) via a single `workflow_dispatch` `mode` input plus dual cron schedules (03:30 UTC autoheal, 15:30 UTC maintenance). The standalone `fro-bot-autoheal.yaml` is no longer present in the workflow directory — this aligns with the three-mode single-file pattern documented in [[marcusrbrown--marcusrbrown-github-io]] and other recent ecosystem updates.
 
 ## Conventions (from AGENTS.md)
 
@@ -213,9 +219,10 @@ Both workflows use `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d973
 
 ## Open Work Items
 
-- **PR #2165** — HeroUI v2 → v3 migration (authored by `fro-bot`, open since before 2026-04-18)
-- **PR #2320** — `eslint-plugin-react-hooks` v7.1.1 (Renovate, pending)
-- **30 open issues** (as of 2026-04-24)
+- **PR #2165** — HeroUI v2 → v3 migration (authored by `fro-bot`, still open as of 2026-05-27 — long-running)
+- **PR #2320** — `fix(dev): update react monorepo` (Renovate, still pending)
+- **PR #2440** — `@bfra.me/eslint-config` v0.51.1 (Renovate)
+- **21 open issues** (down from 30 as of 2026-04-24)
 
 ## Survey History
 
@@ -223,3 +230,4 @@ Both workflows use `fro-bot/agent@v0.41.4` (SHA `28bcadbf44a59f8d6d2544b5db0d973
 | --- | --- | --- |
 | 2026-04-18 | `60bd62e` | Initial survey |
 | 2026-04-24 | `0bb8eed` | Dependency-only delta: `fro-bot/agent` v0.40.2→v0.41.4, `vite` 8.0.8→8.0.9, `@langchain/langgraph` 1.2.8→1.2.9, `eslint` 10.2.0→10.2.1, `uuid` v14 security patch, `@typescript/native-preview` 7.0.0-dev.20260419.1, `actions/setup-node` v6.4.0, `bfra-me/.github` v4.16.8. No structural or application code changes. |
+| 2026-05-27 | `aac0103` | Five-week delta. **Renovate preset crossed v4 → v5.2.0 boundary (#2435, 2026-05-13).** `fro-bot/agent` advanced through 8 versions: v0.41.4 → v0.42.5/.6/.7/.8/.9/.10 → v0.43.0/.1/.3 → v0.44.3 → v0.45.0. Workflow consolidation: `fro-bot-autoheal.yaml` folded into `fro-bot.yaml` as `autoheal` mode (three-mode single-file pattern). Vite 8.0.9 → 8.0.14; LangChain monorepo bumps (`langchain` → 1.4.2, `@langchain/core` → 1.1.48, `@langchain/openai` → 1.4.7, `@langchain/anthropic` → 1.4.0, `@langchain/langgraph` → 1.3.2); TailwindCSS 4.2.2 → 4.3.0; React Router 7.14.1 → 7.15.1; Zod 4.3.6 → 4.4.3; Vitest 4.1.4 → 4.1.7; `@vitest/eslint-plugin` 1.6.18 newly added; ESLint 10.2.1 → 10.4.0; `@bfra.me/prettier-config` → 0.16.9; `@bfra.me/tsconfig` → 0.13.1; Node 24.15.0 → 24.16.0; pnpm 10.33.0 → 10.33.4; `@typescript/native-preview` advanced to 7.0.0-dev.20260523.1; `bfra-me/.github` updated through v4.16.12 → v4.16.19. No structural or application-code changes — exclusively dependency hygiene and workflow consolidation. |

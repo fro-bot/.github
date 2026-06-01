@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/mrbro.dev"
 created: 2026-04-18
-updated: 2026-04-26
+updated: 2026-05-21
 sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 51f5cab5c77768b761d9f0a688ac7436cc5a06f4
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: d8c0e43a471aa41b030890122d75450b5626b981
     accessed: 2026-04-26
+  - url: https://github.com/marcusrbrown/mrbro.dev
+    sha: 88f7a4adf497fe9bb772f27b05216d4e0235af3e
+    accessed: 2026-05-21
 tags: [portfolio, react, typescript, vite, github-pages, blog, pnpm]
 aliases: [mrbro-dev, mrbro.dev]
 related:
@@ -30,8 +33,8 @@ Marcus R. Brown's developer portfolio website. React 19, TypeScript (strict), Vi
 - **Homepage:** https://mrbro.dev
 - **Topics:** `blog`, `developer`, `github-pages`, `portfolio`, `react`, `typescript`, `vite`
 - **License:** MIT (badge present, no LICENSE file detected via API)
-- **Open issues:** 39 (majority are Daily Autohealing Reports)
-- **Open PRs:** 4 (#85 and #87 stale security fixes, #142 non-major deps, #145 fro-bot hook rename)
+- **Open issues:** 8 as of 2026-05-21 (drained from 39 in April — the single perpetual "Daily Autohealing Report" #162 and "Daily Maintenance Report" #13 are now the canonical rolling issues, matching the prompt contract; #1 Dependency Dashboard, #48 triage, plus 4 Renovate pin PRs reflected as issues)
+- **Open PRs:** 4 (all `chore(dev): pin dependency …` Renovate PRs: #168 `@bfra.me/eslint-config` v0.51.0, #172 `@bfra.me/prettier-config` 0.16.8, #173 `@bfra.me/tsconfig` v0.13.0, #175 `eslint-plugin-react-refresh` 0.5.2)
 
 ## Tech Stack
 
@@ -119,8 +122,7 @@ The most architecturally significant feature. Centered on `ThemeContext` (300+ l
 | CI | `ci.yaml` | PR to `main`, dispatch | Lint, test (with coverage), build, type-check, dependency audit, quality gate |
 | E2E Tests | `e2e-tests.yaml` | PR to `main`, dispatch | Playwright E2E (Chromium), visual regression, accessibility (axe-core), badge generation |
 | Performance | `performance.yaml` | push to `main`, PR, weekly cron, dispatch | Lighthouse CI (desktop + mobile), bundle analysis, performance budgets, regression detection |
-| Fro Bot | `fro-bot.yaml` | PR, issue, comment, schedule, dispatch | Automated PR review, daily maintenance, issue triage |
-| Fro Bot Autoheal | `fro-bot-autoheal.yaml` | daily 03:30 UTC, dispatch | Automated CI repair, security, code quality, production site review |
+| Fro Bot | `fro-bot.yaml` | PR, issue, comment, schedule (03:30 + 15:30 UTC), dispatch | Three-mode: PR review / daily maintenance / autoheal (single file as of 2026-05-21) |
 | Renovate | `renovate.yaml` | issue/PR edit, push (non-main), workflow_run, dispatch | Dependency management via `bfra-me/.github` reusable workflow |
 | Copilot Setup Steps | `copilot-setup-steps.yaml` | — | GitHub Copilot coding agent environment |
 
@@ -138,22 +140,34 @@ Sequential: checkout, setup, lint, test, build (with `GITHUB_PAGES=true`), uploa
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present and active.** Two workflows:
+**As of 2026-05-21 (SHA `88f7a4a`), the Fro Bot integration is a single-file three-mode workflow.** The standalone `fro-bot-autoheal.yaml` has been consolidated into `fro-bot.yaml`, matching the pattern in [[marcusrbrown--marcusrbrown-github-io]] and the broader Fro Bot fleet.
 
-### fro-bot.yaml
+### fro-bot.yaml (single-file, three modes — current)
+
+- **Agent pin:** `fro-bot/agent@v0.43.0` (SHA `1563f2987343b5e8d30ba818920d0ac563c617fa`)
+- **Modes** (selectable via `workflow_dispatch.inputs.mode`, default `autoheal`):
+  - `review` — PR review with structured verdict (`PASS | CONDITIONAL | REJECT`), blocking/non-blocking/missing-tests/risk-assessment sections; reserved for `pull_request`, `*_comment`, and `issues` events
+  - `maintenance` — Single perpetual "Daily Maintenance Report" issue at 15:30 UTC; the prompt mandates exactly one open maintenance issue at all times (drift-correction language)
+  - `autoheal` — Daily autoheal at 03:30 UTC (staggered off sibling repos)
+- **Triggers:** `issue_comment`, `pull_request_review_comment`, `discussion_comment`, `issues` (opened/edited), `pull_request` (opened/synchronize/reopened/ready_for_review/review_requested), two `schedule` crons, `workflow_dispatch`
+- **Concurrency:** Per issue/PR/discussion/schedule, non-cancelling
+- **PR review prompt** is mrbro.dev-specific: React 19 / TypeScript / Vite 7, WCAG 2.1 AA, performance budget (JS <500KB, total <2MB), pure ESM, PascalCase hooks, `.yaml` extension enforcement, named exports preferred. Style nits explicitly deferred to ESLint/Prettier.
+- **Hard boundary**: "Do NOT push commits, modify code, or create branches. Review only."
+
+### fro-bot.yaml (prior two-file form — historical, 2026-04-18 → 2026-04-26)
 
 - Triggers: PR events (opened, synchronize, reopened, ready_for_review, review_requested), issue events (opened, edited), comment events (`@fro-bot` mention including discussion comments), daily schedule (15:30 UTC), manual dispatch
-- Uses `fro-bot/agent@v0.41.3` (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`) with `FRO_BOT_PAT` token
+- Used `fro-bot/agent@v0.41.3` (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`) with `FRO_BOT_PAT` token
 - `opencode-config` secret passed via environment (added 2026-04-19, #135)
 - PR review prompt: structured review (Verdict/Blocking/Non-blocking/Missing tests/Risk assessment)
 - Schedule prompt: daily maintenance issue ("Daily Maintenance Report") with 14-day rolling window
 - Concurrency: per-issue/PR, non-cancelling
 - Fork PR guard: skips bot-authored and fork PRs; additional fork-check step for issue_comment on PR events
 
-### fro-bot-autoheal.yaml
+### fro-bot-autoheal.yaml (removed 2026-05-21)
 
 - Triggers: daily 03:30 UTC, manual dispatch
-- Uses `fro-bot/agent@v0.41.3` (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`)
+- Used `fro-bot/agent@v0.41.3` (SHA `36c9850c2ac6e6d4d532662fca2ca89bd2bc559d`)
 - `opencode-config` secret passed via environment
 - Five-category autoheal: errored PRs, security, code quality/hygiene, developer experience, production site review
 - Production site review uses `npx agent-browser` to check mrbro.dev pages (/, /about, /projects, /blog)
@@ -179,7 +193,7 @@ Coverage as of README badges: 70.81% statements, 80.19% branches, 60.4% function
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8`. Post-upgrade runs: `pnpm install`, `pnpm run build`, `pnpm run fix` (twice). Groups all non-major updates. Reusable workflow via `bfra-me/.github@v4.16.7`.
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.0` (as of 2026-05-21, bumped from `#4.5.8`). Post-upgrade runs: `pnpm install`, `pnpm run build`, `pnpm run fix` (twice), `executionMode: 'branch'`. Groups all non-major updates. Config lives at `.github/renovate.json5`.
 - **Probot Settings:** **Not configured.** No `.github/settings.yml` present — unusual for Marcus repos where Probot settings extending `fro-bot/.github:common-settings.yaml` is the standard pattern. Branch protection managed via `.github/BRANCH_PROTECTION.md` documentation and `scripts/configure-branch-protection.ts` script instead.
 - **Git Hooks:** `simple-git-hooks` with `lint-staged` (ESLint --fix on staged files). Pre-push hook at `.github/git-hooks/pre-push.ts`.
 - **Copilot Hooks:** `.github/hooks/` directory for Copilot pre-tool-use guardrails.
@@ -215,12 +229,12 @@ Vite upgraded to v7.3.2 for security fix (#121).
 
 ## Connections to Fro Bot Ecosystem
 
-- Uses `fro-bot/agent@v0.41.3` in both workflow files (bumped from v0.38.0 since 2026-04-18 survey)
+- Uses `fro-bot/agent@v0.43.0` in the single consolidated workflow (v0.38.0 → v0.41.3 → v0.43.0 across surveys)
 - Shares `@bfra.me/*` config ecosystem with the Fro Bot org
-- Renovate extends `marcusrbrown/renovate-config#4.5.8` (same as [[marcusrbrown--ha-config]], [[marcusrbrown--vbs]])
-- Authentication via `APPLICATION_ID`/`APPLICATION_PRIVATE_KEY` secrets (GitHub App) in CI, `FRO_BOT_PAT` + `opencode-config` for agent workflows
+- Renovate extends `marcusrbrown/renovate-config#5.2.0` — first repo in this wiki observed on the v5 preset line
+- Authentication via `APPLICATION_ID`/`APPLICATION_PRIVATE_KEY` secrets (GitHub App) in CI, `FRO_BOT_PAT` + `opencode-config` for agent workflow
 - **No Probot settings.yml** — diverges from sibling repos that extend `fro-bot/.github:common-settings.yaml`
-- Sibling portfolio site: [[marcusrbrown--marcusrbrown-github-io]] (both React+Vite GitHub Pages, different scope and domain)
+- Sibling portfolio site: [[marcusrbrown--marcusrbrown-github-io]] (both React+Vite GitHub Pages, different scope and domain) — both now run the single-file three-mode Fro Bot workflow
 
 ## Survey History
 
@@ -228,3 +242,4 @@ Vite upgraded to v7.3.2 for security fix (#121).
 | --- | --- | --- |
 | 2026-04-18 | `51f5cab` | Initial survey |
 | 2026-04-26 | `d8c0e43` | Agent v0.38.0→v0.41.3, Renovate #4.5.7→#4.5.8, opencode-config added, security overrides, no settings.yml noted, 39 open issues |
+| 2026-05-21 | `88f7a4a` | Workflows consolidated: `fro-bot-autoheal.yaml` removed, single `fro-bot.yaml` with three modes (review/maintenance/autoheal). Agent v0.41.3 → v0.43.0. Renovate preset #4.5.8 → #5.2.0. Open issues 39 → 8 (autoheal backlog drained). Open PRs 4 (all pin-version Renovate). New pnpm overrides: `fast-uri ≥3.1.2`, `ip-address ≥10.1.1`, `uuid ≥14.0.0`. TypeScript bumped 5.6.x → 5.9.3 (still pre-v6). Vitest 4.1.4, pnpm 10.33.4. |

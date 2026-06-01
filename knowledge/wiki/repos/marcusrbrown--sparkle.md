@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/sparkle"
 created: 2026-04-28
-updated: 2026-05-01
+updated: 2026-05-23
 sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: 770356b3c83cec08a666960eab9c5fb4e1ab2a85
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: 712ab1bc2fdcd59ec9b8a2d71ad6d9ca88a023c5
     accessed: 2026-05-01
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: e757fa66aa223f4ccb8af16838d937562b97f713
+    accessed: 2026-05-23
 tags: [typescript, react, react-native, monorepo, design-system, storybook, tailwindcss, radix-ui, turborepo, expo, vite, astro, github-pages, zig, wasm]
 aliases: [sparkle]
 related:
@@ -57,6 +60,8 @@ related:
 | Git hooks         | `simple-git-hooks` + `nano-staged` (runs `eslint --fix`, `sort-package-json`)     |
 | Monorepo tools    | `@manypkg/cli` (workspace consistency checks), Changesets (versioning)            |
 | Bundler           | tsdown (library packages), Vite (apps), Astro (docs)                              |
+
+_Toolchain drift (2026-05-23 survey at SHA `e757fa6`):_ pnpm 10.33.4, Node.js 24.16.0, Turborepo 2.9.14, `@bfra.me/eslint-config` 0.51.1, `@bfra.me/prettier-config` 0.16.9 (still `120-proof`), `@bfra.me/tsconfig` 0.13.1. TypeScript 5.9.3 unchanged. No engine-level shifts — strict-mode TypeScript + ESM-only `"type": "module"` are stable invariants across surveys.
 
 ## Architecture
 
@@ -184,7 +189,7 @@ Missing Fro Bot capabilities:
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.9` + `sanity-io/renovate-config:semantic-commit-type` + `:preserveSemverRanges`. Post-upgrade runs `pnpm bootstrap && pnpm fix`. React Native package grouping rules. Automerge on unstable minor/patch for `@astrojs/check` and `typedoc`. PR creation: `immediate`.
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.0` (major-bumped from `#4.5.9` between 2026-05-01 and 2026-05-23 — same ecosystem-wide cutover seen across the Marcus and Fro Bot portfolios) + `sanity-io/renovate-config:semantic-commit-type` + `:preserveSemverRanges`. Post-upgrade runs `pnpm bootstrap && pnpm fix`. React Native package grouping rules. Automerge on unstable minor/patch for `@astrojs/check` and `typedoc`. PR creation: `immediate`.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` — confirmed Fro Bot ecosystem membership.
 - **Git hooks:** `simple-git-hooks` runs `nano-staged` on pre-commit. nano-staged runs `eslint --fix` on TS/JS/CSS/MD/JSON/YAML and `sort-package-json` on package.json files.
 - **Monorepo validation:** `@manypkg/cli` checks workspace consistency. `scripts/validate-dependencies.ts` validates deps. `scripts/validate-turbo.ts` validates Turbo config. `scripts/validate-build.ts` validates build output.
@@ -211,12 +216,12 @@ Missing Fro Bot capabilities:
 | Feature | Sparkle | Portfolio Standard |
 | --- | --- | --- |
 | Probot settings | `fro-bot/.github:common-settings.yaml` | Same |
-| Renovate preset | `marcusrbrown/renovate-config#4.5.9` | Same |
-| ESLint config | `@bfra.me/eslint-config` 0.51.0 | Same (version varies) |
-| Prettier config | `@bfra.me/prettier-config` 0.16.8 (`120-proof`) | Same |
-| TS config | `@bfra.me/tsconfig` 0.13.0 | Same |
-| pnpm | 10.33.2 | ~10.33.x |
-| Node.js | 24.15.0 | 22–24 |
+| Renovate preset | `marcusrbrown/renovate-config#5.2.0` | Same (major-bumped portfolio-wide) |
+| ESLint config | `@bfra.me/eslint-config` 0.51.1 | Same (version varies) |
+| Prettier config | `@bfra.me/prettier-config` 0.16.9 (`120-proof`) | Same |
+| TS config | `@bfra.me/tsconfig` 0.13.1 | Same |
+| pnpm | 10.33.4 | ~10.33.x |
+| Node.js | 24.16.0 | 22–24 |
 | TypeScript | 5.9.3 | 5.9–6.0 |
 | Fro Bot workflow | **Missing** | Present in most active repos |
 | Fro Bot autoheal | **Missing** | Present in most active repos |
@@ -225,16 +230,20 @@ Missing Fro Bot capabilities:
 
 ## Open PRs and Issues
 
+_As of 2026-05-23 survey (SHA `e757fa6`):_
+
 ### Open PRs (2)
 
-- **#1604** — `fix(deps): update dependency astro to v6 [SECURITY]` (Renovate, security)
-- **#1507** — `chore(dev): update dependency @storybook/test-runner to v0.24.3` (Renovate)
+- **#1646** — `chore(dev): update dependency @storybook/test-runner to v0.24.4` (mrbro-bot[bot] / Renovate; supersedes prior #1507 at v0.24.3)
+- **#1604** — `fix(deps): update dependency astro to v6 [SECURITY]` (mrbro-bot[bot] / Renovate, security) — still open across three consecutive surveys
 
-### Open Issues (5)
+### Open Issues (3)
 
 - **#876** — [Feature] Astro Starlight Documentation - Phase 6: Deployment and CI/CD
 - **#212** — Dependency Dashboard
 - **#57** — Uplift `sparkle`
+
+_Prior survey (2026-05-01) reported 5 open issues; current count is 3. The two delta'd issues were closed between surveys; specific numbers not re-enumerated here. The Astro v6 security PR has been open across all surveys from 2026-05-01 onward — worth flagging if Sparkle ever gets an autoheal workflow._
 
 ## Survey History
 
@@ -243,3 +252,4 @@ Missing Fro Bot capabilities:
 | 2026-04-28 | `770356b` | Initial survey — full page created |
 | 2026-04-30 | `712ab1b` | Re-survey — Renovate preset bumped `#4.5.8` → `#4.5.9`, `bfra-me/.github` reusable workflows bumped to v4.16.11, lockfile maintenance. No structural changes. |
 | 2026-05-01 | `712ab1b` | Re-survey — SHA unchanged. Open PRs: 2 (including Astro v6 security update #1604). Open issues: 5. No structural changes. Still no Fro Bot agent workflow. |
+| 2026-05-23 | `e757fa6` | Re-survey — Renovate preset major-bumped `#4.5.9` → `#5.2.0` (matches the ecosystem-wide cutover seen in [[marcusrbrown--opencode-copilot-delegate]] and others). Node `24.15.0` → `24.16.0`. pnpm `10.33.2` → `10.33.4`. turbo `2.9.6` → `2.9.14`. `@bfra.me/eslint-config` `0.51.0` → `0.51.1`, `@bfra.me/prettier-config` `0.16.8` → `0.16.9`, `@bfra.me/tsconfig` `0.13.0` → `0.13.1`. Open PRs: 2 (Renovate `@storybook/test-runner` #1646 replaces prior #1507; Astro v6 security #1604 still open and unmerged). Open issues: 3 (#876, #212, #57) — drop from 5; #876 Phase-6 docs deployment still open. Workflows unchanged (6 files). Still no Fro Bot agent workflow. |

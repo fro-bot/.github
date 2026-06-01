@@ -2,7 +2,7 @@
 type: topic
 title: Dotfiles Management
 created: 2026-04-18
-updated: 2026-04-22
+updated: 2026-05-24
 tags: [dotfiles, shell, configuration, bare-git-repo, xdg]
 related:
   - marcusrbrown--dotfiles

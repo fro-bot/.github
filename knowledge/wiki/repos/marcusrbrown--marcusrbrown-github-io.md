@@ -2,11 +2,20 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-04-25
+updated: 2026-05-20
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
     accessed: 2026-04-25
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 4cd8198991618f216b940b6a6c13e1a09fd7979d
+    accessed: 2026-05-18
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 4cd8198991618f216b940b6a6c13e1a09fd7979d
+    accessed: 2026-05-19
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 4cd8198991618f216b940b6a6c13e1a09fd7979d
+    accessed: 2026-05-20
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page]
 aliases: [marcusrbrown-github-io, marcusrbrown.com]
 related:
@@ -23,12 +32,12 @@ Personal brand site for Marcus R. Brown. Single-page React 19 portfolio deployed
 - **Purpose:** Personal brand site / landing page
 - **Default branch:** `main`
 - **Created:** 2025-07-18
-- **Last push:** 2026-04-22
+- **Last push:** 2026-05-18
 - **Homepage:** https://marcusrbrown.com
 - **License:** MIT (declared in package.json and README badge; no LICENSE file detected via API)
 - **Visibility:** Public
 - **Stars:** 0 | **Watchers:** 0
-- **Open issues:** 2 (#260 Daily Maintenance Report, #6 Dependency Dashboard)
+- **Open issues (2026-05-18):** 4 — #411 (test branch coverage <80%), #409 (Daily Autohealing Report, perpetual), #260 (Daily Maintenance Report, perpetual), #6 (Dependency Dashboard)
 - **Open PRs:** 0
 
 ## Tech Stack
@@ -97,15 +106,16 @@ Sequential: checkout, setup, lint, build, upload pages artifact (`./dist`), depl
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present and active** (`fro-bot/agent@v0.41.4`, SHA `28bcadbf`).
+**Fro Bot workflow is present and active** (`fro-bot/agent@v0.44.0`, SHA `b030b53b1b47b1bed77a581222706c900cc63b0e`, as of 2026-05-18 survey).
 
-- **Triggers:** PR events (opened, synchronize, ready_for_review, reopened, review_requested), issue/comment events (`@fro-bot` mention from OWNER/MEMBER/COLLABORATOR), daily schedule (15:30 UTC), manual dispatch
+- **Triggers:** PR events (opened, synchronize, ready_for_review, reopened, review_requested), issue/comment events (`@fro-bot` mention from OWNER/MEMBER/COLLABORATOR), two daily crons (autoheal at 03:30 UTC, maintenance at 15:30 UTC), manual dispatch with `mode` input.
+- **Single-file three-mode design:** Unlike [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--vbs]] (which split `fro-bot.yaml` + `fro-bot-autoheal.yaml`), this repo runs review, maintenance, and autoheal modes from one workflow file dispatched by event + `inputs.mode`. Cron schedule disambiguated via `AUTOHEAL_CRON` / `MAINTENANCE_CRON` env vars.
 - **PR review prompt:** Structured review targeting React 19 patterns, TypeScript strictness, pure ESM, accessibility (WCAG 2.1 AA), performance budgets (JS <500KB warning, total <2MB max), PascalCase hooks, `.yaml` extension convention. Verdict format: PASS / CONDITIONAL / REJECT with blocking/non-blocking/missing tests/risk sections.
-- **Schedule prompt:** Daily "Daily Maintenance Report" rolling issue with 14-day window, stale issue/PR detection, security alerts, recommended actions.
-- **Fork PR guard:** Skips bot-authored and fork PRs. Issue_comment fork detection via API call.
-- **Concurrency:** Per-issue/PR, non-cancelling.
-
-**No Fro Bot autoheal workflow detected** — unlike [[marcusrbrown--mrbro-dev]], [[marcusrbrown--vbs]], and other repos that have `fro-bot-autoheal.yaml`. A follow-up to add autohealing may be warranted.
+- **Maintenance prompt:** Perpetual single-issue hygiene model with archive logic and cross-project intelligence ingestion (post-2026-05-14 redesign).
+- **Autoheal prompt (8 categories):** Errored PRs, Security, Code Quality & Repo Hygiene, Developer Experience, Production Site Review, Quality Gates Verification, Cross-Project Intelligence (Inbound), Upstream Modernization Watch (Sundays UTC only). Sunday detection uses a step output rather than `GITHUB_ENV` (Copilot review feedback, PR #407). Playwright browsers conditionally installed when `mode == autoheal`.
+- **Fork PR guard:** Skips bot-authored and fork PRs. Issue_comment fork detection via API call. Whitespace-only `prompt` inputs rejected in review mode (PR #407 hardening).
+- **Permissions:** Moved to job level and expanded for autoheal write operations.
+- **Concurrency:** Per-issue/PR for events; per-schedule (`ops-{cron}`) for scheduled runs; per-mode for dispatched runs. Non-cancelling.
 
 ## Developer Tooling
 
@@ -130,10 +140,12 @@ Sequential: checkout, setup, lint, build, upload pages artifact (`./dist`), depl
 
 ## Missing Compared to Other Marcus Repos
 
-- **No Probot `settings.yml`:** Unlike [[marcusrbrown--mrbro-dev]], [[marcusrbrown--ha-config]], and most other Marcus repos, this repo does not have a `.github/settings.yml` extending `fro-bot/.github:common-settings.yaml`. Branch protection and repo settings are not managed via Probot.
-- **No autoheal workflow:** No `fro-bot-autoheal.yaml` for automated CI repair, security sweeps, or convention enforcement.
-- **No CodeQL/Scorecard:** No security scanning workflows (present in [[marcusrbrown--systematic]] and [[marcusrbrown--mrbro-dev]]).
-- **No performance workflow:** No Lighthouse CI or dedicated performance monitoring (present in [[marcusrbrown--mrbro-dev]]).
+_Updated 2026-05-18: two gaps closed, two remain._
+
+- **No Probot `settings.yml`:** Still true. Unlike [[marcusrbrown--mrbro-dev]], [[marcusrbrown--ha-config]], and most other Marcus repos, this repo does not have a `.github/settings.yml` extending `fro-bot/.github:common-settings.yaml`. Branch protection and repo settings are not managed via Probot.
+- **No CodeQL/Scorecard:** Still true. No security scanning workflows (present in [[marcusrbrown--systematic]] and [[marcusrbrown--mrbro-dev]]).
+- ~~No autoheal workflow~~ — **Closed 2026-05-14 (PR #407).** Autoheal integrated as a mode in `fro-bot.yaml` with 8 healing categories rather than as a separate `fro-bot-autoheal.yaml` file. Architecturally distinct from the sibling-repo pattern.
+- ~~No performance workflow~~ — **Partially closed.** `lhci.config.js` is now present at the repo root, but no dedicated Lighthouse CI workflow has been added. Likely invoked from the CI quality gate or the autoheal "Production Site Review" / "Quality Gates Verification" categories.
 
 ## Relationship to mrbro.dev
 
@@ -147,20 +159,60 @@ This repo and [[marcusrbrown--mrbro-dev]] both deploy React+Vite sites to GitHub
 | Theme system | None | 10+ presets, custom creator, JSON schema validation |
 | Content source | Static | GitHub API (dynamic blog/projects) |
 | Test layers | Unit + E2E + A11y | Unit + E2E + Visual regression + A11y + Lighthouse |
-| Autoheal | Not present | Present (5-category daily) |
-| Fro Bot agent version | v0.41.4 | v0.38.0 (older) |
+| Autoheal | Integrated as mode in `fro-bot.yaml` (8 categories) | Separate `fro-bot-autoheal.yaml` (5 categories) |
+| Fro Bot agent version | v0.44.0 (2026-05-18) | v0.38.0 at last survey (likely behind) |
 
 ## Recent Activity
 
-Latest commits are exclusively Renovate dependency bumps:
-- `ec4b785` 2026-04-22: update all non-major dependencies (#389)
-- `1440a71` 2026-04-21: update pnpm/action-setup action to v6 (#382)
-- `da2cded` 2026-04-20: maintain lockfiles (#388)
-- `12ac462` 2026-04-20: update actions/setup-node action to v6.4.0 (#387)
-- `f5176f6` 2026-04-19: update all non-major dependencies (#386)
+Most recent commits (2026-05-18 survey):
+
+- `4cd8198` 2026-05-18: update all non-major dependencies (#416)
+- `84e75e3` 2026-05-17: update fro-bot/agent to v0.43.3 (#415)
+- `c1f83ee` 2026-05-17: update fro-bot/agent to v0.43.2 (#414)
+- `6251d36` 2026-05-16: update marcusrbrown/renovate-config preset to v5 (#406) — required restoring `fast-uri >=3.1.2` security override mid-PR
+- `af8b935` 2026-05-16: update bfra-me/.github to v4.16.17 (#413)
+- `ba3527f` 2026-05-16: add analyze-build npm script (#410)
+- `ae8357d` 2026-05-15: update fro-bot/agent to v0.43.1 (#412)
+- `8a51a36` 2026-05-14: **integrate autoheal into Fro Bot workflow (#407)** — material architecture change
+- `4fe6ea7` 2026-05-14: update all non-major dependencies (#405)
+- `fa990fa` 2026-05-14: override fast-uri to >=3.1.2 (#408)
+- `d2ea552` 2026-05-08: update pnpm to v10.33.3 (#404)
+- `48746f3` 2026-05-04: update fro-bot/agent to v0.42.7 (#402)
+- `6d3cbd7` 2026-05-03: update fro-bot/agent to v0.42.6 (#400)
+
+Earlier window (2026-04-25 survey baseline): `ec4b785` and prior were exclusively Renovate dependency bumps (#386–#389).
+
+## Delta Log (2026-05-18, SHA `4cd8198`)
+
+Material changes since the 2026-04-25 survey at `ec4b785`. The site's structure and tech stack are unchanged; the interesting motion is in CI/CD and the Fro Bot integration.
+
+- **Fro Bot agent bumped four times in three weeks:** v0.41.4 → v0.42.6 (PR #400) → v0.42.7 (#402) → v0.43.0 (#407) → v0.43.1 (#412) → v0.43.2 (#414) → v0.43.3 (#415) → **v0.44.0** (current on `main`, pinned via SHA `b030b53b1b47b1bed77a581222706c900cc63b0e`). PR #417 is in flight to v0.44.1 (open as of 2026-05-20). Tracks the agent release cadence aggressively — same posture as [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--gpt]].
+- **Autoheal collapsed into the Fro Bot workflow itself (PR #407, 2026-05-14):** The earlier "no autoheal" gap noted in the prior survey was closed by integrating autoheal as a second cron (`30 3 * * *`) and a `workflow_dispatch` `mode` input (`review` / `maintenance` / `autoheal`, default `autoheal`) inside the existing `fro-bot.yaml` — not by adding a separate `fro-bot-autoheal.yaml` like the sibling repos. One file, three modes, branched by event + input.
+- **Autoheal prompt has 8 categories** (vs. 5 in [[marcusrbrown--vbs]] and [[marcusrbrown--mrbro-dev]]): 1) Errored PRs, 2) Security, 3) Code Quality & Repo Hygiene, 4) Developer Experience, 5) Production Site Review, 6) Quality Gates Verification, 7) Cross-Project Intelligence (Inbound), 8) Upstream Modernization Watch (Sundays UTC only — `IS_SUNDAY_UTC` propagated via step output, not `GITHUB_ENV`).
+- **Maintenance prompt now perpetual-single-issue:** Rolling 14-day window collapsed into a perpetual maintenance issue with archive logic and cross-project intelligence ingestion.
+- **Renovate preset jumped major version:** `marcusrbrown/renovate-config#4.5.8` → `#5.2.0` (PR #406, 2026-05-16). Same upgrade inadvertently dropped the `fast-uri` security override, which would have flagged GHSA-q3j6-qgpj-74h6 and GHSA-v39h-62p7-jpjc — the override was restored in the same PR (and again hardened in #408). `package.json` now carries an explicit `pnpm.overrides.fast-uri: ">=3.1.2"` and `flatted: ">=3.4.2"`. Worth tracking — the v5 preset has different defaults that need vetting per repo.
+- **`bfra-me/.github` reusable workflows:** v4.16.8 → v4.16.12 (#401) → v4.16.17 (#413).
+- **New file: `lhci.config.js` (3326 bytes)** at root. Lighthouse CI configuration is now present, closing the "no performance workflow" gap noted in the prior survey — though no Lighthouse workflow file was added; the config likely runs from the CI quality gate or the autoheal "Production Site Review" category.
+- **New file: `TESTING.md` (15440 bytes)** at root. Dedicated testing documentation, separate from AGENTS.md.
+- **New script: `analyze-build`** in `package.json` (PR #410) — `tsx scripts/analyze-build.ts`. Bundle-analysis tooling, consistent with the "Performance budget adherence" line in the PR review prompt.
+- **Dependency bumps:** pnpm `10.33.0` → `10.33.4` (#404), `@types/node` to `^24.0.0`, all other non-major bumps grouped via Renovate.
+- **Open issues:** 2 → 4 (added `#409` Daily Autohealing Report and `#411` test branch coverage below 80% — the autoheal is doing its job).
+- **PR #410** confirms `fro-bot` (account `80104189`) co-authored a security-fix commit alongside the bot account — first observed instance of Fro Bot directly committing to this repo.
+
+### Implications
+
+The earlier survey's "Missing Compared to Other Marcus Repos" section is partially obsolete:
+
+- ~~No autoheal workflow~~ → **integrated into `fro-bot.yaml`** as a mode, not a separate file. Architecturally distinct from the sibling-repo pattern.
+- ~~No performance workflow~~ → **`lhci.config.js` present**, no dedicated workflow yet.
+- **No Probot `settings.yml`** — still true, branch protection remains unmanaged via Probot.
+- **No CodeQL/Scorecard** — still true.
 
 ## Survey History
 
 | Date | SHA | Notes |
 | --- | --- | --- |
 | 2026-04-25 | `ec4b785` | Initial survey |
+| 2026-05-18 | `4cd8198` | Delta: agent v0.41.4 → v0.44.0, autoheal integrated as workflow mode (PR #407), Renovate preset v4 → v5 (PR #406, fast-uri override regression+fix), `lhci.config.js` and `TESTING.md` added |
+| 2026-05-19 | `4cd8198` | No-op re-survey: HEAD unchanged since 2026-05-18. Open issues steady at 4 (#411, #409, #260, #6), 0 open PRs. Fro Bot agent pin verified at `b030b53b...` (v0.44.0). All prior findings hold. |
+| 2026-05-20 | `4cd8198` | No-op re-survey: HEAD still unchanged. Renovate PR #417 (fro-bot/agent v0.44.0 → v0.44.1, branch `renovate/all-minor-patch`) is open and will likely merge under `:automergePatch`. Open issues steady at 4 (#411, #409, #260, #6); open PRs now 1 (#417). `package.json` confirms `packageManager: pnpm@10.33.4`, `@types/node ^24.0.0`, React 19 / TypeScript ^6.0.0 / Vite ^7.0.6 / Vitest ^4.0.0 stack unchanged. No structural drift since 2026-05-18. |

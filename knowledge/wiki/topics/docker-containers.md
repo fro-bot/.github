@@ -2,7 +2,7 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-05-25
 tags: [docker, containers, multi-arch, oci, security, ci-cd]
 related:
   - marcusrbrown--containers
@@ -20,7 +20,7 @@ Docker container build patterns, security practices, and CI/CD integration obser
 
 ### Base Image Pinning
 
-Production Dockerfiles pin base images by full SHA-256 digest (`FROM node:24-alpine@sha256:...`), not just tags. The Dockerfile syntax directive is also digest-pinned (`# syntax=docker/dockerfile:1.23@sha256:...`). This provides reproducible builds independent of tag mutability.
+Production Dockerfiles pin base images by full SHA-256 digest (`FROM node:24-alpine@sha256:...`), not just tags. The Dockerfile syntax directive is also digest-pinned (`# syntax=docker/dockerfile:1.24@sha256:...` as of 2026-05-13 in [[marcusrbrown--containers]]; previously `1.23`). This provides reproducible builds independent of tag mutability — and the digest is treated as _the_ reproducibility boundary, not individual package versions, because Alpine and Debian repos rotate package versions out from under exact-version pins.
 
 ### OCI Label Convention
 

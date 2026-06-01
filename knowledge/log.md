@@ -1112,3 +1112,461 @@ Sources: https://github.com/marcusrbrown/ha-config (SHA f80fbc124c0765b8685c3cd9
 Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/ha-config
+
+## [2026-05-18 08:56] ingest | marcusrbrown/marcusrbrown.github.io
+
+Incremental re-survey of `marcusrbrown/marcusrbrown.github.io` (SHA `4cd8198`, up from `ec4b785` on 2026-04-25). Additive update to repo page `marcusrbrown--marcusrbrown-github-io.md`. Index unchanged (page already cataloged with accurate description). No new topic/entity/comparison pages warranted — `github-pages.md` and `github-actions-ci.md` already cover the cross-cutting concerns observed here.
+
+Deltas since prior survey:
+
+- **Fro Bot agent bumped seven times in three weeks:** v0.41.4 → v0.42.6 → v0.42.7 → v0.43.0 → v0.43.1 → v0.43.2 → v0.43.3 → **v0.44.0** (current, pinned via SHA `b030b53b1b47b1bed77a581222706c900cc63b0e`)
+- **Autoheal integrated into `fro-bot.yaml` itself (PR #407, 2026-05-14)** — added as a second cron (`30 3 * * *`) and a `workflow_dispatch` `mode` input (review/maintenance/autoheal). Architecturally distinct from the sibling-repo pattern that uses a separate `fro-bot-autoheal.yaml`.
+- **Autoheal prompt has 8 categories** (Errored PRs, Security, Code Quality, DX, Production Site Review, Quality Gates Verification, Cross-Project Intelligence Inbound, Upstream Modernization Watch Sundays-only) vs 5 in [[marcusrbrown--vbs]] / [[marcusrbrown--mrbro-dev]]
+- **Renovate preset major-version jump:** `marcusrbrown/renovate-config#4.5.8 → #5.2.0` (PR #406, 2026-05-16). Same upgrade dropped the `fast-uri` security override mid-PR and had to be restored to clear `pnpm audit` failures from GHSA-q3j6-qgpj-74h6 / GHSA-v39h-62p7-jpjc.
+- **New files:** `lhci.config.js` at repo root (Lighthouse CI config, no dedicated workflow yet) and `TESTING.md` (15KB testing doc)
+- **New script:** `analyze-build` (`tsx scripts/analyze-build.ts`) for bundle analysis (PR #410)
+- **`bfra-me/.github` reusable workflows:** v4.16.8 → v4.16.17
+- **pnpm:** 10.33.0 → 10.33.4 (#404)
+- **Open issues:** 2 → 4 (added autoheal report #409 and coverage flag #411)
+- Two earlier "missing" gaps are now closed: autoheal (integrated as mode) and performance (lhci config present). Two remain: no Probot `settings.yml`, no CodeQL/Scorecard.
+- First observed instance of `fro-bot` co-authoring a direct commit in this repo (PR #406 security fix)
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4cd8198991618f216b940b6a6c13e1a09fd7979d)
+
+## [2026-05-18 08:58] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-05-19 00:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey of `marcusrbrown/marcusrbrown.github.io` (SHA `4cd8198`, unchanged since 2026-05-18). Additive update to repo page only — appended a survey-history row and a third source entry. Index unchanged (page already cataloged). No topic/entity/comparison pages touched.
+
+Findings:
+
+- HEAD unchanged at `4cd8198` (`chore(deps): update all non-major dependencies (#416)`, 2026-05-18). Last push 2026-05-18T09:41:00Z.
+- Open issues: 4 (#411 test branch coverage <80%, #409 Daily Autohealing Report, #260 Daily Maintenance Report, #6 Dependency Dashboard) — identical to 2026-05-18.
+- Open PRs: 0. Recent activity window since prior survey is empty (no new Renovate batches landed).
+- Fro Bot workflow file inspected directly: agent still pinned at `fro-bot/agent@b030b53b1b47b1bed77a581222706c900cc63b0e # v0.44.0`. `AUTOHEAL_CRON='30 3 * * *'` and `MAINTENANCE_CRON='30 15 * * *'` env vars confirm the single-file three-mode design described in the prior survey is intact.
+- No contradictions with prior ingest. Two known gaps remain: no Probot `settings.yml`, no CodeQL/Scorecard workflows.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4cd8198991618f216b940b6a6c13e1a09fd7979d)
+
+## [2026-05-19 08:43] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-05-20 08:39] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey at SHA `4cd8198` — still HEAD, unchanged since 2026-05-18. Additive update to the repo page: appended a 2026-05-20 row to the Survey History table, added an in-flight note for fro-bot/agent v0.44.1 (PR #417) to the agent-cadence bullet, refreshed frontmatter `updated:` and appended a fourth source entry. Index entry updated for freshness; no topic, entity, or comparison pages required edits.
+
+Findings:
+
+- HEAD: `4cd8198` (`chore(deps): update all non-major dependencies (#416)`, 2026-05-18). Last push 2026-05-19T09:37:26Z (no commits since 05-18; the push timestamp moved without a HEAD change — likely a tag or branch update).
+- Open issues: 4 (#411, #409, #260, #6) — unchanged.
+- Open PRs: 1 — **#417** `chore(deps): update fro-bot/agent to v0.44.1` on `renovate/all-minor-patch`, labeled `automerge` / `dependencies` / `github-actions` / `renovate` / `patch` / `action`. Will land under the existing automerge policy without human review.
+- `package.json` re-verified: `packageManager: pnpm@10.33.4`, `engines.node >=22.0.0`, `engines.pnpm ^10.28.2`, React `^19.0.0`, TypeScript `^6.0.0`, Vite `^7.0.6`, Vitest `^4.0.0`, `@types/node ^24.0.0`. No drift from prior survey.
+- Fro Bot workflow head re-read: `inputs.mode` choice list `[review, maintenance, autoheal]` default `autoheal`, autoheal cron `30 3 * * *`, maintenance cron `30 15 * * *`. Single-file three-mode design intact.
+- No structural drift. Two known gaps still open: no Probot `settings.yml`, no CodeQL/Scorecard workflows.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4cd8198991618f216b940b6a6c13e1a09fd7979d)
+
+## [2026-05-20 08:40] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-05-20 09:55] ingest | bfra-me/ha-addon-repository
+
+Initial survey of `bfra-me/ha-addon-repository` (SHA `0a163c3f`). Created repo page `bfra-me--ha-addon-repository.md`. Updated topic page `home-assistant.md` to wikilink the new repo and document multi-arch add-on builds + `frenck/action-addon-linter` sibling-tool relationship. Updated `index.md` to catalog the new page.
+
+Key findings:
+
+- GitHub template repo (`is_template: true`) under bfra-me org — blueprint for HA add-on collections. Apache-2.0. Created 2022-10-08.
+- Single example add-on (`example/`, slug `example`, v1.2.2): four arches (`armhf`/`armv7`/`aarch64`/`amd64`), s6-overlay (`init: false`), AppArmor profile, OCI labels, tempio binary install from `home-assistant/tempio` releases.
+- HA base images split: Alpine 3.23 for 64-bit, 3.22 for 32-bit ARM (upstream lag). Dockerfile uses `ARG BUILD_FROM=...@sha256:...` so Renovate rotates the digest via custom Dockerfile manager; `build.yaml` deliberately uses tag-only with `pinDigests: false`.
+- Four workflows, all SHA-pinned actions: `main.yaml` (prepare→lint-addon (frenck/action-addon-linter v2.21.0) + Prettier 3.8.3 → build-addon matrix with `home-assistant/builder@2026.03.2`, `--cosign`, `id-token: write` to GHCR), `fro-bot.yaml`, `renovate.yaml` (reusable `bfra-me/.github` v4.16.16), `update-repo-settings.yaml` (v4.16.16, daily 14:15 UTC).
+- **Fro Bot agent present and active:** `fro-bot/agent@v0.43.1`. Add-on-aware PR review prompt (Dockerfile pinning, config/build.yaml validity, bashio/shellcheck, AppArmor integrity, breaking interface changes, translation completeness) with structured `PASS|CONDITIONAL|REJECT` verdict. Daily 15:30 UTC autoheal sweep across four categories (errored PRs, security, health & maintenance, DX).
+- **Distinctive Fro Bot pattern:** maintains a single perpetual issue titled exactly `Daily Autohealing Report` with prepended dated update sections — diverges from sibling repos that create new issues per cycle.
+- Renovate extends `bfra-me/renovate-config#5.2.1` + `:enablePreCommit` — **different preset family** from the rest of the surveyed ecosystem (which uses `marcusrbrown/renovate-config#4.5.x`). Custom managers for `build.yaml` arch keys, `Dockerfile` `ARG BUILD_FROM=...@sha256:...`, and Alpine packages via repology (`alpine_3_20/{pkg}`). Python capped at `<=3.13`.
+- Probot settings extend `.github:common-settings.yaml` (resolves to bfra-me org `.github`, not Marcus's). Branch protection requires `Prepare`, `Lint`, `Build`, `Renovate / Renovate`, `Fro Bot`; strict + linear history + enforce-admins + 1 reviewer with stale-review dismissal.
+- Tooling: Node 22.11.0, Python 3.13.13 via `.tool-versions`. Devcontainer, pre-commit, markdownlint-cli2, Prettier, Cursor rules all configured.
+- 5 open issues, 0 open PRs at survey time.
+- No CodeQL/Scorecard/Trivy — security delegated to Renovate + autoheal sweep. Reasonable for a template.
+
+Cross-ecosystem relationship: this is the add-on build/publish counterpart to [[marcusrbrown--ha-config]] (which consumes add-ons & integrations). The two `frenck/action-*` tools are siblings: `action-addon-linter` validates the add-on contract here; `action-home-assistant` validates running configs there.
+
+Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+
+## [2026-05-20 16:13] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository
+
+## [2026-05-20 18:00] ingest | bfra-me/.github
+
+Initial survey of `bfra-me/.github` (SHA `a81be4c5d5c93824fdcc426418c9433d5e5bd9be`). Created repo page `bfra-me--github.md`. Updated topic pages `probot-settings.md` (added bfra-me org template as third common-settings source) and `github-actions-ci.md` (added bfra-me/.github to repo list). Updated `index.md` to catalog the new page.
+
+Key findings:
+
+- Org control center for `@bfra-me`. Public, MIT, template (`is_template: true`), created 2022-03-17. Marketed as a `.github` template but runs as a full TypeScript pnpm monorepo (`@bfra.me/.github` v4.16.18, private root).
+- Workspace: 4 packages — root + 3 custom actions under `.github/actions/*` (`renovate-changesets`, `update-metadata`, `update-repository-settings`). Root is itself a workspace member (`packages: ['.', '.github/actions/*']`) with `ignoreWorkspaceRootCheck: true`. `shamefullyHoist: true`, `savePrefix: ''`. All actions use Node.js 24 runtime and ship pre-built `dist/`.
+- Toolchain: Node 24.15.0 (`.node-version`), pnpm 10.33.4, TypeScript 6.0.3 strict, Vitest 4.1.6, ESLint 10.4.0, Prettier 3.8.3, husky 9.1.7, lint-staged 16.4.0, Changesets 2.31.0.
+- **17 workflows.** Notable: `main.yaml` (Quality Check), `fro-bot.yaml` (per-repo persona with three modes via `workflow_dispatch` choice), `fro-bot-autoheal-org.yaml` (org-wide weekday sweep at `0 5 * * 1-5` over all non-archived bfra-me repos, serial processing, dedup against existing bot items, defers dep bumps to Renovate, scope-capped to minimal/reversible fixes), `renovate.yaml` + `trigger-org-renovate.yaml` (self-hosted Renovate fan-out via `@bfra-me/renovate-action`), `update-repo-settings.yaml` (consumes local `update-repository-settings` action), plus CodeQL, Scorecard, Container Scan, Secret Scan, License Compliance, Dependency Review, Copilot setup, PR Triage, Auto-Release.
+- **Fro Bot agent: `v0.44.2`** (SHA `b97877b2`) — ahead of most ecosystem repos (typically `v0.41.x`–`v0.43.x`). PR review prompt is security-focused for an org control center: enforces SHA-pinned actions with version comments, blocks workflow injection via untrusted input in `run:` blocks, requires `dist/` rebuild for action source changes, manually-authored changesets only (`pnpm changeset` CLI explicitly banned), strict TypeScript (no `any`, no `@ts-ignore`, ESM only).
+- **Third common-settings source surfaced.** This repo ships `common-settings.yaml` as the org-wide template for `@bfra-me` repos, parallel to `marcusrbrown/.github:common-settings.yaml` (personal) and `fro-bot/.github:common-settings.yaml` (Fro Bot org). Repo's own `settings.yml` self-extends; branch protection requires 12 status checks (Advanced Security Analysis, CodeQL, Container Scan, Create Renovate Changeset, Fro Bot, GitGuardian Scan, License Scan, Quality Check, Release, Renovate, Review Dependencies, Triage) with `required_approving_review_count: 0` — governance leans on checks, not reviewers. Linear history, admin enforcement enabled.
+- Renovate: `.github/renovate.json5` extends `local>bfra-me/.github:internal.json5`, `automergeType: pr`. Trivy versioned via `github-releases`. `elstudio/actions-settings` disabled (consumed via local action). Mise manager disabled (workaround). Post-upgrade runs `pnpm run bootstrap && pnpm run build && pnpm run fix`. `metadata/renovate.yaml` is the org-wide config inherited by other `bfra-me/*` repos.
+- AGENTS.md documents conventions and anti-patterns: changesets manually authored, scoped to closest package; ESM only; shared `@bfra.me/*` configs; `bfra-me[bot]` app auth; Vitest coverage 80/80/80/75; reusable workflows resolve cross-repo checkout via `GITHUB_WORKFLOW_REF` (not `github.workflow_sha`, which resolves to the caller in `workflow_call`).
+- 5 open issues, 1 open PR at survey time. Latest commit (`a81be4c`, 2026-05-20T09:42:00Z): Renovate bump of `fro-bot/agent` to v0.44.2 (PR #2200) with auto-generated changeset.
+- Follow-up flagged on the repo page: the Probot settings landscape now has three common-settings sources (`marcusrbrown/.github`, `fro-bot/.github`, `bfra-me/.github`). Mapping which repos extend which — and reconciling whether `bfra-me` and `fro-bot` org templates should converge — is a candidate for a future survey/comparison page.
+
+Sources: https://github.com/bfra-me/.github (SHA a81be4c5d5c93824fdcc426418c9433d5e5bd9be)
+
+## [2026-05-20 16:28] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github
+
+## [2026-05-20 17:14] ingest | bfra-me/works
+
+Initial survey of `bfra-me/works` (SHA `ef14b26085dab318fffad1b6c3062292f8ae60b8`). Created repo page `bfra-me--works.md`. Updated topic pages `github-actions-ci.md` (added repo to list and Fro Bot table) and `probot-settings.md` (added bfra-me/works as a representative consumer of the `bfra-me/.github:common-settings.yaml` template). Updated `index.md` to catalog the new page.
+
+Key findings:
+
+- The `@bfra-me` **tooling monorepo** — the shared-library counterpart to [[bfra-me--github]] (which is the org control plane). Public, MIT, created 2020-10-27. Private root `@bfra.me/works` v0.0.0-development.
+- Workspace: 11 entries (root + `docs` + `scripts` + 8 `packages/*`). pnpm 10.33.4, Node 24.15.0, TypeScript 6.0.3 strict (`noUncheckedIndexedAccess`), Vitest 4.1.6, ESLint 10.4.0, Prettier 3.8.3, Changesets 2.31.0, husky 9.1.7, manypkg 0.25.1 with `workspaceProtocol: require`. `autoInstallPeers`, `shamefullyHoist`, `strictPeerDependencies`, `shellEmulator`, `savePrefix: ''`.
+- **8 published packages**: `@bfra.me/eslint-config@0.51.1`, `@bfra.me/prettier-config@0.16.9` (variants: 80/100/120-proof, semi, default, define-config), `@bfra.me/tsconfig@0.13.1`, `@bfra.me/es@0.1.0` (subpath exports for async/env/error/functional/module/result/types/validation/watcher), `@bfra.me/create@0.7.14` (CLI, optional OpenAI/Anthropic AI enhance), `@bfra.me/badge-config@0.2.0`, `@bfra.me/doc-sync@0.1.9` (CLI), `@bfra.me/semantic-release@0.3.7`, `@bfra.me/workspace-analyzer@0.2.8` (latest release 2026-05-16, CLI + JSON output). All build to `lib/` via tsup, except `@bfra.me/create` which builds to `dist/`. Docs site is Astro Starlight with MDX/content-validation tests and automated version-badge sync.
+- **11 workflows + 1 Markdown doc file** under `.github/workflows/`. Every workflow consumes the local composite action `.github/actions/pnpm-install`. Notable: `main.yaml` (Prepare → parallel Lint+type-coverage / Test / Build / Workspace Analysis → CI), `release.yaml` (Changesets, triggered by `workflow_run` after Main on main + Sunday `0 18 * * 0` + dispatch with `force-release` toggle, uses `bfra-me[bot]` app token for schedule/`workflow_run`), `docs.yaml` (Astro Starlight build + GH Pages deploy), `docs-sync.yaml` (path-filtered doc-sync automation with dry-run dispatch input), `renovate.yaml` (calls reusable `bfra-me/.github` v4.16.18), `renovate-changeset.yaml` (auto-changesets for bfra-me/renovate bot PRs), `update-repo-settings.yaml` (calls reusable v4.16.0), `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review.
+- **Fro Bot agent v0.44.2** (SHA `b97877b2`) — parity with [[bfra-me--github]]. Single-file three-mode workflow (PR review / Daily Maintenance Report / Daily Autohealing Report) with `workflow_dispatch` mode choice and `workflow_call` reusable input. Schedule: maintenance `0 16 * * *`, autoheal `30 3 * * *`. Maintains exactly one rolling open issue per mode (`Daily Maintenance Report` and `Daily Autohealing Report`) with consolidation logic for duplicates and 14-day historical-summary collapse. Autoheal is a 5-category sweep with strict guardrails: trusted-author whitelist (`renovate[bot]`, `dependabot[bot]`, `fro-bot`, write-access humans), Renovate owns routine bumps (Fro Bot only touches versions for confirmed security advisories), no workflow/lockfile/prompt mods while repairing PRs, never push to default branch, never weaken guardrails to make checks pass. PR review prompt is TypeScript-monorepo-specific (Result<T,E> usage, explicit named exports, no `export *`, subpath export breaking-change awareness, monorepo build-order impact). Formatting/lint nits explicitly out of scope.
+- **Probot settings**: `.github/settings.yml` extends `.github:common-settings.yaml` (resolves to bfra-me org, same as [[bfra-me--ha-addon-repository]]). Branch protection requires 12 status checks: Analyze, Build, CI, CodeQL, Create Renovate Changeset, Fro Bot, Lint, Prepare, Renovate / Renovate, Review Dependencies, Test, Workspace Analysis. `enforce_admins: true`, `required_linear_history: true`, `required_pull_request_reviews: null` (governance leans on checks, not reviewers — matches [[bfra-me--github]] posture).
+- **Renovate**: `.github/renovate.json5` extends `github>bfra-me/.github:internal.json5#v4.16.18` + `sanity-io/renovate-config:semantic-commit-type` + `security:minimumReleaseAgeNpm`. `addLabels: ['{{{parentDir}}}']` for monorepo directory labeling. ignorePaths include `packages/create/**/templates/**` (template fixtures aren't real deps). Notable rules: `@anthropic-ai/sdk` 0.x minor automerge, `bfra-me/renovate-config` SemVer pinning, `fetch-mock <12.0.0`, `@swc/**` every 2 weeks Sunday, Mise manager disabled. `patch.automerge: true`, `platformAutomerge: false`. Post-upgrade: `pnpm bootstrap && pnpm build && pnpm fix`.
+- AGENTS.md conventions: TypeScript strict mode (no `any`/`@ts-ignore`/`@ts-expect-error`), pure ESM (no `require()`), explicit named exports, `Result<T,E>` from `@bfra.me/es/result` never throw, lib/ output (dist/ only for create), tests in `packages/*/test/**/*.test.ts`, manypkg-enforced `workspace:` protocol, build order `tsconfig → prettier-config → eslint-config → others` handled by streaming, lint-staged on commit via husky, `.yaml` not `.yml`.
+- 38 open issues, 1 open PR at survey time. Latest release: `@bfra.me/workspace-analyzer@0.2.8` (2026-05-16).
+- **Cross-ecosystem relationship**: `bfra-me/works` is the **source** of the `@bfra.me/*` configs and utilities consumed by name across the wider Fro Bot ecosystem (eslint-config, prettier-config, tsconfig, es, semantic-release, workspace-analyzer all show up as devDependencies elsewhere). Pairs with [[bfra-me--github]] (control plane) as the org's two-repo nucleus, and shares the single-issue rolling-update Fro Bot pattern with [[bfra-me--ha-addon-repository]].
+- No follow-up Fro Bot draft PR needed — the workflow is present, current, and at the leading edge (v0.44.2).
+
+Sources: https://github.com/bfra-me/works (SHA ef14b26085dab318fffad1b6c3062292f8ae60b8)
+
+## [2026-05-20 17:15] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works
+
+## [2026-05-21 04:30] ingest | marcusrbrown/opencode-copilot-delegate
+
+Incremental re-survey of `marcusrbrown/opencode-copilot-delegate` (SHA `2744ce7`, v0.12.0 on npm, up from `02cac9c` / v0.1.0 on 2026-04-27). Additively rewrote repo page `marcusrbrown--opencode-copilot-delegate.md` to absorb 11 minor releases. Updated topic page `opencode-plugins.md` with hard-won loader/runtime gotchas surfaced across those releases. Updated `index.md` description. Index unchanged in structure (page already cataloged).
+
+Key deltas since prior survey (v0.1.0 → v0.12.0):
+
+- **Fourth tool added (v0.12.0):** `copilot_resume` wraps `copilot --resume=<target>` with UUID validation against the local session store, automatic workspace-path reuse from prior plugin tasks whose session ID matches, CLI no-match-error normalization, and path-injection rejection. `TaskState`/`OutputEnvelope` gain `origin: spawn|resume|connect` discriminator and surface the upstream Copilot session UUID as `copilot_session_id` on the envelope.
+- **Two-half plugin architecture (v0.10.0+):** Server plugin remains the default; opt-in `./tui` export adds `/copilot-status` via `@opentui/solid`. `package.json` declares `oc-plugin: [server, tui]`. Build target split — server `target: node` (Node-loadable, CI-gated), TUI `target: bun`.
+- **Public-surface hardening (v0.12.0):** Plugin entry now exports only `default`; helper moved to `src/lib/rpc-cleanup.ts`. CI gate between Build and Unit tests asserts the export shape using `node --input-type=module -e "import(...)"`. Tests/package-exports.test.ts mirrors locally. References the Systematic v2.5.0/v2.12.1 regression class.
+- **Orphan subprocess reaper (v0.2.0+):** PID-file identity-gated reaper for foreign-instance subprocesses, hardened across v0.3.0 (streaming worker pool, combined `ps` query), v0.4.0 (configurable timeouts + cooperative `AbortSignal` cancellation, `timedOut: boolean` in `ReapResult`), v0.8.0 (race-safe truncate/unlink helpers), v0.9.0 (`O_NOFOLLOW` + symlinked-parent-dir rejection against same-user attacks). All runtime warnings now share `[copilot-delegate]` prefix.
+- **Per-process plugin singleton (v0.8.0 → v0.11.0):** `globalThis` Symbol guard; **duplicate invocations now return empty hooks `{}`** to prevent double-registration when both user-level and project-level `opencode.json` list the plugin. Diverges from Systematic PR #352 (per-load registration) because this plugin's `doInit` binds a TCP port + writes a PID file — re-running would race on exclusive resources.
+- **TUI slash command (v0.12.0):** Feature-detects `api.keymap.registerLayer` (OpenCode 1.14.44+) vs `api.command.register` (1.14.41 fallback) vs neither (defensive warn). Mirrors Magic Context dual-path pattern from commit 5fe1c4f.
+- **Per-parameter tool description survival (v0.5.0–v0.7.0):** Agent discovery rewritten — `BUILTIN_AGENTS` constant removed since standalone `@github/copilot` CLI ships zero of those legacy names. Tool schemas patched via `_zod.toJSONSchema` override in `src/lib/normalize-tool-arg-schemas.ts` so descriptions survive the host-zod ≠ plugin-zod module boundary. `zod` pinned `^4.3.0` direct + `overrides` to dodge dual-zod TS2883.
+- **TUI re-entrancy fix (v0.10.1):** Pressing Escape on `/copilot-status` previously froze the TUI via re-entrant dialog close handling.
+- **Observability (v0.9.0):** `killProcessTree` classifies fkill failures by probing the process *group* (`process.kill(-pid, 0)`); ESRCH suppressed, others preserve original throw. `notifyCompletion` fallback `client.app.log` wrapped in try/catch with structured SDK shape so synchronous SDK throws can't escape the documented "never throws" contract.
+- **`setStatus` lifecycle tightening (v0.8.0):** Terminal → non-terminal transitions explicitly forbidden; closes an unintended resurrection path no caller exercised but the prior contract permitted.
+- **Toolchain:** Bun 1.3.13 → 1.3.14, Biome 2.4.13 → 2.4.15, mise pins `opencode-ai` 1.14.27 → 1.15.4 and `@github/copilot` 1.0.36 → 1.0.48. `@opencode-ai/plugin` peer narrowed `>=1.14.0` → `>=1.14.41` (v0.12.0). `@opencode-ai/sdk` peer dep removed (v0.6.0) — was never imported.
+- **CI/automation:** Fro Bot agent `v0.42.2` → `v0.44.3` (SHA `b928e797`). Renovate preset `marcusrbrown/renovate-config#4.5.8` → `#5.2.0` (major bump). 6 workflows unchanged. Branch protection unchanged. Probot settings still extend `.github:common-settings.yaml`.
+- **Tests:** Grew from ~6 to 21 unit files plus integration. New coverage: pid-file, orphan-reaper, continuity-checks, continuity-validation, plugin-singleton, rpc-server, rpc-contract, rpc-cleanup, normalize-tool-arg-schemas, package-exports, resume, task-status, task-registry, cancel-helper. Integration suite still gated out of CI per #38.
+- **Open issues unchanged:** 3 (#38 integration tests, #26 daily autoheal report, #25 dep dashboard). 4 open PRs (3 Renovate, 1 Fro Bot self-correction #134 tightening `@types/node` LTS rule).
+
+No contradictions with prior ingest. The 2026-04-23 "TODO stubs" claim was already resolved by the 2026-04-27 survey; the page now reflects the full 11-release hardening arc on top of that foundation.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 2744ce7fc07660baa4f17bfff3656141888261cf)
+
+## [2026-05-21 08:54] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-05-22 08:36] ingest | fro-bot/systematic
+
+Re-surveyed `fro-bot/systematic` (gh-pages SHA `12cae87`, source SHA `dae829a` of [[marcusrbrown--systematic]]). Additively updated [[fro-bot--systematic]] to reflect changes since the 2026-05-07 initial survey:
+
+- **Registry advanced v2.7.3 → v2.20.6.** `index.json` now lists 103 components vs ~96 at prior survey: 51 agents (+ unknown delta), 47 skills, **2 bundles** and **2 profiles** (new V2 component types now materialized in the deployed artifact), and 1 plugin entry. The bundle/profile component types are net-new in this survey window.
+- **Hosted JSON Schema is now a public contract.** `schemas/latest/` and `schemas/v2/systematic-config.schema.json` are served. `$id` on the v2 file is `https://fro.bot/systematic/schemas/v2/systematic-config.schema.json`, which makes that URL the canonical pinned reference for IDE autocomplete on `systematic.json` / `systematic.jsonc`. Draft-07. Top-level keys: `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`. Loader does not fetch or validate against it — it exists purely to flip on editor support. Renaming or restructuring these URLs silently breaks every consumer that pinned them, so the deploy target has effectively grown a third consumer contract on top of the rendered docs and the OCX registry.
+- **New static files** — `404.html` (Starlight not-found page) and `og-image.png` (Open Graph share image).
+- **Deploy cadence intensified.** Multiple deploys per day during active source-repo windows (e.g., five on 2026-05-21 between 18:27 and 23:12 UTC), suggesting CI fans out per merged commit rather than per release tag. Captured the last 10 deploys with both `gh-pages` and source SHAs to make rollback diagnostics easier.
+- **Branches, issues, PRs unchanged in structure.** `gh-pages` (default) + `renovate/configure`. Issue #1 (CodeQL/Scorecard parity) still open; PR #2 (Renovate onboarding) still open and unmerged — Renovate has minimal applicability to a static-HTML repo, so the noise concern from the prior survey still stands.
+- **No Fro Bot workflow** in this repo. Same conclusion as 2026-05-07: not warranted; the source repo [[marcusrbrown--systematic]] holds the agent integration. Recorded explicitly in the repo page so the constraint check passes without a follow-up draft PR.
+
+Cross-page updates:
+- Added a "Hosted JSON Schema is now a public contract" note to [[opencode-plugins]] under "Documentation Deployment" so the schema-URL stability constraint is discoverable from the topic side, not just the repo page.
+- Refreshed the [[fro-bot--systematic]] entry in `index.md` from the placeholder one-liner to a substantive descriptor matching schema convention.
+
+No contradictions with the 2026-05-07 ingest. All prior content preserved; survey-history table extended with the new row.
+
+Sources: https://github.com/fro-bot/systematic (SHA 12cae87)
+
+## [2026-05-22 08:39] ingest | repo:fro-bot/systematic
+
+Surveyed fro-bot/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/systematic
+
+## [2026-05-23 00:00] ingest | marcusrbrown/renovate-config
+
+Incremental re-survey of `marcusrbrown/renovate-config` (SHA `3478c88`, up from `bf13a82` on 2026-04-28). Additively updated repo page `marcusrbrown--renovate-config.md` and topic page `github-actions-ci.md`. Refreshed `index.md` entry description. No new topic/entity/comparison pages warranted — the v5 jump and autoheal architecture shift slot into existing pages.
+
+Deltas since prior survey:
+
+- **Major-version boundary crossed:** v4.5.8 → v5.2.0 (seven releases: 4.5.9, 5.0.1, 5.0.2, 5.1.0, 5.1.1, 5.2.0, plus 5.0.1 intermediate). Breaking change: minimum allowed version floor raised `>=4.0.0` → `>=5.0.0`.
+- **`default.json` policy changes:** Added `group:allNonMajor` to extends; dropped `:disableRateLimiting` (now defers to bfra-me base preset defaults); added a new packageRule that ungroups 0.x packages (`matchCurrentVersion: /^0\./` → `groupName: null`) as the safety valve against PR storms from unstable libs.
+- **Autoheal consolidated into `fro-bot.yaml`:** The separate `fro-bot-autoheal.yaml` is gone. Single-file design with one daily schedule (15:30 UTC) covers PR review + maintenance + autoheal. Mirrors the architecture observed in [[marcusrbrown--marcusrbrown-github-io]] (which uses a `mode` enum dispatch input) and the rolling-perpetual-issue pattern in [[bfra-me--ha-addon-repository]] / [[bfra-me--works]].
+- **Autoheal categories went from 5 → 6.** Removed: "bfra-me Ecosystem Health" (folded into category 5 Cross-Project Intelligence Inbound, which now surveys `yield-farmer`, `poly`, `marcusrbrown/.github`, `bfra-me/renovate-config`, `fro-bot/agent`). Added: category 6 **Upstream Modernization Watch (Sundays only)**, gated by `IS_SUNDAY_UTC` env var via a preflight `date -u +%u` step. At-most-one-draft-PR-per-scan policy; never bumps pinned versions (Renovate-owned).
+- **Fro Bot agent:** v0.42.2 → v0.44.3 (SHA `b928e79729f01b563feabee26a0525a3b48501a6`).
+- **Toolchain:** pnpm 10.33.2 → 11.1.3 (major), lint-staged 16.4.0 → 17.0.5 (major), eslint 10.2.1 → 10.4.0, `@bfra.me/eslint-config` 0.51.0 → 0.51.1, `@bfra.me/prettier-config` → 0.16.9.
+- **pnpm overrides added** for supply-chain hardening: `fast-uri >=3.1.2`, `flatted >=3.4.2`, `handlebars >=4.7.9`, `lodash-es >=4.18.0`, `picomatch@2 ^2.3.2`, `picomatch@4 ^4.0.4`. None existed at prior survey.
+- **Open issues:** 46 → 6. The single-perpetual-issue strategy in the autoheal prompt consolidates and auto-closes dated daily reports — explains the cleanup.
+- **Open PRs:** 0 → 1 (#1311 picomatch@2 v4 by mrbro-bot, awaiting v5 floor consumer migrations).
+- **Downstream v4→v5 migration wave:** [[marcusrbrown--ha-config]], [[marcusrbrown--marcusrbrown-github-io]], and [[marcusrbrown--opencode-copilot-delegate]] all bumped to `#5.2.0` (per their respective wiki pages); no consumer required manual config overrides for the breaking change. Holdouts on v4.x: `containers`, `extend-vscode`, `marcusrbrown`, `esphome-life`, `copiloting` (floating `#v4`), `gpt`, `dotfiles`, `vbs`, `mrbro-dev`, `tokentoilet`, `infra`, `github`, `marcusrbrown`, `sparkle`.
+- Probot settings, branch protection, CodeQL/Scorecard, semantic-release pipeline (bare semver tags, major-branch updates), self-referential Renovate config all unchanged.
+- No contradictions with prior ingest. The 2026-04-28 page already correctly described v4.5.8 state; the new survey row extends survey history without overwriting.
+
+Sources: https://github.com/marcusrbrown/renovate-config (SHA 3478c88753d113b21c7cf10d9e58fd2f9be7e96a)
+
+## [2026-05-23 07:51] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-05-24 12:00] ingest | marcusrbrown/.dotfiles
+
+Incremental re-survey of `marcusrbrown/.dotfiles` (SHA `0bb24f0`, 2026-05-24). Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and entity page `mise.md`. Updated `index.md` entry with current state summary. No new pages created — existing topic/entity coverage remains accurate.
+
+Delta from prior survey (SHA `ae026c1`, 2026-04-22):
+
+- **Fro Bot agent v0.41.3 → v0.44.3** (SHA `b928e79`). Workflow gains a dedicated `Close stale daily reports` step on `schedule` triggers — auto-closes `fro-bot`-authored daily reports older than 3 days with cross-platform `date -u -d` / `-v-3d` fallback. Schedule prompt re-shaped: Developer Experience category is now report-only ("Formatting is handled manually by the repo owner"). Hard guard against querying Dependabot/vulnerability-alert APIs added (PAT 404 by design on user-owned repos).
+- **Renovate preset 4.5.8 → 5.2.0** — crossed the v4→v5 boundary documented in [[marcusrbrown--renovate-config]] (2026-05-13). Joins the migration wave noted in the renovate-config wiki entry.
+- **New Renovate custom manager** for pinned npm plugin versions inside `.config/opencode/opencode.json` and `tui.json` — matches `"name@x.y.z"` patterns so OpenCode plugins now flow through Renovate. Automerge list expanded to include `fro-bot/agent`, `ast-grep`, and `opencode-copilot-delegate`.
+- **OpenCode plugin stack overhaul:**
+  - `oh-my-openagent@3.17.4` → `oh-my-opencode-slim@1.1.1` (replacement, new config file `oh-my-opencode-slim.jsonc`)
+  - `@ex-machina/opencode-anthropic-auth@1.7.4` → `@cortexkit/opencode-anthropic-auth@1.2.2` (vendor switch)
+  - `@cortexkit/opencode-magic-context` 0.13.0 → 0.21.8
+  - `@cortexkit/aft-opencode` 0.14.0 → 0.29.1
+  - `@franlol/opencode-md-table-formatter` removed
+  - **New**: `opencode-copilot-delegate@0.12.0` (consumes [[marcusrbrown--opencode-copilot-delegate]] sibling repo — first dotfiles release pulling it out of v0.1.0 scaffold)
+  - `@fro.bot/systematic` pinned at 2.23.4 (was floating `latest`)
+- **Custom OpenAI provider models** (`openai/gpt-5.5`, `openai/gpt-5.5-fast`) declared in `opencode.json` for the first time — 272K context, 32K output.
+- **Magic-context reshape:** historian migrated to custom `openai/gpt-5.5-fast` (with Copilot/Anthropic now fallbacks only). Dreamer reverted to direct `anthropic/claude-sonnet-4-6` with `inject_docs: true`, pinned key files, user memories. Sidekick disabled. Token thresholds dropped from 4 entries to 2. Percentage thresholds tightened for Anthropic Sonnet/Opus (40% → 55%); new `openai/gpt-5.5` entry at 80%. Experimental block now centers on `auto_search` and `git_commit_indexing`.
+- **mise tool deltas:** Node 24.15.0 → 24.16.0, Python 3.14.4 → 3.14.5, Go 1.26.2 → 1.26.3, Bun 1.3.13 → 1.3.14, Deno 2.7.13 → 2.8.0, pnpm 10.33.0 → 11.2.1 (major), npm 11.12.1 → 11.15.0, ZLS 0.15.0 → 0.16.0, ast-grep 0.40.5 → 0.42.3, Playwright 1.59.1 → 1.60.0, Puppeteer 24.41.0 → 25.0.4, agent-browser 0.26.0 → 0.27.0, ocx 2.0.7 → 2.0.11, opencode-ai 1.14.18 → 1.15.5, tsx 4.21.0 → 4.22.3, biome 2.4.12 → 2.4.15, cargo-binstall 1.15.5 → 1.19.1, typescript-language-server 5.1.3 → 5.2.0, poetry 2.3.4 → 2.4.1. **New:** `@github/copilot@1.0.51` (GitHub Copilot CLI), `aqua:gitleaks/gitleaks@8.30.1` (secret scanner). **Removed from `[tools]`:** `@cortexkit/opencode-magic-context`, `@cortexkit/aft-opencode` (moved to OpenCode plugin slot), `remark-language-server`, `lolcrab`.
+- **New repo-scoped skill:** `.agents/skills/agent-browser/` — joins copilot-cli, test-driven-development, and writing-skills.
+- **Repo metadata:** primary language is now TypeScript (212K) over Shell (55K) — driven by growth in `.config/opencode/`, agent skills, and devcontainer features. Open issues 19 → 4. Stars 18 (new field).
+- Probot settings, devcontainer architecture, bare-repo pattern, branch protection, GPG signing, XDG layout, and Brewfile all unchanged.
+
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA 0bb24f05e29fbd4c70eb9dca9611055e7bef7c5f)
+
+## [2026-05-24 08:08] ingest | repo:marcusrbrown/.dotfiles
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-05-25 09:11] ingest | repo:marcusrbrown/.github
+
+Incremental re-survey of `marcusrbrown/.github` (SHA `0b780fd`, 2026-05-25). Updated repo page `marcusrbrown--github.md`, topic page `probot-settings.md`, and `index.md` summary. No new pages — existing wikilinks remain valid.
+
+Delta from prior survey (SHA `3fb30a4`, 2026-04-27):
+
+- **Pure dependency churn.** Twelve commits since 2026-04-27, all Renovate-authored `chore(deps)` updates merged by `mrbro-bot[bot]`. No structural changes to workflows, settings, or community health files.
+- **`bfra-me/.github` reusable workflows:** v4.16.9 → v4.16.20 (11 sequential patch bumps via PRs #363, #364, #365, #367, #368, #369, #370, #371, #372, #373, #374, #375). Both `renovate.yaml` and `update-repo-settings.yaml` now pinned at SHA `dc366698`.
+- **`marcusrbrown/renovate-config` preset:** v4.5.8 → v4.5.9 (PR #366, 2026-04-30). Repo remains on v4.x — explicitly listed among the v4 holdouts in [[marcusrbrown--renovate-config]] (2026-05-13 v4→v5 boundary not yet crossed for this config-only repo).
+- **No new files, no removed files.** `common-settings.yaml` unchanged at 18115 bytes (label set, branch protection, merge strategy, collaborator model all identical). `.github/settings.yml` unchanged. Renovate cadence still `15 */4 * * *`.
+- **Fro Bot integration status:** still no `fro-bot.yaml` workflow. `fro-bot` retains `push` collaborator permission via inherited settings but is not in the active CI/merge loop. Recommendation from prior survey carries forward — a follow-up draft PR adding the single-file three-mode workflow (per [[marcusrbrown--marcusrbrown-github-io]]) remains open.
+- **Repo metadata:** size 552K, 3 stars, description "GitHub defaults", topics unchanged (`github`, `repository`, `settings`).
+- No contradictions with prior wiki content. All updates are additive — version refresh in source list, new survey-history row, and a refreshed Fro Bot Integration note that acknowledges Renovate-only authorship of recent PRs.
+
+Sources: https://github.com/marcusrbrown/.github (SHA 0b780fdba1b5b0ae6280aaaf28f625e3db142278)
+
+## [2026-05-25 09:34] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
+
+## [2026-05-26 08:49] ingest | marcusrbrown/extend-vscode
+
+Re-survey of `marcusrbrown/extend-vscode` (SHA `516a9eb4`, up from `b457a34f`). Updated repo page `marcusrbrown--extend-vscode.md`, bumped `updated` date on topic page `vscode-extensions.md`, refreshed `index.md` summary line. Added `marcusrbrown--renovate-config` to the repo page's `related` frontmatter.
+
+Delta from prior survey (SHA `b457a34f`, 2026-04-27):
+
+- **Renovate preset crossed v4 → v5 boundary** (PR #487, 2026-05-14): `marcusrbrown/renovate-config#4.5.0` → `#5.2.0`. extend-vscode is now on the v5 line documented in [[marcusrbrown--renovate-config]] (`group:allNonMajor` + 0.x ungrouping policy). This is the headline structural shift since the prior survey.
+- **Three major-version PRs that had been pending since 2026-04-23 closed end of April:** `eslint` v10 (#467, 2026-04-30), `eslint-plugin-node-dependencies` v2 (#468, 2026-04-30), `jsdom` v29 (#469, 2026-04-29). Only `typescript` v6 (#466) remains outstanding as the sole pending major.
+- **`tsup` pinning drift corrected** (#488, 2026-05-14): bumped from `^8.0.2` range to pinned `8.5.1`. The repo's devDependency block now uses exact pins uniformly — a useful invariant for future contributors.
+- **Other patches merged 2026-04-29 → 2026-05-21:** Node.js → v24.16.0 (`.node-version`, #493), `eslint` → 10.4.0 (#492), `tsx` → 4.22.0 (#491), `@types/vscode` → 1.118.0 (#490, prior #483 → 1.116.0), `@playwright/test` → 1.60.0 (#489), `jiti` → 2.7.0 (#486), `eslint-plugin-no-only-tests` → 3.4.0 (#484), `jsdom` → 29.1.0 (#482).
+- **Repository structure, build (tsup dual-target), CI workflows (six unchanged), publishing pipeline (Marketplace + OpenVSIX + npm via semantic-release), Probot settings (`fro-bot/.github:common-settings.yaml`), and branch protection (`Renovate / Renovate`, `Run Checks`, linear history, admin enforcement) all unchanged.**
+- **Open issues:** 5 (#142, #162, #317–#319) — unchanged. **Open PRs:** 1 (#466, `typescript` v6).
+- **Still no Fro Bot agent workflow.** Follow-up PR recommendation carried forward across now five+ surveys — extend-vscode and `marcusrbrown/.github` remain the two main holdouts in Marcus's portfolio without `fro-bot.yaml`.
+- No contradictions with prior wiki content. All updates additive.
+
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA 516a9eb442f97212f45d890e65fb7d7642566206)
+
+## [2026-05-26 08:49] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-05-27 08:58] ingest | marcusrbrown/infra
+
+Incremental survey of `marcusrbrown/infra` at SHA `2f9bafd6cdb03d9ed28ee336d99d5f7bf09a3dfb` (push 2026-05-26). Updated repo page `marcusrbrown--infra.md` and topic page `github-actions-ci.md`. Updated `index.md` catalog entry. No new pages created — existing `github-actions-ci.md` already captures the split-deploy pattern and conventions-test pattern this repo pioneered.
+
+Delta from prior survey (SHA `938fa7c`, 2026-04-27):
+
+- **Major new app: `apps/gateway/`** (Fro Bot Discord client + workspace runner + mitmproxy stack at `gateway.fro.bot`, added #264 on 2026-05-18). Upstream `fro-bot/agent` pinned via `apps/gateway/upstream.json` at `v0.44.2`. Three-service Docker Compose deployment. Secrets materialized via SSH stdin only (never argv); checksum-after-success invariant in `/opt/gateway/.secrets-checksum` prevents silent stale-credential states. Discord registration poll has ~90s budget with 429-aware backoff and token-sanitized error surfaces.
+- **New `packages/shared/`** (#290, 2026-05-23): shared DigitalOcean droplet helpers (`ssh`, `scp`, `validateDoctl`, `dropletExists`, `pinHostKeys`, etc.) consumed by `apps/cliproxy` and `apps/gateway` provision scripts. Private (`@marcusrbrown/infra-shared`, never published).
+- **New workflow** `deploy-gateway.yaml` — third per-app deploy workflow in the split pipeline pattern (12 workflows total, up from 11). The thin `deploy.yaml` orchestrator now coordinates all three apps.
+- **Fro Bot agent** v0.42.2 → v0.44.3 across multiple bumps (#251, #252, #274, #281, #282).
+- **Renovate preset:** v4 → v5 major boundary crossed at 2026-05-17 (#242). Now extends `marcusrbrown/renovate-config#5.2.0` + `group:allNonMajor` for safer grouping.
+- **Major dependency bumps:** TypeScript 6.0.3, ESLint 10.4.0, `@bfra.me/eslint-config` 0.51.1, `@bfra.me/tsconfig` 0.13.1, Changesets 2.31.0.
+- **CLI v0.4.6 → v0.7.0** with MCP fidelity refactor for status-only commands (#296), gateway commands (status/deploy/logs/backup/restore), parsing of `docker compose ps` NDJSON output (#278), and OpenAI provider opt-in for `cliproxy setup --harness opencode` (#307). Codex device-code OAuth login added (#303).
+- **CLIProxyAPI:** v6.9.39 → v6.10.9 (digest-pinned). Caddy: 2.11.2-alpine → 2.11.3-alpine.
+- **Gateway hardening:** ControlMaster SSH multiplexing for deploys (#277), pinned droplet host keys in `.github/known_hosts` (#272), `validateGatewayHost` rejects `-`-prefixed values pre-SSH-invocation, no-argv-for-secrets invariant.
+- **Operational documentation:** new Discord token-lifecycle runbook (#284, `docs/runbooks/`); plan reconciliation for cliproxy deployment + conventions tests (#253); compound learning entry for gateway first-deploy 5-wave cascade (#280, `docs/solutions/`).
+- **Convention enforcement extended:** `predicate-quantifier:every` rule on `dorny/paths-filter` with negations (#254).
+- **AGENTS.md updates:** Root expanded to cover gateway alongside keeweb + cliproxy; new per-app `apps/gateway/AGENTS.md` and `packages/shared/AGENTS.md`.
+- **Open issues:** 5 → 38 (mostly tracked plan work + autohealing reports + Dependency Dashboard); **open PRs:** 1 → 0.
+
+No contradictions with prior surveys — all earlier findings remain accurate, the repo has expanded additively.
+
+Sources: https://github.com/marcusrbrown/infra (SHA 2f9bafd6cdb03d9ed28ee336d99d5f7bf09a3dfb)
+
+## [2026-05-27 08:59] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra
+
+## [2026-05-28 04:51] ingest | marcusrbrown/cortexkit_anthropic-auth
+
+Initial survey of `marcusrbrown/cortexkit_anthropic-auth` at SHA `517d385` (default branch `marcusrbrown/main`). Created repo page `marcusrbrown--cortexkit-anthropic-auth.md`. Updated `opencode-plugins.md` topic (added repo to plugin table, new "Cross-Process OAuth Refresh Locking" section, frontmatter source/tags refresh). Updated `index.md` to catalog the new repo page.
+
+Key findings:
+
+- Public fork of `cortexkit/anthropic-auth`. Bun workspace monorepo with `core`, `opencode`, `pi`, `e2e-tests` packages. MIT, TypeScript 6.0.3, Bun 1.3.14 (mise), Biome 2.4.15, Lefthook 2.1.6.
+- Two packages published from the fork under `@marcusrbrown/*` at `1.2.2-mb.2`: `anthropic-auth-core` (shared) and `opencode-anthropic-auth` (plugin + CLI). Pi package `@cortexkit/pi-anthropic-auth` is `private: true` in this fork — release contract explicitly excludes it.
+- Provides Claude Pro/Max OAuth for OpenCode (`/connect anthropic`) and Pi (`/login anthropic`) with fallback accounts, quota-aware routing (5h/7d Claude quota gates with `failClosedOnUnknownQuota` default), persistent 1-hour prompt cache controls (`/claude-cache`, `/claude-cachekeep`), fast mode toggle (`/claude-fast`), live quota visibility (`/claude-quota`), request dumps (`/claude-dump`), and an optional user-owned Cloudflare Worker relay.
+- Sidecar config: `~/.config/opencode/anthropic-auth.json` (env `OPENCODE_ANTHROPIC_AUTH_FILE`) for OpenCode; `~/.pi/agent/anthropic-auth.json` (env `PI_ANTHROPIC_AUTH_FILE`, `PI_AGENT_DIR`) for Pi. Same JSON schema across both agents.
+- Release-path hardening worth carrying forward: jittered background OAuth refresh (`1.2.2`), cross-process atomic refresh lock to prevent rotated-refresh-token races and `invalid_grant` losers (`1.1.3`/`1.2.2`), wait-and-rejoin on contention, refresh endpoint failover to `api.anthropic.com/v1/oauth/token` after `platform.claude.com` returned OAuth `429` repeatedly (`1.2.1`).
+- Workflows: `ci.yml` (PR-only: typecheck, build, test, Biome format/lint, SHA-pinned actions) and `release.yaml` (tag/dispatch with tag-commit integrity check, version-keyed concurrency, OIDC trusted publishing + provenance, no `NPM_TOKEN`, no `mb` dist-tag lane, `npm publish --tag latest`, no CI manifest mutation — manifests must already match the release version per `version-sync.mjs --validate`).
+- Dependabot (not Renovate) — `enable-beta-ecosystems: true`, weekly bun + github-actions. Deliberate divergence from the rest of Marcus's ecosystem.
+- Captures (`captures/`) are gitignored — mitmproxy HTTPS interception of Claude Code / OpenCode system prompts. PII-sensitive; any PR touching them should be flagged.
+- **No Fro Bot workflow detected.** Noted on the repo page; follow-up draft PR should propose a Fro-Bot config tuned for release-sensitive, OAuth-sensitive repos (review/triage scope only — must not touch version-sync or the OIDC publish path).
+
+No contradictions with existing wiki content. Additive updates only.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 517d38596432429a8fc5f78612edc80a1c3f3dc6)
+
+## [2026-05-28 04:54] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+
+## [2026-05-28 09:04] ingest | marcusrbrown/systematic
+
+Incremental re-survey of `marcusrbrown/systematic` (SHA `9b75707`, 2026-05-28). Updated repo page `marcusrbrown--systematic.md`, bumped opencode-plugins topic page source set, and refreshed index entry. No new topic/entity/comparison pages warranted — all cross-cuts already cataloged.
+
+Delta from prior survey (SHA `420ef650`, 2026-05-06):
+
+- ~80 commits, v2.7.3 → v2.24.0 (17 minor + many patch releases). Repo is post-launch-surface-cleanup era.
+- **Bundled assets:** skills 46 → 47 (new: `release-notes-narrative` project-scoped; `test-driven-development` + `writing-skills` + `writing-systematic-skills` imported from obra/superpowers in #394). Agents 50 → 51 (review category now 28). Deprecation surface marks `orchestrating-swarms` and `claude-permissions-optimizer` (#401).
+- **Workflow consolidation (#446):** `fro-bot.yaml` and `fro-bot-autoheal.yaml` merged into a single workflow with three operating modes (review, maintenance, autoheal) routed via an inline `PROMPT` ternary on `event_name × mode × cron`. Workflow count 9 → 8.
+- **Fro Bot agent:** v0.42.7 → v0.45.0 (SHA `8aac0fc3`).
+- **Release-notes-narrative pipeline (v2.22–v2.23):** New project-scoped skill (#429) dispatched via `@semantic-release/exec` successCmd (#430), with extracted shell script (#432), bash-escaped Lodash render (#431), timestamp-based run identification (#434), and `correlation-id` input on `fro-bot.yaml` (#433).
+- **Source-tree changes:** `plugin-singleton.ts` removed (its semantics folded into the broader factory layer). New modules: `config-schema.ts` (Zod schema for `systematic.json`), `config.ts` (Zod per-issue diagnostics), `skill-catalog.ts` (bootstrap injection of available skills, #365), `bundled-names.ts` (typed bundled-name validation, #384), `agent-colors.ts`, `agent-overlays.ts` (memoized per OpencodeClient, #383; empty-cache to unknown, #378), `model-availability.ts` (discovery-before-validation, #372, #376), `source-model-defaults.ts`.
+- **Zod config schema arc (v2.14–v2.17):** Typed `systematic.json` validation with per-issue diagnostics, IDE autocomplete via published JSON Schema at `fro.bot/systematic/schemas/v2/`, factory pattern construction (#393), schema-drift CI gate.
+- **Overlay hardening (v2.20.x):** Empty-cache and empty-discovery collapse to unknown status, per-client memoization, project-local Systematic overrides global Systematic output (#370).
+- **Documentation modernization:** Architecture (#422), main-loop, philosophy (#421), launch-surface (README, home, Quick Start, config docs — #428), design-iterator and docs aligned with Impeccable design laws (#418, #419). New `docs:verify` script for local CI-parity pre-checks (#445).
+- **OpenCode dep bumped through:** v1.14.49 → v1.15.10. Starlight to ^0.39.0 (#444). `@semantic-release/exec` pinned at 7.1.0 (#435).
+- **Open issues:** 4 → 3 (renovate PR #327 from prior survey is merged). 0 open PRs at survey time.
+- **Stars:** 14 → 22. **Fork count:** 1.
+- **Renovate config + Probot settings:** Unchanged in intent. Renovate adds OpenCode group name (#425).
+- **Fro Bot integration:** Fully active (no follow-up needed for missing workflow). Inline documentation added in #450 (PROMPT routing precedence — the release-notes-narrative automation depends on `workflow_dispatch` `prompt` taking precedence over mode default) and #451 (fork-guard asymmetry across PR-adjacent event types — only `issue_comment` needs explicit API-query because `github.event.pull_request` is null on that path).
+- **No contradictions** with prior survey; `plugin-singleton.ts` was noted as added in v2.7.2 and is now folded into the broader factory layer (durable singleton semantics preserved via config-handler entry point).
+
+Sources: https://github.com/marcusrbrown/systematic (SHA 9b7570782190d540b4d57abdd94cf7ca8e1984f1)
+
+## [2026-05-28 09:05] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-05-29 08:55] ingest | marcusrbrown/ha-config
+
+Re-survey of `marcusrbrown/ha-config` (SHA `33cca05`, 12 days after prior survey). Updated repo page additively with a fourth survey row; updated `index.md` summary; no topic-page edits required (the `home-assistant` page's `.HA_VERSION` pin-drift footgun callout is already accurate and only deepens with the additional staleness).
+
+Key findings:
+
+- Structural surface unchanged: still 11 packages, 10 custom components, ESPHome submodule, no Fro Bot workflow.
+- `.HA_VERSION` still pinned at `2025.6.3` — now ~11 months stale; the package-based config is being validated against a frozen HA release while pip-resolved deps advance freely.
+- Pure Renovate churn since 2026-05-17: `bfra-me/.github` reusable workflow v4.16.17 → v4.16.21 (four patch bumps in 11 days), `pipelinecomponents/remark-lint` digest pin `829aa31` (#790), four esphome submodule digest updates (#782, #784, #786, #787, #789).
+- Same 3 open issues (#427 Dependency Dashboard, #766 asyncio-mqtt v0.16.2, #777 esphome v2026), same 0 open PRs.
+- New observation: `mrbro-bot[bot]` (GitHub ID `137683033`) is co-authoring some recent Renovate merges (e.g. #790). First sighting of a non-fro-bot automation actor on this repo — worth tracking on subsequent passes.
+- **No Fro Bot workflow** for the fourth consecutive survey. Persistence across nearly a year suggests this is intentional: the repo is Renovate-only autopilot and doesn't need PR review or triage automation since virtually all merges are bot-authored.
+
+No contradictions with prior surveys.
+
+Sources: https://github.com/marcusrbrown/ha-config (SHA 33cca0534ca2b0dbbb7db4235912c1f225458beb)
+
+## [2026-05-29 08:57] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/ha-config
+
+## [2026-05-30 08:01] ingest | bfra-me/ha-addon-repository
+
+No-op re-survey of `bfra-me/ha-addon-repository` (SHA `0a163c3f`, unchanged from 2026-05-20). HEAD on `main` has been dormant for 14 days while Renovate accumulates queued PRs on side branches. Additive update only: appended a 2026-05-30 row to the Survey History table, added a `Drift Watch` section noting two emerging signals, refreshed frontmatter `updated:` date, appended a second source entry. Updated `index.md` description with the queued v0.46.1 Fro Bot bump for freshness. No topic, entity, or comparison pages required edits.
+
+Findings:
+
+- HEAD unchanged at `0a163c3f` (`chore(deps): update dependency prettier to v3.8.3 (#551)`, 2026-05-16). `pushedAt` is 2026-05-30 because Renovate keeps re-pushing side branches, but `main` itself is stationary.
+- Open issues: 5 → 6 (#554 `Daily Autohealing Report` continues to accrue dated update sections under the perpetual-issue pattern; #4 Dependency Dashboard unchanged).
+- Open PRs: 0 → 4, all Renovate, all unmerged: #556 (`bfra-me/.github` reusable v4.16.16 → v4.16.21), #557 (`fro-bot/agent` v0.43.1 → v0.46.1 — three minor versions of agent runtime missed), #558 (HA `amd64-base:3.23` digest rotation to `4b7bff6`), #559 (`docker/login-action` v4.2.0).
+- Workflow content inspected: `fro-bot.yaml` still pins `fro-bot/agent@v0.43.1`. `SCHEDULE_PROMPT` env literal still hardcodes "bfra-me/.github reusable workflow version (currently v4.16.6)" — a stale comment relative to the actual `uses:` pin at v4.16.16. Self-corrects via the agent's live SHA comparison, but worth parameterising on next workflow edit.
+- No structural drift to workflows, settings, the `example/` add-on, or the Renovate config family (`bfra-me/renovate-config#5.2.1`).
+- Cross-ecosystem note: this repo lags the agent fleet by 3 minor versions and the `bfra-me/.github` reusable by 5 patch versions. The four queued Renovate PRs cover that drift entirely — bottleneck is review/merge cadence, not Renovate coverage.
+
+Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+
+## [2026-05-30 08:03] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository
+
+## [2026-05-31 00:30] ingest | bfra-me/works
+
+Incremental re-survey of `bfra-me/works` (SHA `cd4a52d`, 2026-05-31; prior `ef14b26`, 2026-05-20). Updated repo page `bfra-me--works.md` and index entry. No new topic/entity/comparison pages warranted — deltas are agent pin advances and dependency bumps, not structural.
+
+Delta:
+
+- **Fro Bot agent:** v0.44.2 → v0.46.1 (#3503) → v0.47.0 (#3510), both merged 2026-05-30. PR #3491 ("Fix Fro Bot mode/prompt resolution for dispatch and reusable runs") patched the inline shell mode-resolution block for `workflow_dispatch` and `workflow_call` paths just ahead of the v0.47.0 bump.
+- **bfra-me/.github reusable workflows + Renovate baseline:** v4.16.18 → v4.16.21 (both `renovate.yaml` workflow ref and `internal.json5#v4.16.21` extends).
+- **pnpm:** 10.33.4 → 10.34.1 (via #3511 then #3514).
+- **Published package versions:** All 9 unchanged (`@bfra.me/badge-config@0.2.0`, `create@0.7.14`, `doc-sync@0.1.9`, `es@0.1.0`, `eslint-config@0.51.1`, `prettier-config@0.16.9`, `semantic-release@0.3.7`, `tsconfig@0.13.1`, `workspace-analyzer@0.2.8` — last release still 2026-05-16).
+- **Workflow inventory, package layout, Probot settings, branch protection (12 required checks), build/release pipeline:** identical.
+- **Open issues:** 38 (unchanged). **Open PRs:** 1 → 2.
+- No contradictions with prior ingest. `bfra-me/works` is currently the bleeding-edge agent adopter; sibling [[bfra-me--github]] and [[bfra-me--ha-addon-repository]] should be re-surveyed to confirm whether they have followed to v0.47.0.
+
+Sources: https://github.com/bfra-me/works (SHA cd4a52d7d9ad59c8770784d9411d688e9a7d50db)
+
+## [2026-05-31 08:27] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works

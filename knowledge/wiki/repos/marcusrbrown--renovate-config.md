@@ -2,11 +2,14 @@
 type: repo
 title: "marcusrbrown/renovate-config — Shareable Renovate Configuration Presets"
 created: 2026-04-28
-updated: 2026-04-28
+updated: 2026-05-23
 sources:
   - url: https://github.com/marcusrbrown/renovate-config
     sha: bf13a82fca143cd0cdcc9c5f12ef56c2b5196c20
     accessed: 2026-04-28
+  - url: https://github.com/marcusrbrown/renovate-config
+    sha: 3478c88753d113b21c7cf10d9e58fd2f9be7e96a
+    accessed: 2026-05-23
 tags: [renovate, renovate-config, renovate-preset, semantic-release, dependency-management]
 aliases: [renovate-config]
 related:
@@ -26,6 +29,7 @@ related:
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--esphome-life
+  - bfra-me--renovate-action
 ---
 
 # marcusrbrown/renovate-config
@@ -42,12 +46,13 @@ Shareable [Renovate](https://docs.renovatebot.com/) configuration presets for Ma
 | Language | JavaScript (config-only; no application code) |
 | Created | 2022-05-03 |
 | Default branch | `main` |
-| Latest release | `4.5.8` (2026-04-17) |
+| Latest release | `5.2.0` (2026-05-13) — major-version boundary crossed since prior survey |
 | Node.js | 24.15.0 (`.node-version`) |
-| Package manager | pnpm 10.33.2 |
+| Package manager | pnpm 11.1.3 (was 10.33.2 at 2026-04-28) |
 | Topics | renovate, renovate-config, renovate-preset, renovatebot, renovate-by-githubaction, semantic-release |
-| Open issues | 46 |
-| Stars / Watchers / Forks | 0 / 0 / 0 |
+| Open issues | 6 (was 46 at 2026-04-28; the daily-issue sprawl was consolidated into the perpetual `Daily Autohealing Report`) |
+| Open PRs | 1 (#1311 picomatch@2 v4 by mrbro-bot) |
+| Stars / Watchers / Forks | 0 / 2 / 0 |
 
 ## Preset Architecture
 
@@ -57,21 +62,24 @@ Three preset files define the Renovate policy surface:
 
 The main preset extended by downstream repos via `github>marcusrbrown/renovate-config` (or pinned to a release, e.g., `#4.5.8`).
 
-Extends:
-- `github>bfra-me/renovate-config#5.2.1` — base config from the bfra-me organization
-- `github>bfra-me/renovate-config:fro-bot.json5#5.2.1` — Fro Bot-specific overrides from bfra-me
+Extends (as of v5.2.0):
 - `:assignAndReview(marcusrbrown)` — auto-assign PRs to Marcus
-- `:disableRateLimiting` — no hourly/concurrent PR caps
 - `:preserveSemverRanges` — keep `^`/`~` ranges as-is
+- `group:allNonMajor` — **new in v5**: groups non-major updates from upstream presets (counterbalanced by an unstable-package opt-out, see below)
 - `npm:unpublishSafe` — wait for npm unpublish window before updating
 - `helpers:pinGitHubActionDigestsToSemver` — pin GitHub Actions by digest with semver tag comments
+- `github>bfra-me/renovate-config#5.2.1` — base config from the bfra-me organization
+- `github>bfra-me/renovate-config:fro-bot.json5#5.2.1` — Fro Bot-specific overrides from bfra-me
+
+The `:disableRateLimiting` preset present in v4 has been **dropped from the extends list** in v5; rate-limiting now defers to the bfra-me base preset's defaults.
 
 Key package rules:
 - **semantic-release grouping:** Groups major updates of `semantic-release` and `conventional-changelog-conventionalcommits` with `semanticCommitType: feat`
-- **Own-project fast-track:** Automerges `@bfra.me/*`, `bfra-me/*`, `@fro.bot/*`, `fro-bot/*`, `@marcusrbrown/*`, `marcusrbrown/*`, and `pro-actions/*` packages with no minimum release age and immediate PR creation
+- **Own-project fast-track:** Automerges `@bfra.me/*`, `bfra-me/*`, `@fro.bot/*`, `fro-bot/*`, `@marcusrbrown/*` (regex `/^@?marcusrbrown/`), `marcusrbrown/*`, and `pro-actions/*` packages with no minimum release age and immediate PR creation
 - **Source URL fast-track:** Same immediate/no-age treatment for packages sourced from `github.com/bfra-me`, `github.com/fro-bot`, or `github.com/marcusrbrown`
 - **Self-reference labeling:** Commits touching `marcusrbrown/renovate-config` use topic `{{{depName}}} preset`
-- **Minimum version floor:** Consumers of this preset must be on `>=4.0.0`
+- **Minimum version floor:** Consumers of this preset must be on `>=5.0.0` (was `>=4.0.0` in v4.x — **breaking change** for any consumer still pinned below v5)
+- **Unstable (0.x) ungrouping (v5.x):** `matchCurrentVersion: /^0\./` sets `groupName: null`, peeling 0.x packages back out of `group:allNonMajor` so each pre-release lib gets its own PR. This is the safety valve that makes the new `group:allNonMajor` extension tolerable for downstream consumers.
 
 Schedule: `at any time` (no restriction).
 
@@ -136,49 +144,56 @@ Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.9`
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present and active** — `fro-bot.yaml` with `fro-bot/agent@v0.42.2` (SHA `94d8a156570d68d2461ab496b589e63bdcd6ba84`).
+**Fro Bot workflow present and active** — `fro-bot.yaml` with `fro-bot/agent@v0.44.3` (SHA `b928e79729f01b563feabee26a0525a3b48501a6`).
 
 Trigger surface:
 - Issue comments, PR review comments, discussion comments (mentioning `@fro-bot`)
-- Issues opened/edited (non-bot)
+- Issues opened/edited (non-bot, OWNER/MEMBER/COLLABORATOR only)
 - PRs opened/synced/reopened/ready_for_review/review_requested (non-bot, non-fork)
 - Daily schedule at 15:30 UTC
 - Manual dispatch with custom prompt
 - Reusable `workflow_call` with prompt input
 
-PR review prompt is domain-specific to Renovate configuration:
-- JSON schema compliance
-- Backward compatibility for version-pinned consumers
-- packageRules correctness (matchers, grouping, automerge, schedules)
-- Security implications of update policies
+**Architectural shift since prior survey:** the separate `fro-bot-autoheal.yaml` is gone. Autoheal now lives inside `fro-bot.yaml` itself, with the schedule prompt covering both maintenance and autoheal categories under a single perpetual issue. Mirrors the single-file three-mode pattern observed in [[marcusrbrown--marcusrbrown-github-io]], though here the dispatch surface is a single freeform `prompt` input rather than a `mode` enum.
+
+PR review prompt remains domain-specific to Renovate configuration:
+- JSON schema compliance against `https://docs.renovatebot.com/renovate-schema.json`
+- Backward compatibility for consumers pinning to major version branches
+- packageRules correctness (`matchPackageNames` patterns, grouping logic, automerge conditions, schedule expressions)
+- Security implications of dependency update policies (`minimumReleaseAge`, vulnerability settings, `npm:unpublishSafe`)
 - Downstream PR storm risk assessment
-- Structured verdict: PASS / CONDITIONAL / REJECT with blocking issues, non-blocking concerns, missing tests, and risk assessment
+- Consistency with the base preset extended from `bfra-me/renovate-config`
+- Structured verdict: PASS / CONDITIONAL / REJECT with blocking issues, non-blocking concerns, missing tests, and risk assessment (LOW/MED/HIGH + rationale)
+- Hard ban on push, branch creation, merge, approve, request-reviewers, or @-mentioning other users
 
-Schedule prompt: rolling daily maintenance issue with 14-day bounded history, stale issue/PR tracking, and recommended actions.
+Daily autohealing categories (now 6, was 5):
 
-**Fro Bot Autoheal** — `fro-bot-autoheal.yaml`, daily at 03:30 UTC, reuses `fro-bot.yaml` via `workflow_call`.
+1. **Errored PRs** — diagnose and fix failing CI on open PRs (skip dep/security PRs, verify author trust, do not run project commands from PR branches that touch workflows/automation prompts/lockfiles/execution scripts)
+2. **Security** — remediate Dependabot/Renovate security alerts and failing security PRs; explicit "if alert data unavailable, skip and note" branch
+3. **Config Validation & Preset Quality** — validate all preset JSON/JSON5 against Renovate schema, check for deprecated options, verify base preset pin is released and not auto-bumped (Renovate owns version bumps), detect rule conflicts, run lint
+4. **Developer Experience** — lint/format auto-fix PRs only (never direct-to-`main` commits)
+5. **Cross-Project Intelligence (Inbound)** — survey focus repos (`marcusrbrown/yield-farmer`, `marcusrbrown/poly`, `marcusrbrown/.github`, `bfra-me/renovate-config`, `fro-bot/agent`) for tooling/CI/preset patterns worth importing; **observation-only**, never modify other repos. Replaces v4's "bfra-me Ecosystem Health" category — the focus repo list explicitly includes Marcus repos not yet surveyed in this wiki (`yield-farmer`, `poly`).
+6. **Upstream Modernization Watch (Sundays only)** — **new category**. Gated by `IS_SUNDAY_UTC` env var set by a preflight `date -u +%u` step. Parses release notes for pinned upstreams (`fro-bot/agent`, `actions/checkout`, `pnpm/action-setup`, `actions/setup-node`, `@bfra.me/eslint-config`, `@bfra.me/prettier-config`) and identifies config/feature adoption opportunities. Action policy: at most one draft PR per scan, only for mechanical changes touching docstrings/AGENTS.md/config examples; anything touching `.github/workflows/`, `package.json`, lockfile, or preset JSON is **tracking-issue-only** (never opens a PR). Hard rule: never bump pinned versions — Renovate owns that.
 
-Five autohealing categories:
-1. **Errored PRs** — diagnose and fix failing CI on open PRs (skip dep/security PRs, verify author trust)
-2. **Security** — remediate Dependabot/Renovate security alerts and failing security PRs
-3. **Config Validation & Preset Quality** — validate all preset JSON/JSON5 against Renovate schema, check for deprecated options, verify base preset pin, detect rule conflicts, run lint
-4. **Developer Experience** — lint/format auto-fix PRs
-5. **bfra-me Ecosystem Health** — report-only audit of action pinning, reusable workflow versions, Scorecard/CodeQL drift, stale TODOs
+Single-issue management: the perpetual `Daily Autohealing Report` issue receives prepended dated sections; dated-format daily issues are auto-consolidated and closed with a link to the perpetual issue. This is the same single-perpetual-issue strategy observed across [[bfra-me--ha-addon-repository]], [[bfra-me--works]], and [[bfra-me--github]] — and explains the open-issue count crash from 46 → 6 since the prior survey.
 
 ## Dev Tooling
 
 | Tool | Version / Config |
 | --- | --- |
-| ESLint | 10.2.1, extends `@bfra.me/eslint-config` 0.51.0 |
-| Prettier | 3.8.3, extends `@bfra.me/prettier-config/120-proof` |
-| lint-staged | 16.4.0 (`*.{js,json,jsx,md,toml,ts,tsx,yml,yaml}`) |
+| ESLint | 10.4.0, extends `@bfra.me/eslint-config` 0.51.1 |
+| Prettier | 3.8.3, extends `@bfra.me/prettier-config/120-proof` (0.16.9) |
+| lint-staged | 17.0.5 (`*.{js,json,jsx,md,toml,ts,tsx,yml,yaml}`) — major bump from 16.4.0 |
 | simple-git-hooks | 2.13.1 (pre-commit runs lint-staged) |
 | semantic-release | 25.0.3 |
 | eslint-config-prettier | 10.1.8 |
 | eslint-plugin-prettier | 5.5.5 |
 | markdownlint | 0.40.0 |
+| conventional-changelog-conventionalcommits | 9.3.1 |
 
 ESLint config (`eslint.config.js`) is a single re-export of `@bfra.me/eslint-config` — no local overrides.
+
+**pnpm overrides for supply-chain hardening** (new since prior survey): `fast-uri >=3.1.2`, `flatted >=3.4.2`, `handlebars >=4.7.9`, `lodash-es >=4.18.0`, `picomatch@2 ^2.3.2`, `picomatch@4 ^4.0.4`. Mirrors the same override approach used in [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--marcusrbrown-github-io]] — a config-only repo carrying transitive-dep pins because npm advisory floors propagate via the lockfile.
 
 ## Probot Settings
 
@@ -203,29 +218,35 @@ Contains comprehensive AI development guidance:
 
 This preset is the dependency-update policy backbone of the entire `marcusrbrown` ecosystem. Known consumers (from wiki surveys):
 
-| Consumer | Pin | Post-Upgrade Tasks |
+| Consumer | Pin (most recent survey) | Post-Upgrade Tasks |
 | --- | --- | --- |
-| [[marcusrbrown--ha-config]] | `#4.5.8` | Prettier |
+| [[marcusrbrown--ha-config]] | `#5.2.0` (crossed v4→v5 boundary on 2026-05-16 via #776) | Prettier |
 | [[marcusrbrown--github]] | `#4.5.8` | `npx prettier --write .` |
 | [[marcusrbrown--containers]] | `#4.5.0` | `pnpm install && pnpm format` |
 | [[marcusrbrown--dotfiles]] | `#4.5.8` | — |
 | [[marcusrbrown--gpt]] | `#4.5.8` | — |
-| [[marcusrbrown--vbs]] | `#4.5.8` | `pnpm install && pnpm fix` |
-| [[marcusrbrown--copiloting]] | `#v4` | — |
+| [[marcusrbrown--vbs]] | `#4.5.9` | `pnpm install && pnpm fix` |
+| [[marcusrbrown--copiloting]] | `#v4` (floating major-version branch) | — |
 | [[marcusrbrown--extend-vscode]] | `#4.5.0` + `sanity-io/renovate-config` | — |
 | [[marcusrbrown--infra]] | `#4.5.8` | `bun install --ignore-scripts && bun run fix` |
 | [[marcusrbrown--mrbro-dev]] | `#4.5.8` | — |
 | [[marcusrbrown--tokentoilet]] | `#4.5.8` | — |
 | [[marcusrbrown--marcusrbrown]] | `#4.5.1` | bootstrap + fix |
-| [[marcusrbrown--marcusrbrown-github-io]] | `#4.5.8` | — |
+| [[marcusrbrown--marcusrbrown-github-io]] | `#5.2.0` (crossed v4→v5 boundary on 2026-05-16 via #406) | — |
 | [[marcusrbrown--systematic]] | extends + `sanity-io/renovate-config:semantic-commit-type` | — |
-| [[marcusrbrown--opencode-copilot-delegate]] | `#4.5.8` | bun install + fix + build |
+| [[marcusrbrown--opencode-copilot-delegate]] | `#5.2.0` (crossed v4→v5 boundary, prior survey 2026-05-21) | bun install + fix + build |
 | [[marcusrbrown--esphome-life]] | `#4.5.1` | — |
+| [[marcusrbrown--sparkle]] | `#4.5.9` | — |
 
-Notable: `marcusrbrown--copiloting` pins to the floating `#v4` major branch rather than a specific release. `marcusrbrown--containers` and `marcusrbrown--extend-vscode` are on the older `#4.5.0` pin.
+**v4→v5 migration wave** (since 2026-04-28): `ha-config`, `marcusrbrown.github.io`, and `opencode-copilot-delegate` have all bumped to `#5.2.0` and survived the breaking change (`group:allNonMajor` extends, `>=5.0.0` floor, dropped `:disableRateLimiting`). Migrations were straightforward Renovate-authored PRs — no consumer required manual config overrides.
+
+**Outstanding v4 holdouts:** `containers` and `extend-vscode` (still `#4.5.0`), `marcusrbrown` (`#4.5.1`), `esphome-life` (`#4.5.1`), `copiloting` (floating `#v4`), plus a long tail still on `#4.5.8`/`#4.5.9`. None will be force-bumped — Renovate routes the upgrade as a major PR per repo, and each consumer's preset pin policy decides timing.
+
+**Pre-survey concern resolved:** the prior survey flagged the `bf13a82` SHA against a `#4.5.8` release. The repo has since shipped seven releases (`5.0.1`, `5.0.2`, `5.1.0`, `5.1.1`, `5.2.0`, plus a 4.5.9 patch).
 
 ## Survey History
 
 | Date | SHA | Notes |
 | --- | --- | --- |
-| 2026-04-28 | `bf13a82` | Initial survey |
+| 2026-04-28 | `bf13a82` | Initial survey; v4.5.8, agent v0.42.2, 46 open issues, separate `fro-bot-autoheal.yaml` |
+| 2026-05-23 | `3478c88` | v4→v5 boundary crossed (5.2.0); agent v0.44.3; autoheal merged into `fro-bot.yaml`; new category 6 Sundays-only Upstream Modernization Watch; 0.x ungrouping rule; minimum version floor `>=5.0.0`; pnpm 11.1.3; lint-staged 17.0.5; pnpm overrides for fast-uri/flatted/handlebars/lodash-es/picomatch; open issues 46 → 6 |

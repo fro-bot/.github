@@ -2,7 +2,7 @@
 type: topic
 title: "Web3 & DeFi Development"
 created: 2026-04-18
-updated: 2026-05-06
+updated: 2026-05-28
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0aa1d9a02f1a8ba5cbd95818fb6157318cf9f20b
     accessed: 2026-05-06
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: db6dbcc2d289d23377d3d80b19d5e4273008a1b2
+    accessed: 2026-05-28
 tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721]
 ---
 
@@ -33,7 +36,7 @@ The ecosystem currently standardizes on:
 
 | Component         | Tool                                            | Notes                                    |
 | ----------------- | ----------------------------------------------- | ---------------------------------------- |
-| React hooks       | Wagmi v2                                        | Core wallet/chain interaction primitives |
+| React hooks       | Wagmi v3 (as of 2026-05-28 in [[marcusrbrown--tokentoilet]]) | Core wallet/chain interaction primitives; major bump from v2 landed via PR #837 lineage |
 | Modal/UI          | Reown AppKit (formerly WalletConnect Web3Modal) | Wallet connection modal and UI           |
 | Query layer       | TanStack React Query                            | Async state for chain reads/writes       |
 | Supported wallets | MetaMask, WalletConnect, Coinbase Wallet        | Per test suites in tokentoilet           |
@@ -81,3 +84,7 @@ The first functional disposal flow (PR #911 in [[marcusrbrown--tokentoilet]]) us
 - **`NetworkGuard`** validates the connected wallet is on Sepolia before rendering disposal UI
 - **Keyed `DisposalExecutor`** — each token gets a fresh `useTokenDisposal` hook instance via React key, preventing stale `isSuccess`/`error` state across multi-token disposals
 - **Deployment:** Vercel GitHub integration handles preview (PRs) and production (main push) — no CI deploy jobs
+
+## Migration Notes: Wagmi v2 → v3 (2026-05-28)
+
+The `useWallet` abstraction in [[marcusrbrown--tokentoilet]] paid off during the wagmi v2 → v3 upgrade — the firewall between components and the wagmi API meant the major version bump largely contained itself inside the `hooks/` directory. The pattern's value: every component that uses `useWallet` instead of `useAccount`/`useConnect` directly is one less site that needs touching when wagmi changes shape. Watch for this when migrating other Web3 apps in the portfolio.

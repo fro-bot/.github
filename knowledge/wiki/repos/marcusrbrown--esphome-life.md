@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/esphome.life"
 created: 2026-04-18
-updated: 2026-04-23
+updated: 2026-05-26
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -10,10 +10,14 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
     accessed: 2026-04-23
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: fc5adc212a7a1556bdaa9a1b30d3cf8a9e8cc584
+    accessed: 2026-05-26
 tags: [esphome, iot, esp32, bluetooth-proxy, home-assistant, firmware, github-pages]
 aliases: [esphome-life, esphome.life]
 related:
   - marcusrbrown--ha-config
+  - marcusrbrown--renovate-config
 ---
 
 # marcusrbrown/esphome.life
@@ -25,7 +29,7 @@ ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forke
 - **Purpose:** ESPHome device firmware definitions, CI-built and deployed to GitHub Pages
 - **Default branch:** `main`
 - **Created:** 2022-11-09
-- **Last push:** 2026-03-12
+- **Last push:** 2026-05-25
 - **Visibility:** Public
 - **License:** None specified
 - **Topics:** _(none set)_
@@ -85,11 +89,19 @@ Defines the full device configuration:
 The CI workflow has four jobs:
 
 1. **Prepare** — Outputs the list of YAML files to build (currently only `olimex-bluetooth-proxy-1349f4.yaml`) and the repo name
-2. **Build firmware** — Matrix build using `esphome/build-action@v7.1.0` with ESPHome 2025.12.7. Uploads build artifacts
+2. **Build firmware** — Matrix build using `esphome/build-action@v7.2.0` with ESPHome 2025.12.7. Uploads build artifacts
 3. **Build** — Gate job (depends on firmware build, reports completion)
 4. **Publish** — Only on `marcusrbrown/esphome.life`. Downloads artifacts, creates a combined `manifest.json`, copies static site files, deploys to `gh-pages` branch using `JamesIves/github-pages-deploy-action@v4.8.0`
 
 Publish uses a GitHub App token (`APPLICATION_ID` / `APPLICATION_PRIVATE_KEY` secrets) and commits as `mrbro-bot[bot]`.
+
+All actions are SHA-pinned with version comments. As of 2026-05-26: `actions/checkout@v5.0.1`, `esphome/build-action@v7.2.0`, `actions/upload-artifact@v5.0.0`, `actions/create-github-app-token@v2.2.2`, `actions/download-artifact@v6.0.0`.
+
+### Reusable Workflow Pins
+
+Both `renovate.yaml` and `update-repo-settings.yaml` delegate to `bfra-me/.github` reusable workflows at v4.16.20 (SHA `dc36669...`).
+
+**Footgun (2026-05-26 survey):** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.20` — the same path used by the Renovate workflow, rather than a settings-specific reusable workflow. This looks like a copy-paste leak from when the workflow was last touched; on its face it means the daily settings-sync cron is running Renovate instead of a settings sync. Worth confirming against `bfra-me/.github` or filing as a follow-up issue. Documented here, not patched in this ingest.
 
 ### Branch Protection
 
@@ -101,7 +113,7 @@ CI workflow uses concurrency group `${{ github.workflow }}-${{ github.event.numb
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.1`. Custom package rule tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types. Post-upgrade runs `npx prettier@3.8.1`.
+- **Renovate:** Extends [[marcusrbrown--renovate-config]] at `#5.2.0` (crossed the v4 → v5 boundary on 2026-05-14, PR #349). Custom package rule tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types. Post-upgrade runs `npx prettier@3.8.3`.
 - **Devcontainer:** Uses `docker.io/ptr727/esphome-nonroot:2025.12.7` with ESPHome dashboard, verbose logging, `America/Phoenix` timezone. Forwards port 6052 (ESPHome native API). VS Code extensions include ESPHome, PlatformIO, Python, YAML, EditorConfig, Markdown lint, serial monitor, and spell checker. File associations map `*.yaml`/`*.yml` to ESPHome language mode (with exceptions for workflow/settings files).
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml`. Overrides description and branch protection.
 - **EditorConfig:** UTF-8, LF, 2-space indent, 120-char max line, trailing whitespace trimming.
@@ -118,7 +130,7 @@ The site content (`static/index.md`) is minimal — the upstream template placeh
 
 **No Fro Bot agent workflow detected.** The repository does not contain a `fro-bot.yaml` workflow. It does extend `fro-bot/.github:common-settings.yaml` via Probot settings, confirming it is part of the Fro Bot-managed ecosystem.
 
-A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage.
+A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage. This recommendation has been carried forward across four surveys (2026-04-18, 2026-04-21, 2026-04-23, 2026-05-26).
 
 ## Notable Patterns
 
@@ -127,6 +139,7 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 - **Template heritage:** The repo was generated from `esphome/esphome-project-template`. Template artifacts remain in `docs/readme.md` and `static/index.md` without customization.
 - **Ethernet-only devices:** All devices use ESP32-PoE-ISO with LAN8720 Ethernet — no Wi-Fi. This is notable for a Bluetooth Proxy setup where wired backhaul provides more reliable connectivity.
 - **Git submodule consumer:** This repo is referenced as a submodule from [[marcusrbrown--ha-config]] at the `esphome/` path, linking ESPHome device firmware to the Home Assistant configuration.
+- **Renovate-only commit log:** Every commit since the prior content change (2026-03-12) has been a Renovate dependency bump. No human-authored changes to device configs, workflows, or static site in over two months.
 
 ## Survey History
 
@@ -135,3 +148,4 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 | 2026-04-18 | `83784bc` (ha-config survey, cross-reference) | Initial cross-reference from [[marcusrbrown--ha-config]] survey |
 | 2026-04-21 | `e398c2e` | Full survey; documented device configs, CI pipeline, devcontainer, Probot/Renovate settings |
 | 2026-04-23 | `e398c2e` | Re-survey; no content changes detected — repo unchanged since 2026-03-12 |
+| 2026-05-26 | `fc5adc2` | Renovate preset crossed v4 → v5 boundary (`#5.2.0`); `bfra-me/.github` v4.4.0 → v4.16.20; `esphome/build-action` v7.1.0 → v7.2.0 plus action SHA refreshes; Prettier 3.8.1 → 3.8.3. Surfaced `update-repo-settings.yaml` reusable-workflow-path footgun (calls `renovate.yaml` instead of a settings workflow). Still no Fro Bot agent workflow. |

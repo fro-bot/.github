@@ -2,11 +2,14 @@
 type: repo
 title: fro-bot/fro-bot.github.io
 created: 2026-05-07
-updated: 2026-05-07
+updated: 2026-05-24
 sources:
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-05-07
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-05-24
 tags: [github-pages, custom-domain, fro-bot-org, infrastructure]
 related:
   - marcusrbrown--systematic
@@ -120,3 +123,4 @@ Given this repo has no application code and a single static file, most of these 
 | Date       | SHA       | Delta                          |
 | ---------- | --------- | ------------------------------ |
 | 2026-05-07 | `3e44653` | Initial survey. Single-file repo, CNAME-only domain holder for `fro.bot`. |
+| 2026-05-24 | `3e44653` | No-op re-survey. HEAD unchanged in 105 days (still the original 2026-02-09 `Create CNAME` commit). Pages config, TLS cert (expires 2026-07-09), missing-integrations table, and issue #1 (CodeQL/Scorecard parity) all unchanged. HTTPS still not enforced. No Fro Bot workflow — all four follow-up recommendations carried forward. |

@@ -2,15 +2,18 @@
 type: repo
 title: "fro-bot/agent"
 created: 2026-05-07
-updated: 2026-05-08
+updated: 2026-05-22
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 8632cf4706b10f7350284c3f0480dd620f2a30b7
+    accessed: 2026-05-22
   - url: https://github.com/fro-bot/agent
     sha: ef6b9525583d13f9443b80e6ceffff8af978410a
     accessed: 2026-05-08
   - url: https://github.com/fro-bot/agent
     sha: ef6b9525583d13f9443b80e6ceffff8af978410a
     accessed: 2026-05-07
-tags: [github-actions, agent, opencode, omo, typescript, persistent-memory, ci-cd, fro-bot, semantic-release, pnpm-workspace, monorepo]
+tags: [github-actions, agent, opencode, omo, typescript, persistent-memory, ci-cd, fro-bot, semantic-release, pnpm-workspace, monorepo, discord, effect, docker-compose, mitmproxy]
 related:
   - marcusrbrown--systematic
   - marcusrbrown--opencode-copilot-delegate
@@ -34,33 +37,36 @@ GitHub Action harness for [OpenCode](https://opencode.ai/) + [Oh My OpenAgent (o
 | Attribute              | Value                                                               |
 | ---------------------- | ------------------------------------------------------------------- |
 | Created                | 2026-01-02                                                         |
-| Last push              | 2026-05-07                                                         |
-| Latest release         | v0.42.8 (2026-05-06)                                               |
+| Last push              | 2026-05-20 (survey 2026-05-22)                                     |
+| Latest release         | v0.44.3 (2026-05-20)                                               |
 | Language               | TypeScript (strict, ESM-only)                                      |
-| License                | MIT                                                                |
-| Node.js                | 24 (pinned in `.node-version`)                                     |
-| Package manager        | pnpm 10.33.2                                                       |
+| Node.js                | 24.15.0 (pinned in `.node-version`)                                |
+| Package manager        | pnpm 10.33.4                                                       |
 | Runtime                | `node24` (GitHub Action `runs.using`)                              |
 | Bundler                | tsdown (Rolldown-based, dual entry points)                         |
-| Test framework         | Vitest 4.1.5                                                       |
-| Lint                   | ESLint 10.2.1 (`@bfra.me/eslint-config`), Prettier 3.8.3          |
+| Test framework         | Vitest 4.1.6 (was 4.1.5 @ v0.42.8)                                 |
+| Lint                   | ESLint 10.3.0 (`@bfra.me/eslint-config` 0.51.0), Prettier 3.8.3   |
 | TypeScript             | 6.0.3                                                              |
 | Release                | semantic-release on `release` branch, `next` → `release` PR model  |
 | Visibility             | Public                                                             |
-| Stars                  | 0                                                                  |
-| Open issues            | 7                                                                  |
+| Stars                  | 1 (was 0 @ 2026-05-08)                                             |
+| Open issues            | 2 (was 7 @ 2026-05-08 — significant triage activity)               |
+| Open PRs               | 5                                                                  |
 | Topics                 | actions, agent, automation, bot, fro-bot, github-actions, github-app |
 
 ## Architecture
 
 ### Workspace Layout
 
-pnpm workspace monorepo with two workspace members:
+pnpm workspace monorepo. As of 2026-05-22 the workspace has **three members** (gateway added between v0.42.8 and v0.44.3):
 
 - **`apps/action`** (`@fro-bot/action`) — The GitHub Action entry points. Private, no publish. Depends on `@fro-bot/runtime`.
-- **`packages/runtime`** (`@fro-bot/runtime`) — Shared runtime library. Private, exports source-level TS (no pre-built dist; consumed via workspace protocol).
+- **`packages/runtime`** (`@fro-bot/runtime`) — Shared runtime library. Private, exports source-level TS (no pre-built dist; consumed via workspace protocol). Hand-rolled `Result<T, E>` from `@bfra.me/es` is the error convention here.
+- **`packages/gateway`** (`@fro-bot/gateway`) — **New 2026-05-22.** Long-running Discord-first daemon. Wraps `@fro-bot/runtime` with `effect` 3.21.2 as the composition layer. Depends on `discord.js` 14.26.4. Builds to `packages/gateway/dist/` via `tsdown`.
 
 Root `tsdown.config.ts` bundles `apps/action/src/main.ts` and `apps/action/src/post.ts` into `dist/main.js` and `dist/post.js`. The `dist/` directory is **committed** (GitHub Action requirement — no build step at consumption time).
+
+The gateway has its own `dist/` not committed at root — it's a runtime daemon shipped via the Docker stack in `deploy/`, not consumed as an action.
 
 ### Layered Source Structure
 
@@ -73,7 +79,9 @@ The codebase follows a strict four-layer dependency hierarchy (~145 source files
 | 2     | `src/features/`  | Business logic: agent execution, triggers/routing, comments, reviews, attachments, delegated branch/PR ops, observability |
 | 3     | `src/harness/`   | Workflow composition: entry points, phase orchestration, config parsing         |
 
-**Note (2026-05-08):** The AGENTS.md lists `object-store/` in Layer 1 services, but the actual directory listing shows `artifact/` instead (containing `upload.ts`, `upload.test.ts`, `index.ts`). The S3-compatible object-store functionality may have been refactored or the AGENTS.md is stale relative to the current directory structure. S3 backup configuration remains in the action inputs, so the capability likely moved elsewhere (possibly into `services/session/` or `services/cache/`).
+**Note (2026-05-08):** The AGENTS.md listed `object-store/` in Layer 1 services, but the actual directory listing showed `artifact/` instead (containing `upload.ts`, `upload.test.ts`, `index.ts`). The S3-compatible object-store functionality may have been refactored or the AGENTS.md was stale relative to the current directory structure. S3 backup configuration remains in the action inputs, so the capability likely moved elsewhere (possibly into `services/session/` or `services/cache/`).
+
+**Update (2026-05-22):** `src/services/` confirms the new layout: `artifact/`, `cache/`, `github/`, `session/`, `setup/` — `object-store/` is gone from the action's src tree. The S3 object-store functionality appears to have migrated either into the gateway/runtime split (`@fro-bot/runtime` is the dependency the gateway uses for `S3 sync helpers`, per `packages/gateway/AGENTS.md`) or been folded into session/cache write-through. The action's AGENTS.md (dated 2026-03-29, commit `045cac8`) is now stale relative to this layout.
 
 Entry points (`src/main.ts`, `src/post.ts`) are thin delegates to `src/harness/run.ts` and `src/harness/post.ts`.
 
@@ -101,7 +109,8 @@ Entry points (`src/main.ts`, `src/post.ts`) are thin delegates to `src/harness/r
 | `auth-json`          | (required)   | JSON map of LLM provider credentials                |
 | `prompt`             | —            | Custom prompt for the agent                         |
 | `output-mode`        | `auto`       | Delivery mode: `auto`, `working-dir`, `branch-pr`   |
-| `agent`              | `sisyphus`   | Primary agent name                                  |
+| `agent`              | (unset)      | Primary agent name (defaults to OpenCode build agent if unset; was `sisyphus` @ v0.42.x) |
+| `enable-omo`         | `false`      | Opt-in to Oh My OpenAgent for extended providers/agents (**new — oMo is no longer auto-installed**) |
 | `model`              | —            | Model override (`provider/model` format)            |
 | `timeout`            | `1800000`    | Execution timeout in ms (0 = no limit)              |
 | `session-retention`  | `50`         | Sessions to retain before pruning                   |
@@ -119,6 +128,44 @@ Entry points (`src/main.ts`, `src/post.ts`) are thin delegates to `src/harness/r
 | `resolved-output-mode`| Resolved delivery mode for this run               |
 | `cache-status`        | Cache restore status (`hit`/`miss`/`corrupted`)   |
 | `duration`            | Run duration in seconds                           |
+
+## Discord Gateway (new 2026-05-22)
+
+`packages/gateway` is a Discord-first daemon — the "Category B" feature long planned in `FEATURES.md` has shipped as runnable code.
+
+| Aspect              | Detail                                                                                       |
+| ------------------- | -------------------------------------------------------------------------------------------- |
+| Entry point         | `packages/gateway/src/main.ts` — wires Discord client, registers slash commands, SIGTERM    |
+| Composition layer   | `effect` 3.21.2 — `Effect.Effect<A, E, R>` everywhere outside the runtime adapter            |
+| Runtime adapter     | `packages/gateway/src/runtime-effect.ts` — sole `Result<>` → `Effect` boundary               |
+| Discord library     | `discord.js` 14.26.4 with non-privileged intents (`Guilds`, `GuildMessages`) by default      |
+| Privileged intents  | Opt-in via `DISCORD_PRIVILEGED_INTENTS` env var                                              |
+| Secret loading      | `readSecret(name)` checks `${NAME}_FILE` first (Docker secrets), falls back to env var       |
+| Lifecycle           | Long-running; SIGTERM handler with 25s drain                                                 |
+
+### Effect / Result Boundary
+
+The gateway is the **only** package using `effect`. The action runner (cold-start sensitive) and the runtime stay on hand-rolled `Result<T, E>`. Subagents adding a runtime call must add the wrapper to `runtime-effect.ts` first, never import `@fro-bot/runtime` directly outside the adapter.
+
+Wrapped runtime functions: `acquireLock`, `releaseLock`, `renewLease`, `forceReleaseLock`, `createRun`, `transitionRun`, `findStaleRuns`, `validateProviderSemantics`, plus S3 sync helpers. This implies the runtime now owns durable lock, run-state, and S3 primitives that were previously scattered (or planned) — these were likely the migration target for `services/object-store/`.
+
+Effect surface used at Unit 4: core (`Effect`, `pipe`, `tryPromise`, `flatMap`, `gen`, `runPromise`, `try`, `succeed`, `fail`, `either`, `void`, `catchAll`). Planned for later units: `Schedule.*` (retry), `Schema.*` (payload validation). DI / Layer / Context / STM / Streams deliberately not used at v1.
+
+## Deployment Stack (`deploy/`, new 2026-05-22)
+
+Docker Compose v2 stack for running the gateway daemon outside CI:
+
+| Service     | Role                                                                              |
+| ----------- | --------------------------------------------------------------------------------- |
+| `gateway`   | Discord gateway daemon — slash commands and mentions (`gateway.Dockerfile`)       |
+| `workspace` | Workspace agent container (placeholder in v1; real agent wired in Unit 7)         |
+| `mitmproxy` | Egress proxy enforcing an allowlist of permitted outbound hosts                   |
+
+Stack files: `deploy/compose.yaml`, `deploy/compose.override.example.yaml`, `deploy/gateway.Dockerfile`, `deploy/workspace.Dockerfile`, `deploy/init-certs.sh`, `deploy/validate-stack.sh`, `deploy/mitmproxy/`.
+
+Secrets are file-based (`deploy/secrets/*`, 0600 permissions). Required: `discord-token`, `discord-application-id`, `s3-bucket`, `s3-region`. Optional: `s3-endpoint`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (pair contract — both or neither; falls back to SDK default credential chain), `AWS_SESSION_TOKEN`.
+
+mitmproxy is configured to fail closed by default; `OBJECT_STORE_HOSTS` is the allowlist knob for S3 egress.
 
 ## Supported Event Triggers
 
@@ -183,18 +230,23 @@ The repo runs its own Fro Bot agent (self-referencing `./` in CI, `fro-bot/agent
 
 ## Dependency Highlights
 
-| Package               | Version      | Purpose                              |
-| --------------------- | ------------ | ------------------------------------ |
-| `@actions/cache`      | 6.0.0        | GitHub Actions cache operations      |
-| `@actions/core`       | 3.0.1        | Action I/O, logging, state           |
-| `@actions/github`     | 9.1.1        | Octokit + GitHub context             |
-| `@aws-sdk/client-s3`  | 3.1040.0     | S3-compatible object storage         |
-| `@opencode-ai/sdk`    | 1.14.30      | OpenCode execution                   |
-| `@octokit/auth-app`   | 8.2.0        | GitHub App authentication            |
-| `@bfra.me/es`         | 0.1.0        | Shared ES utilities                  |
-| `tsdown`              | 0.21.10      | Rolldown-based bundler               |
-| `semantic-release`    | 25.0.3       | Automated versioning/publishing      |
-| `simple-git-hooks`    | 2.13.1       | Pre-commit (lint-staged), pre-push   |
+| Package               | Version (2026-05-22) | Was @ v0.42.8 | Purpose                              |
+| --------------------- | -------------------- | ------------- | ------------------------------------ |
+| `@actions/artifact`   | 6.2.1                | —             | Artifact upload (root dep now)       |
+| `@actions/cache`      | 6.0.0                | 6.0.0         | GitHub Actions cache operations      |
+| `@actions/core`       | 3.0.1                | 3.0.1         | Action I/O, logging, state           |
+| `@actions/exec`       | 3.0.0                | —             | Subprocess execution                 |
+| `@actions/github`     | 9.1.1                | 9.1.1         | Octokit + GitHub context             |
+| `@actions/tool-cache` | 4.0.0                | —             | Tool caching for setup phase         |
+| `@aws-sdk/client-s3`  | 3.1045.0             | 3.1040.0      | S3-compatible object storage         |
+| `@opencode-ai/sdk`    | 1.14.41              | 1.14.30       | OpenCode execution                   |
+| `@octokit/auth-app`   | 8.2.0                | 8.2.0         | GitHub App authentication            |
+| `@bfra.me/es`         | 0.1.0                | 0.1.0         | Shared ES utilities                  |
+| `discord.js`          | 14.26.4              | —             | Gateway Discord client (gateway pkg) |
+| `effect`              | 3.21.2               | —             | Gateway composition layer            |
+| `tsdown`              | 0.22.0               | 0.21.10       | Rolldown-based bundler               |
+| `semantic-release`    | 25.0.3               | 25.0.3        | Automated versioning/publishing      |
+| `simple-git-hooks`    | 2.13.1               | 2.13.1        | Pre-commit (lint-staged), pre-push   |
 
 ## Renovate Configuration
 
@@ -233,6 +285,8 @@ The `docs/` directory contains extensive planning and operational artifacts:
 
 A `FEATURES.md` at repo root documents v1.4 MVP with 73 features across 12 categories (GitHub interactions, Discord agent, memory/persistence, setup, SDK execution, context/prompt, security, observability, error handling, configuration, additional triggers, delegated work tools).
 
+**New 2026-05-22:** A top-level `.agents/skills/` directory has appeared (project-local skills accessible to the agent during self-hosted runs). A `.slim/` directory and `RULES.md` (development rules v1.4 covering technology stack, code style, architecture patterns, security, testing, build/release, anti-patterns) round out the agent-oriented top-level surface. `RULES.md` declares the documentation hierarchy: PRD > RFCs > FEATURES.md > RULES.md.
+
 A `PRD.md` contains the full product requirements document. `RFCS.md` indexes the 19 RFC architecture decision records.
 
 ## Ecosystem Role
@@ -265,22 +319,26 @@ Version lag varies: some repos trail by several patch releases due to Renovate c
 
 ## Fro Bot Workflow Status
 
-**Present and self-hosted.** `fro-bot.yaml` uses `./` (self-reference during CI test) and `fro-bot/agent@v0.42.x` (in the actual fro-bot.yaml). Full trigger coverage: comment mentions, issue events, PR reviews, daily DMR, weekly wiki, manual dispatch.
+**Present and self-hosted.** `fro-bot.yaml` uses `./` (self-reference during CI test) and `fro-bot/agent@v0` (major version pin) in production triggers. Full trigger coverage: comment mentions, issue events, PR reviews, daily DMR (15:30 UTC), weekly wiki (Sun 20:00 UTC), manual dispatch with `use-schedule-prompt` / `use-wiki-prompt` boolean inputs.
+
+The `WIKI_PROMPT` env var in the workflow contains the full wiki maintenance instructions for the project's own `docs/wiki/` Obsidian vault — a parallel artifact to the wiki Fro Bot maintains for the `.github` repo. Branch contract: `fro-bot/wiki-update`, one open PR at a time, branch is deleted if it exists with no open PR.
 
 ## Workspace Packages
 
-| Package             | Path                | Dependencies                           | Purpose                              |
-| ------------------- | ------------------- | -------------------------------------- | ------------------------------------ |
-| `@fro-bot/action`   | `apps/action/`      | `@fro-bot/runtime` (workspace)         | GitHub Action entry points (private) |
-| `@fro-bot/runtime`  | `packages/runtime/` | `@bfra.me/es`, `@opencode-ai/sdk`     | Shared runtime library (private)     |
+| Package             | Path                | Dependencies                                                | Purpose                                                                 |
+| ------------------- | ------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `@fro-bot/action`   | `apps/action/`      | `@fro-bot/runtime` (workspace)                              | GitHub Action entry points (private)                                    |
+| `@fro-bot/runtime`  | `packages/runtime/` | `@bfra.me/es`, `@opencode-ai/sdk`                          | Shared runtime library; locks, run-state, S3 sync helpers (private)     |
+| `@fro-bot/gateway`  | `packages/gateway/` | `@fro-bot/runtime` (workspace), `discord.js`, `effect`     | **New 2026-05-22.** Long-running Discord daemon (private)               |
 
-Root `package.json` (`@fro-bot/agent-workspace`) holds all external production deps and dev deps. Workspace protocol links `@fro-bot/action` → `@fro-bot/runtime`. The runtime exports source-level TypeScript (no pre-built dist; consumed via workspace protocol).
+Root `package.json` (`@fro-bot/agent-workspace`) holds external action/dev deps; gateway-specific deps (`discord.js`, `effect`) live in `packages/gateway/package.json`. Workspace protocol links `@fro-bot/action` and `@fro-bot/gateway` → `@fro-bot/runtime`. The runtime exports source-level TypeScript (no pre-built dist; consumed via workspace protocol).
 
-pnpm workspace config (`pnpm-workspace.yaml`) enables `autoInstallPeers`, `shamefullyHoist`, `shellEmulator`, and carries security-focused overrides for `brace-expansion`, `fast-xml-parser`, `flatted`, `handlebars`, `lodash`/`lodash-es`, `picomatch`, `tar`, `undici`, `yaml`, and pins `vite` to 8.0.10.
+pnpm workspace config (`pnpm-workspace.yaml`) enables `autoInstallPeers`, `shamefullyHoist`, `shellEmulator`, `ignoreWorkspaceRootCheck`. `onlyBuiltDependencies` is now `[esbuild, simple-git-hooks, unrs-resolver]`. Security-focused overrides for `brace-expansion`, `fast-xml-parser`, `flatted`, `handlebars`, `lodash`/`lodash-es`, `picomatch`, `tar@^7`, `undici@^7`, `yaml`. `vite` pin moved from 8.0.10 → 8.0.13. Root `package.json` additionally pins `fast-uri`, `fast-xml-builder`, `fast-xml-parser`, `ip-address` to security-patched ranges.
 
 ## Survey History
 
 | Date       | SHA        | Key changes                                          |
 | ---------- | ---------- | ---------------------------------------------------- |
+| 2026-05-22 | `8632cf4`  | Re-survey at v0.44.3: new `packages/gateway` (Discord daemon, Effect 3.x), new `deploy/` Docker stack (gateway + workspace + mitmproxy), `enable-omo` action input (oMo now opt-in), `agent` input default changed from `sisyphus` to unset/OpenCode-build, open issues 7→2, stars 0→1, dep bumps (`@opencode-ai/sdk` 1.14.30→1.14.41, `tsdown` 0.21→0.22, `vite` pin 8.0.10→8.0.13). `services/object-store/` confirmed migrated (likely into `@fro-bot/runtime`). Action `AGENTS.md` is stale (dated 2026-03-29). |
 | 2026-05-08 | `ef6b952`  | Re-survey: additive detail (workspace packages, docs structure, artifact/object-store discrepancy) |
 | 2026-05-07 | `ef6b952`  | Initial survey                                       |

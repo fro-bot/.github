@@ -2,11 +2,12 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2026-05-17
-tags: [home-assistant, iot, smart-home, yaml, automation]
+updated: 2026-05-20
+tags: [home-assistant, iot, smart-home, yaml, automation, addon]
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--esphome-life
+  - bfra-me--ha-addon-repository
   - github-actions-ci
 ---
 
@@ -18,6 +19,7 @@ Open-source home automation platform. Core references across the Fro Bot ecosyst
 
 - [[marcusrbrown--ha-config]] — Marcus's primary HA configuration (public, CI-validated)
 - [[marcusrbrown--esphome-life]] — ESPHome device firmware; linked from ha-config as a git submodule at `esphome/`
+- [[bfra-me--ha-addon-repository]] — Template repo for building & publishing HA add-ons (bfra-me org), multi-arch Docker images via `home-assistant/builder`
 
 ## Configuration Patterns Observed
 
@@ -30,6 +32,12 @@ The preferred pattern splits configuration by domain into `packages/` directory 
 Home Assistant configs can be validated in CI using `frenck/action-home-assistant`, which runs the HA config check against a specific HA version pinned in `.HA_VERSION`. This catches YAML errors, missing integrations, and breaking changes before merge.
 
 **Pin-drift footgun:** validating against a frozen `.HA_VERSION` only catches problems that exist in *that* version. Observed in [[marcusrbrown--ha-config]], where `.HA_VERSION` has remained at `2025.6.3` across three surveys (2025-06 → 2026-05) while pip-resolved deps like `esphome` advance. The CI passes, but the config is not validated against current upstream HA.
+
+The add-on side uses a different tool: `frenck/action-addon-linter` validates the add-on contract (`config.yaml`, `build.yaml`, image references, arch lists, schema). Observed in [[bfra-me--ha-addon-repository]]. The two `frenck/*` actions are sibling validators serving the two sides of the HA development workflow.
+
+### Multi-Arch Add-on Builds
+
+Add-ons publish multi-arch Docker images via `home-assistant/builder` (pinned at `2026.03.2` in [[bfra-me--ha-addon-repository]]). Standard arch matrix: `aarch64`, `amd64`, `armhf`, `armv7`. Base images from `ghcr.io/home-assistant/{arch}-base` split between Alpine 3.23 (64-bit) and 3.22 (32-bit ARM) — upstream lags on 32-bit. The build action supports `--cosign` for Sigstore signing when `id-token: write` is granted.
 
 ### Custom Components
 

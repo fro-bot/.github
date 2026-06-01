@@ -2,11 +2,14 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-04-27
+updated: 2026-05-25
 tags: [probot, github, repository-settings, automation, governance]
 related:
   - marcusrbrown--github
   - marcusrbrown--ha-config
+  - bfra-me--github
+  - bfra-me--ha-addon-repository
+  - bfra-me--works
 ---
 
 # Probot Settings
@@ -45,6 +48,38 @@ The `fro-bot/.github` repository (this repo) has its own `common-settings.yaml` 
 - `fro-bot` as admin, `marcusrbrown` as push
 - Fewer, more focused labels
 
+### bfra-me/.github (Bfra-Me Org Template)
+
+[[bfra-me--github]] ships a **third** `common-settings.yaml` for the
+`@bfra-me` org. Surveyed 2026-05-20 (SHA `a81be4c`):
+
+- Repo-level: `is_template: true`, `has_projects: false`, `has_wiki: false`,
+  squash-only merging, auto-merge enabled, branch deletion on merge,
+  `allow_update_branch: true`, squash commit title `COMMIT_OR_PR_TITLE`
+- Branch protection (`main`): 12 required status checks (Advanced
+  Security Analysis, CodeQL, Container Scan, Create Renovate Changeset,
+  Fro Bot, GitGuardian Scan, License Scan, Quality Check, Release,
+  Renovate, Review Dependencies, Triage), strict mode, linear history,
+  admin enforcement, `required_approving_review_count: 0` — governance
+  leans on status checks rather than human reviewers
+- `update-repository-settings` is shipped as a local custom action in
+  this repo and consumed by `update-repo-settings.yaml`
+
+[[bfra-me--ha-addon-repository]], [[bfra-me--works]], and other
+`bfra-me/*` repos extend this template; most `marcusrbrown/*` repos
+extend the `fro-bot/.github` template instead. Reconciling which org
+template is canonical for what audience is an open follow-up.
+
+The [[bfra-me--works]] settings file is a representative example of how
+`bfra-me/*` repos compose the org template: it extends
+`.github:common-settings.yaml` and overrides `repository.{name,
+description, topics}` plus a 12-check branch-protection list (`Analyze`,
+`Build`, `CI`, `CodeQL`, `Create Renovate Changeset`, `Fro Bot`,
+`Lint`, `Prepare`, `Renovate / Renovate`, `Review Dependencies`,
+`Test`, `Workspace Analysis`) with `enforce_admins: true`,
+`required_linear_history: true`, and `required_pull_request_reviews:
+null` — matching the org-template posture (checks over reviewers).
+
 ## Settings Sync Workflow
 
 Repos using Probot Settings typically include an `update-repo-settings.yaml` workflow:
@@ -52,7 +87,7 @@ Repos using Probot Settings typically include an `update-repo-settings.yaml` wor
 - **Trigger:** Push to main, daily cron, manual dispatch
 - **Implementation:** Reusable workflow from `bfra-me/.github`
 - **Auth:** GitHub App via `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets
-- **Reusable workflow version:** `bfra-me/.github` v4.16.9 (as of 2026-04-27 in [[marcusrbrown--github]])
+- **Reusable workflow version:** `bfra-me/.github` v4.16.20 (as of 2026-05-25 in [[marcusrbrown--github]]; bumped from v4.16.9 via 11 sequential Renovate PRs over four weeks — example of dependency-only churn dominating a config-only repo)
 
 ## Common Configuration Patterns
 
