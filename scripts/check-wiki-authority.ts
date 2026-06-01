@@ -34,6 +34,7 @@ const GUARDED_PATTERNS: readonly RegExp[] = [
 
 export interface GuardInput {
   readonly author: string
+  readonly headRef: string
   readonly files: readonly string[]
 }
 
@@ -53,6 +54,11 @@ export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly bl
  */
 export function checkWikiAuthority(input: GuardInput): GuardResult {
   if (FROBOT_AUTHORS.has(input.author)) {
+    // metadata/repos.yaml may only arrive via the `data` promotion branch.
+    // Any other head branch from a fro-bot identity is the prohibited both-sides mutation.
+    if (input.files.includes('metadata/repos.yaml') && input.headRef !== 'data') {
+      return {ok: false, blockedFiles: ['metadata/repos.yaml']}
+    }
     return {ok: true}
   }
   const blockedFiles = input.files.filter(f => GUARDED_PATTERNS.some(p => p.test(f)))
@@ -94,20 +100,25 @@ interface PullRequestEventPayload {
   readonly pull_request?: {
     readonly number?: number
     readonly user?: {readonly login?: string} | null
+    readonly head?: {readonly ref?: string} | null
   }
 }
 
-async function readPullRequestContext(eventPath: string): Promise<{prNumber: number; author: string}> {
+async function readPullRequestContext(eventPath: string): Promise<{prNumber: number; author: string; headRef: string}> {
   const raw = await readFile(eventPath, 'utf8')
   const parsed = JSON.parse(raw) as PullRequestEventPayload
   const prNumber = parsed.pull_request?.number
   const author = parsed.pull_request?.user?.login
+  const headRef = parsed.pull_request?.head?.ref
   if (typeof prNumber !== 'number' || typeof author !== 'string' || author === '') {
     throw new Error(
       `check-wiki-authority: event payload missing pull_request.number or pull_request.user.login (path=${eventPath})`,
     )
   }
-  return {prNumber, author}
+  if (typeof headRef !== 'string' || headRef === '') {
+    throw new Error(`check-wiki-authority: event payload missing pull_request.head.ref (path=${eventPath})`)
+  }
+  return {prNumber, author, headRef}
 }
 
 function fetchChangedFiles(prNumber: number): string[] {
@@ -129,9 +140,9 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const {prNumber, author} = await readPullRequestContext(eventPath)
+  const {prNumber, author, headRef} = await readPullRequestContext(eventPath)
   const files = fetchChangedFiles(prNumber)
-  const result = checkWikiAuthority({author, files})
+  const result = checkWikiAuthority({author, headRef, files})
 
   if (result.ok) {
     process.stdout.write(`check-wiki-authority: ok (author=${author}, files_checked=${files.length})\n`)
