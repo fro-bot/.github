@@ -101,10 +101,13 @@ interface PullRequestEventPayload {
     readonly number?: number
     readonly user?: {readonly login?: string} | null
     readonly head?: {readonly ref?: string} | null
+    readonly base?: {readonly repo?: {readonly full_name?: string} | null} | null
   }
 }
 
-async function readPullRequestContext(eventPath: string): Promise<{prNumber: number; author: string; headRef: string}> {
+async function readPullRequestContext(
+  eventPath: string,
+): Promise<{prNumber: number; author: string; headRef: string; fullName: string | null}> {
   const raw = await readFile(eventPath, 'utf8')
   const parsed = JSON.parse(raw) as PullRequestEventPayload
   const prNumber = parsed.pull_request?.number
@@ -118,16 +121,27 @@ async function readPullRequestContext(eventPath: string): Promise<{prNumber: num
   if (typeof headRef !== 'string' || headRef === '') {
     throw new Error(`check-wiki-authority: event payload missing pull_request.head.ref (path=${eventPath})`)
   }
-  return {prNumber, author, headRef}
+  const rawFullName = parsed.pull_request?.base?.repo?.full_name
+  const fullName = typeof rawFullName === 'string' && rawFullName.length > 0 ? rawFullName : null
+  return {prNumber, author, headRef, fullName}
 }
 
-function fetchChangedFiles(prNumber: number): string[] {
-  // `gh pr view` with --json files returns paginated results. For PRs under GitHub's
-  // default per-file soft limit this single-page view is sufficient; if it ever proves
-  // insufficient, swap to `gh api --paginate /repos/{owner}/{repo}/pulls/{n}/files`.
-  const stdout = execFileSync('gh', ['pr', 'view', String(prNumber), '--json', 'files', '--jq', '.files[].path'], {
-    encoding: 'utf8',
-  })
+/**
+ * Fetch the complete list of changed files for a pull request using the paginated GitHub API.
+ *
+ * Uses `gh api --paginate` so files beyond GitHub's first-page soft limit are always included.
+ * `{fullName}` is the `owner/repo` string sourced from the event payload's
+ * `pull_request.base.repo.full_name` field; falls back to `gh repo view` when the payload
+ * does not carry it (e.g. re-triggered workflows).
+ *
+ * Exported for unit testing.
+ */
+export function fetchChangedFiles(prNumber: number, fullName: string): string[] {
+  const stdout = execFileSync(
+    'gh',
+    ['api', '--paginate', `/repos/${fullName}/pulls/${prNumber}/files`, '--jq', '.[].filename'],
+    {encoding: 'utf8'},
+  )
   return stdout.split('\n').filter(line => line.length > 0)
 }
 
@@ -140,8 +154,11 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  const {prNumber, author, headRef} = await readPullRequestContext(eventPath)
-  const files = fetchChangedFiles(prNumber)
+  const {prNumber, author, headRef, fullName: eventFullName} = await readPullRequestContext(eventPath)
+  const fullName =
+    eventFullName ??
+    execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {encoding: 'utf8'}).trim()
+  const files = fetchChangedFiles(prNumber, fullName)
   const result = checkWikiAuthority({author, headRef, files})
 
   if (result.ok) {

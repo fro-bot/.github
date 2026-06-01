@@ -1,6 +1,15 @@
-import {describe, expect, it} from 'vitest'
+import {describe, expect, it, vi} from 'vitest'
 
-import {checkWikiAuthority, formatBlockMessage} from './check-wiki-authority.ts'
+import {checkWikiAuthority, fetchChangedFiles, formatBlockMessage} from './check-wiki-authority.ts'
+
+// Hoisted mock for execFileSync — must precede any import that might trigger the module.
+const {mockExecFileSync} = vi.hoisted(() => ({
+  mockExecFileSync: vi.fn(),
+}))
+
+vi.mock('node:child_process', () => ({
+  execFileSync: mockExecFileSync,
+}))
 
 describe('checkWikiAuthority', () => {
   describe('author is an allowed Fro Bot identity', () => {
@@ -342,5 +351,53 @@ describe('formatBlockMessage', () => {
     // #then the output is a non-trivial string the CI log can surface
     const msg = formatBlockMessage({ok: false, blockedFiles: ['metadata/repos.yaml']})
     expect(msg.length).toBeGreaterThan(50)
+  })
+})
+
+describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
+  it('calls gh api --paginate with the correct endpoint and returns filenames', () => {
+    // #given execFileSync returns a newline-separated list of filenames (as gh --paginate would)
+    mockExecFileSync.mockReturnValue('scripts/foo.ts\nmetadata/repos.yaml\nknowledge/index.md\n')
+
+    // #when fetchChangedFiles is called with prNumber and fullName
+    const files = fetchChangedFiles(42, 'fro-bot/.github')
+
+    // #then it uses gh api --paginate (not gh pr view) and returns all filenames
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'gh',
+      ['api', '--paginate', '/repos/fro-bot/.github/pulls/42/files', '--jq', '.[].filename'],
+      {encoding: 'utf8'},
+    )
+    expect(files).toEqual(['scripts/foo.ts', 'metadata/repos.yaml', 'knowledge/index.md'])
+  })
+
+  it('includes metadata/repos.yaml from a paginated response not on the first page (guard bypass prevented)', () => {
+    // #given execFileSync returns filenames where metadata/repos.yaml appears later
+    // (simulating it being beyond the first page of a large PR — --paginate merges it all)
+    const paginatedOutput = [
+      'scripts/a.ts',
+      'scripts/b.ts',
+      // ... imagine 300 files above, then:
+      'metadata/repos.yaml',
+    ].join('\n')
+    mockExecFileSync.mockReturnValue(`${paginatedOutput}\n`)
+
+    const files = fetchChangedFiles(99, 'fro-bot/.github')
+
+    // #then metadata/repos.yaml is present in the result (not dropped by single-page limit)
+    expect(files).toContain('metadata/repos.yaml')
+
+    // #and a non-data-branch human author is correctly blocked
+    const guardResult = checkWikiAuthority({author: 'marcusrbrown', headRef: 'feature/x', files})
+    expect(guardResult).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+  })
+
+  it('filters empty lines from the output', () => {
+    // #given output with trailing newline (common from shell tools)
+    mockExecFileSync.mockReturnValue('foo.ts\n\nbar.ts\n')
+
+    const files = fetchChangedFiles(1, 'owner/repo')
+
+    expect(files).toEqual(['foo.ts', 'bar.ts'])
   })
 })
