@@ -264,6 +264,12 @@ export async function main(): Promise<void> {
       // Log only node_id + coarse error class; never echo raw gh stderr (may contain owner/name).
       failedNodeIds.push(nodeId)
       process.stderr.write(`check-private-leak: could not resolve node_id=${nodeId} (error)\n`)
+      // TEMP DIAGNOSTIC (revert): surface redacted gh error to classify 401/403/404.
+      // Strips any owner/name-shaped token so no private identity is logged.
+      if ('stderr' in result && typeof result.stderr === 'string' && result.stderr !== '') {
+        const redacted = result.stderr.replaceAll(/[\w.-]+\/[\w.-]+/g, '<redacted>')
+        process.stderr.write(`check-private-leak: DIAGNOSTIC redacted gh error: ${redacted}\n`)
+      }
     }
   }
 
