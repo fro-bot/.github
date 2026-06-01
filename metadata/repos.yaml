@@ -310,3 +310,27 @@ repos:
     next_survey_eligible_at: 2026-06-29
     private: false
     node_id: R_kgDOSmhCGA
+  - owner: '[REDACTED]'
+    name: R_kgDOSVJgdw
+    added: 2026-06-01
+    onboarding_status: pending
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: false
+    discovery_channel: collab
+    next_survey_eligible_at: null
+    private: true
+    node_id: R_kgDOSVJgdw
+  - owner: '[REDACTED]'
+    name: R_kgDOSZ9x-w
+    added: 2026-06-01
+    onboarding_status: pending
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: false
+    discovery_channel: collab
+    next_survey_eligible_at: null
+    private: true
+    node_id: R_kgDOSZ9x-w
