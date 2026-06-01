@@ -147,3 +147,35 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/check-wiki-authority.ts
+
+  check-private-leak:
+    name: Check Private Leak
+    # Only pull_request events carry a PR diff and author to evaluate against the guard.
+    # Post-merge push runs on `main` are already past the gate.
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🔑 Mint App Token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.FRO_BOT_APP_ID }}
+          private-key: ${{ secrets.FRO_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: 🔒 Check Private Leak
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node scripts/check-private-leak.ts
