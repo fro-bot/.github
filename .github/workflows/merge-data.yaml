@@ -36,15 +36,20 @@ jobs:
           ref: data
           path: data-branch-check
 
-      # Use main's metadata/repos.yaml as the authoritative private-repo list so
-      # stale orphan entries on the data branch cannot block the privacy gate.
+      # Privacy gate: blocks promotion if a private repo's wiki page would leak onto main.
+      # Design: delta-based public-allowlist inversion — no GraphQL needed.
+      #   - data's own repos.yaml is authoritative (data branch is the writer)
+      #   - publicSlugs built from entries with explicit private===false via computeRepoSlug
+      #   - pages already on main (default checkout = main) are grandfathered to avoid
+      #     re-flagging verifiably-public repos that lack an explicit private===false field
+      #     (e.g. marcusrbrown/copiloting: onboarding_status=lost-access, absent private)
+      #   - dead/node-null orphans are tolerated: if already on main → grandfathered;
+      #     if genuinely new → correctly flagged without any GraphQL call
       - name: 🔒 Block private wiki pages
         env:
-          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          GRANDFATHER_WIKI_REPOS_DIR: ../knowledge/wiki/repos
         working-directory: data-branch-check
-        run: |
-          cp ../metadata/repos.yaml metadata/repos.yaml
-          node ../scripts/check-wiki-private-presence.ts
+        run: node ../scripts/check-wiki-private-presence.ts
 
       - name: 🔀 Open weekly data merge PR
         env:

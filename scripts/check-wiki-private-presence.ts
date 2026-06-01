@@ -1,208 +1,166 @@
-import {execFileSync} from 'node:child_process'
+import {createHash} from 'node:crypto'
 import {readdir, readFile} from 'node:fs/promises'
+import {join} from 'node:path'
 import process from 'node:process'
 
 import YAML from 'yaml'
 
-import {assertReposFile} from './schemas.ts'
+import {assertReposFile, type RepoEntry} from './schemas.ts'
+import {computeRepoSlug} from './wiki-slug.ts'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface WikiPageSnapshot {
+  filename: string
+  stem: string
+  /** SHA-256 hex digest of the file content — used for content-identity grandfathering. */
+  hash: string
+  /** Raw file content — used for attribution checks. */
+  content: string
+}
 
 export interface PrivateWikiLeak {
   filename: string
-  reason: 'canonical-slug-match' | 'node-id-match'
-  node_id: string
+  reason: 'unattributable-page' | 'ambiguous-public-slug'
 }
 
+// ---------------------------------------------------------------------------
+// detectPrivateWikiLeaks — pure function (no I/O, no subprocess)
+// ---------------------------------------------------------------------------
+
 /**
- * Pure function: detect wiki files in knowledge/wiki/repos/ that correspond to private repo entries.
+ * Pure function: flag data wiki pages that cannot be attributed to a known-public
+ * or unchanged-grandfathered repo.
  *
- * For each private entry:
- * - If canonicalSlug is provided, check for a case-insensitive stem match against wiki filenames.
- * - Always check if any wiki filename stem matches the entry's node_id (defensive).
+ * For each data page its stem is checked in this order:
  *
- * Returns all leaks found without short-circuiting.
+ * 1. If `publicSlugMap` has 2+ entries for the stem → `ambiguous-public-slug`
+ *    (two public repos share the slug after sanitization; fail closed).
+ *
+ * 2. If `publicSlugMap` has exactly 1 entry for the stem AND the page content
+ *    contains `https://github.com/{owner}/{name}` for that entry → **passes**
+ *    (explicitly public AND attributable).
+ *    If the URL is absent → `unattributable-page` (slug collision via content spoofing).
+ *
+ * 3. If the stem appears in `grandfatherPages` with the **same hash** as the
+ *    corresponding data page → **passes** (content-identical to what is already on
+ *    main; e.g. `marcusrbrown/copiloting` with `lost-access`).
+ *    A modified page (different hash) falls through to step 4.
+ *
+ * 4. Otherwise → `unattributable-page`.
+ *
+ * This design requires NO GraphQL. Unchanged grandfathered pages (even absent-
+ * `private` entries like `marcusrbrown/copiloting`) are handled gracefully.
+ * Modified or new unattirbutable pages are blocked.
  */
 export function detectPrivateWikiLeaks(params: {
-  privateEntries: readonly {node_id: string; canonicalSlug?: string}[]
-  wikiRepoFilenames: readonly string[]
+  dataWikiPages: readonly WikiPageSnapshot[]
+  publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
+  grandfatherPages: readonly WikiPageSnapshot[]
 }): PrivateWikiLeak[] {
-  const {privateEntries, wikiRepoFilenames} = params
+  const {dataWikiPages, publicSlugMap, grandfatherPages} = params
+
+  // Build grandfather index: stem → hash (for O(1) lookup)
+  const grandfatherByStem = new Map<string, string>()
+  for (const page of grandfatherPages) {
+    grandfatherByStem.set(page.stem, page.hash)
+  }
+
   const leaks: PrivateWikiLeak[] = []
 
-  for (const entry of privateEntries) {
-    for (const filename of wikiRepoFilenames) {
-      const stem = filename.replace(/\.md$/i, '')
+  for (const page of dataWikiPages) {
+    const entries = publicSlugMap.get(page.stem)
 
-      // Canonical slug match (case-insensitive)
-      if (entry.canonicalSlug !== undefined && stem.toLowerCase() === entry.canonicalSlug.toLowerCase()) {
-        leaks.push({filename, reason: 'canonical-slug-match', node_id: entry.node_id})
+    if (entries !== undefined) {
+      // Slug matches at least one public entry.
+      if (entries.length > 1) {
+        // Ambiguous: 2+ public repos sanitize to the same slug.
+        leaks.push({filename: page.filename, reason: 'ambiguous-public-slug'})
         continue
       }
 
-      // Node ID match (defensive)
-      if (stem === entry.node_id) {
-        leaks.push({filename, reason: 'node-id-match', node_id: entry.node_id})
+      // Single unique public entry — verify content attribution.
+      // entries.length === 1 is guaranteed by the guard above; the non-null assertion
+      // is safe but we narrow with a runtime guard to satisfy strict noUncheckedIndexedAccess.
+      const entry = entries[0]
+      if (entry === undefined) {
+        leaks.push({filename: page.filename, reason: 'unattributable-page'})
+        continue
       }
+      const expectedUrl = `https://github.com/${entry.owner}/${entry.name}`
+      if (page.content.includes(expectedUrl)) {
+        continue // passes: explicitly public and attributable
+      }
+
+      // Content doesn't reference the expected repo — possible slug collision.
+      leaks.push({filename: page.filename, reason: 'unattributable-page'})
+      continue
     }
+
+    // Stem not in publicSlugMap — check content-identity grandfathering.
+    const grandfatherHash = grandfatherByStem.get(page.stem)
+    if (grandfatherHash !== undefined && grandfatherHash === page.hash) {
+      continue // unchanged from main → grandfathered (e.g. copiloting/lost-access)
+    }
+
+    // Not public, not unchanged-grandfathered → block.
+    leaks.push({filename: page.filename, reason: 'unattributable-page'})
   }
 
   return leaks
 }
 
 // ---------------------------------------------------------------------------
-// Type guards for GraphQL response (no unsafe casts at JSON boundary)
-// ---------------------------------------------------------------------------
-
-function isGraphQLRepoNameResponse(value: unknown): value is {data: {node: {nameWithOwner: string}}} {
-  if (typeof value !== 'object' || value === null) return false
-  const v = value as Record<string, unknown>
-  if (typeof v.data !== 'object' || v.data === null) return false
-  const data = v.data as Record<string, unknown>
-  if (typeof data.node !== 'object' || data.node === null) return false
-  const node = data.node as Record<string, unknown>
-  return typeof node.nameWithOwner === 'string' && node.nameWithOwner.length > 0
-}
-
-function isGraphQLNodeNullResponse(value: unknown): value is {data: {node: null}} {
-  if (typeof value !== 'object' || value === null) return false
-  const v = value as Record<string, unknown>
-  if (typeof v.data !== 'object' || v.data === null) return false
-  const data = v.data as Record<string, unknown>
-  return data.node === null
-}
-
-/**
- * Detect a GraphQL NOT_FOUND signal in captured subprocess output.
- *
- * `gh api graphql` exits non-zero whenever the response carries a top-level
- * `errors` array — including the benign "Could not resolve to a node with the
- * global id" NOT_FOUND that accompanies `data.node: null`. When that happens,
- * execFileSync throws before we can parse `data.node`, so the body is only
- * reachable via the thrown error's captured stdout/stderr. This classifies
- * such a throw as a node-lifecycle failure rather than a transport failure.
- */
-export function isNotFoundSignal(text: string): boolean {
-  if (text.length === 0) return false
-  // Try structured parse first: top-level errors[].type === 'NOT_FOUND' or data.node: null.
-  try {
-    const parsed: unknown = JSON.parse(text)
-    if (typeof parsed === 'object' && parsed !== null) {
-      const obj = parsed as Record<string, unknown>
-      if (Array.isArray(obj.errors) && obj.errors.some(e => isNotFoundError(e))) return true
-      if (isGraphQLNodeNullResponse(parsed)) return true
-    }
-  } catch {
-    // Not JSON (e.g. plain `gh:` stderr line) — fall through to substring match.
-  }
-  return /Could not resolve to a node with the global id/i.test(text) || /"type":\s*"NOT_FOUND"/i.test(text)
-}
-
-function isNotFoundError(value: unknown): boolean {
-  return typeof value === 'object' && value !== null && (value as Record<string, unknown>).type === 'NOT_FOUND'
-}
-
-function capturedOutput(error: unknown): string {
-  if (typeof error !== 'object' || error === null) return ''
-  const e = error as {stdout?: unknown; stderr?: unknown; message?: unknown}
-  const parts = [e.stdout, e.stderr, e.message].map(p => (typeof p === 'string' ? p : ''))
-  return parts.join('\n')
-}
-
-// ---------------------------------------------------------------------------
-// resolveCanonicalSlugs — exported for testing; fail-closed
-// ---------------------------------------------------------------------------
-
-export interface ResolvedEntry {
-  node_id: string
-  canonicalSlug: string
-}
-
-export interface SlugResolutionResult {
-  resolved: ResolvedEntry[]
-}
-
-type FailureMode = 'subprocess-threw' | 'node-null'
-
-interface ResolutionFailure {
-  node_id: string
-  mode: FailureMode
-}
-
-/**
- * Resolve canonical slugs for all private entries via GraphQL.
- *
- * Uses parameterized `--field nodeId=` to avoid injection via crafted node_id values.
- *
- * Fail-closed: if ANY entry's slug cannot be resolved, throws with each failure
- * labeled by mode so operators can act without guessing:
- *   [subprocess-threw] — network/rate-limit/auth issue
- *   [node-null]        — repo deleted or App lost access
- *
- * Captures all subprocess output; never echoes to stdout/stderr.
- */
-export function resolveCanonicalSlugs(entries: readonly {node_id: string}[]): SlugResolutionResult {
-  const resolved: ResolvedEntry[] = []
-  const failures: ResolutionFailure[] = []
-
-  const query = 'query($nodeId: ID!) { node(id: $nodeId) { ... on Repository { nameWithOwner } } }'
-
-  for (const entry of entries) {
-    try {
-      const stdout = execFileSync(
-        'gh',
-        ['api', 'graphql', '--field', `nodeId=${entry.node_id}`, '-f', `query=${query}`],
-        {
-          encoding: 'utf8',
-          stdio: ['inherit', 'pipe', 'pipe'],
-        },
-      )
-      const parsed: unknown = JSON.parse(stdout)
-      if (isGraphQLRepoNameResponse(parsed)) {
-        // Normalize to lowercase at storage; convert "owner/repo" → "owner--repo"
-        // GitHub's nameWithOwner is always `owner/repo` with exactly one slash — single-match replace is intentional.
-        const slug = parsed.data.node.nameWithOwner.replace('/', '--').toLowerCase()
-        resolved.push({node_id: entry.node_id, canonicalSlug: slug})
-      } else if (isGraphQLNodeNullResponse(parsed)) {
-        failures.push({node_id: entry.node_id, mode: 'node-null'})
-      } else {
-        // Unexpected response shape — treat as subprocess-level failure
-        failures.push({node_id: entry.node_id, mode: 'subprocess-threw'})
-      }
-    } catch (error) {
-      // `gh api graphql` exits non-zero on NOT_FOUND even though the body is a
-      // valid `data.node: null`. Inspect captured output so a deleted repo / lost
-      // App access is classified as node-null, not a transport failure.
-      const mode: FailureMode = isNotFoundSignal(capturedOutput(error)) ? 'node-null' : 'subprocess-threw'
-      failures.push({node_id: entry.node_id, mode})
-    }
-  }
-
-  if (failures.length > 0) {
-    const lines = failures.map(f => {
-      const hint =
-        f.mode === 'node-null' ? 'investigate repo lifecycle/App access' : 'investigate network/rate-limit/auth'
-      return `  [${f.mode}] ${f.node_id} (${hint})`
-    })
-    throw new Error(
-      `check-wiki-private-presence: cannot verify private wiki presence (${failures.length} ${failures.length === 1 ? 'entry' : 'entries'} unresolved):\n${lines.join('\n')}`,
-    )
-  }
-
-  return {resolved}
-}
-
-// ---------------------------------------------------------------------------
-// loadWikiFilenames — exported for testing; ENOENT-only graceful (P1 #3)
+// loadWikiPages — exported for testing; ENOENT-only graceful
 // ---------------------------------------------------------------------------
 
 /**
- * List .md filenames in knowledge/wiki/repos/.
+ * Load all .md files in `dir` as WikiPageSnapshot records (filename, stem, hash, content).
  *
  * ENOENT is graceful (fresh checkout, no wiki yet) → returns [].
  * Any other error propagates — do not silently swallow FS errors.
+ *
+ * @param dir - Directory path to read (absolute or relative to CWD).
  */
-export async function loadWikiFilenames(): Promise<string[]> {
+export async function loadWikiPages(dir: string): Promise<WikiPageSnapshot[]> {
+  let filenames: string[]
   try {
-    const entries = await readdir('knowledge/wiki/repos')
+    const entries = await readdir(dir)
+    filenames = entries.filter(f => f.endsWith('.md'))
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return []
+    }
+    throw error
+  }
+
+  return Promise.all(
+    filenames.map(async (filename): Promise<WikiPageSnapshot> => {
+      const content = await readFile(join(dir, filename), 'utf8')
+      const hash = createHash('sha256').update(content).digest('hex')
+      const stem = filename.replace(/\.md$/i, '').toLowerCase()
+      return {filename, stem, hash, content}
+    }),
+  )
+}
+
+// ---------------------------------------------------------------------------
+// loadWikiFilenames — kept for backward compatibility; ENOENT-only graceful
+// ---------------------------------------------------------------------------
+
+/**
+ * List .md filenames in the given directory.
+ *
+ * ENOENT is graceful (fresh checkout, no wiki yet) → returns [].
+ * Any other error propagates — do not silently swallow FS errors.
+ *
+ * @param dir - Directory path to read (absolute or relative to CWD).
+ */
+export async function loadWikiFilenames(dir: string): Promise<string[]> {
+  try {
+    const entries = await readdir(dir)
     return entries.filter(f => f.endsWith('.md'))
   } catch (error) {
     if (typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -213,36 +171,93 @@ export async function loadWikiFilenames(): Promise<string[]> {
 }
 
 // ---------------------------------------------------------------------------
-// CLI entry-point
+// buildPublicSlugMap / buildPublicSlugs
 // ---------------------------------------------------------------------------
 
+/**
+ * Build a map from slug → RepoEntry[] for all entries with explicit `private === false`.
+ *
+ * A stem with 2+ entries signals a slug collision (two repos sanitize to the same
+ * string). Callers must flag ambiguous stems rather than silently admitting them.
+ *
+ * Uses `computeRepoSlug` (not raw `owner--name` join) so leading-dot sanitization
+ * matches actual wiki filenames.
+ *
+ * Exported for testing.
+ */
+export function buildPublicSlugMap(repos: readonly RepoEntry[]): Map<string, RepoEntry[]> {
+  const map = new Map<string, RepoEntry[]>()
+  for (const entry of repos) {
+    if (entry.private === false) {
+      const slug = computeRepoSlug(entry.owner, entry.name)
+      const existing = map.get(slug)
+      if (existing === undefined) {
+        map.set(slug, [entry])
+      } else {
+        existing.push(entry)
+      }
+    }
+  }
+  return map
+}
+
+/**
+ * Build the set of public repo slugs from a repos.yaml entry list.
+ *
+ * Only entries with explicit `private === false` are admitted — absent/undefined
+ * private is treated as private (fail-safe). Uses `computeRepoSlug` (not a raw
+ * `owner--name` join) so leading-dot sanitization matches actual wiki filenames.
+ *
+ * Exported as a pure helper so tests can exercise the predicate directly without
+ * standing up the full CLI entry-point.
+ */
+export function buildPublicSlugs(repos: readonly RepoEntry[]): Set<string> {
+  return new Set(buildPublicSlugMap(repos).keys())
+}
+
+/**
+ * Validate and return the `GRANDFATHER_WIKI_REPOS_DIR` environment variable.
+ *
+ * Throws on undefined or blank input — misconfiguration must never silently
+ * pass or over-block. Returns the trimmed path string on success.
+ *
+ * Exported as a pure helper so tests can exercise the validation branch without
+ * standing up the full CLI entry-point.
+ */
+export function requireGrandfatherDir(env: string | undefined): string {
+  if (env === undefined || env.trim() === '') {
+    throw new Error(
+      'check-wiki-private-presence: GRANDFATHER_WIKI_REPOS_DIR env var is required but not set. ' +
+        "The workflow must supply the path to main's knowledge/wiki/repos/ directory " +
+        'so that pages already public are not re-flagged.',
+    )
+  }
+  return env.trim()
+}
+
 async function main(): Promise<void> {
-  // 1. Read and validate metadata/repos.yaml
+  // 1. Read and validate data branch's own metadata/repos.yaml (CWD = data-branch-check).
+  //    Fail closed: throws on read/parse error.
   const reposRaw = await readFile('metadata/repos.yaml', 'utf8')
   const reposParsed: unknown = YAML.parse(reposRaw)
   assertReposFile(reposParsed)
 
-  // 2. Filter to private entries with node_id
-  const privateEntries = reposParsed.repos.filter(
-    (r): r is typeof r & {node_id: string} => r.private === true && typeof r.node_id === 'string',
-  )
+  // 2. Build publicSlugMap from entries with explicit private === false.
+  //    IMPORTANT: absent/undefined private is NOT admitted — fail-safe default is "private".
+  //    Uses computeRepoSlug (not raw owner--name) so sanitization matches actual wiki filenames.
+  const publicSlugMap = buildPublicSlugMap(reposParsed.repos)
 
-  if (privateEntries.length === 0) {
-    process.stdout.write('no private wiki leaks detected\n')
-    return
-  }
+  // 3. Load data wiki pages (CWD = data-branch-check).
+  const dataWikiPages = await loadWikiPages('knowledge/wiki/repos')
 
-  // 3. List wiki repo filenames from the working directory (data branch checkout)
-  const wikiRepoFilenames = await loadWikiFilenames()
+  // 4. Load grandfather pages from main's wiki dir.
+  //    Fail closed: GRANDFATHER_WIKI_REPOS_DIR MUST be supplied by the workflow.
+  //    An unset var → throw loudly; misconfiguration must not silently pass or over-block.
+  const grandfatherDir = requireGrandfatherDir(process.env.GRANDFATHER_WIKI_REPOS_DIR)
+  const grandfatherPages = await loadWikiPages(grandfatherDir)
 
-  // 4. Resolve canonical slugs via GraphQL (fail-closed — throws on any failure)
-  const {resolved} = resolveCanonicalSlugs(privateEntries)
-
-  // 5. Detect leaks
-  const leaks = detectPrivateWikiLeaks({
-    privateEntries: resolved,
-    wikiRepoFilenames,
-  })
+  // 5. Detect leaks — pure function, no GraphQL.
+  const leaks = detectPrivateWikiLeaks({dataWikiPages, publicSlugMap, grandfatherPages})
 
   // 6. Report
   if (leaks.length > 0) {
