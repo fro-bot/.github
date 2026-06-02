@@ -129,6 +129,7 @@ describe('reconcileRepos', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1229,6 +1230,7 @@ describe('reconcileRepos', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 3, dispatched: 0, deferred: 0, lostAccess: 1},
@@ -1272,6 +1274,7 @@ describe('reconcileRepos', () => {
         unchanged: 1,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
           owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1299,6 +1302,7 @@ describe('reconcileRepos', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: emptyChannelStats(),
       })
     })
@@ -3363,6 +3367,142 @@ describe('handleReconcile (I/O shell)', () => {
 
       expect(issuesCreate).not.toHaveBeenCalled()
     })
+
+    it('counts race-suppressed skips separately from pre-existing rollups in raceSuppressedRollups', async () => {
+      // Verifies that raceSuppressedRollups counts only the same-run guard path, not the
+      // pre-existing-on-GitHub silent-skip path.
+      //
+      // All three owners start from an empty repos state so reconcileRepos classifies every repo
+      // as unsolicited-new → pending-review. buildIssueQueue groups them into 3 per-owner rollup
+      // issues; runIssueQueue (step 10) calls issuesCreate for all 3, adding all three to
+      // currentRunRollupOwners. selfHealRollups (step 12) then receives listForRepo returning only
+      // "existing-owner" and checks each owner:
+      //   - race-owner:    not in listForRepo, IS in currentRunRollupOwners → raceSuppressed += 1
+      //   - existing-owner: IS in listForRepo                               → silent skip (no increment)
+      //   - new-owner:     not in listForRepo, IS in currentRunRollupOwners → raceSuppressed += 1
+      //
+      // Expected: issuesCreate called 3× (step 10), raceSuppressedRollups === 2 (race-owner + new-owner).
+
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          // race-owner: 2 pending-review, was created this run (currentRunRollupOwners)
+          makeEntry({owner: 'race-owner', name: 'r1', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'race-owner', name: 'r2', onboarding_status: 'pending-review'}),
+          // existing-owner: 2 pending-review, has an open rollup on GitHub
+          makeEntry({owner: 'existing-owner', name: 'e1', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'existing-owner', name: 'e2', onboarding_status: 'pending-review'}),
+          // new-owner: 2 pending-review, nothing in currentRunRollupOwners or listForRepo
+          makeEntry({owner: 'new-owner', name: 'n1', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'new-owner', name: 'n2', onboarding_status: 'pending-review'}),
+        ],
+      }
+
+      const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+      // listForRepo returns only "existing-owner" rollup (pre-existing on GitHub).
+      // "race-owner" rollup was just created this run but listForRepo lags → not here.
+      const issuesListForRepo = vi.fn(async () => ({
+        data: [
+          {
+            number: 51,
+            title: 'Unsolicited collaborator grants from existing-owner',
+            body: '<!-- reconcile:subject:rollup-owner=existing-owner -->',
+            state: 'open' as const,
+            labels: [{name: 'reconcile:pending-review'}, {name: 'reconcile:rollup-pending-review'}],
+          },
+        ],
+      }))
+
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: existing.repos.map((r, i) => ({
+            owner: {login: r.owner},
+            name: r.name,
+            archived: false,
+            private: false,
+            node_id: `R_obs_${i}`,
+          })),
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
+          readMetadata: makeReadMetadata({repos: {version: 1, repos: []}, allowlist: makeAllowlist([])}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      // Step 10 (runIssueQueue) creates exactly 3 rollups (one per qualifying owner).
+      // Step 12 (selfHealRollups) must NOT create additional duplicates.
+      // raceSuppressedRollups counts owners skipped by the same-run guard (currentRunRollupOwners)
+      // but NOT by the pre-existing check (listForRepo). Here race-owner and new-owner are
+      // in currentRunRollupOwners; existing-owner is in listForRepo.
+      expect(issuesCreate).toHaveBeenCalledTimes(3)
+      // The new summary field must be present and count same-run-suppressed skips only.
+      // existing-owner is pre-existing (listForRepo path) → does not count.
+      // race-owner and new-owner are in currentRunRollupOwners → each counts as 1.
+      expect(result.summary.raceSuppressedRollups).toBe(2)
+    })
+
+    it('serialization-protected recovery: self-heals when currentRunRollupOwners is empty and listForRepo is stale-empty', async () => {
+      // Documents the cross-run serialization guarantee: the workflow concurrency group
+      // (group: reconcile-repos, cancel-in-progress: false) serializes runs so a manual
+      // rerun cannot start until the prior run's creates have propagated well past
+      // listForRepo's eventual-consistency lag. This means:
+      //
+      //   If currentRunRollupOwners is empty (no rollups created this run's step 10)
+      //   AND listForRepo returns empty (stale or no prior rollup),
+      //   selfHealRollups SHOULD create — this is the legitimate recovery path.
+      //
+      // The serialization guarantee means no concurrent run created the rollup,
+      // so there is no duplicate risk in this scenario. This test pins that the
+      // eventual-consistency guard does NOT over-suppress the recovery path.
+
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({owner: 'heal-owner', name: 'h1', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'heal-owner', name: 'h2', onboarding_status: 'pending-review'}),
+        ],
+      }
+
+      const issuesCreate = vi.fn(async () => ({data: {number: 100}}))
+      // listForRepo returns empty — stale or no prior rollup exists.
+      const issuesListForRepo = vi.fn(async () => ({data: []}))
+
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: existing.repos.map((r, i) => ({
+            owner: {login: r.owner},
+            name: r.name,
+            archived: false,
+            private: false,
+            node_id: `R_heal_${i}`,
+          })),
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
+          // Pre-existing repos so step 10 sees no new pending-review → currentRunRollupOwners is empty.
+          readMetadata: makeReadMetadata({repos: existing, allowlist: makeAllowlist([])}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      // selfHealRollups must create the rollup: currentRunRollupOwners is empty,
+      // listForRepo is stale-empty, serialization guarantees no concurrent run created it.
+      expect(issuesCreate).toHaveBeenCalledOnce()
+      const params = firstCallArg<{title: string; labels: string[]}>(issuesCreate)
+      expect(params?.title.toLowerCase()).toContain('heal-owner')
+      expect(params?.labels).toContain('reconcile:rollup-pending-review')
+      // No same-run suppression occurred.
+      expect(result.summary.raceSuppressedRollups).toBe(0)
+    })
   })
 
   describe('data branch integrity check', () => {
@@ -4280,6 +4420,7 @@ describe('formatCommitMessage', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 2 refreshes')
@@ -4300,6 +4441,7 @@ describe('formatCommitMessage', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
@@ -4320,6 +4462,7 @@ describe('formatCommitMessage', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 1 refreshes')
@@ -4340,6 +4483,7 @@ describe('formatCommitMessage', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 1 refreshes, +18 migrated')
