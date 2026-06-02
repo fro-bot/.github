@@ -28,6 +28,50 @@ export interface PrivateWikiLeak {
 }
 
 // ---------------------------------------------------------------------------
+// parseFrontmatterSources — extract structured source URLs from YAML frontmatter
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the YAML frontmatter of a wiki page and return the list of `sources[].url`
+ * strings, or `null` if frontmatter is absent, unparseable, or has no `sources` key.
+ *
+ * Return semantics:
+ * - `string[]` (may be empty)  → frontmatter parsed AND has a `sources` array (authoritative)
+ * - `null`                      → no usable structured sources; caller should fall back to substring
+ *
+ * Callers MUST NOT fall back to substring when a non-null array is returned — the
+ * presence of structured sources makes them authoritative for attribution.
+ */
+function parseFrontmatterSources(content: string): string[] | null {
+  // Match YAML frontmatter fences at the start of the file.
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/m.exec(content)
+  if (!match) return null
+
+  let parsed: unknown
+  try {
+    parsed = YAML.parse(match[1] ?? '')
+  } catch {
+    return null // unparseable frontmatter → caller falls back to substring
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) return null
+
+  const sources = (parsed as Record<string, unknown>).sources
+  if (!Array.isArray(sources)) return null
+
+  // Extract url strings from each sources entry.
+  const urls: string[] = []
+  for (const src of sources) {
+    if (typeof src === 'object' && src !== null) {
+      const url = (src as Record<string, unknown>).url
+      if (typeof url === 'string') urls.push(url)
+    }
+  }
+
+  return urls
+}
+
+// ---------------------------------------------------------------------------
 // detectPrivateWikiLeaks — pure function (no I/O, no subprocess)
 // ---------------------------------------------------------------------------
 
@@ -91,8 +135,35 @@ export function detectPrivateWikiLeaks(params: {
         continue
       }
       const expectedUrl = `https://github.com/${entry.owner}/${entry.name}`
+      const structuredSources = parseFrontmatterSources(page.content)
+
+      if (structuredSources !== null) {
+        // Structured sources are present and parseable — they are authoritative.
+        // Attribution is satisfied iff at least one source URL matches the expected URL.
+        // Body substring is deliberately ignored here; structured sources close the decoy-URL spoof vector.
+        if (structuredSources.some(url => url === expectedUrl || url.includes(expectedUrl))) {
+          continue // passes: structured attribution
+        }
+        // Structured sources exist but none match — treat as unattributable.
+        // Body substring is NOT checked as a rescue when structured sources are present.
+        leaks.push({filename: page.filename, reason: 'unattributable-page'})
+        continue
+      }
+
+      // No parseable structured sources (frontmatter absent, unparseable, or no sources key).
+      // Fall back to legacy body substring check so pre-existing pages are not over-blocked.
       if (page.content.includes(expectedUrl)) {
-        continue // passes: explicitly public and attributable
+        // Emit a migration signal: this page passed via legacy substring attribution only.
+        // The public slug is safe to log; never log private repo owner/name here.
+        process.stderr.write(
+          `${JSON.stringify({
+            level: 'warn',
+            event: 'legacy-substring-attribution',
+            message: 'Page attributed via body substring; add structured frontmatter sources for stronger attribution',
+            slug: page.stem,
+          })}\n`,
+        )
+        continue // passes: legacy substring fallback
       }
 
       // Content doesn't reference the expected repo — possible slug collision.

@@ -1,5 +1,6 @@
 import type {RepoEntry} from './schemas.ts'
 
+import process from 'node:process'
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {
   buildPublicSlugMap,
@@ -27,8 +28,13 @@ vi.mock('node:fs/promises', () => ({
   readdir: mockReaddir,
 }))
 
+// Suppress stderr during tests to avoid polluting output with legacy-attribution warnings.
+// Individual tests that want to assert on stderr capture it explicitly.
+const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
 beforeEach(() => {
   vi.clearAllMocks()
+  stderrSpy.mockClear()
 })
 
 // ---------------------------------------------------------------------------
@@ -378,6 +384,152 @@ describe('detectPrivateWikiLeaks', () => {
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'R_kgDOABCDEF.md', reason: 'unattributable-page'})
+    })
+  })
+
+  describe('structured frontmatter attribution', () => {
+    it('structured pass: page with matching sources[].url in frontmatter is attributed even without body URL', () => {
+      // #given a page whose frontmatter sources list the expected public repo URL
+      //        but whose body does NOT contain the raw URL
+      // #when detection runs
+      // #then passes via structured attribution — body is irrelevant when sources are present
+      const content = [
+        '---',
+        'type: repo',
+        'sources:',
+        '  - url: https://github.com/owner/name',
+        '---',
+        'Body text with no raw URL here.',
+      ].join('\n')
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('owner--name.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['owner--name', [{owner: 'owner', name: 'name', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toEqual([])
+    })
+
+    it('decoy-URL spoof caught: structured sources present but non-matching, body has URL — still flagged', () => {
+      // #given a page whose frontmatter sources point to a DIFFERENT repo (non-matching)
+      //        but whose body contains the expected public URL as a decoy
+      // #when detection runs
+      // #then FLAGGED — structured sources are authoritative when present;
+      //        body substring is ignored, closing the spoof vector
+      const content = [
+        '---',
+        'type: repo',
+        'sources:',
+        '  - url: https://github.com/attacker/private-repo',
+        '---',
+        'Check out https://github.com/acme/widget for more info.',
+      ].join('\n')
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+    })
+
+    it('legacy fallback (no over-block): page with NO sources key in frontmatter — body URL passes via fallback', () => {
+      // #given a page with YAML frontmatter that has NO sources key at all
+      //        but whose body contains the expected URL
+      // #when detection runs
+      // #then passes via legacy substring fallback — no sources key means no structured authority
+      const content = [
+        '---',
+        'type: repo',
+        'title: "acme/widget"',
+        '---',
+        'See https://github.com/acme/widget for details.',
+      ].join('\n')
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toEqual([])
+    })
+
+    it('legacy fallback (no over-block): page with no frontmatter at all — body URL passes via fallback', () => {
+      // #given a page with no YAML frontmatter markers (legacy prose-only page)
+      //        whose body contains the expected URL
+      // #when detection runs
+      // #then passes via legacy substring fallback — exactly as the pre-existing substring check
+      const content = 'See https://github.com/acme/widget for details.'
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toEqual([])
+    })
+
+    it('unparseable frontmatter with body URL — falls back to substring and passes', () => {
+      // #given a page with YAML frontmatter fences but invalid YAML content
+      //        and the expected URL appears in the body
+      // #when detection runs
+      // #then falls back to legacy substring check and passes (no over-block)
+      const content = [
+        '---',
+        ': invalid: yaml: content: [[[',
+        '---',
+        'See https://github.com/acme/widget for details.',
+      ].join('\n')
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toEqual([])
+    })
+
+    it('negative case: no sources, no URL in body — flagged as before', () => {
+      // #given a page with no structured sources and no URL in body
+      // #when detection runs
+      // #then flagged — both structured and substring checks fail
+      const content = 'Nothing useful here.'
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+    })
+
+    it('legacy fallback emits redaction-safe stderr warning (no private owner/name)', () => {
+      // #given a page that passes via legacy substring fallback (no sources frontmatter)
+      // #when detection runs
+      // #then a warning is written to stderr referencing only the public slug (safe to log),
+      //        and never containing any private repo owner/name
+      const content = 'See https://github.com/acme/widget for details.'
+      detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(stderrSpy).toHaveBeenCalled()
+      const written = stderrSpy.mock.calls.map(args => String(args[0])).join('')
+      // Warning must reference the safe public slug
+      expect(written).toContain('acme--widget')
+      // Warning must NOT contain any private identifier pattern (nothing beyond the public slug)
+      expect(written).not.toContain('private')
     })
   })
 
