@@ -1290,6 +1290,34 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
     })
     expect(result).toEqual([])
   })
+
+  it('case-insensitive owner/repo: mixed-case source url Acme/Widget attributes to acme/widget entry', () => {
+    // GitHub owner/repo names are case-insensitive; a source URL with different casing for the
+    // same repo must attribute correctly rather than be over-blocked.
+    const content = ['---', 'sources:', '  - url: https://github.com/Acme/Widget', '---', 'Content.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toEqual([])
+  })
+
+  it('case-insensitive owner/repo: different repo name (widget-other) still does NOT match acme/widget', () => {
+    // Lowercasing both sides must not collapse different repo names — a distinct repo stays flagged.
+    const content = ['---', 'sources:', '  - url: https://github.com/acme/widget-other', '---', 'Content.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
 })
 
 // ---------------------------------------------------------------------------

@@ -99,7 +99,7 @@ function parseFrontmatterSources(content: string): string[] | null {
  * - URL host must be exactly `github.com` (strict — no www.).
  * - No explicit port (`parsed.port` must be empty string — rejects :444, etc.).
  * - URL pathname segments[0] must equal `owner` and segments[1] must equal `name`
- *   (case-sensitive; slug casing follows how RepoEntry fields are stored).
+ *   (case-insensitive; GitHub owner/repo names are case-insensitive).
  * - Trailing path segments (e.g. `/blob/main/README.md`) are allowed — only the
  *   first two segments are checked.
  * - Query string and hash are ignored (URL parsing handles this).
@@ -116,7 +116,12 @@ function sourceUrlMatchesRepo(sourceUrl: string, owner: string, name: string): b
   if (parsed.hostname !== 'github.com') return false
   if (parsed.port !== '') return false
   const segments = parsed.pathname.split('/').filter(s => s.length > 0)
-  return segments[0] === owner && segments[1] === name
+  // GitHub owner/repo names are case-insensitive: compare lowercased so a source URL like
+  // `https://github.com/Acme/Widget` correctly attributes to an entry stored as `acme/widget`.
+  // Optional chaining on segments[1] guards the `/owner`-only path (undefined?.toLowerCase()
+  // returns undefined, which !== any string, so it's a safe no-match). This can only convert
+  // an over-block into a correct attribution — it cannot match a genuinely different repo.
+  return segments[0]?.toLowerCase() === owner.toLowerCase() && segments[1]?.toLowerCase() === name.toLowerCase()
 }
 
 // ---------------------------------------------------------------------------

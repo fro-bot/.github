@@ -381,6 +381,8 @@ async function maybeCreateConflictAlert(params: {
   headBranch: string
   baseBranch: string
 }): Promise<number | null> {
+  // Paginate exhaustively over every open issue so dedup holds regardless of how many
+  // are open; a single page could miss an existing alert and file a duplicate each run.
   const existingIssues = await params.octokit.paginate(params.octokit.rest.issues.listForRepo, {
     owner: params.owner,
     repo: params.repo,
@@ -486,6 +488,8 @@ async function maybeCreateStaleDivergenceAlert(params: {
 
   const alertTitle = `Stale data branch divergence: ${params.headBranch} is older than 14 days`
 
+  // Paginate exhaustively over every open issue so dedup holds regardless of how many
+  // are open; a single page could miss an existing alert and file a duplicate each run.
   const existingIssues = await params.octokit.paginate(params.octokit.rest.issues.listForRepo, {
     owner: params.owner,
     repo: params.repo,
