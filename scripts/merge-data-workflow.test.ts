@@ -7,13 +7,26 @@ import {parse} from 'yaml'
 // run BEFORE the promotion-PR step (merge-data-pr.ts). A refactor that
 // reorders steps would silently break the gate without this test.
 
+/** Narrow the parsed YAML to the shape we index into, without any broad cast. */
+function assertMergeDataWorkflow(value: unknown): asserts value is {
+  jobs: Record<string, {steps: {name?: string; run?: string; 'continue-on-error'?: boolean; if?: string}[]}>
+} {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('jobs' in value) ||
+    typeof (value as Record<string, unknown>).jobs !== 'object'
+  ) {
+    throw new TypeError('merge-data.yaml does not have expected shape: missing jobs object')
+  }
+}
+
 describe('merge-data.yaml workflow step order', () => {
   // #given the merge-data workflow file parsed as a YAML document
   const workflowPath = resolve(import.meta.dirname, '../.github/workflows/merge-data.yaml')
-  const workflow = parse(readFileSync(workflowPath, 'utf8')) as {
-    jobs: Record<string, {steps: {name?: string; run?: string}[]}>
-  }
-  const steps = workflow.jobs['merge-data']?.steps ?? []
+  const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
+  assertMergeDataWorkflow(parsed)
+  const steps = parsed.jobs['merge-data']?.steps ?? []
 
   it('contains the privacy gate step (check-wiki-private-presence.ts)', () => {
     // #when searching for the gate step
@@ -39,5 +52,15 @@ describe('merge-data.yaml workflow step order', () => {
     expect(gateIndex).toBeGreaterThanOrEqual(0)
     expect(mergeIndex).toBeGreaterThanOrEqual(0)
     expect(gateIndex).toBeLessThan(mergeIndex)
+  })
+
+  it('privacy gate step does not have continue-on-error or if: that could neuter it', () => {
+    // #given the gate step
+    const gateStep = steps.find(s => s.run?.includes('check-wiki-private-presence.ts'))
+    expect(gateStep).toBeDefined()
+    // #then continue-on-error must be absent or falsy — it would let the gate fail silently
+    expect(gateStep?.['continue-on-error']).toBeFalsy()
+    // #then if: must be absent — a conditional skip would allow the gate to be bypassed
+    expect(gateStep?.if).toBeUndefined()
   })
 })

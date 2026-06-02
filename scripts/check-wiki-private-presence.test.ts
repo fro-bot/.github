@@ -1,12 +1,12 @@
 import type {RepoEntry} from './schemas.ts'
 
-import {describe, expect, it, vi} from 'vitest'
+import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {
   buildPublicSlugMap,
   buildPublicSlugs,
   detectPrivateWikiLeaks,
+  findStructuralViolations,
   formatLeakReport,
-  loadWikiFilenames,
   loadWikiPages,
   requireGrandfatherDir,
   type WikiPageSnapshot,
@@ -27,6 +27,10 @@ vi.mock('node:fs/promises', () => ({
   readdir: mockReaddir,
 }))
 
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -38,18 +42,24 @@ function page(filename: string, hash: string, content = ''): WikiPageSnapshot {
 }
 
 /**
- * Minimal Dirent stub for the `readdir(dir, {withFileTypes: true})` recursive walk.
- * `loadWikiPages` only calls `.isDirectory()`, `.isFile()`, and reads `.name`.
+ * Minimal Dirent stub for the `readdir(dir, {withFileTypes: true})` flat walk.
+ * Supports file, dir, and symlink kinds.
  */
 function dirent(
   name: string,
-  kind: 'file' | 'dir' = 'file',
+  kind: 'file' | 'dir' | 'symlink' = 'file',
 ): {
   name: string
   isFile: () => boolean
   isDirectory: () => boolean
+  isSymbolicLink: () => boolean
 } {
-  return {name, isFile: () => kind === 'file', isDirectory: () => kind === 'dir'}
+  return {
+    name,
+    isFile: () => kind === 'file',
+    isDirectory: () => kind === 'dir',
+    isSymbolicLink: () => kind === 'symlink',
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -410,7 +420,7 @@ describe('detectPrivateWikiLeaks', () => {
 })
 
 // ---------------------------------------------------------------------------
-// loadWikiPages
+// loadWikiPages — flat, regular-files-only
 // ---------------------------------------------------------------------------
 
 describe('loadWikiPages', () => {
@@ -458,6 +468,19 @@ describe('loadWikiPages', () => {
     expect(result[0]?.hash).toMatch(/^[0-9a-f]{64}$/)
   })
 
+  it('ignores subdirectory entries (flat scan — subdir is a structural violation, not loaded)', async () => {
+    // #given a top-level .md file and a subdirectory entry
+    // #when loadWikiPages is called (flat scan)
+    // #then only the regular .md file is loaded; subdir is silently ignored (flagged by findStructuralViolations)
+    mockReaddir.mockResolvedValue([dirent('top--page.md'), dirent('nested', 'dir')])
+    mockReadFile.mockResolvedValue('content')
+    const result = await loadWikiPages('knowledge/wiki/repos')
+    const filenames = result.map(p => p.filename)
+    expect(filenames).toEqual(['top--page.md'])
+    // readdir called exactly once (no recursion)
+    expect(mockReaddir).toHaveBeenCalledTimes(1)
+  })
+
   it('produces the same hash for identical content (deterministic)', async () => {
     // #given two pages with identical content
     // #when loadWikiPages is called
@@ -489,79 +512,102 @@ describe('loadWikiPages', () => {
     await loadWikiPages('/some/custom/dir')
     expect(mockReadFile).toHaveBeenCalledWith('/some/custom/dir/foo--bar.md', 'utf8')
   })
-
-  // #3327.2 — subdirectory bypass: a .md nested in a subdir must still be scanned.
-  it('recursively loads .md files nested in subdirectories (subdir-bypass fix)', async () => {
-    // #given a top-level page and a page nested one level deep
-    // #when loadWikiPages is called
-    // #then BOTH pages are loaded — a flat readdir would have missed the nested one
-    mockReaddir
-      .mockResolvedValueOnce([dirent('top--page.md'), dirent('nested', 'dir')])
-      .mockResolvedValueOnce([dirent('owner--secret.md')])
-    mockReadFile.mockResolvedValue('content')
-    const result = await loadWikiPages('knowledge/wiki/repos')
-    const filenames = result.map(p => p.filename).sort()
-    expect(filenames).toEqual(['owner--secret.md', 'top--page.md'])
-    // the nested page's readFile path includes the subdir
-    expect(mockReadFile).toHaveBeenCalledWith('knowledge/wiki/repos/nested/owner--secret.md', 'utf8')
-  })
-
-  it('derives the stem from the basename regardless of nesting depth', async () => {
-    // #given a deeply-nested private-named page
-    // #when loadWikiPages is called
-    // #then its stem is the basename slug (so detection matches it like a flat page)
-    mockReaddir
-      .mockResolvedValueOnce([dirent('a', 'dir')])
-      .mockResolvedValueOnce([dirent('b', 'dir')])
-      .mockResolvedValueOnce([dirent('marcusrbrown--poly.md')])
-    mockReadFile.mockResolvedValue('content')
-    const result = await loadWikiPages('knowledge/wiki/repos')
-    expect(result).toHaveLength(1)
-    expect(result[0]?.stem).toBe('marcusrbrown--poly')
-  })
 })
 
 // ---------------------------------------------------------------------------
-// loadWikiFilenames (kept for backward compatibility)
+// findStructuralViolations — non-regular entries in wiki repos dir
 // ---------------------------------------------------------------------------
 
-describe('loadWikiFilenames', () => {
+describe('findStructuralViolations', () => {
+  it('returns one leak for a subdirectory entry (nesting is always illegal)', async () => {
+    // #given a directory entry in the wiki repos dir
+    // #when findStructuralViolations is called
+    // #then returns one leak with reason invalid-wiki-structure
+    mockReaddir.mockResolvedValue([dirent('acme--secret', 'dir')])
+    const result = await findStructuralViolations('knowledge/wiki/repos')
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--secret', reason: 'invalid-wiki-structure'})
+  })
+
+  it('returns one leak for a symlink .md entry (symlinks are always illegal)', async () => {
+    // #given a symlink named like a wiki page
+    // #when findStructuralViolations is called
+    // #then returns one leak — symlinks fail closed, never attributed
+    mockReaddir.mockResolvedValue([dirent('acme--public.md', 'symlink')])
+    const result = await findStructuralViolations('knowledge/wiki/repos')
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--public.md', reason: 'invalid-wiki-structure'})
+  })
+
+  it('returns one leak for a directory named foo.md (dir is a dir even with .md extension)', async () => {
+    // #given a directory whose name ends in .md
+    // #when findStructuralViolations is called
+    // #then returns one leak — it is a directory, not a regular file
+    mockReaddir.mockResolvedValue([dirent('foo.md', 'dir')])
+    const result = await findStructuralViolations('knowledge/wiki/repos')
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'foo.md', reason: 'invalid-wiki-structure'})
+  })
+
+  it('does NOT flag regular non-.md files (.gitkeep, README.md)', async () => {
+    // #given regular files that are not .md (or are a README)
+    // #when findStructuralViolations is called
+    // #then returns no leaks — only non-regular entries are violations
+    mockReaddir.mockResolvedValue([dirent('.gitkeep', 'file'), dirent('README.md', 'file')])
+    const result = await findStructuralViolations('knowledge/wiki/repos')
+    expect(result).toEqual([])
+  })
+
+  it('returns empty array when all entries are regular .md files (clean flat wiki)', async () => {
+    // #given only regular .md files (the expected wiki layout)
+    // #when findStructuralViolations is called
+    // #then no violations
+    mockReaddir.mockResolvedValue([dirent('acme--widget.md'), dirent('marcusrbrown--poly.md')])
+    const result = await findStructuralViolations('knowledge/wiki/repos')
+    expect(result).toEqual([])
+  })
+
   it('returns empty array when directory does not exist (ENOENT)', async () => {
-    // #given the wiki repos directory does not exist
-    // #when loadWikiFilenames is called
-    // #then it returns [] gracefully (fresh checkout, no wiki yet)
+    // #given the directory does not exist (fresh checkout)
+    // #when findStructuralViolations is called
+    // #then returns [] gracefully
     const enoent = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
     mockReaddir.mockRejectedValue(enoent)
-    const result = await loadWikiFilenames('knowledge/wiki/repos')
+    const result = await findStructuralViolations('knowledge/wiki/repos')
     expect(result).toEqual([])
   })
 
   it('propagates non-ENOENT errors (fail-closed)', async () => {
-    // #given readdir throws a permission error (not ENOENT)
-    // #when loadWikiFilenames is called
-    // #then the error propagates — do not silently swallow FS errors
+    // #given readdir throws EPERM
+    // #when findStructuralViolations is called
+    // #then the error propagates — never fail open on FS errors
     const eperm = Object.assign(new Error('EPERM: operation not permitted'), {code: 'EPERM'})
     mockReaddir.mockRejectedValue(eperm)
-    await expect(loadWikiFilenames('knowledge/wiki/repos')).rejects.toThrow(/EPERM/)
+    await expect(findStructuralViolations('knowledge/wiki/repos')).rejects.toThrow(/EPERM/)
   })
 
-  it('returns only .md files from the directory listing', async () => {
-    // #given the directory contains .md and non-.md files
-    // #when loadWikiFilenames is called
-    // #then only .md filenames are returned
-    mockReaddir.mockResolvedValue(['acme--secret.md', 'README.md', '.gitkeep', 'other.txt'])
-    const result = await loadWikiFilenames('knowledge/wiki/repos')
-    expect(result).toEqual(['acme--secret.md', 'README.md'])
-  })
+  it('composes with detectPrivateWikiLeaks: subdir flagged structurally, clean public page passes', async () => {
+    // #given a structural violation (subdir) AND a clean public page
+    // #when both functions are called and results merged
+    // #then structural leak is present; public page does not appear in detectPrivateWikiLeaks results
+    mockReaddir.mockResolvedValue([dirent('acme--secret', 'dir'), dirent('acme--public.md')])
+    mockReadFile.mockResolvedValue('url: https://github.com/acme/public\n')
 
-  it('accepts an explicit directory argument (used for grandfather dir)', async () => {
-    // #given a custom directory path
-    // #when loadWikiFilenames is called with that path
-    // #then readdir is called with the given path
-    mockReaddir.mockResolvedValue(['foo--bar.md'])
-    const result = await loadWikiFilenames('/some/custom/dir')
-    expect(mockReaddir).toHaveBeenCalledWith('/some/custom/dir')
-    expect(result).toEqual(['foo--bar.md'])
+    const structuralLeaks = await findStructuralViolations('knowledge/wiki/repos')
+    const pages = await loadWikiPages('knowledge/wiki/repos')
+    const contentLeaks = detectPrivateWikiLeaks({
+      dataWikiPages: pages,
+      publicSlugMap: new Map([
+        ['acme--public', [{owner: 'acme', name: 'public', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    const allLeaks = [...structuralLeaks, ...contentLeaks]
+
+    expect(structuralLeaks).toHaveLength(1)
+    expect(structuralLeaks[0]).toMatchObject({filename: 'acme--secret', reason: 'invalid-wiki-structure'})
+    expect(contentLeaks).toEqual([])
+    expect(allLeaks).toHaveLength(1)
   })
 })
 
@@ -607,10 +653,10 @@ describe('buildPublicSlugMap', () => {
 })
 
 // ---------------------------------------------------------------------------
-// buildPublicSlugs (Fix #4 — load-bearing predicate end-to-end)
+// buildPublicSlugs (load-bearing predicate end-to-end)
 // ---------------------------------------------------------------------------
 
-describe('buildPublicSlugs (Fix #4 — load-bearing predicate end-to-end)', () => {
+describe('buildPublicSlugs (load-bearing predicate end-to-end)', () => {
   it('excludes entry with ABSENT private field (private !== true would wrongly include it)', () => {
     // #given entry {owner:'acme', name:'mystery'} with NO private field
     // Under private === false: absent is NOT admitted (fail-safe)
@@ -683,10 +729,10 @@ describe('buildPublicSlugs (Fix #4 — load-bearing predicate end-to-end)', () =
 })
 
 // ---------------------------------------------------------------------------
-// formatLeakReport (#3326 — redaction)
+// formatLeakReport (redaction)
 // ---------------------------------------------------------------------------
 
-describe('formatLeakReport (#3326 — redaction)', () => {
+describe('formatLeakReport (redaction)', () => {
   const twoLeaks = [
     {filename: 'marcusrbrown--poly.md', reason: 'unattributable-page' as const},
     {filename: 'acme--secret.md', reason: 'ambiguous-public-slug' as const},
@@ -729,6 +775,10 @@ describe('formatLeakReport (#3326 — redaction)', () => {
     expect(report).not.toContain('.md')
     // Stronger: no owner--repo shape anywhere (e.g. no derivative leakage)
     expect(report).not.toMatch(/[\w.-]+--[\w.-]+/)
+    // Additional redaction assertions
+    expect(report).not.toContain('marcusrbrown/poly')
+    expect(report).not.toContain('https://github.com')
+    expect(report).not.toContain('acme/secret')
   })
 
   it('empty leaks array → Leak count: 0 and no leak- lines', () => {
@@ -742,10 +792,10 @@ describe('formatLeakReport (#3326 — redaction)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// slug-variant + collision regression (#3327.1)
+// slug-variant + collision regression
 // ---------------------------------------------------------------------------
 
-describe('slug-variant + collision regression (#3327.1)', () => {
+describe('slug-variant + collision regression', () => {
   it('suffix variant (marcusrbrown--poly.draft) is flagged — only exact slug admitted', () => {
     // #given a page whose stem is 'marcusrbrown--poly.draft' (a .draft suffix variant)
     //        and publicSlugMap has only 'marcusrbrown--poly' (the plain slug, a different entry)
@@ -770,8 +820,6 @@ describe('slug-variant + collision regression (#3327.1)', () => {
     //        BUT if the page content does NOT contain https://github.com/acme/foo_bar → blocked
     // This is the sharper collision test: a private acme/foo.bar could also sanitize to
     // acme--foo-bar; the attribution URL check is the last line of defense.
-    // Note: structured-frontmatter attribution is a hardening follow-up (#3401 already tracks
-    // substring-attribution hardening).
     const publicSlugMap = buildPublicSlugMap([{owner: 'acme', name: 'foo_bar', private: false} as unknown as RepoEntry])
     // Page content references a wrong repo (no acme/foo_bar URL)
     const result = detectPrivateWikiLeaks({
@@ -800,14 +848,14 @@ describe('slug-variant + collision regression (#3327.1)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// fail-safe regression (#3328)
+// fail-safe regression — private:true cannot smuggle through
 // ---------------------------------------------------------------------------
 
-describe('fail-safe regression (#3328 — private:true cannot smuggle through)', () => {
+describe('fail-safe regression — private:true cannot smuggle through', () => {
   // BDD comment: PR-tree tamper (flipping private:true→false in a PR) is moot —
   // the gate runs only on schedule/workflow_dispatch reading data's sole-writer-protected
   // repos.yaml, never a PR tree. Residual: a trusted-writer downgrade on data is out of
-  // scope for this pure function (tracked as residual in metadata/README.md).
+  // scope for this pure function (tracked as in-progress follow-up hardening).
 
   it('private:true entry produces empty publicSlugMap; matching page is flagged', () => {
     // #given repos with private:true (which buildPublicSlugMap must exclude)
@@ -841,10 +889,10 @@ describe('fail-safe regression (#3328 — private:true cannot smuggle through)',
 })
 
 // ---------------------------------------------------------------------------
-// requireGrandfatherDir (Fix #6 — fail-closed missing-env branch)
+// requireGrandfatherDir (fail-closed missing-env branch)
 // ---------------------------------------------------------------------------
 
-describe('requireGrandfatherDir (Fix #6 — fail-closed missing-env branch)', () => {
+describe('requireGrandfatherDir (fail-closed missing-env branch)', () => {
   it('throws when env is undefined', () => {
     // #given GRANDFATHER_WIKI_REPOS_DIR is not set
     expect(() => requireGrandfatherDir(undefined)).toThrow(/GRANDFATHER_WIKI_REPOS_DIR/)

@@ -5,7 +5,7 @@ This document defines conventions for the Fro Bot knowledge wiki — a persisten
 ## Three-Layer Architecture
 
 1. **Raw sources** — upstream repositories, documentation, and artifacts referenced by URL and commit SHA. Never copied into the wiki; only referenced.
-2. **Wiki** (`knowledge/wiki/`) — LLM-compiled, persistent, cross-referenced pages that compound over time. The wiki is the primary knowledge artifact. Public-only invariant: the wiki carries knowledge about public repositories only — no page, name, or content for a private repository ever reaches it (enforced at survey dispatch, wiki ingest, and the `data → main` promotion gate). The automated promotion gate enforces the public-only invariant for `wiki/repos/` pages by slug attribution; non-repo wiki areas rely on the (in-progress) companion content scan (#3407) and authoring discipline.
+2. **Wiki** (`knowledge/wiki/`) — LLM-compiled, persistent, cross-referenced pages that compound over time. The wiki is the primary knowledge artifact. Public-only invariant: the wiki carries knowledge about public repositories only — no page, name, or content for a private repository ever reaches it (enforced at survey dispatch, wiki ingest, and the `data → main` promotion gate). The automated promotion gate enforces the public-only invariant for `wiki/repos/` pages by slug attribution; non-repo wiki areas rely on the in-progress companion content scan and authoring discipline.
 3. **Schema** (this file) — conventions governing the wiki layer: page types, frontmatter, naming, cross-references, and maintenance rules.
 
 ## Page Types
