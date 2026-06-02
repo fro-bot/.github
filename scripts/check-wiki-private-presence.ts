@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto'
 import {readdir, readFile} from 'node:fs/promises'
-import {join} from 'node:path'
+import {basename, join} from 'node:path'
 import process from 'node:process'
 
 import YAML from 'yaml'
@@ -125,10 +125,15 @@ export function detectPrivateWikiLeaks(params: {
  * @param dir - Directory path to read (absolute or relative to CWD).
  */
 export async function loadWikiPages(dir: string): Promise<WikiPageSnapshot[]> {
-  let filenames: string[]
+  // Recursive walk: a .md file nested in a subdirectory (e.g.
+  // knowledge/wiki/repos/private-collection/owner--repo.md) must still be
+  // scanned. A flat readdir would silently skip it, letting a subdir-nested
+  // private page promote unchecked. We collect every .md at any depth and
+  // derive the stem from the basename so detection matches by filename slug
+  // regardless of the directory it sits in.
+  let absolutePaths: string[]
   try {
-    const entries = await readdir(dir)
-    filenames = entries.filter(f => f.endsWith('.md'))
+    absolutePaths = await collectMarkdownFiles(dir)
   } catch (error) {
     if (typeof error === 'object' && error !== null && (error as NodeJS.ErrnoException).code === 'ENOENT') {
       return []
@@ -137,13 +142,34 @@ export async function loadWikiPages(dir: string): Promise<WikiPageSnapshot[]> {
   }
 
   return Promise.all(
-    filenames.map(async (filename): Promise<WikiPageSnapshot> => {
-      const content = await readFile(join(dir, filename), 'utf8')
+    absolutePaths.map(async (path): Promise<WikiPageSnapshot> => {
+      const content = await readFile(path, 'utf8')
       const hash = createHash('sha256').update(content).digest('hex')
+      const filename = basename(path)
       const stem = filename.replace(/\.md$/i, '').toLowerCase()
       return {filename, stem, hash, content}
     }),
   )
+}
+
+/**
+ * Recursively collect absolute paths of every `.md` file under `dir` at any depth.
+ *
+ * Uses `readdir(dir, {withFileTypes: true})` and recurses into subdirectories.
+ * Propagates errors (including ENOENT) to the caller, which decides ENOENT handling.
+ */
+async function collectMarkdownFiles(dir: string): Promise<string[]> {
+  const dirents = await readdir(dir, {withFileTypes: true})
+  const results: string[] = []
+  for (const dirent of dirents) {
+    const full = join(dir, dirent.name)
+    if (dirent.isDirectory()) {
+      results.push(...(await collectMarkdownFiles(full)))
+    } else if (dirent.isFile() && dirent.name.endsWith('.md')) {
+      results.push(full)
+    }
+  }
+  return results
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +261,37 @@ export function requireGrandfatherDir(env: string | undefined): string {
   return env.trim()
 }
 
+/**
+ * Format the BLOCKED failure report WITHOUT leaking canonical identities.
+ *
+ * The leaked filenames have the form `owner--repo.md` — they ARE the canonical
+ * names the privacy posture keeps off public surfaces. This gate's failure output
+ * goes to a public GitHub Actions log, so it must not echo those filenames (or any
+ * derivative — a hash of a low-entropy slug is trivially reversible by enumeration).
+ *
+ * Instead we emit:
+ *   - per-run ephemeral labels (`leak-1`, `leak-2`, …) with the classification reason,
+ *   - the total count,
+ *   - a pointer to the operator-only resolution tool.
+ *
+ * Labels are positional within a single run only; they carry no information that
+ * survives the run or maps back to a repo without operator credentials. An operator
+ * runs `scripts/resolve-private.ts` locally to map redacted entries to names.
+ *
+ * Exported so tests can assert no `owner--repo` substring ever appears in the output.
+ */
+export function formatLeakReport(leaks: readonly PrivateWikiLeak[]): string {
+  return `${[
+    'check-wiki-private-presence: BLOCKED — unattributable wiki repo pages detected.',
+    ...leaks.map((leak, index) => `  - leak-${index + 1}: ${leak.reason}`),
+    '',
+    `Leak count: ${leaks.length}`,
+    'Identifiers are redacted from this public log. To map them to repositories,',
+    'run `node scripts/resolve-private.ts` locally with operator credentials and',
+    'inspect the data branch wiki pages directly.',
+  ].join('\n')}\n`
+}
+
 async function main(): Promise<void> {
   // 1. Read and validate data branch's own metadata/repos.yaml (CWD = data-branch-check).
   //    Fail closed: throws on read/parse error.
@@ -259,18 +316,10 @@ async function main(): Promise<void> {
   // 5. Detect leaks — pure function, no GraphQL.
   const leaks = detectPrivateWikiLeaks({dataWikiPages, publicSlugMap, grandfatherPages})
 
-  // 6. Report
+  // 6. Report — redacted: the failure goes to a public Actions log, so it must
+  //    never echo the leaked owner--repo.md filenames (see formatLeakReport).
   if (leaks.length > 0) {
-    const filenames = leaks.map(l => l.filename)
-    process.stderr.write(
-      `${[
-        'check-wiki-private-presence: BLOCKED — private wiki pages detected in knowledge/wiki/repos/:',
-        ...filenames.map(f => `  - ${f}`),
-        '',
-        'These files expose private repository identities. Remove them from the data branch before promoting.',
-        `Leak count: ${leaks.length}`,
-      ].join('\n')}\n`,
-    )
+    process.stderr.write(formatLeakReport(leaks))
     process.exit(1)
   }
 

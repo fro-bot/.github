@@ -5,6 +5,7 @@ import {
   buildPublicSlugMap,
   buildPublicSlugs,
   detectPrivateWikiLeaks,
+  formatLeakReport,
   loadWikiFilenames,
   loadWikiPages,
   requireGrandfatherDir,
@@ -34,6 +35,21 @@ vi.mock('node:fs/promises', () => ({
 function page(filename: string, hash: string, content = ''): WikiPageSnapshot {
   const stem = filename.replace(/\.md$/i, '').toLowerCase()
   return {filename, stem, hash, content}
+}
+
+/**
+ * Minimal Dirent stub for the `readdir(dir, {withFileTypes: true})` recursive walk.
+ * `loadWikiPages` only calls `.isDirectory()`, `.isFile()`, and reads `.name`.
+ */
+function dirent(
+  name: string,
+  kind: 'file' | 'dir' = 'file',
+): {
+  name: string
+  isFile: () => boolean
+  isDirectory: () => boolean
+} {
+  return {name, isFile: () => kind === 'file', isDirectory: () => kind === 'dir'}
 }
 
 // ---------------------------------------------------------------------------
@@ -421,17 +437,17 @@ describe('loadWikiPages', () => {
     // #given readdir succeeds but readFile throws a permission error
     // #when loadWikiPages is called
     // #then the error propagates
-    mockReaddir.mockResolvedValue(['foo.md'])
+    mockReaddir.mockResolvedValue([dirent('foo.md')])
     const eperm = Object.assign(new Error('EPERM: cannot read file'), {code: 'EPERM'})
     mockReadFile.mockRejectedValue(eperm)
     await expect(loadWikiPages('knowledge/wiki/repos')).rejects.toThrow(/EPERM/)
   })
 
   it('returns WikiPageSnapshot records with correct fields', async () => {
-    // #given two .md files in the directory
+    // #given two .md files in the directory (plus non-md entries to ignore)
     // #when loadWikiPages is called
     // #then returns snapshots with filename, stem, hash, content
-    mockReaddir.mockResolvedValue(['acme--widget.md', 'other.txt', '.gitkeep'])
+    mockReaddir.mockResolvedValue([dirent('acme--widget.md'), dirent('other.txt'), dirent('.gitkeep')])
     mockReadFile.mockResolvedValue('url: https://github.com/acme/widget\n')
     const result = await loadWikiPages('knowledge/wiki/repos')
     expect(result).toHaveLength(1)
@@ -446,7 +462,7 @@ describe('loadWikiPages', () => {
     // #given two pages with identical content
     // #when loadWikiPages is called
     // #then both snapshots have the same hash
-    mockReaddir.mockResolvedValue(['page-a.md', 'page-b.md'])
+    mockReaddir.mockResolvedValue([dirent('page-a.md'), dirent('page-b.md')])
     mockReadFile.mockResolvedValue('same content')
     const result = await loadWikiPages('knowledge/wiki/repos')
     expect(result).toHaveLength(2)
@@ -457,7 +473,7 @@ describe('loadWikiPages', () => {
     // #given two pages with different content
     // #when loadWikiPages is called
     // #then hashes differ
-    mockReaddir.mockResolvedValue(['page-a.md', 'page-b.md'])
+    mockReaddir.mockResolvedValue([dirent('page-a.md'), dirent('page-b.md')])
     mockReadFile.mockResolvedValueOnce('content A').mockResolvedValueOnce('content B')
     const result = await loadWikiPages('knowledge/wiki/repos')
     expect(result).toHaveLength(2)
@@ -468,10 +484,40 @@ describe('loadWikiPages', () => {
     // #given a custom directory path
     // #when loadWikiPages is called with that path
     // #then readFile is called with the joined path
-    mockReaddir.mockResolvedValue(['foo--bar.md'])
+    mockReaddir.mockResolvedValue([dirent('foo--bar.md')])
     mockReadFile.mockResolvedValue('content')
     await loadWikiPages('/some/custom/dir')
     expect(mockReadFile).toHaveBeenCalledWith('/some/custom/dir/foo--bar.md', 'utf8')
+  })
+
+  // #3327.2 — subdirectory bypass: a .md nested in a subdir must still be scanned.
+  it('recursively loads .md files nested in subdirectories (subdir-bypass fix)', async () => {
+    // #given a top-level page and a page nested one level deep
+    // #when loadWikiPages is called
+    // #then BOTH pages are loaded — a flat readdir would have missed the nested one
+    mockReaddir
+      .mockResolvedValueOnce([dirent('top--page.md'), dirent('nested', 'dir')])
+      .mockResolvedValueOnce([dirent('owner--secret.md')])
+    mockReadFile.mockResolvedValue('content')
+    const result = await loadWikiPages('knowledge/wiki/repos')
+    const filenames = result.map(p => p.filename).sort()
+    expect(filenames).toEqual(['owner--secret.md', 'top--page.md'])
+    // the nested page's readFile path includes the subdir
+    expect(mockReadFile).toHaveBeenCalledWith('knowledge/wiki/repos/nested/owner--secret.md', 'utf8')
+  })
+
+  it('derives the stem from the basename regardless of nesting depth', async () => {
+    // #given a deeply-nested private-named page
+    // #when loadWikiPages is called
+    // #then its stem is the basename slug (so detection matches it like a flat page)
+    mockReaddir
+      .mockResolvedValueOnce([dirent('a', 'dir')])
+      .mockResolvedValueOnce([dirent('b', 'dir')])
+      .mockResolvedValueOnce([dirent('marcusrbrown--poly.md')])
+    mockReadFile.mockResolvedValue('content')
+    const result = await loadWikiPages('knowledge/wiki/repos')
+    expect(result).toHaveLength(1)
+    expect(result[0]?.stem).toBe('marcusrbrown--poly')
   })
 })
 
@@ -633,6 +679,164 @@ describe('buildPublicSlugs (Fix #4 — load-bearing predicate end-to-end)', () =
 
     expect(result.has(computeRepoSlug('acme', 'secret'))).toBe(false)
     expect(result.size).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// formatLeakReport (#3326 — redaction)
+// ---------------------------------------------------------------------------
+
+describe('formatLeakReport (#3326 — redaction)', () => {
+  const twoLeaks = [
+    {filename: 'marcusrbrown--poly.md', reason: 'unattributable-page' as const},
+    {filename: 'acme--secret.md', reason: 'ambiguous-public-slug' as const},
+  ]
+
+  it('emits per-run ephemeral labels (leak-1, leak-2) and each reason', () => {
+    // #given two leaks
+    // #when formatLeakReport is called
+    // #then output contains leak-1 and leak-2 with their respective reason strings
+    const report = formatLeakReport(twoLeaks)
+    expect(report).toContain('leak-1')
+    expect(report).toContain('leak-2')
+    expect(report).toContain('unattributable-page')
+    expect(report).toContain('ambiguous-public-slug')
+  })
+
+  it('contains Leak count: 2 for two leaks', () => {
+    // #given two leaks
+    // #when formatLeakReport is called
+    // #then output contains the count line
+    const report = formatLeakReport(twoLeaks)
+    expect(report).toContain('Leak count: 2')
+  })
+
+  it('references resolve-private.ts for operator resolution', () => {
+    // #given any leaks
+    // #when formatLeakReport is called
+    // #then output points operators to the resolution tool
+    const report = formatLeakReport(twoLeaks)
+    expect(report).toContain('resolve-private.ts')
+  })
+
+  it('NEVER includes any leaked filename or owner--repo substring', () => {
+    // #given leaks with owner--repo filenames
+    // #when formatLeakReport is called
+    // #then NO filename substring appears — public Actions log must not leak identities
+    const report = formatLeakReport(twoLeaks)
+    expect(report).not.toContain('marcusrbrown--poly')
+    expect(report).not.toContain('acme--secret')
+    expect(report).not.toContain('.md')
+    // Stronger: no owner--repo shape anywhere (e.g. no derivative leakage)
+    expect(report).not.toMatch(/[\w.-]+--[\w.-]+/)
+  })
+
+  it('empty leaks array → Leak count: 0 and no leak- lines', () => {
+    // #given no leaks
+    // #when formatLeakReport is called
+    // #then count is 0 and no per-leak lines appear
+    const report = formatLeakReport([])
+    expect(report).toContain('Leak count: 0')
+    expect(report).not.toMatch(/leak-\d/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// slug-variant + collision regression (#3327.1)
+// ---------------------------------------------------------------------------
+
+describe('slug-variant + collision regression (#3327.1)', () => {
+  it('suffix variant (marcusrbrown--poly.draft) is flagged — only exact slug admitted', () => {
+    // #given a page whose stem is 'marcusrbrown--poly.draft' (a .draft suffix variant)
+    //        and publicSlugMap has only 'marcusrbrown--poly' (the plain slug, a different entry)
+    //        and no grandfather
+    // #when detection runs
+    // #then BLOCKED — the suffix variant does NOT match the public slug, so unattributable-page
+    const publicSlugMap = buildPublicSlugMap([
+      {owner: 'marcusrbrown', name: 'poly', private: false} as unknown as RepoEntry,
+    ])
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('marcusrbrown--poly.draft.md', 'h1', 'some content')],
+      publicSlugMap,
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({reason: 'unattributable-page'})
+  })
+
+  it('underscore variant: slug matches but attribution URL absent → blocked (last line of defense against collision)', () => {
+    // #given computeRepoSlug('acme', 'foo_bar') === 'acme--foo-bar' (underscore collapses to dash)
+    //        so a page 'acme--foo-bar.md' DOES map to the public entry for acme/foo_bar
+    //        BUT if the page content does NOT contain https://github.com/acme/foo_bar → blocked
+    // This is the sharper collision test: a private acme/foo.bar could also sanitize to
+    // acme--foo-bar; the attribution URL check is the last line of defense.
+    // Note: structured-frontmatter attribution is a hardening follow-up (#3401 already tracks
+    // substring-attribution hardening).
+    const publicSlugMap = buildPublicSlugMap([{owner: 'acme', name: 'foo_bar', private: false} as unknown as RepoEntry])
+    // Page content references a wrong repo (no acme/foo_bar URL)
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--foo-bar.md', 'h1', 'url: https://github.com/acme/foo-bar')],
+      publicSlugMap,
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({reason: 'unattributable-page'})
+  })
+
+  it('case variant lowercased by page() helper — without public slug → flagged (casing cannot smuggle past)', () => {
+    // #given the page() helper lowercases the stem (matching loadWikiPages behaviour)
+    //        so 'MARCUSRBROWN--POLY.md' → stem 'marcusrbrown--poly'
+    //        and publicSlugMap does NOT contain that slug
+    // #when detection runs
+    // #then flagged — documents that casing normalization is consistent and cannot bypass the gate
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('MARCUSRBROWN--POLY.md', 'h1', 'content')],
+      publicSlugMap: new Map(),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({reason: 'unattributable-page'})
+  })
+})
+
+// ---------------------------------------------------------------------------
+// fail-safe regression (#3328)
+// ---------------------------------------------------------------------------
+
+describe('fail-safe regression (#3328 — private:true cannot smuggle through)', () => {
+  // BDD comment: PR-tree tamper (flipping private:true→false in a PR) is moot —
+  // the gate runs only on schedule/workflow_dispatch reading data's sole-writer-protected
+  // repos.yaml, never a PR tree. Residual: a trusted-writer downgrade on data is out of
+  // scope for this pure function (tracked as residual in metadata/README.md).
+
+  it('private:true entry produces empty publicSlugMap; matching page is flagged', () => {
+    // #given repos with private:true (which buildPublicSlugMap must exclude)
+    // #when buildPublicSlugMap is called
+    // #then map is EMPTY — private:true cannot slip into the public set
+    const privateRepo: RepoEntry = {
+      owner: 'marcusrbrown',
+      name: 'poly',
+      private: true,
+      added: '2025-01-01',
+      onboarding_status: 'pending',
+      last_survey_at: null,
+      last_survey_status: null,
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+    }
+    const publicSlugMap = buildPublicSlugMap([privateRepo])
+    expect(publicSlugMap.size).toBe(0)
+
+    // #and a data page for that private repo (not grandfathered)
+    // #when detectPrivateWikiLeaks runs
+    // #then BLOCKED — flipping/holding private:true cannot smuggle the page through
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('marcusrbrown--poly.md', 'h1', 'content')],
+      publicSlugMap,
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'marcusrbrown--poly.md', reason: 'unattributable-page'})
   })
 })
 
