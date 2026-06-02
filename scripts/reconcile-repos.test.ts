@@ -6355,3 +6355,87 @@ describe('handleReconcile visibility-transition: transient label-check failure d
     expect(issuesGetLabel.mock.calls.length).toBeGreaterThan(2)
   })
 })
+
+describe('handleReconcile visibility-transition: partial label confirmation is not cached', () => {
+  const LABEL_NODE_ID_C = 'R_kgDOLabelC'
+  const LABEL_NODE_ID_D = 'R_kgDOLabelD'
+
+  it('second transition issue retries ensureLabelsExist when first call confirms only a subset of labels', async () => {
+    // Tracks which label names getLabel has been called for, in order
+    const getLabelCalls: string[] = []
+
+    // First label (VISIBILITY_TRANSITION_LABEL) always succeeds immediately.
+    // Second label (INTEGRITY_ALERT_LABEL) fails with a transient 500 on the first call
+    // (so ensureLabelsExist returns size=1 on issue 1 — a partial set).
+    // On the second issue's preflight, both labels should be queried again.
+    const issuesGetLabel = vi.fn(async (params: unknown) => {
+      const {name} = params as {owner: string; repo: string; name: string}
+      getLabelCalls.push(name)
+      const callIndexForThisLabel = getLabelCalls.filter(n => n === name).length
+      if (name === 'reconcile:integrity-alert' && callIndexForThisLabel === 1) {
+        // Transient failure on first attempt for the second label
+        const err = Object.assign(new Error('transient server error'), {status: 500})
+        throw err
+      }
+      return {data: {name}}
+    })
+    const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+    const paginateMock = vi.fn(async () => [])
+
+    await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+          issuesGetLabel,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'partial-label-repo-c',
+                node_id: LABEL_NODE_ID_C,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'partial-label-repo-d',
+                node_id: LABEL_NODE_ID_D,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'partial-label-repo-c',
+                archived: false,
+                private: true,
+                node_id: LABEL_NODE_ID_C,
+              },
+              {
+                owner: {login: 'fro-bot'},
+                name: 'partial-label-repo-d',
+                archived: false,
+                private: true,
+                node_id: LABEL_NODE_ID_D,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // INTEGRITY_ALERT_LABEL must be queried at least twice — once per issue's preflight —
+    // confirming the partial result from issue 1 was NOT cached and issue 2 retried.
+    const integrityLabelCallCount = getLabelCalls.filter(n => n === 'reconcile:integrity-alert').length
+    expect(integrityLabelCallCount).toBeGreaterThanOrEqual(2)
+  })
+})

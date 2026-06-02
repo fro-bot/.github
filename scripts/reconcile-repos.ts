@@ -2448,11 +2448,15 @@ async function runIssueQueue(params: {
           continue
         }
 
-        // Label preflight: ensureLabelsExist is called once per runIssueQueue invocation,
-        // lazily on the first visibility-transition issue. The result is cached only when
-        // non-empty (confirmed); an empty result from a transient failure leaves the cache
-        // null so the next issue retries rather than shipping unlabeled for the rest of the run.
-        if (cachedConfirmedLabels === null || cachedConfirmedLabels.size === 0) {
+        // Label preflight: ensureLabelsExist is called lazily on the first visibility-transition
+        // issue and cached for reuse. The cache is committed only when every required label is
+        // confirmed (labels.size equals TRANSITION_LABELS.length). A partial result — where a
+        // transient failure excluded one or more labels — is never cached: the cache stays null
+        // so each subsequent issue retries the full preflight until a complete set is confirmed.
+        // Regardless of whether the cache is committed, the current issue always uses the freshly
+        // computed label set from this call, not an empty fallback.
+        let confirmedLabels: Set<string>
+        if (cachedConfirmedLabels === null) {
           const labels = await ensureLabelsExist(
             params.appOctokit,
             params.owner,
@@ -2460,11 +2464,13 @@ async function runIssueQueue(params: {
             TRANSITION_LABELS,
             params.logger,
           )
-          if (labels.size > 0) {
+          if (labels.size === TRANSITION_LABELS.length) {
             cachedConfirmedLabels = labels
           }
+          confirmedLabels = labels
+        } else {
+          confirmedLabels = cachedConfirmedLabels
         }
-        const confirmedLabels = cachedConfirmedLabels ?? new Set<string>()
         const payload = renderIssuePayload(issue, params.owner, params.repo)
         const filteredPayload: IssuePayload = {
           ...payload,
