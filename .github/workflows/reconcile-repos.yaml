@@ -64,4 +64,31 @@ jobs:
           # on the next run via the staleness gate, producing a progressive day-over-day
           # cadence instead of bursty fan-outs that exhaust upstream capacity.
           RECONCILE_MAX_DISPATCHES_PER_RUN: '12'
-        run: node scripts/reconcile-repos.ts
+        run: node scripts/reconcile-repos.ts | tee "$RUNNER_TEMP/reconcile-result.json"
+
+      - if: always()
+        name: 📋 Write step summary
+        run: |
+          # Write step summary from reconcile-repos output JSON
+          result="$RUNNER_TEMP/reconcile-result.json"
+          if [[ ! -s "$result" ]]; then
+            echo "reconcile produced no result JSON" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## Reconcile Repos Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Dispatched | $(jq '.dispatches // 0' "$result") |"
+            echo "| Dispatches deferred | $(jq '.dispatchesDeferred // 0' "$result") |"
+            echo "| Dispatches failed | $(jq '.dispatchesFailed // 0' "$result") |"
+            echo "| Visibility transition issues | $(jq '.visibilityTransitionIssues // 0' "$result") |"
+            echo "| Per-repo issues | $(jq '.perRepoIssues // 0' "$result") |"
+            echo "| Rollup issues | $(jq '.rollupIssues // 0' "$result") |"
+            echo "| Issues failed | $(jq '.issuesFailed // 0' "$result") |"
+            echo "| Closed stale issues | $(jq '.closedStaleIssues // 0' "$result") |"
+            echo "| Probes failed | $(jq '.probesFailed // 0' "$result") |"
+            echo "| Committed | $(jq '.committed // false' "$result") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+        shell: bash
