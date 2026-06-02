@@ -97,6 +97,7 @@ jobs:
           # Capture stderr to a temp file so a failure surfaces the real gh/GitHub error
           # (auth, permission, rate limit, network) instead of a generic abort line.
           gh_stderr=$(mktemp)
+          trap 'rm -f "$gh_stderr"' EXIT
           if ! response=$(gh api graphql -F id="$NODE_ID" -f query="$gql_query" 2>"$gh_stderr"); then
             printf 'GraphQL lookup failed for node_id: %s\n' "$NODE_ID" >&2
             # Use %s format so leading dashes in the marker are treated as arguments,
@@ -104,10 +105,8 @@ jobs:
             printf '%s\n' '--- gh stderr ---' >&2
             cat "$gh_stderr" >&2
             printf '%s\n' '--- end gh stderr ---' >&2
-            rm -f "$gh_stderr"
             exit 1
           fi
-          rm -f "$gh_stderr"
 
           name_with_owner=$(printf '%s' "$response" | jq -er '
             .data.node
@@ -219,13 +218,18 @@ jobs:
         run: |
           # shellcheck disable=SC2016
           gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
-          response=$(gh api graphql \
+          gh_stderr=$(mktemp)
+          trap 'rm -f "$gh_stderr"' EXIT
+          if ! response=$(gh api graphql \
             -F id="$NODE_ID" \
             -f query="$gql_query" \
-            2>/dev/null) || {
-            printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
+            2>"$gh_stderr"); then
+            printf 'GraphQL recheck failed for node_id: %s\n' "$NODE_ID" >&2
+            printf '%s\n' '--- gh stderr ---' >&2
+            cat "$gh_stderr" >&2
+            printf '%s\n' '--- end gh stderr ---' >&2
             exit 1
-          }
+          fi
 
           if ! printf '%s' "$response" | jq -e '.data.node.isPrivate == false' >/dev/null; then
             printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
