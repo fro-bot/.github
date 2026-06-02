@@ -301,10 +301,15 @@ jobs:
       discord_title: Repo Survey Complete
       # bluesky_text intentionally omitted — Bluesky step in social-broadcast.yaml
       # is currently gated off via `if: false`. When revived, restore copy here.
-      # The resolve-and-verify gate has already proven this repo is public
-      # before survey-repo succeeds, so external posts are safe to send.
+      # The resolve-and-verify gate has already proven this repo was public
+      # before survey-repo succeeded. private: false is the fail-safe floor;
+      # the broadcast job re-verifies visibility at post time via node_id,
+      # closing the recheck→broadcast queue window.
       private: false
+      node_id: ${{ inputs.node_id }}
     secrets:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
       BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+      APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
+      APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
