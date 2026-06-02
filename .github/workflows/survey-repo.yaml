@@ -216,6 +216,11 @@ jobs:
           NODE_ID: ${{ inputs.node_id }}
           GH_TOKEN: ${{ steps.gate-token.outputs.token }}
         run: |
+          if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
+            printf 'Aborting: dispatch input shape invalid\n' >&2
+            exit 1
+          fi
+
           # shellcheck disable=SC2016
           gql_query='query($id: ID!) { node(id: $id) { ... on Repository { isPrivate } } }'
           gh_stderr=$(mktemp)
@@ -231,6 +236,8 @@ jobs:
             exit 1
           fi
 
+          # No gh stderr dump here: a jq mismatch is a logic failure (repo flipped private /
+          # unexpected isPrivate value), not a gh transport/API error — there is no gh stderr to surface.
           if ! printf '%s' "$response" | jq -e '.data.node.isPrivate == false' >/dev/null; then
             printf 'Aborting: visibility recheck failed for %s\n' "$NODE_ID" >&2
             exit 1
