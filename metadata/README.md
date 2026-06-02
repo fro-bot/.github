@@ -91,7 +91,7 @@ A private repo's existence, name, or content must never reach a public surface. 
 - **Workflow resolution gate** — `survey-repo.yaml` takes a `node_id` input and resolves it to `owner/repo` only after verifying the repo is public; a private (or inaccessible) `node_id` aborts the run before any name reaches a log, run name, or concurrency key.
 - **Social gate** — `social-broadcast.yaml` defaults `private: true`, so a caller that omits the flag skips external posts (fail-safe).
 - **Merge-ceremony gate** — the `data → main` promotion blocks if a wiki page would promote that can't be attributed to a known-public repo.
-- **CI guard** — the `Check Private Leak` job (`scripts/check-private-leak.ts`) scans every PR's added lines for any private repo's canonical `owner/name`, resolved from `data`'s `node_id` values via the GitHub API. A match fails the check and names only the offending file path, never the leaked name. Operator override: a PR titled `[allow-private-leak] …` authored by `marcusrbrown` passes with a logged transparency comment.
+- **CI guard** — `scripts/check-private-leak.ts` scans a PR's added lines for any private repo's canonical `owner/name`, resolved from `data`'s `node_id` values via the GitHub API. A match reports only the offending file path, never the leaked name. Operator override: a PR titled `[allow-private-leak] …` authored by `marcusrbrown` passes with a logged transparency comment. The CI wiring that runs this guard on every PR is deferred: resolving cross-account private names requires a broad-scope credential, which must not run in a job that checks out PR-author code (token-exfiltration risk). The guard ships as a standalone, tested script; its CI integration lands separately in a trusted (`workflow_run`) topology that treats the PR diff as data.
 
 **Operator lookup** — to map a redacted `node_id` back to its `owner/repo` (the convenience a plain `grep` of `repos.yaml` used to provide), run `GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts`. It reads `repos.yaml`, resolves each private entry's `node_id` via the GitHub API, and prints a `node_id → owner/name` table to stdout. It never writes to the working tree and is invoked by no workflow.
 
@@ -139,16 +139,15 @@ PAT split summary:
 
 ### Workflow secret mapping
 
-| Workflow | Secrets passed (explicit, not inherited) |
-| --- | --- |
-| `fro-bot.yaml` | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG` |
-| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`) |
-| `apply-branding.yaml` | Same 4 (via reusable call to `fro-bot.yaml`) |
-| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only |
-| `merge-data.yaml` | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions) |
-| `reconcile-repos.yaml` | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` |
-| `update-metadata.yaml` | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` |
-| `main.yaml` (Check Private Leak) | `FRO_BOT_POLL_PAT` (classic PAT whose broad `repo` scope resolves cross-account private `node_id`s via Fro Bot's collaborator access) |
+| Workflow                | Secrets passed (explicit, not inherited)                                |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `fro-bot.yaml`          | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG` |
+| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`)                            |
+| `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                            |
+| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only                                                 |
+| `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)               |
+| `reconcile-repos.yaml`  | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`       |
+| `update-metadata.yaml`  | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`                            |
 
 ## Editing metadata files
 
@@ -156,7 +155,7 @@ All `metadata/*.yaml` files are enforced as Fro-Bot-writable-only on `main`. A C
 
 `repos.yaml` carries an additional sole-writer invariant: changes to it on `main` must originate only from the `data` promotion branch. A direct edit to `repos.yaml` on a non-promotion branch is prohibited even if fro-bot-authored. Any exception requires an explicit override and is treated as an emergency measure, not routine workflow — the invariant exists precisely to prevent the both-sides mutation that causes promotion conflicts.
 
-A second CI job, `Check Private Leak` (`scripts/check-private-leak.ts`), runs on every PR to `main` and fails if the diff introduces a private repo's canonical `owner/name` (see [Privacy gates and operator tooling](#privacy-gates-and-operator-tooling)). It scans added lines only, so the redaction of an existing entry does not trip it.
+A companion guard, `scripts/check-private-leak.ts`, detects a private repo's canonical `owner/name` introduced in a PR's added lines (see [Privacy gates and operator tooling](#privacy-gates-and-operator-tooling)). It ships as a tested script; its always-on CI wiring is deferred to a trusted (`workflow_run`) topology so the broad-scope resolution credential never runs against PR-author code.
 
 For intentional manual edits to any metadata file (including `allowlist.yaml`), land the change on `data` directly and let the existing promotion flow land it on `main`:
 

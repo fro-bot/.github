@@ -14,7 +14,6 @@ branches:
         contexts:
           - Analyze (typescript)
           - Check Types
-          - Check Private Leak
           - Check Wiki Authority
           - Check Workflows
           - CodeQL
