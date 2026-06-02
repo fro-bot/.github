@@ -511,12 +511,14 @@ describe('detectPrivateWikiLeaks', () => {
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
     })
 
-    it('legacy fallback emits redaction-safe stderr warning (no private owner/name)', () => {
+    it('legacy fallback emits redaction-safe stderr warning — parsed JSON contains only slug, never sensitive names', () => {
       // #given a page that passes via legacy substring fallback (no sources frontmatter)
+      //        where 'widget-super-secret' is a sensitive private repo name that must never appear
       // #when detection runs
-      // #then a warning is written to stderr referencing only the public slug (safe to log),
-      //        and never containing any private repo owner/name
-      const content = 'See https://github.com/acme/widget for details.'
+      // #then a warning is written to stderr as parseable JSON containing ONLY the public slug,
+      //        with NO sensitive private name in the output
+      const sensitiveName = 'widget-super-secret'
+      const content = `See https://github.com/acme/widget for details. Internal name: ${sensitiveName}`
       detectPrivateWikiLeaks({
         dataWikiPages: [page('acme--widget.md', 'h1', content)],
         publicSlugMap: new Map([
@@ -526,10 +528,103 @@ describe('detectPrivateWikiLeaks', () => {
       })
       expect(stderrSpy).toHaveBeenCalled()
       const written = stderrSpy.mock.calls.map(args => String(args[0])).join('')
-      // Warning must reference the safe public slug
-      expect(written).toContain('acme--widget')
-      // Warning must NOT contain any private identifier pattern (nothing beyond the public slug)
-      expect(written).not.toContain('private')
+      // Parse the JSON to assert structure (not just substring presence)
+      const line = written.trim().split('\n')[0] ?? ''
+      const parsed = JSON.parse(line) as Record<string, unknown>
+      // Only allowed keys: level, event, message, slug
+      expect(Object.keys(parsed).sort()).toEqual(['event', 'level', 'message', 'slug'])
+      // Slug must be the safe public identifier
+      expect(parsed.slug).toBe('acme--widget')
+      // The sensitive private name must be absent from the entire stderr output
+      expect(written).not.toContain(sensitiveName)
+      // No raw filename (which would leak the owner--repo identity)
+      expect(written).not.toContain('acme--widget.md')
+    })
+  })
+
+  describe('present-but-empty sources key — authoritative fail-closed (no substring fallback)', () => {
+    it('flags: sources key present as empty array, body has decoy URL — no fallback to substring', () => {
+      // sources key IS present (empty array) → authoritative → some() is false → flagged
+      // Before fix: parseFrontmatterSources returned null → substring fallback → attributed (bug)
+      // After fix: returns [] → authoritative → flagged
+      const content = [
+        '---',
+        'type: repo',
+        'sources: []',
+        '---',
+        'See https://github.com/acme/widget for details.',
+      ].join('\n')
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+    })
+
+    it('flags: sources key present as scalar string (malformed), body has decoy URL — authoritative fail-closed', () => {
+      // sources key IS present but not an array → authoritative → return [] → flagged
+      // Before fix: !Array.isArray → return null → substring fallback → attributed (bug)
+      // After fix: present-but-non-array → return [] → flagged
+      const content = [
+        '---',
+        'type: repo',
+        'sources: "not-an-array"',
+        '---',
+        'See https://github.com/acme/widget for details.',
+      ].join('\n')
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+    })
+
+    it('flags: sources key present as null value, body has decoy URL — authoritative fail-closed', () => {
+      // sources: null → key is present, value is null → not an array → return [] → flagged
+      const content = [
+        '---',
+        'type: repo',
+        'sources: null',
+        '---',
+        'See https://github.com/acme/widget for details.',
+      ].join('\n')
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+    })
+
+    it('passes: sources key ABSENT (no sources property), body URL → legacy substring fallback (no over-block)', () => {
+      // sources key is completely absent from frontmatter → return null → substring fallback → attributed
+      // This is the pre-existing legacy case that must keep passing
+      const content = [
+        '---',
+        'type: repo',
+        'title: "acme/widget"',
+        '---',
+        'See https://github.com/acme/widget for details.',
+      ].join('\n')
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toEqual([])
     })
   })
 
@@ -1070,5 +1165,235 @@ describe('requireGrandfatherDir (fail-closed missing-env branch)', () => {
     // #given a clean path string
     const result = requireGrandfatherDir('/workspace/main/knowledge/wiki/repos')
     expect(result).toBe('/workspace/main/knowledge/wiki/repos')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// prefix-collision guard — sourceUrlMatchesRepo
+// ---------------------------------------------------------------------------
+
+describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo matching', () => {
+  it('prefix-collision: source url acme/widget-private must NOT attribute page for acme/widget', () => {
+    // acme/widget-private is a prefix match for acme/widget under url.includes — must be FLAGGED
+    const content = [
+      '---',
+      'sources:',
+      '  - url: https://github.com/acme/widget-private',
+      '---',
+      'See https://github.com/acme/widget for details (decoy in body, body ignored when sources present).',
+    ].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+
+  it('trailing path: source url with /blob/main/README.md still attributes correctly', () => {
+    // Trailing path segments beyond owner/repo are allowed — only owner and repo must match
+    const content = [
+      '---',
+      'sources:',
+      '  - url: https://github.com/acme/widget/blob/main/README.md',
+      '---',
+      'Content without extra URL.',
+    ].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toEqual([])
+  })
+
+  it('trailing slash: source url https://github.com/acme/widget/ still attributes correctly', () => {
+    const content = ['---', 'sources:', '  - url: https://github.com/acme/widget/', '---', 'Content.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toEqual([])
+  })
+
+  it('malformed source URL does not match (treated as no-match, not a crash)', () => {
+    const content = ['---', 'sources:', '  - url: not-a-valid-url', '---', 'Content.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+
+  it('non-github host does not match (strict github.com only)', () => {
+    const content = ['---', 'sources:', '  - url: https://gitlab.com/acme/widget', '---', 'Content.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+
+  it('non-https protocol (ftp) does not match — protocol restriction', () => {
+    // ftp://github.com/acme/widget should not attribute — only https: is accepted
+    const content = ['---', 'sources:', '  - url: ftp://github.com/acme/widget', '---', 'Content.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+
+  it('custom port (https://github.com:444/acme/widget) does not match — port restriction', () => {
+    // Non-default port rejects the URL to close spoofing vectors
+    const content = ['---', 'sources:', '  - url: https://github.com:444/acme/widget', '---', 'Content.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+
+  it('standard https://github.com/acme/widget still matches — positive regression guard', () => {
+    // Ensure protocol/port restrictions do not break the happy path
+    const content = ['---', 'sources:', '  - url: https://github.com/acme/widget', '---', 'Content.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// false-frontmatter guard — anchored frontmatter regex
+// ---------------------------------------------------------------------------
+
+describe('false-frontmatter guard — body-embedded block must not be treated as authoritative', () => {
+  it('body-embedded wrong-url block does not block a page that has correct URL in plain body text', () => {
+    // Content starts with prose (no leading ---), body has an embedded --- block with wrong URL,
+    // but also has the expected URL in the leading prose.
+    // Before fix (with /m): embedded block parsed as structured sources (wrong URL) → authoritative →
+    //   body substring skipped → FLAGGED (over-block)
+    // After fix (without /m): no leading frontmatter → null → falls back to substring →
+    //   expected URL found in prose → PASSES (correct)
+    const content = [
+      'See https://github.com/acme/widget for details.',
+      '',
+      '---',
+      'sources:',
+      '  - url: https://github.com/some-other/repo',
+      '---',
+    ].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toEqual([])
+  })
+
+  it('real leading frontmatter is still parsed correctly — no regression from removing /m', () => {
+    // A page with genuine leading ---...--- frontmatter must still be attributed via structured sources
+    const content = [
+      '---',
+      'sources:',
+      '  - url: https://github.com/acme/widget',
+      '---',
+      'Content without any URL in the body.',
+    ].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// empty-sources guard — null when no usable URLs
+// ---------------------------------------------------------------------------
+
+describe('present-sources key is authoritative regardless of content — no substring fallback', () => {
+  it('sources: [] with body URL → FLAGGED (authoritative empty array, no substring fallback)', () => {
+    // sources key IS present as empty array → authoritative → return [] → some() false → flagged
+    // Body URL is irrelevant when sources key is present
+    const content = ['---', 'sources: []', '---', 'See https://github.com/acme/widget for details.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+
+  it('sources entries without url key + body URL → FLAGGED (array present → authoritative, body ignored)', () => {
+    // sources key IS present as array, entries have no url key → extracted urls = [] → return []
+    // → authoritative → body substring not checked → flagged
+    const content = [
+      '---',
+      'sources:',
+      '  - name: acme-widget',
+      '---',
+      'See https://github.com/acme/widget for details.',
+    ].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+
+  it('sources: [] without body URL → flagged (no usable attribution)', () => {
+    // Empty sources + no body URL — cannot attribute → flagged
+    const content = ['---', 'sources: []', '---', 'No GitHub URL here.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
   })
 })
