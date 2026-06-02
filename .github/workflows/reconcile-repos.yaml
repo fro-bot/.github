@@ -76,6 +76,8 @@ jobs:
             echo "reconcile produced no result JSON" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          # Most fields read from the top level of HandleReconcileResult; the
+          # "detected" count lives under .summary.visibilityTransitions (nested).
           {
             echo "## Reconcile Repos Summary"
             echo ""
