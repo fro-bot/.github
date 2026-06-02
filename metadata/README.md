@@ -181,3 +181,11 @@ The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data �
 ## Metrics note
 
 `metrics.yaml` is intentionally deferred. Operational telemetry is routed through the journal issue system. The metrics pipeline belongs to the deferred self-improvement plan.
+
+## Reconcile run serialization
+
+Reconcile runs are serialized by the `reconcile-repos.yaml` workflow's concurrency group (`group: reconcile-repos, cancel-in-progress: false`). A manual rerun queues behind the currently-running scheduled job and starts only after it fully completes — typically 15–20 minutes — which is far longer than the GitHub Issues listing API's few-second eventual-consistency lag.
+
+This serialization is what prevents cross-run duplicate rollup issues: because no two reconcile runs can overlap, a rollup created by one run has fully propagated through the API before any subsequent run begins its `selfHealRollups` pass. Manual reruns are therefore safe and do not require paging delays or pacing rules.
+
+The within-run guard (`currentRunRollupOwners`) handles only the in-process race (a rollup POSTed in step 10 not yet visible to step 12's `listForRepo` call). Its activations are now counted as `raceSuppressedRollups` in the run summary so operators can distinguish same-run suppression from pre-existing rollups.
