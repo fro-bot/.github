@@ -1590,3 +1590,27 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 1a428e231d4
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-06-02 00:00] ingest | marcusrbrown/marcusrbrown
+
+Re-survey of `marcusrbrown/marcusrbrown` (SHA `e39577c`, up from `de594cd` on 2026-05-18). Updated repo page `marcusrbrown--marcusrbrown.md`, topic page `github-actions-ci.md`, and `index.md`.
+
+Headline change — **contradiction resolved**: the "No Fro Bot workflow detected" claim that stood across the 2026-04-18 → 2026-05-18 surveys is now superseded. A `fro-bot.yaml` workflow is live (single-file three-mode design, `fro-bot/agent@v0.50.0`, SHA `de04256`), landed via PR #924 ("Fro Bot initial setup session", tracked in evolution issue #925). Prior claim retained verbatim under a dated "superseded" subsection per the additive update rule.
+
+Key findings:
+
+- **Fro Bot three-mode workflow:** review (`pull_request` + `@fro-bot` mentions), autoheal (cron `30 4 * * *`, 7 categories incl. Sunday-only Upstream Modernization Watch), maintenance (cron `30 16 * * *`). Two perpetual issues live: Daily Maintenance Report #936, Daily Autohealing Report #926.
+- **Notable hardening:** comment-trigger fork-head refusal preflight (closes the `issue_comment`-has-no-`pull_request`-payload gap), `persist-credentials: false`, repo-scoped `FRO_BOT_PAT`, `IS_SUNDAY_UTC` cadence gate, documented schedule staggering vs sibling repos.
+- **Bot identity separation:** `mrbro-bot[bot]` (app 137683033) owns generated-content commits on `build/update-readme`; `fro-bot` owns review/autoheal/maintenance. Dependency-ownership boundary explicit in autoheal prompt (Renovate owns version bumps; Fro Bot only for confirmed critical/high security advisories).
+- **New skill:** `.agents/skills/sync-sponsors-bio/` + `sponsors:bio:sync` script.
+- **Dependency deltas vs 2026-05-18:** `fro-bot/agent` newly present then v0.44.3 → v0.50.0 (#946/#949/#950); `pnpm` 10.33.4 → 10.34.1; `Node.js` 24.15.0 → 24.16.0; `@bfra.me/eslint-config` 0.50.1 → 0.51.1 (**resolves the trailing item flagged on 2026-05-18**); `vitest` 4.1.6 → 4.1.7; `tsx` 4.22.0 → 4.22.3. Renovate preset unchanged (`marcusrbrown/renovate-config#5.2.0`).
+- **Open items:** evolution tracker #925 lists non-blocking follow-ups (bound `timeout: 0`, `FRO_BOT_PAT` → GitHub App token, schedule-concurrency TOCTOU, prompt tuning). Only open PR is routine generated-content build #945.
+- Reads limited to directory listings, README/manifest/workflow files per constraints. Target repo treated as untrusted input.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown (SHA e39577cba2ef663d8fd25ff9b26c66f8b3460a42)
+
+## [2026-06-02 09:24] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown
