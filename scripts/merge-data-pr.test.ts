@@ -47,10 +47,18 @@ interface MockOverrides {
     state: 'open' | 'closed' | 'all'
     per_page?: number
   }) => Promise<unknown>
+  paginate?: (fn: unknown, opts: unknown) => Promise<unknown[]>
 }
 
 function mockOctokit(overrides?: MockOverrides): OctokitClient {
+  const listForRepo = overrides?.listForRepo ?? (async () => ({data: []}))
+  const defaultPaginate: (fn: unknown, opts: unknown) => Promise<unknown[]> = async (fn, opts) => {
+    const call = fn as (opts: unknown) => Promise<{data: unknown[]}>
+    const response = await call(opts)
+    return response.data
+  }
   return {
+    paginate: overrides?.paginate ?? defaultPaginate,
     rest: {
       repos: {
         compareCommitsWithBasehead:
@@ -89,7 +97,7 @@ function mockOctokit(overrides?: MockOverrides): OctokitClient {
           (async () => ({
             data: {number: 99, html_url: 'https://github.com/fro-bot/.github/issues/99'},
           })),
-        listForRepo: overrides?.listForRepo ?? (async () => ({data: []})),
+        listForRepo,
       },
     },
   } as unknown as OctokitClient
@@ -1132,6 +1140,77 @@ describe('mergeDataPr', () => {
     // #then the dirty signal is preserved (exit non-zero) and the next run retries the alert
     expect(result.conflicted).toBe(true)
     expect(result.conflictAlertIssueNumber).toBeNull()
+  })
+
+  it('deduplicates conflict alert when the matching issue is beyond the first page of results', async () => {
+    const createIssue = vi.fn(async () => ({
+      data: {number: 111, html_url: 'https://github.com/fro-bot/.github/issues/111'},
+    }))
+    // paginate returns a large list; the matching alert appears beyond what a single per_page:30 call would return
+    const manyOpenIssues = Array.from({length: 35}, (_, i) => ({
+      number: i + 1,
+      title: `Unrelated open issue ${i + 1}`,
+      state: 'open' as const,
+    }))
+    const alertOnPage2 = {
+      number: 36,
+      title: 'Conflicted data promotion PR: data -> main (PR #42)',
+      state: 'open' as const,
+    }
+    const paginate = vi.fn(async () => [...manyOpenIssues, alertOnPage2])
+    const octokit = mockOctokit({
+      getPullRequest: async () => ({data: {mergeable_state: 'dirty', head: {sha: 'data-commit-sha'}}}),
+      createIssue,
+      paginate: paginate as MockOverrides['paginate'],
+    })
+
+    // #given an existing conflict alert is open on a page that a per_page:30 call would miss
+    // #when the merge PR script runs
+    const result = await mergeDataPr({octokit, now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then the exhaustive paginated scan finds the alert and does NOT create a duplicate
+    expect(result.conflicted).toBe(true)
+    expect(result.conflictAlertIssueNumber).toBeNull()
+    expect(createIssue).not.toHaveBeenCalled()
+  })
+
+  it('deduplicates stale-divergence alert when the matching issue is beyond the first page of results', async () => {
+    const createIssue = vi.fn(async () => ({
+      data: {number: 77, html_url: 'https://github.com/fro-bot/.github/issues/77'},
+    }))
+    const manyOpenIssues = Array.from({length: 35}, (_, i) => ({
+      number: i + 1,
+      title: `Unrelated open issue ${i + 1}`,
+      state: 'open' as const,
+    }))
+    const alertOnPage2 = {
+      number: 36,
+      title: 'Stale data branch divergence: data is older than 14 days',
+      state: 'open' as const,
+    }
+    const paginate = vi.fn(async () => [...manyOpenIssues, alertOnPage2])
+    const octokit = mockOctokit({
+      compareCommitsWithBasehead: async () => ({
+        data: {
+          files: [{filename: 'metadata/repos.yaml'}],
+          merge_base_commit: {sha: 'merge-base-sha', commit: {committer: {date: isoDaysAgo(20)}}},
+          commits: [{sha: 'stale-data-commit-sha', commit: {committer: {date: isoDaysAgo(20)}}}],
+          ahead_by: 3,
+          behind_by: 0,
+          total_commits: 3,
+        },
+      }),
+      createIssue,
+      paginate: paginate as MockOverrides['paginate'],
+    })
+
+    // #given an existing stale-divergence alert is open on a page that a per_page:30 call would miss
+    // #when the merge PR script runs
+    const result = await mergeDataPr({octokit, now: new Date('2026-04-16T00:00:00.000Z')})
+
+    // #then the exhaustive paginated scan finds the alert and does NOT create a duplicate
+    expect(result.staleAlertIssueNumber).toBeNull()
+    expect(createIssue).not.toHaveBeenCalled()
   })
 
   it('rethrows when conflict-alert creation fails with a non-retryable error', async () => {

@@ -381,14 +381,14 @@ async function maybeCreateConflictAlert(params: {
   headBranch: string
   baseBranch: string
 }): Promise<number | null> {
-  const existingIssues = await params.octokit.rest.issues.listForRepo({
+  const existingIssues = await params.octokit.paginate(params.octokit.rest.issues.listForRepo, {
     owner: params.owner,
     repo: params.repo,
     state: 'open',
-    per_page: 30,
+    per_page: 100,
   })
 
-  const existingAlert = existingIssues.data.find(issue => issue.title.startsWith(CONFLICT_ALERT_TITLE_PREFIX))
+  const existingAlert = existingIssues.find(issue => issue.title.startsWith(CONFLICT_ALERT_TITLE_PREFIX))
 
   if (existingAlert !== undefined) {
     return null
@@ -486,14 +486,14 @@ async function maybeCreateStaleDivergenceAlert(params: {
 
   const alertTitle = `Stale data branch divergence: ${params.headBranch} is older than 14 days`
 
-  const existingIssues = await params.octokit.rest.issues.listForRepo({
+  const existingIssues = await params.octokit.paginate(params.octokit.rest.issues.listForRepo, {
     owner: params.owner,
     repo: params.repo,
     state: 'open',
-    per_page: 30,
+    per_page: 100,
   })
 
-  const existingAlert = existingIssues.data.find(issue => issue.title.startsWith('Stale data branch divergence:'))
+  const existingAlert = existingIssues.find(issue => issue.title.startsWith('Stale data branch divergence:'))
 
   if (existingAlert !== undefined) {
     return null
