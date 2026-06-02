@@ -1591,26 +1591,24 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-06-02 00:00] ingest | marcusrbrown/marcusrbrown
+## [2026-06-02 00:00] ingest | marcusrbrown/mrbro.dev
 
-Re-survey of `marcusrbrown/marcusrbrown` (SHA `e39577c`, up from `de594cd` on 2026-05-18). Updated repo page `marcusrbrown--marcusrbrown.md`, topic page `github-actions-ci.md`, and `index.md`.
+Incremental re-survey of `marcusrbrown/mrbro.dev` (SHA `7a49abc`, 2026-05-28; prior `88f7a4a`, 2026-05-21). Updated repo page `marcusrbrown--mrbro-dev.md` (frontmatter source/updated, issue/PR counts, rewrote Security Posture section, added Fro Bot prompt-hardening subsection, survey-history row) and refreshed its `index.md` entry. No new topic/entity/comparison pages warranted — the deltas are a dependency-hardening migration and a cross-repo prompt port, not structural code change.
 
-Headline change — **contradiction resolved**: the "No Fro Bot workflow detected" claim that stood across the 2026-04-18 → 2026-05-18 surveys is now superseded. A `fro-bot.yaml` workflow is live (single-file three-mode design, `fro-bot/agent@v0.50.0`, SHA `de04256`), landed via PR #924 ("Fro Bot initial setup session", tracked in evolution issue #925). Prior claim retained verbatim under a dated "superseded" subsection per the additive update rule.
+Delta from prior survey (SHA `88f7a4a`, 2026-05-21):
 
-Key findings:
+- **pnpm `overrides` migrated `package.json` → `pnpm-workspace.yaml`** (#177, alongside `onlyBuiltDependencies` + `shamefullyHoist: true`). The list expanded to ~20 entries, each with an inline GHSA comment naming the advisory and the transitive path. New pins since 2026-05-21: `qs ^6.15.2` (GHSA-q8mj-m7cp-5q26), `ws ^8.20.1` (GHSA-58qx-3vcg-4xpx), `tmp >=0.2.6` (GHSA-52f5-9888-hmc6, best-effort — `@lhci/cli`/`external-editor` pin below safe range, #179), `rollup >=4.59.0`, `js-yaml >=4.1.1`, `flatted >=3.4.2`, `ajv >=8.18.0`, `mdast-util-to-hast >=13.2.1`, `minimatch >=10.2.3`, `yauzl >=3.2.1`, `@isaacs/brace-expansion >=5.0.1`, `brace-expansion ^5.0.6`. Most enter via `@lhci/cli` (Lighthouse) transitive trees. A new `pnpm audit` CI dependency-audit gate (#177) is the forcing function keeping this list current.
+- **Fro Bot prompt hardening (#176, 2026-05-24):** ported 5 surgical prompt inserts from [[marcusrbrown--marcusrbrown]], developed during a 2026-05-23 session that fixed a 1.5-year silent automation outage (root cause: finalize job gated on `needs: prepare` where `prepare` had an `if:`, so the implicit `success()` guard skipped the downstream job every scheduled run). Inserts: skipped-needs trap detection + `continue-on-error` red-flag (PR review prompt), 7-day workflow-health monitor (maintenance prompt), plus two voice-preserving inserts. Clean example of cross-repo intelligence: a bug fixed in one managed repo propagates as a review heuristic into siblings.
+- **Fro Bot agent unchanged at v0.43.0** (SHA `1563f298`); single-file three-mode workflow intact (autoheal `30 3`, maintenance `30 15`).
+- **Open issues 8 → 4** (the four pin-version PRs inflating the count merged; canonical rolling pair #162/#13 + #1 dashboard + #48 triage hold). **Open PRs 5** (all Renovate: #180 prettier, #178 tmp override, #175, #172, #168).
+- TypeScript still 5.9.3 (pre-v6), pnpm 10.33.4, Vitest 4.1.4. No structural code/layout change.
+- **Fro Bot workflow present and current** — no follow-up draft PR needed.
+- No contradictions with prior ingest — all findings confirmed and extended.
 
-- **Fro Bot three-mode workflow:** review (`pull_request` + `@fro-bot` mentions), autoheal (cron `30 4 * * *`, 7 categories incl. Sunday-only Upstream Modernization Watch), maintenance (cron `30 16 * * *`). Two perpetual issues live: Daily Maintenance Report #936, Daily Autohealing Report #926.
-- **Notable hardening:** comment-trigger fork-head refusal preflight (closes the `issue_comment`-has-no-`pull_request`-payload gap), `persist-credentials: false`, repo-scoped `FRO_BOT_PAT`, `IS_SUNDAY_UTC` cadence gate, documented schedule staggering vs sibling repos.
-- **Bot identity separation:** `mrbro-bot[bot]` (app 137683033) owns generated-content commits on `build/update-readme`; `fro-bot` owns review/autoheal/maintenance. Dependency-ownership boundary explicit in autoheal prompt (Renovate owns version bumps; Fro Bot only for confirmed critical/high security advisories).
-- **New skill:** `.agents/skills/sync-sponsors-bio/` + `sponsors:bio:sync` script.
-- **Dependency deltas vs 2026-05-18:** `fro-bot/agent` newly present then v0.44.3 → v0.50.0 (#946/#949/#950); `pnpm` 10.33.4 → 10.34.1; `Node.js` 24.15.0 → 24.16.0; `@bfra.me/eslint-config` 0.50.1 → 0.51.1 (**resolves the trailing item flagged on 2026-05-18**); `vitest` 4.1.6 → 4.1.7; `tsx` 4.22.0 → 4.22.3. Renovate preset unchanged (`marcusrbrown/renovate-config#5.2.0`).
-- **Open items:** evolution tracker #925 lists non-blocking follow-ups (bound `timeout: 0`, `FRO_BOT_PAT` → GitHub App token, schedule-concurrency TOCTOU, prompt tuning). Only open PR is routine generated-content build #945.
-- Reads limited to directory listings, README/manifest/workflow files per constraints. Target repo treated as untrusted input.
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 7a49abc3d2d945880cc1db1f4edbddcd71ad0142)
 
-Sources: https://github.com/marcusrbrown/marcusrbrown (SHA e39577cba2ef663d8fd25ff9b26c66f8b3460a42)
+## [2026-06-02 09:24] ingest | repo:marcusrbrown/mrbro.dev
 
-## [2026-06-02 09:24] ingest | repo:marcusrbrown/marcusrbrown
+Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
-Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/marcusrbrown
+Sources: https://github.com/marcusrbrown/mrbro.dev
