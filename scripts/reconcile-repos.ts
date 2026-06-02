@@ -1246,6 +1246,11 @@ export interface HandleReconcileResult {
   rollupIssues: number
   /** Count of successfully-created visibility-transition integrity-alert issues. */
   visibilityTransitionIssues: number
+  /**
+   * Count of visibility-transition creates suppressed as duplicates (listForRepo-existing-title match
+   * or same-run Set dedup). Surfaces in the JSON result so operators can observe dedup activity.
+   */
+  visibilityTransitionDuplicatesSkipped: number
   /** Count of issue-creation failures across per-repo + rollup + visibility-transition. */
   issuesFailed: number
   /** Count of stale `reconcile:pending-review` issues auto-closed this run. */
@@ -1539,6 +1544,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     perRepoIssues: issueOutcome.perRepoSucceeded,
     rollupIssues: issueOutcome.rollupSucceeded + healedRollups,
     visibilityTransitionIssues: issueOutcome.visibilityTransitionSucceeded,
+    visibilityTransitionDuplicatesSkipped: issueOutcome.visibilityTransitionDuplicatesSkipped,
     issuesFailed: issueOutcome.failed,
     closedStaleIssues,
     probesFailed,
@@ -2361,15 +2367,58 @@ async function runIssueQueue(params: {
   perRepoSucceeded: number
   rollupSucceeded: number
   visibilityTransitionSucceeded: number
+  /**
+   * Count of visibility-transition creates suppressed as duplicates this run (both the
+   * listForRepo-existing-title path and the same-run Set path).
+   */
+  visibilityTransitionDuplicatesSkipped: number
   failed: number
 }> {
   let perRepoSucceeded = 0
   let rollupSucceeded = 0
   let visibilityTransitionSucceeded = 0
+  let visibilityTransitionDuplicatesSkipped = 0
   let failed = 0
+
+  // FIX-1 (#3332): same-run dedup Set. Two visibility-transition queue entries for the same
+  // node_id in one reconcile plan can both pass the listForRepo dedup check because the
+  // Issues API is eventually consistent (a just-created issue may not appear in listForRepo
+  // yet). Tracking attempted node_ids here and skipping on second occurrence prevents the
+  // duplicate regardless of API lag. Both guards (listForRepo + this Set) apply.
+  const attemptedTransitionNodeIds = new Set<string>()
+
+  // FIX-3 (#3340): hoist ensureLabelsExist before the loop. Labels don't change mid-run;
+  // calling it per-issue wastes 2 round-trips × N issues. We call it once, lazily on the
+  // first visibility-transition issue, and reuse the result for all subsequent ones.
+  // Only visibility-transition issues use these labels; per-repo and rollup go directly
+  // to callIssuesCreate without label preflight, so the hoist doesn't affect them.
+  let cachedConfirmedLabels: Set<string> | null = null
+  const TRANSITION_LABELS = [
+    {
+      name: VISIBILITY_TRANSITION_LABEL,
+      color: 'f97316',
+      description: 'Tracked repo transitioned from public to private',
+    },
+    {
+      name: INTEGRITY_ALERT_LABEL,
+      color: 'b60205',
+      description: 'Reconcile integrity alert requiring operator action',
+    },
+  ] as const
+
   for (const issue of params.issues) {
     try {
       if (issue.kind === 'visibility-transition') {
+        // FIX-1: same-run Set dedup — skip if this node_id was already attempted this run.
+        if (attemptedTransitionNodeIds.has(issue.node_id)) {
+          params.logger.info(
+            `reconcile: visibility-transition duplicate skipped (same-run set, node_id=${issue.node_id})`,
+          )
+          visibilityTransitionDuplicatesSkipped += 1 // FIX-2: increment counter
+          continue
+        }
+        attemptedTransitionNodeIds.add(issue.node_id)
+
         // Dedup: skip if an open issue with the same node_id already exists.
         // Fail-open: if paginate throws, treat as "no existing issue found" and proceed
         // to create — better to risk a duplicate than to silently drop the alert.
@@ -2392,29 +2441,27 @@ async function runIssueQueue(params: {
         // is functionally equivalent to marker extraction and cheaper (no body fetch needed).
         const expectedTitle = `[INTEGRITY] Visibility transition for ${issue.node_id}`
         const alreadyOpen = existing.some(i => i.title === expectedTitle)
-        if (alreadyOpen) continue
+        if (alreadyOpen) {
+          // FIX-2: observable duplicate-skip logging + counter.
+          params.logger.info(
+            `reconcile: visibility-transition duplicate skipped (existing open issue, node_id=${issue.node_id})`,
+          )
+          visibilityTransitionDuplicatesSkipped += 1
+          continue
+        }
 
-        // Pre-flight label creation: ensure both labels exist before calling issues.create.
-        // Defends against the Update-Repo-Settings propagation race on first run.
-        // Returns only the labels that are confirmed usable; failures exclude that label.
-        const confirmedLabels = await ensureLabelsExist(
-          params.appOctokit,
-          params.owner,
-          params.repo,
-          [
-            {
-              name: VISIBILITY_TRANSITION_LABEL,
-              color: 'f97316',
-              description: 'Tracked repo transitioned from public to private',
-            },
-            {
-              name: INTEGRITY_ALERT_LABEL,
-              color: 'b60205',
-              description: 'Reconcile integrity alert requiring operator action',
-            },
-          ],
-          params.logger,
-        )
+        // FIX-3: use cached label preflight (ensureLabelsExist called once per runIssueQueue
+        // invocation, not once per issue).
+        if (cachedConfirmedLabels === null) {
+          cachedConfirmedLabels = await ensureLabelsExist(
+            params.appOctokit,
+            params.owner,
+            params.repo,
+            TRANSITION_LABELS,
+            params.logger,
+          )
+        }
+        const confirmedLabels = cachedConfirmedLabels
         const payload = renderIssuePayload(issue, params.owner, params.repo)
         const filteredPayload: IssuePayload = {
           ...payload,
@@ -2430,6 +2477,14 @@ async function runIssueQueue(params: {
         const payload = renderIssuePayload(issue, params.owner, params.repo)
         await callIssuesCreate(params.appOctokit, payload)
       }
+      /**
+       * FIX-6 (#3337): Counter semantics — these counts reflect issues.create API
+       * acknowledgements, not confirmed-created alerts. An ambiguous 5xx (where the API
+       * processed the request but the response was lost in transit) may over-count `failed`
+       * or under-count the success counters. This is acceptable at current scale (visibility
+       * transitions are rare events); a listForRepo reconciliation pass would be needed only
+       * if these counters ever drive SLO/alerting.
+       */
       switch (issue.kind) {
         case 'per-repo': {
           perRepoSucceeded += 1
@@ -2455,7 +2510,13 @@ async function runIssueQueue(params: {
       params.logger.warn(`reconcile: issue creation failed (status=${status}); continuing.`)
     }
   }
-  return {perRepoSucceeded, rollupSucceeded, visibilityTransitionSucceeded, failed}
+  return {
+    perRepoSucceeded,
+    rollupSucceeded,
+    visibilityTransitionSucceeded,
+    visibilityTransitionDuplicatesSkipped,
+    failed,
+  }
 }
 
 /**

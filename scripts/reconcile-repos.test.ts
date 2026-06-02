@@ -5585,8 +5585,11 @@ describe('reconcileRepos visibility-transition detection (Unit 9)', () => {
     expect(entry?.private).toBe(false)
   })
 
-  it('scenario 8: rapid flip within one cycle — detection uses stored state at probe time', () => {
-    // Stored: false. Probe: true. Transition fires. Next stored state becomes true.
+  it('scenario 8: queues a transition on a false→true visibility change', () => {
+    // Stored: false. Live access: true. Transition fires. Next stored state becomes true.
+    // NOTE: sequential rapid-flips (public→private→public within one cycle) are
+    // structurally identical to this single false→true case under single-probe-per-cycle
+    // semantics — separate coverage isn't needed.
     const result = reconcileRepos(
       makeInput({
         currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
@@ -5801,6 +5804,242 @@ describe('renderIssuePayload (visibility-transition rendering)', () => {
     const issue: VisibilityTransitionIssue = {kind: 'visibility-transition', node_id: TEST_NODE_ID}
     const payload: IssuePayload = renderIssuePayload(issue, 'fro-bot', '.github')
     expect(payload.labels).toEqual(['reconcile:integrity-alert', 'reconcile:visibility-transition'])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST FIX-1 — Same-run dedup race: two entries same node_id → one create
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition same-run dedup (FIX-1 #3332)', () => {
+  const DUPE_NODE_ID = 'R_kgDODupe3332'
+
+  it('issues.create called exactly once when two transition entries share the same node_id and listForRepo returns empty', async () => {
+    const issuesCreate = vi.fn(async () => ({data: {number: 10}}))
+    // paginate always returns empty → the listForRepo dedup won't suppress either.
+    // Only the same-run Set must suppress the second create.
+    const paginateMock = vi.fn(async () => [])
+
+    await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              // Two stored entries both pointing at the same node_id (owner/name differ
+              // only in the public vs redacted slot — unusual but possible if both an
+              // alias and the redacted form appear in the metadata state).
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'repo-alpha',
+                node_id: DUPE_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'repo-beta',
+                node_id: DUPE_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'repo-alpha',
+                archived: false,
+                private: true,
+                node_id: DUPE_NODE_ID,
+              },
+              {
+                owner: {login: 'fro-bot'},
+                name: 'repo-beta',
+                archived: false,
+                private: true,
+                node_id: DUPE_NODE_ID,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    expect(issuesCreate).toHaveBeenCalledOnce()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST FIX-2 — Duplicate-skip observability: visibilityTransitionDuplicatesSkipped
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition duplicatesSkipped counter (FIX-2 #3334)', () => {
+  const SKIP_NODE_ID = 'R_kgDOSkip3334'
+  const SKIP_TITLE = `[INTEGRITY] Visibility transition for ${SKIP_NODE_ID}`
+
+  function makeSkipParams(paginateMock: OctokitMockOverrides['paginate']): HandleReconcileParams {
+    return baseParams({
+      appOctokit: mockOctokit({
+        paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+        issuesCreate: async () => ({data: {number: 50}}),
+      }),
+      readMetadata: makeReadMetadata({
+        repos: {
+          version: 1,
+          repos: [
+            makeEntry({
+              owner: 'fro-bot',
+              name: 'skip-repo',
+              node_id: SKIP_NODE_ID,
+              private: false,
+              onboarding_status: 'onboarded',
+            }),
+          ],
+        },
+      }),
+      userOctokit: mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {
+              owner: {login: 'fro-bot'},
+              name: 'skip-repo',
+              archived: false,
+              private: true,
+              node_id: SKIP_NODE_ID,
+            },
+          ],
+        }),
+      }),
+    })
+  }
+
+  it('visibilityTransitionDuplicatesSkipped is 1 when listForRepo finds existing matching title', async () => {
+    const paginateMock = vi.fn(async (_fn: unknown, opts: {labels?: string; state?: string}) => {
+      if (opts.labels === 'reconcile:visibility-transition' && opts.state === 'open') {
+        return [{number: 1, title: SKIP_TITLE, body: null, labels: [{name: 'reconcile:visibility-transition'}]}]
+      }
+      return []
+    })
+
+    const result = await handleReconcile(makeSkipParams(paginateMock as unknown as OctokitMockOverrides['paginate']))
+
+    expect(result.visibilityTransitionDuplicatesSkipped).toBe(1)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST FIX-3 — Hoist ensureLabelsExist: called once for N transition issues
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition label preflight hoisted (FIX-3 #3340)', () => {
+  const HOIST_NODE_ID_A = 'R_kgDOHoistA'
+  const HOIST_NODE_ID_B = 'R_kgDOHoistB'
+
+  it('getLabel called exactly twice (once per label) even when two transition issues fire', async () => {
+    const issuesCreate = vi.fn(async () => ({data: {number: 77}}))
+    const issuesGetLabel = vi.fn(async () => ({data: {name: 'label'}}))
+    const paginateMock = vi.fn(async () => [])
+
+    await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+          issuesGetLabel,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'hoist-repo-a',
+                node_id: HOIST_NODE_ID_A,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'hoist-repo-b',
+                node_id: HOIST_NODE_ID_B,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'hoist-repo-a',
+                archived: false,
+                private: true,
+                node_id: HOIST_NODE_ID_A,
+              },
+              {
+                owner: {login: 'fro-bot'},
+                name: 'hoist-repo-b',
+                archived: false,
+                private: true,
+                node_id: HOIST_NODE_ID_B,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // Two issues, two labels → getLabel called 2 times total (hoisted once), not 4 (per-issue).
+    expect(issuesGetLabel).toHaveBeenCalledTimes(2)
+    expect(issuesCreate).toHaveBeenCalledTimes(2)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST FIX-4 — node_id backfill from access list into stored entry
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('reconcileRepos node_id backfill (FIX-4 #3335)', () => {
+  it('backfills node_id from access list when stored entry has none', () => {
+    const ACCESS_NODE_ID = 'R_kgDOBackfill'
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {
+          version: 1,
+          repos: [
+            // Entry with no node_id — simulates the ha-config scenario
+            makeEntry({
+              owner: 'fro-bot',
+              name: 'ha-config',
+              // node_id intentionally absent
+              private: false,
+              onboarding_status: 'onboarded',
+            }),
+          ],
+        },
+        accessList: [
+          makeAccess({
+            owner: 'fro-bot',
+            name: 'ha-config',
+            node_id: ACCESS_NODE_ID,
+            private: false,
+          }),
+        ],
+      }),
+    )
+
+    const next = result.nextRepos.repos.find(r => r.name === 'ha-config')
+    expect(next?.node_id).toBe(ACCESS_NODE_ID)
   })
 })
 
