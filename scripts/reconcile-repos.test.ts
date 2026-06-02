@@ -3369,16 +3369,19 @@ describe('handleReconcile (I/O shell)', () => {
     })
 
     it('counts race-suppressed skips separately from pre-existing rollups in raceSuppressedRollups', async () => {
-      // FIX 1: existingRollupOwners (from listForRepo) and currentRunRollupOwners (same-run guard)
-      // must be tracked separately so operators can observe the eventual-consistency guard firing.
+      // Verifies that raceSuppressedRollups counts only the same-run guard path, not the
+      // pre-existing-on-GitHub silent-skip path.
       //
-      // Setup:
-      //   - owner "race-owner": NOT in listForRepo, IS in currentRunRollupOwners → race-suppressed skip
-      //   - owner "existing-owner": IS in listForRepo, NOT in currentRunRollupOwners → pre-existing skip
-      //   - owner "new-owner": NOT in either → should create
+      // All three owners start from an empty repos state so reconcileRepos classifies every repo
+      // as unsolicited-new → pending-review. buildIssueQueue groups them into 3 per-owner rollup
+      // issues; runIssueQueue (step 10) calls issuesCreate for all 3, adding all three to
+      // currentRunRollupOwners. selfHealRollups (step 12) then receives listForRepo returning only
+      // "existing-owner" and checks each owner:
+      //   - race-owner:    not in listForRepo, IS in currentRunRollupOwners → raceSuppressed += 1
+      //   - existing-owner: IS in listForRepo                               → silent skip (no increment)
+      //   - new-owner:     not in listForRepo, IS in currentRunRollupOwners → raceSuppressed += 1
       //
-      // Expected: 1 create (new-owner), raceSuppressedRollups === 1 (race-owner only).
-      // "existing-owner" pre-existing skip must NOT increment raceSuppressedRollups.
+      // Expected: issuesCreate called 3× (step 10), raceSuppressedRollups === 2 (race-owner + new-owner).
 
       const existing: ReposFile = {
         version: 1,
@@ -3422,35 +3425,6 @@ describe('handleReconcile (I/O shell)', () => {
         }),
       })
 
-      // "race-owner" is already in plan.issues (currentRunRollupOwners) because reconcileRepos
-      // built a per-owner-rollup for it this run. We pre-seed existing repos so reconcileRepos
-      // sees all entries as unchanged (no new pending-review to create rollups for in step 10),
-      // then confirm selfHealRollups correctly handles the race-suppressed skip.
-      //
-      // Because handleReconcile builds currentRunRollupOwners from plan.issues, and plan.issues
-      // only contains rollups for newly-classified owners, we need "race-owner" to be newly
-      // classified this run. To achieve that: start with an empty repos state so all three
-      // owners are added as pending-review, which triggers rollup creation for all of them in
-      // buildIssueQueue. Then issuesCreate is called once for each qualifying owner in runIssueQueue
-      // (step 10). Finally selfHealRollups (step 12) is called with currentRunRollupOwners =
-      // {'race-owner', 'existing-owner', 'new-owner'} and listForRepo returning only existing-owner.
-      //
-      // To isolate selfHealRollups behavior specifically (race-suppressed vs pre-existing):
-      // Start empty so reconcileRepos classifies all 6 repos as unsolicited-new → pending-review.
-      // buildIssueQueue groups by owner → 3 per-owner-rollup issues in plan.issues.
-      // runIssueQueue (step 10) calls issuesCreate 3 times (one per owner).
-      // selfHealRollups (step 12) calls listForRepo and gets only existing-owner → checks 3 owners:
-      //   - race-owner: not in listForRepo, but IS in currentRunRollupOwners → raceSuppressed += 1
-      //   - existing-owner: IS in listForRepo → silent continue (no raceSuppressedRollups increment)
-      //   - new-owner: not in listForRepo, not in currentRunRollupOwners → would create, but
-      //                since it IS in currentRunRollupOwners (step 10 ran for all 3), it's suppressed too.
-      //
-      // Simplification: to get exactly the scenario described in the test comment (1 create),
-      // use a mixed repos state: only new-owner is newly classified; race-owner is in
-      // currentRunRollupOwners via a different mechanism. This is hard to achieve through
-      // handleReconcile's integration surface — instead, we verify the net behavior:
-      // after step 10 creates rollups for all 3 owners, selfHealRollups should NOT create
-      // duplicates for any of them. raceSuppressedRollups counts only the same-run-guard path.
       const result = await handleReconcile(
         baseParams({
           userOctokit,

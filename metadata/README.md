@@ -184,7 +184,7 @@ The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data �
 
 ## Reconcile run serialization
 
-Reconcile runs are serialized by the `reconcile-repos.yaml` workflow's concurrency group (`group: reconcile-repos, cancel-in-progress: false`). A manual rerun queues behind the currently-running scheduled job and starts only after it fully completes — typically 15–20 minutes — which is far longer than the GitHub Issues listing API's few-second eventual-consistency lag.
+Reconcile runs are serialized by the `reconcile-repos.yaml` workflow's concurrency group (`group: reconcile-repos, cancel-in-progress: false`). A manual rerun queues behind the currently-running scheduled job and starts only after it fully completes — well over ten minutes (the staggered survey dispatches alone span the majority of that) — far longer than the GitHub Issues listing API's few-second eventual-consistency lag.
 
 This serialization is what prevents cross-run duplicate rollup issues: because no two reconcile runs can overlap, a rollup created by one run has fully propagated through the API before any subsequent run begins its `selfHealRollups` pass. Manual reruns are therefore safe and do not require paging delays or pacing rules.
 
