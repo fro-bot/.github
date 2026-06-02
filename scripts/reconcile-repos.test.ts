@@ -3270,7 +3270,7 @@ describe('handleReconcile (I/O shell)', () => {
     })
 
     it('regression: does not duplicate rollup when listForRepo lags behind same-run create', async () => {
-      // Reproduces the 2026-05-18 race (run 26023380395, issues #3307 + #3308):
+      // Reproduces the 2026-05-18 race where listForRepo eventual-consistency lag caused
       //
       // Setup: bfra-me grants access to 2 repos in this run (NOT pre-existing in metadata).
       // Pass 1 of reconcileRepos adds both as `pending-review` + pushes 2 rawIssues.
@@ -5808,10 +5808,10 @@ describe('renderIssuePayload (visibility-transition rendering)', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TEST FIX-1 — Same-run dedup race: two entries same node_id → one create
+// Same-run dedup race: two entries same node_id → one create, counter incremented
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('handleReconcile visibility-transition same-run dedup (FIX-1 #3332)', () => {
+describe('handleReconcile visibility-transition same-run dedup', () => {
   const DUPE_NODE_ID = 'R_kgDODupe3332'
 
   it('issues.create called exactly once when two transition entries share the same node_id and listForRepo returns empty', async () => {
@@ -5820,7 +5820,7 @@ describe('handleReconcile visibility-transition same-run dedup (FIX-1 #3332)', (
     // Only the same-run Set must suppress the second create.
     const paginateMock = vi.fn(async () => [])
 
-    await handleReconcile(
+    const result = await handleReconcile(
       baseParams({
         appOctokit: mockOctokit({
           paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
@@ -5874,14 +5874,15 @@ describe('handleReconcile visibility-transition same-run dedup (FIX-1 #3332)', (
     )
 
     expect(issuesCreate).toHaveBeenCalledOnce()
+    expect(result.visibilityTransitionDuplicatesSkipped).toBe(1)
   })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TEST FIX-2 — Duplicate-skip observability: visibilityTransitionDuplicatesSkipped
+// Duplicate-skip observability: visibilityTransitionDuplicatesSkipped counter
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('handleReconcile visibility-transition duplicatesSkipped counter (FIX-2 #3334)', () => {
+describe('handleReconcile visibility-transition duplicatesSkipped counter', () => {
   const SKIP_NODE_ID = 'R_kgDOSkip3334'
   const SKIP_TITLE = `[INTEGRITY] Visibility transition for ${SKIP_NODE_ID}`
 
@@ -5936,10 +5937,10 @@ describe('handleReconcile visibility-transition duplicatesSkipped counter (FIX-2
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TEST FIX-3 — Hoist ensureLabelsExist: called once for N transition issues
+// Label preflight hoisting: ensureLabelsExist called once for N transition issues
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('handleReconcile visibility-transition label preflight hoisted (FIX-3 #3340)', () => {
+describe('handleReconcile visibility-transition label preflight hoisted', () => {
   const HOIST_NODE_ID_A = 'R_kgDOHoistA'
   const HOIST_NODE_ID_B = 'R_kgDOHoistB'
 
@@ -6006,10 +6007,10 @@ describe('handleReconcile visibility-transition label preflight hoisted (FIX-3 #
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TEST FIX-4 — node_id backfill from access list into stored entry
+// node_id backfill: access list populates missing node_id in stored entry
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('reconcileRepos node_id backfill (FIX-4 #3335)', () => {
+describe('reconcileRepos node_id backfill', () => {
   it('backfills node_id from access list when stored entry has none', () => {
     const ACCESS_NODE_ID = 'R_kgDOBackfill'
     const result = reconcileRepos(
@@ -6017,12 +6018,12 @@ describe('reconcileRepos node_id backfill (FIX-4 #3335)', () => {
         currentRepos: {
           version: 1,
           repos: [
-            // Entry with no node_id — simulates the ha-config scenario
+            // Entry with no node_id and no private field — simulates the ha-config legacy shape
+            // where `private` was never written (undefined, not false).
             makeEntry({
               owner: 'fro-bot',
               name: 'ha-config',
-              // node_id intentionally absent
-              private: false,
+              // node_id and private intentionally absent (legacy entry shape)
               onboarding_status: 'onboarded',
             }),
           ],
@@ -6041,10 +6042,36 @@ describe('reconcileRepos node_id backfill (FIX-4 #3335)', () => {
     const next = result.nextRepos.repos.find(r => r.name === 'ha-config')
     expect(next?.node_id).toBe(ACCESS_NODE_ID)
   })
+
+  it('backfills node_id when stored entry has undefined private (legacy entry without private field)', () => {
+    // Pins the real ha-config scenario: `private` was never written to the YAML entry,
+    // so it deserializes as undefined. node_id backfill must still work.
+    const ACCESS_NODE_ID = 'R_kgDOBackfillUndef'
+    // makeEntry without private/node_id → both fields absent (undefined), matching legacy shape
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {
+          version: 1,
+          repos: [makeEntry({owner: 'fro-bot', name: 'ha-config-legacy', onboarding_status: 'onboarded'})],
+        },
+        accessList: [
+          makeAccess({
+            owner: 'fro-bot',
+            name: 'ha-config-legacy',
+            node_id: ACCESS_NODE_ID,
+            private: false,
+          }),
+        ],
+      }),
+    )
+
+    const next = result.nextRepos.repos.find(r => r.name === 'ha-config-legacy')
+    expect(next?.node_id).toBe(ACCESS_NODE_ID)
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TEST #13 — Dedup branch coverage (existing open issue suppresses create)
+// Dedup branch coverage: existing open issue suppresses create
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('handleReconcile visibility-transition dedup', () => {
@@ -6169,5 +6196,162 @@ describe('handleReconcile visibility-transition dedup', () => {
     // Exact-title dedup: the existing issue title does NOT match the victim's expected title,
     // so issues.create MUST be called. Old substring code would have suppressed this.
     expect(issuesCreate).toHaveBeenCalledOnce()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Same-run dedup must not suppress a retry after a failed first create
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition same-run dedup: failed first create does not suppress retry', () => {
+  const RETRY_NODE_ID = 'R_kgDORetryC'
+
+  it('second same-node entry attempts issues.create when first create rejects, and duplicatesSkipped is 0', async () => {
+    let createCallCount = 0
+    const issuesCreate = vi.fn(async () => {
+      createCallCount += 1
+      if (createCallCount === 1) {
+        const err = Object.assign(new Error('simulated API failure'), {status: 500})
+        throw err
+      }
+      return {data: {number: 99}}
+    })
+    // paginate always returns empty → listForRepo dedup won't suppress anything
+    const paginateMock = vi.fn(async () => [])
+
+    const result = await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'retry-repo-a',
+                node_id: RETRY_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'retry-repo-b',
+                node_id: RETRY_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'retry-repo-a',
+                archived: false,
+                private: true,
+                node_id: RETRY_NODE_ID,
+              },
+              {
+                owner: {login: 'fro-bot'},
+                name: 'retry-repo-b',
+                archived: false,
+                private: true,
+                node_id: RETRY_NODE_ID,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // Both entries must attempt issues.create because the first one failed
+    expect(issuesCreate).toHaveBeenCalledTimes(2)
+    // duplicatesSkipped must NOT be incremented for a failed-then-retry case
+    expect(result.visibilityTransitionDuplicatesSkipped).toBe(0)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A transient ensureLabelsExist failure must not poison the per-run label cache
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition: transient label-check failure does not poison cache', () => {
+  const LABEL_NODE_ID_A = 'R_kgDOLabelA'
+  const LABEL_NODE_ID_B = 'R_kgDOLabelB'
+
+  it('second transition issue triggers a fresh ensureLabelsExist when first call returns empty set', async () => {
+    let getLabelCallCount = 0
+    // First call per-label returns 500 (label confirmed set will be empty); second call succeeds
+    const issuesGetLabel = vi.fn(async () => {
+      getLabelCallCount += 1
+      if (getLabelCallCount <= 2) {
+        // First two calls (for the two labels on first issue) → fail
+        const err = Object.assign(new Error('transient'), {status: 500})
+        throw err
+      }
+      return {data: {name: 'label'}}
+    })
+    const issuesCreate = vi.fn(async () => ({data: {number: 42}}))
+    const paginateMock = vi.fn(async () => [])
+
+    await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+          issuesGetLabel,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'label-repo-a',
+                node_id: LABEL_NODE_ID_A,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'label-repo-b',
+                node_id: LABEL_NODE_ID_B,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'label-repo-a',
+                archived: false,
+                private: true,
+                node_id: LABEL_NODE_ID_A,
+              },
+              {
+                owner: {login: 'fro-bot'},
+                name: 'label-repo-b',
+                archived: false,
+                private: true,
+                node_id: LABEL_NODE_ID_B,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // getLabel should be called more than 2 times — the second issue must retry label check
+    // (cache was not poisoned by the empty first result)
+    expect(issuesGetLabel.mock.calls.length).toBeGreaterThan(2)
   })
 })

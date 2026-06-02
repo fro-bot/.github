@@ -65,6 +65,7 @@ jobs:
           # cadence instead of bursty fan-outs that exhaust upstream capacity.
           RECONCILE_MAX_DISPATCHES_PER_RUN: '12'
         run: node scripts/reconcile-repos.ts | tee "$RUNNER_TEMP/reconcile-result.json"
+        shell: bash
 
       - if: always()
         name: 📋 Write step summary
@@ -84,6 +85,8 @@ jobs:
             echo "| Dispatches deferred | $(jq '.dispatchesDeferred // 0' "$result") |"
             echo "| Dispatches failed | $(jq '.dispatchesFailed // 0' "$result") |"
             echo "| Visibility transition issues | $(jq '.visibilityTransitionIssues // 0' "$result") |"
+            echo "| Visibility transitions detected | $(jq '.summary.visibilityTransitions // 0' "$result") |"
+            echo "| Visibility transition duplicates skipped | $(jq '.visibilityTransitionDuplicatesSkipped // 0' "$result") |"
             echo "| Per-repo issues | $(jq '.perRepoIssues // 0' "$result") |"
             echo "| Rollup issues | $(jq '.rollupIssues // 0' "$result") |"
             echo "| Issues failed | $(jq '.issuesFailed // 0' "$result") |"

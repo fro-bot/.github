@@ -1284,7 +1284,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const maxDispatchesPerRun = params.maxDispatchesPerRun ?? loadMaxDispatchesPerRunFromEnv()
   const logger: ReconcileLogger = params.logger ?? {
     warn: message => process.stderr.write(`${message}\n`),
-    info: message => process.stdout.write(`${message}\n`),
+    info: message => process.stderr.write(`${message}\n`),
   }
   const readMetadata = params.readMetadata ?? readMetadataFromDisk
   const commitMetadataImpl = params.commitMetadata ?? defaultCommitMetadata
@@ -2380,18 +2380,16 @@ async function runIssueQueue(params: {
   let visibilityTransitionDuplicatesSkipped = 0
   let failed = 0
 
-  // FIX-1 (#3332): same-run dedup Set. Two visibility-transition queue entries for the same
+  // Same-run dedup Set. Two visibility-transition queue entries for the same
   // node_id in one reconcile plan can both pass the listForRepo dedup check because the
   // Issues API is eventually consistent (a just-created issue may not appear in listForRepo
-  // yet). Tracking attempted node_ids here and skipping on second occurrence prevents the
-  // duplicate regardless of API lag. Both guards (listForRepo + this Set) apply.
+  // yet). Tracking successfully-created node_ids here and skipping on second occurrence
+  // prevents duplicates regardless of API lag. Both guards (listForRepo + this Set) apply.
   const attemptedTransitionNodeIds = new Set<string>()
 
-  // FIX-3 (#3340): hoist ensureLabelsExist before the loop. Labels don't change mid-run;
-  // calling it per-issue wastes 2 round-trips × N issues. We call it once, lazily on the
-  // first visibility-transition issue, and reuse the result for all subsequent ones.
-  // Only visibility-transition issues use these labels; per-repo and rollup go directly
-  // to callIssuesCreate without label preflight, so the hoist doesn't affect them.
+  // Label preflight: ensureLabelsExist is hoisted out of the per-issue loop. Labels don't
+  // change mid-run; calling it per-issue wastes 2 round-trips × N issues. We call it lazily
+  // on the first visibility-transition issue and reuse when the result is confirmed (non-empty).
   let cachedConfirmedLabels: Set<string> | null = null
   const TRANSITION_LABELS = [
     {
@@ -2409,15 +2407,16 @@ async function runIssueQueue(params: {
   for (const issue of params.issues) {
     try {
       if (issue.kind === 'visibility-transition') {
-        // FIX-1: same-run Set dedup — skip if this node_id was already attempted this run.
+        // Same-run Set dedup — skip if this node_id was already successfully created this run.
+        // The set is populated AFTER a successful create, so a failed first attempt does not
+        // suppress a subsequent retry for the same node_id.
         if (attemptedTransitionNodeIds.has(issue.node_id)) {
           params.logger.info(
             `reconcile: visibility-transition duplicate skipped (same-run set, node_id=${issue.node_id})`,
           )
-          visibilityTransitionDuplicatesSkipped += 1 // FIX-2: increment counter
+          visibilityTransitionDuplicatesSkipped += 1
           continue
         }
-        attemptedTransitionNodeIds.add(issue.node_id)
 
         // Dedup: skip if an open issue with the same node_id already exists.
         // Fail-open: if paginate throws, treat as "no existing issue found" and proceed
@@ -2442,7 +2441,6 @@ async function runIssueQueue(params: {
         const expectedTitle = `[INTEGRITY] Visibility transition for ${issue.node_id}`
         const alreadyOpen = existing.some(i => i.title === expectedTitle)
         if (alreadyOpen) {
-          // FIX-2: observable duplicate-skip logging + counter.
           params.logger.info(
             `reconcile: visibility-transition duplicate skipped (existing open issue, node_id=${issue.node_id})`,
           )
@@ -2450,18 +2448,23 @@ async function runIssueQueue(params: {
           continue
         }
 
-        // FIX-3: use cached label preflight (ensureLabelsExist called once per runIssueQueue
-        // invocation, not once per issue).
-        if (cachedConfirmedLabels === null) {
-          cachedConfirmedLabels = await ensureLabelsExist(
+        // Label preflight: ensureLabelsExist is called once per runIssueQueue invocation,
+        // lazily on the first visibility-transition issue. The result is cached only when
+        // non-empty (confirmed); an empty result from a transient failure leaves the cache
+        // null so the next issue retries rather than shipping unlabeled for the rest of the run.
+        if (cachedConfirmedLabels === null || cachedConfirmedLabels.size === 0) {
+          const labels = await ensureLabelsExist(
             params.appOctokit,
             params.owner,
             params.repo,
             TRANSITION_LABELS,
             params.logger,
           )
+          if (labels.size > 0) {
+            cachedConfirmedLabels = labels
+          }
         }
-        const confirmedLabels = cachedConfirmedLabels
+        const confirmedLabels = cachedConfirmedLabels ?? new Set<string>()
         const payload = renderIssuePayload(issue, params.owner, params.repo)
         const filteredPayload: IssuePayload = {
           ...payload,
@@ -2473,17 +2476,19 @@ async function runIssueQueue(params: {
           )
         }
         await callIssuesCreate(params.appOctokit, filteredPayload)
+        // Mark as successfully created — only after the create call succeeds.
+        // This ensures a failed create does not suppress a subsequent retry for the same node_id.
+        attemptedTransitionNodeIds.add(issue.node_id)
       } else {
         const payload = renderIssuePayload(issue, params.owner, params.repo)
         await callIssuesCreate(params.appOctokit, payload)
       }
       /**
-       * FIX-6 (#3337): Counter semantics — these counts reflect issues.create API
-       * acknowledgements, not confirmed-created alerts. An ambiguous 5xx (where the API
-       * processed the request but the response was lost in transit) may over-count `failed`
-       * or under-count the success counters. This is acceptable at current scale (visibility
-       * transitions are rare events); a listForRepo reconciliation pass would be needed only
-       * if these counters ever drive SLO/alerting.
+       * Counter semantics: these counts reflect issues.create API acknowledgements, not
+       * confirmed-created alerts. An ambiguous 5xx (where the API processed the request but
+       * the response was lost in transit) may over-count `failed` or under-count the success
+       * counters. This is acceptable at current scale (visibility transitions are rare events);
+       * a listForRepo reconciliation pass would be needed only if these counters drive SLO/alerting.
        */
       switch (issue.kind) {
         case 'per-repo': {
