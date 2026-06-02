@@ -28,12 +28,113 @@ export interface PrivateWikiLeak {
 }
 
 // ---------------------------------------------------------------------------
-// detectPrivateWikiLeaks — pure function (no I/O, no subprocess)
+// parseFrontmatterSources — extract structured source URLs from YAML frontmatter
 // ---------------------------------------------------------------------------
 
 /**
- * Pure function: flag data wiki pages that cannot be attributed to a known-public
+ * Parse the YAML frontmatter of a wiki page and return the `sources` attribution
+ * state with the following tri-state contract:
+ *
+ * - `null`       → `sources` key is ABSENT, frontmatter is missing/unparseable, or
+ *                  the parsed value is not an object. Caller falls back to the legacy
+ *                  body-substring check (no over-block of pre-existing pages).
+ * - `[]`         → `sources` key IS PRESENT but is not an array (e.g. a scalar, null),
+ *                  OR is an array with no entries that have a `url` string.
+ *                  Key presence is authoritative — caller treats this as a failed
+ *                  attribution check (page flagged; body substring is NOT consulted).
+ * - `string[]`   → `sources` key IS PRESENT and is an array with at least one usable
+ *                  URL string. Authoritative; caller checks each URL against the repo.
+ *
+ * The critical distinction is key PRESENCE (`'sources' in obj`) vs absence:
+ * - Present → always return an array (possibly empty) → authoritative.
+ * - Absent  → return null → caller falls back to substring.
+ */
+function parseFrontmatterSources(content: string): string[] | null {
+  // Match YAML frontmatter fences anchored to the true start of the file.
+  // The /m flag is intentionally absent so that ^ is string-start only —
+  // body-embedded ---...--- blocks must not be treated as authoritative frontmatter.
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content)
+  if (!match) return null
+
+  let parsed: unknown
+  try {
+    parsed = YAML.parse(match[1] ?? '')
+  } catch {
+    return null // unparseable frontmatter → caller falls back to substring
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) return null
+
+  const obj = parsed as Record<string, unknown>
+
+  // Key ABSENT → return null so callers fall back to legacy substring.
+  if (!Object.prototype.hasOwnProperty.call(obj, 'sources')) return null
+
+  const sources = obj.sources
+
+  // Key PRESENT but not an array → authoritative empty result (fail-closed).
+  if (!Array.isArray(sources)) return []
+
+  // Key PRESENT and is an array → extract url strings (possibly returns []).
+  const urls: string[] = []
+  for (const src of sources) {
+    if (typeof src === 'object' && src !== null) {
+      const url = (src as Record<string, unknown>).url
+      if (typeof url === 'string') urls.push(url)
+    }
+  }
+  return urls
+}
+
+// ---------------------------------------------------------------------------
+// sourceUrlMatchesRepo — exact owner/repo URL matching without prefix collisions
+// ---------------------------------------------------------------------------
+
+/**
+ * Return true iff `sourceUrl` refers to exactly the repo identified by `owner`
+ * and `name` on github.com.
+ *
+ * Matching rules:
+ * - Protocol must be exactly `https:` (rejects http, ftp, etc.).
+ * - URL host must be exactly `github.com` (strict — no www.).
+ * - No explicit port (`parsed.port` must be empty string — rejects :444, etc.).
+ * - URL pathname segments[0] must equal `owner` and segments[1] must equal `name`
+ *   (case-insensitive; GitHub owner/repo names are case-insensitive).
+ * - Trailing path segments (e.g. `/blob/main/README.md`) are allowed — only the
+ *   first two segments are checked.
+ * - Query string and hash are ignored (URL parsing handles this).
+ * - Malformed URLs (parse failure) return false — never throw.
+ */
+function sourceUrlMatchesRepo(sourceUrl: string, owner: string, name: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(sourceUrl)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'https:') return false
+  if (parsed.hostname !== 'github.com') return false
+  if (parsed.port !== '') return false
+  const segments = parsed.pathname.split('/').filter(s => s.length > 0)
+  // GitHub owner/repo names are case-insensitive: compare lowercased so a source URL like
+  // `https://github.com/Acme/Widget` correctly attributes to an entry stored as `acme/widget`.
+  // Optional chaining on segments[1] guards the `/owner`-only path (undefined?.toLowerCase()
+  // returns undefined, which !== any string, so it's a safe no-match). This can only convert
+  // an over-block into a correct attribution — it cannot match a genuinely different repo.
+  return segments[0]?.toLowerCase() === owner.toLowerCase() && segments[1]?.toLowerCase() === name.toLowerCase()
+}
+
+// ---------------------------------------------------------------------------
+// detectPrivateWikiLeaks — emits redaction-safe stderr warnings on substring-fallback path
+// ---------------------------------------------------------------------------
+
+/**
+ * Flag data wiki pages that cannot be attributed to a known-public
  * or unchanged-grandfathered repo.
+ *
+ * Note: this function writes redaction-safe JSON warnings to stderr when a page
+ * is attributed via the legacy body-substring fallback path. Only the public slug
+ * is emitted — no private owner/name is ever logged.
  *
  * For each data page its stem is checked in this order:
  *
@@ -91,8 +192,35 @@ export function detectPrivateWikiLeaks(params: {
         continue
       }
       const expectedUrl = `https://github.com/${entry.owner}/${entry.name}`
+      const structuredSources = parseFrontmatterSources(page.content)
+
+      if (structuredSources !== null) {
+        // Structured sources are present and parseable — they are authoritative.
+        // Attribution is satisfied iff at least one source URL matches the expected URL.
+        // Body substring is deliberately ignored here; structured sources close the decoy-URL spoof vector.
+        if (structuredSources.some(url => sourceUrlMatchesRepo(url, entry.owner, entry.name))) {
+          continue // passes: structured attribution
+        }
+        // Structured sources exist but none match — treat as unattributable.
+        // Body substring is NOT checked as a rescue when structured sources are present.
+        leaks.push({filename: page.filename, reason: 'unattributable-page'})
+        continue
+      }
+
+      // No parseable structured sources (frontmatter absent, unparseable, or no sources key).
+      // Fall back to legacy body substring check so pre-existing pages are not over-blocked.
       if (page.content.includes(expectedUrl)) {
-        continue // passes: explicitly public and attributable
+        // Emit a migration signal: this page passed via legacy substring attribution only.
+        // The public slug is safe to log; never log private repo owner/name here.
+        process.stderr.write(
+          `${JSON.stringify({
+            level: 'warn',
+            event: 'legacy-substring-attribution',
+            message: 'Page attributed via body substring; add structured frontmatter sources for stronger attribution',
+            slug: page.stem,
+          })}\n`,
+        )
+        continue // passes: legacy substring fallback
       }
 
       // Content doesn't reference the expected repo — possible slug collision.
