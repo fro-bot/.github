@@ -10,8 +10,8 @@ import {
   type PrivateRepoMapping,
 } from './enumerate-existing-leaks.ts'
 
-function makePolyMapping(): PrivateRepoMapping {
-  return {node_id: 'R_kgDOPpoLY1', owner: 'marcusrbrown', name: 'poly'}
+function makeCartMapping(): PrivateRepoMapping {
+  return {node_id: 'R_kgDOCaRt11', owner: 'marcusrbrown', name: 'cart'}
 }
 
 function makeReposFile(
@@ -23,7 +23,7 @@ function makeReposFile(
     repos: [
       {
         owner: 'marcusrbrown',
-        name: 'poly',
+        name: 'cart',
         added: '2026-05-01',
         onboarding_status: 'pending',
         last_survey_at: null,
@@ -53,24 +53,24 @@ describe('enumerateLeaks', () => {
       // Empty list = nothing to enumerate; even rich data sources yield zero surfaces.
       const result = enumerateLeaks({
         ...emptyInput(),
-        commitLog: [{sha: 'abc123', subject: 'feat: add poly support'}],
+        commitLog: [{sha: 'abc123', subject: 'feat: add cart support'}],
         reposFile: makeReposFile(),
-        wikiFilenames: ['marcusrbrown--poly.md'],
+        wikiFilenames: ['marcusrbrown--cart.md'],
       })
 
       expect(result).toEqual([])
     })
 
-    it('enumerates all 4 surface types for the poly fixture', () => {
-      // GIVEN the canonical poly fixture: 2 commits, 1 run, 1 metadata entry, 0 wiki pages
+    it('enumerates all 4 surface types for the cart fixture', () => {
+      // GIVEN the canonical cart fixture: 2 commits, 1 run, 1 metadata entry, 0 wiki pages
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
+        privateRepos: [makeCartMapping()],
         commitLog: [
-          {sha: 'd92d12c', subject: 'fix(metadata): allowlist marcusrbrown/poly invitation'},
-          {sha: 'cb5811e', subject: 'chore(reconcile): add marcusrbrown/poly to repos.yaml'},
+          {sha: 'd92d12c', subject: 'fix(metadata): allowlist marcusrbrown/cart invitation'},
+          {sha: 'cb5811e', subject: 'chore(reconcile): add marcusrbrown/cart to repos.yaml'},
           {sha: 'unrelated1', subject: 'docs: update README'},
         ],
-        workflowRuns: [{id: 25395917616, name: 'Survey Repo', inputs: {owner: 'marcusrbrown', repo: 'poly'}}],
+        workflowRuns: [{id: 25395917616, name: 'Survey Repo', inputs: {owner: 'marcusrbrown', repo: 'cart'}}],
         reposFile: makeReposFile(),
         wikiFilenames: [],
       })
@@ -86,21 +86,21 @@ describe('enumerateLeaks', () => {
       expect(runSurface?.identifier).toBe('25395917616')
 
       const metaSurface = result.find(s => s.type === 'metadata-entry')
-      expect(metaSurface?.identifier).toBe('marcusrbrown/poly')
+      expect(metaSurface?.identifier).toBe('marcusrbrown/cart')
     })
 
     it('enumerates wiki pages when matching slug patterns are present', () => {
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
+        privateRepos: [makeCartMapping()],
         commitLog: [],
         workflowRuns: [],
         reposFile: {version: 1, repos: []},
-        wikiFilenames: ['marcusrbrown--poly.md', 'unrelated--repo.md'],
+        wikiFilenames: ['marcusrbrown--cart.md', 'unrelated--repo.md'],
       })
 
       const wikiSurfaces = result.filter(s => s.type === 'wiki-page')
       expect(wikiSurfaces).toHaveLength(1)
-      expect(wikiSurfaces[0]?.identifier).toBe('marcusrbrown--poly.md')
+      expect(wikiSurfaces[0]?.identifier).toBe('marcusrbrown--cart.md')
     })
 
     it('returns empty surfaces for a private repo with no leaks', () => {
@@ -119,8 +119,8 @@ describe('enumerateLeaks', () => {
   describe('detection rules', () => {
     it('matches commit subject case-insensitively', () => {
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
-        commitLog: [{sha: 'mixed', subject: 'FIX: MarcusRBrown/Poly handling'}],
+        privateRepos: [makeCartMapping()],
+        commitLog: [{sha: 'mixed', subject: 'FIX: MarcusRBrown/Cart handling'}],
         workflowRuns: [],
         reposFile: {version: 1, repos: []},
         wikiFilenames: [],
@@ -130,11 +130,11 @@ describe('enumerateLeaks', () => {
     })
 
     it('does NOT match a substring inside another word', () => {
-      // 'poly' alone is too short to substring-match safely in arbitrary text.
+      // 'cart' alone is too short to substring-match safely in arbitrary text.
       // The check requires the canonical owner/name pair to appear together.
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
-        commitLog: [{sha: 'unrelated', subject: 'feat: support polymorphism in parser'}],
+        privateRepos: [makeCartMapping()],
+        commitLog: [{sha: 'unrelated', subject: 'feat: support cartography in parser'}],
         workflowRuns: [],
         reposFile: {version: 1, repos: []},
         wikiFilenames: [],
@@ -145,10 +145,10 @@ describe('enumerateLeaks', () => {
 
     it('matches workflow run inputs by canonical owner/repo pair', () => {
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
+        privateRepos: [makeCartMapping()],
         commitLog: [],
         workflowRuns: [
-          {id: 1, name: 'Survey Repo', inputs: {owner: 'marcusrbrown', repo: 'poly'}},
+          {id: 1, name: 'Survey Repo', inputs: {owner: 'marcusrbrown', repo: 'cart'}},
           {id: 2, name: 'Survey Repo', inputs: {owner: 'someone-else', repo: 'public-repo'}},
         ],
         reposFile: {version: 1, repos: []},
@@ -160,9 +160,9 @@ describe('enumerateLeaks', () => {
 
     it('matches workflow run name when canonical owner/repo appears in the run name', () => {
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
+        privateRepos: [makeCartMapping()],
         commitLog: [],
-        workflowRuns: [{id: 99, name: 'Survey: marcusrbrown/poly', inputs: {}}],
+        workflowRuns: [{id: 99, name: 'Survey: marcusrbrown/cart', inputs: {}}],
         reposFile: {version: 1, repos: []},
         wikiFilenames: [],
       })
@@ -172,7 +172,7 @@ describe('enumerateLeaks', () => {
 
     it('matches metadata entry by current owner/name (pre-redaction)', () => {
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
+        privateRepos: [makeCartMapping()],
         commitLog: [],
         workflowRuns: [],
         reposFile: makeReposFile(),
@@ -185,10 +185,10 @@ describe('enumerateLeaks', () => {
 
     it('does NOT report metadata entry when the entry is already redacted', () => {
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
+        privateRepos: [makeCartMapping()],
         commitLog: [],
         workflowRuns: [],
-        reposFile: makeReposFile({owner: '[REDACTED]', name: 'R_kgDOPpoLY1'}),
+        reposFile: makeReposFile({owner: '[REDACTED]', name: 'R_kgDOCaRt11'}),
         wikiFilenames: [],
       })
 
@@ -199,8 +199,8 @@ describe('enumerateLeaks', () => {
   describe('remediation commands', () => {
     it('attaches a rebase/replace-message hint for commit-subject surfaces', () => {
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
-        commitLog: [{sha: 'd92d12c', subject: 'fix: marcusrbrown/poly'}],
+        privateRepos: [makeCartMapping()],
+        commitLog: [{sha: 'd92d12c', subject: 'fix: marcusrbrown/cart'}],
         workflowRuns: [],
         reposFile: {version: 1, repos: []},
         wikiFilenames: [],
@@ -213,9 +213,9 @@ describe('enumerateLeaks', () => {
 
     it('attaches a delete-run command for workflow-run surfaces', () => {
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
+        privateRepos: [makeCartMapping()],
         commitLog: [],
-        workflowRuns: [{id: 25395917616, name: 'Survey Repo', inputs: {owner: 'marcusrbrown', repo: 'poly'}}],
+        workflowRuns: [{id: 25395917616, name: 'Survey Repo', inputs: {owner: 'marcusrbrown', repo: 'cart'}}],
         reposFile: {version: 1, repos: []},
         wikiFilenames: [],
       })
@@ -228,7 +228,7 @@ describe('enumerateLeaks', () => {
 
     it('attaches a redact-entry command for metadata-entry surfaces', () => {
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
+        privateRepos: [makeCartMapping()],
         commitLog: [],
         workflowRuns: [],
         reposFile: makeReposFile(),
@@ -238,21 +238,21 @@ describe('enumerateLeaks', () => {
       const surface = result.find(s => s.type === 'metadata-entry')
       expect(surface?.remediation.action).toBe('redact-entry')
       // Must reference the node_id since that's the post-redaction name
-      expect(surface?.remediation.command).toContain('R_kgDOPpoLY1')
+      expect(surface?.remediation.command).toContain('R_kgDOCaRt11')
     })
 
     it('attaches a delete-page command for wiki-page surfaces', () => {
       const result = enumerateLeaks({
-        privateRepos: [makePolyMapping()],
+        privateRepos: [makeCartMapping()],
         commitLog: [],
         workflowRuns: [],
         reposFile: {version: 1, repos: []},
-        wikiFilenames: ['marcusrbrown--poly.md'],
+        wikiFilenames: ['marcusrbrown--cart.md'],
       })
 
       const surface = result.find(s => s.type === 'wiki-page')
       expect(surface?.remediation.action).toBe('delete-page')
-      expect(surface?.remediation.command).toContain('marcusrbrown--poly.md')
+      expect(surface?.remediation.command).toContain('marcusrbrown--cart.md')
     })
   })
 
@@ -287,13 +287,13 @@ describe('formatLeakReport', () => {
       {
         type: 'commit-subject',
         identifier: 'd92d12c',
-        description: 'commit subject names marcusrbrown/poly',
+        description: 'commit subject names marcusrbrown/cart',
         remediation: {action: 'rebase-rewrite', command: 'git rebase -i d92d12c~1'},
       },
       {
         type: 'workflow-run',
         identifier: '25395917616',
-        description: 'workflow run inputs name marcusrbrown/poly',
+        description: 'workflow run inputs name marcusrbrown/cart',
         remediation: {action: 'delete-run', command: 'gh api -X DELETE /repos/.../actions/runs/25395917616'},
       },
     ])
@@ -309,8 +309,8 @@ describe('formatLeakReport', () => {
 
 describe('parsePrivateArgs', () => {
   it('parses a single well-formed --private mapping', () => {
-    const result = parsePrivateArgs(['--private', 'R_kgDOPpoLY1:marcusrbrown/poly'])
-    expect(result).toEqual([{node_id: 'R_kgDOPpoLY1', owner: 'marcusrbrown', name: 'poly'}])
+    const result = parsePrivateArgs(['--private', 'R_kgDOCaRt11:marcusrbrown/cart'])
+    expect(result).toEqual([{node_id: 'R_kgDOCaRt11', owner: 'marcusrbrown', name: 'cart'}])
   })
 
   it('parses multiple --private flags into an ordered list', () => {

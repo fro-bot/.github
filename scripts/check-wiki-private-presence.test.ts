@@ -80,11 +80,11 @@ describe('detectPrivateWikiLeaks', () => {
       // #then no leaks are reported
       const result = detectPrivateWikiLeaks({
         dataWikiPages: [
-          page('marcusrbrown--poly.md', 'hash1', 'url: https://github.com/marcusrbrown/poly'),
+          page('marcusrbrown--cart.md', 'hash1', 'url: https://github.com/marcusrbrown/cart'),
           page('some-org--some-repo.md', 'hash2', 'url: https://github.com/some-org/some-repo'),
         ],
         publicSlugMap: new Map([
-          ['marcusrbrown--poly', [{owner: 'marcusrbrown', name: 'poly', private: false} as unknown as RepoEntry]],
+          ['marcusrbrown--cart', [{owner: 'marcusrbrown', name: 'cart', private: false} as unknown as RepoEntry]],
           ['some-org--some-repo', [{owner: 'some-org', name: 'some-repo', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
@@ -629,14 +629,14 @@ describe('detectPrivateWikiLeaks', () => {
   })
 
   describe('case-insensitive stem matching', () => {
-    it('matches case-insensitively (MarcusRBrown--Poly.md stem lowercased to match publicSlugMap)', () => {
+    it('matches case-insensitively (MarcusRBrown--Cart.md stem lowercased to match publicSlugMap)', () => {
       // #given a wiki filename with mixed case
       // #when detection runs
       // #then matched case-insensitively against publicSlugMap
       const result = detectPrivateWikiLeaks({
-        dataWikiPages: [page('MarcusRBrown--Poly.md', 'h1', 'url: https://github.com/marcusrbrown/poly')],
+        dataWikiPages: [page('MarcusRBrown--Cart.md', 'h1', 'url: https://github.com/marcusrbrown/cart')],
         publicSlugMap: new Map([
-          ['marcusrbrown--poly', [{owner: 'marcusrbrown', name: 'poly', private: false} as unknown as RepoEntry]],
+          ['marcusrbrown--cart', [{owner: 'marcusrbrown', name: 'cart', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
       })
@@ -809,7 +809,7 @@ describe('findStructuralViolations', () => {
     // #given only regular .md files (the expected wiki layout)
     // #when findStructuralViolations is called
     // #then no violations
-    mockReaddir.mockResolvedValue([dirent('acme--widget.md'), dirent('marcusrbrown--poly.md')])
+    mockReaddir.mockResolvedValue([dirent('acme--widget.md'), dirent('marcusrbrown--cart.md')])
     const result = await findStructuralViolations('knowledge/wiki/repos')
     expect(result).toEqual([])
   })
@@ -981,7 +981,7 @@ describe('buildPublicSlugs (load-bearing predicate end-to-end)', () => {
 
 describe('formatLeakReport (redaction)', () => {
   const twoLeaks = [
-    {filename: 'marcusrbrown--poly.md', reason: 'unattributable-page' as const},
+    {filename: 'marcusrbrown--cart.md', reason: 'unattributable-page' as const},
     {filename: 'acme--secret.md', reason: 'ambiguous-public-slug' as const},
   ]
 
@@ -1017,13 +1017,13 @@ describe('formatLeakReport (redaction)', () => {
     // #when formatLeakReport is called
     // #then NO filename substring appears — public Actions log must not leak identities
     const report = formatLeakReport(twoLeaks)
-    expect(report).not.toContain('marcusrbrown--poly')
+    expect(report).not.toContain('marcusrbrown--cart')
     expect(report).not.toContain('acme--secret')
     expect(report).not.toContain('.md')
     // Stronger: no owner--repo shape anywhere (e.g. no derivative leakage)
     expect(report).not.toMatch(/[\w.-]+--[\w.-]+/)
     // Additional redaction assertions
-    expect(report).not.toContain('marcusrbrown/poly')
+    expect(report).not.toContain('marcusrbrown/cart')
     expect(report).not.toContain('https://github.com')
     expect(report).not.toContain('acme/secret')
   })
@@ -1043,17 +1043,17 @@ describe('formatLeakReport (redaction)', () => {
 // ---------------------------------------------------------------------------
 
 describe('slug-variant + collision regression', () => {
-  it('suffix variant (marcusrbrown--poly.draft) is flagged — only exact slug admitted', () => {
-    // #given a page whose stem is 'marcusrbrown--poly.draft' (a .draft suffix variant)
-    //        and publicSlugMap has only 'marcusrbrown--poly' (the plain slug, a different entry)
+  it('suffix variant (marcusrbrown--cart.draft) is flagged — only exact slug admitted', () => {
+    // #given a page whose stem is 'marcusrbrown--cart.draft' (a .draft suffix variant)
+    //        and publicSlugMap has only 'marcusrbrown--cart' (the plain slug, a different entry)
     //        and no grandfather
     // #when detection runs
     // #then BLOCKED — the suffix variant does NOT match the public slug, so unattributable-page
     const publicSlugMap = buildPublicSlugMap([
-      {owner: 'marcusrbrown', name: 'poly', private: false} as unknown as RepoEntry,
+      {owner: 'marcusrbrown', name: 'cart', private: false} as unknown as RepoEntry,
     ])
     const result = detectPrivateWikiLeaks({
-      dataWikiPages: [page('marcusrbrown--poly.draft.md', 'h1', 'some content')],
+      dataWikiPages: [page('marcusrbrown--cart.draft.md', 'h1', 'some content')],
       publicSlugMap,
       grandfatherPages: [],
     })
@@ -1080,12 +1080,12 @@ describe('slug-variant + collision regression', () => {
 
   it('case variant lowercased by page() helper — without public slug → flagged (casing cannot smuggle past)', () => {
     // #given the page() helper lowercases the stem (matching loadWikiPages behaviour)
-    //        so 'MARCUSRBROWN--POLY.md' → stem 'marcusrbrown--poly'
+    //        so 'MARCUSRBROWN--CART.md' → stem 'marcusrbrown--cart'
     //        and publicSlugMap does NOT contain that slug
     // #when detection runs
     // #then flagged — documents that casing normalization is consistent and cannot bypass the gate
     const result = detectPrivateWikiLeaks({
-      dataWikiPages: [page('MARCUSRBROWN--POLY.md', 'h1', 'content')],
+      dataWikiPages: [page('MARCUSRBROWN--CART.md', 'h1', 'content')],
       publicSlugMap: new Map(),
       grandfatherPages: [],
     })
@@ -1110,7 +1110,7 @@ describe('fail-safe regression — private:true cannot smuggle through', () => {
     // #then map is EMPTY — private:true cannot slip into the public set
     const privateRepo: RepoEntry = {
       owner: 'marcusrbrown',
-      name: 'poly',
+      name: 'cart',
       private: true,
       added: '2025-01-01',
       onboarding_status: 'pending',
@@ -1126,12 +1126,12 @@ describe('fail-safe regression — private:true cannot smuggle through', () => {
     // #when detectPrivateWikiLeaks runs
     // #then BLOCKED — flipping/holding private:true cannot smuggle the page through
     const result = detectPrivateWikiLeaks({
-      dataWikiPages: [page('marcusrbrown--poly.md', 'h1', 'content')],
+      dataWikiPages: [page('marcusrbrown--cart.md', 'h1', 'content')],
       publicSlugMap,
       grandfatherPages: [],
     })
     expect(result).toHaveLength(1)
-    expect(result[0]).toMatchObject({filename: 'marcusrbrown--poly.md', reason: 'unattributable-page'})
+    expect(result[0]).toMatchObject({filename: 'marcusrbrown--cart.md', reason: 'unattributable-page'})
   })
 })
 
