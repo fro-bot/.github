@@ -474,7 +474,7 @@ describe('reconcileRepos', () => {
       const result = reconcileRepos(
         makeInput({
           currentRepos: {version: 1, repos: [tracked]},
-          accessList: [makeAccess({owner: 'marcusrbrown', name: 'poly', node_id: 'R_kgDOSVJgdw', private: true})],
+          accessList: [makeAccess({owner: 'marcusrbrown', name: 'cart', node_id: 'R_kgDOSVJgdw', private: true})],
           allowlist: makeAllowlist(['marcusrbrown']),
         }),
       )
@@ -519,7 +519,7 @@ describe('reconcileRepos', () => {
       const result = reconcileRepos(
         makeInput({
           currentRepos: {version: 1, repos: [redactedNoNodeId]},
-          accessList: [makeAccess({owner: 'marcusrbrown', name: 'poly', node_id: 'R_kgDOSVJgdw', private: true})],
+          accessList: [makeAccess({owner: 'marcusrbrown', name: 'cart', node_id: 'R_kgDOSVJgdw', private: true})],
           allowlist: makeAllowlist(['marcusrbrown']),
         }),
       )
