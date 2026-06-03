@@ -1,8 +1,8 @@
+import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
-
 import {parse as parseYaml} from 'yaml'
 import {isRecord, makeGhNodeIdResolver} from './private-repo-resolution.ts'
 import {assertReposFile} from './schemas.ts'
@@ -13,6 +13,28 @@ import {computeRepoSlug} from './wiki-slug.ts'
 // ---------------------------------------------------------------------------
 
 export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly matchedFiles: readonly string[]}
+
+/**
+ * Result of a promotion scan.
+ *
+ * - `{ok: true}` — scan passed (no private tokens found in diff).
+ * - `{ok: false, matchedFiles}` — private token found; matchedFiles lists affected file paths only.
+ * - `{ok: false, resolutionFailed: true, failedNodeIds}` — one or more node_ids could not be
+ *   resolved (non-access-lost failure); promotion is blocked fail-closed.
+ */
+export type PromotionScanResult =
+  | {readonly ok: true}
+  | {readonly ok: false; readonly matchedFiles: readonly string[]}
+  | {readonly ok: false; readonly resolutionFailed: true; readonly failedNodeIds: readonly string[]}
+
+export interface PromotionScanInputs {
+  /** Raw YAML text of data branch's metadata/repos.yaml */
+  readonly reposYaml: string
+  /** Injectable resolver — caller wires FRO_BOT_POLL_PAT into makeGhNodeIdResolver(token) */
+  readonly resolver: NodeIdResolver
+  /** Unified diff text (main...data three-dot diff) */
+  readonly diff: string
+}
 
 export interface OverrideOptions {
   readonly titlePrefixed: boolean
@@ -217,6 +239,196 @@ function postOverrideComment(prNumber: number, author: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Promotion scan — pure testable core
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the private token set from a resolved nameWithOwner string.
+ * Returns [canonical, slug] — both carry the owner prefix for specificity.
+ * Bare name is intentionally excluded (false-positive risk on short names).
+ */
+function buildTokensForName(nameWithOwner: string): string[] {
+  const slashIndex = nameWithOwner.indexOf('/')
+  if (slashIndex < 1) return []
+  const owner = nameWithOwner.slice(0, slashIndex)
+  const name = nameWithOwner.slice(slashIndex + 1)
+  if (owner === '' || name === '') return []
+  const tokens: string[] = [nameWithOwner]
+  try {
+    tokens.push(computeRepoSlug(owner, name))
+  } catch {
+    // computeRepoSlug throws on empty segments — skip slug form
+  }
+  return tokens
+}
+
+/**
+ * Promotion-mode scan: pure, injectable, testable.
+ *
+ * Resolves private node_ids from repos.yaml content, builds the token set, and
+ * runs `checkPrivateLeak` against the provided diff. The resolver and diff are
+ * both injectable so tests can exercise the full matrix without shelling out.
+ *
+ * Resolution matrix (exhaustive, fail-closed):
+ * - `access-lost` → SKIP (repo deleted/no-access; no current content to leak)
+ * - any other failure (transient/auth/rate-limit/unknown) → BLOCK: returns
+ *   `{ok:false, resolutionFailed:true, failedNodeIds}` — never silently passes
+ * - success → include `owner/name` + `owner--slug` in the token set
+ *
+ * Zero private entries → `{ok:true}` immediately (nothing to scan).
+ *
+ * Redaction guarantee: no resolved private name appears in any returned value.
+ * The caller (CLI shell) is responsible for redacted stderr output.
+ */
+export async function runPromotionScan(inputs: PromotionScanInputs): Promise<PromotionScanResult> {
+  const {reposYaml, resolver, diff} = inputs
+
+  // Parse repos.yaml and extract private node_ids.
+  const parsed: unknown = parseYaml(reposYaml)
+  assertReposFile(parsed)
+  const privateNodeIds = parsed.repos
+    .filter(r => r.private === true && typeof r.node_id === 'string' && r.node_id.length > 0)
+    .map(r => r.node_id as string)
+
+  // Zero private entries → nothing to scan.
+  if (privateNodeIds.length === 0) {
+    return {ok: true}
+  }
+
+  // Resolve each node_id — exhaustive matrix.
+  const resolvedNames: string[] = []
+  const failedNodeIds: string[] = []
+
+  for (const nodeId of privateNodeIds) {
+    const result = await resolver(nodeId)
+    if ('nameWithOwner' in result) {
+      resolvedNames.push(result.nameWithOwner)
+    } else if (result.error === 'access-lost') {
+      // access-lost: repo gone, no current content to leak — skip safely.
+      // (Caller logs this with the node_id; we don't log here to keep this pure.)
+    } else {
+      // Non-access-lost failure: transient/auth/rate-limit/unknown — fail closed.
+      // Cannot guarantee a complete scan; block promotion.
+      failedNodeIds.push(nodeId)
+    }
+  }
+
+  // Any non-access-lost failure → block (fail-closed).
+  if (failedNodeIds.length > 0) {
+    return {ok: false, resolutionFailed: true, failedNodeIds}
+  }
+
+  // Build token set from resolved names.
+  const privateTokens: string[] = []
+  for (const nameWithOwner of resolvedNames) {
+    privateTokens.push(...buildTokensForName(nameWithOwner))
+  }
+
+  // Run the pure scan. No override in promotion mode (operator-supervised scheduled job).
+  const scanResult = checkPrivateLeak(privateTokens, diff, {titlePrefixed: false, isOperator: false})
+  return scanResult
+}
+
+/**
+ * CLI shell for promotion mode: wires env (FRO_BOT_POLL_PAT), reads repos.yaml
+ * from the data subtree, runs git diff, maps result to exit code.
+ *
+ * Accepts the repos.yaml path via PROMOTION_REPOS_YAML_PATH env (injectable for
+ * testing; defaults to 'metadata/repos.yaml' relative to CWD which is the
+ * data-branch-check subtree in CI).
+ */
+async function runPromotionCli(): Promise<void> {
+  const pat = process.env.FRO_BOT_POLL_PAT
+  if (pat === undefined || pat === '') {
+    process.stderr.write(
+      'check-private-leak: FRO_BOT_POLL_PAT not set. This is required for promotion mode to resolve private repo names.\n',
+    )
+    process.exit(1)
+  }
+
+  // Read repos.yaml from the data subtree (CWD = data-branch-check in CI).
+  const reposYamlPath = process.env.PROMOTION_REPOS_YAML_PATH ?? 'metadata/repos.yaml'
+  let reposYaml: string
+  try {
+    reposYaml = await readFile(reposYamlPath, 'utf8')
+  } catch (error) {
+    process.stderr.write(
+      `check-private-leak: could not read repos.yaml at ${reposYamlPath}: ${error instanceof Error ? error.message : String(error)}\n`,
+    )
+    process.exit(1)
+  }
+
+  // Obtain the main...data diff via local git — no token needed.
+  let diff: string
+  try {
+    diff = execFileSync('git', ['diff', 'origin/main...origin/data'], {encoding: 'utf8'})
+  } catch (error) {
+    process.stderr.write(
+      `check-private-leak: could not obtain main...data diff: ${error instanceof Error ? error.message : String(error)}\n`,
+    )
+    process.exit(1)
+  }
+
+  // Wire FRO_BOT_POLL_PAT ONLY to the resolver — not to the diff or any other call.
+  const resolver = makeGhNodeIdResolver(pat)
+
+  // Parse repos.yaml to log access-lost node_ids (the pure function doesn't log).
+  const parsedForLog: unknown = parseYaml(reposYaml)
+  assertReposFile(parsedForLog)
+  const privateNodeIds = parsedForLog.repos
+    .filter(r => r.private === true && typeof r.node_id === 'string' && r.node_id.length > 0)
+    .map(r => r.node_id as string)
+
+  // Wrap resolver to emit redacted stderr for access-lost and error cases.
+  const loggingResolver = async (nodeId: string) => {
+    const result = await resolver(nodeId)
+    if ('nameWithOwner' in result) {
+      // Success — no logging (name is private; never log it)
+    } else if (result.error === 'access-lost') {
+      process.stderr.write(
+        `check-private-leak [promotion]: node_id=${nodeId} access-lost (deleted/no-access), skipping\n`,
+      )
+    } else {
+      process.stderr.write(`check-private-leak [promotion]: could not resolve node_id=${nodeId} (error)\n`)
+    }
+    return result
+  }
+
+  const result = await runPromotionScan({reposYaml, resolver: loggingResolver, diff})
+
+  if (result.ok) {
+    process.stdout.write(`check-private-leak [promotion]: ok (scanned ${privateNodeIds.length} private node_id(s))\n`)
+    return
+  }
+
+  if ('resolutionFailed' in result && result.resolutionFailed) {
+    // Fail-closed: resolution failure blocks promotion.
+    process.stderr.write(
+      `check-private-leak [promotion]: FAILED — could not resolve private node_id(s): ${result.failedNodeIds.join(', ')}\n`,
+    )
+    process.stderr.write('check-private-leak [promotion]: cannot guarantee a complete scan — blocking promotion\n')
+    process.exit(1)
+  }
+
+  // Diff match: print file paths only, never the matched name.
+  process.stderr.write(
+    'check-private-leak [promotion]: FAILED — private repository name(s) detected in promotion diff\n',
+  )
+  process.stderr.write('\nMatched files:\n')
+  if ('matchedFiles' in result) {
+    for (const file of result.matchedFiles) {
+      process.stderr.write(`  - ${file}\n`)
+    }
+  }
+  process.stderr.write(
+    '\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts metadata/repos.yaml\n',
+  )
+  process.stderr.write('  (This prints a node_id → owner/name table for all private entries.)\n')
+  process.stderr.write('To resolve: redact the private name from the data branch and re-run the promotion.\n')
+  process.exit(1)
+}
+
+// ---------------------------------------------------------------------------
 // CLI entrypoint
 // ---------------------------------------------------------------------------
 
@@ -343,5 +555,9 @@ export async function main(): Promise<void> {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  await main()
+  if (process.argv.includes('--promotion')) {
+    await runPromotionCli()
+  } else {
+    await main()
+  }
 }
