@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/mrbro.dev"
 created: 2026-04-18
-updated: 2026-05-21
+updated: 2026-06-02
 sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 51f5cab5c77768b761d9f0a688ac7436cc5a06f4
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 88f7a4adf497fe9bb772f27b05216d4e0235af3e
     accessed: 2026-05-21
+  - url: https://github.com/marcusrbrown/mrbro.dev
+    sha: 7a49abc3d2d945880cc1db1f4edbddcd71ad0142
+    accessed: 2026-06-02
 tags: [portfolio, react, typescript, vite, github-pages, blog, pnpm]
 aliases: [mrbro-dev, mrbro.dev]
 related:
@@ -33,8 +36,8 @@ Marcus R. Brown's developer portfolio website. React 19, TypeScript (strict), Vi
 - **Homepage:** https://mrbro.dev
 - **Topics:** `blog`, `developer`, `github-pages`, `portfolio`, `react`, `typescript`, `vite`
 - **License:** MIT (badge present, no LICENSE file detected via API)
-- **Open issues:** 8 as of 2026-05-21 (drained from 39 in April — the single perpetual "Daily Autohealing Report" #162 and "Daily Maintenance Report" #13 are now the canonical rolling issues, matching the prompt contract; #1 Dependency Dashboard, #48 triage, plus 4 Renovate pin PRs reflected as issues)
-- **Open PRs:** 4 (all `chore(dev): pin dependency …` Renovate PRs: #168 `@bfra.me/eslint-config` v0.51.0, #172 `@bfra.me/prettier-config` 0.16.8, #173 `@bfra.me/tsconfig` v0.13.0, #175 `eslint-plugin-react-refresh` 0.5.2)
+- **Open issues:** 4 as of 2026-06-02 — the canonical rolling pair holds: "Daily Autohealing Report" #162 and "Daily Maintenance Report" #13, plus #1 Dependency Dashboard and #48 triage. (Was 8 on 2026-05-21; the four pin-version PRs that were inflating the count have mostly merged.)
+- **Open PRs:** 5 as of 2026-06-02 (all Renovate: #180 `prettier` 3.8.3, #178 pnpm override for `tmp` path-traversal advisory, #175 `eslint-plugin-react-refresh` 0.5.2, #172 `@bfra.me/prettier-config` 0.16.8, #168 `@bfra.me/eslint-config` v0.51.0)
 
 ## Tech Stack
 
@@ -154,6 +157,17 @@ Sequential: checkout, setup, lint, test, build (with `GITHUB_PAGES=true`), uploa
 - **PR review prompt** is mrbro.dev-specific: React 19 / TypeScript / Vite 7, WCAG 2.1 AA, performance budget (JS <500KB, total <2MB), pure ESM, PascalCase hooks, `.yaml` extension enforcement, named exports preferred. Style nits explicitly deferred to ESLint/Prettier.
 - **Hard boundary**: "Do NOT push commits, modify code, or create branches. Review only."
 
+#### Prompt hardening ported from `marcusrbrown/marcusrbrown` (#176, 2026-05-24)
+
+Five surgical prompt inserts were ported in from a 2026-05-23 session that diagnosed a 1.5-year silent automation outage in [[marcusrbrown--marcusrbrown]] (root cause: a finalize job gated on `needs: prepare`, where `prepare` had an `if:` condition, so GitHub's implicit `success()` guard silently skipped the downstream job on every scheduled run). The inserts spread review/maintenance coverage to the same failure class:
+
+- **Skipped-needs trap** (PR review): flag finalize jobs depending on conditional prepare jobs that lack `!cancelled()` to bypass the implicit `success()` guard.
+- **`continue-on-error` red-flag** (PR review): `continue-on-error: true` on local deterministic steps is a smell; reserve it for external-API fetches with explicit fallback.
+- **Workflow-health monitor** (maintenance): adds a 7-day workflow-run health section to the Daily Maintenance Report.
+- Two further inserts preserve existing prompt voice/indentation (no sections replaced).
+
+This is the cross-repo intelligence pattern in action: a bug fixed in one managed repo propagates as a review heuristic into siblings. The fix itself lives in `marcusrbrown/marcusrbrown` PRs #923 (bug) and #924 (source workflow).
+
 ### fro-bot.yaml (prior two-file form — historical, 2026-04-18 → 2026-04-26)
 
 - Triggers: PR events (opened, synchronize, reopened, ready_for_review, review_requested), issue events (opened, edited), comment events (`@fro-bot` mention including discussion comments), daily schedule (15:30 UTC), manual dispatch
@@ -202,18 +216,33 @@ Coverage as of README badges: 70.81% statements, 80.19% branches, 60.4% function
 
 ## Security Posture
 
-Several security remediations applied via pnpm overrides in `package.json`:
+**As of 2026-06-02 (SHA `7a49abc`), the pnpm `overrides` block migrated out of `package.json` into `pnpm-workspace.yaml`** (alongside `onlyBuiltDependencies` and `shamefullyHoist: true`). The override list expanded substantially as the CI dependency-audit gate (#177) surfaced more transitive advisories. Each entry carries an inline GHSA comment naming the advisory and the dependency path that pulls the vulnerable package — almost all via `@lhci/cli` (Lighthouse) and `@bfra.me/eslint-config` transitive trees.
 
-| Override | Reason |
+Current overrides (`pnpm-workspace.yaml`):
+
+| Override | Reason / advisory |
 | --- | --- |
-| `basic-ftp: 5.3.0` | Transitive advisory remediation (#136) |
-| `brace-expansion: >=5.0.5` | Vulnerability fix (#109) |
-| `lodash: >=4.18.0` | Known prototype pollution advisory (#109) |
-| `lodash-es: >=4.18.0` | Same advisory, ESM variant (#109) |
-| `path-to-regexp: >=0.1.13` | ReDoS vulnerability |
-| `picomatch@>=4.0.0 <4.0.4: >=4.0.4` | Glob DoS fix |
+| `@isaacs/brace-expansion@<=5.0.0: >=5.0.1` | brace-expansion family ReDoS |
+| `ajv@>=7.0.0-alpha.0 <8.18.0: >=8.18.0` | ajv advisory |
+| `basic-ftp: 5.3.1` | Transitive advisory remediation |
+| `brace-expansion: ^5.0.6` | GHSA-jxxr-4gwj-5jf2 (moderate; via `@bfra.me/eslint-config` → eslint-plugin-command → typescript-estree → minimatch) |
+| `fast-uri: >=3.1.2` | Added #165 |
+| `flatted@<3.4.2: >=3.4.2` | flatted advisory |
+| `ip-address: >=10.1.1` | Added 2026-05-21 |
+| `js-yaml@>=4.0.0 <4.1.1: >=4.1.1` | js-yaml advisory |
+| `lodash / lodash-es: >=4.18.0` | Prototype pollution (#109) |
+| `mdast-util-to-hast@>=13.0.0 <13.2.1: >=13.2.1` | mdast advisory |
+| `minimatch@>=10.0.0 <10.2.3: >=10.2.3` | minimatch advisory |
+| `path-to-regexp: >=0.1.13` | ReDoS |
+| `picomatch@>=4.0.0 <4.0.4: >=4.0.4` | Glob DoS |
+| `qs: ^6.15.2` | GHSA-q8mj-m7cp-5q26 (moderate; via `@lhci/cli` → express → qs) |
+| `rollup@>=4.0.0 <4.59.0: >=4.59.0` | rollup advisory |
+| `tmp@<=0.2.3: >=0.2.6` | GHSA-52f5-9888-hmc6 (low; via `@lhci/cli` → tmp and inquirer → external-editor → tmp). Note: best-effort only — `@lhci/cli` and `external-editor` pin tmp below the safe range, so pnpm cannot fully resolve it (#179) |
+| `uuid: >=14.0.0` | GHSA-w5hq-g745-h8pq (#148) |
+| `ws: ^8.20.1` | GHSA-58qx-3vcg-4xpx (moderate; via `@lhci/cli` → lighthouse → puppeteer-core → ws) |
+| `yauzl@<3.2.1: >=3.2.1` | yauzl advisory |
 
-Vite upgraded to v7.3.2 for security fix (#121).
+Vite upgraded to v7.3.2 for security fix (#121). The migration to a CI dependency-audit gate (`pnpm audit`, #177) is now the forcing function that keeps this list current — overrides are added in response to a failing audit rather than ad-hoc.
 
 ## Notable Patterns
 
@@ -243,3 +272,4 @@ Vite upgraded to v7.3.2 for security fix (#121).
 | 2026-04-18 | `51f5cab` | Initial survey |
 | 2026-04-26 | `d8c0e43` | Agent v0.38.0→v0.41.3, Renovate #4.5.7→#4.5.8, opencode-config added, security overrides, no settings.yml noted, 39 open issues |
 | 2026-05-21 | `88f7a4a` | Workflows consolidated: `fro-bot-autoheal.yaml` removed, single `fro-bot.yaml` with three modes (review/maintenance/autoheal). Agent v0.41.3 → v0.43.0. Renovate preset #4.5.8 → #5.2.0. Open issues 39 → 8 (autoheal backlog drained). Open PRs 4 (all pin-version Renovate). New pnpm overrides: `fast-uri ≥3.1.2`, `ip-address ≥10.1.1`, `uuid ≥14.0.0`. TypeScript bumped 5.6.x → 5.9.3 (still pre-v6). Vitest 4.1.4, pnpm 10.33.4. |
+| 2026-06-02 | `7a49abc` | **pnpm `overrides` migrated `package.json` → `pnpm-workspace.yaml`** and expanded to ~20 entries with inline GHSA annotations, driven by a new `pnpm audit` CI gate (#177). New advisories pinned: `qs`, `ws`, `tmp`, `rollup`, `js-yaml`, `flatted`, `ajv`, `mdast-util-to-hast`, `minimatch`, `yauzl` — mostly transitive via `@lhci/cli`. **Fro Bot prompt hardening (#176):** ported 5 inserts from [[marcusrbrown--marcusrbrown]] (skipped-needs trap, `continue-on-error` red-flag, 7-day workflow-health monitor). Agent unchanged at v0.43.0. Open issues 8 → 4 (pin PRs merged). Open PRs 5 (Renovate). TypeScript still 5.9.3, pnpm 10.33.4, Vitest 4.1.4. No structural code/layout change. |
