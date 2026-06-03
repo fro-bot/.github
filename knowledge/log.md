@@ -1324,7 +1324,7 @@ Deltas since prior survey:
 - **Major-version boundary crossed:** v4.5.8 → v5.2.0 (seven releases: 4.5.9, 5.0.1, 5.0.2, 5.1.0, 5.1.1, 5.2.0, plus 5.0.1 intermediate). Breaking change: minimum allowed version floor raised `>=4.0.0` → `>=5.0.0`.
 - **`default.json` policy changes:** Added `group:allNonMajor` to extends; dropped `:disableRateLimiting` (now defers to bfra-me base preset defaults); added a new packageRule that ungroups 0.x packages (`matchCurrentVersion: /^0\./` → `groupName: null`) as the safety valve against PR storms from unstable libs.
 - **Autoheal consolidated into `fro-bot.yaml`:** The separate `fro-bot-autoheal.yaml` is gone. Single-file design with one daily schedule (15:30 UTC) covers PR review + maintenance + autoheal. Mirrors the architecture observed in [[marcusrbrown--marcusrbrown-github-io]] (which uses a `mode` enum dispatch input) and the rolling-perpetual-issue pattern in [[bfra-me--ha-addon-repository]] / [[bfra-me--works]].
-- **Autoheal categories went from 5 → 6.** Removed: "bfra-me Ecosystem Health" (folded into category 5 Cross-Project Intelligence Inbound, which now surveys `yield-farmer`, `poly`, `marcusrbrown/.github`, `bfra-me/renovate-config`, `fro-bot/agent`). Added: category 6 **Upstream Modernization Watch (Sundays only)**, gated by `IS_SUNDAY_UTC` env var via a preflight `date -u +%u` step. At-most-one-draft-PR-per-scan policy; never bumps pinned versions (Renovate-owned).
+- **Autoheal categories went from 5 → 6.** Removed: "bfra-me Ecosystem Health" (folded into category 5 Cross-Project Intelligence Inbound, which now surveys `marcusrbrown/.github`, `bfra-me/renovate-config`, `fro-bot/agent`). Added: category 6 **Upstream Modernization Watch (Sundays only)**, gated by `IS_SUNDAY_UTC` env var via a preflight `date -u +%u` step. At-most-one-draft-PR-per-scan policy; never bumps pinned versions (Renovate-owned).
 - **Fro Bot agent:** v0.42.2 → v0.44.3 (SHA `b928e79729f01b563feabee26a0525a3b48501a6`).
 - **Toolchain:** pnpm 10.33.2 → 11.1.3 (major), lint-staged 16.4.0 → 17.0.5 (major), eslint 10.2.1 → 10.4.0, `@bfra.me/eslint-config` 0.51.0 → 0.51.1, `@bfra.me/prettier-config` → 0.16.9.
 - **pnpm overrides added** for supply-chain hardening: `fast-uri >=3.1.2`, `flatted >=3.4.2`, `handlebars >=4.7.9`, `lodash-es >=4.18.0`, `picomatch@2 ^2.3.2`, `picomatch@4 ^4.0.4`. None existed at prior survey.
@@ -1590,3 +1590,25 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 1a428e231d4
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-06-02 00:00] ingest | marcusrbrown/mrbro.dev
+
+Incremental re-survey of `marcusrbrown/mrbro.dev` (SHA `7a49abc`, 2026-05-28; prior `88f7a4a`, 2026-05-21). Updated repo page `marcusrbrown--mrbro-dev.md` (frontmatter source/updated, issue/PR counts, rewrote Security Posture section, added Fro Bot prompt-hardening subsection, survey-history row) and refreshed its `index.md` entry. No new topic/entity/comparison pages warranted — the deltas are a dependency-hardening migration and a cross-repo prompt port, not structural code change.
+
+Delta from prior survey (SHA `88f7a4a`, 2026-05-21):
+
+- **pnpm `overrides` migrated `package.json` → `pnpm-workspace.yaml`** (#177, alongside `onlyBuiltDependencies` + `shamefullyHoist: true`). The list expanded to ~20 entries, each with an inline GHSA comment naming the advisory and the transitive path. New pins since 2026-05-21: `qs ^6.15.2` (GHSA-q8mj-m7cp-5q26), `ws ^8.20.1` (GHSA-58qx-3vcg-4xpx), `tmp >=0.2.6` (GHSA-52f5-9888-hmc6, best-effort — `@lhci/cli`/`external-editor` pin below safe range, #179), `rollup >=4.59.0`, `js-yaml >=4.1.1`, `flatted >=3.4.2`, `ajv >=8.18.0`, `mdast-util-to-hast >=13.2.1`, `minimatch >=10.2.3`, `yauzl >=3.2.1`, `@isaacs/brace-expansion >=5.0.1`, `brace-expansion ^5.0.6`. Most enter via `@lhci/cli` (Lighthouse) transitive trees. A new `pnpm audit` CI dependency-audit gate (#177) is the forcing function keeping this list current.
+- **Fro Bot prompt hardening (#176, 2026-05-24):** ported 5 surgical prompt inserts from [[marcusrbrown--marcusrbrown]], developed during a 2026-05-23 session that fixed a 1.5-year silent automation outage (root cause: finalize job gated on `needs: prepare` where `prepare` had an `if:`, so the implicit `success()` guard skipped the downstream job every scheduled run). Inserts: skipped-needs trap detection + `continue-on-error` red-flag (PR review prompt), 7-day workflow-health monitor (maintenance prompt), plus two voice-preserving inserts. Clean example of cross-repo intelligence: a bug fixed in one managed repo propagates as a review heuristic into siblings.
+- **Fro Bot agent unchanged at v0.43.0** (SHA `1563f298`); single-file three-mode workflow intact (autoheal `30 3`, maintenance `30 15`).
+- **Open issues 8 → 4** (the four pin-version PRs inflating the count merged; canonical rolling pair #162/#13 + #1 dashboard + #48 triage hold). **Open PRs 5** (all Renovate: #180 prettier, #178 tmp override, #175, #172, #168).
+- TypeScript still 5.9.3 (pre-v6), pnpm 10.33.4, Vitest 4.1.4. No structural code/layout change.
+- **Fro Bot workflow present and current** — no follow-up draft PR needed.
+- No contradictions with prior ingest — all findings confirmed and extended.
+
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 7a49abc3d2d945880cc1db1f4edbddcd71ad0142)
+
+## [2026-06-02 09:24] ingest | repo:marcusrbrown/mrbro.dev
+
+Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mrbro.dev

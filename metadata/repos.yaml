@@ -110,12 +110,12 @@ repos:
     name: marcusrbrown
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-20
+    last_survey_at: 2026-06-02
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-06-21
+    next_survey_eligible_at: 2026-07-04
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
   - owner: marcusrbrown
@@ -134,12 +134,12 @@ repos:
     name: mrbro.dev
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-21
+    last_survey_at: 2026-06-02
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-06-22
+    next_survey_eligible_at: 2026-07-02
     private: false
     node_id: R_kgDORgYjdA
   - owner: marcusrbrown
@@ -316,8 +316,8 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
-    has_renovate: false
+    has_fro_bot_workflow: true
+    has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: null
     private: true
@@ -328,7 +328,7 @@ repos:
     onboarding_status: pending
     last_survey_at: null
     last_survey_status: null
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
     discovery_channel: collab
     next_survey_eligible_at: null
