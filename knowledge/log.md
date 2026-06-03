@@ -1613,24 +1613,28 @@ Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mrbro.dev
 
-## [2026-06-03 10:00] ingest | marcusrbrown/opencode-copilot-delegate
+## [2026-06-03 10:15] ingest | repo:fro-bot/agent
 
-Incremental re-survey of `marcusrbrown/opencode-copilot-delegate` (SHA `f9aaeea`, 2026-06-03; prior `2744ce7`, 2026-05-21). Updated repo page `marcusrbrown--opencode-copilot-delegate.md` (frontmatter source/updated, new Status block, tooling versions, Fro Bot agent pin, release pipeline action version, rewrote Open PRs section, survey-history row) and refreshed its `index.md` entry. No topic/entity/comparison pages warranted updates — [[opencode-plugins]] already reflects the plugin accurately at v0.12.0, and this survey surfaced no structural code change.
+Re-survey of `fro-bot/agent` (SHA `d0f39a2`, v0.51.0, 2026-06-03; prior `8632cf4`, v0.44.3, 2026-05-22). Updated repo page `fro-bot--agent.md` (frontmatter sources/updated/tags, overview table, workspace layout, action inputs, new Workspace Agent + gateway-evolution sections, Renovate constants, dependency table, downstream consumers, workspace-packages table, survey-history row) and its `index.md` entry. No new topic/entity/comparison pages warranted — the deltas are structural feature growth within the existing repo, not a new cross-cutting concept (Hono and Effect remain confined to this repo's daemon/sandbox halves; if a second repo adopts either, an entity page is justified).
 
-Delta from prior survey (SHA `2744ce7`, 2026-05-21):
+Delta from prior survey (v0.44.3 → v0.51.0, seven minors):
 
-- **No release and no source-tree change** — still v0.12.0 on npm with the same 4 tools (delegate/output/cancel/resume), same TUI half, same RPC layer. The architectural narrative remains current.
-- Window is pure dependency-update churn (Renovate + Fro Bot agent bumps). Notable pins: **Fro Bot agent v0.44.3 → v0.51.0** (through v0.46.0 #165, v0.48.0 #168, v0.48.1 #171, v0.50.0 #174, v0.51.0 #177); `changesets/action` v1.7.0 → v1.9.0 (#178); `actions/checkout` → v6.0.3; `bfra-me/.github` → v4.16.22; Biome 2.4.15 → 2.4.16; `@github/copilot` CLI 1.0.48 → 1.0.56; `opencode-ai`/`@opencode-ai/plugin` dev pin 1.15.4 → 1.15.13; `@types/node` 24.12.4.
-- **6 workflows on `main` unchanged** (ci, fro-bot, release, renovate, update-repo-settings, copilot-setup-steps). **Fro Bot workflow present and current** — no follow-up draft PR needed.
-- **Open issues unchanged** (#38 integration tests, #26 autoheal report, #25 dependency dashboard). **Open PRs:** new #169 (Biome schema/CLI version sync); the four prior PRs (#127/#130/#134/#135) remain open three weeks later — `@opentui/*` deps still pinned at 0.2.6.
-- No contradictions with prior ingest — all findings confirmed; deltas are additive.
+- **`apps/workspace-agent` shipped (v0.45.0, #674)** — a Hono HTTP service running *inside* the workspace container on port 9100 (internal `sandbox-net` only). Handles sandboxed git ops so the gateway never touches `docker.sock`. `/clone` is hardened against untrusted input: internally-derived dest paths, `[A-Za-z0-9._-]+` owner/repo validation, `GIT_ASKPASS` token injection (never argv), post-clone realpath escape check, atomic temp-dir rename, 4 KB body cap, 19 distinct error codes. v0.50.0 (#725/#728) built the executor image and provisioned OpenCode model/provider/auth — the `workspace` compose service is no longer a placeholder.
+- **Gateway became a working Discord control plane** — channel↔repo bindings store + GitHub App auth (v0.45.0), `/fro-bot add-project` (v0.46.0), `@fro-bot` mention→OpenCode execution (v0.48.0), sensitive-tool **approval prompts** + boot provider-semantics self-test + opt-in announce/presence endpoint (v0.51.0). Gateway `src/` now `approvals/`, `bindings/`, `discord/`, `execute/`, `github/`, `http/`, `workspace-api/`.
+- **OMO Slim** added as opt-in orchestration (v0.49.0, #722): `enable-omo-slim` input (mutually exclusive with `enable-omo`), `omo-slim-preset` (default `openai`), pinned `DEFAULT_OMO_SLIM_VERSION = '1.1.1'` (stable line, not the 2.0.0-beta channel), fifth Renovate custom regex manager.
+- **Action inputs expanded** — `skip-cache`, `omo-providers`, and a full S3/KMS surface (`s3-key-prefix`, `s3-expected-bucket-owner`, `s3-allow-insecure-endpoint`, `s3-kms-key-id`, `s3-sse`, `aws-region`).
+- **Shared layer relocated** — pinned-version constants now live in `packages/runtime/src/shared/constants.ts`; the action's Layer 0 re-exports from the runtime. Both a root `src/` and `apps/action/src/` coexist (action still ships from root `dist/`); the action's migration into `apps/action` is in progress.
+- **Deps/tooling** — `@aws-sdk/client-s3` 3.1045→3.1057, `tsdown` 0.22.0→0.22.1, Vitest 4.1.6→4.1.7, `@actions/cache` 6.0.0→6.0.1, ESLint 10.3→10.4, `hono` 4.12.23 + `@hono/node-server` 1.19.14 new; Node 24.16.0-alpine in Docker images; `pnpm.overrides` fully migrated to `pnpm-workspace.yaml` (v0.45.0, #665) with `brace-expansion` bumped to >=5.0.6 at v0.51.0 (#734); `vite` pin 8.0.13→8.0.14. Stars 1→2.
+- **Open regression (#741):** at v0.51.0 the workspace egress is broken — mitmproxy on the internal-only `sandbox-net` returns 502 on all outbound, so `/fro-bot add-project` clones fail. Noted on the repo page; tracks the cost of fail-closed proxy posture meeting a network with no permitted egress route.
+- **Fro Bot workflow present and self-hosted** (`fro-bot.yaml` dogfoods `uses: ./`; daily DMR 15:30 UTC, weekly wiki Sun 20:00 UTC). No follow-up draft PR needed.
+- No contradictions with prior ingest — the 2026-05-22 prediction that `services/object-store/` migrated into `@fro-bot/runtime` is reinforced by the shared-constants relocation into runtime.
 
-Constraints honored: target treated as untrusted, reads limited to repo metadata, README/manifests, and workflow files via `gh`; edits confined to `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; additive updates only.
+Survey limited to directory listings, README/AGENTS files, manifests, workflows, and release notes per untrusted-input constraint. Modified only `knowledge/wiki/repos/fro-bot--agent.md`, `knowledge/index.md`, `knowledge/log.md`.
 
-Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA f9aaeead2a756f48d7cd8da0018ddea2cfbfea98)
+Sources: https://github.com/fro-bot/agent (SHA d0f39a25b443b60e51da709b9d13065d6a62d157)
 
-## [2026-06-03 10:11] ingest | repo:marcusrbrown/opencode-copilot-delegate
+## [2026-06-03 10:16] ingest | repo:fro-bot/agent
 
-Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+Surveyed fro-bot/agent and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+Sources: https://github.com/fro-bot/agent
