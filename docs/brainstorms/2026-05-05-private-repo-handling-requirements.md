@@ -22,15 +22,15 @@ The chosen architecture is **always-redacted-everywhere**: `metadata/repos.yaml`
 
 ## Problem
 
-`marcusrbrown/poly` is the first private repo Fro Bot has been invited to. The existing pipeline produced multiple leaks before this brainstorm reached the plan:
+`marcusrbrown/private-repo-a` is the first private repo Fro Bot has been invited to. The existing pipeline produced multiple leaks before this brainstorm reached the plan:
 
-- **Two commits on `main`** name `poly` in their subject lines:
-  - `cb5811e` — `chore(metadata): add marcusrbrown/poly from invitation polling`
-  - `d92d12c` — `chore(reconcile): record survey failure for marcusrbrown/poly`
-- **Workflow run 25395917616** (Survey Repo) leaks the slug in workflow log content — `WIKI_TARGET=repo:marcusrbrown/poly`, `WIKI_SUMMARY`, `WIKI_COMMIT_MESSAGE`, `WIKI_SOURCES`, the `WikiIngestError` stderr, dispatch input parameters in the run details panel, and the concurrency group name `survey-repo-marcusrbrown-poly`. Public Actions tab. Permanent.
-- **`metadata/repos.yaml`** on both `data` and `main` currently names `poly`.
+- **Two commits on `main`** name `private-repo-a` in their subject lines:
+  - `cb5811e` — `chore(metadata): add marcusrbrown/private-repo-a from invitation polling`
+  - `d92d12c` — `chore(reconcile): record survey failure for marcusrbrown/private-repo-a`
+- **Workflow run 25395917616** (Survey Repo) leaks the slug in workflow log content — `WIKI_TARGET=repo:marcusrbrown/private-repo-a`, `WIKI_SUMMARY`, `WIKI_COMMIT_MESSAGE`, `WIKI_SOURCES`, the `WikiIngestError` stderr, dispatch input parameters in the run details panel, and the concurrency group name `survey-repo-marcusrbrown-private-repo-a`. Public Actions tab. Permanent.
+- **`metadata/repos.yaml`** on both `data` and `main` currently names `private-repo-a`.
 
-The Survey Repo run failed before any wiki page was committed (the agent emitted a `[[Note]]` orphan wikilink and `validateWikilinks` rejected the commit). So no `knowledge/wiki/repos/marcusrbrown--poly.md` exists. But the architectural intent of the existing pipeline — given a successful run — is to write `poly`'s name, description, README excerpts, and topic associations to a publicly readable wiki at that path.
+The Survey Repo run failed before any wiki page was committed (the agent emitted a `[[Note]]` orphan wikilink and `validateWikilinks` rejected the commit). So no `knowledge/wiki/repos/marcusrbrown--private-repo-a.md` exists. But the architectural intent of the existing pipeline — given a successful run — is to write `private-repo-a`'s name, description, README excerpts, and topic associations to a publicly readable wiki at that path.
 
 Once we trace every public artifact `fro-bot/.github` produces, the surface is broader than the wiki:
 
@@ -57,7 +57,7 @@ Plus four failure modes that survive the listing above:
 - Privacy is enforced at every public-artifact write boundary, not at any single caller. Every dispatch site (`reconcile-repos.ts` classifyTracked, `survey-repo.yaml` workflow, `poll-invitations.yaml` workflow, `fro-bot.yaml` event handler, manual operator commands) carries a gate.
 - Privacy violations are detectable in CI, not in production. A future code change that accidentally bypasses a gate fails CI before merging.
 - The `private` flag becomes a stated convention: any pipeline producing artifacts on either branch or any public channel MUST consult `private` and document its handling. New pipelines without explicit private-handling are presumed broken.
-- The redacted-everywhere model is observable by external testing: `git fetch origin data:data && git show data:metadata/repos.yaml | grep -i poly` returns nothing after this work lands.
+- The redacted-everywhere model is observable by external testing: `git fetch origin data:data && git show data:metadata/repos.yaml | grep -i private-repo-a` returns nothing after this work lands.
 
 ## Non-Goals
 
@@ -83,11 +83,11 @@ Plus four failure modes that survive the listing above:
 
 #### R0 — Enumerate and remediate existing leaks before v1 lands
 
-Before any v1 unit ships, enumerate the existing leak surfaces for `marcusrbrown/poly`:
+Before any v1 unit ships, enumerate the existing leak surfaces for `marcusrbrown/private-repo-a`:
 
 - Commit `cb5811e` on `main` — subject names the repo
 - Commit `d92d12c` on `main` — subject names the repo
-- Current `metadata/repos.yaml` content on both `data` and `main` — entry has `owner: marcusrbrown`, `name: poly`
+- Current `metadata/repos.yaml` content on both `data` and `main` — entry has `owner: marcusrbrown`, `name: private-repo-a`
 - Workflow run `25395917616` (and any earlier runs) — log content names the repo in 7+ places
 
 For each surface, choose one of:
@@ -301,17 +301,17 @@ Tests cover (consolidated; per-unit scenarios in the plan):
 
 After this feature lands and the first reconcile run + first `data → main` promotion complete, all of the following hold for any new public artifact:
 
-- `knowledge/wiki/repos/marcusrbrown--poly.md` does not exist on `data` or `main`.
-- No file under `knowledge/wiki/`, `knowledge/index.md`, or `knowledge/log.md` references `poly` or `Polymarket`.
-- `metadata/repos.yaml` on either branch does not contain the strings `poly` or `marcusrbrown/poly` in any field of a `private: true` entry. Redacted entries appear with `owner: '[REDACTED]'`, `name: <node_id>`.
-- No new Discord post or Bluesky post mentions `poly`.
-- No new public workflow run name in `fro-bot/.github`'s Actions tab references `poly` by name.
-- No autonomous commit message after the v1 ship date names `poly` (or any other private repo).
-- The verifiable test `git fetch origin data:data && git show data:metadata/repos.yaml | grep -i poly` returns nothing.
+- `knowledge/wiki/repos/marcusrbrown--private-repo-a.md` does not exist on `data` or `main`.
+- No file under `knowledge/wiki/`, `knowledge/index.md`, or `knowledge/log.md` references `private-repo-a` or `[redacted-product]`.
+- `metadata/repos.yaml` on either branch does not contain the strings `private-repo-a` or `marcusrbrown/private-repo-a` in any field of a `private: true` entry. Redacted entries appear with `owner: '[REDACTED]'`, `name: <node_id>`.
+- No new Discord post or Bluesky post mentions `private-repo-a`.
+- No new public workflow run name in `fro-bot/.github`'s Actions tab references `private-repo-a` by name.
+- No autonomous commit message after the v1 ship date names `private-repo-a` (or any other private repo).
+- The verifiable test `git fetch origin data:data && git show data:metadata/repos.yaml | grep -i private-repo-a` returns nothing.
 
 ### SC2 — Existing leaks handled per R0 decision
 
-If R0 chose remediation: existing leak surfaces are no longer accessible (force-pushed history, deleted runs, redacted entries). The `git log main --grep=poly` test returns nothing.
+If R0 chose remediation: existing leak surfaces are no longer accessible (force-pushed history, deleted runs, redacted entries). The `git log main --grep=private-repo-a` test returns nothing.
 
 If R0 chose acceptance: the accepted-disclosure section of `metadata/README.md` documents each surface with a justification.
 
