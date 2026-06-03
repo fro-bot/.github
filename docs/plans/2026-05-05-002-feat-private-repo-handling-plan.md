@@ -17,7 +17,7 @@ The architecture is **always-redacted-everywhere**: `metadata/repos.yaml` on bot
 
 ## Problem Frame
 
-`marcusrbrown/poly` is the first private repo Fro Bot has been invited to. Multiple leaks already exist on `main` (two commit subjects, workflow run logs, current `metadata/repos.yaml` content). Going forward, several additional public-artifact write boundaries need gates: wiki-ingest, social broadcast, autonomous commit messages, workflow surface elements, and visibility transitions. Three failure modes also need correction: probe coercion (fail-open by construction), manual `workflow_dispatch` bypass (multiple sites), and probe-error-class collapse (404 vs 5xx vs malformed-200 carry different semantics).
+`marcusrbrown/private-repo-a` is the first private repo Fro Bot has been invited to. Multiple leaks already exist on `main` (two commit subjects, workflow run logs, current `metadata/repos.yaml` content). Going forward, several additional public-artifact write boundaries need gates: wiki-ingest, social broadcast, autonomous commit messages, workflow surface elements, and visibility transitions. Three failure modes also need correction: probe coercion (fail-open by construction), manual `workflow_dispatch` bypass (multiple sites), and probe-error-class collapse (404 vs 5xx vs malformed-200 carry different semantics).
 
 See origin for the full posture statement, reconsider triggers, and rejected alternatives.
 
@@ -103,7 +103,7 @@ The survey-cadence plan (`docs/plans/2026-05-05-001-feat-survey-cadence-and-mult
 
 ### External Verification (during planning)
 
-`origin/data` of `fro-bot/.github` is publicly readable to any unauthenticated git client. Verified `2026-05-04` via `git clone --depth=1 && git fetch origin data:data && git show data:metadata/repos.yaml` (no auth, returns canonical `poly` entry). This forced the always-redacted-everywhere architecture in Unit 3.
+`origin/data` of `fro-bot/.github` is publicly readable to any unauthenticated git client. Verified `2026-05-04` via `git clone --depth=1 && git fetch origin data:data && git show data:metadata/repos.yaml` (no auth, returns canonical `private-repo-a` entry). This forced the always-redacted-everywhere architecture in Unit 3.
 
 ## Key Technical Decisions
 
@@ -196,7 +196,7 @@ R0's enumeration must complete and the per-surface remediation/acceptance decisi
 ### Deferred to Implementation
 
 - **`node_id` resolution failure handling**: when the API returns 404 for a previously-stored `node_id` (repo deleted, transferred, or App lost access), how does Unit 11's `resolve-private.ts` and Unit 10's CI guard behave? Likely: emit a warning, surface `node_id` only, continue. Implementation detail.
-- **Exact CI guard match algorithm**: substring case-insensitive vs whole-word vs regex with word-boundary anchors? Default: case-insensitive substring (catches `marcusrbrown/poly`, `MARCUSRBROWN/POLY`, and `MARCUSRBROWN-POLY` slug forms). Tighten if false-positive rate is unacceptable in practice.
+- **Exact CI guard match algorithm**: substring case-insensitive vs whole-word vs regex with word-boundary anchors? Default: case-insensitive substring (catches `marcusrbrown/private-repo-a`, `MARCUSRBROWN/PRIVATE-REPO-A`, and `MARCUSRBROWN-PRIVATE-REPO-A` slug forms). Tighten if false-positive rate is unacceptable in practice.
 - **Daily-report visibility for `summary.skippedPrivate`**: whether the daily-report broadcaster surfaces the count is a future decision, not in scope for this plan.
 
 ## High-Level Technical Design
@@ -286,7 +286,7 @@ persona/
 
 - [x] **Unit 0: Enumerate existing leaks and remediate per operator decision**
 
-**Goal:** Enumerate every existing leak surface for currently-tracked private repos (today: only `marcusrbrown/poly`); present operator with per-surface remediate/accept decision; execute the chosen action.
+**Goal:** Enumerate every existing leak surface for currently-tracked private repos (today: only `marcusrbrown/private-repo-a`); present operator with per-surface remediate/accept decision; execute the chosen action.
 
 **Requirements:** R0
 
@@ -303,7 +303,7 @@ persona/
   - **Workflow runs**: `gh api /repos/.../actions/runs?status=...` filtered by run name or input parameters
   - **Current `metadata/repos.yaml`**: parse and find entries by `node_id` whose `owner`/`name` are not yet redacted
   - **Wiki pages**: enumerate `knowledge/wiki/repos/*.md` for filenames matching private slugs (currently none)
-- CLI entry-point reads `node_id` values from a temporary canonical mapping (Marcus runs `gh api /repos/marcusrbrown/poly` and supplies `node_id` directly), enumerates surfaces, prints a table.
+- CLI entry-point reads `node_id` values from a temporary canonical mapping (Marcus runs `gh api /repos/marcusrbrown/private-repo-a` and supplies `node_id` directly), enumerates surfaces, prints a table.
 - For each surface, the operator chooses: REMEDIATE (script provides remediation commands) or ACCEPT (script appends an entry to `metadata/README.md` documenting the accepted disclosure).
 - Remediation commands the script generates:
   - **Commit subject rewrite**: `git filter-repo --replace-message <expr>` instructions, or `git rebase -i HEAD~N` and amend each commit's subject. Operator runs this manually; the script does NOT auto-rewrite history.
@@ -315,12 +315,12 @@ persona/
 
 **Test scenarios:**
 - Happy path: empty private list → no surfaces enumerated, no decisions needed
-- Happy path: one private repo (`poly`) → surfaces enumerated correctly: 2 commits, N workflow runs, 1 metadata entry, 0 wiki pages
+- Happy path: one private repo (`private-repo-a`) → surfaces enumerated correctly: 2 commits, N workflow runs, 1 metadata entry, 0 wiki pages
 - Edge case: a private repo with no leaks → surfaces enumerated as empty per type
 - Edge case: malformed `metadata/repos.yaml` → script fails with structured error (does not silently skip)
 
 **Verification:**
-- Operator runs `node scripts/enumerate-existing-leaks.ts` for `poly`; output matches the manually-confirmed surfaces from the deepening review (2 commits, 1+ workflow runs, current metadata entry).
+- Operator runs `node scripts/enumerate-existing-leaks.ts` for `private-repo-a`; output matches the manually-confirmed surfaces from the deepening review (2 commits, 1+ workflow runs, current metadata entry).
 - Operator chooses an action per surface; if REMEDIATE, executes the generated commands; if ACCEPT, records the decision in `metadata/README.md`.
 - Phase 0 closes when all surfaces have an explicit decision.
 
@@ -447,7 +447,7 @@ persona/
 **Verification:**
 - New tests pass
 - Manual fixture: a `metadata/repos.yaml` with mixed entries round-trips through mutators correctly
-- The verifiable test from origin SC1: after one reconcile run, `git show data:metadata/repos.yaml | grep -i poly` returns nothing
+- The verifiable test from origin SC1: after one reconcile run, `git show data:metadata/repos.yaml | grep -i private-repo-a` returns nothing
 
 ---
 
@@ -721,7 +721,7 @@ persona/
 - Edge case: PR diff is empty → guard passes (no-op)
 - Edge case: PR diff includes a private repo's `node_id` → guard passes (`node_id` not scanned)
 - Edge case: `metadata/repos.yaml` on `data` has no private entries → guard passes regardless of diff content
-- Edge case: case sensitivity — diff contains `MARCUSRBROWN/POLY` → guard fails (case-insensitive match)
+- Edge case: case sensitivity — diff contains `MARCUSRBROWN/PRIVATE-REPO-A` → guard fails (case-insensitive match)
 - Edge case: PR diff modifies `metadata/repos.yaml` to flip `private: true → false` AND introduces the canonical name elsewhere → guard fails (the name addition triggers regardless of the metadata flip)
 - Edge case: override — PR title starts with `[allow-private-leak]` and author is `marcusrbrown` → guard passes with logged warning and PR comment
 - Edge case: override — PR title starts with `[allow-private-leak]` but author is `fro-bot[bot]` (not operator) → guard does NOT honor override; fails normally
@@ -846,7 +846,7 @@ persona/
   - Names in commit messages or PR bodies (only file diffs scanned) — mitigated by Unit 4 for autonomous paths; operator-authored messages are documented as a limitation in `metadata/README.md`
   - Names visible in the GitHub PR UI's "Files Changed" tab during the PR's open lifetime, even if the PR fails CI — documented limitation
 - **Daily report visibility:** `summary.skippedPrivate` will appear in JSON. Whether the daily-report broadcaster surfaces the count is a future decision, not in scope for this plan.
-- **`marcusrbrown/poly`** continues to be the trigger repo. Until Unit 0 remediation completes (or acceptance is documented), the `[[Note]]` orphan-wikilink content-quality bug continues to crash survey runs harmlessly. After Unit 6 lands, those failures move from the wiki-ingest content-quality bug to the workflow-internal gate (private-repo abort).
+- **`marcusrbrown/private-repo-a`** continues to be the trigger repo. Until Unit 0 remediation completes (or acceptance is documented), the `[[Note]]` orphan-wikilink content-quality bug continues to crash survey runs harmlessly. After Unit 6 lands, those failures move from the wiki-ingest content-quality bug to the workflow-internal gate (private-repo abort).
 
 ## Sources & References
 
@@ -859,4 +859,4 @@ persona/
   - `scripts/check-wiki-authority.ts` — CI-guard shape for Unit 10
   - `scripts/repos-metadata.ts` — pure mutator pattern for Unit 3
 - **Verified during planning:** `origin/data` of `fro-bot/.github` is publicly readable to any unauthenticated git client (forced the always-redacted-everywhere architecture)
-- **Trigger:** Survey Repo run 25395917616 (`marcusrbrown/poly`) failed on `[[Note]]` orphan wikilink (content-quality bug, separate from this plan)
+- **Trigger:** Survey Repo run 25395917616 (`marcusrbrown/private-repo-a`) failed on `[[Note]]` orphan wikilink (content-quality bug, separate from this plan)
