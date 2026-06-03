@@ -1,7 +1,7 @@
 ---
 title: Private-repo handling
 type: feat
-status: active
+status: complete
 date: 2026-05-05
 origin: docs/brainstorms/2026-05-05-private-repo-handling-requirements.md
 deepened: 2026-05-05
@@ -575,7 +575,7 @@ persona/
 
 ---
 
-- [ ] **Unit 7: `social-broadcast` privacy-aware with fail-safe default**
+- [x] **Unit 7: `social-broadcast` privacy-aware with fail-safe default**
 
 **Goal:** `social-broadcast.yaml` accepts a `private: boolean` input with default `true` (NOT required). Discord and Bluesky steps skip when `private: true`; journal step always runs.
 
@@ -608,7 +608,7 @@ persona/
 
 ---
 
-- [ ] **Unit 8: Wiki-page block in merge ceremony**
+- [x] **Unit 8: Wiki-page block in merge ceremony**
 
 **Goal:** `merge-data.yaml` adds a check before `merge-data-pr.ts` that scans `knowledge/wiki/repos/` on `data` for any filename matching a private entry's pre-redaction slug or `node_id`-based slug. Blocks the PR if any private wiki page is found.
 
@@ -641,7 +641,7 @@ persona/
 
 ---
 
-- [ ] **Unit 9: Visibility-transition detection (probe-vs-stored)**
+- [x] **Unit 9: Visibility-transition detection (probe-vs-stored)**
 
 **Goal:** Reconcile fires a `reconcile:visibility-transition` integrity-alert issue when the probe observes a tracked repo's stored `private` flag flip from `false` to `true` (including via `access-lost`). Detection compares probe-vs-stored, not probe-vs-prior-probe. Private→public transitions trigger recanonicalization via the next mutator write.
 
@@ -682,7 +682,7 @@ persona/
 
 ---
 
-- [ ] **Unit 10: CI guard against private-name introduction**
+- [x] **Unit 10: CI guard against private-name introduction**
 
 **Goal:** New CI check on `fro-bot/.github` runs on every PR to `main`. Reads `node_id` values from `data:metadata/repos.yaml`, resolves each to `owner/name` via the GitHub API, then scans the PR's added-lines diff for any string match. Override mechanism via PR title prefix.
 
@@ -737,7 +737,7 @@ persona/
 
 ---
 
-- [ ] **Unit 11: Operator lookup script `resolve-private.ts`**
+- [x] **Unit 11: Operator lookup script `resolve-private.ts`**
 
 **Goal:** Operator-only script reads `metadata/repos.yaml` and resolves `node_id` values to `owner/name` via the GitHub API. Stdout-only output. Provides the lookup convenience that YAML-grep used to provide for non-private entries.
 
@@ -773,7 +773,7 @@ persona/
 
 ---
 
-- [ ] **Unit 12: Documentation**
+- [x] **Unit 12: Documentation**
 
 **Goal:** Document the privacy posture, every gate, the schema fields, the operator tool, and the existing-leak handling decision (from Unit 0) across the relevant project docs.
 

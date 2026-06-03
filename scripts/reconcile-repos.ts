@@ -273,6 +273,14 @@ export interface ReconcileSummary {
    */
   visibilityTransitions: number
   /**
+   * Number of per-owner rollup issues skipped by {@link selfHealRollups} because the owner
+   * was already processed earlier in THIS same reconcile run (the eventual-consistency guard).
+   * Distinct from owners skipped because a rollup already existed on GitHub from a prior run —
+   * those are silent skips with no counter. A non-zero value means the in-process guard fired:
+   * the same-run listForRepo lag was present and suppression prevented a duplicate create.
+   */
+  raceSuppressedRollups: number
+  /**
    * Per-channel activity breakdown. See {@link ChannelStats} for field semantics. The
    * engine populates `tracked` and `lostAccess`; the shell populates `dispatched` and
    * `deferred` after cap selection.
@@ -381,6 +389,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     skippedPrivate: 0,
     flooredDispatches: 0,
     visibilityTransitions: 0,
+    raceSuppressedRollups: 0,
     byChannel: {
       collab: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
       owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1246,6 +1255,11 @@ export interface HandleReconcileResult {
   rollupIssues: number
   /** Count of successfully-created visibility-transition integrity-alert issues. */
   visibilityTransitionIssues: number
+  /**
+   * Count of visibility-transition creates suppressed as duplicates (listForRepo-existing-title match
+   * or same-run Set dedup). Surfaces in the JSON result so operators can observe dedup activity.
+   */
+  visibilityTransitionDuplicatesSkipped: number
   /** Count of issue-creation failures across per-repo + rollup + visibility-transition. */
   issuesFailed: number
   /** Count of stale `reconcile:pending-review` issues auto-closed this run. */
@@ -1279,7 +1293,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const maxDispatchesPerRun = params.maxDispatchesPerRun ?? loadMaxDispatchesPerRunFromEnv()
   const logger: ReconcileLogger = params.logger ?? {
     warn: message => process.stderr.write(`${message}\n`),
-    info: message => process.stdout.write(`${message}\n`),
+    info: message => process.stderr.write(`${message}\n`),
   }
   const readMetadata = params.readMetadata ?? readMetadataFromDisk
   const commitMetadataImpl = params.commitMetadata ?? defaultCommitMetadata
@@ -1519,7 +1533,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   const currentRunRollupOwners = new Set(
     plan.issues.filter(issue => issue.kind === 'per-owner-rollup').map(issue => issue.owner),
   )
-  const healedRollups = await selfHealRollups({
+  const {created: healedRollups, raceSuppressed} = await selfHealRollups({
     appOctokit,
     owner,
     repo,
@@ -1529,6 +1543,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     logger,
     currentRunRollupOwners,
   })
+  plan.summary.raceSuppressedRollups = raceSuppressed
 
   return {
     accessListSize: accessList.length,
@@ -1539,6 +1554,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     perRepoIssues: issueOutcome.perRepoSucceeded,
     rollupIssues: issueOutcome.rollupSucceeded + healedRollups,
     visibilityTransitionIssues: issueOutcome.visibilityTransitionSucceeded,
+    visibilityTransitionDuplicatesSkipped: issueOutcome.visibilityTransitionDuplicatesSkipped,
     issuesFailed: issueOutcome.failed,
     closedStaleIssues,
     probesFailed,
@@ -2361,15 +2377,57 @@ async function runIssueQueue(params: {
   perRepoSucceeded: number
   rollupSucceeded: number
   visibilityTransitionSucceeded: number
+  /**
+   * Count of visibility-transition creates suppressed as duplicates this run (both the
+   * listForRepo-existing-title path and the same-run Set path).
+   */
+  visibilityTransitionDuplicatesSkipped: number
   failed: number
 }> {
   let perRepoSucceeded = 0
   let rollupSucceeded = 0
   let visibilityTransitionSucceeded = 0
+  let visibilityTransitionDuplicatesSkipped = 0
   let failed = 0
+
+  // Same-run dedup Set. Two visibility-transition queue entries for the same
+  // node_id in one reconcile plan can both pass the listForRepo dedup check because the
+  // Issues API is eventually consistent (a just-created issue may not appear in listForRepo
+  // yet). Tracking successfully-created node_ids here and skipping on second occurrence
+  // prevents duplicates regardless of API lag. Both guards (listForRepo + this Set) apply.
+  const attemptedTransitionNodeIds = new Set<string>()
+
+  // Label preflight: ensureLabelsExist is hoisted out of the per-issue loop. Labels don't
+  // change mid-run; calling it per-issue wastes 2 round-trips × N issues. We call it lazily
+  // on the first visibility-transition issue and reuse when the result is confirmed (non-empty).
+  let cachedConfirmedLabels: Set<string> | null = null
+  const TRANSITION_LABELS = [
+    {
+      name: VISIBILITY_TRANSITION_LABEL,
+      color: 'f97316',
+      description: 'Tracked repo transitioned from public to private',
+    },
+    {
+      name: INTEGRITY_ALERT_LABEL,
+      color: 'b60205',
+      description: 'Reconcile integrity alert requiring operator action',
+    },
+  ] as const
+
   for (const issue of params.issues) {
     try {
       if (issue.kind === 'visibility-transition') {
+        // Same-run Set dedup — skip if this node_id was already successfully created this run.
+        // The set is populated AFTER a successful create, so a failed first attempt does not
+        // suppress a subsequent retry for the same node_id.
+        if (attemptedTransitionNodeIds.has(issue.node_id)) {
+          params.logger.info(
+            `reconcile: visibility-transition duplicate skipped (same-run set, node_id=${issue.node_id})`,
+          )
+          visibilityTransitionDuplicatesSkipped += 1
+          continue
+        }
+
         // Dedup: skip if an open issue with the same node_id already exists.
         // Fail-open: if paginate throws, treat as "no existing issue found" and proceed
         // to create — better to risk a duplicate than to silently drop the alert.
@@ -2392,29 +2450,37 @@ async function runIssueQueue(params: {
         // is functionally equivalent to marker extraction and cheaper (no body fetch needed).
         const expectedTitle = `[INTEGRITY] Visibility transition for ${issue.node_id}`
         const alreadyOpen = existing.some(i => i.title === expectedTitle)
-        if (alreadyOpen) continue
+        if (alreadyOpen) {
+          params.logger.info(
+            `reconcile: visibility-transition duplicate skipped (existing open issue, node_id=${issue.node_id})`,
+          )
+          visibilityTransitionDuplicatesSkipped += 1
+          continue
+        }
 
-        // Pre-flight label creation: ensure both labels exist before calling issues.create.
-        // Defends against the Update-Repo-Settings propagation race on first run.
-        // Returns only the labels that are confirmed usable; failures exclude that label.
-        const confirmedLabels = await ensureLabelsExist(
-          params.appOctokit,
-          params.owner,
-          params.repo,
-          [
-            {
-              name: VISIBILITY_TRANSITION_LABEL,
-              color: 'f97316',
-              description: 'Tracked repo transitioned from public to private',
-            },
-            {
-              name: INTEGRITY_ALERT_LABEL,
-              color: 'b60205',
-              description: 'Reconcile integrity alert requiring operator action',
-            },
-          ],
-          params.logger,
-        )
+        // Label preflight: ensureLabelsExist is called lazily on the first visibility-transition
+        // issue and cached for reuse. The cache is committed only when every required label is
+        // confirmed (labels.size equals TRANSITION_LABELS.length). A partial result — where a
+        // transient failure excluded one or more labels — is never cached: the cache stays null
+        // so each subsequent issue retries the full preflight until a complete set is confirmed.
+        // Regardless of whether the cache is committed, the current issue always uses the freshly
+        // computed label set from this call, not an empty fallback.
+        let confirmedLabels: Set<string>
+        if (cachedConfirmedLabels === null) {
+          const labels = await ensureLabelsExist(
+            params.appOctokit,
+            params.owner,
+            params.repo,
+            TRANSITION_LABELS,
+            params.logger,
+          )
+          if (labels.size === TRANSITION_LABELS.length) {
+            cachedConfirmedLabels = labels
+          }
+          confirmedLabels = labels
+        } else {
+          confirmedLabels = cachedConfirmedLabels
+        }
         const payload = renderIssuePayload(issue, params.owner, params.repo)
         const filteredPayload: IssuePayload = {
           ...payload,
@@ -2426,10 +2492,20 @@ async function runIssueQueue(params: {
           )
         }
         await callIssuesCreate(params.appOctokit, filteredPayload)
+        // Mark as successfully created — only after the create call succeeds.
+        // This ensures a failed create does not suppress a subsequent retry for the same node_id.
+        attemptedTransitionNodeIds.add(issue.node_id)
       } else {
         const payload = renderIssuePayload(issue, params.owner, params.repo)
         await callIssuesCreate(params.appOctokit, payload)
       }
+      /**
+       * Counter semantics: these counts reflect issues.create API acknowledgements, not
+       * confirmed-created alerts. An ambiguous 5xx (where the API processed the request but
+       * the response was lost in transit) may over-count `failed` or under-count the success
+       * counters. This is acceptable at current scale (visibility transitions are rare events);
+       * a listForRepo reconciliation pass would be needed only if these counters drive SLO/alerting.
+       */
       switch (issue.kind) {
         case 'per-repo': {
           perRepoSucceeded += 1
@@ -2455,7 +2531,13 @@ async function runIssueQueue(params: {
       params.logger.warn(`reconcile: issue creation failed (status=${status}); continuing.`)
     }
   }
-  return {perRepoSucceeded, rollupSucceeded, visibilityTransitionSucceeded, failed}
+  return {
+    perRepoSucceeded,
+    rollupSucceeded,
+    visibilityTransitionSucceeded,
+    visibilityTransitionDuplicatesSkipped,
+    failed,
+  }
 }
 
 /**
@@ -2694,6 +2776,23 @@ async function autoCloseStaleIssues(params: {
   return closed
 }
 
+/**
+ * Self-healing pass that recovers missing per-owner rollup issues.
+ *
+ * In-process race (same run): the GitHub Issues listing API has eventual-consistency lag —
+ * a rollup POSTed in step 10 may not appear in a subsequent listForRepo call. The
+ * `currentRunRollupOwners` set carries every owner whose rollup was attempted in this run
+ * (success or failure) so the skip is observable as `raceSuppressed` rather than silently
+ * conflated with pre-existing rollups.
+ *
+ * Cross-run race: two reconcile runs overlapping (e.g., scheduled + manual rerun) could
+ * theoretically produce duplicate rollups if both see an empty listForRepo. This is closed
+ * operationally by the workflow concurrency group (`group: reconcile-repos,
+ * cancel-in-progress: false`): a manual rerun queues behind the prior run and starts only
+ * after it fully completes, far longer than listForRepo's few-second lag. No persistent
+ * timestamp or distributed lock is needed — the serialization guarantee comes from the
+ * workflow scheduler, not from this code.
+ */
 async function selfHealRollups(params: {
   appOctokit: OctokitClient
   owner: string
@@ -2703,7 +2802,7 @@ async function selfHealRollups(params: {
   allowlist: AllowlistFile
   logger: ReconcileLogger
   currentRunRollupOwners: ReadonlySet<string>
-}): Promise<number> {
+}): Promise<{created: number; raceSuppressed: number}> {
   const allowlistedOwners = new Set(params.allowlist.approved_inviters.map(i => i.username))
   const pendingReviewByOwner = new Map<string, RepoEntry[]>()
   for (const entry of params.nextRepos.repos) {
@@ -2716,8 +2815,10 @@ async function selfHealRollups(params: {
 
   // Only owners with ≥2 pending-review entries qualify for a rollup.
   const qualifyingOwners = [...pendingReviewByOwner.entries()].filter(([, entries]) => entries.length >= 2)
-  if (qualifyingOwners.length === 0) return 0
+  if (qualifyingOwners.length === 0) return {created: 0, raceSuppressed: 0}
 
+  // existingRollupOwners: ONLY owners with rollups confirmed on GitHub via listForRepo.
+  // Kept separate from currentRunRollupOwners so each skip path is observable independently.
   let existingRollupOwners: Set<string>
   try {
     const openRollups = (await params.appOctokit.paginate(params.appOctokit.rest.issues.listForRepo, {
@@ -2733,22 +2834,26 @@ async function selfHealRollups(params: {
       const match = ROLLUP_OWNER_MARKER_PATTERN.exec(body)
       if (match?.[1] !== undefined) existingRollupOwners.add(match[1])
     }
-    // Union with owners whose rollups were attempted in this same reconcile run.
-    // The GitHub Issues listing API has eventual-consistency lag: a rollup created
-    // in step 10 may not appear in this listing, causing a duplicate to be filed here.
-    for (const owner of params.currentRunRollupOwners) {
-      existingRollupOwners.add(owner)
-    }
+    // NOTE: do NOT union currentRunRollupOwners here. They are checked separately below
+    // so the same-run eventual-consistency guard is observable in raceSuppressed.
   } catch (error: unknown) {
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     params.logger.warn(`reconcile: self-heal rollup listing failed (status=${status}); skipping.`)
-    return 0
+    return {created: 0, raceSuppressed: 0}
   }
 
   const accessByKey = new Map(params.accessList.map(a => [`${a.owner}/${a.name}`, a]))
   let created = 0
+  let raceSuppressed = 0
   for (const [owner, entries] of qualifyingOwners) {
-    if (existingRollupOwners.has(owner)) continue
+    if (existingRollupOwners.has(owner)) continue // pre-existing on GitHub — silent skip
+    if (params.currentRunRollupOwners.has(owner)) {
+      // Same-run race suppression: a rollup was already attempted for this owner in step 10.
+      // The eventual-consistency guard is firing — observable via raceSuppressed.
+      raceSuppressed += 1
+      params.logger.info(`selfHealRollups: skipped owner=${owner} (already created earlier in this run)`)
+      continue
+    }
     const rollupEntries: PerOwnerRollupIssue['entries'] = []
     for (const entry of entries) {
       const access = accessByKey.get(`${entry.owner}/${entry.name}`)
@@ -2776,7 +2881,7 @@ async function selfHealRollups(params: {
       params.logger.warn(`reconcile: self-heal rollup creation failed (status=${status}); continuing.`)
     }
   }
-  return created
+  return {created, raceSuppressed}
 }
 
 /**

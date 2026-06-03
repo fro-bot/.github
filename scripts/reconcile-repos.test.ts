@@ -129,6 +129,7 @@ describe('reconcileRepos', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -473,7 +474,7 @@ describe('reconcileRepos', () => {
       const result = reconcileRepos(
         makeInput({
           currentRepos: {version: 1, repos: [tracked]},
-          accessList: [makeAccess({owner: 'marcusrbrown', name: 'poly', node_id: 'R_kgDOSVJgdw', private: true})],
+          accessList: [makeAccess({owner: 'marcusrbrown', name: 'cart', node_id: 'R_kgDOSVJgdw', private: true})],
           allowlist: makeAllowlist(['marcusrbrown']),
         }),
       )
@@ -518,7 +519,7 @@ describe('reconcileRepos', () => {
       const result = reconcileRepos(
         makeInput({
           currentRepos: {version: 1, repos: [redactedNoNodeId]},
-          accessList: [makeAccess({owner: 'marcusrbrown', name: 'poly', node_id: 'R_kgDOSVJgdw', private: true})],
+          accessList: [makeAccess({owner: 'marcusrbrown', name: 'cart', node_id: 'R_kgDOSVJgdw', private: true})],
           allowlist: makeAllowlist(['marcusrbrown']),
         }),
       )
@@ -1229,6 +1230,7 @@ describe('reconcileRepos', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 3, dispatched: 0, deferred: 0, lostAccess: 1},
@@ -1272,6 +1274,7 @@ describe('reconcileRepos', () => {
         unchanged: 1,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
           owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1299,6 +1302,7 @@ describe('reconcileRepos', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: emptyChannelStats(),
       })
     })
@@ -3270,7 +3274,7 @@ describe('handleReconcile (I/O shell)', () => {
     })
 
     it('regression: does not duplicate rollup when listForRepo lags behind same-run create', async () => {
-      // Reproduces the 2026-05-18 race (run 26023380395, issues #3307 + #3308):
+      // Reproduces the 2026-05-18 race where listForRepo eventual-consistency lag caused
       //
       // Setup: bfra-me grants access to 2 repos in this run (NOT pre-existing in metadata).
       // Pass 1 of reconcileRepos adds both as `pending-review` + pushes 2 rawIssues.
@@ -3362,6 +3366,142 @@ describe('handleReconcile (I/O shell)', () => {
       )
 
       expect(issuesCreate).not.toHaveBeenCalled()
+    })
+
+    it('counts race-suppressed skips separately from pre-existing rollups in raceSuppressedRollups', async () => {
+      // Verifies that raceSuppressedRollups counts only the same-run guard path, not the
+      // pre-existing-on-GitHub silent-skip path.
+      //
+      // All three owners start from an empty repos state so reconcileRepos classifies every repo
+      // as unsolicited-new → pending-review. buildIssueQueue groups them into 3 per-owner rollup
+      // issues; runIssueQueue (step 10) calls issuesCreate for all 3, adding all three to
+      // currentRunRollupOwners. selfHealRollups (step 12) then receives listForRepo returning only
+      // "existing-owner" and checks each owner:
+      //   - race-owner:    not in listForRepo, IS in currentRunRollupOwners → raceSuppressed += 1
+      //   - existing-owner: IS in listForRepo                               → silent skip (no increment)
+      //   - new-owner:     not in listForRepo, IS in currentRunRollupOwners → raceSuppressed += 1
+      //
+      // Expected: issuesCreate called 3× (step 10), raceSuppressedRollups === 2 (race-owner + new-owner).
+
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          // race-owner: 2 pending-review, was created this run (currentRunRollupOwners)
+          makeEntry({owner: 'race-owner', name: 'r1', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'race-owner', name: 'r2', onboarding_status: 'pending-review'}),
+          // existing-owner: 2 pending-review, has an open rollup on GitHub
+          makeEntry({owner: 'existing-owner', name: 'e1', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'existing-owner', name: 'e2', onboarding_status: 'pending-review'}),
+          // new-owner: 2 pending-review, nothing in currentRunRollupOwners or listForRepo
+          makeEntry({owner: 'new-owner', name: 'n1', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'new-owner', name: 'n2', onboarding_status: 'pending-review'}),
+        ],
+      }
+
+      const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+      // listForRepo returns only "existing-owner" rollup (pre-existing on GitHub).
+      // "race-owner" rollup was just created this run but listForRepo lags → not here.
+      const issuesListForRepo = vi.fn(async () => ({
+        data: [
+          {
+            number: 51,
+            title: 'Unsolicited collaborator grants from existing-owner',
+            body: '<!-- reconcile:subject:rollup-owner=existing-owner -->',
+            state: 'open' as const,
+            labels: [{name: 'reconcile:pending-review'}, {name: 'reconcile:rollup-pending-review'}],
+          },
+        ],
+      }))
+
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: existing.repos.map((r, i) => ({
+            owner: {login: r.owner},
+            name: r.name,
+            archived: false,
+            private: false,
+            node_id: `R_obs_${i}`,
+          })),
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
+          readMetadata: makeReadMetadata({repos: {version: 1, repos: []}, allowlist: makeAllowlist([])}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      // Step 10 (runIssueQueue) creates exactly 3 rollups (one per qualifying owner).
+      // Step 12 (selfHealRollups) must NOT create additional duplicates.
+      // raceSuppressedRollups counts owners skipped by the same-run guard (currentRunRollupOwners)
+      // but NOT by the pre-existing check (listForRepo). Here race-owner and new-owner are
+      // in currentRunRollupOwners; existing-owner is in listForRepo.
+      expect(issuesCreate).toHaveBeenCalledTimes(3)
+      // The new summary field must be present and count same-run-suppressed skips only.
+      // existing-owner is pre-existing (listForRepo path) → does not count.
+      // race-owner and new-owner are in currentRunRollupOwners → each counts as 1.
+      expect(result.summary.raceSuppressedRollups).toBe(2)
+    })
+
+    it('serialization-protected recovery: self-heals when currentRunRollupOwners is empty and listForRepo is stale-empty', async () => {
+      // Documents the cross-run serialization guarantee: the workflow concurrency group
+      // (group: reconcile-repos, cancel-in-progress: false) serializes runs so a manual
+      // rerun cannot start until the prior run's creates have propagated well past
+      // listForRepo's eventual-consistency lag. This means:
+      //
+      //   If currentRunRollupOwners is empty (no rollups created this run's step 10)
+      //   AND listForRepo returns empty (stale or no prior rollup),
+      //   selfHealRollups SHOULD create — this is the legitimate recovery path.
+      //
+      // The serialization guarantee means no concurrent run created the rollup,
+      // so there is no duplicate risk in this scenario. This test pins that the
+      // eventual-consistency guard does NOT over-suppress the recovery path.
+
+      const existing: ReposFile = {
+        version: 1,
+        repos: [
+          makeEntry({owner: 'heal-owner', name: 'h1', onboarding_status: 'pending-review'}),
+          makeEntry({owner: 'heal-owner', name: 'h2', onboarding_status: 'pending-review'}),
+        ],
+      }
+
+      const issuesCreate = vi.fn(async () => ({data: {number: 100}}))
+      // listForRepo returns empty — stale or no prior rollup exists.
+      const issuesListForRepo = vi.fn(async () => ({data: []}))
+
+      const userOctokit = mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: existing.repos.map((r, i) => ({
+            owner: {login: r.owner},
+            name: r.name,
+            archived: false,
+            private: false,
+            node_id: `R_heal_${i}`,
+          })),
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
+          // Pre-existing repos so step 10 sees no new pending-review → currentRunRollupOwners is empty.
+          readMetadata: makeReadMetadata({repos: existing, allowlist: makeAllowlist([])}),
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+        }),
+      )
+
+      // selfHealRollups must create the rollup: currentRunRollupOwners is empty,
+      // listForRepo is stale-empty, serialization guarantees no concurrent run created it.
+      expect(issuesCreate).toHaveBeenCalledOnce()
+      const params = firstCallArg<{title: string; labels: string[]}>(issuesCreate)
+      expect(params?.title.toLowerCase()).toContain('heal-owner')
+      expect(params?.labels).toContain('reconcile:rollup-pending-review')
+      // No same-run suppression occurred.
+      expect(result.summary.raceSuppressedRollups).toBe(0)
     })
   })
 
@@ -4280,6 +4420,7 @@ describe('formatCommitMessage', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 2 refreshes')
@@ -4300,6 +4441,7 @@ describe('formatCommitMessage', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
@@ -4320,6 +4462,7 @@ describe('formatCommitMessage', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 1 refreshes')
@@ -4340,6 +4483,7 @@ describe('formatCommitMessage', () => {
         unchanged: 0,
         flooredDispatches: 0,
         visibilityTransitions: 0,
+        raceSuppressedRollups: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 1 refreshes, +18 migrated')
@@ -5585,8 +5729,11 @@ describe('reconcileRepos visibility-transition detection (Unit 9)', () => {
     expect(entry?.private).toBe(false)
   })
 
-  it('scenario 8: rapid flip within one cycle — detection uses stored state at probe time', () => {
-    // Stored: false. Probe: true. Transition fires. Next stored state becomes true.
+  it('scenario 8: queues a transition on a false→true visibility change', () => {
+    // Stored: false. Live access: true. Transition fires. Next stored state becomes true.
+    // NOTE: sequential rapid-flips (public→private→public within one cycle) are
+    // structurally identical to this single false→true case under single-probe-per-cycle
+    // semantics — separate coverage isn't needed.
     const result = reconcileRepos(
       makeInput({
         currentRepos: {version: 1, repos: [makeTransitionEntry(false)]},
@@ -5805,7 +5952,270 @@ describe('renderIssuePayload (visibility-transition rendering)', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TEST #13 — Dedup branch coverage (existing open issue suppresses create)
+// Same-run dedup race: two entries same node_id → one create, counter incremented
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition same-run dedup', () => {
+  const DUPE_NODE_ID = 'R_kgDODupe3332'
+
+  it('issues.create called exactly once when two transition entries share the same node_id and listForRepo returns empty', async () => {
+    const issuesCreate = vi.fn(async () => ({data: {number: 10}}))
+    // paginate always returns empty → the listForRepo dedup won't suppress either.
+    // Only the same-run Set must suppress the second create.
+    const paginateMock = vi.fn(async () => [])
+
+    const result = await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              // Two stored entries both pointing at the same node_id (owner/name differ
+              // only in the public vs redacted slot — unusual but possible if both an
+              // alias and the redacted form appear in the metadata state).
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'repo-alpha',
+                node_id: DUPE_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'repo-beta',
+                node_id: DUPE_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'repo-alpha',
+                archived: false,
+                private: true,
+                node_id: DUPE_NODE_ID,
+              },
+              {
+                owner: {login: 'fro-bot'},
+                name: 'repo-beta',
+                archived: false,
+                private: true,
+                node_id: DUPE_NODE_ID,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    expect(issuesCreate).toHaveBeenCalledOnce()
+    expect(result.visibilityTransitionDuplicatesSkipped).toBe(1)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Duplicate-skip observability: visibilityTransitionDuplicatesSkipped counter
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition duplicatesSkipped counter', () => {
+  const SKIP_NODE_ID = 'R_kgDOSkip3334'
+  const SKIP_TITLE = `[INTEGRITY] Visibility transition for ${SKIP_NODE_ID}`
+
+  function makeSkipParams(paginateMock: OctokitMockOverrides['paginate']): HandleReconcileParams {
+    return baseParams({
+      appOctokit: mockOctokit({
+        paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+        issuesCreate: async () => ({data: {number: 50}}),
+      }),
+      readMetadata: makeReadMetadata({
+        repos: {
+          version: 1,
+          repos: [
+            makeEntry({
+              owner: 'fro-bot',
+              name: 'skip-repo',
+              node_id: SKIP_NODE_ID,
+              private: false,
+              onboarding_status: 'onboarded',
+            }),
+          ],
+        },
+      }),
+      userOctokit: mockOctokit({
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {
+              owner: {login: 'fro-bot'},
+              name: 'skip-repo',
+              archived: false,
+              private: true,
+              node_id: SKIP_NODE_ID,
+            },
+          ],
+        }),
+      }),
+    })
+  }
+
+  it('visibilityTransitionDuplicatesSkipped is 1 when listForRepo finds existing matching title', async () => {
+    const paginateMock = vi.fn(async (_fn: unknown, opts: {labels?: string; state?: string}) => {
+      if (opts.labels === 'reconcile:visibility-transition' && opts.state === 'open') {
+        return [{number: 1, title: SKIP_TITLE, body: null, labels: [{name: 'reconcile:visibility-transition'}]}]
+      }
+      return []
+    })
+
+    const result = await handleReconcile(makeSkipParams(paginateMock as unknown as OctokitMockOverrides['paginate']))
+
+    expect(result.visibilityTransitionDuplicatesSkipped).toBe(1)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Label preflight hoisting: ensureLabelsExist called once for N transition issues
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition label preflight hoisted', () => {
+  const HOIST_NODE_ID_A = 'R_kgDOHoistA'
+  const HOIST_NODE_ID_B = 'R_kgDOHoistB'
+
+  it('getLabel called exactly twice (once per label) even when two transition issues fire', async () => {
+    const issuesCreate = vi.fn(async () => ({data: {number: 77}}))
+    const issuesGetLabel = vi.fn(async () => ({data: {name: 'label'}}))
+    const paginateMock = vi.fn(async () => [])
+
+    await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+          issuesGetLabel,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'hoist-repo-a',
+                node_id: HOIST_NODE_ID_A,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'hoist-repo-b',
+                node_id: HOIST_NODE_ID_B,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'hoist-repo-a',
+                archived: false,
+                private: true,
+                node_id: HOIST_NODE_ID_A,
+              },
+              {
+                owner: {login: 'fro-bot'},
+                name: 'hoist-repo-b',
+                archived: false,
+                private: true,
+                node_id: HOIST_NODE_ID_B,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // Two issues, two labels → getLabel called 2 times total (hoisted once), not 4 (per-issue).
+    expect(issuesGetLabel).toHaveBeenCalledTimes(2)
+    expect(issuesCreate).toHaveBeenCalledTimes(2)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// node_id backfill: access list populates missing node_id in stored entry
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('reconcileRepos node_id backfill', () => {
+  it('backfills node_id from access list when stored entry has none', () => {
+    const ACCESS_NODE_ID = 'R_kgDOBackfill'
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {
+          version: 1,
+          repos: [
+            // Entry with no node_id and no private field — simulates the ha-config legacy shape
+            // where `private` was never written (undefined, not false).
+            makeEntry({
+              owner: 'fro-bot',
+              name: 'ha-config',
+              // node_id and private intentionally absent (legacy entry shape)
+              onboarding_status: 'onboarded',
+            }),
+          ],
+        },
+        accessList: [
+          makeAccess({
+            owner: 'fro-bot',
+            name: 'ha-config',
+            node_id: ACCESS_NODE_ID,
+            private: false,
+          }),
+        ],
+      }),
+    )
+
+    const next = result.nextRepos.repos.find(r => r.name === 'ha-config')
+    expect(next?.node_id).toBe(ACCESS_NODE_ID)
+  })
+
+  it('backfills node_id when stored entry has undefined private (legacy entry without private field)', () => {
+    // Pins the real ha-config scenario: `private` was never written to the YAML entry,
+    // so it deserializes as undefined. node_id backfill must still work.
+    const ACCESS_NODE_ID = 'R_kgDOBackfillUndef'
+    // makeEntry without private/node_id → both fields absent (undefined), matching legacy shape
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {
+          version: 1,
+          repos: [makeEntry({owner: 'fro-bot', name: 'ha-config-legacy', onboarding_status: 'onboarded'})],
+        },
+        accessList: [
+          makeAccess({
+            owner: 'fro-bot',
+            name: 'ha-config-legacy',
+            node_id: ACCESS_NODE_ID,
+            private: false,
+          }),
+        ],
+      }),
+    )
+
+    const next = result.nextRepos.repos.find(r => r.name === 'ha-config-legacy')
+    expect(next?.node_id).toBe(ACCESS_NODE_ID)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dedup branch coverage: existing open issue suppresses create
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('handleReconcile visibility-transition dedup', () => {
@@ -5930,5 +6340,246 @@ describe('handleReconcile visibility-transition dedup', () => {
     // Exact-title dedup: the existing issue title does NOT match the victim's expected title,
     // so issues.create MUST be called. Old substring code would have suppressed this.
     expect(issuesCreate).toHaveBeenCalledOnce()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Same-run dedup must not suppress a retry after a failed first create
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition same-run dedup: failed first create does not suppress retry', () => {
+  const RETRY_NODE_ID = 'R_kgDORetryC'
+
+  it('second same-node entry attempts issues.create when first create rejects, and duplicatesSkipped is 0', async () => {
+    let createCallCount = 0
+    const issuesCreate = vi.fn(async () => {
+      createCallCount += 1
+      if (createCallCount === 1) {
+        const err = Object.assign(new Error('simulated API failure'), {status: 500})
+        throw err
+      }
+      return {data: {number: 99}}
+    })
+    // paginate always returns empty → listForRepo dedup won't suppress anything
+    const paginateMock = vi.fn(async () => [])
+
+    const result = await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'retry-repo-a',
+                node_id: RETRY_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'retry-repo-b',
+                node_id: RETRY_NODE_ID,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'retry-repo-a',
+                archived: false,
+                private: true,
+                node_id: RETRY_NODE_ID,
+              },
+              {
+                owner: {login: 'fro-bot'},
+                name: 'retry-repo-b',
+                archived: false,
+                private: true,
+                node_id: RETRY_NODE_ID,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // Both entries must attempt issues.create because the first one failed
+    expect(issuesCreate).toHaveBeenCalledTimes(2)
+    // duplicatesSkipped must NOT be incremented for a failed-then-retry case
+    expect(result.visibilityTransitionDuplicatesSkipped).toBe(0)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A transient ensureLabelsExist failure must not poison the per-run label cache
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile visibility-transition: transient label-check failure does not poison cache', () => {
+  const LABEL_NODE_ID_A = 'R_kgDOLabelA'
+  const LABEL_NODE_ID_B = 'R_kgDOLabelB'
+
+  it('second transition issue triggers a fresh ensureLabelsExist when first call returns empty set', async () => {
+    let getLabelCallCount = 0
+    // First call per-label returns 500 (label confirmed set will be empty); second call succeeds
+    const issuesGetLabel = vi.fn(async () => {
+      getLabelCallCount += 1
+      if (getLabelCallCount <= 2) {
+        // First two calls (for the two labels on first issue) → fail
+        const err = Object.assign(new Error('transient'), {status: 500})
+        throw err
+      }
+      return {data: {name: 'label'}}
+    })
+    const issuesCreate = vi.fn(async () => ({data: {number: 42}}))
+    const paginateMock = vi.fn(async () => [])
+
+    await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+          issuesGetLabel,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'label-repo-a',
+                node_id: LABEL_NODE_ID_A,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'label-repo-b',
+                node_id: LABEL_NODE_ID_B,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'label-repo-a',
+                archived: false,
+                private: true,
+                node_id: LABEL_NODE_ID_A,
+              },
+              {
+                owner: {login: 'fro-bot'},
+                name: 'label-repo-b',
+                archived: false,
+                private: true,
+                node_id: LABEL_NODE_ID_B,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // getLabel should be called more than 2 times — the second issue must retry label check
+    // (cache was not poisoned by the empty first result)
+    expect(issuesGetLabel.mock.calls.length).toBeGreaterThan(2)
+  })
+})
+
+describe('handleReconcile visibility-transition: partial label confirmation is not cached', () => {
+  const LABEL_NODE_ID_C = 'R_kgDOLabelC'
+  const LABEL_NODE_ID_D = 'R_kgDOLabelD'
+
+  it('second transition issue retries ensureLabelsExist when first call confirms only a subset of labels', async () => {
+    // Tracks which label names getLabel has been called for, in order
+    const getLabelCalls: string[] = []
+
+    // First label (VISIBILITY_TRANSITION_LABEL) always succeeds immediately.
+    // Second label (INTEGRITY_ALERT_LABEL) fails with a transient 500 on the first call
+    // (so ensureLabelsExist returns size=1 on issue 1 — a partial set).
+    // On the second issue's preflight, both labels should be queried again.
+    const issuesGetLabel = vi.fn(async (params: unknown) => {
+      const {name} = params as {owner: string; repo: string; name: string}
+      getLabelCalls.push(name)
+      const callIndexForThisLabel = getLabelCalls.filter(n => n === name).length
+      if (name === 'reconcile:integrity-alert' && callIndexForThisLabel === 1) {
+        // Transient failure on first attempt for the second label
+        const err = Object.assign(new Error('transient server error'), {status: 500})
+        throw err
+      }
+      return {data: {name}}
+    })
+    const issuesCreate = vi.fn(async () => ({data: {number: 99}}))
+    const paginateMock = vi.fn(async () => [])
+
+    await handleReconcile(
+      baseParams({
+        appOctokit: mockOctokit({
+          paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+          issuesCreate,
+          issuesGetLabel,
+        }),
+        readMetadata: makeReadMetadata({
+          repos: {
+            version: 1,
+            repos: [
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'partial-label-repo-c',
+                node_id: LABEL_NODE_ID_C,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+              makeEntry({
+                owner: 'fro-bot',
+                name: 'partial-label-repo-d',
+                node_id: LABEL_NODE_ID_D,
+                private: false,
+                onboarding_status: 'onboarded',
+              }),
+            ],
+          },
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'partial-label-repo-c',
+                archived: false,
+                private: true,
+                node_id: LABEL_NODE_ID_C,
+              },
+              {
+                owner: {login: 'fro-bot'},
+                name: 'partial-label-repo-d',
+                archived: false,
+                private: true,
+                node_id: LABEL_NODE_ID_D,
+              },
+            ],
+          }),
+        }),
+      }),
+    )
+
+    // INTEGRITY_ALERT_LABEL must be queried at least twice — once per issue's preflight —
+    // confirming the partial result from issue 1 was NOT cached and issue 2 retried.
+    const integrityLabelCallCount = getLabelCalls.filter(n => n === 'reconcile:integrity-alert').length
+    expect(integrityLabelCallCount).toBeGreaterThanOrEqual(2)
   })
 })

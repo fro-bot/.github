@@ -329,7 +329,7 @@ describe('schemas — rejection cases', () => {
       repos: [
         {
           owner: 'marcusrbrown',
-          name: 'poly',
+          name: 'cart',
           added: '2026-05-05',
           onboarding_status: 'onboarded',
           last_survey_at: '2026-05-06',

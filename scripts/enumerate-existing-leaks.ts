@@ -55,8 +55,8 @@ export interface EnumerateLeaksInput {
  * Detection rules:
  * - **commit-subject**: case-insensitive `includes` match of the canonical `owner/name`
  *   string (slash included). The slash itself prevents substring collisions inside
- *   single-word names — `marcusrbrown/poly` won't match `polymorphism`, because the
- *   search term contains `/` and `polymorphism` does not.
+ *   single-word names — `marcusrbrown/cart` won't match `cartography`, because the
+ *   search term contains `/` and `cartography` does not.
  * - **workflow-run**: matches when the run's `inputs.owner` and `inputs.repo` both
  *   equal the canonical pair (case-sensitive — GitHub stores logins canonically), OR
  *   when the run's display name contains `owner/name` as a substring.
