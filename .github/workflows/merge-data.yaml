@@ -24,6 +24,8 @@ jobs:
 
       - name: ⤵ Checkout Branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0 # full history needed for three-dot diff in promotion privacy check
 
       - name: 📦 Setup
         uses: ./.github/actions/setup
@@ -50,6 +52,18 @@ jobs:
           GRANDFATHER_WIKI_REPOS_DIR: ../knowledge/wiki/repos
         working-directory: data-branch-check
         run: node ../scripts/check-wiki-private-presence.ts
+
+      # Promotion privacy gate: blocks merge if a private repo name appears in the data→main diff.
+      # Design: three-dot diff (origin/main...origin/data) against private node_ids from data's
+      #   repos.yaml — requires full history (fetch-depth: 0 above) and origin/data ref (fetched
+      #   below). FRO_BOT_POLL_PAT is scoped to this step only; git diff needs no token.
+      - name: 🔒 Block private repo names in promotion diff
+        env:
+          FRO_BOT_POLL_PAT: ${{ secrets.FRO_BOT_POLL_PAT }}
+          PROMOTION_REPOS_YAML_PATH: data-branch-check/metadata/repos.yaml
+        run: |
+          git fetch --no-tags --prune origin data
+          node scripts/check-private-leak.ts --promotion
 
       - name: 🔀 Open weekly data merge PR
         env:
