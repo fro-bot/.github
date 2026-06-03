@@ -1612,3 +1612,25 @@ Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 7a49abc3d2d945880cc1db1f
 Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mrbro.dev
+
+## [2026-06-03 10:00] ingest | marcusrbrown/opencode-copilot-delegate
+
+Incremental re-survey of `marcusrbrown/opencode-copilot-delegate` (SHA `f9aaeea`, 2026-06-03; prior `2744ce7`, 2026-05-21). Updated repo page `marcusrbrown--opencode-copilot-delegate.md` (frontmatter source/updated, new Status block, tooling versions, Fro Bot agent pin, release pipeline action version, rewrote Open PRs section, survey-history row) and refreshed its `index.md` entry. No topic/entity/comparison pages warranted updates — [[opencode-plugins]] already reflects the plugin accurately at v0.12.0, and this survey surfaced no structural code change.
+
+Delta from prior survey (SHA `2744ce7`, 2026-05-21):
+
+- **No release and no source-tree change** — still v0.12.0 on npm with the same 4 tools (delegate/output/cancel/resume), same TUI half, same RPC layer. The architectural narrative remains current.
+- Window is pure dependency-update churn (Renovate + Fro Bot agent bumps). Notable pins: **Fro Bot agent v0.44.3 → v0.51.0** (through v0.46.0 #165, v0.48.0 #168, v0.48.1 #171, v0.50.0 #174, v0.51.0 #177); `changesets/action` v1.7.0 → v1.9.0 (#178); `actions/checkout` → v6.0.3; `bfra-me/.github` → v4.16.22; Biome 2.4.15 → 2.4.16; `@github/copilot` CLI 1.0.48 → 1.0.56; `opencode-ai`/`@opencode-ai/plugin` dev pin 1.15.4 → 1.15.13; `@types/node` 24.12.4.
+- **6 workflows on `main` unchanged** (ci, fro-bot, release, renovate, update-repo-settings, copilot-setup-steps). **Fro Bot workflow present and current** — no follow-up draft PR needed.
+- **Open issues unchanged** (#38 integration tests, #26 autoheal report, #25 dependency dashboard). **Open PRs:** new #169 (Biome schema/CLI version sync); the four prior PRs (#127/#130/#134/#135) remain open three weeks later — `@opentui/*` deps still pinned at 0.2.6.
+- No contradictions with prior ingest — all findings confirmed; deltas are additive.
+
+Constraints honored: target treated as untrusted, reads limited to repo metadata, README/manifests, and workflow files via `gh`; edits confined to `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; additive updates only.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA f9aaeead2a756f48d7cd8da0018ddea2cfbfea98)
+
+## [2026-06-03 10:11] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
