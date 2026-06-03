@@ -56,14 +56,16 @@ jobs:
       # Promotion privacy gate: blocks merge if a private repo name appears in the data→main diff.
       # Design: three-dot diff (origin/main...origin/data) against private node_ids from data's
       #   repos.yaml — requires full history (fetch-depth: 0 above) and origin/data ref (fetched
-      #   below). FRO_BOT_POLL_PAT is scoped to this step only; git diff needs no token.
+      #   below). FRO_BOT_POLL_PAT is scoped to the node invocation only; git fetch needs no token.
+      # Split into two steps so FRO_BOT_POLL_PAT never enters the git subprocess environment.
+      - name: 🔒 Fetch data ref for promotion diff (no token)
+        run: git fetch --no-tags --prune origin data
+
       - name: 🔒 Block private repo names in promotion diff
         env:
           FRO_BOT_POLL_PAT: ${{ secrets.FRO_BOT_POLL_PAT }}
           PROMOTION_REPOS_YAML_PATH: data-branch-check/metadata/repos.yaml
-        run: |
-          git fetch --no-tags --prune origin data
-          node scripts/check-private-leak.ts --promotion
+        run: node scripts/check-private-leak.ts --promotion
 
       - name: 🔀 Open weekly data merge PR
         env:
