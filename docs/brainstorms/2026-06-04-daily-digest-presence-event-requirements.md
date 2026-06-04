@@ -108,7 +108,12 @@ alone. On a genuinely quiet day, skip the Discord post entirely. The oversight
   post is made; the oversight issue is still created.
 - **SC3** — The legacy `📣 Notify Discord — daily oversight` webhook step and its
   `discord-notify.ts` invocation are removed from `fro-bot.yaml`; no
-  `discord-notify.ts` callers remain anywhere.
+  `discord-notify.ts` callers remain anywhere. **Sequencing:** this removal must
+  land only *after* the gateway `daily_digest` variant is deployed and the
+  control-plane announce step is live — removing the webhook earlier would leave
+  the daily run with no Discord poster in the gap. The safe order is: gateway
+  ships → control-plane announce step enabled and verified → webhook step removed
+  in the same or a following change.
 - **SC4** — Best-effort: a gateway failure never fails the scheduled oversight
   run (same fail-soft contract as the other announce steps).
 
