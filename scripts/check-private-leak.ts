@@ -88,6 +88,12 @@ const OPERATOR_LOGIN = 'marcusrbrown'
  *    extended headers, and via `diff --git a/X b/Y` when X ≠ Y (rename without content change).
  * 3. **Added content lines** — `+` lines (excluding `+++` headers).
  *
+ * Scope invariant: the *path* of a MODIFIED file (not new/renamed) is not itself a scanned
+ * surface — such a file is caught only if a private token also appears in one of its added `+`
+ * lines. This is correct by construction for `main...data` promotions (wiki pages arrive as
+ * additions; pre-existing paths are grandfathered by the slug gate), but a future caller scanning
+ * a different diff shape must not assume modified-file paths are covered.
+ *
  * Returns which FILES contained a match, never which token matched.
  * Override: if `override.titlePrefixed && override.isOperator` → bypass and return `{ok:true}`.
  */

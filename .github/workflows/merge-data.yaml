@@ -56,9 +56,11 @@ jobs:
       # Promotion privacy gate: blocks merge if a private repo name appears in the data→main diff.
       # Design: three-dot diff (origin/main...origin/data) against private node_ids from data's
       #   repos.yaml — requires full history (fetch-depth: 0 above) and origin/data ref (fetched
-      #   below). FRO_BOT_POLL_PAT is scoped to the node invocation only; git fetch needs no token.
-      # Split into two steps so FRO_BOT_POLL_PAT never enters the git subprocess environment.
-      - name: 🔒 Fetch data ref for promotion diff (no token)
+      #   below). The fetch runs under the default checkout GITHUB_TOKEN (sufficient to reach
+      #   origin/data); the broad-scope FRO_BOT_POLL_PAT is confined to the node step that resolves
+      #   private names. Splitting the steps keeps FRO_BOT_POLL_PAT out of every git subprocess —
+      #   the env-stripping in runPromotionCli enforces the same property for the diff git call.
+      - name: 🔒 Fetch data ref for promotion diff
         run: git fetch --no-tags --prune origin data
 
       - name: 🔒 Block private repo names in promotion diff
