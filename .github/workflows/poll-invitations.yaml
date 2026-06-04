@@ -52,16 +52,6 @@ jobs:
           export EVENT_CONTEXT_JSON
           node scripts/gateway-announce.ts
 
-      - name: 📣 Notify Discord
-        if: steps.poll.outputs.public_invitations_accepted > 0
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.public_invitations_accepted }}
-        run: |
-          node scripts/discord-notify.ts \
-            --message "🌐 Just joined ${INVITATIONS_ACCEPTED} new space(s) on GitHub. The network grows ✨" \
-            --title "New Collaboration"
-
       # Bluesky posting is disabled pending re-evaluation of social channels.
       # The script (scripts/bluesky-post.ts) is intentionally retained for future
       # reactivation; only the step invocation here is gated off via `if: false`.
