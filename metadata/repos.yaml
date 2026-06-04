@@ -146,12 +146,12 @@ repos:
     name: renovate-config
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-23
+    last_survey_at: 2026-06-04
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-06-25
+    next_survey_eligible_at: 2026-07-04
     private: false
     node_id: R_kgDOHRfvyQ
   - owner: marcusrbrown
@@ -206,24 +206,24 @@ repos:
     name: opencode-copilot-delegate
     added: 2026-04-23
     onboarding_status: onboarded
-    last_survey_at: 2026-05-21
+    last_survey_at: 2026-06-03
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-06-23
+    next_survey_eligible_at: 2026-07-05
     private: false
     node_id: R_kgDOSKIp0Q
   - owner: fro-bot
     name: agent
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-05-22
+    last_survey_at: 2026-06-04
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: owned
-    next_survey_eligible_at: 2026-06-08
+    next_survey_eligible_at: 2026-06-21
     private: false
     node_id: R_kgDOQyTMEw
   - owner: fro-bot
@@ -242,12 +242,12 @@ repos:
     name: systematic
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-05-22
+    last_survey_at: 2026-06-04
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: owned
-    next_survey_eligible_at: 2026-06-08
+    next_survey_eligible_at: 2026-06-21
     private: false
     node_id: R_kgDORLx6ew
   - owner: bfra-me

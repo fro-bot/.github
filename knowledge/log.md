@@ -1612,3 +1612,108 @@ Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 7a49abc3d2d945880cc1db1f
 Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mrbro.dev
+
+## [2026-06-03 10:15] ingest | repo:fro-bot/agent
+
+Re-survey of `fro-bot/agent` (SHA `d0f39a2`, v0.51.0, 2026-06-03; prior `8632cf4`, v0.44.3, 2026-05-22). Updated repo page `fro-bot--agent.md` (frontmatter sources/updated/tags, overview table, workspace layout, action inputs, new Workspace Agent + gateway-evolution sections, Renovate constants, dependency table, downstream consumers, workspace-packages table, survey-history row) and its `index.md` entry. No new topic/entity/comparison pages warranted — the deltas are structural feature growth within the existing repo, not a new cross-cutting concept (Hono and Effect remain confined to this repo's daemon/sandbox halves; if a second repo adopts either, an entity page is justified).
+
+Delta from prior survey (v0.44.3 → v0.51.0, seven minors):
+
+- **`apps/workspace-agent` shipped (v0.45.0, #674)** — a Hono HTTP service running *inside* the workspace container on port 9100 (internal `sandbox-net` only). Handles sandboxed git ops so the gateway never touches `docker.sock`. `/clone` is hardened against untrusted input: internally-derived dest paths, `[A-Za-z0-9._-]+` owner/repo validation, `GIT_ASKPASS` token injection (never argv), post-clone realpath escape check, atomic temp-dir rename, 4 KB body cap, 19 distinct error codes. v0.50.0 (#725/#728) built the executor image and provisioned OpenCode model/provider/auth — the `workspace` compose service is no longer a placeholder.
+- **Gateway became a working Discord control plane** — channel↔repo bindings store + GitHub App auth (v0.45.0), `/fro-bot add-project` (v0.46.0), `@fro-bot` mention→OpenCode execution (v0.48.0), sensitive-tool **approval prompts** + boot provider-semantics self-test + opt-in announce/presence endpoint (v0.51.0). Gateway `src/` now `approvals/`, `bindings/`, `discord/`, `execute/`, `github/`, `http/`, `workspace-api/`.
+- **OMO Slim** added as opt-in orchestration (v0.49.0, #722): `enable-omo-slim` input (mutually exclusive with `enable-omo`), `omo-slim-preset` (default `openai`), pinned `DEFAULT_OMO_SLIM_VERSION = '1.1.1'` (stable line, not the 2.0.0-beta channel), fifth Renovate custom regex manager.
+- **Action inputs expanded** — `skip-cache`, `omo-providers`, and a full S3/KMS surface (`s3-key-prefix`, `s3-expected-bucket-owner`, `s3-allow-insecure-endpoint`, `s3-kms-key-id`, `s3-sse`, `aws-region`).
+- **Shared layer relocated** — pinned-version constants now live in `packages/runtime/src/shared/constants.ts`; the action's Layer 0 re-exports from the runtime. Both a root `src/` and `apps/action/src/` coexist (action still ships from root `dist/`); the action's migration into `apps/action` is in progress.
+- **Deps/tooling** — `@aws-sdk/client-s3` 3.1045→3.1057, `tsdown` 0.22.0→0.22.1, Vitest 4.1.6→4.1.7, `@actions/cache` 6.0.0→6.0.1, ESLint 10.3→10.4, `hono` 4.12.23 + `@hono/node-server` 1.19.14 new; Node 24.16.0-alpine in Docker images; `pnpm.overrides` fully migrated to `pnpm-workspace.yaml` (v0.45.0, #665) with `brace-expansion` bumped to >=5.0.6 at v0.51.0 (#734); `vite` pin 8.0.13→8.0.14. Stars 1→2.
+- **Open regression (#741):** at v0.51.0 the workspace egress is broken — mitmproxy on the internal-only `sandbox-net` returns 502 on all outbound, so `/fro-bot add-project` clones fail. Noted on the repo page; tracks the cost of fail-closed proxy posture meeting a network with no permitted egress route.
+- **Fro Bot workflow present and self-hosted** (`fro-bot.yaml` dogfoods `uses: ./`; daily DMR 15:30 UTC, weekly wiki Sun 20:00 UTC). No follow-up draft PR needed.
+- No contradictions with prior ingest — the 2026-05-22 prediction that `services/object-store/` migrated into `@fro-bot/runtime` is reinforced by the shared-constants relocation into runtime.
+
+Survey limited to directory listings, README/AGENTS files, manifests, workflows, and release notes per untrusted-input constraint. Modified only `knowledge/wiki/repos/fro-bot--agent.md`, `knowledge/index.md`, `knowledge/log.md`.
+
+Sources: https://github.com/fro-bot/agent (SHA d0f39a25b443b60e51da709b9d13065d6a62d157)
+
+## [2026-06-03 10:16] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent
+
+## [2026-06-04 09:10] ingest | marcusrbrown/renovate-config
+
+Re-survey of `marcusrbrown/renovate-config` (SHA `499f0ca`, was `3478c88` at 2026-05-23). Additive update to `marcusrbrown--renovate-config.md`. No preset policy change — this was a dependency-churn cycle, not a behavior change.
+
+Key findings:
+
+- **Preset policy stable.** Latest release still `5.2.0`; `default.json` extends/packageRules and the bfra-me base pin `#5.2.1` are byte-identical to the prior survey. `onboarding.json`, `archived-repository.json`, and the self-referential `.github/renovate.json5` (regex manager + postUpgradeTasks) unchanged.
+- **Fro Bot agent jumped v0.44.3 → v0.52.1** (SHA `28cf93a`) — eight Renovate-authored minor bumps (#1338–#1353) in ~12 days, tracking [[fro-bot--agent]]'s release cadence. Runner action pins also advanced: checkout v6.0.3, setup-node v6.4.0, pnpm/action-setup v6.0.8.
+- **bfra-me renovate reusable workflow** v4.16.9 → v4.16.23 (#1337 → #1354).
+- **Tooling bumps:** pnpm 11.1.3 → 11.5.0, eslint 10.4.0 → 10.4.1, eslint-plugin-prettier 5.5.5 → 5.5.6, lint-staged 17.0.5 → 17.0.7. pnpm supply-chain overrides unchanged.
+- **Cross-Project Intelligence focus-list evolved:** the schedule prompt now leads with two of Marcus's other repos selected for agentic-safety / autohealing-strategy intelligence. Both are **private** — names and contents deliberately omitted from the wiki per the public-only invariant. Documented the evolution generically on the repo page.
+- **Open-issue composition drift:** count holds at 6, but the active perpetual issue is now #1314 (a new number), and legacy `Daily Maintenance Report` (#1111) + three `Weekly Maintenance Report — YYYY-MM-DD` issues persist. The autoheal cleanup matcher only sweeps `Daily Autohealing Report — YYYY-MM-DD` dated issues, so these differently-titled legacy reports linger. Flagged as a manual-cleanup / broadened-matcher candidate.
+- Fro Bot workflow present and active — no follow-up draft PR needed.
+
+Survey limited to directory listings, README/AGENTS files, manifests, and workflow files per untrusted-input constraint. Modified only `knowledge/wiki/repos/marcusrbrown--renovate-config.md`, `knowledge/index.md`, `knowledge/log.md`.
+
+Sources: https://github.com/marcusrbrown/renovate-config (SHA 499f0cac43d2077ab5498ed7b213366cbc74e079)
+
+## [2026-06-04 09:08] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-06-04 14:42] ingest | repo:fro-bot/agent
+
+Re-surveyed `fro-bot/agent` at SHA `34abe2abc779e942444df86342956542dbfc6b3c` (was `d0f39a2` @ 2026-06-03). Release jumped v0.51.0 → v0.53.1 (three releases). Updated `knowledge/wiki/repos/fro-bot--agent.md` additively and refreshed the `index.md` catalog entry.
+
+Key findings:
+
+- **New `packages/harness` (`@fro.bot/harness`)** shipped at v0.53.0 (#752) — a published, public, OIDC-trust-published patched-OpenCode CLI built via [cortexkit/orw](https://github.com/cortexkit/orw)'s LLM-merge integration method. It is now "the default OpenCode for Fro Bot," replacing the stock OpenCode download in action setup, and is the workspace's **only published** member (the others are private). Workspace is now **5 members**. Added a full "Harness" section (CLI contract, provenance model, per-platform distribution, carry policy) and a "Build / Publish Pipeline" subsection.
+- **New `harness-release.yaml` workflow** (10 workflows total) — fenced to manual dispatch / `harness-v*` tag. Strong supply-chain posture: read-only build job with **no `id-token`** (untrusted LLM-merge + upstream build), OIDC trusted-publish scoped to a separate job, per-platform `optionalDependencies` injected at publish time to keep `pnpm-lock.yaml` clean. Bootstrap caveat noted (npm trusted publishing requires pre-existing packages).
+- **OpenCode pinned to 1.15.13** (#742, SDK + CLI) to clear the 1.14.42+ `/event` SSE `SyncEvent` regression (upstream #27959). The new event contract (`message.part.updated` / `message.part.delta`) drove the gateway tool-progress migration (#744, v0.52.0); legacy handlers retained as fallback. Renovate caps OpenCode at 1.15.13. `harness.config.json` bases its integration on this same `base_version: 1.15.13`. `DEFAULT_MODEL` documented as `opencode/big-pickle`.
+- **Egress regression #741 resolved** by #747 (v0.52.1) — workspace egress restored + configurable proxy allowlist. Follow-on hardening open as #746 (DNS-rebinding TOCTOU + topology-guard bypass) and #745 (live mitmproxy egress smoke test).
+- **Cold-boot supervisor regression #749 fixed** by #755 (v0.53.1) — prevents the `apps/workspace-agent` OpenCode supervisor cold-boot readiness hang.
+- Open issues 2 → 6, open PRs 5 → 4 (all Renovate/CI dep bumps). Stars steady at 2.
+- Fro Bot workflow present and self-hosted (`fro-bot.yaml` self-references `./`; daily DMR 15:30 UTC, weekly wiki Sun 20:00 UTC) — no follow-up draft PR needed.
+
+Survey limited to directory listings, README/AGENTS files, manifests, constants, and workflow files per untrusted-input constraint. Modified only `knowledge/wiki/repos/fro-bot--agent.md`, `knowledge/index.md`, `knowledge/log.md`.
+
+Sources: https://github.com/fro-bot/agent (SHA 34abe2abc779e942444df86342956542dbfc6b3c)
+
+## [2026-06-04 14:46] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent
+
+## [2026-06-04 15:20] ingest | repo:fro-bot/tokentoilet
+
+Surveyed fro-bot/tokentoilet (SHA `a141424`) and created its repo page. The target is a **public fork** of [[marcusrbrown--tokentoilet]] living under the `fro-bot` account — public, so safe for the wiki per the public-only invariant.
+
+Key findings:
+
+- **Frozen fork, not a divergent project.** Created 2026-04-14, last pushed 2026-04-16, then static. It captures the upstream pre-MVP codebase state (before the Sepolia `/flush` disposal flow merged on the parent in PR #911). No fork-specific divergence beyond version lag was observed in the surveyed surfaces.
+- **~Month behind upstream on every axis.** Fork sits on wagmi v2 / pnpm 10.33.0 / Next 16.1.4 / TS 6.0.2 / ESLint 10.1.0; upstream has since crossed wagmi v2→v3 and pnpm v10→v11 (Next 16.2.6). Storybook alpha-addon drift inherited from upstream.
+- **Fro Bot workflow present** (`fro-bot.yaml`) — requirement satisfied, no missing-workflow follow-up draft needed. But it pins **`fro-bot/agent@v0.37.0`** (SHA `7fa1422`), ~16 minor versions behind [[fro-bot--agent]]'s v0.53.1 and behind upstream's v0.45.0. Daily schedule (`30 3 * * *`), full PR-review + five-category autoheal prompts. The actionable gap is the stale agent pin and the open question of whether the fork's automation is intentionally live.
+- **Doc drift:** `readme.md`/`mvp.md` badges advertise Next 14 / TS 5.7 / Tailwind 3.4 — stale by two major Next versions vs the real `package.json` (Next 16 / TS 6 / Tailwind 4). Upstream-inherited, not fork-introduced. No license file (inherits upstream's no-license state).
+
+Touched pages: created `knowledge/wiki/repos/fro-bot--tokentoilet.md`; cross-linked [[marcusrbrown--tokentoilet]] (fork note + `related` + source); added the fork to [[web3-defi]] repositories list; cataloged in `knowledge/index.md`. Modified only `knowledge/wiki/**`, `knowledge/index.md`, and `knowledge/log.md`. Survey limited to directory listings, README, manifest, and workflow files per untrusted-input constraint.
+
+Sources: https://github.com/fro-bot/tokentoilet (SHA a141424e89c133a3c8e1a7544f31193afc5af21c)
+
+## [2026-06-04 15:19] ingest | repo:fro-bot/tokentoilet
+
+Surveyed fro-bot/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/tokentoilet
+
+## [2026-06-04 16:00] maintenance | privacy-gate:wiki-attribution
+
+Removed the `fro-bot--tokentoilet` wiki page. `fro-bot/tokentoilet` has no entry in `metadata/repos.yaml`, so `check-wiki-private-presence.ts` flagged the page as an `unattributable-page` and fail-closed the data→main promotion. An unattributable wiki page is a privacy leak by the gate's contract regardless of the underlying repo's actual visibility — the gate cannot prove the source is public without a `private: false` entry.
+
+Removed: deleted `knowledge/wiki/repos/fro-bot--tokentoilet.md`; dropped the catalog line from `knowledge/index.md`; removed the fork note + `related` entry from [[marcusrbrown--tokentoilet]]; removed the repositories-list entry from [[web3-defi]]. The prior survey entries above are left intact as chronological record; their `fro-bot--tokentoilet` mentions are backtick file-path text, not live wikilinks, so no broken links remain.
+
+Verified: ran the gate against the data tree (grandfather = main wiki) — `no private wiki leaks detected`, exit 0. With the page restored the gate reports `Leak count: 1`, confirming the orphan was the sole leak. Did not touch `metadata/repos.yaml` or anything outside `knowledge/`.
+
+Sources: scripts/check-wiki-private-presence.ts

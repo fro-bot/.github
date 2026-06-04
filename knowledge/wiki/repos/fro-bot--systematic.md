@@ -2,7 +2,7 @@
 type: repo
 title: "fro-bot/systematic"
 created: 2026-05-07
-updated: 2026-05-22
+updated: 2026-06-04
 sources:
   - url: https://github.com/fro-bot/systematic
     sha: 73fa108
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/fro-bot/systematic
     sha: 12cae87
     accessed: 2026-05-22
+  - url: https://github.com/fro-bot/systematic
+    sha: 33cc55a
+    accessed: 2026-06-04
 tags: [documentation, github-pages, astro, starlight, opencode, plugin, ocx, json-schema]
 related:
   - marcusrbrown--systematic
@@ -25,7 +28,7 @@ Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Star
 | Attribute       | Value                                                |
 | --------------- | ---------------------------------------------------- |
 | Created         | 2026-02-09                                           |
-| Last push       | 2026-05-21                                           |
+| Last push       | 2026-06-04                                           |
 | Default branch  | `gh-pages`                                           |
 | Language        | HTML (static build output)                           |
 | License         | None specified                                       |
@@ -33,6 +36,7 @@ Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Star
 | Open issues     | 1 (+ 1 open PR)                                      |
 | Pages URL       | https://fro.bot/systematic/                          |
 | Visibility      | Public                                               |
+| Description     | "Documentation site for @marcusrbrown/systematic" (added since the 2026-05-22 survey; the repo previously carried no description) |
 
 ## Purpose
 
@@ -51,13 +55,15 @@ The deploy workflow lives in `marcusrbrown/systematic` (the `docs.yaml` workflow
 The `gh-pages` branch contains the built Starlight/Astro static site:
 
 - `index.html` — Landing page
-- `404.html` — Starlight not-found page (new since prior survey)
+- `404.html` — Starlight not-found page (added 2026-05-22 survey)
+- `favicon.svg` — Site favicon (new since the 2026-05-22 survey)
 - `_astro/` — Bundled CSS, JS, and image assets
 - `components/` — OCX component pages (one per agent/skill)
 - `getting-started/` — Getting started guides
 - `guides/` — Philosophy, main loop, agent install, conversion guides
+- `privacy/` — Privacy policy page (`privacy/index.html`, new since the 2026-05-22 survey)
 - `reference/` — Generated reference pages for skills and agents
-- `schemas/` — Hosted JSON Schemas for the user config file (new since prior survey)
+- `schemas/` — Hosted JSON Schemas for the user config file (added 2026-05-22 survey)
 - `pagefind/` — Client-side search index
 - `.well-known/ocx.json` — OCX registry pointer (`{"version":1,"registry":"/systematic/index.json"}`)
 - `index.json` — OCX component registry for `ocx` CLI installation
@@ -69,17 +75,17 @@ The `gh-pages` branch contains the built Starlight/Astro static site:
 
 The `.well-known/ocx.json` file points to the OCX component registry at `/systematic/index.json`. This enables the `ocx` CLI to discover and install individual skills and agents from the documentation site URL. The registry uses V2 schema (since `@fro.bot/systematic` v2.6.0).
 
-As of the 2026-05-22 survey, `index.json` advertises:
+As of the 2026-06-04 survey, `index.json` advertises:
 
 | Field        | Value                                                        |
 | ------------ | ------------------------------------------------------------ |
 | `name`       | `Systematic`                                                 |
 | `namespace`  | `systematic`                                                 |
-| `version`    | `2.20.6` (up from v2.7.3 at the prior survey — see [[marcusrbrown--systematic]] for source-side release history) |
+| `version`    | `2.24.0` (up from v2.20.6 at the 2026-05-22 survey — see [[marcusrbrown--systematic]] for source-side release history; this now matches the latest source release v2.24.0) |
 | `author`     | `Marcus R. Brown <human@fro.bot>`                            |
 | `components` | 103 total                                                    |
 
-Component breakdown:
+Component breakdown (unchanged since the 2026-05-22 survey):
 
 | Type      | Count |
 | --------- | ----- |
@@ -89,7 +95,7 @@ Component breakdown:
 | `profile` | 2     |
 | `plugin`  | 1     |
 
-The `bundle` and `profile` types are new since the prior survey — V2 registry capabilities now surface in the deployed artifact.
+The `bundle` and `profile` types (V2 registry capabilities) were new in the 2026-05-22 survey. The v2.20.6 → v2.24.0 advance carried no net component-count change — the v2.21+ launch-surface and release-automation work on the source repo was content/tooling churn rather than component additions or removals.
 
 ## Hosted JSON Schemas (new in this survey)
 
@@ -151,7 +157,22 @@ The documentation build pipeline flows: `marcusrbrown/systematic` → Astro buil
 
 Based on commit history, deployments track releases of `@fro.bot/systematic`. Recent activity is markedly bursty — multiple deploys per day during active development windows on the source repo, suggesting CI fans out per merge rather than per release tag.
 
-Latest 10 deploys observed on 2026-05-22 (source SHAs are the `marcusrbrown/systematic` commit each deploy was built from):
+Latest deploys observed on 2026-06-04 (source SHAs are the `marcusrbrown/systematic` commit each deploy was built from). Cadence cooled relative to the May burst — deploys now track discrete merge windows rather than firing many times per day:
+
+| Date (UTC)         | gh-pages SHA | Source SHA  |
+| ------------------ | ------------ | ----------- |
+| 2026-06-04 06:34   | `33cc55a`    | `9914b6c`   |
+| 2026-05-30 15:52   | `6e9b231`    | `1594a7e`   |
+| 2026-05-30 02:56   | `08eb5f6`    | `7a91b88`   |
+| 2026-05-30 01:05   | `96a40f2`    | `a958aeb`   |
+| 2026-05-27 05:38   | `a056444`    | `1065d83`   |
+| 2026-05-27 05:19   | `335fce6`    | `357107e`   |
+| 2026-05-26 23:15   | `fc81e43`    | `0a75480`   |
+| 2026-05-24 00:20   | `c4362a2`    | `5568ffc`   |
+| 2026-05-24 00:05   | `d6b384e`    | `5dc7101`   |
+| 2026-05-23 23:59   | `b4d05ef`    | `d0c6486`   |
+
+Deploys observed on the 2026-05-22 survey:
 
 | Date (UTC)         | gh-pages SHA | Source SHA  |
 | ------------------ | ------------ | ----------- |
@@ -184,3 +205,4 @@ Earlier deploys remain documented from the prior survey:
 | ---------- | ---------- | ------------------------ |
 | 2026-05-07 | `73fa108`  | Initial survey           |
 | 2026-05-22 | `12cae87`  | Registry advanced v2.7.3 → v2.20.6; 103 components (51 agents, 47 skills, 2 bundles, 2 profiles, 1 plugin); `schemas/{latest,v2}/systematic-config.schema.json` now hosted; `404.html` and `og-image.png` added; deploy cadence visibly intensified |
+| 2026-06-04 | `33cc55a`  | Registry advanced v2.20.6 → v2.24.0 (now matches latest source release); component counts unchanged (103: 51/47/2/2/1); `favicon.svg` and `privacy/index.html` added; repo description set to "Documentation site for @marcusrbrown/systematic"; schema `$id`/shape and `.well-known/ocx.json` unchanged; deploy cadence cooled from the May burst; no Fro Bot workflow (still expected); issue #1 and PR #2 still open |

@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/tokentoilet"
 created: 2026-04-18
-updated: 2026-05-28
+updated: 2026-06-04
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
