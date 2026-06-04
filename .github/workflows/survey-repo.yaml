@@ -129,6 +129,33 @@ jobs:
             git restore --source FETCH_HEAD --worktree -- knowledge
           fi
 
+      # Gate: only repos already tracked in metadata/repos.yaml may have a wiki page
+      # written to the data branch. A page for an un-onboarded repo would be
+      # unattributable to the promotion privacy gate and would block data -> main.
+      #
+      # Metadata overlay: when the data branch exists, fetch its metadata/repos.yaml
+      # (authoritative runtime state) before running the check. If the fetch or restore
+      # fails (e.g. data branch absent, network blip), the script runs against the
+      # checked-out (main) metadata instead. The private===false predicate in
+      # publicRepoEntryExists keeps this fallback fail-safe: only entries with explicit
+      # private===false in main's promoted metadata can yield onboarded=true, so a
+      # missing data branch cannot silently admit an un-promotable repo.
+      #
+      # The node script always runs and always emits onboarded=true/false — it never
+      # hard-fails — so a git error here produces a clean onboarded=false skip rather
+      # than a red job for a legitimately un-onboarded manual dispatch.
+      - name: Check repo onboarded
+        id: onboarded
+        env:
+          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
+          REPO_NAME: ${{ steps.resolve.outputs.repo }}
+        run: |
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch origin data || true
+            git restore --source FETCH_HEAD --worktree -- metadata || true
+          fi
+          node scripts/check-repo-onboarded.ts
+
       - name: Capture wiki baseline
         id: wiki-baseline
         run: |
@@ -240,7 +267,8 @@ jobs:
 
       - name: Commit wiki ingest to data branch
         id: wiki-commit
-        if: steps.wiki-changes.outputs.changed == 'true' && steps.recheck.conclusion == 'success'
+        if: steps.wiki-changes.outputs.changed == 'true' && steps.recheck.conclusion == 'success' &&
+          steps.onboarded.outputs.onboarded == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
           WIKI_OPERATION: survey
@@ -290,6 +318,7 @@ jobs:
         if: >-
           ${{ !cancelled() && steps.recheck.conclusion == 'success' &&
           steps.survey-agent.conclusion == 'success' &&
+          steps.onboarded.outputs.onboarded == 'true' &&
           (steps.wiki-commit.conclusion == 'success' || steps.wiki-commit.conclusion == 'skipped') }}
         env:
           EVENT_TYPE: survey_completed
