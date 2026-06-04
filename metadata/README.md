@@ -139,15 +139,28 @@ PAT split summary:
 
 ### Workflow secret mapping
 
-| Workflow                | Secrets passed (explicit, not inherited)                                |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `fro-bot.yaml`          | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG` |
-| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`)                            |
-| `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                            |
-| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT` only                                                 |
-| `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)               |
-| `reconcile-repos.yaml`  | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`       |
-| `update-metadata.yaml`  | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`                            |
+| Workflow                | Secrets passed (explicit, not inherited)                                                |
+| ----------------------- | --------------------------------------------------------------------------------------- |
+| `fro-bot.yaml`          | `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG`                 |
+| `fro-bot-autoheal.yaml` | Same 4 (via reusable call to `fro-bot.yaml`)                                            |
+| `apply-branding.yaml`   | Same 4 (via reusable call to `fro-bot.yaml`)                                            |
+| `poll-invitations.yaml` | `FRO_BOT_POLL_PAT`, `GATEWAY_WEBHOOK_SECRET` (presence)                                 |
+| `survey-repo.yaml`      | `FRO_BOT_PAT`, `FRO_BOT_POLL_PAT`, `APPLICATION_*`, `GATEWAY_WEBHOOK_SECRET` (presence) |
+| `merge-data.yaml`       | `GITHUB_TOKEN` (auto-provisioned, job-scoped permissions)                               |
+| `reconcile-repos.yaml`  | `FRO_BOT_POLL_PAT` + `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`                       |
+| `update-metadata.yaml`  | `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`                                            |
+
+### Gateway presence (Discord)
+
+`survey-repo.yaml` and `poll-invitations.yaml` post in-character event announcements to the Fro Bot gateway, which relays them into Fronomenal Discord as the Fro Bot user. These steps are best-effort: they never fail the workflow, and they stay silent unless the gateway is configured.
+
+| Name                        | Type     | Purpose                                                 |
+| --------------------------- | -------- | ------------------------------------------------------- |
+| `GATEWAY_WEBHOOK_SECRET`    | secret   | HMAC-SHA256 signing key for the announce payload        |
+| `GATEWAY_PRESENCE_URL`      | variable | Gateway `POST /v1/announce` endpoint URL                |
+| `GATEWAY_ANNOUNCE_DISABLED` | variable | Kill switch — any truthy value mutes all announce POSTs |
+
+The gateway endpoint is opt-in: it accepts announcements only when the gateway deployment itself has both its webhook secret and presence channel configured. Until `GATEWAY_PRESENCE_URL` and `GATEWAY_WEBHOOK_SECRET` are set here, the announce steps log a skip and exit cleanly.
 
 ## Editing metadata files
 

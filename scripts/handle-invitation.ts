@@ -404,12 +404,23 @@ function invitationCommitMessage(target: {owner: string; repo: string}): string 
   return `chore(metadata): add ${target.owner}/${target.repo} from invitation polling`
 }
 
+function filterPublicAcceptedInvitations(processed: readonly InvitationProcessResult[]): AcceptedInvitationResult[] {
+  return processed.filter(
+    (result): result is AcceptedInvitationResult => result.status === 'accepted' && result.owner !== REDACTED_OWNER,
+  )
+}
+
 export function countPublicAcceptedInvitations(processed: readonly InvitationProcessResult[]): number {
-  return processed.filter(result => result.status === 'accepted' && result.owner !== REDACTED_OWNER).length
+  return filterPublicAcceptedInvitations(processed).length
 }
 
 export function formatInvitationGithubOutput(processed: readonly InvitationProcessResult[]): string {
-  return `public_invitations_accepted=${countPublicAcceptedInvitations(processed)}\n`
+  const publicAccepted = filterPublicAcceptedInvitations(processed)
+  const repos = publicAccepted.map(result => ({owner: result.owner, name: result.repo}))
+  return (
+    `public_invitations_accepted=${publicAccepted.length}\n` +
+    `public_invitations_accepted_repos=${JSON.stringify(repos)}\n`
+  )
 }
 
 function sanitizePrivateInvitationError(message: string, nodeIdOrRedacted: string): string {
