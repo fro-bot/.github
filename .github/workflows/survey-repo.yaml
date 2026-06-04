@@ -306,12 +306,14 @@ jobs:
           GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
           GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
           GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
+          WIKI_PAGES_CHANGED: ${{ steps.wiki-commit.outputs.pages_changed || '0' }}
         run: |
           EVENT_CONTEXT_JSON="$(jq -nc \
             --arg owner "$REPO_OWNER" \
             --arg repo "$REPO_NAME" \
             --arg slug "$REPO_SLUG" \
-            '{owner: $owner, repo: $repo, slug: $slug, wiki_pages_changed: 0}')"
+            --argjson pages "${WIKI_PAGES_CHANGED:-0}" \
+            '{owner: $owner, repo: $repo, slug: $slug, wiki_pages_changed: $pages}')"
           export EVENT_CONTEXT_JSON
           node scripts/gateway-announce.ts
 
