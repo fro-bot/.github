@@ -3,6 +3,12 @@ import process from 'node:process'
 
 export type EventType = 'survey_completed' | 'invitation_accepted'
 
+const VALID_EVENT_TYPES = new Set<string>(['survey_completed', 'invitation_accepted'])
+
+export function isEventType(value: string): value is EventType {
+  return VALID_EVENT_TYPES.has(value)
+}
+
 export interface AnnounceParams {
   eventType: EventType
   context: Record<string, unknown>
@@ -18,12 +24,15 @@ export interface AnnounceParams {
   fetchImpl?: typeof globalThis.fetch
   /** Override the sleep implementation. Defaults to a real 5s sleep. */
   sleep?: (ms: number) => Promise<void>
+  /** Per-attempt fetch timeout in ms. Defaults to 10000. */
+  timeoutMs?: number
 }
 
 export type AnnounceResult =
   | {posted: true; status: number}
   | {posted: false; skipped: 'kill-switch' | 'missing-config'}
-  | {posted: false; status?: number; error?: string}
+  | {posted: false; failure: 'http'; status: number}
+  | {posted: false; failure: 'network'}
 
 async function defaultSleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -31,6 +40,11 @@ async function defaultSleep(ms: number): Promise<void> {
 
 function hmacSha256Hex(secret: string, message: string): string {
   return createHmac('sha256', secret).update(message).digest('hex')
+}
+
+function isKillSwitchActive(raw: string | undefined): boolean {
+  const ks = (raw ?? '').trim().toLowerCase()
+  return ks !== '' && ks !== 'false' && ks !== '0'
 }
 
 /**
@@ -44,8 +58,8 @@ function hmacSha256Hex(secret: string, message: string): string {
  * exit 0 so announce failures never fail a workflow.
  */
 export async function announce(params: AnnounceParams): Promise<AnnounceResult> {
-  const killSwitch = params.killSwitch ?? process.env.GATEWAY_ANNOUNCE_DISABLED
-  if (killSwitch !== undefined && killSwitch !== '' && killSwitch !== 'false' && killSwitch !== '0') {
+  const killSwitchRaw = params.killSwitch ?? process.env.GATEWAY_ANNOUNCE_DISABLED
+  if (isKillSwitchActive(killSwitchRaw)) {
     process.stderr.write('gateway-announce: kill switch active; skipping POST\n')
     return {posted: false, skipped: 'kill-switch'}
   }
@@ -63,6 +77,7 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
   const getNow = params.now ?? (() => new Date().toISOString())
   const fetchImpl = params.fetchImpl ?? globalThis.fetch
   const sleep = params.sleep ?? defaultSleep
+  const timeoutMs = params.timeoutMs ?? 10_000
 
   // Capture timestamp ONCE — drives both fired_at and X-Gateway-Timestamp header.
   const ts = getNow()
@@ -87,13 +102,14 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
     'X-Gateway-Timestamp': ts,
   }
 
-  const doPost = async (): Promise<Response> => fetchImpl(url, {method: 'POST', headers, body})
+  const doPost = async (): Promise<Response> =>
+    fetchImpl(url, {method: 'POST', headers, body, signal: AbortSignal.timeout(timeoutMs)})
 
   let res: Response
   try {
     res = await doPost()
   } catch {
-    // Network error on first attempt — retry once.
+    // Network error or timeout on first attempt — retry once.
     await sleep(5000)
     try {
       res = await doPost()
@@ -103,7 +119,7 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
       process.stderr.write(
         `gateway-announce: event_type=${params.eventType} error=network-error detail=${errMsg.slice(0, 80)}\n`,
       )
-      return {posted: false, error: 'network-error'}
+      return {posted: false, failure: 'network'}
     }
   }
 
@@ -123,7 +139,7 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
       process.stderr.write(
         `gateway-announce: event_type=${params.eventType} status=${firstStatus} retry=network-error detail=${errMsg.slice(0, 80)}\n`,
       )
-      return {posted: false, status: firstStatus, error: 'network-error'}
+      return {posted: false, failure: 'network'}
     }
 
     if (retryRes.status >= 200 && retryRes.status < 300) {
@@ -132,27 +148,41 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
 
     // Redact: log only event type + coarse status, never secret/sig/body/context.repos.
     process.stderr.write(`gateway-announce: event_type=${params.eventType} status=${retryRes.status} posted=false\n`)
-    return {posted: false, status: retryRes.status}
+    return {posted: false, failure: 'http', status: retryRes.status}
   }
 
   // 4xx — terminal, no retry.
   process.stderr.write(`gateway-announce: event_type=${params.eventType} status=${res.status} posted=false\n`)
-  return {posted: false, status: res.status}
+  return {posted: false, failure: 'http', status: res.status}
 }
 
 async function main(): Promise<void> {
+  // Kill-switch check before any parsing — mutes cleanly even if env vars are missing.
+  const killSwitchRaw = process.env.GATEWAY_ANNOUNCE_DISABLED
+  if (isKillSwitchActive(killSwitchRaw)) {
+    process.stderr.write('gateway-announce: kill switch active; skipping POST\n')
+    process.stdout.write(`${JSON.stringify({posted: false, skipped: 'kill-switch'})}\n`)
+    process.exit(0)
+  }
+
   const eventType = process.env.EVENT_TYPE
   const contextJson = process.env.EVENT_CONTEXT_JSON
 
   if (eventType === undefined || eventType === '') {
     process.stderr.write('gateway-announce: EVENT_TYPE not set\n')
-    process.stdout.write(`${JSON.stringify({posted: false, error: 'missing-event-type'})}\n`)
+    process.stdout.write(`${JSON.stringify({posted: false, failure: 'missing-event-type'})}\n`)
+    process.exit(0)
+  }
+
+  if (!isEventType(eventType)) {
+    process.stderr.write(`gateway-announce: EVENT_TYPE is not a valid event type class\n`)
+    process.stdout.write(`${JSON.stringify({posted: false, failure: 'invalid-event-type'})}\n`)
     process.exit(0)
   }
 
   if (contextJson === undefined || contextJson === '') {
     process.stderr.write('gateway-announce: EVENT_CONTEXT_JSON not set\n')
-    process.stdout.write(`${JSON.stringify({posted: false, error: 'missing-context'})}\n`)
+    process.stdout.write(`${JSON.stringify({posted: false, failure: 'missing-context'})}\n`)
     process.exit(0)
   }
 
@@ -166,12 +196,12 @@ async function main(): Promise<void> {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     process.stderr.write(`gateway-announce: malformed EVENT_CONTEXT_JSON: ${detail}\n`)
-    process.stdout.write(`${JSON.stringify({posted: false, error: 'malformed-context'})}\n`)
+    process.stdout.write(`${JSON.stringify({posted: false, failure: 'malformed-context'})}\n`)
     process.exit(0)
   }
 
   const result = await announce({
-    eventType: eventType as EventType,
+    eventType,
     context,
   })
 

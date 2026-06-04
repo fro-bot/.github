@@ -3,11 +3,7 @@ import {createHmac} from 'node:crypto'
 import process from 'node:process'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-const modulePromise: Promise<{
-  announce: typeof import('./gateway-announce.js').announce
-}> = import(`./gateway-announce${'.js'}`)
-const {announce} = await modulePromise
+import {announce, isEventType} from './gateway-announce.ts'
 
 // Helpers
 const TEST_URL = 'https://gateway.example.com/v1/announce'
@@ -190,7 +186,7 @@ describe('announce', () => {
 
   // ─── Two consecutive 5xx ──────────────────────────────────────────────────
 
-  it('two consecutive 5xx: returns posted:false, no secret or sig in stderr', async () => {
+  it('two consecutive 5xx: returns posted:false with failure:http, no secret or sig in stderr', async () => {
     const fetchImpl = makeStatusFetch(503, 503)
     const sleepSpy = vi.fn(noSleep)
 
@@ -207,6 +203,8 @@ describe('announce', () => {
     )
 
     expect((result as {posted: boolean}).posted).toBe(false)
+    expect((result as {posted: boolean; failure?: string}).failure).toBe('http')
+    expect((result as {posted: boolean; status?: number}).status).toBe(503)
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     expect(sleepSpy).toHaveBeenCalledOnce()
 
@@ -219,7 +217,7 @@ describe('announce', () => {
 
   // ─── Network throw twice ──────────────────────────────────────────────────
 
-  it('network throw twice: retried once, returns posted:false with error=network-error', async () => {
+  it('network throw twice: retried once, returns posted:false with failure:network', async () => {
     const netErr = new Error('ECONNREFUSED')
     const fetchImpl = vi.fn().mockRejectedValue(netErr) as unknown as typeof globalThis.fetch
     const sleepSpy = vi.fn(noSleep)
@@ -234,15 +232,15 @@ describe('announce', () => {
       sleep: sleepSpy,
     })
 
-    expect((result as {posted: boolean; error?: string}).posted).toBe(false)
-    expect((result as {posted: boolean; error?: string}).error).toBe('network-error')
+    expect((result as {posted: boolean}).posted).toBe(false)
+    expect((result as {posted: boolean; failure?: string}).failure).toBe('network')
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     expect(sleepSpy).toHaveBeenCalledOnce()
   })
 
   // ─── 4xx → no retry ───────────────────────────────────────────────────────
 
-  it.each([400, 401, 429])('status %i: no retry, returns posted:false', async status => {
+  it.each([400, 401, 429])('status %i: no retry, returns posted:false with failure:http', async status => {
     const fetchImpl = makeStatusFetch(status)
 
     const result = await announce({
@@ -255,7 +253,8 @@ describe('announce', () => {
       sleep: noSleep,
     })
 
-    expect((result as {posted: boolean; status?: number}).posted).toBe(false)
+    expect((result as {posted: boolean}).posted).toBe(false)
+    expect((result as {posted: boolean; failure?: string}).failure).toBe('http')
     expect((result as {posted: boolean; status?: number}).status).toBe(status)
     expect(fetchImpl).toHaveBeenCalledOnce()
   })
@@ -299,6 +298,42 @@ describe('announce', () => {
     expect(result).toEqual({posted: false, skipped: 'kill-switch'})
     expect(fetchImpl).not.toHaveBeenCalled()
     delete process.env.GATEWAY_ANNOUNCE_DISABLED
+  })
+
+  it('kill switch whitespace: "  false  " is NOT active (whitespace-trimmed)', async () => {
+    const fetchImpl = makeOkFetch(200)
+
+    const result = await announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      now: () => TEST_TS,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      killSwitch: '  false  ',
+      fetchImpl,
+      sleep: noSleep,
+    })
+
+    expect(result).toEqual({posted: true, status: 200})
+    expect(fetchImpl).toHaveBeenCalledOnce()
+  })
+
+  it('kill switch whitespace: "  true  " IS active (whitespace-trimmed)', async () => {
+    const fetchImpl = vi.fn() as unknown as typeof globalThis.fetch
+
+    const result = await announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      now: () => TEST_TS,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      killSwitch: '  true  ',
+      fetchImpl,
+      sleep: noSleep,
+    })
+
+    expect(result).toEqual({posted: false, skipped: 'kill-switch'})
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   // ─── Missing config ───────────────────────────────────────────────────────
@@ -451,5 +486,80 @@ describe('announce', () => {
     expect(result).toEqual({posted: true, status: 200})
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     expect(sleepSpy).toHaveBeenCalledOnce()
+  })
+
+  // ─── isEventType guard ────────────────────────────────────────────────────
+
+  it('isEventType: accepts valid event types', () => {
+    expect(isEventType('survey_completed')).toBe(true)
+    expect(isEventType('invitation_accepted')).toBe(true)
+  })
+
+  it('isEventType: rejects invalid event types', () => {
+    expect(isEventType('')).toBe(false)
+    expect(isEventType('unknown_event')).toBe(false)
+    expect(isEventType('SURVEY_COMPLETED')).toBe(false)
+  })
+
+  // ─── FIX 9: 5xx-then-throw retry test ────────────────────────────────────
+
+  it('503 then network throw: fetch called twice, sleep once, returns failure:network, no secret/sig/body/ts in stderr', async () => {
+    const netErr = new Error('ECONNRESET')
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', {status: 503}))
+      .mockRejectedValueOnce(netErr) as unknown as typeof globalThis.fetch
+    const sleepSpy = vi.fn(noSleep)
+
+    const {result, stderr} = await captureStderr(async () =>
+      announce({
+        eventType: TEST_EVENT_TYPE,
+        context: TEST_CONTEXT,
+        now: () => TEST_TS,
+        secret: TEST_SECRET,
+        url: TEST_URL,
+        fetchImpl,
+        sleep: sleepSpy,
+      }),
+    )
+
+    expect((result as {posted: boolean}).posted).toBe(false)
+    expect((result as {posted: boolean; failure?: string}).failure).toBe('network')
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(sleepSpy).toHaveBeenCalledOnce()
+
+    // Redaction: none of the sensitive material must appear in stderr.
+    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+    const sentBody = init.body as string
+    const actualSig = createHmac('sha256', TEST_SECRET).update(TEST_TS).update('.').update(sentBody).digest('hex')
+
+    expect(stderr).not.toContain(TEST_SECRET)
+    expect(stderr).not.toContain(actualSig)
+    expect(stderr).not.toContain(sentBody)
+    expect(stderr).not.toContain(TEST_TS)
+  })
+
+  it('AbortSignal timeout on both attempts: retried once, returns failure:network, exit-0 path', async () => {
+    // Simulate AbortError (what AbortSignal.timeout fires) on every call.
+    const abortErr = new DOMException('The operation was aborted.', 'AbortError')
+    const fetchImpl = vi.fn().mockRejectedValue(abortErr) as unknown as typeof globalThis.fetch
+    const sleepSpy = vi.fn(noSleep)
+
+    const result = await announce({
+      eventType: TEST_EVENT_TYPE,
+      context: TEST_CONTEXT,
+      now: () => TEST_TS,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      fetchImpl,
+      sleep: sleepSpy,
+      timeoutMs: 1, // tiny timeout for test
+    })
+
+    expect((result as {posted: boolean}).posted).toBe(false)
+    expect((result as {posted: boolean; failure?: string}).failure).toBe('network')
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(sleepSpy).toHaveBeenCalledOnce()
+    // announce never throws — the caller (CLI) always gets a result and exits 0.
   })
 })
