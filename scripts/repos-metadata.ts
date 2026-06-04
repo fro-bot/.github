@@ -405,6 +405,23 @@ export function resetSurveyResult(current: unknown, input: ResetSurveyResultInpu
   }
 }
 
+/**
+ * Pure predicate: returns true iff `metadata/repos.yaml` has an entry whose
+ * `owner` and `name` exactly match the given `owner` and `repo` strings
+ * (case-sensitive, matching how entries are stored and how `recordSurveyResult`
+ * locates them).
+ *
+ * Does NOT throw on a missing entry — that is the whole point of a boolean
+ * predicate. If `current` is not a valid repos file, `assertReposFile` throws
+ * and the caller decides how to handle it (fail-closed).
+ *
+ * Pure: no I/O, no mutation of `current`.
+ */
+export function repoEntryExists(current: unknown, owner: string, repo: string): boolean {
+  assertReposFile(current, 'repos')
+  return current.repos.some(entry => entry.owner === owner && entry.name === repo)
+}
+
 export class RepoEntryNotFoundError extends Error {
   readonly code = 'REPO_ENTRY_NOT_FOUND'
   // Explicit field declarations + assignment in the constructor body, not parameter properties.

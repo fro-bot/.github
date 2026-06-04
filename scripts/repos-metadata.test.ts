@@ -5,6 +5,7 @@ import {
   addRepoEntry,
   computeNextEligibleAt,
   recordSurveyResult,
+  repoEntryExists,
   RepoEntryNotFoundError,
   resetSurveyResult,
 } from './repos-metadata.ts'
@@ -1206,5 +1207,90 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
 
     expect(result.repos[0]?.onboarding_status).toBe('onboarded')
     expect(result.repos[0]?.next_survey_eligible_at).not.toBeNull()
+  })
+})
+
+describe('repoEntryExists', () => {
+  // Happy path: entry present for owner/repo → true
+  it('returns true when an entry exists for the given owner and repo', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project'})],
+    }
+    expect(repoEntryExists(current, 'alice', 'project')).toBe(true)
+  })
+
+  // Edge: entry absent → false
+  it('returns false when no entry exists for the given owner and repo', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project'})],
+    }
+    expect(repoEntryExists(current, 'bob', 'other')).toBe(false)
+  })
+
+  // Edge: empty repos list → false (no crash)
+  it('returns false without throwing when the repos list is empty', () => {
+    expect(repoEntryExists(EMPTY_REPOS, 'alice', 'project')).toBe(false)
+  })
+
+  // Edge: owner matches but name differs → false
+  it('returns false when owner matches but repo name differs', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project'})],
+    }
+    expect(repoEntryExists(current, 'alice', 'other-project')).toBe(false)
+  })
+
+  // Edge: name matches but owner differs → false
+  it('returns false when repo name matches but owner differs', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project'})],
+    }
+    expect(repoEntryExists(current, 'bob', 'project')).toBe(false)
+  })
+
+  // Schema validation: invalid input propagates assertReposFile throw
+  it('throws when current is not a valid ReposFile', () => {
+    expect(() => repoEntryExists(null, 'alice', 'project')).toThrow()
+    expect(() => repoEntryExists({version: 2, repos: []}, 'alice', 'project')).toThrow()
+    expect(() => repoEntryExists({repos: []}, 'alice', 'project')).toThrow()
+  })
+
+  // Case-sensitivity: exact match only
+  it('is case-sensitive — uppercase owner does not match lowercase stored entry', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project'})],
+    }
+    expect(repoEntryExists(current, 'Alice', 'project')).toBe(false)
+    expect(repoEntryExists(current, 'alice', 'Project')).toBe(false)
+  })
+
+  // Multiple entries: finds the right one among many
+  it('returns true for the correct entry when multiple entries exist', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        repoEntry({owner: 'alice', name: 'first'}),
+        repoEntry({owner: 'bob', name: 'second'}),
+        repoEntry({owner: 'carol', name: 'third'}),
+      ],
+    }
+    expect(repoEntryExists(current, 'bob', 'second')).toBe(true)
+    expect(repoEntryExists(current, 'alice', 'second')).toBe(false)
+  })
+
+  // Purity: does not mutate the input
+  it('does not mutate the input ReposFile', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project'})],
+    }
+    const snapshot = structuredClone(current)
+    repoEntryExists(current, 'alice', 'project')
+    expect(current).toEqual(snapshot)
   })
 })
