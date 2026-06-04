@@ -56,9 +56,6 @@ jobs:
     name: Survey Repo
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    outputs:
-      owner: ${{ steps.resolve.outputs.owner }}
-      repo: ${{ steps.resolve.outputs.repo }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
