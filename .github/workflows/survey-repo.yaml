@@ -9,10 +9,6 @@ run-name: Survey Repo
 #
 # Look up node_id with:
 #   gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){id}}' --jq '.data.repository.id'
-#
-# Job outputs:
-#   owner — repository owner, only set after the resolve step verifies isPrivate === false
-#   repo  — repository name, same guarantee
 on:
   workflow_dispatch:
     inputs:
