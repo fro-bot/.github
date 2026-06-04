@@ -33,6 +33,10 @@ export type AnnounceResult =
   | {posted: false; skipped: 'kill-switch' | 'missing-config'}
   | {posted: false; failure: 'http'; status: number}
   | {posted: false; failure: 'network'}
+  | {posted: false; failure: 'missing-event-type'}
+  | {posted: false; failure: 'invalid-event-type'}
+  | {posted: false; failure: 'missing-context'}
+  | {posted: false; failure: 'malformed-context'}
 
 async function defaultSleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -156,34 +160,43 @@ export async function announce(params: AnnounceParams): Promise<AnnounceResult> 
   return {posted: false, failure: 'http', status: res.status}
 }
 
-async function main(): Promise<void> {
+/**
+ * Parse-and-dispatch logic for the CLI entrypoint. Reads from the provided env
+ * map; does NOT call process.exit or read process.env directly.
+ *
+ * Kill-switch is checked first — short-circuits even when EVENT_TYPE /
+ * EVENT_CONTEXT_JSON are absent. Writes structured diagnostics to stderr
+ * (redaction unchanged: event type class + coarse status only).
+ */
+export async function runCli(
+  env: Record<string, string | undefined>,
+  deps?: {announceImpl?: typeof announce},
+): Promise<AnnounceResult> {
+  const announceImpl = deps?.announceImpl ?? announce
+
   // Kill-switch check before any parsing — mutes cleanly even if env vars are missing.
-  const killSwitchRaw = process.env.GATEWAY_ANNOUNCE_DISABLED
-  if (isKillSwitchActive(killSwitchRaw)) {
+  if (isKillSwitchActive(env.GATEWAY_ANNOUNCE_DISABLED)) {
     process.stderr.write('gateway-announce: kill switch active; skipping POST\n')
-    process.stdout.write(`${JSON.stringify({posted: false, skipped: 'kill-switch'})}\n`)
-    process.exit(0)
+    return {posted: false, skipped: 'kill-switch'}
   }
 
-  const eventType = process.env.EVENT_TYPE
-  const contextJson = process.env.EVENT_CONTEXT_JSON
+  const eventType = env.EVENT_TYPE
 
   if (eventType === undefined || eventType === '') {
     process.stderr.write('gateway-announce: EVENT_TYPE not set\n')
-    process.stdout.write(`${JSON.stringify({posted: false, failure: 'missing-event-type'})}\n`)
-    process.exit(0)
+    return {posted: false, failure: 'missing-event-type'}
   }
 
   if (!isEventType(eventType)) {
     process.stderr.write(`gateway-announce: EVENT_TYPE is not a valid event type class\n`)
-    process.stdout.write(`${JSON.stringify({posted: false, failure: 'invalid-event-type'})}\n`)
-    process.exit(0)
+    return {posted: false, failure: 'invalid-event-type'}
   }
+
+  const contextJson = env.EVENT_CONTEXT_JSON
 
   if (contextJson === undefined || contextJson === '') {
     process.stderr.write('gateway-announce: EVENT_CONTEXT_JSON not set\n')
-    process.stdout.write(`${JSON.stringify({posted: false, failure: 'missing-context'})}\n`)
-    process.exit(0)
+    return {posted: false, failure: 'missing-context'}
   }
 
   let context: Record<string, unknown>
@@ -196,15 +209,17 @@ async function main(): Promise<void> {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     process.stderr.write(`gateway-announce: malformed EVENT_CONTEXT_JSON: ${detail}\n`)
-    process.stdout.write(`${JSON.stringify({posted: false, failure: 'malformed-context'})}\n`)
-    process.exit(0)
+    return {posted: false, failure: 'malformed-context'}
   }
 
-  const result = await announce({
+  return announceImpl({
     eventType,
     context,
   })
+}
 
+async function main(): Promise<void> {
+  const result = await runCli(process.env)
   process.stdout.write(`${JSON.stringify(result)}\n`)
   process.exit(0)
 }

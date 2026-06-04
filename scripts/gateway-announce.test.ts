@@ -3,7 +3,7 @@ import {createHmac} from 'node:crypto'
 import process from 'node:process'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
-import {announce, isEventType} from './gateway-announce.ts'
+import {announce, isEventType, runCli, type AnnounceResult} from './gateway-announce.ts'
 
 // Helpers
 const TEST_URL = 'https://gateway.example.com/v1/announce'
@@ -561,5 +561,185 @@ describe('announce', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     expect(sleepSpy).toHaveBeenCalledOnce()
     // announce never throws — the caller (CLI) always gets a result and exits 0.
+  })
+})
+
+describe('runCli', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // ─── Kill switch short-circuits everything ────────────────────────────────
+
+  it('kill switch active: returns skipped:kill-switch, announceImpl not called, short-circuits even without EVENT_TYPE/EVENT_CONTEXT_JSON', async () => {
+    const spy = vi.fn()
+    const {result, stderr} = await captureStderr(async () =>
+      runCli({GATEWAY_ANNOUNCE_DISABLED: 'true'}, {announceImpl: spy as unknown as typeof announce}),
+    )
+
+    expect(result).toEqual({posted: false, skipped: 'kill-switch'})
+    expect(spy).not.toHaveBeenCalled()
+    expect(stderr).toContain('kill switch active')
+  })
+
+  // ─── EVENT_TYPE validation ────────────────────────────────────────────────
+
+  it('missing EVENT_TYPE: returns missing-event-type, announceImpl not called', async () => {
+    const spy = vi.fn()
+
+    const result = await runCli(
+      {EVENT_CONTEXT_JSON: '{"owner":"fro-bot"}'},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual({posted: false, failure: 'missing-event-type'})
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('empty EVENT_TYPE: returns missing-event-type, announceImpl not called', async () => {
+    const spy = vi.fn()
+
+    const result = await runCli(
+      {EVENT_TYPE: '', EVENT_CONTEXT_JSON: '{"owner":"fro-bot"}'},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual({posted: false, failure: 'missing-event-type'})
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('invalid EVENT_TYPE ("bogus"): returns invalid-event-type, announceImpl not called', async () => {
+    const spy = vi.fn()
+
+    const result = await runCli(
+      {EVENT_TYPE: 'bogus', EVENT_CONTEXT_JSON: '{"owner":"fro-bot"}'},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual({posted: false, failure: 'invalid-event-type'})
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  // ─── EVENT_CONTEXT_JSON validation ───────────────────────────────────────
+
+  it('missing EVENT_CONTEXT_JSON: returns missing-context, announceImpl not called', async () => {
+    const spy = vi.fn()
+
+    const result = await runCli({EVENT_TYPE: 'survey_completed'}, {announceImpl: spy as unknown as typeof announce})
+
+    expect(result).toEqual({posted: false, failure: 'missing-context'})
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('empty EVENT_CONTEXT_JSON: returns missing-context, announceImpl not called', async () => {
+    const spy = vi.fn()
+
+    const result = await runCli(
+      {EVENT_TYPE: 'survey_completed', EVENT_CONTEXT_JSON: ''},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual({posted: false, failure: 'missing-context'})
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('malformed EVENT_CONTEXT_JSON ("{not json"): returns malformed-context', async () => {
+    const spy = vi.fn()
+
+    const result = await runCli(
+      {EVENT_TYPE: 'survey_completed', EVENT_CONTEXT_JSON: '{not json'},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual({posted: false, failure: 'malformed-context'})
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('non-object EVENT_CONTEXT_JSON ("[]"): returns malformed-context', async () => {
+    const spy = vi.fn()
+
+    const result = await runCli(
+      {EVENT_TYPE: 'survey_completed', EVENT_CONTEXT_JSON: '[]'},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual({posted: false, failure: 'malformed-context'})
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('non-object EVENT_CONTEXT_JSON ("null"): returns malformed-context', async () => {
+    const spy = vi.fn()
+
+    const result = await runCli(
+      {EVENT_TYPE: 'survey_completed', EVENT_CONTEXT_JSON: 'null'},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual({posted: false, failure: 'malformed-context'})
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('non-object EVENT_CONTEXT_JSON ("42"): returns malformed-context', async () => {
+    const spy = vi.fn()
+
+    const result = await runCli(
+      {EVENT_TYPE: 'survey_completed', EVENT_CONTEXT_JSON: '42'},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual({posted: false, failure: 'malformed-context'})
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  // ─── Happy path: delegates to announceImpl ────────────────────────────────
+
+  it('valid env: announceImpl called once with parsed eventType + context, returns its result', async () => {
+    const expectedResult: AnnounceResult = {posted: true, status: 200}
+    const spy = vi.fn().mockResolvedValue(expectedResult)
+    const ctx = {owner: 'fro-bot', repo: 'test-repo', slug: 'test-slug', wiki_pages_changed: 3}
+
+    const result = await runCli(
+      {EVENT_TYPE: 'survey_completed', EVENT_CONTEXT_JSON: JSON.stringify(ctx)},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual(expectedResult)
+    expect(spy).toHaveBeenCalledOnce()
+    expect(spy).toHaveBeenCalledWith({eventType: 'survey_completed', context: ctx})
+  })
+
+  it('valid env with invitation_accepted: announceImpl called with correct eventType', async () => {
+    const expectedResult: AnnounceResult = {posted: true, status: 201}
+    const spy = vi.fn().mockResolvedValue(expectedResult)
+    const ctx = {owner: 'acme', repo: 'widget', slug: 'acme-widget', wiki_pages_changed: 1}
+
+    const result = await runCli(
+      {EVENT_TYPE: 'invitation_accepted', EVENT_CONTEXT_JSON: JSON.stringify(ctx)},
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual(expectedResult)
+    expect(spy).toHaveBeenCalledWith({eventType: 'invitation_accepted', context: ctx})
+  })
+
+  // ─── Redaction: secret-shaped env values never leak to stderr ────────────
+
+  it('redaction: secret-shaped env value does not appear in stderr on any failure path', async () => {
+    const secretShapedValue = 'ghp_supersecrettoken1234567890abcdef'
+    const spy = vi.fn()
+
+    const {stderr} = await captureStderr(async () =>
+      runCli(
+        {
+          GATEWAY_WEBHOOK_SECRET: secretShapedValue,
+          EVENT_TYPE: 'bogus',
+          EVENT_CONTEXT_JSON: '{"owner":"fro-bot"}',
+        },
+        {announceImpl: spy as unknown as typeof announce},
+      ),
+    )
+
+    expect(stderr).not.toContain(secretShapedValue)
+    expect(spy).not.toHaveBeenCalled()
   })
 })
