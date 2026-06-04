@@ -1662,3 +1662,27 @@ Sources: https://github.com/marcusrbrown/renovate-config (SHA 499f0cac43d2077ab5
 Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-06-04 14:42] ingest | repo:fro-bot/agent
+
+Re-surveyed `fro-bot/agent` at SHA `34abe2abc779e942444df86342956542dbfc6b3c` (was `d0f39a2` @ 2026-06-03). Release jumped v0.51.0 → v0.53.1 (three releases). Updated `knowledge/wiki/repos/fro-bot--agent.md` additively and refreshed the `index.md` catalog entry.
+
+Key findings:
+
+- **New `packages/harness` (`@fro.bot/harness`)** shipped at v0.53.0 (#752) — a published, public, OIDC-trust-published patched-OpenCode CLI built via [cortexkit/orw](https://github.com/cortexkit/orw)'s LLM-merge integration method. It is now "the default OpenCode for Fro Bot," replacing the stock OpenCode download in action setup, and is the workspace's **only published** member (the others are private). Workspace is now **5 members**. Added a full "Harness" section (CLI contract, provenance model, per-platform distribution, carry policy) and a "Build / Publish Pipeline" subsection.
+- **New `harness-release.yaml` workflow** (10 workflows total) — fenced to manual dispatch / `harness-v*` tag. Strong supply-chain posture: read-only build job with **no `id-token`** (untrusted LLM-merge + upstream build), OIDC trusted-publish scoped to a separate job, per-platform `optionalDependencies` injected at publish time to keep `pnpm-lock.yaml` clean. Bootstrap caveat noted (npm trusted publishing requires pre-existing packages).
+- **OpenCode pinned to 1.15.13** (#742, SDK + CLI) to clear the 1.14.42+ `/event` SSE `SyncEvent` regression (upstream #27959). The new event contract (`message.part.updated` / `message.part.delta`) drove the gateway tool-progress migration (#744, v0.52.0); legacy handlers retained as fallback. Renovate caps OpenCode at 1.15.13. `harness.config.json` bases its integration on this same `base_version: 1.15.13`. `DEFAULT_MODEL` documented as `opencode/big-pickle`.
+- **Egress regression #741 resolved** by #747 (v0.52.1) — workspace egress restored + configurable proxy allowlist. Follow-on hardening open as #746 (DNS-rebinding TOCTOU + topology-guard bypass) and #745 (live mitmproxy egress smoke test).
+- **Cold-boot supervisor regression #749 fixed** by #755 (v0.53.1) — prevents the `apps/workspace-agent` OpenCode supervisor cold-boot readiness hang.
+- Open issues 2 → 6, open PRs 5 → 4 (all Renovate/CI dep bumps). Stars steady at 2.
+- Fro Bot workflow present and self-hosted (`fro-bot.yaml` self-references `./`; daily DMR 15:30 UTC, weekly wiki Sun 20:00 UTC) — no follow-up draft PR needed.
+
+Survey limited to directory listings, README/AGENTS files, manifests, constants, and workflow files per untrusted-input constraint. Modified only `knowledge/wiki/repos/fro-bot--agent.md`, `knowledge/index.md`, `knowledge/log.md`.
+
+Sources: https://github.com/fro-bot/agent (SHA 34abe2abc779e942444df86342956542dbfc6b3c)
+
+## [2026-06-04 14:46] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent
