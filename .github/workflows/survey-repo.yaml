@@ -10,7 +10,7 @@ run-name: Survey Repo
 # Look up node_id with:
 #   gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){id}}' --jq '.data.repository.id'
 #
-# Job outputs (consumed by the broadcast job below):
+# Job outputs:
 #   owner — repository owner, only set after the resolve step verifies isPrivate === false
 #   repo  — repository name, same guarantee
 on:
@@ -316,29 +316,3 @@ jobs:
             '{owner: $owner, repo: $repo, slug: $slug, wiki_pages_changed: $pages}')"
           export EVENT_CONTEXT_JSON
           node scripts/gateway-announce.ts
-
-  broadcast:
-    name: Broadcast survey complete
-    needs: survey-repo
-    if: needs.survey-repo.result == 'success'
-    uses: ./.github/workflows/social-broadcast.yaml
-    with:
-      event_type: repo_survey_complete
-      discord_message: >-
-        Just finished surveying **${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }}**.
-        New knowledge ingested into the wiki ✨
-      discord_title: Repo Survey Complete
-      # bluesky_text intentionally omitted — Bluesky step in social-broadcast.yaml
-      # is currently gated off via `if: false`. When revived, restore copy here.
-      # The resolve-and-verify gate has already proven this repo was public
-      # before survey-repo succeeded. private: false is the fail-safe floor;
-      # the broadcast job re-verifies visibility at post time via node_id,
-      # closing the recheck→broadcast queue window.
-      private: false
-      node_id: ${{ inputs.node_id }}
-    secrets:
-      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
-      BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
-      APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
-      APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
