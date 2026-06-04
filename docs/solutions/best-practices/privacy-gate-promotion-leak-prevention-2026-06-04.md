@@ -1,6 +1,8 @@
 ---
 title: Privacy Gate Design for Data→Main Promotion Leak Prevention
 date: 2026-06-04
+last_updated: 2026-06-04
+verified: 2026-06-04
 category: best-practices
 module: github-workflows
 problem_type: best_practice

@@ -1,6 +1,8 @@
 ---
 title: Structured-First Attribution for Public-Allowlist Privacy Gates
 date: 2026-06-04
+last_updated: 2026-06-04
+verified: 2026-06-04
 category: best-practices
 module: github-workflows
 problem_type: best_practice
