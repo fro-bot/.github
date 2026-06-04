@@ -17,8 +17,9 @@ on:
   workflow_dispatch:
     inputs:
       prompt:
-        description: Custom prompt for the Fro Bot agent
-        required: true
+        description: "Custom prompt for the Fro Bot agent (leave empty to run the default daily oversight + autohealing pass)"
+        required: false
+        default: ''
   workflow_call:
     inputs:
       prompt:
@@ -51,7 +52,8 @@ concurrency:
       github.event.issue.number ||
       github.event.pull_request.number ||
       github.event.discussion.number ||
-      github.run_id
+      ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'daily')
+      || github.run_id
     }}
   cancel-in-progress: false
 
@@ -342,9 +344,9 @@ jobs:
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
           TASK_PROMPT: >-
             ${{
-              (github.event_name == 'workflow_dispatch' && (github.event.inputs.prompt || ''))
+              (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
               || inputs.prompt
-              || (github.event_name == 'schedule' && env.SCHEDULE_PROMPT)
+              || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && env.SCHEDULE_PROMPT)
               || (github.event_name == 'pull_request' && env.PR_REVIEW_PROMPT)
               || ''
             }}
