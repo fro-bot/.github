@@ -1,8 +1,8 @@
+import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
-
 import {parse as parseYaml} from 'yaml'
 import {isRecord, makeGhNodeIdResolver} from './private-repo-resolution.ts'
 import {assertReposFile} from './schemas.ts'
@@ -14,10 +14,54 @@ import {computeRepoSlug} from './wiki-slug.ts'
 
 export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly matchedFiles: readonly string[]}
 
+/**
+ * Result of a promotion scan.
+ *
+ * - `{ok: true}` — scan passed (no private tokens found in diff).
+ * - `{ok: false, matchedFiles}` — private token found; matchedFiles lists affected file paths only
+ *   (any path segment containing a private token is redacted to `[REDACTED]`).
+ * - `{ok: false, resolutionFailed: true, failedNodeIds}` — one or more node_ids could not be
+ *   resolved (including access-lost); promotion is blocked fail-closed.
+ */
+export type PromotionScanResult =
+  | {readonly ok: true}
+  | {readonly ok: false; readonly matchedFiles: readonly string[]}
+  | {readonly ok: false; readonly resolutionFailed: true; readonly failedNodeIds: readonly string[]}
+
+export interface PromotionScanInputs {
+  /** Raw YAML text of data branch's metadata/repos.yaml */
+  readonly reposYaml: string
+  /** Injectable resolver — caller wires FRO_BOT_POLL_PAT into makeGhNodeIdResolver(token) */
+  readonly resolver: NodeIdResolver
+  /** Unified diff text (main...data three-dot diff) */
+  readonly diff: string
+}
+
 export interface OverrideOptions {
   readonly titlePrefixed: boolean
   readonly isOperator: boolean
 }
+
+// ---------------------------------------------------------------------------
+// Seam types for CLI testability (Fix E)
+// ---------------------------------------------------------------------------
+
+/**
+ * Injectable git-diff runner. Receives an explicit env so FRO_BOT_POLL_PAT
+ * never reaches the git subprocess (Fix C). Defaults to the real execFileSync.
+ */
+export type GitDiffRunner = (args: string[], env: NodeJS.ProcessEnv) => string
+
+/**
+ * Injectable repos.yaml reader. Defaults to fs.readFile.
+ */
+export type ReposYamlReader = (path: string) => Promise<string>
+
+/**
+ * Injectable resolver factory. Receives the PAT and returns a NodeIdResolver.
+ * Defaults to makeGhNodeIdResolver.
+ */
+export type ResolverFactory = (pat: string) => NodeIdResolver
 
 // ---------------------------------------------------------------------------
 // Operator override
@@ -43,6 +87,12 @@ const OPERATOR_LOGIN = 'marcusrbrown'
  * 2. **Rename/copy destination paths** — detected via `rename to <path>` / `copy to <path>`
  *    extended headers, and via `diff --git a/X b/Y` when X ≠ Y (rename without content change).
  * 3. **Added content lines** — `+` lines (excluding `+++` headers).
+ *
+ * Scope invariant: the *path* of a MODIFIED file (not new/renamed) is not itself a scanned
+ * surface — such a file is caught only if a private token also appears in one of its added `+`
+ * lines. This is correct by construction for `main...data` promotions (wiki pages arrive as
+ * additions; pre-existing paths are grandfathered by the slug gate), but a future caller scanning
+ * a different diff shape must not assume modified-file paths are covered.
  *
  * Returns which FILES contained a match, never which token matched.
  * Override: if `override.titlePrefixed && override.isOperator` → bypass and return `{ok:true}`.
@@ -217,6 +267,296 @@ function postOverrideComment(prNumber: number, author: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Promotion scan — pure testable core
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the private token set from a resolved nameWithOwner string.
+ * Returns [canonical, raw-double-dash, slug] — all carry the owner prefix for specificity.
+ * The raw double-dash form (`owner--name`) is added before the slug so it is always present
+ * even if computeRepoSlug throws. For simple names the raw form equals the slug; for names
+ * with underscores, dots, or uppercase it differs and closes a scan+redaction gap.
+ * Bare name is intentionally excluded (false-positive risk on short names).
+ * Duplicate forms are collapsed via a Set round-trip.
+ */
+function buildTokensForName(nameWithOwner: string): string[] {
+  const slashIndex = nameWithOwner.indexOf('/')
+  if (slashIndex < 1) return []
+  const owner = nameWithOwner.slice(0, slashIndex)
+  const name = nameWithOwner.slice(slashIndex + 1)
+  if (owner === '' || name === '') return []
+  // Raw double-dash form — original chars, no sanitization. Always added first.
+  const rawDoubleDash = `${owner}--${name}`
+  const tokens: string[] = [nameWithOwner, rawDoubleDash]
+  try {
+    tokens.push(computeRepoSlug(owner, name))
+  } catch {
+    // computeRepoSlug throws on empty segments — skip slug form
+  }
+  // Dedup: identical forms (e.g. simple names where raw == slug) don't double up.
+  return [...new Set(tokens)]
+}
+
+/**
+ * Redact any occurrence of a known private token within a file path string.
+ *
+ * Approach: replace each private token (case-insensitive) found in the path with
+ * `[REDACTED]`. This keeps the path structure operator-actionable (directory depth,
+ * extension, surrounding segments are preserved) while never printing the literal
+ * private name. Operators can run `node scripts/resolve-private.ts metadata/repos.yaml`
+ * to map node_ids back to owner/name.
+ */
+function redactPathTokens(filePath: string, privateTokens: readonly string[]): string {
+  let result = filePath
+  for (const token of privateTokens) {
+    // Case-insensitive replacement of the token anywhere in the path.
+    const escaped = token.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)
+    result = result.replaceAll(new RegExp(escaped, 'gi'), '[REDACTED]')
+  }
+  return result
+}
+
+/**
+ * Promotion-mode scan: pure, injectable, testable.
+ *
+ * Resolves private node_ids from repos.yaml content, builds the token set, and
+ * runs `checkPrivateLeak` against the provided diff. The resolver and diff are
+ * both injectable so tests can exercise the full matrix without shelling out.
+ *
+ * Resolution matrix (exhaustive, fail-closed):
+ * - `access-lost` → BLOCK: returns `{ok:false, resolutionFailed:true, failedNodeIds}`.
+ *   Rationale: GitHub GraphQL `node()` returns null for BOTH a deleted repo AND a repo
+ *   the token cannot see. A mis-scoped/expired PAT makes every private repo look
+ *   access-lost → treating it as "skip" would make the gate pass everything (mass
+ *   fail-open). The cost — a genuinely-deleted repo's stale node_id blocks promotion
+ *   until an operator removes it from data's repos.yaml — is the correct tradeoff for
+ *   a privacy gate. Operators can verify and clean up stale entries manually.
+ * - any other failure (transient/auth/rate-limit/unknown) → BLOCK: same result.
+ *   Cannot guarantee a complete scan; block promotion.
+ * - `private:true` entry with missing/empty node_id → BLOCK: included as the sentinel
+ *   string `"<missing-node-id>"` in failedNodeIds (never any owner/name).
+ * - success → include `owner/name` + `owner--slug` in the token set
+ *
+ * Zero private entries → `{ok:true}` immediately (nothing to scan).
+ *
+ * Redaction guarantee: no resolved private name appears in any returned value.
+ * Matched file paths have private tokens replaced with `[REDACTED]`.
+ * The caller (CLI shell) is responsible for redacted stderr output.
+ */
+export async function runPromotionScan(inputs: PromotionScanInputs): Promise<PromotionScanResult> {
+  const {reposYaml, resolver, diff} = inputs
+
+  // Parse repos.yaml and extract private entries.
+  const parsed: unknown = parseYaml(reposYaml)
+  assertReposFile(parsed)
+  const privateEntries = parsed.repos.filter(r => r.private === true)
+
+  // Zero private entries → nothing to scan.
+  if (privateEntries.length === 0) {
+    return {ok: true}
+  }
+
+  // Fix B: any private entry with missing/empty node_id is a blocking condition.
+  // We cannot scan what we cannot identify — fail closed.
+  const missingNodeIdCount = privateEntries.filter(r => typeof r.node_id !== 'string' || r.node_id.length === 0).length
+
+  const privateNodeIds = privateEntries
+    .filter(r => typeof r.node_id === 'string' && r.node_id.length > 0)
+    .map(r => r.node_id as string)
+
+  // Resolve each node_id — exhaustive matrix.
+  const resolvedNames: string[] = []
+  const failedNodeIds: string[] = []
+
+  // Seed with missing-node-id sentinels (Fix B).
+  for (let i = 0; i < missingNodeIdCount; i++) {
+    failedNodeIds.push('<missing-node-id>')
+  }
+
+  for (const nodeId of privateNodeIds) {
+    const result = await resolver(nodeId)
+    if ('nameWithOwner' in result) {
+      resolvedNames.push(result.nameWithOwner)
+    } else {
+      // Fix A: access-lost → BLOCK (same as any other failure).
+      // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
+      // Treating it as skip would make a mis-scoped PAT silently pass everything.
+      failedNodeIds.push(nodeId)
+    }
+  }
+
+  // Any failure (access-lost, transient, auth, missing node_id) → block (fail-closed).
+  if (failedNodeIds.length > 0) {
+    return {ok: false, resolutionFailed: true, failedNodeIds}
+  }
+
+  // Build token set from resolved names.
+  const privateTokens: string[] = []
+  for (const nameWithOwner of resolvedNames) {
+    privateTokens.push(...buildTokensForName(nameWithOwner))
+  }
+
+  // Run the pure scan. No override in promotion mode (operator-supervised scheduled job).
+  const scanResult = checkPrivateLeak(privateTokens, diff, {titlePrefixed: false, isOperator: false})
+
+  // Fix D: redact private tokens from matched file paths before returning.
+  if (!scanResult.ok && 'matchedFiles' in scanResult) {
+    const redactedFiles = scanResult.matchedFiles.map(f => redactPathTokens(f, privateTokens))
+    return {ok: false, matchedFiles: redactedFiles}
+  }
+
+  return scanResult
+}
+
+// ---------------------------------------------------------------------------
+// Default seam implementations for runPromotionCli
+// ---------------------------------------------------------------------------
+
+/**
+ * Default git-diff runner: strips FRO_BOT_POLL_PAT from the subprocess env
+ * so the PAT never reaches git (Fix C). The env argument is the already-sanitized
+ * env built by the caller.
+ */
+const defaultGitDiffRunner: GitDiffRunner = (args: string[], env: NodeJS.ProcessEnv): string =>
+  execFileSync('git', args, {encoding: 'utf8', env})
+
+const defaultReposYamlReader: ReposYamlReader = async (path: string): Promise<string> => readFile(path, 'utf8')
+
+const defaultResolverFactory: ResolverFactory = (pat: string): NodeIdResolver => makeGhNodeIdResolver(pat)
+
+// ---------------------------------------------------------------------------
+// Promotion CLI shell — injectable seams for testability (Fix E)
+// ---------------------------------------------------------------------------
+
+/**
+ * CLI shell for promotion mode: wires env (FRO_BOT_POLL_PAT), reads repos.yaml
+ * from the data subtree, runs git diff, maps result to exit code.
+ *
+ * Accepts the repos.yaml path via PROMOTION_REPOS_YAML_PATH env (injectable for
+ * testing; defaults to 'metadata/repos.yaml' relative to CWD which is the
+ * data-branch-check subtree in CI).
+ *
+ * Injectable seams (all default to real implementations):
+ * - `gitDiffRunner`: receives args + a PAT-stripped env; never sees FRO_BOT_POLL_PAT
+ * - `reposYamlReader`: reads the repos.yaml file
+ * - `resolverFactory`: builds the NodeIdResolver from the PAT
+ *
+ * Returns an exit code (0 = pass, 1 = block/error) instead of calling process.exit
+ * directly, so tests can assert without killing the test process. The entrypoint
+ * wrapper maps the return value to process.exit.
+ */
+export async function runPromotionCli(
+  gitDiffRunner: GitDiffRunner = defaultGitDiffRunner,
+  reposYamlReader: ReposYamlReader = defaultReposYamlReader,
+  resolverFactory: ResolverFactory = defaultResolverFactory,
+): Promise<number> {
+  const pat = process.env.FRO_BOT_POLL_PAT
+  if (pat === undefined || pat === '') {
+    process.stderr.write(
+      'check-private-leak: FRO_BOT_POLL_PAT not set. This is required for promotion mode to resolve private repo names.\n',
+    )
+    return 1
+  }
+
+  // Read repos.yaml from the data subtree (CWD = data-branch-check in CI).
+  const reposYamlPath = process.env.PROMOTION_REPOS_YAML_PATH ?? 'metadata/repos.yaml'
+  let reposYaml: string
+  try {
+    reposYaml = await reposYamlReader(reposYamlPath)
+  } catch (error) {
+    process.stderr.write(
+      `check-private-leak: could not read repos.yaml at ${reposYamlPath}: ${error instanceof Error ? error.message : String(error)}\n`,
+    )
+    return 1
+  }
+
+  // Fix C: build a sanitized env that excludes FRO_BOT_POLL_PAT before passing to git.
+  // The PAT must reach ONLY makeGhNodeIdResolver — never the git subprocess.
+  const gitEnv: NodeJS.ProcessEnv = {...process.env}
+  delete gitEnv.FRO_BOT_POLL_PAT
+
+  // Obtain the main...data diff via local git — no token needed.
+  let diff: string
+  try {
+    diff = gitDiffRunner(['diff', 'origin/main...origin/data'], gitEnv)
+  } catch (error) {
+    process.stderr.write(
+      `check-private-leak: could not obtain main...data diff: ${error instanceof Error ? error.message : String(error)}\n`,
+    )
+    return 1
+  }
+
+  // Wire FRO_BOT_POLL_PAT ONLY to the resolver — not to the diff or any other call.
+  const resolver = resolverFactory(pat)
+
+  // Parse repos.yaml to log access-lost and missing-node-id cases (the pure function doesn't log).
+  const parsedForLog: unknown = parseYaml(reposYaml)
+  assertReposFile(parsedForLog)
+  const allPrivateEntries = parsedForLog.repos.filter(r => r.private === true)
+  const privateNodeIds = allPrivateEntries
+    .filter(r => typeof r.node_id === 'string' && r.node_id.length > 0)
+    .map(r => r.node_id as string)
+
+  // Log missing node_id entries (Fix B — these will block in runPromotionScan).
+  const missingCount = allPrivateEntries.length - privateNodeIds.length
+  if (missingCount > 0) {
+    process.stderr.write(
+      `check-private-leak [promotion]: ${missingCount} private entry/entries have no node_id — will block\n`,
+    )
+  }
+
+  // Wrap resolver to emit redacted stderr for access-lost and error cases.
+  // Fix A: access-lost now BLOCKS — log it as a blocking condition, not a skip.
+  const loggingResolver: NodeIdResolver = async (nodeId: string) => {
+    const result = await resolver(nodeId)
+    if ('nameWithOwner' in result) {
+      // Success — no logging (name is private; never log it)
+    } else if (result.error === 'access-lost') {
+      process.stderr.write(
+        `check-private-leak [promotion]: node_id=${nodeId} access-lost (deleted or token cannot see it) — BLOCKING\n`,
+      )
+    } else {
+      process.stderr.write(`check-private-leak [promotion]: could not resolve node_id=${nodeId} (error)\n`)
+    }
+    return result
+  }
+
+  const result = await runPromotionScan({reposYaml, resolver: loggingResolver, diff})
+
+  if (result.ok) {
+    process.stdout.write(`check-private-leak [promotion]: ok (scanned ${privateNodeIds.length} private node_id(s))\n`)
+    return 0
+  }
+
+  if ('resolutionFailed' in result && result.resolutionFailed) {
+    // Fail-closed: resolution failure (including access-lost) blocks promotion.
+    process.stderr.write(
+      `check-private-leak [promotion]: FAILED — could not resolve private node_id(s): ${result.failedNodeIds.join(', ')}\n`,
+    )
+    process.stderr.write('check-private-leak [promotion]: cannot guarantee a complete scan — blocking promotion\n')
+    return 1
+  }
+
+  // Diff match: print redacted file paths only, never the matched name.
+  // Fix D: paths are already redacted by runPromotionScan before being returned here.
+  process.stderr.write(
+    'check-private-leak [promotion]: FAILED — private repository name(s) detected in promotion diff\n',
+  )
+  process.stderr.write('\nMatched files (private tokens redacted):\n')
+  if ('matchedFiles' in result) {
+    for (const file of result.matchedFiles) {
+      process.stderr.write(`  - ${file}\n`)
+    }
+  }
+  process.stderr.write(
+    '\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts metadata/repos.yaml\n',
+  )
+  process.stderr.write('  (This prints a node_id → owner/name table for all private entries.)\n')
+  process.stderr.write('To resolve: redact the private name from the data branch and re-run the promotion.\n')
+  return 1
+}
+
+// ---------------------------------------------------------------------------
 // CLI entrypoint
 // ---------------------------------------------------------------------------
 
@@ -287,25 +627,10 @@ export async function main(): Promise<void> {
   }
 
   // Build the full set of tokens to scan for.
-  // For each resolved nameWithOwner (owner/name), include:
-  //   - canonical form:  owner/name
-  //   - wiki slug form:  owner--slug  (e.g. computeRepoSlug('org', 'repo') → 'org--repo')
-  // Bare name (without owner) is intentionally excluded: short names like 'go', 'api', 'web'
-  // substring-match unrelated content and cause false-positive blocks on clean PRs.
-  // Both tokens above carry the owner prefix, so they remain specific.
+  // P3: use buildTokensForName to share token semantics with the promotion path.
   const privateTokens: string[] = []
   for (const nameWithOwner of resolvedNames) {
-    const slashIndex = nameWithOwner.indexOf('/')
-    if (slashIndex < 1) continue
-    const owner = nameWithOwner.slice(0, slashIndex)
-    const name = nameWithOwner.slice(slashIndex + 1)
-    if (owner === '' || name === '') continue
-    privateTokens.push(nameWithOwner) // canonical: owner/name
-    try {
-      privateTokens.push(computeRepoSlug(owner, name)) // wiki slug: owner--slug
-    } catch {
-      // computeRepoSlug throws on empty segments — skip slug form if it can't be computed
-    }
+    privateTokens.push(...buildTokensForName(nameWithOwner))
   }
 
   // Fetch diff and evaluate.
@@ -328,10 +653,11 @@ export async function main(): Promise<void> {
   }
 
   // Failure: print file paths only, never the matched name.
+  // Redact any private token from the matched file paths before printing (parity with promotion path).
   process.stderr.write('check-private-leak: FAILED — private repository name(s) detected in PR diff\n')
   process.stderr.write('\nMatched files:\n')
   for (const file of result.matchedFiles) {
-    process.stderr.write(`  - ${file}\n`)
+    process.stderr.write(`  - ${redactPathTokens(file, privateTokens)}\n`)
   }
   // FIX #5: corrected remediation command (resolve-private takes a file path, not a node_id).
   process.stderr.write(
@@ -343,5 +669,10 @@ export async function main(): Promise<void> {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  await main()
+  if (process.argv.includes('--promotion')) {
+    const exitCode = await runPromotionCli()
+    process.exit(exitCode)
+  } else {
+    await main()
+  }
 }
