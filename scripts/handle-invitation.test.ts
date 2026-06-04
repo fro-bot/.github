@@ -1097,6 +1097,86 @@ describe('formatInvitationGithubOutput', () => {
         {invitationId: 1, inviter: 'marcusrbrown', owner: 'fro-bot', repo: 'public-repo', status: 'accepted'},
         {invitationId: 2, inviter: 'marcusrbrown', owner: '[REDACTED]', repo: 'R_kgDOPRIVATE', status: 'accepted'},
       ]),
-    ).toBe('public_invitations_accepted=1\n')
+    ).toBe(
+      'public_invitations_accepted=1\npublic_invitations_accepted_repos=[{"owner":"fro-bot","name":"public-repo"}]\n',
+    )
+  })
+
+  it('emits both count and repos list for 2 public + 1 private accepted', () => {
+    const output = formatInvitationGithubOutput([
+      {invitationId: 1, inviter: 'marcusrbrown', owner: 'fro-bot', repo: 'alpha', status: 'accepted'},
+      {invitationId: 2, inviter: 'marcusrbrown', owner: 'fro-bot', repo: 'beta', status: 'accepted'},
+      {invitationId: 3, inviter: 'marcusrbrown', owner: '[REDACTED]', repo: 'R_kgDOPRIVATE', status: 'accepted'},
+    ])
+    const lines = output.split('\n').filter(l => l.length > 0)
+    const countLine = lines.find(l => l.startsWith('public_invitations_accepted='))
+    const reposLine = lines.find(l => l.startsWith('public_invitations_accepted_repos='))
+
+    // count line is unchanged and correct
+    expect(countLine).toBe('public_invitations_accepted=2')
+
+    // repos line contains exactly the 2 public entries
+    const reposJson = reposLine?.slice('public_invitations_accepted_repos='.length) ?? ''
+    const repos = JSON.parse(reposJson) as unknown[]
+    expect(repos).toHaveLength(2)
+    expect(repos).toContainEqual({owner: 'fro-bot', name: 'alpha'})
+    expect(repos).toContainEqual({owner: 'fro-bot', name: 'beta'})
+
+    // count and list agree
+    expect(repos).toHaveLength(2)
+  })
+
+  it('emits count=0 and repos=[] when there are no accepted invitations', () => {
+    const output = formatInvitationGithubOutput([
+      {
+        invitationId: 1,
+        inviter: 'marcusrbrown',
+        owner: 'fro-bot',
+        repo: 'skipped-repo',
+        status: 'skipped',
+        reason: 'inviter-not-allowlisted',
+      },
+    ])
+    const lines = output.split('\n').filter(l => l.length > 0)
+    const countLine = lines.find(l => l.startsWith('public_invitations_accepted='))
+    const reposLine = lines.find(l => l.startsWith('public_invitations_accepted_repos='))
+
+    expect(countLine).toBe('public_invitations_accepted=0')
+    const reposJson = reposLine?.slice('public_invitations_accepted_repos='.length) ?? ''
+    expect(JSON.parse(reposJson)).toEqual([])
+  })
+
+  it('emits count=0 and repos=[] when only private/redacted invitations were accepted', () => {
+    const output = formatInvitationGithubOutput([
+      {invitationId: 1, inviter: 'marcusrbrown', owner: '[REDACTED]', repo: 'R_kgDOPRIVATE1', status: 'accepted'},
+      {invitationId: 2, inviter: 'marcusrbrown', owner: '[REDACTED]', repo: 'R_kgDOPRIVATE2', status: 'accepted'},
+    ])
+    const lines = output.split('\n').filter(l => l.length > 0)
+    const countLine = lines.find(l => l.startsWith('public_invitations_accepted='))
+    const reposLine = lines.find(l => l.startsWith('public_invitations_accepted_repos='))
+
+    expect(countLine).toBe('public_invitations_accepted=0')
+    const reposJson = reposLine?.slice('public_invitations_accepted_repos='.length) ?? ''
+    expect(JSON.parse(reposJson)).toEqual([])
+
+    // no redacted owner or node_id leaks into the output
+    expect(output).not.toContain('[REDACTED]')
+    expect(output).not.toContain('R_kgDOPRIVATE1')
+    expect(output).not.toContain('R_kgDOPRIVATE2')
+  })
+
+  it('emits a single-line JSON value that round-trips through JSON.parse', () => {
+    const output = formatInvitationGithubOutput([
+      {invitationId: 1, inviter: 'marcusrbrown', owner: 'fro-bot', repo: 'my-repo', status: 'accepted'},
+    ])
+    const reposLine = output.split('\n').find(l => l.startsWith('public_invitations_accepted_repos=')) ?? ''
+    const reposJson = reposLine.slice('public_invitations_accepted_repos='.length)
+
+    // must be single-line (no embedded newlines)
+    expect(reposJson).not.toContain('\n')
+
+    // must round-trip
+    const parsed = JSON.parse(reposJson) as unknown[]
+    expect(parsed).toEqual([{owner: 'fro-bot', name: 'my-repo'}])
   })
 })

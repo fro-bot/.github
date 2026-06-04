@@ -405,6 +405,31 @@ export function resetSurveyResult(current: unknown, input: ResetSurveyResultInpu
   }
 }
 
+/**
+ * Pure predicate: returns true iff `metadata/repos.yaml` has an entry whose
+ * `owner` and `name` exactly match the given `owner` and `repo` strings
+ * AND whose `private` field is explicitly `false`.
+ *
+ * This intentionally requires `private === false` (strict equality). An entry
+ * with `private` absent or `private: true` does NOT match — mirroring the
+ * promotion privacy gate in `buildPublicSlugMap` (check-wiki-private-presence.ts),
+ * which only admits wiki pages for repos with explicit `private === false`.
+ * Absent/undefined `private` is treated as private (fail-safe default).
+ *
+ * Does NOT use node_id or redacted-entry matching — this predicate is for the
+ * public-promotable presence check only, not for locating entries by identity key.
+ *
+ * Does NOT throw on a missing entry — that is the whole point of a boolean
+ * predicate. If `current` is not a valid repos file, `assertReposFile` throws
+ * and the caller decides how to handle it (fail-closed).
+ *
+ * Pure: no I/O, no mutation of `current`.
+ */
+export function publicRepoEntryExists(current: unknown, owner: string, repo: string): boolean {
+  assertReposFile(current, 'repos')
+  return current.repos.some(entry => entry.owner === owner && entry.name === repo && entry.private === false)
+}
+
 export class RepoEntryNotFoundError extends Error {
   readonly code = 'REPO_ENTRY_NOT_FOUND'
   // Explicit field declarations + assignment in the constructor body, not parameter properties.

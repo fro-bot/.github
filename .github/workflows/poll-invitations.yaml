@@ -31,15 +31,26 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_POLL_PAT }}
         run: node scripts/handle-invitation.ts
 
-      - name: 📣 Notify Discord
+      # Best-effort Discord presence: announce accepted public invitations to the
+      # gateway, which posts in Fronomenal as the Fro Bot user. Only public,
+      # non-redacted repos are in the list output (handle-invitation.ts gates that).
+      # Never fails the run — gateway-announce.ts exits 0 on any error.
+      - name: 📣 Announce invitations to gateway
         if: steps.poll.outputs.public_invitations_accepted > 0
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          EVENT_TYPE: invitation_accepted
           INVITATIONS_ACCEPTED: ${{ steps.poll.outputs.public_invitations_accepted }}
+          INVITATIONS_REPOS: ${{ steps.poll.outputs.public_invitations_accepted_repos }}
+          GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
+          GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
+          GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
         run: |
-          node scripts/discord-notify.ts \
-            --message "🌐 Just joined ${INVITATIONS_ACCEPTED} new space(s) on GitHub. The network grows ✨" \
-            --title "New Collaboration"
+          EVENT_CONTEXT_JSON="$(jq -nc \
+            --argjson count "$INVITATIONS_ACCEPTED" \
+            --argjson repos "$INVITATIONS_REPOS" \
+            '{count: $count, repos: $repos}')"
+          export EVENT_CONTEXT_JSON
+          node scripts/gateway-announce.ts
 
       # Bluesky posting is disabled pending re-evaluation of social channels.
       # The script (scripts/bluesky-post.ts) is intentionally retained for future

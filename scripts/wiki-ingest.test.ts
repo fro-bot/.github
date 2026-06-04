@@ -7,10 +7,12 @@ import {describe, expect, it, vi} from 'vitest'
 const wikiIngestModulePromise: Promise<{
   buildWikiIngestChanges: typeof import('./wiki-ingest.js').buildWikiIngestChanges
   commitWikiChanges: typeof import('./wiki-ingest.js').commitWikiChanges
+  countWikiPages: typeof import('./wiki-ingest.js').countWikiPages
   parsePorcelainPaths: typeof import('./wiki-ingest.js').parsePorcelainPaths
   WikiIngestError: typeof import('./wiki-ingest.js').WikiIngestError
 }> = import(`./wiki-ingest${'.js'}`)
-const {buildWikiIngestChanges, commitWikiChanges, parsePorcelainPaths, WikiIngestError} = await wikiIngestModulePromise
+const {buildWikiIngestChanges, commitWikiChanges, countWikiPages, parsePorcelainPaths, WikiIngestError} =
+  await wikiIngestModulePromise
 
 interface MockOverrides {
   getBranch?: (params: {owner: string; repo: string; branch: string}) => Promise<unknown>
@@ -899,5 +901,55 @@ describe('commitWikiChanges (422 surfacing)', () => {
     // #then the original error bubbles without retries
     await expect(action).rejects.toMatchObject({status: 422})
     expect(updateRef).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('countWikiPages', () => {
+  it('counts pages in all four category directories', () => {
+    // #given paths covering all four wiki entry categories
+    const paths = [
+      'knowledge/wiki/repos/fro-bot--agent.md',
+      'knowledge/wiki/topics/vitest.md',
+      'knowledge/wiki/entities/mise.md',
+      'knowledge/wiki/comparisons/vitest-vs-jest.md',
+    ]
+
+    // #when the paths are counted
+    // #then all four are included
+    expect(countWikiPages(paths)).toBe(4)
+  })
+
+  it('excludes knowledge/index.md and knowledge/log.md', () => {
+    // #given the catalog/log machinery files alongside a real entry
+    const paths = ['knowledge/index.md', 'knowledge/log.md', 'knowledge/wiki/repos/fro-bot--agent.md']
+
+    // #when the paths are counted
+    // #then only the entry page is counted
+    expect(countWikiPages(paths)).toBe(1)
+  })
+
+  it('excludes paths outside the four category directories', () => {
+    // #given paths that live outside the four canonical category dirs
+    const paths = ['knowledge/wiki/README.md', 'knowledge/schema.md', 'knowledge/wiki/repos/fro-bot--agent.md']
+
+    // #when the paths are counted
+    // #then only the entry under repos/ is counted
+    expect(countWikiPages(paths)).toBe(1)
+  })
+
+  it('excludes nested paths and non-.md files', () => {
+    // #given a nested path and a non-markdown file that should not count
+    const paths = ['knowledge/wiki/repos/sub/x.md', 'knowledge/wiki/repos/x.txt', 'knowledge/wiki/topics/vitest.md']
+
+    // #when the paths are counted
+    // #then only the flat .md entry is counted
+    expect(countWikiPages(paths)).toBe(1)
+  })
+
+  it('returns 0 for an empty input', () => {
+    // #given no paths at all
+    // #when the paths are counted
+    // #then the result is zero
+    expect(countWikiPages([])).toBe(0)
   })
 })

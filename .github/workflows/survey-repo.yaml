@@ -9,10 +9,6 @@ run-name: Survey Repo
 #
 # Look up node_id with:
 #   gh api graphql -f query='query{repository(owner:"<owner>",name:"<repo>"){id}}' --jq '.data.repository.id'
-#
-# Job outputs (consumed by the broadcast job below):
-#   owner — repository owner, only set after the resolve step verifies isPrivate === false
-#   repo  — repository name, same guarantee
 on:
   workflow_dispatch:
     inputs:
@@ -56,9 +52,6 @@ jobs:
     name: Survey Repo
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    outputs:
-      owner: ${{ steps.resolve.outputs.owner }}
-      repo: ${{ steps.resolve.outputs.repo }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -136,6 +129,33 @@ jobs:
             git restore --source FETCH_HEAD --worktree -- knowledge
           fi
 
+      # Gate: only repos already tracked in metadata/repos.yaml may have a wiki page
+      # written to the data branch. A page for an un-onboarded repo would be
+      # unattributable to the promotion privacy gate and would block data -> main.
+      #
+      # Metadata overlay: when the data branch exists, fetch its metadata/repos.yaml
+      # (authoritative runtime state) before running the check. If the fetch or restore
+      # fails (e.g. data branch absent, network blip), the script runs against the
+      # checked-out (main) metadata instead. The private===false predicate in
+      # publicRepoEntryExists keeps this fallback fail-safe: only entries with explicit
+      # private===false in main's promoted metadata can yield onboarded=true, so a
+      # missing data branch cannot silently admit an un-promotable repo.
+      #
+      # The node script always runs and always emits onboarded=true/false — it never
+      # hard-fails — so a git error here produces a clean onboarded=false skip rather
+      # than a red job for a legitimately un-onboarded manual dispatch.
+      - name: Check repo onboarded
+        id: onboarded
+        env:
+          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
+          REPO_NAME: ${{ steps.resolve.outputs.repo }}
+        run: |
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch origin data || true
+            git restore --source FETCH_HEAD --worktree -- metadata || true
+          fi
+          node scripts/check-repo-onboarded.ts
+
       - name: Capture wiki baseline
         id: wiki-baseline
         run: |
@@ -175,7 +195,7 @@ jobs:
 
       - name: Run Fro Bot survey ingest
         id: survey-agent
-        uses: fro-bot/agent@de04256d247b1ba118f05be9855df6357ee54a6e # v0.50.0
+        uses: fro-bot/agent@28cf93adc1c99bccad7c40ec2bdb84d9293de8be # v0.52.1
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
@@ -247,7 +267,8 @@ jobs:
 
       - name: Commit wiki ingest to data branch
         id: wiki-commit
-        if: steps.wiki-changes.outputs.changed == 'true' && steps.recheck.conclusion == 'success'
+        if: steps.wiki-changes.outputs.changed == 'true' && steps.recheck.conclusion == 'success' &&
+          steps.onboarded.outputs.onboarded == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
           WIKI_OPERATION: survey
@@ -288,28 +309,32 @@ jobs:
             steps.wiki-commit.conclusion == 'skipped')) && 'success' || 'failure' }}
         run: node scripts/record-survey-result.ts
 
-  broadcast:
-    name: Broadcast survey complete
-    needs: survey-repo
-    if: needs.survey-repo.result == 'success'
-    uses: ./.github/workflows/social-broadcast.yaml
-    with:
-      event_type: repo_survey_complete
-      discord_message: >-
-        Just finished surveying **${{ needs.survey-repo.outputs.owner }}/${{ needs.survey-repo.outputs.repo }}**.
-        New knowledge ingested into the wiki ✨
-      discord_title: Repo Survey Complete
-      # bluesky_text intentionally omitted — Bluesky step in social-broadcast.yaml
-      # is currently gated off via `if: false`. When revived, restore copy here.
-      # The resolve-and-verify gate has already proven this repo was public
-      # before survey-repo succeeded. private: false is the fail-safe floor;
-      # the broadcast job re-verifies visibility at post time via node_id,
-      # closing the recheck→broadcast queue window.
-      private: false
-      node_id: ${{ inputs.node_id }}
-    secrets:
-      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
-      BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
-      APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
-      APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+      # Best-effort Discord presence: announce the completed survey to the gateway,
+      # which posts in Fronomenal as the Fro Bot user. Rides behind the same recheck
+      # privacy gate as the survey itself (only public repos reach here) and fires
+      # only on a real success. Never fails the run — gateway-announce.ts exits 0 on
+      # any error and this step is excluded from the job's success aggregation.
+      - name: 📣 Announce survey to gateway
+        if: >-
+          ${{ !cancelled() && steps.recheck.conclusion == 'success' &&
+          steps.survey-agent.conclusion == 'success' &&
+          steps.onboarded.outputs.onboarded == 'true' &&
+          (steps.wiki-commit.conclusion == 'success' || steps.wiki-commit.conclusion == 'skipped') }}
+        env:
+          EVENT_TYPE: survey_completed
+          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
+          REPO_NAME: ${{ steps.resolve.outputs.repo }}
+          REPO_SLUG: ${{ steps.ingest-prompt.outputs.target-slug }}
+          GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
+          GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
+          GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
+          WIKI_PAGES_CHANGED: ${{ steps.wiki-commit.outputs.pages_changed || '0' }}
+        run: |
+          EVENT_CONTEXT_JSON="$(jq -nc \
+            --arg owner "$REPO_OWNER" \
+            --arg repo "$REPO_NAME" \
+            --arg slug "$REPO_SLUG" \
+            --argjson pages "${WIKI_PAGES_CHANGED:-0}" \
+            '{owner: $owner, repo: $repo, slug: $slug, wiki_pages_changed: $pages}')"
+          export EVENT_CONTEXT_JSON
+          node scripts/gateway-announce.ts

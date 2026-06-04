@@ -1,7 +1,7 @@
 import type {Dirent} from 'node:fs'
 import type {Octokit} from '@octokit/rest'
 import {execFile} from 'node:child_process'
-import {readdir, readFile} from 'node:fs/promises'
+import {appendFile, readdir, readFile} from 'node:fs/promises'
 import {basename} from 'node:path'
 import process from 'node:process'
 import {promisify} from 'node:util'
@@ -862,6 +862,25 @@ function defaultCommitMessage(payload: WikiIngestPayload): string {
   return `feat(knowledge): ${payload.operation} ${payload.target}`
 }
 
+const WIKI_PAGE_PATTERN = /^knowledge\/wiki\/(?:repos|topics|entities|comparisons)\/[^/]+\.md$/
+
+/**
+ * Count the number of wiki entry pages in a list of paths.
+ * Only paths matching `knowledge/wiki/(repos|topics|entities|comparisons)/<filename>.md`
+ * are counted. Excludes knowledge/index.md, knowledge/log.md, and any paths outside
+ * the four category directories.
+ */
+export function countWikiPages(paths: string[]): number {
+  return paths.filter(p => WIKI_PAGE_PATTERN.test(p)).length
+}
+
+async function emitPagesChanged(n: number): Promise<void> {
+  const outputPath = process.env.GITHUB_OUTPUT
+  if (outputPath !== undefined && outputPath !== '') {
+    await appendFile(outputPath, `pages_changed=${n}\n`)
+  }
+}
+
 async function main(): Promise<void> {
   const payloadPath = process.argv[2] ?? process.env.WIKI_INGEST_INPUT
   const existingFiles = await loadExistingWikiFiles()
@@ -871,6 +890,8 @@ async function main(): Promise<void> {
   let repo: string | undefined
   let branch: string | undefined
   let message: string
+
+  let committedPagePaths: string[]
 
   if (payloadPath !== undefined && payloadPath !== '') {
     const payload = parsePayload(await readFile(payloadPath, 'utf8'))
@@ -887,10 +908,12 @@ async function main(): Promise<void> {
     repo = payload.repo
     branch = payload.branch
     message = payload.message ?? defaultCommitMessage(payload)
+    committedPagePaths = payload.pages.map(p => p.path)
   } else {
     const changedPaths = await getChangedWikiPaths()
     if (changedPaths.length === 0) {
-      process.stdout.write(`${JSON.stringify({committed: false, attempts: 1})}\n`)
+      await emitPagesChanged(0)
+      process.stdout.write(`${JSON.stringify({committed: false, attempts: 1, pagesChanged: 0})}\n`)
       return
     }
 
@@ -910,6 +933,7 @@ async function main(): Promise<void> {
     message =
       process.env.WIKI_COMMIT_MESSAGE ??
       `feat(knowledge): ${process.env.WIKI_OPERATION ?? 'event'} ${process.env.WIKI_TARGET ?? 'wiki update'}`
+    committedPagePaths = changedPaths
   }
 
   const result = await commitWikiChanges({
@@ -920,7 +944,9 @@ async function main(): Promise<void> {
     files: built.files,
   })
 
-  process.stdout.write(`${JSON.stringify(result)}\n`)
+  const pagesChanged = countWikiPages(committedPagePaths)
+  await emitPagesChanged(pagesChanged)
+  process.stdout.write(`${JSON.stringify({...result, pagesChanged})}\n`)
 }
 
 function parseSources(raw: string | undefined): WikiSource[] {

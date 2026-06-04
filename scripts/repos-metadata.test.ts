@@ -4,6 +4,7 @@ import {describe, expect, it} from 'vitest'
 import {
   addRepoEntry,
   computeNextEligibleAt,
+  publicRepoEntryExists,
   recordSurveyResult,
   RepoEntryNotFoundError,
   resetSurveyResult,
@@ -1206,5 +1207,118 @@ describe('recordSurveyResult — next_survey_eligible_at', () => {
 
     expect(result.repos[0]?.onboarding_status).toBe('onboarded')
     expect(result.repos[0]?.next_survey_eligible_at).not.toBeNull()
+  })
+})
+
+describe('publicRepoEntryExists', () => {
+  // Privacy gate: entry present with private:false → true (the only path to true)
+  it('returns true when an entry exists with private:false for the given owner and repo', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project', private: false})],
+    }
+    expect(publicRepoEntryExists(current, 'alice', 'project')).toBe(true)
+  })
+
+  // Privacy gate: entry present but private absent → false (fail-safe default)
+  it('returns false when an entry exists but private is absent (fail-safe default)', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project'})],
+    }
+    expect(publicRepoEntryExists(current, 'alice', 'project')).toBe(false)
+  })
+
+  // Privacy gate: entry present with private:true → false
+  it('returns false when an entry exists with private:true', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: '[REDACTED]', name: PRIVATE_NODE_ID, private: true, node_id: PRIVATE_NODE_ID})],
+    }
+    expect(publicRepoEntryExists(current, '[REDACTED]', PRIVATE_NODE_ID)).toBe(false)
+  })
+
+  // Privacy gate: owner/name mismatch even with private:false → false
+  it('returns false when private:false but owner/name do not match', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project', private: false})],
+    }
+    expect(publicRepoEntryExists(current, 'bob', 'project')).toBe(false)
+    expect(publicRepoEntryExists(current, 'alice', 'other')).toBe(false)
+  })
+
+  // Edge: entry absent → false
+  it('returns false when no entry exists for the given owner and repo', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project', private: false})],
+    }
+    expect(publicRepoEntryExists(current, 'bob', 'other')).toBe(false)
+  })
+
+  // Edge: empty repos list → false (no crash)
+  it('returns false without throwing when the repos list is empty', () => {
+    expect(publicRepoEntryExists(EMPTY_REPOS, 'alice', 'project')).toBe(false)
+  })
+
+  // Edge: owner matches but name differs → false
+  it('returns false when owner matches but repo name differs', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project', private: false})],
+    }
+    expect(publicRepoEntryExists(current, 'alice', 'other-project')).toBe(false)
+  })
+
+  // Edge: name matches but owner differs → false
+  it('returns false when repo name matches but owner differs', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project', private: false})],
+    }
+    expect(publicRepoEntryExists(current, 'bob', 'project')).toBe(false)
+  })
+
+  // Schema validation: invalid input propagates assertReposFile throw
+  it('throws when current is not a valid ReposFile', () => {
+    expect(() => publicRepoEntryExists(null, 'alice', 'project')).toThrow()
+    expect(() => publicRepoEntryExists({version: 2, repos: []}, 'alice', 'project')).toThrow()
+    expect(() => publicRepoEntryExists({repos: []}, 'alice', 'project')).toThrow()
+  })
+
+  // Case-sensitivity: exact match only
+  it('is case-sensitive — uppercase owner does not match lowercase stored entry', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project', private: false})],
+    }
+    expect(publicRepoEntryExists(current, 'Alice', 'project')).toBe(false)
+    expect(publicRepoEntryExists(current, 'alice', 'Project')).toBe(false)
+  })
+
+  // Multiple entries: finds the right one among many
+  it('returns true for the correct entry when multiple entries exist', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        repoEntry({owner: 'alice', name: 'first', private: false}),
+        repoEntry({owner: 'bob', name: 'second', private: false}),
+        repoEntry({owner: 'carol', name: 'third', private: false}),
+      ],
+    }
+    expect(publicRepoEntryExists(current, 'bob', 'second')).toBe(true)
+    expect(publicRepoEntryExists(current, 'alice', 'second')).toBe(false)
+  })
+
+  // Purity: does not mutate the input
+  it('does not mutate the input ReposFile', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [repoEntry({owner: 'alice', name: 'project', private: false})],
+    }
+    const snapshot = structuredClone(current)
+    publicRepoEntryExists(current, 'alice', 'project')
+    expect(current).toEqual(snapshot)
   })
 })

@@ -1,9 +1,9 @@
 # Fro Bot Discord Presence via Control-Plane Events
 
-**Date:** 2026-05-23
-**Status:** Requirements (revised after document-review)
+**Date:** 2026-05-23 (reconciled against shipped gateway 2026-06-04)
+**Status:** Requirements — gateway side SHIPPED; ready for `ce:plan`
 **Scope:** Standard
-**This document:** control-plane side only. The gateway-side feature is tracked in [fro-bot/agent#671](https://github.com/fro-bot/agent/issues/671).
+**This document:** control-plane side only. The gateway-side feature shipped in [fro-bot/agent#671](https://github.com/fro-bot/agent/issues/671) via agent PR #697 (2026-05-30) and is deployed to Fronomenal through `marcusrbrown/infra`. The contract below has been reconciled against the shipped implementation (`packages/gateway/src/http/{announce-schema,announce-handler,hmac}.ts`); see the **Shipped-Gateway Reconciliation** section.
 
 ## Feature
 
@@ -88,8 +88,8 @@ fro-bot/.github (control plane)            fro-bot/agent (gateway)
 1. **`scripts/gateway-announce.ts`** — new TypeScript module, runs under Node 24 native TS. Responsibilities:
    - Read event type, structured context, and timestamp from env vars passed by the calling workflow step
    - Read `GATEWAY_WEBHOOK_SECRET` and `GATEWAY_PRESENCE_URL` from env
-   - Build canonical JSON payload (field ordering deterministic; see Payload Contract below)
-   - Compute HMAC-SHA256 over the canonicalized payload bytes
+   - Build the JSON payload (serialized once via `JSON.stringify`; field ordering is irrelevant since the gateway signs raw bytes, not canonical JSON — see Shipped-Gateway Reconciliation)
+   - Compute HMAC-SHA256 over `timestamp + "." + body` using the exact serialized body bytes
    - Honor kill-switch env var (when set, log and exit 0 without POSTing)
    - POST with single retry on transient failure (network error or HTTP 5xx); on final failure, log structured stderr warning and exit 0 (do not fail the workflow)
 2. **Composer step in event-firing workflows** — added to:
@@ -110,20 +110,24 @@ The control plane sends this exact shape to `POST /v1/announce`:
   "context": {                                     // event-specific structured data; see Event Types below
     // event-specific keys
   },
-  "rendered_text": null                            // v1: always null. v2 forward: pre-composed in-character message text. Gateway falls back to its templates when null.
+  "rendered_text": null                            // REQUIRED field, type `string | null`. v1 always sends null but the key MUST be present (gateway schema rejects omission). v2 forward: pre-composed text; gateway templates when null.
 }
 ```
 
-**Canonicalization for signing**:
-- Encode as JSON with **lexicographically sorted keys at every level**, no whitespace
-- UTF-8 byte encoding
-- HMAC-SHA256 over the canonical bytes, hex-encoded (lowercase)
-- Signature transmitted in `X-Gateway-Signature` header (HMAC hex)
-- Timestamp transmitted in `X-Gateway-Timestamp` header AND in the body's `fired_at` field; gateway MUST verify they match
+**Signing — reconciled against shipped gateway (`hmac.ts`, agent PR #697)**:
 
-**Replay window**: the gateway should reject requests where `|now - fired_at| > 5 minutes`. Strictly informational here; implementation is gateway-side.
+The shipped gateway signs over the **exact raw request body bytes it receives** — there is NO JSON canonicalization. The control plane therefore signs the precise bytes it sends ("sign what you send"): serialize the payload once, sign those bytes, send those bytes. No key sorting, no re-serialization.
 
-**Constant-time comparison**: HMAC verification on the gateway side MUST use constant-time comparison. Stated as a requirement on the gateway issue; not enforceable from the POST side.
+- **Signed message** = `<X-Gateway-Timestamp value>` + `"."` + `<raw JSON body bytes>` — a literal `.` delimiter between the timestamp string and the body bytes. (Shipped: `createHmac('sha256', secret).update(timestampHeader).update('.').update(rawBody)`.)
+- **Algorithm**: HMAC-SHA256 with `GATEWAY_WEBHOOK_SECRET`.
+- **Encoding**: lowercase hex, exactly 64 chars. No `v1=` prefix, no base64.
+- **Signature header**: `X-Gateway-Signature`. **Timestamp header**: `X-Gateway-Timestamp`.
+- **`fired_at` ↔ header**: the body's `fired_at` MUST be **byte-identical** to the `X-Gateway-Timestamp` header value — the gateway rejects with **400** on mismatch via raw string equality. The control plane sets both from the same ISO-8601 string in a single step.
+- **Body size**: gateway caps the body at **8 KiB** (`ANNOUNCE_MAX_BODY_BYTES`); v1 payloads are well under this.
+
+**Replay window**: gateway rejects when the timestamp is outside a **5-minute** window (shipped `REPLAY_WINDOW_MS = 5 * 60 * 1000`), and rejects a re-used signature (replay cache). Both return **401** (generic body — no oracle distinguishing bad-sig / stale / replay).
+
+**Constant-time comparison**: verified on the gateway side (shipped); not enforceable from the POST side.
 
 ### v1 Event Types
 
@@ -143,7 +147,8 @@ These ship after v1 proves out the contract. Listed here so the gateway issue ca
 
 ### Outage Policy
 
-- Single retry on transient failure (network error, HTTP 5xx) with 5-second backoff
+- Single retry on transient failure (**network error or HTTP 5xx**, which includes the gateway's **503** drain/shutdown response) with 5-second backoff
+- **Do NOT retry 4xx**: `400`/`401` indicate a signing, timestamp-mismatch, or schema bug that a retry cannot fix; `429` (rate-limited) won't clear within a single 5-second backoff and v1 volume is low. Treat all 4xx as terminal — log and exit 0.
 - On final failure: structured stderr log line carrying event type and HTTP status (no canonical identifiers in the failure message — repos in the context field stay in the body, which isn't logged on failure), then exit 0
 - Lost events are acceptable in v1; the control plane has its own audit trail (data-branch commits, metadata files, GitHub Actions run logs)
 - No buffer, no queue, no replay
@@ -162,12 +167,29 @@ Only `invitation_accepted` and `survey_completed` events ship in v1. Both carry 
 - `invitation_accepted` only includes public invitations (already gated in `scripts/handle-invitation.ts`)
 - The fast-follower `reconcile_notable` will need an additional privacy review before shipping — the `byChannel` rollup could carry channel-classification telemetry that's meaningful only for public-discovery surfaces; that boundary is the fast-follower's problem to resolve
 
+## Shipped-Gateway Reconciliation
+
+The gateway side shipped in agent PR #697 (2026-05-30). This section pins the control-plane build to the gateway's actual implementation. Where the original brainstorm and the shipped code disagreed, **the shipped code wins** and the contract above has been updated to match.
+
+| Aspect | Original brainstorm assumption | Shipped gateway reality | Control-plane action |
+|---|---|---|---|
+| Signing input | Canonical JSON (lexicographically sorted keys, re-serialized) | Raw request body bytes, no canonicalization | **Sign the exact bytes sent.** Serialize once, sign those bytes, send those bytes. Drop all key-sorting logic. |
+| Signed message | HMAC over canonical body only | `HMAC(secret, timestamp + "." + rawBody)` — timestamp string + literal `.` + body bytes | Build the signed message as `timestamp + "." + body` with the exact body bytes. |
+| `fired_at` vs header | "gateway MUST verify they match" (advisory) | Hard **400** on raw-string mismatch | Set `fired_at` and `X-Gateway-Timestamp` from one identical ISO-8601 string. |
+| `rendered_text` | Optional, send `null` | Schema-**required** field, type `string \| null` | Always include the key with value `null` in v1. |
+| Endpoint availability | Assumed always-on | Opt-in: live only when gateway has BOTH `GATEWAY_WEBHOOK_SECRET` and `GATEWAY_PRESENCE_CHANNEL_ID` | No control-plane code impact, but pre-flight: confirm the deployed gateway has both set (it is, per `marcusrbrown/infra`). Until then, the kill switch / black-hole tolerance (SC5) covers a not-listening endpoint. |
+| Rejection statuses | 4xx vs 5xx unspecified | 413/429/400/401 (4xx terminal); 503 on drain (retryable) | Retry only network-error/5xx (incl. 503); treat 4xx as terminal. |
+| Body size | unspecified | 8 KiB cap | v1 payloads are tiny; no action. |
+| Replay/rate-limit | gateway-side | 5-min window, 60 req/min, dedup on signature | No control-plane action; informs SC3 expectations. |
+
+**Net effect on the control-plane build:** *simpler* than the brainstorm — the canonicalization module (sort keys, stable re-serialize) is **deleted from scope**. The signer becomes: `const body = JSON.stringify(payload); const sig = hmacSha256Hex(secret, ` + "`${timestamp}.${body}`" + `)`. The one new sharp edge is that `payload.fired_at` must be set from the same `timestamp` variable used for the header, before `JSON.stringify`, so the signed body and the header agree.
+
 ## Functional Requirements
 
-- **R1**: `scripts/gateway-announce.ts` accepts event type, structured context, and timestamp from env vars and produces a canonicalized JSON payload matching the contract above
+- **R1**: `scripts/gateway-announce.ts` accepts event type, structured context, and timestamp from env vars and produces a JSON payload matching the contract above, serialized once so the signed bytes equal the sent bytes (no canonicalization — the gateway signs raw body bytes)
 - **R2**: HMAC-SHA256 signature uses the `GATEWAY_WEBHOOK_SECRET` env var; signature is hex-encoded and transmitted in the `X-Gateway-Signature` header
 - **R3**: The script POSTs to the URL in `GATEWAY_PRESENCE_URL` env var with `Content-Type: application/json`, `X-Gateway-Signature`, and `X-Gateway-Timestamp` headers
-- **R4**: On HTTP 5xx or network error, the script retries exactly once after a 5-second backoff; on second failure, logs a structured stderr line and exits 0
+- **R4**: On HTTP 5xx (including 503) or network error, the script retries exactly once after a 5-second backoff; on second failure, logs a structured stderr line and exits 0. 4xx responses (400/401/429) are terminal — no retry (a signing/schema bug or rate-limit won't clear on retry)
 - **R5**: When the repo variable `GATEWAY_ANNOUNCE_DISABLED` is truthy, the script logs `gateway-announce: kill switch active; skipping POST` to stderr and exits 0 before any network call or HMAC computation
 - **R6**: `survey-repo.yaml` invokes `gateway-announce.ts` in a new step after the `Record survey result` step, only when the recheck succeeded (same gate as the existing `Record survey result` step). Event type: `survey_completed`. Context: `{owner, repo, slug, wiki_pages_changed}`
 - **R7**: `poll-invitations.yaml` invokes `gateway-announce.ts` when `steps.poll.outputs.public_invitations_accepted > 0`. Event type: `invitation_accepted`. Context: `{count, repos: [...]}` — repos populated from invitation handler output (will require a small change to `scripts/handle-invitation.ts` to emit the list)
@@ -199,9 +221,11 @@ The legacy `discord-notify.ts` webhook posting (still present, no callers as of 
 - **Q1**: Output of `scripts/handle-invitation.ts` currently exposes only the count of accepted public invitations via step output. To populate `context.repos`, the script needs to also expose the list of repo identifiers (owner/name pairs) — either as a stringified JSON step output or via a small artifact file. Planning resolves the exact mechanism.
 - **Q2**: The `Record survey result` step computes `SURVEY_STATUS` from a multi-step truth table. The gateway-announce step needs the same success gate; planning decides whether to reuse the same env-var pattern or extract a shared step output.
 - **Q3**: `GATEWAY_PRESENCE_URL` — repo variable or repo secret? URLs aren't secret in the security sense, but the gateway endpoint URL is rarely-rotated and not useful to attackers without the HMAC secret. Probably variable; planning confirms.
-- **Q4**: Test strategy for `scripts/gateway-announce.ts` — unit-test the canonicalization, HMAC, retry, and kill-switch logic with mocked fetch. No live integration test in CI (gateway is production).
-- **Q5**: Should `gateway-announce.ts` use Node's built-in `crypto` for HMAC and built-in `fetch` for the POST, or pull in a dep? Lean toward built-in (matches repo's zero-dep ethos for control-plane scripts).
-- **Q6**: Versioning policy on the contract — `v: 1` in the payload is the simple knob. When v2 ships the composer, it bumps to `v: 2` and gateway supports both during transition? Or does v2 stay `v: 1` since `rendered_text` was always in the contract? Planning decides.
+- **Q4**: Test strategy for `scripts/gateway-announce.ts` — unit-test the signed-message construction (`timestamp + "." + body`, byte-exact), HMAC hex output against a known vector matching the gateway's `hmac.test.ts`, `fired_at`↔header equality, retry (5xx/503 only, 4xx terminal), and kill-switch logic with mocked fetch. No live integration test in CI (gateway is production).
+- **Q5**: Should `gateway-announce.ts` use Node's built-in `crypto` for HMAC and built-in `fetch` for the POST, or pull in a dep? Lean toward built-in (matches repo's zero-dep ethos for control-plane scripts). **Reinforced by shipped reality**: the gateway uses Node `createHmac('sha256', ...)` with hex digest — `crypto.createHmac` on the control-plane side produces a byte-identical signature with no dep.
+- **Q6**: Versioning policy on the contract — `v: 1` in the payload is the knob. **Resolved by shipped reality**: the gateway schema fixes `v` to literal `1` and `rendered_text` is already in the v1 schema, so v2's composer stays `v: 1` and simply populates `rendered_text` (no version bump, no dual-support transition needed). Confirm in planning.
+- **Q7 (new, from reconciliation)**: The signer must set `fired_at` and the `X-Gateway-Timestamp` header from the **same** timestamp string, captured once before serialization, or the gateway 400s on mismatch. Planning pins this as an explicit single-source-of-timestamp requirement in `gateway-announce.ts`.
+- **Q8 (new, from reconciliation)**: Pre-flight — confirm the deployed Fronomenal gateway has both `GATEWAY_WEBHOOK_SECRET` and `GATEWAY_PRESENCE_CHANNEL_ID` set (endpoint is opt-in). SC5 (black-hole tolerance) means a not-yet-configured endpoint won't break workflows, but SC1/SC2 (real posts land) can't pass until both are set on the `marcusrbrown/infra` deployment and the matching `GATEWAY_WEBHOOK_SECRET` is mirrored into this repo's secrets.
 
 ## Out-of-Scope but Worth Flagging
 
@@ -212,7 +236,7 @@ The legacy `discord-notify.ts` webhook posting (still present, no callers as of 
 
 - **Sunset PR #3368** — removed the journal-entry pipeline. Did not replace the channel; v1 here is the replacement
 - **Explorer research (2026-05-23)** — capability matrix on `fro-bot/agent` gateway + `marcusrbrown/infra` deployment (informs the gateway issue contents)
-- **`fro-bot/agent#671`** — gateway-side build (filed 2026-05-23)
+- **`fro-bot/agent#671`** — gateway-side build; **SHIPPED 2026-05-30 via agent PR #697** ("signed announce webhook"). Endpoint live (`POST /v1/announce`), opt-in (active only when the gateway has both `GATEWAY_WEBHOOK_SECRET` and `GATEWAY_PRESENCE_CHANNEL_ID` set), deployed to Fronomenal via `marcusrbrown/infra`. Gateway internals: `packages/gateway/src/http/{announce-schema,announce-handler,hmac,replay-cache,rate-limit}.ts`
 - **`marcusrbrown/infra`** — will need a deploy secret rollout (`GATEWAY_WEBHOOK_SECRET`) and possibly env var (`GATEWAY_PRESENCE_CHANNEL_ID`) once the gateway side lands
 - **PR #3293 / `docs/solutions/security-issues/survey-workflow-side-privacy-gate-2026-05-16.md`** — the privacy gate on `survey-repo.yaml` is what makes `survey_completed` safe to broadcast
 - **`scripts/handle-invitation.ts`** — needs a small change to expose the list of accepted repos (Q1 above)
