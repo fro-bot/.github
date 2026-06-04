@@ -32,7 +32,6 @@ Patterns, tooling, and conventions for Web3 and decentralized finance (DeFi) app
 ## Repositories
 
 - [[marcusrbrown--tokentoilet]] — Token disposal and charity donation DeFi app (Next.js + Wagmi + Reown AppKit)
-- [[fro-bot--tokentoilet]] — Public fork of the above under the `fro-bot` account; frozen at a 2026-04-16 pre-MVP snapshot (wagmi v2, Next 16.1.4), carries its own Fro Bot workflow at a stale agent pin (v0.37.0)
 
 ## Wallet Integration Stack
 

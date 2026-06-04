@@ -1707,3 +1707,13 @@ Sources: https://github.com/fro-bot/tokentoilet (SHA a141424e89c133a3c8e1a7544f3
 Surveyed fro-bot/tokentoilet and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/tokentoilet
+
+## [2026-06-04 16:00] maintenance | privacy-gate:wiki-attribution
+
+Removed the `fro-bot--tokentoilet` wiki page. `fro-bot/tokentoilet` has no entry in `metadata/repos.yaml`, so `check-wiki-private-presence.ts` flagged the page as an `unattributable-page` and fail-closed the data→main promotion. An unattributable wiki page is a privacy leak by the gate's contract regardless of the underlying repo's actual visibility — the gate cannot prove the source is public without a `private: false` entry.
+
+Removed: deleted `knowledge/wiki/repos/fro-bot--tokentoilet.md`; dropped the catalog line from `knowledge/index.md`; removed the fork note + `related` entry from [[marcusrbrown--tokentoilet]]; removed the repositories-list entry from [[web3-defi]]. The prior survey entries above are left intact as chronological record; their `fro-bot--tokentoilet` mentions are backtick file-path text, not live wikilinks, so no broken links remain.
+
+Verified: ran the gate against the data tree (grandfather = main wiki) — `no private wiki leaks detected`, exit 0. With the page restored the gate reports `Leak count: 1`, confirming the orphan was the sole leak. Did not touch `metadata/repos.yaml` or anything outside `knowledge/`.
+
+Sources: scripts/check-wiki-private-presence.ts
