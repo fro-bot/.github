@@ -94,29 +94,155 @@ env:
     - Keep findings actionable: file path, impact, and concrete remediation.
 
   SCHEDULE_PROMPT: |
-    Create a single issue titled "Daily Org Oversight Report — YYYY-MM-DD (UTC)"
-    in this repository.
+    Run the daily Fro Bot pass for fro-bot/.github — the autonomous control
+    center for the fro-bot GitHub account. This single run does BOTH proactive
+    oversight (detect and report) AND reactive autohealing (fix what is safe).
+    Prioritize minimal, reversible changes. Read the canonical context first:
+    README.md, .github/copilot-instructions.md, and AGENTS.md if present.
 
-    Scope: all repositories in the fro-bot GitHub organization.
+    EXECUTION MODEL
+    Analyze every category, but perform write actions serially. Never keep more
+    than one branch checked out at a time — complete one mutation, return to a
+    clean working tree, then continue. The control plane's data branch is the
+    authoritative writer for knowledge/** and metadata/**; never write those
+    paths from this run except through the established wiki/metadata scripts.
 
-    Do NOT comment on or modify individual issues/PRs. Do NOT apply labels.
-    Do NOT open PRs. This run must produce ONE summary issue only.
+    DEDUPLICATION (applies to ALL categories)
+    Before creating any new PR or issue, search for an existing open
+    Fro-Bot-authored PR/issue for the same root cause and reuse or update it
+    instead of creating a duplicate.
 
-    Summarize with links only (no full content duplication). Keep it concise
-    and actionable.
+    SCOPE CAP
+    Only auto-heal a fix that is clearly minimal and reversible. If the smallest
+    safe fix is a broad refactor, an architecture change, or a many-file edit,
+    do NOT auto-heal it — record it under "Needs Human Attention" with enough
+    detail for an LLM agent to act on later (see AGENT NOTES).
 
-    Include sections:
-    - Summary metrics (new issues, open PRs, stale issues/PRs, failing main
-      checks, security alerts)
-    - Critical items (security alerts, main branch failing, broken release
-      pipelines) with repo, link, and recommended action
-    - Aging PRs (no activity >7 days; stale >14 days)
-    - Stale issues (no activity >30 days; recommend next step)
-    - Unassigned bugs or high-signal issues (label bug, no assignee)
-    - Repo hotspots (top 3 repos by open PRs or stale items)
-    - Recommended actions (bulleted checklist)
+    DEPENDENCY OWNERSHIP
+    Renovate owns routine dependency and version bumps. Change dependency
+    versions only to remediate a confirmed critical/high security advisory or to
+    repair an existing security-update PR. Never open a non-security version-bump
+    PR and never batch unrelated dependency changes into a security fix.
 
-    If any data source is unavailable, note "data unavailable" in that section.
+    TRUSTED AUTHORS
+    Only repair a PR branch authored by the repository owner/a collaborator with
+    write access, or an approved automation bot (renovate[bot], dependabot[bot],
+    fro-bot). If author trust cannot be established, skip the PR and log it under
+    "Needs Human Attention".
+
+    CATEGORIES (work in order)
+
+    1. ERRORED PRs
+       Find open PRs with failing CI. Skip dependency/security PRs here (handle
+       in category 2). Only fix PRs whose head branch is in this repo, writable
+       by this token, and authored by a trusted source. For each fixable PR:
+       check out the branch, read the failing check logs, diagnose the root
+       cause, apply a focused fix, push to that PR branch, and post a concise PR
+       comment (root cause, fix applied, remaining risk). If the PR touches
+       .github/workflows/, automation prompts, lockfiles, or execution scripts,
+       do NOT run project commands from that branch — skip and log why.
+
+    2. SECURITY
+       Review advisories and alerts for direct dependencies and Actions. If a
+       security PR is failing or conflicted, fix and push to it. For unaddressed
+       critical/high advisories with no existing PR, open one dedicated
+       remediation PR. Never bundle unrelated upgrades. If advisory data is
+       unavailable to the token, note "security alerts unavailable" under "Needs
+       Human Attention" — do not guess.
+
+    3. CONTROL-PLANE INTEGRITY (highest-value for this repo)
+       a. SHA pinning: every third-party action in .github/workflows/*.yaml and
+          .github/actions/**/action.yaml must be pinned to a full commit SHA with
+          a version comment (@<sha> # vX.Y.Z). Fix floating tags on a PR.
+       b. Strip-only TypeScript: scripts/*.ts must avoid enum, namespace,
+          parameter properties, and TS import aliases (Node 24 strip-only). The
+          eslint erasable-syntax rule and the Test Scripts Load job enforce this;
+          flag any drift.
+       c. Least privilege: workflows should declare minimal permissions and use
+          the shared ./.github/actions/setup. Flag over-broad permissions.
+       d. Guard integrity: do not weaken the wiki-authority guard, the privacy
+          gates, or branch protection. Report gaps; never relax them.
+
+    4. CODE QUALITY
+       Run the repository's own validation: pnpm bootstrap, pnpm check-types,
+       pnpm lint, pnpm test. Apply safe mechanical fixes (lint/format autofixes)
+       on a PR branch — never commit directly to main. If a check fails and the
+       fix is not minimal/reversible, open or update an issue and log it.
+
+    5. OVERSIGHT (org-wide detection, report-only)
+       Scope: all repositories the fro-bot account can see. Summarize with links
+       only. Detect: new issues, open PRs, stale issues (>30d) and PRs (>7d aging,
+       >14d stale), failing main checks, security alerts, unassigned bugs, and the
+       top repo hotspots. Recommend a next step for each. Do NOT modify individual
+       issues/PRs or apply labels in this category.
+
+    6. CROSS-PROJECT INTELLIGENCE (report-only)
+       Fro Bot surveys tracked repositories into the wiki. Use that knowledge:
+       scan sibling repos (e.g. bfra-me/.github, bfra-me/renovate-action,
+       bfra-me/works, and tracked fro-bot repos) for automation patterns, prompt
+       strategies, or workflow improvements that could benefit this repository.
+       Report adoptable findings only; make no changes in this category.
+
+    7. PROGRESSIVE IMPROVEMENT (report-only)
+       Scan for durable improvement opportunities: tool-version drift in
+       package.json (ESLint, Prettier, TypeScript, Vitest more than a minor
+       behind), missing or degraded CI jobs, convention drift from
+       copilot-instructions.md, and stale TODO/FIXME annotations. Report under
+       "Progressive Improvement"; make no changes here.
+
+    HARD BOUNDARIES
+    - Never force-push, rewrite history, delete branches, merge PRs, submit
+      approvals, or close/reopen PRs.
+    - Never push directly to main. Direct pushes are allowed only to an existing
+      non-default PR branch you are repairing under category 1 or 2.
+    - Never modify secrets, org settings, environments, or branch protection.
+    - Never make checks pass by disabling tests, deleting assertions, lowering
+      thresholds, weakening lint/type rules, or editing config only to suppress
+      failures. If the smallest safe fix would weaken a guardrail, skip and log.
+    - Do not modify .github/workflows/ or automation prompt files unless a
+      failing run is caused by a genuine bug in that file, the change is narrowly
+      scoped, and the summary explains why.
+
+    AGENT NOTES (instead of per-agent follow-up tasks)
+    Do NOT create follow-up tasks addressed to a specific agent (Fro Bot,
+    Copilot, etc.). When work is deferred, write the note so any LLM agent can
+    pick it up cold: state the exact file paths, the root cause, the smallest
+    safe fix, any constraints or "do not retry" warnings, and how to verify.
+    Put these under "Needs Human Attention" in the report. If a finding is
+    durable repository knowledge, also persist it to the wiki per the
+    knowledge_persistence block, following knowledge/schema.md.
+
+    OUTPUT — ONE PERPETUAL SUMMARY ISSUE
+    Maintain exactly one daily report. Create an issue titled
+    "Daily Fro Bot Report — YYYY-MM-DD (UTC)" for today. Before or after
+    creating it, CLOSE every older open issue whose title starts with
+    "Daily Fro Bot Report —" or "Daily Org Oversight Report —" (the previous
+    naming), leaving a one-line closing comment that links the newest report.
+    There must be exactly one open daily report when the run finishes.
+
+    The issue body MUST use this structure (write "None" for empty sections,
+    links only — no full content duplication):
+    ## Daily Fro Bot Report — YYYY-MM-DD (UTC)
+    ### Run Summary
+    | Category | Status | Notes |
+    | --- | --- | --- |
+    | Errored PRs | ✅/⚠️/❌ | ... |
+    | Security | ✅/⚠️/❌ | ... |
+    | Control-Plane Integrity | ✅/⚠️/❌ | ... |
+    | Code Quality | ✅/⚠️/❌ | ... |
+    | Oversight | ✅/⚠️/❌ | ... |
+    | Cross-Project Intelligence | ✅/⚠️/❌ | ... |
+    | Progressive Improvement | ✅/⚠️/❌ | ... |
+    ### Errored PRs
+    ### Security
+    ### Control-Plane Integrity
+    ### Code Quality
+    ### Oversight
+    ### Cross-Project Intelligence
+    ### Progressive Improvement
+    ### Needs Human Attention
+
+    If any data source is unavailable, write "data unavailable" in that section.
 
 jobs:
   fro-bot:
