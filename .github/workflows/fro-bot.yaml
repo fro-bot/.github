@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       prompt:
-        description: "Custom prompt for the Fro Bot agent (leave empty to run the default daily oversight + autohealing pass)"
+        description: 'Custom prompt for the Fro Bot agent (leave empty to run the default daily oversight + autohealing pass)'
         required: false
         default: ''
   workflow_call:
