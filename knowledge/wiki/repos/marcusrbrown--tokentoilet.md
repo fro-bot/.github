@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/tokentoilet"
 created: 2026-04-18
-updated: 2026-05-28
+updated: 2026-06-04
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -24,11 +24,14 @@ aliases: [tokentoilet]
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--vbs
+  - fro-bot--tokentoilet
 ---
 
 # marcusrbrown/tokentoilet
 
 A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens, converting "wallet dust" into charitable contributions. Built with Next.js 16, React 19, TypeScript 6, Wagmi v2, and Reown AppKit. Deployed to Vercel.
+
+> **Fork:** A public fork lives at [[fro-bot--tokentoilet]] under the `fro-bot` account, frozen at a 2026-04-16 pre-MVP snapshot (wagmi v2, Next 16.1.4, agent pin v0.37.0). It tracks an earlier state of this repo and is roughly a month behind on every axis. See that page for fork-specific details.
 
 ## Overview
 

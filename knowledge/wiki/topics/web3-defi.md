@@ -2,7 +2,7 @@
 type: topic
 title: "Web3 & DeFi Development"
 created: 2026-04-18
-updated: 2026-05-28
+updated: 2026-06-04
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -19,6 +19,9 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: db6dbcc2d289d23377d3d80b19d5e4273008a1b2
     accessed: 2026-05-28
+  - url: https://github.com/fro-bot/tokentoilet
+    sha: a141424e89c133a3c8e1a7544f31193afc5af21c
+    accessed: 2026-06-04
 tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721]
 ---
 
@@ -29,6 +32,7 @@ Patterns, tooling, and conventions for Web3 and decentralized finance (DeFi) app
 ## Repositories
 
 - [[marcusrbrown--tokentoilet]] — Token disposal and charity donation DeFi app (Next.js + Wagmi + Reown AppKit)
+- [[fro-bot--tokentoilet]] — Public fork of the above under the `fro-bot` account; frozen at a 2026-04-16 pre-MVP snapshot (wagmi v2, Next 16.1.4), carries its own Fro Bot workflow at a stale agent pin (v0.37.0)
 
 ## Wallet Integration Stack
 

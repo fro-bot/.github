@@ -1686,3 +1686,24 @@ Sources: https://github.com/fro-bot/agent (SHA 34abe2abc779e942444df86342956542d
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-06-04 15:20] ingest | repo:fro-bot/tokentoilet
+
+Surveyed fro-bot/tokentoilet (SHA `a141424`) and created its repo page. The target is a **public fork** of [[marcusrbrown--tokentoilet]] living under the `fro-bot` account — public, so safe for the wiki per the public-only invariant.
+
+Key findings:
+
+- **Frozen fork, not a divergent project.** Created 2026-04-14, last pushed 2026-04-16, then static. It captures the upstream pre-MVP codebase state (before the Sepolia `/flush` disposal flow merged on the parent in PR #911). No fork-specific divergence beyond version lag was observed in the surveyed surfaces.
+- **~Month behind upstream on every axis.** Fork sits on wagmi v2 / pnpm 10.33.0 / Next 16.1.4 / TS 6.0.2 / ESLint 10.1.0; upstream has since crossed wagmi v2→v3 and pnpm v10→v11 (Next 16.2.6). Storybook alpha-addon drift inherited from upstream.
+- **Fro Bot workflow present** (`fro-bot.yaml`) — requirement satisfied, no missing-workflow follow-up draft needed. But it pins **`fro-bot/agent@v0.37.0`** (SHA `7fa1422`), ~16 minor versions behind [[fro-bot--agent]]'s v0.53.1 and behind upstream's v0.45.0. Daily schedule (`30 3 * * *`), full PR-review + five-category autoheal prompts. The actionable gap is the stale agent pin and the open question of whether the fork's automation is intentionally live.
+- **Doc drift:** `readme.md`/`mvp.md` badges advertise Next 14 / TS 5.7 / Tailwind 3.4 — stale by two major Next versions vs the real `package.json` (Next 16 / TS 6 / Tailwind 4). Upstream-inherited, not fork-introduced. No license file (inherits upstream's no-license state).
+
+Touched pages: created `knowledge/wiki/repos/fro-bot--tokentoilet.md`; cross-linked [[marcusrbrown--tokentoilet]] (fork note + `related` + source); added the fork to [[web3-defi]] repositories list; cataloged in `knowledge/index.md`. Modified only `knowledge/wiki/**`, `knowledge/index.md`, and `knowledge/log.md`. Survey limited to directory listings, README, manifest, and workflow files per untrusted-input constraint.
+
+Sources: https://github.com/fro-bot/tokentoilet (SHA a141424e89c133a3c8e1a7544f31193afc5af21c)
+
+## [2026-06-04 15:19] ingest | repo:fro-bot/tokentoilet
+
+Surveyed fro-bot/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/tokentoilet
