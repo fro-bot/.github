@@ -1,9 +1,9 @@
+import type {GitDiffRunner, ReposYamlReader, ResolverFactory} from './check-private-leak.ts'
+import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
-
 import {describe, expect, it, vi} from 'vitest'
-
-import {checkPrivateLeak, main} from './check-private-leak.ts'
+import {checkPrivateLeak, main, runPromotionCli, runPromotionScan} from './check-private-leak.ts'
 
 // ---------------------------------------------------------------------------
 // Module-level hoisted mocks — shared across all describe blocks.
@@ -364,7 +364,7 @@ describe('checkPrivateLeak — rename/copy path detection (Round-3 FIX #1)', () 
 })
 
 // ---------------------------------------------------------------------------
-// Round-3 FIX #2 — access-lost should SKIP, not fail-closed
+// Round-3 FIX #2 — access-lost and error fail-closed
 // Round-3 FIX #3 — stderr sanitization
 // Round-3 FIX #4 — no bare-name false positives (pure function)
 // ---------------------------------------------------------------------------
@@ -502,7 +502,7 @@ describe('main() — fail-closed and no-name-leak (FIX #1, FIX #4)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Round-3 FIX #2 — access-lost should SKIP, not fail-closed (CLI-level)
+// Round-3 FIX #2 — access-lost skip vs error fail-closed (CLI-level, PR path)
 // ---------------------------------------------------------------------------
 
 describe('main() — access-lost skip vs error fail-closed (Round-3 FIX #2)', () => {
@@ -711,5 +711,886 @@ describe('checkPrivateLeak — no bare-name false positives (Round-3 FIX #4)', (
     ].join('\n')
     const result = checkPrivateLeak(['acme/go', 'acme--go'], diff, override)
     expect(result).toEqual({ok: false, matchedFiles: ['docs/tech.md']})
+  })
+})
+
+// ---------------------------------------------------------------------------
+// runPromotionScan — promotion-mode entry path
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal repos.yaml YAML string with the given private node_ids.
+ */
+function makeReposYaml(nodeIds: string[]): string {
+  if (nodeIds.length === 0) {
+    return 'version: 1\nrepos: []\n'
+  }
+  const entries = nodeIds
+    .map(
+      (id, i) =>
+        `  - owner: "[REDACTED]"\n    name: repo-${i}\n    private: true\n    node_id: ${id}\n    added: "2024-01-01"\n    onboarding_status: onboarded\n    last_survey_at: null\n    last_survey_status: null\n    has_fro_bot_workflow: false\n    has_renovate: false`,
+    )
+    .join('\n')
+  return `version: 1\nrepos:\n${entries}\n`
+}
+
+/**
+ * Build a minimal repos.yaml with a private entry that has no node_id field.
+ */
+function makeReposYamlMissingNodeId(): string {
+  return `version: 1
+repos:
+  - owner: "[REDACTED]"
+    name: repo-no-id
+    private: true
+    added: "2024-01-01"
+    onboarding_status: onboarded
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: false
+`
+}
+
+/**
+ * Build a minimal repos.yaml with two private entries: one with a node_id, one without.
+ * Used to test that a missing node_id blocks even when other entries are valid.
+ */
+function makeReposYamlOneMissingOnePresent(): string {
+  return `version: 1
+repos:
+  - owner: "[REDACTED]"
+    name: repo-no-id
+    private: true
+    added: "2024-01-01"
+    onboarding_status: onboarded
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: false
+  - owner: "[REDACTED]"
+    name: repo-with-id
+    private: true
+    node_id: R_valid
+    added: "2024-01-01"
+    onboarding_status: onboarded
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: false
+`
+}
+
+/**
+ * Build a minimal unified diff with added lines for promotion-scan tests.
+ */
+function makePromoDiff(filePath: string, additions: string[]): string {
+  const lines = [
+    `diff --git a/${filePath} b/${filePath}`,
+    `--- a/${filePath}`,
+    `+++ b/${filePath}`,
+    '@@ -1,0 +1 @@',
+    ...additions.map(l => `+${l}`),
+  ]
+  return lines.join('\n')
+}
+
+describe('runPromotionScan — happy path: all resolve, no match → exit 0', () => {
+  it('returns ok:true when all node_ids resolve and diff has no private token', async () => {
+    // #given: one private node_id resolves; diff has no private name
+    const reposYaml = makeReposYaml(['R_promo_1'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_promo_1') return {nameWithOwner: 'acme/private-repo'}
+      return {error: 'error'}
+    }
+    const diff = makePromoDiff('knowledge/wiki/topics/rust.md', ['Some content about Rust.'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    expect(result).toEqual({ok: true})
+  })
+})
+
+describe('runPromotionScan — happy path: diff contains private owner/name → block', () => {
+  it('returns ok:false with matchedFiles when diff added line contains the private name', async () => {
+    // #given: one private node_id resolves to acme/private-repo; diff adds that name in body
+    const reposYaml = makeReposYaml(['R_promo_2'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_promo_2') return {nameWithOwner: 'acme/private-repo'}
+      return {error: 'error'}
+    }
+    const diff = makePromoDiff('knowledge/wiki/topics/rust.md', ['See acme/private-repo for details.'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: blocked, file listed, no resolved name in matchedFiles (paths only)
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/rust.md']})
+    // Verify the result does NOT contain the resolved name itself (only file paths)
+    if (!result.ok && 'matchedFiles' in result) {
+      for (const file of result.matchedFiles) {
+        expect(file).not.toContain('acme/private-repo')
+      }
+    }
+  })
+})
+
+describe('runPromotionScan — edge: private token as new wiki page path → detected and redacted', () => {
+  it('returns ok:false when a new wiki page path contains the owner--slug form; path is redacted', async () => {
+    // #given: private repo resolves; diff adds a new file whose path is the slug form
+    const reposYaml = makeReposYaml(['R_promo_3'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_promo_3') return {nameWithOwner: 'acme/private-repo'}
+      return {error: 'error'}
+    }
+    // New file added with slug path — the path itself is the leak surface
+    const diff = [
+      'diff --git a/knowledge/wiki/repos/acme--private-repo.md b/knowledge/wiki/repos/acme--private-repo.md',
+      'new file mode 100644',
+      '--- /dev/null',
+      '+++ b/knowledge/wiki/repos/acme--private-repo.md',
+      '@@ -0,0 +1 @@',
+      '+Some unrelated content',
+    ].join('\n')
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: blocked; the matched file path has the private token redacted
+    expect(result.ok).toBe(false)
+    if (!result.ok && 'matchedFiles' in result) {
+      // The path must NOT contain the literal private token
+      for (const file of result.matchedFiles) {
+        expect(file).not.toContain('acme--private-repo')
+        expect(file).not.toContain('acme/private-repo')
+        // The redaction marker must be present
+        expect(file).toContain('[REDACTED]')
+      }
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fix D — redaction: matched path containing a private token is redacted
+// ---------------------------------------------------------------------------
+
+describe('runPromotionScan — Fix D: matched path redaction', () => {
+  it('redacts the private token from a matched file path in the returned result', async () => {
+    // #given: private repo resolves; diff adds content to a file whose path contains the slug
+    const reposYaml = makeReposYaml(['R_redact'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_redact') return {nameWithOwner: 'secretowner/secret-repo'}
+      return {error: 'error'}
+    }
+    // The matched file path contains the slug form of the private repo
+    const diff = makePromoDiff('knowledge/wiki/repos/secretowner--secret-repo.md', [
+      'See secretowner/secret-repo for details.',
+    ])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: blocked
+    expect(result.ok).toBe(false)
+    if (!result.ok && 'matchedFiles' in result) {
+      const serialized = JSON.stringify(result)
+      // The literal private tokens must NOT appear in the result
+      expect(serialized).not.toContain('secretowner/secret-repo')
+      expect(serialized).not.toContain('secretowner--secret-repo')
+      expect(serialized).not.toContain('secretowner')
+      // The redaction marker must be present
+      expect(serialized).toContain('[REDACTED]')
+    }
+  })
+
+  it('does not redact paths that do not contain a private token', async () => {
+    // #given: private repo resolves; diff adds content to a public-named file
+    const reposYaml = makeReposYaml(['R_no_redact'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_no_redact') return {nameWithOwner: 'secretowner/secret-repo'}
+      return {error: 'error'}
+    }
+    // The matched file path does NOT contain the private token
+    const diff = makePromoDiff('docs/public-doc.md', ['See secretowner/secret-repo for details.'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: blocked; path is preserved (no token in path)
+    expect(result.ok).toBe(false)
+    if (!result.ok && 'matchedFiles' in result) {
+      // The path itself is public — it should be preserved as-is
+      expect(result.matchedFiles).toContain('docs/public-doc.md')
+    }
+  })
+})
+
+describe('runPromotionScan — error: non-access-lost failure → BLOCK (fail-closed)', () => {
+  it('returns a resolution-failure result when a node_id returns a transient/auth error', async () => {
+    // #given: one node_id fails with a non-access-lost error (transient/auth)
+    const reposYaml = makeReposYaml(['R_promo_fail'])
+    const resolver: NodeIdResolver = async () => ({error: 'error'})
+    const diff = makePromoDiff('knowledge/wiki/topics/rust.md', ['Some content.'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: fail-closed — resolution failure blocks promotion
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['R_promo_fail']})
+  })
+
+  it('does not leak the resolved name in the failure result', async () => {
+    // #given: one resolves, one fails — the resolved name must not appear in the result
+    const reposYaml = makeReposYaml(['R_ok', 'R_fail'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_ok') return {nameWithOwner: 'acme/private-repo'}
+      return {error: 'error'}
+    }
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['R_fail']})
+    // The resolved name must not appear anywhere in the result object
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toContain('acme/private-repo')
+    expect(serialized).not.toContain('acme')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fix A — access-lost must BLOCK in promotion mode (not skip)
+// ---------------------------------------------------------------------------
+
+describe('runPromotionScan — Fix A: access-lost BLOCKS (fail-closed)', () => {
+  it('BLOCKS when a node_id returns access-lost — includes it in failedNodeIds', async () => {
+    // #given: one node_id returns access-lost
+    // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
+    // A mis-scoped PAT makes every private repo look access-lost → must block, not skip.
+    const reposYaml = makeReposYaml(['R_access_lost'])
+    const resolver: NodeIdResolver = async () => ({error: 'access-lost'})
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: fail-closed — access-lost blocks promotion
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['R_access_lost']})
+  })
+
+  it('BLOCKS when one node_id is access-lost and one resolves successfully', async () => {
+    // #given: one access-lost, one resolves; diff has no private name
+    const reposYaml = makeReposYaml(['R_gone', 'R_present'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_gone') return {error: 'access-lost'}
+      if (nodeId === 'R_present') return {nameWithOwner: 'acme/private-repo'}
+      return {error: 'error'}
+    }
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: access-lost blocks — R_gone is in failedNodeIds
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['R_gone']})
+  })
+
+  it('BLOCKS when ALL node_ids are access-lost', async () => {
+    // #given: all private repos are access-lost
+    const reposYaml = makeReposYaml(['R_gone1', 'R_gone2'])
+    const resolver: NodeIdResolver = async () => ({error: 'access-lost'})
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: all access-lost → all in failedNodeIds
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['R_gone1', 'R_gone2']})
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fix B — missing/empty node_id on a private entry must BLOCK
+// ---------------------------------------------------------------------------
+
+describe('runPromotionScan — Fix B: missing/empty node_id BLOCKS', () => {
+  it('BLOCKS when a private entry has no node_id field', async () => {
+    // #given: repos.yaml with a private entry that has no node_id
+    const reposYaml = makeReposYamlMissingNodeId()
+    const resolver: NodeIdResolver = vi.fn()
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: fail-closed — missing node_id blocks promotion
+    expect(result.ok).toBe(false)
+    if (!result.ok && 'resolutionFailed' in result) {
+      expect(result.resolutionFailed).toBe(true)
+      // The sentinel placeholder must appear (never any owner/name)
+      expect(result.failedNodeIds).toContain('<missing-node-id>')
+      // The resolver must NOT have been called (no node_id to resolve)
+      expect(resolver).not.toHaveBeenCalled()
+    }
+  })
+
+  it('BLOCKS when mix of missing node_id and valid node_id — missing entry blocks regardless', async () => {
+    // #given: one entry with missing node_id, one with a valid node_id that resolves
+    // The schema allows node_id to be omitted (undefined) but not empty string.
+    const reposYaml = makeReposYamlOneMissingOnePresent()
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_valid') return {nameWithOwner: 'acme/private-repo'}
+      return {error: 'error'}
+    }
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: blocked because of the missing node_id entry
+    expect(result.ok).toBe(false)
+    if (!result.ok && 'resolutionFailed' in result) {
+      expect(result.resolutionFailed).toBe(true)
+      expect(result.failedNodeIds).toContain('<missing-node-id>')
+    }
+  })
+
+  it('the sentinel placeholder never contains owner or name', async () => {
+    // #given: private entry with no node_id
+    const reposYaml = makeReposYamlMissingNodeId()
+    const resolver: NodeIdResolver = vi.fn()
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    const serialized = JSON.stringify(result)
+    // The sentinel must not contain any owner/name information
+    expect(serialized).not.toContain('repo-no-id')
+    expect(serialized).not.toContain('REDACTED"') // the owner field value
+    // But the sentinel placeholder itself is present
+    expect(serialized).toContain('<missing-node-id>')
+  })
+})
+
+describe('runPromotionScan — edge: zero private entries → exit 0 (nothing to scan)', () => {
+  it('returns ok:true immediately when repos.yaml has no private entries', async () => {
+    // #given: repos.yaml with only public entries (no private: true)
+    const reposYaml = `version: 1
+repos:
+  - owner: "publicowner"
+    name: "public-repo"
+    private: false
+    added: "2024-01-01"
+    onboarding_status: onboarded
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: false
+`
+    const resolverSpy = vi.fn<NodeIdResolver>()
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    const result = await runPromotionScan({reposYaml, resolver: resolverSpy, diff})
+
+    // #then: ok immediately, resolver never called
+    expect(result).toEqual({ok: true})
+    expect(resolverSpy).not.toHaveBeenCalled()
+  })
+
+  it('returns ok:true when repos.yaml has an empty repos array', async () => {
+    const reposYaml = 'version: 1\nrepos: []\n'
+    const resolverSpy = vi.fn<NodeIdResolver>()
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    const result = await runPromotionScan({reposYaml, resolver: resolverSpy, diff})
+
+    expect(result).toEqual({ok: true})
+    expect(resolverSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('runPromotionScan — integration: PAT passed only to resolver, diff needs no token', () => {
+  it('passes the resolver as an injectable dependency (token wiring is caller responsibility)', async () => {
+    // #given: a resolver spy that captures what it was called with
+    const reposYaml = makeReposYaml(['R_token_test'])
+    const capturedNodeIds: string[] = []
+    const resolver: NodeIdResolver = async nodeId => {
+      capturedNodeIds.push(nodeId)
+      return {nameWithOwner: 'acme/private-repo'}
+    }
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: resolver was called with the node_id from repos.yaml
+    expect(capturedNodeIds).toEqual(['R_token_test'])
+    // The diff is passed directly — no token involved in obtaining it (caller's responsibility)
+    // This test verifies the seam: resolver is injectable, diff is injectable, no ambient token
+  })
+
+  it('the resolver receives each private node_id exactly once', async () => {
+    // #given: two private node_ids
+    const reposYaml = makeReposYaml(['R_a', 'R_b'])
+    const calls: string[] = []
+    const resolver: NodeIdResolver = async nodeId => {
+      calls.push(nodeId)
+      return {nameWithOwner: `acme/repo-${nodeId}`}
+    }
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    await runPromotionScan({reposYaml, resolver, diff})
+
+    expect(calls).toEqual(['R_a', 'R_b'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fix E — runPromotionCli: CLI-level tests via injectable seams
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal repos.yaml string for CLI tests.
+ */
+function makeCliReposYaml(nodeIds: string[]): string {
+  return makeReposYaml(nodeIds)
+}
+
+interface SeamOpts {
+  nodeIds?: string[]
+  resolverResult?: NodeIdResolver
+  diffOutput?: string
+  reposYamlContent?: string
+  gitThrows?: Error
+  reposYamlThrows?: Error
+}
+
+interface SeamResult {
+  gitDiffRunner: GitDiffRunner
+  reposYamlReader: ReposYamlReader
+  resolverFactory: ResolverFactory
+  capturedGitEnvs: NodeJS.ProcessEnv[]
+}
+
+/**
+ * Build standard seam fakes for runPromotionCli tests.
+ * Moved to outer scope to satisfy unicorn/consistent-function-scoping.
+ */
+function makeSeams(opts: SeamOpts = {}): SeamResult {
+  const capturedGitEnvs: NodeJS.ProcessEnv[] = []
+
+  const gitDiffRunner: GitDiffRunner = (_args, env) => {
+    capturedGitEnvs.push({...env})
+    if (opts.gitThrows !== undefined) throw opts.gitThrows
+    return opts.diffOutput ?? ''
+  }
+
+  const reposYamlReader: ReposYamlReader = async () => {
+    if (opts.reposYamlThrows !== undefined) throw opts.reposYamlThrows
+    return opts.reposYamlContent ?? makeCliReposYaml(opts.nodeIds ?? [])
+  }
+
+  const resolverFactory: ResolverFactory = (_pat: string): NodeIdResolver =>
+    opts.resolverResult ?? (async () => ({nameWithOwner: 'acme/private-repo'}))
+
+  return {gitDiffRunner, reposYamlReader, resolverFactory, capturedGitEnvs}
+}
+
+describe('runPromotionCli — Fix E: CLI-level tests via injectable seams', () => {
+  it('returns 1 when FRO_BOT_POLL_PAT is not set', async () => {
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+
+    const savedPat = process.env.FRO_BOT_POLL_PAT
+    delete process.env.FRO_BOT_POLL_PAT
+
+    try {
+      const {gitDiffRunner, reposYamlReader, resolverFactory} = makeSeams()
+      const exitCode = await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+
+      expect(exitCode).toBe(1)
+      expect(stderrOutput.join('')).toContain('FRO_BOT_POLL_PAT not set')
+    } finally {
+      if (savedPat !== undefined) process.env.FRO_BOT_POLL_PAT = savedPat
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('returns 1 when repos.yaml cannot be read', async () => {
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      const {gitDiffRunner, reposYamlReader, resolverFactory} = makeSeams({
+        reposYamlThrows: new Error('ENOENT: no such file'),
+      })
+      const exitCode = await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+
+      expect(exitCode).toBe(1)
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('returns 1 when git diff fails', async () => {
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      const {gitDiffRunner, reposYamlReader, resolverFactory} = makeSeams({
+        nodeIds: [],
+        gitThrows: new Error('git: not a git repository'),
+      })
+      const exitCode = await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+
+      expect(exitCode).toBe(1)
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('returns 0 when all node_ids resolve and diff is clean', async () => {
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      const {gitDiffRunner, reposYamlReader, resolverFactory} = makeSeams({
+        nodeIds: ['R_clean'],
+        resolverResult: async () => ({nameWithOwner: 'acme/private-repo'}),
+        diffOutput: makePromoDiff('docs/public.md', ['some public content']),
+      })
+      const exitCode = await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+
+      expect(exitCode).toBe(0)
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('returns 1 when resolution fails (access-lost) — blocks promotion', async () => {
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      const {gitDiffRunner, reposYamlReader, resolverFactory} = makeSeams({
+        nodeIds: ['R_access_lost_cli'],
+        resolverResult: async () => ({error: 'access-lost'}),
+        diffOutput: '',
+      })
+      const exitCode = await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+
+      expect(exitCode).toBe(1)
+      const stderrText = stderrOutput.join('')
+      // access-lost is now a blocking condition
+      expect(stderrText).toContain('BLOCKING')
+      expect(stderrText).toContain('R_access_lost_cli')
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('returns 1 when diff contains a matched private file', async () => {
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      const {gitDiffRunner, reposYamlReader, resolverFactory} = makeSeams({
+        nodeIds: ['R_match'],
+        resolverResult: async () => ({nameWithOwner: 'acme/private-repo'}),
+        diffOutput: makePromoDiff('docs/foo.md', ['See acme/private-repo for details.']),
+      })
+      const exitCode = await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+
+      expect(exitCode).toBe(1)
+      const stderrText = stderrOutput.join('')
+      // The private name must NOT appear in stderr (redacted)
+      expect(stderrText).not.toContain('acme/private-repo')
+      expect(stderrText).not.toContain('acme--private-repo')
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('Fix C: git runner env does NOT contain FRO_BOT_POLL_PAT', async () => {
+    // #given: FRO_BOT_POLL_PAT is set in process.env
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    process.env.FRO_BOT_POLL_PAT = 'super-secret-pat'
+    try {
+      const {gitDiffRunner, reposYamlReader, resolverFactory, capturedGitEnvs} = makeSeams({
+        nodeIds: ['R_env_test'],
+        resolverResult: async () => ({nameWithOwner: 'acme/private-repo'}),
+        diffOutput: '',
+      })
+      await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+
+      // #then: the git runner was called at least once
+      expect(capturedGitEnvs.length).toBeGreaterThan(0)
+      // #then: FRO_BOT_POLL_PAT must NOT be in the env passed to git
+      for (const env of capturedGitEnvs) {
+        expect(env).not.toHaveProperty('FRO_BOT_POLL_PAT')
+        expect(Object.values(env)).not.toContain('super-secret-pat')
+      }
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('Fix C: PAT reaches the resolver factory but not the git runner', async () => {
+    // #given: FRO_BOT_POLL_PAT is set
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    process.env.FRO_BOT_POLL_PAT = 'resolver-only-pat'
+    const capturedPats: string[] = []
+
+    try {
+      const {gitDiffRunner, reposYamlReader, capturedGitEnvs} = makeSeams({
+        nodeIds: ['R_pat_routing'],
+        diffOutput: '',
+      })
+
+      // Custom resolver factory that captures the PAT
+      const resolverFactory: ResolverFactory = (pat: string): NodeIdResolver => {
+        capturedPats.push(pat)
+        return async () => ({nameWithOwner: 'acme/private-repo'})
+      }
+
+      await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+
+      // #then: PAT reached the resolver factory
+      expect(capturedPats).toContain('resolver-only-pat')
+      // #then: PAT did NOT reach the git runner
+      for (const env of capturedGitEnvs) {
+        expect(env).not.toHaveProperty('FRO_BOT_POLL_PAT')
+      }
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('no resolved private name appears in captured stdout+stderr', async () => {
+    // #given: a private repo resolves; diff matches it
+    const stdoutOutput: string[] = []
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
+      stdoutOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      const {gitDiffRunner, reposYamlReader, resolverFactory} = makeSeams({
+        nodeIds: ['R_no_leak'],
+        resolverResult: async () => ({nameWithOwner: 'secretowner/secret-repo'}),
+        diffOutput: makePromoDiff('docs/foo.md', ['See secretowner/secret-repo for details.']),
+      })
+      await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+
+      const allOutput = [...stdoutOutput, ...stderrOutput].join('')
+      // The private name must NEVER appear in any output
+      expect(allOutput).not.toContain('secretowner/secret-repo')
+      expect(allOutput).not.toContain('secretowner--secret-repo')
+      expect(allOutput).not.toContain('secretowner')
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      vi.restoreAllMocks()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 1 (token coverage) — buildTokensForName raw double-dash form
+// ---------------------------------------------------------------------------
+
+describe('buildTokensForName — raw double-dash form (FIX 1)', () => {
+  // buildTokensForName is not exported; exercise it via runPromotionScan which
+  // calls it internally and uses the returned tokens for both matching and redaction.
+
+  it('includes the raw double-dash form for a name with underscore (acme/private_repo)', async () => {
+    // #given: a private repo whose name contains an underscore.
+    // The slug sanitizes underscore → hyphen (acme--private-repo), but the raw form preserves it
+    // (acme--private_repo). Without the raw form in the token set, a diff containing
+    // "acme--private_repo" would not be detected.
+    const reposYaml = makeReposYaml(['R_underscore'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_underscore') return {nameWithOwner: 'acme/private_repo'}
+      return {error: 'error'}
+    }
+    // Diff adds a content line containing the raw double-dash form (underscore preserved).
+    // The slug form (acme--private-repo) would NOT match this line — only the raw form does.
+    const diff = makePromoDiff('docs/some-doc.md', ['See acme--private_repo for details.'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: the raw double-dash form is in the token set → detected as a leak
+    expect(result.ok).toBe(false)
+  })
+
+  it('redacts the raw double-dash form (acme--private_repo) in the matched path output', async () => {
+    // #given: same scenario — raw double-dash form in a new file path
+    const reposYaml = makeReposYaml(['R_underscore_redact'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_underscore_redact') return {nameWithOwner: 'acme/private_repo'}
+      return {error: 'error'}
+    }
+    const diff = [
+      'diff --git a/knowledge/wiki/repos/acme--private_repo.md b/knowledge/wiki/repos/acme--private_repo.md',
+      'new file mode 100644',
+      '--- /dev/null',
+      '+++ b/knowledge/wiki/repos/acme--private_repo.md',
+      '@@ -0,0 +1 @@',
+      '+Some unrelated content',
+    ].join('\n')
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: blocked; the matched path must NOT contain the literal private_repo token
+    expect(result.ok).toBe(false)
+    if (!result.ok && 'matchedFiles' in result) {
+      for (const file of result.matchedFiles) {
+        expect(file).not.toContain('private_repo')
+        expect(file).not.toContain('acme--private_repo')
+        expect(file).toContain('[REDACTED]')
+      }
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 2 (PR-path redaction parity) — matched files redacted in main() stderr
+// ---------------------------------------------------------------------------
+
+describe('main() — PR-path matched file redaction (FIX 2)', () => {
+  it('redacts the private token from matched file paths printed to stderr on failure', async () => {
+    // #given: a private repo resolves; diff adds a new file whose path contains the slug
+    mockReadFile.mockResolvedValue(makeEvent())
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce(makeYamlBase64(['R_pr_redact'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'synth-owner/synth_private'}}})) // resolver → resolves
+      // fetchPrDiff: diff adds a new file whose path contains the slug form
+      .mockReturnValueOnce(
+        [
+          'diff --git a/knowledge/wiki/repos/synth-owner--synth_private.md b/knowledge/wiki/repos/synth-owner--synth_private.md',
+          'new file mode 100644',
+          '--- /dev/null',
+          '+++ b/knowledge/wiki/repos/synth-owner--synth_private.md',
+          '@@ -0,0 +1 @@',
+          '+Some content',
+        ].join('\n'),
+      )
+
+    const stderrOutput: string[] = []
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    try {
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      const stderrText = stderrOutput.join('')
+
+      // #then: the "Matched files:" header is present
+      expect(stderrText).toContain('Matched files:')
+
+      // #then: the private token does NOT appear literally in stderr
+      expect(stderrText).not.toContain('synth_private')
+      expect(stderrText).not.toContain('synth-owner--synth_private')
+      expect(stderrText).not.toContain('synth-owner/synth_private')
+
+      // #then: the redaction marker IS present (path was redacted, not dropped)
+      expect(stderrText).toContain('[REDACTED]')
+    } finally {
+      stderrSpy.mockRestore()
+      exitSpy.mockRestore()
+      delete process.env.GITHUB_EVENT_PATH
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 3 (correctness) — regex-metachar token redacted literally, not as pattern
+// ---------------------------------------------------------------------------
+
+describe('redactPathTokens — regex-metachar token (FIX 3)', () => {
+  // redactPathTokens is not exported; exercise via runPromotionScan which calls it
+  // on matched file paths before returning them.
+
+  it('redacts a token containing regex metacharacters literally without throwing', async () => {
+    // #given: a synthetic owner/name that produces regex metacharacters in the slug.
+    // "a.c/d+e" → raw double-dash form "a.c--d+e" contains '.' and '+' which are regex metacharacters.
+    // The redaction must treat them as literals, not regex operators.
+    const reposYaml = makeReposYaml(['R_metachar'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_metachar') return {nameWithOwner: 'a.c/d+e'}
+      return {error: 'error'}
+    }
+    // Diff adds a new file whose path contains the raw double-dash form of the token.
+    // If '.' or '+' were interpreted as regex metacharacters, the match/redaction would be wrong.
+    const diff = [
+      'diff --git a/knowledge/wiki/repos/a.c--d+e.md b/knowledge/wiki/repos/a.c--d+e.md',
+      'new file mode 100644',
+      '--- /dev/null',
+      '+++ b/knowledge/wiki/repos/a.c--d+e.md',
+      '@@ -0,0 +1 @@',
+      '+Some content',
+    ].join('\n')
+
+    // #when: runPromotionScan is called — must not throw a regex error
+    let result: Awaited<ReturnType<typeof runPromotionScan>>
+    expect(() => {
+      result = undefined as unknown as typeof result
+    }).not.toThrow()
+
+    result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: the literal path is detected (not a regex false-negative)
+    expect(result.ok).toBe(false)
+
+    if (!result.ok && 'matchedFiles' in result) {
+      for (const file of result.matchedFiles) {
+        // The literal token must be redacted, not left as-is or partially matched
+        expect(file).not.toContain('a.c--d+e')
+        expect(file).toContain('[REDACTED]')
+      }
+    }
+  })
+
+  it('does not match unrelated paths when token contains regex metacharacters', async () => {
+    // #given: token "a.c/d+e" — the '.' would match any char and '+' is a quantifier if unescaped.
+    // A path like "axc--dde.md" should NOT be matched (only the literal "a.c--d+e" should match).
+    const reposYaml = makeReposYaml(['R_metachar_no_false_pos'])
+    const resolver: NodeIdResolver = async nodeId => {
+      if (nodeId === 'R_metachar_no_false_pos') return {nameWithOwner: 'a.c/d+e'}
+      return {error: 'error'}
+    }
+    // Diff adds a file whose path would match if '.' and '+' were regex metacharacters,
+    // but should NOT match because the literal token is different.
+    const diff = makePromoDiff('knowledge/wiki/repos/axc--dde.md', ['Some content'])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: no match — the path does not contain the literal token
+    expect(result.ok).toBe(true)
   })
 })
