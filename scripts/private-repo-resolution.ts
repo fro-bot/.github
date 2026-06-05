@@ -73,7 +73,12 @@ export function makeGhNodeIdResolver(
 
     while (true) {
       try {
-        const env: NodeJS.ProcessEnv = token === undefined ? {...process.env} : {...process.env, GH_TOKEN: token}
+        // Strip the ambient FRO_BOT_POLL_PAT so the gh subprocess only ever sees the
+        // token via GH_TOKEN — one token form, not two. Defense-in-depth: the named PAT
+        // is redundant once GH_TOKEN is set, and removing it narrows secret propagation.
+        const env: NodeJS.ProcessEnv = {...process.env}
+        delete env.FRO_BOT_POLL_PAT
+        if (token !== undefined) env.GH_TOKEN = token
         const stdout = execFileSync('gh', ['api', 'graphql', '-f', `query=${GRAPHQL_QUERY}`, '-f', `id=${nodeId}`], {
           encoding: 'utf8',
           env,

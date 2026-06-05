@@ -1,3 +1,5 @@
+import process from 'node:process'
+
 import {describe, expect, it, vi} from 'vitest'
 
 import {makeGhNodeIdResolver} from './private-repo-resolution.ts'
@@ -112,5 +114,34 @@ describe('makeGhNodeIdResolver', () => {
 
     // #then only called once (no retry)
     expect(mockExecFileSync).toHaveBeenCalledTimes(1)
+  })
+
+  it('#3429: strips FRO_BOT_POLL_PAT from subprocess env and passes only GH_TOKEN', async () => {
+    // #given: FRO_BOT_POLL_PAT is set in the ambient environment
+    const savedPat = process.env.FRO_BOT_POLL_PAT
+    process.env.FRO_BOT_POLL_PAT = 'ghp_ambient_pat'
+
+    // Capture the options argument (3rd arg) passed to execFileSync
+    let capturedOptions: {env?: NodeJS.ProcessEnv} | undefined
+    const payload = JSON.stringify({data: {node: {nameWithOwner: 'org/repo'}}})
+    mockExecFileSync.mockImplementationOnce((_cmd: unknown, _args: unknown, options: {env?: NodeJS.ProcessEnv}) => {
+      capturedOptions = options
+      return payload
+    })
+
+    try {
+      const resolver = makeGhNodeIdResolver('ghp_test')
+      await resolver('R_env_strip')
+
+      // #then: the ambient PAT must NOT appear in the subprocess env
+      expect(capturedOptions).toBeDefined()
+      expect(capturedOptions?.env?.FRO_BOT_POLL_PAT).toBeUndefined()
+
+      // #then: GH_TOKEN is set to the token passed to makeGhNodeIdResolver
+      expect(capturedOptions?.env?.GH_TOKEN).toBe('ghp_test')
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      if (savedPat !== undefined) process.env.FRO_BOT_POLL_PAT = savedPat
+    }
   })
 })

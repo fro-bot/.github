@@ -530,8 +530,12 @@ export async function runPromotionCli(
 
   if ('resolutionFailed' in result && result.resolutionFailed) {
     // Fail-closed: resolution failure (including access-lost) blocks promotion.
+    // Print only the COUNT, never the raw node_ids: a node_id is normally an opaque
+    // public identifier, but the schema is defense-in-depth and a malformed
+    // owner/repo-shaped value could otherwise be echoed into a public log. The count
+    // keeps the failure operator-actionable; the local resolver maps ids to repos.
     process.stderr.write(
-      `check-private-leak [promotion]: FAILED — could not resolve private node_id(s): ${result.failedNodeIds.join(', ')}\n`,
+      `check-private-leak [promotion]: FAILED — could not resolve ${result.failedNodeIds.length} private node_id(s)\n`,
     )
     process.stderr.write('check-private-leak [promotion]: cannot guarantee a complete scan — blocking promotion\n')
     return 1

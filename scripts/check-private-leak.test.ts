@@ -1317,6 +1317,40 @@ describe('runPromotionCli — Fix E: CLI-level tests via injectable seams', () =
     }
   })
 
+  it('#3430: resolutionFailed stderr prints COUNT not raw node_ids', async () => {
+    // #given: one private node_id fails to resolve (non-access-lost error)
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      const {gitDiffRunner, reposYamlReader, resolverFactory} = makeSeams({
+        nodeIds: ['R_promo_fail'],
+        resolverResult: async () => ({error: 'error'}),
+        diffOutput: '',
+      })
+      const exitCode = await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+
+      expect(exitCode).toBe(1)
+      const stderrText = stderrOutput.join('')
+
+      // #then: stderr contains the count-based summary message (not the raw node_id)
+      expect(stderrText).toMatch(/could not resolve \d+ private node_id\(s\)/)
+
+      // #then: the summary line (count form) must NOT contain the raw node_id
+      // The per-node logging line may contain it, but the FAILED summary must not.
+      const summaryLine = stderrText.split('\n').find(l => /could not resolve \d+ private node_id\(s\)/.test(l))
+      expect(summaryLine).toBeDefined()
+      expect(summaryLine).not.toContain('R_promo_fail')
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      vi.restoreAllMocks()
+    }
+  })
+
   it('Fix C: git runner env does NOT contain FRO_BOT_POLL_PAT', async () => {
     // #given: FRO_BOT_POLL_PAT is set in process.env
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true)

@@ -566,6 +566,74 @@ describe('schemas — rejection cases', () => {
     expect(error.path).toContain('node_id')
   })
 
+  it('#3412: accepts legacy padded base64 node_id (MDEw...==)', () => {
+    // NODE_ID_PATTERN = /^[\w-]+={0,2}$/ — legacy GitHub node_ids use standard base64 with == padding
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          node_id: 'MDEwOlJlcG9zaXRvcnk3Njg3NTEzMg==',
+        },
+      ],
+    }
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('#3412: rejects node_id with owner/repo slash form (marcusrbrown/poly)', () => {
+    // A slash-shaped node_id is a credential hygiene risk — the pattern must reject it
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          node_id: 'marcusrbrown/poly',
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('node_id')
+  })
+
+  it('#3412: rejects node_id containing a space (R_kg DO)', () => {
+    // Spaces are not in [\w-] — must be rejected
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          node_id: 'R_kg DO',
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('node_id')
+  })
+
   it('rejects node_id containing shell metacharacters (defense-in-depth for operator copy-paste safety)', () => {
     // node_id must match ^[A-Za-z0-9_\-+/=]+$ — shell metacharacters are rejected at parse time
     // so they can never reach the issue body's inline gh api graphql command.
