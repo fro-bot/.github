@@ -321,10 +321,12 @@ async function readWorkflowRunContext(
     // Step 2: if pull_requests[] yielded no numbers, fall back to the head-SHA API.
     // The SHA fallback may also return abbreviated objects, so apply the same pattern:
     // extract numbers only, then fetch full objects for validation.
+    let usedHeadShaFallback = false
     const candidateNumbers: number[] =
       fromPullRequests.length > 0
         ? fromPullRequests
         : await (async (): Promise<number[]> => {
+            usedHeadShaFallback = true
             const prs = await prApiResolver.fetchPrsByHeadSha(headSha)
             const nums = extractNumbers(prs)
             if (nums.length === 0) {
@@ -347,7 +349,9 @@ async function readWorkflowRunContext(
 
     if (validCandidates.length !== 1) {
       throw new Error(
-        `check-private-leak: expected exactly 1 valid PR in pull_requests[], found ${validCandidates.length} — fail-closed`,
+        usedHeadShaFallback
+          ? `check-private-leak: expected exactly 1 valid PR from head-SHA fallback, found ${validCandidates.length} — fail-closed`
+          : `check-private-leak: expected exactly 1 valid PR in pull_requests[], found ${validCandidates.length} — fail-closed`,
       )
     }
     const prNum = validCandidates[0]
