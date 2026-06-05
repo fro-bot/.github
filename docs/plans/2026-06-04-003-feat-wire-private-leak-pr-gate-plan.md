@@ -391,3 +391,5 @@ live same-repo and fork PRs.
 - Related code: `scripts/check-private-leak.ts`, `scripts/private-repo-resolution.ts`,
   `.github/workflows/renovate.yaml`, `.github/workflows/merge-data.yaml`
 - Related learnings: `docs/solutions/best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md`
+
+<!-- private-leak gate proof: trivial change to verify the security/check-private-leak status attaches; revert before merge -->
