@@ -1,3 +1,5 @@
+import process from 'node:process'
+
 import {describe, expect, it, vi} from 'vitest'
 
 import {makeGhNodeIdResolver} from './private-repo-resolution.ts'
@@ -112,5 +114,82 @@ describe('makeGhNodeIdResolver', () => {
 
     // #then only called once (no retry)
     expect(mockExecFileSync).toHaveBeenCalledTimes(1)
+  })
+
+  it('#3429: token-less path preserves ambient GH_TOKEN/GITHUB_TOKEN and strips FRO_BOT_POLL_PAT', async () => {
+    // #given: ambient GH_TOKEN, GITHUB_TOKEN, and FRO_BOT_POLL_PAT are set in the environment
+    const savedGhToken = process.env.GH_TOKEN
+    const savedGithubToken = process.env.GITHUB_TOKEN
+    const savedPat = process.env.FRO_BOT_POLL_PAT
+    process.env.GH_TOKEN = 'ambient_gh'
+    process.env.GITHUB_TOKEN = 'ambient_github'
+    process.env.FRO_BOT_POLL_PAT = 'ghp_pat'
+
+    // Capture the options argument (3rd arg) passed to execFileSync
+    let capturedOptions: {env?: NodeJS.ProcessEnv} | undefined
+    const payload = JSON.stringify({data: {node: {nameWithOwner: 'org/repo'}}})
+    mockExecFileSync.mockImplementationOnce((_cmd: unknown, _args: unknown, options: {env?: NodeJS.ProcessEnv}) => {
+      capturedOptions = options
+      return payload
+    })
+
+    try {
+      // #when: resolver is constructed with NO token (token-less / workflow-auth path)
+      const resolver = makeGhNodeIdResolver()
+      await resolver('R_tokenless')
+
+      // #then: ambient GH_TOKEN is preserved in the subprocess env
+      expect(capturedOptions).toBeDefined()
+      expect(capturedOptions?.env?.GH_TOKEN).toBe('ambient_gh')
+
+      // #then: ambient GITHUB_TOKEN is preserved in the subprocess env
+      expect(capturedOptions?.env?.GITHUB_TOKEN).toBe('ambient_github')
+
+      // #then: named PAT is still stripped from the subprocess env
+      expect(capturedOptions?.env?.FRO_BOT_POLL_PAT).toBeUndefined()
+    } finally {
+      delete process.env.GH_TOKEN
+      if (savedGhToken !== undefined) process.env.GH_TOKEN = savedGhToken
+      delete process.env.GITHUB_TOKEN
+      if (savedGithubToken !== undefined) process.env.GITHUB_TOKEN = savedGithubToken
+      delete process.env.FRO_BOT_POLL_PAT
+      if (savedPat !== undefined) process.env.FRO_BOT_POLL_PAT = savedPat
+    }
+  })
+
+  it('#3429: strips FRO_BOT_POLL_PAT from subprocess env and passes only GH_TOKEN', async () => {
+    // #given: FRO_BOT_POLL_PAT and GITHUB_TOKEN are set in the ambient environment
+    const savedPat = process.env.FRO_BOT_POLL_PAT
+    const savedGithubToken = process.env.GITHUB_TOKEN
+    process.env.FRO_BOT_POLL_PAT = 'ghp_ambient_pat'
+    process.env.GITHUB_TOKEN = 'github_ambient'
+
+    // Capture the options argument (3rd arg) passed to execFileSync
+    let capturedOptions: {env?: NodeJS.ProcessEnv} | undefined
+    const payload = JSON.stringify({data: {node: {nameWithOwner: 'org/repo'}}})
+    mockExecFileSync.mockImplementationOnce((_cmd: unknown, _args: unknown, options: {env?: NodeJS.ProcessEnv}) => {
+      capturedOptions = options
+      return payload
+    })
+
+    try {
+      const resolver = makeGhNodeIdResolver('ghp_test')
+      await resolver('R_env_strip')
+
+      // #then: the ambient PAT must NOT appear in the subprocess env
+      expect(capturedOptions).toBeDefined()
+      expect(capturedOptions?.env?.FRO_BOT_POLL_PAT).toBeUndefined()
+
+      // #then: GH_TOKEN is set to the token passed to makeGhNodeIdResolver
+      expect(capturedOptions?.env?.GH_TOKEN).toBe('ghp_test')
+
+      // #then: GITHUB_TOKEN alias must NOT appear in the subprocess env (alias stripping)
+      expect(capturedOptions?.env?.GITHUB_TOKEN).toBeUndefined()
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      if (savedPat !== undefined) process.env.FRO_BOT_POLL_PAT = savedPat
+      delete process.env.GITHUB_TOKEN
+      if (savedGithubToken !== undefined) process.env.GITHUB_TOKEN = savedGithubToken
+    }
   })
 })
