@@ -1,9 +1,21 @@
-import type {GitDiffRunner, ReposYamlReader, ResolverFactory} from './check-private-leak.ts'
+import type {
+  GitDiffRunner,
+  PrApiResolver,
+  ReposYamlReader,
+  ResolverFactory,
+  WorkflowRunReader,
+} from './check-private-leak.ts'
 import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
-import {checkPrivateLeak, main, runPromotionCli, runPromotionScan} from './check-private-leak.ts'
+import {
+  assertCompareNotTruncated,
+  checkPrivateLeak,
+  main,
+  runPromotionCli,
+  runPromotionScan,
+} from './check-private-leak.ts'
 
 // ---------------------------------------------------------------------------
 // Module-level hoisted mocks — shared across all describe blocks.
@@ -29,6 +41,18 @@ vi.mock('node:fs/promises', async importOriginal => {
 // ---------------------------------------------------------------------------
 // Pure function: checkPrivateLeak
 // ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal compare JSON response (as returned by the GitHub compare API without
+ * a diff media type). Used to mock the truncation-check call in fetchDiffForSha.
+ * Returns a well-formed response with one file entry that has a patch field.
+ */
+function makeCompareJson(filePath = 'docs/public.md'): string {
+  return JSON.stringify({
+    total_commits: 1,
+    files: [{filename: filePath, status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'}],
+  })
+}
 
 /**
  * Build a minimal unified diff with added lines. Each line in `additions` appears
@@ -369,17 +393,6 @@ describe('checkPrivateLeak — rename/copy path detection (Round-3 FIX #1)', () 
 // Round-3 FIX #4 — no bare-name false positives (pure function)
 // ---------------------------------------------------------------------------
 
-function makeEvent(opts: {title?: string; author?: string; prNumber?: number} = {}): string {
-  return JSON.stringify({
-    pull_request: {
-      number: opts.prNumber ?? 42,
-      title: opts.title ?? 'some PR',
-      user: {login: opts.author ?? 'some-user'},
-      base: {repo: {full_name: 'fro-bot/.github'}},
-    },
-  })
-}
-
 function makeYamlBase64(nodeIds: string[]): string {
   const entries = nodeIds
     .map(
@@ -393,9 +406,11 @@ function makeYamlBase64(nodeIds: string[]): string {
 describe('main() — fail-closed and no-name-leak (FIX #1, FIX #4)', () => {
   it('exits non-zero (fail-closed) when one node_id resolves and one fails — private name NOT in stderr', async () => {
     // #given: two private node_ids; one resolves, one fails
-    mockReadFile.mockResolvedValue(makeEvent())
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fix1-a'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fix1-a'})})
     mockExecFileSync.mockReset()
     mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_ok', 'R_fail'])) // fetchPrivateNodeIds
       .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // R_ok
       .mockImplementationOnce(() => {
@@ -412,8 +427,9 @@ describe('main() — fail-closed and no-name-leak (FIX #1, FIX #4)', () => {
     })
 
     process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
     try {
-      await expect(main()).rejects.toThrow('process.exit called')
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
 
       const stderrText = stderrOutput.join('')
 
@@ -431,16 +447,21 @@ describe('main() — fail-closed and no-name-leak (FIX #1, FIX #4)', () => {
       stderrSpy.mockRestore()
       exitSpy.mockRestore()
       delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
       mockExecFileSync.mockReset()
     }
   })
 
   it('exits non-zero when ALL node_ids fail to resolve and no override', async () => {
-    mockReadFile.mockResolvedValue(makeEvent())
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fix1-b'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fix1-b'})})
     mockExecFileSync.mockReset()
-    mockExecFileSync.mockReturnValueOnce(makeYamlBase64(['R_x'])).mockImplementationOnce(() => {
-      throw new Error('server error')
-    })
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_x'])) // fetchPrivateNodeIds
+      .mockImplementationOnce(() => {
+        throw new Error('server error')
+      }) // resolver R_x — fails
 
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit called')
@@ -448,27 +469,39 @@ describe('main() — fail-closed and no-name-leak (FIX #1, FIX #4)', () => {
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
 
     process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
     try {
-      await expect(main()).rejects.toThrow('process.exit called')
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
       expect(exitSpy).toHaveBeenCalledWith(1)
     } finally {
       exitSpy.mockRestore()
       vi.restoreAllMocks()
       delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
       mockExecFileSync.mockReset()
     }
   })
 
   it('passes with bypass log when operator override is active and resolution fails', async () => {
     // #given: operator override active + one node_id fails
-    mockReadFile.mockResolvedValue(makeEvent({title: '[allow-private-leak] my PR', author: 'marcusrbrown'}))
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fix1-c'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({
+        number: 42,
+        headSha: 'sha-fix1-c',
+        title: '[allow-private-leak] my PR',
+        author: 'marcusrbrown',
+      }),
+    })
     mockExecFileSync.mockReset()
     mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_y'])) // fetchPrivateNodeIds
       .mockImplementationOnce(() => {
         throw new Error('outage')
       }) // resolver R_y — fails
-      .mockReturnValueOnce('') // fetchPrDiff → empty diff
+      .mockReturnValueOnce(makeCompareJson()) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce('') // fetchDiffForSha: raw diff → empty
 
     const stderrOutput: string[] = []
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
@@ -481,8 +514,9 @@ describe('main() — fail-closed and no-name-leak (FIX #1, FIX #4)', () => {
     })
 
     process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
     try {
-      await main() // should NOT throw
+      await main(makeWorkflowRunReader(eventJson), prApiResolver) // should NOT throw
 
       // #then: exit was NOT called
       expect(exitSpy).not.toHaveBeenCalled()
@@ -496,6 +530,7 @@ describe('main() — fail-closed and no-name-leak (FIX #1, FIX #4)', () => {
       exitSpy.mockRestore()
       vi.restoreAllMocks()
       delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
       mockExecFileSync.mockReset()
     }
   })
@@ -505,16 +540,18 @@ describe('main() — fail-closed and no-name-leak (FIX #1, FIX #4)', () => {
 // Round-3 FIX #2 — access-lost skip vs error fail-closed (CLI-level, PR path)
 // ---------------------------------------------------------------------------
 
-describe('main() — access-lost skip vs error fail-closed (Round-3 FIX #2)', () => {
-  it('proceeds (no exit 1) when one resolves + one access-lost; access-lost node_id in stderr', async () => {
+describe('main() — access-lost fail-closed (Round-3 FIX #2, updated for Finding A)', () => {
+  it('fails closed (exit 1) when one resolves + one access-lost; access-lost node_id in stderr', async () => {
     // #given: two private node_ids — one resolves, one is access-lost (null node)
-    mockReadFile.mockResolvedValue(makeEvent())
+    // Finding A: access-lost is now fail-closed (same as error class) — not skipped.
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fix2-a'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fix2-a'})})
     mockExecFileSync.mockReset()
     mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_resolved', 'R_gone'])) // fetchPrivateNodeIds
       .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/resolved-repo'}}})) // R_resolved → ok
       .mockReturnValueOnce(JSON.stringify({data: {node: null}})) // R_gone → access-lost
-      .mockReturnValueOnce('') // fetchPrDiff → empty diff (nothing to scan)
 
     const stderrOutput: string[] = []
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
@@ -527,16 +564,16 @@ describe('main() — access-lost skip vs error fail-closed (Round-3 FIX #2)', ()
     })
 
     process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
     try {
-      await main() // must NOT throw
-
-      // #then: no exit called
-      expect(exitSpy).not.toHaveBeenCalled()
+      // #then: access-lost → fail closed (process.exit(1))
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
 
       const stderrText = stderrOutput.join('')
-      // #then: access-lost node_id appears in stderr
+      // #then: access-lost node_id appears in stderr with BLOCKING message
       expect(stderrText).toContain('R_gone')
-      expect(stderrText).toContain('access-lost')
+      expect(stderrText).toContain('BLOCKING')
       // #then: the resolved canonical name does NOT appear in stderr
       expect(stderrText).not.toContain('acme/resolved-repo')
     } finally {
@@ -544,14 +581,17 @@ describe('main() — access-lost skip vs error fail-closed (Round-3 FIX #2)', ()
       exitSpy.mockRestore()
       vi.restoreAllMocks()
       delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
       mockExecFileSync.mockReset()
     }
   })
 
   it('fails-closed (exit 1) when one resolved + one error-class failure', async () => {
-    mockReadFile.mockResolvedValue(makeEvent())
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fix2-b'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fix2-b'})})
     mockExecFileSync.mockReset()
     mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_ok2', 'R_err'])) // fetchPrivateNodeIds
       .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/resolved-repo'}}})) // R_ok2 → ok
       .mockImplementationOnce(() => {
@@ -564,26 +604,30 @@ describe('main() — access-lost skip vs error fail-closed (Round-3 FIX #2)', ()
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
 
     process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
     try {
-      await expect(main()).rejects.toThrow('process.exit called')
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
       expect(exitSpy).toHaveBeenCalledWith(1)
     } finally {
       exitSpy.mockRestore()
       vi.restoreAllMocks()
       delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
       mockExecFileSync.mockReset()
     }
   })
 
-  it('proceeds when ALL node_ids are access-lost (nothing to scan → guard passes)', async () => {
-    // #given: both private repos are access-lost (deleted/inaccessible)
-    mockReadFile.mockResolvedValue(makeEvent())
+  it('fails closed when ALL node_ids are access-lost (Finding A: cannot guarantee complete scan)', async () => {
+    // #given: both private repos are access-lost (deleted/inaccessible or mis-scoped PAT)
+    // Finding A: access-lost is indistinguishable from no-access/mis-scoped-token → fail closed.
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fix2-c'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fix2-c'})})
     mockExecFileSync.mockReset()
     mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_gone1', 'R_gone2'])) // fetchPrivateNodeIds
       .mockReturnValueOnce(JSON.stringify({data: {node: null}})) // R_gone1 → access-lost
       .mockReturnValueOnce(JSON.stringify({data: {node: null}})) // R_gone2 → access-lost
-      .mockReturnValueOnce('') // fetchPrDiff → empty diff
 
     const stderrOutput: string[] = []
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
@@ -596,21 +640,23 @@ describe('main() — access-lost skip vs error fail-closed (Round-3 FIX #2)', ()
     })
 
     process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
     try {
-      await main() // must NOT throw
-
-      expect(exitSpy).not.toHaveBeenCalled()
+      // #then: all access-lost → fail closed
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
 
       const stderrText = stderrOutput.join('')
-      // Both access-lost node_ids appear in stderr
+      // Both access-lost node_ids appear in stderr with BLOCKING message
       expect(stderrText).toContain('R_gone1')
       expect(stderrText).toContain('R_gone2')
-      expect(stderrText).toContain('access-lost')
+      expect(stderrText).toContain('BLOCKING')
     } finally {
       stderrSpy.mockRestore()
       exitSpy.mockRestore()
       vi.restoreAllMocks()
       delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
       mockExecFileSync.mockReset()
     }
   })
@@ -623,12 +669,14 @@ describe('main() — access-lost skip vs error fail-closed (Round-3 FIX #2)', ()
 describe('main() — stderr sanitization on error-class failure (Round-3 FIX #3)', () => {
   it('never echoes raw gh stderr containing owner/name on error-class resolution failure', async () => {
     // #given: one private node_id fails with a poisoned gh stderr body containing owner/name
-    mockReadFile.mockResolvedValue(makeEvent())
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fix3'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fix3'})})
     mockExecFileSync.mockReset()
 
     // The gh error body contains a canonical owner/name — must NOT appear in logged output.
     const poisonedStderr = 'GraphQL error for someowner/private-repo: Not Found\n'
     mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_leak_test'])) // fetchPrivateNodeIds
       .mockImplementationOnce(() => {
         throw Object.assign(new Error('gh failed'), {stderr: poisonedStderr})
@@ -644,8 +692,9 @@ describe('main() — stderr sanitization on error-class failure (Round-3 FIX #3)
     })
 
     process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
     try {
-      await expect(main()).rejects.toThrow('process.exit called')
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
 
       const stderrText = stderrOutput.join('')
 
@@ -661,6 +710,7 @@ describe('main() — stderr sanitization on error-class failure (Round-3 FIX #3)
       exitSpy.mockRestore()
       vi.restoreAllMocks()
       delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
       mockExecFileSync.mockReset()
     }
   })
@@ -1447,6 +1497,545 @@ describe('runPromotionCli — Fix E: CLI-level tests via injectable seams', () =
 })
 
 // ---------------------------------------------------------------------------
+// main() — workflow_run main() behavior tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal workflow_run event payload.
+ */
+function makeWorkflowRunEvent(
+  opts: {
+    event?: string
+    headSha?: string
+    pullRequests?: {
+      number: number
+      head: {sha: string; repo: {full_name: string}}
+      base: {ref: string; repo: {full_name: string}}
+    }[]
+  } = {},
+): string {
+  return JSON.stringify({
+    workflow_run: {
+      event: opts.event ?? 'pull_request',
+      head_sha: opts.headSha ?? 'abc123',
+      pull_requests: opts.pullRequests ?? [
+        {
+          number: 42,
+          head: {sha: opts.headSha ?? 'abc123', repo: {full_name: 'fro-bot/.github'}},
+          base: {ref: 'main', repo: {full_name: 'fro-bot/.github'}},
+        },
+      ],
+    },
+  })
+}
+
+/**
+ * Build a minimal PR API response (as returned by the GitHub API).
+ */
+function makePrApiResponse(
+  opts: {
+    number?: number
+    title?: string
+    author?: string
+    headSha?: string
+    baseRef?: string
+    baseRepoFullName?: string
+    headRepoFullName?: string
+  } = {},
+): Record<string, unknown> {
+  return {
+    number: opts.number ?? 42,
+    title: opts.title ?? 'some PR',
+    user: {login: opts.author ?? 'some-user'},
+    head: {sha: opts.headSha ?? 'abc123', repo: {full_name: opts.headRepoFullName ?? 'fro-bot/.github'}},
+    base: {ref: opts.baseRef ?? 'main', repo: {full_name: opts.baseRepoFullName ?? 'fro-bot/.github'}},
+  }
+}
+
+/**
+ * Build a minimal WorkflowRunReader seam for main() tests.
+ */
+function makeWorkflowRunReader(eventJson: string): WorkflowRunReader {
+  return async (_path: string) => eventJson
+}
+
+/**
+ * Build a minimal PrApiResolver seam for main() tests.
+ * Returns a PR by number, or by head SHA (fallback).
+ */
+function makePrApiResolver(
+  opts: {
+    prByNumber?: Record<string, unknown>
+    prsByHeadSha?: Record<string, unknown>[]
+    throwOnNumber?: boolean
+    throwOnSha?: boolean
+  } = {},
+): PrApiResolver {
+  return {
+    fetchPrByNumber: async (_prNumber: number) => {
+      if (opts.throwOnNumber === true) throw new Error('API error fetching PR by number')
+      return opts.prByNumber ?? makePrApiResponse()
+    },
+    fetchPrsByHeadSha: async (_headSha: string) => {
+      if (opts.throwOnSha === true) throw new Error('API error fetching PRs by SHA')
+      return opts.prsByHeadSha ?? []
+    },
+  }
+}
+
+describe('main() — workflow_run event: happy path with pull_requests[] populated', () => {
+  it('resolves PR identity from pull_requests[], validates, scans diff, passes when no private name', async () => {
+    // #given: workflow_run payload with pull_requests[] populated; no private names in diff
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-happy'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-happy'}),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_wf_1'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(makeCompareJson('docs/public.md')) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha: raw diff
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+      // #then: no exit called (pass)
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  it('fails with offending file path (never the name) when diff contains a private name', async () => {
+    // #given: workflow_run payload; diff adds a line with the private name
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fail'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fail'}),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_wf_2'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(makeCompareJson('docs/leak.md')) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce(makeDiff('docs/leak.md', ['See acme/private-repo for details.'])) // fetchDiffForSha: raw diff
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+
+      const stderrText = stderrOutput.join('')
+      // #then: file path appears in output
+      expect(stderrText).toContain('docs/leak.md')
+      // #then: the private name does NOT appear
+      expect(stderrText).not.toContain('acme/private-repo')
+      expect(stderrText).not.toContain('acme--private-repo')
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
+describe('main() — workflow_run event: empty pull_requests[] → API fallback by head_sha', () => {
+  it('falls back to fetchPrsByHeadSha when pull_requests[] is empty and resolves PR', async () => {
+    // #given: workflow_run payload with empty pull_requests[]; API fallback returns one PR
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fallback', pullRequests: []})
+    const fallbackPr = makePrApiResponse({number: 99, headSha: 'sha-fallback'})
+    const prApiResolver = makePrApiResolver({
+      prsByHeadSha: [fallbackPr],
+      prByNumber: fallbackPr,
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_wf_fallback'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(makeCompareJson('docs/public.md')) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha: raw diff
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+      // #then: no exit called (pass)
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
+describe('main() — workflow_run event: error paths (fail-closed)', () => {
+  it('fails closed when workflow_run.event != "pull_request"', async () => {
+    // #given: workflow_run payload with event = 'push' (not pull_request)
+    const eventJson = makeWorkflowRunEvent({event: 'push'})
+    const prApiResolver = makePrApiResolver()
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+    }
+  })
+
+  it('fails closed when base repo does not match fro-bot/.github', async () => {
+    // #given: workflow_run payload with a PR targeting a different base repo
+    const eventJson = makeWorkflowRunEvent({
+      headSha: 'sha-wrong-repo',
+      pullRequests: [
+        {
+          number: 42,
+          head: {sha: 'sha-wrong-repo', repo: {full_name: 'other-org/other-repo'}},
+          base: {ref: 'main', repo: {full_name: 'other-org/other-repo'}},
+        },
+      ],
+    })
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-wrong-repo', baseRepoFullName: 'other-org/other-repo'}),
+    })
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+    }
+  })
+
+  it('fails closed when base branch is not main', async () => {
+    // #given: workflow_run payload with a PR targeting a non-main branch
+    const eventJson = makeWorkflowRunEvent({
+      headSha: 'sha-wrong-branch',
+      pullRequests: [
+        {
+          number: 42,
+          head: {sha: 'sha-wrong-branch', repo: {full_name: 'fro-bot/.github'}},
+          base: {ref: 'develop', repo: {full_name: 'fro-bot/.github'}},
+        },
+      ],
+    })
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-wrong-branch', baseRef: 'develop'}),
+    })
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+    }
+  })
+
+  it('fails closed when PR head SHA does not match the scanned workflow_run head_sha', async () => {
+    // #given: workflow_run payload with head_sha that doesn't match the PR's head SHA
+    const eventJson = makeWorkflowRunEvent({
+      headSha: 'sha-scanned',
+      pullRequests: [
+        {
+          number: 42,
+          head: {sha: 'sha-different', repo: {full_name: 'fro-bot/.github'}},
+          base: {ref: 'main', repo: {full_name: 'fro-bot/.github'}},
+        },
+      ],
+    })
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-different'}),
+    })
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+    }
+  })
+
+  it('fails closed when pull_requests[] is empty and API fallback returns nothing', async () => {
+    // #given: workflow_run payload with empty pull_requests[]; API fallback returns empty array
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-no-pr', pullRequests: []})
+    const prApiResolver = makePrApiResolver({prsByHeadSha: []})
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+    }
+  })
+
+  it('fails closed when head-SHA fallback returns multiple PRs and not exactly one passes validation', async () => {
+    // #given: workflow_run payload with empty pull_requests[]; API fallback returns two PRs
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-ambiguous', pullRequests: []})
+    const pr1 = makePrApiResponse({number: 10, headSha: 'sha-ambiguous'})
+    const pr2 = makePrApiResponse({number: 11, headSha: 'sha-ambiguous'})
+    const prApiResolver = makePrApiResolver({prsByHeadSha: [pr1, pr2]})
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+    }
+  })
+
+  it('fails closed when FRO_BOT_POLL_PAT is absent', async () => {
+    // #given: workflow_run payload is valid; but FRO_BOT_POLL_PAT is not set
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-no-pat'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-no-pat'}),
+    })
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    delete process.env.FRO_BOT_POLL_PAT
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+    }
+  })
+})
+
+describe('main() — workflow_run event: PAT isolation (resolver vs diff subprocess)', () => {
+  it('PAT is present in resolver subprocess env but absent from diff subprocess env', async () => {
+    // #given: workflow_run payload; FRO_BOT_POLL_PAT is set
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-pat-isolation'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-pat-isolation'}),
+    })
+
+    // We capture the env passed to execFileSync calls.
+    // The resolver (gh api graphql) call should have GH_TOKEN = PAT (makeGhNodeIdResolver sets it).
+    // The diff (gh api repos/.../compare/...) call should NOT have FRO_BOT_POLL_PAT.
+    const capturedEnvs: {args: string[]; env: NodeJS.ProcessEnv | undefined}[] = []
+    mockExecFileSync.mockReset()
+    mockExecFileSync.mockImplementation((cmd: string, args: string[], opts: {env?: NodeJS.ProcessEnv} | undefined) => {
+      capturedEnvs.push({args: [cmd, ...args], env: opts?.env})
+      // fetchPrivateNodeIds: gh api repos/.../contents/...
+      if (args[0] === 'api' && String(args[1]).startsWith('repos/') && String(args[1]).includes('/contents/')) {
+        return makeYamlBase64(['R_pat_iso'])
+      }
+      // resolver: gh api graphql
+      if (args[0] === 'api' && args[1] === 'graphql') {
+        return JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})
+      }
+      // fetchDiffForSha: gh api repos/.../compare/main...{sha}
+      // Two calls: first is the JSON truncation check (no -H header), second is the raw diff.
+      if (args[0] === 'api' && String(args[1]).includes('/compare/')) {
+        if (args.includes('-H') && args.some(a => String(a).includes('application/vnd.github'))) {
+          return makeDiff('docs/public.md', ['some public content'])
+        }
+        return makeCompareJson('docs/public.md')
+      }
+      return ''
+    })
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'super-secret-pat'
+    try {
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+
+      // Find the diff calls (gh api repos/.../compare/main...{sha} — both JSON check and raw diff)
+      const diffCalls = capturedEnvs.filter(c => c.args[1] === 'api' && String(c.args[2]).includes('/compare/'))
+      expect(diffCalls.length).toBeGreaterThan(0)
+      for (const call of diffCalls) {
+        // FRO_BOT_POLL_PAT must NOT be in the diff subprocess env
+        expect(call.env).not.toHaveProperty('FRO_BOT_POLL_PAT')
+        if (call.env !== undefined) {
+          expect(Object.values(call.env)).not.toContain('super-secret-pat')
+        }
+      }
+
+      // Find the resolver call (gh api graphql)
+      const resolverCalls = capturedEnvs.filter(c => c.args[1] === 'api' && c.args[2] === 'graphql')
+      expect(resolverCalls.length).toBeGreaterThan(0)
+      for (const call of resolverCalls) {
+        // The resolver subprocess should have GH_TOKEN = PAT (set by makeGhNodeIdResolver)
+        // and FRO_BOT_POLL_PAT stripped (makeGhNodeIdResolver strips it)
+        expect(call.env).not.toHaveProperty('FRO_BOT_POLL_PAT')
+        if (call.env !== undefined) {
+          expect(call.env.GH_TOKEN).toBe('super-secret-pat')
+        }
+      }
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
+describe('main() — workflow_run event: [allow-private-leak] override honored under new identity path', () => {
+  it('honors override when title is prefixed and author is the operator (title from validated PR JSON)', async () => {
+    // #given: workflow_run payload; PR title has [allow-private-leak] prefix; author is marcusrbrown
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-override'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({
+        number: 42,
+        headSha: 'sha-override',
+        title: '[allow-private-leak] my PR',
+        author: 'marcusrbrown',
+      }),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_override'])) // fetchPrivateNodeIds
+      .mockImplementationOnce(() => {
+        throw new Error('outage')
+      }) // resolver R_override — fails (but override should allow proceeding)
+      .mockReturnValueOnce(makeCompareJson()) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce('') // fetchDiffForSha: raw diff → empty
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+      // #then: no exit called (override honored)
+      expect(exitSpy).not.toHaveBeenCalled()
+      // #then: override was logged
+      const stderrText = stderrOutput.join('')
+      expect(stderrText).toContain('operator override active')
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
 // FIX 1 (token coverage) — buildTokensForName raw double-dash form
 // ---------------------------------------------------------------------------
 
@@ -1511,12 +2100,18 @@ describe('buildTokensForName — raw double-dash form (FIX 1)', () => {
 describe('main() — PR-path matched file redaction (FIX 2)', () => {
   it('redacts the private token from matched file paths printed to stderr on failure', async () => {
     // #given: a private repo resolves; diff adds a new file whose path contains the slug
-    mockReadFile.mockResolvedValue(makeEvent())
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fix2-redact'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fix2-redact'}),
+    })
     mockExecFileSync.mockReset()
     mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_pr_redact'])) // fetchPrivateNodeIds
       .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'synth-owner/synth_private'}}})) // resolver → resolves
-      // fetchPrDiff: diff adds a new file whose path contains the slug form
+      // fetchDiffForSha: compare JSON (truncation check — well-formed, under cap)
+      .mockReturnValueOnce(makeCompareJson('knowledge/wiki/repos/synth-owner--synth_private.md'))
+      // fetchDiffForSha: raw diff — adds a new file whose path contains the slug form
       .mockReturnValueOnce(
         [
           'diff --git a/knowledge/wiki/repos/synth-owner--synth_private.md b/knowledge/wiki/repos/synth-owner--synth_private.md',
@@ -1538,8 +2133,9 @@ describe('main() — PR-path matched file redaction (FIX 2)', () => {
     })
 
     process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
     try {
-      await expect(main()).rejects.toThrow('process.exit called')
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
 
       const stderrText = stderrOutput.join('')
 
@@ -1557,6 +2153,7 @@ describe('main() — PR-path matched file redaction (FIX 2)', () => {
       stderrSpy.mockRestore()
       exitSpy.mockRestore()
       delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
       mockExecFileSync.mockReset()
     }
   })
@@ -1626,5 +2223,560 @@ describe('redactPathTokens — regex-metachar token (FIX 3)', () => {
 
     // #then: no match — the path does not contain the literal token
     expect(result.ok).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Finding F: regression-lock tests for Finding A (access-lost fail-closed in PR mode)
+// and Finding B (head-SHA moved → fail-closed)
+// ---------------------------------------------------------------------------
+
+describe('main() — Finding A regression lock: access-lost in PR mode → fail-closed', () => {
+  it('fails closed (process.exit(1)) when resolver returns access-lost without operator override', async () => {
+    // #given: workflow_run payload; resolver returns access-lost for the private node_id
+    // This is the critical regression lock: if access-lost goes back to being skipped,
+    // this test must fail.
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-access-lost'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-access-lost'}),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_access_lost_pr'])) // fetchPrivateNodeIds
+      .mockImplementationOnce(() => {
+        // resolver: returns access-lost (simulate mis-scoped/expired PAT)
+        return JSON.stringify({data: {node: null}, errors: [{type: 'NOT_FOUND'}]})
+      })
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with an access-lost resolver result
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      // #then: process.exit(1) was called — fail closed
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      // #then: stderr mentions BLOCKING (not "skipping")
+      const stderrText = stderrOutput.join('')
+      expect(stderrText).toContain('BLOCKING')
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  it('proceeds (no exit) when access-lost occurs AND operator override is active', async () => {
+    // #given: workflow_run payload; resolver returns access-lost; operator override is active
+    // Parity with the existing failedNodeIds override test.
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-access-lost-override'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({
+        number: 42,
+        headSha: 'sha-access-lost-override',
+        title: '[allow-private-leak] operator override',
+        author: 'marcusrbrown',
+      }),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_access_lost_override'])) // fetchPrivateNodeIds
+      .mockImplementationOnce(() => {
+        // resolver: returns access-lost
+        return JSON.stringify({data: {node: null}, errors: [{type: 'NOT_FOUND'}]})
+      })
+      .mockReturnValueOnce(makeCompareJson()) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce('') // fetchDiffForSha: raw diff → empty (no leak)
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with access-lost + operator override
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+      // #then: no exit called — operator override allows proceeding
+      expect(exitSpy).not.toHaveBeenCalled()
+      // #then: override was logged
+      const stderrText = stderrOutput.join('')
+      expect(stderrText).toContain('operator override active')
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
+describe('main() — Finding B regression lock: diff pinned to immutable scannedHeadSha (no TOCTOU)', () => {
+  it('scans the diff for the scanned SHA even when the PR head has since moved (force-push)', async () => {
+    // #given: workflow_run payload with headSha='sha-scanned-b'; a force-push has since moved
+    // the PR head to 'sha-moved'. With the old revalidation approach this would fail-closed.
+    // With the new pinned-SHA approach, main() fetches the diff for 'sha-scanned-b' (immutable)
+    // and proceeds — the status is posted to 'sha-scanned-b' and the diff is for that exact SHA.
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-scanned-b'})
+    // readWorkflowRunContext calls fetchPrByNumber once (returns sha-scanned-b → validates OK).
+    // No second revalidation call — the pinned-SHA approach eliminates it.
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-scanned-b'}),
+    })
+
+    // Capture which SHA the compare-API diff call uses.
+    const capturedCompareArgs: string[] = []
+    mockExecFileSync.mockReset()
+    mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      // gh repo view
+      if (cmd === 'gh' && args[0] === 'repo') return 'fro-bot/.github'
+      // fetchPrivateNodeIds
+      if (cmd === 'gh' && args[0] === 'api' && String(args[1]).includes('/contents/')) {
+        return makeYamlBase64(['R_sha_moved'])
+      }
+      // resolver
+      if (cmd === 'gh' && args[0] === 'api' && args[1] === 'graphql') {
+        return JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})
+      }
+      // fetchDiffForSha: gh api repos/.../compare/main...{sha}
+      // Two calls: first is the JSON truncation check (no -H header), second is the raw diff.
+      if (cmd === 'gh' && args[0] === 'api' && String(args[1]).includes('/compare/')) {
+        capturedCompareArgs.push(String(args[1]))
+        // If the call includes the diff Accept header, return the raw diff.
+        // Otherwise return the JSON truncation-check response.
+        if (args.includes('-H') && args.some(a => String(a).includes('application/vnd.github'))) {
+          return makeDiff('docs/public.md', ['some public content'])
+        }
+        return makeCompareJson('docs/public.md')
+      }
+      return ''
+    })
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs — even though the PR head has "moved" (no revalidation), it proceeds
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+
+      // #then: no exit called — the scan passed (diff is clean)
+      expect(exitSpy).not.toHaveBeenCalled()
+
+      // #then: the compare-API diff call used the scanned SHA (immutable), not any "current" head
+      expect(capturedCompareArgs.length).toBeGreaterThan(0)
+      for (const compareArg of capturedCompareArgs) {
+        // The compare endpoint must reference the scanned SHA, not 'sha-moved'
+        expect(compareArg).toContain('sha-scanned-b')
+        expect(compareArg).not.toContain('sha-moved')
+      }
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
+describe('main() — Finding F: pull_requests[] with two validating PRs → fail-closed', () => {
+  it('fails closed when pull_requests[] contains two PRs that both pass validation', async () => {
+    // #given: workflow_run payload with two PRs in pull_requests[] that both validate
+    const eventJson = JSON.stringify({
+      workflow_run: {
+        event: 'pull_request',
+        head_sha: 'sha-two-prs',
+        pull_requests: [
+          {
+            number: 10,
+            head: {sha: 'sha-two-prs', repo: {full_name: 'fro-bot/.github'}},
+            base: {ref: 'main', repo: {full_name: 'fro-bot/.github'}},
+          },
+          {
+            number: 11,
+            head: {sha: 'sha-two-prs', repo: {full_name: 'fro-bot/.github'}},
+            base: {ref: 'main', repo: {full_name: 'fro-bot/.github'}},
+          },
+        ],
+      },
+    })
+    const prApiResolver = makePrApiResolver()
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with two validating PRs
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      // #then: fail closed — exactly-one guard triggered
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 1 (P1, fail-open): compare-API diff truncation must fail closed
+// Regression lock: a compare response at the 300-file cap (or a file with a
+// dropped patch) must cause the gate to fail closed (throw), never silently pass.
+// ---------------------------------------------------------------------------
+
+describe('assertCompareNotTruncated — truncation detection (FIX 1, P1)', () => {
+  // Scenario: files.length exactly at the 300-file cap → fail closed
+  it('throws when files.length is exactly 300 (at the API cap)', () => {
+    // #given: a compare JSON response with exactly 300 files, each with a patch field
+    const files = Array.from({length: 300}, (_, i) => ({
+      filename: `file-${i}.ts`,
+      status: 'modified',
+      patch: `@@ -1 +1 @@\n-old\n+new`,
+    }))
+    const compareJson = {total_commits: 1, files}
+
+    // #when / #then: throws because files.length >= 300 (the cap)
+    expect(() => assertCompareNotTruncated(compareJson)).toThrow(
+      /diff too large to scan completely.*300.*file.*cap.*fail closed/i,
+    )
+  })
+
+  // Scenario: files.length above the cap → fail closed
+  it('throws when files.length exceeds 300', () => {
+    // #given: 301 files (impossible in practice but validates the >= check)
+    const files = Array.from({length: 301}, (_, i) => ({
+      filename: `file-${i}.ts`,
+      status: 'modified',
+      patch: `@@ -1 +1 @@\n-old\n+new`,
+    }))
+    const compareJson = {total_commits: 1, files}
+
+    expect(() => assertCompareNotTruncated(compareJson)).toThrow(/fail closed/i)
+  })
+
+  // Scenario: a file is missing its patch field (individually too large) → fail closed
+  it('throws when any file entry is missing its patch field', () => {
+    // #given: two files, the second has no patch (API omits it for very large files)
+    const compareJson = {
+      total_commits: 1,
+      files: [
+        {filename: 'small-file.ts', status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'},
+        {filename: 'huge-file.ts', status: 'modified'}, // patch intentionally absent
+      ],
+    }
+
+    // #when / #then: throws because a file has no patch — and the filename is NOT echoed
+    // (a path could embed a private slug; the message stays redacted).
+    expect(() => assertCompareNotTruncated(compareJson)).toThrow(/file patch was omitted.*fail closed/i)
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow(/huge-file\.ts/)
+  })
+
+  // Scenario: first file missing patch → fail closed (order doesn't matter)
+  it('throws when the first file entry is missing its patch field', () => {
+    const compareJson = {
+      total_commits: 1,
+      files: [
+        {filename: 'huge-first.ts', status: 'added'}, // no patch
+        {filename: 'normal.ts', status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'},
+      ],
+    }
+
+    // Throws on the missing-patch signal without echoing the filename.
+    expect(() => assertCompareNotTruncated(compareJson)).toThrow(/file patch was omitted.*fail closed/i)
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow(/huge-first\.ts/)
+  })
+
+  // Scenario: well-formed response under the cap → does NOT throw
+  it('does not throw for a well-formed response with fewer than 300 files', () => {
+    // #given: 5 files, all with patch fields
+    const files = Array.from({length: 5}, (_, i) => ({
+      filename: `file-${i}.ts`,
+      status: 'modified',
+      patch: `@@ -1 +1 @@\n-old\n+new`,
+    }))
+    const compareJson = {total_commits: 1, files}
+
+    // #when / #then: no throw — response is complete
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow()
+  })
+
+  // Scenario: empty files array → does NOT throw (zero-file diff is valid)
+  it('does not throw for an empty files array (zero-file diff)', () => {
+    const compareJson = {total_commits: 0, files: []}
+
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow()
+  })
+
+  // Scenario: non-object JSON → fail closed
+  it('throws when compareJson is not an object', () => {
+    expect(() => assertCompareNotTruncated('not an object')).toThrow(/non-object JSON.*fail closed/i)
+    expect(() => assertCompareNotTruncated(null)).toThrow(/non-object JSON.*fail closed/i)
+    expect(() => assertCompareNotTruncated(42)).toThrow(/non-object JSON.*fail closed/i)
+  })
+
+  // Scenario: missing files array → fail closed
+  it('throws when compareJson is missing the files array', () => {
+    expect(() => assertCompareNotTruncated({total_commits: 1})).toThrow(/missing files array.*fail closed/i)
+    expect(() => assertCompareNotTruncated({total_commits: 1, files: 'not-an-array'})).toThrow(
+      /missing files array.*fail closed/i,
+    )
+  })
+
+  // Scenario: 299 files all with patches → does NOT throw (one below the cap)
+  it('does not throw for 299 files all with patch fields (one below the cap)', () => {
+    const files = Array.from({length: 299}, (_, i) => ({
+      filename: `file-${i}.ts`,
+      status: 'modified',
+      patch: `@@ -1 +1 @@\n-old\n+new`,
+    }))
+    const compareJson = {total_commits: 1, files}
+
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 1 (P1): main() fails closed when compare JSON signals truncation
+// Integration: the truncation check is wired into fetchDiffForSha which is
+// called by main(). Verify that a truncated compare response causes process.exit(1).
+// ---------------------------------------------------------------------------
+
+describe('main() — FIX 1 (P1): truncation in compare JSON → fail closed', () => {
+  it('fails closed (process.exit(1)) when compare JSON has files.length at the 300-file cap', async () => {
+    // #given: workflow_run payload; compare JSON returns 300 files (truncated)
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-truncated-300'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-truncated-300'}),
+    })
+
+    // Build a compare JSON with 300 files (all with patches — the cap itself is the signal)
+    const truncatedFiles = Array.from({length: 300}, (_, i) => ({
+      filename: `file-${i}.ts`,
+      status: 'modified',
+      patch: `@@ -1 +1 @@\n-old\n+new`,
+    }))
+    const truncatedCompareJson = JSON.stringify({total_commits: 1, files: truncatedFiles})
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_trunc_300'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(truncatedCompareJson) // fetchDiffForSha: compare JSON (truncated)
+    // Note: the raw diff fetch is NOT reached — truncation throws before it
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with a truncated compare response
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      // #then: fail closed — process.exit(1) was called
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      // #then: stderr mentions the truncation (not a private name)
+      const stderrText = stderrOutput.join('')
+      expect(stderrText).toMatch(/diff too large|truncat|fail closed/i)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  it('fails closed (process.exit(1)) when compare JSON has a file with no patch field', async () => {
+    // #given: workflow_run payload; compare JSON has a file with no patch (too large)
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-no-patch'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-no-patch'}),
+    })
+
+    // Compare JSON with one normal file and one file missing its patch
+    const compareJsonWithMissingPatch = JSON.stringify({
+      total_commits: 1,
+      files: [
+        {filename: 'normal.ts', status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'},
+        {filename: 'huge-binary.bin', status: 'modified'}, // no patch — too large
+      ],
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_no_patch'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(compareJsonWithMissingPatch) // fetchDiffForSha: compare JSON (missing patch)
+    // Note: the raw diff fetch is NOT reached — truncation throws before it
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with a compare response that has a file missing its patch
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      // #then: fail closed — process.exit(1) was called
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      // #then: stderr mentions the truncation
+      const stderrText = stderrOutput.join('')
+      expect(stderrText).toMatch(/patch omitted|fail closed/i)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  it('proceeds normally when compare JSON is well-formed and under the cap', async () => {
+    // #given: workflow_run payload; compare JSON has 2 files, all with patches
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-not-truncated'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-not-truncated'}),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_not_trunc'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(makeCompareJson('docs/public.md')) // fetchDiffForSha: compare JSON (ok)
+      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha: raw diff
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with a well-formed compare response
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+      // #then: no exit called — scan passed
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
+describe('main() — Finding F: malformed PR details → fail-closed', () => {
+  it('fails closed when fetchPrByNumber returns a PR missing the title field', async () => {
+    // #given: workflow_run payload; fetchPrByNumber returns a PR with no title
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-no-title'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: {
+        number: 42,
+        // title intentionally omitted
+        user: {login: 'some-user'},
+        head: {sha: 'sha-no-title', repo: {full_name: 'fro-bot/.github'}},
+        base: {ref: 'main', repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+    }
+  })
+
+  it('fails closed when fetchPrByNumber returns a PR missing user.login', async () => {
+    // #given: workflow_run payload; fetchPrByNumber returns a PR with no user.login
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-no-login'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: {
+        number: 42,
+        title: 'some PR',
+        // user intentionally omitted
+        head: {sha: 'sha-no-login', repo: {full_name: 'fro-bot/.github'}},
+        base: {ref: 'main', repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+    }
   })
 })

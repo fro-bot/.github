@@ -1,0 +1,40 @@
+---
+# Trusted-topology trigger for the private-leak PR gate.
+#
+# This workflow does nothing sensitive — no secrets, no PAT, no checkout of
+# PR-author code. Its sole purpose is to fire on pull_request events so that
+# the privileged `check-private-leak.yaml` workflow can trigger via
+# `workflow_run`. Because `workflow_run` always runs the DEFAULT-BRANCH
+# workflow definition, the broad-scope FRO_BOT_POLL_PAT in the privileged job
+# never executes PR-author code — closing the token-exfiltration vector that
+# existed when the scan ran directly in a `pull_request` job.
+#
+# `edited` is included so a title-based [allow-private-leak] override change
+# re-fires the gate for the same head SHA (otherwise the required status goes
+# stale when the operator adds the override prefix without pushing a new commit).
+name: Private Leak Sentinel
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+# No permissions needed — this workflow does nothing sensitive.
+permissions: {}
+
+jobs:
+  sentinel:
+    name: Sentinel
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # PR-derived values passed via env (not inline ${{ }}) for injection-safety
+      # consistency with the privileged job, even though SHA/number cannot carry a payload.
+      - name: 🔒 Trigger private-leak scan
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          echo "sentinel: triggering private-leak scan via workflow_run"
+          echo "  head_sha=${HEAD_SHA}"
+          echo "  pr=${PR_NUMBER}"
