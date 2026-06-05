@@ -1502,15 +1502,28 @@ describe('runPromotionCli — Fix E: CLI-level tests via injectable seams', () =
 
 /**
  * Build a minimal workflow_run event payload.
+ *
+ * The pull_requests[] entries are ABBREVIATED (as GitHub actually sends them):
+ * they carry base.repo.name/id/url but NOT base.repo.full_name.
+ * This matches the live behavior that caused the production bug — the old code
+ * tried to validate these abbreviated objects with validatePrIdentity (which
+ * requires base.repo.full_name) and always got 0 valid PRs → fail-closed.
+ *
+ * The new code treats pull_requests[] entries as hints (number only) and fetches
+ * the full PR via fetchPrByNumber for validation.
  */
 function makeWorkflowRunEvent(
   opts: {
     event?: string
     headSha?: string
+    /**
+     * Abbreviated PR objects as GitHub sends in workflow_run.pull_requests[].
+     * Each entry has number + abbreviated head/base (no full_name on repos).
+     */
     pullRequests?: {
       number: number
-      head: {sha: string; repo: {full_name: string}}
-      base: {ref: string; repo: {full_name: string}}
+      head: {sha: string; repo: {name: string; id: number; url: string}}
+      base: {ref: string; repo: {name: string; id: number; url: string}}
     }[]
   } = {},
 ): string {
@@ -1520,9 +1533,13 @@ function makeWorkflowRunEvent(
       head_sha: opts.headSha ?? 'abc123',
       pull_requests: opts.pullRequests ?? [
         {
+          // Abbreviated object: has name/id/url but NOT full_name — matches live GitHub behavior.
           number: 42,
-          head: {sha: opts.headSha ?? 'abc123', repo: {full_name: 'fro-bot/.github'}},
-          base: {ref: 'main', repo: {full_name: 'fro-bot/.github'}},
+          head: {
+            sha: opts.headSha ?? 'abc123',
+            repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+          },
+          base: {ref: 'main', repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'}},
         },
       ],
     },
@@ -1667,6 +1684,143 @@ describe('main() — workflow_run event: happy path with pull_requests[] populat
   })
 })
 
+// ---------------------------------------------------------------------------
+// Regression lock: abbreviated pull_requests[] objects must NOT fail-closed
+// This is the exact live bug: abbreviated entries lack base.repo.full_name, so
+// the old validatePrIdentity call always returned false → 0 valid → fail-closed.
+// The fix: extract numbers only from pull_requests[], fetch full PR via fetchPrByNumber.
+// ---------------------------------------------------------------------------
+
+describe('main() — regression: abbreviated pull_requests[] entry resolves successfully (live bug fix)', () => {
+  it('resolves PR identity when pull_requests[] has abbreviated objects (no base.repo.full_name)', async () => {
+    // #given: workflow_run payload with abbreviated pull_requests[] entry — exactly as GitHub sends it.
+    // The abbreviated object has base.repo.name/id/url but NOT base.repo.full_name.
+    // OLD behavior: validatePrIdentity(abbreviatedObj) → false → 0 valid → fail-closed (blocks every legit PR).
+    // NEW behavior: extract number 42 → fetchPrByNumber(42) → validatePrIdentity(fullObj) → true → resolves.
+    const eventJson = JSON.stringify({
+      workflow_run: {
+        event: 'pull_request',
+        head_sha: 'sha-abbrev-regression',
+        pull_requests: [
+          {
+            // Abbreviated object: has name/id/url but NOT full_name — this is what GitHub actually sends.
+            number: 42,
+            head: {
+              sha: 'sha-abbrev-regression',
+              repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+            },
+            base: {
+              ref: 'main',
+              repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+            },
+          },
+        ],
+      },
+    })
+    // fetchPrByNumber returns the FULL PR object (with base.repo.full_name) — this is what validates.
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-abbrev-regression'}),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_abbrev_regression'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(makeCompareJson('docs/public.md')) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha: raw diff
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with abbreviated pull_requests[] entry
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+      // #then: no exit called — the gate PASSES (regression: old code would fail-closed here)
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  it('mutation check: reverting to validate abbreviated object directly causes this test to fail', async () => {
+    // This test documents the mutation check: if validatePrIdentity were called on the abbreviated
+    // object (which lacks base.repo.full_name), it would return false → 0 valid → fail-closed.
+    // The abbreviated object below has NO base.repo.full_name — validatePrIdentity returns false for it.
+    const abbreviatedPr: Record<string, unknown> = {
+      number: 42,
+      head: {
+        sha: 'sha-mutation-check',
+        repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+      },
+      base: {ref: 'main', repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'}},
+    }
+    // Verify the abbreviated object lacks full_name (the root cause of the bug).
+    const base = abbreviatedPr.base
+    const baseRepo =
+      base !== null && typeof base === 'object' && 'repo' in base ? (base as Record<string, unknown>).repo : undefined
+    const fullName =
+      baseRepo !== null && typeof baseRepo === 'object' && 'full_name' in (baseRepo as Record<string, unknown>)
+        ? (baseRepo as Record<string, unknown>).full_name
+        : undefined
+    // #then: abbreviated object has no full_name — the old code would fail here
+    expect(fullName).toBeUndefined()
+
+    // The fix: the code now extracts the number (42) and calls fetchPrByNumber(42),
+    // which returns a FULL object with base.repo.full_name. That full object validates correctly.
+    const eventJson = JSON.stringify({
+      workflow_run: {
+        event: 'pull_request',
+        head_sha: 'sha-mutation-check',
+        pull_requests: [abbreviatedPr],
+      },
+    })
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-mutation-check'}),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_mutation'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(makeCompareJson('docs/public.md')) // fetchDiffForSha: compare JSON
+      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha: raw diff
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs — with the fix, this PASSES (no exit)
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+      // #then: no exit called — the fix works
+      // If you revert to validating the abbreviated object directly, this assertion fails
+      // because the gate would fail-closed (process.exit(1) would be called).
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
 describe('main() — workflow_run event: empty pull_requests[] → API fallback by head_sha', () => {
   it('falls back to fetchPrsByHeadSha when pull_requests[] is empty and resolves PR', async () => {
     // #given: workflow_run payload with empty pull_requests[]; API fallback returns one PR
@@ -1732,14 +1886,21 @@ describe('main() — workflow_run event: error paths (fail-closed)', () => {
   })
 
   it('fails closed when base repo does not match fro-bot/.github', async () => {
-    // #given: workflow_run payload with a PR targeting a different base repo
+    // #given: workflow_run payload with abbreviated pull_requests[] entry (number hint only).
+    // Validation happens via fetchPrByNumber which returns a PR targeting a different base repo.
     const eventJson = makeWorkflowRunEvent({
       headSha: 'sha-wrong-repo',
       pullRequests: [
         {
           number: 42,
-          head: {sha: 'sha-wrong-repo', repo: {full_name: 'other-org/other-repo'}},
-          base: {ref: 'main', repo: {full_name: 'other-org/other-repo'}},
+          head: {
+            sha: 'sha-wrong-repo',
+            repo: {name: 'other-repo', id: 99, url: 'https://api.github.com/repos/other-org/other-repo'},
+          },
+          base: {
+            ref: 'main',
+            repo: {name: 'other-repo', id: 99, url: 'https://api.github.com/repos/other-org/other-repo'},
+          },
         },
       ],
     })
@@ -1766,14 +1927,21 @@ describe('main() — workflow_run event: error paths (fail-closed)', () => {
   })
 
   it('fails closed when base branch is not main', async () => {
-    // #given: workflow_run payload with a PR targeting a non-main branch
+    // #given: workflow_run payload with abbreviated pull_requests[] entry (number hint only).
+    // Validation happens via fetchPrByNumber which returns a PR targeting a non-main branch.
     const eventJson = makeWorkflowRunEvent({
       headSha: 'sha-wrong-branch',
       pullRequests: [
         {
           number: 42,
-          head: {sha: 'sha-wrong-branch', repo: {full_name: 'fro-bot/.github'}},
-          base: {ref: 'develop', repo: {full_name: 'fro-bot/.github'}},
+          head: {
+            sha: 'sha-wrong-branch',
+            repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+          },
+          base: {
+            ref: 'develop',
+            repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+          },
         },
       ],
     })
@@ -1800,14 +1968,18 @@ describe('main() — workflow_run event: error paths (fail-closed)', () => {
   })
 
   it('fails closed when PR head SHA does not match the scanned workflow_run head_sha', async () => {
-    // #given: workflow_run payload with head_sha that doesn't match the PR's head SHA
+    // #given: workflow_run payload with abbreviated pull_requests[] entry (number hint only).
+    // Validation happens via fetchPrByNumber which returns a PR whose head SHA doesn't match.
     const eventJson = makeWorkflowRunEvent({
       headSha: 'sha-scanned',
       pullRequests: [
         {
           number: 42,
-          head: {sha: 'sha-different', repo: {full_name: 'fro-bot/.github'}},
-          base: {ref: 'main', repo: {full_name: 'fro-bot/.github'}},
+          head: {
+            sha: 'sha-different',
+            repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+          },
+          base: {ref: 'main', repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'}},
         },
       ],
     })
@@ -1856,12 +2028,19 @@ describe('main() — workflow_run event: error paths (fail-closed)', () => {
     }
   })
 
-  it('fails closed when head-SHA fallback returns multiple PRs and not exactly one passes validation', async () => {
-    // #given: workflow_run payload with empty pull_requests[]; API fallback returns two PRs
+  it('fails closed when head-SHA fallback returns multiple PRs and both pass validation', async () => {
+    // #given: workflow_run payload with empty pull_requests[]; API fallback returns two PRs.
+    // Numbers are extracted from the fallback results; fetchPrByNumber returns a valid full PR
+    // for both numbers → exactly-one guard triggers → fail-closed.
     const eventJson = makeWorkflowRunEvent({headSha: 'sha-ambiguous', pullRequests: []})
+    // prsByHeadSha provides the number hints (abbreviated objects are fine here too).
     const pr1 = makePrApiResponse({number: 10, headSha: 'sha-ambiguous'})
     const pr2 = makePrApiResponse({number: 11, headSha: 'sha-ambiguous'})
-    const prApiResolver = makePrApiResolver({prsByHeadSha: [pr1, pr2]})
+    // fetchPrByNumber returns a valid full PR for any number — both 10 and 11 pass validation.
+    const prApiResolver: PrApiResolver = {
+      fetchPrsByHeadSha: async () => [pr1, pr2],
+      fetchPrByNumber: async (num: number) => makePrApiResponse({number: num, headSha: 'sha-ambiguous'}),
+    }
 
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
@@ -2408,26 +2587,44 @@ describe('main() — Finding B regression lock: diff pinned to immutable scanned
 
 describe('main() — Finding F: pull_requests[] with two validating PRs → fail-closed', () => {
   it('fails closed when pull_requests[] contains two PRs that both pass validation', async () => {
-    // #given: workflow_run payload with two PRs in pull_requests[] that both validate
+    // #given: workflow_run payload with two abbreviated PR entries (numbers 10 and 11).
+    // fetchPrByNumber returns a valid full PR for BOTH numbers → exactly-one guard triggers.
     const eventJson = JSON.stringify({
       workflow_run: {
         event: 'pull_request',
         head_sha: 'sha-two-prs',
+        // Abbreviated entries — only numbers are extracted; full objects fetched via fetchPrByNumber.
         pull_requests: [
           {
             number: 10,
-            head: {sha: 'sha-two-prs', repo: {full_name: 'fro-bot/.github'}},
-            base: {ref: 'main', repo: {full_name: 'fro-bot/.github'}},
+            head: {
+              sha: 'sha-two-prs',
+              repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+            },
+            base: {
+              ref: 'main',
+              repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+            },
           },
           {
             number: 11,
-            head: {sha: 'sha-two-prs', repo: {full_name: 'fro-bot/.github'}},
-            base: {ref: 'main', repo: {full_name: 'fro-bot/.github'}},
+            head: {
+              sha: 'sha-two-prs',
+              repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+            },
+            base: {
+              ref: 'main',
+              repo: {name: '.github', id: 12345, url: 'https://api.github.com/repos/fro-bot/.github'},
+            },
           },
         ],
       },
     })
-    const prApiResolver = makePrApiResolver()
+    // fetchPrByNumber returns a valid full PR for any number — both 10 and 11 pass validation.
+    const prApiResolver: PrApiResolver = {
+      fetchPrByNumber: async (num: number) => makePrApiResponse({number: num, headSha: 'sha-two-prs'}),
+      fetchPrsByHeadSha: async () => [],
+    }
 
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
@@ -2439,7 +2636,7 @@ describe('main() — Finding F: pull_requests[] with two validating PRs → fail
     try {
       // #when: main() runs with two validating PRs
       await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
-      // #then: fail closed — exactly-one guard triggered
+      // #then: fail closed — exactly-one guard triggered (2 valid, not 1)
       expect(exitSpy).toHaveBeenCalledWith(1)
     } finally {
       exitSpy.mockRestore()
