@@ -251,11 +251,17 @@ function validatePrIdentity(pr: Record<string, unknown>, expectedHeadSha: string
  * Read the workflow_run event payload and resolve PR identity.
  *
  * Resolution order:
- * 1. Take the first candidate from `workflow_run.pull_requests[]` that passes validation.
- * 2. If pull_requests[] is empty, fall back to an API query by head_sha.
+ * 1. Extract PR NUMBERS from `workflow_run.pull_requests[]` as hints (do NOT validate
+ *    the abbreviated objects — they lack base.repo.full_name).
+ * 2. For each candidate number, fetch the FULL PR via fetchPrByNumber and validate that.
+ * 3. If pull_requests[] yields no candidate numbers, fall back to fetchPrsByHeadSha and
+ *    apply the same number-extraction-then-fetchPrByNumber pattern.
+ *
+ * Invariant: validatePrIdentity is ONLY ever called on full PR objects from fetchPrByNumber.
+ * The abbreviated pull_requests[] entries are used only to extract PR numbers.
  *
  * Validation: base repo == fro-bot/.github, base branch == main, PR head SHA == workflow_run.head_sha.
- * Requires EXACTLY ONE PR to survive validation — fail-closed otherwise.
+ * Requires EXACTLY ONE PR to survive full-object validation — fail-closed otherwise.
  *
  * Returns the validated PR number, title, and author.
  */
@@ -290,46 +296,58 @@ async function readWorkflowRunContext(
   }
 
   // Resolve PR number from pull_requests[] or API fallback.
+  // IMPORTANT: pull_requests[] entries are ABBREVIATED — they lack base.repo.full_name.
+  // Extract PR numbers only; fetch the full PR object via fetchPrByNumber for validation.
   const pullRequests = Array.isArray(workflowRun.pull_requests) ? workflowRun.pull_requests : []
 
   const resolvedPrNumber: number = await (async (): Promise<number> => {
-    if (pullRequests.length > 0) {
-      // Use pull_requests[] — find the one that passes validation.
-      const validCandidates: number[] = []
-      for (const pr of pullRequests) {
+    /** Extract PR numbers from an array of PR objects (abbreviated or full). */
+    const extractNumbers = (prs: unknown[]): number[] => {
+      const nums: number[] = []
+      for (const pr of prs) {
         if (!isRecord(pr)) continue
-        if (validatePrIdentity(pr, headSha)) {
-          const num = pr.number
-          if (typeof num === 'number') {
-            validCandidates.push(num)
-          }
-        }
-      }
-      if (validCandidates.length !== 1) {
-        throw new Error(
-          `check-private-leak: expected exactly 1 valid PR in pull_requests[], found ${validCandidates.length} — fail-closed`,
-        )
-      }
-      const prNum = validCandidates[0]
-      if (prNum === undefined) throw new Error('check-private-leak: internal: validCandidates[0] undefined')
-      return prNum
-    }
-
-    // Fallback: query by head_sha.
-    const prs = await prApiResolver.fetchPrsByHeadSha(headSha)
-    const validCandidates: number[] = []
-    for (const pr of prs) {
-      if (!isRecord(pr)) continue
-      if (validatePrIdentity(pr, headSha)) {
         const num = pr.number
         if (typeof num === 'number') {
-          validCandidates.push(num)
+          nums.push(num)
         }
       }
+      return nums
     }
+
+    // Step 1: collect candidate PR numbers from pull_requests[] (abbreviated objects — numbers only).
+    // IMPORTANT: do NOT validate the abbreviated objects — they lack base.repo.full_name.
+    const fromPullRequests = extractNumbers(pullRequests)
+
+    // Step 2: if pull_requests[] yielded no numbers, fall back to the head-SHA API.
+    // The SHA fallback may also return abbreviated objects, so apply the same pattern:
+    // extract numbers only, then fetch full objects for validation.
+    const candidateNumbers: number[] =
+      fromPullRequests.length > 0
+        ? fromPullRequests
+        : await (async (): Promise<number[]> => {
+            const prs = await prApiResolver.fetchPrsByHeadSha(headSha)
+            const nums = extractNumbers(prs)
+            if (nums.length === 0) {
+              throw new Error(
+                `check-private-leak: head-SHA fallback returned ${nums.length} valid PR(s), expected exactly 1 — fail-closed`,
+              )
+            }
+            return nums
+          })()
+
+    // Step 3: for each candidate number, fetch the FULL PR object and validate it.
+    // validatePrIdentity requires base.repo.full_name — only full objects have it.
+    const validCandidates: number[] = []
+    for (const num of candidateNumbers) {
+      const fullPr = await prApiResolver.fetchPrByNumber(num)
+      if (validatePrIdentity(fullPr, headSha)) {
+        validCandidates.push(num)
+      }
+    }
+
     if (validCandidates.length !== 1) {
       throw new Error(
-        `check-private-leak: head-SHA fallback returned ${validCandidates.length} valid PR(s), expected exactly 1 — fail-closed`,
+        `check-private-leak: expected exactly 1 valid PR in pull_requests[], found ${validCandidates.length} — fail-closed`,
       )
     }
     const prNum = validCandidates[0]
@@ -338,6 +356,8 @@ async function readWorkflowRunContext(
   })()
 
   // Fetch the validated PR's details (number, title, author).
+  // The full PR was already fetched during validation above; fetch again for title/author.
+  // (fetchPrByNumber is idempotent and the result is not cached — acceptable for correctness.)
   const prDetails = await prApiResolver.fetchPrByNumber(resolvedPrNumber)
 
   const title = prDetails.title
