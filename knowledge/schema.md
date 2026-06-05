@@ -103,3 +103,11 @@ git push origin data
 The `Merge Data Branch` workflow promotes `data → main` on a weekly schedule (or run it immediately via `gh workflow run merge-data.yaml`). The promotion PR is authored by `fro-bot[bot]`, which passes the guard.
 
 This file (`knowledge/schema.md`) and `knowledge/README.md` / `knowledge/wiki/README.md` remain editable through normal PRs to `main` — the guard targets only the agent-authored content tree, not conventions or scaffolding docs.
+
+## Provenance boundary
+
+The promotion gate's attribution check (`scripts/check-wiki-private-presence.ts`) confirms that a slug-matching `wiki/repos/` page declares its public repository in structured `sources[].url` with an exact owner/repo match. This stops decoy-URL mis-attribution, but it trusts the page's own declared sources — it does not independently prove the page body genuinely concerns that repository.
+
+This is a defense-in-depth layer, not the primary provenance control. The real provenance boundary is enforced upstream: every wiki write is authored under Fro Bot's identity, the `data` branch is the sole writer, and the authority guard rejects any other origin. A page can only reach the attribution check by passing through those controls, so there is no path for an untrusted actor to plant a page with forged self-declared sources.
+
+Content-level provenance (cross-checking page body against trusted generator metadata) is intentionally not built. It would add real machinery — the generator would need to emit verifiable provenance the gate could check — for a layer that has no reachable attack given the upstream identity and sole-writer controls. The trade is not worth it today; this note records the residual so the decision is explicit and revisitable if the upstream controls ever weaken.
