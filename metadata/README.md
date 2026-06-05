@@ -101,7 +101,7 @@ A private repo's existence, name, or content must never reach a public surface. 
   - `github.token` (`GITHUB_TOKEN`): diff fetch, PR API identity resolution, commit status POST.
   - `FRO_BOT_POLL_PAT`: private `node_id` → `owner/name` resolution only (resolver subprocess, scrubbed env — no `GH_TOKEN`/`GITHUB_TOKEN` inheritance).
 
-  The gate posts a `security/check-private-leak` commit status to the exact PR head SHA. If the status POST itself fails, the job exits non-zero (fail-closed — the PR is never left unsignaled). Required-check registration on `main` is gated on empirical proof that the status attaches for fork PR heads (Unit 3, not yet registered).
+  The gate posts a `security/check-private-leak` commit status to the exact PR head SHA. If the status POST itself fails, the job exits non-zero (fail-closed — the PR is never left unsignaled). Required-check registration on `main` is deferred until empirical fork-status proof exists.
 
 **Operator lookup** — to map a redacted `node_id` back to its `owner/repo` (the convenience a plain `grep` of `repos.yaml` used to provide), run `GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts`. It reads `repos.yaml`, resolves each private entry's `node_id` via the GitHub API, and prints a `node_id → owner/name` table to stdout. It never writes to the working tree and is invoked by no workflow.
 

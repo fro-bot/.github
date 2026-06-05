@@ -64,7 +64,7 @@ export type ReposYamlReader = (path: string) => Promise<string>
 export type ResolverFactory = (pat: string) => NodeIdResolver
 
 // ---------------------------------------------------------------------------
-// Seam types for main() workflow_run testability (Unit 1)
+// Seam types for main() workflow_run testability
 // ---------------------------------------------------------------------------
 
 /**
@@ -216,7 +216,7 @@ export function checkPrivateLeak(
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// workflow_run event reader + PR identity resolver (Unit 1)
+// workflow_run event reader + PR identity resolver
 // ---------------------------------------------------------------------------
 
 /**
@@ -263,7 +263,7 @@ async function readWorkflowRunContext(
   eventPath: string,
   reader: WorkflowRunReader,
   prApiResolver: PrApiResolver,
-): Promise<{prNumber: number; title: string; author: string}> {
+): Promise<{prNumber: number; title: string; author: string; headSha: string}> {
   const raw = await reader(eventPath)
   const parsed: unknown = JSON.parse(raw)
 
@@ -351,11 +351,11 @@ async function readWorkflowRunContext(
     throw new Error(`check-private-leak: PR #${resolvedPrNumber} missing user.login field`)
   }
 
-  return {prNumber: resolvedPrNumber, title, author}
+  return {prNumber: resolvedPrNumber, title, author, headSha}
 }
 
 // ---------------------------------------------------------------------------
-// Default seam implementations for main() (Unit 1)
+// Default seam implementations for main()
 // ---------------------------------------------------------------------------
 
 const defaultWorkflowRunReader: WorkflowRunReader = async (path: string): Promise<string> => readFile(path, 'utf8')
@@ -363,13 +363,21 @@ const defaultWorkflowRunReader: WorkflowRunReader = async (path: string): Promis
 const defaultPrApiResolver: PrApiResolver = {
   fetchPrByNumber: async (prNumber: number): Promise<Record<string, unknown>> => {
     const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/pulls/${prNumber}`, '--jq', '.'], {encoding: 'utf8'})
-    return JSON.parse(raw) as Record<string, unknown>
+    const parsed: unknown = JSON.parse(raw)
+    if (!isRecord(parsed)) {
+      throw new TypeError(`check-private-leak: fetchPrByNumber returned non-object for PR #${prNumber}`)
+    }
+    return parsed
   },
   fetchPrsByHeadSha: async (headSha: string): Promise<Record<string, unknown>[]> => {
     const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/commits/${headSha}/pulls`, '--jq', '.'], {
       encoding: 'utf8',
     })
-    return JSON.parse(raw) as Record<string, unknown>[]
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      throw new TypeError(`check-private-leak: fetchPrsByHeadSha returned non-array for SHA ${headSha}`)
+    }
+    return parsed.filter(isRecord)
   },
 }
 
@@ -395,12 +403,28 @@ function fetchPrivateNodeIds(fullName: string): string[] {
 }
 
 /**
- * Fetch unified diff text for a pull request.
+ * Fetch the unified diff for an immutable, pinned head SHA against the base branch.
+ *
+ * Uses the GitHub compare API with the diff media type so the result is a standard
+ * unified diff — the same format as `git diff main...data` used on the promotion path.
+ * Pinning to scannedHeadSha (the workflow_run head_sha) closes the force-push TOCTOU:
+ * the diff is for exactly the SHA the commit status is posted to, regardless of any
+ * subsequent force-push to the PR branch.
+ *
  * Accepts an explicit env so FRO_BOT_POLL_PAT never reaches the gh subprocess
  * (mirrors the --promotion gitEnv isolation pattern).
  */
-function fetchPrDiff(prNumber: number, env: NodeJS.ProcessEnv): string {
-  return execFileSync('gh', ['pr', 'diff', String(prNumber)], {encoding: 'utf8', env})
+function fetchDiffForSha(headSha: string, env: NodeJS.ProcessEnv): string {
+  return execFileSync(
+    'gh',
+    [
+      'api',
+      `repos/{owner}/{repo}/compare/${EXPECTED_BASE_BRANCH}...${headSha}`,
+      '-H',
+      'Accept: application/vnd.github.v3.diff',
+    ],
+    {encoding: 'utf8', env},
+  )
 }
 
 /**
@@ -738,8 +762,14 @@ export async function main(
   let prNumber: number
   let title: string
   let author: string
+  let scannedHeadSha: string
   try {
-    ;({prNumber, title, author} = await readWorkflowRunContext(eventPath, workflowRunReader, prApiResolver))
+    ;({
+      prNumber,
+      title,
+      author,
+      headSha: scannedHeadSha,
+    } = await readWorkflowRunContext(eventPath, workflowRunReader, prApiResolver))
   } catch (error) {
     process.stderr.write(`check-private-leak: ${error instanceof Error ? error.message : String(error)}\n`)
     process.exit(1)
@@ -761,7 +791,7 @@ export async function main(
   const isOperator = author === OPERATOR_LOGIN
   const override: OverrideOptions = {titlePrefixed, isOperator}
 
-  // Build a sanitized env that excludes FRO_BOT_POLL_PAT before passing to gh pr diff.
+  // Build a sanitized env that excludes FRO_BOT_POLL_PAT before passing to the compare-API diff fetch.
   // The PAT must reach ONLY makeGhNodeIdResolver — never the diff subprocess.
   // Mirrors the --promotion gitEnv isolation pattern (Fix C in runPromotionCli).
   const diffEnv: NodeJS.ProcessEnv = {...process.env}
@@ -778,9 +808,13 @@ export async function main(
     if ('nameWithOwner' in result) {
       resolvedNames.push(result.nameWithOwner)
     } else if (result.error === 'access-lost') {
-      // access-lost = repo gone = no current content to leak; safe to skip.
-      // transient error = unknown state = must fail closed.
-      process.stderr.write(`check-private-leak: node_id=${nodeId} access-lost (deleted/no-access), skipping\n`)
+      // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
+      // Treating it as skip would make a mis-scoped PAT silently pass everything — fail closed.
+      // Mirror runPromotionScan's Fix A: push to failedNodeIds so the fail-closed block catches it.
+      failedNodeIds.push(nodeId)
+      process.stderr.write(
+        `check-private-leak: node_id=${nodeId} access-lost (deleted or token cannot see it) — BLOCKING\n`,
+      )
     } else {
       // 'error' class: transient/auth/rate-limit/unknown — fail closed.
       // Log only node_id + coarse error class; never echo raw gh stderr (may contain owner/name).
@@ -815,9 +849,12 @@ export async function main(
     privateTokens.push(...buildTokensForName(nameWithOwner))
   }
 
-  // Fetch diff via gh pr diff — no PAT needed (uses ambient GITHUB_TOKEN).
+  // Fetch the diff pinned to the immutable scannedHeadSha via the GitHub compare API.
+  // This closes the force-push TOCTOU (Finding B): the diff is for exactly the SHA the
+  // commit status is posted to — a force-push after the workflow_run fires cannot desync
+  // the scanned diff from the status target. No extra round-trip needed (no revalidation).
   // Pass diffEnv (PAT-stripped) so FRO_BOT_POLL_PAT never reaches the gh subprocess.
-  const diff = fetchPrDiff(prNumber, diffEnv)
+  const diff = fetchDiffForSha(scannedHeadSha, diffEnv)
   const result = checkPrivateLeak(privateTokens, diff, override)
 
   if (result.ok) {
