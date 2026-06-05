@@ -44,13 +44,21 @@ jobs:
       # branch, but the workflow's checkout pulls scripts from the default branch (`main`).
       # Overlay the authoritative `metadata/` tree from `data` so reconcile plans against
       # live state instead of whatever `main` last reflected.
+      # git authenticates via the credentials actions/checkout persisted on origin, so no
+      # explicit token env is needed here. The fetch is guarded: when `data` does not yet
+      # exist (first run, fresh clone, fork, accidental deletion) reconcile bootstraps it,
+      # so a missing branch must not hard-fail this step under `set -euo pipefail`.
+      # NOTE: `git checkout origin/data -- metadata/` leaves metadata/ staged in the index.
+      # Reconcile commits via Octokit (not git CLI), so this is fine. Any future step in this
+      # job that depends on a clean index must `git reset HEAD metadata/` first.
       - name: ⤵ Overlay metadata from data branch
-        env:
-          GH_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
         run: |
           set -euo pipefail
-          git fetch --no-tags origin data
-          git checkout origin/data -- metadata/
+          if git fetch --no-tags origin data 2>/dev/null; then
+            git checkout origin/data -- metadata/
+          else
+            echo "data branch not yet established; reconcile will bootstrap it."
+          fi
 
       - name: 🔁 Reconcile repos
         env:
