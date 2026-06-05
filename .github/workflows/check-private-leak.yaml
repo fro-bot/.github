@@ -1,0 +1,121 @@
+---
+# Privileged per-PR private-leak gate — trusted workflow_run topology.
+#
+# Security model:
+#   - Triggered by `workflow_run` (on: workflow_run) so this job ALWAYS runs the
+#     DEFAULT-BRANCH workflow definition, never PR-author code. The broad-scope
+#     FRO_BOT_POLL_PAT is therefore never exposed to a malicious PR rewrite.
+#   - NO checkout of the PR head. Only the default branch (main) is checked out —
+#     for the script and metadata/repos.yaml. The PR diff is fetched as pure data
+#     via the GitHub API (`gh pr diff`), never from a checked-out tree.
+#   - NO actions/cache restore. The shared setup action restores a pnpm cache that
+#     a PR workflow could poison. This job installs deps fresh with no cache.
+#   - FRO_BOT_POLL_PAT is passed ONLY as a step-level env on the scan step. The
+#     script forwards it into the resolver subprocess under a scrubbed env (no
+#     GH_TOKEN/GITHUB_TOKEN inheritance) — mirroring the --promotion gitEnv pattern.
+#   - The commit status is posted to the exact PR head SHA the scan ran against.
+#     If the status POST itself fails, the job exits non-zero (fail-closed, R5).
+#
+# Credential split:
+#   - github.token (GITHUB_TOKEN): diff fetch, PR API, commit status POST.
+#   - FRO_BOT_POLL_PAT: private node_id → owner/name resolution only (resolver subprocess).
+name: Check Private Leak
+
+on:
+  workflow_run:
+    workflows: [Private Leak Sentinel]
+    types: [completed]
+
+# Minimum permissions: read the repo (checkout + gh api), write commit statuses,
+# read PR metadata for the API fallback identity resolution.
+permissions:
+  contents: read
+  statuses: write
+  pull-requests: read
+
+# Cancel superseded runs for the same PR head SHA. cancel-in-progress: false so a
+# stale run still posts its (failure) status rather than being silently dropped.
+concurrency:
+  group: check-private-leak-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash -Eeuo pipefail {0}
+
+jobs:
+  check-private-leak:
+    name: Check Private Leak
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Checkout the DEFAULT branch (main) only — for the script + metadata/repos.yaml.
+      # NEVER checkout the PR head; the diff is fetched as data via the GitHub API.
+      - name: ⤵ Checkout main
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          fetch-depth: 1
+
+      # Minimal node + pnpm setup via mise — NO cache restore (R1: no poisonable cache).
+      # Uses the same mise-action pin as .github/actions/setup but skips the
+      # actions/cache step entirely so a PR workflow cannot poison the store.
+      - name: 📦 Install mise (node + pnpm)
+        env:
+          MISE_VERSION: 2026.6.0 # renovate: datasource=github-releases packageName=jdx/mise
+        uses: jdx/mise-action@dba19683ed58901619b14f395a24841710cb4925 # v4.1.0
+        with:
+          version: ${{ env.MISE_VERSION }}
+          # Disable mise's own cache so no PR-poisonable cache is restored.
+          cache: false
+
+      # Install production deps (yaml package is required by check-private-leak.ts).
+      # --prefer-offline is fine here since there is no cache to restore from.
+      # --ignore-scripts prevents lifecycle hooks from running untrusted code.
+      - name: 📦 Install dependencies (no cache)
+        run: pnpm install --prefer-offline --ignore-scripts --loglevel warn
+
+      # Run the scan. FRO_BOT_POLL_PAT is scoped to THIS STEP ONLY (R6).
+      # The script reads GITHUB_EVENT_PATH (set automatically by Actions to the
+      # workflow_run payload), resolves PR identity via the API, fetches the diff
+      # as data, and exits 0 (pass) or non-zero (fail/error).
+      # GH_TOKEN is set to github.token so gh CLI uses the default token for
+      # diff fetch and PR API — never the broad-scope PAT.
+      - id: scan
+        name: 🔒 Scan PR diff for private repo names
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FRO_BOT_POLL_PAT: ${{ secrets.FRO_BOT_POLL_PAT }}
+        run: node scripts/check-private-leak.ts
+
+      # Post the commit status to the PR head SHA (R4, R5).
+      # Runs unconditionally (if: always()) so the status is posted whether the
+      # scan passed, failed, or errored. If this POST fails, the step exits
+      # non-zero and the job fails — the PR is never left unsignaled (fail-closed).
+      #
+      # INJECTION SAFETY: head_sha is a SHA (hex-only, safe to inline). The PR
+      # title and branch are never interpolated into this run: block.
+      - name: 📋 Post commit status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          if [ "$SCAN_OUTCOME" = "success" ]; then
+            state="success"
+            description="No private repository names detected in PR diff."
+          else
+            state="failure"
+            description="Private repository name(s) detected or scan error — see run logs for file paths."
+          fi
+
+          gh api \
+            --method POST \
+            "repos/{owner}/{repo}/statuses/${HEAD_SHA}" \
+            -f state="${state}" \
+            -f context="security/check-private-leak" \
+            -f description="${description}" \
+            -f target_url="${RUN_URL}"
