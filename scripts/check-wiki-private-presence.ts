@@ -416,7 +416,51 @@ export function formatLeakReport(leaks: readonly PrivateWikiLeak[]): string {
   ].join('\n')}\n`
 }
 
-async function main(): Promise<void> {
+/**
+ * Format the BLOCKED failure report WITH full page identities for local operator use.
+ *
+ * **LOCAL-ONLY OUTPUT — do not wire this into any workflow or paste into public logs.**
+ *
+ * Unlike `formatLeakReport`, this function includes each leak's `filename` and `reason`
+ * so an operator or local agent can identify and remediate offending pages without
+ * reverse-engineering the redacted gate output.
+ *
+ * This function MUST only be called from the `--operator-report` branch of `runCli`,
+ * which hard-refuses to run when `GITHUB_ACTIONS` or `CI=true` is set. It must never
+ * be wired into a GitHub Actions workflow step.
+ *
+ * Exported for testing only.
+ */
+export function formatOperatorReport(leaks: readonly PrivateWikiLeak[]): string {
+  const lines: string[] = [
+    `check-wiki-private-presence: BLOCKED — ${leaks.length} unattributable wiki repo page(s).`,
+    '',
+    'Offending pages (LOCAL OPERATOR OUTPUT — do not paste into public logs):',
+    ...leaks.map(leak => `  - knowledge/wiki/repos/${leak.filename}  (${leak.reason})`),
+    '',
+    'Remediation:',
+    '  1. Inspect each page on the data branch; if its repo is private, the page must not be promoted.',
+    '  2. Redact via a fro-bot[bot] write to data (dispatch fro-bot.yaml) — never a human-authored PR (wiki authority guard).',
+    '  3. If the repo is actually public, ensure its metadata/repos.yaml entry has `private: false` so the slug is admitted.',
+    '  4. Re-run the promotion (Merge Data Branch) once data is clean.',
+  ]
+  return `${lines.join('\n')}\n`
+}
+
+// ---------------------------------------------------------------------------
+// collectLeaks — shared detection pipeline (used by both normal and operator paths)
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the full leak-detection pipeline and return all detected leaks.
+ *
+ * Reads `metadata/repos.yaml` from CWD, scans `knowledge/wiki/repos`, and loads
+ * grandfather pages from the path in `env.GRANDFATHER_WIKI_REPOS_DIR`.
+ *
+ * Extracted as a shared helper so the normal (redacted) path and the operator
+ * (unredacted) path use ONE detection implementation with no drift risk.
+ */
+async function collectLeaks(env: Record<string, string | undefined>): Promise<PrivateWikiLeak[]> {
   // 1. Read and validate data branch's own metadata/repos.yaml (CWD = data-branch-check).
   //    Fail closed: throws on read/parse error.
   const reposRaw = await readFile('metadata/repos.yaml', 'utf8')
@@ -438,23 +482,65 @@ async function main(): Promise<void> {
   // 5. Load grandfather pages from main's wiki dir.
   //    Fail closed: GRANDFATHER_WIKI_REPOS_DIR MUST be supplied by the workflow.
   //    An unset var → throw loudly; misconfiguration must not silently pass or over-block.
-  const grandfatherDir = requireGrandfatherDir(process.env.GRANDFATHER_WIKI_REPOS_DIR)
+  const grandfatherDir = requireGrandfatherDir(env.GRANDFATHER_WIKI_REPOS_DIR)
   const grandfatherPages = await loadWikiPages(grandfatherDir)
 
   // 6. Detect content-attribution leaks — pure function, no GraphQL.
   const contentLeaks = detectPrivateWikiLeaks({dataWikiPages, publicSlugMap, grandfatherPages})
 
   // 7. Merge structural and content leaks.
-  const leaks = [...structuralLeaks, ...contentLeaks]
+  return [...structuralLeaks, ...contentLeaks]
+}
 
-  // 8. Report — redacted: the failure goes to a public Actions log, so it must
-  //    never echo the leaked owner--repo.md filenames (see formatLeakReport).
-  if (leaks.length > 0) {
-    process.stderr.write(formatLeakReport(leaks))
-    process.exit(1)
+// ---------------------------------------------------------------------------
+// runCli — testable seam (no process.exit / process.env / process.argv reads)
+// ---------------------------------------------------------------------------
+
+/**
+ * Testable CLI entry point. Does NOT call `process.exit` or read `process.env`/`process.argv`
+ * directly — all inputs are injected so tests can assert on exit codes and output without
+ * spawning a subprocess.
+ *
+ * `main()` calls this and maps the result to `process.stdout`/`process.stderr`/`process.exit`.
+ */
+export async function runCli(
+  argv: string[],
+  env: Record<string, string | undefined>,
+): Promise<{exitCode: number; stdout: string; stderr: string}> {
+  const operatorMode = argv.includes('--operator-report')
+
+  if (operatorMode) {
+    // Hard-refuse BEFORE loading or printing ANYTHING sensitive.
+    // Any value for GITHUB_ACTIONS, or CI === 'true', means we are in CI.
+    if (env.GITHUB_ACTIONS !== undefined || env.CI === 'true') {
+      return {
+        exitCode: 2,
+        stdout: '',
+        stderr: 'check-wiki-private-presence: --operator-report is local-only; refusing to run in CI\n',
+      }
+    }
+
+    // Local operator path — run detection and emit unredacted report.
+    const leaks = await collectLeaks(env)
+    if (leaks.length > 0) {
+      return {exitCode: 1, stdout: formatOperatorReport(leaks), stderr: ''}
+    }
+    return {exitCode: 0, stdout: 'no private wiki leaks detected\n', stderr: ''}
   }
 
-  process.stdout.write('no private wiki leaks detected\n')
+  // Normal (redacted) path — used in CI and locally without the flag.
+  const leaks = await collectLeaks(env)
+  if (leaks.length > 0) {
+    return {exitCode: 1, stdout: '', stderr: formatLeakReport(leaks)}
+  }
+  return {exitCode: 0, stdout: 'no private wiki leaks detected\n', stderr: ''}
+}
+
+async function main(): Promise<void> {
+  const result = await runCli(process.argv.slice(2), process.env as Record<string, string | undefined>)
+  if (result.stdout) process.stdout.write(result.stdout)
+  if (result.stderr) process.stderr.write(result.stderr)
+  if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
