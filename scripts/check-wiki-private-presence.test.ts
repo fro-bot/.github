@@ -8,8 +8,10 @@ import {
   detectPrivateWikiLeaks,
   findStructuralViolations,
   formatLeakReport,
+  formatOperatorReport,
   loadWikiPages,
   requireGrandfatherDir,
+  runCli,
   type WikiPageSnapshot,
 } from './check-wiki-private-presence.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
@@ -1423,5 +1425,224 @@ describe('present-sources key is authoritative regardless of content — no subs
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+})
+
+// ---------------------------------------------------------------------------
+// formatOperatorReport (local-only unredacted output)
+// ---------------------------------------------------------------------------
+
+describe('formatOperatorReport (local-only unredacted output)', () => {
+  const twoLeaks = [
+    {filename: 'marcusrbrown--cart.md', reason: 'unattributable-page' as const},
+    {filename: 'acme--secret.md', reason: 'ambiguous-public-slug' as const},
+  ]
+
+  it('includes the offending filename in the output', () => {
+    // #given two leaks with known filenames
+    // #when formatOperatorReport is called
+    // #then each filename appears verbatim in the output
+    const report = formatOperatorReport(twoLeaks)
+    expect(report).toContain('marcusrbrown--cart.md')
+    expect(report).toContain('acme--secret.md')
+  })
+
+  it('includes each reason alongside the filename', () => {
+    // #given two leaks with distinct reasons
+    // #when formatOperatorReport is called
+    // #then each reason appears in the output
+    const report = formatOperatorReport(twoLeaks)
+    expect(report).toContain('unattributable-page')
+    expect(report).toContain('ambiguous-public-slug')
+  })
+
+  it('includes the BLOCKED header with the leak count', () => {
+    // #given two leaks
+    // #when formatOperatorReport is called
+    // #then the header contains BLOCKED and the count
+    const report = formatOperatorReport(twoLeaks)
+    expect(report).toContain('BLOCKED')
+    expect(report).toContain('2')
+  })
+
+  it('includes the remediation header', () => {
+    // #given any leaks
+    // #when formatOperatorReport is called
+    // #then a Remediation section is present
+    const report = formatOperatorReport(twoLeaks)
+    expect(report).toContain('Remediation')
+  })
+
+  it('includes the LOCAL OPERATOR OUTPUT warning label', () => {
+    // #given any leaks
+    // #when formatOperatorReport is called
+    // #then the output contains the local-operator warning so operators know not to paste it publicly
+    const report = formatOperatorReport(twoLeaks)
+    expect(report).toContain('LOCAL OPERATOR OUTPUT')
+  })
+
+  it('empty leaks array → no filename lines, still has header', () => {
+    // #given no leaks
+    // #when formatOperatorReport is called
+    // #then no filename lines appear but the header is still present
+    const report = formatOperatorReport([])
+    expect(report).toContain('check-wiki-private-presence')
+    expect(report).not.toContain('marcusrbrown')
+    expect(report).not.toContain('acme')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// runCli — testable seam for --operator-report and normal mode
+// ---------------------------------------------------------------------------
+
+describe('runCli — CI-refusal (critical privacy gate)', () => {
+  it('refuses with exitCode 2 when GITHUB_ACTIONS is set, regardless of leaks', async () => {
+    // #given GITHUB_ACTIONS=true in env (simulating CI)
+    // #when runCli is called with --operator-report
+    // #then exitCode is 2 and stderr contains the refusal message
+    // The refusal must short-circuit BEFORE any detection or file I/O
+    const result = await runCli(['--operator-report'], {GITHUB_ACTIONS: 'true'})
+    expect(result.exitCode).toBe(2)
+    expect(result.stderr).toContain('local-only')
+    expect(result.stderr).toContain('refusing to run in CI')
+  })
+
+  it('refuses with exitCode 2 when CI=true in env', async () => {
+    // #given CI=true in env (simulating CI)
+    // #when runCli is called with --operator-report
+    // #then exitCode is 2
+    const result = await runCli(['--operator-report'], {CI: 'true'})
+    expect(result.exitCode).toBe(2)
+    expect(result.stderr).toContain('refusing to run in CI')
+  })
+
+  it('CI-refusal stdout contains NO filename substring (short-circuits before detection)', async () => {
+    // #given GITHUB_ACTIONS=true
+    // #when runCli is called with --operator-report
+    // #then stdout is empty — the refusal must not print any leak detail
+    // This is the critical privacy assertion: even if leaks exist, CI must see nothing
+    const result = await runCli(['--operator-report'], {GITHUB_ACTIONS: 'true'})
+    expect(result.stdout).toBe('')
+    // No owner--repo .md filename shape in either stream
+    // Use literal check: the separator '--' followed by a word and '.md' must not appear
+    const combined = result.stdout + result.stderr
+    expect(combined).not.toContain('.md')
+  })
+
+  it('CI-refusal stderr contains NO filename substring', async () => {
+    // #given GITHUB_ACTIONS=true
+    // #when runCli is called with --operator-report
+    // #then stderr contains only the refusal message, no filenames
+    const result = await runCli(['--operator-report'], {GITHUB_ACTIONS: 'true'})
+    // The refusal message must not contain any .md filename
+    expect(result.stderr).not.toContain('.md')
+  })
+
+  it('GITHUB_ACTIONS=true WITHOUT --operator-report flag runs normally (redacted gate still works in CI)', async () => {
+    // #given GITHUB_ACTIONS=true but no --operator-report flag
+    // #when runCli is called without the flag
+    // #then it does NOT refuse — the normal redacted gate must still work in CI
+    // Set up mocks so the normal path can complete: no wiki pages, no leaks → exits 0
+    const enoent = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+    mockReaddir.mockRejectedValue(enoent)
+    mockReadFile.mockResolvedValue('version: 1\nrepos: []\n')
+
+    const result = await runCli([], {GITHUB_ACTIONS: 'true', GRANDFATHER_WIKI_REPOS_DIR: '/tmp/grandfather'})
+    expect(result.exitCode).not.toBe(2)
+    expect(result.stderr).not.toContain('refusing to run in CI')
+  })
+})
+
+describe('runCli — local operator path (no CI env)', () => {
+  it('exits 0 and prints "no private wiki leaks detected" when no leaks found', async () => {
+    // #given a clean environment with no CI vars and a valid GRANDFATHER_WIKI_REPOS_DIR
+    // #when runCli is called with --operator-report and readdir returns empty (no wiki pages)
+    // #then exitCode 0 and stdout contains the clean message
+    // We use the mocked readdir/readFile from the top-level vi.mock — reset to ENOENT for both dirs
+    const enoent = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+    mockReaddir.mockRejectedValue(enoent)
+    mockReadFile.mockResolvedValue('version: 1\nrepos: []\n')
+
+    const result = await runCli(['--operator-report'], {GRANDFATHER_WIKI_REPOS_DIR: '/tmp/empty-grandfather'})
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('no private wiki leaks detected')
+  })
+
+  it('exits 1 and stdout contains the offending filename when leaks are found', async () => {
+    // #given a local env with a known leak (a page not in publicSlugMap, not grandfathered)
+    // #when runCli is called with --operator-report
+    // #then exitCode 1 and stdout contains the offending filename
+    const enoentGrandfather = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+
+    // readdir: first call = structural check (knowledge/wiki/repos), second = loadWikiPages, third = grandfather ENOENT
+    mockReaddir
+      .mockResolvedValueOnce([dirent('acme--secret.md')]) // findStructuralViolations
+      .mockResolvedValueOnce([dirent('acme--secret.md')]) // loadWikiPages
+      .mockRejectedValueOnce(enoentGrandfather) // grandfather dir ENOENT
+
+    mockReadFile
+      .mockResolvedValueOnce('version: 1\nrepos: []\n') // metadata/repos.yaml
+      .mockResolvedValueOnce('private content') // acme--secret.md content
+
+    const result = await runCli(['--operator-report'], {GRANDFATHER_WIKI_REPOS_DIR: '/tmp/empty-grandfather'})
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toContain('acme--secret.md')
+  })
+
+  it('operator report stdout does NOT contain redacted leak-N labels (uses unredacted format)', async () => {
+    // #given a local env with a known leak
+    // #when runCli is called with --operator-report
+    // #then stdout does NOT use the redacted "leak-1" format — it uses the operator format
+    const enoentGrandfather = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+
+    mockReaddir
+      .mockResolvedValueOnce([dirent('acme--secret.md')])
+      .mockResolvedValueOnce([dirent('acme--secret.md')])
+      .mockRejectedValueOnce(enoentGrandfather)
+
+    mockReadFile.mockResolvedValueOnce('version: 1\nrepos: []\n').mockResolvedValueOnce('private content')
+
+    const result = await runCli(['--operator-report'], {GRANDFATHER_WIKI_REPOS_DIR: '/tmp/empty-grandfather'})
+    // Should NOT use the redacted format
+    expect(result.stdout).not.toMatch(/leak-\d+:/)
+    // Should contain the filename
+    expect(result.stdout).toContain('acme--secret.md')
+  })
+})
+
+describe('runCli — normal mode (no --operator-report flag)', () => {
+  it('normal mode with leaks exits 1 and stderr contains redacted report (no filenames)', async () => {
+    // #given a local env with a known leak and no --operator-report flag
+    // #when runCli is called without the flag
+    // #then exitCode 1 and stderr contains the redacted report (no filenames)
+    const enoentGrandfather = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+
+    mockReaddir
+      .mockResolvedValueOnce([dirent('acme--secret.md')])
+      .mockResolvedValueOnce([dirent('acme--secret.md')])
+      .mockRejectedValueOnce(enoentGrandfather)
+
+    mockReadFile.mockResolvedValueOnce('version: 1\nrepos: []\n').mockResolvedValueOnce('private content')
+
+    const result = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: '/tmp/empty-grandfather'})
+    expect(result.exitCode).toBe(1)
+    // Redacted format: no filename in stderr
+    expect(result.stderr).not.toContain('acme--secret.md')
+    // Contains the redacted leak label
+    expect(result.stderr).toContain('leak-1')
+  })
+
+  it('normal mode with no leaks exits 0 and stdout contains clean message', async () => {
+    // #given a clean env with no leaks and no --operator-report flag
+    // #when runCli is called without the flag
+    // #then exitCode 0 and stdout contains the clean message
+    const enoent = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+    mockReaddir.mockRejectedValue(enoent)
+    mockReadFile.mockResolvedValue('version: 1\nrepos: []\n')
+
+    const result = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: '/tmp/empty-grandfather'})
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('no private wiki leaks detected')
   })
 })
