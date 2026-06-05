@@ -229,12 +229,25 @@ jobs:
         id: ts
         run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
+      # Re-mint the gate token immediately before the visibility recheck. The initial
+      # gate-token is minted at job start, but the survey agent can run for up to the job
+      # timeout before this point; a fresh token here keeps the recheck well clear of the
+      # ~1h installation-token lifetime even if survey durations grow.
+      - name: Re-mint App token for recheck
+        id: recheck-token
+        if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: 🔒 Recheck visibility
         id: recheck
         if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' }}
         env:
           NODE_ID: ${{ inputs.node_id }}
-          GH_TOKEN: ${{ steps.gate-token.outputs.token }}
+          GH_TOKEN: ${{ steps.recheck-token.outputs.token }}
         run: |
           if ! printf '%s' "$NODE_ID" | grep -qE '^[A-Za-z0-9_=-]+$'; then
             printf 'Aborting: dispatch input shape invalid\n' >&2
