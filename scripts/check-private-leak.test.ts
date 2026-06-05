@@ -9,7 +9,13 @@ import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
-import {checkPrivateLeak, main, runPromotionCli, runPromotionScan} from './check-private-leak.ts'
+import {
+  assertCompareNotTruncated,
+  checkPrivateLeak,
+  main,
+  runPromotionCli,
+  runPromotionScan,
+} from './check-private-leak.ts'
 
 // ---------------------------------------------------------------------------
 // Module-level hoisted mocks — shared across all describe blocks.
@@ -35,6 +41,18 @@ vi.mock('node:fs/promises', async importOriginal => {
 // ---------------------------------------------------------------------------
 // Pure function: checkPrivateLeak
 // ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal compare JSON response (as returned by the GitHub compare API without
+ * a diff media type). Used to mock the truncation-check call in fetchDiffForSha.
+ * Returns a well-formed response with one file entry that has a patch field.
+ */
+function makeCompareJson(filePath = 'docs/public.md'): string {
+  return JSON.stringify({
+    total_commits: 1,
+    files: [{filename: filePath, status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'}],
+  })
+}
 
 /**
  * Build a minimal unified diff with added lines. Each line in `additions` appears
@@ -482,7 +500,8 @@ describe('main() — fail-closed and no-name-leak (FIX #1, FIX #4)', () => {
       .mockImplementationOnce(() => {
         throw new Error('outage')
       }) // resolver R_y — fails
-      .mockReturnValueOnce('') // fetchPrDiff → empty diff
+      .mockReturnValueOnce(makeCompareJson()) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce('') // fetchDiffForSha: raw diff → empty
 
     const stderrOutput: string[] = []
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
@@ -1577,7 +1596,8 @@ describe('main() — workflow_run event: happy path with pull_requests[] populat
       .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_wf_1'])) // fetchPrivateNodeIds
       .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
-      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha (compare API)
+      .mockReturnValueOnce(makeCompareJson('docs/public.md')) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha: raw diff
 
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
@@ -1612,7 +1632,8 @@ describe('main() — workflow_run event: happy path with pull_requests[] populat
       .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_wf_2'])) // fetchPrivateNodeIds
       .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
-      .mockReturnValueOnce(makeDiff('docs/leak.md', ['See acme/private-repo for details.'])) // fetchDiffForSha (compare API)
+      .mockReturnValueOnce(makeCompareJson('docs/leak.md')) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce(makeDiff('docs/leak.md', ['See acme/private-repo for details.'])) // fetchDiffForSha: raw diff
 
     const stderrOutput: string[] = []
     vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
@@ -1661,7 +1682,8 @@ describe('main() — workflow_run event: empty pull_requests[] → API fallback 
       .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_wf_fallback'])) // fetchPrivateNodeIds
       .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
-      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha (compare API)
+      .mockReturnValueOnce(makeCompareJson('docs/public.md')) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha: raw diff
 
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
@@ -1907,9 +1929,13 @@ describe('main() — workflow_run event: PAT isolation (resolver vs diff subproc
       if (args[0] === 'api' && args[1] === 'graphql') {
         return JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})
       }
-      // fetchDiffForSha: gh api repos/.../compare/main...{sha} (immutable pinned diff)
+      // fetchDiffForSha: gh api repos/.../compare/main...{sha}
+      // Two calls: first is the JSON truncation check (no -H header), second is the raw diff.
       if (args[0] === 'api' && String(args[1]).includes('/compare/')) {
-        return makeDiff('docs/public.md', ['some public content'])
+        if (args.includes('-H') && args.some(a => String(a).includes('application/vnd.github'))) {
+          return makeDiff('docs/public.md', ['some public content'])
+        }
+        return makeCompareJson('docs/public.md')
       }
       return ''
     })
@@ -1925,7 +1951,7 @@ describe('main() — workflow_run event: PAT isolation (resolver vs diff subproc
     try {
       await main(makeWorkflowRunReader(eventJson), prApiResolver)
 
-      // Find the diff call (gh api repos/.../compare/main...{sha} — immutable pinned diff)
+      // Find the diff calls (gh api repos/.../compare/main...{sha} — both JSON check and raw diff)
       const diffCalls = capturedEnvs.filter(c => c.args[1] === 'api' && String(c.args[2]).includes('/compare/'))
       expect(diffCalls.length).toBeGreaterThan(0)
       for (const call of diffCalls) {
@@ -1977,7 +2003,8 @@ describe('main() — workflow_run event: [allow-private-leak] override honored u
       .mockImplementationOnce(() => {
         throw new Error('outage')
       }) // resolver R_override — fails (but override should allow proceeding)
-      .mockReturnValueOnce('') // fetchPrDiff → empty diff
+      .mockReturnValueOnce(makeCompareJson()) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce('') // fetchDiffForSha: raw diff → empty
 
     const stderrOutput: string[] = []
     vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
@@ -2082,7 +2109,9 @@ describe('main() — PR-path matched file redaction (FIX 2)', () => {
       .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_pr_redact'])) // fetchPrivateNodeIds
       .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'synth-owner/synth_private'}}})) // resolver → resolves
-      // fetchDiffForSha (compare API): diff adds a new file whose path contains the slug form
+      // fetchDiffForSha: compare JSON (truncation check — well-formed, under cap)
+      .mockReturnValueOnce(makeCompareJson('knowledge/wiki/repos/synth-owner--synth_private.md'))
+      // fetchDiffForSha: raw diff — adds a new file whose path contains the slug form
       .mockReturnValueOnce(
         [
           'diff --git a/knowledge/wiki/repos/synth-owner--synth_private.md b/knowledge/wiki/repos/synth-owner--synth_private.md',
@@ -2271,7 +2300,8 @@ describe('main() — Finding A regression lock: access-lost in PR mode → fail-
         // resolver: returns access-lost
         return JSON.stringify({data: {node: null}, errors: [{type: 'NOT_FOUND'}]})
       })
-      .mockReturnValueOnce('') // fetchDiffForSha → empty diff (no leak, compare API)
+      .mockReturnValueOnce(makeCompareJson()) // fetchDiffForSha: compare JSON (truncation check)
+      .mockReturnValueOnce('') // fetchDiffForSha: raw diff → empty (no leak)
 
     const stderrOutput: string[] = []
     vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
@@ -2331,9 +2361,15 @@ describe('main() — Finding B regression lock: diff pinned to immutable scanned
         return JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})
       }
       // fetchDiffForSha: gh api repos/.../compare/main...{sha}
+      // Two calls: first is the JSON truncation check (no -H header), second is the raw diff.
       if (cmd === 'gh' && args[0] === 'api' && String(args[1]).includes('/compare/')) {
         capturedCompareArgs.push(String(args[1]))
-        return makeDiff('docs/public.md', ['some public content'])
+        // If the call includes the diff Accept header, return the raw diff.
+        // Otherwise return the JSON truncation-check response.
+        if (args.includes('-H') && args.some(a => String(a).includes('application/vnd.github'))) {
+          return makeDiff('docs/public.md', ['some public content'])
+        }
+        return makeCompareJson('docs/public.md')
       }
       return ''
     })
@@ -2410,6 +2446,273 @@ describe('main() — Finding F: pull_requests[] with two validating PRs → fail
       vi.restoreAllMocks()
       delete process.env.GITHUB_EVENT_PATH
       delete process.env.FRO_BOT_POLL_PAT
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 1 (P1, fail-open): compare-API diff truncation must fail closed
+// Regression lock: a compare response at the 300-file cap (or a file with a
+// dropped patch) must cause the gate to fail closed (throw), never silently pass.
+// ---------------------------------------------------------------------------
+
+describe('assertCompareNotTruncated — truncation detection (FIX 1, P1)', () => {
+  // Scenario: files.length exactly at the 300-file cap → fail closed
+  it('throws when files.length is exactly 300 (at the API cap)', () => {
+    // #given: a compare JSON response with exactly 300 files, each with a patch field
+    const files = Array.from({length: 300}, (_, i) => ({
+      filename: `file-${i}.ts`,
+      status: 'modified',
+      patch: `@@ -1 +1 @@\n-old\n+new`,
+    }))
+    const compareJson = {total_commits: 1, files}
+
+    // #when / #then: throws because files.length >= 300 (the cap)
+    expect(() => assertCompareNotTruncated(compareJson)).toThrow(
+      /diff too large to scan completely.*300.*file.*cap.*fail closed/i,
+    )
+  })
+
+  // Scenario: files.length above the cap → fail closed
+  it('throws when files.length exceeds 300', () => {
+    // #given: 301 files (impossible in practice but validates the >= check)
+    const files = Array.from({length: 301}, (_, i) => ({
+      filename: `file-${i}.ts`,
+      status: 'modified',
+      patch: `@@ -1 +1 @@\n-old\n+new`,
+    }))
+    const compareJson = {total_commits: 1, files}
+
+    expect(() => assertCompareNotTruncated(compareJson)).toThrow(/fail closed/i)
+  })
+
+  // Scenario: a file is missing its patch field (individually too large) → fail closed
+  it('throws when any file entry is missing its patch field', () => {
+    // #given: two files, the second has no patch (API omits it for very large files)
+    const compareJson = {
+      total_commits: 1,
+      files: [
+        {filename: 'small-file.ts', status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'},
+        {filename: 'huge-file.ts', status: 'modified'}, // patch intentionally absent
+      ],
+    }
+
+    // #when / #then: throws because a file has no patch — and the filename is NOT echoed
+    // (a path could embed a private slug; the message stays redacted).
+    expect(() => assertCompareNotTruncated(compareJson)).toThrow(/file patch was omitted.*fail closed/i)
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow(/huge-file\.ts/)
+  })
+
+  // Scenario: first file missing patch → fail closed (order doesn't matter)
+  it('throws when the first file entry is missing its patch field', () => {
+    const compareJson = {
+      total_commits: 1,
+      files: [
+        {filename: 'huge-first.ts', status: 'added'}, // no patch
+        {filename: 'normal.ts', status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'},
+      ],
+    }
+
+    // Throws on the missing-patch signal without echoing the filename.
+    expect(() => assertCompareNotTruncated(compareJson)).toThrow(/file patch was omitted.*fail closed/i)
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow(/huge-first\.ts/)
+  })
+
+  // Scenario: well-formed response under the cap → does NOT throw
+  it('does not throw for a well-formed response with fewer than 300 files', () => {
+    // #given: 5 files, all with patch fields
+    const files = Array.from({length: 5}, (_, i) => ({
+      filename: `file-${i}.ts`,
+      status: 'modified',
+      patch: `@@ -1 +1 @@\n-old\n+new`,
+    }))
+    const compareJson = {total_commits: 1, files}
+
+    // #when / #then: no throw — response is complete
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow()
+  })
+
+  // Scenario: empty files array → does NOT throw (zero-file diff is valid)
+  it('does not throw for an empty files array (zero-file diff)', () => {
+    const compareJson = {total_commits: 0, files: []}
+
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow()
+  })
+
+  // Scenario: non-object JSON → fail closed
+  it('throws when compareJson is not an object', () => {
+    expect(() => assertCompareNotTruncated('not an object')).toThrow(/non-object JSON.*fail closed/i)
+    expect(() => assertCompareNotTruncated(null)).toThrow(/non-object JSON.*fail closed/i)
+    expect(() => assertCompareNotTruncated(42)).toThrow(/non-object JSON.*fail closed/i)
+  })
+
+  // Scenario: missing files array → fail closed
+  it('throws when compareJson is missing the files array', () => {
+    expect(() => assertCompareNotTruncated({total_commits: 1})).toThrow(/missing files array.*fail closed/i)
+    expect(() => assertCompareNotTruncated({total_commits: 1, files: 'not-an-array'})).toThrow(
+      /missing files array.*fail closed/i,
+    )
+  })
+
+  // Scenario: 299 files all with patches → does NOT throw (one below the cap)
+  it('does not throw for 299 files all with patch fields (one below the cap)', () => {
+    const files = Array.from({length: 299}, (_, i) => ({
+      filename: `file-${i}.ts`,
+      status: 'modified',
+      patch: `@@ -1 +1 @@\n-old\n+new`,
+    }))
+    const compareJson = {total_commits: 1, files}
+
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 1 (P1): main() fails closed when compare JSON signals truncation
+// Integration: the truncation check is wired into fetchDiffForSha which is
+// called by main(). Verify that a truncated compare response causes process.exit(1).
+// ---------------------------------------------------------------------------
+
+describe('main() — FIX 1 (P1): truncation in compare JSON → fail closed', () => {
+  it('fails closed (process.exit(1)) when compare JSON has files.length at the 300-file cap', async () => {
+    // #given: workflow_run payload; compare JSON returns 300 files (truncated)
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-truncated-300'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-truncated-300'}),
+    })
+
+    // Build a compare JSON with 300 files (all with patches — the cap itself is the signal)
+    const truncatedFiles = Array.from({length: 300}, (_, i) => ({
+      filename: `file-${i}.ts`,
+      status: 'modified',
+      patch: `@@ -1 +1 @@\n-old\n+new`,
+    }))
+    const truncatedCompareJson = JSON.stringify({total_commits: 1, files: truncatedFiles})
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_trunc_300'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(truncatedCompareJson) // fetchDiffForSha: compare JSON (truncated)
+    // Note: the raw diff fetch is NOT reached — truncation throws before it
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with a truncated compare response
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      // #then: fail closed — process.exit(1) was called
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      // #then: stderr mentions the truncation (not a private name)
+      const stderrText = stderrOutput.join('')
+      expect(stderrText).toMatch(/diff too large|truncat|fail closed/i)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  it('fails closed (process.exit(1)) when compare JSON has a file with no patch field', async () => {
+    // #given: workflow_run payload; compare JSON has a file with no patch (too large)
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-no-patch'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-no-patch'}),
+    })
+
+    // Compare JSON with one normal file and one file missing its patch
+    const compareJsonWithMissingPatch = JSON.stringify({
+      total_commits: 1,
+      files: [
+        {filename: 'normal.ts', status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'},
+        {filename: 'huge-binary.bin', status: 'modified'}, // no patch — too large
+      ],
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_no_patch'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(compareJsonWithMissingPatch) // fetchDiffForSha: compare JSON (missing patch)
+    // Note: the raw diff fetch is NOT reached — truncation throws before it
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with a compare response that has a file missing its patch
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      // #then: fail closed — process.exit(1) was called
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      // #then: stderr mentions the truncation
+      const stderrText = stderrOutput.join('')
+      expect(stderrText).toMatch(/patch omitted|fail closed/i)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  it('proceeds normally when compare JSON is well-formed and under the cap', async () => {
+    // #given: workflow_run payload; compare JSON has 2 files, all with patches
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-not-truncated'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-not-truncated'}),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_not_trunc'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(makeCompareJson('docs/public.md')) // fetchDiffForSha: compare JSON (ok)
+      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha: raw diff
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with a well-formed compare response
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+      // #then: no exit called — scan passed
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
     }
   })
 })

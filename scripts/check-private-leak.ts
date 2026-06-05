@@ -403,18 +403,86 @@ function fetchPrivateNodeIds(fullName: string): string[] {
 }
 
 /**
+ * The maximum number of files the GitHub compare API returns in a single JSON response.
+ * If `files.length` reaches this cap, the response is truncated and we cannot guarantee
+ * a complete scan — fail closed.
+ */
+const COMPARE_API_FILE_CAP = 300
+
+/**
+ * Check the compare JSON response for truncation signals.
+ * Exported for unit testing.
+ *
+ * GitHub's compare API caps `files` at 300 per response. Two truncation signals:
+ * 1. `files.length >= 300` — the cap was hit; additional files may be missing.
+ * 2. Any file entry missing its `patch` field — the API omits `patch` for very large
+ *    individual files; we cannot scan a file whose patch was dropped.
+ *
+ * Throws with a redacted message if truncation is detected so the caller (main()'s
+ * try/catch) exits non-zero — fail closed.
+ */
+export function assertCompareNotTruncated(compareJson: unknown): void {
+  if (!isRecord(compareJson)) {
+    throw new TypeError('check-private-leak: compare API returned non-object JSON — fail closed')
+  }
+
+  const files = compareJson.files
+  if (!Array.isArray(files)) {
+    throw new TypeError('check-private-leak: compare API response missing files array — fail closed')
+  }
+
+  // Signal 1: file count at or above the API cap.
+  if (files.length >= COMPARE_API_FILE_CAP) {
+    throw new Error(
+      `check-private-leak: diff too large to scan completely (${files.length} files >= ${COMPARE_API_FILE_CAP}-file cap) — fail closed`,
+    )
+  }
+
+  // Signal 2: any file missing its patch field (individually too large for the API to include).
+  // The filename is intentionally NOT echoed — a path under knowledge/wiki/repos/ could embed a
+  // private slug. Fail closed with a count-only message.
+  for (const file of files) {
+    if (!isRecord(file)) continue
+    if (!('patch' in file)) {
+      throw new Error(
+        'check-private-leak: a file patch was omitted by the compare API (file too large to diff) — fail closed',
+      )
+    }
+  }
+}
+
+/**
  * Fetch the unified diff for an immutable, pinned head SHA against the base branch.
  *
- * Uses the GitHub compare API with the diff media type so the result is a standard
- * unified diff — the same format as `git diff main...data` used on the promotion path.
- * Pinning to scannedHeadSha (the workflow_run head_sha) closes the force-push TOCTOU:
- * the diff is for exactly the SHA the commit status is posted to, regardless of any
- * subsequent force-push to the PR branch.
+ * Uses the GitHub compare API pinned to the workflow_run head SHA, never from a
+ * checked-out tree. Pinning to scannedHeadSha (the workflow_run head_sha) closes the
+ * force-push TOCTOU: the diff is for exactly the SHA the commit status is posted to,
+ * regardless of any subsequent force-push to the PR branch.
+ *
+ * Truncation guard (fail-closed): before fetching the raw diff, queries the compare
+ * endpoint as JSON (no diff media type) to check for truncation. GitHub caps the
+ * `files` array at 300 entries and omits `patch` for individually-too-large files.
+ * Either signal means we cannot guarantee a complete scan → throws so main()'s
+ * try/catch exits non-zero (fail closed). The raw diff fetch is skipped on truncation.
  *
  * Accepts an explicit env so FRO_BOT_POLL_PAT never reaches the gh subprocess
- * (mirrors the --promotion gitEnv isolation pattern).
+ * (mirrors the --promotion gitEnv isolation pattern). The PAT-stripped env is used
+ * for BOTH the JSON truncation check and the raw diff fetch.
  */
 function fetchDiffForSha(headSha: string, env: NodeJS.ProcessEnv): string {
+  // Step 1: fetch the compare JSON to detect truncation before scanning.
+  // No diff media type — returns { total_commits, files: [...] } with per-file patch fields.
+  const compareJsonRaw = execFileSync(
+    'gh',
+    ['api', `repos/{owner}/{repo}/compare/${EXPECTED_BASE_BRANCH}...${headSha}`],
+    {encoding: 'utf8', env},
+  )
+  const compareJson: unknown = JSON.parse(compareJsonRaw)
+  // Throws if truncated — fail closed. main()'s try/catch maps this to process.exit(1).
+  assertCompareNotTruncated(compareJson)
+
+  // Step 2: fetch the raw unified diff for the actual scan content.
+  // Only reached when the JSON check confirms the diff is complete.
   return execFileSync(
     'gh',
     [
@@ -854,7 +922,14 @@ export async function main(
   // commit status is posted to — a force-push after the workflow_run fires cannot desync
   // the scanned diff from the status target. No extra round-trip needed (no revalidation).
   // Pass diffEnv (PAT-stripped) so FRO_BOT_POLL_PAT never reaches the gh subprocess.
-  const diff = fetchDiffForSha(scannedHeadSha, diffEnv)
+  // fetchDiffForSha also performs a truncation check (fail-closed) before fetching the raw diff.
+  let diff: string
+  try {
+    diff = fetchDiffForSha(scannedHeadSha, diffEnv)
+  } catch (error) {
+    process.stderr.write(`check-private-leak: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exit(1)
+  }
   const result = checkPrivateLeak(privateTokens, diff, override)
 
   if (result.ok) {

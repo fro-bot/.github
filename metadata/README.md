@@ -95,7 +95,7 @@ A private repo's existence, name, or content must never reach a public surface. 
 
   The CI wiring uses a **trusted `workflow_run` topology** to keep the broad-scope `FRO_BOT_POLL_PAT` away from PR-author code:
   - `private-leak-sentinel.yaml` — a minimal `pull_request` workflow (no secrets, no PAT, no checkout) that fires on `opened`, `synchronize`, `reopened`, and `edited` events targeting `main`. Its only job is to trigger the privileged workflow. `edited` is included so a title-based `[allow-private-leak]` override change re-fires the gate for the same head SHA.
-  - `check-private-leak.yaml` — a `workflow_run` workflow that runs **only the default-branch workflow definition** (never PR-author code). It checks out `main` only (never the PR head), installs deps fresh with no cache restore (no poisonable pnpm store), and runs the scan with `FRO_BOT_POLL_PAT` scoped to the resolver subprocess only. The PR diff is fetched as pure data via `gh pr diff` using the default `GITHUB_TOKEN` — the broad-scope PAT never touches the diff subprocess.
+  - `check-private-leak.yaml` — a `workflow_run` workflow that runs **only the default-branch workflow definition** (never PR-author code). It checks out `main` only (never the PR head), installs deps fresh with no cache restore (no poisonable pnpm store), and runs the scan with `FRO_BOT_POLL_PAT` scoped to the resolver subprocess only. The PR diff is fetched as pure data via the GitHub compare API pinned to the immutable workflow_run head SHA, using the default `GITHUB_TOKEN` — the broad-scope PAT never touches the diff subprocess.
 
   Credential split in the privileged job:
   - `github.token` (`GITHUB_TOKEN`): diff fetch, PR API identity resolution, commit status POST.

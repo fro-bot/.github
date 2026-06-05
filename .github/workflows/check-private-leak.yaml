@@ -7,7 +7,8 @@
 #     FRO_BOT_POLL_PAT is therefore never exposed to a malicious PR rewrite.
 #   - NO checkout of the PR head. Only the default branch (main) is checked out —
 #     for the script and metadata/repos.yaml. The PR diff is fetched as pure data
-#     via the GitHub API (`gh pr diff`), never from a checked-out tree.
+#     via the GitHub compare API pinned to the workflow_run head SHA, never from a
+#     checked-out tree.
 #   - NO actions/cache restore. The shared setup action restores a pnpm cache that
 #     a PR workflow could poison. This job installs deps fresh with no cache.
 #   - FRO_BOT_POLL_PAT is passed ONLY as a step-level env on the scan step. The
