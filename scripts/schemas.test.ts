@@ -567,7 +567,8 @@ describe('schemas — rejection cases', () => {
   })
 
   it('#3412: accepts legacy padded base64 node_id (MDEw...==)', () => {
-    // NODE_ID_PATTERN = /^[\w-]+={0,2}$/ — legacy GitHub node_ids use standard base64 with == padding
+    // NODE_ID_PATTERN = /^[\w-]+={0,2}$/ — accepts URL-safe base64 body chars (word chars + hyphen)
+    // plus optional trailing = padding; legacy MDEw... IDs pass because their body uses only A-Za-z0-9
     const ok = {
       version: 1,
       repos: [
@@ -634,10 +635,42 @@ describe('schemas — rejection cases', () => {
     expect(error.path).toContain('node_id')
   })
 
+  it('rejects node_id containing standard base64 + or / chars (not URL-safe)', () => {
+    // NODE_ID_PATTERN = /^[\w-]+={0,2}$/ — + and / are not in [\w-] and must be rejected.
+    // slash-forms and plus-forms are rejected; only URL-safe base64 body chars are accepted.
+    const invalidBase64Ids = [
+      'R_kgDO+bad', // + is standard base64 but not URL-safe — rejected
+      'MDEw/abc', // / is standard base64 but not URL-safe — rejected
+      'a=b', // mid-string padding is not trailing-only — rejected
+    ]
+    for (const nodeId of invalidBase64Ids) {
+      const bad = {
+        version: 1,
+        repos: [
+          {
+            owner: 'fro-bot',
+            name: 'test',
+            added: '2026-04-17',
+            onboarding_status: 'pending',
+            last_survey_at: null,
+            last_survey_status: null,
+            has_fro_bot_workflow: false,
+            has_renovate: false,
+            node_id: nodeId,
+          },
+        ],
+      }
+      expect(isReposFile(bad)).toBe(false)
+      const error = catchSchemaError(() => assertReposFile(bad))
+      expect(error.path).toContain('node_id')
+    }
+  })
+
   it('rejects node_id containing shell metacharacters (defense-in-depth for operator copy-paste safety)', () => {
-    // node_id must match ^[A-Za-z0-9_\-+/=]+$ — shell metacharacters are rejected at parse time
-    // so they can never reach the issue body's inline gh api graphql command.
-    // Base64 chars (+, /, =) are allowed since legacy GitHub node IDs use standard base64.
+    // NODE_ID_PATTERN = /^[\w-]+={0,2}$/ — accepts URL-safe base64 body chars (word chars + hyphen)
+    // plus optional trailing = padding. Shell metacharacters are rejected at parse time so they
+    // can never reach the issue body's inline gh api graphql command.
+    // NOTE: + and / (standard base64) are rejected; only URL-safe base64 chars are accepted.
     const shellMetaIds = ["R_kgDO'injected", 'R_kgDO`cmd`', 'R_kgDO$VAR', 'R_kgDO;evil', 'R_kgDO with space']
     for (const nodeId of shellMetaIds) {
       const bad = {
@@ -662,16 +695,17 @@ describe('schemas — rejection cases', () => {
     }
   })
 
-  it('accepts node_id with valid GitHub node_id characters (alphanumeric, underscore, hyphen, and legacy base64)', () => {
-    // New-style: URL-safe base64 (A-Za-z0-9_-)
-    // Legacy-style: standard base64 (A-Za-z0-9+/=) — real entries in metadata/repos.yaml
+  it('accepts node_id with valid GitHub node_id characters (alphanumeric, underscore, hyphen, and URL-safe base64)', () => {
+    // NODE_ID_PATTERN = /^[\w-]+={0,2}$/ — accepts URL-safe base64 body chars (word chars + hyphen)
+    // plus optional trailing = or == padding. + and / (standard base64) are rejected.
+    // Legacy MDEw... IDs happen to use only A-Za-z0-9 in their body, so they still pass.
     const validIds = [
       'R_kgDOSVJgdw',
       'I_kwDOBxyz123',
       'PR_kwDO-abc_XYZ',
-      'MDEwOlJlcG9zaXRvcnkxODY5MTU0', // legacy base64, no padding
-      'MDEwOlJlcG9zaXRvcnkzMDg1MzMxOTg=', // legacy base64, = padding
-      'MDEwOlJlcG9zaXRvcnk3Njg3NTEzMg==', // legacy base64, == padding
+      'MDEwOlJlcG9zaXRvcnkxODY5MTU0', // no padding — body chars only, passes URL-safe check
+      'MDEwOlJlcG9zaXRvcnkzMDg1MzMxOTg=', // = padding
+      'MDEwOlJlcG9zaXRvcnk3Njg3NTEzMg==', // == padding
     ]
     for (const nodeId of validIds) {
       const ok = {

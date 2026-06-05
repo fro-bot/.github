@@ -117,9 +117,11 @@ describe('makeGhNodeIdResolver', () => {
   })
 
   it('#3429: strips FRO_BOT_POLL_PAT from subprocess env and passes only GH_TOKEN', async () => {
-    // #given: FRO_BOT_POLL_PAT is set in the ambient environment
+    // #given: FRO_BOT_POLL_PAT and GITHUB_TOKEN are set in the ambient environment
     const savedPat = process.env.FRO_BOT_POLL_PAT
+    const savedGithubToken = process.env.GITHUB_TOKEN
     process.env.FRO_BOT_POLL_PAT = 'ghp_ambient_pat'
+    process.env.GITHUB_TOKEN = 'github_ambient'
 
     // Capture the options argument (3rd arg) passed to execFileSync
     let capturedOptions: {env?: NodeJS.ProcessEnv} | undefined
@@ -139,9 +141,14 @@ describe('makeGhNodeIdResolver', () => {
 
       // #then: GH_TOKEN is set to the token passed to makeGhNodeIdResolver
       expect(capturedOptions?.env?.GH_TOKEN).toBe('ghp_test')
+
+      // #then: GITHUB_TOKEN alias must NOT appear in the subprocess env (alias stripping)
+      expect(capturedOptions?.env?.GITHUB_TOKEN).toBeUndefined()
     } finally {
       delete process.env.FRO_BOT_POLL_PAT
       if (savedPat !== undefined) process.env.FRO_BOT_POLL_PAT = savedPat
+      delete process.env.GITHUB_TOKEN
+      if (savedGithubToken !== undefined) process.env.GITHUB_TOKEN = savedGithubToken
     }
   })
 })
