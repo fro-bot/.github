@@ -54,7 +54,8 @@ jobs:
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
-          if git fetch --no-tags origin data 2>/dev/null; then
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch --no-tags origin data
             git checkout origin/data -- metadata/
           else
             echo "data branch not yet established; reconcile will bootstrap it."
