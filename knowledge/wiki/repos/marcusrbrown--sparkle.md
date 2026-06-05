@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/sparkle"
 created: 2026-04-28
-updated: 2026-05-23
+updated: 2026-06-05
 sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: 770356b3c83cec08a666960eab9c5fb4e1ab2a85
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: e757fa66aa223f4ccb8af16838d937562b97f713
     accessed: 2026-05-23
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: e03e3173c70087d08e0def5196db624de964bf50
+    accessed: 2026-06-05
 tags: [typescript, react, react-native, monorepo, design-system, storybook, tailwindcss, radix-ui, turborepo, expo, vite, astro, github-pages, zig, wasm]
 aliases: [sparkle]
 related:
@@ -35,22 +38,22 @@ related:
 - **Purpose:** Experimental playground for modern TypeScript monorepo patterns, cross-platform UI, and design system tooling
 - **Default branch:** `main`
 - **Created:** 2020-11-26
-- **Last push:** 2026-04-30
+- **Last push:** 2026-06-05
 - **Homepage:** https://sparkle.mrbro.dev (Astro Starlight docs site on GitHub Pages)
 - **License:** MIT
 - **Topics:** `typescript`, `playground`, `next-js`, `react`, `vite`
-- **Package manager:** pnpm 10.33.2
-- **Node.js:** 24.15.0 (pinned via `.node-version`)
-- **Stars:** 1, **Forks:** 1, **Watchers:** 2
-- **Open issues:** 5, **Open PRs:** 2, **Has GitHub Pages:** yes
+- **Package manager:** pnpm 10.34.1
+- **Node.js:** 24.16.0 (pinned via `.node-version`)
+- **Stars:** 1, **Forks:** 1, **Watchers:** 1
+- **Open issues:** 7, **Open PRs:** 3, **Has GitHub Pages:** yes
 
 ## Tech Stack
 
 | Layer             | Technology                                                                        |
 | ----------------- | --------------------------------------------------------------------------------- |
 | Language          | TypeScript 5.9.3 (strict mode, ESM-only `"type": "module"`)                      |
-| Build             | Turborepo 2.9.6, tsdown 0.16.8, Vite                                             |
-| Framework (web)   | React 19.2.5, Radix UI primitives, Tailwind CSS                                  |
+| Build             | Turborepo 2.9.x, tsdown 0.16.x, Vite                                             |
+| Framework (web)   | React 19.x, Radix UI primitives, Tailwind CSS                                    |
 | Framework (mobile)| Expo / React Native                                                               |
 | Component docs    | Storybook                                                                         |
 | Documentation     | Astro Starlight (`@sparkle/docs`), TypeDoc, automated JSDoc extraction            |
@@ -62,6 +65,8 @@ related:
 | Bundler           | tsdown (library packages), Vite (apps), Astro (docs)                              |
 
 _Toolchain drift (2026-05-23 survey at SHA `e757fa6`):_ pnpm 10.33.4, Node.js 24.16.0, Turborepo 2.9.14, `@bfra.me/eslint-config` 0.51.1, `@bfra.me/prettier-config` 0.16.9 (still `120-proof`), `@bfra.me/tsconfig` 0.13.1. TypeScript 5.9.3 unchanged. No engine-level shifts — strict-mode TypeScript + ESM-only `"type": "module"` are stable invariants across surveys.
+
+_Toolchain drift (2026-06-05 survey at SHA `e03e317`):_ pnpm bumped to `10.34.1` (root `packageManager` field updated). Node.js 24.16.0 unchanged. `llms.txt` still references pnpm `10.33.4` — minor doc drift. No other engine-level changes confirmed from manifest inspection.
 
 ## Architecture
 
@@ -142,6 +147,7 @@ Astro Starlight at `docs/` with automated documentation generation:
 | `.github/copilot-instructions.md` | AI agent development guide |
 | `.ai/` | AI context files (analysis, audit, notes, plan, review, security) |
 | `.changeset/config.json` | Changesets versioning config |
+| `opencode.jsonc` | OpenCode config — `instructions` points to `.github/copilot-instructions.md` |
 
 ## CI/CD Pipeline
 
@@ -155,6 +161,7 @@ Astro Starlight at `docs/` with automated documentation generation:
 | Renovate | `renovate.yaml` | issues, PR, push to non-main, dispatch, workflow_run | Dependency updates via `bfra-me/.github` reusable workflow |
 | Update Repo Settings | `update-repo-settings.yaml` | push to `main`, daily 11:43 UTC, dispatch | Probot settings sync via `bfra-me/.github` reusable workflow |
 | Cache Cleanup | `cleanup-cache.yaml` | PR close, weekly Sunday 00:00 UTC, dispatch | Clean up Actions caches |
+| **Fro Bot** | **`fro-bot.yaml`** | **PR open/sync, issues, comments (@fro-bot), schedule (05:00 + 17:00 UTC), dispatch** | **PR review + daily maintenance (17:00) + autoheal (05:00)** |
 
 ### CI Jobs (main.yaml)
 
@@ -172,24 +179,53 @@ The `regenerate-docs.yaml` workflow detects package source changes, runs TypeDoc
 
 ## Fro Bot Integration
 
-**No Fro Bot agent workflow detected.** The repository lacks `fro-bot.yaml` and `fro-bot-autoheal.yaml` — a follow-up draft PR should be proposed to add Fro Bot PR review and autohealing capabilities.
+**Fro Bot agent workflow detected as of 2026-06-05 survey (SHA `e03e317`).** The `fro-bot.yaml` workflow was added since the 2026-05-23 survey (it was absent at SHA `e757fa6`). This resolves the previously flagged gap.
 
-The repo does have:
+### Workflow: `fro-bot.yaml`
+
+- **Agent version:** `fro-bot/agent@07820934d4eb20a50a40c2314a738b202bbfc3c2` (v0.54.2)
+- **Triggers:**
+  - `pull_request` (opened, synchronize, reopened, ready_for_review, review_requested)
+  - `issues` (opened, edited) — from OWNER/MEMBER/COLLABORATOR only
+  - `issue_comment` / `pull_request_review_comment` / `discussion_comment` — `@fro-bot` mentions from trusted author associations
+  - `schedule`: autoheal at `0 5 * * *` (05:00 UTC), maintenance at `0 17 * * *` (17:00 UTC)
+  - `workflow_dispatch` with `mode` input: `review` / `maintenance` / `autoheal` (default: `autoheal`)
+- **Permissions:** `contents: write`, `issues: write`, `pull-requests: write`, `discussions: write`
+- **Token:** `FRO_BOT_PAT` for checkout and GitHub operations
+- **Setup:** Uses `./.github/actions/setup-ci` with Zig install enabled — full project setup before each run
+
+### Embedded Prompts
+
+The workflow carries three inline prompts (~9000 tokens combined):
+
+- **`PR_REVIEW_PROMPT`:** 7-focus-area review targeting cross-package side effects, ESM invariants, TypeScript strict, cross-platform theme, Vitest coverage, security, and changeset coverage. Verdict format: `PASS | CONDITIONAL | REJECT`.
+- **`MAINTENANCE_PROMPT`:** Perpetual issue "Daily Maintenance Report" updated daily at 17:00 UTC. 14-day rolling window, historical summary, 9 sections including cross-project intelligence, docs site health, and Renovate dashboard state.
+- **`AUTOHEAL_PROMPT`:** Perpetual issue "Daily Autohealing Report" updated daily at 05:00 UTC. 8 categories: errored PRs, security, code quality, DX fixes, quality gates, docs site health (live via agent-browser), cross-project intelligence, and upstream modernization watch (Sundays only). Scope cap and dependency ownership rules match the ecosystem standard.
+
+### Fork Guard
+
+The workflow has an explicit fork PR head refusal step on `issue_comment` triggers — resolves the event-context gap in job-level fork guards.
+
+### Schedule Stagger
+
+- **Autoheal 05:00 UTC** — staggered from mrbro.dev (03:30), marcusrbrown (04:30), tokentoilet (03:30)
+- **Maintenance 17:00 UTC** — staggered from marcusrbrown (16:30) and mrbro.dev (15:30)
+
+### Active Perpetual Issues
+
+- **#1665** — "Daily Autohealing Report" (open, `fro-bot`-authored, first run 2026-06-05)
+
+The repo also has:
 
 - Probot settings extending `fro-bot/.github:common-settings.yaml` (confirmed via `.github/settings.yml`)
-- Renovate via `bfra-me/.github` reusable workflow extending `marcusrbrown/renovate-config#4.5.8`
+- Renovate via `bfra-me/.github` reusable workflow extending `marcusrbrown/renovate-config#5.2.0`
 - GitHub App tokens via `actions/create-github-app-token` (for regenerate-docs workflow)
-
-Missing Fro Bot capabilities:
-
-- Automated PR review with structured verdicts
-- Daily maintenance reporting
-- Nightly autohealing (errored PRs, security, code quality, DX)
-- `@fro-bot` mention-triggered responses
+- `opencode.jsonc` — OpenCode config pointing to `.github/copilot-instructions.md` for instructions
 
 ## Developer Tooling
 
 - **Renovate:** Extends `marcusrbrown/renovate-config#5.2.0` (major-bumped from `#4.5.9` between 2026-05-01 and 2026-05-23 — same ecosystem-wide cutover seen across the Marcus and Fro Bot portfolios) + `sanity-io/renovate-config:semantic-commit-type` + `:preserveSemverRanges`. Post-upgrade runs `pnpm bootstrap && pnpm fix`. React Native package grouping rules. Automerge on unstable minor/patch for `@astrojs/check` and `typedoc`. PR creation: `immediate`.
+- **OpenCode config:** `opencode.jsonc` added at root — points `instructions` to `.github/copilot-instructions.md`. First survey confirmation of OpenCode config presence in this repo.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` — confirmed Fro Bot ecosystem membership.
 - **Git hooks:** `simple-git-hooks` runs `nano-staged` on pre-commit. nano-staged runs `eslint --fix` on TS/JS/CSS/MD/JSON/YAML and `sort-package-json` on package.json files.
 - **Monorepo validation:** `@manypkg/cli` checks workspace consistency. `scripts/validate-dependencies.ts` validates deps. `scripts/validate-turbo.ts` validates Turbo config. `scripts/validate-build.ts` validates build output.
@@ -209,6 +245,8 @@ Missing Fro Bot capabilities:
 - **Enhanced error reporting:** Custom TypeScript error reporter wrapping `tsc --noEmit` with better DX — novel tooling not seen in other repos.
 - **`nano-staged` vs `lint-staged`:** Sparkle uses `nano-staged` (smaller, faster), while most other Marcus repos use `lint-staged`. Both serve the same purpose.
 - **`mrbro-bot[bot]` for commits:** Doc regeneration PRs authored by `mrbro-bot[bot]` (app 137683033), same as [[marcusrbrown--marcusrbrown]].
+- **`fro-bot` as active PR author:** As of 2026-06-05, Fro Bot is opening PRs (#1681 Turbo fix, #1663 docs regen) in addition to the mrbro-bot[bot] automation — confirming the Fro Bot autoheal workflow is running and making commits.
+- **Turbo task graph gap:** PR #1681 reveals a cold-cache Turborepo invariant: `@sparkle/test-utils` sub-path exports (`/dom`, `/console`) were not reachable in `moo-dang` tests because the `build:test-utils` task was missing from test task dependencies. This is a structural Turborepo pitfall when packages use sub-path exports that require a build step.
 - **Oldest repo by creation date:** Created 2020-11-26, predating most other Marcus repos. Actively maintained despite age.
 
 ## Shared Ecosystem Patterns
@@ -223,27 +261,33 @@ Missing Fro Bot capabilities:
 | pnpm | 10.33.4 | ~10.33.x |
 | Node.js | 24.16.0 | 22–24 |
 | TypeScript | 5.9.3 | 5.9–6.0 |
-| Fro Bot workflow | **Missing** | Present in most active repos |
-| Fro Bot autoheal | **Missing** | Present in most active repos |
+| Fro Bot workflow | **Present** (`fro-bot.yaml`, agent v0.54.2) | Present in most active repos |
+| Fro Bot autoheal | **Present** (05:00 UTC, categories 1–8) | Present in most active repos |
+| Maintenance report | **Present** (17:00 UTC perpetual issue) | Present in most active repos |
 | Copilot setup steps | **Missing** | Present in most active repos |
 | AGENTS.md | **Missing (root)** | Present in most active repos |
+| `opencode.jsonc` | **Present** (points to copilot-instructions.md) | Emerging pattern |
 
 ## Open PRs and Issues
 
-_As of 2026-05-23 survey (SHA `e757fa6`):_
+_As of 2026-06-05 survey (SHA `e03e317`):_
 
-### Open PRs (2)
+### Open PRs (3)
 
-- **#1646** — `chore(dev): update dependency @storybook/test-runner to v0.24.4` (mrbro-bot[bot] / Renovate; supersedes prior #1507 at v0.24.3)
-- **#1604** — `fix(deps): update dependency astro to v6 [SECURITY]` (mrbro-bot[bot] / Renovate, security) — still open across three consecutive surveys
+- **#1681** — `fix(turbo): add @sparkle/test-utils#build dependency to test tasks` (fro-bot; fixes cold-cache Turborepo build failure where `moo-dang` tests couldn't resolve `@sparkle/test-utils` sub-path exports)
+- **#1663** — `docs: regenerate API docs from current JSDoc sources` (fro-bot; automated docs regeneration PR)
+- **#1646** — `chore(dev): update dependency @storybook/test-runner to v0.24.4` (mrbro-bot[bot] / Renovate)
 
-### Open Issues (3)
+_Note: Astro v6 security PR #1604 from prior surveys is no longer in the open PR list — either merged or closed between 2026-05-23 and 2026-06-05._
 
+### Open Issues (4 non-PR)
+
+- **#1665** — "Daily Autohealing Report" (fro-bot perpetual issue, first run 2026-06-05)
+- **#1664** — "chore: review stale TODO/FIXME annotations (>90 days old)" (fro-bot, opened by autoheal)
 - **#876** — [Feature] Astro Starlight Documentation - Phase 6: Deployment and CI/CD
 - **#212** — Dependency Dashboard
-- **#57** — Uplift `sparkle`
 
-_Prior survey (2026-05-01) reported 5 open issues; current count is 3. The two delta'd issues were closed between surveys; specific numbers not re-enumerated here. The Astro v6 security PR has been open across all surveys from 2026-05-01 onward — worth flagging if Sparkle ever gets an autoheal workflow._
+_Issue #57 ("Uplift `sparkle`") and the Astro v6 security PR #1604 are no longer in the open state. Two new fro-bot-authored issues appeared (#1665, #1664) — first evidence of active Fro Bot autoheal operation in this repo._
 
 ## Survey History
 
@@ -253,3 +297,4 @@ _Prior survey (2026-05-01) reported 5 open issues; current count is 3. The two d
 | 2026-04-30 | `712ab1b` | Re-survey — Renovate preset bumped `#4.5.8` → `#4.5.9`, `bfra-me/.github` reusable workflows bumped to v4.16.11, lockfile maintenance. No structural changes. |
 | 2026-05-01 | `712ab1b` | Re-survey — SHA unchanged. Open PRs: 2 (including Astro v6 security update #1604). Open issues: 5. No structural changes. Still no Fro Bot agent workflow. |
 | 2026-05-23 | `e757fa6` | Re-survey — Renovate preset major-bumped `#4.5.9` → `#5.2.0` (matches the ecosystem-wide cutover seen in [[marcusrbrown--opencode-copilot-delegate]] and others). Node `24.15.0` → `24.16.0`. pnpm `10.33.2` → `10.33.4`. turbo `2.9.6` → `2.9.14`. `@bfra.me/eslint-config` `0.51.0` → `0.51.1`, `@bfra.me/prettier-config` `0.16.8` → `0.16.9`, `@bfra.me/tsconfig` `0.13.0` → `0.13.1`. Open PRs: 2 (Renovate `@storybook/test-runner` #1646 replaces prior #1507; Astro v6 security #1604 still open and unmerged). Open issues: 3 (#876, #212, #57) — drop from 5; #876 Phase-6 docs deployment still open. Workflows unchanged (6 files). Still no Fro Bot agent workflow. |
+| 2026-06-05 | `e03e317` | **Major delta: Fro Bot agent workflow landed.** `fro-bot.yaml` added (agent v0.54.2) — first Fro Bot presence in this repo. pnpm `10.33.4` → `10.34.1`. Node.js 24.16.0 unchanged. Workflow count: 6 → 7. `opencode.jsonc` added at root. PR #1604 (Astro v6 security) no longer open. Issue #57 ("Uplift sparkle") closed. Two new fro-bot issues: #1665 (perpetual autohealing report), #1664 (stale TODO review). Two new fro-bot PRs: #1681 (Turbo task graph fix), #1663 (API docs regen). Open issues: 4 (up from 3). Open PRs: 3 (up from 2). `llms.txt` lists `pnpm@10.33.4` — minor drift from actual `10.34.1`. |

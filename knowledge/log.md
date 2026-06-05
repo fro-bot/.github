@@ -1718,27 +1718,30 @@ Verified: ran the gate against the data tree (grandfather = main wiki) — `no p
 
 Sources: scripts/check-wiki-private-presence.ts
 
-## [2026-06-05 08:55] ingest | fro-bot/fro-bot.github.io
+## [2026-06-05 00:00] ingest | marcusrbrown/sparkle
 
-No-op re-survey of `fro-bot/fro-bot.github.io` (SHA `3e44653`, unchanged since 2026-02-09). Additive update to repo page `fro-bot--fro-bot-github-io.md`. Index unchanged (page already cataloged). No topic, entity, or comparison pages required edits.
+Re-survey of `marcusrbrown/sparkle` (SHA `e03e317`). Updated `knowledge/wiki/repos/marcusrbrown--sparkle.md` and `knowledge/index.md`.
 
-Findings:
+Key findings (delta from 2026-05-23 at SHA `e757fa6`):
 
-- HEAD still at `3e44653` (`Create CNAME`, 2026-02-09). Repo has now been static for 116 days.
-- Repository structure: single file `CNAME` containing `fro.bot` — unchanged.
-- Open issues: 1 (#1 — Enable code scanning, CodeQL/Scorecard) — unchanged.
-- GitHub Pages config: `build_type: legacy`, source `main:/`, `custom_domain: fro.bot`, `https_enforced: false` — all unchanged.
-- **TLS certificate approaching renewal window:** expires 2026-07-09 (34 days out as of survey date). GitHub Pages auto-renews when HTTPS enforcement and DNS are correctly configured. With HTTPS enforcement still disabled, renewal may not trigger automatically — warrants attention before expiry.
-- All four prior follow-up recommendations persist:
-  1. Enable HTTPS enforcement (now time-sensitive given cert expiry proximity)
-  2. Add Probot Settings extending `fro-bot/.github:common-settings.yaml`
-  3. Add a Fro Bot workflow (minimal issue-triage / settings-oversight scope)
-  4. Add a README
+- **Fro Bot agent workflow landed** — `fro-bot.yaml` present, agent v0.54.2. This resolves the gap flagged across all prior surveys. Triggers: PR events, issue events (trusted authors), `@fro-bot` mentions, schedule at 05:00 (autoheal) and 17:00 UTC (maintenance), workflow_dispatch.
+- **pnpm** bumped `10.33.4` → `10.34.1` (root `packageManager` field).
+- **Workflow count:** 6 → 7 (fro-bot.yaml added).
+- **`opencode.jsonc`** added at repo root — points OpenCode `instructions` to `.github/copilot-instructions.md`.
+- **PR #1604** (Astro v6 security) no longer open — resolved between surveys.
+- **Issue #57** ("Uplift sparkle") closed.
+- **New fro-bot issues:** #1665 (perpetual "Daily Autohealing Report"), #1664 (stale TODO/FIXME review).
+- **New fro-bot PRs:** #1681 (Turbo task graph fix — `@sparkle/test-utils#build` missing from test task deps), #1663 (API docs regen).
+- **Open issues:** 4 (up from 3). **Open PRs:** 3 (up from 2).
+- `llms.txt` references pnpm `10.33.4` but actual is `10.34.1` — minor doc drift flagged in page.
+- Node.js 24.16.0, TypeScript strict, ESM-only, `@bfra.me` toolchain, Renovate preset v5.2.0 — all unchanged.
 
-Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+Touched pages: `knowledge/wiki/repos/marcusrbrown--sparkle.md` (updated frontmatter, overview, tooling, CI/CD table, Fro Bot section rewritten from "missing" to "active", open PRs/issues section, survey history, notable patterns, developer tooling, shared ecosystem patterns table, key files table); `knowledge/index.md` (updated sparkle catalog line).
 
-## [2026-06-05 08:57] ingest | repo:fro-bot/fro-bot.github.io
+Sources: https://github.com/marcusrbrown/sparkle (SHA e03e3173c70087d08e0def5196db624de964bf50)
 
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+## [2026-06-05 08:58] ingest | repo:marcusrbrown/sparkle
 
-Sources: https://github.com/fro-bot/fro-bot.github.io
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
