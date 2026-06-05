@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/fro-bot.github.io
 created: 2026-05-07
-updated: 2026-05-24
+updated: 2026-06-05
 sources:
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-05-24
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-06-05
 tags: [github-pages, custom-domain, fro-bot-org, infrastructure]
 related:
   - marcusrbrown--systematic
@@ -62,7 +65,7 @@ Single commit on `main`:
 - **Source:** `main` branch, root path (`/`)
 - **Build type:** Legacy (no GitHub Actions deployment)
 - **Custom domain:** `fro.bot`
-- **TLS certificate:** Approved, covers `fro.bot` and `www.fro.bot`, expires 2026-07-09
+- **TLS certificate:** Approved, covers `fro.bot` and `www.fro.bot`, expires 2026-07-09 (**~34 days as of 2026-06-05 — approaching renewal window**)
 - **HTTPS enforcement:** Not enabled (should be enabled for security)
 - **Custom 404:** Not configured
 
@@ -124,3 +127,4 @@ Given this repo has no application code and a single static file, most of these 
 | ---------- | --------- | ------------------------------ |
 | 2026-05-07 | `3e44653` | Initial survey. Single-file repo, CNAME-only domain holder for `fro.bot`. |
 | 2026-05-24 | `3e44653` | No-op re-survey. HEAD unchanged in 105 days (still the original 2026-02-09 `Create CNAME` commit). Pages config, TLS cert (expires 2026-07-09), missing-integrations table, and issue #1 (CodeQL/Scorecard parity) all unchanged. HTTPS still not enforced. No Fro Bot workflow — all four follow-up recommendations carried forward. |
+| 2026-06-05 | `3e44653` | No-op re-survey. HEAD still unchanged (116 days since last push on 2026-02-09). Repo structure, Pages config, TLS cert (expires 2026-07-09, **now 34 days out — approaching renewal**), missing-integrations table, and issue #1 all unchanged. HTTPS still not enforced. No Fro Bot workflow. All follow-up recommendations persist. TLS cert expiry is the only new time-sensitive observation. |

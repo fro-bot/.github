@@ -1717,3 +1717,28 @@ Removed: deleted `knowledge/wiki/repos/fro-bot--tokentoilet.md`; dropped the cat
 Verified: ran the gate against the data tree (grandfather = main wiki) — `no private wiki leaks detected`, exit 0. With the page restored the gate reports `Leak count: 1`, confirming the orphan was the sole leak. Did not touch `metadata/repos.yaml` or anything outside `knowledge/`.
 
 Sources: scripts/check-wiki-private-presence.ts
+
+## [2026-06-05 08:55] ingest | fro-bot/fro-bot.github.io
+
+No-op re-survey of `fro-bot/fro-bot.github.io` (SHA `3e44653`, unchanged since 2026-02-09). Additive update to repo page `fro-bot--fro-bot-github-io.md`. Index unchanged (page already cataloged). No topic, entity, or comparison pages required edits.
+
+Findings:
+
+- HEAD still at `3e44653` (`Create CNAME`, 2026-02-09). Repo has now been static for 116 days.
+- Repository structure: single file `CNAME` containing `fro.bot` — unchanged.
+- Open issues: 1 (#1 — Enable code scanning, CodeQL/Scorecard) — unchanged.
+- GitHub Pages config: `build_type: legacy`, source `main:/`, `custom_domain: fro.bot`, `https_enforced: false` — all unchanged.
+- **TLS certificate approaching renewal window:** expires 2026-07-09 (34 days out as of survey date). GitHub Pages auto-renews when HTTPS enforcement and DNS are correctly configured. With HTTPS enforcement still disabled, renewal may not trigger automatically — warrants attention before expiry.
+- All four prior follow-up recommendations persist:
+  1. Enable HTTPS enforcement (now time-sensitive given cert expiry proximity)
+  2. Add Probot Settings extending `fro-bot/.github:common-settings.yaml`
+  3. Add a Fro Bot workflow (minimal issue-triage / settings-oversight scope)
+  4. Add a README
+
+Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+
+## [2026-06-05 08:57] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
