@@ -1745,3 +1745,25 @@ Sources: https://github.com/marcusrbrown/sparkle (SHA e03e3173c70087d08e0def5196
 Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-06-06 08:05] ingest | marcusrbrown/.github
+
+Incremental re-survey of `marcusrbrown/.github` (SHA `a00e888`, up from `0b780fd` on 2026-05-25). Updated repo page `marcusrbrown--github.md` and `index.md` summary. No new topic/entity/comparison pages warranted.
+
+Delta from prior survey (SHA `0b780fd`, 2026-05-25):
+
+- **Pure dependency churn.** Three commits since 2026-05-25, all Renovate-authored `chore(deps)` updates merged by `mrbro-bot[bot]`.
+- **`bfra-me/.github` reusable workflows:** v4.16.20 → v4.16.23 via PRs #376 (2026-05-28, v4.16.21), #377 (2026-06-01, v4.16.22), #378 (2026-06-04, v4.16.23). Both `renovate.yaml` and `update-repo-settings.yaml` now pinned at SHA `e972072a`.
+- **No structural changes.** `common-settings.yaml`, `.github/settings.yml`, `.github/renovate.json5`, `main.yaml` all unchanged. `renovate.json5` preset remains at `marcusrbrown/renovate-config#4.5.9` (v4 holdout still holds).
+- **Fro Bot integration status:** still no `fro-bot.yaml` workflow. `fro-bot` retains `push` collaborator permission via settings but is not in the active CI/merge loop. Draft PR recommendation carried forward.
+- **Repo metadata:** 2 open issues (#37, #214), 0 open PRs. 3 stars, 2 watchers. All unchanged.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--github.md` (added source entry, bumped `updated`, updated last-push, refreshed workflow SHA and version, updated PRs range reference, added survey history row, refreshed renovate version note); `knowledge/index.md` (updated bfra-me workflow version in catalog line from v4.16.20 → v4.16.23).
+
+Sources: https://github.com/marcusrbrown/.github (SHA a00e88890a2d49b08cd6489d2ab0350a005a306c)
+
+## [2026-06-06 08:09] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
