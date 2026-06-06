@@ -1746,24 +1746,29 @@ Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
 
-## [2026-06-06 08:05] ingest | marcusrbrown/.github
+## [2026-06-06 00:00] ingest | marcusrbrown/.dotfiles
 
-Incremental re-survey of `marcusrbrown/.github` (SHA `a00e888`, up from `0b780fd` on 2026-05-25). Updated repo page `marcusrbrown--github.md` and `index.md` summary. No new topic/entity/comparison pages warranted.
+Incremental survey from SHA `0bb24f0` (2026-05-24) to SHA `70c211bc` (2026-06-06). 71 commits. Updated `marcusrbrown--dotfiles.md` and `index.md`.
 
-Delta from prior survey (SHA `0b780fd`, 2026-05-25):
+Key changes:
 
-- **Pure dependency churn.** Three commits since 2026-05-25, all Renovate-authored `chore(deps)` updates merged by `mrbro-bot[bot]`.
-- **`bfra-me/.github` reusable workflows:** v4.16.20 → v4.16.23 via PRs #376 (2026-05-28, v4.16.21), #377 (2026-06-01, v4.16.22), #378 (2026-06-04, v4.16.23). Both `renovate.yaml` and `update-repo-settings.yaml` now pinned at SHA `e972072a`.
-- **No structural changes.** `common-settings.yaml`, `.github/settings.yml`, `.github/renovate.json5`, `main.yaml` all unchanged. `renovate.json5` preset remains at `marcusrbrown/renovate-config#4.5.9` (v4 holdout still holds).
-- **Fro Bot integration status:** still no `fro-bot.yaml` workflow. `fro-bot` retains `push` collaborator permission via settings but is not in the active CI/merge loop. Draft PR recommendation carried forward.
-- **Repo metadata:** 2 open issues (#37, #214), 0 open PRs. 3 stars, 2 watchers. All unchanged.
+- **Fro Bot agent**: v0.44.3 → v0.55.1 (18 version jumps across 71 commits, including v0.45–v0.55 series)
+- **Auth plugin migrated**: `@cortexkit/opencode-anthropic-auth@1.2.2` → `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3` (Marcus's own published fork via [[marcusrbrown--cortexkit-anthropic-auth]])
+- **Default model declared**: `opencode-go/kimi-k2.6` as top-level model in `opencode.json`
+- **oh-my-opencode-slim routing**: 4 named presets (`openai`, `opencode-go`, `copilot`, `mixed`); active preset `mixed` uses `anthropic/claude-opus-4-8` as orchestrator; `ce` skill removed from presets
+- **General/explore agents disabled** in `opencode.json`
+- **Discord MCP server added** (disabled by default)
+- **New config files**: `aft.jsonc` (AFT plugin config), `systematic.jsonc` (systematic skills config)
+- **Plugin versions bumped**: magic-context 0.21.8 → 0.22.4, aft-opencode 0.29.1 → 0.35.4, systematic 2.23.4 → 2.28.0
+- **magic-context updates**: Historian model changed to `openai/gpt-5.5` (full), `claude-opus-4-8` added to cache TTL, `temporal_awareness: true`, `system_prompt_injection` block added
+- **Tool version bumps**: rust 1.96.0, go 1.26.4, pnpm 11.5.1, npm 11.16.0, opencode-ai 1.16.2, biome 2.4.16, deno 2.8.2
+- **Renovate**: semver versioning for OpenCode plugin regex manager, cross-series prerelease upgrade support
+- **bfra-me/.github** bumped to v4.16.21
 
-Touched pages: `knowledge/wiki/repos/marcusrbrown--github.md` (added source entry, bumped `updated`, updated last-push, refreshed workflow SHA and version, updated PRs range reference, added survey history row, refreshed renovate version note); `knowledge/index.md` (updated bfra-me workflow version in catalog line from v4.16.20 → v4.16.23).
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA 70c211bc269b4bb8c476a3929fd976bc51153b1c)
 
-Sources: https://github.com/marcusrbrown/.github (SHA a00e88890a2d49b08cd6489d2ab0350a005a306c)
+## [2026-06-06 08:09] ingest | repo:marcusrbrown/.dotfiles
 
-## [2026-06-06 08:09] ingest | repo:marcusrbrown/.github
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
-Surveyed marcusrbrown/.github and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/.github
+Sources: https://github.com/marcusrbrown/.dotfiles
