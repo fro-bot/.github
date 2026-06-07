@@ -64,6 +64,26 @@ export type ReposYamlReader = (path: string) => Promise<string>
 export type ResolverFactory = (pat: string) => NodeIdResolver
 
 // ---------------------------------------------------------------------------
+// Seam types for main() workflow_run testability
+// ---------------------------------------------------------------------------
+
+/**
+ * Injectable workflow_run event reader. Reads the raw JSON from GITHUB_EVENT_PATH.
+ * Defaults to fs.readFile.
+ */
+export type WorkflowRunReader = (path: string) => Promise<string>
+
+/**
+ * Injectable GitHub API resolver for PR identity.
+ * - fetchPrByNumber: fetch a PR by its number (for validation after pull_requests[] lookup)
+ * - fetchPrsByHeadSha: fetch PRs associated with a head SHA (fallback when pull_requests[] is empty)
+ */
+export interface PrApiResolver {
+  readonly fetchPrByNumber: (prNumber: number) => Promise<Record<string, unknown>>
+  readonly fetchPrsByHeadSha: (headSha: string) => Promise<Record<string, unknown>[]>
+}
+
+// ---------------------------------------------------------------------------
 // Operator override
 // ---------------------------------------------------------------------------
 
@@ -195,35 +215,194 @@ export function checkPrivateLeak(
 // CLI helpers
 // ---------------------------------------------------------------------------
 
-async function readPullRequestContext(
+// ---------------------------------------------------------------------------
+// workflow_run event reader + PR identity resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * The expected base repository for PRs this gate scans.
+ * Fail-closed if the PR targets a different repo.
+ */
+const EXPECTED_BASE_REPO = 'fro-bot/.github'
+
+/**
+ * The expected base branch for PRs this gate scans.
+ * Fail-closed if the PR targets a different branch.
+ */
+const EXPECTED_BASE_BRANCH = 'main'
+
+/**
+ * Validate a PR object against the expected base repo, base branch, and head SHA.
+ * Returns true only if all three match.
+ */
+function validatePrIdentity(pr: Record<string, unknown>, expectedHeadSha: string): boolean {
+  const head = isRecord(pr.head) ? pr.head : undefined
+  const base = isRecord(pr.base) ? pr.base : undefined
+  const baseRepo = base !== undefined && isRecord(base.repo) ? base.repo : undefined
+
+  const headSha = typeof head?.sha === 'string' ? head.sha : undefined
+  const baseRef = typeof base?.ref === 'string' ? base.ref : undefined
+  const baseRepoFullName = typeof baseRepo?.full_name === 'string' ? baseRepo.full_name : undefined
+
+  return headSha === expectedHeadSha && baseRef === EXPECTED_BASE_BRANCH && baseRepoFullName === EXPECTED_BASE_REPO
+}
+
+/**
+ * Read the workflow_run event payload and resolve PR identity.
+ *
+ * Resolution order:
+ * 1. Extract PR NUMBERS from `workflow_run.pull_requests[]` as hints (do NOT validate
+ *    the abbreviated objects — they lack base.repo.full_name).
+ * 2. For each candidate number, fetch the FULL PR via fetchPrByNumber and validate that.
+ * 3. If pull_requests[] yields no candidate numbers, fall back to fetchPrsByHeadSha and
+ *    apply the same number-extraction-then-fetchPrByNumber pattern.
+ *
+ * Invariant: validatePrIdentity is ONLY ever called on full PR objects from fetchPrByNumber.
+ * The abbreviated pull_requests[] entries are used only to extract PR numbers.
+ *
+ * Validation: base repo == fro-bot/.github, base branch == main, PR head SHA == workflow_run.head_sha.
+ * Requires EXACTLY ONE PR to survive full-object validation — fail-closed otherwise.
+ *
+ * Returns the validated PR number, title, and author.
+ */
+async function readWorkflowRunContext(
   eventPath: string,
-): Promise<{prNumber: number; title: string; author: string; fullName: string | null}> {
-  const raw = await readFile(eventPath, 'utf8')
+  reader: WorkflowRunReader,
+  prApiResolver: PrApiResolver,
+): Promise<{prNumber: number; title: string; author: string; headSha: string}> {
+  const raw = await reader(eventPath)
   const parsed: unknown = JSON.parse(raw)
 
   if (!isRecord(parsed)) {
-    throw new Error(`check-private-leak: event payload is not an object (path=${eventPath})`)
+    throw new Error(`check-private-leak: workflow_run event payload is not an object (path=${eventPath})`)
   }
 
-  const pr = isRecord(parsed.pull_request) ? parsed.pull_request : undefined
-  const prNumber = pr === undefined ? undefined : pr.number
-  const title = pr === undefined ? undefined : pr.title
-  const user = pr !== undefined && isRecord(pr.user) ? pr.user : undefined
-  const author = typeof user?.login === 'string' ? user.login : undefined
-  const base = pr !== undefined && isRecord(pr.base) ? pr.base : undefined
-  const repo = base !== undefined && isRecord(base.repo) ? base.repo : undefined
-  const rawFullName = repo === undefined ? undefined : repo.full_name
+  const workflowRun = isRecord(parsed.workflow_run) ? parsed.workflow_run : undefined
+  if (workflowRun === undefined) {
+    throw new Error(`check-private-leak: event payload missing workflow_run field (path=${eventPath})`)
+  }
 
-  if (typeof prNumber !== 'number' || typeof author !== 'string' || author === '') {
+  // Require workflow_run.event == 'pull_request' — fail-closed otherwise.
+  const triggerEvent = workflowRun.event
+  if (triggerEvent !== 'pull_request') {
     throw new Error(
-      `check-private-leak: event payload missing pull_request.number or pull_request.user.login (path=${eventPath})`,
+      `check-private-leak: workflow_run.event is "${String(triggerEvent)}", expected "pull_request" — fail-closed`,
     )
   }
-  if (typeof title !== 'string') {
-    throw new TypeError(`check-private-leak: event payload missing pull_request.title (path=${eventPath})`)
+
+  const headSha = workflowRun.head_sha
+  if (typeof headSha !== 'string' || headSha === '') {
+    throw new Error(`check-private-leak: workflow_run.head_sha is missing or empty (path=${eventPath})`)
   }
-  const fullName = typeof rawFullName === 'string' && rawFullName.length > 0 ? rawFullName : null
-  return {prNumber, title, author, fullName}
+
+  // Resolve PR number from pull_requests[] or API fallback.
+  // IMPORTANT: pull_requests[] entries are ABBREVIATED — they lack base.repo.full_name.
+  // Extract PR numbers only; fetch the full PR object via fetchPrByNumber for validation.
+  const pullRequests = Array.isArray(workflowRun.pull_requests) ? workflowRun.pull_requests : []
+
+  const resolvedPrNumber: number = await (async (): Promise<number> => {
+    /** Extract PR numbers from an array of PR objects (abbreviated or full). */
+    const extractNumbers = (prs: unknown[]): number[] => {
+      const nums: number[] = []
+      for (const pr of prs) {
+        if (!isRecord(pr)) continue
+        const num = pr.number
+        if (typeof num === 'number') {
+          nums.push(num)
+        }
+      }
+      return nums
+    }
+
+    // Step 1: collect candidate PR numbers from pull_requests[] (abbreviated objects — numbers only).
+    // IMPORTANT: do NOT validate the abbreviated objects — they lack base.repo.full_name.
+    const fromPullRequests = extractNumbers(pullRequests)
+
+    // Step 2: if pull_requests[] yielded no numbers, fall back to the head-SHA API.
+    // The SHA fallback may also return abbreviated objects, so apply the same pattern:
+    // extract numbers only, then fetch full objects for validation.
+    let usedHeadShaFallback = false
+    const candidateNumbers: number[] =
+      fromPullRequests.length > 0
+        ? fromPullRequests
+        : await (async (): Promise<number[]> => {
+            usedHeadShaFallback = true
+            const prs = await prApiResolver.fetchPrsByHeadSha(headSha)
+            const nums = extractNumbers(prs)
+            if (nums.length === 0) {
+              throw new Error(
+                `check-private-leak: head-SHA fallback returned ${nums.length} valid PR(s), expected exactly 1 — fail-closed`,
+              )
+            }
+            return nums
+          })()
+
+    // Step 3: for each candidate number, fetch the FULL PR object and validate it.
+    // validatePrIdentity requires base.repo.full_name — only full objects have it.
+    const validCandidates: number[] = []
+    for (const num of candidateNumbers) {
+      const fullPr = await prApiResolver.fetchPrByNumber(num)
+      if (validatePrIdentity(fullPr, headSha)) {
+        validCandidates.push(num)
+      }
+    }
+
+    if (validCandidates.length !== 1) {
+      throw new Error(
+        usedHeadShaFallback
+          ? `check-private-leak: expected exactly 1 valid PR from head-SHA fallback, found ${validCandidates.length} — fail-closed`
+          : `check-private-leak: expected exactly 1 valid PR in pull_requests[], found ${validCandidates.length} — fail-closed`,
+      )
+    }
+    const prNum = validCandidates[0]
+    if (prNum === undefined) throw new Error('check-private-leak: internal: validCandidates[0] undefined')
+    return prNum
+  })()
+
+  // Fetch the validated PR's details (number, title, author).
+  // The full PR was already fetched during validation above; fetch again for title/author.
+  // (fetchPrByNumber is idempotent and the result is not cached — acceptable for correctness.)
+  const prDetails = await prApiResolver.fetchPrByNumber(resolvedPrNumber)
+
+  const title = prDetails.title
+  const user = isRecord(prDetails.user) ? prDetails.user : undefined
+  const author = typeof user?.login === 'string' ? user.login : undefined
+
+  if (typeof title !== 'string') {
+    throw new TypeError(`check-private-leak: PR #${resolvedPrNumber} missing title field`)
+  }
+  if (author === undefined || author === '') {
+    throw new Error(`check-private-leak: PR #${resolvedPrNumber} missing user.login field`)
+  }
+
+  return {prNumber: resolvedPrNumber, title, author, headSha}
+}
+
+// ---------------------------------------------------------------------------
+// Default seam implementations for main()
+// ---------------------------------------------------------------------------
+
+const defaultWorkflowRunReader: WorkflowRunReader = async (path: string): Promise<string> => readFile(path, 'utf8')
+
+const defaultPrApiResolver: PrApiResolver = {
+  fetchPrByNumber: async (prNumber: number): Promise<Record<string, unknown>> => {
+    const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/pulls/${prNumber}`, '--jq', '.'], {encoding: 'utf8'})
+    const parsed: unknown = JSON.parse(raw)
+    if (!isRecord(parsed)) {
+      throw new TypeError(`check-private-leak: fetchPrByNumber returned non-object for PR #${prNumber}`)
+    }
+    return parsed
+  },
+  fetchPrsByHeadSha: async (headSha: string): Promise<Record<string, unknown>[]> => {
+    const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/commits/${headSha}/pulls`, '--jq', '.'], {
+      encoding: 'utf8',
+    })
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      throw new TypeError(`check-private-leak: fetchPrsByHeadSha returned non-array for SHA ${headSha}`)
+    }
+    return parsed.filter(isRecord)
+  },
 }
 
 /**
@@ -248,10 +427,96 @@ function fetchPrivateNodeIds(fullName: string): string[] {
 }
 
 /**
- * Fetch unified diff text for a pull request.
+ * The maximum number of files the GitHub compare API returns in a single JSON response.
+ * If `files.length` reaches this cap, the response is truncated and we cannot guarantee
+ * a complete scan — fail closed.
  */
-function fetchPrDiff(prNumber: number): string {
-  return execFileSync('gh', ['pr', 'diff', String(prNumber)], {encoding: 'utf8'})
+const COMPARE_API_FILE_CAP = 300
+
+/**
+ * Check the compare JSON response for truncation signals.
+ * Exported for unit testing.
+ *
+ * GitHub's compare API caps `files` at 300 per response. Two truncation signals:
+ * 1. `files.length >= 300` — the cap was hit; additional files may be missing.
+ * 2. Any file entry missing its `patch` field — the API omits `patch` for very large
+ *    individual files; we cannot scan a file whose patch was dropped.
+ *
+ * Throws with a redacted message if truncation is detected so the caller (main()'s
+ * try/catch) exits non-zero — fail closed.
+ */
+export function assertCompareNotTruncated(compareJson: unknown): void {
+  if (!isRecord(compareJson)) {
+    throw new TypeError('check-private-leak: compare API returned non-object JSON — fail closed')
+  }
+
+  const files = compareJson.files
+  if (!Array.isArray(files)) {
+    throw new TypeError('check-private-leak: compare API response missing files array — fail closed')
+  }
+
+  // Signal 1: file count at or above the API cap.
+  if (files.length >= COMPARE_API_FILE_CAP) {
+    throw new Error(
+      `check-private-leak: diff too large to scan completely (${files.length} files >= ${COMPARE_API_FILE_CAP}-file cap) — fail closed`,
+    )
+  }
+
+  // Signal 2: any file missing its patch field (individually too large for the API to include).
+  // The filename is intentionally NOT echoed — a path under knowledge/wiki/repos/ could embed a
+  // private slug. Fail closed with a count-only message.
+  for (const file of files) {
+    if (!isRecord(file)) continue
+    if (!('patch' in file)) {
+      throw new Error(
+        'check-private-leak: a file patch was omitted by the compare API (file too large to diff) — fail closed',
+      )
+    }
+  }
+}
+
+/**
+ * Fetch the unified diff for an immutable, pinned head SHA against the base branch.
+ *
+ * Uses the GitHub compare API pinned to the workflow_run head SHA, never from a
+ * checked-out tree. Pinning to scannedHeadSha (the workflow_run head_sha) closes the
+ * force-push TOCTOU: the diff is for exactly the SHA the commit status is posted to,
+ * regardless of any subsequent force-push to the PR branch.
+ *
+ * Truncation guard (fail-closed): before fetching the raw diff, queries the compare
+ * endpoint as JSON (no diff media type) to check for truncation. GitHub caps the
+ * `files` array at 300 entries and omits `patch` for individually-too-large files.
+ * Either signal means we cannot guarantee a complete scan → throws so main()'s
+ * try/catch exits non-zero (fail closed). The raw diff fetch is skipped on truncation.
+ *
+ * Accepts an explicit env so FRO_BOT_POLL_PAT never reaches the gh subprocess
+ * (mirrors the --promotion gitEnv isolation pattern). The PAT-stripped env is used
+ * for BOTH the JSON truncation check and the raw diff fetch.
+ */
+function fetchDiffForSha(headSha: string, env: NodeJS.ProcessEnv): string {
+  // Step 1: fetch the compare JSON to detect truncation before scanning.
+  // No diff media type — returns { total_commits, files: [...] } with per-file patch fields.
+  const compareJsonRaw = execFileSync(
+    'gh',
+    ['api', `repos/{owner}/{repo}/compare/${EXPECTED_BASE_BRANCH}...${headSha}`],
+    {encoding: 'utf8', env},
+  )
+  const compareJson: unknown = JSON.parse(compareJsonRaw)
+  // Throws if truncated — fail closed. main()'s try/catch maps this to process.exit(1).
+  assertCompareNotTruncated(compareJson)
+
+  // Step 2: fetch the raw unified diff for the actual scan content.
+  // Only reached when the JSON check confirms the diff is complete.
+  return execFileSync(
+    'gh',
+    [
+      'api',
+      `repos/{owner}/{repo}/compare/${EXPECTED_BASE_BRANCH}...${headSha}`,
+      '-H',
+      'Accept: application/vnd.github.v3.diff',
+    ],
+    {encoding: 'utf8', env},
+  )
 }
 
 /**
@@ -530,8 +795,12 @@ export async function runPromotionCli(
 
   if ('resolutionFailed' in result && result.resolutionFailed) {
     // Fail-closed: resolution failure (including access-lost) blocks promotion.
+    // Print only the COUNT, never the raw node_ids: a node_id is normally an opaque
+    // public identifier, but the schema is defense-in-depth and a malformed
+    // owner/repo-shaped value could otherwise be echoed into a public log. The count
+    // keeps the failure operator-actionable; the local resolver maps ids to repos.
     process.stderr.write(
-      `check-private-leak [promotion]: FAILED — could not resolve private node_id(s): ${result.failedNodeIds.join(', ')}\n`,
+      `check-private-leak [promotion]: FAILED — could not resolve ${result.failedNodeIds.length} private node_id(s)\n`,
     )
     process.stderr.write('check-private-leak [promotion]: cannot guarantee a complete scan — blocking promotion\n')
     return 1
@@ -560,19 +829,47 @@ export async function runPromotionCli(
 // CLI entrypoint
 // ---------------------------------------------------------------------------
 
-export async function main(): Promise<void> {
+export async function main(
+  workflowRunReader: WorkflowRunReader = defaultWorkflowRunReader,
+  prApiResolver: PrApiResolver = defaultPrApiResolver,
+): Promise<void> {
   const eventPath = process.env.GITHUB_EVENT_PATH
   if (eventPath === undefined || eventPath === '') {
     process.stderr.write(
-      'check-private-leak: GITHUB_EVENT_PATH not set. This script must run inside a GitHub Actions pull_request event.\n',
+      'check-private-leak: GITHUB_EVENT_PATH not set. This script must run inside a GitHub Actions workflow_run event.\n',
     )
     process.exit(1)
   }
 
-  const {prNumber, title, author, fullName: eventFullName} = await readPullRequestContext(eventPath)
-  const fullName =
-    eventFullName ??
-    execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {encoding: 'utf8'}).trim()
+  // Fail-closed if FRO_BOT_POLL_PAT is absent — resolver cannot run without it.
+  const pat = process.env.FRO_BOT_POLL_PAT
+  if (pat === undefined || pat === '') {
+    process.stderr.write(
+      'check-private-leak: FRO_BOT_POLL_PAT not set. This is required to resolve private repo names.\n',
+    )
+    process.exit(1)
+  }
+
+  // Read workflow_run payload and resolve PR identity (fail-closed on any error).
+  let prNumber: number
+  let title: string
+  let author: string
+  let scannedHeadSha: string
+  try {
+    ;({
+      prNumber,
+      title,
+      author,
+      headSha: scannedHeadSha,
+    } = await readWorkflowRunContext(eventPath, workflowRunReader, prApiResolver))
+  } catch (error) {
+    process.stderr.write(`check-private-leak: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exit(1)
+  }
+
+  const fullName = execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+    encoding: 'utf8',
+  }).trim()
 
   // Resolve private node_ids from data branch.
   const privateNodeIds = fetchPrivateNodeIds(fullName)
@@ -586,8 +883,15 @@ export async function main(): Promise<void> {
   const isOperator = author === OPERATOR_LOGIN
   const override: OverrideOptions = {titlePrefixed, isOperator}
 
-  // Resolve each node_id → nameWithOwner, tracking successes and failures separately.
-  const resolver = makeGhNodeIdResolver()
+  // Build a sanitized env that excludes FRO_BOT_POLL_PAT before passing to the compare-API diff fetch.
+  // The PAT must reach ONLY makeGhNodeIdResolver — never the diff subprocess.
+  // Mirrors the --promotion gitEnv isolation pattern (Fix C in runPromotionCli).
+  const diffEnv: NodeJS.ProcessEnv = {...process.env}
+  delete diffEnv.FRO_BOT_POLL_PAT
+
+  // Wire FRO_BOT_POLL_PAT ONLY to the resolver — never the diff or any other call.
+  // Mirror the --promotion gitEnv isolation: the PAT must reach ONLY makeGhNodeIdResolver.
+  const resolver = makeGhNodeIdResolver(pat)
   const resolvedNames: string[] = []
   const failedNodeIds: string[] = []
 
@@ -596,9 +900,13 @@ export async function main(): Promise<void> {
     if ('nameWithOwner' in result) {
       resolvedNames.push(result.nameWithOwner)
     } else if (result.error === 'access-lost') {
-      // access-lost = repo gone = no current content to leak; safe to skip.
-      // transient error = unknown state = must fail closed.
-      process.stderr.write(`check-private-leak: node_id=${nodeId} access-lost (deleted/no-access), skipping\n`)
+      // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
+      // Treating it as skip would make a mis-scoped PAT silently pass everything — fail closed.
+      // Mirror runPromotionScan's Fix A: push to failedNodeIds so the fail-closed block catches it.
+      failedNodeIds.push(nodeId)
+      process.stderr.write(
+        `check-private-leak: node_id=${nodeId} access-lost (deleted or token cannot see it) — BLOCKING\n`,
+      )
     } else {
       // 'error' class: transient/auth/rate-limit/unknown — fail closed.
       // Log only node_id + coarse error class; never echo raw gh stderr (may contain owner/name).
@@ -633,8 +941,19 @@ export async function main(): Promise<void> {
     privateTokens.push(...buildTokensForName(nameWithOwner))
   }
 
-  // Fetch diff and evaluate.
-  const diff = fetchPrDiff(prNumber)
+  // Fetch the diff pinned to the immutable scannedHeadSha via the GitHub compare API.
+  // This closes the force-push TOCTOU (Finding B): the diff is for exactly the SHA the
+  // commit status is posted to — a force-push after the workflow_run fires cannot desync
+  // the scanned diff from the status target. No extra round-trip needed (no revalidation).
+  // Pass diffEnv (PAT-stripped) so FRO_BOT_POLL_PAT never reaches the gh subprocess.
+  // fetchDiffForSha also performs a truncation check (fail-closed) before fetching the raw diff.
+  let diff: string
+  try {
+    diff = fetchDiffForSha(scannedHeadSha, diffEnv)
+  } catch (error) {
+    process.stderr.write(`check-private-leak: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exit(1)
+  }
   const result = checkPrivateLeak(privateTokens, diff, override)
 
   if (result.ok) {

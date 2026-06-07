@@ -113,6 +113,18 @@ export interface SocialCooldownEntry {
  */
 const CONTRIB_REPO_PATTERN = /^[A-Z\d](?:[A-Z\d]|-(?=[A-Z\d])){0,38}\/(?!\.{1,2}$)[\w.-]{1,100}$/i
 
+/**
+ * GitHub repository GraphQL node_id shape. Two real forms exist:
+ * - Next-gen: `R_kgDO...` (TYPE prefix + URL-safe base64, chars `[A-Za-z0-9_-]`, no padding).
+ * - Legacy:   `MDEwOlJlcG9zaXRvcnk...==` (standard-ish base64, may carry 1-2 `=` padding chars).
+ *
+ * Both are opaque identifiers — neither contains a `/`. The body is `[\w-]+` (word chars
+ * plus hyphen) followed by optional base64 padding. Rejecting `/` is the point: it keeps an
+ * `owner/repo`-shaped string from passing schema and later reaching a render/log site as if
+ * it were a node_id. Verified against every node_id currently on the data branch.
+ */
+const NODE_ID_PATTERN = /^[\w-]+={0,2}$/
+
 export class SchemaValidationError extends Error {
   readonly path: string
 
@@ -222,7 +234,7 @@ function isRepoEntry(value: unknown): value is RepoEntry {
       typeof value.next_survey_eligible_at === 'string') &&
     (value.private === undefined || typeof value.private === 'boolean') &&
     (value.node_id === undefined ||
-      (typeof value.node_id === 'string' && value.node_id.length > 0 && /^[\w\-+/=]+$/.test(value.node_id)))
+      (typeof value.node_id === 'string' && value.node_id.length > 0 && NODE_ID_PATTERN.test(value.node_id)))
   )
 }
 
@@ -257,9 +269,12 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
   if (value.node_id !== undefined && (typeof value.node_id !== 'string' || value.node_id.length === 0))
     throw new SchemaValidationError(`${path}.node_id`, 'expected non-empty string or omitted')
   // Render sites embed node_id in shell commands (see renderVisibilityTransitionIssue in scripts/reconcile-repos.ts);
-  // keep this pattern restrictive to GitHub's base64ish node-id format.
-  if (value.node_id !== undefined && typeof value.node_id === 'string' && !/^[\w\-+/=]+$/.test(value.node_id))
-    throw new SchemaValidationError(`${path}.node_id`, String.raw`expected safe node_id matching ^[\w\-+/=]+$`)
+  // keep this pattern restrictive to GitHub's node-id format and reject owner/repo shapes.
+  if (value.node_id !== undefined && typeof value.node_id === 'string' && !NODE_ID_PATTERN.test(value.node_id))
+    throw new SchemaValidationError(
+      `${path}.node_id`,
+      'expected safe GitHub node_id (no slash; base64url body with optional padding)',
+    )
 }
 
 function isOnboardingStatus(value: unknown): value is OnboardingStatus {
