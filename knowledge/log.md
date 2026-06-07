@@ -1772,3 +1772,26 @@ Sources: https://github.com/marcusrbrown/.dotfiles (SHA 70c211bc269b4bb8c476a392
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-06-07] ingest | marcusrbrown/esphome.life
+
+Survey of `marcusrbrown/esphome.life` (SHA `bd5aa88`). Updated repo page `marcusrbrown--esphome-life.md` and entity page `esphome.md`. Updated `index.md` with richer description for the esphome-life entry.
+
+Key findings vs. prior survey (2026-05-26, SHA `fc5adc2`):
+
+- `esphome/build-action` bumped v7.2.0 → v7.3.0 (SHA `4ef4722`, PR #356 on 2026-05-26)
+- `bfra-me/.github` reusable workflows bumped v4.16.20 → v4.16.21 → v4.16.22 → v4.16.23 (PRs #355–#359, weekly cadence)
+- Renovate preset bumped `#5.2.0` → `#5.2.1` (PR #360 on 2026-06-06, latest commit)
+- `update-repo-settings.yaml` footgun **confirmed persisting**: Renovate is actively bumping the wrong workflow path (`renovate.yaml` instead of a settings workflow) with each `bfra-me/.github` release — the footgun is being maintained by automation
+- ESPHome device firmware config unchanged: 2025.12.7, Olimex ESP32-PoE-ISO Bluetooth Proxy. No human-authored commits since at least 2026-03-12 (approaching 3 months on Renovate autopilot)
+- ESPHome version 2025.12.7 still pinned — notable given upstream ESPHome has released 2026.x versions; `separateMajorMinor: false` + `versioning: loose` may be suppressing bumps
+- No Fro Bot agent workflow added (recommendation carried forward across 5 surveys)
+- 3 open issues: Dependency Dashboard (#26), Uplift meta-issue (#8), community BPPLUG note (#298)
+
+Sources: https://github.com/marcusrbrown/esphome.life (SHA bd5aa8885780aebdacefc9714a5f4d6b344158c9)
+
+## [2026-06-07 08:36] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
