@@ -1773,25 +1773,29 @@ Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
 
-## [2026-06-07] ingest | marcusrbrown/esphome.life
+## [2026-06-07 08:33] ingest | marcusrbrown/containers
 
-Survey of `marcusrbrown/esphome.life` (SHA `bd5aa88`). Updated repo page `marcusrbrown--esphome-life.md` and entity page `esphome.md`. Updated `index.md` with richer description for the esphome-life entry.
+Incremental re-survey of `marcusrbrown/containers` (SHA `8aeadf73`, 2026-06-06). Updated repo page `marcusrbrown--containers.md`, topic page `github-actions-ci.md`, and `index.md` description. No new topic/entity/comparison pages warranted — changes slot into existing cross-cutting pages.
 
-Key findings vs. prior survey (2026-05-26, SHA `fc5adc2`):
+Delta from prior survey (SHA `6f8a1014`, 2026-05-25):
 
-- `esphome/build-action` bumped v7.2.0 → v7.3.0 (SHA `4ef4722`, PR #356 on 2026-05-26)
-- `bfra-me/.github` reusable workflows bumped v4.16.20 → v4.16.21 → v4.16.22 → v4.16.23 (PRs #355–#359, weekly cadence)
-- Renovate preset bumped `#5.2.0` → `#5.2.1` (PR #360 on 2026-06-06, latest commit)
-- `update-repo-settings.yaml` footgun **confirmed persisting**: Renovate is actively bumping the wrong workflow path (`renovate.yaml` instead of a settings workflow) with each `bfra-me/.github` release — the footgun is being maintained by automation
-- ESPHome device firmware config unchanged: 2025.12.7, Olimex ESP32-PoE-ISO Bluetooth Proxy. No human-authored commits since at least 2026-03-12 (approaching 3 months on Renovate autopilot)
-- ESPHome version 2025.12.7 still pinned — notable given upstream ESPHome has released 2026.x versions; `separateMajorMinor: false` + `versioning: loose` may be suppressing bumps
-- No Fro Bot agent workflow added (recommendation carried forward across 5 surveys)
-- 3 open issues: Dependency Dashboard (#26), Uplift meta-issue (#8), community BPPLUG note (#298)
+- **AI config scaffold merged** (PR #584, 2026-06-06): long-pending Copilot SWE-agent PR finally lands. Adds first-class `containers ai config` CLI subcommand (`--init`, `--validate`, `--file` flags), `ai_config.example.yaml` canonical reference config, and three new docs (`docs/AI_CONFIGURATION.md`, `docs/AI_CLI_GUIDE.md`, `docs/AI_VERIFICATION_REPORT.md`). The CLI is now self-bootstrapping for AI feature setup.
+- **Security patch** (PR #620, 2026-06-06): qs 6.15.2, express 4.22.2, and idna 3.17 patched in Express template and Python transitive deps.
+- **Fro Bot agent jumped v0.44.0 → v0.55.0** (SHA `f73a3e59...`, PR #630, 2026-06-05) — largest single-survey version jump observed for this repo.
+- **dorny/paths-filter bumped v3 → v4** (SHA `fbd0ab8f...`, PR #607) — minor interface change; the `v4.0.1` pin resolves the v4 PR in flight noted in the prior survey.
+- **pnpm bumped 10.33.0 → 10.34.1** (PR #622). Note: v10.34.x `.tar.gz` assets are missing from the Aqua backend, so pnpm was temporarily reverted to 10.33.0 in one commit (#624) before the aqua backend caught up.
+- **Node.js bumped 24.15.0 → 24.16.0** (mise.toml).
+- **openai bumped >=2.36.0 → >=2.41.0,<2.42.0** (PR #628).
+- **Continuous Node.js/Debian base image digest rotation** (#621–#630 range).
+- **Open PRs at survey time:** 3 (Copilot pytest PR #583 still pending since 2026-04-18; two mrbro-bot Renovate pin PRs #611/#612). Open issues: 6.
+- **Observed drift:** `bfra-me/.github` reusable renovate workflow still pinned at v4.16.0 (SHA `65caa6a...`) — behind the ecosystem median of v4.16.21+ seen in sibling repos. Renovate has PRs in flight to address this. Flagged as a potential drift candidate in the repo page.
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA bd5aa8885780aebdacefc9714a5f4d6b344158c9)
+No contradictions with prior surveys. Repository structure, container variants, template system, Dockerfile patterns, CI pipeline, and branch protection are unchanged.
 
-## [2026-06-07 08:36] ingest | repo:marcusrbrown/esphome.life
+Sources: https://github.com/marcusrbrown/containers (SHA 8aeadf737140077d3e976d30d70caee9cd09a885)
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+## [2026-06-07 08:38] ingest | repo:marcusrbrown/containers
 
-Sources: https://github.com/marcusrbrown/esphome.life
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers
