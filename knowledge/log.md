@@ -1800,23 +1800,23 @@ Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
 
-## [2026-06-08 10:00] ingest | marcusrbrown/extend-vscode
+## [2026-06-08 00:00] ingest | marcusrbrown/gpt
 
-Incremental re-survey of `marcusrbrown/extend-vscode` (SHA `73790dd8`, 2026-06-03). Updated repo page `marcusrbrown--extend-vscode.md` and `index.md` description. No new topic/entity/comparison pages warranted — changes slot into existing cross-cutting pages.
+Incremental re-survey of `marcusrbrown/gpt` (SHA `36b50c9`, up from `aac0103` on 2026-05-27). Updated repo page `marcusrbrown--gpt.md` and topic page `langchain.md`. Updated `index.md` description. No new topic/entity/comparison pages warranted — delta is dependency hygiene and an accessibility fix.
 
-Delta from prior survey (SHA `516a9eb4`, 2026-05-21):
+Delta from prior survey (SHA `aac0103`, 2026-05-27):
 
-- 5 dependency bumps merged (2026-05-27 to 2026-06-03): `tmp` v0.2.6 [SECURITY], `typescript-eslint` v8.60.0, `pnpm` v10.34.0, `@types/vscode` v1.120.0, `type-fest` v5.7.0.
-- Security patch `tmp` v0.2.6 (#494) was the only CVE-triggered bump outside regular schedule.
-- `package.json` at HEAD reveals newly explicit devDependencies: `@types/node` 24.12.0, `@vitest/eslint-plugin` 1.6.1, `esbuild-plugin-polyfill-node` 0.3.0, `eslint-plugin-prettier` 5.5.0. The `esbuild-plugin-polyfill-node` entry confirms explicit Node.js polyfilling for the web extension build target.
-- Open issues: 6 (added `#466` with `major` + `dependencies` labels). Open PRs: 1 (#466, `typescript` v6, still pending).
-- Repository structure, architecture, workflows, publishing pipeline, AI context files, and Probot settings all unchanged.
-- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~7+ weeks).
+- **`fro-bot/agent` bumped:** v0.45.0 → v0.57.0 (SHA `4470582693390235d4ab6fce1049373225025590`). `actions/checkout` pinned at v6.0.3 (`df4cb1c`). New `opencode-config` secret input added to agent step.
+- **LangChain updates:** `langchain` 1.4.2 → 1.4.4, `@langchain/langgraph` 1.3.2 → 1.3.5.
+- **Dependency bumps:** `vite` 8.0.14 → 8.0.16, `react-router-dom` 7.15.1 → 7.17.0, `openai` → 6.42.0, `dexie` 4.4.2 → 4.4.3, `vitest` 4.1.7 → 4.1.8, `@vitest/eslint-plugin` 1.6.18 → 1.6.19, `@vitest/coverage-v8` 4.1.7 → 4.1.8, `eslint` 10.4.0 → 10.4.1, `@types/node` → 24.12.4, `lucide-react` → 0.577.0, `lint-staged` → 16.4.0, `pnpm` 10.33.4 → 10.34.1, `@typescript/native-preview` → 7.0.0-dev.20260604.1.
+- **Accessibility fix:** Removed nested sidebar landmark (PR #2525, 2026-06-08). AGENTS.md updated for Vite 8 alignment.
+- Single three-mode `fro-bot.yaml` workflow confirmed — no separate `fro-bot-autoheal.yaml`. Open issues: 25.
+- No structural or application-code changes.
 
-Sources: https://github.com/marcusrbrown/extend-vscode (SHA 73790dd8d45ee3a58c43a225f0ea8a7bc21b0924)
+Sources: https://github.com/marcusrbrown/gpt (SHA 36b50c9254c1795edd75331a4b0dad07961a49e1)
 
-## [2026-06-08 10:00] ingest | repo:marcusrbrown/extend-vscode
+## [2026-06-08 10:02] ingest | repo:marcusrbrown/gpt
 
-Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/extend-vscode
+Sources: https://github.com/marcusrbrown/gpt
