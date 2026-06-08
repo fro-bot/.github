@@ -1799,3 +1799,24 @@ Sources: https://github.com/marcusrbrown/containers (SHA 8aeadf737140077d3e976d3
 Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
+
+## [2026-06-08 10:00] ingest | marcusrbrown/extend-vscode
+
+Incremental re-survey of `marcusrbrown/extend-vscode` (SHA `73790dd8`, 2026-06-03). Updated repo page `marcusrbrown--extend-vscode.md` and `index.md` description. No new topic/entity/comparison pages warranted — changes slot into existing cross-cutting pages.
+
+Delta from prior survey (SHA `516a9eb4`, 2026-05-21):
+
+- 5 dependency bumps merged (2026-05-27 to 2026-06-03): `tmp` v0.2.6 [SECURITY], `typescript-eslint` v8.60.0, `pnpm` v10.34.0, `@types/vscode` v1.120.0, `type-fest` v5.7.0.
+- Security patch `tmp` v0.2.6 (#494) was the only CVE-triggered bump outside regular schedule.
+- `package.json` at HEAD reveals newly explicit devDependencies: `@types/node` 24.12.0, `@vitest/eslint-plugin` 1.6.1, `esbuild-plugin-polyfill-node` 0.3.0, `eslint-plugin-prettier` 5.5.0. The `esbuild-plugin-polyfill-node` entry confirms explicit Node.js polyfilling for the web extension build target.
+- Open issues: 6 (added `#466` with `major` + `dependencies` labels). Open PRs: 1 (#466, `typescript` v6, still pending).
+- Repository structure, architecture, workflows, publishing pipeline, AI context files, and Probot settings all unchanged.
+- **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~7+ weeks).
+
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA 73790dd8d45ee3a58c43a225f0ea8a7bc21b0924)
+
+## [2026-06-08 10:00] ingest | repo:marcusrbrown/extend-vscode
+
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/extend-vscode

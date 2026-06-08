@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/extend-vscode"
 created: 2026-04-18
-updated: 2026-05-26
+updated: 2026-06-08
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -31,6 +31,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 516a9eb442f97212f45d890e65fb7d7642566206
     accessed: 2026-05-26
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 73790dd8d45ee3a58c43a225f0ea8a7bc21b0924
+    accessed: 2026-06-08
 tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
 aliases: [extend-vscode]
 related:
@@ -47,7 +50,7 @@ Modular toolkit for building VS Code extensions. Provides typed abstractions for
 - **Purpose:** Reference extension + reusable toolkit for VS Code extension development
 - **Default branch:** `main`
 - **Created:** 2020-11-16
-- **Last push:** 2026-05-21
+- **Last push:** 2026-06-03
 - **Version:** 0.1.0 (pre-release, semantic-release configured)
 - **License:** MIT
 - **Engine:** VS Code `^1.102.0`
@@ -295,16 +298,44 @@ Three of the four previously-pending majors closed: `eslint` v10, `eslint-plugin
 
 Confirmed dependency snapshot at HEAD:
 
-- Runtime: pnpm 10.33.0, Node 24.16.0, VS Code engine `^1.102.0`
-- Core: `typescript` 5.9.3, `tsup` 8.5.1 (now pinned, not ranged), `vitest` 4.1.0, `@vitest/coverage-v8` 4.1.0, `@vitest/ui` 4.1.0
-- Lint: `eslint` 10.4.0 (v10 line stabilized), `typescript-eslint` 8.59.0, `@bfra.me/eslint-config` 0.51.0, `eslint-plugin-node-dependencies` 2.2.0, `eslint-plugin-no-only-tests` 3.4.0, `prettier` 3.8.0
-- VS Code tooling: `@types/vscode` 1.118.0, `@vscode/vsce` 3.9.0, `@vscode/test-electron` 2.5.2, `@vscode/test-web` 0.0.67, `vscode-ext-gen` 1.6.0
+- Runtime: pnpm 10.34.0, Node 24.16.0, VS Code engine `^1.102.0`
+- Core: `typescript` 5.9.3, `tsup` 8.5.1 (pinned), `vitest` 4.1.0, `@vitest/coverage-v8` 4.1.0, `@vitest/ui` 4.1.0, `@vitest/eslint-plugin` 1.6.1 (new)
+- Lint: `eslint` 10.4.0, `typescript-eslint` 8.60.0, `@bfra.me/eslint-config` 0.51.0, `eslint-plugin-node-dependencies` 2.2.0, `eslint-plugin-no-only-tests` 3.4.0, `eslint-plugin-prettier` 5.5.0 (now explicit), `eslint-config-prettier` 10.1.1, `prettier` 3.8.0
+- VS Code tooling: `@types/vscode` 1.120.0, `@types/node` 24.12.0 (now explicit), `@vscode/vsce` 3.9.0, `@vscode/test-electron` 2.5.2, `@vscode/test-web` 0.0.67, `@vscode/test-cli` 0.0.10, `vscode-ext-gen` 1.6.0
 - Publishing: `semantic-release` 25.0.1, `semantic-release-vsce` 6.1.0, `ovsx` 0.10.5
 - Testing: `@playwright/test` 1.60.0, `jsdom` 29.1.0
-- Build helpers: `tsx` 4.22.0, `jiti` 2.7.0, `type-fest` 5.6.0
+- Build helpers: `tsx` 4.22.0, `jiti` 2.7.0, `type-fest` 5.7.0, `esbuild-plugin-polyfill-node` 0.3.0 (new, explicit web polyfill)
 
 Repo metadata: 1 star, 1 watcher, not archived, not forked. Open issues: 5 (#142 Uplift `vscode-bash`, #162 Dependency Dashboard, #317–#319 Advanced Testing Infrastructure Phases 3–5). Open PRs: 1 (#466, `typescript` v6 — pending).
 
 **Footgun observation:** `tsup` was previously declared with a `^8.0.2` semver range while every other devDependency was pinned exactly. PR #488 corrected the drift to `8.5.1`. The repo now has a consistent pin-exact policy across all devDependencies — useful invariant to preserve if a future contributor adds a new devDep.
 
 **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (now ~6 weeks open across surveys). Six workflows present, unchanged: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`. Probot settings still extend `fro-bot/.github:common-settings.yaml`; branch protection (`Renovate / Renovate`, `Run Checks`, linear history, admin enforcement) unchanged.
+
+### 2026-06-08 (SHA `73790dd8` from `516a9eb4`)
+
+Five dependency bumps merged between 2026-05-27 and 2026-06-03. One security patch included. No structural, architectural, or workflow changes.
+
+| PR | Date | Change |
+| --- | --- | --- |
+| #498 | 2026-06-03 | `type-fest` v5.6.0 → v5.7.0 |
+| #497 | 2026-06-01 | `@types/vscode` → v1.120.0 |
+| #496 | 2026-05-30 | `pnpm` → v10.34.0 |
+| #495 | 2026-05-28 | `typescript-eslint` v8.59.0 → v8.60.0 |
+| #494 | 2026-05-27 | `tmp` → v0.2.6 [SECURITY] |
+
+The `tmp` security patch (#494) is the only notable deviation from routine Renovate cadence — the commit message flags `[SECURITY]`, meaning a CVE-triggered bump was processed ahead of the weekly schedule.
+
+The `package.json` at HEAD also reveals several devDependencies now explicitly declared that were previously implicit or unlisted in surveys: `@types/node` 24.12.0, `@vitest/eslint-plugin` 1.6.1, `esbuild-plugin-polyfill-node` 0.3.0, `eslint-plugin-prettier` 5.5.0. These may have been present in the lockfile but are now promoted to first-class manifest entries — consistent with a deliberate effort to make the dependency graph auditable. The `esbuild-plugin-polyfill-node` entry is functionally interesting: it confirms the web extension build uses explicit Node.js polyfills rather than relying on esbuild/tsup auto-polyfill behavior.
+
+Confirmed dependency snapshot at HEAD (`73790dd8`):
+
+- Runtime: pnpm 10.34.0, Node 24.16.0, VS Code engine `^1.102.0`
+- Core: `typescript` 5.9.3, `tsup` 8.5.1 (pinned), `vitest` 4.1.0
+- Lint: `eslint` 10.4.0, `typescript-eslint` 8.60.0
+- VS Code tooling: `@types/vscode` 1.120.0, `@vscode/vsce` 3.9.0
+- Build helpers: `type-fest` 5.7.0, `esbuild-plugin-polyfill-node` 0.3.0 (explicit)
+
+Repo metadata: 1 star, 1 watcher, not archived, not forked. Open issues: 6 (#142, #162, #317–#319, #466). Open PRs: 1 (#466, `typescript` v6 — pending, now carrying `major` + `dependencies` labels).
+
+**Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~7+ weeks open across surveys). Six workflows present, unchanged: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`.
