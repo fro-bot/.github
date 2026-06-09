@@ -195,7 +195,7 @@ jobs:
 
       - name: Run Fro Bot survey ingest
         id: survey-agent
-        uses: fro-bot/agent@f73a3e5957ef703c442bf6316e3b5597baff1cbd # v0.55.0
+        uses: fro-bot/agent@73501cca967b8b909812754ee29e4ab1cccf85ff # v0.58.1
         with:
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
