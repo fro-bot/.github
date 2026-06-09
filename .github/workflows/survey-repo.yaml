@@ -310,6 +310,7 @@ jobs:
       # the agent made no changes) counts as success, not failure, because the agent
       # completed cleanly.
       - name: Record survey result
+        id: record-result
         if: ${{ !cancelled() && steps.survey-agent.conclusion != 'skipped' && steps.recheck.conclusion == 'success' }}
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
@@ -351,3 +352,21 @@ jobs:
             '{owner: $owner, repo: $repo, slug: $slug, wiki_pages_changed: $pages}')"
           export EVENT_CONTEXT_JSON
           node scripts/gateway-announce.ts
+
+      # Cadence-advance safety net: if the normal "Record survey result" step did not
+      # run or did not succeed (cancelled run, hard timeout, upstream failure before
+      # recheck, etc.) record a failure result so last_survey_at / next_survey_eligible_at
+      # advance and the minimum-floor stops retargeting this repo every day.
+      # The `outcome != 'success'` guard makes this idempotent: it never fires when the
+      # normal record step already wrote a result.
+      - name: Record survey result (cancelled/timeout fallback)
+        if: ${{ (cancelled() || failure()) && steps.record-result.outcome != 'success' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          REPO_OWNER: ${{ steps.resolve.outputs.owner }}
+          REPO_NAME: ${{ steps.resolve.outputs.repo }}
+          REPO_NODE_ID: ${{ inputs.node_id }}
+          REPO_PRIVATE: ${{ steps.recheck.outputs.private }}
+          SURVEY_STATUS: failure
+        run: node scripts/record-survey-result.ts
