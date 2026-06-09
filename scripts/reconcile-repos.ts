@@ -860,18 +860,21 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   // Only upgrades (lower → higher precedence) are applied. Downgrades are suppressed so a
   // genuinely `owned` entry that also appears in the collab list stays `owned`. Precedence
   // rank: owned=2 > contrib=1 > collab=0 (matches mergeAccessChannels loop order).
-  const CHANNEL_RANK: Record<DiscoveryChannel, number> = {owned: 2, contrib: 1, collab: 0}
+  const CHANNEL_RANK = {owned: 2, contrib: 1, collab: 0} as const satisfies Record<DiscoveryChannel, number>
   const liveChannel = params.accessChannelByKey.get(accessKey) ?? 'collab'
   const storedChannel = entry.discovery_channel ?? 'collab'
   let workingEntry = entry
   if (CHANNEL_RANK[liveChannel] > CHANNEL_RANK[storedChannel]) {
     // Recompute next_survey_eligible_at for the new channel's interval. Use last_survey_at
     // as the base date when available; fall back to now so the entry gets a fresh cadence
-    // window rather than becoming immediately eligible.
-    const baseDate =
+    // window rather than becoming immediately eligible. Guard against a corrupted
+    // last_survey_at (e.g. 'bogus') that would produce an Invalid Date and cause
+    // computeNextEligibleAt's .toISOString() to throw — mirror migrateRepoEntry's guard.
+    const baseMs =
       entry.last_survey_at !== null && entry.last_survey_at !== undefined
-        ? new Date(`${entry.last_survey_at}T00:00:00Z`)
-        : now
+        ? Date.parse(`${entry.last_survey_at}T00:00:00Z`)
+        : Number.NaN
+    const baseDate = Number.isFinite(baseMs) ? new Date(baseMs) : now
     const nextEligible = computeNextEligibleAt({
       owner: access.owner,
       repo: access.name,

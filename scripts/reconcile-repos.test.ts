@@ -1816,6 +1816,68 @@ describe('reconcileRepos', () => {
       expect(byName.get('agent')).toBe('owned')
       expect(byName.get('.github')).toBe('contrib')
     })
+
+    it('channel-refresh with malformed last_survey_at does not throw and falls back to now', () => {
+      // #given a tracked collab entry with a corrupted last_survey_at AND a live contrib upgrade
+      // A malformed date string must not crash computeNextEligibleAt via Invalid Date.toISOString().
+      const entry = makeEntry({
+        owner: 'bfra-me',
+        name: 'renovate-config',
+        onboarding_status: 'onboarded',
+        discovery_channel: 'collab',
+        last_survey_at: 'bogus', // malformed — not a valid YYYY-MM-DD
+        next_survey_eligible_at: '2026-06-01',
+      })
+
+      // #when reconciling with a live contrib channel upgrade — must not throw
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({owner: 'bfra-me', name: 'renovate-config', node_id: 'R_bfra_ren'})],
+          accessChannelByKey: new Map([['bfra-me/renovate-config', 'contrib']]),
+        }),
+      )
+
+      // #then channel is upgraded to contrib
+      expect(result.nextRepos.repos[0]?.discovery_channel).toBe('contrib')
+
+      // #then next_survey_eligible_at is a valid ISO string (computed from `now`, not from 'bogus')
+      const nextEligible = result.nextRepos.repos[0]?.next_survey_eligible_at
+      expect(typeof nextEligible).toBe('string')
+      expect(Number.isFinite(Date.parse(nextEligible ?? ''))).toBe(true)
+    })
+
+    it('does not downgrade a tracked owned entry when live channel is contrib or collab', () => {
+      // #given a tracked owned entry
+      const entry = makeEntry({
+        owner: 'fro-bot',
+        name: 'agent',
+        onboarding_status: 'onboarded',
+        discovery_channel: 'owned',
+        next_survey_eligible_at: '2026-05-01',
+        private: false,
+        node_id: 'R_agent',
+      })
+      const currentRepos: ReposFile = {version: 1, repos: [entry]}
+
+      // #when the live channel map reports contrib (lower precedence than owned)
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos,
+          accessList: [makeAccess({owner: 'fro-bot', name: 'agent', node_id: 'R_agent'})],
+          accessChannelByKey: new Map([['fro-bot/agent', 'contrib']]),
+        }),
+      )
+
+      // #then channel stays owned — downgrade is suppressed
+      expect(result.nextRepos.repos[0]?.discovery_channel).toBe('owned')
+      // #and no channel-refresh refresh bump (reference identity preserved for the channel field)
+      // The entry may be refreshed for other reasons (e.g. node_id write), but the channel
+      // must not change. We assert the channel directly rather than summary.refreshed to avoid
+      // coupling to unrelated field-drift behavior.
+      expect(result.nextRepos.repos[0]?.discovery_channel).not.toBe('contrib')
+      expect(result.nextRepos.repos[0]?.discovery_channel).not.toBe('collab')
+    })
   })
 })
 

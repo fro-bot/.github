@@ -81,7 +81,7 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
   const yesterdayUtc = new Date(todayMs - 86_400_000).toISOString().slice(0, 10)
 
   let reposTracked = 0
-  let surveysToday = 0
+  let surveysYesterday = 0
 
   for (const entry of data.repos) {
     // Guard: a null or non-object element is a malformed entry — treat as data error.
@@ -98,14 +98,14 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
       // Count public entries whose last_survey_at (YYYY-MM-DD) equals the prior UTC day.
       // Private repos are excluded — the gateway's public-only intent applies here too.
       if (typeof entry.last_survey_at === 'string' && entry.last_survey_at === yesterdayUtc) {
-        surveysToday++
+        surveysYesterday++
       }
     }
   }
 
   return {
     repos_tracked: reposTracked,
-    surveys_today: surveysToday,
+    surveys_today: surveysYesterday,
     should_post: true, // count_status === 'ok': post every day; suppress only on read error
     count_status: 'ok',
   }
