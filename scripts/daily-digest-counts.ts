@@ -70,8 +70,8 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
 
   for (const entry of data.repos) {
     // Guard: a null or non-object element is a malformed entry — treat as data error.
-    if (entry === null || typeof entry !== 'object') {
-      process.stderr.write('daily-digest-counts: malformed repos[] element (null or non-object)\n')
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      process.stderr.write('daily-digest-counts: malformed repos[] element (null, non-object, or array)\n')
       return errorResult
     }
 

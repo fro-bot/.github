@@ -346,8 +346,11 @@ jobs:
         run: |
           set -euo pipefail
           if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch --no-tags origin data
-            git checkout origin/data -- metadata/
+            overlay_err=$(
+              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
+            ) || {
+              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
+            }
           else
             echo "data branch not yet established; skipping metadata overlay."
           fi

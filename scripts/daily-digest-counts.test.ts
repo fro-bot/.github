@@ -239,6 +239,24 @@ describe('deriveCounts', () => {
     expect(stderrSpy).toHaveBeenCalled()
   })
 
+  it('repos:[[...]] (array element) → count_status:error (not a silent quiet day)', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    // YAML where a repos element is itself an array — typeof [] === 'object' so the
+    // old guard missed this; the Array.isArray() addition closes the gap.
+    const yaml = 'version: 1\nrepos:\n  - - owner: acme\n    - name: alpha\n'
+
+    const result = deriveCounts(yaml, TODAY)
+
+    expect(result).toEqual({
+      repos_tracked: 0,
+      surveys_today: 0,
+      should_post: false,
+      count_status: 'error',
+    })
+    expect(stderrSpy).toHaveBeenCalled()
+  })
+
   // ─── Strengthen missing-private test (full exact result object) ───────────
 
   it('entry missing `private` field — full exact result object', () => {
