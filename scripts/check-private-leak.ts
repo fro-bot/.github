@@ -398,6 +398,23 @@ async function readWorkflowRunContext(
 }
 
 // ---------------------------------------------------------------------------
+// 404-detection helper (exported for unit testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when `error` carries the clear HTTP 404 signal that `gh` emits
+ * for branch/content API calls: `\bHTTP 404\b` in stderr OR `"status":"404"` in stdout.
+ *
+ * Any other error shape (401/403/5xx/network/rate-limit) returns false so the
+ * caller can fail closed.
+ */
+export function isGh404Error(error: unknown): boolean {
+  const stdout = isRecord(error) && typeof error.stdout === 'string' ? error.stdout : ''
+  const stderr = isRecord(error) && typeof error.stderr === 'string' ? error.stderr : ''
+  return /\bHTTP 404\b/.test(stderr) || /"status"\s*:\s*"404"/.test(stdout)
+}
+
+// ---------------------------------------------------------------------------
 // Default seam implementations for main()
 // ---------------------------------------------------------------------------
 
@@ -440,11 +457,7 @@ const defaultDataBranchChecker: DataBranchChecker = (fullName: string): boolean 
     })
     return true
   } catch (error: unknown) {
-    // Inspect captured stdout/stderr for a clear HTTP 404 signal.
-    // `gh` prints `gh: ... (HTTP 404)` to stderr and `{"status":"404"}` to stdout.
-    const stdout = isRecord(error) && typeof error.stdout === 'string' ? error.stdout : ''
-    const stderr = isRecord(error) && typeof error.stderr === 'string' ? error.stderr : ''
-    if (/\bHTTP 404\b/.test(stderr) || /"status"\s*:\s*"404"/.test(stdout)) {
+    if (isGh404Error(error)) {
       return false
     }
     // Any other error (5xx, network, rate-limit, etc.) — re-throw so caller fails closed.
@@ -500,12 +513,7 @@ function fetchPrivateNodeIds(
       {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']},
     ).trim()
   } catch (error: unknown) {
-    // Inspect captured stdout/stderr for a clear HTTP 404 signal.
-    const stdout = isRecord(error) && typeof error.stdout === 'string' ? error.stdout : ''
-    const stderr = isRecord(error) && typeof error.stderr === 'string' ? error.stderr : ''
-    const is404 = /\bHTTP 404\b/.test(stderr) || /"status"\s*:\s*"404"/.test(stdout)
-
-    if (!is404) {
+    if (!isGh404Error(error)) {
       // Step 4: non-404 error (401/403/5xx/network/rate-limit) → fail closed.
       throw error
     }

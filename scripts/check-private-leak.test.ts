@@ -14,6 +14,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   assertCompareNotTruncated,
   checkPrivateLeak,
+  isGh404Error,
   main,
   runPromotionCli,
   runPromotionScan,
@@ -3262,9 +3263,89 @@ describe('main() — fetchPrivateNodeIds: data-absent fallback (Oracle-specified
     }
   })
 
+  // Test 1b (regression lock): fallback warning must NOT leak the repo name or fullName.
+  // Uses 'fro-bot/.github' as the fullName and a private entry with a recognizable owner/name.
+  // Asserts the warning is identifier-free — locks the redaction guarantee.
+  it('Test 1b: fallback warning is identifier-free (does not contain fullName or private repo name)', async () => {
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fallback-1b'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fallback-1b'})})
+
+    // data branch absent → fall back to main which has one private entry with a recognizable name
+    const dataBranchChecker = makeDataBranchChecker({exists: false})
+    // Build a repos.yaml with a private entry whose owner/name is clearly identifiable
+    const privateRepoOwner = 'fro-bot'
+    const privateRepoName = 'super-secret-private-repo'
+    const mainReposYaml = [
+      'version: 1',
+      'repos:',
+      `  - owner: "${privateRepoOwner}"`,
+      `    name: "${privateRepoName}"`,
+      '    private: true',
+      '    node_id: R_redaction_lock',
+      '    added: "2024-01-01"',
+      '    onboarding_status: onboarded',
+      '    last_survey_at: null',
+      '    last_survey_status: null',
+      '    has_fro_bot_workflow: false',
+      '    has_renovate: false',
+      '',
+    ].join('\n')
+    const mainReposYamlReader = makeMainReposYamlReader(mainReposYaml)
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockImplementationOnce(() => {
+        throw make404Error()
+      }) // fetchPrivateNodeIds: data content 404
+      // dataBranchChecker is injectable — no execFileSync call
+      // mainReposYamlReader is injectable — no execFileSync call
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: `${privateRepoOwner}/${privateRepoName}`}}})) // resolver R_redaction_lock
+      .mockReturnValueOnce(makeCompareJson('docs/leak.md')) // fetchDiffForSha: compare JSON
+      .mockReturnValueOnce(makeDiff('docs/leak.md', [`See ${privateRepoOwner}/${privateRepoName} for details.`])) // fetchDiffForSha: raw diff
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #then: gate FAILS — leak detected via main fallback
+      await expect(
+        main(makeWorkflowRunReader(eventJson), prApiResolver, dataBranchChecker, mainReposYamlReader),
+      ).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+
+      // #then: fallback warning was emitted
+      const stderrText = stderrOutput.join('')
+      expect(stderrText).toContain('data branch absent')
+
+      // #then: warning is identifier-free — does NOT contain the private repo name
+      expect(stderrText).not.toContain(`${privateRepoOwner}/${privateRepoName}`)
+      // #then: warning does NOT contain the fullName ('fro-bot/.github')
+      expect(stderrText).not.toContain('fro-bot/.github')
+      // #then: warning does NOT contain the private repo owner alone
+      expect(stderrText).not.toContain(privateRepoName)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
   // Test 6: Race: first content 404, ref exists, retry SUCCEEDS ⇒ uses data node_ids.
   it('Test 6: data 404 + branch exists + retry succeeds → uses data node_ids (race win)', async () => {
     const eventJson = makeWorkflowRunEvent({headSha: 'sha-fallback-6'})
+
     const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fallback-6'})})
 
     // data branch EXISTS → retry succeeds with data content
@@ -3312,5 +3393,57 @@ describe('main() — fetchPrivateNodeIds: data-absent fallback (Oracle-specified
       delete process.env.FRO_BOT_POLL_PAT
       mockExecFileSync.mockReset()
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isGh404Error — direct unit tests for 404-detection regex logic
+// ---------------------------------------------------------------------------
+
+describe('isGh404Error()', () => {
+  it('detects HTTP 404 via stderr containing "HTTP 404"', () => {
+    const error = Object.assign(new Error('gh: Not Found (HTTP 404)'), {
+      stderr: 'gh: Not Found (HTTP 404)',
+      stdout: '',
+    })
+    expect(isGh404Error(error)).toBe(true)
+  })
+
+  it('detects HTTP 404 via stdout containing "status":"404"', () => {
+    const error = Object.assign(new Error('API error'), {
+      stderr: '',
+      stdout: '{"status":"404","message":"Not Found"}',
+    })
+    expect(isGh404Error(error)).toBe(true)
+  })
+
+  it('does NOT detect 404 for generic "Not Found" without "HTTP 404" in stderr', () => {
+    // Must not false-positive on a plain "Not Found" message that lacks the HTTP status token
+    const error = Object.assign(new Error('Not Found'), {
+      stderr: 'Not Found',
+      stdout: '{"message":"Not Found"}',
+    })
+    expect(isGh404Error(error)).toBe(false)
+  })
+
+  it('does NOT detect 404 for HTTP 403 (Forbidden)', () => {
+    const error = Object.assign(new Error('gh: Forbidden (HTTP 403)'), {
+      stderr: 'gh: Forbidden (HTTP 403)',
+      stdout: '{"status":"403"}',
+    })
+    expect(isGh404Error(error)).toBe(false)
+  })
+
+  it('does NOT detect 404 for HTTP 500 (Internal Server Error)', () => {
+    const error = Object.assign(new Error('gh: Internal Server Error (HTTP 500)'), {
+      stderr: 'gh: Internal Server Error (HTTP 500)',
+      stdout: '{"status":"500"}',
+    })
+    expect(isGh404Error(error)).toBe(false)
+  })
+
+  it('does NOT detect 404 when error has no stdout/stderr properties', () => {
+    const error = new Error('network timeout')
+    expect(isGh404Error(error)).toBe(false)
   })
 })
