@@ -1854,29 +1854,30 @@ Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wik
 
 Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
 
-## [2026-06-09 09:00] ingest | marcusrbrown/systematic
+## [2026-06-09 12:00] ingest | marcusrbrown/tokentoilet
 
-Incremental re-survey of `marcusrbrown/systematic` (HEAD `4d2c123`, 2026-06-09). Updated `marcusrbrown--systematic.md` and `knowledge/index.md`. No new topic or entity pages warranted — existing coverage is sufficient.
+Survey of `marcusrbrown/tokentoilet` (SHA `76d543e`). Updated existing repo page `marcusrbrown--tokentoilet.md`. Updated `index.md` entry. This is the 7th survey of this repo.
 
-Key delta from prior survey (SHA `9b75707`, 2026-05-28, v2.24.0):
+Key deltas since last survey (2026-05-28, SHA `db6dbcc`):
 
-- **Version**: v2.24.0 → v2.31.0 (~86 commits, 8 releases in 12 days)
-- **Skills**: 47 → 49 (+`orchestrating-subagents` v2.28.0 #491; `argument-hint` enforcement on `ce:compound-refresh` v2.31.0 #505). Count confirmed from directory listing.
-- **Agent runtime**: `fro-bot/agent@v0.45.0` → `v0.59.0` (SHA `feb5365`). 14 version bumps since last survey including 3 security hardening fixes in v0.55.6.
-- **Agent frontmatter hardening** (v2.27.0–v2.29.0): all 51 agents now declare explicit `mode: subagent` (#488) and explicit `temperature:` (#495). Content-integrity gates enforce both. Zero-behavior-change proofs via converter-equivalence tests.
-- **New skills content**: `ce:brainstorm` Phase 2.5 Synthesis Summary; `ce:plan` Anti-Expansion step 3.7 + dual scope paths; `ce:review` Stage 5b independent finding validation (#485).
-- **Portable install path** (v2.30.0): `npx skills add marcusrbrown/systematic` documented as harness-agnostic install alongside OpenCode plugin. Every non-deprecated skill reference page gets a copyable `npx skills add --skill <name>` command.
-- **Docs site**: homepage redesigned with custom hero, live stats banner (walks skills/agents/registry at build time), Open Graph/JSON-LD SEO, Umami analytics wired end-to-end in CI Actions step (#463, #446, v2.25.0).
-- **Content-integrity**: solution-doc YAML unquoted-comment detection; `checkAgentMode` and `checkAgentTemperature` gates; `argument-hint` guard (skills referencing `$ARGUMENTS` outside fenced blocks must declare `argument-hint`).
-- **Release dispatch**: confirmation timeout changed from exit 1 to `::warning::` + exit 0 (#504); poll budget bumped 90s → 180s.
-- **OpenCode dep**: v1.15.10 → v1.16.2 (#513).
-- **Open issues**: unchanged at 3 (Weekly Maintenance #157, Daily Autohealing #153, Dependency Dashboard #15). 0 open PRs.
-- **`npx skills` footnote**: The `orchestrating-swarms` and `claude-permissions-optimizer` skills remain in the deprecation surface from v2.18+ but are still bundled.
+- **Fro Bot agent: v0.45.0 → v0.59.0** — 14 Renovate-merged releases in 12 days, the fastest agent version churn in the portfolio. SHA updated to `feb5365dca6dc56752e1258d1ca66afa7b035e04`.
+- **pnpm 11.3.0 → 11.5.2** — Non-major bump via Renovate batch update.
+- **Next.js 16.2.6 → 16.2.7, React 19.2.6 → 19.2.7** — Patch increments landed cleanly.
+- **vite 8.0.14 → 8.0.16, vitest 4.1.7 → 4.1.8, eslint 10.4.0 → 10.4.1, Storybook 10.4.1 → 10.4.2** — Non-major tooling bumps.
+- **Renovate preset bumped: #5.2.0 → #5.2.1**
+- **bfra-me/.github reusable workflow: → v4.16.24** — Both renovate.yaml and update-repo-settings.yaml updated.
+- **PR #1033 (blocking):** `@bfra.me/eslint-config` v0.51.1 Renovate PR open since 2026-05-16 with lint failures (TypeScript type errors in test files). Only open PR as of this survey.
+- **Design system / Web3 validation failures stable:** 5 missing component test/story files, 2 Web3 validation issues — unchanged across 12+ daily autohealing reports. Human decision needed.
+- **Abandoned deps accumulating:** 6 packages flagged (led by `crypto-js` last updated 2023-10-24). `@metamask/sdk` and `@metamask/sdk-communication-layer` deprecated with no replacement PRs.
+- **`copilot-instructions.md` added to `.github/`** — GitHub Copilot coding agent instructions now present alongside AGENTS.md and Fro Bot workflow.
+- **Renovate preset updated:** `marcusrbrown/renovate-config` bumped to `5.2.1` in `.github/renovate.json5`.
 
-Sources: https://github.com/marcusrbrown/systematic (SHA 4d2c123f7f5568bba66433eb2a4e51c5ce42985c)
+No new topic, entity, or comparison pages warranted by this survey — all observations are updates to the existing repo page.
 
-## [2026-06-09 15:43] ingest | repo:marcusrbrown/systematic
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 76d543e213abdc2823c1e0c2a7b0fdcdf7bc9727)
 
-Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+## [2026-06-09 15:44] ingest | repo:marcusrbrown/tokentoilet
 
-Sources: https://github.com/marcusrbrown/systematic
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
