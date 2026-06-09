@@ -652,7 +652,8 @@ describe('runCli', () => {
     const result = await runCli(
       {
         EVENT_TYPE: 'daily_digest',
-        EVENT_CONTEXT_JSON: '{"repos_tracked":3,"surveys_today":2,"report_url":"https://github.com/fro-bot/.github/issues/1"}',
+        EVENT_CONTEXT_JSON:
+          '{"repos_tracked":3,"surveys_today":2,"report_url":"https://github.com/fro-bot/.github/issues/1"}',
       },
       {announceImpl: spy as unknown as typeof announce},
     )

@@ -65,27 +65,27 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
     return errorResult
   }
 
-  let repos_tracked = 0
-  let surveys_today = 0
+  let reposTracked = 0
+  let surveysToday = 0
 
   for (const entry of data.repos) {
     // Only entries with explicit `private: false` count as public.
     // Entries missing `private` or with `private: true` are NOT counted.
     if (entry.private === false) {
-      repos_tracked++
+      reposTracked++
 
       // Count public entries whose last_survey_at (YYYY-MM-DD) equals today in UTC.
       // Private repos are excluded — the gateway's public-only intent applies here too.
       if (typeof entry.last_survey_at === 'string' && entry.last_survey_at === todayUtc) {
-        surveys_today++
+        surveysToday++
       }
     }
   }
 
   return {
-    repos_tracked,
-    surveys_today,
-    should_post: surveys_today > 0,
+    repos_tracked: reposTracked,
+    surveys_today: surveysToday,
+    should_post: surveysToday > 0,
     count_status: 'ok',
   }
 }
@@ -98,10 +98,7 @@ async function main(): Promise<void> {
 
   // Accept today's UTC date as second arg or TODAY_UTC env var (for testing/CI override).
   // Default: derive from the current UTC clock.
-  const todayUtc =
-    process.argv[3] ??
-    process.env.TODAY_UTC ??
-    new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+  const todayUtc = process.argv[3] ?? process.env.TODAY_UTC ?? new Date().toISOString().slice(0, 10) // YYYY-MM-DD
 
   let yamlContent: string
   try {
