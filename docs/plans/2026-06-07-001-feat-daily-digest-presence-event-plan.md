@@ -4,7 +4,7 @@ type: feat
 status: active
 date: 2026-06-07
 origin: docs/brainstorms/2026-06-04-daily-digest-presence-event-requirements.md
-deepened: 2026-06-07
+deepened: 2026-06-09
 ---
 
 # Daily digest presence event (control-plane side)
@@ -121,8 +121,14 @@ cron heartbeat (see origin: `docs/brainstorms/2026-06-04-daily-digest-presence-e
 - **Suppress-on-quiet gate is `surveys_today > 0`** for v1 (invitations omitted). On a quiet day the
   announce step is skipped entirely; the oversight issue is still created.
 - **Report URL via deterministic `gh issue list`** after the agent step — match the agent's
-  deterministic title (`Daily Fro Bot Report — YYYY-MM-DD (UTC)`) for today's UTC date. The agent
+  **exact** title `Daily Fro Bot Report — <today-UTC> (UTC)` (em-dash `—`, U+2014). The agent
   creates the issue mid-run; the workflow rediscovers it rather than parsing agent output.
+  **Hazard (verified in live data):** two title families coexist on the repo — `Daily Fro Bot
+  Report — …` (current) and the older `Daily Autohealing Report — …` / `Daily Org Oversight
+  Report — …`. A loose/substring match could grab the wrong issue. Discovery MUST anchor on the
+  full exact title for today's UTC date and select the single newest open match (`--search` by
+  title is not exact, so post-filter the JSON titles for byte-equality), then shape-validate the
+  resulting URL before signing. On zero or multiple matches → skip the post (fail-soft).
 - **Ship dormant via a dedicated `DAILY_DIGEST_ENABLED` step gate**, NOT the global
   `GATEWAY_ANNOUNCE_DISABLED` kill switch. The announce step's `if:` requires `vars.DAILY_DIGEST_ENABLED`
   to be truthy; it is unset at merge, so the step is skipped entirely (never even calls the signer)
@@ -258,9 +264,13 @@ the `daily_digest` (shipped dormant), without touching the legacy webhook step.
   **validate** the result is an `https://github.com/<owner>/<repo>/issues/<number>` URL for the
   expected repo before it is used; on no-match or shape-mismatch, skip the post (fail-soft).
 - Add a step that runs `scripts/daily-digest-counts.ts`, then a `📣 Announce daily digest to gateway`
-  step that builds `EVENT_CONTEXT_JSON` (`repos_tracked`, `surveys_today`, validated `report_url`) via
-  `jq -nc` and runs `node scripts/gateway-announce.ts` with `EVENT_TYPE=daily_digest` and the
-  `GATEWAY_*` env (mirror the env block in the two existing announce steps).
+  step that builds `EVENT_CONTEXT_JSON` and runs `node scripts/gateway-announce.ts` with
+  `EVENT_TYPE=daily_digest` and the `GATEWAY_*` env (mirror the env block in the two existing announce
+  steps). **Build the context with `jq -nc --argjson repos_tracked "$REPOS_TRACKED" --argjson
+  surveys_today "$SURVEYS_TODAY" --arg report_url "$REPORT_URL" '{repos_tracked:$repos_tracked,
+  surveys_today:$surveys_today, report_url:$report_url}'`** — the two counts MUST be `--argjson`
+  (JSON numbers) to satisfy the gateway's strict `Schema.Number`; the URL is `--arg` (string). This
+  mirrors the verified `--argjson pages` pattern at `survey-repo.yaml:350`.
 - **Dormancy is a dedicated step gate, not the global kill switch.** Gate the announce step's `if:` on
   `github.event_name == 'schedule'` **and** `should_post == true` **and** `vars.DAILY_DIGEST_ENABLED`
   truthy. `DAILY_DIGEST_ENABLED` is unset at merge, so the step is skipped entirely and never calls
@@ -332,7 +342,8 @@ step is unchanged.
 | Report-URL discovery step has no token | Set `GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}` on the step (the action's `with: github-token` does not reach sibling shell steps). |
 | Untrusted `report_url` flows into the signed, gateway-rendered message | Validate the discovered URL is an `https://github.com/<owner>/<repo>/issues/<n>` shape for the expected repo before signing; skip on mismatch. |
 | Broken `data` overlay silently looks like a quiet day | Count script emits `count_status:'error'` distinct from `should_post:false`; the workflow surfaces an error as a step warning. |
-| Context shape drifts from the gateway-side schema | Pin the exact `{repos_tracked, surveys_today, report_url}` shape against `fro-bot/agent` #765 before enabling. |
+| Context shape drifts from the gateway-side schema | Pin the exact `{repos_tracked, surveys_today, report_url}` shape against `fro-bot/agent` #765 before enabling. **Verified 2026-06-09:** gateway `DailyDigest` schema (`packages/gateway/src/http/announce-schema.ts`) requires exactly these three fields; excess props are stripped (Effect `decodeUnknownEither`), so extras are safe but **types are strict**. |
+| Counts emitted as JSON **strings** → gateway `Schema.Number` rejects with `malformed_body` (400) post-go-live | Build `EVENT_CONTEXT_JSON` with `jq --argjson` for `repos_tracked`/`surveys_today` (numbers) and `--arg` for `report_url` (string) — mirroring the verified `--argjson pages` precedent in `survey-repo.yaml`. A quoted `"3"` count would fail the strict schema. |
 | Report URL not found (agent issue-title format changes) | Discovery step tolerates "not found" and skips the post (fail-soft), never fails the run. |
 | Metadata overlay adds run cost / `data` branch absent | Reuse the precedented, guarded overlay from `reconcile-repos.yaml`; tolerate missing `data`. |
 | Counts wrong at UTC date boundary | UTC-explicit date logic, pinned with a fixed-clock test (Unit 2). |

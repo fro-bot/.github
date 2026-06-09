@@ -162,6 +162,31 @@ describe('announce', () => {
     expect(body.context).toEqual(ctx)
   })
 
+  it('payload shape (daily_digest): event_type is daily_digest, rendered_text null, context verbatim', async () => {
+    const fetchImpl = makeOkFetch(200)
+    const ctx = {repos_tracked: 3, surveys_today: 2, report_url: 'https://github.com/fro-bot/.github/issues/1'}
+
+    const result = await announce({
+      eventType: 'daily_digest',
+      context: ctx,
+      now: () => TEST_TS,
+      secret: TEST_SECRET,
+      url: TEST_URL,
+      fetchImpl,
+      sleep: noSleep,
+    })
+
+    expect(result).toEqual({posted: true, status: 200})
+
+    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+
+    expect(body.v).toBe(1)
+    expect(body.event_type).toBe('daily_digest')
+    expect(body.rendered_text).toBeNull()
+    expect(body.context).toEqual(ctx)
+  })
+
   // ─── 503 then 200 → one retry ─────────────────────────────────────────────
 
   it('503 then 200: retries once, sleep called exactly once, returns posted:true', async () => {
@@ -493,6 +518,7 @@ describe('announce', () => {
   it('isEventType: accepts valid event types', () => {
     expect(isEventType('survey_completed')).toBe(true)
     expect(isEventType('invitation_accepted')).toBe(true)
+    expect(isEventType('daily_digest')).toBe(true)
   })
 
   it('isEventType: rejects invalid event types', () => {
@@ -618,6 +644,24 @@ describe('runCli', () => {
 
     expect(result).toEqual({posted: false, failure: 'invalid-event-type'})
     expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('daily_digest EVENT_TYPE: accepted (not invalid-event-type), announceImpl called with parsed context', async () => {
+    const spy = vi.fn(async () => ({posted: true, status: 200}) as AnnounceResult)
+
+    const result = await runCli(
+      {
+        EVENT_TYPE: 'daily_digest',
+        EVENT_CONTEXT_JSON: '{"repos_tracked":3,"surveys_today":2,"report_url":"https://github.com/fro-bot/.github/issues/1"}',
+      },
+      {announceImpl: spy as unknown as typeof announce},
+    )
+
+    expect(result).toEqual({posted: true, status: 200})
+    expect(spy).toHaveBeenCalledWith({
+      eventType: 'daily_digest',
+      context: {repos_tracked: 3, surveys_today: 2, report_url: 'https://github.com/fro-bot/.github/issues/1'},
+    })
   })
 
   // ─── EVENT_CONTEXT_JSON validation ───────────────────────────────────────
