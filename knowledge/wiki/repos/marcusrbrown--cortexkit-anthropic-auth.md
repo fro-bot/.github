@@ -2,12 +2,15 @@
 type: repo
 title: marcusrbrown/cortexkit_anthropic-auth
 created: 2026-05-28
-updated: 2026-05-28
+updated: 2026-06-09
 sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
     sha: 517d38596432429a8fc5f78612edc80a1c3f3dc6
     accessed: 2026-05-28
-tags: [opencode, pi, anthropic, oauth, claude, bun, typescript, monorepo, biome, fork, relay, cloudflare-worker, mitmproxy]
+  - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+    sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
+    accessed: 2026-06-09
+tags: [opencode, pi, anthropic, oauth, claude, bun, typescript, monorepo, biome, fork, relay, cloudflare-worker, mitmproxy, fro-bot]
 related: [marcusrbrown--opencode-copilot-delegate, marcusrbrown--systematic, marcusrbrown--dotfiles]
 ---
 
@@ -19,15 +22,20 @@ Fork of `cortexkit/anthropic-auth` adding Claude Pro/Max OAuth, fallback account
 
 This is a Bun workspace monorepo with three packages: a shared core, an OpenCode plugin, and a Pi provider extension. The OpenCode plugin intercepts the final Anthropic request and rewrites it into the shape Anthropic's Claude Pro/Max OAuth path expects; the Pi package registers a CortexKit provider override under Pi's built-in `anthropic` provider ID. Both integrations share OAuth, fallback-account, quota, cache, relay, dump, SSE, and request-signing logic through the core package.
 
-**Fork status (2026-05-28):**
+**Fork status (2026-06-09, SHA `99fdbe9`):**
 
 - Default branch is `marcusrbrown/main` (not `main`) — fork-specific so upstream `main` can be tracked cleanly.
 - Fork of `cortexkit/anthropic-auth`. Public, MIT-licensed, 1 star, 0 forks, issues enabled, no GitHub wiki, no discussions.
-- Two packages published under `@marcusrbrown/*` at `1.2.2-mb.2`:
+- Two packages published under `@marcusrbrown/*` at `1.2.5-mb.3`:
   - `@marcusrbrown/anthropic-auth-core` (shared)
   - `@marcusrbrown/opencode-anthropic-auth` (OpenCode plugin)
-- Pi package `@cortexkit/pi-anthropic-auth` is `private: true` in this fork — explicitly excluded from publish jobs.
-- Recommended install pin: `@marcusrbrown/opencode-anthropic-auth@1.2.2-mb.2`.
+- Pi package `@cortexkit/pi-anthropic-auth` is `private: true` in this fork at upstream version `1.2.5` — explicitly excluded from publish jobs.
+- Recommended install pin: `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3`.
+- Fro Bot workflow active since the `1.2.5-mb.3` release cycle — see [Fro Bot Status](#fro-bot-status).
+
+**Fork status (2026-05-28, SHA `517d385`):** _(prior survey — preserved for delta tracking)_
+
+- Published versions at `1.2.2-mb.2`. No Fro Bot workflow present at that time.
 
 ## Why the Fork Exists
 
@@ -50,7 +58,7 @@ This pattern — fork → republish under personal scope → re-target internal 
 | Test Runner | `bun test` for unit and e2e |
 | License | MIT |
 | Default Branch | `marcusrbrown/main` |
-| Disk Usage | 387 KB |
+| Disk Usage | 520 KB (387 KB at 2026-05-28) |
 | TypeScript | 6.0.3 |
 
 ### Mise Tooling
@@ -61,9 +69,9 @@ This pattern — fork → republish under personal scope → re-target internal 
 
 | Package | Scope | Version | Purpose |
 |---------|-------|---------|---------|
-| `@marcusrbrown/anthropic-auth-core` | published, fork | `1.2.2-mb.2` | Shared OAuth, account, quota, cache, relay, dump, SSE, request-signing logic. Single runtime dep: `xxhash-wasm` (for body-derived `cch` signing). |
-| `@marcusrbrown/opencode-anthropic-auth` | published, fork | `1.2.2-mb.2` | OpenCode plugin + CLI (`opencode-anthropic-auth` bin). Peer dep on `@opencode-ai/plugin`. Built with `bun build --target node --format esm --splitting --external @opencode-ai/plugin --minify` plus `tsc --emitDeclarationOnly`. Engines: `bun: 1.3.14`. |
-| `@cortexkit/pi-anthropic-auth` | private in fork | `1.2.2` (unpublished here) | Pi extension declared via `pi.extensions` package-manifest field; registers a CortexKit Anthropic provider under Pi's `anthropic` provider ID. Depends on the fork's `@marcusrbrown/anthropic-auth-core`. Peer deps on three `@earendil-works/pi-*` packages (`pi-ai`, `pi-coding-agent`, `pi-tui`). |
+| `@marcusrbrown/anthropic-auth-core` | published, fork | `1.2.5-mb.3` (was `1.2.2-mb.2`) | Shared OAuth, account, quota, cache, relay, dump, SSE, request-signing logic. Single runtime dep: `xxhash-wasm` (for body-derived `cch` signing). |
+| `@marcusrbrown/opencode-anthropic-auth` | published, fork | `1.2.5-mb.3` (was `1.2.2-mb.2`) | OpenCode plugin + CLI (`opencode-anthropic-auth` bin). Peer dep on `@opencode-ai/plugin` (devDep pinned at `1.15.5`). Built with `bun build --target node --format esm --splitting --external @opencode-ai/plugin --minify` plus `tsc --emitDeclarationOnly`. Engines: `bun: 1.3.14`. |
+| `@cortexkit/pi-anthropic-auth` | private in fork | `1.2.5` (unpublished here, was `1.2.2`) | Pi extension declared via `pi.extensions` package-manifest field; registers a CortexKit Anthropic provider under Pi's `anthropic` provider ID. Depends on the fork's `@marcusrbrown/anthropic-auth-core`. Peer deps on three `@earendil-works/pi-*` packages (`pi-ai`, `pi-coding-agent`, `pi-tui`). |
 | `packages/e2e-tests/` | internal | n/a | OpenCode end-to-end harness invoked via root `test:e2e` script; gated behind a core build. |
 
 ## Architecture
@@ -98,12 +106,17 @@ From the README's "What CortexKit adds" matrix:
 
 ```
 .
+├── .agents/
+│   └── skills/
+│       └── anthropic-auth-upstream-release/  # bundled Fro Bot skill for upstream sync / fork releases
+│           └── SKILL.md
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
 │   ├── instructions/
 │   ├── workflows/
 │   │   ├── ci.yml
 │   │   ├── copilot-setup-steps.yml
+│   │   ├── fro-bot.yaml           # added between 2026-05-28 and 2026-05-31
 │   │   └── release.yaml
 │   ├── copilot-instructions.md
 │   └── dependabot.yml
@@ -119,6 +132,7 @@ From the README's "What CortexKit adds" matrix:
 ├── images/
 ├── scripts/
 │   ├── analyze-cache-usage.mjs
+│   ├── analyze-claude-dumps.mjs   # added since 2026-05-28 survey
 │   ├── capture-with-mitmproxy.sh
 │   ├── dev.ts / dev-clean.ts
 │   ├── extract-system-prompt.ts
@@ -187,9 +201,49 @@ No Renovate config detected at the root — the repo uses Dependabot, not the [[
 
 ## Fro Bot Status
 
-**No Fro Bot workflow detected.** The only workflows are `ci.yml`, `copilot-setup-steps.yml`, and `release.yaml`. No `fro-bot.yaml`, no maintenance/autoheal job, no scheduled wiki update.
+**Active.** `fro-bot.yaml` landed between the 2026-05-28 survey and the 2026-06-09 re-survey (last push `2026-05-31T04:03:34Z`). Agent version: `v0.45.0` (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`).
 
-Follow-up: a separate draft PR can propose a Fro Bot workflow tuned to this repo's profile (release-sensitive, OAuth/PII-sensitive captures, dual-package publish). The release contract above means the workflow must avoid touching version-sync, the OIDC publish path, or any release-tagging — its initial scope should be code review and triage, not autoheal.
+### Workflow profile
+
+Three-mode single-file workflow:
+
+| Trigger | Mode | Prompt |
+|---------|------|--------|
+| `pull_request` events (non-bot, non-fork) | review | `PR_REVIEW_PROMPT` |
+| `schedule` — Monday 09:00 UTC | maintenance | `MAINTENANCE_PROMPT` |
+| `schedule` — daily 03:30 UTC | autoheal | `AUTOHEAL_PROMPT` |
+| `workflow_dispatch mode=review` | review | `PR_REVIEW_PROMPT` |
+| `workflow_dispatch mode=maintenance` | maintenance | `MAINTENANCE_PROMPT` |
+| `workflow_dispatch mode=autoheal` | autoheal | `AUTOHEAL_PROMPT` |
+| `workflow_dispatch prompt=<non-empty>` | custom | verbatim custom prompt |
+| issues / comments / discussions / PR review events | interaction | `GENERAL_INTERACTION_PROMPT` |
+
+PR review trusted actors (same list as autoheal fixable-PR check): `marcusrbrown`, `app/copilot-swe-agent`, `dependabot[bot]`, `renovate[bot]`, `fro-bot`, `mrbro-bot[bot]`.
+
+### Release constraints in workflow
+
+The workflow bakes release invariants directly into env-var prompt variables. Every mode prompt references them:
+
+- Fork publishes only `@marcusrbrown/anthropic-auth-core` and `@marcusrbrown/opencode-anthropic-auth`.
+- Pi stays private/unpublished in this fork.
+- npm Trusted Publishing/OIDC/provenance only; `npm publish --tag latest`; no `NPM_DIST_TAG_TOKEN`; no `NPM_TOKEN` fallback.
+- No `environment: npm-publish` unless both the GitHub environment and npm Trusted Publisher configs are confirmed present.
+
+### Autoheal categories
+
+The `AUTOHEAL_PROMPT` defines five categories: errored PRs, code quality and repo hygiene, release and package health, developer experience, and cross-project intelligence. Cross-project intelligence is inbound-only (read, never write to other repos): `fro-bot/agent`, `marcusrbrown/opencode-copilot-delegate`, `marcusrbrown/systematic`, `anomalyco/opencode`, `cortexkit/opencode-magic-context`.
+
+### Perpetual issue management
+
+Both maintenance and autoheal modes manage a single perpetual open issue titled "Daily Autohealing Report" — prepend-by-section, never close, archive oldest sections when body exceeds 50 000 characters.
+
+Issue #11 ("Daily Autohealing Report") created under `marcusrbrown`'s account is the active perpetual issue as of 2026-06-09.
+
+### Bundled skill
+
+`.agents/skills/anthropic-auth-upstream-release/SKILL.md` — teaches Fro Bot (and any OpenCode agent with `.agents/` skill discovery) how to: sync from upstream `cortexkit/anthropic-auth`, resolve fork conflicts, cut `vX.Y.Z-mb.N` releases, and validate npm metadata. Scope is explicit: upstream sync + fork release only; not for ordinary feature work.
+
+_Prior gap note (2026-05-28): No Fro Bot workflow was present at that time. The gap is now closed._
 
 ## Operational Notes
 
@@ -198,17 +252,21 @@ Follow-up: a separate draft PR can propose a Fro Bot workflow tuned to this repo
 - **Sidecar override env vars.** `OPENCODE_ANTHROPIC_AUTH_FILE` (OpenCode), `PI_ANTHROPIC_AUTH_FILE` and `PI_AGENT_DIR` (Pi). Both default to user config dirs, never `/etc` or anything system-wide.
 - **OAuth refresh path.** As of `1.2.1`, tokens refresh through `https://api.anthropic.com/v1/oauth/token` (live-smoke-tested CLIProxyAPI path) after `platform.claude.com` repeatedly returned OAuth `429` during proactive refresh. Useful prior art for anyone else implementing Anthropic OAuth refresh.
 - **OpenCode plugin singleton + lock semantics.** `1.2.2` adds jitter to background refresh timers and hardens cross-process refresh locks so a process can't steal a lock while another is still initializing it — preventing duplicate refreshes that burn a rotated refresh token and leave the loser with `invalid_grant`. This is exactly the kind of subtle multi-process pitfall worth carrying into [[opencode-plugins]].
+- **Fallback-account quota snapshot reuse.** `1.2.5` preserves cached fallback-account quota snapshots when transient quota probes are rate limited, and clears stale quota errors during explicit checks — preventing a transient `429` from hiding an otherwise viable fallback account.
+- **Fallback OAuth refresh serialization.** `1.2.4` serializes fallback-account OAuth refreshes across OpenCode processes, closing the same rotating-token invalidation window for fallback accounts that `1.2.2` closed for the main account.
+- **Dump improvements.** `1.2.5-mb.2` added direct Claude request dumping; `1.2.5-mb.3` added `analyze-claude-dumps.mjs` with volatile `cch` field filtering so dump analysis diffs are stable across requests.
+- **OAuth token refresh realignment.** `1.2.3` aligned the Claude OAuth token refresh with the live-tested PR #40 request shape (`platform.claude.com/v1/oauth/token`, JSON payloads, `axios/1.13.6` UA), and added `Retry-After`-aware backoff. Upstream contributor: @iceteaSA.
 
 ## Cross-Cutting References
 
 - [[opencode-plugins]] — Plugin architecture, Bun build target, peer-dep handling, plugin singleton patterns. This repo is an additional data point for the singleton + cross-process lock category.
 - [[marcusrbrown--opencode-copilot-delegate]] — Another OpenCode plugin in Marcus's stack; same Biome 2.4.15 + Bun 1.3.14 toolchain, comparable peer-dep and build-target discipline.
 - [[marcusrbrown--systematic]] — Sibling OpenCode plugin (skills/agents framework).
-- [[marcusrbrown--dotfiles]] — Consumes OpenCode plugins via OpenCode config; relevant pinning target for `@marcusrbrown/opencode-anthropic-auth@1.2.2-mb.2`.
+- [[marcusrbrown--dotfiles]] — Consumes OpenCode plugins via OpenCode config; pinned at `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3` as of the 2026-06-06 dotfiles survey.
 - [[github-actions-ci]] — General CI patterns; this repo contributes the tag-commit integrity check pattern and the "no manifest mutation in CI" release rule.
 
 ## Open Questions / Gaps
 
-- Is the upstream `cortexkit/anthropic-auth` still actively maintained? The fork's release notes carry forward upstream changelog entries through `1.2.2`, suggesting recent sync, but no explicit upstream-tracking workflow was observed.
+- Is the upstream `cortexkit/anthropic-auth` still actively maintained? The fork's CHANGELOG carried forward upstream entries through `1.2.5` as of 2026-05-31, and the commit history shows a deliberate `chore(sync): merge upstream v1.2.5` on 2026-05-28. The `.agents/skills/anthropic-auth-upstream-release/` skill codifies the sync/release procedure — suggesting an explicit, maintained upstream-tracking practice, though no automated tracking workflow is present.
 - The `docs/brainstorms/` and `docs/plans/` directories exist but were not read (per the survey constraint to limit reads to listings, README, manifests, workflows). Future ingest could enumerate plan filenames to map roadmap scope.
 - `e2e-tests` package internals (test count, framework) were not read.

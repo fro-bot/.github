@@ -1821,27 +1821,35 @@ Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
 
-## [2026-06-09 00:00] ingest | marcusrbrown/infra
+## [2026-06-09 00:00] ingest | marcusrbrown/cortexkit_anthropic-auth
 
-Incremental re-survey of `marcusrbrown/infra` (SHA `9ce50f4`, up from `2f9bafd` on 2026-05-27). Updated repo page `marcusrbrown--infra.md` and `index.md`. No new topic/entity/comparison pages created — Umami analytics is a self-contained addition that doesn't yet cross-cut other managed repos.
+Incremental re-survey of `marcusrbrown/cortexkit_anthropic-auth` (SHA `99fdbe9`, 2026-05-31). Updated `marcusrbrown--cortexkit-anthropic-auth.md`, `opencode-plugins.md` topic page, and `index.md`.
 
-Delta from prior survey (SHA `2f9bafd`, 2026-05-27):
+Key delta from prior survey (SHA `517d385`, 2026-05-28):
 
-- **New app: Umami analytics** (`apps/umami/`) — self-hosted Umami 3.1.0 at `metrics.fro.bot`. Three-service Docker Compose stack (umami + postgres 15-alpine + caddy 2.11.3-alpine). `deploy-umami.yaml` workflow added (13 workflows total). New `umami` GitHub Environment. New CLI command group (`infra umami status/deploy/host/logs`). New secrets: `UMAMI_SSH_KEY`, `UMAMI_DOMAIN`, `UMAMI_APP_SECRET`, `UMAMI_DB_PASSWORD`, `UMAMI_ADMIN_PASSWORD`.
-- **CLI version:** v0.7.0 → v0.9.17.
-- **Fro Bot agent:** v0.44.3 → v0.59.0 (SHA `feb5365`); rapid series of bumps via Renovate.
-- **Gateway daemon upstream:** v0.44.2 → v0.57.0 (#466, `daily_digest` presence event support). Go-live verification runbook added (#474).
-- **CLIProxyAPI:** v6.10.9 → v7.1.56 (major version boundary crossed). Intermediate v7.1.54/55 reverted (#463) for health check regression; v7.1.56 is stable.
-- **CLIProxy deploy healthcheck:** moved from CLIProxyAPI endpoint to Caddy endpoint for Debian-image compatibility (#469).
-- **Gateway secrets contract expanded:** Added `GH_APP_ID`, `GH_APP_PRIVATE_KEY`, `WORKSPACE_OPENCODE_TOKEN`, `WORKSPACE_OPENCODE_AUTH`, `WORKSPACE_OPENCODE_MODEL`, `WORKSPACE_OPENCODE_CONFIG`, `GATEWAY_TRIGGER_ROLE_ID`, optional `GATEWAY_WEBHOOK_SECRET`, `GATEWAY_PRESENCE_CHANNEL_ID`. Removed `OMO_PROVIDERS` from repo secrets.
-- **Provisioning security fix (#453):** Management key written to 0600 file instead of stdout during cliproxy provisioning.
-- **Renovate config:** `marcusrbrown/renovate-config#5.2.0` → `#5.2.1`.
-- **Umami topic/entity page:** Not created — single-repo footprint; will create when other repos in the ecosystem adopt Umami or reference it.
+- **Fro Bot workflow landed** — `fro-bot.yaml` present, agent v0.45.0 (SHA `8aac0fc`). This resolves the "no Fro Bot workflow" gap flagged in the prior survey. Three-mode: review/maintenance/autoheal. Weekly maintenance Monday 09:00 UTC, daily autoheal 03:30 UTC. Release invariants are baked directly into every prompt env-var, covering both the constraint list and the "never break npm Trusted Publishing/OIDC" rule.
+- **Version bumped**: `1.2.2-mb.2` → `1.2.5-mb.3` for both `@marcusrbrown/anthropic-auth-core` and `@marcusrbrown/opencode-anthropic-auth`. Pi stays private at upstream `1.2.5`.
+- **Bundled skill added**: `.agents/skills/anthropic-auth-upstream-release/SKILL.md` — covers upstream sync and fork release procedure. First repo-local operational skill observed in the Marcus ecosystem.
+- **New script**: `scripts/analyze-claude-dumps.mjs` with volatile-field (`cch`) filtering.
+- **Upstream sync landed**: `chore(sync): merge upstream v1.2.5` on 2026-05-28 — fork is tracking upstream actively.
+- **New changelog entries**: `1.2.3` (OAuth refresh realignment with live-tested request shape + `Retry-After` backoff), `1.2.4` (serialize fallback-account OAuth refreshes across processes), `1.2.5` (quota snapshot reuse for rate-limited probe paths).
+- **Repo size**: 387 KB → 520 KB.
+- **Open issues**: 0 → 1 (#11 "Daily Autohealing Report" perpetual issue, under `marcusrbrown`).
+- **Open PRs**: 0.
+- **`@opencode-ai/plugin` devDep**: bumped to `1.15.5`.
 
-Sources: https://github.com/marcusrbrown/infra (SHA 9ce50f419995919aae53143eb797bd7798949cc0)
+Topic update: `opencode-plugins.md` received a new "Bundled Skill for Upstream Sync" section documenting the `.agents/skills/` pattern and adding the updated source SHA.
 
-## [2026-06-09 08:47] ingest | repo:marcusrbrown/infra
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 99fdbe906c5875893d363c904f6e6bc066d997b1)
 
-Surveyed marcusrbrown/infra and updated the control-plane wiki.
+## [2026-06-09 00:00] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
 
-Sources: https://github.com/marcusrbrown/infra
+Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+
+## [2026-06-09 08:50] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
