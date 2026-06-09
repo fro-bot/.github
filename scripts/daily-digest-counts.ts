@@ -30,6 +30,16 @@ export interface DigestCounts {
  * @param todayUtc    - Today's date in YYYY-MM-DD format (UTC). Injected for
  *                      testability so tests can pin the UTC boundary.
  * @returns DigestCounts — never throws; emits a stderr diagnostic on error.
+ *
+ * Note: `surveys_today` reflects the **prior UTC day's** settled survey count
+ * (yesterdayUtc = todayUtc − 1 day). The digest runs at 00:00 UTC, so the
+ * prior day is fully settled (~16h after its reconcile). Counting same-day
+ * surveys would always yield ~0 at that hour. The gateway field name
+ * `surveys_today` is retained for payload schema compatibility.
+ *
+ * `should_post` is `count_status === 'ok'` — the digest fires every scheduled
+ * day regardless of survey count; zero surveys is valid signal. It is only
+ * `false` on a genuine metadata read error.
  */
 export function deriveCounts(yamlContent: string, todayUtc: string): DigestCounts {
   const errorResult: DigestCounts = {
@@ -65,8 +75,13 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
     return errorResult
   }
 
+  // Derive yesterdayUtc: parse todayUtc as UTC midnight, subtract 86400000ms, reformat.
+  // This is UTC-safe: YYYY-MM-DD parsed as UTC avoids local-timezone drift.
+  const todayMs = Date.parse(`${todayUtc}T00:00:00Z`)
+  const yesterdayUtc = new Date(todayMs - 86_400_000).toISOString().slice(0, 10)
+
   let reposTracked = 0
-  let surveysToday = 0
+  let surveysYesterday = 0
 
   for (const entry of data.repos) {
     // Guard: a null or non-object element is a malformed entry — treat as data error.
@@ -80,18 +95,18 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
     if (entry.private === false) {
       reposTracked++
 
-      // Count public entries whose last_survey_at (YYYY-MM-DD) equals today in UTC.
+      // Count public entries whose last_survey_at (YYYY-MM-DD) equals the prior UTC day.
       // Private repos are excluded — the gateway's public-only intent applies here too.
-      if (typeof entry.last_survey_at === 'string' && entry.last_survey_at === todayUtc) {
-        surveysToday++
+      if (typeof entry.last_survey_at === 'string' && entry.last_survey_at === yesterdayUtc) {
+        surveysYesterday++
       }
     }
   }
 
   return {
     repos_tracked: reposTracked,
-    surveys_today: surveysToday,
-    should_post: surveysToday > 0,
+    surveys_today: surveysYesterday,
+    should_post: true, // count_status === 'ok': post every day; suppress only on read error
     count_status: 'ok',
   }
 }

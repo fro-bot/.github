@@ -104,5 +104,8 @@ jobs:
             echo "| Closed stale issues | $(jq '.closedStaleIssues // 0' "$result") |"
             echo "| Probes failed | $(jq '.probesFailed // 0' "$result") |"
             echo "| Committed | $(jq '.committed // false' "$result") |"
+            echo "| Entries refreshed | $(jq '.summary.refreshed // 0' "$result") |"
+            echo "| Entries migrated | $(jq '.summary.migrated // 0' "$result") |"
+            echo "| Contrib tracked | $(jq '.summary.byChannel.contrib.tracked // 0' "$result") |"
           } >> "$GITHUB_STEP_SUMMARY"
         shell: bash
