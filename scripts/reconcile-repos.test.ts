@@ -29,7 +29,7 @@ import {
   type RepoStatusProbe,
   type VisibilityTransitionIssue,
 } from './reconcile-repos.ts'
-import {addRepoEntry} from './repos-metadata.ts'
+import {addRepoEntry, computeNextEligibleAt} from './repos-metadata.ts'
 import {assertReposFile} from './schemas.ts'
 
 const NOW = new Date('2026-04-17T12:00:00Z')
@@ -4807,16 +4807,28 @@ describe('mergeAccessChannels (precedence + dedup)', () => {
     expect(result.accessChannelByKey.get('bfra-me/.github')).toBe('contrib')
   })
 
-  it('collab wins over owned for the same key', () => {
+  it('owned wins over collab for the same key', () => {
     // #given the same owner/name appears in both collab and owned
     const result = mergeAccessChannels({
       collab: [entry('fro-bot', 'agent')],
       owned: [entry('fro-bot', 'agent')],
       contrib: [],
     })
-    // #then collab wins; only one entry; no duplicate keys
+    // #then owned wins (owned > collab); only one entry; no duplicate keys
     expect(result.accessList).toHaveLength(1)
-    expect(result.accessChannelByKey.get('fro-bot/agent')).toBe('collab')
+    expect(result.accessChannelByKey.get('fro-bot/agent')).toBe('owned')
+  })
+
+  it('contrib wins over collab for the same key', () => {
+    // #given the same owner/name appears in both collab and contrib
+    const result = mergeAccessChannels({
+      collab: [entry('bfra-me', '.github')],
+      owned: [],
+      contrib: [entry('bfra-me', '.github')],
+    })
+    // #then contrib wins (contrib > collab); only one entry; no duplicate keys
+    expect(result.accessList).toHaveLength(1)
+    expect(result.accessChannelByKey.get('bfra-me/.github')).toBe('contrib')
   })
 
   it('owned wins over contrib for the same key', () => {
@@ -4829,14 +4841,14 @@ describe('mergeAccessChannels (precedence + dedup)', () => {
     expect(result.accessChannelByKey.get('shared/repo')).toBe('owned')
   })
 
-  it('collab wins over both owned and contrib for the same key', () => {
+  it('owned wins over both collab and contrib for the same key (triple overlap)', () => {
     const result = mergeAccessChannels({
       collab: [entry('shared', 'repo')],
       owned: [entry('shared', 'repo')],
       contrib: [entry('shared', 'repo')],
     })
     expect(result.accessList).toHaveLength(1)
-    expect(result.accessChannelByKey.get('shared/repo')).toBe('collab')
+    expect(result.accessChannelByKey.get('shared/repo')).toBe('owned')
   })
 
   it('preserves all three channels when keys are distinct', () => {
@@ -4852,11 +4864,12 @@ describe('mergeAccessChannels (precedence + dedup)', () => {
   })
 
   it('produces an accessList that passes validateAccessList (no duplicates)', () => {
-    // #given overlapping channels
+    // #given overlapping channels (use 'eslint-config' instead of '.github' to avoid
+    // the dot in the auto-generated node_id R_bfra-me_.github failing NODE_ID_PATTERN)
     const result = mergeAccessChannels({
       collab: [entry('shared', 'repo'), entry('marcusrbrown', 'foo')],
       owned: [entry('shared', 'repo'), entry('fro-bot', 'agent')],
-      contrib: [entry('bfra-me', '.github')],
+      contrib: [entry('bfra-me', 'eslint-config')],
     })
     // #then reconcileRepos accepts it without throwing on the duplicate-key check
     expect(() =>
@@ -4946,6 +4959,195 @@ describe('reconcileRepos byChannel summary', () => {
     expect(result.summary.byChannel.owned.tracked).toBe(1)
     expect(result.summary.byChannel.contrib.tracked).toBe(1)
     expect(result.summary.byChannel.collab.tracked).toBe(0)
+  })
+})
+
+describe('classifyTracked — discovery_channel refresh', () => {
+  // Happy path: stored collab, live contrib → refreshed to contrib, summary.refreshed++,
+  // next_survey_eligible_at recomputed for 21d contrib interval.
+  it('refreshes stored collab to live contrib, increments summary.refreshed, recomputes eligibility', () => {
+    const entry = makeEntry({
+      owner: 'bfra-me',
+      name: 'eslint-config',
+      discovery_channel: 'collab',
+      last_survey_at: '2026-04-01',
+      next_survey_eligible_at: '2026-05-01', // stale collab-based date
+      private: false,
+      node_id: 'R_bfra',
+      onboarding_status: 'onboarded',
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({owner: 'bfra-me', name: 'eslint-config', node_id: 'R_bfra', private: false})],
+        accessChannelByKey: new Map([['bfra-me/eslint-config', 'contrib']]),
+        fieldProbes: new Map([['bfra-me/eslint-config', {has_fro_bot_workflow: false, has_renovate: false}]]),
+      }),
+    )
+
+    const next = result.nextRepos.repos[0]
+    expect(next).toBeDefined()
+    expect(next?.discovery_channel).toBe('contrib')
+    expect(result.summary.refreshed).toBe(1)
+    expect(result.summary.unchanged).toBe(0)
+    // next_survey_eligible_at must be recomputed for the contrib (21d) interval
+    const expected = computeNextEligibleAt({
+      owner: 'bfra-me',
+      repo: 'eslint-config',
+      channel: 'contrib',
+      baseDate: new Date('2026-04-01T00:00:00Z'),
+    })
+    expect(next?.next_survey_eligible_at).toBe(expected)
+  })
+
+  // Edge: tracked entry with no stored discovery_channel (legacy), live contrib → backfilled to contrib.
+  it('backfills missing discovery_channel to live contrib (not left defaulting to collab)', () => {
+    // Build a legacy entry without discovery_channel (simulate pre-schema entry)
+    const legacyEntry: RepoEntry = {
+      owner: 'bfra-me',
+      name: 'tsconfig',
+      added: '2026-01-01',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-03-15',
+      last_survey_status: 'success',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      next_survey_eligible_at: '2026-04-14',
+      private: false,
+      node_id: 'R_tsconfig',
+      // discovery_channel intentionally omitted (legacy entry)
+    }
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [legacyEntry]},
+        accessList: [makeAccess({owner: 'bfra-me', name: 'tsconfig', node_id: 'R_tsconfig', private: false})],
+        accessChannelByKey: new Map([['bfra-me/tsconfig', 'contrib']]),
+        fieldProbes: new Map([['bfra-me/tsconfig', {has_fro_bot_workflow: false, has_renovate: false}]]),
+      }),
+    )
+
+    const next = result.nextRepos.repos[0]
+    expect(next?.discovery_channel).toBe('contrib')
+    expect(result.summary.refreshed).toBe(1)
+    // next_survey_eligible_at recomputed for contrib interval
+    const expected = computeNextEligibleAt({
+      owner: 'bfra-me',
+      repo: 'tsconfig',
+      channel: 'contrib',
+      baseDate: new Date('2026-03-15T00:00:00Z'),
+    })
+    expect(next?.next_survey_eligible_at).toBe(expected)
+  })
+
+  // Edge: stored channel == live channel → no change, no spurious refreshed, reference identity preserved.
+  it('preserves reference identity when stored channel matches live channel (no-op)', () => {
+    const entry = makeEntry({
+      owner: 'bfra-me',
+      name: 'prettier-config',
+      discovery_channel: 'contrib',
+      last_survey_at: '2026-04-01',
+      next_survey_eligible_at: '2026-04-25',
+      private: false,
+      node_id: 'R_prettier',
+      onboarding_status: 'onboarded',
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({owner: 'bfra-me', name: 'prettier-config', node_id: 'R_prettier', private: false})],
+        accessChannelByKey: new Map([['bfra-me/prettier-config', 'contrib']]),
+        fieldProbes: new Map([['bfra-me/prettier-config', {has_fro_bot_workflow: false, has_renovate: false}]]),
+      }),
+    )
+
+    // Reference identity preserved (no-op path)
+    expect(result.nextRepos.repos[0]).toBe(entry)
+    expect(result.summary.refreshed).toBe(0)
+    expect(result.summary.unchanged).toBe(1)
+  })
+
+  // Integration: 4 bfra-me contrib entries → byChannel.contrib.tracked == 4, collab reduced.
+  it('integration: 4 bfra-me contrib entries count under byChannel.contrib.tracked', () => {
+    const contribRepos = [
+      makeEntry({
+        owner: 'bfra-me',
+        name: 'eslint-config',
+        discovery_channel: 'collab',
+        private: false,
+        node_id: 'R_1',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01',
+        next_survey_eligible_at: '2026-05-01',
+      }),
+      makeEntry({
+        owner: 'bfra-me',
+        name: 'tsconfig',
+        discovery_channel: 'collab',
+        private: false,
+        node_id: 'R_2',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01',
+        next_survey_eligible_at: '2026-05-01',
+      }),
+      makeEntry({
+        owner: 'bfra-me',
+        name: 'prettier-config',
+        discovery_channel: 'collab',
+        private: false,
+        node_id: 'R_3',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01',
+        next_survey_eligible_at: '2026-05-01',
+      }),
+      makeEntry({
+        owner: 'bfra-me',
+        name: '.github',
+        discovery_channel: 'collab',
+        private: false,
+        node_id: 'R_4',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01',
+        next_survey_eligible_at: '2026-05-01',
+      }),
+    ]
+    const accessList = contribRepos.map(e =>
+      makeAccess({owner: e.owner, name: e.name, node_id: e.node_id ?? `R_${e.name}`, private: false}),
+    )
+    const channelMap = new Map<string, DiscoveryChannel>(
+      contribRepos.map(e => [`${e.owner}/${e.name}`, 'contrib' as DiscoveryChannel]),
+    )
+    const fieldProbes = new Map(
+      contribRepos.map(e => [`${e.owner}/${e.name}`, {has_fro_bot_workflow: false, has_renovate: false}]),
+    )
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: contribRepos},
+        accessList,
+        accessChannelByKey: channelMap,
+        fieldProbes,
+      }),
+    )
+
+    // All 4 entries should now be classified as contrib
+    expect(result.summary.byChannel.contrib.tracked).toBe(4)
+    expect(result.summary.byChannel.collab.tracked).toBe(0)
+    // All 4 refreshed (stored collab → live contrib)
+    expect(result.summary.refreshed).toBe(4)
+    // All entries have contrib channel
+    for (const entry of result.nextRepos.repos) {
+      expect(entry.discovery_channel).toBe('contrib')
+    }
+    // next_survey_eligible_at recomputed for contrib (21d) interval for each
+    for (const entry of result.nextRepos.repos) {
+      const expected = computeNextEligibleAt({
+        owner: entry.owner,
+        repo: entry.name,
+        channel: 'contrib',
+        baseDate: new Date('2026-04-01T00:00:00Z'),
+      })
+      expect(entry.next_survey_eligible_at).toBe(expected)
+    }
   })
 })
 

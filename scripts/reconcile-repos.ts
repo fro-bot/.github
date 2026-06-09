@@ -851,6 +851,36 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     dispatches.push({owner: access.owner, repo: access.name, node_id: access.node_id})
   }
 
+  // Channel refresh: if the live access-channel has higher precedence than the stored
+  // discovery_channel (including legacy entries with no stored channel, which default to
+  // 'collab'), update the channel and recompute next_survey_eligible_at for the new
+  // channel's interval. This self-heals mis-classified entries (e.g. bfra-me contrib repos
+  // stored as collab) and backfills legacy entries that predate the discovery_channel field.
+  //
+  // Only upgrades (lower → higher precedence) are applied. Downgrades are suppressed so a
+  // genuinely `owned` entry that also appears in the collab list stays `owned`. Precedence
+  // rank: owned=2 > contrib=1 > collab=0 (matches mergeAccessChannels loop order).
+  const CHANNEL_RANK: Record<DiscoveryChannel, number> = {owned: 2, contrib: 1, collab: 0}
+  const liveChannel = params.accessChannelByKey.get(accessKey) ?? 'collab'
+  const storedChannel = entry.discovery_channel ?? 'collab'
+  let workingEntry = entry
+  if (CHANNEL_RANK[liveChannel] > CHANNEL_RANK[storedChannel]) {
+    // Recompute next_survey_eligible_at for the new channel's interval. Use last_survey_at
+    // as the base date when available; fall back to now so the entry gets a fresh cadence
+    // window rather than becoming immediately eligible.
+    const baseDate =
+      entry.last_survey_at !== null && entry.last_survey_at !== undefined
+        ? new Date(`${entry.last_survey_at}T00:00:00Z`)
+        : now
+    const nextEligible = computeNextEligibleAt({
+      owner: access.owner,
+      repo: access.name,
+      channel: liveChannel,
+      baseDate,
+    })
+    workingEntry = {...entry, discovery_channel: liveChannel, next_survey_eligible_at: nextEligible}
+  }
+
   // Field refresh: apply probe results when they disagree with tracked fields,
   // and write live private/node_id from the access list when they differ.
   const probe = fieldProbes.get(key) ?? fieldProbes.get(accessKey)
@@ -859,7 +889,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
 
   if (probe === undefined) {
     // No field probe — but access list still has private/node_id. Apply if changed.
-    const normalized = normalizeRepoEntryForStorage(entry, storageInput)
+    const normalized = normalizeRepoEntryForStorage(workingEntry, storageInput)
     if (normalized === entry) {
       summary.unchanged += 1
       return entry
@@ -869,16 +899,17 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   }
 
   const fieldsMatch =
-    probe.has_fro_bot_workflow === entry.has_fro_bot_workflow && probe.has_renovate === entry.has_renovate
-  const privacyMatch = entry.private === accessPrivate && entry.node_id === accessNodeId
+    probe.has_fro_bot_workflow === workingEntry.has_fro_bot_workflow && probe.has_renovate === workingEntry.has_renovate
+  const privacyMatch = workingEntry.private === accessPrivate && workingEntry.node_id === accessNodeId
+  const channelMatch = workingEntry === entry // true only when no channel refresh occurred
 
-  if (fieldsMatch && privacyMatch) {
+  if (fieldsMatch && privacyMatch && channelMatch) {
     summary.unchanged += 1
     return entry
   }
   summary.refreshed += 1
   return normalizeRepoEntryForStorage({
-    ...normalizeRepoEntryForStorage(entry, storageInput),
+    ...normalizeRepoEntryForStorage(workingEntry, storageInput),
     has_fro_bot_workflow: probe.has_fro_bot_workflow,
     has_renovate: probe.has_renovate,
   })
@@ -2122,9 +2153,14 @@ async function probeContribWorkflow(
 
 /**
  * Merge per-channel access lists into the canonical access list + channel map. Precedence
- * is `collab > owned > contrib`: when the same `owner/name` appears in multiple channels,
+ * is `owned > contrib > collab`: when the same `owner/name` appears in multiple channels,
  * the highest-precedence channel wins so `validateAccessList` (which rejects duplicate
  * keys) sees a single entry.
+ *
+ * Rationale: explicitly-approved channels (owned/contrib) must win over generic collaborator
+ * access. A bfra-me repo that is both collab-accessible AND contrib-approved must be
+ * classified as `contrib` so it gets the correct 21-day cadence and counts under
+ * `byChannel.contrib.tracked`.
  */
 export function mergeAccessChannels(input: {
   collab: AccessListEntry[]
@@ -2134,15 +2170,9 @@ export function mergeAccessChannels(input: {
   const accessByKey = new Map<string, AccessListEntry>()
   const channelByKey = new Map<string, DiscoveryChannel>()
 
-  // Order matters: collab first wins overlap with owned/contrib; owned wins over contrib.
-  for (const entry of input.collab) {
-    const key = repoKey(entry.owner, entry.name)
-    accessByKey.set(key, entry)
-    channelByKey.set(key, 'collab')
-  }
+  // Order matters: owned first wins overlap with contrib/collab; contrib wins over collab.
   for (const entry of input.owned) {
     const key = repoKey(entry.owner, entry.name)
-    if (accessByKey.has(key)) continue
     accessByKey.set(key, entry)
     channelByKey.set(key, 'owned')
   }
@@ -2151,6 +2181,12 @@ export function mergeAccessChannels(input: {
     if (accessByKey.has(key)) continue
     accessByKey.set(key, entry)
     channelByKey.set(key, 'contrib')
+  }
+  for (const entry of input.collab) {
+    const key = repoKey(entry.owner, entry.name)
+    if (accessByKey.has(key)) continue
+    accessByKey.set(key, entry)
+    channelByKey.set(key, 'collab')
   }
 
   return {accessList: Array.from(accessByKey.values()), accessChannelByKey: channelByKey}
