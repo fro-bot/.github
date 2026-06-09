@@ -1,6 +1,7 @@
 import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
+import {readFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
 import {parse as parseYaml} from 'yaml'
@@ -82,6 +83,24 @@ export interface PrApiResolver {
   readonly fetchPrByNumber: (prNumber: number) => Promise<Record<string, unknown>>
   readonly fetchPrsByHeadSha: (headSha: string) => Promise<Record<string, unknown>[]>
 }
+
+/**
+ * Injectable data-branch existence checker for fetchPrivateNodeIds.
+ *
+ * Returns `true` if the `data` branch ref exists in the remote, `false` if it
+ * is absent (HTTP 404 from the branches API), or throws for any other error
+ * (5xx, network, rate-limit, etc.) so the caller can fail closed.
+ */
+export type DataBranchChecker = (fullName: string) => boolean
+
+/**
+ * Injectable main-branch repos.yaml reader for fetchPrivateNodeIds fallback.
+ *
+ * Reads `metadata/repos.yaml` from the local working tree (the workflow checks
+ * out `ref: main`, so the file is present at `metadata/repos.yaml` in CWD).
+ * Defaults to fs.readFileSync so it stays synchronous alongside execFileSync.
+ */
+export type MainReposYamlReader = (path: string) => string
 
 // ---------------------------------------------------------------------------
 // Operator override
@@ -379,6 +398,23 @@ async function readWorkflowRunContext(
 }
 
 // ---------------------------------------------------------------------------
+// 404-detection helper (exported for unit testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when `error` carries the clear HTTP 404 signal that `gh` emits
+ * for branch/content API calls: `\bHTTP 404\b` in stderr OR `"status":"404"` in stdout.
+ *
+ * Any other error shape (401/403/5xx/network/rate-limit) returns false so the
+ * caller can fail closed.
+ */
+export function isGh404Error(error: unknown): boolean {
+  const stdout = isRecord(error) && typeof error.stdout === 'string' ? error.stdout : ''
+  const stderr = isRecord(error) && typeof error.stderr === 'string' ? error.stderr : ''
+  return /\bHTTP 404\b/.test(stderr) || /"status"\s*:\s*"404"/.test(stdout)
+}
+
+// ---------------------------------------------------------------------------
 // Default seam implementations for main()
 // ---------------------------------------------------------------------------
 
@@ -406,24 +442,125 @@ const defaultPrApiResolver: PrApiResolver = {
 }
 
 /**
- * Fetch metadata/repos.yaml from the `data` branch and return node_ids for private entries.
+ * Default DataBranchChecker: calls `gh api repos/<fullName>/branches/data` and
+ * returns true if the branch exists, false on HTTP 404, throws on any other error.
+ *
+ * `gh` exits non-zero on API errors and writes a JSON body + HTTP status to stdout/stderr.
+ * We capture both streams and inspect for `HTTP 404` to distinguish branch-absent from
+ * other failures (5xx, network, rate-limit, etc.).
  */
-function fetchPrivateNodeIds(fullName: string): string[] {
-  const encoded = execFileSync(
-    'gh',
-    ['api', `repos/${fullName}/contents/metadata/repos.yaml?ref=data`, '--jq', '.content'],
-    {encoding: 'utf8'},
-  ).trim()
+const defaultDataBranchChecker: DataBranchChecker = (fullName: string): boolean => {
+  try {
+    execFileSync('gh', ['api', `repos/${fullName}/branches/data`], {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    return true
+  } catch (error: unknown) {
+    if (isGh404Error(error)) {
+      return false
+    }
+    // Any other error (5xx, network, rate-limit, etc.) — re-throw so caller fails closed.
+    throw error
+  }
+}
 
-  // GitHub API returns base64 with potential embedded newlines.
-  const yamlText = Buffer.from(encoded.replaceAll('\n', ''), 'base64').toString('utf8')
+/**
+ * Default MainReposYamlReader: reads `metadata/repos.yaml` from the local working tree.
+ * The workflow checks out `ref: main`, so the file is present at `metadata/repos.yaml` in CWD.
+ */
+const defaultMainReposYamlReader: MainReposYamlReader = (path: string): string => readFileSync(path, 'utf8')
+
+/**
+ * Parse a repos.yaml YAML string and extract private node_ids.
+ */
+function extractPrivateNodeIds(yamlText: string): string[] {
   const parsed: unknown = parseYaml(yamlText)
   assertReposFile(parsed)
-  const repos = parsed.repos
-
-  return repos
+  return parsed.repos
     .filter(r => r.private === true && typeof r.node_id === 'string' && r.node_id.length > 0)
     .map(r => r.node_id as string)
+}
+
+/**
+ * Fetch metadata/repos.yaml from the `data` branch and return node_ids for private entries.
+ *
+ * Algorithm (PR mode):
+ * 1. Try fetching `metadata/repos.yaml` content from `data` via the GitHub API.
+ * 2. SUCCESS → parse and return private node_ids.
+ * 3. Content fetch returns HTTP 404:
+ *    a. Check whether the `data` branch ref exists.
+ *    b. data branch ABSENT → fall back to reading `metadata/repos.yaml` from the local
+ *       main checkout on disk. Emit a bounded warning. NOT empty — main carries redacted
+ *       private entries (always-redacted-everywhere model).
+ *    c. data branch EXISTS (content 404 but ref present → create/race) → RETRY once.
+ *       If retry succeeds, use data. If retry still 404 → FAIL CLOSED.
+ * 4. ANY OTHER failure (401/403/5xx/network/rate-limit/unknown) → FAIL CLOSED.
+ *
+ * Injectable seams (dataBranchChecker, mainReposYamlReader) allow tests to drive each branch.
+ */
+function fetchPrivateNodeIds(
+  fullName: string,
+  dataBranchChecker: DataBranchChecker = defaultDataBranchChecker,
+  mainReposYamlReader: MainReposYamlReader = defaultMainReposYamlReader,
+): string[] {
+  // Step 1: attempt to fetch content from the data branch.
+  let encoded: string
+  try {
+    encoded = execFileSync(
+      'gh',
+      ['api', `repos/${fullName}/contents/metadata/repos.yaml?ref=data`, '--jq', '.content'],
+      {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']},
+    ).trim()
+  } catch (error: unknown) {
+    if (!isGh404Error(error)) {
+      // Step 4: non-404 error (401/403/5xx/network/rate-limit) → fail closed.
+      throw error
+    }
+
+    // Step 3: content fetch returned HTTP 404 — check branch existence.
+    let branchExists: boolean
+    try {
+      branchExists = dataBranchChecker(fullName)
+    } catch {
+      // Step 5: branch-existence check itself failed → fail closed.
+      throw new Error('check-private-leak: data branch existence check failed (non-404 error) — fail closed')
+    }
+
+    if (!branchExists) {
+      // Step 3b: data branch ABSENT → fall back to main checkout on disk.
+      // The workflow checks out ref: main, so metadata/repos.yaml is present in CWD.
+      process.stderr.write(
+        'check-private-leak: data branch absent (post-squash window) — falling back to main metadata/repos.yaml\n',
+      )
+      const mainYaml = mainReposYamlReader('metadata/repos.yaml')
+      return extractPrivateNodeIds(mainYaml)
+    }
+
+    // Step 3c: data branch EXISTS but content is 404 (create/race) → retry once.
+    let retryEncoded: string
+    try {
+      retryEncoded = execFileSync(
+        'gh',
+        ['api', `repos/${fullName}/contents/metadata/repos.yaml?ref=data`, '--jq', '.content'],
+        {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']},
+      ).trim()
+    } catch {
+      // Retry also 404 or other error → fail closed.
+      throw new Error(
+        'check-private-leak: data branch exists but metadata/repos.yaml is missing/corrupt after retry — fail closed',
+      )
+    }
+
+    // Retry succeeded — use data branch content.
+    const retryYaml = Buffer.from(retryEncoded.replaceAll('\n', ''), 'base64').toString('utf8')
+    return extractPrivateNodeIds(retryYaml)
+  }
+
+  // Step 2: SUCCESS — parse and return private node_ids.
+  // GitHub API returns base64 with potential embedded newlines.
+  const yamlText = Buffer.from(encoded.replaceAll('\n', ''), 'base64').toString('utf8')
+  return extractPrivateNodeIds(yamlText)
 }
 
 /**
@@ -832,6 +969,8 @@ export async function runPromotionCli(
 export async function main(
   workflowRunReader: WorkflowRunReader = defaultWorkflowRunReader,
   prApiResolver: PrApiResolver = defaultPrApiResolver,
+  dataBranchChecker: DataBranchChecker = defaultDataBranchChecker,
+  mainReposYamlReader: MainReposYamlReader = defaultMainReposYamlReader,
 ): Promise<void> {
   const eventPath = process.env.GITHUB_EVENT_PATH
   if (eventPath === undefined || eventPath === '') {
@@ -871,8 +1010,16 @@ export async function main(
     encoding: 'utf8',
   }).trim()
 
-  // Resolve private node_ids from data branch.
-  const privateNodeIds = fetchPrivateNodeIds(fullName)
+  // Resolve private node_ids from data branch (with 404 fallback to main).
+  let privateNodeIds: string[]
+  try {
+    privateNodeIds = fetchPrivateNodeIds(fullName, dataBranchChecker, mainReposYamlReader)
+  } catch (error) {
+    process.stderr.write(
+      `check-private-leak: failed to fetch private node_ids — fail closed: ${error instanceof Error ? error.message : String(error)}\n`,
+    )
+    process.exit(1)
+  }
   if (privateNodeIds.length === 0) {
     process.stdout.write('check-private-leak: no private entries found in metadata/repos.yaml — skipping scan\n')
     return

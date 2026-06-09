@@ -1,5 +1,7 @@
 import type {
+  DataBranchChecker,
   GitDiffRunner,
+  MainReposYamlReader,
   PrApiResolver,
   ReposYamlReader,
   ResolverFactory,
@@ -12,6 +14,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   assertCompareNotTruncated,
   checkPrivateLeak,
+  isGh404Error,
   main,
   runPromotionCli,
   runPromotionScan,
@@ -2975,5 +2978,472 @@ describe('main() — Finding F: malformed PR details → fail-closed', () => {
       delete process.env.GITHUB_EVENT_PATH
       delete process.env.FRO_BOT_POLL_PAT
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// fetchPrivateNodeIds — data-absent fallback (Oracle-specified tests)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal repos.yaml string for main-branch fallback tests.
+ * Uses the same format as makeReposYaml but for the local-file reader.
+ */
+function makeMainReposYaml(nodeIds: string[]): string {
+  if (nodeIds.length === 0) {
+    return 'version: 1\nrepos: []\n'
+  }
+  const entries = nodeIds
+    .map(
+      (id, i) =>
+        `  - owner: "[REDACTED]"\n    name: repo-${i}\n    private: true\n    node_id: ${id}\n    added: "2024-01-01"\n    onboarding_status: onboarded\n    last_survey_at: null\n    last_survey_status: null\n    has_fro_bot_workflow: false\n    has_renovate: false`,
+    )
+    .join('\n')
+  return `version: 1\nrepos:\n${entries}\n`
+}
+
+/**
+ * Build a fake DataBranchChecker that returns a fixed value or throws.
+ */
+function makeDataBranchChecker(opts: {exists?: boolean; throws?: Error} = {}): DataBranchChecker {
+  return (_fullName: string): boolean => {
+    if (opts.throws !== undefined) throw opts.throws
+    return opts.exists ?? false
+  }
+}
+
+/**
+ * Build a fake MainReposYamlReader that returns fixed content or throws.
+ */
+function makeMainReposYamlReader(content: string): MainReposYamlReader {
+  return (_path: string): string => content
+}
+
+/**
+ * Build a fake execFileSync mock sequence for the data-absent fallback tests.
+ *
+ * The mock sequence for main() in the 404-fallback scenario:
+ * 1. gh repo view → fullName
+ * 2. gh api repos/.../contents/metadata/repos.yaml?ref=data → throws 404 (fetchPrivateNodeIds)
+ * 3. (dataBranchChecker is injectable — no execFileSync call)
+ * 4. (mainReposYamlReader is injectable — no execFileSync call)
+ * 5. gh graphql → resolver call(s)
+ * 6. gh api compare JSON → fetchDiffForSha truncation check
+ * 7. gh api compare diff → fetchDiffForSha raw diff
+ */
+function make404Error(): Error {
+  return Object.assign(new Error('gh: Not Found (HTTP 404)'), {
+    stdout: '{"status":"404"}',
+    stderr: 'gh: Not Found (HTTP 404)',
+  })
+}
+
+describe('main() — fetchPrivateNodeIds: data-absent fallback (Oracle-specified tests)', () => {
+  // Test 1: data content 404 + data ref ABSENT + main has a private node_id whose name
+  // appears in the PR diff added lines ⇒ gate FAILS (catches the leak via main fallback).
+  it('Test 1: data 404 + branch absent + main has private entry matching diff → gate FAILS', async () => {
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fallback-1'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fallback-1'})})
+
+    // data branch absent → fall back to main which has one private node_id
+    const dataBranchChecker = makeDataBranchChecker({exists: false})
+    const mainReposYamlReader = makeMainReposYamlReader(makeMainReposYaml(['R_main_private']))
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockImplementationOnce(() => {
+        throw make404Error()
+      }) // fetchPrivateNodeIds: data content 404
+      // dataBranchChecker is injectable — no execFileSync call
+      // mainReposYamlReader is injectable — no execFileSync call
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-leak-repo'}}})) // resolver R_main_private
+      .mockReturnValueOnce(makeCompareJson('docs/leak.md')) // fetchDiffForSha: compare JSON
+      .mockReturnValueOnce(makeDiff('docs/leak.md', ['See acme/private-leak-repo for details.'])) // fetchDiffForSha: raw diff
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #then: gate FAILS — leak detected via main fallback
+      await expect(
+        main(makeWorkflowRunReader(eventJson), prApiResolver, dataBranchChecker, mainReposYamlReader),
+      ).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+
+      // #then: fallback warning was emitted
+      const stderrText = stderrOutput.join('')
+      expect(stderrText).toContain('data branch absent')
+      // #then: private name NOT in stderr (redacted)
+      expect(stderrText).not.toContain('acme/private-leak-repo')
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  // Test 2: data content 404 + data ref ABSENT + main has ZERO private entries ⇒ gate PASSES.
+  it('Test 2: data 404 + branch absent + main has zero private entries → gate PASSES', async () => {
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fallback-2'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fallback-2'})})
+
+    // data branch absent → fall back to main which has NO private entries
+    const dataBranchChecker = makeDataBranchChecker({exists: false})
+    const mainReposYamlReader = makeMainReposYamlReader(makeMainReposYaml([]))
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockImplementationOnce(() => {
+        throw make404Error()
+      }) // fetchPrivateNodeIds: data content 404
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #then: gate PASSES — no private entries in main
+      await main(makeWorkflowRunReader(eventJson), prApiResolver, dataBranchChecker, mainReposYamlReader)
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  // Test 3: data content 404 + data ref EXISTS + retry still 404 ⇒ FAIL CLOSED.
+  it('Test 3: data 404 + branch exists + retry still 404 → FAIL CLOSED', async () => {
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fallback-3'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fallback-3'})})
+
+    // data branch EXISTS but content is 404 (create/race) → retry also 404
+    const dataBranchChecker = makeDataBranchChecker({exists: true})
+    const mainReposYamlReader = makeMainReposYamlReader(makeMainReposYaml(['R_should_not_be_used']))
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockImplementationOnce(() => {
+        throw make404Error()
+      }) // fetchPrivateNodeIds: data content 404 (first attempt)
+      .mockImplementationOnce(() => {
+        throw make404Error()
+      }) // fetchPrivateNodeIds: data content 404 (retry)
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #then: FAIL CLOSED — branch exists but file missing after retry
+      await expect(
+        main(makeWorkflowRunReader(eventJson), prApiResolver, dataBranchChecker, mainReposYamlReader),
+      ).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  // Test 4: data content 403 / 500 / network / rate-limit ⇒ FAIL CLOSED (no main fallback).
+  it('Test 4: data content 403/500/network/rate-limit → FAIL CLOSED (no main fallback)', async () => {
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fallback-4'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fallback-4'})})
+
+    // dataBranchChecker should NOT be called for non-404 errors
+    let dataBranchCheckerCalled = false
+    const dataBranchChecker: DataBranchChecker = (_fullName: string): boolean => {
+      dataBranchCheckerCalled = true
+      return false
+    }
+    const mainReposYamlReader = makeMainReposYamlReader(makeMainReposYaml(['R_should_not_be_used']))
+
+    // Test with a 403 error (not a 404)
+    const error403 = Object.assign(new Error('gh: Forbidden (HTTP 403)'), {
+      stdout: '{"status":"403"}',
+      stderr: 'gh: Forbidden (HTTP 403)',
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockImplementationOnce(() => {
+        throw error403
+      }) // fetchPrivateNodeIds: 403 (not 404)
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #then: FAIL CLOSED — non-404 error, no main fallback
+      await expect(
+        main(makeWorkflowRunReader(eventJson), prApiResolver, dataBranchChecker, mainReposYamlReader),
+      ).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      // #then: dataBranchChecker was NOT called (non-404 path skips branch check)
+      expect(dataBranchCheckerCalled).toBe(false)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  // Test 5: data content 404 + ref-existence check itself returns 500/network ⇒ FAIL CLOSED.
+  it('Test 5: data 404 + branch-existence check throws (500/network) → FAIL CLOSED', async () => {
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fallback-5'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fallback-5'})})
+
+    // dataBranchChecker throws (simulating 500/network error)
+    const dataBranchChecker = makeDataBranchChecker({throws: new Error('network error checking branch')})
+    const mainReposYamlReader = makeMainReposYamlReader(makeMainReposYaml(['R_should_not_be_used']))
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockImplementationOnce(() => {
+        throw make404Error()
+      }) // fetchPrivateNodeIds: data content 404
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #then: FAIL CLOSED — branch existence check failed
+      await expect(
+        main(makeWorkflowRunReader(eventJson), prApiResolver, dataBranchChecker, mainReposYamlReader),
+      ).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  // Test 1b (regression lock): fallback warning must NOT leak the repo name or fullName.
+  // Uses 'fro-bot/.github' as the fullName and a private entry with a recognizable owner/name.
+  // Asserts the warning is identifier-free — locks the redaction guarantee.
+  it('Test 1b: fallback warning is identifier-free (does not contain fullName or private repo name)', async () => {
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fallback-1b'})
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fallback-1b'})})
+
+    // data branch absent → fall back to main which has one private entry with a recognizable name
+    const dataBranchChecker = makeDataBranchChecker({exists: false})
+    // Build a repos.yaml with a private entry whose owner/name is clearly identifiable
+    const privateRepoOwner = 'fro-bot'
+    const privateRepoName = 'super-secret-private-repo'
+    const mainReposYaml = [
+      'version: 1',
+      'repos:',
+      `  - owner: "${privateRepoOwner}"`,
+      `    name: "${privateRepoName}"`,
+      '    private: true',
+      '    node_id: R_redaction_lock',
+      '    added: "2024-01-01"',
+      '    onboarding_status: onboarded',
+      '    last_survey_at: null',
+      '    last_survey_status: null',
+      '    has_fro_bot_workflow: false',
+      '    has_renovate: false',
+      '',
+    ].join('\n')
+    const mainReposYamlReader = makeMainReposYamlReader(mainReposYaml)
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockImplementationOnce(() => {
+        throw make404Error()
+      }) // fetchPrivateNodeIds: data content 404
+      // dataBranchChecker is injectable — no execFileSync call
+      // mainReposYamlReader is injectable — no execFileSync call
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: `${privateRepoOwner}/${privateRepoName}`}}})) // resolver R_redaction_lock
+      .mockReturnValueOnce(makeCompareJson('docs/leak.md')) // fetchDiffForSha: compare JSON
+      .mockReturnValueOnce(makeDiff('docs/leak.md', [`See ${privateRepoOwner}/${privateRepoName} for details.`])) // fetchDiffForSha: raw diff
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #then: gate FAILS — leak detected via main fallback
+      await expect(
+        main(makeWorkflowRunReader(eventJson), prApiResolver, dataBranchChecker, mainReposYamlReader),
+      ).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+
+      // #then: fallback warning was emitted
+      const stderrText = stderrOutput.join('')
+      expect(stderrText).toContain('data branch absent')
+
+      // #then: warning is identifier-free — does NOT contain the private repo name
+      expect(stderrText).not.toContain(`${privateRepoOwner}/${privateRepoName}`)
+      // #then: warning does NOT contain the fullName ('fro-bot/.github')
+      expect(stderrText).not.toContain('fro-bot/.github')
+      // #then: warning does NOT contain the private repo owner alone
+      expect(stderrText).not.toContain(privateRepoName)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  // Test 6: Race: first content 404, ref exists, retry SUCCEEDS ⇒ uses data node_ids.
+  it('Test 6: data 404 + branch exists + retry succeeds → uses data node_ids (race win)', async () => {
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-fallback-6'})
+
+    const prApiResolver = makePrApiResolver({prByNumber: makePrApiResponse({number: 42, headSha: 'sha-fallback-6'})})
+
+    // data branch EXISTS → retry succeeds with data content
+    const dataBranchChecker = makeDataBranchChecker({exists: true})
+    // mainReposYamlReader should NOT be called (retry succeeded)
+    let mainReaderCalled = false
+    const mainReposYamlReader: MainReposYamlReader = (_path: string): string => {
+      mainReaderCalled = true
+      return makeMainReposYaml(['R_should_not_be_used'])
+    }
+
+    // Retry returns data content with a different node_id than main would have
+    const dataNodeId = 'R_data_race_win'
+    const retryBase64 = makeYamlBase64([dataNodeId])
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockImplementationOnce(() => {
+        throw make404Error()
+      }) // fetchPrivateNodeIds: data content 404 (first attempt)
+      .mockReturnValueOnce(retryBase64) // fetchPrivateNodeIds: retry succeeds with data content
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/data-race-repo'}}})) // resolver R_data_race_win
+      .mockReturnValueOnce(makeCompareJson('docs/public.md')) // fetchDiffForSha: compare JSON
+      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha: raw diff
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #then: gate PASSES — retry succeeded, data node_ids used
+      await main(makeWorkflowRunReader(eventJson), prApiResolver, dataBranchChecker, mainReposYamlReader)
+      expect(exitSpy).not.toHaveBeenCalled()
+      // #then: main fallback was NOT used
+      expect(mainReaderCalled).toBe(false)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isGh404Error — direct unit tests for 404-detection regex logic
+// ---------------------------------------------------------------------------
+
+describe('isGh404Error()', () => {
+  it('detects HTTP 404 via stderr containing "HTTP 404"', () => {
+    const error = Object.assign(new Error('gh: Not Found (HTTP 404)'), {
+      stderr: 'gh: Not Found (HTTP 404)',
+      stdout: '',
+    })
+    expect(isGh404Error(error)).toBe(true)
+  })
+
+  it('detects HTTP 404 via stdout containing "status":"404"', () => {
+    const error = Object.assign(new Error('API error'), {
+      stderr: '',
+      stdout: '{"status":"404","message":"Not Found"}',
+    })
+    expect(isGh404Error(error)).toBe(true)
+  })
+
+  it('does NOT detect 404 for generic "Not Found" without "HTTP 404" in stderr', () => {
+    // Must not false-positive on a plain "Not Found" message that lacks the HTTP status token
+    const error = Object.assign(new Error('Not Found'), {
+      stderr: 'Not Found',
+      stdout: '{"message":"Not Found"}',
+    })
+    expect(isGh404Error(error)).toBe(false)
+  })
+
+  it('does NOT detect 404 for HTTP 403 (Forbidden)', () => {
+    const error = Object.assign(new Error('gh: Forbidden (HTTP 403)'), {
+      stderr: 'gh: Forbidden (HTTP 403)',
+      stdout: '{"status":"403"}',
+    })
+    expect(isGh404Error(error)).toBe(false)
+  })
+
+  it('does NOT detect 404 for HTTP 500 (Internal Server Error)', () => {
+    const error = Object.assign(new Error('gh: Internal Server Error (HTTP 500)'), {
+      stderr: 'gh: Internal Server Error (HTTP 500)',
+      stdout: '{"status":"500"}',
+    })
+    expect(isGh404Error(error)).toBe(false)
+  })
+
+  it('does NOT detect 404 when error has no stdout/stderr properties', () => {
+    const error = new Error('network timeout')
+    expect(isGh404Error(error)).toBe(false)
   })
 })
