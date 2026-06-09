@@ -527,12 +527,3 @@ jobs:
           WIKI_COMMIT_MESSAGE: 'feat(knowledge): ingest ${{ github.event_name }} context for ${{ github.repository }}'
           WIKI_SOURCES: '[{"url":"https://github.com/${{ github.repository }}","sha":"${{ github.sha }}","accessed":"${{ steps.ingest-ts.outputs.now }}"}]'
         run: node scripts/wiki-ingest.ts
-
-      - name: 📣 Notify Discord — daily oversight
-        if: success() && github.event_name == 'schedule'
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          node scripts/discord-notify.ts \
-            --message "Daily oversight complete on **${{ github.repository }}**. PRs reviewed, wiki updated, signal maintained 🛰️" \
-            --title "Daily Oversight"
