@@ -101,7 +101,7 @@ A private repo's existence, name, or content must never reach a public surface. 
   - `github.token` (`GITHUB_TOKEN`): diff fetch, PR API identity resolution, commit status POST.
   - `FRO_BOT_POLL_PAT`: private `node_id` → `owner/name` resolution only (resolver subprocess, scrubbed env — no `GH_TOKEN`/`GITHUB_TOKEN` inheritance).
 
-  The gate posts a `security/check-private-leak` commit status to the exact PR head SHA. If the status POST itself fails, the job exits non-zero (fail-closed — the PR is never left unsignaled). Required-check registration on `main` is deferred until empirical fork-status proof exists.
+  The gate posts a `Security: Private Leak Scan` commit status to the exact PR head SHA. If the status POST itself fails, the job exits non-zero (fail-closed — the PR is never left unsignaled). It is registered as a required status check on `main`.
 
 **Operator lookup** — to map a redacted `node_id` back to its `owner/repo` (the convenience a plain `grep` of `repos.yaml` used to provide), run `GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts`. It reads `repos.yaml`, resolves each private entry's `node_id` via the GitHub API, and prints a `node_id → owner/name` table to stdout. It never writes to the working tree and is invoked by no workflow.
 
@@ -202,7 +202,7 @@ All `metadata/*.yaml` files are enforced as Fro-Bot-writable-only on `main`. A C
 
 `repos.yaml` carries an additional sole-writer invariant: changes to it on `main` must originate only from the `data` promotion branch. A direct edit to `repos.yaml` on a non-promotion branch is prohibited even if fro-bot-authored. Any exception requires an explicit override and is treated as an emergency measure, not routine workflow — the invariant exists precisely to prevent the both-sides mutation that causes promotion conflicts.
 
-A companion guard, `scripts/check-private-leak.ts`, detects a private repo's canonical `owner/name` introduced in a PR's added lines (see [Privacy gates and operator tooling](#privacy-gates-and-operator-tooling)). It runs on every PR to `main` via the trusted `workflow_run` topology described above (`private-leak-sentinel.yaml` + `check-private-leak.yaml`), posting a `security/check-private-leak` commit status to the PR head SHA.
+A companion guard, `scripts/check-private-leak.ts`, detects a private repo's canonical `owner/name` introduced in a PR's added lines (see [Privacy gates and operator tooling](#privacy-gates-and-operator-tooling)). It runs on every PR to `main` via the trusted `workflow_run` topology described above (`private-leak-sentinel.yaml` + `check-private-leak.yaml`), posting a `Security: Private Leak Scan` commit status to the PR head SHA.
 
 For intentional manual edits to any metadata file (including `allowlist.yaml`), land the change on `data` directly and let the existing promotion flow land it on `main`:
 
