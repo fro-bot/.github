@@ -471,7 +471,6 @@ jobs:
       - name: 📣 Announce daily digest to gateway
         if: >-
           (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-          steps.digest-counts.outputs.should_post == 'true' &&
           steps.report-url.outputs.report_url != '' &&
           vars.DAILY_DIGEST_ENABLED == 'true'
         env:
