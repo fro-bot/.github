@@ -42,6 +42,9 @@ on:
       DISCORD_WEBHOOK_URL:
         description: Discord webhook URL for social notifications (optional)
         required: false
+      GATEWAY_WEBHOOK_SECRET:
+        description: HMAC-SHA256 signing key for the gateway presence announce (optional)
+        required: false
 
 permissions:
   contents: read
@@ -335,6 +338,23 @@ jobs:
             }}
         run: node scripts/wiki-query.ts
 
+      # Overlay metadata/ from the data branch so the scheduled run can derive
+      # digest counts from live metadata/repos.yaml. Mirrors the precedented guard
+      # in reconcile-repos.yaml: tolerate a missing data branch (skip, don't fail).
+      - name: ⤵ Overlay metadata from data branch
+        if: github.event_name == 'schedule'
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            overlay_err=$(
+              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
+            ) || {
+              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
+            }
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
       - name: Run Fro Bot
         id: fro-bot-agent
         uses: fro-bot/agent@73501cca967b8b909812754ee29e4ab1cccf85ff # v0.58.1
@@ -374,6 +394,104 @@ jobs:
             `knowledge/schema.md`. Keep changes additive, preserve contradictions with
             dates and sources, and leave the wiki untouched when the signal is weak.
             </knowledge_persistence>
+
+      # Discover the daily report issue URL created by the agent this run.
+      # MUST run after the agent step (the agent creates the issue mid-run).
+      # Matches the EXACT title "Daily Fro Bot Report — <today-UTC> (UTC)" (em-dash U+2014).
+      # Two title families coexist — post-filter JSON for byte-equality to avoid false matches.
+      # Shape-validates the URL before use; skips the post on zero/multiple matches (fail-soft).
+      - name: 🔍 Discover daily report URL
+        id: report-url
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+        run: |
+          set -euo pipefail
+          TODAY_UTC="$(date -u +%Y-%m-%d)"
+          EXPECTED_TITLE="Daily Fro Bot Report — ${TODAY_UTC} (UTC)"
+          # Fetch open issues, post-filter for exact title match (byte-equality).
+          # Fail-soft: any gh/jq error emits empty report_url + warning and exits 0.
+          if ! MATCHES="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --limit 50 \
+            --json number,title,url \
+            2>/tmp/discover-err \
+            | jq --arg title "$EXPECTED_TITLE" \
+              '[.[] | select(.title == $title)]' \
+            2>>/tmp/discover-err)"; then
+            echo "report_url=" >> "$GITHUB_OUTPUT"
+            echo "::warning::daily-digest: report URL discovery failed: $(head -c 200 /tmp/discover-err 2>/dev/null)"
+            exit 0
+          fi
+          COUNT="$(echo "$MATCHES" | jq 'length')"
+          if [ "$COUNT" -ne 1 ]; then
+            echo "report_url=" >> "$GITHUB_OUTPUT"
+            echo "::notice::daily-digest: expected 1 report issue match, got ${COUNT}; skipping announce"
+          else
+            CANDIDATE_URL="$(echo "$MATCHES" | jq -r '.[0].url')"
+            # Shape-validate: must be https://github.com/fro-bot/.github/issues/<n>
+            if echo "$CANDIDATE_URL" | grep -qE '^https://github\.com/fro-bot/\.github/issues/[0-9]+$'; then
+              echo "report_url=${CANDIDATE_URL}" >> "$GITHUB_OUTPUT"
+            else
+              echo "report_url=" >> "$GITHUB_OUTPUT"
+              echo "::notice::daily-digest: report URL failed shape validation; skipping announce"
+            fi
+          fi
+
+      # Derive repos_tracked, surveys_today, should_post, count_status from metadata/repos.yaml.
+      # Surfaces count_status=='error' as a step warning so a broken data overlay is visible.
+      - name: 📊 Derive daily digest counts
+        id: digest-counts
+        if: github.event_name == 'schedule'
+        run: |
+          set -euo pipefail
+          TODAY_UTC="$(date -u +%Y-%m-%d)"
+          export TODAY_UTC
+          RESULT="$(node scripts/daily-digest-counts.ts metadata/repos.yaml "$TODAY_UTC")"
+          REPOS_TRACKED="$(echo "$RESULT" | jq '.repos_tracked')"
+          SURVEYS_TODAY="$(echo "$RESULT" | jq '.surveys_today')"
+          SHOULD_POST="$(echo "$RESULT" | jq -r '.should_post')"
+          COUNT_STATUS="$(echo "$RESULT" | jq -r '.count_status')"
+          {
+            echo "result=${RESULT}"
+            echo "repos_tracked=${REPOS_TRACKED}"
+            echo "surveys_today=${SURVEYS_TODAY}"
+            echo "should_post=${SHOULD_POST}"
+            echo "count_status=${COUNT_STATUS}"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$COUNT_STATUS" = "error" ]; then
+            echo "::warning::daily-digest-counts: count_status=error — metadata overlay may have failed; treating as quiet day"
+          fi
+
+      # Best-effort Discord presence: announce the daily digest to the gateway.
+      # DORMANT until vars.DAILY_DIGEST_ENABLED is set (default unset at merge).
+      # The dedicated step gate (not GATEWAY_ANNOUNCE_DISABLED) keeps this dormant
+      # so the two live events (survey_completed, invitation_accepted) are unaffected.
+      # Go-live: set DAILY_DIGEST_ENABLED after the gateway daily_digest variant is
+      # deployed and verified in fro-bot/agent + marcusrbrown/infra.
+      - name: 📣 Announce daily digest to gateway
+        if: >-
+          github.event_name == 'schedule' &&
+          steps.digest-counts.outputs.should_post == 'true' &&
+          steps.report-url.outputs.report_url != '' &&
+          vars.DAILY_DIGEST_ENABLED == 'true'
+        env:
+          EVENT_TYPE: daily_digest
+          REPOS_TRACKED: ${{ steps.digest-counts.outputs.repos_tracked }}
+          SURVEYS_TODAY: ${{ steps.digest-counts.outputs.surveys_today }}
+          REPORT_URL: ${{ steps.report-url.outputs.report_url }}
+          GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
+          GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}
+          GATEWAY_ANNOUNCE_DISABLED: ${{ vars.GATEWAY_ANNOUNCE_DISABLED }}
+        run: |
+          EVENT_CONTEXT_JSON="$(jq -nc \
+            --argjson repos_tracked "$REPOS_TRACKED" \
+            --argjson surveys_today "$SURVEYS_TODAY" \
+            --arg report_url "$REPORT_URL" \
+            '{repos_tracked: $repos_tracked, surveys_today: $surveys_today, report_url: $report_url}')"
+          export EVENT_CONTEXT_JSON
+          node scripts/gateway-announce.ts
 
       - name: Detect wiki insight changes
         id: wiki-changes
