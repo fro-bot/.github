@@ -91,9 +91,9 @@ Any time you add or rename a `required_status_checks.contexts` entry — or set 
 - `/`
 - other YAML-significant punctuation
 
-Quote contexts without such punctuation (e.g. `Test Scripts Load`) are fine
-unquoted; the quote is only required when the raw token would parse as something
-other than a string.
+Contexts without such punctuation (e.g. `Test Scripts Load`) are fine unquoted;
+the quote is only required when the raw token would parse as something other than
+a string.
 
 ## Examples
 
