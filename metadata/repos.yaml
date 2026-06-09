@@ -258,8 +258,8 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    discovery_channel: collab
-    next_survey_eligible_at: 2026-07-01
+    discovery_channel: contrib
+    next_survey_eligible_at: 2026-06-22
     private: false
     node_id: R_kgDOHBEXpg
   - owner: bfra-me
@@ -270,8 +270,8 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    discovery_channel: collab
-    next_survey_eligible_at: 2026-06-30
+    discovery_channel: contrib
+    next_survey_eligible_at: 2026-06-21
     private: false
     node_id: R_kgDOIKWaJA
   - owner: bfra-me
@@ -282,8 +282,8 @@ repos:
     last_survey_status: failure
     has_fro_bot_workflow: true
     has_renovate: true
-    discovery_channel: collab
-    next_survey_eligible_at: 2026-07-03
+    discovery_channel: contrib
+    next_survey_eligible_at: 2026-06-24
     private: false
     node_id: R_kgDOKWu8zQ
   - owner: bfra-me
@@ -294,8 +294,8 @@ repos:
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    discovery_channel: collab
-    next_survey_eligible_at: 2026-07-02
+    discovery_channel: contrib
+    next_survey_eligible_at: 2026-06-23
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMDc1NzM1OTE=
   - owner: marcusrbrown
