@@ -360,7 +360,7 @@ jobs:
       # The `outcome != 'success'` guard makes this idempotent: it never fires when the
       # normal record step already wrote a result.
       - name: Record survey result (cancelled/timeout fallback)
-        if: ${{ (cancelled() || failure()) && steps.record-result.outcome != 'success' }}
+        if: ${{ (cancelled() || failure()) && steps.record-result.outcome != 'success' && steps.resolve.outcome == 'success' }}
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
