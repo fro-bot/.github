@@ -1717,3 +1717,106 @@ Removed: deleted `knowledge/wiki/repos/fro-bot--tokentoilet.md`; dropped the cat
 Verified: ran the gate against the data tree (grandfather = main wiki) — `no private wiki leaks detected`, exit 0. With the page restored the gate reports `Leak count: 1`, confirming the orphan was the sole leak. Did not touch `metadata/repos.yaml` or anything outside `knowledge/`.
 
 Sources: scripts/check-wiki-private-presence.ts
+
+## [2026-06-05 00:00] ingest | marcusrbrown/sparkle
+
+Re-survey of `marcusrbrown/sparkle` (SHA `e03e317`). Updated `knowledge/wiki/repos/marcusrbrown--sparkle.md` and `knowledge/index.md`.
+
+Key findings (delta from 2026-05-23 at SHA `e757fa6`):
+
+- **Fro Bot agent workflow landed** — `fro-bot.yaml` present, agent v0.54.2. This resolves the gap flagged across all prior surveys. Triggers: PR events, issue events (trusted authors), `@fro-bot` mentions, schedule at 05:00 (autoheal) and 17:00 UTC (maintenance), workflow_dispatch.
+- **pnpm** bumped `10.33.4` → `10.34.1` (root `packageManager` field).
+- **Workflow count:** 6 → 7 (fro-bot.yaml added).
+- **`opencode.jsonc`** added at repo root — points OpenCode `instructions` to `.github/copilot-instructions.md`.
+- **PR #1604** (Astro v6 security) no longer open — resolved between surveys.
+- **Issue #57** ("Uplift sparkle") closed.
+- **New fro-bot issues:** #1665 (perpetual "Daily Autohealing Report"), #1664 (stale TODO/FIXME review).
+- **New fro-bot PRs:** #1681 (Turbo task graph fix — `@sparkle/test-utils#build` missing from test task deps), #1663 (API docs regen).
+- **Open issues:** 4 (up from 3). **Open PRs:** 3 (up from 2).
+- `llms.txt` references pnpm `10.33.4` but actual is `10.34.1` — minor doc drift flagged in page.
+- Node.js 24.16.0, TypeScript strict, ESM-only, `@bfra.me` toolchain, Renovate preset v5.2.0 — all unchanged.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--sparkle.md` (updated frontmatter, overview, tooling, CI/CD table, Fro Bot section rewritten from "missing" to "active", open PRs/issues section, survey history, notable patterns, developer tooling, shared ecosystem patterns table, key files table); `knowledge/index.md` (updated sparkle catalog line).
+
+Sources: https://github.com/marcusrbrown/sparkle (SHA e03e3173c70087d08e0def5196db624de964bf50)
+
+## [2026-06-05 08:58] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-06-06 00:00] ingest | marcusrbrown/.dotfiles
+
+Incremental survey from SHA `0bb24f0` (2026-05-24) to SHA `70c211bc` (2026-06-06). 71 commits. Updated `marcusrbrown--dotfiles.md` and `index.md`.
+
+Key changes:
+
+- **Fro Bot agent**: v0.44.3 → v0.55.1 (18 version jumps across 71 commits, including v0.45–v0.55 series)
+- **Auth plugin migrated**: `@cortexkit/opencode-anthropic-auth@1.2.2` → `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3` (Marcus's own published fork via [[marcusrbrown--cortexkit-anthropic-auth]])
+- **Default model declared**: `opencode-go/kimi-k2.6` as top-level model in `opencode.json`
+- **oh-my-opencode-slim routing**: 4 named presets (`openai`, `opencode-go`, `copilot`, `mixed`); active preset `mixed` uses `anthropic/claude-opus-4-8` as orchestrator; `ce` skill removed from presets
+- **General/explore agents disabled** in `opencode.json`
+- **Discord MCP server added** (disabled by default)
+- **New config files**: `aft.jsonc` (AFT plugin config), `systematic.jsonc` (systematic skills config)
+- **Plugin versions bumped**: magic-context 0.21.8 → 0.22.4, aft-opencode 0.29.1 → 0.35.4, systematic 2.23.4 → 2.28.0
+- **magic-context updates**: Historian model changed to `openai/gpt-5.5` (full), `claude-opus-4-8` added to cache TTL, `temporal_awareness: true`, `system_prompt_injection` block added
+- **Tool version bumps**: rust 1.96.0, go 1.26.4, pnpm 11.5.1, npm 11.16.0, opencode-ai 1.16.2, biome 2.4.16, deno 2.8.2
+- **Renovate**: semver versioning for OpenCode plugin regex manager, cross-series prerelease upgrade support
+- **bfra-me/.github** bumped to v4.16.21
+
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA 70c211bc269b4bb8c476a3929fd976bc51153b1c)
+
+## [2026-06-06 08:09] ingest | repo:marcusrbrown/.dotfiles
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-06-07 08:33] ingest | marcusrbrown/containers
+
+Incremental re-survey of `marcusrbrown/containers` (SHA `8aeadf73`, 2026-06-06). Updated repo page `marcusrbrown--containers.md`, topic page `github-actions-ci.md`, and `index.md` description. No new topic/entity/comparison pages warranted — changes slot into existing cross-cutting pages.
+
+Delta from prior survey (SHA `6f8a1014`, 2026-05-25):
+
+- **AI config scaffold merged** (PR #584, 2026-06-06): long-pending Copilot SWE-agent PR finally lands. Adds first-class `containers ai config` CLI subcommand (`--init`, `--validate`, `--file` flags), `ai_config.example.yaml` canonical reference config, and three new docs (`docs/AI_CONFIGURATION.md`, `docs/AI_CLI_GUIDE.md`, `docs/AI_VERIFICATION_REPORT.md`). The CLI is now self-bootstrapping for AI feature setup.
+- **Security patch** (PR #620, 2026-06-06): qs 6.15.2, express 4.22.2, and idna 3.17 patched in Express template and Python transitive deps.
+- **Fro Bot agent jumped v0.44.0 → v0.55.0** (SHA `f73a3e59...`, PR #630, 2026-06-05) — largest single-survey version jump observed for this repo.
+- **dorny/paths-filter bumped v3 → v4** (SHA `fbd0ab8f...`, PR #607) — minor interface change; the `v4.0.1` pin resolves the v4 PR in flight noted in the prior survey.
+- **pnpm bumped 10.33.0 → 10.34.1** (PR #622). Note: v10.34.x `.tar.gz` assets are missing from the Aqua backend, so pnpm was temporarily reverted to 10.33.0 in one commit (#624) before the aqua backend caught up.
+- **Node.js bumped 24.15.0 → 24.16.0** (mise.toml).
+- **openai bumped >=2.36.0 → >=2.41.0,<2.42.0** (PR #628).
+- **Continuous Node.js/Debian base image digest rotation** (#621–#630 range).
+- **Open PRs at survey time:** 3 (Copilot pytest PR #583 still pending since 2026-04-18; two mrbro-bot Renovate pin PRs #611/#612). Open issues: 6.
+- **Observed drift:** `bfra-me/.github` reusable renovate workflow still pinned at v4.16.0 (SHA `65caa6a...`) — behind the ecosystem median of v4.16.21+ seen in sibling repos. Renovate has PRs in flight to address this. Flagged as a potential drift candidate in the repo page.
+
+No contradictions with prior surveys. Repository structure, container variants, template system, Dockerfile patterns, CI pipeline, and branch protection are unchanged.
+
+Sources: https://github.com/marcusrbrown/containers (SHA 8aeadf737140077d3e976d30d70caee9cd09a885)
+
+## [2026-06-07 08:38] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers
+
+## [2026-06-08 00:00] ingest | marcusrbrown/gpt
+
+Incremental re-survey of `marcusrbrown/gpt` (SHA `36b50c9`, up from `aac0103` on 2026-05-27). Updated repo page `marcusrbrown--gpt.md` and topic page `langchain.md`. Updated `index.md` description. No new topic/entity/comparison pages warranted — delta is dependency hygiene and an accessibility fix.
+
+Delta from prior survey (SHA `aac0103`, 2026-05-27):
+
+- **`fro-bot/agent` bumped:** v0.45.0 → v0.57.0 (SHA `4470582693390235d4ab6fce1049373225025590`). `actions/checkout` pinned at v6.0.3 (`df4cb1c`). New `opencode-config` secret input added to agent step.
+- **LangChain updates:** `langchain` 1.4.2 → 1.4.4, `@langchain/langgraph` 1.3.2 → 1.3.5.
+- **Dependency bumps:** `vite` 8.0.14 → 8.0.16, `react-router-dom` 7.15.1 → 7.17.0, `openai` → 6.42.0, `dexie` 4.4.2 → 4.4.3, `vitest` 4.1.7 → 4.1.8, `@vitest/eslint-plugin` 1.6.18 → 1.6.19, `@vitest/coverage-v8` 4.1.7 → 4.1.8, `eslint` 10.4.0 → 10.4.1, `@types/node` → 24.12.4, `lucide-react` → 0.577.0, `lint-staged` → 16.4.0, `pnpm` 10.33.4 → 10.34.1, `@typescript/native-preview` → 7.0.0-dev.20260604.1.
+- **Accessibility fix:** Removed nested sidebar landmark (PR #2525, 2026-06-08). AGENTS.md updated for Vite 8 alignment.
+- Single three-mode `fro-bot.yaml` workflow confirmed — no separate `fro-bot-autoheal.yaml`. Open issues: 25.
+- No structural or application-code changes.
+
+Sources: https://github.com/marcusrbrown/gpt (SHA 36b50c9254c1795edd75331a4b0dad07961a49e1)
+
+## [2026-06-08 10:02] ingest | repo:marcusrbrown/gpt
+
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/gpt
