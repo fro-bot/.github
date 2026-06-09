@@ -302,12 +302,12 @@ repos:
     name: cortexkit_anthropic-auth
     added: 2026-05-28
     onboarding_status: onboarded
-    last_survey_at: 2026-05-28
+    last_survey_at: 2026-06-09
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: false
     discovery_channel: collab
-    next_survey_eligible_at: 2026-06-29
+    next_survey_eligible_at: 2026-07-10
     private: false
     node_id: R_kgDOSmhCGA
   - owner: '[REDACTED]'
