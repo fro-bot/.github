@@ -405,15 +405,22 @@ jobs:
         run: |
           set -euo pipefail
           TODAY_UTC="$(date -u +%Y-%m-%d)"
-          EXPECTED_TITLE="Daily Fro Bot Report \u2014 ${TODAY_UTC} (UTC)"
+          EXPECTED_TITLE="Daily Fro Bot Report — ${TODAY_UTC} (UTC)"
           # Fetch open issues, post-filter for exact title match (byte-equality).
-          MATCHES="$(gh issue list \
+          # Fail-soft: any gh/jq error emits empty report_url + warning and exits 0.
+          if ! MATCHES="$(gh issue list \
             --repo "$GITHUB_REPOSITORY" \
             --state open \
             --limit 50 \
             --json number,title,url \
+            2>/tmp/discover-err \
             | jq --arg title "$EXPECTED_TITLE" \
-              '[.[] | select(.title == $title)]')"
+              '[.[] | select(.title == $title)]' \
+            2>>/tmp/discover-err)"; then
+            echo "report_url=" >> "$GITHUB_OUTPUT"
+            echo "::warning::daily-digest: report URL discovery failed: $(head -c 200 /tmp/discover-err 2>/dev/null)"
+            exit 0
+          fi
           COUNT="$(echo "$MATCHES" | jq 'length')"
           if [ "$COUNT" -ne 1 ]; then
             echo "report_url=" >> "$GITHUB_OUTPUT"
@@ -464,7 +471,8 @@ jobs:
         if: >-
           github.event_name == 'schedule' &&
           steps.digest-counts.outputs.should_post == 'true' &&
-          vars.DAILY_DIGEST_ENABLED != ''
+          steps.report-url.outputs.report_url != '' &&
+          vars.DAILY_DIGEST_ENABLED == 'true'
         env:
           EVENT_TYPE: daily_digest
           REPOS_TRACKED: ${{ steps.digest-counts.outputs.repos_tracked }}

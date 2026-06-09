@@ -69,6 +69,12 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
   let surveysToday = 0
 
   for (const entry of data.repos) {
+    // Guard: a null or non-object element is a malformed entry — treat as data error.
+    if (entry === null || typeof entry !== 'object') {
+      process.stderr.write('daily-digest-counts: malformed repos[] element (null or non-object)\n')
+      return errorResult
+    }
+
     // Only entries with explicit `private: false` count as public.
     // Entries missing `private` or with `private: true` are NOT counted.
     if (entry.private === false) {
@@ -116,7 +122,21 @@ async function main(): Promise<void> {
     process.exit(0)
   }
 
-  const result = deriveCounts(yamlContent, todayUtc)
+  let result: DigestCounts
+  try {
+    result = deriveCounts(yamlContent, todayUtc)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`daily-digest-counts: unexpected error in deriveCounts: ${detail}\n`)
+    const errorResult: DigestCounts = {
+      repos_tracked: 0,
+      surveys_today: 0,
+      should_post: false,
+      count_status: 'error',
+    }
+    process.stdout.write(`${JSON.stringify(errorResult)}\n`)
+    process.exit(0)
+  }
   process.stdout.write(`${JSON.stringify(result)}\n`)
   process.exit(0)
 }

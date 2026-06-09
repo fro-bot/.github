@@ -202,4 +202,59 @@ describe('deriveCounts', () => {
     expect(result.should_post).toBe(false)
     expect(result.count_status).toBe('ok')
   })
+
+  // ─── Malformed repos[] elements → count_status:'error' (Fix B) ───────────
+
+  it('repos:[null] → count_status:error (malformed entry, not silent skip)', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    // Raw YAML with a null element in repos array
+    const yaml = 'version: 1\nrepos:\n  - ~\n'
+
+    const result = deriveCounts(yaml, TODAY)
+
+    expect(result).toEqual({
+      repos_tracked: 0,
+      surveys_today: 0,
+      should_post: false,
+      count_status: 'error',
+    })
+    expect(stderrSpy).toHaveBeenCalled()
+  })
+
+  it('repos:["x"] (scalar string element) → count_status:error (malformed entry)', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    // Raw YAML with a scalar string element in repos array
+    const yaml = 'version: 1\nrepos:\n  - "x"\n'
+
+    const result = deriveCounts(yaml, TODAY)
+
+    expect(result).toEqual({
+      repos_tracked: 0,
+      surveys_today: 0,
+      should_post: false,
+      count_status: 'error',
+    })
+    expect(stderrSpy).toHaveBeenCalled()
+  })
+
+  // ─── Strengthen missing-private test (full exact result object) ───────────
+
+  it('entry missing `private` field — full exact result object', () => {
+    const yaml = makeYaml([
+      {owner: 'acme', name: 'pub', private: false, last_survey_at: TODAY},
+      // no `private` key at all
+      {owner: 'acme', name: 'unknown', last_survey_at: TODAY},
+    ])
+
+    const result = deriveCounts(yaml, TODAY)
+
+    expect(result).toEqual({
+      repos_tracked: 1,
+      surveys_today: 1,
+      should_post: true,
+      count_status: 'ok',
+    })
+  })
 })

@@ -165,12 +165,12 @@ PAT split summary:
 
 `survey-repo.yaml`, `poll-invitations.yaml`, and the scheduled `fro-bot.yaml` run post in-character event announcements to the Fro Bot gateway, which relays them into Fronomenal Discord as the Fro Bot user. These steps are best-effort: they never fail the workflow, and they stay silent unless the gateway is configured.
 
-| Name                        | Type     | Purpose                                                                                 |
-| --------------------------- | -------- | --------------------------------------------------------------------------------------- |
-| `GATEWAY_WEBHOOK_SECRET`    | secret   | HMAC-SHA256 signing key for the announce payload                                        |
-| `GATEWAY_PRESENCE_URL`      | variable | Gateway `POST /v1/announce` endpoint URL                                                |
-| `GATEWAY_ANNOUNCE_DISABLED` | variable | Kill switch — any truthy value mutes all announce POSTs                                 |
-| `DAILY_DIGEST_ENABLED`      | variable | Go-live gate for the `daily_digest` event. Unset = the daily digest step is skipped     |
+| Name | Type | Purpose |
+| --- | --- | --- |
+| `GATEWAY_WEBHOOK_SECRET` | secret | HMAC-SHA256 signing key for the announce payload |
+| `GATEWAY_PRESENCE_URL` | variable | Gateway `POST /v1/announce` endpoint URL |
+| `GATEWAY_ANNOUNCE_DISABLED` | variable | Kill switch — any truthy value mutes all announce POSTs |
+| `DAILY_DIGEST_ENABLED` | variable | Go-live gate for the `daily_digest` event. Must be set to `true` to enable; unset or any other value = step is skipped |
 
 The gateway endpoint is opt-in: it accepts announcements only when the gateway deployment itself has both its webhook secret and presence channel configured. Until `GATEWAY_PRESENCE_URL` and `GATEWAY_WEBHOOK_SECRET` are set here, the announce steps log a skip and exit cleanly.
 
@@ -178,11 +178,11 @@ The gateway endpoint is opt-in: it accepts announcements only when the gateway d
 
 Each event carries a small, fixed context the gateway renders into a Discord message. All three post as the Fro Bot user.
 
-| Event                  | Source                  | Context shape                                                  |
-| ---------------------- | ----------------------- | ------------------------------------------------------------- |
-| `survey_completed`     | `survey-repo.yaml`      | `{ owner, repo, slug, wiki_pages_changed }`                   |
-| `invitation_accepted`  | `poll-invitations.yaml` | `{ count, repos: [{ owner, name }] }`                         |
-| `daily_digest`         | `fro-bot.yaml`          | `{ repos_tracked: number, surveys_today: number, report_url }` |
+| Event                 | Source                  | Context shape                                                  |
+| --------------------- | ----------------------- | -------------------------------------------------------------- |
+| `survey_completed`    | `survey-repo.yaml`      | `{ owner, repo, slug, wiki_pages_changed }`                    |
+| `invitation_accepted` | `poll-invitations.yaml` | `{ count, repos: [{ owner, name }] }`                          |
+| `daily_digest`        | `fro-bot.yaml`          | `{ repos_tracked: number, surveys_today: number, report_url }` |
 
 `daily_digest` posts on scheduled runs only, and only on days with at least one survey — quiet days are suppressed (the oversight report issue is still created either way). `repos_tracked` counts public tracked repos; `surveys_today` counts repos surveyed that UTC day; `report_url` links that day's oversight report.
 
@@ -191,7 +191,7 @@ Each event carries a small, fixed context the gateway renders into a Discord mes
 The `daily_digest` step ships dormant. To enable it:
 
 1. Confirm the gateway `daily_digest` variant is deployed and serving (gateway support lives in `fro-bot/agent` and is deployed via `marcusrbrown/infra`).
-2. Set the `DAILY_DIGEST_ENABLED` repository variable to any non-empty value.
+2. Set the `DAILY_DIGEST_ENABLED` repository variable to `true`.
 3. Verify one live post appears in Discord as the Fro Bot user with a working report link.
 
 The legacy daily-oversight Discord webhook keeps running until a separate follow-up removes it after go-live, so there is no coverage gap and no double-post while `DAILY_DIGEST_ENABLED` is unset.

@@ -1,9 +1,11 @@
 import {createHmac} from 'node:crypto'
 import process from 'node:process'
 
-export type EventType = 'survey_completed' | 'invitation_accepted' | 'daily_digest'
+const EVENT_TYPES = ['survey_completed', 'invitation_accepted', 'daily_digest'] as const
 
-const VALID_EVENT_TYPES = new Set<string>(['survey_completed', 'invitation_accepted', 'daily_digest'])
+export type EventType = (typeof EVENT_TYPES)[number]
+
+const VALID_EVENT_TYPES = new Set<string>(EVENT_TYPES)
 
 export function isEventType(value: string): value is EventType {
   return VALID_EVENT_TYPES.has(value)
