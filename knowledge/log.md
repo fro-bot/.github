@@ -1820,3 +1820,28 @@ Sources: https://github.com/marcusrbrown/gpt (SHA 36b50c9254c1795edd75331a4b0dad
 Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-06-09 00:00] ingest | marcusrbrown/infra
+
+Incremental re-survey of `marcusrbrown/infra` (SHA `9ce50f4`, up from `2f9bafd` on 2026-05-27). Updated repo page `marcusrbrown--infra.md` and `index.md`. No new topic/entity/comparison pages created — Umami analytics is a self-contained addition that doesn't yet cross-cut other managed repos.
+
+Delta from prior survey (SHA `2f9bafd`, 2026-05-27):
+
+- **New app: Umami analytics** (`apps/umami/`) — self-hosted Umami 3.1.0 at `metrics.fro.bot`. Three-service Docker Compose stack (umami + postgres 15-alpine + caddy 2.11.3-alpine). `deploy-umami.yaml` workflow added (13 workflows total). New `umami` GitHub Environment. New CLI command group (`infra umami status/deploy/host/logs`). New secrets: `UMAMI_SSH_KEY`, `UMAMI_DOMAIN`, `UMAMI_APP_SECRET`, `UMAMI_DB_PASSWORD`, `UMAMI_ADMIN_PASSWORD`.
+- **CLI version:** v0.7.0 → v0.9.17.
+- **Fro Bot agent:** v0.44.3 → v0.59.0 (SHA `feb5365`); rapid series of bumps via Renovate.
+- **Gateway daemon upstream:** v0.44.2 → v0.57.0 (#466, `daily_digest` presence event support). Go-live verification runbook added (#474).
+- **CLIProxyAPI:** v6.10.9 → v7.1.56 (major version boundary crossed). Intermediate v7.1.54/55 reverted (#463) for health check regression; v7.1.56 is stable.
+- **CLIProxy deploy healthcheck:** moved from CLIProxyAPI endpoint to Caddy endpoint for Debian-image compatibility (#469).
+- **Gateway secrets contract expanded:** Added `GH_APP_ID`, `GH_APP_PRIVATE_KEY`, `WORKSPACE_OPENCODE_TOKEN`, `WORKSPACE_OPENCODE_AUTH`, `WORKSPACE_OPENCODE_MODEL`, `WORKSPACE_OPENCODE_CONFIG`, `GATEWAY_TRIGGER_ROLE_ID`, optional `GATEWAY_WEBHOOK_SECRET`, `GATEWAY_PRESENCE_CHANNEL_ID`. Removed `OMO_PROVIDERS` from repo secrets.
+- **Provisioning security fix (#453):** Management key written to 0600 file instead of stdout during cliproxy provisioning.
+- **Renovate config:** `marcusrbrown/renovate-config#5.2.0` → `#5.2.1`.
+- **Umami topic/entity page:** Not created — single-repo footprint; will create when other repos in the ecosystem adopt Umami or reference it.
+
+Sources: https://github.com/marcusrbrown/infra (SHA 9ce50f419995919aae53143eb797bd7798949cc0)
+
+## [2026-06-09 08:47] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra
