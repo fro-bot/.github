@@ -1853,3 +1853,30 @@ Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
 Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+
+## [2026-06-09 09:00] ingest | marcusrbrown/systematic
+
+Incremental re-survey of `marcusrbrown/systematic` (HEAD `4d2c123`, 2026-06-09). Updated `marcusrbrown--systematic.md` and `knowledge/index.md`. No new topic or entity pages warranted — existing coverage is sufficient.
+
+Key delta from prior survey (SHA `9b75707`, 2026-05-28, v2.24.0):
+
+- **Version**: v2.24.0 → v2.31.0 (~86 commits, 8 releases in 12 days)
+- **Skills**: 47 → 49 (+`orchestrating-subagents` v2.28.0 #491; `argument-hint` enforcement on `ce:compound-refresh` v2.31.0 #505). Count confirmed from directory listing.
+- **Agent runtime**: `fro-bot/agent@v0.45.0` → `v0.59.0` (SHA `feb5365`). 14 version bumps since last survey including 3 security hardening fixes in v0.55.6.
+- **Agent frontmatter hardening** (v2.27.0–v2.29.0): all 51 agents now declare explicit `mode: subagent` (#488) and explicit `temperature:` (#495). Content-integrity gates enforce both. Zero-behavior-change proofs via converter-equivalence tests.
+- **New skills content**: `ce:brainstorm` Phase 2.5 Synthesis Summary; `ce:plan` Anti-Expansion step 3.7 + dual scope paths; `ce:review` Stage 5b independent finding validation (#485).
+- **Portable install path** (v2.30.0): `npx skills add marcusrbrown/systematic` documented as harness-agnostic install alongside OpenCode plugin. Every non-deprecated skill reference page gets a copyable `npx skills add --skill <name>` command.
+- **Docs site**: homepage redesigned with custom hero, live stats banner (walks skills/agents/registry at build time), Open Graph/JSON-LD SEO, Umami analytics wired end-to-end in CI Actions step (#463, #446, v2.25.0).
+- **Content-integrity**: solution-doc YAML unquoted-comment detection; `checkAgentMode` and `checkAgentTemperature` gates; `argument-hint` guard (skills referencing `$ARGUMENTS` outside fenced blocks must declare `argument-hint`).
+- **Release dispatch**: confirmation timeout changed from exit 1 to `::warning::` + exit 0 (#504); poll budget bumped 90s → 180s.
+- **OpenCode dep**: v1.15.10 → v1.16.2 (#513).
+- **Open issues**: unchanged at 3 (Weekly Maintenance #157, Daily Autohealing #153, Dependency Dashboard #15). 0 open PRs.
+- **`npx skills` footnote**: The `orchestrating-swarms` and `claude-permissions-optimizer` skills remain in the deprecation surface from v2.18+ but are still bundled.
+
+Sources: https://github.com/marcusrbrown/systematic (SHA 4d2c123f7f5568bba66433eb2a4e51c5ce42985c)
+
+## [2026-06-09 15:43] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/systematic
