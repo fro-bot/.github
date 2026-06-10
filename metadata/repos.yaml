@@ -4,11 +4,11 @@ repos:
     name: ha-config
     added: 2026-04-17
     onboarding_status: onboarded
-    last_survey_at: 2026-05-29
+    last_survey_at: 2026-06-10
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
-    next_survey_eligible_at: 2026-06-29
+    next_survey_eligible_at: 2026-07-12
     discovery_channel: collab
     private: false
     node_id: R_kgDOJ_bMaQ
