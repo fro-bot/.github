@@ -363,9 +363,6 @@ export function formatFloorTelemetry(flooredDispatches: number, thresholdYield: 
  * above the 33d worst-case normal cadence while remaining sensitive to genuinely
  * stuck repos (those whose last_survey_at has not advanced across multiple runs).
  */
-// Grace margin: must be strictly greater than JITTER_MAX_DAYS so a repo on normal
-// collab cadence at maximum jitter (30d + 3d = 33d) never trips the detector.
-// Using 7d grace: 7 > JITTER_MAX_DAYS (3). Result: 30 + 7 = 37d.
 const STUCK_GRACE_DAYS = JITTER_MAX_DAYS + 4 // 3 + 4 = 7; strictly > JITTER_MAX_DAYS
 const STUCK_STALENESS_DAYS = CHANNEL_INTERVAL_DAYS.collab + STUCK_GRACE_DAYS // 30 + 7 = 37
 

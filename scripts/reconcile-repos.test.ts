@@ -5675,18 +5675,13 @@ function stuckInput(entry: RepoEntry, extraOverrides: Partial<ReconcileInput> = 
     currentRepos: {version: 1, repos: [entry]},
     accessList: [
       makeAccess({
-        owner: entry.owner === '[REDACTED]' ? 'fro-bot' : entry.owner,
-        name: entry.name === entry.node_id ? 'test-repo' : entry.name,
+        owner: entry.owner,
+        name: entry.name,
         node_id: entry.node_id ?? 'R_stuck_test',
         private: false,
       }),
     ],
-    fieldProbes: new Map([
-      [
-        `${entry.owner === '[REDACTED]' ? 'fro-bot' : entry.owner}/${entry.name === entry.node_id ? 'test-repo' : entry.name}`,
-        {has_fro_bot_workflow: false, has_renovate: false},
-      ],
-    ]),
+    fieldProbes: new Map([[`${entry.owner}/${entry.name}`, {has_fro_bot_workflow: false, has_renovate: false}]]),
     ...extraOverrides,
   })
 }
@@ -5759,6 +5754,37 @@ describe('stuckCandidates detector', () => {
       }),
     )
     expect(result.summary.stuckCandidates).toBe(2)
+  })
+
+  it('edge: onboarded repo with malformed last_survey_at → NOT counted (conservative guard)', () => {
+    // Date.parse('not-a-dateT00:00:00Z') returns NaN; Number.isFinite(NaN) is false,
+    // so the detector skips the entry rather than treating it as stuck. This avoids
+    // false positives from data corruption that the field-probe path surfaces separately.
+    // NOW = 2026-04-17; only one onboarded repo in the snapshot, nothing else stuck.
+    const entry = stuckEntry({last_survey_at: 'not-a-date', node_id: 'R_malformed_date'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(0)
+  })
+
+  it('boundary: onboarded repo surveyed exactly 37 days ago → NOT counted (37 is not > 37)', () => {
+    // STUCK_STALENESS_DAYS = 37. The detector uses strict greater-than (daysAgo > 37),
+    // so a repo surveyed exactly 37 whole UTC days before NOW must NOT be counted.
+    // NOW = 2026-04-17T12:00:00Z; 37 days before = 2026-03-11.
+    // Date.parse('2026-03-11T00:00:00Z') → daysAgo = floor((NOW_ms - surveyed_ms) / 86_400_000)
+    // = floor((2026-04-17T12:00:00Z - 2026-03-11T00:00:00Z) / 86_400_000) = floor(37.5) = 37.
+    // 37 > 37 is false → NOT stuck.
+    const entry = stuckEntry({last_survey_at: '2026-03-11', node_id: 'R_boundary_37'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(0)
+  })
+
+  it('boundary: onboarded repo surveyed exactly 38 days ago → counted (38 > 37)', () => {
+    // NOW = 2026-04-17T12:00:00Z; 38 days before = 2026-03-10.
+    // daysAgo = floor((2026-04-17T12:00:00Z - 2026-03-10T00:00:00Z) / 86_400_000) = floor(38.5) = 38.
+    // 38 > 37 is true → counted as stuck.
+    const entry = stuckEntry({last_survey_at: '2026-03-10', node_id: 'R_boundary_38'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(1)
   })
 })
 
