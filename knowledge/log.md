@@ -1881,3 +1881,28 @@ Sources: https://github.com/marcusrbrown/tokentoilet (SHA 76d543e213abdc2823c1e0
 Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-06-10 03:54] ingest | marcusrbrown/ha-config
+
+Survey of `marcusrbrown/ha-config` (SHA `906126b`). Sixth survey; updated existing repo page `marcusrbrown--ha-config.md`, topic page `home-assistant.md`, and `index.md`.
+
+Key deltas since last survey (2026-05-29, SHA `33cca05`):
+
+- **bfra-me/.github reusable workflows: v4.16.21 → v4.16.24** (#791, #794, #798) — both `renovate.yaml` and `update-repo-settings.yaml`.
+- **Renovate preset: `marcusrbrown/renovate-config#5.2.0` → `#5.2.1`** (#796).
+- **`actions/checkout` → v6.0.3** (#793).
+- **esphome submodule digest advanced four times** (#792, #795, #797, #799).
+- **`mrbro-bot[bot]` now authors every merge** in the last 15 commits — escalated from "co-author seen" to sole Renovate merge identity on this repo.
+- **Correction recorded:** prior surveys logged "3 open issues, 0 open PRs"; #766 and #777 are open PRs counted by GitHub's `open_issues_count`. Noted both versions per contradiction rule.
+- **No structural drift:** same 11 packages, 10 custom components, `.HA_VERSION` 2025.6.3 (~12 months stale), `esphome==2025.12.7` while the v2026 bump PR (#777) stays parked.
+- **Still no Fro Bot workflow** (fifth consecutive confirmation) — repo page retains the follow-up draft-PR note.
+
+Topic update: `home-assistant.md` pin-drift footgun section extended — the drift is now ~12 months and the Renovate PR that would close it is itself parked.
+
+Sources: https://github.com/marcusrbrown/ha-config (SHA 906126b1e09e1d6102612287cc155000b51068c0)
+
+## [2026-06-10 03:57] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/ha-config
