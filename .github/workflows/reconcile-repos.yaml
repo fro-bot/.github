@@ -107,5 +107,6 @@ jobs:
             echo "| Entries refreshed | $(jq '.summary.refreshed // 0' "$result") |"
             echo "| Entries migrated | $(jq '.summary.migrated // 0' "$result") |"
             echo "| Contrib tracked | $(jq '.summary.byChannel.contrib.tracked // 0' "$result") |"
+            echo "| Stuck candidates | $(jq '.summary.stuckCandidates // 0' "$result") |"
           } >> "$GITHUB_STEP_SUMMARY"
         shell: bash
