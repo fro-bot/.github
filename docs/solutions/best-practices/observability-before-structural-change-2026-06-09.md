@@ -16,6 +16,8 @@ tags:
   - reconciliation
   - canary
 date: 2026-06-09
+last_updated: 2026-06-09
+verified: 2026-06-09
 ---
 
 # Observability Before Structural Change
