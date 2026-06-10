@@ -1,8 +1,9 @@
 ---
 title: 'feat: Control-plane gateway-announce for Fro Bot Discord presence'
 type: feat
-status: active
+status: complete
 date: 2026-06-04
+completed: 2026-06-09
 origin: docs/brainstorms/2026-05-23-discord-presence-via-control-plane-events-requirements.md
 deepened: 2026-06-04
 ---
@@ -179,7 +180,7 @@ workflow step (survey-repo / poll-invitations)
 
 ## Implementation Units
 
-- [ ] **Unit 1: `scripts/gateway-announce.ts` signer + CLI**
+- [x] **Unit 1: `scripts/gateway-announce.ts` signer + CLI**
 
 **Goal:** A strip-only-safe, zero-dep module that builds the payload, signs the exact bytes, POSTs
 with the retry/kill-switch policy, and never fails the workflow.
@@ -239,7 +240,7 @@ split); `scripts/bluesky-post.ts` (env-override seams).
 **Verification:** All scenarios pass with mocked `fetch`/`sleep`; `node -e "import('./scripts/gateway-announce.ts')"`
 loads under strip-only; types + lint clean.
 
-- [ ] **Unit 2: `handle-invitation.ts` emits accepted-public-repos list**
+- [x] **Unit 2: `handle-invitation.ts` emits accepted-public-repos list**
 
 **Goal:** Expose the list of accepted public repos so `poll-invitations.yaml` can build
 `context.repos` for the announce.
@@ -275,7 +276,7 @@ pair in `scripts/handle-invitation.ts`.
 **Verification:** existing handle-invitation tests stay green; new list-output tests pass; no redacted
 identifier appears in the list.
 
-- [ ] **Unit 3: Wire `survey_completed` into `survey-repo.yaml`**
+- [x] **Unit 3: Wire `survey_completed` into `survey-repo.yaml`**
 
 **Goal:** Fire a `survey_completed` announce after a successful survey, best-effort, behind the
 existing privacy/success gate.
@@ -313,7 +314,7 @@ existing privacy/success gate.
 payload context is built from verified outputs only; secret appears only in this step's env. Live
 proof deferred to rollout (SC1).
 
-- [ ] **Unit 4: Wire `invitation_accepted` into `poll-invitations.yaml`**
+- [x] **Unit 4: Wire `invitation_accepted` into `poll-invitations.yaml`**
 
 **Goal:** Fire a single aggregated `invitation_accepted` announce when ≥1 public invitation was
 accepted.
@@ -342,7 +343,7 @@ accepted.
 **Verification:** `actionlint` clean; step fires only when count > 0; `context.repos` comes from the
 Unit 2 list output (public only); secret scoped to the step.
 
-- [ ] **Unit 5: Document secrets/vars in `metadata/README.md`**
+- [x] **Unit 5: Document secrets/vars in `metadata/README.md`**
 
 **Goal:** Document the three new config values and which workflows consume them.
 

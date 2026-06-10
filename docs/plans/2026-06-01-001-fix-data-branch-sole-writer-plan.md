@@ -1,8 +1,9 @@
 ---
 title: "fix: Make data the sole writer of metadata/repos.yaml"
 type: fix
-status: active
+status: complete
 date: 2026-06-01
+completed: 2026-06-09
 origin: docs/brainstorms/2026-06-01-data-branch-sole-writer-requirements.md
 ---
 
