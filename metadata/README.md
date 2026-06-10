@@ -236,3 +236,11 @@ Reconcile runs are serialized by the `reconcile-repos.yaml` workflow's concurren
 This serialization is what prevents cross-run duplicate rollup issues: because no two reconcile runs can overlap, a rollup created by one run has fully propagated through the API before any subsequent run begins its `selfHealRollups` pass. Manual reruns are therefore safe and do not require paging delays or pacing rules.
 
 The within-run guard (`currentRunRollupOwners`) handles only the in-process race (a rollup POSTed in step 10 not yet visible to step 12's `listForRepo` call). Its activations are now counted as `raceSuppressedRollups` in the run summary so operators can distinguish same-run suppression from pre-existing rollups.
+
+## Survey floor stuck-repo observability
+
+The survey floor selects the oldest-surveyed onboarded repos to guarantee a minimum number of dispatches per run. Survey completion advances `last_survey_at`; the floor then moves to the next-oldest repo. A survey cancelled or killed before its resolve step completes records nothing, so `last_survey_at` never advances and the floor keeps re-selecting that repo every run, silently consuming a floor slot on a repo that cannot make progress.
+
+This cancel-before-resolve window is a known, accepted residual. Rather than tracking dispatch state per repo, the reconcile run derives a `stuckCandidates` count from existing metadata: the number of `onboarded` entries whose `last_survey_at` is `null` or older than the staleness threshold (the longest channel interval plus a grace margin that exceeds the jitter range, so normal cadence never trips it). The count is reported counts-only in the run summary and step summary — no repo identifiers in logs.
+
+A sustained non-zero `stuckCandidates` count across consecutive runs is the signal to implement stateful dispatch tracking (a `last_dispatched_at` field plus a cooldown that excludes recently-dispatched repos from floor selection). Until that signal fires, the lighter observability counter is sufficient.
