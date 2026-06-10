@@ -1,8 +1,9 @@
 ---
 title: "fix: Contrib channel tracking, daily digest truthfulness, and floor retry loops"
 type: fix
-status: active
+status: complete
 date: 2026-06-09
+completed: 2026-06-09
 ---
 
 # fix: Contrib channel tracking, daily digest truthfulness, and floor retry loops

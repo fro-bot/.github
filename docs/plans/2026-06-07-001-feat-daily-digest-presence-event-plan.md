@@ -1,8 +1,9 @@
 ---
 title: "feat: Daily digest presence event (control-plane side)"
 type: feat
-status: active
+status: complete
 date: 2026-06-07
+completed: 2026-06-09
 origin: docs/brainstorms/2026-06-04-daily-digest-presence-event-requirements.md
 deepened: 2026-06-09
 ---
@@ -165,7 +166,7 @@ cron heartbeat (see origin: `docs/brainstorms/2026-06-04-daily-digest-presence-e
 
 ## Implementation Units
 
-- [ ] **Unit 1: Teach the signer the `daily_digest` event type**
+- [x] **Unit 1: Teach the signer the `daily_digest` event type**
 
 **Goal:** Extend `gateway-announce.ts` so it accepts and signs `daily_digest` without changing the
 auth/replay contract.
@@ -198,7 +199,7 @@ auth/replay contract.
 **Verification:** New tests pass; existing signer tests unchanged; `tsc --noEmit` clean; the script
 still loads under Node strip-only.
 
-- [ ] **Unit 2: Count-derivation + suppress-gate script**
+- [x] **Unit 2: Count-derivation + suppress-gate script**
 
 **Goal:** A small tested script that reads `metadata/repos.yaml` and emits the digest counts plus a
 post/skip decision.
@@ -242,7 +243,7 @@ Vitest).
 
 **Verification:** Tests pass; script loads under strip-only; `tsc --noEmit` clean.
 
-- [ ] **Unit 3: Wire the scheduled run — metadata overlay, report-URL, dormant announce**
+- [x] **Unit 3: Wire the scheduled run — metadata overlay, report-URL, dormant announce**
 
 **Goal:** In `fro-bot.yaml`, overlay `metadata/`, derive counts, discover the report URL, and post
 the `daily_digest` (shipped dormant), without touching the legacy webhook step.
@@ -295,7 +296,7 @@ the step is skipped (never calls the signer); the discovery step carries `GH_TOK
 `GATEWAY_ANNOUNCE_DISABLED` is untouched and the two live events are unaffected; the legacy webhook
 step is unchanged.
 
-- [ ] **Unit 4: Docs — event type, secrets/vars, and go-live runbook**
+- [x] **Unit 4: Docs — event type, secrets/vars, and go-live runbook**
 
 **Goal:** Document the new event type and the exact dormant→live sequence.
 
