@@ -1904,3 +1904,26 @@ Sources: https://github.com/marcusrbrown/vbs (SHA abe4998fdd597743219edf5c0249b7
 Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/vbs
+
+## [2026-06-10 09:06] ingest | bfra-me/.github
+
+Re-survey of `bfra-me/.github` (SHA `a27ccfa`, prior survey 2026-05-20 at `a81be4c`). Updated repo page `bfra-me--github.md` (2nd survey), [[probot-settings]] (settings-sync defect note), [[github-actions-ci]] (Fro Bot Agent table row added), and `index.md`.
+
+Key deltas over 3 weeks:
+
+- **Fro Bot agent v0.44.2 → v0.59.1** — 17 sequential Renovate-automerged bumps (#2231–#2279); this repo is the freshest agent pin in the ecosystem, tracking releases within a day.
+- **Version churn:** `@bfra.me/.github` v4.16.18 → v4.16.24, pnpm 10.33.4 → 10.34.1, Node 24.15.0 → 24.16.0, `bfra-me/renovate-action` v9.101 → v9.110.
+- **Structure unchanged:** still 17 workflows, 3 custom actions, same workspace shape. Confirmed `shellEmulator: true` / `strictPeerDependencies: false` in pnpm-workspace.yaml (additive detail).
+- **New defect: issue #2213** (Marcus, 2026-05-23, open) — `update-repo-settings` `Filter Changed Files` step fails with git exit 128 on push events. Noted on both the repo page and [[probot-settings]] since this is the source repo for the settings-sync reusable workflow.
+- **Architecture detail captured:** `fro-bot-autoheal-org.yaml` delegates execution to the local `fro-bot.yaml` via `uses: ./.github/workflows/fro-bot.yaml` — single engine for per-repo and org-wide modes. Mode resolution chain (input → caller → cron → event) documented.
+- Open PRs: 1 (Changesets release #2275). Open issues: 5, all standing bot reports except #2213.
+
+Fro Bot workflow present and active — no onboarding follow-up needed. Open follow-up from prior survey (three-way common-settings reconciliation) remains open.
+
+Sources: https://github.com/bfra-me/.github (SHA a27ccfa2f1bc670ddfa2dbfdcabe154d944daf0c)
+
+## [2026-06-10 09:08] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github

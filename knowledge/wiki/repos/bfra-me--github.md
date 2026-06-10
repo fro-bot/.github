@@ -2,11 +2,14 @@
 type: repo
 title: bfra-me/.github
 created: 2026-05-20
-updated: 2026-05-20
+updated: 2026-06-10
 sources:
   - url: https://github.com/bfra-me/.github
     sha: a81be4c5d5c93824fdcc426418c9433d5e5bd9be
     accessed: 2026-05-20
+  - url: https://github.com/bfra-me/.github
+    sha: a27ccfa2f1bc670ddfa2dbfdcabe154d944daf0c
+    accessed: 2026-06-10
 tags: [bfra-me, dotgithub, monorepo, pnpm, typescript, github-actions, probot, renovate, template]
 related:
   - bfra-me--ha-addon-repository
@@ -38,12 +41,13 @@ license/secret/container scanning).
 - **License:** MIT
 - **Default branch:** `main`
 - **Created:** 2022-03-17
-- **Last push:** 2026-05-20
-- **Package version:** `@bfra.me/.github` v4.16.18 (private root)
-- **Node:** 24.15.0 (`.node-version`)
-- **Package manager:** pnpm 10.33.4
+- **Last push:** 2026-06-10
+- **Package version:** `@bfra.me/.github` v4.16.24 (private root)
+- **Node:** 24.16.0 (`.node-version`; was 24.15.0 on 2026-05-20)
+- **Package manager:** pnpm 10.34.1 (was 10.33.4 on 2026-05-20)
 - **TypeScript:** 6.0.3, strict
-- **Open issues / PRs:** 5 / 1 (2026-05-20)
+- **Open issues / PRs:** 5 / 1 (2026-06-10; the lone open PR is the
+  Changesets release PR #2275)
 
 ## Layout
 
@@ -86,7 +90,9 @@ license/secret/container scanning).
 - 4 packages: root (`@bfra.me/.github`) + 3 actions under `.github/actions/*`
 - Root is itself a workspace member (`packages: ['.', '.github/actions/*']`)
   with `ignoreWorkspaceRootCheck: true` — uncommon but intentional
-- `shamefullyHoist: true`, `autoInstallPeers: true`, `savePrefix: ''`
+- `shamefullyHoist: true`, `autoInstallPeers: true`, `savePrefix: ''`,
+  `shellEmulator: true`, `strictPeerDependencies: false` (latter two
+  confirmed 2026-06-10)
 - Overrides: `flatted@3.4.2` pinned; `undici@<6.23.0` forced to `>=6.23.0`;
   `vite@>=8.0.0 <=8.0.4` forced to `>=8.0.5`
 - `onlyBuiltDependencies`: `esbuild`, `unrs-resolver`
@@ -136,10 +142,14 @@ Notable surface area:
 ## Fro Bot Integration
 
 This repo **is** a Fro Bot workflow host, and it also _runs_ the org-wide
-autoheal sweep. As of HEAD it pins:
+autoheal sweep. As of HEAD (2026-06-10) it pins:
 
-- `fro-bot/agent@b97877b202095e5faf046c1f9d7a18891720a73b # v0.44.2`
-  (bumped via Renovate, PR #2200)
+- `fro-bot/agent@a289cef1f0ffddd7fb7f66e1c3955908e9644c9e # v0.59.1`
+  (PR #2279). This repo tracks agent releases nearly in lockstep:
+  Renovate landed **17 sequential agent bumps** between 2026-05-20
+  (v0.44.2) and 2026-06-09 (v0.59.1) — v0.48.0 through v0.59.1 each as
+  its own automerged PR. It is consistently the freshest agent pin in
+  the ecosystem.
 
 ### `fro-bot.yaml` (per-repo)
 
@@ -149,6 +159,12 @@ autoheal sweep. As of HEAD it pins:
   `workflow_dispatch` with `mode` input, `workflow_call`
 - Concurrency keyed off issue/PR/discussion/schedule/run_id; never
   cancels in progress (autoheal runs must finish cleanly)
+- `workflow_dispatch` also accepts a custom `prompt` input that
+  overrides mode selection entirely; mode resolution falls back through
+  explicit input → caller (`workflow_call`) mode → cron match
+  (05:00 = maintenance, 15:30 = autoheal) → event type
+  (dispatch = autoheal, PR = review), with hard validation against the
+  three known modes (observed 2026-06-10)
 - `PR_REVIEW_PROMPT` is security-focused for an org control center —
   enforces SHA-pinned actions with version comments, blocks workflow
   injection via untrusted input in `run:` blocks, requires `dist/`
@@ -170,6 +186,10 @@ autoheal sweep. As of HEAD it pins:
 - Dependency ownership: Renovate owns routine version bumps; Fro Bot may
   change versions **only** to remediate confirmed high/critical
   advisories
+- Implementation detail (observed 2026-06-10): the org sweep delegates
+  to the local reusable workflow via `uses:
+  ./.github/workflows/fro-bot.yaml` — the per-repo `fro-bot.yaml` is the
+  single execution engine for both per-repo and org-wide operation
 
 ## Probot Settings
 
@@ -265,11 +285,31 @@ action can detect it as a published package.
   but they consume `bfra-me/.github` reusable workflows.
 - **[[bfra-me--ha-addon-repository]]** — sibling org template; pulls
   reusable workflows and Probot settings from here.
-- **[[fro-bot--agent]]** — this repo pins `fro-bot/agent@v0.44.2`,
-  ahead of most other ecosystem repos (commonly `v0.41.x`–`v0.43.x`).
+- **[[fro-bot--agent]]** — this repo pins `fro-bot/agent@v0.59.1`
+  (2026-06-10; was v0.44.2 on 2026-05-20), ahead of most other
+  ecosystem repos. Renovate automerge keeps it within a day of each
+  agent release.
 - **[[marcusrbrown--renovate-config]]** — Marcus's preset is the
   Renovate baseline for `marcusrbrown/*` repos; `bfra-me/.github` ships
   its own `metadata/renovate.yaml` for `bfra-me/*` repos.
+
+## Operational Notes
+
+- **Issue #2213** (opened 2026-05-23 by Marcus, still open 2026-06-10):
+  `update-repo-settings` workflow's `Filter Changed Files` step fails
+  with git exit 128 on push events — a live defect in the settings-sync
+  path of the org control plane.
+- Standing bot-authored report issues: #2185 (Daily Maintenance
+  Report), #1960 (Org Autohealing Report), #1959 (Daily Autohealing
+  Report), #7 (Dependency Dashboard).
+- Commit traffic between 2026-05-20 and 2026-06-10 is almost entirely
+  Renovate dependency churn (fro-bot/agent, bfra-me/renovate-action
+  v9.101→v9.110, codeql-action, Vite/Vitest/eslint/tsx) plus periodic
+  `chore: update internal action SHA pins` and Changesets release
+  merges. No structural changes: still 17 workflows, 3 custom actions,
+  same root layout (plus `.ai/`, `.husky/`, `.changeset/`,
+  `.git-blame-ignore-revs`, `CONTRIBUTING.md`, `llms.txt` at root —
+  present at HEAD, some not captured in the original layout snapshot).
 
 ## Open Questions / Follow-Ups
 
@@ -287,3 +327,4 @@ action can detect it as a published package.
 | Date       | SHA        | Notes                                                                      |
 | ---------- | ---------- | -------------------------------------------------------------------------- |
 | 2026-05-20 | `a81be4c`  | Initial survey. `fro-bot/agent@v0.44.2` (PR #2200). 17 workflows, 3 custom actions. |
+| 2026-06-10 | `a27ccfa`  | Re-survey. v4.16.24, pnpm 10.34.1, Node 24.16.0, agent v0.59.1 (17 bumps in 3 weeks). Structure unchanged. Issue #2213 (settings-sync git exit 128) open. |

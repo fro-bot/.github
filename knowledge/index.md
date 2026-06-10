@@ -4,7 +4,7 @@ Master catalog of all wiki pages, organized by type.
 
 ## Repos
 
-- [[bfra-me--github]] — Org control center for `@bfra-me`; pnpm/TypeScript monorepo with 3 custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`), 17 workflows, org-wide Fro Bot autoheal (weekdays), canonical `bfra-me/.github:common-settings.yaml`, Fro Bot agent v0.44.2
+- [[bfra-me--github]] — Org control center for `@bfra-me`; pnpm/TypeScript monorepo with 3 custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`), 17 workflows, org-wide Fro Bot autoheal (weekdays, delegates to local `fro-bot.yaml` via `workflow_call`), canonical `bfra-me/.github:common-settings.yaml`; v4.16.24, Fro Bot agent v0.59.1 (freshest pin in ecosystem, 17 Renovate bumps 2026-05-20→06-09); live defect #2213 in `update-repo-settings` (git exit 128 on push)
 - [[bfra-me--ha-addon-repository]] — Template repository for a Home Assistant add-on repository (bfra-me org); multi-arch Docker builds via `home-assistant/builder`, GHCR publishing with cosign, Fro Bot agent v0.43.1 with add-on-aware review/autoheal (Renovate PR #557 queuing v0.46.1; HEAD unchanged on `main` for 14 days as of 2026-05-30)
 - [[bfra-me--renovate-action]] — bfra-me/renovate-action
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo (pnpm 10.34.1, TS 6, ESM); 9 published packages (`eslint-config`, `prettier-config`, `tsconfig`, `es`, `create`, `badge-config`, `doc-sync`, `semantic-release`, `workspace-analyzer`) + Astro Starlight docs; 11 workflows; Fro Bot agent v0.47.0 (jumped v0.44.2 → v0.46.1 → v0.47.0 on 2026-05-30 alongside PR #3491 fixing dispatch/reusable-call mode resolution); `bfra-me/.github` reusable workflows + Renovate baseline at v4.16.21

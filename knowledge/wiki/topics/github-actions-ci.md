@@ -102,6 +102,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--sparkle]]     | **Not present**          | N/A                               |
 | [[marcusrbrown--ha-config]]   | **Not present**          | N/A                               |
 | [[bfra-me--works]]            | Present (`fro-bot.yaml`, single-file three-mode at v0.44.2) | Maintenance `0 16 * * *`, Autoheal `30 3 * * *`; both rolling-update single-issue reports (`Daily Maintenance Report` / `Daily Autohealing Report`) |
+| [[bfra-me--github]]           | Present (`fro-bot.yaml` three-mode at v0.59.1 as of 2026-06-10, freshest pin in ecosystem — 17 Renovate bumps in 3 weeks) plus `fro-bot-autoheal-org.yaml` org sweep that delegates to the local `fro-bot.yaml` via `workflow_call` | Maintenance `0 5 * * *`, Autoheal `30 15 * * *`, org-wide autoheal weekdays `0 5 * * 1-5` |
 
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
 
