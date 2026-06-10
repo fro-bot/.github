@@ -11,6 +11,7 @@ import {
   fetchPerRepoStatus,
   formatCommitMessage,
   formatFloorTelemetry,
+  formatStuckTelemetry,
   handleReconcile,
   isEligibleForSurvey,
   loadDispatchStaggerFromEnv,
@@ -130,6 +131,7 @@ describe('reconcileRepos', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1231,6 +1233,7 @@ describe('reconcileRepos', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 3, dispatched: 0, deferred: 0, lostAccess: 1},
@@ -1275,6 +1278,7 @@ describe('reconcileRepos', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
           owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1303,6 +1307,7 @@ describe('reconcileRepos', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: emptyChannelStats(),
       })
     })
@@ -4483,6 +4488,7 @@ describe('formatCommitMessage', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 2 refreshes')
@@ -4504,6 +4510,7 @@ describe('formatCommitMessage', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
@@ -4525,6 +4532,7 @@ describe('formatCommitMessage', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 1 refreshes')
@@ -4546,6 +4554,7 @@ describe('formatCommitMessage', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 1 refreshes, +18 migrated')
@@ -5637,6 +5646,256 @@ describe('formatFloorTelemetry', () => {
     expect(msg).not.toMatch(/R_[a-z\d]/)
     // Matches the strict counts-only pattern.
     expect(msg).toMatch(/^floor fired: dispatched \d+ of FLOOR_MIN=\d+ \(threshold yielded \d+\)$/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// stuckCandidates detector — unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// NOW = 2026-04-17T12:00:00Z (re-uses the module-level constant)
+// STUCK_STALENESS_DAYS = 37 (collab base 30d + grace 7d > JITTER_MAX_DAYS 3d)
+//
+// Boundary: a repo surveyed exactly 33 days ago (30d + max jitter 3d) is NOT stuck.
+// A repo surveyed 40 days ago IS stuck. A null last_survey_at on an onboarded repo IS stuck.
+
+/** Build a minimal onboarded entry with a given last_survey_at for stuck-candidate tests. */
+function stuckEntry(overrides: Partial<RepoEntry> = {}): RepoEntry {
+  return makeEntry({
+    onboarding_status: 'onboarded',
+    private: false,
+    node_id: 'R_stuck_test',
+    ...overrides,
+  })
+}
+
+/** Build a minimal reconcile input with a single tracked repo in the access list. */
+function stuckInput(entry: RepoEntry, extraOverrides: Partial<ReconcileInput> = {}): ReconcileInput {
+  return makeInput({
+    currentRepos: {version: 1, repos: [entry]},
+    accessList: [
+      makeAccess({
+        owner: entry.owner === '[REDACTED]' ? 'fro-bot' : entry.owner,
+        name: entry.name === entry.node_id ? 'test-repo' : entry.name,
+        node_id: entry.node_id ?? 'R_stuck_test',
+        private: false,
+      }),
+    ],
+    fieldProbes: new Map([
+      [
+        `${entry.owner === '[REDACTED]' ? 'fro-bot' : entry.owner}/${entry.name === entry.node_id ? 'test-repo' : entry.name}`,
+        {has_fro_bot_workflow: false, has_renovate: false},
+      ],
+    ]),
+    ...extraOverrides,
+  })
+}
+
+describe('stuckCandidates detector', () => {
+  it('happy path: all onboarded repos have recent last_survey_at → stuckCandidates === 0', () => {
+    // A repo surveyed exactly 33 days ago (30d base + max jitter 3d) is NOT stuck.
+    // NOW = 2026-04-17, so 33 days ago = 2026-03-15.
+    const entry = stuckEntry({last_survey_at: '2026-03-15', node_id: 'R_recent'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(0)
+  })
+
+  it('edge: onboarded repo with last_survey_at older than threshold → counted', () => {
+    // 40 days ago from NOW (2026-04-17) = 2026-03-08.
+    const entry = stuckEntry({last_survey_at: '2026-03-08', node_id: 'R_stale'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(1)
+  })
+
+  it('edge: onboarded repo with last_survey_at === null → counted', () => {
+    const entry = stuckEntry({last_survey_at: null, node_id: 'R_null_survey'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(1)
+  })
+
+  it('edge: lost-access repo with very old last_survey_at → NOT counted', () => {
+    // lost-access repos are excluded from the stuck-candidate population.
+    const entry = stuckEntry({
+      onboarding_status: 'lost-access',
+      last_survey_at: '2025-01-01',
+      node_id: 'R_lost',
+    })
+    // lost-access entry not in access list → stays lost-access
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [],
+        perRepoStatus: new Map([['fro-bot/test-repo', {status: 'revoked'} as const]]),
+      }),
+    )
+    expect(result.summary.stuckCandidates).toBe(0)
+  })
+
+  it('edge: pending repo with null survey state → NOT counted', () => {
+    const entry = stuckEntry({
+      onboarding_status: 'pending',
+      last_survey_at: null,
+      node_id: 'R_pending',
+    })
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(0)
+  })
+
+  it('counts multiple stuck onboarded repos correctly', () => {
+    // Two onboarded repos: one with null survey, one with 40d-old survey.
+    const entry1 = stuckEntry({owner: 'fro-bot', name: 'repo-a', last_survey_at: null, node_id: 'R_a_stuck'})
+    const entry2 = stuckEntry({owner: 'fro-bot', name: 'repo-b', last_survey_at: '2026-03-08', node_id: 'R_b_stuck'})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry1, entry2]},
+        accessList: [
+          makeAccess({owner: 'fro-bot', name: 'repo-a', node_id: 'R_a_stuck', private: false}),
+          makeAccess({owner: 'fro-bot', name: 'repo-b', node_id: 'R_b_stuck', private: false}),
+        ],
+        fieldProbes: new Map([
+          ['fro-bot/repo-a', {has_fro_bot_workflow: false, has_renovate: false}],
+          ['fro-bot/repo-b', {has_fro_bot_workflow: false, has_renovate: false}],
+        ]),
+      }),
+    )
+    expect(result.summary.stuckCandidates).toBe(2)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// formatStuckTelemetry — unit tests for the stuck-candidate log message helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('formatStuckTelemetry', () => {
+  it('returns the expected message string for a given count', () => {
+    expect(formatStuckTelemetry(3)).toBe('stuck candidates: 3 onboarded repo(s) past staleness threshold')
+  })
+
+  it('contains no owner/name/node_id in the message (counts-only invariant)', () => {
+    const msg = formatStuckTelemetry(5)
+    // No slash-separated owner/repo shape.
+    expect(msg).not.toMatch(/\//)
+    // No node_id-shaped token.
+    expect(msg).not.toMatch(/R_[a-z\d]/)
+    // Matches the strict counts-only pattern.
+    expect(msg).toMatch(/^stuck candidates: \d+ onboarded repo\(s\) past staleness threshold$/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// handleReconcile stuck-candidate telemetry integration tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile stuck-candidate telemetry', () => {
+  it('emits a counts-only stuck log line when stuckCandidates > 0', async () => {
+    const warnCalls: string[] = []
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn((msg: string) => {
+        warnCalls.push(msg)
+      }),
+    }
+
+    // A repo with last_survey_at 40 days before NOW (2026-04-17) = 2026-03-08.
+    // next_survey_eligible_at in the future so it doesn't dispatch via threshold.
+    const staleEntry: RepoEntry = {
+      owner: 'fro-bot',
+      name: 'stale-repo',
+      added: '2026-01-01',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-03-08',
+      last_survey_status: 'success',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      discovery_channel: 'collab',
+      private: false,
+      node_id: 'R_stale_telemetry',
+      next_survey_eligible_at: '2030-01-01',
+    }
+
+    await handleReconcile(
+      baseParams({
+        logger,
+        readMetadata: makeReadMetadata({
+          repos: {version: 1, repos: [staleEntry]},
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'stale-repo',
+                archived: false,
+                private: false,
+                node_id: 'R_stale_telemetry',
+              },
+            ],
+          }),
+        }),
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+      }),
+    )
+
+    const stuckLines = warnCalls.filter(m => m.includes('stuck candidates'))
+    expect(stuckLines).toHaveLength(1)
+    // Counts-only: no owner/name/node_id.
+    expect(stuckLines[0]).not.toMatch(/fro-bot/)
+    expect(stuckLines[0]).not.toMatch(/stale-repo/)
+    expect(stuckLines[0]).not.toMatch(/R_stale_telemetry/)
+    expect(stuckLines[0]).toMatch(/^stuck candidates: \d+ onboarded repo\(s\) past staleness threshold$/)
+  })
+
+  it('emits NO stuck log line when stuckCandidates === 0', async () => {
+    const warnCalls: string[] = []
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn((msg: string) => {
+        warnCalls.push(msg)
+      }),
+    }
+
+    // A repo surveyed 33 days ago (within threshold) — should NOT trigger stuck telemetry.
+    // NOW = 2026-04-17, 33 days ago = 2026-03-15.
+    const freshEntry: RepoEntry = {
+      owner: 'fro-bot',
+      name: 'fresh-repo',
+      added: '2026-01-01',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-03-15',
+      last_survey_status: 'success',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      discovery_channel: 'collab',
+      private: false,
+      node_id: 'R_fresh_telemetry',
+      next_survey_eligible_at: '2030-01-01',
+    }
+
+    await handleReconcile(
+      baseParams({
+        logger,
+        readMetadata: makeReadMetadata({
+          repos: {version: 1, repos: [freshEntry]},
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'fresh-repo',
+                archived: false,
+                private: false,
+                node_id: 'R_fresh_telemetry',
+              },
+            ],
+          }),
+        }),
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+      }),
+    )
+
+    const stuckLines = warnCalls.filter(m => m.includes('stuck candidates'))
+    expect(stuckLines).toHaveLength(0)
   })
 })
 

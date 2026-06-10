@@ -54,7 +54,13 @@ import {
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
-import {addRepoEntry, computeNextEligibleAt, normalizeRepoEntryForStorage} from './repos-metadata.ts'
+import {
+  addRepoEntry,
+  CHANNEL_INTERVAL_DAYS,
+  computeNextEligibleAt,
+  JITTER_MAX_DAYS,
+  normalizeRepoEntryForStorage,
+} from './repos-metadata.ts'
 import {
   assertAllowlistFile,
   assertReposFile,
@@ -286,6 +292,19 @@ export interface ReconcileSummary {
    * `deferred` after cap selection.
    */
   byChannel: Record<DiscoveryChannel, ChannelStats>
+  /**
+   * Number of `onboarded` entries whose `last_survey_at` has not advanced past the
+   * normal cadence threshold ({@link STUCK_STALENESS_DAYS} days). A non-zero value
+   * across consecutive runs is the signal to investigate the cancel-before-resolve
+   * window where a survey never records a result and the floor keeps re-selecting it.
+   *
+   * Derived stateless at reconcile time from existing metadata — no new schema field.
+   * Counts only `onboarded` entries; `pending`, `pending-review`, and `lost-access`
+   * entries are excluded (different dispatch paths or already out of rotation).
+   * A `null` `last_survey_at` on an `onboarded` entry counts as stuck (onboarded but
+   * never successfully surveyed).
+   */
+  stuckCandidates: number
 }
 
 export interface ReconcileResult {
@@ -332,6 +351,33 @@ const FLOOR_MIN_GAP_DAYS = 7
  */
 export function formatFloorTelemetry(flooredDispatches: number, thresholdYield: number): string {
   return `floor fired: dispatched ${flooredDispatches} of FLOOR_MIN=${FLOOR_MIN} (threshold yielded ${thresholdYield})`
+}
+
+/**
+ * Staleness threshold (in whole UTC days) for the stuck-candidate detector.
+ *
+ * Derivation: longest channel base interval (collab = 30d) + grace margin.
+ * Grace must be strictly greater than JITTER_MAX_DAYS (3d) so a repo on normal
+ * collab cadence at maximum jitter (30d + 3d = 33d) never trips the detector.
+ * A grace of 7d gives STUCK_STALENESS_DAYS = 37d, providing a comfortable buffer
+ * above the 33d worst-case normal cadence while remaining sensitive to genuinely
+ * stuck repos (those whose last_survey_at has not advanced across multiple runs).
+ */
+// Grace margin: must be strictly greater than JITTER_MAX_DAYS so a repo on normal
+// collab cadence at maximum jitter (30d + 3d = 33d) never trips the detector.
+// Using 7d grace: 7 > JITTER_MAX_DAYS (3). Result: 30 + 7 = 37d.
+const STUCK_GRACE_DAYS = JITTER_MAX_DAYS + 4 // 3 + 4 = 7; strictly > JITTER_MAX_DAYS
+const STUCK_STALENESS_DAYS = CHANNEL_INTERVAL_DAYS.collab + STUCK_GRACE_DAYS // 30 + 7 = 37
+
+/**
+ * Format the stuck-candidate telemetry message.
+ *
+ * Extracted so the message shape can be unit-tested independently of the I/O shell.
+ * Security invariant: the message must contain only aggregate counts — no owner, repo
+ * name, or node_id. Mirrors {@link formatFloorTelemetry}.
+ */
+export function formatStuckTelemetry(stuckCandidates: number): string {
+  return `stuck candidates: ${stuckCandidates} onboarded repo(s) past staleness threshold`
 }
 
 /**
@@ -390,6 +436,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     flooredDispatches: 0,
     visibilityTransitions: 0,
     raceSuppressedRollups: 0,
+    stuckCandidates: 0,
     byChannel: {
       collab: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
       owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -577,13 +624,37 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
 
   const issues: IssueQueueEntry[] = [...buildIssueQueue(rawIssues), ...transitionIssues]
 
-  // Populate per-channel tracked counts after both passes complete. Counts entries
-  // present on `next.repos` post-classification (excludes lost-access entries via the
-  // existing flow — `lost-access` entries remain in repos, only their onboarding_status
-  // changes, so they still count as tracked). The plan defines `tracked` as entries
-  // currently in `metadata/repos.yaml` for that channel, regardless of survey status.
+  // Populate per-channel tracked counts and stuck-candidate count after both passes
+  // complete. Counts entries present on `next.repos` post-classification (excludes
+  // lost-access entries via the existing flow — `lost-access` entries remain in repos,
+  // only their onboarding_status changes, so they still count as tracked). The plan
+  // defines `tracked` as entries currently in `metadata/repos.yaml` for that channel,
+  // regardless of survey status.
+  //
+  // Stuck-candidate detection: an `onboarded` entry whose `last_survey_at` has not
+  // advanced past STUCK_STALENESS_DAYS is a stuck candidate. Uses the same whole-day
+  // UTC age computation as the floor gap check (Math.floor of ms / 86_400_000) so the
+  // boundary is stable regardless of the time-of-day component of `now`.
+  const nowMs = now.getTime()
   for (const entry of next.repos) {
     summary.byChannel[entry.discovery_channel ?? 'collab'].tracked += 1
+
+    if (entry.onboarding_status === 'onboarded') {
+      if (entry.last_survey_at === null) {
+        // Onboarded but never successfully surveyed — counts as stuck.
+        summary.stuckCandidates += 1
+      } else {
+        const surveyedMs = Date.parse(`${entry.last_survey_at}T00:00:00Z`)
+        if (Number.isFinite(surveyedMs)) {
+          const daysAgo = Math.floor((nowMs - surveyedMs) / 86_400_000)
+          if (daysAgo > STUCK_STALENESS_DAYS) {
+            summary.stuckCandidates += 1
+          }
+        }
+        // Malformed last_survey_at: not counted as stuck (conservative; avoids false
+        // positives from data corruption that the field-probe path will surface separately).
+      }
+    }
   }
 
   // Zero-change optimization: preserve currentRepos reference identity for cheap `===` probe.
@@ -1399,6 +1470,18 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
       // point. A breadcrumb to stderr preserves visibility of programmer errors (e.g. a
       // future refactor that makes `logger` undefined) without aborting the scheduled run.
       console.error('reconcile: floor telemetry emission failed', error)
+    }
+  }
+
+  // Stuck-candidate telemetry — counts-only, no per-repo identifiers (security invariant:
+  // see docs/solutions/security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md).
+  // Emitted only when stuckCandidates > 0 to keep quiet runs noise-free.
+  // Telemetry is best-effort: a logger failure must never abort the scheduled reconcile run.
+  if (plan.summary.stuckCandidates > 0) {
+    try {
+      logger.warn(formatStuckTelemetry(plan.summary.stuckCandidates))
+    } catch (error) {
+      console.error('reconcile: stuck-candidate telemetry emission failed', error)
     }
   }
 
