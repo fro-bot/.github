@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/vbs"
 created: 2026-04-18
-updated: 2026-05-29
+updated: 2026-06-10
 sources:
+  - url: https://github.com/marcusrbrown/vbs
+    sha: abe4998fdd597743219edf5c0249b71cc00c9e56
+    accessed: 2026-06-10
   - url: https://github.com/marcusrbrown/vbs
     sha: 69db16a73245372a9a1b1c6c32d0a70fd0a22185
     accessed: 2026-05-29
@@ -20,6 +23,9 @@ tags: [typescript, vite, star-trek, viewing-guide, local-first, d3, github-pages
 aliases: [vbs, view-by-stardate]
 related:
   - github-actions-ci
+  - marcusrbrown--tokentoilet
+  - marcusrbrown--systematic
+  - marcusrbrown--renovate-config
 ---
 
 # marcusrbrown/vbs
@@ -31,11 +37,11 @@ related:
 - **Purpose:** Interactive Star Trek chronological viewing guide with progress tracking
 - **Default branch:** `main`
 - **Created:** 2025-07-18
-- **Last push:** 2026-05-29 (as of 2026-05-29 survey)
+- **Last push:** 2026-06-07 (as of 2026-06-10 survey)
 - **Homepage:** https://marcusrbrown.github.io/vbs/
 - **License:** MIT (declared in package.json; no LICENSE file observed at root)
 - **Topics:** `star-trek`, `viewing-guide`, `chronological`, `progress-tracker`, `local-first`
-- **Package manager:** pnpm 10.33.4 (as of 2026-05-29; previously 10.33.2)
+- **Package manager:** pnpm 10.34.1 (as of 2026-06-10; previously 10.33.4)
 - **Node.js:** 22.x
 
 ## Tech Stack
@@ -147,7 +153,7 @@ vbs/
 | --- | --- | --- | --- |
 | CI | `ci.yaml` | push/PR to `main` | Lint, type-check, test with coverage, build |
 | Deploy | `deploy.yaml` | push to `main`, dispatch | Build + deploy to GitHub Pages |
-| Fro Bot | `fro-bot.yaml` | PR, issue, comment, schedule (daily 15:30 UTC + 03:30 UTC autoheal), dispatch | PR review, daily maintenance, autoheal (single workflow as of 2026-05-14, PR #564) |
+| Fro Bot | `fro-bot.yaml` | PR, issue, comment, schedule (daily 15:30 UTC + 03:30 UTC autoheal), dispatch | PR review, daily maintenance, autoheal (single workflow as of 2026-05-14, PR #564; single unified job as of 2026-05-30, PR #594) |
 | ~~Fro Bot Autoheal~~ | ~~`fro-bot-autoheal.yaml`~~ | _Removed 2026-05-14 (PR #564) — folded into `fro-bot.yaml` with `mode` dispatch input (`review`/`maintenance`/`autoheal`/`both`)_ | _historical_ |
 | Update Star Trek Data | `update-star-trek-data.yaml` | weekly Monday 09:00 UTC, dispatch | Regenerate data from external sources, validate, create PR |
 | Renovate | `renovate.yaml` | — | Dependency updates |
@@ -165,7 +171,7 @@ Required status checks on `main`: Build, Fro Bot, Renovate / Renovate, Test. Lin
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present and active** (`fro-bot.yaml`). As of 2026-05-29 survey: agent `v0.46.0` (was `v0.42.8` at 2026-05-07 survey — see Survey History for the version trail). As of 2026-05-14 (PR #564) the separate `fro-bot-autoheal.yaml` was folded into a single `fro-bot.yaml` with three operating modes routed by `workflow_dispatch.inputs.mode` (`review` | `maintenance` | `autoheal` | `both`) and dual cron schedules (`30 3 * * *` autoheal, `30 15 * * *` maintenance). This mirrors the consolidation pattern landed in [[marcusrbrown--systematic]] (#446) and [[marcusrbrown--marcusrbrown-github-io]] and is the dominant Fro Bot workflow shape across the ecosystem now.
+**Fro Bot workflow is present and active** (`fro-bot.yaml`). As of 2026-06-10 survey: agent `v0.55.4` (was `v0.46.0` at 2026-05-29 — see Survey History for the version trail). As of 2026-05-14 (PR #564) the separate `fro-bot-autoheal.yaml` was folded into a single `fro-bot.yaml` with operating modes routed by `workflow_dispatch.inputs.mode` and dual cron schedules (`30 3 * * *` autoheal, `30 15 * * *` maintenance). PR #594 (2026-05-30, Fro Bot-authored) completed the consolidation into a **unified single-job workflow**: the separate `fro-bot-autoheal` job was removed, the `both` mode was dropped (modes are now `review` | `maintenance` | `autoheal`, default `autoheal`), concurrency for schedule triggers now keys on `github.event.schedule` (the actual cron string) instead of a hardcoded string, and a fork-PR-head guard was added at the job `if` level (skips fork PRs and bot-authored PRs). PR #593 (2026-05-30, Marcus-authored) added `opencode-config` to job secrets. This mirrors the consolidation pattern landed in [[marcusrbrown--systematic]] (#446), [[marcusrbrown--marcusrbrown-github-io]], and `marcusrbrown/marcusrbrown` / [[marcusrbrown--tokentoilet]], and is the dominant Fro Bot workflow shape across the ecosystem now.
 
 ### PR Review
 
@@ -181,7 +187,7 @@ Scheduled at 15:30 UTC daily. Maintains a rolling "Daily Maintenance Report" iss
 
 ### Daily Autoheal
 
-Scheduled at 03:30 UTC daily via separate `fro-bot-autoheal.yaml`. Five-category sweep:
+Scheduled at 03:30 UTC daily. Originally ran via a separate `fro-bot-autoheal.yaml` (removed 2026-05-14, PR #564) and then a separate job within `fro-bot.yaml` (removed 2026-05-30, PR #594); now routed through the single unified `fro-bot` job. Five-category sweep:
 
 1. Errored PRs — diagnose and fix failing CI on open PRs
 2. Security — remediate Dependabot/Renovate security alerts
@@ -197,7 +203,7 @@ Responds to `@fro-bot` mentions in issue/PR/discussion comments from OWNER/MEMBE
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.9` + `group:allNonMajor`. Post-upgrade tasks run `pnpm install` + `pnpm fix`. Rebase when behind base branch.
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.1` (as of 2026-06-10; was `#5.2.0` at 2026-05-29, `#4.5.9` before that) + `group:allNonMajor`. Post-upgrade tasks run `pnpm install` + `pnpm fix`. Rebase when behind base branch.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` — confirms membership in the Fro Bot-managed ecosystem.
 - **Git hooks:** `simple-git-hooks` runs `lint-staged` on pre-commit. Lint-staged runs `eslint --fix` on TS/JS/CSS/MD/JSON/YAML files.
 - **AI context:** Root `AGENTS.md`, `src/modules/AGENTS.md`, `src/components/AGENTS.md`, `.ai/` directory, `llms.txt`, `.github/copilot-instructions.md`, `.github/agents/` (data-curator agent).
@@ -213,7 +219,7 @@ Responds to `@fro-bot` mentions in issue/PR/discussion comments from OWNER/MEMBE
 - **D3 timeline visualization:** `timeline-viz.ts` module + `timeline-controls.ts` component for interactive chronological visualization.
 - **Streaming availability layer:** `streaming-api.ts` module with UI components for Paramount+/Netflix availability.
 - **Data-curator agent:** Dedicated `.github/agents/data-curator.agent.md` for Star Trek data management via Copilot agents.
-- **Aggressive autoheal:** The `fro-bot-autoheal.yaml` workflow is one of the most comprehensive automated maintenance configurations in the ecosystem, covering 5 categories with detailed output formatting.
+- **Aggressive autoheal:** The autoheal configuration (originally `fro-bot-autoheal.yaml`, now a mode of the unified `fro-bot.yaml` as of PR #594) is one of the most comprehensive automated maintenance configurations in the ecosystem, covering 5 categories with detailed output formatting.
 
 ## Survey History
 
@@ -223,6 +229,33 @@ Responds to `@fro-bot` mentions in issue/PR/discussion comments from OWNER/MEMBE
 | 2026-04-25 | `dd10e05` | Incremental — 7 Renovate commits, agent bump v0.40.2 → v0.41.4, no structural changes |
 | 2026-05-07 | `b3c415b` | Incremental — 15 Renovate commits, agent bump v0.41.4 → v0.42.8, Renovate preset #4.5.8 → #4.5.9 |
 | 2026-05-29 | `69db16a` | Workflow consolidation (PR #564), Renovate preset v4.5.9 → v5.2.0 (#567), multi-track timeline merged (#458), data-automation stabilization (#574), agent v0.42.8 → v0.46.0, backlog cleared |
+| 2026-06-10 | `abe4998` | Single-job workflow unification (PR #594), opencode-config secret (#593), agent v0.46.0 → v0.55.4, Renovate preset v5.2.0 → v5.2.1, pnpm 10.34.1, rest is Renovate cadence |
+
+### 2026-06-10 Delta (SHA `69db16a` → `abe4998`)
+
+28 commits over 9 days. Two structural CI commits on 2026-05-30; everything else is Renovate-authored (`mrbro-bot[bot]`) dependency cadence. No application code changes.
+
+**Structural changes (non-Renovate):**
+
+- **Unified single-job Fro Bot workflow (PR #594, `8b1e7ae`, 2026-05-30, Fro Bot-authored):** Completes the consolidation started in PR #564. The separate `fro-bot-autoheal` job inside `fro-bot.yaml` was removed; autoheal logic now routes through the single `fro-bot` job via schedule/mode-based `PROMPT` dispatch. The `both` dispatch mode was dropped (`review` | `maintenance` | `autoheal`, default `autoheal`). Concurrency for schedule triggers now keys on `github.event.schedule` rather than a hardcoded string. A fork-PR / bot-author guard was added at the job `if` level. Autoheal prompt expanded with strategies ported from sibling repos. Explicitly matches the pattern in `marcusrbrown/marcusrbrown` and [[marcusrbrown--tokentoilet]].
+- **opencode-config secret (PR #593, `4bacf6b`, 2026-05-30, Marcus-authored):** Adds `opencode-config` to the Fro Bot job secrets — the only human-authored commit in the delta.
+
+**Renovate / dependency cadence:**
+
+- **`fro-bot/agent` version trail:** v0.46.0 → v0.46.1 (#591) → v0.48.0 (#597) → v0.49.0 (#600) → v0.50.0 (#601) → v0.51.0 (#603) → v0.52.0 (#604) → v0.52.1 (#605) → v0.53.1 (#609) → v0.54.1 (#610) → v0.54.2 (#611) → v0.55.0 (#612) → v0.55.2 (#614) → v0.55.3 (#615) → v0.55.4 (#616). Fifteen bumps in 9 days — tracking upstream agent releases at full cadence.
+- **Renovate preset:** `marcusrbrown/renovate-config#5.2.0` → `#5.2.1`.
+- **pnpm:** 10.33.4 → 10.34.1 (#595).
+- **vite:** pinned to 7.3.2 (#577, the long-open PR finally merged 2026-05-30) → 7.3.3 (#596) → 7.3.5 (#608).
+- **bfra-me tooling pins advanced:** `@bfra.me/eslint-config` 0.51.1, `@bfra.me/prettier-config` 0.16.9, `@bfra.me/tsconfig` 0.13.1.
+- **`bfra-me/.github` reusable workflows:** → v4.16.23 (#606). `actions/checkout` → v6.0.3 (#602).
+
+**Activity shape (as of 2026-06-10):**
+
+- **Open PRs:** 0 (down from 1) — #577 merged. Clean PR surface.
+- **Open issues:** 13 (down from 14). Steady state.
+- **Star count:** 1.
+- **No license file at root** (still — only `license: MIT` in `package.json`). Carried forward; no contradiction.
+- Repository remains in maintenance/dependency autopilot mode aside from the CI consolidation work.
 
 ### 2026-05-29 Delta (SHA `b3c415b` → `69db16a`)
 

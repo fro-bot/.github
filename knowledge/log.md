@@ -1882,27 +1882,25 @@ Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/tokentoilet
 
-## [2026-06-10 03:54] ingest | marcusrbrown/ha-config
+## [2026-06-10 04:00] ingest | marcusrbrown/vbs
 
-Survey of `marcusrbrown/ha-config` (SHA `906126b`). Sixth survey; updated existing repo page `marcusrbrown--ha-config.md`, topic page `home-assistant.md`, and `index.md`.
+Survey of `marcusrbrown/vbs` (SHA `abe4998`). Updated existing repo page `marcusrbrown--vbs.md` (5th survey), updated [[github-actions-ci]] Fro Bot Agent table (vbs row added), updated `index.md` entry.
 
-Key deltas since last survey (2026-05-29, SHA `33cca05`):
+Key deltas since last survey (2026-05-29, SHA `69db16a`), 28 commits over 9 days:
 
-- **bfra-me/.github reusable workflows: v4.16.21 → v4.16.24** (#791, #794, #798) — both `renovate.yaml` and `update-repo-settings.yaml`.
-- **Renovate preset: `marcusrbrown/renovate-config#5.2.0` → `#5.2.1`** (#796).
-- **`actions/checkout` → v6.0.3** (#793).
-- **esphome submodule digest advanced four times** (#792, #795, #797, #799).
-- **`mrbro-bot[bot]` now authors every merge** in the last 15 commits — escalated from "co-author seen" to sole Renovate merge identity on this repo.
-- **Correction recorded:** prior surveys logged "3 open issues, 0 open PRs"; #766 and #777 are open PRs counted by GitHub's `open_issues_count`. Noted both versions per contradiction rule.
-- **No structural drift:** same 11 packages, 10 custom components, `.HA_VERSION` 2025.6.3 (~12 months stale), `esphome==2025.12.7` while the v2026 bump PR (#777) stays parked.
-- **Still no Fro Bot workflow** (fifth consecutive confirmation) — repo page retains the follow-up draft-PR note.
+- **Unified single-job Fro Bot workflow (PR #594, 2026-05-30, Fro Bot-authored):** separate `fro-bot-autoheal` job removed from `fro-bot.yaml`; autoheal routed through the single `fro-bot` job via mode-based PROMPT dispatch. `both` mode dropped (now `review`/`maintenance`/`autoheal`, default `autoheal`). Schedule concurrency now keys on `github.event.schedule`. Fork-PR + bot-author guard added at job `if` level. Matches `marcusrbrown/marcusrbrown` and tokentoilet pattern.
+- **opencode-config job secret (PR #593, Marcus-authored)** — the sole human commit in the delta.
+- **Fro Bot agent: v0.46.0 → v0.55.4** — 15 Renovate bumps in 9 days, full upstream cadence.
+- **Renovate preset #5.2.0 → #5.2.1; pnpm 10.33.4 → 10.34.1; vite pinned 7.3.2 → 7.3.5; bfra-me/.github → v4.16.23.**
+- **Open PRs: 1 → 0** (long-open #577 vite pin merged). Open issues: 14 → 13. No application code changes; maintenance autopilot aside from CI consolidation.
+- Contradiction handling: prior "three operating modes + both" description superseded additively; no license file at root carried forward unchanged.
 
-Topic update: `home-assistant.md` pin-drift footgun section extended — the drift is now ~12 months and the Renovate PR that would close it is itself parked.
+Fro Bot workflow is present and active — no follow-up onboarding PR needed.
 
-Sources: https://github.com/marcusrbrown/ha-config (SHA 906126b1e09e1d6102612287cc155000b51068c0)
+Sources: https://github.com/marcusrbrown/vbs (SHA abe4998fdd597743219edf5c0249b71cc00c9e56)
 
-## [2026-06-10 03:57] ingest | repo:marcusrbrown/ha-config
+## [2026-06-10 04:00] ingest | repo:marcusrbrown/vbs
 
-Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/ha-config
+Sources: https://github.com/marcusrbrown/vbs
