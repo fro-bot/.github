@@ -177,3 +177,4 @@ Reference implementation pattern:
 - [Private repo dispatch requires definitive public visibility](../security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md) — engine-side fail-closed privacy gate the floor inherits
 - [Survey Repo dispatch boundary trusted caller-provided owner/repo](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md) — workflow-side counterpart; defense-in-depth pair
 - [Loose-then-tight schema migration pattern](./loose-then-tight-schema-migration-pattern-2026-05-05.md) — the additive `flooredDispatches` field follows this approach
+- [Observability before structural change](./observability-before-structural-change-2026-06-09.md) — before adding state to harden this floor, prove the gap is real; otherwise ship a derived counter and revisit trigger
