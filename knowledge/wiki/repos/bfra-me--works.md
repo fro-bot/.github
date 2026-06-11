@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/works
 created: 2026-05-20
-updated: 2026-05-31
+updated: 2026-06-11
 sources:
   - url: https://github.com/bfra-me/works
     sha: ef14b26085dab318fffad1b6c3062292f8ae60b8
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/bfra-me/works
     sha: cd4a52d7d9ad59c8770784d9411d688e9a7d50db
     accessed: 2026-05-31
+  - url: https://github.com/bfra-me/works
+    sha: 499b2156515414fd1d85561b52efcce4fb93536d
+    accessed: 2026-06-11
 tags:
   [
     bfra-me,
@@ -56,13 +59,13 @@ automation actions), `bfra-me/works` is the **shared library plane**.
 - **License:** MIT
 - **Default branch:** `main`
 - **Created:** 2020-10-27
-- **Last push:** 2026-05-31
+- **Last push:** 2026-06-10
 - **Topics:** `bfra-me`, `works`, `components`, `semantic-release`, `tools`, `tsconfig`
 - **Stars:** 3
-- **Open issues / PRs:** 38 / 2 (2026-05-31)
-- **Latest release:** `@bfra.me/workspace-analyzer@0.2.8` (2026-05-16) — unchanged
+- **Open issues / PRs:** 42 total / 4 open PRs (2026-06-11)
+- **Latest release:** `@bfra.me/workspace-analyzer@0.2.8` (2026-05-16) — unchanged since 2026-05-16; a pending Changesets publish PR (#3652) queues `@bfra.me/create@0.7.15` and sibling patch bumps
 - **Primary language:** TypeScript (~99%)
-- **Node:** 24.15.0 (`.node-version`) — packages target ES2022+/Node 20+
+- **Node:** 24.16.0 (`.node-version`; was 24.15.0 on 2026-05-31) — packages target ES2022+/Node 20+
 - **Package manager:** pnpm 10.34.1 (was 10.33.4 on 2026-05-20)
 - **TypeScript:** 6.0.3, strict (`noUncheckedIndexedAccess`)
 - **Root package:** `@bfra.me/works` v0.0.0-development (private)
@@ -183,9 +186,9 @@ Surface area:
   when package READMEs, sources, or `package.json` files change. Has a
   `dry-run` dispatch input.
 - **`renovate.yaml`** — calls reusable
-  `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.21` (bumped
-  from `v4.16.18` on 2026-05-20) after the Release workflow succeeds,
-  with `log-level` and `print-config` dispatch inputs.
+  `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.25` (v4.16.18
+  → v4.16.21 → v4.16.25 across surveys) after the Release workflow
+  succeeds, with `log-level` and `print-config` dispatch inputs.
 - **`renovate-changeset.yaml`** — auto-generates changesets for
   `bfra-me[bot]` / `renovate[bot]` PRs. Triggers on `merge_group`,
   `pull_request_target`, and `workflow_dispatch`. Uses
@@ -208,13 +211,14 @@ setup and cache restoration.
 ## Fro Bot Integration
 
 `bfra-me/works` runs a **single-file three-mode Fro Bot** at
-`fro-bot/agent@54ee8140 # v0.47.0` (as of 2026-05-31) — parity with
-[[bfra-me--github]], ahead of most other ecosystem repos. The pin
-advanced v0.44.2 → v0.46.1 (#3503) → v0.47.0 (#3510) in a single day
-on 2026-05-30, alongside PR #3491 ("Fix Fro Bot mode/prompt
-resolution for dispatch and reusable runs") which patched the inline
-shell mode resolution for `workflow_dispatch` and `workflow_call`
-paths.
+`fro-bot/agent@f2f3c08f # v0.60.0` (as of 2026-06-11) — the leading
+agent pin in the surveyed ecosystem. The pin advanced v0.44.2 →
+v0.46.1 (#3503) → v0.47.0 (#3510) on 2026-05-30, then rode the full
+Renovate cadence through v0.55.x–v0.59.x to v0.60.0 (#3649) on
+2026-06-10 — 13 agent bumps in the 2026-05-31 → 2026-06-10 window
+alone, all automerged. PR #3491 ("Fix Fro Bot mode/prompt resolution
+for dispatch and reusable runs") patched the inline shell mode
+resolution for `workflow_dispatch` and `workflow_call` paths.
 
 ### Triggers
 
@@ -356,8 +360,8 @@ create a new report per cycle.
 ## Renovate
 
 - `.github/renovate.json5` extends:
-  - `github>bfra-me/.github:internal.json5#v4.16.21` (org baseline; was
-    `#v4.16.18` on 2026-05-20)
+  - `github>bfra-me/.github:internal.json5#v4.16.25` (org baseline;
+    `#v4.16.18` on 2026-05-20, `#v4.16.21` on 2026-05-31)
   - `github>sanity-io/renovate-config:semantic-commit-type`
   - `security:minimumReleaseAgeNpm`
 - `addLabels: ['{{{parentDir}}}']` auto-labels by directory (clean
@@ -430,17 +434,19 @@ Release pipeline:
 ## Cross-Repo Relationships
 
 - **[[bfra-me--github]]** — the org control plane. Provides the
-  reusable workflows this repo calls (`renovate.yaml@v4.16.21` as of
-  2026-05-31, `update-repo-settings.yaml@v4.16.0`), the
+  reusable workflows this repo calls (`renovate.yaml@v4.16.25` as of
+  2026-06-11, `update-repo-settings.yaml@v4.16.0`), the
   `internal.json5` Renovate baseline, and the `common-settings.yaml`
   Probot template. `bfra-me/works` is currently leading the agent pin
-  at `v0.47.0`; sibling repos should be re-surveyed to confirm whether
+  at `v0.60.0`; sibling repos should be re-surveyed to confirm whether
   the org control plane and HA add-on template have followed.
 - **[[bfra-me--ha-addon-repository]]** — sibling `bfra-me` org repo.
   Shares the `Daily Autohealing Report` single-issue rolling-update
-  convention, and also extends `.github:common-settings.yaml`.
-- **[[fro-bot--agent]]** — this repo runs `v0.44.2`, at the leading
-  edge.
+  convention, and also extends `.github:common-settings.yaml`. Stark
+  contrast in update health: ha-addon-repository is review-deadlocked
+  at agent v0.43.1 while `works` automerges its way to v0.60.0.
+- **[[fro-bot--agent]]** — this repo runs `v0.60.0`, at the leading
+  edge of the surveyed fleet.
 - **[[marcusrbrown--renovate-config]]** — parallel Renovate preset
   family in the `marcusrbrown/*` ecosystem; `bfra-me/works` extends
   the `bfra-me/.github:internal.json5` baseline instead.
@@ -452,6 +458,17 @@ Release pipeline:
   surface as devDependencies.
 
 ## Open Questions / Follow-Ups
+
+- Three Fro Bot-authored PRs are open as of 2026-06-11: #3508
+  (`fix(workspace-analyzer): accept comparator peer ranges`, open
+  since ~2026-05-30), #3619 (`fix(security): update create templates
+  vitest`), and #3620 (`docs: update AGENTS package count`). The
+  autoheal loop generates fixes but nothing merges them — same
+  review-pipeline gap as [[bfra-me--ha-addon-repository]], in milder
+  form. Worth watching whether these age out or land.
+- No npm publish since 2026-05-16 despite continuous dependency churn;
+  the Changesets PR #3652 accumulates patch bumps. Not a fault — just
+  a release-cadence observation.
 
 - The `docs` package uses Astro Starlight; its quality infrastructure
   (MDX lint, content tests, version-badge sync) is sophisticated
@@ -472,3 +489,4 @@ Release pipeline:
 | ---------- | --------- | ---------------------------------------------------------------------------------------------- |
 | 2026-05-20 | `ef14b26` | Initial survey. `fro-bot/agent@v0.44.2`, 11 workflows, 8 published packages + docs site, manypkg-enforced workspace protocol. |
 | 2026-05-31 | `cd4a52d` | Re-survey. `fro-bot/agent` v0.44.2 → v0.47.0 (via v0.46.1, same day 2026-05-30). PR #3491 patched dispatch/reusable-call mode resolution in the inline shell. `bfra-me/.github` reusable workflows + `internal.json5` baseline v4.16.18 → v4.16.21. pnpm 10.33.4 → 10.34.1. Published package versions unchanged. Workflow inventory, package layout, Probot settings, branch protection, build/release pipeline all identical. Open PRs 1 → 2. |
+| 2026-06-11 | `499b215` | Third survey. `fro-bot/agent` v0.47.0 → v0.60.0 (13 automerged bumps in 10 days — fastest agent cadence in the fleet). `bfra-me/.github` reusable renovate workflow + `internal.json5` baseline v4.16.21 → v4.16.25 (`update-repo-settings` still v4.16.0). Node 24.15.0 → 24.16.0. Changesets publish PR #3652 pending (`@bfra.me/create@0.7.15` + sibling patches); last actual npm release still 2026-05-16. Three Fro Bot-authored PRs open (#3508 workspace-analyzer peer-range fix, #3619 security template bump, #3620 docs). Workflow inventory, layout, workspace config, conventions all unchanged. Open PRs 2 → 4. |

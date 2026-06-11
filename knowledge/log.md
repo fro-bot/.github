@@ -1924,3 +1924,26 @@ Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103
 Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/ha-addon-repository
+
+## [2026-06-11 09:51] ingest | bfra-me/works
+
+Third survey of `bfra-me/works` (SHA `499b215`). Updated repo page `bfra-me--works.md` (identity, Fro Bot pin, Renovate baseline, cross-repo links, follow-ups, survey-history row), updated [[github-actions-ci]] (workflow inventory line + Fro Bot table row), updated `index.md` entry.
+
+Key deltas since last survey (2026-05-31, SHA `cd4a52d`):
+
+- **`fro-bot/agent` v0.47.0 → v0.60.0** — 13 automerged Renovate bumps across 2026-05-31→06-10 (v0.55.x ladder through v0.59.1, landing v0.60.0 in #3649). Fleet-leading pin; sharp contrast with [[bfra-me--ha-addon-repository]] still review-deadlocked at v0.43.1.
+- **`bfra-me/.github` reusable renovate workflow + `internal.json5` baseline v4.16.21 → v4.16.25** (#3651, HEAD commit). `update-repo-settings.yaml` still pinned at v4.16.0.
+- **Node 24.15.0 → 24.16.0.** pnpm 10.34.1, TypeScript 6.0.3 unchanged.
+- **Release stall observation:** last npm publish remains 2026-05-16; Changesets PR #3652 accumulates `@bfra.me/create@0.7.15` + sibling patch bumps.
+- **3 Fro Bot-authored PRs open without review** (#3508 workspace-analyzer comparator peer ranges, #3619 security template vitest bump, #3620 AGENTS docs) — milder form of the review-pipeline gap seen at ha-addon-repository. Recorded under Open Questions / Follow-Ups.
+- Workflow inventory (11 + 1 doc), package layout, workspace config, Probot settings, branch protection, conventions all unchanged.
+
+Fro Bot workflow present and active — no onboarding follow-up needed. No new topic/entity/comparison pages warranted.
+
+Sources: https://github.com/bfra-me/works (SHA 499b2156515414fd1d85561b52efcce4fb93536d)
+
+## [2026-06-11 09:52] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works
