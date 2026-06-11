@@ -1925,25 +1925,24 @@ Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/ha-addon-repository
 
-## [2026-06-11 09:51] ingest | bfra-me/works
+## [2026-06-11 09:52] ingest | bfra-me/renovate-action
 
-Third survey of `bfra-me/works` (SHA `499b215`). Updated repo page `bfra-me--works.md` (identity, Fro Bot pin, Renovate baseline, cross-repo links, follow-ups, survey-history row), updated [[github-actions-ci]] (workflow inventory line + Fro Bot table row), updated `index.md` entry.
+Second survey of `bfra-me/renovate-action` (SHA `5b2b2faf`, was `bc9c4591` on 2026-05-20). Updated repo page `bfra-me--renovate-action.md` (frontmatter source, identity, version pins, fro-bot workflow, survey-history row), expanded the index stub entry, added the repo to the Fro Bot Agent presence table in `github-actions-ci.md`.
 
-Key deltas since last survey (2026-05-31, SHA `cd4a52d`):
+Key deltas since 2026-05-20:
 
-- **`fro-bot/agent` v0.47.0 → v0.60.0** — 13 automerged Renovate bumps across 2026-05-31→06-10 (v0.55.x ladder through v0.59.1, landing v0.60.0 in #3649). Fleet-leading pin; sharp contrast with [[bfra-me--ha-addon-repository]] still review-deadlocked at v0.43.1.
-- **`bfra-me/.github` reusable renovate workflow + `internal.json5` baseline v4.16.21 → v4.16.25** (#3651, HEAD commit). `update-repo-settings.yaml` still pinned at v4.16.0.
-- **Node 24.15.0 → 24.16.0.** pnpm 10.34.1, TypeScript 6.0.3 unchanged.
-- **Release stall observation:** last npm publish remains 2026-05-16; Changesets PR #3652 accumulates `@bfra.me/create@0.7.15` + sibling patch bumps.
-- **3 Fro Bot-authored PRs open without review** (#3508 workspace-analyzer comparator peer ranges, #3619 security template vitest bump, #3620 AGENTS docs) — milder form of the review-pipeline gap seen at ha-addon-repository. Recorded under Open Questions / Follow-Ups.
-- Workflow inventory (11 + 1 doc), package layout, workspace config, Probot settings, branch protection, conventions all unchanged.
+- **Fro Bot agent v0.44.2 → v0.60.0** — a 16-minor jump in 22 days; highest pin observed across the wiki (next: tokentoilet at v0.59.0). Canary hypothesis from the first survey confirmed: the self-Renovate loop keeps this repo on the agent's bleeding edge.
+- **Release 9.90.0 → 9.113.0** (23 minor releases / 22 days), Renovate pin 43.186.2 → 43.220.0, internal preset v4.16.18 → v4.16.25.
+- **Toolchain drift:** Node 24.15.0 → 24.16.0, pnpm 10.33.4 → 10.34.1, ESLint 10.4.0 → 10.4.1, Vitest 4.1.6 → 4.1.8.
+- **`workflow_dispatch` mode resolution change:** dispatch with no explicit mode now falls back to `autoheal` (first survey recorded user-selected only). Noted as a dated contradiction per schema rules.
+- **Dead v8 analytics code in `docker/entrypoint.sh` re-confirmed present** despite README's "analytics removed in v9" claim — contradiction stands after 23 releases; the daily autoheal has not cleaned it up.
+- Workflow set unchanged (8 workflows), branch protection contexts unchanged (11), v10 Docker-removal plan unchanged with no replacement implementation yet.
+- Fro Bot workflow present and active — no onboarding follow-up needed.
 
-Fro Bot workflow present and active — no onboarding follow-up needed. No new topic/entity/comparison pages warranted.
+Sources: https://github.com/bfra-me/renovate-action (SHA 5b2b2faff7e3e9725fdfe87d5e1802f6f5cb831c)
 
-Sources: https://github.com/bfra-me/works (SHA 499b2156515414fd1d85561b52efcce4fb93536d)
+## [2026-06-11 09:54] ingest | repo:bfra-me/renovate-action
 
-## [2026-06-11 09:52] ingest | repo:bfra-me/works
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
 
-Surveyed bfra-me/works and updated the control-plane wiki.
-
-Sources: https://github.com/bfra-me/works
+Sources: https://github.com/bfra-me/renovate-action

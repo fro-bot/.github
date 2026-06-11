@@ -17,6 +17,7 @@ related:
   - marcusrbrown--vbs
   - bfra-me--github
   - bfra-me--works
+  - bfra-me--renovate-action
 ---
 
 # GitHub Actions CI
@@ -34,7 +35,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
 - [[bfra-me--github]] — Org control center; 17 workflows including `main.yaml` (Quality Check), `fro-bot.yaml` (per-repo persona), `fro-bot-autoheal-org.yaml` (weekday org-wide sweep), `renovate.yaml` + `trigger-org-renovate.yaml` (self-hosted Renovate fan-out), and three custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). Source of the reusable workflows that `marcusrbrown/*` repos consume.
-- [[bfra-me--works]] — `@bfra-me` tooling monorepo; 11 workflows including `main.yaml` (Prepare → parallel {Lint+type-coverage, Test, Build, Workspace Analysis} → CI), `release.yaml` (Changesets, `workflow_run` after Main + Sunday cron + dispatch with force-release toggle), `fro-bot.yaml` (three-mode single-file at v0.60.0 as of 2026-06-11), `docs.yaml` (Astro Starlight → GitHub Pages), `docs-sync.yaml` (path-filtered @bfra.me/doc-sync re-sync), `renovate.yaml` + `update-repo-settings.yaml` (reusable `bfra-me/.github` callers at v4.16.25 / v4.16.0), `renovate-changeset.yaml`, `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review. Local composite action `.github/actions/pnpm-install` consumed by every workflow.
+- [[bfra-me--works]] — `@bfra-me` tooling monorepo; 11 workflows including `main.yaml` (Prepare → parallel {Lint+type-coverage, Test, Build, Workspace Analysis} → CI), `release.yaml` (Changesets, `workflow_run` after Main + Sunday cron + dispatch with force-release toggle), `fro-bot.yaml` (three-mode single-file at v0.44.2), `docs.yaml` (Astro Starlight → GitHub Pages), `docs-sync.yaml` (path-filtered @bfra.me/doc-sync re-sync), `renovate.yaml` + `update-repo-settings.yaml` (reusable `bfra-me/.github` callers), `renovate-changeset.yaml`, `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review. Local composite action `.github/actions/pnpm-install` consumed by every workflow.
 
 ## Common Patterns
 
@@ -101,7 +102,8 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--vbs]]         | Present (single-file unified single-job `fro-bot.yaml` at v0.55.4; autoheal job folded in via #594 on 2026-05-30) | Autoheal `30 3 * * *`, Maintenance `30 15 * * *`; modes `review`/`maintenance`/`autoheal` via dispatch; fork-PR + bot-author guard at job `if` level |
 | [[marcusrbrown--sparkle]]     | **Not present**          | N/A                               |
 | [[marcusrbrown--ha-config]]   | **Not present**          | N/A                               |
-| [[bfra-me--works]]            | Present (`fro-bot.yaml`, single-file three-mode at v0.60.0 as of 2026-06-11 — fleet-leading pin, 13 automerged bumps 2026-05-31→06-10) | Maintenance `0 16 * * *`, Autoheal `30 3 * * *`; both rolling-update single-issue reports (`Daily Maintenance Report` / `Daily Autohealing Report`) |
+| [[bfra-me--works]]            | Present (`fro-bot.yaml`, single-file three-mode at v0.44.2) | Maintenance `0 16 * * *`, Autoheal `30 3 * * *`; both rolling-update single-issue reports (`Daily Maintenance Report` / `Daily Autohealing Report`) |
+| [[bfra-me--renovate-action]]  | Present (single-file three-mode `fro-bot.yaml` at **v0.60.0** as of 2026-06-11 — ecosystem version leader/canary) | Autoheal `30 3 * * *`, Maintenance `30 15 * * *`; dispatch defaults to autoheal; two perpetual issues (`Daily Maintenance Report` / `Daily Autohealing Report`); explicit Renovate-owns-dependency-bumps boundary in autoheal prompt |
 
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
 
