@@ -1946,3 +1946,25 @@ Sources: https://github.com/bfra-me/renovate-action (SHA 5b2b2faff7e3e9725fdfe87
 Surveyed bfra-me/renovate-action and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/renovate-action
+
+## [2026-06-12 09:18] ingest | marcusrbrown/marcusrbrown.github.io
+
+Sixth survey of `marcusrbrown/marcusrbrown.github.io` (SHA `b633e40`, was `1a428e2` on 2026-06-01). Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (frontmatter source, overview, Fro Bot pin, Renovate preset, new delta-log section, survey-history row), updated the Fro Bot Agent presence table in `github-actions-ci.md`, annotated the version-leadership observation in `bfra-me--renovate-action.md`, refreshed the index entry.
+
+Key deltas since 2026-06-01:
+
+- **Fro Bot agent v0.48.1 → v0.61.0** across ~16 near-daily Renovate bumps (#433–#452). Pin `6794bf59…` — now the highest agent pin in the wiki, one minor ahead of bfra-me/renovate-action (v0.60.0). Version leadership is a rolling title among the fast-automerge cohort.
+- **Renovate preset 5.2.0 → 5.2.1**, `bfra-me/.github` reusable workflows → v4.16.25.
+- **Security overrides split-brained:** ~12 entries migrated to `pnpm-workspace.yaml` (mirroring mrbro-dev's pattern) while `fast-uri`/`flatted` remain in `package.json` `pnpm.overrides`.
+- **`mrbro-bot[bot]` now co-authors Renovate merges** — same new bot identity first seen in ha-config; fleet-wide bot migration in progress.
+- **Repo `homepage` metadata field now null** (was marcusrbrown.com); consistent with the unmanaged-settings gap (still no Probot `settings.yml`).
+- Zero structural drift: stack, 5-workflow inventory, crons, single-file three-mode Fro Bot design all unchanged. Open issues steady at 4; 0 open PRs. Gaps unchanged (no Probot settings.yml, no CodeQL/Scorecard). Fro Bot workflow present and active — no onboarding follow-up needed.
+- Curiosity: `.github/BRANCH_PROTECTION.md` still says "for the mrbro.dev project" — doc ported from mrbro-dev without renaming.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA b633e40df799fe239a3e55cce2cd5efd60d72b48)
+
+## [2026-06-12 09:20] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io

@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-06-01
+updated: 2026-06-12
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -19,6 +19,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 1a428e231d4d3be7de40bbc016192cc14cb5190b
     accessed: 2026-06-01
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: b633e40df799fe239a3e55cce2cd5efd60d72b48
+    accessed: 2026-06-12
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page]
 aliases: [marcusrbrown-github-io, marcusrbrown.com]
 related:
@@ -35,12 +38,12 @@ Personal brand site for Marcus R. Brown. Single-page React 19 portfolio deployed
 - **Purpose:** Personal brand site / landing page
 - **Default branch:** `main`
 - **Created:** 2025-07-18
-- **Last push:** 2026-05-18
-- **Homepage:** https://marcusrbrown.com
+- **Last push:** 2026-06-12
+- **Homepage:** https://marcusrbrown.com (note: the GitHub `homepage` repo field reads null as of 2026-06-12; the domain is declared in `package.json` `homepage`)
 - **License:** MIT (declared in package.json and README badge; no LICENSE file detected via API)
 - **Visibility:** Public
 - **Stars:** 0 | **Watchers:** 0
-- **Open issues (2026-05-18):** 4 — #411 (test branch coverage <80%), #409 (Daily Autohealing Report, perpetual), #260 (Daily Maintenance Report, perpetual), #6 (Dependency Dashboard)
+- **Open issues (2026-06-12):** 4 — #411 (test branch coverage <80%), #409 (Daily Autohealing Report, perpetual), #260 (Daily Maintenance Report, perpetual), #6 (Dependency Dashboard) — unchanged since 2026-05-18
 - **Open PRs:** 0
 
 ## Tech Stack
@@ -109,7 +112,7 @@ Sequential: checkout, setup, lint, build, upload pages artifact (`./dist`), depl
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present and active** (`fro-bot/agent@v0.48.1`, SHA `80f1fa11d8e25280d388947c0a28875ed18cdc25`, as of 2026-06-01 survey; was v0.44.0 / `b030b53b…` at the 2026-05-18 survey).
+**Fro Bot workflow is present and active** (`fro-bot/agent@v0.61.0`, SHA `6794bf595059d0419d31abf027cfcf66ff0780ec`, as of 2026-06-12 survey; was v0.48.1 / `80f1fa11…` at 2026-06-01 and v0.44.0 / `b030b53b…` at 2026-05-18).
 
 - **Triggers:** PR events (opened, synchronize, ready_for_review, reopened, review_requested), issue/comment events (`@fro-bot` mention from OWNER/MEMBER/COLLABORATOR), two daily crons (autoheal at 03:30 UTC, maintenance at 15:30 UTC), manual dispatch with `mode` input.
 - **Single-file three-mode design:** Unlike [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--vbs]] (which split `fro-bot.yaml` + `fro-bot-autoheal.yaml`), this repo runs review, maintenance, and autoheal modes from one workflow file dispatched by event + `inputs.mode`. Cron schedule disambiguated via `AUTOHEAL_CRON` / `MAINTENANCE_CRON` env vars.
@@ -122,7 +125,7 @@ Sequential: checkout, setup, lint, build, upload pages artifact (`./dist`), depl
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.8` + `:preserveSemverRanges` + `group:allNonMajor`. Post-upgrade: `pnpm install`, `pnpm run build`, `pnpm run fix` (twice). Uses `bfra-me/.github` reusable workflow (v4.16.8). Trigger model: issue/PR edit (non-bot), push to non-main, dispatch, workflow_run after Deploy.
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.1` (as of 2026-06-12; was `#4.5.8` at initial survey, `#5.2.0` after PR #406) + `:preserveSemverRanges` + `group:allNonMajor`. Post-upgrade: `pnpm install`, `pnpm run build`, `pnpm run fix` (twice). Uses `bfra-me/.github` reusable workflow (v4.16.25 as of 2026-06-12). Trigger model: issue/PR edit (non-bot), push to non-main, dispatch, workflow_run after Deploy.
 - **Git Hooks:** `simple-git-hooks` with `lint-staged` running `eslint --fix` on staged files.
 - **AGENTS.md:** Comprehensive root-level file with code map, conventions, commands, CI table, testing guide, anti-patterns. Generated 2026-03-10.
 - **Copilot instructions:** `.github/copilot-instructions.md` with stack summary and critical conventions (PascalCase hooks, strict TS, named exports, `.yaml` extension).
@@ -163,7 +166,9 @@ This repo and [[marcusrbrown--mrbro-dev]] both deploy React+Vite sites to GitHub
 | Content source | Static | GitHub API (dynamic blog/projects) |
 | Test layers | Unit + E2E + A11y | Unit + E2E + Visual regression + A11y + Lighthouse |
 | Autoheal | Integrated as mode in `fro-bot.yaml` (8 categories) | Separate `fro-bot-autoheal.yaml` (5 categories) |
-| Fro Bot agent version | v0.48.1 (2026-06-01) | v0.38.0 at last survey (likely behind) |
+| Fro Bot agent version | v0.61.0 (2026-06-12) | v0.43.0 at last survey (likely behind) |
+
+A curiosity surfaced 2026-06-12: this repo's `.github/BRANCH_PROTECTION.md` opens with "branch protection rules… for the **mrbro.dev** project" — the doc was evidently ported from [[marcusrbrown--mrbro-dev]] without renaming the project reference. Harmless, but it confirms the cross-repo doc-porting pattern (and that nobody proofread the header).
 
 ## Recent Activity
 
@@ -223,6 +228,19 @@ No structural drift since the 2026-05-20 re-survey at `4cd8198`. Twelve days, el
 - **Open issues:** steady at 4 (#411, #409, #260, #6). **Open PRs:** 0.
 - The two long-standing gaps still hold: **no Probot `settings.yml`**, **no CodeQL/Scorecard**. No contradictions with prior ingests.
 
+## Delta Log (2026-06-12, SHA `b633e40`)
+
+Eleven days, 27 commits since `1a428e2` — every one a Renovate bump touching only `.github/renovate.json5` and the five workflow files (plus lockfile). Zero structural drift: stack, workflow inventory, single-file three-mode Fro Bot design, and crons (`30 3` autoheal / `30 15` maintenance UTC) all unchanged. This repo is in pure autopilot cruise.
+
+- **Fro Bot agent climbed v0.48.1 → v0.61.0 across ~16 bumps** (#433–#452, near-daily merges; v0.53.0/.1, v0.54.x, v0.55.x ×5, v0.56.x, v0.57.0, v0.58.0, v0.59.x, v0.60.0, v0.61.0). Pin on `main`: `fro-bot/agent@6794bf595059d0419d31abf027cfcf66ff0780ec # v0.61.0`. That's *ahead* of [[bfra-me--renovate-action]] (v0.60.0, previously the ecosystem version leader) — this repo is now the canary.
+- **Renovate preset:** `marcusrbrown/renovate-config#5.2.0` → `#5.2.1` in `.github/renovate.json5`.
+- **`bfra-me/.github` reusable workflows:** v4.16.21 → v4.16.25 (#446, #451).
+- **Security-override migration to `pnpm-workspace.yaml`:** the workspace file now carries ~12 GHSA-style overrides (`ajv`, `brace-expansion`, `rollup`, `qs`, `minimatch`, `picomatch`, etc.) plus `onlyBuiltDependencies` and `shamefullyHoist: true`. `package.json` still retains the legacy `pnpm.overrides` for `fast-uri >=3.1.2` and `flatted >=3.4.2` — split-brain override management, mirroring the pattern [[marcusrbrown--mrbro-dev]] adopted (~20 entries there). Worth consolidating into one location eventually.
+- **GitHub repo `homepage` field is now null** (was https://marcusrbrown.com in earlier surveys). The site domain still lives in `package.json`. Minor metadata regression, possibly from a Probot-less settings drift — consistent with the long-standing "no Probot `settings.yml`" gap.
+- **Co-author shift:** recent Renovate merges are co-authored by `mrbro-bot[bot]` — the same new bot identity first observed in [[marcusrbrown--ha-config]]. The bot migration is spreading across the fleet.
+- **Open issues steady at 4** (#411, #409, #260, #6); 0 open PRs. Issue #411 (branch coverage <80%) has now sat open since mid-May — autoheal files reports but hasn't closed the coverage gap.
+- The two long-standing gaps still hold: **no Probot `settings.yml`**, **no CodeQL/Scorecard**. No contradictions with prior ingests.
+
 ## Survey History
 
 | Date | SHA | Notes |
@@ -232,3 +250,4 @@ No structural drift since the 2026-05-20 re-survey at `4cd8198`. Twelve days, el
 | 2026-05-19 | `4cd8198` | No-op re-survey: HEAD unchanged since 2026-05-18. Open issues steady at 4 (#411, #409, #260, #6), 0 open PRs. Fro Bot agent pin verified at `b030b53b...` (v0.44.0). All prior findings hold. |
 | 2026-05-20 | `4cd8198` | No-op re-survey: HEAD still unchanged. Renovate PR #417 (fro-bot/agent v0.44.0 → v0.44.1, branch `renovate/all-minor-patch`) is open and will likely merge under `:automergePatch`. Open issues steady at 4 (#411, #409, #260, #6); open PRs now 1 (#417). `package.json` confirms `packageManager: pnpm@10.33.4`, `@types/node ^24.0.0`, React 19 / TypeScript ^6.0.0 / Vite ^7.0.6 / Vitest ^4.0.0 stack unchanged. No structural drift since 2026-05-18. |
 | 2026-06-01 | `1a428e2` | Dependency-drift re-survey: HEAD advanced 11 commits, all Renovate bumps. Fro Bot agent v0.44.0 → v0.48.1 (pin `80f1fa11…`), pnpm 10.33.4 → 10.34.1 (#423), `bfra-me/.github` v4.16.17 → v4.16.21 (#419). No structural change to stack, workflows, crons, or Fro Bot single-file three-mode design. Open issues steady at 4; 0 open PRs. Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) unchanged. |
+| 2026-06-12 | `b633e40` | Dependency-drift re-survey: 27 commits, all Renovate. Fro Bot agent v0.48.1 → **v0.61.0** (pin `6794bf5…`) — now ecosystem version leader. Renovate preset 5.2.0 → 5.2.1, `bfra-me/.github` → v4.16.25. Security overrides split between `pnpm-workspace.yaml` (~12 entries) and legacy `package.json` `pnpm.overrides` (2 entries). `mrbro-bot[bot]` co-authoring merges. Repo `homepage` field now null. Issues steady at 4; 0 open PRs. Gaps unchanged. |
