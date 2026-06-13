@@ -1967,3 +1967,25 @@ Sources: https://github.com/marcusrbrown/marcusrbrown (SHA b26dd18884df26ac593c8
 Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-06-13 17:18] ingest | repo:marcusrbrown/mrbro.dev
+
+No-delta re-survey of `marcusrbrown/mrbro.dev` (SHA `7a49abc`, unchanged since 2026-06-02; `pushed_at` 2026-05-28T02:28Z). Updated repo page `marcusrbrown--mrbro-dev.md` (added 2026-06-13 source entry, `updated` bump, survey-history row, two same-tree corrections, `mrbro-bot[bot]` observation) and refreshed the index entry.
+
+Findings:
+
+- **HEAD unchanged** — every tracked fact re-verified against the identical tree: Fro Bot agent v0.43.0 (`fro-bot/agent@1563f298`), TypeScript 5.9.3, Vite 7.3.2, Vitest 4.1.4, pnpm 10.33.4 (`engines.pnpm ^10.28.2`, Node >=22.6.0), React Router 7.7.1, 7 workflows, still no `.github/settings.yml`, MIT license (now present in API: `spdx_id` null in repo metadata but `license: MIT` in `package.json`).
+- **Same-SHA corrections:** Playwright recorded as 1.54.x is actually 1.59.1; pnpm table said 10.33.0, true value 10.33.4. Both were earlier-survey artifacts, not real deltas.
+- **New observable — dual-bot Renovate authorship:** pin PRs #180/#175/#172/#168 are authored by `app/mrbro-bot`, while the security-override PR #178 is authored by `fro-bot`. The `mrbro-bot[bot]` actor (first seen on merges in marcusrbrown/ha-config) is now visibly active here, splitting labor: `mrbro-bot` for version pins, `fro-bot` for security-advisory remediation.
+- Open issues 4 (#162, #13, #1, #48), open PRs 5 — both unchanged from 2026-06-02.
+- Fro Bot workflow present and active (`fro-bot.yaml`, single-file three-mode) — no onboarding follow-up needed.
+
+Reads limited to repo metadata, directory listings, README/manifest (`package.json`), and `fro-bot.yaml` per untrusted-input constraints.
+
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 7a49abc3d2d945880cc1db1f4edbddcd71ad0142)
+
+## [2026-06-13 17:20] ingest | repo:marcusrbrown/mrbro.dev
+
+Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mrbro.dev
