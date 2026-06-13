@@ -354,7 +354,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@f2f3c08f3933822e1a4284fbba952684db1ceb70 # v0.60.0
+        uses: fro-bot/agent@58dc094738ac2d3e7c6fe25cb6111ddb1ac08e72 # v0.62.0
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
