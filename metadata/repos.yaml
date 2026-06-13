@@ -206,12 +206,12 @@ repos:
     name: opencode-copilot-delegate
     added: 2026-04-23
     onboarding_status: onboarded
-    last_survey_at: 2026-06-03
-    last_survey_status: success
+    last_survey_at: 2026-06-13
+    last_survey_status: failure
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-05
+    next_survey_eligible_at: 2026-07-14
     private: false
     node_id: R_kgDOSKIp0Q
   - owner: fro-bot
