@@ -2041,26 +2041,28 @@ Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
 
-## [2026-06-14 12:00] ingest | repo:fro-bot/systematic
+## [2026-06-14 08:55] ingest | marcusrbrown/renovate-config
 
-Re-surveyed `fro-bot/systematic` at `gh-pages` HEAD `28400b1` (last push 2026-06-07). Updated repo page `fro-bot--systematic.md` and the index entry. Reads limited to repo metadata, branch/issue/PR listings, the `gh-pages` directory tree, and the published artifacts (`index.json`, `.well-known/ocx.json`, `schemas/{latest,v2}/systematic-config.schema.json`) per the untrusted-input constraint.
+Re-survey of `marcusrbrown/renovate-config` (SHA `42ee3cd`, was `499f0ca` at 2026-06-04). Additive update to `marcusrbrown--renovate-config.md`. Dependency-churn cycle — no preset policy change.
 
-Deltas since the 2026-06-04 survey:
+Delta from prior survey:
 
-- **OCX registry v2.24.0 → v2.31.0**, still matching the latest source release (`marcusrbrown/systematic` v2.31.0, published 2026-06-07 09:19; deployed at 09:20).
-- **Components 103 → 104**: skills 47 → 48; agents (51), bundles (2), profiles (2), and the single plugin unchanged. Recorded the full 48-skill name list on the repo page for future diffing.
-- **Two schema-shape contradictions vs. the 2026-06-04 record** (noted additively, both versions preserved):
-  1. The human-readable label `Systematic user configuration file (systematic.json / systematic.jsonc)` moved from the top-level `title` key to `description`; neither schema now carries a `title`. Content identical, key changed.
-  2. `schemas/latest/systematic-config.schema.json` now declares `$id` = the v2 URL, making `latest` byte-equivalent to `v2` on surveyed fields. Benign while v2 is the only major; flagged for re-check at a future v3.
-- Config field set (`$schema`, `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`) and `.well-known/ocx.json` unchanged. `gh-pages` tree structure unchanged.
-- Deploy cadence re-intensified to multi-per-day on 2026-06-05 and 2026-06-07 around the v2.31.0 release, reversing the early-June cooldown.
-- **No Fro Bot workflow** — still expected and not recommended; this repo is a pure static-output deploy target whose source ([[marcusrbrown--systematic]]) already carries full Fro Bot integration. No follow-up draft PR warranted.
-- Repo metadata steady: description unchanged, `gh-pages` default branch, `renovate/configure` branch with open PR #2, open issue #1. No fork.
+- Preset surface stable: `default.json` `extends`, packageRules, `group:allNonMajor` + 0.x ungrouping safety valve, automerge fast-tracks, `>=5.0.0` floor, and schedule all unchanged in shape. Only the bfra-me base pin moved `github>bfra-me/renovate-config#5.2.1` → `#5.2.3` (both `default.json` extends entries; Renovate-bumped via the self-referential custom regex manager).
+- Latest release 5.2.0 → **5.2.3** (three patch releases: 5.2.1/5.2.2/5.2.3).
+- Fro Bot agent `fro-bot/agent` v0.52.1 → **v0.63.0** (SHA `817d4ada`, latest bump #1385) — continues the fast [[fro-bot--agent]] cadence.
+- Runner action pins **unchanged**: checkout v6.0.3 (`df4cb1c`), setup-node v6.4.0 (`48b55a0`), pnpm-action-setup v6.0.8 (`0e279bb`).
+- `bfra-me/.github` renovate reusable workflow v4.16.23 → **v4.16.25** (SHA `11b3f16`).
+- Toolchain: node 24.15.0 → 24.16.0, pnpm 11.5.0 → 11.5.3, prettier 3.8.3 → 3.8.4, semantic-release 25.0.3 → 25.0.5. ESLint 10.4.1, eslint-plugin-prettier 5.5.6, lint-staged 17.0.7, `@bfra.me/eslint-config` 0.51.1 unchanged.
+- Daily autoheal six-category schedule prompt unchanged. Category-5 Cross-Project Intelligence focus-list still leads with two **private** Marcus repos (visibility re-verified `PRIVATE`); their names and contents are deliberately withheld here per the wiki public-only invariant.
+- Open-issue set stable at 6 (no churn): perpetual `Daily Autohealing Report` #1314, plus `Daily Maintenance Report` #1111 and three legacy `Weekly Maintenance Report` issues (#1096/#1079/#1068) still lingering outside the dated-format autoheal cleanup matcher, and `Dependency Dashboard` #556. Sole open PR still #1311 (picomatch@2 v4, mrbro-bot).
+- Fro Bot workflow present and active — no follow-up draft PR needed.
 
-Sources: https://github.com/fro-bot/systematic (SHA 28400b1)
+Survey limited to directory listings, README/AGENTS files, manifests, and workflow files per untrusted-input constraint. Modified only `knowledge/wiki/repos/marcusrbrown--renovate-config.md`, `knowledge/index.md`, `knowledge/log.md`.
 
-## [2026-06-14 08:55] ingest | repo:fro-bot/systematic
+Sources: https://github.com/marcusrbrown/renovate-config (SHA 42ee3cd0ad4b26b3976fb4b325a28a292ae6824c)
 
-Surveyed fro-bot/systematic and updated the control-plane wiki.
+## [2026-06-14 08:57] ingest | repo:marcusrbrown/renovate-config
 
-Sources: https://github.com/fro-bot/systematic
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config

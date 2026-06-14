@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/renovate-config — Shareable Renovate Configuration Presets"
 created: 2026-04-28
-updated: 2026-06-04
+updated: 2026-06-14
 sources:
   - url: https://github.com/marcusrbrown/renovate-config
     sha: bf13a82fca143cd0cdcc9c5f12ef56c2b5196c20
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/renovate-config
     sha: 499f0cac43d2077ab5498ed7b213366cbc74e079
     accessed: 2026-06-04
+  - url: https://github.com/marcusrbrown/renovate-config
+    sha: 42ee3cd0ad4b26b3976fb4b325a28a292ae6824c
+    accessed: 2026-06-14
 tags: [renovate, renovate-config, renovate-preset, semantic-release, dependency-management]
 aliases: [renovate-config]
 related:
@@ -49,15 +52,15 @@ Shareable [Renovate](https://docs.renovatebot.com/) configuration presets for Ma
 | Language | JavaScript (config-only; no application code) |
 | Created | 2022-05-03 |
 | Default branch | `main` |
-| Latest release | `5.2.0` (2026-05-13) — major-version boundary crossed since prior survey |
-| Node.js | 24.15.0 (`.node-version`) |
-| Package manager | pnpm 11.5.0 (was 11.1.3 at 2026-05-23, 10.33.2 at 2026-04-28) |
+| Latest release | `5.2.3` (2026-06-13) — three patch releases since prior survey (5.2.1/5.2.2/5.2.3); was `5.2.0` at 2026-06-04 |
+| Node.js | 24.16.0 (`.node-version`) — was 24.15.0 |
+| Package manager | pnpm 11.5.3 (was 11.5.0 at 2026-06-04, 11.1.3 at 2026-05-23, 10.33.2 at 2026-04-28) |
 | Topics | renovate, renovate-config, renovate-preset, renovatebot, renovate-by-githubaction, semantic-release |
-| Open issues | 6 — but composition shifted (see note below); was 6 at 2026-05-23, 46 at 2026-04-28 |
+| Open issues | 6 — composition unchanged from 2026-06-04 (see note below); was 6 at 2026-05-23, 46 at 2026-04-28 |
 | Open PRs | 1 (#1311 picomatch@2 v4 by mrbro-bot — same PR open across three surveys) |
 | Stars / Watchers / Forks | 0 / 2 / 0 |
 
-**Open-issue composition drift (2026-06-04):** the count holds at 6, but the mix is no longer a clean single-perpetual-issue story. Currently open: `Daily Autohealing Report` (#1314), `Daily Maintenance Report` (#1111), three legacy `Weekly Maintenance Report — YYYY-MM-DD` issues (#1096/#1079/#1068), and the Renovate `Dependency Dashboard` (#556). The active perpetual issue is now #1314 (was a different number at prior survey), implying the prior perpetual issue was closed/recreated rather than reused — and the older `Daily Maintenance Report` / `Weekly Maintenance Report` issues from the pre-consolidation era were never swept up. The autoheal "single perpetual issue" cleanup logic only closes issues matching the dated `Daily Autohealing Report — YYYY-MM-DD` pattern, so these differently-titled legacy reports fall outside its broom. Candidate for manual cleanup or a broadened cleanup matcher.
+**Open-issue composition (stable through 2026-06-14):** the count holds at 6, with the same mix observed at 2026-06-04 — no churn in the open-issue set. Currently open: `Daily Autohealing Report` (#1314), `Daily Maintenance Report` (#1111), three legacy `Weekly Maintenance Report — YYYY-MM-DD` issues (#1096/#1079/#1068), and the Renovate `Dependency Dashboard` (#556). The active perpetual issue is now #1314 (was a different number at prior survey), implying the prior perpetual issue was closed/recreated rather than reused — and the older `Daily Maintenance Report` / `Weekly Maintenance Report` issues from the pre-consolidation era were never swept up. The autoheal "single perpetual issue" cleanup logic only closes issues matching the dated `Daily Autohealing Report — YYYY-MM-DD` pattern, so these differently-titled legacy reports fall outside its broom. Candidate for manual cleanup or a broadened cleanup matcher.
 
 ## Preset Architecture
 
@@ -73,8 +76,8 @@ Extends (as of v5.2.0):
 - `group:allNonMajor` — **new in v5**: groups non-major updates from upstream presets (counterbalanced by an unstable-package opt-out, see below)
 - `npm:unpublishSafe` — wait for npm unpublish window before updating
 - `helpers:pinGitHubActionDigestsToSemver` — pin GitHub Actions by digest with semver tag comments
-- `github>bfra-me/renovate-config#5.2.1` — base config from the bfra-me organization
-- `github>bfra-me/renovate-config:fro-bot.json5#5.2.1` — Fro Bot-specific overrides from bfra-me
+- `github>bfra-me/renovate-config#5.2.3` — base config from the bfra-me organization (was `#5.2.1` at 2026-06-04; Renovate-bumped via the custom regex manager)
+- `github>bfra-me/renovate-config:fro-bot.json5#5.2.3` — Fro Bot-specific overrides from bfra-me
 
 The `:disableRateLimiting` preset present in v4 has been **dropped from the extends list** in v5; rate-limiting now defers to the bfra-me base preset's defaults.
 
@@ -139,7 +142,7 @@ Two sequential jobs:
 
 ### `renovate.yaml`
 
-Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.23` (was `@v4.16.9` at 2026-05-23; bumped via #1337 → #1354, SHA `e972072`). Triggers on issue edits, PR edits, push to non-main branches, manual dispatch, and `workflow_run` after main CI succeeds. Includes `path-filters` scoped to Renovate config files and presets.
+Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.25` (SHA `11b3f16`; was `@v4.16.23` at 2026-06-04, `@v4.16.9` at 2026-05-23). Triggers on issue edits, PR edits, push to non-main branches, manual dispatch, and `workflow_run` after main CI succeeds. Includes `path-filters` scoped to Renovate config files and presets.
 
 ### `codeql-analysis.yaml` — CodeQL security scanning
 
@@ -149,7 +152,7 @@ Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.23
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present and active** — `fro-bot.yaml` with `fro-bot/agent@v0.52.1` (SHA `28cf93adc1c99bccad7c40ec2bdb84d9293de8be`). The agent pin jumped v0.44.3 → v0.52.1 between 2026-05-23 and 2026-06-04 — eight Renovate-authored minor bumps (#1338–#1353) in ~12 days, tracking the rapid [[fro-bot--agent]] release cadence over that window. Runner action pins also advanced: `actions/checkout` v6.0.3 (`df4cb1c`), `actions/setup-node` v6.4.0 (`48b55a0`), `pnpm/action-setup` v6.0.8 (`0e279bb`).
+**Fro Bot workflow present and active** — `fro-bot.yaml` with `fro-bot/agent@v0.63.0` (SHA `817d4ada48d334a02ff5e5aacae3ad447e8bbad6`). The agent pin advanced v0.52.1 → v0.63.0 between 2026-06-04 and 2026-06-14 — another fast Renovate-authored cadence (latest bump #1385), continuing the rapid [[fro-bot--agent]] release tracking observed across the prior survey window. Runner action pins are **unchanged** from 2026-06-04: `actions/checkout` v6.0.3 (`df4cb1c`), `actions/setup-node` v6.4.0 (`48b55a0`), `pnpm/action-setup` v6.0.8 (`0e279bb`).
 
 Trigger surface:
 - Issue comments, PR review comments, discussion comments (mentioning `@fro-bot`)
@@ -177,7 +180,7 @@ Daily autohealing categories (now 6, was 5):
 2. **Security** — remediate Dependabot/Renovate security alerts and failing security PRs; explicit "if alert data unavailable, skip and note" branch
 3. **Config Validation & Preset Quality** — validate all preset JSON/JSON5 against Renovate schema, check for deprecated options, verify base preset pin is released and not auto-bumped (Renovate owns version bumps), detect rule conflicts, run lint
 4. **Developer Experience** — lint/format auto-fix PRs only (never direct-to-`main` commits)
-5. **Cross-Project Intelligence (Inbound)** — survey focus repos for tooling/CI/preset patterns worth importing; **observation-only**, never modify other repos. Replaces v4's "bfra-me Ecosystem Health" category. **Focus-list evolved (2026-06-04):** the prompt now leads with two of Marcus's other repositories (named in the workflow source) chosen for agentic-safety-guardrail and autohealing-strategy intelligence, alongside the retained `marcusrbrown/.github`, `bfra-me/renovate-config`, and `fro-bot/agent`. The prompt explicitly frames the list as living — "drop repos that consistently have nothing actionable, add repos that become relevant." Note: those two newly-added focus repos are **private**, so their names and contents are deliberately omitted here per the wiki public-only invariant; the cross-project survey reads them but the wiki does not record them.
+5. **Cross-Project Intelligence (Inbound)** — survey focus repos for tooling/CI/preset patterns worth importing; **observation-only**, never modify other repos. Replaces v4's "bfra-me Ecosystem Health" category. **Focus-list stable (re-confirmed 2026-06-14):** the prompt still leads with two of Marcus's other repositories (named in the workflow source) chosen for agentic-safety-guardrail and autohealing-strategy intelligence, alongside the retained `marcusrbrown/.github`, `bfra-me/renovate-config`, and `fro-bot/agent`. The prompt explicitly frames the list as living — "drop repos that consistently have nothing actionable, add repos that become relevant." Note: both of those leading focus repos are **private** (visibility re-verified `PRIVATE` at 2026-06-14), so their names and contents are deliberately omitted here per the wiki public-only invariant; the cross-project survey reads them but the wiki does not record them.
 6. **Upstream Modernization Watch (Sundays only)** — **new category**. Gated by `IS_SUNDAY_UTC` env var set by a preflight `date -u +%u` step. Parses release notes for pinned upstreams (`fro-bot/agent`, `actions/checkout`, `pnpm/action-setup`, `actions/setup-node`, `@bfra.me/eslint-config`, `@bfra.me/prettier-config`) and identifies config/feature adoption opportunities. Action policy: at most one draft PR per scan, only for mechanical changes touching docstrings/AGENTS.md/config examples; anything touching `.github/workflows/`, `package.json`, lockfile, or preset JSON is **tracking-issue-only** (never opens a PR). Hard rule: never bump pinned versions — Renovate owns that.
 
 Single-issue management: the perpetual `Daily Autohealing Report` issue receives prepended dated sections; dated-format daily issues are auto-consolidated and closed with a link to the perpetual issue. This is the same single-perpetual-issue strategy observed across [[bfra-me--ha-addon-repository]], [[bfra-me--works]], and [[bfra-me--github]] — and explains the open-issue count crash from 46 → 6 since the prior survey.
@@ -186,11 +189,11 @@ Single-issue management: the perpetual `Daily Autohealing Report` issue receives
 
 | Tool | Version / Config |
 | --- | --- |
-| ESLint | 10.4.1 (was 10.4.0), extends `@bfra.me/eslint-config` 0.51.1 |
-| Prettier | 3.8.3, extends `@bfra.me/prettier-config/120-proof` (0.16.9) |
-| lint-staged | 17.0.7 (was 17.0.5) (`*.{js,json,jsx,md,toml,ts,tsx,yml,yaml}`) |
+| ESLint | 10.4.1, extends `@bfra.me/eslint-config` 0.51.1 |
+| Prettier | 3.8.4 (was 3.8.3), extends `@bfra.me/prettier-config/120-proof` (0.16.9) |
+| lint-staged | 17.0.7 (`*.{js,json,jsx,md,toml,ts,tsx,yml,yaml}`) |
 | simple-git-hooks | 2.13.1 (pre-commit runs lint-staged) |
-| semantic-release | 25.0.3 |
+| semantic-release | 25.0.5 (was 25.0.3) |
 | eslint-config-prettier | 10.1.8 |
 | eslint-plugin-prettier | 5.5.6 (was 5.5.5) |
 | markdownlint | 0.40.0 |
@@ -256,3 +259,4 @@ This preset is the dependency-update policy backbone of the entire `marcusrbrown
 | 2026-04-28 | `bf13a82` | Initial survey; v4.5.8, agent v0.42.2, 46 open issues, separate `fro-bot-autoheal.yaml` |
 | 2026-05-23 | `3478c88` | v4→v5 boundary crossed (5.2.0); agent v0.44.3; autoheal merged into `fro-bot.yaml`; new category 6 Sundays-only Upstream Modernization Watch; 0.x ungrouping rule; minimum version floor `>=5.0.0`; pnpm 11.1.3; lint-staged 17.0.5; pnpm overrides for fast-uri/flatted/handlebars/lodash-es/picomatch; open issues 46 → 6 |
 | 2026-06-04 | `499f0ca` | Dependency-churn survey — no preset policy change. Latest release still 5.2.0; `default.json` + bfra-me pin `#5.2.1` unchanged. agent v0.44.3 → **v0.52.1** (8 bumps in ~12 days); runner actions checkout v6.0.3 / setup-node v6.4.0 / pnpm-action-setup v6.0.8; bfra-me renovate reusable workflow v4.16.9 → v4.16.23; pnpm 11.1.3 → 11.5.0; eslint 10.4.0 → 10.4.1; eslint-plugin-prettier 5.5.5 → 5.5.6; lint-staged 17.0.5 → 17.0.7. Cross-Project Intelligence focus-list now leads with two **private** Marcus repos (names withheld per public-only invariant). Open-issue count holds at 6 but legacy `Daily Maintenance` / `Weekly Maintenance` report issues linger outside the autoheal cleanup matcher. |
+| 2026-06-14 | `42ee3cd` | Dependency-churn survey — no preset policy change. Preset `extends` list, packageRules, schedule, and onboarding/archived presets all byte-identical in shape; only the bfra-me base pin moved `#5.2.1` → **`#5.2.3`** (default.json, Renovate-bumped via custom regex manager). Latest release 5.2.0 → **5.2.3** (three patch releases). agent v0.52.1 → **v0.63.0** (`817d4ada`, latest bump #1385); runner action pins **unchanged**; bfra-me renovate reusable workflow v4.16.23 → **v4.16.25** (`11b3f16`); node 24.15.0 → 24.16.0; pnpm 11.5.0 → 11.5.3; prettier 3.8.3 → 3.8.4; semantic-release 25.0.3 → 25.0.5. Daily autoheal six-category prompt unchanged; category-5 focus repos still the two **private** Marcus repos (names withheld; visibility re-verified `PRIVATE`). Open-issue set stable at 6 (no churn); same legacy report issues still outside the autoheal cleanup matcher. Sole open PR still #1311 (picomatch@2 v4). |
