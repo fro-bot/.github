@@ -51,6 +51,28 @@ today; Phase 1 still requires standing up hosting, operator auth, and credential
 as its own delivery work. Gateway bindings (the third population) remain deferred to the
 fast-follow.
 
+## Why two populations move the needle
+
+A fair critique is that two-of-three populations, read-only, could feel like "the daily
+report with a UI." It is meaningfully more, for four reasons:
+
+- **Live and on-demand, not a daily snapshot.** The daily report is a once-per-day text
+  issue; this is refreshable status reflecting current GitHub state when the operator looks
+  — the difference between "what was true at 00:00 UTC" and "what is true now."
+- **Covers a population the report never did.** The daily oversight report does not enumerate
+  **Agent App installations** — where the deployed gateway actually reads repos. That blind
+  spot is exactly the "spread across so many repos/installations" pain; this surfaces it.
+- **Glanceable triage, not prose.** Attention-needing repos surface first in a scannable
+  view, versus reading a long markdown issue to find what matters.
+- **It is the foundation, not a throwaway.** This is the read-half of the north-star R1
+  dashboard. The authenticated app, the credential model, the infra hosting, and the
+  data-aggregation layer are exactly what the eventual interactive dashboard (mission launch,
+  approvals, bindings) upgrades from — so the heavy first increment is paid once and reused.
+
+Gateway bindings are deferred not because they don't matter, but because they are the one
+population that needs agent-side work (`fro-bot/agent#907`); holding Phase 1 for them would
+block the relief the other two populations deliver today.
+
 ## Requirements
 
 - **R1 — Two-population monitoring.** Aggregate and display Fro Bot's footprint across
