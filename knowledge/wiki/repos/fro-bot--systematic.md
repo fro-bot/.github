@@ -2,7 +2,7 @@
 type: repo
 title: "fro-bot/systematic"
 created: 2026-05-07
-updated: 2026-06-04
+updated: 2026-06-14
 sources:
   - url: https://github.com/fro-bot/systematic
     sha: 73fa108
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/fro-bot/systematic
     sha: 33cc55a
     accessed: 2026-06-04
+  - url: https://github.com/fro-bot/systematic
+    sha: 28400b1
+    accessed: 2026-06-14
 tags: [documentation, github-pages, astro, starlight, opencode, plugin, ocx, json-schema]
 related:
   - marcusrbrown--systematic
@@ -28,7 +31,7 @@ Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Star
 | Attribute       | Value                                                |
 | --------------- | ---------------------------------------------------- |
 | Created         | 2026-02-09                                           |
-| Last push       | 2026-06-04                                           |
+| Last push       | 2026-06-07                                           |
 | Default branch  | `gh-pages`                                           |
 | Language        | HTML (static build output)                           |
 | License         | None specified                                       |
@@ -75,40 +78,47 @@ The `gh-pages` branch contains the built Starlight/Astro static site:
 
 The `.well-known/ocx.json` file points to the OCX component registry at `/systematic/index.json`. This enables the `ocx` CLI to discover and install individual skills and agents from the documentation site URL. The registry uses V2 schema (since `@fro.bot/systematic` v2.6.0).
 
-As of the 2026-06-04 survey, `index.json` advertises:
+As of the 2026-06-14 survey, `index.json` advertises:
 
 | Field        | Value                                                        |
 | ------------ | ------------------------------------------------------------ |
 | `name`       | `Systematic`                                                 |
 | `namespace`  | `systematic`                                                 |
-| `version`    | `2.24.0` (up from v2.20.6 at the 2026-05-22 survey — see [[marcusrbrown--systematic]] for source-side release history; this now matches the latest source release v2.24.0) |
+| `version`    | `2.31.0` (up from v2.24.0 at the 2026-06-04 survey — see [[marcusrbrown--systematic]] for source-side release history; this still matches the latest source release, which is now v2.31.0, published 2026-06-07) |
 | `author`     | `Marcus R. Brown <human@fro.bot>`                            |
-| `components` | 103 total                                                    |
+| `components` | 104 total                                                    |
 
-Component breakdown (unchanged since the 2026-05-22 survey):
+Component breakdown (2026-06-14 survey):
 
 | Type      | Count |
 | --------- | ----- |
 | `agent`   | 51    |
-| `skill`   | 47    |
+| `skill`   | 48    |
 | `bundle`  | 2     |
 | `profile` | 2     |
 | `plugin`  | 1     |
 
-The `bundle` and `profile` types (V2 registry capabilities) were new in the 2026-05-22 survey. The v2.20.6 → v2.24.0 advance carried no net component-count change — the v2.21+ launch-surface and release-automation work on the source repo was content/tooling churn rather than component additions or removals.
+The `bundle` and `profile` types (V2 registry capabilities) were new in the 2026-05-22 survey. The v2.24.0 → v2.31.0 advance added exactly one component: skill count rose 47 → 48 (agents, bundles, profiles, and the single plugin are unchanged). The 48 skills now published: `agent-browser`, `agent-native-architecture`, `agent-native-audit`, `andrew-kane-gem-writer`, `ce-brainstorm`, `ce-compound`, `ce-compound-refresh`, `ce-ideate`, `ce-plan`, `ce-review`, `ce-work`, `changelog`, `claude-permissions-optimizer`, `compound-docs`, `deepen-plan`, `deploy-docs`, `dhh-rails-style`, `document-review`, `dspy-ruby`, `every-style-editor`, `feature-video`, `frontend-design`, `gemini-imagegen`, `generate-command`, `git-clean-gone-branches`, `git-commit`, `git-commit-push-pr`, `git-worktree`, `lfg`, `onboarding`, `orchestrating-subagents`, `orchestrating-swarms`, `proof`, `rclone`, `report-bug-ce`, `reproduce-bug`, `resolve-pr-feedback`, `setup`, `slfg`, `test-browser`, `test-driven-development`, `test-xcode`, `todo-create`, `todo-resolve`, `todo-triage`, `using-systematic`, `writing-skills`, `writing-systematic-skills`.
 
-## Hosted JSON Schemas (new in this survey)
+## Hosted JSON Schemas
 
 The `schemas/` tree appeared on `gh-pages` between the 2026-05-07 survey and now. Two URLs are served:
 
 - `https://fro.bot/systematic/schemas/latest/systematic-config.schema.json`
 - `https://fro.bot/systematic/schemas/v2/systematic-config.schema.json`
 
-Both are draft-07 JSON Schemas titled `Systematic user configuration file (systematic.json / systematic.jsonc)`. The `$id` on the v2 file is the v2 URL above, which makes that the canonical pinned reference. Top-level schema fields: `$schema`, `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap` — matching the `systematic.json` config shape consumed by `marcusrbrown/systematic`'s `config-handler.ts`.
+Both are draft-07 JSON Schemas. Top-level schema fields: `$schema`, `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap` — matching the `systematic.json` config shape consumed by `marcusrbrown/systematic`'s `config-handler.ts`. The field set is unchanged across all surveys to date.
 
 The schema's own `$schema` property is documented as informational only — the loader does not fetch or validate against it. Its purpose is to flip on field-level autocomplete in VSCode, Zed, IntelliJ, and any other editor that resolves `$schema` URLs.
 
 Consequence: this deployment target is no longer purely a docs site. It is now also a stable schema host. Renaming, restructuring, or breaking the URL shape of `schemas/v2/systematic-config.schema.json` would silently break IDE autocomplete in every consumer that pinned the v2 URL. Treat it like a public API.
+
+### Schema shape changes observed 2026-06-14
+
+Two changes since the 2026-06-04 survey, both contradicting prior recorded facts:
+
+1. **Human-readable label moved from `title` to `description`.** The 2026-06-04 survey recorded both schemas as *titled* `Systematic user configuration file (systematic.json / systematic.jsonc)`. As of 2026-06-14, neither schema carries a top-level `title` key at all; that exact string is now the top-level `description`. The label content is identical — only the JSON key changed (`title` → `description`).
+2. **`schemas/latest/` now serves a `$id` pointing at the v2 URL.** The `latest` schema's `$id` is now `https://fro.bot/systematic/schemas/v2/systematic-config.schema.json` — identical to the v2 file. Previously the `latest` variant was understood to carry its own `latest` URL as `$id`. Practically, `latest` and `v2` are now byte-equivalent on the fields surveyed (same `$id`, same `description`, same property set), so the two paths currently resolve to the same canonical reference. This is benign while v2 is the only major, but if a v3 ever ships, a `latest` whose `$id` is hard-pinned to v2 would mis-advertise its own identity. Worth re-checking at the next major.
 
 ## Branches
 
@@ -157,10 +167,19 @@ The documentation build pipeline flows: `marcusrbrown/systematic` → Astro buil
 
 Based on commit history, deployments track releases of `@fro.bot/systematic`. Recent activity is markedly bursty — multiple deploys per day during active development windows on the source repo, suggesting CI fans out per merge rather than per release tag.
 
-Latest deploys observed on 2026-06-04 (source SHAs are the `marcusrbrown/systematic` commit each deploy was built from). Cadence cooled relative to the May burst — deploys now track discrete merge windows rather than firing many times per day:
+Latest deploys observed on 2026-06-14 (source SHAs are the `marcusrbrown/systematic` commit each deploy was built from). The cadence re-intensified into a multi-per-day rhythm on 2026-06-05 and 2026-06-07, tracking the run-up to the v2.31.0 release (published 2026-06-07 09:19, deployed at 09:20):
 
 | Date (UTC)         | gh-pages SHA | Source SHA  |
 | ------------------ | ------------ | ----------- |
+| 2026-06-07 09:20   | `28400b1`    | `75622be`   |
+| 2026-06-07 07:48   | `17c6122`    | `bae4aea`   |
+| 2026-06-07 07:17   | `78f9c2f`    | `16270b3`   |
+| 2026-06-07 03:49   | `3bb89b7`    | `9dd0b4c`   |
+| 2026-06-05 23:06   | `015f562`    | `870127c`   |
+| 2026-06-05 18:47   | `479aeff`    | `2b44a48`   |
+| 2026-06-05 15:41   | `9044ca6`    | `3b9d0e6`   |
+| 2026-06-05 07:21   | `30a36a3`    | `c3032ee`   |
+| 2026-06-05 05:21   | `d5e217a`    | `ce121dd`   |
 | 2026-06-04 06:34   | `33cc55a`    | `9914b6c`   |
 | 2026-05-30 15:52   | `6e9b231`    | `1594a7e`   |
 | 2026-05-30 02:56   | `08eb5f6`    | `7a91b88`   |
@@ -206,3 +225,4 @@ Earlier deploys remain documented from the prior survey:
 | 2026-05-07 | `73fa108`  | Initial survey           |
 | 2026-05-22 | `12cae87`  | Registry advanced v2.7.3 → v2.20.6; 103 components (51 agents, 47 skills, 2 bundles, 2 profiles, 1 plugin); `schemas/{latest,v2}/systematic-config.schema.json` now hosted; `404.html` and `og-image.png` added; deploy cadence visibly intensified |
 | 2026-06-04 | `33cc55a`  | Registry advanced v2.20.6 → v2.24.0 (now matches latest source release); component counts unchanged (103: 51/47/2/2/1); `favicon.svg` and `privacy/index.html` added; repo description set to "Documentation site for @marcusrbrown/systematic"; schema `$id`/shape and `.well-known/ocx.json` unchanged; deploy cadence cooled from the May burst; no Fro Bot workflow (still expected); issue #1 and PR #2 still open |
+| 2026-06-14 | `28400b1`  | Registry advanced v2.24.0 → v2.31.0 (still matches latest source release, published 2026-06-07); components 103 → 104 — skills 47 → 48, all other types unchanged (51/2/2/1); schema config field set unchanged BUT two shape contradictions vs. prior survey: human-readable label moved `title` → `description` on both schemas, and `schemas/latest/` `$id` now hard-points at the v2 URL (latest ≡ v2 on surveyed fields); `.well-known/ocx.json` unchanged; gh-pages tree structure unchanged; deploy cadence re-intensified to multi-per-day around the v2.31.0 release; no Fro Bot workflow (still expected); issue #1 and PR #2 still open |

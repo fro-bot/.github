@@ -2040,3 +2040,27 @@ Sources: https://github.com/fro-bot/agent (SHA a23ae97c433d815974cfd009bec64748c
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-06-14 12:00] ingest | repo:fro-bot/systematic
+
+Re-surveyed `fro-bot/systematic` at `gh-pages` HEAD `28400b1` (last push 2026-06-07). Updated repo page `fro-bot--systematic.md` and the index entry. Reads limited to repo metadata, branch/issue/PR listings, the `gh-pages` directory tree, and the published artifacts (`index.json`, `.well-known/ocx.json`, `schemas/{latest,v2}/systematic-config.schema.json`) per the untrusted-input constraint.
+
+Deltas since the 2026-06-04 survey:
+
+- **OCX registry v2.24.0 → v2.31.0**, still matching the latest source release (`marcusrbrown/systematic` v2.31.0, published 2026-06-07 09:19; deployed at 09:20).
+- **Components 103 → 104**: skills 47 → 48; agents (51), bundles (2), profiles (2), and the single plugin unchanged. Recorded the full 48-skill name list on the repo page for future diffing.
+- **Two schema-shape contradictions vs. the 2026-06-04 record** (noted additively, both versions preserved):
+  1. The human-readable label `Systematic user configuration file (systematic.json / systematic.jsonc)` moved from the top-level `title` key to `description`; neither schema now carries a `title`. Content identical, key changed.
+  2. `schemas/latest/systematic-config.schema.json` now declares `$id` = the v2 URL, making `latest` byte-equivalent to `v2` on surveyed fields. Benign while v2 is the only major; flagged for re-check at a future v3.
+- Config field set (`$schema`, `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`) and `.well-known/ocx.json` unchanged. `gh-pages` tree structure unchanged.
+- Deploy cadence re-intensified to multi-per-day on 2026-06-05 and 2026-06-07 around the v2.31.0 release, reversing the early-June cooldown.
+- **No Fro Bot workflow** — still expected and not recommended; this repo is a pure static-output deploy target whose source ([[marcusrbrown--systematic]]) already carries full Fro Bot integration. No follow-up draft PR warranted.
+- Repo metadata steady: description unchanged, `gh-pages` default branch, `renovate/configure` branch with open PR #2, open issue #1. No fork.
+
+Sources: https://github.com/fro-bot/systematic (SHA 28400b1)
+
+## [2026-06-14 08:55] ingest | repo:fro-bot/systematic
+
+Surveyed fro-bot/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/systematic
