@@ -166,54 +166,74 @@ push, cross-agent coordination, negotiation — truly requires the spine.
 
 ## Phased roadmap
 
-- **Phase 1 (now):** One Tier-2 autonomy capability that compounds immediately and needs
-  no new infrastructure — start the inward engine while the outward foundation is designed.
-- **Phase 2:** The Tier-0 spine (S1 web control surface + S2 auth) — the foundation every
-  outward capability needs. Design-heavy; the highest-leverage infrastructure investment.
-- **Phase 3:** Tier-1 operator reach (dashboard, push, web wiki) on top of the spine.
-- **Phase 4:** Tier-2 A3 cross-repo coordination + Tier-3 frontier (negotiation, then
+The phasing leads with the operator's stated pain — *visibility into work scattered across
+repos* — rather than the agent's internal autonomy. Relief comes first; the heavier
+foundation and the autonomy engine follow.
+
+- **Phase 1 (now):** A **read-only visibility surface** — cross-repo issues, PR/CI status,
+  and agent state aggregated into one place. This is the part of the dashboard that needs
+  **no spine and no auth**: it only reads GitHub (and the control plane's own state) and
+  can be a minimal web view or even a generated single-pane report. It directly answers
+  "issues missed, spread across repos." In parallel, begin **designing** the S1/S2 spine
+  (web control surface + operator auth) so Phase 2 build is unblocked.
+- **Phase 2:** **Build** the Tier-0 spine (S1 inbound web control surface + S2 operator
+  auth). S2 is the security keystone — a real browser-auth/session model replacing
+  shared-secret HMAC — and is treated as a first-class hard problem, not Discord parity.
+- **Phase 3:** Upgrade the Phase-1 visibility surface into the full interactive dashboard
+  (launch missions, approve actions, push notifications, editable wiki) on top of the spine,
+  and land **A1 skill-learning / A2 self-maintenance** (control-plane-native, can begin
+  earlier if capacity allows since they don't need the spine).
+- **Phase 4:** A3 cross-repo coordination + Tier-3 frontier (negotiation, then
   beyond-software).
 
-Phases 1 and 2 can overlap: Phase 1 is control-plane-native work, Phase 2 is agent/infra
-foundation work — different systems, runnable in parallel.
+The Phase-1 visibility slice and the Phase-1 spine *design* parallelize cleanly — one is
+read-only control-plane/GitHub work, the other is agent/infra design. A1/A2 are
+control-plane-native and can start whenever capacity allows; they're placed in Phase 3
+because visibility and the spine are the higher-priority near-term moves, not because A1/A2
+depend on them.
 
 ## Candidate first workstreams
 
 | Candidate | Unlocks | Effort/risk | Why now / why not |
 |---|---|---|---|
-| **A1 skill-learning** | Tier 2 autonomy; compounds every later phase | M | Control-plane-native, no new infra, builds on existing wiki + compound docs. Directly reduces "manual tweaking." Lower visibility to operator. |
-| **A2 self-maintenance** | Tier 2; reduces operator load | M | Extends the autoheal you already shipped. Incremental, low risk. Narrower upside than A1. |
-| **S1+S2 spine (design now, build Phase 2)** | All of Tier 1/3 outward | H | The foundation, but heaviest lift and lives in agent/infra, not here. Begin *design* in parallel with Phase 1; defer *build* until A1 has surfaced the work-unit vocabulary it needs. S2 web auth is a first-class hard problem, not a Discord-parity appendage. |
-| **R1 dashboard** | Operator reach | H | Most directly solves "cumbersome, issues missed," but cannot start before the spine (S1/S2). |
+| **Read-only visibility slice** | Immediate relief of the stated pain | L–M | Reads GitHub + control-plane state only; needs no spine, no auth. Directly answers "issues missed, spread across repos." Doesn't yet let you *command* Fro Bot from the web — that's Phase 2/3. |
+| **S1+S2 spine (design now, build Phase 2)** | All of Tier 1/3 outward | H | The foundation for everything interactive. Begin *design* in parallel with the visibility slice; build in Phase 2. S2 web auth is a first-class, security-critical hard problem, not a Discord-parity appendage. |
+| **R1 full dashboard** | Operator command + approve | H | The complete answer to the stated pain, but its interactive half can't start before the spine. Its read-only half *is* the visibility slice above. |
+| **A1 skill-learning** | Tier 2 autonomy; compounds later phases | M | Control-plane-native, no new infra, builds on existing wiki + compound docs. Strong compounding value — but it sharpens the agent's internals while leaving the operator's *visibility* pain unaddressed, so it follows visibility rather than leading. |
 
 ## Recommendation
 
-**Start with A1 (skill-learning / "grow and learn") as Phase 1, and begin designing the
-S1/S2 spine in parallel as Phase 2.**
+**Start with the read-only visibility slice as Phase 1, begin designing the S1/S2 spine in
+parallel, and follow with A1 skill-learning in Phase 3.**
 
 Rationale:
 
-1. **A1 is the highest-leverage move that needs nothing new.** It lives entirely in this
-   repo, builds on the wiki + compound-docs machinery already in place, and compounds the
-   value of *every* later phase — a smarter agent makes the dashboard, cross-repo planning,
-   and negotiation all more useful. It directly attacks the "manual tweaking is cumbersome"
-   pain by making Fro Bot capture and reuse what it learns instead of relearning each run.
-2. **The spine is the right Phase 2, but not the right Phase 1.** S1/S2 is the foundation
-   for everything outward, but it's the heaviest lift, lives in agent/infra, and is better
-   designed once A1 has clarified what "a unit of agent work" (a mission) actually is —
-   skill-learning naturally surfaces the vocabulary the control surface will need.
-3. **They parallelize cleanly.** A1 is control-plane work in this repo; S1/S2 design is
-   agent/infra work. Different systems, no file contention, runnable at once — so we don't
-   trade the foundation for the quick win; we start both.
-4. **The Discord reframe de-risks the spine.** Because remote command + approval already
-   work through Discord, the Phase 2 spine is "add a web surface to a proven model," not
-   "invent bidirectional control." That lowers S1's real risk below its H tag and makes
-   parallel Phase-1/Phase-2 realistic.
+1. **Lead with the stated pain.** The motivating problem is *visibility* — "manual tweaking
+   is cumbersome and issues can be missed, spread across so many repos." The shortest path
+   to relief is aggregating cross-repo issues, PR/CI status, and agent state into one place.
+   This needs no spine and no auth (it only reads GitHub + control-plane state), so it ships
+   fast and answers the actual job-to-be-done first. Optimizing the agent's internals (A1)
+   before the operator can *see* the system would make Fro Bot smarter while leaving the
+   stated pain intact.
+2. **Design the spine now, build it in Phase 2.** S1 (inbound web control surface) + S2
+   (operator web auth) is the foundation for everything interactive — launching missions,
+   approving actions, push notifications. Design begins in parallel with the visibility
+   slice; build follows. **S2 is the security keystone**: a real browser-auth/session model
+   replacing shared-secret HMAC, treated as a first-class hard problem. The Discord reframe
+   de-risks the *interaction model* (what commands mean, the fail-closed approval flow), not
+   the *web-auth implementation* — that remains genuinely hard.
+3. **A1/A2 autonomy is Phase 3, but unblocked.** Skill-learning and self-maintenance are
+   control-plane-native and need nothing new, so they can start whenever capacity allows.
+   They follow visibility + spine because those address the acute near-term pain and unlock
+   the whole outward program; A1/A2 compound value but don't relieve the stated problem.
+4. **The surfaces need one ownership model.** Discord is the proven command surface today.
+   The web dashboard must be defined as either canonical or an augment to Discord — not a
+   second, divergent control plane. Resolve this before Phase 3 (see Open decisions).
 
-Override signal: if the operator-visibility pain ("issues missed, spread across repos") is
-more acute than the autonomy gap right now, flip the order — design the spine first and
-treat A1 as Phase 2. The recommendation assumes the autonomy compounding is the bigger
-near-term win.
+Override signal: if reducing manual operator toil through agent autonomy is more urgent than
+seeing the system, pull A1 forward to overlap Phase 1 (it's control-plane-native and
+parallelizes with the visibility slice). The recommendation assumes visibility is the more
+acute near-term pain, per the stated motivation.
 
 ## Scope boundaries (non-goals for this doc)
 
@@ -223,17 +243,30 @@ near-term win.
   first move.
 - No modification to any of the five systems — this is pure architecture mapping.
 
-## Open decisions (resolve before Phase 1 kickoff)
+## Open decisions (resolve at the relevant phase kickoff)
 
-- **D1:** Confirm the first workstream (recommended: A1 skill-learning) and whether to
-  start S1/S2 spine design in parallel now.
-- **D2:** For A1 — does "skill" mean reusable agent procedures (Hermes-style) captured into
-  the wiki, control-plane workflow refinements, or both? (Shapes the A1 brainstorm.)
-- **D3:** Cross-repo issue strategy — capabilities owned by `fro-bot/agent` and
-  `marcusrbrown/infra` will need their own tracking issues there once their phase starts.
+- **D1 — Visibility-slice scope (Phase 1):** What's the minimum viable view? Candidates:
+  a generated single-pane report issue (zero new infra), a static read-only web page on an
+  `infra` droplet, or a thin always-on dashboard. Shapes the Phase-1 brainstorm.
+- **D2 — Surface ownership model (before Phase 3):** Is Discord the canonical command
+  surface with the dashboard as an augment/read layer, or are both first-class command
+  surfaces? Undefined risks a second control plane diverging from Discord's proven model.
+  (Raised by design review.)
+- **D3 — Spine trust boundary (Phase 2):** S1's inbound control surface widens the trust
+  boundary the current outbound-only announce model avoids. Web-launched missions MUST route
+  through the same fail-closed approval gate as Discord-triggered work, and operator wiki
+  edits (R3) MUST preserve the `data`-branch sole-writer + privacy-gate invariants. S2 web
+  auth is the security keystone — strong operator identity, sessions, revocation,
+  origin-bound auth. (Raised by security review.)
+- **D4 — A1 skill definition (Phase 3):** Does "skill" mean reusable agent procedures
+  (Hermes-style) captured into the wiki, control-plane workflow refinements, or both?
+  (Shapes the A1 brainstorm.)
+- **D5 — Cross-repo tracking:** Capabilities owned by `fro-bot/agent` and
+  `marcusrbrown/infra` will need their own tracking issues there once their phase starts
+  (notably the S1/S2 spine, which lives in `fro-bot/agent`).
 
 ## Next step
 
-Resolve D1 in a follow-up, then run a focused `ce:brainstorm` on the chosen first
-workstream (the recommended path: an A1 skill-learning brainstorm), which this north-star
-doc feeds directly.
+Run a focused `ce:brainstorm` on the **Phase-1 visibility slice** (resolving D1), which this
+north-star doc feeds directly. Begin S1/S2 spine *design* in parallel as a `fro-bot/agent`
+workstream (D3/D5).
