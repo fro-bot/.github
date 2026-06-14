@@ -21,6 +21,7 @@ branches:
           - Lint
           - Renovate / Renovate
           - Review Dependencies
+          - 'Security: Private Leak Scan'
           - Test
           - Test Scripts Load
 

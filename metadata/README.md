@@ -101,7 +101,7 @@ A private repo's existence, name, or content must never reach a public surface. 
   - `github.token` (`GITHUB_TOKEN`): diff fetch, PR API identity resolution, commit status POST.
   - `FRO_BOT_POLL_PAT`: private `node_id` → `owner/name` resolution only (resolver subprocess, scrubbed env — no `GH_TOKEN`/`GITHUB_TOKEN` inheritance).
 
-  The gate posts a `security/check-private-leak` commit status to the exact PR head SHA. If the status POST itself fails, the job exits non-zero (fail-closed — the PR is never left unsignaled). Required-check registration on `main` is deferred until empirical fork-status proof exists.
+  The gate posts a `Security: Private Leak Scan` commit status to the exact PR head SHA. If the status POST itself fails, the job exits non-zero (fail-closed — the PR is never left unsignaled). It is registered as a required status check on `main`.
 
 **Operator lookup** — to map a redacted `node_id` back to its `owner/repo` (the convenience a plain `grep` of `repos.yaml` used to provide), run `GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts`. It reads `repos.yaml`, resolves each private entry's `node_id` via the GitHub API, and prints a `node_id → owner/name` table to stdout. It never writes to the working tree and is invoked by no workflow.
 
@@ -163,15 +163,38 @@ PAT split summary:
 
 ### Gateway presence (Discord)
 
-`survey-repo.yaml` and `poll-invitations.yaml` post in-character event announcements to the Fro Bot gateway, which relays them into Fronomenal Discord as the Fro Bot user. These steps are best-effort: they never fail the workflow, and they stay silent unless the gateway is configured.
+`survey-repo.yaml`, `poll-invitations.yaml`, and the scheduled `fro-bot.yaml` run post in-character event announcements to the Fro Bot gateway, which relays them into Fronomenal Discord as the Fro Bot user. These steps are best-effort: they never fail the workflow, and they stay silent unless the gateway is configured.
 
-| Name                        | Type     | Purpose                                                 |
-| --------------------------- | -------- | ------------------------------------------------------- |
-| `GATEWAY_WEBHOOK_SECRET`    | secret   | HMAC-SHA256 signing key for the announce payload        |
-| `GATEWAY_PRESENCE_URL`      | variable | Gateway `POST /v1/announce` endpoint URL                |
+| Name | Type | Purpose |
+| --- | --- | --- |
+| `GATEWAY_WEBHOOK_SECRET` | secret | HMAC-SHA256 signing key for the announce payload |
+| `GATEWAY_PRESENCE_URL` | variable | Gateway `POST /v1/announce` endpoint URL |
 | `GATEWAY_ANNOUNCE_DISABLED` | variable | Kill switch — any truthy value mutes all announce POSTs |
+| `DAILY_DIGEST_ENABLED` | variable | Go-live gate for the `daily_digest` event. Must be set to `true` to enable; unset or any other value = step is skipped |
 
 The gateway endpoint is opt-in: it accepts announcements only when the gateway deployment itself has both its webhook secret and presence channel configured. Until `GATEWAY_PRESENCE_URL` and `GATEWAY_WEBHOOK_SECRET` are set here, the announce steps log a skip and exit cleanly.
+
+#### Events
+
+Each event carries a small, fixed context the gateway renders into a Discord message. All three post as the Fro Bot user.
+
+| Event                 | Source                  | Context shape                                                  |
+| --------------------- | ----------------------- | -------------------------------------------------------------- |
+| `survey_completed`    | `survey-repo.yaml`      | `{ owner, repo, slug, wiki_pages_changed }`                    |
+| `invitation_accepted` | `poll-invitations.yaml` | `{ count, repos: [{ owner, name }] }`                          |
+| `daily_digest`        | `fro-bot.yaml`          | `{ repos_tracked: number, surveys_today: number, report_url }` |
+
+`daily_digest` posts on scheduled runs only, and only on days with at least one survey — quiet days are suppressed (the oversight report issue is still created either way). `repos_tracked` counts public tracked repos; `surveys_today` counts repos surveyed that UTC day; `report_url` links that day's oversight report.
+
+#### Daily digest go-live
+
+The `daily_digest` step ships dormant. To enable it:
+
+1. Confirm the gateway `daily_digest` variant is deployed and serving (gateway support lives in `fro-bot/agent` and is deployed via `marcusrbrown/infra`).
+2. Set the `DAILY_DIGEST_ENABLED` repository variable to `true`.
+3. Verify one live post appears in Discord as the Fro Bot user with a working report link.
+
+The legacy daily-oversight Discord webhook keeps running until a separate follow-up removes it after go-live, so there is no coverage gap and no double-post while `DAILY_DIGEST_ENABLED` is unset.
 
 ## Editing metadata files
 
@@ -179,7 +202,7 @@ All `metadata/*.yaml` files are enforced as Fro-Bot-writable-only on `main`. A C
 
 `repos.yaml` carries an additional sole-writer invariant: changes to it on `main` must originate only from the `data` promotion branch. A direct edit to `repos.yaml` on a non-promotion branch is prohibited even if fro-bot-authored. Any exception requires an explicit override and is treated as an emergency measure, not routine workflow — the invariant exists precisely to prevent the both-sides mutation that causes promotion conflicts.
 
-A companion guard, `scripts/check-private-leak.ts`, detects a private repo's canonical `owner/name` introduced in a PR's added lines (see [Privacy gates and operator tooling](#privacy-gates-and-operator-tooling)). It runs on every PR to `main` via the trusted `workflow_run` topology described above (`private-leak-sentinel.yaml` + `check-private-leak.yaml`), posting a `security/check-private-leak` commit status to the PR head SHA.
+A companion guard, `scripts/check-private-leak.ts`, detects a private repo's canonical `owner/name` introduced in a PR's added lines (see [Privacy gates and operator tooling](#privacy-gates-and-operator-tooling)). It runs on every PR to `main` via the trusted `workflow_run` topology described above (`private-leak-sentinel.yaml` + `check-private-leak.yaml`), posting a `Security: Private Leak Scan` commit status to the PR head SHA.
 
 For intentional manual edits to any metadata file (including `allowlist.yaml`), land the change on `data` directly and let the existing promotion flow land it on `main`:
 
@@ -213,3 +236,13 @@ Reconcile runs are serialized by the `reconcile-repos.yaml` workflow's concurren
 This serialization is what prevents cross-run duplicate rollup issues: because no two reconcile runs can overlap, a rollup created by one run has fully propagated through the API before any subsequent run begins its `selfHealRollups` pass. Manual reruns are therefore safe and do not require paging delays or pacing rules.
 
 The within-run guard (`currentRunRollupOwners`) handles only the in-process race (a rollup POSTed in step 10 not yet visible to step 12's `listForRepo` call). Its activations are now counted as `raceSuppressedRollups` in the run summary so operators can distinguish same-run suppression from pre-existing rollups.
+
+## Survey floor stuck-repo observability
+
+The survey floor selects the oldest-surveyed onboarded repos to guarantee a minimum number of dispatches per run. Survey completion advances `last_survey_at`; the floor then moves to the next-oldest repo. A survey cancelled or killed before its resolve step completes records nothing, so `last_survey_at` never advances and the floor keeps re-selecting that repo every run, silently consuming a floor slot on a repo that cannot make progress.
+
+This cancel-before-resolve window is a known, accepted residual. Rather than tracking dispatch state per repo, the reconcile run derives a `stuckCandidates` count from existing metadata: the number of `onboarded` entries whose `last_survey_at` is `null` or older than the staleness threshold (the longest channel interval plus a grace margin that exceeds the jitter range, so normal cadence never trips it). The count is reported counts-only in the run summary and step summary — no repo identifiers in logs.
+
+A sustained non-zero `stuckCandidates` count across consecutive runs is the signal to implement stateful dispatch tracking (a `last_dispatched_at` field plus a cooldown that excludes recently-dispatched repos from floor selection). Until that signal fires, the lighter observability counter is sufficient.
+
+The staleness threshold is calibrated to the longest channel interval (collab, 30d), so the detector surfaces stuck `owned` (14d) and `contrib` (21d) repos more slowly than their own cadence — acceptable for a counts-only canary, and a channel-aware threshold (`CHANNEL_INTERVAL_DAYS[channel] + grace`) is the refinement if per-channel sensitivity is later needed.

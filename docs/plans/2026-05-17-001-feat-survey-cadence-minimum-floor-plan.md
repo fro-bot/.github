@@ -1,8 +1,9 @@
 ---
 title: 'feat: Survey cadence minimum-dispatch floor'
 type: feat
-status: active
+status: complete
 date: 2026-05-17
+completed: 2026-06-09
 origin: docs/brainstorms/2026-05-17-survey-cadence-minimum-floor-requirements.md
 ---
 

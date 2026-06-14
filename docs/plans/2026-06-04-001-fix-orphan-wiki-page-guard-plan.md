@@ -1,8 +1,9 @@
 ---
 title: 'fix: gate survey wiki-commit on an onboarded repos.yaml entry'
 type: fix
-status: active
+status: complete
 date: 2026-06-04
+completed: 2026-06-09
 ---
 
 # Gate survey wiki-commit on an onboarded repos.yaml entry
@@ -136,7 +137,7 @@ dispatch (commit `1dd3b5c`); the gate now passes. This plan prevents recurrence.
 
 ## Implementation Units
 
-- [ ] **Unit 1: `repoEntryExists` helper + tests**
+- [x] **Unit 1: `repoEntryExists` helper + tests**
 
 **Goal:** A pure, tested predicate that answers "does `metadata/repos.yaml` have
 an entry for this owner/repo?" for the survey gate to call.
@@ -173,7 +174,7 @@ an entry for this owner/repo?" for the survey gate to call.
 - Edge: malformed YAML → fail-closed (treat as not-onboarded / surface a clear
   error per the chosen wrapper contract), never a silent true.
 
-- [ ] **Unit 2: wire the onboarded gate into `survey-repo.yaml`**
+- [x] **Unit 2: wire the onboarded gate into `survey-repo.yaml`**
 
 **Goal:** Survey only commits the wiki page (and announces) when the resolved repo
 is onboarded on `data`.

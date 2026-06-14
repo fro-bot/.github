@@ -11,6 +11,7 @@ import {
   fetchPerRepoStatus,
   formatCommitMessage,
   formatFloorTelemetry,
+  formatStuckTelemetry,
   handleReconcile,
   isEligibleForSurvey,
   loadDispatchStaggerFromEnv,
@@ -29,7 +30,7 @@ import {
   type RepoStatusProbe,
   type VisibilityTransitionIssue,
 } from './reconcile-repos.ts'
-import {addRepoEntry} from './repos-metadata.ts'
+import {addRepoEntry, computeNextEligibleAt} from './repos-metadata.ts'
 import {assertReposFile} from './schemas.ts'
 
 const NOW = new Date('2026-04-17T12:00:00Z')
@@ -130,6 +131,7 @@ describe('reconcileRepos', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1231,6 +1233,7 @@ describe('reconcileRepos', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         // dispatched/deferred populated by the I/O shell, not the engine
         byChannel: {
           collab: {tracked: 3, dispatched: 0, deferred: 0, lostAccess: 1},
@@ -1275,6 +1278,7 @@ describe('reconcileRepos', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: {
           collab: {tracked: 1, dispatched: 0, deferred: 0, lostAccess: 0},
           owned: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
@@ -1303,6 +1307,7 @@ describe('reconcileRepos', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: emptyChannelStats(),
       })
     })
@@ -1815,6 +1820,68 @@ describe('reconcileRepos', () => {
       expect(byName.get('collab-repo')).toBe('collab')
       expect(byName.get('agent')).toBe('owned')
       expect(byName.get('.github')).toBe('contrib')
+    })
+
+    it('channel-refresh with malformed last_survey_at does not throw and falls back to now', () => {
+      // #given a tracked collab entry with a corrupted last_survey_at AND a live contrib upgrade
+      // A malformed date string must not crash computeNextEligibleAt via Invalid Date.toISOString().
+      const entry = makeEntry({
+        owner: 'bfra-me',
+        name: 'renovate-config',
+        onboarding_status: 'onboarded',
+        discovery_channel: 'collab',
+        last_survey_at: 'bogus', // malformed — not a valid YYYY-MM-DD
+        next_survey_eligible_at: '2026-06-01',
+      })
+
+      // #when reconciling with a live contrib channel upgrade — must not throw
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({owner: 'bfra-me', name: 'renovate-config', node_id: 'R_bfra_ren'})],
+          accessChannelByKey: new Map([['bfra-me/renovate-config', 'contrib']]),
+        }),
+      )
+
+      // #then channel is upgraded to contrib
+      expect(result.nextRepos.repos[0]?.discovery_channel).toBe('contrib')
+
+      // #then next_survey_eligible_at is a valid ISO string (computed from `now`, not from 'bogus')
+      const nextEligible = result.nextRepos.repos[0]?.next_survey_eligible_at
+      expect(typeof nextEligible).toBe('string')
+      expect(Number.isFinite(Date.parse(nextEligible ?? ''))).toBe(true)
+    })
+
+    it('does not downgrade a tracked owned entry when live channel is contrib or collab', () => {
+      // #given a tracked owned entry
+      const entry = makeEntry({
+        owner: 'fro-bot',
+        name: 'agent',
+        onboarding_status: 'onboarded',
+        discovery_channel: 'owned',
+        next_survey_eligible_at: '2026-05-01',
+        private: false,
+        node_id: 'R_agent',
+      })
+      const currentRepos: ReposFile = {version: 1, repos: [entry]}
+
+      // #when the live channel map reports contrib (lower precedence than owned)
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos,
+          accessList: [makeAccess({owner: 'fro-bot', name: 'agent', node_id: 'R_agent'})],
+          accessChannelByKey: new Map([['fro-bot/agent', 'contrib']]),
+        }),
+      )
+
+      // #then channel stays owned — downgrade is suppressed
+      expect(result.nextRepos.repos[0]?.discovery_channel).toBe('owned')
+      // #and no channel-refresh refresh bump (reference identity preserved for the channel field)
+      // The entry may be refreshed for other reasons (e.g. node_id write), but the channel
+      // must not change. We assert the channel directly rather than summary.refreshed to avoid
+      // coupling to unrelated field-drift behavior.
+      expect(result.nextRepos.repos[0]?.discovery_channel).not.toBe('contrib')
+      expect(result.nextRepos.repos[0]?.discovery_channel).not.toBe('collab')
     })
   })
 })
@@ -4421,6 +4488,7 @@ describe('formatCommitMessage', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 2 refreshes')
@@ -4442,6 +4510,7 @@ describe('formatCommitMessage', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 0 refreshes, +18 migrated')
@@ -4463,6 +4532,7 @@ describe('formatCommitMessage', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +0 new, 0 pending-review, 0 lost-access, 1 refreshes')
@@ -4484,6 +4554,7 @@ describe('formatCommitMessage', () => {
         flooredDispatches: 0,
         visibilityTransitions: 0,
         raceSuppressedRollups: 0,
+        stuckCandidates: 0,
         byChannel: emptyChannelStats(),
       }),
     ).toBe('chore(reconcile): +1 new, 0 pending-review, 0 lost-access, 1 refreshes, +18 migrated')
@@ -4807,16 +4878,28 @@ describe('mergeAccessChannels (precedence + dedup)', () => {
     expect(result.accessChannelByKey.get('bfra-me/.github')).toBe('contrib')
   })
 
-  it('collab wins over owned for the same key', () => {
+  it('owned wins over collab for the same key', () => {
     // #given the same owner/name appears in both collab and owned
     const result = mergeAccessChannels({
       collab: [entry('fro-bot', 'agent')],
       owned: [entry('fro-bot', 'agent')],
       contrib: [],
     })
-    // #then collab wins; only one entry; no duplicate keys
+    // #then owned wins (owned > collab); only one entry; no duplicate keys
     expect(result.accessList).toHaveLength(1)
-    expect(result.accessChannelByKey.get('fro-bot/agent')).toBe('collab')
+    expect(result.accessChannelByKey.get('fro-bot/agent')).toBe('owned')
+  })
+
+  it('contrib wins over collab for the same key', () => {
+    // #given the same owner/name appears in both collab and contrib
+    const result = mergeAccessChannels({
+      collab: [entry('bfra-me', '.github')],
+      owned: [],
+      contrib: [entry('bfra-me', '.github')],
+    })
+    // #then contrib wins (contrib > collab); only one entry; no duplicate keys
+    expect(result.accessList).toHaveLength(1)
+    expect(result.accessChannelByKey.get('bfra-me/.github')).toBe('contrib')
   })
 
   it('owned wins over contrib for the same key', () => {
@@ -4829,14 +4912,14 @@ describe('mergeAccessChannels (precedence + dedup)', () => {
     expect(result.accessChannelByKey.get('shared/repo')).toBe('owned')
   })
 
-  it('collab wins over both owned and contrib for the same key', () => {
+  it('owned wins over both collab and contrib for the same key (triple overlap)', () => {
     const result = mergeAccessChannels({
       collab: [entry('shared', 'repo')],
       owned: [entry('shared', 'repo')],
       contrib: [entry('shared', 'repo')],
     })
     expect(result.accessList).toHaveLength(1)
-    expect(result.accessChannelByKey.get('shared/repo')).toBe('collab')
+    expect(result.accessChannelByKey.get('shared/repo')).toBe('owned')
   })
 
   it('preserves all three channels when keys are distinct', () => {
@@ -4852,11 +4935,12 @@ describe('mergeAccessChannels (precedence + dedup)', () => {
   })
 
   it('produces an accessList that passes validateAccessList (no duplicates)', () => {
-    // #given overlapping channels
+    // #given overlapping channels (use 'eslint-config' instead of '.github' to avoid
+    // the dot in the auto-generated node_id R_bfra-me_.github failing NODE_ID_PATTERN)
     const result = mergeAccessChannels({
       collab: [entry('shared', 'repo'), entry('marcusrbrown', 'foo')],
       owned: [entry('shared', 'repo'), entry('fro-bot', 'agent')],
-      contrib: [entry('bfra-me', '.github')],
+      contrib: [entry('bfra-me', 'eslint-config')],
     })
     // #then reconcileRepos accepts it without throwing on the duplicate-key check
     expect(() =>
@@ -4946,6 +5030,195 @@ describe('reconcileRepos byChannel summary', () => {
     expect(result.summary.byChannel.owned.tracked).toBe(1)
     expect(result.summary.byChannel.contrib.tracked).toBe(1)
     expect(result.summary.byChannel.collab.tracked).toBe(0)
+  })
+})
+
+describe('classifyTracked — discovery_channel refresh', () => {
+  // Happy path: stored collab, live contrib → refreshed to contrib, summary.refreshed++,
+  // next_survey_eligible_at recomputed for 21d contrib interval.
+  it('refreshes stored collab to live contrib, increments summary.refreshed, recomputes eligibility', () => {
+    const entry = makeEntry({
+      owner: 'bfra-me',
+      name: 'eslint-config',
+      discovery_channel: 'collab',
+      last_survey_at: '2026-04-01',
+      next_survey_eligible_at: '2026-05-01', // stale collab-based date
+      private: false,
+      node_id: 'R_bfra',
+      onboarding_status: 'onboarded',
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({owner: 'bfra-me', name: 'eslint-config', node_id: 'R_bfra', private: false})],
+        accessChannelByKey: new Map([['bfra-me/eslint-config', 'contrib']]),
+        fieldProbes: new Map([['bfra-me/eslint-config', {has_fro_bot_workflow: false, has_renovate: false}]]),
+      }),
+    )
+
+    const next = result.nextRepos.repos[0]
+    expect(next).toBeDefined()
+    expect(next?.discovery_channel).toBe('contrib')
+    expect(result.summary.refreshed).toBe(1)
+    expect(result.summary.unchanged).toBe(0)
+    // next_survey_eligible_at must be recomputed for the contrib (21d) interval
+    const expected = computeNextEligibleAt({
+      owner: 'bfra-me',
+      repo: 'eslint-config',
+      channel: 'contrib',
+      baseDate: new Date('2026-04-01T00:00:00Z'),
+    })
+    expect(next?.next_survey_eligible_at).toBe(expected)
+  })
+
+  // Edge: tracked entry with no stored discovery_channel (legacy), live contrib → backfilled to contrib.
+  it('backfills missing discovery_channel to live contrib (not left defaulting to collab)', () => {
+    // Build a legacy entry without discovery_channel (simulate pre-schema entry)
+    const legacyEntry: RepoEntry = {
+      owner: 'bfra-me',
+      name: 'tsconfig',
+      added: '2026-01-01',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-03-15',
+      last_survey_status: 'success',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      next_survey_eligible_at: '2026-04-14',
+      private: false,
+      node_id: 'R_tsconfig',
+      // discovery_channel intentionally omitted (legacy entry)
+    }
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [legacyEntry]},
+        accessList: [makeAccess({owner: 'bfra-me', name: 'tsconfig', node_id: 'R_tsconfig', private: false})],
+        accessChannelByKey: new Map([['bfra-me/tsconfig', 'contrib']]),
+        fieldProbes: new Map([['bfra-me/tsconfig', {has_fro_bot_workflow: false, has_renovate: false}]]),
+      }),
+    )
+
+    const next = result.nextRepos.repos[0]
+    expect(next?.discovery_channel).toBe('contrib')
+    expect(result.summary.refreshed).toBe(1)
+    // next_survey_eligible_at recomputed for contrib interval
+    const expected = computeNextEligibleAt({
+      owner: 'bfra-me',
+      repo: 'tsconfig',
+      channel: 'contrib',
+      baseDate: new Date('2026-03-15T00:00:00Z'),
+    })
+    expect(next?.next_survey_eligible_at).toBe(expected)
+  })
+
+  // Edge: stored channel == live channel → no change, no spurious refreshed, reference identity preserved.
+  it('preserves reference identity when stored channel matches live channel (no-op)', () => {
+    const entry = makeEntry({
+      owner: 'bfra-me',
+      name: 'prettier-config',
+      discovery_channel: 'contrib',
+      last_survey_at: '2026-04-01',
+      next_survey_eligible_at: '2026-04-25',
+      private: false,
+      node_id: 'R_prettier',
+      onboarding_status: 'onboarded',
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({owner: 'bfra-me', name: 'prettier-config', node_id: 'R_prettier', private: false})],
+        accessChannelByKey: new Map([['bfra-me/prettier-config', 'contrib']]),
+        fieldProbes: new Map([['bfra-me/prettier-config', {has_fro_bot_workflow: false, has_renovate: false}]]),
+      }),
+    )
+
+    // Reference identity preserved (no-op path)
+    expect(result.nextRepos.repos[0]).toBe(entry)
+    expect(result.summary.refreshed).toBe(0)
+    expect(result.summary.unchanged).toBe(1)
+  })
+
+  // Integration: 4 bfra-me contrib entries → byChannel.contrib.tracked == 4, collab reduced.
+  it('integration: 4 bfra-me contrib entries count under byChannel.contrib.tracked', () => {
+    const contribRepos = [
+      makeEntry({
+        owner: 'bfra-me',
+        name: 'eslint-config',
+        discovery_channel: 'collab',
+        private: false,
+        node_id: 'R_1',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01',
+        next_survey_eligible_at: '2026-05-01',
+      }),
+      makeEntry({
+        owner: 'bfra-me',
+        name: 'tsconfig',
+        discovery_channel: 'collab',
+        private: false,
+        node_id: 'R_2',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01',
+        next_survey_eligible_at: '2026-05-01',
+      }),
+      makeEntry({
+        owner: 'bfra-me',
+        name: 'prettier-config',
+        discovery_channel: 'collab',
+        private: false,
+        node_id: 'R_3',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01',
+        next_survey_eligible_at: '2026-05-01',
+      }),
+      makeEntry({
+        owner: 'bfra-me',
+        name: '.github',
+        discovery_channel: 'collab',
+        private: false,
+        node_id: 'R_4',
+        onboarding_status: 'onboarded',
+        last_survey_at: '2026-04-01',
+        next_survey_eligible_at: '2026-05-01',
+      }),
+    ]
+    const accessList = contribRepos.map(e =>
+      makeAccess({owner: e.owner, name: e.name, node_id: e.node_id ?? `R_${e.name}`, private: false}),
+    )
+    const channelMap = new Map<string, DiscoveryChannel>(
+      contribRepos.map(e => [`${e.owner}/${e.name}`, 'contrib' as DiscoveryChannel]),
+    )
+    const fieldProbes = new Map(
+      contribRepos.map(e => [`${e.owner}/${e.name}`, {has_fro_bot_workflow: false, has_renovate: false}]),
+    )
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: contribRepos},
+        accessList,
+        accessChannelByKey: channelMap,
+        fieldProbes,
+      }),
+    )
+
+    // All 4 entries should now be classified as contrib
+    expect(result.summary.byChannel.contrib.tracked).toBe(4)
+    expect(result.summary.byChannel.collab.tracked).toBe(0)
+    // All 4 refreshed (stored collab → live contrib)
+    expect(result.summary.refreshed).toBe(4)
+    // All entries have contrib channel
+    for (const entry of result.nextRepos.repos) {
+      expect(entry.discovery_channel).toBe('contrib')
+    }
+    // next_survey_eligible_at recomputed for contrib (21d) interval for each
+    for (const entry of result.nextRepos.repos) {
+      const expected = computeNextEligibleAt({
+        owner: entry.owner,
+        repo: entry.name,
+        channel: 'contrib',
+        baseDate: new Date('2026-04-01T00:00:00Z'),
+      })
+      expect(entry.next_survey_eligible_at).toBe(expected)
+    }
   })
 })
 
@@ -5373,6 +5646,282 @@ describe('formatFloorTelemetry', () => {
     expect(msg).not.toMatch(/R_[a-z\d]/)
     // Matches the strict counts-only pattern.
     expect(msg).toMatch(/^floor fired: dispatched \d+ of FLOOR_MIN=\d+ \(threshold yielded \d+\)$/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// stuckCandidates detector — unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// NOW = 2026-04-17T12:00:00Z (re-uses the module-level constant)
+// STUCK_STALENESS_DAYS = 37 (collab base 30d + grace 7d > JITTER_MAX_DAYS 3d)
+//
+// Boundary: a repo surveyed exactly 33 days ago (30d + max jitter 3d) is NOT stuck.
+// A repo surveyed 40 days ago IS stuck. A null last_survey_at on an onboarded repo IS stuck.
+
+/** Build a minimal onboarded entry with a given last_survey_at for stuck-candidate tests. */
+function stuckEntry(overrides: Partial<RepoEntry> = {}): RepoEntry {
+  return makeEntry({
+    onboarding_status: 'onboarded',
+    private: false,
+    node_id: 'R_stuck_test',
+    ...overrides,
+  })
+}
+
+/** Build a minimal reconcile input with a single tracked repo in the access list. */
+function stuckInput(entry: RepoEntry, extraOverrides: Partial<ReconcileInput> = {}): ReconcileInput {
+  return makeInput({
+    currentRepos: {version: 1, repos: [entry]},
+    accessList: [
+      makeAccess({
+        owner: entry.owner,
+        name: entry.name,
+        node_id: entry.node_id ?? 'R_stuck_test',
+        private: false,
+      }),
+    ],
+    fieldProbes: new Map([[`${entry.owner}/${entry.name}`, {has_fro_bot_workflow: false, has_renovate: false}]]),
+    ...extraOverrides,
+  })
+}
+
+describe('stuckCandidates detector', () => {
+  it('happy path: all onboarded repos have recent last_survey_at → stuckCandidates === 0', () => {
+    // A repo surveyed exactly 33 days ago (30d base + max jitter 3d) is NOT stuck.
+    // NOW = 2026-04-17, so 33 days ago = 2026-03-15.
+    const entry = stuckEntry({last_survey_at: '2026-03-15', node_id: 'R_recent'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(0)
+  })
+
+  it('edge: onboarded repo with last_survey_at older than threshold → counted', () => {
+    // 40 days ago from NOW (2026-04-17) = 2026-03-08.
+    const entry = stuckEntry({last_survey_at: '2026-03-08', node_id: 'R_stale'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(1)
+  })
+
+  it('edge: onboarded repo with last_survey_at === null → counted', () => {
+    const entry = stuckEntry({last_survey_at: null, node_id: 'R_null_survey'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(1)
+  })
+
+  it('edge: lost-access repo with very old last_survey_at → NOT counted', () => {
+    // lost-access repos are excluded from the stuck-candidate population.
+    const entry = stuckEntry({
+      onboarding_status: 'lost-access',
+      last_survey_at: '2025-01-01',
+      node_id: 'R_lost',
+    })
+    // lost-access entry not in access list → stays lost-access
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [],
+        perRepoStatus: new Map([['fro-bot/test-repo', {status: 'revoked'} as const]]),
+      }),
+    )
+    expect(result.summary.stuckCandidates).toBe(0)
+  })
+
+  it('edge: pending repo with null survey state → NOT counted', () => {
+    const entry = stuckEntry({
+      onboarding_status: 'pending',
+      last_survey_at: null,
+      node_id: 'R_pending',
+    })
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(0)
+  })
+
+  it('counts multiple stuck onboarded repos correctly', () => {
+    // Two onboarded repos: one with null survey, one with 40d-old survey.
+    const entry1 = stuckEntry({owner: 'fro-bot', name: 'repo-a', last_survey_at: null, node_id: 'R_a_stuck'})
+    const entry2 = stuckEntry({owner: 'fro-bot', name: 'repo-b', last_survey_at: '2026-03-08', node_id: 'R_b_stuck'})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry1, entry2]},
+        accessList: [
+          makeAccess({owner: 'fro-bot', name: 'repo-a', node_id: 'R_a_stuck', private: false}),
+          makeAccess({owner: 'fro-bot', name: 'repo-b', node_id: 'R_b_stuck', private: false}),
+        ],
+        fieldProbes: new Map([
+          ['fro-bot/repo-a', {has_fro_bot_workflow: false, has_renovate: false}],
+          ['fro-bot/repo-b', {has_fro_bot_workflow: false, has_renovate: false}],
+        ]),
+      }),
+    )
+    expect(result.summary.stuckCandidates).toBe(2)
+  })
+
+  it('edge: onboarded repo with malformed last_survey_at → NOT counted (conservative guard)', () => {
+    // Date.parse('not-a-dateT00:00:00Z') returns NaN; Number.isFinite(NaN) is false,
+    // so the detector skips the entry rather than treating it as stuck. This avoids
+    // false positives from data corruption that the field-probe path surfaces separately.
+    // NOW = 2026-04-17; only one onboarded repo in the snapshot, nothing else stuck.
+    const entry = stuckEntry({last_survey_at: 'not-a-date', node_id: 'R_malformed_date'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(0)
+  })
+
+  it('boundary: onboarded repo surveyed exactly 37 days ago → NOT counted (37 is not > 37)', () => {
+    // STUCK_STALENESS_DAYS = 37. The detector uses strict greater-than (daysAgo > 37),
+    // so a repo surveyed exactly 37 whole UTC days before NOW must NOT be counted.
+    // NOW = 2026-04-17T12:00:00Z; 37 days before = 2026-03-11.
+    // Date.parse('2026-03-11T00:00:00Z') → daysAgo = floor((NOW_ms - surveyed_ms) / 86_400_000)
+    // = floor((2026-04-17T12:00:00Z - 2026-03-11T00:00:00Z) / 86_400_000) = floor(37.5) = 37.
+    // 37 > 37 is false → NOT stuck.
+    const entry = stuckEntry({last_survey_at: '2026-03-11', node_id: 'R_boundary_37'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(0)
+  })
+
+  it('boundary: onboarded repo surveyed exactly 38 days ago → counted (38 > 37)', () => {
+    // NOW = 2026-04-17T12:00:00Z; 38 days before = 2026-03-10.
+    // daysAgo = floor((2026-04-17T12:00:00Z - 2026-03-10T00:00:00Z) / 86_400_000) = floor(38.5) = 38.
+    // 38 > 37 is true → counted as stuck.
+    const entry = stuckEntry({last_survey_at: '2026-03-10', node_id: 'R_boundary_38'})
+    const result = reconcileRepos(stuckInput(entry))
+    expect(result.summary.stuckCandidates).toBe(1)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// formatStuckTelemetry — unit tests for the stuck-candidate log message helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('formatStuckTelemetry', () => {
+  it('returns the expected message string for a given count', () => {
+    expect(formatStuckTelemetry(3)).toBe('stuck candidates: 3 onboarded repo(s) past staleness threshold')
+  })
+
+  it('contains no owner/name/node_id in the message (counts-only invariant)', () => {
+    const msg = formatStuckTelemetry(5)
+    // No slash-separated owner/repo shape.
+    expect(msg).not.toMatch(/\//)
+    // No node_id-shaped token.
+    expect(msg).not.toMatch(/R_[a-z\d]/)
+    // Matches the strict counts-only pattern.
+    expect(msg).toMatch(/^stuck candidates: \d+ onboarded repo\(s\) past staleness threshold$/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// handleReconcile stuck-candidate telemetry integration tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleReconcile stuck-candidate telemetry', () => {
+  it('emits a counts-only stuck log line when stuckCandidates > 0', async () => {
+    const warnCalls: string[] = []
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn((msg: string) => {
+        warnCalls.push(msg)
+      }),
+    }
+
+    // A repo with last_survey_at 40 days before NOW (2026-04-17) = 2026-03-08.
+    // next_survey_eligible_at in the future so it doesn't dispatch via threshold.
+    const staleEntry: RepoEntry = {
+      owner: 'fro-bot',
+      name: 'stale-repo',
+      added: '2026-01-01',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-03-08',
+      last_survey_status: 'success',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      discovery_channel: 'collab',
+      private: false,
+      node_id: 'R_stale_telemetry',
+      next_survey_eligible_at: '2030-01-01',
+    }
+
+    await handleReconcile(
+      baseParams({
+        logger,
+        readMetadata: makeReadMetadata({
+          repos: {version: 1, repos: [staleEntry]},
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'stale-repo',
+                archived: false,
+                private: false,
+                node_id: 'R_stale_telemetry',
+              },
+            ],
+          }),
+        }),
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+      }),
+    )
+
+    const stuckLines = warnCalls.filter(m => m.includes('stuck candidates'))
+    expect(stuckLines).toHaveLength(1)
+    // Counts-only: no owner/name/node_id.
+    expect(stuckLines[0]).not.toMatch(/fro-bot/)
+    expect(stuckLines[0]).not.toMatch(/stale-repo/)
+    expect(stuckLines[0]).not.toMatch(/R_stale_telemetry/)
+    expect(stuckLines[0]).toMatch(/^stuck candidates: \d+ onboarded repo\(s\) past staleness threshold$/)
+  })
+
+  it('emits NO stuck log line when stuckCandidates === 0', async () => {
+    const warnCalls: string[] = []
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn((msg: string) => {
+        warnCalls.push(msg)
+      }),
+    }
+
+    // A repo surveyed 33 days ago (within threshold) — should NOT trigger stuck telemetry.
+    // NOW = 2026-04-17, 33 days ago = 2026-03-15.
+    const freshEntry: RepoEntry = {
+      owner: 'fro-bot',
+      name: 'fresh-repo',
+      added: '2026-01-01',
+      onboarding_status: 'onboarded',
+      last_survey_at: '2026-03-15',
+      last_survey_status: 'success',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      discovery_channel: 'collab',
+      private: false,
+      node_id: 'R_fresh_telemetry',
+      next_survey_eligible_at: '2030-01-01',
+    }
+
+    await handleReconcile(
+      baseParams({
+        logger,
+        readMetadata: makeReadMetadata({
+          repos: {version: 1, repos: [freshEntry]},
+        }),
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({
+            data: [
+              {
+                owner: {login: 'fro-bot'},
+                name: 'fresh-repo',
+                archived: false,
+                private: false,
+                node_id: 'R_fresh_telemetry',
+              },
+            ],
+          }),
+        }),
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+      }),
+    )
+
+    const stuckLines = warnCalls.filter(m => m.includes('stuck candidates'))
+    expect(stuckLines).toHaveLength(0)
   })
 })
 

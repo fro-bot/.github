@@ -44,7 +44,22 @@ jobs:
         run: |
           CACHE_KEYS="$(gh cache list -R "${{ github.repository }}" --ref "${{ env.REF }}" --limit 100 --order asc --sort last_accessed_at | cut -f 2 | tr '\n' ' ')"
           for key in $CACHE_KEYS; do
-            gh cache delete "$key" -R "${{ github.repository }}"
+            # A listed cache can be evicted or re-keyed before we delete it (a TOCTOU
+            # race against GitHub's async cache eviction), making `gh cache delete` exit
+            # non-zero with "Could not find a cache matching ...". That specific case is
+            # benign and must not abort the loop. Any OTHER failure (auth, API, scope) is
+            # unexpected and must fail the step loudly rather than silently delete nothing.
+            if ! delete_output="$(gh cache delete "$key" -R "${{ github.repository }}" 2>&1)"; then
+              # Matches gh's human-readable error text. If gh rewords this, the guard
+              # flips to fail-loud on the benign race -- noisy but safe (never silent).
+              if printf '%s' "$delete_output" | grep -q 'Could not find a cache matching'; then
+                echo "::notice::cache key already evicted, skipping: $key"
+              else
+                printf '%s\n' "$delete_output" >&2
+                echo "::error::unexpected failure deleting cache key: $key"
+                exit 1
+              fi
+            fi
           done
 
   setup-cache:

@@ -117,6 +117,6 @@ jobs:
             --method POST \
             "repos/{owner}/{repo}/statuses/${HEAD_SHA}" \
             -f state="${state}" \
-            -f context="security/check-private-leak" \
+            -f context="Security: Private Leak Scan" \
             -f description="${description}" \
             -f target_url="${RUN_URL}"

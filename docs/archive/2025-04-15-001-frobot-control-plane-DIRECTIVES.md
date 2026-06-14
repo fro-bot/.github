@@ -46,7 +46,6 @@ This document captures all review findings (Metis + Oracle + document-review per
 - `scripts/handle-invitation.ts` — invitation handling
 - `scripts/survey-repo.ts` — repo survey (if one is needed vs inline workflow)
 - `scripts/journal-entry.ts` — journal system
-- `scripts/discord-notify.ts` — Discord webhook posting (fetch-based, was `discord-notify.sh`)
 - `scripts/dispatch-renovate.ts` — Renovate dispatch (was `dispatch-renovate.sh`)
 - `scripts/update-metadata.ts` — metadata scanner (was `update-metadata.sh`)
 - `scripts/wiki-ingest.ts` — Karpathy wiki ingest operation (NEW — see P1-2)

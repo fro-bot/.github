@@ -1,8 +1,9 @@
 ---
 title: 'feat: Wire Check Private Leak as a per-PR gate via trusted workflow_run'
 type: feat
-status: active
+status: complete
 date: 2026-06-04
+completed: 2026-06-09
 origin: 'GitHub issue #3407'
 ---
 
@@ -196,7 +197,7 @@ branch protection (once proven) requires security/check-private-leak ─┘
 
 ## Implementation Units
 
-- [ ] **Unit 1: Add a `workflow_run` / per-PR event reader + resolver wiring to `check-private-leak.ts`**
+- [x] **Unit 1: Add a `workflow_run` / per-PR event reader + resolver wiring to `check-private-leak.ts`**
 
 **Goal:** Teach `main()` to run under a `workflow_run` event: read the `workflow_run` payload, resolve
 and validate PR identity via the API, wire `FRO_BOT_POLL_PAT` into the resolver, and emit a structured
@@ -258,7 +259,7 @@ fail-closed identity-validation paths before implementing.
   silent-pass regression and fail under the fail-closed implementation.
 - The PAT never appears in the diff/git subprocess env.
 
-- [ ] **Unit 2: Add the sentinel + privileged `workflow_run` workflows and post the commit status**
+- [x] **Unit 2: Add the sentinel + privileged `workflow_run` workflows and post the commit status**
 
 **Goal:** Add the minimal `pull_request` sentinel workflow and the privileged `workflow_run` workflow
 that runs the Unit 1 scan with subprocess-scoped PAT and posts a `security/check-private-leak` commit
@@ -310,7 +311,8 @@ Unit 3. The behavioral logic is covered by Unit 1's script tests.
 - The privileged job's logs show no PAT, no PR-head checkout, no cache restore; the PAT is present only
   in the scan step's resolver subprocess.
 
-- [ ] **Unit 3: Prove fork-head status attachment, then register the required check**
+- [x] **Unit 3: Prove fork-head status attachment, then register the required check**
+  - Same-repo attachment proven and the check is registered as required; fork-head status attachment remains an accepted, documented residual (no fork PR has exercised it).
 
 **Goal:** Empirically verify the commit status attaches and blocks for both same-repo and fork PR heads,
 then register `security/check-private-leak` as a required status check on `main`. If fork-head
