@@ -200,6 +200,10 @@ file-move, not a signature migration:
 - Exact droplet size/region (mirror `apps/umami` defaults unless load suggests otherwise).
 - Key-revocation runbook: where to revoke the second Agent App key, confirmation it doesn't
   affect the gateway, re-provision path. Document in `apps/dashboard/README.md` at Unit 7.
+- Cardinality disclosure: the "N repos the Agent App can see are not in public metadata"
+  count-only drift surface is a deliberate cardinality disclosure (operator learns private repos
+  exist and how many). Acceptable for single-operator Phase-1; revisit if the dashboard ever
+  becomes multi-viewer.
 
 ## Output Structure
 
@@ -393,10 +397,20 @@ installations channel.
 - Create: `src/github/aggregator.ts`
 - Test: `test/aggregator.test.ts`
 
-**Approach:** Union(installations repos, collaborator repos). Before incorporating any
-installation-enumerated repo into output, exclude any whose `node_id` is in `redactedNodeIds`
-(from Unit 3) — never count, render, or cache it. This prevents the installations channel from
-re-deriving what metadata redaction hid.
+**Approach:** Union(installations repos, collaborator repos). Before issuing any per-repo
+`statusCheckRollup` GraphQL query, exclude any installation-enumerated repo whose `node_id` is
+in `redactedNodeIds` (from Unit 3) — the exclusion happens upstream of the query layer, not at
+render time. Rationale: issuing a status query against a redacted private repo is itself an
+observable signal and a leak of intent, even if the result is later dropped. Denylisted
+`node_id`s never reach the GraphQL fetch loop — they are removed from the working repo set
+before iteration begins. This prevents the installations channel from re-deriving what metadata
+redaction hid.
+
+**Fail-closed on denylist unavailability:** if the `metadata/repos.yaml` read from the `data`
+branch fails (Unit 3 returns an error or an empty/incomplete denylist), the aggregator MUST
+NOT serve an unfiltered union of installation-discovered repos. Doing so would expose private
+repos the denylist would have caught. Instead: serve the last-good cached state + banner, or
+an empty/error state. Never build a fresh union without a valid `redactedNodeIds` set.
 
 Source-channel labels: populated ONLY for repos known-public from `repos.yaml`; repos
 discovered solely via the installations channel carry a generic `discovered` label (never
@@ -422,6 +436,12 @@ flag. Sort attention-first. Cap per-repo summary to a small N (R2 fixed set).
 - Security: given `repos.yaml` redacted entries + installations API returning those same repos
   with real names, aggregator output contains ZERO references to them (by `full_name`, `name`,
   or `node_id`).
+- Security: no GraphQL/status call is ISSUED for a denylisted `node_id` — assert the GitHub
+  client is never invoked for those repos, not just that they are absent from output.
+- Security: when the `data`-branch metadata read fails (so `redactedNodeIds` is unavailable),
+  the aggregator does NOT emit installation-discovered repos unfiltered — fail closed: serve
+  last-good stale cache or an empty/error state, never an un-denylisted union built without the
+  denylist.
 
 **Verification:** aggregator returns labeled, attention-sorted status; cache refreshes; partial
 failures isolated; redacted repos absent from all output.
