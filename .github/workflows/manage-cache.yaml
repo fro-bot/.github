@@ -44,7 +44,10 @@ jobs:
         run: |
           CACHE_KEYS="$(gh cache list -R "${{ github.repository }}" --ref "${{ env.REF }}" --limit 100 --order asc --sort last_accessed_at | cut -f 2 | tr '\n' ' ')"
           for key in $CACHE_KEYS; do
-            gh cache delete "$key" -R "${{ github.repository }}"
+            # A cache listed above can be evicted or re-keyed before we delete it,
+            # making `gh cache delete` exit non-zero. Cleanup is best-effort, so a
+            # missing entry must not abort the loop (the default shell uses `set -e`).
+            gh cache delete "$key" -R "${{ github.repository }}" || echo "::notice::cache key already gone, skipping: $key"
           done
 
   setup-cache:
