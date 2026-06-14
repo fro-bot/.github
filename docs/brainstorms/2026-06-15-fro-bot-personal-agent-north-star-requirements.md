@@ -156,6 +156,11 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
                                           └──────────────┘
 ```
 
+Every "Depends on" edge here is a *design assertion*, not a constraint this repo enforces.
+The map's authority ends at the boundary of each owning system; each per-capability
+brainstorm must re-validate its dependency edges against the real interfaces. Treat this
+diagram as a directional guide, not a contract.
+
 The critical insight: **Tier 0 (the spine) gates the outward program — Tier 1, A3, and the
 Tier 3 frontier — but NOT A1/A2.** Skill-learning and self-maintenance compound the agent's
 value *today* in this repo, with one caveat surfaced in review: their *storage and learning*
