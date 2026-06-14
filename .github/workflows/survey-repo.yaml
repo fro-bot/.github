@@ -37,6 +37,7 @@ env:
     - Modify only `knowledge/wiki/**`, `knowledge/index.md`, and `knowledge/log.md` in this repository.
     - Keep wikilinks valid and frontmatter complete.
     - If the target repo appears to lack a Fro Bot workflow, note that in the repo page so a follow-up draft PR can be proposed separately.
+    - Record the ingest summary only in `knowledge/log.md`. Do not open, comment on, or update a GitHub issue as a run notice; the log entry is the canonical per-survey summary.
 
     Required outcomes:
     1. Update or create the repo page at `knowledge/wiki/repos/$TARGET_SLUG.md`.
