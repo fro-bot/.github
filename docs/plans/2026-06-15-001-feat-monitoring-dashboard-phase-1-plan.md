@@ -3,6 +3,7 @@ title: 'feat: Fro Bot monitoring dashboard — Phase 1'
 type: feat
 status: active
 date: 2026-06-15
+deepened: 2026-06-15
 origin: docs/brainstorms/2026-06-15-monitoring-dashboard-phase-1-requirements.md
 ---
 
@@ -43,13 +44,17 @@ move the needle" rationale.)
   refreshed not daily-snapshot. (origin R2)
 - R3. Glanceable + on-demand: attention-needing repos surface first; manual refresh. (origin R3)
 - R4. Authenticated, operator-only; deny-by-default. (origin R4, R8)
-- R5. Isolated read credential: a second private key for the existing Agent App, verified
-  read-only at the permission level. (origin R5, SC5)
+- R5. Isolated read credential: a second private key for the existing Agent App. The dashboard
+  MUST mint every installation token with an explicit read-only permission subset
+  (`pull_requests:read, checks:read, issues:read, contents:read, metadata:read,
+  security_events:read, vulnerability_alerts:read`); the Agent App's registered permissions are
+  thereby irrelevant to the dashboard's effective access. (origin R5, SC5)
 - R6. Infra-hosted via the `apps/<name>` pattern. (origin R6)
-- R7. Read-only by construction: no write code paths, no write-capable use of the credential.
-  (origin R7)
+- R7. Read-only by construction: no write code paths; token-scoping at mint time enforces this
+  structurally, not just behaviorally. (origin R7)
 - R8. Security properties: deny-by-default authz, encrypted key at rest, redaction
-  preservation, abuse controls. (origin R8)
+  preservation (including cross-source leak prevention — the installations channel must not
+  re-derive what metadata redaction hid), abuse controls. (origin R8)
 
 ## Scope Boundaries
 
@@ -82,6 +87,9 @@ move the needle" rationale.)
   release pipeline) before the dashboard — or any sibling app — could consume them. Treat the
   dashboard's standalone primitives as deliberate near-term duplication that a later extraction
   pass can collapse, not as a missed reuse.
+- **Future: migrate to a dedicated read-only GitHub App** — gated on the dashboard needing an
+  installation source the Agent App doesn't cover, or a real permission-creep/App-deletion
+  incident. Not needed for Phase-1 given token-scoping (Change 1 / R5 above).
 
 ## Context & Research
 
@@ -89,27 +97,35 @@ move the needle" rationale.)
 
 - **Infra deploy contract** (`marcusrbrown/infra`): closest analog is `apps/umami/`
   (web app + Caddy). Minimal new-app file set: `apps/dashboard/{README.md, AGENTS.md,
-  package.json, docker-compose.yaml, config/Caddyfile, src/deploy.ts, src/host.ts,
-  server/provision-droplet.ts}`. Deploy via `.github/workflows/deploy-dashboard.yaml` wired
-  into the umbrella `.github/workflows/deploy.yaml` (dorny/paths-filter on `apps/dashboard/**`).
-  Secrets via GitHub Environment `dashboard`, materialized over SSH stdin to
-  `/opt/dashboard/.env`. CLI group under `packages/cli/src/commands/dashboard/`, registered in
-  `packages/cli/src/cli.ts`. Droplet via `server/provision-droplet.ts` (DO droplet + host-key
-  pinning in `.github/known_hosts`). DNS A record `dashboard.fro.bot` → droplet; Caddy ACME TLS.
+  package.json, docker-compose.yaml, config/Caddyfile, src/deploy.ts, src/host.ts}`. Deploy
+  via `.github/workflows/deploy-dashboard.yaml` wired into the umbrella
+  `.github/workflows/deploy.yaml` (dorny/paths-filter on `apps/dashboard/**`). Secrets via
+  GitHub Environment `dashboard`, materialized over SSH stdin to `/opt/dashboard/.env`. CLI
+  group under `packages/cli/src/commands/dashboard/`, registered in
+  `packages/cli/src/cli.ts`. DNS A record `dashboard.fro.bot` → droplet; Caddy ACME TLS.
 - **Control-plane metadata** (`fro-bot/.github`): `metadata/repos.yaml` on the `data` branch
   carries collaborator repos with intentionally-redacted private entries (`owner: [REDACTED]`,
-  node-id names) — must be preserved (R8).
+  node-id names) — must be preserved (R8). The installations channel can re-derive what
+  metadata redaction hid; the aggregator must prevent this (see Unit 4).
 
 ### External References
 
 - GitHub App auth flow: App JWT (signed with private key) → `GET /app/installations`
-  (`apps.listInstallations`) → `POST /app/installations/{id}/access_tokens` → installation
-  token → `GET /installation/repositories`. Docs: docs.github.com/en/apps/.../authenticating-with-a-github-app.
+  (`apps.listInstallations`) → `POST /app/installations/{id}/access_tokens` with explicit
+  `permissions` object → installation token → `GET /installation/repositories`. Docs:
+  docs.github.com/en/apps/.../authenticating-with-a-github-app.
+- Token-scoping: `POST /app/installations/{id}/access_tokens` accepts a `permissions` object
+  that mints a token with a strict subset of the App's registered permissions. The gateway
+  already uses this pattern (`installAuth({type:'installation', permissions:{...}})`). The
+  dashboard MUST do the same — this makes the App's registered permission set irrelevant to
+  the dashboard's effective access.
 - GitHub Apps support up to 25 private keys (second-key path is supported). Docs:
   managing-private-keys-for-github-apps.
 - Least-privilege read scopes: `metadata:read`, `pull_requests:read`, `checks:read`,
-  `issues:read`, `security_events:read` (code scanning), `vulnerability_alerts:read`
-  (Dependabot).
+  `issues:read`, `contents:read`, `security_events:read` (code scanning),
+  `vulnerability_alerts:read` (Dependabot). Note: `security_events` and `vulnerability_alerts`
+  may not be registered on the Agent App — handle token-mint/query failure for these
+  gracefully (conditional, don't crash).
 - Status rollup: GraphQL `statusCheckRollup.state` on PR/commit = cleanest green/red/pending.
 - Rate limits: 5,000 GraphQL points/hr per installation — ample for ~30-50 repos at 60s refresh.
 - Stack: Hono + `hono/jsx` SSR (no build step, Node 24 native TS), Arctic v3 GitHub OAuth +
@@ -127,16 +143,36 @@ move the needle" rationale.)
   private key for the existing Fro Bot Agent App** — already installed on `marcusrbrown` +
   `fro-bot`, so no new App to install; independent rotation from the gateway's key. (User
   decisions, Forks 1 + 2.)
-- **Read-only verified at the permission level (R5/R7).** The dashboard only calls read
-  endpoints, but because the second key inherits the Agent App's permission set, the plan must
-  verify the Agent App's permissions are acceptable; if the App carries write scopes, that's
-  recorded as a risk to confirm, not silently relied on.
+- **Read-only enforced at token-mint time (R5/R7).** Every installation token is minted with
+  an explicit read-only `permissions` object (`pull_requests:read, checks:read, issues:read,
+  contents:read, metadata:read, security_events:read, vulnerability_alerts:read`), mirroring
+  the gateway's `installAuth({type:'installation', permissions:{...}})` pattern. This makes the
+  Agent App's registered permission set irrelevant to the dashboard's effective access — the
+  token is scoped down structurally, not just behaviorally. A boot-time self-check logs
+  (fail-loud, no crash) if the App lacks a needed read permission.
 - **Aggregation: enumerate installations, GraphQL `statusCheckRollup`, in-memory 60s cache.**
-  `listInstallations` returns the (currently 2) installs; per-install token; union repos; one
-  GraphQL query per repo for PRs+checks+issues; cache + background refresh; serve stale + banner
-  on fetch failure. (Research.)
-- **Redaction preservation.** When reading `metadata/repos.yaml`, preserve `[REDACTED]` entries;
-  never resolve/render/cache/export underlying private names. (origin R8.)
+  `listInstallations` returns the (currently 2) installs; per-install token (read-only scoped);
+  union repos; one GraphQL query per repo for PRs+checks+issues; cache + background refresh;
+  serve stale + banner on fetch failure. (Research.)
+- **Redaction preservation + cross-source leak prevention.** When reading `metadata/repos.yaml`,
+  preserve `[REDACTED]` entries; never resolve/render/cache/export underlying private names.
+  The aggregator additionally maintains a `redactedNodeIds` denylist (from Unit 3) and excludes
+  any installation-enumerated repo whose node_id is in that set — preventing the installations
+  channel from re-deriving what metadata redaction hid. Source-channel labels are populated
+  ONLY for repos known-public from repos.yaml; installation-discovered repos carry a generic
+  `discovered` label. (origin R8.)
+
+### Interface Contracts (seam map for future `@fro.bot/runtime` collapse)
+
+These are NOT done in Phase-1. They document the extraction seam so a future collapse is a
+file-move, not a signature migration:
+
+- `src/secrets.ts` → match gateway `config.ts` signatures (`readSecret`, `readMultilineSecret`,
+  `SecretFileNotFoundError`, `O_NOFOLLOW` + size-limit semantics).
+- `src/server.ts` → split `buildDashboardApp(): Hono` + `createDashboardServer(): ServerType`
+  (mirror gateway's build/serve split).
+- Logger → implement the `@fro-bot/runtime` `shared/logger.ts` `Logger` interface.
+- App client → use a `Result<T,E>` error-return shape.
 
 ## Open Questions
 
@@ -149,6 +185,9 @@ move the needle" rationale.)
 - Stack/auth/secret/freshness? → Hono+JSX / Arctic OAuth+cookie / file-mounted PEM / 60s
   in-memory cache. (Research.)
 - Status signal? → GraphQL `statusCheckRollup.state`. (Research.)
+- Dedicated read-scoped App vs second key? → second key is sufficient; token-scoping at mint
+  time makes the App's registered permissions irrelevant. Dedicated App deferred (see Scope
+  Boundaries → Deferred).
 
 ### Deferred to Implementation
 
@@ -158,9 +197,9 @@ move the needle" rationale.)
   `DASHBOARD_OPERATOR_LOGIN`, `DASHBOARD_COOKIE_KEY`).
 - `metadata/repos.yaml` read path: direct GitHub API/`raw` fetch of the `data` ref vs a synced
   copy (origin D3) — resolve when wiring the data layer; preferred is direct read of `data`.
-- Whether the Agent App's current permission set is already read-only-acceptable or needs a
-  scope review before issuing the second key (R5 verification step in Unit 2).
 - Exact droplet size/region (mirror `apps/umami` defaults unless load suggests otherwise).
+- Key-revocation runbook: where to revoke the second Agent App key, confirmation it doesn't
+  affect the gateway, re-provision path. Document in `apps/dashboard/README.md` at Unit 7.
 
 ## Output Structure
 
@@ -178,7 +217,7 @@ move the needle" rationale.)
           api.ts                       /api/status (JSON), /healthz
         github/
           app-client.ts               Agent App (2nd key) Octokit + throttling/retry
-          installations.ts            enumerate installs → tokens → repos
+          installations.ts            enumerate installs → tokens (read-only scoped) → repos
           metadata.ts                 read collaborator repos from data branch (redaction-safe)
           aggregator.ts               union populations + status, in-memory 60s cache
         auth/
@@ -191,7 +230,6 @@ move the needle" rationale.)
         docker-compose.yaml            read_only, cap_drop, file-mounted secret
         config/Caddyfile               dashboard.fro.bot, ACME TLS, 127.0.0.1:3000 upstream
         src/deploy.ts, src/host.ts
-        server/provision-droplet.ts
       .github/workflows/deploy-dashboard.yaml
       packages/cli/src/commands/dashboard/{index,deploy,status,logs}.ts
 
@@ -200,6 +238,35 @@ move the needle" rationale.)
 Sequenced; Units 1-6 are `fro-bot/dashboard`, Units 7-8 are `marcusrbrown/infra`. The app
 (1-6) can be built and tested locally before the infra wiring (7-8) deploys it.
 
+**Unit 0 + Unit 1 (repo bootstrap) are the handoff seam** — after the repo is bootstrapped,
+the `fro-bot/dashboard` build (Units 1-6) is handed to a separate parallel development session
+working against this plan; orchestration/planning stays in the originating session. Units 7-8
+(infra deploy) coordinate back.
+
+- [ ] **Unit 0: Provision prerequisites (one-time, manual)**
+
+**Goal:** All external resources that Units 1-6 depend on are created and secrets are
+provisioned before any code is written.
+
+**Requirements:** Foundation for all units.
+
+**Checklist:**
+- Create the `fro-bot/dashboard` repo (empty, with branch protection).
+- Create a dedicated GitHub OAuth App; save `CLIENT_ID` / `CLIENT_SECRET`; set callback URL
+  to `https://dashboard.fro.bot/auth/callback`.
+- Generate a second private key for the existing Fro Bot Agent App; save as the dashboard's
+  app key (independent rotation from the gateway's key).
+- Provision the DO droplet via the `apps/umami` `server/provision-droplet.ts` pattern; pin
+  host key to `.github/known_hosts` in `marcusrbrown/infra`.
+- Create the `dashboard` GitHub Environment in `marcusrbrown/infra` with secrets:
+  `DASHBOARD_SSH_KEY`, `DASHBOARD_DOMAIN`, `DASHBOARD_GITHUB_APP_ID`,
+  `DASHBOARD_GITHUB_APP_KEY`, `DASHBOARD_OAUTH_CLIENT_ID`, `DASHBOARD_OAUTH_CLIENT_SECRET`,
+  `DASHBOARD_OPERATOR_LOGIN`, `DASHBOARD_COOKIE_KEY`.
+
+**Note:** Units 1-6 can proceed locally with env-overridable dev values; smoke/integration
+tests against real GitHub require the real key. Droplet provisioning is a one-time step here;
+Unit 7 owns the Compose/Caddy/deploy files.
+
 - [ ] **Unit 1: Bootstrap `fro-bot/dashboard` repo + Hono skeleton**
 
 **Goal:** Stand up the new repo with a minimal Hono server, TS/Node-24 config, pnpm, vitest,
@@ -207,7 +274,7 @@ and a `/healthz` route.
 
 **Requirements:** R6 (deployable shape), foundation for all.
 
-**Dependencies:** repo `fro-bot/dashboard` created.
+**Dependencies:** Unit 0 (repo created).
 
 **Files (fro-bot/dashboard):**
 - Create: `package.json`, `tsconfig.json`, `src/server.ts`, `src/routes/api.ts` (`/healthz`),
@@ -230,12 +297,11 @@ shape; Hono node-server quickstart.
 - [ ] **Unit 2: Agent App client (second key) + installation enumeration**
 
 **Goal:** Octokit App client authenticating with the second Agent App private key; enumerate
-installations → tokens → accessible repos.
+installations → read-only-scoped tokens → accessible repos.
 
 **Requirements:** R1, R5, R7.
 
-**Dependencies:** Unit 1; second Agent App private key issued; **R5 permission verification**
-(confirm the Agent App's scopes are read-only-acceptable, record as risk if not).
+**Dependencies:** Unit 0 (second Agent App private key issued); Unit 1.
 
 **Files (fro-bot/dashboard):**
 - Create: `src/secrets.ts` (file-mounted PEM loader + env fallback), `src/github/app-client.ts`
@@ -243,14 +309,27 @@ installations → tokens → accessible repos.
 - Test: `test/installations.test.ts`
 
 **Approach:** Load PEM from `/run/secrets/...` (env-overridable for dev). App JWT →
-`apps.listInstallations` → per-install token → `listReposAccessibleToInstallation`. Cache
-installation tokens in memory. Never log the key.
+`apps.listInstallations` → per-install token minted via `POST /app/installations/{id}/access_tokens`
+with an explicit read-only `permissions` object (`{pull_requests:'read', checks:'read',
+issues:'read', contents:'read', metadata:'read', security_events:'read',
+vulnerability_alerts:'read'}`) and `repositoryNames` (or installation scope), mirroring the
+gateway's `installAuth({type:'installation', permissions:{...}})` pattern in
+`packages/gateway/src/github/app-client.ts`. Cache installation tokens in memory. Never log
+the key. `security_events` and `vulnerability_alerts` may not be registered on the App —
+handle token-mint failure for these gracefully (conditional, don't crash). A boot-time
+self-check logs (fail-loud, no crash) if the App lacks a needed read permission.
+
+**Structural contrast:** the gateway's app-client does per-(owner,repo) discovery → repo-scoped
+token; the dashboard does `listInstallations` → per-install token → install-scoped repos.
+Structurally different flows — do NOT share or abstract them into one component. Both use
+`@octokit/auth-app` as the common primitive; similarity ends there.
 
 **Execution note:** test-first for the enumeration/union logic (pure transform over mocked
 Octokit responses).
 
-**Patterns to follow:** research Octokit App+throttling setup; control-plane Octokit-derived
-typing convention (`as unknown as` boundary casts, no `any`).
+**Patterns to follow:** gateway `packages/gateway/src/github/app-client.ts`
+`installAuth({type:'installation', permissions:{...}})` for token-mint shape; control-plane
+Octokit-derived typing convention (`as unknown as` boundary casts, no `any`).
 
 **Test scenarios:**
 - Happy path: 2 installations → union of their repos, deduped.
@@ -258,14 +337,16 @@ typing convention (`as unknown as` boundary casts, no `any`).
 - Edge: an installation with 0 accessible repos → contributes nothing.
 - Error path: `listInstallations` rejects → surfaced as a fetch error (cache serves stale).
 - Security: PEM loader never emits key bytes in logs/errors (assert redaction).
+- Security: every installation-token mint call carries a read-only `permissions` subset (assert
+  the permissions object is present and contains no write scopes).
 
 **Verification:** with mocked Octokit, enumeration returns the unioned repo set; key never
-appears in any log line.
+appears in any log line; every minted token carries a read-only permissions object.
 
 - [ ] **Unit 3: Collaborator-repo metadata reader (redaction-safe)**
 
 **Goal:** Read collaborator repos from `metadata/repos.yaml` on the control plane `data`
-branch, preserving redactions.
+branch, preserving redactions and exporting a denylist of redacted node_ids for the aggregator.
 
 **Requirements:** R1, R8 (redaction preservation).
 
@@ -276,9 +357,12 @@ branch, preserving redactions.
 - Test: `test/metadata.test.ts`
 
 **Approach:** Fetch `metadata/repos.yaml` at `ref=data` (direct GitHub contents API; preferred
-over a synced copy). Parse YAML. Filter/label entries; **preserve `owner:[REDACTED]` / node-id
-name entries as-is — never resolve, render, cache, or export the underlying private name.**
-Handle `data` missing/behind (warn + degrade, don't crash).
+over a synced copy). Parse YAML. Check top-level `version` field — if `version !== 1`, fail
+closed (throw/return error; do not silently return empty). Filter/label entries; **preserve
+`owner:[REDACTED]` / node-id name entries as-is — never resolve, render, cache, or export the
+underlying private name.** Export both the public repo list AND `redactedNodeIds: Set<string>`
+— the `node_id` values of every `[REDACTED]`/`private:true` entry — for the aggregator's
+cross-source denylist. Handle `data` missing/behind (warn + degrade, don't crash).
 
 **Patterns to follow:** control-plane `metadata/repos.yaml` schema; `data`-branch read by ref.
 
@@ -286,17 +370,22 @@ Handle `data` missing/behind (warn + degrade, don't crash).
 - Happy path: parses public entries with owner/name/channel.
 - Security: a `[REDACTED]` entry is preserved redacted — the underlying name never appears in
   output/cache (assert no leak).
+- Security: redacted entries' `node_id` values populate `redactedNodeIds` (assert denylist
+  is non-empty and contains the expected ids).
+- Schema: `version !== 1` → reader fails closed (returns error, does not silently return empty).
 - Error path: `data` ref 404 / missing → returns empty + warning, no throw.
 - Edge: malformed YAML → handled, surfaced as a fetch error.
 
-**Verification:** redacted entries stay redacted end-to-end; missing `data` degrades gracefully.
+**Verification:** redacted entries stay redacted end-to-end; `redactedNodeIds` populated;
+unexpected schema version fails closed; missing `data` degrades gracefully.
 
 - [ ] **Unit 4: Status aggregator + in-memory cache**
 
 **Goal:** For the unioned repo set, fetch the bounded Phase-1 signal set via GraphQL and cache
-it with a 60s background refresh.
+it with a 60s background refresh — without leaking redacted private repos through the
+installations channel.
 
-**Requirements:** R2, R3.
+**Requirements:** R2, R3, R8 (cross-source leak prevention).
 
 **Dependencies:** Units 2, 3.
 
@@ -304,10 +393,20 @@ it with a 60s background refresh.
 - Create: `src/github/aggregator.ts`
 - Test: `test/aggregator.test.ts`
 
-**Approach:** Union(installations repos, collaborator repos), source-channel labeled. Per repo,
-one GraphQL query: open PRs + `statusCheckRollup.state`, failing default-branch checks, open
-issues (attention heuristic), security alerts. `Map<repoId,{fetchedAt,payload}>` +
-`setInterval(refresh, 60_000)`; initial fetch on boot; on failure serve stale + set a banner
+**Approach:** Union(installations repos, collaborator repos). Before incorporating any
+installation-enumerated repo into output, exclude any whose `node_id` is in `redactedNodeIds`
+(from Unit 3) — never count, render, or cache it. This prevents the installations channel from
+re-deriving what metadata redaction hid.
+
+Source-channel labels: populated ONLY for repos known-public from `repos.yaml`; repos
+discovered solely via the installations channel carry a generic `discovered` label (never
+expose the metadata-vs-installation cardinality gap that would let an operator infer hidden
+private repos exist). The output may surface a count-only drift note — "N repos the Agent App
+can see are not in public metadata" — with NO names.
+
+Per repo, one GraphQL query: open PRs + `statusCheckRollup.state`, failing default-branch
+checks, open issues (attention heuristic), security alerts. `Map<repoId,{fetchedAt,payload}>`
++ `setInterval(refresh, 60_000)`; initial fetch on boot; on failure serve stale + set a banner
 flag. Sort attention-first. Cap per-repo summary to a small N (R2 fixed set).
 
 **Patterns to follow:** research GraphQL `statusCheckRollup`; throttling-plugin backoff.
@@ -320,9 +419,12 @@ flag. Sort attention-first. Cap per-repo summary to a small N (R2 fixed set).
 - Error path: per-repo GraphQL failure → that repo marked stale, others unaffected.
 - Error path: full refresh failure → cache serves last-good + banner flag set.
 - Integration: cache refresh replaces stale payload after interval (fake timers).
+- Security: given `repos.yaml` redacted entries + installations API returning those same repos
+  with real names, aggregator output contains ZERO references to them (by `full_name`, `name`,
+  or `node_id`).
 
 **Verification:** aggregator returns labeled, attention-sorted status; cache refreshes; partial
-failures isolated.
+failures isolated; redacted repos absent from all output.
 
 - [ ] **Unit 5: Operator auth (GitHub OAuth + signed cookie, allowlist)**
 
@@ -330,17 +432,23 @@ failures isolated.
 
 **Requirements:** R4, R8.
 
-**Dependencies:** Unit 1.
+**Dependencies:** Unit 0 (OAuth App created, `OPERATOR_LOGIN` + `COOKIE_KEY` provisioned);
+Unit 1.
 
 **Files (fro-bot/dashboard):**
 - Create: `src/auth/oauth.ts` (Arctic), `src/session.ts` (signed cookie), `src/routes/auth.ts`
 - Modify: `src/server.ts` (auth middleware on all non-public routes)
 - Test: `test/auth.test.ts`, `test/session.test.ts`
 
-**Approach:** Arctic GitHub OAuth web flow with `state`. Callback reads `/user`; reject unless
+**Approach:** Arctic GitHub OAuth web flow. OAuth `state` stored in a short-TTL signed cookie
+before redirect, compared on callback (CSRF). Callback reads `/user`; reject unless
 `login === OPERATOR_LOGIN`. Signed `HttpOnly; Secure; SameSite=Lax` cookie; signing key from
-`/data/cookie.key` (generated at first boot if absent). Auth middleware protects every route
-except `/healthz` + `/auth/*`; **fail closed** if `OPERATOR_LOGIN` unset.
+`/data/cookie.key` (env-overridable for dev). Cookie signing key MUST be `crypto.randomBytes(32)`
+(256-bit minimum); reject keys shorter than 32 bytes at boot (fail closed). Signed cookie
+payload includes a 24h `exp` claim covered by the HMAC; auth middleware rejects expired
+cookies. Auth middleware protects every route except `/healthz` + `/auth/*`; **fail closed**
+if `OPERATOR_LOGIN` is unset or whitespace-only. Per-IP rate limiting (Hono middleware) on
+`/api/status`, the SSR route, and `/auth/callback`.
 
 **Execution note:** test-first for the allowlist gate + session validation (the security core).
 
@@ -351,11 +459,15 @@ except `/healthz` + `/auth/*`; **fail closed** if `OPERATOR_LOGIN` unset.
 - Security: non-allowlisted login → rejected, no session.
 - Security: missing/invalid/tampered cookie → protected route denied (no anonymous fallback).
 - Security: `OPERATOR_LOGIN` unset → app fails closed (all auth denied).
-- Edge: OAuth `state` mismatch → callback rejected (CSRF).
-- Happy path: `/healthz` reachable without auth.
+- Security: `OPERATOR_LOGIN=" "` (whitespace-only) → boot fails.
+- Security: expired cookie → rejected (24h `exp` claim enforced).
+- Security: OAuth `state` mismatch → callback rejected (CSRF).
+- Security: cookie key shorter than 32 bytes → boot fails (weak key rejected).
+- Edge: `/healthz` reachable without auth.
 
 **Verification:** only the allowlisted operator gains a session; every protected route denies
-unauthenticated/invalid requests; unset allowlist fails closed.
+unauthenticated/invalid/expired requests; unset or whitespace allowlist fails closed; weak
+cookie key rejected at boot.
 
 - [ ] **Unit 6: Dashboard view (SSR) + status API**
 
@@ -389,24 +501,28 @@ empty/stale states render cleanly.
 
 - [ ] **Unit 7: Infra `apps/dashboard` deploy stack**
 
-**Goal:** Deployable Compose + Caddy + deploy scripts + provisioning, mirroring `apps/umami`.
+**Goal:** Deployable Compose + Caddy + deploy scripts, mirroring `apps/umami`.
 
 **Requirements:** R6, R8 (secret-at-rest).
 
-**Dependencies:** Units 1-6 (a runnable image); `marcusrbrown/infra` access.
+**Dependencies:** Units 1-6 (a runnable image); `marcusrbrown/infra` access; Unit 0 (droplet
+already provisioned, host key already pinned).
 
 **Files (marcusrbrown/infra):**
 - Create: `apps/dashboard/{README.md, AGENTS.md, package.json, docker-compose.yaml,
-  config/Caddyfile, src/deploy.ts, src/host.ts, server/provision-droplet.ts}`,
+  config/Caddyfile, src/deploy.ts, src/host.ts}`,
   `apps/dashboard/docker-compose.test.ts`
 
 **Approach:** Mirror `apps/umami`. Compose: `read_only`, `cap_drop:[ALL]`,
 `no-new-privileges`, non-root user, **file-mounted PEM secret**, app on `127.0.0.1:3000`,
 Caddy fronting `dashboard.fro.bot` with ACME TLS. `deploy.ts` writes `/opt/dashboard/.env`
-+ secret file over SSH stdin. `provision-droplet.ts` creates the DO droplet + pins host keys.
++ secret file over SSH stdin. Droplet egress restricted to `api.github.com:443` + DNS only.
+Installation tokens are re-minted every refresh cycle — never serve a cached token past TTL.
+`apps/dashboard/README.md` includes the key-revocation runbook (where to revoke the second
+Agent App key, confirmation it doesn't affect the gateway, re-provision path).
 
-**Patterns to follow:** `apps/umami/{docker-compose.yaml, config/Caddyfile, src/deploy.ts,
-server/provision-droplet.ts}` exactly.
+**Patterns to follow:** `apps/umami/{docker-compose.yaml, config/Caddyfile, src/deploy.ts}`
+exactly.
 
 **Test scenarios:**
 - `apps/dashboard/docker-compose.test.ts` validates the compose shape (mirror umami's test):
@@ -448,11 +564,17 @@ triggers the workflow; actionlint clean.
 
 - **Interaction graph:** read-only consumer of GitHub APIs + the control plane's `data` branch.
   Does not write to any repo, metadata, the gateway, or wiki.
+- **Data-branch read architecture:** every refresh cycle issues one Contents API call at
+  `ref=data` before status queries; no local cache of the YAML. Degrades gracefully in the
+  `data` force-push/squash window (warn + empty). The dashboard is a second consumer of the
+  `data` ref's availability alongside the control plane.
 - **Credential surface:** introduces a second Agent App private key on a new web-facing host —
-  the primary new risk (mitigated by file-mount, read-only-verified scopes, deny-by-default
-  auth, no-log discipline).
+  the primary new risk (mitigated by file-mount, token-scoped read-only at mint time,
+  deny-by-default auth, no-log discipline).
 - **Redaction invariant:** the dashboard reads `metadata/repos.yaml`; it MUST preserve the
-  control plane's private-repo redactions (R8) — a leak here would undo the privacy work.
+  control plane's private-repo redactions (R8). The cross-source leak risk is specific: the
+  installations channel can re-derive what metadata redaction hid — the aggregator's
+  `redactedNodeIds` denylist (Unit 3 → Unit 4) is the structural guard.
 - **Unchanged invariants:** the gateway, the control plane's `data`-branch authority, and the
   Agent App's existing gateway use are untouched; the dashboard only adds a second read key.
 
@@ -460,12 +582,16 @@ triggers the workflow; actionlint clean.
 
 | Risk | Mitigation |
 |------|------------|
-| Second Agent App key inherits write scopes (read-only is then only behavioral) | Verify the Agent App's permission set before issuing the key (Unit 2 dependency); record + confirm if write scopes exist; the app calls only read endpoints regardless |
+| Second Agent App key's effective scopes too broad | Installation tokens are minted with a read-only `permissions` subset at mint time — the App's registered permissions don't determine the dashboard's access. A boot-time self-check logs (fail-loud, no crash) if the App lacks a needed read permission. |
 | Web-facing host holds an App private key | File-mounted PEM, `read_only` container, deny-by-default auth, never logged, independently revocable |
-| `metadata/repos.yaml` private redactions leak through the dashboard | Redaction-preserving reader (Unit 3) with explicit no-leak tests |
+| `metadata/repos.yaml` private redactions leak through the installations channel | Unit 3 exports `redactedNodeIds`; Unit 4 aggregator excludes any installation-enumerated repo in that set — zero references by name, full_name, or node_id in output |
 | GitHub rate limits across many repos | GraphQL batched per-repo, per-install token, 60s cache (5000 pts/hr is ample); throttling+retry plugins |
 | `data` branch absent in the post-squash window | Reader degrades gracefully (warn + empty), mirrors control-plane handling |
-| New repo + new droplet provisioning overhead | Mirror `apps/umami` exactly; provisioning is a one-time setup unit |
+| New repo + new droplet provisioning overhead | Unit 0 is the explicit one-time provisioning step; Unit 7 mirrors `apps/umami` exactly |
+| Installation-topology coupling | Dashboard's install inventory is a live query of the shared Agent App; no independent snapshot — shows current state only. Acceptable for Phase-1 single-operator use. |
+| Permission-creep inheritance | Mitigated by token-scoping at mint time (boot-time self-check); a periodic check is a deferred improvement. |
+| App-level rate-limit contention | `listInstallations` shares the App's rate limit with the gateway; negligible at 2 installs/60s. Log App rate-limit headers to alert before contention. |
+| `security_events`/`vulnerability_alerts` not registered on App | Token-mint and query failures for these scopes handled gracefully (conditional, no crash). |
 
 ## Sources & References
 
