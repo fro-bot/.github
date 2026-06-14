@@ -2012,3 +2012,31 @@ Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 60cbe42c
 Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-06-14 08:00] ingest | fro-bot/agent
+
+Re-survey of `fro-bot/agent` (SHA `a23ae97`, up from `34abe2a` on 2026-06-04). Additively updated repo page `fro-bot--agent.md` and refreshed the `index.md` entry. No new topic/entity/comparison pages warranted — the cross-cutting concerns (GitHub Actions CI, OpenCode plugins) are already covered and this delta is internal to the runtime.
+
+Delta from prior survey (v0.53.1 → v0.63.0, ten minor releases):
+
+- **Harness-as-default-OpenCode cutover (headline, v0.63.0):** `@fro.bot/harness` now publishes its own **GitHub Releases** under **non-`v` tags** (#890) — e.g. `1.17.3+harness.94c10df9` — and both the action (#888/#884) and the workspace executor (#889) **run the harness OpenCode build by default**. `DEFAULT_OPENCODE_VERSION` is now a harness build identifier, not a plain upstream version; the plain stock base is `FALLBACK_VERSION` in `opencode.ts` (used when latest-fetch fails). musl Linux release assets added (#887); release version-check narrowed to runner-native binary (#879).
+- **OpenCode base rebased:** 1.15.13 → **1.16.0** (#786) → **1.17.3** (#867, three carried patches) → SDK/base **1.17.6**. `harness.config.json` now carries **three** integration refs against `anomalyco/opencode` (PRs #19961, #31859, #31638; was the single #30182).
+- **Harness pipeline maturation:** integrate→build CI artifact handoff (#774); integrate **merge runs through the Fro Bot workflow itself** (#779); integration job **skipped when no patches carried** (#788); post-bridge hardening — redaction, `doctor` version check, per-ref provenance (#873, v0.62.0, closes #775).
+- **Release-notes narration (v0.56.0, #818):** published releases are now narrated by the Fro Bot agent via a `fro-bot.yaml` `workflow_call` (the `<!-- fro-bot-narration-v1 -->` "What's new" block atop each release); routing + fail-soft guards in `docs/solutions/` (#825).
+- **Gateway:** serial per-channel mention queue (#850), `/fro-bot force-release-lock` operator command + run reactions (#854), live status message + typing indicator for mention runs (#843), `daily_digest` presence event (#826), Discord sends centralized behind fail-soft io helpers (#858), shared guild-command pipeline (#859), Effect failure-channel discipline pass (#863).
+- **Cold-boot hardened further (v0.54.0):** workspace-agent supervises OpenCode with respawn + process-group reaping (#767); mention dispatch gated on workspace OpenCode readiness (#761).
+- **Dependencies:** pnpm crossed 10→11 (10.33.4 → **11.5.3**); `@fro.bot/systematic` 2.24.0 → 2.31.0; OMO Slim 1.1.1 → 1.1.2 (#860); `effect` 3.21.3 (#834); `tsdown` 0.22.2 (#822); `semantic-release` 25.0.5 (#875 restored Perform Release); `@aws-sdk/client-s3` 3.1066.0 (#885); `vite` pin 8.0.16 (#757); Prettier 3.8.4; `bfra-me/.github` reusable workflows v4.16.25.
+- **Workspace, layered source structure, action interface, Probot settings all stable** — 5 members, same 10 workflows, same `src/services/` layout (`artifact`/`cache`/`github`/`session`/`setup`).
+- **Repo metadata:** 0 open PRs (was 4); 6 open issues (#814 topology-guard sidecar egress, #775 harness post-bridge hardening, #763 workspace/gateway reliability, #745 mitmproxy egress smoke test, #579 dep dashboard, #252 DMR). Stars 2.
+- **Fro Bot workflow present and self-hosted** — no onboarding follow-up needed.
+- No contradictions with prior ingest; the OpenCode-pin section was rewritten to reflect that the version is no longer a simple Renovate-capped pin.
+
+Reads limited to repo metadata, directory listings, release notes, README/manifest files (`package.json`, `harness.config.json`, runtime `constants.ts`), and workflow files per untrusted-input constraints.
+
+Sources: https://github.com/fro-bot/agent (SHA a23ae97c433d815974cfd009bec64748c0a63ad6)
+
+## [2026-06-14 07:31] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent
