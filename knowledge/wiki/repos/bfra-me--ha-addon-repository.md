@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/ha-addon-repository
 created: 2026-05-20
-updated: 2026-05-30
+updated: 2026-06-10
 sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: 0a163c3fa8846704103658142fa742f40d165743
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: 0a163c3fa8846704103658142fa742f40d165743
     accessed: 2026-05-30
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: 0a163c3fa8846704103658142fa742f40d165743
+    accessed: 2026-06-10
 tags: [home-assistant, addon, hassio, template, docker, multi-arch, bfra-me]
 related:
   - marcusrbrown--ha-config
@@ -36,7 +39,7 @@ This is the bfra-me ecosystem's add-on counterpart to Marcus's runtime [[marcusr
 - **Primary language:** Dockerfile
 - **Topics:** `addon`, `addons`, `hassio`, `home-assistant`, `homeassistant`, `template`
 - **Created:** 2022-10-08
-- **Last push:** 2026-05-20
+- **Last push:** 2026-06-09 (non-main; `main` HEAD unchanged since 2026-05-16)
 
 ## Layout
 
@@ -174,8 +177,10 @@ The two `frenck/action-*` tools are siblings serving the two sides of the HA dev
 |---|---|---|
 | 2026-05-20 | `0a163c3f` | Initial survey. Fro Bot agent v0.43.1, four workflows, example add-on at v1.2.2, HA base images Alpine 3.22/3.23, Node 22.11.0, Python 3.13.13. |
 | 2026-05-30 | `0a163c3f` | HEAD unchanged on `main` for 14 days. Open issues 5 → 6 (new `Daily Autohealing Report` entry from the perpetual issue pattern). 4 open Renovate PRs queued and unmerged: #556 (`bfra-me/.github` v4.16.16 → v4.16.21), #557 (`fro-bot/agent` v0.43.1 → v0.46.1, 3-minor-version jump), #558 (HA `amd64-base:3.23` digest rotation), #559 (`docker/login-action` v4.2.0). The `SCHEDULE_PROMPT` block still references `bfra-me/.github` "currently v4.16.6" — that's a stale comment relative to the actual workflow import at v4.16.16, and worth updating when #556 lands. No content drift on workflows, settings, or the `example/` add-on. |
+| 2026-06-10 | `0a163c3f` | HEAD unchanged on `main` for 25 days (last merge: prettier 3.8.3, #551, 2026-05-16). Renovate PR queue grew to 5: #556 retargeted to `bfra-me/.github` v4.16.24, #557 retargeted to `fro-bot/agent` v0.59.1 (now a 16-minor-version jump from the pinned v0.43.1), #558 (`amd64-base:3.23` digest), #559 (`docker/login-action` v4.2.0), new #560 (`actions/checkout` v6.0.3). All 5 green but BLOCKED on `REVIEW_REQUIRED` — branch protection requires 1 approving review and nobody is reviewing. #556 blocked 27 days per the autoheal report. The `Daily Autohealing Report` issue (#554) is updating daily (last 2026-06-09) and has escalated to assigning "Tasks for Copilot" to approve/merge the stuck PRs. Workflow set unchanged (4 workflows). Open issues: 2 substantive (#554 perpetual report, #4 Dependency Dashboard); gh `open_issues_count` of 7 includes the 5 PRs. |
 
 ## Drift Watch
 
-- **Stale comment in `fro-bot.yaml`:** The `SCHEDULE_PROMPT` env literal hardcodes "bfra-me/.github reusable workflow version (currently v4.16.6)" while the actual `uses:` pin in `renovate.yaml` and `update-repo-settings.yaml` is at v4.16.16, with v4.16.21 queued in PR #556. The agent self-corrects via the live SHA comparison it's instructed to do, but the literal will keep drifting until someone parameterises it or relies entirely on dynamic lookup.
-- **Fro Bot agent lag:** Repo is at v0.43.1; ecosystem (e.g., `marcusrbrown/dotfiles`, `marcusrbrown/systematic`) has moved through v0.44.x → v0.45.0 and Renovate has v0.46.1 queued. PR #557 alone covers three minor versions — worth a targeted review before merge in case any of v0.44 / v0.45 introduced workflow input changes that need surfacing in `fro-bot.yaml`.
+- **Stale comment in `fro-bot.yaml`:** The `SCHEDULE_PROMPT` env literal hardcodes "bfra-me/.github reusable workflow version (currently v4.16.6)" while the actual `uses:` pin in `renovate.yaml` and `update-repo-settings.yaml` is at v4.16.16, with v4.16.24 queued in PR #556. The agent self-corrects via the live SHA comparison it's instructed to do, but the literal will keep drifting until someone parameterises it or relies entirely on dynamic lookup.
+- **Fro Bot agent lag (worsening):** Repo is pinned at v0.43.1; PR #557 has been retargeted by Renovate to v0.59.1 as of 2026-06-10 — a 16-minor-version jump. The agent harness changed substantially across that span (single-job mode dispatch, OpenCode pin changes, gateway tool-progress migration per [[fro-bot--agent]]). Merging #557 without checking `fro-bot.yaml` input compatibility is a footgun; merging nothing means the daily autoheal keeps running on an increasingly archaic harness.
+- **Review-required deadlock:** Branch protection requires 1 approving review with `enforce_admins: true`, but no human or delegated reviewer is processing the Renovate queue. All 5 open PRs are green-but-blocked; the oldest has waited 27 days. The autoheal report has begun delegating approval tasks to Copilot — a sign the review pipeline, not CI, is the bottleneck. Either enable auto-approve for grouped Renovate updates (as sibling `bfra-me` repos lean on checks-over-reviewers governance) or schedule a human review pass.

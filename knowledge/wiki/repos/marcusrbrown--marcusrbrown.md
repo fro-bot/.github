@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/marcusrbrown"
 created: 2026-04-18
-updated: 2026-06-02
+updated: 2026-06-12
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: b26dd18884df26ac593c8d423ed0ed8b0e9bb393
+    accessed: 2026-06-12
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: e39577cba2ef663d8fd25ff9b26c66f8b3460a42
     accessed: 2026-06-02
@@ -34,7 +37,7 @@ Marcus R. Brown's GitHub profile README repository. A TypeScript-powered automat
 - **Default branch:** `main`
 - **Language:** TypeScript
 - **Created:** 2020-12-09
-- **Last push:** 2026-05-18
+- **Last push:** 2026-06-12
 - **License:** MIT
 - **Topics:** `github`, `readme-profile`, `profile-readme`, `awesome-readme`, `typescript`, `markdown`
 - **Collaborators:** `marcusrbrown` (admin), `fro-bot` (push)
@@ -103,7 +106,7 @@ A/B test variants live in `templates/variants/` (e.g., `SPONSORME-benefits.tpl.m
 | Renovate | `renovate.yaml` | issue/PR edit, push, dispatch, Main completion | Dependency updates |
 | Update Repo Settings | `update-repo-settings.yaml` | push to `main`, daily cron, dispatch | Probot settings sync |
 | Cleanup Cache | `cleanup-cache.yaml` | PR close, weekly, dispatch | Prune stale GHA cache entries |
-| **Fro Bot** | `fro-bot.yaml` | PR events, `@fro-bot` mentions, cron 04:30 + 16:30 UTC, dispatch | Three-mode agent: PR review / autoheal / maintenance (added 2026-06-02, `fro-bot/agent@v0.50.0`) |
+| **Fro Bot** | `fro-bot.yaml` | PR events, issues (opened/edited), `@fro-bot` mentions, cron 04:30 + 16:30 UTC, dispatch | Three-mode agent: PR review / autoheal / maintenance (added 2026-06-02; `fro-bot/agent@v0.61.0` SHA-pinned `6794bf5` as of 2026-06-12) |
 
 ### Profile Update Pipeline (update-profile.yaml)
 
@@ -160,6 +163,20 @@ Required status checks on `main`: CI, Renovate, Prepare, Finalize. Linear histor
 
 ## Fro Bot Integration
 
+### 2026-06-12 update: Renovate version treadmill, agent at v0.61.0
+
+Ten days after onboarding, the Fro Bot workflow is fully routine. Renovate has merged **17 `fro-bot/agent` bumps since 2026-06-02** (v0.51.0 → v0.61.0 via #952–#980, often several per day), confirming the dependency-ownership boundary works as designed — every bump is Renovate-authored, none came from autoheal. The action is now **SHA-pinned** (`6794bf5` # v0.61.0) rather than tag-pinned, consistent with the PR review prompt's own "pinned SHAs for third-party actions" rule.
+
+Workflow trigger surface has grown since the 2026-06-02 survey: `issues: [opened, edited]` is now a trigger (gated to non-bot OWNER/MEMBER/COLLABORATOR authors), alongside the original PR/comment/schedule/dispatch set. A `workflow_dispatch` `mode` choice input (review/maintenance/autoheal, default autoheal) with a required-prompt validation step for review mode is also present.
+
+Operational observations from issue event history:
+
+- **Daily close/reopen oscillation on #936 (Daily Maintenance Report):** fro-bot reopens it each afternoon (~17:30 UTC) and closes it each morning (~06:00 UTC) — e.g., reopened 2026-06-11T17:48, closed 2026-06-12T06:02. The perpetual-issue contract says exactly one *open* maintenance issue should exist at all times; the autoheal run appears to be closing it and the maintenance run reopening it, a daily churn loop. #926 (Daily Autohealing Report) stays open (20 comments). This is the schedule-concurrency/perpetual-issue friction anticipated in tracker #925, now empirically visible.
+- **PR #960** (`build/update-readme`, generated content) has been open since 2026-06-04 and is updated every 6 hours by the profile pipeline — normal steady-state for this repo's design.
+- Open items are down to 4: #960 (build PR), #926 (autoheal report), #925 (evolution tracker), #284 (dependency dashboard).
+
+The composite `.github/actions/setup` action (pnpm store cache keyed by year-month + lockfile hash, `pnpm/action-setup` SHA-pinned) handles install; checkout remains `persist-credentials: false` with the comment-trigger fork-head refusal preflight intact.
+
 ### 2026-06-02 update: Fro Bot workflow is now live (contradiction resolved)
 
 **Fro Bot workflow present and active** (`fro-bot.yaml`, `fro-bot/agent@v0.50.0`, SHA `de04256`). This **contradicts the prior survey claim** below — the onboarding gap that stood across the 2026-04-18 → 2026-05-18 surveys has been closed. The workflow landed via PR #924 during a dedicated "Fro Bot initial setup session" (referenced in evolution tracker issue #925), and the agent pin has since rolled forward v0.44.3 → v0.48.0 → v0.49.0 → v0.50.0 via Renovate (#946, #949, #950).
@@ -209,6 +226,27 @@ The repo references `fro-bot/.github:common-settings.yaml` in its Probot setting
 - **Dependency drift risk:** With Renovate stalled since 2026-03-12, this repo is accumulating dependency drift. Other Marcus repos have moved to `marcusrbrown/renovate-config#4.5.8`, `pnpm 10.33.0`, `Prettier 3.8.3`, and `bfra-me/.github` v4.16.8. This repo remains pinned at older versions across the board.
 
 ## Version Comparison (vs. Ecosystem)
+
+### 2026-06-12 snapshot
+
+| Dependency | This Repo | Delta vs 2026-06-02 |
+| --- | --- | --- |
+| `fro-bot/agent` | v0.61.0 (`6794bf5`, SHA-pinned) | v0.50.0 → v0.61.0 — 17 Renovate bumps in 10 days; this repo now leads the ecosystem with [[bfra-me--renovate-action]] (v0.60.0 as of 2026-06-11) |
+| `marcusrbrown/renovate-config` | `#5.2.1` | 5.2.0 → 5.2.1 |
+| `bfra-me/.github` | v4.16.25 | → v4.16.25 (#979) |
+| `pnpm` | 10.34.1 | unchanged |
+| `Node.js` | 24.16.0 | unchanged (`.mise.toml`) |
+| `vitest` / `@vitest/ui` | 4.1.8 | 4.1.7 → 4.1.8 (#958) |
+| `tsx` | 4.22.4 | 4.22.3 → 4.22.4 (#953) |
+| `actions/checkout` | v6.0.3 (SHA-pinned) | → v6.0.3 (#951) |
+| `@bfra.me/eslint-config` | 0.51.1 | unchanged |
+| `Prettier` | 3.8.3 | unchanged |
+| `@bfra.me/prettier-config` | 0.16.9 | unchanged |
+| `@bfra.me/tsconfig` | 0.13.1 | unchanged |
+| `@types/node` | 24.12.4 | unchanged |
+| `jiti` | 2.7.0 | unchanged |
+
+Renovate is fully healthy; the merge stream is dominated by `fro-bot/agent` releases tracking the upstream [[fro-bot--agent]] release cadence.
 
 ### 2026-06-02 snapshot
 
@@ -298,3 +336,4 @@ Backlog is back to baseline. The profile update pipeline (every 6 hours) and Ren
 | 2026-04-24 | `af78e68` | SHA unchanged; documented Renovate stall (issue #895), dependency drift vs ecosystem, fro-bot collaborator confirmed, open work items added |
 | 2026-05-18 | `de594cd` | Renovate thaw confirmed (#895 closed, preset → 5.2.0 via #897); 18 dependency PRs landed 2026-05-14 → 2026-05-18; bumped `bfra-me/.github` v4.4.0 → v4.16.18, `pnpm` 10.31.0 → 10.33.4, `vitest` 4.0.18 → 4.1.6, `tsx` 4.20.3 → 4.22.0, `Node.js` 24.14.0 → 24.15.0, `Prettier` 3.8.1 → 3.8.3; new pinned deps added (`@bfra.me/prettier-config` 0.16.9, `@bfra.me/tsconfig` 0.13.1, `@types/node` 24.12.4); `@bfra.me/eslint-config` 0.50.1 still trailing; no Fro Bot workflow yet — follow-up PR still warranted |
 | 2026-06-02 | `e39577c` | **Fro Bot onboarded** — `fro-bot.yaml` single-file three-mode workflow landed via #924 (evolution tracker #925), `fro-bot/agent` v0.44.3 → v0.50.0; contradicts prior "no Fro Bot workflow" claim, now resolved. New `.agents/skills/sync-sponsors-bio/` skill + `sponsors:bio:sync` script. Dep deltas: `pnpm` 10.33.4 → 10.34.1, `Node.js` 24.15.0 → 24.16.0, `@bfra.me/eslint-config` 0.50.1 → 0.51.1 (trailing item resolved), `vitest` 4.1.6 → 4.1.7, `tsx` 4.22.0 → 4.22.3. Perpetual issues live: Daily Maintenance Report #936, Daily Autohealing Report #926 |
+| 2026-06-12 | `b26dd18` | **Steady state, version treadmill** — `fro-bot/agent` v0.50.0 → v0.61.0 (17 Renovate bumps, now SHA-pinned `6794bf5`); renovate-config preset 5.2.0 → 5.2.1; `bfra-me/.github` → v4.16.25; vitest → 4.1.8, tsx → 4.22.4; `issues: [opened, edited]` trigger + dispatch `mode` input added to `fro-bot.yaml`. Operational finding: daily close/reopen oscillation on maintenance issue #936 between autoheal (closes ~06:00 UTC) and maintenance (reopens ~17:30 UTC) runs — perpetual-issue churn anticipated in #925 now observable. Open items down to 4 |

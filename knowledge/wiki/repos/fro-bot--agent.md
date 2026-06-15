@@ -2,8 +2,11 @@
 type: repo
 title: "fro-bot/agent"
 created: 2026-05-07
-updated: 2026-06-04
+updated: 2026-06-14
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: a23ae97c433d815974cfd009bec64748c0a63ad6
+    accessed: 2026-06-14
   - url: https://github.com/fro-bot/agent
     sha: 34abe2abc779e942444df86342956542dbfc6b3c
     accessed: 2026-06-04
@@ -43,22 +46,22 @@ GitHub Action harness for [OpenCode](https://opencode.ai/) + [Oh My OpenAgent (o
 | Attribute              | Value                                                               |
 | ---------------------- | ------------------------------------------------------------------- |
 | Created                | 2026-01-02                                                         |
-| Last push              | 2026-06-04 (survey 2026-06-04)                                     |
-| Latest release         | v0.53.1 (2026-06-04; was v0.51.0 @ 2026-06-03)                     |
+| Last push              | 2026-06-14 (survey 2026-06-14)                                     |
+| Latest release         | v0.63.0 (2026-06-14; was v0.53.1 @ 2026-06-04)                    |
 | Language               | TypeScript (strict, ESM-only)                                      |
-| Node.js                | 24.16.0-alpine in Docker images; `.node-version` pin              |
-| Package manager        | pnpm 10.33.4 (PR #702 queues 10.34.1)                              |
+| Node.js                | Docker images pin via `.node-version` (Renovate digest `fb71d01`, #856) |
+| Package manager        | pnpm 11.5.3 (was 10.33.4 @ v0.53.1)                                |
 | Runtime                | `node24` (GitHub Action `runs.using`)                              |
-| Bundler                | tsdown 0.22.1 (Rolldown-based, dual entry points)                  |
-| Test framework         | Vitest 4.1.7                                                       |
-| Lint                   | ESLint 10.4.1 (`@bfra.me/eslint-config` 0.51.1), Prettier 3.8.3   |
+| Bundler                | tsdown 0.22.2 (Rolldown-based, dual entry points)                 |
+| Test framework         | Vitest 4.1.8                                                       |
+| Lint                   | ESLint 10.4.1 (`@bfra.me/eslint-config` 0.51.1), Prettier 3.8.4   |
 | TypeScript             | 6.0.3                                                              |
-| OpenCode pin           | 1.15.13 (#742; Renovate-capped — bumps past it are deliberate)    |
+| OpenCode default       | **Harness build `1.17.3+harness.94c10df9`** (v0.63.0, #888) — `DEFAULT_OPENCODE_VERSION` is now a harness GitHub-Release tag, not a plain version; SDK at 1.17.6; harness base `1.17.6` |
 | Release                | semantic-release on `release` branch, `next` → `release` PR model  |
 | Visibility             | Public                                                             |
 | Stars                  | 2                                                                  |
-| Open issues            | 6 (#749 cold-boot supervisor [fixed by #755], #746/#745 egress hardening, #727 workspace timeline, #579 dep dashboard, #252 DMR) |
-| Open PRs               | 4 (all Renovate / CI dep bumps)                                   |
+| Open issues            | 6 (#814 topology-guard sidecar egress, #775 harness post-bridge hardening [v0.62.0 #873 addressed], #763 workspace/gateway reliability, #745 mitmproxy egress smoke test, #579 dep dashboard, #252 DMR) |
+| Open PRs               | 0                                                                  |
 | Topics                 | actions, agent, automation, bot, fro-bot, github-actions, github-app |
 
 ## Architecture
@@ -188,6 +191,10 @@ The gateway moved from "wired but inert" to a working Discord control plane over
 | v0.48.0 | `@fro-bot` **mention-triggered OpenCode execution** (#705) — the gateway can now run the agent |
 | v0.51.0 | **Approval prompts for sensitive tool calls** (#737); fail-fast provider-semantics self-test at boot (#739); opt-in announce/presence endpoint (#740) |
 | v0.52.0 | Tool-progress rendering migrated to the **OpenCode 1.15.13 event contract** (#744) — tool lifecycle + text now arrive via `message.part.updated` / `message.part.delta`; legacy `session.next.tool.*` / `session.next.text.delta` handlers retained as fallback |
+| v0.57.0 | `daily_digest` **presence event** (#826) on the announce/presence endpoint                |
+| v0.59.0 | **Live status message + typing indicator** for mention runs (#843) — real-time feedback during agent execution |
+| v0.60.0 | **Serial per-channel queue** for mentions (#850) — prevents races when concurrent mentions arrive in one channel; **`/fro-bot force-release-lock`** operator command + run reactions (#854) to manually clear stuck release locks |
+| v0.61.0 | Discord sends centralized behind **fail-soft io helpers** (#858); shared guild-command pipeline (#859); Effect failure-channel discipline pass (#863) |
 
 The Discord-side approval flow (#737) is the human-in-the-loop gate for the daemon path that CI runs don't need — sensitive tool calls now surface a prompt before executing. The boot-time provider-semantics self-test (#739) fails fast rather than letting a misconfigured provider produce silent garbage at request time — the same `validateProviderSemantics` primitive the runtime already exposed, now run eagerly.
 
@@ -240,6 +247,19 @@ The release workflow is fenced (manual `workflow_dispatch` with `integration_com
 - **`optionalDependencies` injected at publish time** — the per-platform packages are deliberately *not* in the source `package.json` (keeps `pnpm-lock.yaml` clean since they only exist on npm after a release); the workflow injects version-pinned `optionalDependencies` into the published main package.
 - **Bootstrap caveat:** npm trusted publishing requires a package to already exist; the first release of the five packages needs a one-time token-authenticated bootstrap (or pending-publisher flow), after which OIDC governs all subsequent publishes.
 
+### Harness-as-Default-OpenCode Cutover (v0.63.0, 2026-06-14)
+
+The harness moved from "a published npm CLI" to **the binary the action and workspace executor run by default.** Three converging changes landed across v0.54.0–v0.63.0:
+
+- **Harness now publishes its own GitHub Releases** (#874) under **non-`v` tags** (#890) — e.g. `1.17.3+harness.94c10df9`, `1.17.3+harness.2c9cdbd2`. The non-`v` tag namespace deliberately avoids colliding with the action's `vX.Y.Z` semantic-release tags in the same repo. The action downloads the harness build from this release (no longer the stock OpenCode download).
+- **`DEFAULT_OPENCODE_VERSION` is now a harness build identifier** (`'1.17.3+harness.94c10df9'`), not a plain upstream version. The constant comment distinguishes it from `FALLBACK_VERSION` (in `opencode.ts`), the plain stock base used when the latest-fetch fails. So the install path is: harness build by default → stock OpenCode as fallback.
+- **Workspace executor runs the harness build too** (#889) — the `deploy/` workspace container provisions the same harness OpenCode the action uses, closing the action/daemon parity gap.
+- **musl Linux release assets** (#887) added alongside the glibc per-platform builds; release version-check narrowed to only the runner-native binary (#879).
+
+The integrate→build CI handoff was wired via artifact (#774, v0.55.0), the integrate merge now runs **through the Fro Bot workflow itself** (#779) — i.e. the LLM merge is a Fro Bot agent run via `workflow_call` — and the integration job is **skipped when no patches are carried** (#788). Post-bridge hardening (#873, v0.62.0, closes #775) added redaction, a `doctor` version check, and per-ref provenance. Base rebased 1.15.13 → **1.16.0** (#786) → **1.17.3** (#867, three carried patches) → SDK/base **1.17.6**.
+
+**Integration refs (2026-06-14):** `harness.config.json` now carries **three** refs against `anomalyco/opencode`: PRs #19961, #31859, #31638 (was the single #30182 at v0.53.0). Merge `agent: build`, merge `model: anthropic/claude-sonnet-4-6`.
+
 ### Carry Policy
 
 "The pipeline is the asset; the patch list stays boring." Target 1–3 carried refs max. A ref qualifies only if it is: (1) a merged-to-dev correctness fix not yet in stable, (2) an open/stalled upstream fix for Fro-Bot-critical behavior with a failing fixture/incident, (3) a perf/DX/agent-quality patch with before/after numbers, or (4) a stable-lane guardrail. Drop a ref once upstream stable includes it, it stops applying cleanly, or no recent incident/metric justifies the maintenance burden.
@@ -251,12 +271,12 @@ Docker Compose v2 stack for running the gateway + workspace executor outside CI:
 | Service     | Role                                                                              |
 | ----------- | --------------------------------------------------------------------------------- |
 | `gateway`   | Discord gateway daemon — slash commands and mentions (`gateway.Dockerfile`)       |
-| `workspace` | Workspace executor running `apps/workspace-agent` on port 9100 (`workspace.Dockerfile`, `workspace-entrypoint.sh`). **No longer a placeholder** as of v0.45.0–v0.50.0; OpenCode model/provider/auth now provisioned (#728). |
+| `workspace` | Workspace executor running `apps/workspace-agent` on port 9100 (`workspace.Dockerfile`, `workspace-entrypoint.sh`). **No longer a placeholder** as of v0.45.0–v0.50.0; OpenCode model/provider/auth provisioned (#728); **runs the harness OpenCode build by default** as of v0.63.0 (#889). |
 | `mitmproxy` | Egress proxy enforcing an allowlist of permitted outbound hosts                   |
 
 **Egress regression #741 resolved (2026-06-04, #747 → v0.52.1).** The v0.51.0 502-on-all-outbound failure (fail-closed mitmproxy meeting a `sandbox-net` with no permitted egress route) was fixed by restoring workspace egress and adding a **configurable proxy allowlist**. Follow-on hardening is open as #746 (close DNS-rebinding TOCTOU + topology-guard bypass gaps) and #745 (add a live mitmproxy egress smoke test to complement the static topology guard).
 
-**Cold-boot supervisor regression #749 fixed (#755 → v0.53.1).** The `apps/workspace-agent` OpenCode supervisor was brittle on cold-boot mention runs (15s one-shot timeout, no per-probe timeout, no retry, `/healthz` masking a dead OpenCode). #755 prevents the cold-boot readiness hang.
+**Cold-boot supervisor regression #749 fixed (#755 → v0.53.1), then hardened further (v0.54.0).** The `apps/workspace-agent` OpenCode supervisor was brittle on cold-boot mention runs (15s one-shot timeout, no per-probe timeout, no retry, `/healthz` masking a dead OpenCode). #755 prevented the cold-boot readiness hang; v0.54.0 then **supervised OpenCode with respawn + process-group reaping** (#767) and **gated mention dispatch on workspace OpenCode readiness** (#761) so the gateway never dispatches into a not-yet-live executor. Remaining reliability work tracked in open #763 (attach-path timeouts + readiness depth) and #814 (topology guard misses sidecar egress relays).
 
 Stack files: `deploy/compose.yaml`, `deploy/compose.override.example.yaml`, `deploy/gateway.Dockerfile`, `deploy/workspace.Dockerfile`, `deploy/init-certs.sh`, `deploy/validate-stack.sh`, `deploy/mitmproxy/`.
 
@@ -286,7 +306,8 @@ mitmproxy is configured to fail closed by default; `OBJECT_STORE_HOSTS` is the a
 | `auto-release.yaml`       | Merge `next` into `release`, semantic-release, update `v0` branch |
 | `harness-release.yaml`    | **New v0.53.0.** Fenced (manual dispatch / `harness-v*` tag) build+publish of `@fro.bot/harness` + per-platform packages. Read-only build job (no `id-token`); OIDC trusted-publish job only. |
 | `prepare-release-pr.yaml` | (not examined)                                              |
-| `fro-bot.yaml`            | Self-hosted Fro Bot: PR review, issue triage, mentions, daily DMR (15:30 UTC), weekly wiki update (Sun 20:00 UTC) |
+| `fro-bot.yaml`            | Self-hosted Fro Bot: PR review, issue triage, mentions, daily DMR (15:30 UTC), weekly wiki update (Sun 20:00 UTC). Now also exposes a `workflow_call` interface (model + `response-mode` + optional `correlation-id`) so other workflows invoke the agent — used by **release-notes narration** (#818) and the harness **integrate merge** (#779) |
+| `auto-release.yaml`/release pipeline | **Release-notes narration (v0.56.0, #818):** on a published release, calls `fro-bot.yaml` to narrate the release notes (the `<!-- fro-bot-narration-v1 -->` "What's new" block now atop every release); routing + fail-soft guards documented in `docs/solutions/` (#825) |
 | `renovate.yaml`           | Reusable from `bfra-me/.github`, triggered on issue/PR edit, push, CI success, dispatch |
 | `codeql-analysis.yaml`    | Security vulnerability analysis                             |
 | `scorecard.yaml`          | OpenSSF supply-chain security                               |
@@ -336,8 +357,8 @@ The repo runs its own Fro Bot agent. As of 2026-06-03 `fro-bot.yaml` self-refere
 | `@actions/exec`       | 3.0.0                | 3.0.0         | Subprocess execution                 |
 | `@actions/github`     | 9.1.1                | 9.1.1         | Octokit + GitHub context             |
 | `@actions/tool-cache` | 4.0.0                | 4.0.0         | Tool caching for setup phase         |
-| `@aws-sdk/client-s3`  | 3.1057.0             | 3.1045.0      | S3-compatible object storage         |
-| `@opencode-ai/sdk`    | 1.15.13              | 1.14.41       | OpenCode execution (#742 pinned SDK+CLI to 1.15.13) |
+| `@aws-sdk/client-s3`  | 3.1066.0             | 3.1045.0      | S3-compatible object storage (#885)  |
+| `@opencode-ai/sdk`    | 1.17.6               | 1.14.41       | OpenCode execution (base bumped 1.15.13 → 1.16.0 → 1.17.3 → 1.17.6) |
 | `@octokit/auth-app`   | 8.2.0                | 8.2.0         | GitHub App authentication            |
 | `@octokit/webhooks-types` | 7.6.1            | —             | Webhook payload typing (dev)         |
 | `@bfra.me/es`         | 0.1.0                | 0.1.0         | Shared ES utilities                  |
@@ -345,8 +366,9 @@ The repo runs its own Fro Bot agent. As of 2026-06-03 `fro-bot.yaml` self-refere
 | `effect`              | 3.21.2               | —             | Gateway composition layer            |
 | `hono`                | 4.12.23              | —             | HTTP layer (gateway + workspace-agent) |
 | `@hono/node-server`   | 1.19.14              | —             | Node adapter for Hono                 |
-| `tsdown`              | 0.22.1               | 0.22.0        | Rolldown-based bundler               |
-| `semantic-release`    | 25.0.3               | 25.0.3        | Automated versioning/publishing      |
+| `effect`              | 3.21.3               | —             | Gateway composition layer (#834)     |
+| `tsdown`              | 0.22.2               | 0.22.0        | Rolldown-based bundler (#822)        |
+| `semantic-release`    | 25.0.5               | 25.0.3        | Automated versioning/publishing (#875 restored Perform Release) |
 | `simple-git-hooks`    | 2.13.1               | 2.13.1        | Pre-commit (lint-staged), pre-push   |
 
 ## Renovate Configuration
@@ -355,17 +377,21 @@ Extends `github>fro-bot/.github` (the `.github` repo's Renovate config). `dist/*
 
 Five custom regex managers tracking pinned versions in `packages/runtime/src/shared/constants.ts` (the constants moved out of the action's `src/shared/` into the runtime package at v0.45+):
 
-| Constant (2026-06-04)              | Datasource                                   |
+| Constant (2026-06-14)              | Datasource                                   |
 | ---------------------------------- | -------------------------------------------- |
-| `DEFAULT_OPENCODE_VERSION = '1.15.13'` | GitHub releases `anomalyco/opencode` (**Renovate-capped at 1.15.13** in `renovate.json5`; bumps past it are deliberate) |
+| `DEFAULT_OPENCODE_VERSION = '1.17.3+harness.94c10df9'` | **Now the harness build** — a fro-bot/agent GitHub Release (non-`v` tag) bundling the patched OpenCode; `FALLBACK_VERSION` in `opencode.ts` is the plain stock base when latest-fetch fails |
 | `DEFAULT_BUN_VERSION = '1.3.14'`   | GitHub releases `oven-sh/bun`                |
 | `DEFAULT_OMO_VERSION = '3.17.15'`  | npm `oh-my-openagent`                        |
-| `DEFAULT_OMO_SLIM_VERSION = '1.1.1'` | npm `oh-my-opencode-slim` (stable line only)|
-| `DEFAULT_SYSTEMATIC_VERSION = '2.24.0'` | npm `@fro.bot/systematic`               |
+| `DEFAULT_OMO_SLIM_VERSION = '1.1.2'` | npm `oh-my-opencode-slim` (stable line only; #860 bumped 1.1.1 → 1.1.2) |
+| `DEFAULT_SYSTEMATIC_VERSION = '2.31.0'` | npm `@fro.bot/systematic` (was 2.24.0; #784 →2.25.0, #816 →2.30.1, then 2.31.0) |
 
-`STORAGE_VERSION = 1` governs the on-disk session/cache layout. `DEFAULT_MODEL` is `opencode/big-pickle` (the default inference model ensuring OpenCode Zen starts).
+`STORAGE_VERSION = 1` governs the on-disk session/cache layout. `DEFAULT_MODEL.modelID` is `big-pickle` (the default inference model ensuring OpenCode Zen starts).
 
-**OpenCode 1.15.13 pin rationale (#742):** the 1.14.42+ `/event` SSE `SyncEvent` regression (`message.part.updated`, `message.updated`, `session.next.*` not reaching `bus.subscribeAll()` subscribers) was fixed upstream (#27959) and verified in 1.15.13. The 1.15.13 event contract changed the streaming surface: tool lifecycle and text now arrive via `message.part.updated` / `message.part.delta`, so `session.next.tool.*` / `session.next.text.delta` no longer fire — legacy handlers in `streaming.ts` are retained as fallback. This same contract drove the gateway tool-progress migration (#744, v0.52.0). The pin is the upstream-source-of-truth that `@fro.bot/harness` bases its integration on (`harness.config.json` `base_version: 1.15.13`).
+**Note (2026-06-14):** with the harness-as-default cutover, the OpenCode version no longer tracks a plain `anomalyco/opencode` release via custom regex manager — the default is a harness build whose base version is set in `harness.config.json` (`base_version: 1.17.6`). The harness release itself is produced by the fenced `harness-release.yaml` pipeline rather than a Renovate version bump.
+
+**OpenCode event-contract / pin history:** the 1.14.42+ `/event` SSE `SyncEvent` regression (`message.part.updated`, `message.updated`, `session.next.*` not reaching `bus.subscribeAll()` subscribers) was fixed upstream (#27959) and verified in 1.15.13. That event contract changed the streaming surface: tool lifecycle and text now arrive via `message.part.updated` / `message.part.delta`, so `session.next.tool.*` / `session.next.text.delta` no longer fire — legacy handlers in `streaming.ts` are retained as fallback. This drove the gateway tool-progress migration (#744, v0.52.0).
+
+**As of v0.63.0 the OpenCode version is no longer a simple Renovate-capped pin** — the default is the harness build (`base_version: 1.17.6` in `harness.config.json`, after rebasing through 1.16.0 #786 and 1.17.3 #867). The action consumes the harness GitHub Release; `FALLBACK_VERSION` is the plain stock base when the latest-fetch fails. See "Harness-as-Default-OpenCode Cutover" above.
 
 Post-upgrade tasks: `pnpm run bootstrap && pnpm run build && pnpm run fix`.
 
@@ -401,7 +427,7 @@ A `PRD.md` contains the full product requirements document. `RFCS.md` indexes th
 
 This is the **central runtime** consumed by all Fro Bot-managed repositories. Every repo with a `fro-bot.yaml` workflow depends on `fro-bot/agent` as a GitHub Action reference (e.g., `fro-bot/agent@v0.42.8`). The action auto-installs and configures [[marcusrbrown--systematic]] as an OpenCode plugin, connecting the agent to 45+ skills and 50 agents.
 
-Downstream consumers span the `marcusrbrown/*`, `bfra-me/*`, and `fro-bot/*` ecosystems via `fro-bot/agent@vX` references. Version lag varies widely by Renovate cadence — as of the 2026-06-03 survey the spread runs from trailing pins (e.g. [[marcusrbrown--mrbro-dev]] at v0.43.0, [[bfra-me--ha-addon-repository]] at v0.43.1) up through the bleeding edge ([[marcusrbrown--marcusrbrown-github-io]] at v0.48.1, [[bfra-me--works]] at v0.47.0). Per-repo pins are tracked on each consumer's own wiki page rather than mirrored here, since they drift faster than this page is surveyed. The agent auto-installs and configures [[marcusrbrown--systematic]] / `@fro.bot/systematic` (v2.24.0) as an OpenCode plugin on every run.
+Downstream consumers span the `marcusrbrown/*`, `bfra-me/*`, and `fro-bot/*` ecosystems via `fro-bot/agent@vX` references. Version lag varies widely by Renovate cadence — as of the 2026-06-03 survey the spread runs from trailing pins (e.g. [[marcusrbrown--mrbro-dev]] at v0.43.0, [[bfra-me--ha-addon-repository]] at v0.43.1) up through the bleeding edge ([[marcusrbrown--marcusrbrown-github-io]] at v0.48.1, [[bfra-me--works]] at v0.47.0). Per-repo pins are tracked on each consumer's own wiki page rather than mirrored here, since they drift faster than this page is surveyed. The agent auto-installs and configures [[marcusrbrown--systematic]] / `@fro.bot/systematic` (v2.31.0 as of v0.63.0) as an OpenCode plugin on every run.
 
 ## Build System
 
@@ -429,12 +455,13 @@ The `WIKI_PROMPT` env var in the workflow contains the full wiki maintenance ins
 
 Root `package.json` (`@fro-bot/agent-workspace`) holds external action/dev deps; gateway- and workspace-agent-specific deps live in their own package manifests. Workspace protocol links `@fro-bot/action` and `@fro-bot/gateway` → `@fro-bot/runtime`. The runtime exports source-level TypeScript (no pre-built dist; consumed via workspace protocol). The root `build`/`test`/`lint`/`fix`/`check-types` scripts now run runtime + action + harness (`pnpm --filter @fro.bot/harness ...` was added at v0.53.0) — the gateway and workspace-agent build via the Docker stack, not the action's `dist/` pipeline; the harness builds + publishes via the fenced `harness-release.yaml` workflow.
 
-pnpm workspace config (`pnpm-workspace.yaml`) enables `autoInstallPeers`, `shamefullyHoist`, `shellEmulator`, `ignoreWorkspaceRootCheck`, `savePrefix: ''`, `strictPeerDependencies: false`. `onlyBuiltDependencies` is `[esbuild, simple-git-hooks, unrs-resolver]`. `overrides` (now all in `pnpm-workspace.yaml` after the package.json migration at v0.45.0, #665) cover `brace-expansion >=5.0.6` (bumped at v0.51.0, #734), `fast-uri`, `fast-xml-builder`, `fast-xml-parser`, `flatted`, `handlebars`, `ip-address >=10.1.1`, `lodash`/`lodash-es`, `picomatch`, `tar@^7`, `undici@^7`, `yaml`. `vite` pin now 8.0.14.
+pnpm workspace config (`pnpm-workspace.yaml`) enables `autoInstallPeers`, `shamefullyHoist`, `shellEmulator`, `ignoreWorkspaceRootCheck`, `savePrefix: ''`, `strictPeerDependencies: false`. `onlyBuiltDependencies` is `[esbuild, simple-git-hooks, unrs-resolver]`. `overrides` (now all in `pnpm-workspace.yaml` after the package.json migration at v0.45.0, #665) cover `brace-expansion >=5.0.6` (bumped at v0.51.0, #734), `fast-uri`, `fast-xml-builder`, `fast-xml-parser`, `flatted`, `handlebars`, `ip-address >=10.1.1`, `lodash`/`lodash-es`, `picomatch`, `tar@^7`, `undici@^7`, `yaml`. `vite` pin now 8.0.16 (#757). pnpm is now 11.5.3 (was 10.33.4 at v0.53.1 — crossed the 10→11 major).
 
 ## Survey History
 
 | Date       | SHA        | Key changes                                          |
 | ---------- | ---------- | ---------------------------------------------------- |
+| 2026-06-14 | `a23ae97`  | Re-survey at v0.63.0 (v0.53.1 → v0.63.0, 10 minors): **Harness-as-default-OpenCode cutover** (v0.63.0, #888/#884/#874/#889) — `@fro.bot/harness` now publishes its own **GitHub Releases** under non-`v` tags (`1.17.3+harness.94c10df9`), and both the action and the workspace executor run the harness build by default; `DEFAULT_OPENCODE_VERSION` is now a harness build id (stock OpenCode = `FALLBACK_VERSION`); musl Linux assets added (#887). OpenCode base rebased 1.15.13 → **1.16.0** (#786) → **1.17.3** (#867) → SDK **1.17.6**; integration refs grew to 3 (#19961/#31859/#31638). Harness integrate merge now runs through the Fro Bot workflow (#779), skipped when no patches carried (#788); post-bridge hardening (#873, closes #775). **Release-notes narration** (v0.56.0, #818) — published releases narrated by the agent via `fro-bot.yaml` `workflow_call`. Gateway: serial per-channel mention queue (#850), `/fro-bot force-release-lock` (#854), live status/typing (#843), `daily_digest` presence (#826), fail-soft io helpers (#858). Cold-boot hardened further (v0.54.0, #767/#761). Deps: pnpm 10.33.4 → **11.5.3**, systematic 2.24.0 → 2.31.0, OMO Slim 1.1.1 → 1.1.2, effect 3.21.3, tsdown 0.22.2, semantic-release 25.0.5, `@aws-sdk/client-s3` 3.1066.0, vite 8.0.16. 0 open PRs; 6 open issues. |
 | 2026-06-04 | `34abe2a`  | Re-survey at v0.53.1 (v0.51.0 → v0.53.1, 3 releases): **`packages/harness` (`@fro.bot/harness`)** shipped (v0.53.0, #752) — a published, OIDC-trust-published, patched-OpenCode CLI built via cortexkit/orw LLM-merge integration; now "the default OpenCode for Fro Bot" and the workspace's only public package; new fenced `harness-release.yaml` workflow (read-only build job, no `id-token`; OIDC publish job; per-platform `optionalDependencies` injected at publish time). **OpenCode pinned to 1.15.13** (#742, SDK+CLI) for the 1.14.42+ SSE `SyncEvent` regression fix; new event contract (`message.part.updated`/`delta`) drove the gateway tool-progress migration (#744, v0.52.0). **Egress regression #741 resolved** (#747 → v0.52.1, configurable proxy allowlist); follow-on hardening open as #746/#745. **Cold-boot supervisor regression #749 fixed** (#755 → v0.53.1). `DEFAULT_MODEL` noted as `opencode/big-pickle`. Workspace now 5 members. |
 | 2026-06-03 | `d0f39a2`  | Re-survey at v0.51.0 (jumped 7 minors from v0.44.3): **`apps/workspace-agent`** shipped (v0.45.0, Hono service for sandboxed git ops + OpenCode provisioning, port 9100, hardened `/clone`) — workspace executor no longer a placeholder; gateway grew a working Discord control plane (bindings store, GitHub App auth, `/fro-bot add-project`, `@fro-bot` mention → OpenCode execution, sensitive-tool approval prompts, boot provider self-test); **OMO Slim** added as opt-in orchestration (`enable-omo-slim`, mutually exclusive with `enable-omo`, pinned 1.1.1); expanded S3 inputs (key-prefix, expected-bucket-owner, KMS/SSE, insecure-endpoint), `skip-cache`, `omo-providers`; shared-layer constants relocated to `packages/runtime/src/shared/`; Node 24.16.0-alpine in Docker; deps (`@aws-sdk/client-s3` →3.1057.0, `tsdown` →0.22.1, Vitest →4.1.7, `@actions/cache` →6.0.1); stars 1→2. Open regression #741: mitmproxy egress 502 on `sandbox-net` breaks `add-project` clones. |
 | 2026-05-22 | `8632cf4`  | Re-survey at v0.44.3: new `packages/gateway` (Discord daemon, Effect 3.x), new `deploy/` Docker stack (gateway + workspace + mitmproxy), `enable-omo` action input (oMo now opt-in), `agent` input default changed from `sisyphus` to unset/OpenCode-build, open issues 7→2, stars 0→1, dep bumps (`@opencode-ai/sdk` 1.14.30→1.14.41, `tsdown` 0.21→0.22, `vite` pin 8.0.10→8.0.13). `services/object-store/` confirmed migrated (likely into `@fro-bot/runtime`). Action `AGENTS.md` is stale (dated 2026-03-29). |

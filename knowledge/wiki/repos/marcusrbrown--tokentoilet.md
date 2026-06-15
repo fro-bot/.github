@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/tokentoilet"
 created: 2026-04-18
-updated: 2026-06-04
+updated: 2026-06-09
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -19,6 +19,9 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: db6dbcc2d289d23377d3d80b19d5e4273008a1b2
     accessed: 2026-05-28
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 76d543e213abdc2823c1e0c2a7b0fdcdf7bc9727
+    accessed: 2026-06-09
 tags: [next-js, react, web3, defi, wagmi, reown-appkit, tailwindcss, vitest, storybook, vercel, typescript, sepolia]
 aliases: [tokentoilet]
 related:
@@ -35,14 +38,14 @@ A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens,
 - **Purpose:** Web3 DeFi token disposal and charity donation platform
 - **Default branch:** `main`
 - **Created:** 2023-07-05
-- **Last push:** 2026-05-06
+- **Last push:** 2026-06-09
 - **Homepage:** https://v0-token-toilet-mrbro-dev.vercel.app
 - **Topics:** `next-js`, `react`
 - **License:** None specified
 - **Visibility:** Public
-- **Package manager:** pnpm 11.3.0 (was 10.33.2 as of 2026-05-06; crossed v10→v11 on 2026-05-23)
-- **Open issues:** 3 (down from 30 — significant triage between 2026-05-06 and 2026-05-28)
-- **Open PRs:** 1 (single Renovate `@bfra.me/eslint-config` v0.51.1 bump)
+- **Package manager:** pnpm 11.5.2 (was 11.3.0 as of 2026-05-28; bumped in non-major batch)
+- **Open issues:** 3 (Dependency Dashboard #995, Daily Autohealing Report #1013, stable since 2026-05-28)
+- **Open PRs:** 1 (`@bfra.me/eslint-config` v0.51.1 Renovate PR #1033 — has lint failures, blocked on TypeScript type errors in test files)
 
 ## Core Concept
 
@@ -74,18 +77,18 @@ Still not implemented: smart contracts, NFT receipts, charity integration, token
 
 | Layer      | Technology                  | Version                        |
 | ---------- | --------------------------- | ------------------------------ |
-| Framework  | Next.js (App Router)        | 16.2.6                         |
-| UI library | React                       | 19.2.6                         |
+| Framework  | Next.js (App Router)        | 16.2.7                         |
+| UI library | React                       | 19.2.7                         |
 | Language   | TypeScript                  | 6.0.3                          |
-| Web3       | Wagmi v3 + Reown AppKit     | wagmi ^3.0.0 / appkit ^1.7.18 (v2→v3 boundary crossed) |
+| Web3       | Wagmi v3 + Reown AppKit     | wagmi ^3.0.0 / appkit ^1.7.18  |
 | Styling    | Tailwind CSS v4 (CSS-first) | 4.3.0                          |
-| Testing    | Vitest                      | 4.1.7                          |
-| Components | Storybook                   | 10.4.1 (mixed with stale 9.0.0-alpha.* addons) |
+| Testing    | Vitest                      | 4.1.8                          |
+| Components | Storybook                   | 10.4.2 (mixed with stale 9.0.0-alpha.* addons) |
 | Deployment | Vercel (GitHub integration) | —                              |
 | State      | TanStack React Query        | ^5.66.0                        |
 | Validation | Zod                         | ^4.1.8                         |
-| Build      | Vite (dev tooling)          | 8.0.14                         |
-| Lint       | ESLint                      | 10.4.0                         |
+| Build      | Vite (dev tooling)          | 8.0.16                         |
+| Lint       | ESLint                      | 10.4.1                         |
 
 ## Repository Structure
 
@@ -171,7 +174,7 @@ Vercel handles deployment via its GitHub integration:
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.45.0` (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`, bumped from v0.42.6 on 2026-05-28 path) with:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.59.0` (SHA `feb5365dca6dc56752e1258d1ca66afa7b035e04`, bumped rapidly via Renovate from v0.45.0 through v0.55.x to v0.59.0 between 2026-05-28 and 2026-06-09) with:
 
 - **PR Review:** Structured review with Web3 security focus, mandatory verdict (PASS/CONDITIONAL/REJECT), specific review sections for blocking issues, Web3 security assessment, missing tests, risk assessment.
 - **Daily Autohealing (schedule):** Five-category sweep — errored PRs, security, code quality/hygiene, developer experience, quality gates. Produces a single summary issue per run. Respects Renovate ownership of dependency bumps.
@@ -194,7 +197,9 @@ The Fro Bot workflow conditionals filter out: fork PRs, bot-authored PRs/issues,
 - **ESLint:** `@bfra.me/eslint-config` with React, Next.js, and Prettier plugins.
 - **Bundle analysis:** `@next/bundle-analyzer` available via `NEXT_BUILD_ENV_ANALYZE=true`.
 - **Environment:** `@t3-oss/env-nextjs` + Zod for typed environment validation. Access via `import {env} from '@/env'`, never `process.env`.
-- **Renovate:** Via reusable workflow, extends `marcusrbrown/renovate-config#5.2.0` (v4→v5 boundary crossed between surveys, aligning with [[marcusrbrown--renovate-config]] v5.2.0 release). Post-upgrade tasks run `pnpm install` + `pnpm run fix`. Custom rule: `lucide-react` 0.x minor automerge monthly. Same preset ecosystem as [[marcusrbrown--ha-config]] and [[marcusrbrown--vbs]].
+- **Renovate:** Via reusable workflow, extends `marcusrbrown/renovate-config#5.2.1` (bumped from 5.2.0 between surveys). Post-upgrade tasks run `pnpm install` + `pnpm run fix`. Custom rule: `lucide-react` 0.x minor automerge monthly; v1 pending approval in Dependency Dashboard. Same preset ecosystem as [[marcusrbrown--ha-config]] and [[marcusrbrown--vbs]].
+- **Abandoned dependencies flagged by Renovate:** `@testing-library/user-event` (last updated 2025-01-21), `class-variance-authority` (2024-11-26), `clsx` (2024-04-23), `consola` (2025-03-18), `crypto-js` (2023-10-24), `vitest-axe` (2025-01-22). These are in the Dependency Dashboard #995 but no replacements have been actioned.
+- **Deprecated packages:** `@metamask/sdk` and `@metamask/sdk-communication-layer` flagged as deprecated with no available replacement PRs.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` via `bfra-me/.github` reusable workflow. Branch protection requires: Build, Build Storybook, Lint, Renovate, Security Audit, Test. Linear history enforced, admin enforcement enabled, no required PR reviews.
 
 ## Architecture Patterns
@@ -228,24 +233,28 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | Pattern              | tokentoilet                            | ha-config       | vbs      |
 | -------------------- | -------------------------------------- | --------------- | -------- |
 | Probot settings base | `fro-bot/.github:common-settings.yaml` | Same            | Same     |
-| Renovate preset      | `marcusrbrown/renovate-config#5.2.0`   | `#4.5.8`        | `#4.5.8` |
+| Renovate preset      | `marcusrbrown/renovate-config#5.2.1`   | `#4.5.8`        | `#4.5.8` |
 | ESLint config        | `@bfra.me/eslint-config`               | N/A (YAML repo) | Same     |
 | Prettier config      | `@bfra.me/prettier-config/120-proof`   | N/A             | Same     |
-| Package manager      | pnpm 11.3.0                            | N/A (YAML repo) | pnpm     |
-| Fro Bot workflow     | Present (v0.45.0)                      | **Missing**     | Present  |
+| Package manager      | pnpm 11.5.2                            | N/A (YAML repo) | pnpm     |
+| Fro Bot workflow     | Present (v0.59.0)                      | **Missing**     | Present  |
 | Copilot setup steps  | Present                                | Not present     | Present  |
 | AGENTS.md            | Present                                | Not present     | Present  |
 
 ## Notable Observations
 
 - **MVP shipped:** The ERC-20 disposal flow (PR #911) is the first functional Web3 feature — burns tokens to a dead address on Sepolia. Smart contracts, NFT receipts, charity integration, token fountain, and multi-chain support remain on the roadmap.
-- **Heavy test infrastructure:** Co-located tests for every hook, with wallet-specific test suites (MetaMask, WalletConnect, Coinbase). All chain ID references updated from mainnet to Sepolia as part of MVP.
-- **Storybook alpha:** Using Storybook 10.x / 9.x alpha releases — bleeding edge, may have stability issues.
+- **Heavy test infrastructure:** Co-located tests for every hook, with wallet-specific test suites (MetaMask, WalletConnect, Coinbase). 1103 tests passing, 12 skipped as of 2026-06-09. Coverage: ~61% statements/lines, ~57% functions. 4 stale TODOs in `hooks/use-wallet.integration.test.ts` (2025-09-29, >240 days old) requesting E2E migration.
+- **Storybook alpha:** Using Storybook 10.4.2 / 9.0.0-alpha.* releases — mixed pinning is a known footgun (addons at alpha vs. core at stable). 5 of 15 components missing required test/story files: button, card, input, modal, toast-notifications.
 - **TypeScript 6:** Early adopter of TS 6.0.3.
 - **No license:** The repo has no license file specified, which is unusual for a public repository.
-- **CI optimized:** PR #889 removed time-based cache churn and reduced PR test overhead. Deploy jobs removed from CI — Vercel GitHub integration handles all deployments.
-- **Open PRs of note:** wagmi v3 (#837), lucide-react v1 (#835), `@bfra.me/eslint-config` ^0.51.0 (#897), postcss v8.5.13 (#974) — major/minor version bumps pending review. Lockfile maintenance PR #929 open. Copilot-authored security overrides PR #941 (postcss/axios + setState-in-effect lint fix) also open.
-- **Copilot coding agent active:** PR #941 authored by GitHub Copilot, indicating Copilot agent has write access and is producing fix branches (`copilot/fix-lint-issues`, `copilot/address-review-concerns`, `copilot/resolve-daily-autohealing-report-2026-04-26`).
+- **Persistent lint warnings (not errors):** 8 lint warnings on `main`: 4 `@eslint-react/jsx-no-leaked-dollar` false positives (currency `$` display in JSX), 2 ref naming, 2 setState-in-effect. `process.env.NODE_ENV` used in 4 source files directly instead of `env` import — unresolved tension between the mandate and `NODE_ENV` not being in `experimental__runtimeEnv`.
+- **Web3 validation false positives:** `scripts/validate-web3-integration.ts` flags 2 issues: multi-chain support config.ts false-positive, and Button missing Web3 variant styles. These have persisted without resolution across multiple daily autohealing runs.
+- **Security posture clean:** 0 moderate+ vulnerabilities on `main` as of 2026-06-09. 1 low advisory (elliptic, no patched version). `qs` advisory resolved in a prior cycle.
+- **Fro Bot agent rapid churn:** v0.45.0 → v0.59.0 between 2026-05-28 and 2026-06-09 (14 separate Renovate PRs merged). Aggressive Renovate automerge cadence for `fro-bot/agent` is intentional per workflow config.
+- **Blocked Renovate PR:** `@bfra.me/eslint-config` v0.51.1 (PR #1033) has been open since 2026-05-16 with lint failures. TypeScript type errors in test files prevent automerge. Assigned to marcusrbrown for manual resolution.
+- **Deprecated MetaMask SDK:** `@metamask/sdk` and `@metamask/sdk-communication-layer` flagged deprecated with no replacement. The `useWallet` abstraction layer may buffer downstream impact, but the upstream abandonment is a risk to watch.
+- **Abandoned deps accumulating:** 6 packages flagged as abandoned in Dependency Dashboard. `crypto-js` (last updated 2023) is the highest-risk given its role in cryptographic operations.
 
 ## Survey History
 
@@ -257,6 +266,18 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | 2026-04-25 | `97e96c1` | No code changes — SHA unchanged, open issues 25→26, lockfile maintenance PR #929 opened |
 | 2026-05-06 | `0aa1d9a` | Dependency bumps only: Fro Bot v0.41.4→v0.42.6, pnpm 10.33.0→10.33.2, tailwindcss 4.2.2→4.2.4, postcss→8.5.12. Open issues 26→30. Copilot agent branches observed. |
 | 2026-05-28 | `db6dbcc` | **Three majors crossed**: wagmi v2→v3, pnpm v10→v11 (11.3.0), Renovate preset v4→v5 (#5.2.0). Fro Bot v0.42.6→v0.45.0. Next.js 16.2.4→16.2.6, React 19.2.5→19.2.6, tailwindcss 4.2.4→4.3.0, postcss→8.5.15 (qs advisory patched, stale `pnpm.overrides` removed in #1064), vitest 4.0.7→4.1.7, vite→8.0.14, eslint→10.4.0. Fro Bot prompt updated (PR #1067) to port silent-outage workflow-health heuristics from marcusrbrown/marcusrbrown. Open issues 30→3, open PRs 6→1 — triage sweep. |
+| 2026-06-09 | `76d543e` | **Dependency velocity sprint**: 20 commits since 2026-06-04, all Renovate non-major bumps + Fro Bot agent releases. Fro Bot v0.45.0→v0.59.0 (14 releases merged). pnpm 11.3.0→11.5.2. Next.js 16.2.6→16.2.7. React 19.2.6→19.2.7 (react monorepo). vite→8.0.16, vitest→4.1.8, eslint→10.4.1, Storybook→10.4.2. Renovate preset bumped to #5.2.1. bfra-me/.github reusable workflow→v4.16.24. Only 1 PR open (PR #1033, blocked). Perpetual autohealing issue #1013 active, design system / Web3 validation failures stable for 12+ days. |
+
+## Notable Deltas (2026-06-09)
+
+- **Fro Bot agent sprint: v0.45.0 → v0.59.0:** 14 Renovate-merged bumps in under 12 days. The Renovate automerge config for `fro-bot/agent` is functioning as designed — aggressive, non-blocking. This pace is higher than any other repo in the portfolio and reflects how rapidly the agent harness is iterating.
+- **pnpm 11.5.2:** Non-major bump from 11.3.0. No lockfile incompatibility observed.
+- **React 19.2.7 + Next.js 16.2.7:** Minor patch increments. Both landed cleanly via Renovate.
+- **Renovate preset #5.2.1:** Minor bump from #5.2.0. No behavioral changes expected per prior renovate-config survey.
+- **bfra-me/.github v4.16.24:** Reusable Renovate/settings-sync workflow bumped. Renovate and update-repo-settings workflows both updated.
+- **PR #1033 aging:** The `@bfra.me/eslint-config` v0.51.1 Renovate PR has now been open for 24+ days with lint failures. The TypeScript type errors in test files are the blocker. Automerge is configured but cannot engage while CI is red. This is the only open PR as of 2026-06-09.
+- **Dependency quality risk compounds:** The 6 abandoned packages (led by `crypto-js` last updated 2023) and 2 deprecated MetaMask SDK packages have no active remediation. The `useWallet` abstraction provides some insulation, but `crypto-js` in a Web3 crypto context is a substantive risk.
+- **Design system / Web3 validation: stable failures:** The 5 missing component test/story files and 2 Web3 validation issues have now appeared in 12+ consecutive daily autohealing reports without resolution. These are human-decision blockers, not autohealing candidates.
 
 ## Notable Deltas (2026-05-28)
 

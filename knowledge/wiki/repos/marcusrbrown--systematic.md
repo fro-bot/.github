@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/systematic"
 created: 2026-04-24
-updated: 2026-05-28
+updated: 2026-06-09
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 9b7570782190d540b4d57abdd94cf7ca8e1984f1
     accessed: 2026-05-28
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 4d2c123f7f5568bba66433eb2a4e51c5ce42985c
+    accessed: 2026-06-09
 tags: [opencode, plugin, ai, workflow, typescript, bun, biome, semantic-release, npm, zod, json-schema]
 related:
   - marcusrbrown--opencode-copilot-delegate
@@ -31,8 +34,8 @@ OpenCode plugin providing structured engineering workflows for AI-powered develo
 | Attribute       | Value                                                |
 | --------------- | ---------------------------------------------------- |
 | Created         | 2026-01-24                                           |
-| Last push       | 2026-05-28                                           |
-| Latest release  | v2.24.0 (2026-05-27)                                 |
+| Last push       | 2026-06-09                                           |
+| Latest release  | v2.31.0 (2026-06-07)                                 |
 | Language        | TypeScript (strict, ESM)                             |
 | Runtime         | Bun                                                  |
 | License         | MIT                                                  |
@@ -85,8 +88,8 @@ The plugin implements three OpenCode hooks:
 
 ### Bundled Assets
 
-- **47 skills** in `skills/` — Core CE workflows (`ce:brainstorm`, `ce:plan`, `ce:review`, `ce:work`, `ce:compound`, `ce:compound-refresh`, `ce:ideate`), development tools (`agent-browser`, `frontend-design`, `git-worktree`, `git-commit`, `git-commit-push-pr`, `git-clean-gone-branches`), specialized skills (`dhh-rails-style`, `dspy-ruby`, `gemini-imagegen`, `proof`, `rclone`, `andrew-kane-gem-writer`), engineering practice (`test-driven-development`, `writing-skills`, `writing-systematic-skills` — imported from obra/superpowers in #394), autonomous workflows (`lfg`, `slfg`), release automation (`release-notes-narrative` — new in v2.23.0, #429). Deprecation surface introduced in v2.18+ marks `orchestrating-swarms` and `claude-permissions-optimizer` (#401).
-- **51 agents** in `agents/` across 6 categories: `design/` (3), `docs/` (1), `document-review/` (7), `research/` (7), `review/` (28), `workflow/` (5)
+- **49 skills** in `skills/` — Core CE workflows (`ce:brainstorm`, `ce:plan`, `ce:review`, `ce:work`, `ce:compound`, `ce:compound-refresh`, `ce:ideate`), development tools (`agent-browser`, `frontend-design`, `git-worktree`, `git-commit`, `git-commit-push-pr`, `git-clean-gone-branches`), specialized skills (`dhh-rails-style`, `dspy-ruby`, `gemini-imagegen`, `proof`, `rclone`, `andrew-kane-gem-writer`), engineering practice (`test-driven-development`, `writing-skills`, `writing-systematic-skills`), autonomous workflows (`lfg`, `slfg`), release automation (`release-notes-narrative`), new in v2.28.0: `orchestrating-subagents` (#491), new in v2.30.0: `npx skills` portable install path added to docs; new in v2.31.0: `ce:compound-refresh` gains `argument-hint` frontmatter (#505). Deprecation surface marks `orchestrating-swarms` and `claude-permissions-optimizer` (#401).
+- **51 agents** in `agents/` across 6 categories: `design/` (3), `docs/` (1), `document-review/` (7), `research/` (7), `review/` (28), `workflow/` (5). All 51 agents now declare explicit `temperature:` in frontmatter (v2.29.0, #495) and explicit `mode: subagent` (v2.27.0, #488). Content-integrity gates enforce both invariants in CI.
 - **OCX registry** in `registry/` — Component-level installation via `ocx` CLI with named profiles (`omo`, `standalone`); v2.20.6 of the registry was the last published before the v2.21+ launch-surface refresh
 
 ### Configuration Schema
@@ -126,7 +129,7 @@ This divergence is deliberate — the plugin targets Bun as OpenCode's native ru
 
 ## CI/CD
 
-8 GitHub Actions workflows (consolidated from 9 — `fro-bot-autoheal.yaml` merged into `fro-bot.yaml` in #446):
+8 GitHub Actions workflows (consolidated from 9 — `fro-bot-autoheal.yaml` merged into `fro-bot.yaml` in #446; unchanged count as of 2026-06-09):
 
 | Workflow                  | Purpose                                              | Trigger                          |
 | ------------------------- | ---------------------------------------------------- | -------------------------------- |
@@ -155,7 +158,7 @@ Required status checks: Build, Docs Build, Fro Bot, Typecheck, Lint, Test, Regis
 
 **Fully active.** Consolidated into a single workflow file as of #446 (v2.23+ era):
 
-- `fro-bot.yaml` — `fro-bot/agent@v0.45.0` (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`). Three operating modes selected by an inline `PROMPT` ternary keyed on `event_name × mode × cron`:
+- `fro-bot.yaml` — `fro-bot/agent@v0.59.0` (SHA `feb5365dca6dc56752e1258d1ca66afa7b035e04`; was v0.45.0 at last survey). Three operating modes selected by an inline `PROMPT` ternary keyed on `event_name × mode × cron`:
   1. **PR review** — `PR_REVIEW_PROMPT` env, TypeScript/Bun/Biome-specific (type safety, ESM conventions, zero-class convention, breaking change detection, security implications for prompt injection)
   2. **Weekly maintenance** — `MAINTENANCE_PROMPT` env, Mon 09:00 UTC, rolling issue with 28-day window
   3. **Daily autoheal** — `AUTOHEAL_PROMPT` env, daily 03:30 UTC, 4-category sweep: errored PRs (CI fix and push), security (Dependabot/Renovate alerts), health & maintenance (major version updates, Action SHA pinning), developer experience (typecheck, lint fixes)
@@ -183,6 +186,18 @@ Extends `marcusrbrown/renovate-config` + `sanity-io/renovate-config:semantic-com
 - Semantic-release packages use `build` commit type
 - `@opencode-ai/*` packages use `build` commit type
 - Post-upgrade: `bun install && bun run fix`
+
+## Notable Dependencies (as of v2.31.0)
+
+| Package | Version | Role |
+|---------|---------|------|
+| `@opencode-ai/plugin` | 1.16.2 | Plugin API host |
+| `@opencode-ai/sdk` | 1.16.2 | SDK tooling |
+| `zod` | 4.4.3 | Config schema validation |
+| `@biomejs/biome` | 2.4.16 | Lint + format |
+| `typescript` | 6.0.3 | Type checking |
+| `bun` (`@types/bun`) | latest | Runtime |
+| `semantic-release` | 25.0.3 | Release automation |
 
 ## Probot Settings
 
@@ -218,6 +233,13 @@ Extends `fro-bot/.github:common-settings.yaml` — same pattern as [[marcusrbrow
 | v2.22.0 | 2026-05-23 | New `release-notes-narrative` project-scoped skill (#429) |
 | v2.23.0–v2.23.6 | 2026-05-23 → 2026-05-27 | Automated release-notes-narrative via `@semantic-release/exec` (#430); successCmd extraction to `scripts/dispatch-release-notes.sh` (#432); bash escape for Lodash render (#431); timestamp-based run identification replacing log-scan (#434); correlation-id input on `fro-bot.yaml` (#433); docs modernization (#421, #422); design-iterator + docs aligned with Impeccable design laws (#418, #419) |
 | v2.24.0 | 2026-05-27 | OpenCode dep bumped to v1.15.10 (#442); Starlight ^0.39.0 (#444); `docs:verify` script for local CI-parity pre-checks (#445); fork-guard asymmetry documented inline (#451); PROMPT routing precedence documented inline (#450); `fro-bot.yaml` + `fro-bot-autoheal.yaml` consolidated (#446) |
+| v2.25.0 | 2026-06-05 | Hompage redesign (custom hero, live stats banner, feature grid, Open Graph/JSON-LD SEO); `ce:review` Stage 5b independent finding-validation pass (#485); content-integrity check for solution-doc YAML frontmatter unquoted comments; Umami analytics wired end-to-end in CI; reproducible eval harness with transcripts and rubrics (#455); `fro-bot/agent` bumped through v0.46.0–v0.52.1 |
+| v2.26.0 | 2026-06-05 | `ce:brainstorm` Phase 2.5 Synthesis Summary scope checkpoint; `ce:plan` Anti-Expansion step 3.7 + solo/brainstorm-sourced dual paths + markdown rendering layer; upstream CEP improvements merged (#486) |
+| v2.27.0 | 2026-06-05 | `mode: subagent` explicit on all 51 bundled agents; `checkAgentMode` content-integrity gate; converter-equivalence test for zero-behavior-change proof; CodeQL `js/incomplete-multi-character-sanitization` alert fixed in `transform-content.ts` (#31) |
+| v2.28.0 | 2026-06-05 | New `orchestrating-subagents` skill (#491): full coordination lifecycle for serial/parallel subagent work in OpenCode via `task()` dispatch |
+| v2.29.0 | 2026-06-07 | Explicit `temperature:` on all 51 bundled agents; `checkAgentTemperature` content-integrity gate; `fro-bot/agent` v0.55.1–v0.55.3 (#492–494) |
+| v2.30.0–v2.30.1 | 2026-06-07 | `npx skills add marcusrbrown/systematic` as portable harness-agnostic install path; every non-deprecated skill reference page gets a copyable `npx skills add` command; MDX footguns documented (JSX `<name>` placeholder trap, copy-button on fenced blocks only); docs generator covered by 9 unit tests |
+| v2.31.0 | 2026-06-07 | `ce:compound-refresh` gains `argument-hint` frontmatter (#505); `argument-hint` enforcement column in `writing-systematic-skills`; guard fails any skill referencing `$ARGUMENTS` outside fenced code blocks without `argument-hint`; release dispatch confirmation timeout now `::warning::` + exit 0 (#504); `fro-bot/agent` v0.55.6 (3 security hardening fixes: IPv6 egress bypass, DNS resolution timeout, compose topology guard) |
 
 ## Open Issues / PRs
 
@@ -227,7 +249,7 @@ Extends `fro-bot/.github:common-settings.yaml` — same pattern as [[marcusrbrow
 | #153 | Daily Autohealing Report | Issue (rolling) |
 | #15  | Dependency Dashboard | Issue (Renovate) |
 
-0 open PRs at survey time — main is fully drained.
+0 open PRs at survey time — main is fully drained. (Latest HEAD: `4d2c123` — `chore(deps): update fro-bot/agent to v0.59.0`, 2026-06-09)
 
 ## Survey History
 
@@ -236,3 +258,4 @@ Extends `fro-bot/.github:common-settings.yaml` — same pattern as [[marcusrbrow
 | 2026-04-24 | `ef02119`  | Initial survey           |
 | 2026-05-06 | `420ef65`  | 28 commits, v2.5.1→v2.7.3, skills 45→46, agent v0.41.4→v0.42.7, `plugin-singleton.ts` added, OCX V2, content-integrity gate, skill guardrails, model field removal |
 | 2026-05-28 | `9b75707`  | ~80 commits, v2.7.3→v2.24.0, skills 46→47, agents 50→51, agent v0.42.7→v0.45.0, `fro-bot.yaml` + `fro-bot-autoheal.yaml` consolidated (#446), `plugin-singleton.ts` removed, Zod config schema arc (v2.14–v2.17), `release-notes-narrative` skill + semantic-release-driven dispatch, launch-surface cleanup, docs modernization, deprecation surface, overlay hardening, project-local override fix |
+| 2026-06-09 | `4d2c123`  | ~86 commits since last survey, v2.24.0→v2.31.0, skills 47→49 (+`orchestrating-subagents` v2.28.0), agent v0.45.0→v0.59.0; explicit `mode: subagent` on all 51 agents (#488); explicit `temperature:` on all 51 agents (#495); content-integrity gates for both; `ce:brainstorm` Phase 2.5 + `ce:plan` Anti-Expansion; `ce:review` Stage 5b validation; homepage redesign with live stats; `npx skills` portable install path (v2.30.0); `argument-hint` enforcement (v2.31.0); release dispatch timeout now non-fatal; OpenCode dep at v1.16.2 |

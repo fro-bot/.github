@@ -4,11 +4,11 @@ repos:
     name: ha-config
     added: 2026-04-17
     onboarding_status: onboarded
-    last_survey_at: 2026-05-29
+    last_survey_at: 2026-06-10
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
-    next_survey_eligible_at: 2026-06-29
+    next_survey_eligible_at: 2026-07-12
     discovery_channel: collab
     private: false
     node_id: R_kgDOJ_bMaQ
@@ -98,11 +98,11 @@ repos:
     name: infra
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-27
+    last_survey_at: 2026-06-09
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-06-27
+    next_survey_eligible_at: 2026-07-10
     discovery_channel: collab
     private: false
     node_id: R_kgDOR4g8TA
@@ -110,48 +110,48 @@ repos:
     name: marcusrbrown
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-02
+    last_survey_at: 2026-06-12
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-04
+    next_survey_eligible_at: 2026-07-12
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
   - owner: marcusrbrown
     name: marcusrbrown.github.io
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-01
+    last_survey_at: 2026-06-12
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-03
+    next_survey_eligible_at: 2026-07-14
     private: false
     node_id: R_kgDOPOkk2A
   - owner: marcusrbrown
     name: mrbro.dev
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-02
+    last_survey_at: 2026-06-13
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-02
+    next_survey_eligible_at: 2026-07-15
     private: false
     node_id: R_kgDORgYjdA
   - owner: marcusrbrown
     name: renovate-config
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-04
+    last_survey_at: 2026-06-14
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-04
+    next_survey_eligible_at: 2026-07-16
     private: false
     node_id: R_kgDOHRfvyQ
   - owner: marcusrbrown
@@ -170,11 +170,11 @@ repos:
     name: systematic
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-28
+    last_survey_at: 2026-06-09
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-06-28
+    next_survey_eligible_at: 2026-07-12
     discovery_channel: collab
     private: false
     node_id: R_kgDORAJegA
@@ -182,11 +182,11 @@ repos:
     name: tokentoilet
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-28
+    last_survey_at: 2026-06-09
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-06-28
+    next_survey_eligible_at: 2026-07-09
     discovery_channel: collab
     private: false
     node_id: R_kgDOJ3rINw
@@ -194,11 +194,11 @@ repos:
     name: vbs
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-29
+    last_survey_at: 2026-06-10
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-07-01
+    next_survey_eligible_at: 2026-07-13
     discovery_channel: collab
     private: false
     node_id: R_kgDOPOixzg
@@ -206,24 +206,24 @@ repos:
     name: opencode-copilot-delegate
     added: 2026-04-23
     onboarding_status: onboarded
-    last_survey_at: 2026-06-03
+    last_survey_at: 2026-06-13
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-05
+    next_survey_eligible_at: 2026-07-14
     private: false
     node_id: R_kgDOSKIp0Q
   - owner: fro-bot
     name: agent
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-06-04
+    last_survey_at: 2026-06-14
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: owned
-    next_survey_eligible_at: 2026-06-21
+    next_survey_eligible_at: 2026-06-28
     private: false
     node_id: R_kgDOQyTMEw
   - owner: fro-bot
@@ -242,72 +242,72 @@ repos:
     name: systematic
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-06-04
+    last_survey_at: 2026-06-14
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: owned
-    next_survey_eligible_at: 2026-06-21
+    next_survey_eligible_at: 2026-06-30
     private: false
     node_id: R_kgDORLx6ew
   - owner: bfra-me
     name: .github
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-30
+    last_survey_at: 2026-06-10
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    discovery_channel: collab
-    next_survey_eligible_at: 2026-07-01
+    discovery_channel: contrib
+    next_survey_eligible_at: 2026-07-02
     private: false
     node_id: R_kgDOHBEXpg
   - owner: bfra-me
     name: ha-addon-repository
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-30
+    last_survey_at: 2026-06-10
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    discovery_channel: collab
-    next_survey_eligible_at: 2026-06-30
+    discovery_channel: contrib
+    next_survey_eligible_at: 2026-07-02
     private: false
     node_id: R_kgDOIKWaJA
   - owner: bfra-me
     name: renovate-action
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-31
-    last_survey_status: failure
+    last_survey_at: 2026-06-11
+    last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    discovery_channel: collab
-    next_survey_eligible_at: 2026-07-03
+    discovery_channel: contrib
+    next_survey_eligible_at: 2026-07-05
     private: false
     node_id: R_kgDOKWu8zQ
   - owner: bfra-me
     name: works
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-05-31
+    last_survey_at: 2026-06-11
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    discovery_channel: collab
-    next_survey_eligible_at: 2026-07-02
+    discovery_channel: contrib
+    next_survey_eligible_at: 2026-07-03
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMDc1NzM1OTE=
   - owner: marcusrbrown
     name: cortexkit_anthropic-auth
     added: 2026-05-28
     onboarding_status: onboarded
-    last_survey_at: 2026-05-28
+    last_survey_at: 2026-06-09
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: false
     discovery_channel: collab
-    next_survey_eligible_at: 2026-06-29
+    next_survey_eligible_at: 2026-07-10
     private: false
     node_id: R_kgDOSmhCGA
   - owner: '[REDACTED]'

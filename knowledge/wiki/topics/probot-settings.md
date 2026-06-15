@@ -2,7 +2,7 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-05-25
+updated: 2026-06-10
 tags: [probot, github, repository-settings, automation, governance]
 related:
   - marcusrbrown--github
@@ -88,6 +88,11 @@ Repos using Probot Settings typically include an `update-repo-settings.yaml` wor
 - **Implementation:** Reusable workflow from `bfra-me/.github`
 - **Auth:** GitHub App via `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets
 - **Reusable workflow version:** `bfra-me/.github` v4.16.20 (as of 2026-05-25 in [[marcusrbrown--github]]; bumped from v4.16.9 via 11 sequential Renovate PRs over four weeks — example of dependency-only churn dominating a config-only repo)
+- **Known defect (2026-06-10):** in [[bfra-me--github]] itself, the
+  `update-repo-settings` workflow's `Filter Changed Files` step fails
+  with git exit 128 on push events (bfra-me/.github#2213, opened
+  2026-05-23, still open) — the settings-sync path has a live bug at
+  its source repo
 
 ## Common Configuration Patterns
 

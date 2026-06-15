@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/mrbro.dev"
 created: 2026-04-18
-updated: 2026-06-02
+updated: 2026-06-13
 sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 51f5cab5c77768b761d9f0a688ac7436cc5a06f4
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 7a49abc3d2d945880cc1db1f4edbddcd71ad0142
     accessed: 2026-06-02
+  - url: https://github.com/marcusrbrown/mrbro.dev
+    sha: 7a49abc3d2d945880cc1db1f4edbddcd71ad0142
+    accessed: 2026-06-13
 tags: [portfolio, react, typescript, vite, github-pages, blog, pnpm]
 aliases: [mrbro-dev, mrbro.dev]
 related:
@@ -50,12 +53,12 @@ Marcus R. Brown's developer portfolio website. React 19, TypeScript (strict), Vi
 | Syntax Highlighting | Shiki | 4.x (externalized in build) |
 | Schema Validation | Ajv + ajv-formats | 8.x |
 | Unit Testing | Vitest | 4.x (happy-dom) |
-| E2E / Visual / A11y Testing | Playwright | 1.54.x |
+| E2E / Visual / A11y Testing | Playwright | 1.59.1 (was recorded as 1.54.x; corrected 2026-06-13 against same `7a49abc` tree) |
 | Performance Testing | Lighthouse CI | 0.15.x |
 | Linting | ESLint 10 flat config (`eslint.config.ts`) | `@bfra.me/eslint-config` ^0.51.0 |
 | Formatting | Prettier | `@bfra.me/prettier-config/120-proof` |
 | Type Config | TypeScript | `@bfra.me/tsconfig` ^0.13.0 |
-| Package Manager | pnpm | 10.33.0 (enforced via `packageManager` field) |
+| Package Manager | pnpm | 10.33.4 (enforced via `packageManager` field; `engines.pnpm ^10.28.2`) |
 | Node.js | >= 22.6.0 |  |
 | Git Hooks | simple-git-hooks + lint-staged |  |
 
@@ -264,6 +267,7 @@ Vite upgraded to v7.3.2 for security fix (#121). The migration to a CI dependenc
 - Authentication via `APPLICATION_ID`/`APPLICATION_PRIVATE_KEY` secrets (GitHub App) in CI, `FRO_BOT_PAT` + `opencode-config` for agent workflow
 - **No Probot settings.yml** — diverges from sibling repos that extend `fro-bot/.github:common-settings.yaml`
 - Sibling portfolio site: [[marcusrbrown--marcusrbrown-github-io]] (both React+Vite GitHub Pages, different scope and domain) — both now run the single-file three-mode Fro Bot workflow
+- **`mrbro-bot[bot]` opening Renovate pin PRs (2026-06-13):** the dependency-pin PRs (#180, #175, #172, #168) are authored by `app/mrbro-bot`, while the security-override PR (#178) is authored by `fro-bot`. This is the same `mrbro-bot[bot]` actor first noted on merges in [[marcusrbrown--ha-config]] — a distinct GitHub App from `fro-bot[bot]` now visibly driving Renovate-class automation in this repo. The two bots split labor here: `mrbro-bot` for routine version pins, `fro-bot` for security-advisory remediation.
 
 ## Survey History
 
@@ -273,3 +277,4 @@ Vite upgraded to v7.3.2 for security fix (#121). The migration to a CI dependenc
 | 2026-04-26 | `d8c0e43` | Agent v0.38.0→v0.41.3, Renovate #4.5.7→#4.5.8, opencode-config added, security overrides, no settings.yml noted, 39 open issues |
 | 2026-05-21 | `88f7a4a` | Workflows consolidated: `fro-bot-autoheal.yaml` removed, single `fro-bot.yaml` with three modes (review/maintenance/autoheal). Agent v0.41.3 → v0.43.0. Renovate preset #4.5.8 → #5.2.0. Open issues 39 → 8 (autoheal backlog drained). Open PRs 4 (all pin-version Renovate). New pnpm overrides: `fast-uri ≥3.1.2`, `ip-address ≥10.1.1`, `uuid ≥14.0.0`. TypeScript bumped 5.6.x → 5.9.3 (still pre-v6). Vitest 4.1.4, pnpm 10.33.4. |
 | 2026-06-02 | `7a49abc` | **pnpm `overrides` migrated `package.json` → `pnpm-workspace.yaml`** and expanded to ~20 entries with inline GHSA annotations, driven by a new `pnpm audit` CI gate (#177). New advisories pinned: `qs`, `ws`, `tmp`, `rollup`, `js-yaml`, `flatted`, `ajv`, `mdast-util-to-hast`, `minimatch`, `yauzl` — mostly transitive via `@lhci/cli`. **Fro Bot prompt hardening (#176):** ported 5 inserts from [[marcusrbrown--marcusrbrown]] (skipped-needs trap, `continue-on-error` red-flag, 7-day workflow-health monitor). Agent unchanged at v0.43.0. Open issues 8 → 4 (pin PRs merged). Open PRs 5 (Renovate). TypeScript still 5.9.3, pnpm 10.33.4, Vitest 4.1.4. No structural code/layout change. |
+| 2026-06-13 | `7a49abc` | **No-delta re-survey — HEAD unchanged since 2026-06-02 (`pushed_at` 2026-05-28T02:28Z).** Every tracked fact re-verified against the same tree: agent v0.43.0, TypeScript 5.9.3, Vite 7.3.2, Vitest 4.1.4, pnpm 10.33.4 (`engines.pnpm ^10.28.2`), Node >=22.6.0, React Router 7.7.1, 7 workflows, no `settings.yml`. Open issues 4 (#162 autoheal, #13 maintenance, #1 Dependency Dashboard, #48 triage), open PRs 5 (unchanged set: #180/#178/#175/#172/#168). **Corrections against same SHA:** Playwright recorded as 1.54.x is actually 1.59.1; pnpm table said 10.33.0, true value 10.33.4. **New observable:** Renovate pin PRs (#180/#175/#172/#168) authored by `app/mrbro-bot`, security-override PR (#178) by `fro-bot` — the `mrbro-bot[bot]` actor (cf. [[marcusrbrown--ha-config]]) is now visibly active here, splitting automation labor with `fro-bot`. |

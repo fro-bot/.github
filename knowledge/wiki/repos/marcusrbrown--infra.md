@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/infra"
 created: 2026-04-18
-updated: 2026-05-27
+updated: 2026-06-09
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: 9ce50f419995919aae53143eb797bd7798949cc0
+    accessed: 2026-06-09
   - url: https://github.com/marcusrbrown/infra
     sha: 2f9bafd6cdb03d9ed28ee336d99d5f7bf09a3dfb
     accessed: 2026-05-27
@@ -22,7 +25,7 @@ sources:
   - url: https://github.com/marcusrbrown/infra
     sha: 20de04713bf01294217dee4d3b64d5d7cfb2426e
     accessed: 2026-04-18
-tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, gateway, mcp, cli, typescript, conventions, discord]
+tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, gateway, umami, mcp, cli, typescript, conventions, discord, analytics]
 aliases: [infra]
 related:
   - marcusrbrown--ha-config
@@ -32,18 +35,18 @@ related:
 
 # marcusrbrown/infra
 
-Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), the [[fro-bot--agent]] Discord gateway deployment, and an operational CLI with MCP bridge.
+Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), the [[fro-bot--agent]] Discord gateway deployment, self-hosted Umami analytics, and an operational CLI with MCP bridge.
 
 ## Overview
 
 - **Purpose:** Deploy automation, operational CLI, and infrastructure tooling
 - **Default branch:** `main`
 - **Created:** 2026-04-03
-- **Last push:** 2026-05-26
+- **Last push:** 2026-06-09 (`9ce50f4`)
 - **Runtime:** Bun v1.0+
-- **Published package:** `@marcusrbrown/infra` v0.7.0 on npm
-- **Open issues:** 38 (mostly tracked work + autohealing reports + Dependency Dashboard)
-- **Open PRs:** 0
+- **Published package:** `@marcusrbrown/infra` v0.9.17 on npm
+- **Open issues:** ~1+ (active Renovate Dependency Dashboard + autohealing reports; exact count fluctuates)
+- **Open PRs:** 1 (as of 2026-06-09)
 - **Topics:** `bun`, `deploy`, `github-actions`, `infra`, `keeweb`
 - **License:** MIT
 
@@ -58,6 +61,7 @@ Bun workspace monorepo with `apps/*` and `packages/*` workspaces.
 | `apps/keeweb/`        | KeeWeb v1.18.7 static site deploy automation (`kw.igg.ms`)             |
 | `apps/cliproxy/`      | CLIProxyAPI Docker Compose stack behind Caddy (`cliproxy.fro.bot`)     |
 | `apps/gateway/`       | Fro Bot Discord gateway + workspace runner + mitmproxy (`gateway.fro.bot`) |
+| `apps/umami/`         | Umami analytics Docker Compose stack (umami + postgres + caddy) at `metrics.fro.bot` |
 | `packages/cli/`       | `@marcusrbrown/infra` CLI — health checks, deploy triggers, MCP bridge |
 | `packages/shared/`    | Shared TypeScript helpers for DigitalOcean droplet provisioning (private) |
 | `docs/brainstorms/`   | Requirements and brainstorm documents                                  |
@@ -100,6 +104,22 @@ Fro Bot Discord client + workspace runner stack at `gateway.fro.bot`. Three-serv
 - **Host hardening:** `validateGatewayHost` rejects `-`-prefixed values before any SSH invocation (SSH treats `-`-prefixed hostnames as flags, including `-oProxyCommand=`); host keys pinned in `.github/known_hosts` (commit `cf0500af`, 2026-05-19)
 - **Deploy SSH multiplexing** via ControlMaster (#277, 2026-05-20) to amortize handshake cost across the multi-step deploy
 
+#### Umami (`apps/umami`)
+
+Self-hosted [Umami](https://umami.is) privacy-respecting analytics at `metrics.fro.bot`. Added post-2026-05-27 survey. Three-service Docker Compose stack:
+
+- **umami** — `umamisoftware/umami:3.1.0` (digest-pinned)
+- **postgres** — `postgres:15-alpine` (digest-pinned); port 5432 never published to host
+- **caddy** — `caddy:2.11.3-alpine` (digest-pinned); handles automatic HTTPS
+
+Key operational properties:
+- `DISABLE_TELEMETRY=1` and `PRIVATE_MODE=1` set in compose layer; cookie-free, respects DNT
+- Admin password rotated on every deploy (before Caddy starts); DB-password fingerprint guard prevents volume-bricking changes
+- Provisioned on `s-1vcpu-1gb` DigitalOcean droplet (`docker-20-04` image) — smallest in the infra fleet
+- Secret materialization via SSH stdin (`/opt/umami/.env`) — never argv
+- DNS preflight before deploy (validates `UMAMI_DOMAIN` resolves before touching droplet)
+- `umami` environment in GitHub Actions with required reviewer gate
+
 ### CLI (`packages/cli`)
 
 Published as `@marcusrbrown/infra` on npm. Built with [goke](https://github.com/remorses/goke) (CLI framework) + Zod Standard Schemas. Key commands:
@@ -122,7 +142,11 @@ Published as `@marcusrbrown/infra` on npm. Built with [goke](https://github.com/
 | `infra gateway logs <svc> [--tail N]` | Stream `docker compose logs` for `gateway`/`workspace`/`mitmproxy`; `--allow-ci` required in headless contexts |
 | `infra gateway backup --include-ca`   | Pull mitmproxy CA tarball; local file created with mode 0600 via `O_EXCL\|O_CREAT` (no chmod race) |
 | `infra gateway restore --input FILE --include-ca` | Validate tarball locally, upload to unguessable `mktemp` path, extract, restart, byte-equal confirm |
-| `infra mcp`             | Start stdio MCP server exposing all CLI commands as tools                |
+| `infra umami status`    | HTTP reachability check for `metrics.fro.bot`                            |
+| `infra umami deploy`    | Trigger Umami deployment (remote via GitHub Actions or `--local` via SSH) |
+| `infra umami host`      | Display/validate the Umami droplet host                                  |
+| `infra umami logs [--tail N]` | Stream docker compose logs for umami/db/caddy services             |
+| `infra mcp`             | Start stdio MCP server exposing all CLI commands as tools (read-only allowlist) |
 
 The MCP bridge (`infra mcp`) lets coding agents (Fro Bot, Copilot) call commands programmatically via the [Model Context Protocol](https://modelcontextprotocol.io).
 
@@ -137,6 +161,7 @@ The MCP bridge (`infra mcp`) lets coding agents (Fro Bot, Copilot) call commands
 | Deploy KeeWeb | `deploy-keeweb.yaml` | Push to `main`, dispatch, `workflow_call` | Build and deploy KeeWeb (path-filtered, `keeweb` environment) |
 | Deploy CLIProxy | `deploy-cliproxy.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy CLIProxyAPI (path-filtered, `cliproxy` environment) |
 | Deploy Gateway | `deploy-gateway.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy Fro Bot gateway stack (path-filtered, `gateway` environment) |
+| Deploy Umami | `deploy-umami.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy Umami analytics stack (path-filtered, `umami` environment) |
 | Release | `release.yaml` | Push to `main`, dispatch | Version and publish `@marcusrbrown/infra` via Changesets |
 | Renovate | `renovate.yaml` | Schedule, issue/PR edits, post-deploy | Automated dependency updates |
 | Renovate Changesets | `renovate-changesets.yaml` | `pull_request_target` (Renovate PRs) | Auto-create changeset files for dependency updates |
@@ -201,7 +226,7 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.44.3` (bumped from v0.42.2 through v0.43.x to v0.44.3 over 2026-05-17 → 2026-05-20). The workflow includes:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.59.0` (SHA `feb5365dca6dc56752e1258d1ca66afa7b035e04`; bumped from v0.44.3 via v0.45.x–v0.58.x over 2026-05-27 → 2026-06-09). The workflow includes:
 
 - **PR review** with structured verdict format (PASS / CONDITIONAL / REJECT) and sections for blocking issues, non-blocking concerns, missing tests, and risk assessment
 - **Daily autohealing schedule** (03:30 UTC) with 8 operational categories: errored PRs, security, code quality, developer experience, deploy pipeline health, live site review (via `agent-browser`), cross-project intelligence, and **upstream modernization watch** (Sunday-only)
@@ -234,9 +259,11 @@ The autohealing schedule monitors:
 
 **`cliproxy` environment:** `CLIPROXY_SSH_KEY`, `CLIPROXY_MANAGEMENT_KEY`, `CLIPROXY_DOMAIN`
 
-**`gateway` environment:** `GATEWAY_SSH_KEY`, `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`, `DISCORD_GUILD_ID`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_REGION`, `GATEWAY_HOST`; optional: `S3_ENDPOINT`, `OBJECT_STORE_HOSTS`, `AWS_SESSION_TOKEN`
+**`gateway` environment (updated 2026-06-09):** Required: `GATEWAY_SSH_KEY`, `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`, `DISCORD_GUILD_ID`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET`, `S3_REGION`, `GATEWAY_HOST`, `GH_APP_ID`, `GH_APP_PRIVATE_KEY`, `WORKSPACE_OPENCODE_TOKEN`, `WORKSPACE_OPENCODE_AUTH`, `WORKSPACE_OPENCODE_MODEL`, `WORKSPACE_OPENCODE_CONFIG`, `GATEWAY_TRIGGER_ROLE_ID`. Optional: `S3_ENDPOINT`, `OBJECT_STORE_HOSTS`, `AWS_SESSION_TOKEN`, `GATEWAY_WEBHOOK_SECRET`, `GATEWAY_PRESENCE_CHANNEL_ID`.
 
-**Repository secrets:** `APPLICATION_ID`, `APPLICATION_PRIVATE_KEY`, `DIGITALOCEAN_ACCESS_TOKEN`, `FRO_BOT_PAT`, `NPM_TOKEN`, `OMO_PROVIDERS`, `OPENCODE_AUTH_JSON`, `OPENCODE_CONFIG`
+**`umami` environment (added post-2026-05-27):** `UMAMI_SSH_KEY`, `UMAMI_DOMAIN`, `UMAMI_APP_SECRET`, `UMAMI_DB_PASSWORD`, `UMAMI_ADMIN_PASSWORD`
+
+**Repository secrets:** `APPLICATION_ID`, `APPLICATION_PRIVATE_KEY`, `DIGITALOCEAN_ACCESS_TOKEN`, `FRO_BOT_PAT`, `NPM_TOKEN`, `OPENCODE_AUTH_JSON`, `OPENCODE_CONFIG`
 
 **Repository variables:** `FRO_BOT_MODEL`
 
@@ -298,19 +325,33 @@ This approach avoids relying solely on human review or agent-driven linting for 
 | Component | Image | Version |
 | --- | --- | --- |
 | Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned |
-| CLIProxyAPI | `eceasy/cli-proxy-api:v6.10.9` | Digest-pinned |
+| CLIProxyAPI | `eceasy/cli-proxy-api:v7.1.56` | Digest-pinned |
 
 Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest rotations with changelog context sourced from upstream repositories (`router-for-me/CLIProxyAPI`, `caddyserver/caddy`).
 
-The CLIProxyAPI container uses a Docker healthcheck (`wget --spider http://localhost:8317/healthz`) with 30s interval, 5s timeout, 3 retries, and 10s start period.
+**Version note:** CLIProxyAPI crossed v6→v7 major boundary between 2026-05-27 and 2026-06-09. The prior survey recorded v6.10.9; the current deployment is v7.1.56. Intermediate v7.1.54/55 were rolled back (#463, 2026-06-09) due to a health check regression before settling at v7.1.56.
+
+**Healthcheck change:** As of #469 (2026-06-09), the deploy healthcheck was moved from the CLIProxyAPI endpoint to the Caddy endpoint for Debian-image compatibility. The docker-compose healthcheck itself (`wget --spider http://localhost:8317/healthz`) is unchanged.
+
+### Umami Stack
+
+| Component | Image | Version |
+| --- | --- | --- |
+| Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned (shared digest with cliproxy) |
+| Umami analytics | `umamisoftware/umami:3.1.0` | Digest-pinned |
+| Postgres | `postgres:15-alpine` | Digest-pinned |
+
+Digest-pinned images managed by Renovate. Postgres port 5432 is never published to the host — DB is only accessible on the internal compose network.
 
 ### Fro Bot Gateway Stack
 
 | Component | Source | Notes |
 | --- | --- | --- |
-| Gateway daemon | `fro-bot/agent@v0.44.2` (pinned in `apps/gateway/upstream.json`) | Cloned + reset on the droplet each deploy |
+| Gateway daemon | `fro-bot/agent@v0.57.0` (pinned in `apps/gateway/upstream.json`) | Cloned + reset on the droplet each deploy |
 | Workspace executor | Same source | Runs inside the same Compose stack |
 | mitmproxy | Per upstream compose | Starts first; certificate in `mitmproxy-certs` named volume |
+
+**Upstream pin note:** Gateway daemon bumped from v0.44.2 (prior survey) to v0.57.0 (#466, 2026-06-09) to pick up the `daily_digest` presence event.
 
 Compose stack lives at `/opt/gateway/` on the droplet. Source materialization is `git clone || git fetch && git reset --hard && git clean -xfd` to the pinned SHA, isolated from `/opt/gateway/.secrets-checksum` so checksum survives `git clean -xfd`.
 
@@ -324,3 +365,4 @@ Compose stack lives at `/opt/gateway/` on the droplet. Source materialization is
 | 2026-04-26 | `cd3bb16` | Fro Bot v0.41.4→v0.42.1, new category 8 (Upstream Modernization Watch, #182), CLIProxy healthcheck switched to `/healthz` (#181), CLI v0.4.6, CLIProxyAPI v6.9.38 |
 | 2026-04-27 | `938fa7c` | Fro Bot v0.42.1→v0.42.2 (#185), CLIProxyAPI v6.9.38→v6.9.39 (#186), bfra-me/.github v4.16.8→v4.16.9 (#188). Open issues 4→5, 1 open PR (version packages #187) |
 | 2026-05-27 | `2f9bafd` | **Major expansion.** New `apps/gateway/` (Fro Bot Discord stack at `gateway.fro.bot`, #264, 2026-05-18); new `packages/shared/` for droplet provisioning helpers (#290). 12 workflows (added `deploy-gateway.yaml`). Fro Bot agent v0.42.2 → v0.44.3 (multiple bumps). Renovate preset bumped major v4→v5 (#242, `marcusrbrown/renovate-config#5.2.0`) with `group:allNonMajor`. TypeScript 6.0.3, ESLint 10.4.0, `@bfra.me/eslint-config` 0.51.1. CLI v0.4.6 → v0.7.0; MCP fidelity refactor for status-only commands (#296). CLIProxy: OpenAI/Codex device-code OAuth login (#303), OpenAI provider opt-in for `cliproxy setup --harness opencode` (#307); CLIProxyAPI v6.10.9, Caddy 2.11.3-alpine. Gateway hardening: ControlMaster multiplexing (#277), pinned droplet host keys (#272), checksum-after-success secret rotation. Discord token-lifecycle runbook (#284). Open issues 5→38, 0 open PRs. |
+| 2026-06-09 | `9ce50f4` | **New app: Umami analytics.** Added `apps/umami/` — self-hosted Umami at `metrics.fro.bot`, 3-service Docker Compose (umami 3.1.0 + postgres 15-alpine + caddy 2.11.3-alpine), `deploy-umami.yaml` workflow, `umami` GitHub Environment, new CLI command group (`umami status/deploy/host/logs`). Now 13 workflows total. CLI v0.7.0 → v0.9.17. Fro Bot agent v0.44.3 → v0.59.0 (SHA `feb5365`). Gateway upstream daemon pin v0.44.2 → v0.57.0 (#466, `daily_digest` presence event). CLIProxyAPI v6.x → v7.1.56 (major version; v7.1.54/55 reverted #463 for health check regression, v7.1.56 stable). CLIProxy deploy healthcheck moved to Caddy endpoint for Debian-image compat (#469). Renovate config bumped `marcusrbrown/renovate-config#5.2.1`. Gateway secrets contract expanded (added GitHub App credentials, workspace OpenCode secrets, presence channel secrets). `OMO_PROVIDERS` removed from repo secrets; `WORKSPACE_OPENCODE_TOKEN/AUTH/MODEL/CONFIG` and `GH_APP_ID/PRIVATE_KEY`, `GATEWAY_TRIGGER_ROLE_ID`, `GATEWAY_WEBHOOK_SECRET`, `GATEWAY_PRESENCE_CHANNEL_ID` added. Provisioning management key now written to a 0600 file instead of stdout (#453). |

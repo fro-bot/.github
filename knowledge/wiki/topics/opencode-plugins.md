@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-05-28
+updated: 2026-06-09
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -28,7 +28,10 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 9b7570782190d540b4d57abdd94cf7ca8e1984f1
     accessed: 2026-05-28
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface]
+  - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+    sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
+    accessed: 2026-06-09
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow]
 ---
 
 # OpenCode Plugin Development
@@ -276,12 +279,24 @@ As of the 2026-05-22 [[fro-bot--systematic]] survey, the same docs site is now t
 
 Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. Treat both URLs as public API; renaming or restructuring them silently breaks autocomplete for every consumer that pinned them. The same docs deploy now drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
 
+## Bundled Skill for Upstream Sync (cortexkit_anthropic-auth pattern)
+
+[[marcusrbrown--cortexkit-anthropic-auth]] ships a `.agents/skills/anthropic-auth-upstream-release/SKILL.md` in the repo root. OpenCode's `.agents/` discovery path picks it up automatically for any agent working in that repo, giving the agent explicit procedural context for upstream sync operations and fork-invariant release cutting.
+
+This is the first instance in the Marcus ecosystem of a repo-local skill scoped to a specific operational domain (upstream-sync / fork-release) rather than a general-purpose engineering skill. Pattern notes:
+
+- Skill is named after the operation domain, not the repo — `anthropic-auth-upstream-release` is meaningful outside the repo's own slug.
+- Covers only upstream sync + fork release; ordinary feature work is explicitly out of scope, preventing skill over-reach.
+- Encodes all fork invariants (package names, version lane, npm publish rules) in one place so agents and human contributors see the same guardrails.
+
+Contrast with [[marcusrbrown--systematic]] which ships general-purpose skills (`ce:plan`, `ce:work`, etc.) distributed for consumption by other OpenCode users — the cortexkit-auth pattern is internal/operational, not distributable.
+
 ## Related Pages
 
 - [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows with 46 skills and 50 agents
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
-- [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi
+- [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi; Fro Bot active at v0.45.0 (as of 2026-06-09)
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
 - [[github-pages]] — GitHub Pages deployment patterns including cross-repo Starlight deploy
