@@ -29,3 +29,9 @@ coverage
 # Wiki lint local artifacts (CI uploads them to actions/upload-artifact; never tracked in git)
 wiki-lint-report.md
 wiki-lint-report.json
+
+# Opencode
+!.opencode/
+.opencode/*
+!.opencode/themes/
+!.opencode/tui.json
