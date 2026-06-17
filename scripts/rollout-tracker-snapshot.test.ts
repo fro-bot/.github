@@ -387,6 +387,24 @@ describe('selectLatestMarkerCommentBody', () => {
     ).toBe(second)
   })
 
+  it('selects a marker comment authored by fro-bot[bot] (GitHub App identity)', () => {
+    const markerBody = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: 'bot-hash', snapshot: {items: []}})} -->`
+
+    expect(selectLatestMarkerCommentBody([{author: {login: 'fro-bot[bot]'}, body: markerBody}])).toBe(markerBody)
+  })
+
+  it('prefers the latest marker across both fro-bot and fro-bot[bot] identities', () => {
+    const patMarker = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: 'pat', snapshot: {items: []}})} -->`
+    const appMarker = `<!-- ${MARKER_PREFIX}${JSON.stringify({hash: 'app', snapshot: {items: []}})} -->`
+
+    expect(
+      selectLatestMarkerCommentBody([
+        {author: {login: 'fro-bot'}, body: patMarker},
+        {author: {login: 'fro-bot[bot]'}, body: appMarker},
+      ]),
+    ).toBe(appMarker)
+  })
+
   it('returns an empty body when no fro-bot marker exists', () => {
     expect(
       selectLatestMarkerCommentBody([

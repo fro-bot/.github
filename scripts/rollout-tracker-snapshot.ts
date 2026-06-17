@@ -67,6 +67,17 @@ export interface TrackerComment {
  */
 export const MARKER_PREFIX = 'gateway-rollout-tracker:'
 
+/**
+ * Fro Bot identities permitted to author tracker marker comments.
+ *
+ * GitHub issues/PRs surface two distinct login values depending on how the bot
+ * authenticated: `fro-bot` (PAT / classic token) and `fro-bot[bot]` (GitHub
+ * App installation token). Both are legitimate and must be treated as equivalent.
+ *
+ * Kept symmetric with the `FROBOT_AUTHORS` set in `scripts/check-wiki-authority.ts`.
+ */
+export const FROBOT_COMMENT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
+
 // ─── Core functions (exported for tests) ─────────────────────────────────────
 
 /**
@@ -234,8 +245,9 @@ export function extractPreviousMarker(body: string): MarkerData | null {
 
 export function selectLatestMarkerCommentBody(comments: TrackerComment[]): string {
   return (
-    comments.findLast(comment => comment.author.login === 'fro-bot' && extractPreviousMarker(comment.body) !== null)
-      ?.body ?? ''
+    comments.findLast(
+      comment => FROBOT_COMMENT_AUTHORS.has(comment.author.login) && extractPreviousMarker(comment.body) !== null,
+    )?.body ?? ''
   )
 }
 
