@@ -16,11 +16,11 @@ repos:
     name: .dotfiles
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-06
+    last_survey_at: 2026-06-16
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-07-08
+    next_survey_eligible_at: 2026-07-18
     discovery_channel: collab
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkxODY5MTU0
@@ -158,12 +158,12 @@ repos:
     name: sparkle
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-05
+    last_survey_at: 2026-06-16
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-07
+    next_survey_eligible_at: 2026-07-18
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMTYxMDA5ODY=
   - owner: marcusrbrown
@@ -230,12 +230,12 @@ repos:
     name: fro-bot.github.io
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-06-05
+    last_survey_at: 2026-06-15
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: owned
-    next_survey_eligible_at: 2026-06-19
+    next_survey_eligible_at: 2026-07-01
     private: false
     node_id: R_kgDORLxXng
   - owner: fro-bot
@@ -334,3 +334,15 @@ repos:
     next_survey_eligible_at: null
     private: true
     node_id: R_kgDOSZ9x-w
+  - owner: fro-bot
+    name: dashboard
+    added: 2026-06-15
+    onboarding_status: onboarded
+    last_survey_at: 2026-06-15
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
+    discovery_channel: owned
+    next_survey_eligible_at: 2026-07-01
+    private: false
+    node_id: R_kgDOS6ys-g
