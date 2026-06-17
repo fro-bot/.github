@@ -46,6 +46,9 @@ on:
 permissions:
   contents: read
 
+# FRO_BOT_PAT carries cross-repo write-tier authority for the agent. It must
+# include repo access, read:org for organization queries, and project scope for
+# tracker Project updates when called by Gateway Rollout Tracker.
 concurrency:
   group: >-
     fro-bot-${{
@@ -190,7 +193,16 @@ env:
        package.json (ESLint, Prettier, TypeScript, Vitest more than a minor
        behind), missing or degraded CI jobs, convention drift from
        copilot-instructions.md, and stale TODO/FIXME annotations. Report under
-       "Progressive Improvement"; make no changes here.
+        "Progressive Improvement"; make no changes here.
+
+    8. GATEWAY OPERATOR CONTROL-SURFACE ROLLOUT TRACKER
+       Review awareness only. Check whether the Gateway operator control-surface
+       rollout tracker at fro-bot/.github#3512 or the linked GitHub Project at
+       https://github.com/users/fro-bot/projects/1 has obvious drift, and
+       summarize drift in the Daily Org Oversight Report if found. Do not post
+       tracker comments or edit Project fields from this daily report path; the
+       dedicated Gateway Rollout Tracker workflow owns tracker writes.
+
 
     HARD BOUNDARIES
     - Never force-push, rewrite history, delete branches, merge PRs, submit
@@ -250,6 +262,7 @@ jobs:
   fro-bot:
     name: Fro Bot
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     if: >-
       (
         github.event.pull_request == null ||
@@ -399,7 +412,9 @@ jobs:
       # Shape-validates the URL before use; skips the post on zero/multiple matches (fail-soft).
       - name: 🔍 Discover daily report URL
         id: report-url
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: >-
+          (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+          inputs.prompt == ''
         env:
           GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
         run: |
@@ -440,7 +455,9 @@ jobs:
       # Surfaces count_status=='error' as a step warning so a broken data overlay is visible.
       - name: 📊 Derive daily digest counts
         id: digest-counts
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: >-
+          (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+          inputs.prompt == ''
         run: |
           set -euo pipefail
           TODAY_UTC="$(date -u +%Y-%m-%d)"
@@ -471,6 +488,7 @@ jobs:
       - name: 📣 Announce daily digest to gateway
         if: >-
           (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+          inputs.prompt == '' &&
           steps.digest-counts.outputs.count_status == 'ok' &&
           steps.report-url.outputs.report_url != '' &&
           vars.DAILY_DIGEST_ENABLED == 'true'
