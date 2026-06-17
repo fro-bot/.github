@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/sparkle"
 created: 2026-04-28
-updated: 2026-06-05
+updated: 2026-06-16
 sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: 770356b3c83cec08a666960eab9c5fb4e1ab2a85
@@ -19,6 +19,9 @@ sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: e03e3173c70087d08e0def5196db624de964bf50
     accessed: 2026-06-05
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: 5ccf10681cf1095bd0ffb113c0e1a3745b40109c
+    accessed: 2026-06-16
 tags: [typescript, react, react-native, monorepo, design-system, storybook, tailwindcss, radix-ui, turborepo, expo, vite, astro, github-pages, zig, wasm]
 aliases: [sparkle]
 related:
@@ -67,6 +70,8 @@ related:
 _Toolchain drift (2026-05-23 survey at SHA `e757fa6`):_ pnpm 10.33.4, Node.js 24.16.0, Turborepo 2.9.14, `@bfra.me/eslint-config` 0.51.1, `@bfra.me/prettier-config` 0.16.9 (still `120-proof`), `@bfra.me/tsconfig` 0.13.1. TypeScript 5.9.3 unchanged. No engine-level shifts — strict-mode TypeScript + ESM-only `"type": "module"` are stable invariants across surveys.
 
 _Toolchain drift (2026-06-05 survey at SHA `e03e317`):_ pnpm bumped to `10.34.1` (root `packageManager` field updated). Node.js 24.16.0 unchanged. `llms.txt` still references pnpm `10.33.4` — minor doc drift. No other engine-level changes confirmed from manifest inspection.
+
+_Toolchain drift (2026-06-16 survey at SHA `5ccf106`):_ pnpm `10.34.1` → `10.34.3` (root `packageManager`). Turborepo `2.9.14` → `2.9.18`. `@types/node` now pinned at `24.13.2`; `prettier` `3.8.4`; `tsdown` `0.16.8`; `tsx` `4.22.4`. `@bfra.me/eslint-config` 0.51.1, `@bfra.me/prettier-config` 0.16.9 (`120-proof`), `@bfra.me/tsconfig` 0.13.1, TypeScript 5.9.3 — all unchanged. `engines` floor remains `node >=22.13.1` / `pnpm >=9.15.4`; `.node-version` pins 24.16.0. `llms.txt` still references pnpm `10.33.4` — the doc drift has now widened by two patch releases (actual `10.34.3`). Strict-mode TypeScript + ESM-only `"type": "module"` remain stable invariants.
 
 ## Architecture
 
@@ -140,7 +145,7 @@ Astro Starlight at `docs/` with automated documentation generation:
 | --- | --- |
 | `turbo.json` | Task graph and caching configuration |
 | `pnpm-workspace.yaml` | Workspace packages: `packages/*`, `apps/*`, `docs`, `scripts` |
-| `.node-version` | Node.js 24.15.0 |
+| `.node-version` | Node.js 24.16.0 |
 | `eslint.config.ts` | Root ESLint config |
 | `tsconfig.json` / `tsconfig.node.json` | TypeScript project references |
 | `.github/actions/setup-ci/` | Composite CI setup action |
@@ -183,7 +188,7 @@ The `regenerate-docs.yaml` workflow detects package source changes, runs TypeDoc
 
 ### Workflow: `fro-bot.yaml`
 
-- **Agent version:** `fro-bot/agent@07820934d4eb20a50a40c2314a738b202bbfc3c2` (v0.54.2)
+- **Agent version:** `fro-bot/agent@b7efdd6d8e9d41766e287327d1d99876959620d3` (v0.65.0 as of 2026-06-16 survey; was `07820934...` v0.54.2 at 2026-06-05). Eleven-minor bump in eleven days — the repo is tracking the agent release cadence closely.
 - **Triggers:**
   - `pull_request` (opened, synchronize, reopened, ready_for_review, review_requested)
   - `issues` (opened, edited) — from OWNER/MEMBER/COLLABORATOR only
@@ -214,6 +219,7 @@ The workflow has an explicit fork PR head refusal step on `issue_comment` trigge
 ### Active Perpetual Issues
 
 - **#1665** — "Daily Autohealing Report" (open, `fro-bot`-authored, first run 2026-06-05)
+- **#1666** — "Daily Maintenance Report" (`fro-bot`-authored; observed **CLOSED** at the 2026-06-16 survey). The 17:00 UTC maintenance prompt is designed to update a perpetual issue; a closed report issue suggests either a manual close or that the maintenance run reopens/recreates rather than reusing #1666. Watch on next survey to confirm whether the maintenance perpetual issue is being maintained as intended.
 
 The repo also has:
 
@@ -261,7 +267,7 @@ The repo also has:
 | pnpm | 10.33.4 | ~10.33.x |
 | Node.js | 24.16.0 | 22–24 |
 | TypeScript | 5.9.3 | 5.9–6.0 |
-| Fro Bot workflow | **Present** (`fro-bot.yaml`, agent v0.54.2) | Present in most active repos |
+| Fro Bot workflow | **Present** (`fro-bot.yaml`, agent v0.65.0) | Present in most active repos |
 | Fro Bot autoheal | **Present** (05:00 UTC, categories 1–8) | Present in most active repos |
 | Maintenance report | **Present** (17:00 UTC perpetual issue) | Present in most active repos |
 | Copilot setup steps | **Missing** | Present in most active repos |
@@ -269,6 +275,23 @@ The repo also has:
 | `opencode.jsonc` | **Present** (points to copilot-instructions.md) | Emerging pattern |
 
 ## Open PRs and Issues
+
+_As of 2026-06-16 survey (SHA `5ccf106`):_
+
+### Open PRs (0)
+
+No open PRs. All three PRs open at the 2026-06-05 survey (#1681 Turbo fix, #1663 docs regen, #1646 Renovate `@storybook/test-runner`) have since merged or closed. A clean PR queue while the autoheal/maintenance issues stay active reads as a healthy steady state — the daemon is keeping the deck clear.
+
+### Open Issues (4 non-PR)
+
+- **#1665** — "Daily Autohealing Report" (fro-bot perpetual issue, open)
+- **#1664** — "chore: review stale TODO/FIXME annotations (>90 days old)" (fro-bot, opened by autoheal)
+- **#876** — [Feature] Astro Starlight Documentation - Phase 6: Deployment and CI/CD
+- **#212** — Dependency Dashboard (mrbro-bot / Renovate)
+
+_Issue count steady at 4. Note: the "Daily Maintenance Report" issue **#1666** exists but is **CLOSED** — see Active Perpetual Issues above for the open question on maintenance-report lifecycle._
+
+---
 
 _As of 2026-06-05 survey (SHA `e03e317`):_
 
@@ -298,3 +321,4 @@ _Issue #57 ("Uplift `sparkle`") and the Astro v6 security PR #1604 are no longer
 | 2026-05-01 | `712ab1b` | Re-survey — SHA unchanged. Open PRs: 2 (including Astro v6 security update #1604). Open issues: 5. No structural changes. Still no Fro Bot agent workflow. |
 | 2026-05-23 | `e757fa6` | Re-survey — Renovate preset major-bumped `#4.5.9` → `#5.2.0` (matches the ecosystem-wide cutover seen in [[marcusrbrown--opencode-copilot-delegate]] and others). Node `24.15.0` → `24.16.0`. pnpm `10.33.2` → `10.33.4`. turbo `2.9.6` → `2.9.14`. `@bfra.me/eslint-config` `0.51.0` → `0.51.1`, `@bfra.me/prettier-config` `0.16.8` → `0.16.9`, `@bfra.me/tsconfig` `0.13.0` → `0.13.1`. Open PRs: 2 (Renovate `@storybook/test-runner` #1646 replaces prior #1507; Astro v6 security #1604 still open and unmerged). Open issues: 3 (#876, #212, #57) — drop from 5; #876 Phase-6 docs deployment still open. Workflows unchanged (6 files). Still no Fro Bot agent workflow. |
 | 2026-06-05 | `e03e317` | **Major delta: Fro Bot agent workflow landed.** `fro-bot.yaml` added (agent v0.54.2) — first Fro Bot presence in this repo. pnpm `10.33.4` → `10.34.1`. Node.js 24.16.0 unchanged. Workflow count: 6 → 7. `opencode.jsonc` added at root. PR #1604 (Astro v6 security) no longer open. Issue #57 ("Uplift sparkle") closed. Two new fro-bot issues: #1665 (perpetual autohealing report), #1664 (stale TODO review). Two new fro-bot PRs: #1681 (Turbo task graph fix), #1663 (API docs regen). Open issues: 4 (up from 3). Open PRs: 3 (up from 2). `llms.txt` lists `pnpm@10.33.4` — minor drift from actual `10.34.1`. |
+| 2026-06-16 | `5ccf106` | Re-survey — Fro Bot agent bumped v0.54.2 → **v0.65.0** (SHA `b7efdd6`). pnpm `10.34.1` → `10.34.3`. turbo `2.9.14` → `2.9.18`. Node.js 24.16.0 and `@bfra.me/*` toolchain unchanged. Workflow count steady at 7. All 3 prior open PRs (#1681, #1663, #1646) now merged/closed — **open PRs: 0**. Open issues steady at 4 (#1665, #1664, #876, #212). New observation: "Daily Maintenance Report" issue **#1666** exists but is **CLOSED** — maintenance-report lifecycle flagged for follow-up. `docs-legacy/` no longer present in root tree. `llms.txt` still pins `pnpm@10.33.4` — doc drift widened to actual `10.34.3`. No structural/architecture changes. |

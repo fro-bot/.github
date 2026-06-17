@@ -2066,3 +2066,52 @@ Sources: https://github.com/marcusrbrown/renovate-config (SHA 42ee3cd0ad4b26b397
 Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-06-15 11:26] ingest | repo:fro-bot/fro-bot.github.io
+
+Re-survey of `fro-bot/fro-bot.github.io` (HEAD `3e44653`, unchanged). Additive update to `fro-bot--fro-bot-github-io.md`.
+
+Delta from prior survey (2026-06-05):
+
+- **HEAD unchanged** — still the single `Create CNAME` commit from 2026-02-09 (126 days frozen). Tree is one blob (`CNAME` → `fro.bot`). No README, no `.github`, no workflows.
+- **TLS cert renewed** — Pages cert expiry moved 2026-07-09 → **2026-09-07** (covers `fro.bot`/`www.fro.bot`). GitHub auto-renewed ahead of the window the 2026-06-05 survey flagged as approaching; no longer time-sensitive. Recorded as a dated contradiction-resolution rather than overwriting prior expiry note.
+- **Domain unverified** — Pages API reports `protected_domain_state: unverified`; surfaced as a durable hardening note (org-level domain verification recommended).
+- Pages config otherwise stable: `legacy` build, source `main:/`, `custom_404: false`, `https_enforced: false`.
+- Issue #1 (CodeQL/Scorecard parity) still open and unchanged; no other open issues.
+- **No Fro Bot workflow** present — all four follow-up recommendations (HTTPS enforcement, Probot Settings, Fro Bot workflow, README) carried forward. Follow-up draft PR remains warranted.
+
+Reads limited to repo metadata, root tree listing, Pages config, and open-issue list per untrusted-input constraint. Modified only `knowledge/wiki/repos/fro-bot--fro-bot-github-io.md`, `knowledge/index.md`, `knowledge/log.md`.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+
+## [2026-06-15 11:27] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
+
+## [2026-06-16 10:25] ingest | marcusrbrown/.dotfiles
+
+Incremental re-survey of `marcusrbrown/.dotfiles` (HEAD `4df0c2d`, 2026-06-16, up from `70c211bc` 2026-06-06). Reads limited to directory listings, manifests, and workflow files per the untrusted-input constraint. Updated repo page `marcusrbrown--dotfiles.md` and `index.md`. No new topic/entity/comparison pages warranted — existing [[dotfiles]], [[mise]], and [[fro-bot--agent]] coverage absorbs the deltas.
+
+Material deltas (additive; contradictions flagged in-page):
+
+- **Contradiction — Anthropic auth plugin reverted:** `opencode.json` is back on upstream `@cortexkit/opencode-anthropic-auth@1.9.2`. The 2026-06-06 survey recorded a switch to Marcus's own fork `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3`. The fork is no longer referenced. Likely upstream caught up (1.2.x fork line → 1.9.2 upstream). Both states retained per the additive-update rule; [[marcusrbrown--cortexkit-anthropic-auth]] cross-ref updated.
+- **Contradiction — license undetectable:** GitHub License API returns 404 and no `LICENSE`/`UNLICENSE` file exists in the tree. Prior surveys recorded The Unlicense. Marked status as unspecified until reconfirmed.
+- **Harness cutover mirror:** `@fro.bot/harness@1.17.6-harness.13169873` added to mise `[tools]` alongside stock `opencode-ai@1.17.4` — local-machine reflection of the [[fro-bot--agent]] harness-as-default-OpenCode cutover.
+- **Fro Bot agent** v0.55.1 → v0.65.0 (SHA `b7efdd6`), model now read from `FRO_BOT_MODEL` repo var.
+- **OpenCode plugin bumps:** magic-context 0.22.4 → 0.24.1 (`claude-fable-5` added to 59m cache TTL), aft 0.35.4 → 0.39.2 (new `bridge.hang_threshold: 5`), systematic 2.28.0 → 2.32.0, oh-my-opencode-slim 1.1.1 → 1.1.2.
+- **Removed from `opencode.json`:** Discord MCP (`saseq/discord-mcp`) and the inline custom `openai/gpt-5.5`/`gpt-5.5-fast` provider model declarations. MCP set now context7/grep_app/tavily/websearch only.
+- **slim `mixed` preset routing:** librarian `anthropic/claude-haiku-4-5` → `github-copilot/gpt-5.4-mini`; explorer `github-copilot/gpt-5.4-mini` → `openai/gpt-5.4-mini`. `opencode-go` preset now uses `minimax-m3` for librarian/explorer and `deepseek-v4-flash` for fixer.
+- **`.agents/skills/` pruned** to `copilot-cli` only — `agent-browser`, `test-driven-development`, `writing-skills` removed (now provided by upstream `@fro.bot/systematic` / `skills` packages).
+- **Tool bumps:** pnpm 11.5.1 → 11.6.0, npm 11.16.0 → 11.17.0, python 3.14.5 → 3.14.6, deno 2.8.2 → 2.8.3, biome 2.4.16 → 2.5.0, ast-grep 0.42.3 → 0.43.0, cargo-binstall 1.19.1 → 1.20.0, opencode-ai 1.16.2 → 1.17.4, @github/copilot 1.0.59 → 1.0.61, skills 1.5.10 → 1.5.11, prettier 3.8.3 → 3.8.4, agent-browser 0.27.1 → 0.27.3. mise-action 2026.4.16 → 2026.6.10.
+
+Fro Bot workflow present (`fro-bot.yaml`) — no follow-up draft PR needed. Bare-git pattern, devcontainer, Probot settings, branch protection, Renovate preset (v5.2.0) all unchanged.
+
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA 4df0c2d66dfa697c4de345afcd4075dd8f8109ac)
+
+## [2026-06-16 10:30] ingest | repo:marcusrbrown/.dotfiles
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles
