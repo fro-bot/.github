@@ -1,9 +1,12 @@
 ---
+title: Autonomous rollout tracker workflows
 module: gateway-rollout-tracker
 date: 2026-06-17
+last_updated: 2026-06-17
 problem_type: workflow_issue
 component: development_workflow
 severity: medium
+verified: true
 applies_when:
   - a cross-repo rollout needs ongoing autonomous status tracking
   - a reusable agent workflow is called from a dedicated scheduled workflow
