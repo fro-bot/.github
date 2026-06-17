@@ -1,0 +1,52 @@
+---
+name: Gateway Rollout Tracker
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-rollout-tracker
+  cancel-in-progress: false
+
+jobs:
+  update-rollout-tracker:
+    uses: ./.github/workflows/fro-bot.yaml
+    with:
+      prompt: >-
+        Update the Gateway operator control-surface rollout tracker at
+        fro-bot/.github#3512 and the linked GitHub Project at
+        https://github.com/users/marcusrbrown/projects/2. Review the current
+        status of all tracked issues and post a status update comment on
+        fro-bot/.github#3512 only when there is meaningful drift since the
+        latest @fro-bot tracker status comment.
+
+        Tracked issues to review:
+        - fro-bot/agent#907
+        - fro-bot/agent#929
+        - fro-bot/dashboard#24
+        - fro-bot/dashboard#25
+        - fro-bot/dashboard#26
+        - marcusrbrown/infra#579
+        - marcusrbrown/infra#580
+        - marcusrbrown/infra#581
+
+        For each tracked issue: check whether it has been closed, whether a
+        deployment has happened, or whether a supporting feature has been
+        released. Update the GitHub Project item state/fields when the evidence
+        changes readiness. Use fro-bot/.github#3512 as the routine status log;
+        comment on tracked issues only when there is issue-specific transition
+        evidence that has not already been acknowledged, and link those comments
+        back to fro-bot/.github#3512.
+
+        All status comments must begin with @fro-bot or explicitly mention
+        @fro-bot. Post status updates in a concise, structured format.
+    secrets:
+      FRO_BOT_PAT: ${{ secrets.FRO_BOT_PAT }}
+      OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON }}
+      OMO_PROVIDERS: ${{ secrets.OMO_PROVIDERS }}
+      OPENCODE_CONFIG: ${{ secrets.OPENCODE_CONFIG }}
