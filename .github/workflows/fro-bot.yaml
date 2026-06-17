@@ -198,7 +198,7 @@ env:
     8. GATEWAY OPERATOR CONTROL-SURFACE ROLLOUT TRACKER
        Review awareness only. Check whether the Gateway operator control-surface
        rollout tracker at fro-bot/.github#3512 or the linked GitHub Project at
-       https://github.com/users/marcusrbrown/projects/2 has obvious drift, and
+       https://github.com/users/fro-bot/projects/1 has obvious drift, and
        summarize drift in the Daily Org Oversight Report if found. Do not post
        tracker comments or edit Project fields from this daily report path; the
        dedicated Gateway Rollout Tracker workflow owns tracker writes.
