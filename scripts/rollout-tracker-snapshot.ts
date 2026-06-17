@@ -391,14 +391,16 @@ async function main(): Promise<void> {
     items = filterSupportedProjectItems(items)
     const trackedIssues = deriveTrackedIssueRefs(items)
     issues = []
-    const {execSync} = await import('node:child_process')
+    const {execFileSync} = await import('node:child_process')
     for (const ref of trackedIssues) {
       const [repo, numStr] = ref.split('#')
       if (repo === undefined || numStr === undefined) continue
       try {
-        const raw = execSync(`gh issue view ${numStr} --repo ${repo} --json number,state,title,closedAt,labels`, {
-          encoding: 'utf8',
-        })
+        const raw = execFileSync(
+          'gh',
+          ['issue', 'view', numStr, '--repo', repo, '--json', 'number,state,title,closedAt,labels'],
+          {encoding: 'utf8'},
+        )
         const parsed = JSON.parse(raw) as {
           number: number
           state: string
@@ -441,10 +443,12 @@ async function main(): Promise<void> {
       process.exit(1)
     }
     try {
-      const {execSync} = await import('node:child_process')
-      const raw = execSync(`gh issue view ${trackerNumStr} --repo ${trackerRepo} --comments --json comments`, {
-        encoding: 'utf8',
-      })
+      const {execFileSync} = await import('node:child_process')
+      const raw = execFileSync(
+        'gh',
+        ['issue', 'view', trackerNumStr, '--repo', trackerRepo, '--comments', '--json', 'comments'],
+        {encoding: 'utf8'},
+      )
       const parsed = JSON.parse(raw) as {comments: TrackerComment[]}
       latestCommentBody = selectLatestMarkerCommentBody(parsed.comments)
     } catch (error) {

@@ -829,6 +829,23 @@ describe('static trackedIssues removed from production code', () => {
   })
 })
 
+// ─── Shell-injection regression: issue fetch uses execFileSync argv form ──────
+
+describe('shell-injection regression: issue fetch uses execFileSync argv form', () => {
+  it('production source does not use shell-string interpolation for gh issue view', () => {
+    const src = readFileSync(resolve(import.meta.dirname, './rollout-tracker-snapshot.ts'), 'utf8')
+    // The vulnerable pattern: execSync(`gh issue view ${numStr} --repo ${repo} ...`)
+    // Any template literal containing "gh issue view" is the shell-injection risk.
+    expect(src).not.toMatch(/execSync\s*\(\s*`gh issue view/)
+  })
+
+  it('production source uses execFileSync with argv array for gh issue view', () => {
+    const src = readFileSync(resolve(import.meta.dirname, './rollout-tracker-snapshot.ts'), 'utf8')
+    // Must use execFileSync('gh', ['issue', 'view', ...]) form
+    expect(src).toMatch(/execFileSync\s*\(\s*['"]gh['"]/)
+  })
+})
+
 // ─── Workflow shape regression ────────────────────────────────────────────────
 
 interface WorkflowJob {
