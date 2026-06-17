@@ -118,11 +118,42 @@ export function normaliseIssueState(raw: string): 'open' | 'closed' | 'merged' {
 }
 
 /**
+ * Derive a deduplicated list of `"repo#number"` ref strings from Project items.
+ *
+ * Items with an empty `content_repo` or a `content_number` of `0` are
+ * considered unsupported (e.g. draft cards, notes, or items without a linked
+ * issue/PR). Each unsupported item emits a warning to stderr and is excluded
+ * from the returned set.
+ */
+export function deriveTrackedIssueRefs(items: ProjectItem[]): string[] {
+  const seen = new Set<string>()
+  for (const item of filterSupportedProjectItems(items)) {
+    seen.add(`${item.content_repo}#${item.content_number}`)
+  }
+  return [...seen]
+}
+
+function filterSupportedProjectItems(items: ProjectItem[]): ProjectItem[] {
+  return items.filter(item => {
+    if (item.content_repo === '' || item.content_number === 0) {
+      process.stderr.write(
+        `rollout-tracker-snapshot: warning — skipping unsupported Project item (id=${item.id}, repo="${item.content_repo}", number=${item.content_number})\n`,
+      )
+      return false
+    }
+    return true
+  })
+}
+
+/**
  * Build a normalized, deterministic snapshot from Project items and issue states.
  *
  * Volatile fields (title, body, prose) are excluded. Items are sorted by
  * repo+number for stable ordering. Issue state is merged by matching
  * content_repo+content_number to issue repo+number.
+ *
+ * Unsupported items (`content_repo === ''` or `content_number === 0`) are
+ * excluded from the snapshot with a stderr warning.
  */
 export function buildSnapshot(items: ProjectItem[], issues: IssueState[]): RolloutSnapshot {
   // Build a lookup map: "repo#number" → IssueState
@@ -131,7 +162,9 @@ export function buildSnapshot(items: ProjectItem[], issues: IssueState[]): Rollo
     issueMap.set(`${issue.repo}#${issue.number}`, issue)
   }
 
-  const snapshotItems: SnapshotItem[] = items.map(item => {
+  const supportedItems = filterSupportedProjectItems(items)
+
+  const snapshotItems: SnapshotItem[] = supportedItems.map(item => {
     const key = `${item.content_repo}#${item.content_number}`
     const issue = issueMap.get(key)
     return {
@@ -355,18 +388,8 @@ async function main(): Promise<void> {
   }
 
   if (process.env.ROLLOUT_TRACKER_ISSUES_JSON === undefined) {
-    // Fetch tracked issue states via gh CLI
-    const trackedIssues = [
-      'fro-bot/.github#3512',
-      'fro-bot/agent#907',
-      'fro-bot/agent#929',
-      'fro-bot/dashboard#24',
-      'fro-bot/dashboard#25',
-      'fro-bot/dashboard#26',
-      'marcusrbrown/infra#579',
-      'marcusrbrown/infra#580',
-      'marcusrbrown/infra#581',
-    ]
+    items = filterSupportedProjectItems(items)
+    const trackedIssues = deriveTrackedIssueRefs(items)
     issues = []
     const {execSync} = await import('node:child_process')
     for (const ref of trackedIssues) {

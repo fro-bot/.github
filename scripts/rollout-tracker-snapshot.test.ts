@@ -56,6 +56,7 @@ function runCliFixture(params: {items: ProjectItem[]; issues: IssueState[]; comm
       ROLLOUT_TRACKER_ISSUES_JSON: JSON.stringify(params.issues),
       ROLLOUT_TRACKER_ITEMS_JSON: JSON.stringify(params.items),
     },
+    stdio: ['ignore', 'pipe', 'pipe'],
   })
 
   return JSON.parse(stdout) as CommentDecision
@@ -670,6 +671,161 @@ describe('buildSnapshot — MERGED PR state', () => {
     const mergedSnap = buildSnapshot([base], [makeIssueState({number: 929, repo: 'fro-bot/agent', state: 'merged'})])
     expect(hashSnapshot(mergedSnap)).not.toBe(hashSnapshot(openSnap))
     expect(hashSnapshot(mergedSnap)).not.toBe(hashSnapshot(closedSnap))
+  })
+})
+
+// ─── deriveTrackedIssueRefs ───────────────────────────────────────────────────
+
+describe('deriveTrackedIssueRefs', () => {
+  // Import lazily so the test file compiles even before the export exists
+  // (the import at the top of the file will fail if the export is missing)
+  it('derives refs from supported project items', async () => {
+    const {deriveTrackedIssueRefs} = await import('./rollout-tracker-snapshot.ts')
+    const items: ProjectItem[] = [
+      makeProjectItem({content_number: 931, content_repo: 'fro-bot/agent'}),
+      makeProjectItem({content_number: 907, content_repo: 'fro-bot/agent'}),
+    ]
+    const refs = deriveTrackedIssueRefs(items)
+    expect(refs).toContain('fro-bot/agent#931')
+    expect(refs).toContain('fro-bot/agent#907')
+    expect(refs).toHaveLength(2)
+  })
+
+  it('deduplicates refs when the same repo#number appears multiple times', async () => {
+    const {deriveTrackedIssueRefs} = await import('./rollout-tracker-snapshot.ts')
+    const items: ProjectItem[] = [
+      makeProjectItem({content_number: 907, content_repo: 'fro-bot/agent'}),
+      makeProjectItem({content_number: 907, content_repo: 'fro-bot/agent'}),
+    ]
+    const refs = deriveTrackedIssueRefs(items)
+    expect(refs).toHaveLength(1)
+    expect(refs[0]).toBe('fro-bot/agent#907')
+  })
+
+  it('excludes items with empty content_repo', async () => {
+    const {deriveTrackedIssueRefs} = await import('./rollout-tracker-snapshot.ts')
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const items: ProjectItem[] = [
+      makeProjectItem({content_number: 907, content_repo: ''}),
+      makeProjectItem({content_number: 929, content_repo: 'fro-bot/agent'}),
+    ]
+    const refs = deriveTrackedIssueRefs(items)
+    expect(refs).not.toContain('#907')
+    expect(refs).toContain('fro-bot/agent#929')
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('unsupported'))
+    stderrSpy.mockRestore()
+  })
+
+  it('excludes items with content_number === 0', async () => {
+    const {deriveTrackedIssueRefs} = await import('./rollout-tracker-snapshot.ts')
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const items: ProjectItem[] = [
+      makeProjectItem({content_number: 0, content_repo: 'fro-bot/agent'}),
+      makeProjectItem({content_number: 929, content_repo: 'fro-bot/agent'}),
+    ]
+    const refs = deriveTrackedIssueRefs(items)
+    expect(refs).not.toContain('fro-bot/agent#0')
+    expect(refs).toContain('fro-bot/agent#929')
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('unsupported'))
+    stderrSpy.mockRestore()
+  })
+
+  it('returns empty array when all items are unsupported', async () => {
+    const {deriveTrackedIssueRefs} = await import('./rollout-tracker-snapshot.ts')
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const items: ProjectItem[] = [makeProjectItem({content_number: 0, content_repo: ''})]
+    const refs = deriveTrackedIssueRefs(items)
+    expect(refs).toHaveLength(0)
+    expect(stderrSpy).toHaveBeenCalled()
+    stderrSpy.mockRestore()
+  })
+})
+
+// ─── Project-derived state: fro-bot/agent#931 ────────────────────────────────
+
+describe('Project-derived state: fro-bot/agent#931', () => {
+  it('agent#931 derives a tracked ref from Project items (not static list)', async () => {
+    const {deriveTrackedIssueRefs} = await import('./rollout-tracker-snapshot.ts')
+    const items: ProjectItem[] = [makeProjectItem({content_number: 931, content_repo: 'fro-bot/agent'})]
+    const refs = deriveTrackedIssueRefs(items)
+    expect(refs).toContain('fro-bot/agent#931')
+  })
+
+  it('agent#931 can receive issue_state merged without being in a static list', () => {
+    const items: ProjectItem[] = [makeProjectItem({content_number: 931, content_repo: 'fro-bot/agent'})]
+    const issues: IssueState[] = [
+      makeIssueState({number: 931, repo: 'fro-bot/agent', state: 'merged', closed_at: '2026-06-17T00:00:00Z'}),
+    ]
+    const snapshot = buildSnapshot(items, issues)
+    expect(snapshot.items[0]?.issue_state).toBe('merged')
+    expect(snapshot.items[0]?.content_number).toBe(931)
+  })
+
+  it('CLI fixture: agent#931 appears in snapshot with merged state via ROLLOUT_TRACKER_ISSUES_JSON', () => {
+    const items: ProjectItem[] = [makeProjectItem({content_number: 931, content_repo: 'fro-bot/agent'})]
+    const issues: IssueState[] = [
+      makeIssueState({number: 931, repo: 'fro-bot/agent', state: 'merged', closed_at: '2026-06-17T00:00:00Z'}),
+    ]
+    const result = runCliFixture({items, issues})
+    const item931 = result.snapshot.items.find(i => i.content_number === 931 && i.content_repo === 'fro-bot/agent')
+    expect(item931).toBeDefined()
+    expect(item931?.issue_state).toBe('merged')
+  })
+})
+
+// ─── Unsupported Project items excluded from snapshot ─────────────────────────
+
+describe('unsupported Project items excluded from snapshot', () => {
+  it('buildSnapshot excludes items with empty content_repo', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const items: ProjectItem[] = [
+      makeProjectItem({content_number: 907, content_repo: ''}),
+      makeProjectItem({content_number: 929, content_repo: 'fro-bot/agent'}),
+    ]
+    const issues: IssueState[] = [makeIssueState({number: 929, repo: 'fro-bot/agent', state: 'open'})]
+    const snapshot = buildSnapshot(items, issues)
+    // The item with empty repo must not appear in the snapshot
+    expect(snapshot.items.every(i => i.content_repo !== '')).toBe(true)
+    expect(snapshot.items).toHaveLength(1)
+    expect(snapshot.items[0]?.content_number).toBe(929)
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('unsupported'))
+    stderrSpy.mockRestore()
+  })
+
+  it('buildSnapshot excludes items with content_number === 0', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const items: ProjectItem[] = [
+      makeProjectItem({content_number: 0, content_repo: 'fro-bot/agent'}),
+      makeProjectItem({content_number: 929, content_repo: 'fro-bot/agent'}),
+    ]
+    const issues: IssueState[] = [makeIssueState({number: 929, repo: 'fro-bot/agent', state: 'open'})]
+    const snapshot = buildSnapshot(items, issues)
+    expect(snapshot.items.every(i => i.content_number !== 0)).toBe(true)
+    expect(snapshot.items).toHaveLength(1)
+    expect(snapshot.items[0]?.content_number).toBe(929)
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('unsupported'))
+    stderrSpy.mockRestore()
+  })
+
+  it('CLI fixture: unsupported items do not appear in snapshot output', () => {
+    const items: ProjectItem[] = [
+      makeProjectItem({content_number: 0, content_repo: ''}),
+      makeProjectItem({content_number: 929, content_repo: 'fro-bot/agent'}),
+    ]
+    const issues: IssueState[] = [makeIssueState({number: 929, repo: 'fro-bot/agent', state: 'open'})]
+    const result = runCliFixture({items, issues})
+    expect(result.snapshot.items.every(i => i.content_number !== 0 && i.content_repo !== '')).toBe(true)
+    expect(result.snapshot.items).toHaveLength(1)
+  })
+})
+
+// ─── Static trackedIssues removed from production code ───────────────────────
+
+describe('static trackedIssues removed from production code', () => {
+  it('production source does not contain a hardcoded trackedIssues array', () => {
+    const src = readFileSync(resolve(import.meta.dirname, './rollout-tracker-snapshot.ts'), 'utf8')
+    // The static list was defined as `const trackedIssues = [...]`
+    expect(src).not.toMatch(/const\s+trackedIssues\s*=\s*\[/)
   })
 })
 
