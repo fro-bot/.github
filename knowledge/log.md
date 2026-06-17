@@ -2115,3 +2115,26 @@ Sources: https://github.com/marcusrbrown/.dotfiles (SHA 4df0c2d66dfa697c4de345af
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-06-17 00:00] ingest | marcusrbrown/.github
+
+Re-survey of `marcusrbrown/.github` (SHA `1c97ca8`, up from `a00e888`). Updated repo page `marcusrbrown--github.md` and the `index.md` catalog entry. No new topic/entity/comparison pages warranted — delta is pure dependency churn.
+
+Delta from prior survey (SHA `a00e888`, 2026-06-06):
+
+- **`bfra-me/.github` reusable workflows:** v4.16.23 → v4.16.26 via PRs #379 (2026-06-08), #380 (2026-06-11), #382 (2026-06-15). Both `renovate.yaml` and `update-repo-settings.yaml` now pinned at SHA `dd6ab96816fe70f28628856e72ef2543b16b0946`.
+- **Prettier:** 3.8.3 → 3.8.4 (PR #381, 2026-06-12) — propagated to `main.yaml` `PRETTIER_VERSION` env and the `renovate.json5` post-upgrade task.
+- **Renovate preset unchanged:** still `marcusrbrown/renovate-config#4.5.9` — remains a v4.x holdout from the v5 wave.
+- Repository structure identical: same 16-entry file tree, no new paths. `common-settings.yaml`, `.github/settings.yml`, `.prettierrc.yaml` all unchanged.
+- **Still no Fro Bot agent workflow** — follow-up draft PR recommendation carried forward. `fro-bot` remains a `push` collaborator with no active workflow; all recent merges (#379–#382) are `mrbro-bot[bot]`-authored Renovate bumps.
+- 2 open issues (#37, #214), 0 open PRs, 3 stars, 2 watchers.
+
+No contradictions with prior ingest.
+
+Sources: https://github.com/marcusrbrown/.github (SHA 1c97ca8dcd9bf7df5f377d348953dd4d9d485aee)
+
+## [2026-06-17 10:07] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
