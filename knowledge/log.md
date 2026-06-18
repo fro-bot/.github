@@ -2138,3 +2138,26 @@ Sources: https://github.com/marcusrbrown/containers (SHA 569a6c8c526a694e28be541
 Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
+
+## [2026-06-18 02:00] ingest | marcusrbrown/esphome.life
+
+Incremental re-survey of `marcusrbrown/esphome.life` (HEAD `ce8df72`, last push 2026-06-18, up from `bd5aa88` 2026-06-07). Reads limited per the untrusted-input constraint to repo metadata, root directory listing, the three workflow files (`ci.yaml`, `renovate.yaml`, `update-repo-settings.yaml`), `.github/renovate.json5`, `.devcontainer.json`, `packages/olimex-bluetooth-proxy.yaml`, and the open issue list. Updated repo page `marcusrbrown--esphome-life.md`, entity page `esphome.md`, and `index.md`. No new topic/entity/comparison pages warranted — existing [[home-assistant]], [[probot-settings]], [[marcusrbrown--renovate-config]], and [[marcusrbrown--ha-config]] coverage absorbs the deltas.
+
+Material deltas (additive; dependency-only — no device/config/structural changes):
+
+- **`bfra-me/.github` reusable workflows v4.16.23 → v4.16.27** (four weekly bumps #361/#362/#365/#366, SHA `3f97c92`).
+- **Renovate preset `#5.2.1` → `#5.2.3`** (#364, 2026-06-13).
+- **Prettier 3.8.3 → 3.8.4** in the post-upgrade command (#363, 2026-06-12).
+- **`update-repo-settings.yaml` footgun reconfirmed (third survey):** still calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.27` instead of a settings-specific reusable workflow. The daily settings cron runs Renovate twice and never syncs settings; Renovate keeps bumping the wrong path. No patch has landed. Remains a candidate for a follow-up issue.
+- **Unchanged:** ESPHome 2025.12.7 (CI + devcontainer), `esphome/build-action@v7.3.0`, CI action SHA pins, Olimex ESP32-PoE-ISO Bluetooth Proxy device configs (`13451c` still CI-excluded), GitHub Pages / ESP Web Tools site, branch protection, devcontainer image. ESPHome version pin now held across six surveys — the loose-versioning + `separateMajorMinor: false` config is suppressing upstream 2026.x bumps while the rest of the stack updates weekly.
+- **Open issues unchanged:** #8 (Uplift, longstanding), #26 (Dependency Dashboard), #298 (BPPLUG community note, spam-adjacent).
+
+No Fro Bot agent workflow detected (only ci/renovate/update-repo-settings present). The repo extends `fro-bot/.github:common-settings.yaml` via Probot but has no `fro-bot.yaml`. Follow-up draft PR to add the agent workflow recommended for a sixth consecutive survey; noted in the repo page so a separate PR can be proposed.
+
+Sources: https://github.com/marcusrbrown/esphome.life (SHA ce8df7225573e4a38b1992b05bb81cb869406e89)
+
+## [2026-06-18 09:51] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
