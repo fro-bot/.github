@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/extend-vscode"
 created: 2026-04-18
-updated: 2026-06-08
+updated: 2026-06-18
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -34,6 +34,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 73790dd8d45ee3a58c43a225f0ea8a7bc21b0924
     accessed: 2026-06-08
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 5724bd8b1d7567a81c282bac2779184b419385a2
+    accessed: 2026-06-18
 tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
 aliases: [extend-vscode]
 related:
@@ -339,3 +342,30 @@ Confirmed dependency snapshot at HEAD (`73790dd8`):
 Repo metadata: 1 star, 1 watcher, not archived, not forked. Open issues: 6 (#142, #162, #317–#319, #466). Open PRs: 1 (#466, `typescript` v6 — pending, now carrying `major` + `dependencies` labels).
 
 **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~7+ weeks open across surveys). Six workflows present, unchanged: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`.
+
+### 2026-06-18 (SHA `5724bd8b` from `73790dd8`)
+
+Five dependency bumps merged between 2026-06-11 and 2026-06-18. One security patch included. No structural, architectural, or workflow changes — the toolkit's drift remains pure dependency maintenance.
+
+| PR | Date | Change |
+| --- | --- | --- |
+| #503 | 2026-06-18 | All non-major dependencies → v24.17.0 (grouped `@types`/Node bump) |
+| #502 | 2026-06-15 | `form-data` → v4.0.6 [SECURITY] |
+| #501 | 2026-06-15 | `eslint` monorepo → v10.5.0 |
+| #500 | 2026-06-15 | `@types` devDependencies → v24.13.2 |
+| #499 | 2026-06-11 | `typescript-eslint` v8.60.0 → v8.61.0 |
+
+The `form-data` security patch (#502) is the second consecutive survey to surface a CVE-triggered bump out of routine cadence — `tmp` (#494) carried the same `[SECURITY]` flag on 2026-05-27. Two transitive-dependency CVEs in three weeks is a signal worth watching, but both were patched promptly via Renovate's vulnerability path; the daemon is doing its job.
+
+Confirmed dependency snapshot at HEAD (`5724bd8b`):
+
+- Runtime: pnpm 10.34.0, Node 24.16.0 (`.node-version`), VS Code engine `^1.102.0`
+- Core: `typescript` 5.9.3, `tsup` 8.5.1 (pinned), `vitest` 4.1.0
+- Lint: `eslint` 10.5.0, `typescript-eslint` 8.61.0, `@bfra.me/eslint-config` 0.51.0, `eslint-plugin-node-dependencies` 2.2.0, `eslint-plugin-prettier` 5.5.0, `eslint-config-prettier` 10.1.1, `prettier` 3.8.0
+- VS Code tooling: `@types/vscode` 1.120.0, `@types/node` 24.13.2, `@vscode/vsce` 3.9.0
+- Build helpers: `type-fest` 5.7.0, `esbuild-plugin-polyfill-node` 0.3.0 (explicit web polyfill), `tsx` 4.22.0, `jiti` 2.7.0
+- Publishing: `semantic-release` 25.0.1, `semantic-release-vsce` 6.1.0, `ovsx` 0.10.5
+
+Repo metadata: 1 star, 1 watcher, not archived, not forked, public. Open issues: 5 (#142 Uplift `vscode-bash`, #162 Dependency Dashboard, #317–#319 Advanced Testing Infrastructure Phases 3–5). Open PRs: 1 (#466, `typescript` v6 — still the sole outstanding major, now ~7 weeks pending). The pin-exact devDependency policy holds: every entry in `package.json` is an exact version. The `prepare` script runs `generate:meta` (vscode-ext-gen), confirming generated metadata is regenerated on install.
+
+**Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~8+ weeks open across surveys). Six workflows present, unchanged: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`. Probot settings still extend `fro-bot/.github:common-settings.yaml`.

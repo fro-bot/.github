@@ -2139,25 +2139,24 @@ Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
 
-## [2026-06-18 02:00] ingest | marcusrbrown/esphome.life
+## [2026-06-18 10:00] ingest | repo:marcusrbrown/extend-vscode
 
-Incremental re-survey of `marcusrbrown/esphome.life` (HEAD `ce8df72`, last push 2026-06-18, up from `bd5aa88` 2026-06-07). Reads limited per the untrusted-input constraint to repo metadata, root directory listing, the three workflow files (`ci.yaml`, `renovate.yaml`, `update-repo-settings.yaml`), `.github/renovate.json5`, `.devcontainer.json`, `packages/olimex-bluetooth-proxy.yaml`, and the open issue list. Updated repo page `marcusrbrown--esphome-life.md`, entity page `esphome.md`, and `index.md`. No new topic/entity/comparison pages warranted — existing [[home-assistant]], [[probot-settings]], [[marcusrbrown--renovate-config]], and [[marcusrbrown--ha-config]] coverage absorbs the deltas.
+Incremental re-survey of `marcusrbrown/extend-vscode` (HEAD `5724bd8b`, last push 2026-06-18, up from `73790dd8` 2026-06-03). Reads limited to repo metadata, root + `.github/workflows` directory listings, `package.json`, and the open issue/PR lists per the untrusted-input constraint. Updated repo page `marcusrbrown--extend-vscode.md` and `index.md`. No new topic/entity/comparison pages warranted — existing [[vscode-extensions]] and [[marcusrbrown--renovate-config]] coverage absorbs the deltas; the changes are pure dependency maintenance with no new cross-cutting pattern.
 
-Material deltas (additive; dependency-only — no device/config/structural changes):
+Material deltas (additive; no contradictions with prior surveys):
 
-- **`bfra-me/.github` reusable workflows v4.16.23 → v4.16.27** (four weekly bumps #361/#362/#365/#366, SHA `3f97c92`).
-- **Renovate preset `#5.2.1` → `#5.2.3`** (#364, 2026-06-13).
-- **Prettier 3.8.3 → 3.8.4** in the post-upgrade command (#363, 2026-06-12).
-- **`update-repo-settings.yaml` footgun reconfirmed (third survey):** still calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.27` instead of a settings-specific reusable workflow. The daily settings cron runs Renovate twice and never syncs settings; Renovate keeps bumping the wrong path. No patch has landed. Remains a candidate for a follow-up issue.
-- **Unchanged:** ESPHome 2025.12.7 (CI + devcontainer), `esphome/build-action@v7.3.0`, CI action SHA pins, Olimex ESP32-PoE-ISO Bluetooth Proxy device configs (`13451c` still CI-excluded), GitHub Pages / ESP Web Tools site, branch protection, devcontainer image. ESPHome version pin now held across six surveys — the loose-versioning + `separateMajorMinor: false` config is suppressing upstream 2026.x bumps while the rest of the stack updates weekly.
-- **Open issues unchanged:** #8 (Uplift, longstanding), #26 (Dependency Dashboard), #298 (BPPLUG community note, spam-adjacent).
+- **Five dependency bumps merged 2026-06-11 → 2026-06-18:** #503 (all non-major → v24.17.0 grouped), #502 (`form-data` → v4.0.6 [SECURITY]), #501 (`eslint` → v10.5.0), #500 (`@types` devDeps → v24.13.2), #499 (`typescript-eslint` → v8.61.0).
+- **Second consecutive CVE-triggered bump:** `form-data` #502 carries `[SECURITY]`, following `tmp` #494 three weeks prior. Two transitive-dep CVEs in three weeks; both patched promptly via Renovate's vulnerability path.
+- **Confirmed snapshot at HEAD:** pnpm 10.34.0, Node 24.16.0, VS Code engine `^1.102.0`, `typescript` 5.9.3, `tsup` 8.5.1 (pinned), `vitest` 4.1.0, `eslint` 10.5.0, `typescript-eslint` 8.61.0, `@types/vscode` 1.120.0, `@types/node` 24.13.2, `type-fest` 5.7.0. Pin-exact devDependency policy holds across the whole manifest.
+- **Unchanged:** controller/feature-module architecture, dual-target tsup build, three-target semantic-release publishing, six workflows (`main`, `publish`, `rollback`, `renovate`, `cache-cleanup`, `update-repo-settings`), AI context files (`llms.txt`, `.github/copilot-instructions.md`, `.ai/`, `.cursor/`), Probot settings extending `fro-bot/.github:common-settings.yaml`.
+- **Open issues:** 5 (#142, #162, #317–#319). **Open PRs:** 1 (#466, `typescript` v6 — sole outstanding major, ~7 weeks pending).
 
-No Fro Bot agent workflow detected (only ci/renovate/update-repo-settings present). The repo extends `fro-bot/.github:common-settings.yaml` via Probot but has no `fro-bot.yaml`. Follow-up draft PR to add the agent workflow recommended for a sixth consecutive survey; noted in the repo page so a separate PR can be proposed.
+**Still no Fro Bot agent workflow** (~8+ weeks across surveys) — follow-up draft PR recommendation carried forward per task constraint.
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA ce8df7225573e4a38b1992b05bb81cb869406e89)
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA 5724bd8b1d7567a81c282bac2779184b419385a2)
 
-## [2026-06-18 09:51] ingest | repo:marcusrbrown/esphome.life
+## [2026-06-18 09:52] ingest | repo:marcusrbrown/extend-vscode
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/esphome.life
+Sources: https://github.com/marcusrbrown/extend-vscode
