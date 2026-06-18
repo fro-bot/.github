@@ -75,23 +75,15 @@ jobs:
         been detected since the last tracker comment — narrate only the
         transition that triggered this run.
 
-        Tracked issues to review:
-        - fro-bot/agent#907
-        - fro-bot/agent#929
-        - fro-bot/dashboard#24
-        - fro-bot/dashboard#25
-        - fro-bot/dashboard#26
-        - marcusrbrown/infra#579
-        - marcusrbrown/infra#580
-        - marcusrbrown/infra#581
-
-        For each tracked issue: check whether it has been closed, whether a
-        deployment has happened, or whether a supporting feature has been
-        released. Update the GitHub Project item state/fields when the evidence
-        changes readiness. Use fro-bot/.github#3512 as the routine status log;
-        comment on tracked issues only when there is issue-specific transition
-        evidence that has not already been acknowledged, and link those comments
-        back to fro-bot/.github#3512.
+        Use the preflight snapshot and Project items as the tracked rollout
+        source of truth; do not rely on a hardcoded issue list. For each tracked
+        Project item: check whether it has been closed, whether a deployment has
+        happened, or whether a supporting feature has been released. Update the
+        GitHub Project item state/fields when the evidence changes readiness.
+        Use fro-bot/.github#3512 as the routine status log; comment on tracked
+        issues only when there is issue-specific transition evidence that has
+        not already been acknowledged, and link those comments back to
+        fro-bot/.github#3512.
 
         All status comments must begin with @fro-bot or explicitly mention
         @fro-bot. Post status updates in a concise, structured format.
