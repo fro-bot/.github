@@ -2160,3 +2160,22 @@ Sources: https://github.com/marcusrbrown/extend-vscode (SHA 5724bd8b1d7567a81c28
 Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-06-19 03:36] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+No-delta re-survey of `marcusrbrown/cortexkit_anthropic-auth`. Reads limited to repo metadata, `.github/workflows` directory listing, latest-commit pointer, and root `package.json` per the untrusted-input constraint. Updated repo page `marcusrbrown--cortexkit-anthropic-auth.md` (added a third dated source, bumped `updated` to 2026-06-19, added a no-delta confirmation block) and `index.md`. No topic/entity/comparison pages warranted — nothing new to compound.
+
+Findings (additive; no contradictions with prior surveys):
+
+- **HEAD unchanged at `99fdbe9`** (`chore(release): bump fork packages to 1.2.5-mb.3`, committed 2026-05-31T04:03Z). Identical to the 2026-06-09 survey — no upstream sync or fork release in the interim. The fork is parked at its last release.
+- **Workflows unchanged:** `ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`.
+- **Confirmed snapshot:** public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1 star / 0 forks, issues enabled, no GitHub wiki, 520 KB, TypeScript primary. Published `@marcusrbrown/{anthropic-auth-core,opencode-anthropic-auth}` hold at `1.2.5-mb.3`; `@cortexkit/pi-anthropic-auth` still private in the fork.
+- **Fro Bot workflow present** (`fro-bot.yaml`, agent v0.45.0) — no follow-up draft PR needed.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 99fdbe906c5875893d363c904f6e6bc066d997b1)
+
+## [2026-06-19 03:38] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
