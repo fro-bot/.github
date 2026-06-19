@@ -131,6 +131,15 @@ export type RepoStatusProbe =
 export interface FieldProbe {
   has_fro_bot_workflow: boolean
   has_renovate: boolean
+  /**
+   * Numeric REST `repository.id` (GitHub's `databaseId`). Captured from the per-repo
+   * field probe alongside `isPrivate`/`node_id`. Optional: absent when the probe did not
+   * return a positive integer (e.g. the API response omitted the field or returned null).
+   *
+   * Data-branch-only: must never be rendered/logged publicly. Unit 3 writes this onto
+   * redacted entries so the denylist secondary guard is format-independent.
+   */
+  database_id?: number
 }
 
 export interface ReconcileInput {
@@ -969,18 +978,24 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     return normalized
   }
 
+  // Include database_id from the probe so redacted entries carry the format-independent
+  // denylist anchor. Optional: absent when the probe did not return a positive integer.
+  const storageInputWithProbe =
+    probe.database_id === undefined ? storageInput : {...storageInput, database_id: probe.database_id}
+
   const fieldsMatch =
     probe.has_fro_bot_workflow === workingEntry.has_fro_bot_workflow && probe.has_renovate === workingEntry.has_renovate
   const privacyMatch = workingEntry.private === accessPrivate && workingEntry.node_id === accessNodeId
+  const databaseIdMatch = workingEntry.database_id === probe.database_id
   const channelMatch = workingEntry === entry // true only when no channel refresh occurred
 
-  if (fieldsMatch && privacyMatch && channelMatch) {
+  if (fieldsMatch && privacyMatch && databaseIdMatch && channelMatch) {
     summary.unchanged += 1
     return entry
   }
   summary.refreshed += 1
   return normalizeRepoEntryForStorage({
-    ...normalizeRepoEntryForStorage(workingEntry, storageInput),
+    ...normalizeRepoEntryForStorage(workingEntry, storageInputWithProbe),
     has_fro_bot_workflow: probe.has_fro_bot_workflow,
     has_renovate: probe.has_renovate,
   })
@@ -1898,7 +1913,14 @@ export async function fetchPerRepoStatus(
   return map
 }
 
-async function fetchFieldProbes(
+/**
+ * Probe still-accessible tracked repos for field values (`has_fro_bot_workflow`,
+ * `has_renovate`, `database_id`). Exported for unit tests; the sole production caller
+ * is `handleReconcile` in this same file.
+ *
+ * @internal
+ */
+export async function fetchFieldProbes(
   userOctokit: OctokitClient,
   currentRepos: ReposFile,
   accessList: AccessListEntry[],
@@ -1926,11 +1948,43 @@ async function fetchFieldProbes(
 }
 
 async function probeSingleRepo(userOctokit: OctokitClient, owner: string, name: string): Promise<FieldProbe> {
-  const [hasWorkflow, hasRenovate] = await Promise.all([
+  const [hasWorkflow, hasRenovate, databaseId] = await Promise.all([
     probeFroBotWorkflow(userOctokit, owner, name),
     probeRenovateConfig(userOctokit, owner, name),
+    probeRepoDatabaseId(userOctokit, owner, name),
   ])
-  return {has_fro_bot_workflow: hasWorkflow, has_renovate: hasRenovate}
+  const probe: FieldProbe = {has_fro_bot_workflow: hasWorkflow, has_renovate: hasRenovate}
+  if (databaseId !== undefined) {
+    probe.database_id = databaseId
+  }
+  return probe
+}
+
+/**
+ * Fetch the numeric `repository.id` (GitHub's `databaseId`) for a repo via `repos.get`.
+ * Returns `undefined` when the response omits or nulls the field — a missing `databaseId`
+ * is not an error; the entry remains protected by the primary `node_id` guard.
+ *
+ * Only positive integers are accepted. Zero, negatives, and non-integers are treated as
+ * absent (same validation as `RepoEntry.database_id` in the schema).
+ */
+async function probeRepoDatabaseId(
+  userOctokit: OctokitClient,
+  owner: string,
+  name: string,
+): Promise<number | undefined> {
+  try {
+    const response = await userOctokit.rest.repos.get({owner, repo: name})
+    const id = (response.data as {id?: unknown}).id
+    if (typeof id === 'number' && Number.isInteger(id) && id > 0) {
+      return id
+    }
+    return undefined
+  } catch {
+    // Non-blocking: a failed databaseId probe does not fail the field probe.
+    // The entry remains protected by the primary node_id guard.
+    return undefined
+  }
 }
 
 async function probeFroBotWorkflow(userOctokit: OctokitClient, owner: string, name: string): Promise<boolean> {

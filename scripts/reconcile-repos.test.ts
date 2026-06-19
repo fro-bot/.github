@@ -8,6 +8,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   containsFroBotAgentReference,
   DISPATCH_DEFAULTS,
+  fetchFieldProbes,
   fetchPerRepoStatus,
   formatCommitMessage,
   formatFloorTelemetry,
@@ -22,6 +23,7 @@ import {
   reconcileRepos,
   renderIssuePayload,
   type AccessListEntry,
+  type FieldProbe,
   type HandleReconcileParams,
   type IssuePayload,
   type OctokitClient,
@@ -2121,6 +2123,181 @@ describe('fetchPerRepoStatus 5-state classification', () => {
 
 //
 // ─────────────────────────────────────────────────────────────────────────────
+// fetchFieldProbes — database_id capture unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+//
+
+interface FieldProbeRepoGetResponse {
+  private?: boolean
+  node_id?: string
+  id?: number
+}
+
+/**
+ * Build a minimal OctokitClient mock for fetchFieldProbes.
+ * fetchFieldProbes calls repos.getContent (for workflow/renovate probes) and
+ * repos.get (for database_id). We stub both here.
+ */
+function makeFieldProbeOctokit(
+  overrides: {
+    reposGet?: (params: {owner: string; repo: string}) => Promise<{data: FieldProbeRepoGetResponse}>
+    getContent?: (params: {owner: string; repo: string; path: string}) => Promise<unknown>
+  } = {},
+): OctokitClient {
+  return {
+    rest: {
+      repos: {
+        get:
+          overrides.reposGet ??
+          (async () => ({
+            data: {private: false, node_id: 'R_default', id: 12345} satisfies FieldProbeRepoGetResponse,
+          })),
+        getContent:
+          overrides.getContent ??
+          (async () => {
+            throw Object.assign(new Error('Not Found'), {status: 404})
+          }),
+      },
+    },
+  } as unknown as OctokitClient
+}
+
+describe('fetchFieldProbes — database_id capture', () => {
+  it('happy path: GraphQL/REST returns databaseId → probe result carries numeric database_id', async () => {
+    // GIVEN a tracked repo in the access list with a known numeric id
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})],
+    }
+    const accessList: AccessListEntry[] = [makeAccess({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})]
+    const reposGet = vi.fn(async () => ({
+      data: {private: false, node_id: 'R_test', id: 987654} satisfies FieldProbeRepoGetResponse,
+    }))
+    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    // WHEN probing
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+
+    // THEN the probe result carries the numeric database_id
+    const probe = result.probes.get('fro-bot/test-repo')
+    expect(probe).toBeDefined()
+    expect(probe?.database_id).toBe(987654)
+    expect(result.failed).toBe(0)
+  })
+
+  it('edge: REST returns null/undefined id → probe result has no database_id; not malformed; no crash', async () => {
+    // GIVEN a tracked repo where the REST response has no numeric id
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})],
+    }
+    const accessList: AccessListEntry[] = [makeAccess({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})]
+    const reposGet = vi.fn(async () => ({
+      // id is absent — simulates a response where databaseId is not returned
+      data: {private: false, node_id: 'R_test'} as FieldProbeRepoGetResponse,
+    }))
+    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    // WHEN probing
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+
+    // THEN the probe result has no database_id but is otherwise valid (not failed)
+    const probe = result.probes.get('fro-bot/test-repo')
+    expect(probe).toBeDefined()
+    expect(probe).not.toHaveProperty('database_id')
+    expect(result.failed).toBe(0)
+    // AND the probe is not classified as malformed (no warn about malformed)
+    expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('malformed'))
+  })
+
+  it('edge: REST returns id: null → probe result has no database_id; not malformed; no crash', async () => {
+    // GIVEN a tracked repo where the REST response has id: null
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})],
+    }
+    const accessList: AccessListEntry[] = [makeAccess({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})]
+    const reposGet = vi.fn(async () => ({
+      data: {private: false, node_id: 'R_test', id: null} as unknown as FieldProbeRepoGetResponse,
+    }))
+    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    // WHEN probing
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+
+    // THEN the probe result has no database_id but is otherwise valid
+    const probe = result.probes.get('fro-bot/test-repo')
+    expect(probe).toBeDefined()
+    expect(probe).not.toHaveProperty('database_id')
+    expect(result.failed).toBe(0)
+  })
+
+  it('integration: captured database_id is available on the probe result for downstream consumption', async () => {
+    // GIVEN a tracked repo with a known numeric id
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'fro-bot', name: 'private-repo', node_id: 'R_private', private: true})],
+    }
+    const accessList: AccessListEntry[] = [
+      makeAccess({owner: 'fro-bot', name: 'private-repo', node_id: 'R_private', private: true}),
+    ]
+    const reposGet = vi.fn(async () => ({
+      data: {private: true, node_id: 'R_private', id: 1234567} satisfies FieldProbeRepoGetResponse,
+    }))
+    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    // WHEN probing
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+
+    // THEN the probe result carries database_id that a downstream writer (Unit 3) can read
+    const probe = result.probes.get('fro-bot/private-repo')
+    expect(probe).toBeDefined()
+    // Verify the field is accessible and has the correct type
+    const databaseId: number | undefined = probe?.database_id
+    expect(databaseId).toBe(1234567)
+    expect(typeof databaseId).toBe('number')
+  })
+
+  it('missing databaseId alone does not cause the entry to be classified as malformed in reconcileRepos', () => {
+    // GIVEN a tracked repo with a field probe that has no database_id
+    const entry = makeEntry({
+      name: 'no-db-id-repo',
+      onboarding_status: 'onboarded',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      private: false,
+      node_id: 'R_default',
+    })
+    // A FieldProbe without database_id (the optional field is absent)
+    const probeWithoutDatabaseId: FieldProbe = {
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      // database_id intentionally absent
+    }
+
+    // WHEN reconciling with this probe
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({name: 'no-db-id-repo', private: false, node_id: 'R_default'})],
+        fieldProbes: new Map([['fro-bot/no-db-id-repo', probeWithoutDatabaseId]]),
+      }),
+    )
+
+    // THEN the entry is NOT classified as malformed — missing database_id alone is not malformed
+    expect(result.summary.malformed).toBe(0)
+    // AND the entry is unchanged (no field drift)
+    expect(result.summary.unchanged).toBe(1)
+    expect(result.summary.refreshed).toBe(0)
+  })
+})
+
+//
+// ─────────────────────────────────────────────────────────────────────────────
 // Unit 3 — I/O shell tests for `handleReconcile`
 // ─────────────────────────────────────────────────────────────────────────────
 //
@@ -2153,6 +2330,7 @@ interface RepoGetResponse {
   archived?: boolean
   private?: boolean
   node_id?: string
+  id?: number
 }
 
 interface BranchResponse {
