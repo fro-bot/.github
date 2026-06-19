@@ -2185,26 +2185,24 @@ Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
 
-## [2026-06-19 09:55] ingest | repo:marcusrbrown/infra
+## [2026-06-19 09:59] ingest | marcusrbrown/systematic
 
-Incremental re-survey of `marcusrbrown/infra` (HEAD `ac79468`, last push 2026-06-19, up from `9ce50f4` 2026-06-09). Reads limited per the untrusted-input constraint: repo metadata, root + `apps/` + `packages/` + `.github/workflows/` directory listings, the two new apps' README/`package.json`, root `package.json`, `packages/cli/package.json`, `AGENTS.md` (grep), `apps/gateway/upstream.json`, and the four `docker-compose.yaml` image pins. The 10-day delta is a structural expansion, not just hygiene. Updated repo page `marcusrbrown--infra.md`, cross-linked `fro-bot--dashboard.md`, and `index.md`. No new topic/entity/comparison pages warranted — existing [[github-actions-ci]], [[docker-containers]], and [[probot-settings]] coverage absorbs the deltas.
+Re-survey of `marcusrbrown/systematic` (HEAD `11b12bf`, was `4d2c123`). Modest delta — 32 commits since last survey, the bulk Renovate dependency churn. Updated repo page additively and touched [[opencode-plugins]], `index.md`.
 
-Material deltas (additive):
+Key findings:
 
-- **Two new apps.** `apps/dashboard/` — Fro Bot operator dashboard at `dashboard.fro.bot`; 2-service compose (caddy + digest-pinned upstream `ghcr.io/fro-bot/dashboard:2026.06.16`, no on-droplet build), GitHub App key file-mounted (never env var), digest-verify-before-serve invariant, single-operator OAuth. The build/source home is [[fro-bot--dashboard]]; infra is the deploy/runbook home. `apps/vpn/` — WireGuard egress box on **AWS Lightsail** (`eu-west-1`), the repo's **first AWS-backed deployable**; native `wg-quick`/systemd (no Docker), provisioned via `@aws-sdk/client-lightsail`, deploy/status SSH-only, peer roster in `VPN_PEERS` Environment secret + gitignored local mirror.
-- **Workflows 13 → 16:** added `deploy-dashboard.yaml`, `deploy-vpn.yaml`, and `codeql.yaml` (CodeQL `javascript-typescript` analysis, weekly Wed 05:30 UTC + push/PR). `deploy.yaml` orchestrator now fans out to 6 per-app deploy workflows.
-- **New GitHub Environments:** `dashboard` (8 secrets incl. file-mounted App key) and `vpn` (`VPN_SSH_KEY`, `VPN_HOST`, optional `VPN_PEERS`; AWS creds kept operator-local, deliberately not in the Environment).
-- **Version bumps:** CLI `@marcusrbrown/infra` v0.9.17 → **v0.12.2**; Fro Bot agent v0.59.0 → **v0.71.0** (SHA `9b89fb3`); gateway upstream pin v0.57.0 → **v0.69.0**; CLIProxyAPI v7.1.56 → **v7.2.20**; Renovate preset `marcusrbrown/renovate-config` #5.2.0 → **#5.2.3**; ESLint 10.4.0 → 10.5.0, lint-staged 16 → 17, Prettier 3.8.3 → 3.8.4. Caddy steady at `2.11.3-alpine` (digest shared across cliproxy/umami/dashboard).
-- **New root docs:** `ARCHITECTURE.md`, `STRUCTURE.md`.
+- **Release:** v2.31.0 → v2.32.0 (2026-06-15). The substantive feature is a removed-names lifecycle for `disabled_skills`/`disabled_agents` (#534): schema-enum acceptance + validation acceptance + load-time silent drop with per-load `[systematic]` warning, plus a content-integrity gate enforcing removed ∩ bundled = ∅. Fixes the footgun where a later upstream skill/agent cleanup would brick configs that had disabled the now-removed name.
+- **Agent:** `fro-bot/agent` v0.59.0 → v0.71.0 (SHA `9b89fb3`) — 12 Renovate minor bumps over the interval. Ecosystem version laggard relative to renovate-action's v0.60.0-era canary cadence.
+- **Runtime/deps:** OpenCode `@opencode-ai/{plugin,sdk}` v1.16.2 → v1.17.7; semantic-release v25.0.3 → v25.0.5; `biome.json` `$schema` synced to 2.4.16 to match the pinned CLI (#533, fixed a deserialize-driven lint failure). Manifest now surfaces `js-yaml` (^4.1.1) and `jsonc-parser` (^3.3.0) as direct runtime deps; `js-yaml` is externalized in the `bun build` command. `ajv`/`ajv-formats` present as schema-tooling dev deps.
+- **Skills/agents:** Bundled skill directory count is 48 at this SHA; prior surveys recorded 49. Recorded as methodology drift (live dir scan vs. earlier counts that folded in the project-scoped `release-notes-narrative` skill shipping outside `skills/`), not a removal — noted both readings on the page per the additive/contradiction rule. 51 agents and 8 workflows unchanged.
+- **`orchestrating-subagents`** corrected for OpenCode 1.17.6 and now recommends background subagents (#530).
+- **Fro Bot integration:** fully active, single three-mode `fro-bot.yaml` unchanged in structure. No follow-up draft PR needed.
+- HEAD fully drained (0 open PRs); recent merges co-authored by `mrbro-bot[bot]`.
 
-**Fro Bot workflow present** — full three-mode integration at agent v0.71.0; no follow-up draft PR needed.
+Sources: https://github.com/marcusrbrown/systematic (SHA 11b12bfae2433577db84821b5788a99f339243c9)
 
-Corrected stale facts carried from prior surveys: Cross-Repository Patterns listed Renovate preset `#4.5.8` (the rest of the page already said #5.2.0) — reconciled to the confirmed #5.2.3 and wikilinked [[marcusrbrown--renovate-config]].
+## [2026-06-19 10:00] ingest | repo:marcusrbrown/systematic
 
-Sources: https://github.com/marcusrbrown/infra (SHA ac7946892a6a12c7b1720e273d4c7398e7d738c0)
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
-## [2026-06-19 10:00] ingest | repo:marcusrbrown/infra
-
-Surveyed marcusrbrown/infra and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/infra
+Sources: https://github.com/marcusrbrown/systematic

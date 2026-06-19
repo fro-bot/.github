@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-06-09
+updated: 2026-06-19
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -31,6 +31,9 @@ sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
     sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
     accessed: 2026-06-09
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 11b12bfae2433577db84821b5788a99f339243c9
+    accessed: 2026-06-19
 tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow]
 ---
 
@@ -135,6 +138,7 @@ Rather than registering one tool per skill, systematic registers a single `syste
 | OCX registry | Component-level distribution via ocx CLI with named profiles (V2 schema since v2.6.0) | [[marcusrbrown--systematic]] |
 | Factory deduplication | Singleton guard preventing duplicate plugin registration across multiple opencode.json sources | [[marcusrbrown--systematic]] |
 | Content integrity gate | CI-enforced validation that all skill/agent sub-files are properly imported and shipped | [[marcusrbrown--systematic]] |
+| Removed-name disable-list tolerance | Disable lists (`disabled_skills`/`disabled_agents`) accept names that were once bundled but later removed; load-time silently drops them with a warning instead of failing validation. A content-integrity gate enforces removed ∩ bundled = ∅. Prevents a later upstream cleanup from bricking configs that had disabled the removed item (systematic v2.32.0, #534) | [[marcusrbrown--systematic]] |
 
 ## Process Tree Management
 
@@ -144,7 +148,7 @@ Rather than registering one tool per skill, systematic registers a single `syste
 
 | Repo | npm Package | Purpose | Stack | Status |
 |------|-------------|---------|-------|--------|
-| [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (46 skills, 50 agents) | Bun, Biome, semantic-release | Active, v2.7.3 |
+| [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (~48 bundled skill dirs, 51 agents) | Bun, Biome, Zod-typed config, semantic-release | Active, v2.32.0 |
 | [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses; opt-in `/copilot-status` TUI half | Bun, Biome, Changesets | Active, v0.12.0 (4 tools: delegate/output/cancel/resume) |
 | [[marcusrbrown--cortexkit-anthropic-auth]] | `@marcusrbrown/opencode-anthropic-auth` + `@marcusrbrown/anthropic-auth-core` | Claude Pro/Max OAuth, fallback accounts, quota routing, prompt-cache controls, optional Cloudflare Worker relay; OpenCode + Pi share the same core | Bun, Biome, Lefthook, monorepo workspaces | Active fork, `1.2.2-mb.2` (fork of `cortexkit/anthropic-auth`); Pi package private in fork |
 
@@ -293,7 +297,7 @@ Contrast with [[marcusrbrown--systematic]] which ships general-purpose skills (`
 
 ## Related Pages
 
-- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows with 46 skills and 50 agents
+- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows (~48 bundled skill dirs, 51 agents) at v2.32.0
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi; Fro Bot active at v0.45.0 (as of 2026-06-09)
