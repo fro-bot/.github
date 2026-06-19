@@ -4,6 +4,7 @@ import {describe, expect, it} from 'vitest'
 import {
   addRepoEntry,
   computeNextEligibleAt,
+  normalizeRepoEntryForStorage,
   publicRepoEntryExists,
   recordSurveyResult,
   RepoEntryNotFoundError,
@@ -1320,5 +1321,192 @@ describe('publicRepoEntryExists', () => {
     const snapshot = structuredClone(current)
     publicRepoEntryExists(current, 'alice', 'project')
     expect(current).toEqual(snapshot)
+  })
+})
+
+describe('addRepoEntry — database_id on redacted entries', () => {
+  const DB_ID = 987654321
+
+  // Happy path: private repo WITH probe database_id → entry carries database_id, node_id, private:true, owner:[REDACTED]
+  it('persists database_id on a new private entry when provided', () => {
+    const result = addRepoEntry(EMPTY_REPOS, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      now: NOW,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      database_id: DB_ID,
+    })
+
+    expect(result.repos[0]).toMatchObject({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      database_id: DB_ID,
+    })
+    // Security: canonical owner/name must not appear anywhere in the serialized output
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+    // Security: database_id appears only as the numeric field, not in any string
+    expect(typeof result.repos[0]?.database_id).toBe('number')
+  })
+
+  // Edge: private repo with NO probe database_id → entry has node_id/private but no database_id
+  it('omits database_id when not provided — entry is still valid and redacted', () => {
+    const result = addRepoEntry(EMPTY_REPOS, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      now: NOW,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+    })
+
+    expect(result.repos[0]).toMatchObject({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+    })
+    expect(result.repos[0]?.database_id).toBeUndefined()
+    expect(JSON.stringify(result)).not.toContain('private-owner')
+    expect(JSON.stringify(result)).not.toContain('secret-repo')
+  })
+
+  // Edge: re-running the writer on an entry that already has database_id → idempotent (returns same ref)
+  it('is idempotent when re-adding a private entry that already has database_id', () => {
+    const existingEntry = repoEntry({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      database_id: DB_ID,
+    })
+    const current: ReposFile = {version: 1, repos: [existingEntry]}
+
+    const result = addRepoEntry(current, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      now: NOW,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      database_id: DB_ID,
+    })
+
+    expect(result).toBe(current)
+    expect(result.repos[0]).toBe(existingEntry)
+  })
+
+  // Security: database_id on a public entry is NOT treated as a redacted field
+  it('does not redact owner/name for a public entry even when database_id is provided', () => {
+    const result = addRepoEntry(EMPTY_REPOS, {
+      owner: 'alice',
+      repo: 'public-project',
+      now: NOW,
+      private: false,
+      node_id: PUBLIC_NODE_ID,
+      database_id: DB_ID,
+    })
+
+    expect(result.repos[0]).toMatchObject({
+      owner: 'alice',
+      name: 'public-project',
+      private: false,
+      node_id: PUBLIC_NODE_ID,
+    })
+    // database_id is not a privacy field for public repos — it may or may not be present
+    // depending on implementation, but owner/name must be canonical
+  })
+})
+
+describe('normalizeRepoEntryForStorage — database_id propagation', () => {
+  const DB_ID = 123456789
+
+  // Happy path: normalizing a private entry with database_id in the input → entry carries it
+  it('copies database_id onto a private entry when present in the identity input', () => {
+    const entry = repoEntry({
+      owner: 'private-owner',
+      name: 'secret-repo',
+      private: false,
+      node_id: PRIVATE_NODE_ID,
+    })
+
+    const result = normalizeRepoEntryForStorage(entry, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      database_id: DB_ID,
+    })
+
+    expect(result).toMatchObject({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      database_id: DB_ID,
+    })
+  })
+
+  // Edge: normalizing without database_id → no database_id on the result
+  it('does not add database_id when not present in the identity input', () => {
+    const entry = repoEntry({
+      owner: 'private-owner',
+      name: 'secret-repo',
+      private: false,
+      node_id: PRIVATE_NODE_ID,
+    })
+
+    const result = normalizeRepoEntryForStorage(entry, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+    })
+
+    expect(result.database_id).toBeUndefined()
+  })
+
+  // Edge: idempotent — re-normalizing an already-redacted entry with same database_id returns same ref
+  it('returns the same entry reference when database_id already matches (idempotent)', () => {
+    const entry = repoEntry({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      database_id: DB_ID,
+    })
+
+    const result = normalizeRepoEntryForStorage(entry, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      database_id: DB_ID,
+    })
+
+    expect(result).toBe(entry)
+  })
+
+  // Edge: database_id changes → new entry returned with updated database_id
+  it('returns a new entry when database_id differs from the stored value', () => {
+    const entry = repoEntry({
+      owner: '[REDACTED]',
+      name: PRIVATE_NODE_ID,
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      database_id: 111,
+    })
+
+    const result = normalizeRepoEntryForStorage(entry, {
+      owner: 'private-owner',
+      repo: 'secret-repo',
+      private: true,
+      node_id: PRIVATE_NODE_ID,
+      database_id: DB_ID,
+    })
+
+    expect(result).not.toBe(entry)
+    expect(result.database_id).toBe(DB_ID)
   })
 })
