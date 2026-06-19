@@ -32,6 +32,31 @@ across repos, other agents, and eventually domains beyond software.
 | **Workflows** | Systematic (`marcusrbrown/systematic`) | Durable structured workflows (brainstorm/plan/work/review/compound) | The discipline layer for cross-repo planning and durable agent learning |
 | **Dashboard** | net-new | — | The operator's window and command surface (PWA) |
 
+## Rebaseline (2026-06-21) — program is running concurrent, not serial
+
+This doc's original roadmap recommended a serial Phase 1 → 2 → 3. Reality has diverged, and
+this note rebaselines it:
+
+- **Phase 1 (read-only dashboard):** code-complete in `fro-bot/dashboard` (Units 1-6) and
+  `marcusrbrown/infra` (deploy stack, Units 7-8) — **but not yet operationally verified**
+  (live deploy, production-shaped redaction exercise, and infra security posture are owed
+  before it can be called done). The R8 cross-source leak guard is genuinely implemented.
+- **Phase 2 (S1/S2 spine):** already in **active parallel implementation** in `fro-bot/agent`
+  (operator auth/OAuth/session/CSRF/allowlist + repo-authz helper merged through "Unit 3f",
+  `v0.69.0` released; umbrella `fro-bot/agent#907`). It is no longer "design now, build later."
+- **Phase 3 (interactive dashboard):** exploratory/mock work has started (dashboard `#37`
+  typed mock operator-client merged; `#26` mock operator UI skeleton open) — but this is
+  **gated on `fro-bot/agent` owning and freezing the canonical operator API contract**. The
+  mock must remain a non-canonical fixture, never the de facto API design.
+
+So the operating truth is **concurrent workstreams**, not strict serial phases. The serial
+roadmap below is retained as the original strategic recommendation, not the current schedule.
+
+Correction to the original framing: this doc said the Phase-1 visibility slice needs "no
+spine and no auth." The shipped Phase-1 dashboard *does* use operator auth (a dedicated GitHub
+OAuth App + signed cookie) because it holds a GitHub App read key and must be operator-only.
+"No spine" still holds; "no auth" does not.
+
 ## Current state (verified 2026-06-15)
 
 Grounded against live source, not aspiration:
@@ -170,6 +195,11 @@ they reach their ceiling once some operator surface exists. Everything else — 
 push, cross-agent coordination, negotiation — truly requires the spine.
 
 ## Phased roadmap
+
+> **Historical recommendation (2026-06-15).** This serial phasing was the original strategic
+> recommendation. As of the 2026-06-21 rebaseline above, Phases 1 and 2 are being built
+> concurrently and Phase 3 mock work has begun — read this section as the strategic intent,
+> not the current schedule.
 
 The phasing leads with the operator's stated pain — *visibility into work scattered across
 repos* — rather than the agent's internal autonomy. Relief comes first; the heavier
