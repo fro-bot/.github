@@ -1,13 +1,27 @@
 ---
 title: 'feat: Fro Bot monitoring dashboard — Phase 1'
 type: feat
-status: active
+status: code-complete-pending-verification
 date: 2026-06-15
 deepened: 2026-06-15
+reconciled: 2026-06-21
 origin: docs/brainstorms/2026-06-15-monitoring-dashboard-phase-1-requirements.md
 ---
 
 # feat: Fro Bot monitoring dashboard — Phase 1
+
+> **Reconciliation (2026-06-21).** All 8 units are CODE-COMPLETE and merged — Units 1-6 in
+> `fro-bot/dashboard`, Units 7-8 in `marcusrbrown/infra` — with the R8 cross-source leak
+> guard genuinely implemented (denylist-before-query + fail-closed). This is **not yet
+> operationally complete.** Owed before "done": (A) live-deploy verification
+> (`dashboard.fro.bot` TLS/`healthz`, OAuth E2E, protected-route denial, cookie/logout);
+> (B) production-shaped R8 verification (exercise the aggregator against real redacted data —
+> zero private name/`node_id` in SSR/api/logs/cache; fail-closed on metadata failure);
+> (C) infra security posture (App key file-mounted, container hardening, no secrets in logs,
+> revocation runbook); (D) a post-merge security review if Units 1-6 shipped without one.
+> Those verification steps are owned by the dedicated dashboard + infra sessions; this plan
+> stays `code-complete-pending-verification` until they pass. The unit checkboxes below
+> reflect code-merged status, not operational sign-off.
 
 **Target repos:** `fro-bot/dashboard` (net-new, the app) and `marcusrbrown/infra`
 (deploy wiring as `apps/dashboard`). Both need creating. This plan doc lives in
@@ -247,7 +261,7 @@ the `fro-bot/dashboard` build (Units 1-6) is handed to a separate parallel devel
 working against this plan; orchestration/planning stays in the originating session. Units 7-8
 (infra deploy) coordinate back.
 
-- [ ] **Unit 0: Provision prerequisites (one-time, manual)**
+- [x] **Unit 0: Provision prerequisites (one-time, manual)**
 
 **Goal:** All external resources that Units 1-6 depend on are created and secrets are
 provisioned before any code is written.
@@ -271,7 +285,7 @@ provisioned before any code is written.
 tests against real GitHub require the real key. Droplet provisioning is a one-time step here;
 Unit 7 owns the Compose/Caddy/deploy files.
 
-- [ ] **Unit 1: Bootstrap `fro-bot/dashboard` repo + Hono skeleton**
+- [x] **Unit 1: Bootstrap `fro-bot/dashboard` repo + Hono skeleton**
 
 **Goal:** Stand up the new repo with a minimal Hono server, TS/Node-24 config, pnpm, vitest,
 and a `/healthz` route.
@@ -298,7 +312,7 @@ shape; Hono node-server quickstart.
 
 **Verification:** server starts on Node 24, `/healthz` responds, vitest + lint green.
 
-- [ ] **Unit 2: Agent App client (second key) + installation enumeration**
+- [x] **Unit 2: Agent App client (second key) + installation enumeration**
 
 **Goal:** Octokit App client authenticating with the second Agent App private key; enumerate
 installations → read-only-scoped tokens → accessible repos.
@@ -347,7 +361,7 @@ Octokit-derived typing convention (`as unknown as` boundary casts, no `any`).
 **Verification:** with mocked Octokit, enumeration returns the unioned repo set; key never
 appears in any log line; every minted token carries a read-only permissions object.
 
-- [ ] **Unit 3: Collaborator-repo metadata reader (redaction-safe)**
+- [x] **Unit 3: Collaborator-repo metadata reader (redaction-safe)**
 
 **Goal:** Read collaborator repos from `metadata/repos.yaml` on the control plane `data`
 branch, preserving redactions and exporting a denylist of redacted node_ids for the aggregator.
@@ -383,7 +397,7 @@ cross-source denylist. Handle `data` missing/behind (warn + degrade, don't crash
 **Verification:** redacted entries stay redacted end-to-end; `redactedNodeIds` populated;
 unexpected schema version fails closed; missing `data` degrades gracefully.
 
-- [ ] **Unit 4: Status aggregator + in-memory cache**
+- [x] **Unit 4: Status aggregator + in-memory cache**
 
 **Goal:** For the unioned repo set, fetch the bounded Phase-1 signal set via GraphQL and cache
 it with a 60s background refresh — without leaking redacted private repos through the
@@ -446,7 +460,7 @@ flag. Sort attention-first. Cap per-repo summary to a small N (R2 fixed set).
 **Verification:** aggregator returns labeled, attention-sorted status; cache refreshes; partial
 failures isolated; redacted repos absent from all output.
 
-- [ ] **Unit 5: Operator auth (GitHub OAuth + signed cookie, allowlist)**
+- [x] **Unit 5: Operator auth (GitHub OAuth + signed cookie, allowlist)**
 
 **Goal:** Lock the app to one operator via a dedicated GitHub OAuth App; deny-by-default.
 
@@ -489,7 +503,7 @@ if `OPERATOR_LOGIN` is unset or whitespace-only. Per-IP rate limiting (Hono midd
 unauthenticated/invalid/expired requests; unset or whitespace allowlist fails closed; weak
 cookie key rejected at boot.
 
-- [ ] **Unit 6: Dashboard view (SSR) + status API**
+- [x] **Unit 6: Dashboard view (SSR) + status API**
 
 **Goal:** Glanceable SSR view + `/api/status` JSON, behind auth, with manual refresh.
 
@@ -519,7 +533,7 @@ Stale-cache banner when set.
 **Verification:** authed operator sees a glanceable attention-sorted view; unauth denied;
 empty/stale states render cleanly.
 
-- [ ] **Unit 7: Infra `apps/dashboard` deploy stack**
+- [x] **Unit 7: Infra `apps/dashboard` deploy stack**
 
 **Goal:** Deployable Compose + Caddy + deploy scripts, mirroring `apps/umami`.
 
@@ -551,7 +565,7 @@ exactly.
 **Verification:** `docker compose config` valid; secret is file-mounted not argv; Caddyfile
 targets `dashboard.fro.bot`.
 
-- [ ] **Unit 8: Infra deploy workflow + CLI registration**
+- [x] **Unit 8: Infra deploy workflow + CLI registration**
 
 **Goal:** Wire `apps/dashboard` into the deploy router + CLI.
 
