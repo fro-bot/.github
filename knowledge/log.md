@@ -2161,21 +2161,26 @@ Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
 
-## [2026-06-19 03:36] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+## [2026-06-19 03:35] ingest | repo:marcusrbrown/gpt
 
-No-delta re-survey of `marcusrbrown/cortexkit_anthropic-auth`. Reads limited to repo metadata, `.github/workflows` directory listing, latest-commit pointer, and root `package.json` per the untrusted-input constraint. Updated repo page `marcusrbrown--cortexkit-anthropic-auth.md` (added a third dated source, bumped `updated` to 2026-06-19, added a no-delta confirmation block) and `index.md`. No topic/entity/comparison pages warranted — nothing new to compound.
+Incremental re-survey of `marcusrbrown/gpt` (HEAD `182e23d`, last push 2026-06-19, up from `36b50c9` 2026-06-08). Reads limited to repo metadata, `.github/workflows` directory listing, `package.json`, `.tool-versions`, `fro-bot.yaml`, and `renovate.json5` per the untrusted-input constraint. The 50-commit delta touched only `.github/renovate.json5`, four `.github/workflows/*.yaml` files, `.tool-versions`, `package.json`, and `pnpm-lock.yaml` — pure dependency/workflow hygiene, no structural or application-code changes. Updated repo page `marcusrbrown--gpt.md` and `index.md`. No new topic/entity/comparison pages warranted; existing [[langchain]] and [[github-actions-ci]] coverage absorbs the deltas.
 
-Findings (additive; no contradictions with prior surveys):
+Material deltas (additive; contradiction resolved, see below):
 
-- **HEAD unchanged at `99fdbe9`** (`chore(release): bump fork packages to 1.2.5-mb.3`, committed 2026-05-31T04:03Z). Identical to the 2026-06-09 survey — no upstream sync or fork release in the interim. The fork is parked at its last release.
-- **Workflows unchanged:** `ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`.
-- **Confirmed snapshot:** public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1 star / 0 forks, issues enabled, no GitHub wiki, 520 KB, TypeScript primary. Published `@marcusrbrown/{anthropic-auth-core,opencode-anthropic-auth}` hold at `1.2.5-mb.3`; `@cortexkit/pi-anthropic-auth` still private in the fork.
-- **Fro Bot workflow present** (`fro-bot.yaml`, agent v0.45.0) — no follow-up draft PR needed.
+- **Fro Bot agent v0.57.0 → v0.70.0** (SHA `60e600f39316758524f4fefe4c8a44f5bb25b089`); `actions/checkout` still pinned v6.0.3 (`df4cb1c`).
+- **Renovate preset** `marcusrbrown/renovate-config` 5.2.0 → 5.2.3; `bfra-me/renovate-config:automerge.json5` 5.2.1 → 5.2.3.
+- **Toolchain:** Node 24.16.0 → 24.17.0; pnpm 10.34.1 → 10.34.3; `@typescript/native-preview` → 7.0.0-dev.20260615.1.
+- **Dep bumps:** `@langchain/langgraph` 1.3.5 → 1.4.2, `langchain` 1.4.4 → 1.4.5, `@langchain/core` → 1.1.49, `@langchain/anthropic` → 1.4.1, `tailwindcss`/`@tailwindcss/vite` → 4.3.1, `@playwright/test` → 1.61.0, `vitest`/`@vitest/coverage-v8` → 4.1.9, `@vitest/eslint-plugin` → 1.6.20, `eslint` → 10.5.0, `prettier` → 3.8.4.
+- **Open issues:** 25 → 22. PR #2165 (HeroUI v2→v3) status still unconfirmed; HeroUI pinned 2.8.10.
 
-Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 99fdbe906c5875893d363c904f6e6bc066d997b1)
+**Contradiction resolved:** The Fro Bot Integration section still carried a stale "Two dedicated workflows" header listing `fro-bot-autoheal.yaml` alongside an inline note that the split had consolidated. Confirmed at this HEAD that the workflow directory contains a single `fro-bot.yaml` carrying review/maintenance/autoheal as `mode`-gated paths (dual cron 03:30/15:30 UTC); rewrote the section to the confirmed single-file reality and corrected the "Dual Fro Bot workflows" line in Notable Patterns.
 
-## [2026-06-19 03:38] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+**Fro Bot workflow present** — full integration; no follow-up draft PR needed.
 
-Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+Sources: https://github.com/marcusrbrown/gpt (SHA 182e23d701acef6615ae3194343c2bda2e0cfa5b)
 
-Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+## [2026-06-19 03:38] ingest | repo:marcusrbrown/gpt
+
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/gpt
