@@ -729,6 +729,149 @@ describe('schemas — rejection cases', () => {
     }
   })
 
+  it('accepts entry with database_id: 1234567 (positive integer)', () => {
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: '[REDACTED]',
+          name: 'R_kgDOSVJgdw',
+          added: '2026-05-05',
+          onboarding_status: 'onboarded',
+          last_survey_at: '2026-05-06',
+          last_survey_status: 'success',
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: '2026-06-08',
+          private: true,
+          node_id: 'R_kgDOSVJgdw',
+          database_id: 1234567,
+        },
+      ],
+    }
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('accepts entry omitting database_id (optional field)', () => {
+    const ok = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+        },
+      ],
+    }
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+  })
+
+  it('rejects database_id: 0 (not positive)', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          database_id: 0,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('database_id')
+  })
+
+  it('rejects database_id: -5 (negative)', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          database_id: -5,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('database_id')
+  })
+
+  it('rejects database_id: 12.5 (not an integer)', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          database_id: 12.5,
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('database_id')
+  })
+
+  it('rejects database_id: "1234" (string, not number)', () => {
+    const bad = {
+      version: 1,
+      repos: [
+        {
+          owner: 'fro-bot',
+          name: 'test',
+          added: '2026-04-17',
+          onboarding_status: 'pending',
+          last_survey_at: null,
+          last_survey_status: null,
+          has_fro_bot_workflow: false,
+          has_renovate: false,
+          discovery_channel: 'collab',
+          next_survey_eligible_at: null,
+          database_id: '1234',
+        },
+      ],
+    }
+    expect(isReposFile(bad)).toBe(false)
+    const error = catchSchemaError(() => assertReposFile(bad))
+    expect(error.path).toContain('database_id')
+  })
+
   it('rejects non-string entry in with-renovate list', () => {
     const bad = {repositories: {'with-renovate': ['valid', 42]}}
     expect(isRenovateFile(bad)).toBe(false)
