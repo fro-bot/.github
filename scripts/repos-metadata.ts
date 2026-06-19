@@ -27,6 +27,14 @@ export interface RepoIdentityInput {
   repo: string
   private?: boolean
   node_id?: string
+  /**
+   * Numeric REST `repository.id` (GitHub's `databaseId`). Optional: absent when the probe
+   * did not return a positive integer. Like `node_id`, this promotes to main with the entry
+   * but must NEVER be embedded in a rendered/logged public surface (issue text, commit
+   * message, log line). Written onto redacted entries so the denylist secondary guard is
+   * format-independent.
+   */
+  database_id?: number
 }
 
 function assertPrivateNodeId(input: Pick<RepoIdentityInput, 'private' | 'node_id'>): void {
@@ -35,7 +43,9 @@ function assertPrivateNodeId(input: Pick<RepoIdentityInput, 'private' | 'node_id
   }
 }
 
-function definedPrivacyFields(input: Pick<RepoIdentityInput, 'private' | 'node_id'>): Partial<RepoEntry> {
+function definedPrivacyFields(
+  input: Pick<RepoIdentityInput, 'private' | 'node_id' | 'database_id'>,
+): Partial<RepoEntry> {
   const fields: Partial<RepoEntry> = {}
 
   if (input.private !== undefined) {
@@ -44,6 +54,10 @@ function definedPrivacyFields(input: Pick<RepoIdentityInput, 'private' | 'node_i
 
   if (input.node_id !== undefined) {
     fields.node_id = input.node_id
+  }
+
+  if (input.database_id !== undefined) {
+    fields.database_id = input.database_id
   }
 
   return fields
@@ -68,6 +82,7 @@ function findRepoEntryIndex(repos: readonly RepoEntry[], input: RepoIdentityInpu
 export function normalizeRepoEntryForStorage(entry: RepoEntry, input: Partial<RepoIdentityInput> = {}): RepoEntry {
   const nextPrivate = input.private ?? entry.private
   const nextNodeId = input.node_id ?? entry.node_id ?? (entry.owner === REDACTED_OWNER ? entry.name : undefined)
+  const nextDatabaseId = input.database_id ?? entry.database_id
 
   if (nextPrivate === true) {
     assertPrivateNodeId({private: true, node_id: nextNodeId})
@@ -80,18 +95,23 @@ export function normalizeRepoEntryForStorage(entry: RepoEntry, input: Partial<Re
       entry.owner === REDACTED_OWNER &&
       entry.name === redactedName &&
       entry.private === true &&
-      entry.node_id === redactedName
+      entry.node_id === redactedName &&
+      entry.database_id === nextDatabaseId
     ) {
       return entry
     }
 
-    return {
+    const redacted: RepoEntry = {
       ...entry,
       owner: REDACTED_OWNER,
       name: redactedName,
       private: true,
       node_id: redactedName,
     }
+    if (nextDatabaseId !== undefined) {
+      redacted.database_id = nextDatabaseId
+    }
+    return redacted
   }
 
   const nextOwner = input.private === false && input.owner !== undefined ? input.owner : entry.owner
@@ -100,14 +120,15 @@ export function normalizeRepoEntryForStorage(entry: RepoEntry, input: Partial<Re
     ...entry,
     owner: nextOwner,
     name: nextName,
-    ...definedPrivacyFields({private: input.private, node_id: nextNodeId}),
+    ...definedPrivacyFields({private: input.private, node_id: nextNodeId, database_id: input.database_id}),
   }
 
   if (
     nextEntry.owner === entry.owner &&
     nextEntry.name === entry.name &&
     nextEntry.private === entry.private &&
-    nextEntry.node_id === entry.node_id
+    nextEntry.node_id === entry.node_id &&
+    nextEntry.database_id === entry.database_id
   ) {
     return entry
   }
@@ -186,6 +207,14 @@ export interface AddRepoEntryInput {
   private?: boolean
   /** GitHub GraphQL global node ID. Required when `private` is true. */
   node_id?: string
+  /**
+   * Numeric REST `repository.id` (GitHub's `databaseId`). Optional: absent when the probe
+   * did not return a positive integer. Like `node_id`, this promotes to main with the entry
+   * but must NEVER be embedded in a rendered/logged public surface (issue text, commit
+   * message, log line). Written onto redacted entries so the denylist secondary guard is
+   * format-independent.
+   */
+  database_id?: number
   /**
    * Onboarding status for the new entry. Defaults to `'pending'` to match the original
    * invitation-acceptance path. Reconcile passes `'pending-review'` when the repo owner is

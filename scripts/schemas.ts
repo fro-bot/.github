@@ -79,6 +79,17 @@ export interface RepoEntry {
    * Optional during the rollout window for the same reason as `private`. Tightened later.
    */
   node_id?: string
+  /**
+   * Stable numeric GitHub REST `repository.id`. The format-independent denylist anchor for
+   * redacted entries: unlike `node_id`, this value does not change when GitHub migrates its
+   * node_id format (legacy base64 → next-gen `R_…`). Populated by reconcile's field probe.
+   *
+   * Like `node_id`, this promotes to main with the entry but must NEVER be embedded in a
+   * rendered/logged public surface (issue text, commit message, log line). Optional: legacy
+   * and public entries need not carry it; a redacted entry without `database_id` remains
+   * protected by the primary `node_id` guard.
+   */
+  database_id?: number
 }
 
 export type OnboardingStatus = 'pending' | 'onboarded' | 'failed' | 'lost-access' | 'pending-review'
@@ -234,7 +245,9 @@ function isRepoEntry(value: unknown): value is RepoEntry {
       typeof value.next_survey_eligible_at === 'string') &&
     (value.private === undefined || typeof value.private === 'boolean') &&
     (value.node_id === undefined ||
-      (typeof value.node_id === 'string' && value.node_id.length > 0 && NODE_ID_PATTERN.test(value.node_id)))
+      (typeof value.node_id === 'string' && value.node_id.length > 0 && NODE_ID_PATTERN.test(value.node_id))) &&
+    (value.database_id === undefined ||
+      (typeof value.database_id === 'number' && Number.isInteger(value.database_id) && value.database_id > 0))
   )
 }
 
@@ -274,6 +287,14 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
     throw new SchemaValidationError(
       `${path}.node_id`,
       'expected safe GitHub node_id (no slash; base64url body with optional padding)',
+    )
+  if (
+    value.database_id !== undefined &&
+    (typeof value.database_id !== 'number' || !Number.isInteger(value.database_id) || value.database_id <= 0)
+  )
+    throw new SchemaValidationError(
+      `${path}.database_id`,
+      'expected positive integer (stable numeric GitHub repository.id) or omitted',
     )
 }
 
