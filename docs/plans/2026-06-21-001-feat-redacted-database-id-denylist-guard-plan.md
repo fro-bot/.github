@@ -1,12 +1,19 @@
 ---
 title: 'feat: format-independent database_id denylist guard for redacted repos'
 type: feat
-status: active
+status: complete
 date: 2026-06-21
+completed: 2026-06-21
 origin: https://github.com/fro-bot/.github/issues/3525
 ---
 
 # feat: format-independent database_id denylist guard for redacted repos
+
+> **Complete (2026-06-21).** Units 1-3 shipped in PR #3526 (schema field, field-probe
+> capture via `repos.get`, writer persistence on redacted entries). Unit 4 backfill landed
+> self-healingly on the next reconcile run: both redacted `data` entries now carry a
+> `database_id`, the run was integrity-clean, and the dashboard's secondary
+> `redactedDatabaseIds` denylist is now effective. Closes #3525.
 
 ## Overview
 
@@ -135,7 +142,7 @@ path is safe; the fix protects against a future format drift.
 Sequenced: schema first (the field must exist before the writer/probe populate it or the data
 backfill validates), then probe capture, then writer persistence, then the data backfill.
 
-- [ ] **Unit 1: Add `database_id` to the `RepoEntry` schema**
+- [x] **Unit 1: Add `database_id` to the `RepoEntry` schema**
 
 **Goal:** `RepoEntry` accepts an optional, validated `database_id` (positive integer).
 
@@ -169,7 +176,7 @@ valid. Note in the field doc that it is data-branch-only and must not be rendere
 **Verification:** schema guards accept positive-integer or omitted `database_id`, reject all
 invalid shapes; `pnpm check-types` + `pnpm test` green.
 
-- [ ] **Unit 2: Capture `databaseId` in the reconcile field probe**
+- [x] **Unit 2: Capture `databaseId` in the reconcile field probe**
 
 **Goal:** The field probe resolves the numeric `repository.id` per tracked repo alongside
 `private`/`node_id`, via the existing GraphQL query.
@@ -204,7 +211,7 @@ remains protected by `node_id`). Keep the `malformed` classification logic intac
 **Verification:** the probe surfaces `databaseId` when present, degrades gracefully when absent;
 existing probe tests still pass.
 
-- [ ] **Unit 3: Persist `database_id` on redacted entries at the write site**
+- [x] **Unit 3: Persist `database_id` on redacted entries at the write site**
 
 **Goal:** New/updated redacted entries carry `database_id` from the probe, so private repos are
 format-independent by construction.
@@ -244,7 +251,7 @@ redaction discipline as `node_id` (data-branch-only; never logged).
 **Verification:** redacted entries gain `database_id` when the probe provides it; the writer
 stays idempotent and pure; no canonical identifier leaks.
 
-- [ ] **Unit 4: Backfill `database_id` into the two existing redacted entries on `data`**
+- [x] **Unit 4: Backfill `database_id` into the two existing redacted entries on `data`**
 
 **Goal:** The two current redacted entries (`R_kgDOSVJgdw`, `R_kgDOSZ9x-w`) carry their numeric
 `database_id`, resolved from the probe.
