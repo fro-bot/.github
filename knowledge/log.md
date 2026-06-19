@@ -2184,3 +2184,27 @@ Sources: https://github.com/marcusrbrown/gpt (SHA 182e23d701acef6615ae3194343c2b
 Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-06-19 09:55] ingest | repo:marcusrbrown/infra
+
+Incremental re-survey of `marcusrbrown/infra` (HEAD `ac79468`, last push 2026-06-19, up from `9ce50f4` 2026-06-09). Reads limited per the untrusted-input constraint: repo metadata, root + `apps/` + `packages/` + `.github/workflows/` directory listings, the two new apps' README/`package.json`, root `package.json`, `packages/cli/package.json`, `AGENTS.md` (grep), `apps/gateway/upstream.json`, and the four `docker-compose.yaml` image pins. The 10-day delta is a structural expansion, not just hygiene. Updated repo page `marcusrbrown--infra.md`, cross-linked `fro-bot--dashboard.md`, and `index.md`. No new topic/entity/comparison pages warranted — existing [[github-actions-ci]], [[docker-containers]], and [[probot-settings]] coverage absorbs the deltas.
+
+Material deltas (additive):
+
+- **Two new apps.** `apps/dashboard/` — Fro Bot operator dashboard at `dashboard.fro.bot`; 2-service compose (caddy + digest-pinned upstream `ghcr.io/fro-bot/dashboard:2026.06.16`, no on-droplet build), GitHub App key file-mounted (never env var), digest-verify-before-serve invariant, single-operator OAuth. The build/source home is [[fro-bot--dashboard]]; infra is the deploy/runbook home. `apps/vpn/` — WireGuard egress box on **AWS Lightsail** (`eu-west-1`), the repo's **first AWS-backed deployable**; native `wg-quick`/systemd (no Docker), provisioned via `@aws-sdk/client-lightsail`, deploy/status SSH-only, peer roster in `VPN_PEERS` Environment secret + gitignored local mirror.
+- **Workflows 13 → 16:** added `deploy-dashboard.yaml`, `deploy-vpn.yaml`, and `codeql.yaml` (CodeQL `javascript-typescript` analysis, weekly Wed 05:30 UTC + push/PR). `deploy.yaml` orchestrator now fans out to 6 per-app deploy workflows.
+- **New GitHub Environments:** `dashboard` (8 secrets incl. file-mounted App key) and `vpn` (`VPN_SSH_KEY`, `VPN_HOST`, optional `VPN_PEERS`; AWS creds kept operator-local, deliberately not in the Environment).
+- **Version bumps:** CLI `@marcusrbrown/infra` v0.9.17 → **v0.12.2**; Fro Bot agent v0.59.0 → **v0.71.0** (SHA `9b89fb3`); gateway upstream pin v0.57.0 → **v0.69.0**; CLIProxyAPI v7.1.56 → **v7.2.20**; Renovate preset `marcusrbrown/renovate-config` #5.2.0 → **#5.2.3**; ESLint 10.4.0 → 10.5.0, lint-staged 16 → 17, Prettier 3.8.3 → 3.8.4. Caddy steady at `2.11.3-alpine` (digest shared across cliproxy/umami/dashboard).
+- **New root docs:** `ARCHITECTURE.md`, `STRUCTURE.md`.
+
+**Fro Bot workflow present** — full three-mode integration at agent v0.71.0; no follow-up draft PR needed.
+
+Corrected stale facts carried from prior surveys: Cross-Repository Patterns listed Renovate preset `#4.5.8` (the rest of the page already said #5.2.0) — reconciled to the confirmed #5.2.3 and wikilinked [[marcusrbrown--renovate-config]].
+
+Sources: https://github.com/marcusrbrown/infra (SHA ac7946892a6a12c7b1720e273d4c7398e7d738c0)
+
+## [2026-06-19 10:00] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra
