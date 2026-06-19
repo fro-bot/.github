@@ -988,7 +988,7 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   const fieldsMatch =
     probe.has_fro_bot_workflow === workingEntry.has_fro_bot_workflow && probe.has_renovate === workingEntry.has_renovate
   const privacyMatch = workingEntry.private === accessPrivate && workingEntry.node_id === accessNodeId
-  const databaseIdMatch = workingEntry.database_id === probe.database_id
+  const databaseIdMatch = probe.database_id === undefined || workingEntry.database_id === probe.database_id
   const channelMatch = workingEntry === entry // true only when no channel refresh occurred
 
   if (fieldsMatch && privacyMatch && databaseIdMatch && channelMatch) {

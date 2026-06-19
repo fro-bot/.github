@@ -2319,6 +2319,74 @@ describe('fetchFieldProbes — database_id capture', () => {
     expect(result.summary.unchanged).toBe(1)
     expect(result.summary.refreshed).toBe(0)
   })
+
+  it('sticky: stored database_id + transient probe (no database_id) → NOT refreshed, stored value preserved', () => {
+    // GIVEN an entry that already has a stored database_id
+    const entry = makeEntry({
+      name: 'sticky-repo',
+      onboarding_status: 'onboarded',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      private: false,
+      node_id: 'R_sticky',
+      database_id: 123,
+    })
+    // AND a probe that transiently returns no database_id (e.g. repos.get hiccup)
+    const transientProbe: FieldProbe = {
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      // database_id absent — simulates a transient sub-probe failure
+    }
+
+    // WHEN reconciling
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({name: 'sticky-repo', private: false, node_id: 'R_sticky'})],
+        fieldProbes: new Map([['fro-bot/sticky-repo', transientProbe]]),
+      }),
+    )
+
+    // THEN the entry is NOT counted as refreshed — absent probe must not signal drift
+    expect(result.summary.refreshed).toBe(0)
+    expect(result.summary.unchanged).toBe(1)
+    // AND the stored database_id is preserved in the output
+    expect(result.nextRepos.repos[0]).toMatchObject({database_id: 123})
+  })
+
+  it('backfill: stored database_id absent + probe returns a number → entry IS refreshed and gains database_id', () => {
+    // GIVEN an entry with no stored database_id (first-time capture scenario)
+    const entry = makeEntry({
+      name: 'backfill-repo',
+      onboarding_status: 'onboarded',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      private: false,
+      node_id: 'R_backfill',
+      // database_id intentionally absent
+    })
+    // AND a probe that returns a numeric database_id for the first time
+    const backfillProbe: FieldProbe = {
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      database_id: 456,
+    }
+
+    // WHEN reconciling
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({name: 'backfill-repo', private: false, node_id: 'R_backfill'})],
+        fieldProbes: new Map([['fro-bot/backfill-repo', backfillProbe]]),
+      }),
+    )
+
+    // THEN the entry IS refreshed — a present probe value that differs from stored triggers capture
+    expect(result.summary.refreshed).toBe(1)
+    expect(result.summary.unchanged).toBe(0)
+    // AND the new database_id is written to the output entry
+    expect(result.nextRepos.repos[0]).toMatchObject({database_id: 456})
+  })
 })
 
 //
