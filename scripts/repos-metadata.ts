@@ -29,8 +29,9 @@ export interface RepoIdentityInput {
   node_id?: string
   /**
    * Numeric REST `repository.id` (GitHub's `databaseId`). Optional: absent when the probe
-   * did not return a positive integer. Data-branch-only — must never be rendered/logged
-   * publicly. Written onto redacted entries so the denylist secondary guard is
+   * did not return a positive integer. Like `node_id`, this promotes to main with the entry
+   * but must NEVER be embedded in a rendered/logged public surface (issue text, commit
+   * message, log line). Written onto redacted entries so the denylist secondary guard is
    * format-independent.
    */
   database_id?: number
@@ -126,7 +127,8 @@ export function normalizeRepoEntryForStorage(entry: RepoEntry, input: Partial<Re
     nextEntry.owner === entry.owner &&
     nextEntry.name === entry.name &&
     nextEntry.private === entry.private &&
-    nextEntry.node_id === entry.node_id
+    nextEntry.node_id === entry.node_id &&
+    nextEntry.database_id === entry.database_id
   ) {
     return entry
   }
@@ -207,8 +209,9 @@ export interface AddRepoEntryInput {
   node_id?: string
   /**
    * Numeric REST `repository.id` (GitHub's `databaseId`). Optional: absent when the probe
-   * did not return a positive integer. Data-branch-only — must never be rendered/logged
-   * publicly. Written onto redacted entries so the denylist secondary guard is
+   * did not return a positive integer. Like `node_id`, this promotes to main with the entry
+   * but must NEVER be embedded in a rendered/logged public surface (issue text, commit
+   * message, log line). Written onto redacted entries so the denylist secondary guard is
    * format-independent.
    */
   database_id?: number

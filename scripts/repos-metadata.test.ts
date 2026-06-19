@@ -1488,6 +1488,32 @@ describe('normalizeRepoEntryForStorage — database_id propagation', () => {
     expect(result).toBe(entry)
   })
 
+  // FIX 1 regression: public entry without database_id + input carrying database_id → new entry returned with it
+  it('returns a new entry (not the original) when a public entry gains a new database_id from the input', () => {
+    // GIVEN a public entry with no database_id
+    const entry = repoEntry({
+      owner: 'alice',
+      name: 'public-repo',
+      private: false,
+      node_id: PUBLIC_NODE_ID,
+      // database_id intentionally absent
+    })
+
+    // WHEN normalizing with an input that carries a database_id
+    const result = normalizeRepoEntryForStorage(entry, {
+      owner: 'alice',
+      repo: 'public-repo',
+      private: false,
+      node_id: PUBLIC_NODE_ID,
+      database_id: DB_ID,
+    })
+
+    // THEN the returned entry is NOT the original reference (the identity shortcut must not fire)
+    expect(result).not.toBe(entry)
+    // AND the new database_id is persisted on the returned entry
+    expect(result.database_id).toBe(DB_ID)
+  })
+
   // Edge: database_id changes → new entry returned with updated database_id
   it('returns a new entry when database_id differs from the stored value', () => {
     const entry = repoEntry({

@@ -136,8 +136,10 @@ export interface FieldProbe {
    * field probe alongside `isPrivate`/`node_id`. Optional: absent when the probe did not
    * return a positive integer (e.g. the API response omitted the field or returned null).
    *
-   * Data-branch-only: must never be rendered/logged publicly. Unit 3 writes this onto
-   * redacted entries so the denylist secondary guard is format-independent.
+   * Like node_id, this promotes to main with the entry but must NEVER be embedded in a
+   * rendered/logged public surface (issue text, commit message, log line). The metadata
+   * writer persists this onto redacted entries so the denylist secondary guard is
+   * format-independent.
    */
   database_id?: number
 }

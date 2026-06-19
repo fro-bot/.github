@@ -2253,13 +2253,38 @@ describe('fetchFieldProbes — database_id capture', () => {
     // WHEN probing
     const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
 
-    // THEN the probe result carries database_id that a downstream writer (Unit 3) can read
+    // THEN the probe result carries database_id that a downstream writer can read
     const probe = result.probes.get('fro-bot/private-repo')
     expect(probe).toBeDefined()
     // Verify the field is accessible and has the correct type
     const databaseId: number | undefined = probe?.database_id
     expect(databaseId).toBe(1234567)
     expect(typeof databaseId).toBe('number')
+  })
+
+  it('API error from repos.get → probe has no database_id, failed/error count unaffected, no exception', async () => {
+    // GIVEN a tracked repo where repos.get throws an API error
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'fro-bot', name: 'error-repo', node_id: 'R_error'})],
+    }
+    const accessList: AccessListEntry[] = [makeAccess({owner: 'fro-bot', name: 'error-repo', node_id: 'R_error'})]
+    const reposGet = vi.fn(async () => {
+      throw apiError(500, 'Internal Server Error')
+    })
+    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    // WHEN probing — should not throw
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+
+    // THEN the probe result has no database_id
+    const probe = result.probes.get('fro-bot/error-repo')
+    expect(probe).toBeDefined()
+    expect(probe).not.toHaveProperty('database_id')
+    // AND the failed/error count is unaffected (0) — API errors on the database_id sub-probe
+    // are non-fatal; the probe still succeeds for the other fields
+    expect(result.failed).toBe(0)
   })
 
   it('missing databaseId alone does not cause the entry to be classified as malformed in reconcileRepos', () => {

@@ -84,9 +84,10 @@ export interface RepoEntry {
    * redacted entries: unlike `node_id`, this value does not change when GitHub migrates its
    * node_id format (legacy base64 → next-gen `R_…`). Populated by reconcile's field probe.
    *
-   * DATA-BRANCH-ONLY. Must never be rendered or logged publicly — treat with the same
-   * redaction discipline as `node_id`. Optional: legacy and public entries need not carry it;
-   * a redacted entry without `database_id` remains protected by the primary `node_id` guard.
+   * Like `node_id`, this promotes to main with the entry but must NEVER be embedded in a
+   * rendered/logged public surface (issue text, commit message, log line). Optional: legacy
+   * and public entries need not carry it; a redacted entry without `database_id` remains
+   * protected by the primary `node_id` guard.
    */
   database_id?: number
 }
