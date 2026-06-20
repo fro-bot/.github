@@ -2252,3 +2252,22 @@ Sources: https://github.com/bfra-me/.github (SHA af0e41ef899e4083f3fc3c5a472c980
 Surveyed bfra-me/.github and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/.github
+
+## [2026-06-20 19:20] ingest | bfra-me/ha-addon-repository
+
+Re-survey of `bfra-me/ha-addon-repository` (`main` HEAD `0a163c3f`, unchanged for 35 days since #551 on 2026-05-16). No content drift on `main` — workflows (4), `settings.yml`, `renovate.json5`, and the `example/` add-on (v1.2.2) all identical to the 2026-06-10 survey. All deltas are in the unmerged Renovate PR queue. Updated repo page `bfra-me--ha-addon-repository.md` additively (new source, Survey History row, refreshed Drift Watch), bumped topic page `home-assistant.md` (noted unmerged Alpine 3.24 base bump), and updated `index.md`. No new pages warranted.
+
+Delta from 2026-06-10 survey:
+
+- Same 5 Renovate PRs still open and `REVIEW_REQUIRED`, retargeted upward as upstream moved: #556 → `bfra-me/.github` **v4.16.27** (was v4.16.24), #557 → `fro-bot/agent` **v0.72.0** (was v0.59.1 — now a **~29-minor jump** from pinned v0.43.1), #558 → HA Add-ons base **v3.24** (was a `:3.23` digest-only rotation), #559 (`docker/login-action` v4.2.0, unchanged), #560 (`actions/checkout` v6.0.3, unchanged).
+- #556 now blocked **35 days**. Branch protection requires 1 approving review with `enforce_admins: true`; no reviewer is processing the queue. Review-required deadlock is now the dominant fact about the repo — every check is green, the repo is frozen anyway.
+- `Daily Autohealing Report` issue (#554, Fro-Bot-authored, perpetual single-issue model) updated today (2026-06-20). Open issues: 2 substantive (#554, #4 Dependency Dashboard); 5 open PRs.
+- **Fro Bot workflow present** (`fro-bot.yaml`, agent v0.43.1 on `main`). No follow-up draft PR needed — but the agent pin is now ~2 months stale and widening every cycle.
+
+Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+
+## [2026-06-20 19:23] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository
