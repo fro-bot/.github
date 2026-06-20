@@ -2253,21 +2253,26 @@ Surveyed bfra-me/.github and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/.github
 
-## [2026-06-20 19:20] ingest | bfra-me/ha-addon-repository
+## [2026-06-20 19:23] ingest | marcusrbrown/ha-config
 
-Re-survey of `bfra-me/ha-addon-repository` (`main` HEAD `0a163c3f`, unchanged for 35 days since #551 on 2026-05-16). No content drift on `main` — workflows (4), `settings.yml`, `renovate.json5`, and the `example/` add-on (v1.2.2) all identical to the 2026-06-10 survey. All deltas are in the unmerged Renovate PR queue. Updated repo page `bfra-me--ha-addon-repository.md` additively (new source, Survey History row, refreshed Drift Watch), bumped topic page `home-assistant.md` (noted unmerged Alpine 3.24 base bump), and updated `index.md`. No new pages warranted.
+Sixth survey of `marcusrbrown/ha-config` (HEAD `6b04de1`, last push 2026-06-18). Pure Renovate churn since the prior survey (`906126b`, 2026-06-10) — no structural drift, no package or custom-component changes. Updated `marcusrbrown--ha-config.md` (frontmatter source + new survey-history row), refreshed its stale `index.md` catalog line.
 
-Delta from 2026-06-10 survey:
+Version drift captured:
 
-- Same 5 Renovate PRs still open and `REVIEW_REQUIRED`, retargeted upward as upstream moved: #556 → `bfra-me/.github` **v4.16.27** (was v4.16.24), #557 → `fro-bot/agent` **v0.72.0** (was v0.59.1 — now a **~29-minor jump** from pinned v0.43.1), #558 → HA Add-ons base **v3.24** (was a `:3.23` digest-only rotation), #559 (`docker/login-action` v4.2.0, unchanged), #560 (`actions/checkout` v6.0.3, unchanged).
-- #556 now blocked **35 days**. Branch protection requires 1 approving review with `enforce_admins: true`; no reviewer is processing the queue. Review-required deadlock is now the dominant fact about the repo — every check is green, the repo is frozen anyway.
-- `Daily Autohealing Report` issue (#554, Fro-Bot-authored, perpetual single-issue model) updated today (2026-06-20). Open issues: 2 substantive (#554, #4 Dependency Dashboard); 5 open PRs.
-- **Fro Bot workflow present** (`fro-bot.yaml`, agent v0.43.1 on `main`). No follow-up draft PR needed — but the agent pin is now ~2 months stale and widening every cycle.
+- bfra-me/.github reusable workflows v4.16.24 → **v4.16.27** (SHA `3f97c92`; #800, #806, #808)
+- Renovate preset `marcusrbrown/renovate-config#5.2.1` → **#5.2.3** (#804)
+- Prettier 3.8.3 → **3.8.4** (#802) — propagated to both the `ci.yaml` env var and the renovate post-upgrade task
+- esphome submodule digest advanced ~six times (#799 → #809)
+- New `groupName: pre-commit` rule added to `renovate.json5`
 
-Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+Static / unchanged: `.HA_VERSION` 2025.6.3 (~12 months stale), `requirements.txt` esphome==2025.12.7 + yamllint==1.38.0, mise pre-commit 4.6.0, 11 packages, 10 custom components, three workflows (`ci.yaml`, `renovate.yaml`, `update-repo-settings.yaml`). Open items unchanged: #427 Dependency Dashboard (confirmed open), parked Renovate PRs #766 (asyncio-mqtt v0.16.2) and #777 (esphome v2026, while requirements stays on 2025.12.7).
 
-## [2026-06-20 19:23] ingest | repo:bfra-me/ha-addon-repository
+Authorship: `mrbro-bot[bot]` authors every merge in the window (through #809) — durably displaced prior pattern, no fro-bot-authored commits. **Still no Fro Bot workflow** (sixth consecutive survey) — a follow-up draft PR to add `fro-bot.yaml` remains the standing recommendation; the year-long persistence reads as intentional (Renovate-only autopilot repo). Working-dir delivery mode: no GitHub issue notice opened; this log entry is the canonical summary.
 
-Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+Sources: https://github.com/marcusrbrown/ha-config (SHA 6b04de1e1b4dc15936ccce169953914b1b5bcbce)
 
-Sources: https://github.com/bfra-me/ha-addon-repository
+## [2026-06-20 19:24] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/ha-config
