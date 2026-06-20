@@ -2206,3 +2206,27 @@ Sources: https://github.com/marcusrbrown/systematic (SHA 11b12bfae2433577db84821
 Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-06-20 06:30] ingest | marcusrbrown/tokentoilet
+
+Incremental re-survey of `marcusrbrown/tokentoilet` (SHA `3be6b76`, up from `76d543e` on 2026-06-09). Public repo, untrusted-input handling; reads limited to listings, README, manifests, and workflow files. Updated repo page `marcusrbrown--tokentoilet.md` (frontmatter source/`updated`, Overview, Tech Stack, Fro Bot pin, Renovate preset, Shared Ecosystem table, new Notable Deltas (2026-06-20) section, survey-history row). Bumped `updated` + added source on topic page `web3-defi.md`. Refreshed `index.md` entry. No contradictions — steady-state churn, all prior structural findings re-confirmed.
+
+Deltas since prior survey (`76d543e`):
+
+- **~40 commits, all Renovate/Fro Bot bumps — zero structural or application-code change.** MVP status unchanged (Sepolia burn-address ERC-20 disposal only; contracts, NFT receipts, charity routing, fountain, multi-chain still roadmap).
+- **Fro Bot agent v0.59.0 → v0.71.0** (SHA `9b89fb3acadec6f26fdfe49412b9c5cbd5a039d1`), ~20 releases merged in ~10 days — still the portfolio's highest churn rate. `fro-bot.yaml` logic unchanged; schedule still 03:30 UTC.
+- **Dependency bumps:** pnpm 11.5.2 → 11.7.0, Next.js 16.2.7 → 16.2.9, Storybook → 10.4.6, vitest → 4.1.9, eslint → 10.5.0, tailwindcss → 4.3.1, prettier → 3.8.4. TypeScript holds at 6.0.3, React 19.2.7. Storybook addon mixed-pin (`9.0.0-alpha.*` vs 10.x core) persists.
+- **Renovate preset #5.2.1 → #5.2.3**; `bfra-me/.github` reusable workflow → v4.16.27.
+- **Open PRs 1 → 5:** two new fro-bot-authored security override PRs — #1156 (pnpm overrides for transitive `undici`/`ws`/`form-data`/`js-yaml` advisories) and #1144 (esbuild GHSA-gv7w-rqvm-qjhr → 0.28.1), both reporting `pnpm audit` reduced to low-only + clean CI — plus lint cleanup #1157 and Renovate #1153. `@bfra.me/eslint-config` v0.51.1 PR #1033 still blocked on test-file type errors (35+ days), autoheal skips it under dependency-ownership policy.
+- **Autoheal report decomposition:** the two long-lived human-decision blockers were extracted from the rolling Daily Autohealing Report (#1013) into standalone tracking issues — #1142 (4 stale wallet-test TODOs, all >90 days) and #1143 (design-system validator missing 5 component test/story files; Web3 validator false positives). Same unresolved problems, now with stable issue homes.
+- **New scaffolding docs at root:** `CHANGELOG.md`, `CONTRIBUTING.md`, `mvp.md`, `.env.example` — hygiene additions, not feature work.
+
+Fro Bot workflow present and current — no follow-up draft PR needed.
+
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 3be6b7675bab3d7f207c3ea6e1dc439c541cb0c8)
+
+## [2026-06-20 08:34] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
