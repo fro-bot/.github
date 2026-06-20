@@ -1393,6 +1393,12 @@ export interface HandleReconcileResult {
    */
   integrityCheck: 'ok' | 'skipped-no-data-branch' | 'skipped-just-bootstrapped'
   committed: boolean
+  /** Count of collab/contrib repos starred this run (check returned 404 → star call succeeded). */
+  starsAdded: number
+  /** Count of collab/contrib repos already starred (check returned 204 → no star call needed). */
+  starsAlreadyPresent: number
+  /** Count of star check or star call failures this run (non-blocking; loop continues). */
+  starFailures: number
 }
 
 /**
@@ -1676,6 +1682,36 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   })
   plan.summary.raceSuppressedRollups = raceSuppressed
 
+  // 13. Star sync — star collab/contrib repos not yet starred by @fro-bot. Non-blocking:
+  //     failures increment starFailures and the run still returns. Owned repos are excluded
+  //     (fro-bot owns them; self-starring is pointless). A star is a user action — uses
+  //     userOctokit (FRO_BOT_POLL_PAT), never appOctokit. Counts-only telemetry.
+  const starCandidates = accessList.filter(entry => {
+    const channel = accessChannelByKey.get(`${entry.owner}/${entry.name}`)
+    return channel === 'collab' || channel === 'contrib'
+  })
+  const starOutcome = await syncStars({
+    userOctokit,
+    candidates: starCandidates.map(e => ({owner: e.owner, name: e.name})),
+    logger,
+  })
+
+  // Star telemetry — counts-only, no per-repo identifiers. Best-effort: a logger failure
+  // must never abort the reconcile run.
+  if (starOutcome.starsAdded > 0 || starOutcome.starFailures > 0) {
+    try {
+      if (starOutcome.starFailures > 0) {
+        logger.warn(
+          `reconcile: star sync complete (starsAdded=${starOutcome.starsAdded}, starFailures=${starOutcome.starFailures})`,
+        )
+      } else {
+        logger.info(`reconcile: star sync complete (starsAdded=${starOutcome.starsAdded})`)
+      }
+    } catch (error) {
+      console.error('reconcile: star sync telemetry emission failed', error)
+    }
+  }
+
   return {
     accessListSize: accessList.length,
     summary: plan.summary,
@@ -1691,6 +1727,9 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     probesFailed,
     integrityCheck,
     committed,
+    starsAdded: starOutcome.starsAdded,
+    starsAlreadyPresent: starOutcome.starsAlreadyPresent,
+    starFailures: starOutcome.starFailures,
   }
 }
 
@@ -2396,6 +2435,67 @@ async function fileIntegrityAlert(params: {
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     params.logger.warn(`reconcile: failed to file integrity alert issue (status=${status}).`)
   }
+}
+
+/**
+ * Star collab/contrib-channel repos that `@fro-bot` has not yet starred.
+ *
+ * For each candidate, calls `checkRepoIsStarredByAuthenticatedUser` (204 = already starred,
+ * 404 = not starred). On 404, calls `starRepoForAuthenticatedUser`. Any other error on the
+ * check, or any error on the star call, increments `starFailures` and continues — one failure
+ * never aborts the loop. Telemetry is counts-only; canonical owner/name never appears in any
+ * log or warn message.
+ *
+ * A star is a user action — MUST use `userOctokit` (the FRO_BOT_POLL_PAT), never the App token.
+ *
+ * Exported for unit tests; the sole production caller is `handleReconcile`.
+ *
+ * @internal
+ */
+export async function syncStars(params: {
+  userOctokit: OctokitClient
+  candidates: {owner: string; name: string}[]
+  logger: ReconcileLogger
+}): Promise<{starsAdded: number; starsAlreadyPresent: number; starFailures: number}> {
+  let starsAdded = 0
+  let starsAlreadyPresent = 0
+  let starFailures = 0
+
+  for (const candidate of params.candidates) {
+    try {
+      // 204 = already starred (resolves); 404 = not starred (throws).
+      await params.userOctokit.rest.activity.checkRepoIsStarredByAuthenticatedUser({
+        owner: candidate.owner,
+        repo: candidate.name,
+      })
+      // Resolved without throwing → already starred.
+      starsAlreadyPresent += 1
+    } catch (checkError: unknown) {
+      if (isApiStatus(checkError, 404)) {
+        // Not starred — attempt to star it.
+        try {
+          await params.userOctokit.rest.activity.starRepoForAuthenticatedUser({
+            owner: candidate.owner,
+            repo: candidate.name,
+          })
+          starsAdded += 1
+        } catch (starError: unknown) {
+          starFailures += 1
+          const status = isRecord(starError) && typeof starError.status === 'number' ? starError.status : 'unknown'
+          const kind = starError instanceof Error ? starError.name : 'unknown'
+          params.logger.warn(`reconcile: star sync failed (status=${status}, kind=${kind}); continuing.`)
+        }
+      } else {
+        // Non-404 error on the check — treat as a failure, continue.
+        starFailures += 1
+        const status = isRecord(checkError) && typeof checkError.status === 'number' ? checkError.status : 'unknown'
+        const kind = checkError instanceof Error ? checkError.name : 'unknown'
+        params.logger.warn(`reconcile: star sync failed (status=${status}, kind=${kind}); continuing.`)
+      }
+    }
+  }
+
+  return {starsAdded, starsAlreadyPresent, starFailures}
 }
 
 async function runDispatches(params: {
