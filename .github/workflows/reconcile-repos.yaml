@@ -108,5 +108,8 @@ jobs:
             echo "| Entries migrated | $(jq '.summary.migrated // 0' "$result") |"
             echo "| Contrib tracked | $(jq '.summary.byChannel.contrib.tracked // 0' "$result") |"
             echo "| Stuck candidates | $(jq '.summary.stuckCandidates // 0' "$result") |"
+            echo "| Stars added | $(jq '.starsAdded // 0' "$result") |"
+            echo "| Stars already present | $(jq '.starsAlreadyPresent // 0' "$result") |"
+            echo "| Star failures | $(jq '.starFailures // 0' "$result") |"
           } >> "$GITHUB_STEP_SUMMARY"
         shell: bash
