@@ -209,7 +209,7 @@ Fro Bot control plane:
 | **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Issues, PR events, schedule, dispatch |
 | **Fro Bot Autoheal** | Scheduled self-repair pass | Daily 03:30 UTC, dispatch |
 | **Poll Invitations** | Accept allowlisted collaboration invitations | Every 15 minutes, dispatch |
-| **Reconcile Repos** | Reconcile collaborator access against `metadata/repos.yaml`; dispatch surveys for stale repos | Daily 05:17 UTC, dispatch |
+| **Reconcile Repos** | Reconcile collaborator access against `metadata/repos.yaml`; dispatch surveys for stale repos; auto-stars collab/contrib repos | Daily 05:17 UTC, dispatch |
 | **Survey Repo** | Ingest a repository into the knowledge wiki; dispatched by Reconcile Repos or manually via `gh workflow run survey-repo.yaml -f node_id=<node_id>` | Dispatch (by Reconcile Repos) |
 | **Merge Data Branch** | Promote autonomous `data`-branch commits to `main` | Sunday 22:00 UTC, dispatch |
 | **Update Metadata** | Refresh `metadata/renovate.yaml` from the fro-bot org scan | Daily 04:30 UTC, dispatch |

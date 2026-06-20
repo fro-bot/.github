@@ -2481,6 +2481,13 @@ export async function syncStars(params: {
           starsAdded += 1
         } catch (starError: unknown) {
           starFailures += 1
+          if (isGitHubRateLimit(starError)) {
+            const status = isRecord(starError) && typeof starError.status === 'number' ? starError.status : 'unknown'
+            params.logger.warn(
+              `reconcile: star sync stopped early on rate limit (status=${status}); remaining candidates retry next run.`,
+            )
+            break
+          }
           const status = isRecord(starError) && typeof starError.status === 'number' ? starError.status : 'unknown'
           const kind = starError instanceof Error ? starError.name : 'unknown'
           params.logger.warn(`reconcile: star sync failed (status=${status}, kind=${kind}); continuing.`)
@@ -2488,6 +2495,13 @@ export async function syncStars(params: {
       } else {
         // Non-404 error on the check — treat as a failure, continue.
         starFailures += 1
+        if (isGitHubRateLimit(checkError)) {
+          const status = isRecord(checkError) && typeof checkError.status === 'number' ? checkError.status : 'unknown'
+          params.logger.warn(
+            `reconcile: star sync stopped early on rate limit (status=${status}); remaining candidates retry next run.`,
+          )
+          break
+        }
         const status = isRecord(checkError) && typeof checkError.status === 'number' ? checkError.status : 'unknown'
         const kind = checkError instanceof Error ? checkError.name : 'unknown'
         params.logger.warn(`reconcile: star sync failed (status=${status}, kind=${kind}); continuing.`)

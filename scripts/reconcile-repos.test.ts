@@ -7578,11 +7578,11 @@ describe('syncStars', () => {
   })
 
   describe('credential — star calls use userOctokit, not appOctokit', () => {
-    it('star and check calls go through userOctokit; appOctokit.activity methods are never called', async () => {
-      // GIVEN a candidate that needs starring
-      // WHEN syncStars runs with separate userOctokit and appOctokit
+    it('star and check calls go through userOctokit; appOctokit.activity methods are never called (integration)', async () => {
+      // GIVEN an unstarred collab repo in the access list
+      // AND both userOctokit and appOctokit are wired with distinct activity mocks
       const userCheckStar = vi.fn(async () => {
-        throw apiError(404, 'Not Found')
+        throw apiError(404, 'Not Found') // not starred
       })
       const userStarRepo = vi.fn(async () => undefined)
       const appCheckStar = vi.fn(async () => undefined)
@@ -7591,23 +7591,123 @@ describe('syncStars', () => {
       const userOctokit = mockOctokit({
         checkRepoIsStarredByAuthenticatedUser: userCheckStar as never,
         starRepoForAuthenticatedUser: userStarRepo as never,
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'marcusrbrown'}, name: 'some-repo', archived: false, private: false, node_id: 'R_some'},
+          ],
+        }),
       })
-      // appOctokit is NOT passed to syncStars — but we verify its activity methods are untouched
-      // by wiring them into a separate mock and asserting they were never called.
+      // appOctokit has its own activity mocks — if syncStars mistakenly used appOctokit,
+      // these would be called and the assertions below would catch it.
+      const appOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: appCheckStar as never,
+        starRepoForAuthenticatedUser: appStarRepo as never,
+      })
+
+      // WHEN handleReconcile runs end-to-end
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit,
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['marcusrbrown'])}),
+        }),
+      )
+
+      // THEN userOctokit's activity methods were called (the star went through)
+      expect(userCheckStar).toHaveBeenCalledOnce()
+      expect(userStarRepo).toHaveBeenCalledOnce()
+      expect(result.starsAdded).toBe(1)
+      // AND appOctokit's activity methods were NEVER called
+      // (mutation-proof: if syncStars were switched to appOctokit, these would fail)
+      expect(appCheckStar).not.toHaveBeenCalled()
+      expect(appStarRepo).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('rate-limit early break', () => {
+    it('stops the loop when check throws a rate-limit error; later candidates are not processed', async () => {
+      // GIVEN three candidates; the first check throws a 429 rate-limit error
+      const checkStar = vi
+        .fn()
+        .mockRejectedValueOnce(apiError(429, 'Too Many Requests')) // candidate 1: rate-limited
+        .mockResolvedValueOnce(undefined) // candidate 2: would resolve (already starred)
+        .mockRejectedValueOnce(apiError(404, 'Not Found')) // candidate 3: would need starring
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
       const logger = silentLogger()
 
-      await syncStars({
+      // WHEN syncStars runs
+      const result = await syncStars({
         userOctokit,
-        candidates: [{owner: 'marcusrbrown', name: 'some-repo'}],
+        candidates: [
+          {owner: 'owner-a', name: 'repo-a'},
+          {owner: 'owner-b', name: 'repo-b'},
+          {owner: 'owner-c', name: 'repo-c'},
+        ],
         logger,
       })
 
-      // THEN userOctokit's activity methods were called
-      expect(userCheckStar).toHaveBeenCalledOnce()
-      expect(userStarRepo).toHaveBeenCalledOnce()
-      // AND appOctokit's activity methods were never called
-      expect(appCheckStar).not.toHaveBeenCalled()
-      expect(appStarRepo).not.toHaveBeenCalled()
+      // THEN the loop stopped after the first candidate
+      // starFailures reflects the rate-limited candidate
+      expect(result.starFailures).toBe(1)
+      // starsAdded and starsAlreadyPresent are zero (loop broke before any success)
+      expect(result.starsAdded).toBe(0)
+      expect(result.starsAlreadyPresent).toBe(0)
+      // AND candidates 2 and 3 were never checked (loop broke early)
+      expect(checkStar).toHaveBeenCalledTimes(1)
+      expect(starRepo).not.toHaveBeenCalled()
+      // AND a single warn was emitted with status, no owner/name
+      expect(logger.warn).toHaveBeenCalledOnce()
+      const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
+      expect(warnMsg).toContain('rate limit')
+      expect(warnMsg).toContain('status=429')
+      expect(warnMsg).not.toContain('owner-a')
+      expect(warnMsg).not.toContain('repo-a')
+    })
+
+    it('stops the loop when star call throws a rate-limit error (403 + x-ratelimit-remaining: 0)', async () => {
+      // GIVEN two candidates; the first check returns 404 (not starred) but the star call is rate-limited
+      const rateLimitError = Object.assign(new Error('API rate limit exceeded'), {
+        status: 403,
+        response: {headers: {'x-ratelimit-remaining': '0'}},
+      })
+      const checkStar = vi
+        .fn()
+        .mockRejectedValueOnce(apiError(404, 'Not Found')) // candidate 1: not starred
+        .mockRejectedValueOnce(apiError(404, 'Not Found')) // candidate 2: would need starring
+      const starRepo = vi.fn().mockRejectedValueOnce(rateLimitError) // star call rate-limited
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      // WHEN syncStars runs
+      const result = await syncStars({
+        userOctokit,
+        candidates: [
+          {owner: 'owner-a', name: 'repo-a'},
+          {owner: 'owner-b', name: 'repo-b'},
+        ],
+        logger,
+      })
+
+      // THEN the loop stopped after the first candidate's star call failed
+      expect(result.starFailures).toBe(1)
+      expect(result.starsAdded).toBe(0)
+      // AND candidate 2's check was never called (loop broke after star failure)
+      expect(checkStar).toHaveBeenCalledTimes(1)
+      expect(starRepo).toHaveBeenCalledTimes(1)
+      // AND the warn message contains status, no owner/name
+      expect(logger.warn).toHaveBeenCalledOnce()
+      const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
+      expect(warnMsg).toContain('rate limit')
+      expect(warnMsg).toContain('status=403')
+      expect(warnMsg).not.toContain('owner-a')
+      expect(warnMsg).not.toContain('repo-a')
     })
   })
 
@@ -7749,6 +7849,68 @@ describe('handleReconcile — star sync integration', () => {
 
       expect(result.starFailures).toBe(1)
       expect(result.starsAdded).toBe(0)
+    })
+  })
+
+  describe('contrib channel — unstarred contrib repo flows through to a star call', () => {
+    it('stars an unstarred contrib-channel repo; starsAdded reflects it', async () => {
+      // GIVEN an allowlist with one contrib repo (bfra-me/.github) that has a trusted workflow
+      const contribAllowlist: AllowlistFile = {
+        version: 1,
+        approved_inviters: [],
+        approved_contrib_repos: ['bfra-me/.github'],
+      }
+
+      const trustedWorkflow = `name: Fro Bot
+on: [issues, pull_request]
+jobs:
+  agent:
+    uses: fro-bot/agent/.github/workflows/fro-bot.yaml@v0.42.1
+`
+
+      // reposGet drives probeContribRepoMetadata for the contrib repo
+      const reposGet = async ({owner, repo}: {owner: string; repo: string}) => {
+        if (owner === 'bfra-me' && repo === '.github') {
+          return {data: {archived: false, fork: false, private: false, node_id: 'R_bfra_gh'} as RepoGetResponse}
+        }
+        return {data: {archived: false, private: false, node_id: 'R_default'} as RepoGetResponse}
+      }
+
+      // The contrib repo is not yet starred (check → 404)
+      const checkStar = vi.fn(async () => {
+        throw apiError(404, 'Not Found')
+      })
+      const starRepo = vi.fn(async () => undefined)
+
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+        // No collab repos — only contrib
+        listForAuthenticatedUser: async () => ({data: []}),
+      })
+
+      const appOctokit = mockOctokit({
+        paginate: async () => [], // no owned repos
+        getContent: contentByRepo(new Map([['bfra-me/.github', trustedWorkflow]])),
+        reposGet,
+      })
+
+      // WHEN handleReconcile runs
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit,
+          readMetadata: makeReadMetadata({allowlist: contribAllowlist}),
+        }),
+      )
+
+      // THEN the contrib repo was starred (starsAdded reflects it)
+      expect(result.starsAdded).toBe(1)
+      expect(result.starsAlreadyPresent).toBe(0)
+      expect(result.starFailures).toBe(0)
+      // AND the star call was made for the contrib repo
+      expect(starRepo).toHaveBeenCalledOnce()
+      expect(starRepo).toHaveBeenCalledWith({owner: 'bfra-me', repo: '.github'})
     })
   })
 })
