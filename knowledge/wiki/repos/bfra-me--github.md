@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/.github
 created: 2026-05-20
-updated: 2026-06-10
+updated: 2026-06-20
 sources:
   - url: https://github.com/bfra-me/.github
     sha: a81be4c5d5c93824fdcc426418c9433d5e5bd9be
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/bfra-me/.github
     sha: a27ccfa2f1bc670ddfa2dbfdcabe154d944daf0c
     accessed: 2026-06-10
+  - url: https://github.com/bfra-me/.github
+    sha: af0e41ef899e4083f3fc3c5a472c98093387c181
+    accessed: 2026-06-20
 tags: [bfra-me, dotgithub, monorepo, pnpm, typescript, github-actions, probot, renovate, template]
 related:
   - bfra-me--ha-addon-repository
@@ -41,13 +44,16 @@ license/secret/container scanning).
 - **License:** MIT
 - **Default branch:** `main`
 - **Created:** 2022-03-17
-- **Last push:** 2026-06-10
-- **Package version:** `@bfra.me/.github` v4.16.24 (private root)
-- **Node:** 24.16.0 (`.node-version`; was 24.15.0 on 2026-05-20)
-- **Package manager:** pnpm 10.34.1 (was 10.33.4 on 2026-05-20)
-- **TypeScript:** 6.0.3, strict
-- **Open issues / PRs:** 5 / 1 (2026-06-10; the lone open PR is the
-  Changesets release PR #2275)
+- **Last push:** 2026-06-20 (was 2026-06-10)
+- **Package version:** `@bfra.me/.github` v4.16.27 (private root; was
+  v4.16.24 on 2026-06-10)
+- **Node:** 24.17.0 (`.node-version`; was 24.16.0 on 2026-06-10, 24.15.0
+  on 2026-05-20)
+- **Package manager:** pnpm 10.34.3 (was 10.34.1 on 2026-06-10)
+- **TypeScript:** 6.0.3, strict (unchanged across all three surveys)
+- **Open issues / PRs:** 4 / 2 (2026-06-20). Open PRs: #2310 Changesets
+  release PR, and #2292 (a Fro Bot-authored esbuild security
+  remediation — see Fro Bot Integration). Was 5/1 on 2026-06-10.
 
 ## Layout
 
@@ -142,14 +148,31 @@ Notable surface area:
 ## Fro Bot Integration
 
 This repo **is** a Fro Bot workflow host, and it also _runs_ the org-wide
-autoheal sweep. As of HEAD (2026-06-10) it pins:
+autoheal sweep. As of HEAD (2026-06-20) it pins:
 
-- `fro-bot/agent@a289cef1f0ffddd7fb7f66e1c3955908e9644c9e # v0.59.1`
-  (PR #2279). This repo tracks agent releases nearly in lockstep:
-  Renovate landed **17 sequential agent bumps** between 2026-05-20
-  (v0.44.2) and 2026-06-09 (v0.59.1) — v0.48.0 through v0.59.1 each as
-  its own automerged PR. It is consistently the freshest agent pin in
-  the ecosystem.
+- `fro-bot/agent@9b89fb3acadec6f26fdfe49412b9c5cbd5a039d1 # v0.71.0`
+  (was v0.59.1 on 2026-06-10, v0.44.2 on 2026-05-20). This repo tracks
+  agent releases nearly in lockstep: Renovate landed **12 more
+  sequential agent bumps** between 2026-06-10 (v0.60.0) and 2026-06-20
+  (v0.71.0) — v0.60.0, v0.61.0, v0.62.0, v0.64.0/0.64.1/0.64.3,
+  v0.65.0–v0.71.0 each as its own automerged PR (PR #2319 for v0.71.0).
+  Combined with the v0.48.0→v0.59.1 run, that is **~29 agent bumps in a
+  single month**. It remains the freshest agent pin in the ecosystem.
+
+### Live Fro Bot security autoheal (PR #2292, observed 2026-06-20)
+
+A concrete, in-flight example of the autoheal contract executing: PR
+#2292 (`fix(security): remediate esbuild vulnerability`, authored by
+`fro-bot`, opened 2026-06-13) forces `esbuild >=0.28.1` via
+`pnpm-workspace.yaml` overrides to close Dependabot alerts #52 (HIGH:
+binary integrity verification bypass enabling RCE via
+`NPM_CONFIG_REGISTRY`) and #51 (LOW: dev-server arbitrary file read on
+Windows). The PR body shows the exact pattern the autoheal prompt
+mandates: a transitive-only dependency override scoped to a confirmed
+high/critical advisory (not a routine bump — those stay with Renovate),
+plus `pnpm audit` and `quality-check` verification in the checklist.
+Still open at HEAD, so the override is **not yet on `main`** (main's
+overrides remain `flatted`, `undici`, `vite` only).
 
 ### `fro-bot.yaml` (per-repo)
 
@@ -285,31 +308,41 @@ action can detect it as a published package.
   but they consume `bfra-me/.github` reusable workflows.
 - **[[bfra-me--ha-addon-repository]]** — sibling org template; pulls
   reusable workflows and Probot settings from here.
-- **[[fro-bot--agent]]** — this repo pins `fro-bot/agent@v0.59.1`
-  (2026-06-10; was v0.44.2 on 2026-05-20), ahead of most other
-  ecosystem repos. Renovate automerge keeps it within a day of each
-  agent release.
+- **[[fro-bot--agent]]** — this repo pins `fro-bot/agent@v0.71.0`
+  (2026-06-20; was v0.59.1 on 2026-06-10, v0.44.2 on 2026-05-20), ahead
+  of most other ecosystem repos. Renovate automerge keeps it within a
+  day of each agent release.
 - **[[marcusrbrown--renovate-config]]** — Marcus's preset is the
   Renovate baseline for `marcusrbrown/*` repos; `bfra-me/.github` ships
   its own `metadata/renovate.yaml` for `bfra-me/*` repos.
 
 ## Operational Notes
 
-- **Issue #2213** (opened 2026-05-23 by Marcus, still open 2026-06-10):
-  `update-repo-settings` workflow's `Filter Changed Files` step fails
-  with git exit 128 on push events — a live defect in the settings-sync
-  path of the org control plane.
+- **Issue #2213** (opened 2026-05-23 by Marcus, still open 2026-06-20,
+  now 4 weeks unresolved): `update-repo-settings` workflow's `Filter
+  Changed Files` step fails with git exit 128 on push events — a live
+  defect in the settings-sync path of the org control plane. Notably,
+  this defect has survived ~29 agent bumps and the autoheal sweeps
+  without remediation, which fits the autoheal scope cap: a workflow
+  logic bug is not a "minimal reversible fix" and likely sits under
+  "Needs Human Attention" rather than getting auto-patched.
 - Standing bot-authored report issues: #2185 (Daily Maintenance
   Report), #1960 (Org Autohealing Report), #1959 (Daily Autohealing
-  Report), #7 (Dependency Dashboard).
-- Commit traffic between 2026-05-20 and 2026-06-10 is almost entirely
-  Renovate dependency churn (fro-bot/agent, bfra-me/renovate-action
-  v9.101→v9.110, codeql-action, Vite/Vitest/eslint/tsx) plus periodic
-  `chore: update internal action SHA pins` and Changesets release
-  merges. No structural changes: still 17 workflows, 3 custom actions,
-  same root layout (plus `.ai/`, `.husky/`, `.changeset/`,
-  `.git-blame-ignore-revs`, `CONTRIBUTING.md`, `llms.txt` at root —
-  present at HEAD, some not captured in the original layout snapshot).
+  Report), #7 (Dependency Dashboard) — all still open 2026-06-20.
+- Commit traffic between 2026-06-10 and 2026-06-20 is again almost
+  entirely Renovate dependency churn (fro-bot/agent v0.60.0→v0.71.0,
+  bfra-me/renovate-action v9.110→v9.123.0, pnpm 10.34.1→10.34.3, Node
+  24.16.0→24.17.0, eslint v10.5.0, Prettier v3.8.4, Vitest v4.1.9,
+  pnpm/action-setup v6.0.9) plus periodic `chore: update internal
+  action SHA pins` and three `chore(changesets): publish release`
+  merges. Dev toolchain at HEAD: eslint 10.5.0, prettier 3.8.4, vitest
+  4.1.9, @vitest/coverage-v8 4.1.9, vite 8.0.16, @types/node 24.12.4,
+  @bfra.me/eslint-config 0.51.1. No structural changes: still 17
+  workflows, 3 custom actions, same root layout.
+- The one non-Renovate, non-release change of note this period is Fro
+  Bot's own PR #2292 (esbuild security remediation; see Fro Bot
+  Integration) — the autoheal contract producing a real patch rather
+  than just a report.
 
 ## Open Questions / Follow-Ups
 
@@ -328,3 +361,4 @@ action can detect it as a published package.
 | ---------- | ---------- | -------------------------------------------------------------------------- |
 | 2026-05-20 | `a81be4c`  | Initial survey. `fro-bot/agent@v0.44.2` (PR #2200). 17 workflows, 3 custom actions. |
 | 2026-06-10 | `a27ccfa`  | Re-survey. v4.16.24, pnpm 10.34.1, Node 24.16.0, agent v0.59.1 (17 bumps in 3 weeks). Structure unchanged. Issue #2213 (settings-sync git exit 128) open. |
+| 2026-06-20 | `af0e41e`  | Re-survey. v4.16.27, pnpm 10.34.3, Node 24.17.0, agent v0.71.0 (12 more bumps in 10 days, ~29 in a month). Structure unchanged (17 workflows, 3 actions). Issue #2213 still open (now 4 weeks). New: Fro Bot PR #2292 esbuild security autoheal (HIGH alert #52), still open. |

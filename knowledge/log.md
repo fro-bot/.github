@@ -2230,3 +2230,25 @@ Sources: https://github.com/marcusrbrown/tokentoilet (SHA 3be6b7675bab3d7f207c3e
 Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-06-20 08:34] ingest | bfra-me/.github
+
+Re-survey of `bfra-me/.github` (HEAD `af0e41e`, was `a27ccfa` on 2026-06-10). Low-structure-delta interval — 10 days of almost-pure Renovate churn plus one notable Fro Bot-authored security PR. Updated repo page additively; touched `index.md`. No topic/entity page changes warranted (structure, conventions, Probot landscape, and the [[probot-settings]] three-source follow-up all unchanged).
+
+Key findings:
+
+- **Version drift:** `@bfra.me/.github` v4.16.24 → v4.16.27; pnpm 10.34.1 → 10.34.3; Node 24.16.0 → 24.17.0; TypeScript steady at 6.0.3. Dev toolchain at HEAD: eslint 10.5.0, prettier 3.8.4, vitest/coverage-v8 4.1.9, vite 8.0.16, @bfra.me/eslint-config 0.51.1.
+- **Agent pin:** `fro-bot/agent` v0.59.1 → v0.71.0 (SHA `9b89fb3`, PR #2319) — 12 more sequential automerged minor bumps, ~29 in a single month. Remains the ecosystem's freshest agent pin.
+- **renovate-action:** v9.110 → v9.123.0 over the interval.
+- **Live autoheal:** PR #2292 (`fix(security)`, authored by `fro-bot`, opened 2026-06-13) forces `esbuild >=0.28.1` via `pnpm-workspace.yaml` overrides to close Dependabot HIGH alert #52 (binary-integrity RCE) and LOW #51. Textbook autoheal behavior — transitive-only override scoped to a confirmed high/critical advisory, with `pnpm audit` + `quality-check` verification. Still open at HEAD, so the override is not yet on `main`.
+- **Structure:** unchanged — 17 workflows (API-confirmed), 3 custom actions, same root layout, same overrides on main (`flatted`, `undici`, `vite`).
+- **Open defect:** Issue #2213 (`update-repo-settings` Filter Changed Files git exit 128 on push) still open, now 4 weeks. Survived ~29 agent bumps and the autoheal sweeps — consistent with the autoheal scope cap (workflow logic bug is not a minimal reversible fix; lands under "Needs Human Attention").
+- **Fro Bot workflow:** present and active (`fro-bot.yaml` + `fro-bot-autoheal-org.yaml`). No follow-up draft PR needed.
+
+Sources: https://github.com/bfra-me/.github (SHA af0e41ef899e4083f3fc3c5a472c98093387c181)
+
+## [2026-06-20 16:58] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github
