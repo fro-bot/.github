@@ -2276,3 +2276,28 @@ Sources: https://github.com/marcusrbrown/ha-config (SHA 6b04de1e1b4dc15936ccce16
 Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/ha-config
+
+## [2026-06-21 02:00] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs (SHA `abe4998` → `85df074`). 11 commits over 11 days, **all Renovate-authored** (`mrbro-bot[bot]`) — pure dependency cadence, no structural or application code changes. The late-May CI consolidation work has settled; the repo is back in dependency-autopilot mode. The only non-Renovate signal is open PR #626, a Fro Bot-authored AGENTS.md drift fix — the autoheal "AGENTS.md accuracy" check landing exactly the kind of PR it exists for.
+
+Version drift captured:
+
+- `fro-bot/agent` v0.55.4 → **v0.73.0** (SHA-pinned in `.github/workflows/fro-bot.yaml`, +18 minors in 11 days; #617, #619–#622, #624–#625, #627–#629). VBS continues tracking upstream agent releases at full cadence.
+- Renovate preset `marcusrbrown/renovate-config#5.2.1` → **#5.2.3**.
+- pnpm 10.34.1 → **10.34.3**.
+- Vitest stack (`vitest`, `@vitest/coverage-v8`, `@vitest/ui`) pinned to **4.1.9** (#623).
+- bfra-me tooling pins steady (`eslint-config` 0.51.1, `prettier-config` 0.16.9, `tsconfig` 0.13.1); prettier 3.8.4, `@types/node` 24.13.2.
+
+Activity shape (2026-06-21): 2 open PRs (#618 perpetual data, #626 Fro Bot AGENTS.md drift fix), 12 open issues (down from 13), **star count 1 → 2** (first net star movement since the page was created). No license file at root (still only `license: MIT` in `package.json`; carried forward, no contradiction). Workflows unchanged (7; `fro-bot.yaml` present and active).
+
+Fro Bot workflow present — no follow-up draft PR needed. Pages touched: `wiki/repos/marcusrbrown--vbs.md`, `index.md`, `log.md`. Working-dir delivery mode: no GitHub issue notice opened; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/vbs (SHA 85df074fc28bb01d7df5147623948b8bc29d93c8)
+
+
+## [2026-06-21 09:06] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs
