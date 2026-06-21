@@ -229,6 +229,22 @@ The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data �
 
 `metrics.yaml` is intentionally deferred. Operational telemetry is routed through the journal issue system. The metrics pipeline belongs to the deferred self-improvement plan.
 
+## Reconcile auto-star
+
+During each reconcile run, Fro Bot stars every collab- and contrib-channel repo it has access to that it has not already starred. Owned repos (`fro-bot/*`) are excluded — Fro Bot owns them and self-starring is pointless.
+
+The star path is:
+
+1. For each collab/contrib candidate, call `activity.checkRepoIsStarredByAuthenticatedUser` (204 = already starred, 404 = not starred).
+2. On 404, call `activity.starRepoForAuthenticatedUser`.
+3. Any failure increments `starFailures` and the loop continues — one failure never aborts the reconcile run.
+
+This is self-healing: a repo that loses its star (manual unstar) is re-starred on the next reconcile run. Private repos are included — a star on a private repo is visible only to those with access.
+
+**Credential:** stars are a user action and must use the `FRO_BOT_POLL_PAT` (the user PAT), never the App installation token. The App acts as `fro-bot[bot]` and cannot star as the user.
+
+**Telemetry:** counts-only (`starsAdded`, `starsAlreadyPresent`, `starFailures`). Canonical owner/name never appears in any log or telemetry line.
+
 ## Reconcile run serialization
 
 Reconcile runs are serialized by the `reconcile-repos.yaml` workflow's concurrency group (`group: reconcile-repos, cancel-in-progress: false`). A manual rerun queues behind the currently-running scheduled job and starts only after it fully completes — well over ten minutes (the staggered survey dispatches alone span the majority of that) — far longer than the GitHub Issues listing API's few-second eventual-consistency lag.

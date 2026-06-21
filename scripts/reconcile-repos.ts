@@ -131,6 +131,17 @@ export type RepoStatusProbe =
 export interface FieldProbe {
   has_fro_bot_workflow: boolean
   has_renovate: boolean
+  /**
+   * Numeric REST `repository.id` (GitHub's `databaseId`). Captured from the per-repo
+   * field probe alongside `isPrivate`/`node_id`. Optional: absent when the probe did not
+   * return a positive integer (e.g. the API response omitted the field or returned null).
+   *
+   * Like node_id, this promotes to main with the entry but must NEVER be embedded in a
+   * rendered/logged public surface (issue text, commit message, log line). The metadata
+   * writer persists this onto redacted entries so the denylist secondary guard is
+   * format-independent.
+   */
+  database_id?: number
 }
 
 export interface ReconcileInput {
@@ -969,18 +980,24 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     return normalized
   }
 
+  // Include database_id from the probe so redacted entries carry the format-independent
+  // denylist anchor. Optional: absent when the probe did not return a positive integer.
+  const storageInputWithProbe =
+    probe.database_id === undefined ? storageInput : {...storageInput, database_id: probe.database_id}
+
   const fieldsMatch =
     probe.has_fro_bot_workflow === workingEntry.has_fro_bot_workflow && probe.has_renovate === workingEntry.has_renovate
   const privacyMatch = workingEntry.private === accessPrivate && workingEntry.node_id === accessNodeId
+  const databaseIdMatch = probe.database_id === undefined || workingEntry.database_id === probe.database_id
   const channelMatch = workingEntry === entry // true only when no channel refresh occurred
 
-  if (fieldsMatch && privacyMatch && channelMatch) {
+  if (fieldsMatch && privacyMatch && databaseIdMatch && channelMatch) {
     summary.unchanged += 1
     return entry
   }
   summary.refreshed += 1
   return normalizeRepoEntryForStorage({
-    ...normalizeRepoEntryForStorage(workingEntry, storageInput),
+    ...normalizeRepoEntryForStorage(workingEntry, storageInputWithProbe),
     has_fro_bot_workflow: probe.has_fro_bot_workflow,
     has_renovate: probe.has_renovate,
   })
@@ -1376,6 +1393,12 @@ export interface HandleReconcileResult {
    */
   integrityCheck: 'ok' | 'skipped-no-data-branch' | 'skipped-just-bootstrapped'
   committed: boolean
+  /** Count of collab/contrib repos starred this run (check returned 404 → star call succeeded). */
+  starsAdded: number
+  /** Count of collab/contrib repos already starred (check returned 204 → no star call needed). */
+  starsAlreadyPresent: number
+  /** Count of star check or star call failures this run (non-blocking; loop continues). */
+  starFailures: number
 }
 
 /**
@@ -1659,6 +1682,36 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   })
   plan.summary.raceSuppressedRollups = raceSuppressed
 
+  // 13. Star sync — star collab/contrib repos not yet starred by @fro-bot. Non-blocking:
+  //     failures increment starFailures and the run still returns. Owned repos are excluded
+  //     (fro-bot owns them; self-starring is pointless). A star is a user action — uses
+  //     userOctokit (FRO_BOT_POLL_PAT), never appOctokit. Counts-only telemetry.
+  const starCandidates = accessList.filter(entry => {
+    const channel = accessChannelByKey.get(`${entry.owner}/${entry.name}`)
+    return channel === 'collab' || channel === 'contrib'
+  })
+  const starOutcome = await syncStars({
+    userOctokit,
+    candidates: starCandidates.map(e => ({owner: e.owner, name: e.name})),
+    logger,
+  })
+
+  // Star telemetry — counts-only, no per-repo identifiers. Best-effort: a logger failure
+  // must never abort the reconcile run.
+  if (starOutcome.starsAdded > 0 || starOutcome.starFailures > 0) {
+    try {
+      if (starOutcome.starFailures > 0) {
+        logger.warn(
+          `reconcile: star sync complete (starsAdded=${starOutcome.starsAdded}, starFailures=${starOutcome.starFailures})`,
+        )
+      } else {
+        logger.info(`reconcile: star sync complete (starsAdded=${starOutcome.starsAdded})`)
+      }
+    } catch (error) {
+      console.error('reconcile: star sync telemetry emission failed', error)
+    }
+  }
+
   return {
     accessListSize: accessList.length,
     summary: plan.summary,
@@ -1674,6 +1727,9 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     probesFailed,
     integrityCheck,
     committed,
+    starsAdded: starOutcome.starsAdded,
+    starsAlreadyPresent: starOutcome.starsAlreadyPresent,
+    starFailures: starOutcome.starFailures,
   }
 }
 
@@ -1898,7 +1954,14 @@ export async function fetchPerRepoStatus(
   return map
 }
 
-async function fetchFieldProbes(
+/**
+ * Probe still-accessible tracked repos for field values (`has_fro_bot_workflow`,
+ * `has_renovate`, `database_id`). Exported for unit tests; the sole production caller
+ * is `handleReconcile` in this same file.
+ *
+ * @internal
+ */
+export async function fetchFieldProbes(
   userOctokit: OctokitClient,
   currentRepos: ReposFile,
   accessList: AccessListEntry[],
@@ -1926,11 +1989,43 @@ async function fetchFieldProbes(
 }
 
 async function probeSingleRepo(userOctokit: OctokitClient, owner: string, name: string): Promise<FieldProbe> {
-  const [hasWorkflow, hasRenovate] = await Promise.all([
+  const [hasWorkflow, hasRenovate, databaseId] = await Promise.all([
     probeFroBotWorkflow(userOctokit, owner, name),
     probeRenovateConfig(userOctokit, owner, name),
+    probeRepoDatabaseId(userOctokit, owner, name),
   ])
-  return {has_fro_bot_workflow: hasWorkflow, has_renovate: hasRenovate}
+  const probe: FieldProbe = {has_fro_bot_workflow: hasWorkflow, has_renovate: hasRenovate}
+  if (databaseId !== undefined) {
+    probe.database_id = databaseId
+  }
+  return probe
+}
+
+/**
+ * Fetch the numeric `repository.id` (GitHub's `databaseId`) for a repo via `repos.get`.
+ * Returns `undefined` when the response omits or nulls the field — a missing `databaseId`
+ * is not an error; the entry remains protected by the primary `node_id` guard.
+ *
+ * Only positive integers are accepted. Zero, negatives, and non-integers are treated as
+ * absent (same validation as `RepoEntry.database_id` in the schema).
+ */
+async function probeRepoDatabaseId(
+  userOctokit: OctokitClient,
+  owner: string,
+  name: string,
+): Promise<number | undefined> {
+  try {
+    const response = await userOctokit.rest.repos.get({owner, repo: name})
+    const id = (response.data as {id?: unknown}).id
+    if (typeof id === 'number' && Number.isInteger(id) && id > 0) {
+      return id
+    }
+    return undefined
+  } catch {
+    // Non-blocking: a failed databaseId probe does not fail the field probe.
+    // The entry remains protected by the primary node_id guard.
+    return undefined
+  }
 }
 
 async function probeFroBotWorkflow(userOctokit: OctokitClient, owner: string, name: string): Promise<boolean> {
@@ -2340,6 +2435,81 @@ async function fileIntegrityAlert(params: {
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     params.logger.warn(`reconcile: failed to file integrity alert issue (status=${status}).`)
   }
+}
+
+/**
+ * Star collab/contrib-channel repos that `@fro-bot` has not yet starred.
+ *
+ * For each candidate, calls `checkRepoIsStarredByAuthenticatedUser` (204 = already starred,
+ * 404 = not starred). On 404, calls `starRepoForAuthenticatedUser`. Any other error on the
+ * check, or any error on the star call, increments `starFailures` and continues — one failure
+ * never aborts the loop. Telemetry is counts-only; canonical owner/name never appears in any
+ * log or warn message.
+ *
+ * A star is a user action — MUST use `userOctokit` (the FRO_BOT_POLL_PAT), never the App token.
+ *
+ * Exported for unit tests; the sole production caller is `handleReconcile`.
+ *
+ * @internal
+ */
+export async function syncStars(params: {
+  userOctokit: OctokitClient
+  candidates: {owner: string; name: string}[]
+  logger: ReconcileLogger
+}): Promise<{starsAdded: number; starsAlreadyPresent: number; starFailures: number}> {
+  let starsAdded = 0
+  let starsAlreadyPresent = 0
+  let starFailures = 0
+
+  for (const candidate of params.candidates) {
+    try {
+      // 204 = already starred (resolves); 404 = not starred (throws).
+      await params.userOctokit.rest.activity.checkRepoIsStarredByAuthenticatedUser({
+        owner: candidate.owner,
+        repo: candidate.name,
+      })
+      // Resolved without throwing → already starred.
+      starsAlreadyPresent += 1
+    } catch (checkError: unknown) {
+      if (isApiStatus(checkError, 404)) {
+        // Not starred — attempt to star it.
+        try {
+          await params.userOctokit.rest.activity.starRepoForAuthenticatedUser({
+            owner: candidate.owner,
+            repo: candidate.name,
+          })
+          starsAdded += 1
+        } catch (starError: unknown) {
+          starFailures += 1
+          if (isGitHubRateLimit(starError)) {
+            const status = isRecord(starError) && typeof starError.status === 'number' ? starError.status : 'unknown'
+            params.logger.warn(
+              `reconcile: star sync stopped early on rate limit (status=${status}); remaining candidates retry next run.`,
+            )
+            break
+          }
+          const status = isRecord(starError) && typeof starError.status === 'number' ? starError.status : 'unknown'
+          const kind = starError instanceof Error ? starError.name : 'unknown'
+          params.logger.warn(`reconcile: star sync failed (status=${status}, kind=${kind}); continuing.`)
+        }
+      } else {
+        // Non-404 error on the check — treat as a failure, continue.
+        starFailures += 1
+        if (isGitHubRateLimit(checkError)) {
+          const status = isRecord(checkError) && typeof checkError.status === 'number' ? checkError.status : 'unknown'
+          params.logger.warn(
+            `reconcile: star sync stopped early on rate limit (status=${status}); remaining candidates retry next run.`,
+          )
+          break
+        }
+        const status = isRecord(checkError) && typeof checkError.status === 'number' ? checkError.status : 'unknown'
+        const kind = checkError instanceof Error ? checkError.name : 'unknown'
+        params.logger.warn(`reconcile: star sync failed (status=${status}, kind=${kind}); continuing.`)
+      }
+    }
+  }
+
+  return {starsAdded, starsAlreadyPresent, starFailures}
 }
 
 async function runDispatches(params: {

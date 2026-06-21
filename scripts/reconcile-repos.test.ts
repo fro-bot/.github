@@ -8,6 +8,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   containsFroBotAgentReference,
   DISPATCH_DEFAULTS,
+  fetchFieldProbes,
   fetchPerRepoStatus,
   formatCommitMessage,
   formatFloorTelemetry,
@@ -21,7 +22,9 @@ import {
   ReconcileError,
   reconcileRepos,
   renderIssuePayload,
+  syncStars,
   type AccessListEntry,
+  type FieldProbe,
   type HandleReconcileParams,
   type IssuePayload,
   type OctokitClient,
@@ -2121,6 +2124,274 @@ describe('fetchPerRepoStatus 5-state classification', () => {
 
 //
 // ─────────────────────────────────────────────────────────────────────────────
+// fetchFieldProbes — database_id capture unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+//
+
+interface FieldProbeRepoGetResponse {
+  private?: boolean
+  node_id?: string
+  id?: number
+}
+
+/**
+ * Build a minimal OctokitClient mock for fetchFieldProbes.
+ * fetchFieldProbes calls repos.getContent (for workflow/renovate probes) and
+ * repos.get (for database_id). We stub both here.
+ */
+function makeFieldProbeOctokit(
+  overrides: {
+    reposGet?: (params: {owner: string; repo: string}) => Promise<{data: FieldProbeRepoGetResponse}>
+    getContent?: (params: {owner: string; repo: string; path: string}) => Promise<unknown>
+  } = {},
+): OctokitClient {
+  return {
+    rest: {
+      repos: {
+        get:
+          overrides.reposGet ??
+          (async () => ({
+            data: {private: false, node_id: 'R_default', id: 12345} satisfies FieldProbeRepoGetResponse,
+          })),
+        getContent:
+          overrides.getContent ??
+          (async () => {
+            throw Object.assign(new Error('Not Found'), {status: 404})
+          }),
+      },
+    },
+  } as unknown as OctokitClient
+}
+
+describe('fetchFieldProbes — database_id capture', () => {
+  it('happy path: GraphQL/REST returns databaseId → probe result carries numeric database_id', async () => {
+    // GIVEN a tracked repo in the access list with a known numeric id
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})],
+    }
+    const accessList: AccessListEntry[] = [makeAccess({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})]
+    const reposGet = vi.fn(async () => ({
+      data: {private: false, node_id: 'R_test', id: 987654} satisfies FieldProbeRepoGetResponse,
+    }))
+    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    // WHEN probing
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+
+    // THEN the probe result carries the numeric database_id
+    const probe = result.probes.get('fro-bot/test-repo')
+    expect(probe).toBeDefined()
+    expect(probe?.database_id).toBe(987654)
+    expect(result.failed).toBe(0)
+  })
+
+  it('edge: REST returns null/undefined id → probe result has no database_id; not malformed; no crash', async () => {
+    // GIVEN a tracked repo where the REST response has no numeric id
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})],
+    }
+    const accessList: AccessListEntry[] = [makeAccess({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})]
+    const reposGet = vi.fn(async () => ({
+      // id is absent — simulates a response where databaseId is not returned
+      data: {private: false, node_id: 'R_test'} as FieldProbeRepoGetResponse,
+    }))
+    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    // WHEN probing
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+
+    // THEN the probe result has no database_id but is otherwise valid (not failed)
+    const probe = result.probes.get('fro-bot/test-repo')
+    expect(probe).toBeDefined()
+    expect(probe).not.toHaveProperty('database_id')
+    expect(result.failed).toBe(0)
+    // AND the probe is not classified as malformed (no warn about malformed)
+    expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('malformed'))
+  })
+
+  it('edge: REST returns id: null → probe result has no database_id; not malformed; no crash', async () => {
+    // GIVEN a tracked repo where the REST response has id: null
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})],
+    }
+    const accessList: AccessListEntry[] = [makeAccess({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})]
+    const reposGet = vi.fn(async () => ({
+      data: {private: false, node_id: 'R_test', id: null} as unknown as FieldProbeRepoGetResponse,
+    }))
+    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    // WHEN probing
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+
+    // THEN the probe result has no database_id but is otherwise valid
+    const probe = result.probes.get('fro-bot/test-repo')
+    expect(probe).toBeDefined()
+    expect(probe).not.toHaveProperty('database_id')
+    expect(result.failed).toBe(0)
+  })
+
+  it('integration: captured database_id is available on the probe result for downstream consumption', async () => {
+    // GIVEN a tracked repo with a known numeric id
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'fro-bot', name: 'private-repo', node_id: 'R_private', private: true})],
+    }
+    const accessList: AccessListEntry[] = [
+      makeAccess({owner: 'fro-bot', name: 'private-repo', node_id: 'R_private', private: true}),
+    ]
+    const reposGet = vi.fn(async () => ({
+      data: {private: true, node_id: 'R_private', id: 1234567} satisfies FieldProbeRepoGetResponse,
+    }))
+    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    // WHEN probing
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+
+    // THEN the probe result carries database_id that a downstream writer can read
+    const probe = result.probes.get('fro-bot/private-repo')
+    expect(probe).toBeDefined()
+    // Verify the field is accessible and has the correct type
+    const databaseId: number | undefined = probe?.database_id
+    expect(databaseId).toBe(1234567)
+    expect(typeof databaseId).toBe('number')
+  })
+
+  it('API error from repos.get → probe has no database_id, failed/error count unaffected, no exception', async () => {
+    // GIVEN a tracked repo where repos.get throws an API error
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'fro-bot', name: 'error-repo', node_id: 'R_error'})],
+    }
+    const accessList: AccessListEntry[] = [makeAccess({owner: 'fro-bot', name: 'error-repo', node_id: 'R_error'})]
+    const reposGet = vi.fn(async () => {
+      throw apiError(500, 'Internal Server Error')
+    })
+    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const logger = silentLogger()
+
+    // WHEN probing — should not throw
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, logger)
+
+    // THEN the probe result has no database_id
+    const probe = result.probes.get('fro-bot/error-repo')
+    expect(probe).toBeDefined()
+    expect(probe).not.toHaveProperty('database_id')
+    // AND the failed/error count is unaffected (0) — API errors on the database_id sub-probe
+    // are non-fatal; the probe still succeeds for the other fields
+    expect(result.failed).toBe(0)
+  })
+
+  it('missing databaseId alone does not cause the entry to be classified as malformed in reconcileRepos', () => {
+    // GIVEN a tracked repo with a field probe that has no database_id
+    const entry = makeEntry({
+      name: 'no-db-id-repo',
+      onboarding_status: 'onboarded',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      private: false,
+      node_id: 'R_default',
+    })
+    // A FieldProbe without database_id (the optional field is absent)
+    const probeWithoutDatabaseId: FieldProbe = {
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      // database_id intentionally absent
+    }
+
+    // WHEN reconciling with this probe
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({name: 'no-db-id-repo', private: false, node_id: 'R_default'})],
+        fieldProbes: new Map([['fro-bot/no-db-id-repo', probeWithoutDatabaseId]]),
+      }),
+    )
+
+    // THEN the entry is NOT classified as malformed — missing database_id alone is not malformed
+    expect(result.summary.malformed).toBe(0)
+    // AND the entry is unchanged (no field drift)
+    expect(result.summary.unchanged).toBe(1)
+    expect(result.summary.refreshed).toBe(0)
+  })
+
+  it('sticky: stored database_id + transient probe (no database_id) → NOT refreshed, stored value preserved', () => {
+    // GIVEN an entry that already has a stored database_id
+    const entry = makeEntry({
+      name: 'sticky-repo',
+      onboarding_status: 'onboarded',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      private: false,
+      node_id: 'R_sticky',
+      database_id: 123,
+    })
+    // AND a probe that transiently returns no database_id (e.g. repos.get hiccup)
+    const transientProbe: FieldProbe = {
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      // database_id absent — simulates a transient sub-probe failure
+    }
+
+    // WHEN reconciling
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({name: 'sticky-repo', private: false, node_id: 'R_sticky'})],
+        fieldProbes: new Map([['fro-bot/sticky-repo', transientProbe]]),
+      }),
+    )
+
+    // THEN the entry is NOT counted as refreshed — absent probe must not signal drift
+    expect(result.summary.refreshed).toBe(0)
+    expect(result.summary.unchanged).toBe(1)
+    // AND the stored database_id is preserved in the output
+    expect(result.nextRepos.repos[0]).toMatchObject({database_id: 123})
+  })
+
+  it('backfill: stored database_id absent + probe returns a number → entry IS refreshed and gains database_id', () => {
+    // GIVEN an entry with no stored database_id (first-time capture scenario)
+    const entry = makeEntry({
+      name: 'backfill-repo',
+      onboarding_status: 'onboarded',
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      private: false,
+      node_id: 'R_backfill',
+      // database_id intentionally absent
+    })
+    // AND a probe that returns a numeric database_id for the first time
+    const backfillProbe: FieldProbe = {
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      database_id: 456,
+    }
+
+    // WHEN reconciling
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({name: 'backfill-repo', private: false, node_id: 'R_backfill'})],
+        fieldProbes: new Map([['fro-bot/backfill-repo', backfillProbe]]),
+      }),
+    )
+
+    // THEN the entry IS refreshed — a present probe value that differs from stored triggers capture
+    expect(result.summary.refreshed).toBe(1)
+    expect(result.summary.unchanged).toBe(0)
+    // AND the new database_id is written to the output entry
+    expect(result.nextRepos.repos[0]).toMatchObject({database_id: 456})
+  })
+})
+
+//
+// ─────────────────────────────────────────────────────────────────────────────
 // Unit 3 — I/O shell tests for `handleReconcile`
 // ─────────────────────────────────────────────────────────────────────────────
 //
@@ -2139,6 +2410,8 @@ interface OctokitMockOverrides {
   issuesListForRepo?: (params: unknown) => Promise<{data: IssueListEntry[]}>
   issuesGetLabel?: (params: unknown) => Promise<{data: {name: string}}>
   issuesCreateLabel?: (params: unknown) => Promise<{data: {name: string}}>
+  checkRepoIsStarredByAuthenticatedUser?: (params: {owner: string; repo: string}) => Promise<void>
+  starRepoForAuthenticatedUser?: (params: {owner: string; repo: string}) => Promise<void>
 }
 
 interface AccessListApiEntry {
@@ -2153,6 +2426,7 @@ interface RepoGetResponse {
   archived?: boolean
   private?: boolean
   node_id?: string
+  id?: number
 }
 
 interface BranchResponse {
@@ -2276,6 +2550,15 @@ function mockOctokit(overrides: OctokitMockOverrides = {}): OctokitClient {
         listForRepo: overrides.issuesListForRepo ?? (async () => ({data: [] as IssueListEntry[]})),
         getLabel: overrides.issuesGetLabel ?? (async () => ({data: {name: 'label'}})),
         createLabel: overrides.issuesCreateLabel ?? (async () => ({data: {name: 'label'}})),
+      },
+      activity: {
+        checkRepoIsStarredByAuthenticatedUser:
+          overrides.checkRepoIsStarredByAuthenticatedUser ??
+          (async () => {
+            // Default: not starred (throws 404)
+            throw apiError(404, 'Not Found')
+          }),
+        starRepoForAuthenticatedUser: overrides.starRepoForAuthenticatedUser ?? (async () => undefined),
       },
     },
   } as unknown as OctokitClient
@@ -7130,5 +7413,504 @@ describe('handleReconcile visibility-transition: partial label confirmation is n
     // confirming the partial result from issue 1 was NOT cached and issue 2 retried.
     const integrityLabelCallCount = getLabelCalls.filter(n => n === 'reconcile:integrity-alert').length
     expect(integrityLabelCallCount).toBeGreaterThanOrEqual(2)
+  })
+})
+
+// ─── syncStars ───────────────────────────────────────────────────────────────
+
+describe('syncStars', () => {
+  describe('happy path — unstarred repo', () => {
+    it('calls starRepoForAuthenticatedUser when check throws 404, increments starsAdded', async () => {
+      // GIVEN a collab repo that is not yet starred (check → 404)
+      // WHEN syncStars runs
+      const checkStar = vi.fn(async () => {
+        throw apiError(404, 'Not Found')
+      })
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      const result = await syncStars({
+        userOctokit,
+        candidates: [{owner: 'marcusrbrown', name: 'cool-repo'}],
+        logger,
+      })
+
+      // THEN the repo is starred and starsAdded increments
+      expect(result.starsAdded).toBe(1)
+      expect(result.starsAlreadyPresent).toBe(0)
+      expect(result.starFailures).toBe(0)
+      expect(starRepo).toHaveBeenCalledOnce()
+      expect(starRepo).toHaveBeenCalledWith({owner: 'marcusrbrown', repo: 'cool-repo'})
+    })
+  })
+
+  describe('idempotency — already-starred repo', () => {
+    it('does NOT call starRepoForAuthenticatedUser when check resolves (204), increments starsAlreadyPresent', async () => {
+      // GIVEN a repo that is already starred (check → resolves without throwing)
+      // WHEN syncStars runs
+      const checkStar = vi.fn(async () => undefined) // resolves = already starred
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      const result = await syncStars({
+        userOctokit,
+        candidates: [{owner: 'marcusrbrown', name: 'already-starred'}],
+        logger,
+      })
+
+      // THEN no star call is made and starsAlreadyPresent increments
+      expect(result.starsAdded).toBe(0)
+      expect(result.starsAlreadyPresent).toBe(1)
+      expect(result.starFailures).toBe(0)
+      expect(starRepo).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('private collab repo — starred, counts-only telemetry', () => {
+    it('stars a private collab repo (check 404) and emits no canonical name in logger output', async () => {
+      // GIVEN a private collab repo not yet starred
+      // WHEN syncStars runs
+      const checkStar = vi.fn(async () => {
+        throw apiError(404, 'Not Found')
+      })
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      const result = await syncStars({
+        userOctokit,
+        candidates: [{owner: 'private-owner', name: 'secret-repo'}],
+        logger,
+      })
+
+      // THEN the repo is starred
+      expect(result.starsAdded).toBe(1)
+      expect(starRepo).toHaveBeenCalledOnce()
+
+      // AND no canonical owner/name appears in any logger output (counts-only)
+      const allLogMessages = [...logger.warn.mock.calls.map(c => c[0]), ...logger.info.mock.calls.map(c => c[0])]
+      for (const msg of allLogMessages) {
+        expect(msg).not.toContain('private-owner')
+        expect(msg).not.toContain('secret-repo')
+      }
+    })
+  })
+
+  describe('non-blocking — check error (non-404)', () => {
+    it('increments starFailures on non-404 check error, continues to next candidate', async () => {
+      // GIVEN a check that throws a non-404 error (e.g. 500), followed by a normal unstarred repo
+      // WHEN syncStars runs
+      const checkStar = vi
+        .fn()
+        .mockRejectedValueOnce(apiError(500, 'Internal Server Error'))
+        .mockRejectedValueOnce(apiError(404, 'Not Found'))
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      const result = await syncStars({
+        userOctokit,
+        candidates: [
+          {owner: 'owner-a', name: 'repo-a'},
+          {owner: 'owner-b', name: 'repo-b'},
+        ],
+        logger,
+      })
+
+      // THEN the first candidate fails (starFailures), the second is starred (starsAdded)
+      expect(result.starFailures).toBe(1)
+      expect(result.starsAdded).toBe(1)
+      expect(result.starsAlreadyPresent).toBe(0)
+      // AND the loop continued — star was called for the second candidate
+      expect(starRepo).toHaveBeenCalledOnce()
+      expect(starRepo).toHaveBeenCalledWith({owner: 'owner-b', repo: 'repo-b'})
+    })
+  })
+
+  describe('non-blocking — star call error', () => {
+    it('increments starFailures when starRepoForAuthenticatedUser throws, continues to next candidate', async () => {
+      // GIVEN a check that returns 404 (not starred) but the star call itself fails
+      // AND a second candidate that succeeds normally
+      // WHEN syncStars runs
+      const checkStar = vi.fn(async () => {
+        throw apiError(404, 'Not Found')
+      })
+      const starRepo = vi.fn().mockRejectedValueOnce(apiError(403, 'Forbidden')).mockResolvedValueOnce(undefined)
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      const result = await syncStars({
+        userOctokit,
+        candidates: [
+          {owner: 'owner-a', name: 'repo-a'},
+          {owner: 'owner-b', name: 'repo-b'},
+        ],
+        logger,
+      })
+
+      // THEN the first star call fails (starFailures), the second succeeds (starsAdded)
+      expect(result.starFailures).toBe(1)
+      expect(result.starsAdded).toBe(1)
+      // AND the warn message contains status/kind only, no owner/name
+      expect(logger.warn).toHaveBeenCalledOnce()
+      const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
+      expect(warnMsg).toContain('status=403')
+      expect(warnMsg).not.toContain('owner-a')
+      expect(warnMsg).not.toContain('repo-a')
+    })
+  })
+
+  describe('credential — star calls use userOctokit, not appOctokit', () => {
+    it('star and check calls go through userOctokit; appOctokit.activity methods are never called (integration)', async () => {
+      // GIVEN an unstarred collab repo in the access list
+      // AND both userOctokit and appOctokit are wired with distinct activity mocks
+      const userCheckStar = vi.fn(async () => {
+        throw apiError(404, 'Not Found') // not starred
+      })
+      const userStarRepo = vi.fn(async () => undefined)
+      const appCheckStar = vi.fn(async () => undefined)
+      const appStarRepo = vi.fn(async () => undefined)
+
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: userCheckStar as never,
+        starRepoForAuthenticatedUser: userStarRepo as never,
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'marcusrbrown'}, name: 'some-repo', archived: false, private: false, node_id: 'R_some'},
+          ],
+        }),
+      })
+      // appOctokit has its own activity mocks — if syncStars mistakenly used appOctokit,
+      // these would be called and the assertions below would catch it.
+      const appOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: appCheckStar as never,
+        starRepoForAuthenticatedUser: appStarRepo as never,
+      })
+
+      // WHEN handleReconcile runs end-to-end
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit,
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['marcusrbrown'])}),
+        }),
+      )
+
+      // THEN userOctokit's activity methods were called (the star went through)
+      expect(userCheckStar).toHaveBeenCalledOnce()
+      expect(userStarRepo).toHaveBeenCalledOnce()
+      expect(result.starsAdded).toBe(1)
+      // AND appOctokit's activity methods were NEVER called
+      // (mutation-proof: if syncStars were switched to appOctokit, these would fail)
+      expect(appCheckStar).not.toHaveBeenCalled()
+      expect(appStarRepo).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('rate-limit early break', () => {
+    it('stops the loop when check throws a rate-limit error; later candidates are not processed', async () => {
+      // GIVEN three candidates; the first check throws a 429 rate-limit error
+      const checkStar = vi
+        .fn()
+        .mockRejectedValueOnce(apiError(429, 'Too Many Requests')) // candidate 1: rate-limited
+        .mockResolvedValueOnce(undefined) // candidate 2: would resolve (already starred)
+        .mockRejectedValueOnce(apiError(404, 'Not Found')) // candidate 3: would need starring
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      // WHEN syncStars runs
+      const result = await syncStars({
+        userOctokit,
+        candidates: [
+          {owner: 'owner-a', name: 'repo-a'},
+          {owner: 'owner-b', name: 'repo-b'},
+          {owner: 'owner-c', name: 'repo-c'},
+        ],
+        logger,
+      })
+
+      // THEN the loop stopped after the first candidate
+      // starFailures reflects the rate-limited candidate
+      expect(result.starFailures).toBe(1)
+      // starsAdded and starsAlreadyPresent are zero (loop broke before any success)
+      expect(result.starsAdded).toBe(0)
+      expect(result.starsAlreadyPresent).toBe(0)
+      // AND candidates 2 and 3 were never checked (loop broke early)
+      expect(checkStar).toHaveBeenCalledTimes(1)
+      expect(starRepo).not.toHaveBeenCalled()
+      // AND a single warn was emitted with status, no owner/name
+      expect(logger.warn).toHaveBeenCalledOnce()
+      const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
+      expect(warnMsg).toContain('rate limit')
+      expect(warnMsg).toContain('status=429')
+      expect(warnMsg).not.toContain('owner-a')
+      expect(warnMsg).not.toContain('repo-a')
+    })
+
+    it('stops the loop when star call throws a rate-limit error (403 + x-ratelimit-remaining: 0)', async () => {
+      // GIVEN two candidates; the first check returns 404 (not starred) but the star call is rate-limited
+      const rateLimitError = Object.assign(new Error('API rate limit exceeded'), {
+        status: 403,
+        response: {headers: {'x-ratelimit-remaining': '0'}},
+      })
+      const checkStar = vi
+        .fn()
+        .mockRejectedValueOnce(apiError(404, 'Not Found')) // candidate 1: not starred
+        .mockRejectedValueOnce(apiError(404, 'Not Found')) // candidate 2: would need starring
+      const starRepo = vi.fn().mockRejectedValueOnce(rateLimitError) // star call rate-limited
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      // WHEN syncStars runs
+      const result = await syncStars({
+        userOctokit,
+        candidates: [
+          {owner: 'owner-a', name: 'repo-a'},
+          {owner: 'owner-b', name: 'repo-b'},
+        ],
+        logger,
+      })
+
+      // THEN the loop stopped after the first candidate's star call failed
+      expect(result.starFailures).toBe(1)
+      expect(result.starsAdded).toBe(0)
+      // AND candidate 2's check was never called (loop broke after star failure)
+      expect(checkStar).toHaveBeenCalledTimes(1)
+      expect(starRepo).toHaveBeenCalledTimes(1)
+      // AND the warn message contains status, no owner/name
+      expect(logger.warn).toHaveBeenCalledOnce()
+      const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
+      expect(warnMsg).toContain('rate limit')
+      expect(warnMsg).toContain('status=403')
+      expect(warnMsg).not.toContain('owner-a')
+      expect(warnMsg).not.toContain('repo-a')
+    })
+  })
+
+  describe('empty candidates', () => {
+    it('returns all-zero counts when candidates list is empty', async () => {
+      // GIVEN no candidates
+      // WHEN syncStars runs
+      const checkStar = vi.fn(async () => undefined)
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      const result = await syncStars({userOctokit, candidates: [], logger})
+
+      // THEN no calls are made and all counts are zero
+      expect(result).toEqual({starsAdded: 0, starsAlreadyPresent: 0, starFailures: 0})
+      expect(checkStar).not.toHaveBeenCalled()
+      expect(starRepo).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe('handleReconcile — star sync integration', () => {
+  describe('channel filter — owned repos excluded', () => {
+    it('does not check or star owned-channel repos; only collab/contrib repos are candidates', async () => {
+      // GIVEN an access list with one owned repo and one collab repo
+      // WHEN handleReconcile runs
+      const checkStar = vi.fn(async () => {
+        throw apiError(404, 'Not Found') // not starred
+      })
+      const starRepo = vi.fn(async () => undefined)
+
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+        // Provide collab access list: one collab repo
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'marcusrbrown'}, name: 'collab-repo', archived: false, private: false, node_id: 'R_collab'},
+          ],
+        }),
+      })
+      // appOctokit provides the owned repo via listReposAccessibleToInstallation
+      const appPaginateOwned = async (_fn: unknown, _opts: unknown) => {
+        // Return one owned repo
+        return [
+          {
+            owner: {login: 'fro-bot'},
+            name: 'owned-repo',
+            archived: false,
+            fork: false,
+            private: false,
+            node_id: 'R_owned',
+          },
+        ]
+      }
+      const appOctokit = mockOctokit({
+        paginate: appPaginateOwned as never,
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit,
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['marcusrbrown'])}),
+        }),
+      )
+
+      // THEN only the collab repo was checked/starred (not the owned repo)
+      expect(checkStar).toHaveBeenCalledOnce()
+      expect(checkStar).toHaveBeenCalledWith({owner: 'marcusrbrown', repo: 'collab-repo'})
+      expect(starRepo).toHaveBeenCalledOnce()
+      expect(result.starsAdded).toBe(1)
+      expect(result.starsAlreadyPresent).toBe(0)
+    })
+  })
+
+  describe('star counts surface in HandleReconcileResult', () => {
+    it('returns starsAdded, starsAlreadyPresent, starFailures in the result', async () => {
+      // GIVEN two collab repos: one unstarred, one already starred
+      // WHEN handleReconcile runs
+      const checkStar = vi
+        .fn()
+        .mockRejectedValueOnce(apiError(404, 'Not Found')) // first: not starred
+        .mockResolvedValueOnce(undefined) // second: already starred
+
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'owner-a'}, name: 'repo-a', archived: false, private: false, node_id: 'R_a'},
+            {owner: {login: 'owner-b'}, name: 'repo-b', archived: false, private: false, node_id: 'R_b'},
+          ],
+        }),
+      })
+
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['owner-a', 'owner-b'])}),
+        }),
+      )
+
+      // THEN the result carries the correct star counts
+      expect(result.starsAdded).toBe(1)
+      expect(result.starsAlreadyPresent).toBe(1)
+      expect(result.starFailures).toBe(0)
+    })
+  })
+
+  describe('non-blocking — star failure does not abort handleReconcile', () => {
+    it('handleReconcile still returns when syncStars encounters a failure', async () => {
+      // GIVEN a collab repo where the star check throws a non-404 error
+      // WHEN handleReconcile runs
+      const checkStar = vi.fn(async () => {
+        throw apiError(500, 'Internal Server Error')
+      })
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'marcusrbrown'}, name: 'flaky-repo', archived: false, private: false, node_id: 'R_flaky'},
+          ],
+        }),
+      })
+
+      // THEN handleReconcile completes without throwing
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['marcusrbrown'])}),
+        }),
+      )
+
+      expect(result.starFailures).toBe(1)
+      expect(result.starsAdded).toBe(0)
+    })
+  })
+
+  describe('contrib channel — unstarred contrib repo flows through to a star call', () => {
+    it('stars an unstarred contrib-channel repo; starsAdded reflects it', async () => {
+      // GIVEN an allowlist with one contrib repo (bfra-me/.github) that has a trusted workflow
+      const contribAllowlist: AllowlistFile = {
+        version: 1,
+        approved_inviters: [],
+        approved_contrib_repos: ['bfra-me/.github'],
+      }
+
+      const trustedWorkflow = `name: Fro Bot
+on: [issues, pull_request]
+jobs:
+  agent:
+    uses: fro-bot/agent/.github/workflows/fro-bot.yaml@v0.42.1
+`
+
+      // reposGet drives probeContribRepoMetadata for the contrib repo
+      const reposGet = async ({owner, repo}: {owner: string; repo: string}) => {
+        if (owner === 'bfra-me' && repo === '.github') {
+          return {data: {archived: false, fork: false, private: false, node_id: 'R_bfra_gh'} as RepoGetResponse}
+        }
+        return {data: {archived: false, private: false, node_id: 'R_default'} as RepoGetResponse}
+      }
+
+      // The contrib repo is not yet starred (check → 404)
+      const checkStar = vi.fn(async () => {
+        throw apiError(404, 'Not Found')
+      })
+      const starRepo = vi.fn(async () => undefined)
+
+      const userOctokit = mockOctokit({
+        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+        // No collab repos — only contrib
+        listForAuthenticatedUser: async () => ({data: []}),
+      })
+
+      const appOctokit = mockOctokit({
+        paginate: async () => [], // no owned repos
+        getContent: contentByRepo(new Map([['bfra-me/.github', trustedWorkflow]])),
+        reposGet,
+      })
+
+      // WHEN handleReconcile runs
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit,
+          readMetadata: makeReadMetadata({allowlist: contribAllowlist}),
+        }),
+      )
+
+      // THEN the contrib repo was starred (starsAdded reflects it)
+      expect(result.starsAdded).toBe(1)
+      expect(result.starsAlreadyPresent).toBe(0)
+      expect(result.starFailures).toBe(0)
+      // AND the star call was made for the contrib repo
+      expect(starRepo).toHaveBeenCalledOnce()
+      expect(starRepo).toHaveBeenCalledWith({owner: 'bfra-me', repo: '.github'})
+    })
   })
 })

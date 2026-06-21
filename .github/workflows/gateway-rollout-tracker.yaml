@@ -1,0 +1,104 @@
+---
+name: Gateway Rollout Tracker
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-rollout-tracker
+  cancel-in-progress: false
+
+jobs:
+  # ── Preflight: deterministic snapshot + idempotency gate ──────────────────
+  # Reads the GitHub Project and tracked issue states, builds a stable hash,
+  # and compares it to the hash embedded in the latest @fro-bot tracker comment.
+  # Outputs should_comment=true only when there is a genuine gating transition.
+  preflight:
+    name: Rollout Tracker Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      should_comment: ${{ steps.snapshot.outputs.should_comment }}
+      reason: ${{ steps.snapshot.outputs.reason }}
+      hash: ${{ steps.snapshot.outputs.hash }}
+      snapshot: ${{ steps.snapshot.outputs.snapshot }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🔍 Run rollout tracker snapshot preflight
+        id: snapshot
+        env:
+          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+        run: |
+          set -euo pipefail
+          RESULT="$(node scripts/rollout-tracker-snapshot.ts)"
+          SHOULD_COMMENT="$(echo "$RESULT" | jq -r '.should_comment')"
+          REASON="$(echo "$RESULT" | jq -r '.reason')"
+          HASH="$(echo "$RESULT" | jq -r '.hash')"
+          SNAPSHOT="$(echo "$RESULT" | jq -c '.snapshot')"
+          {
+            echo "should_comment=${SHOULD_COMMENT}"
+            echo "reason=${REASON}"
+            echo "hash=${HASH}"
+            echo "snapshot<<SNAPSHOT_JSON"
+            echo "${SNAPSHOT}"
+            echo "SNAPSHOT_JSON"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$SHOULD_COMMENT" = "false" ]; then
+            echo "::notice::rollout-tracker: no gating transition — ${REASON}"
+          else
+            echo "::notice::rollout-tracker: gating transition detected — ${REASON}"
+          fi
+
+  # ── Fro Bot agent: only runs when preflight detects a gating transition ───
+  update-rollout-tracker:
+    name: Update Rollout Tracker
+    needs: preflight
+    if: needs.preflight.outputs.should_comment == 'true'
+    uses: ./.github/workflows/fro-bot.yaml
+    with:
+      prompt: >-
+        Update the Gateway operator control-surface rollout tracker at
+        fro-bot/.github#3512 and the linked GitHub Project at
+        https://github.com/users/fro-bot/projects/1. A gating transition has
+        been detected since the last tracker comment — narrate only the
+        transition that triggered this run.
+
+        Use the preflight snapshot and Project items as the tracked rollout
+        source of truth; do not rely on a hardcoded issue list. For each tracked
+        Project item: check whether it has been closed, whether a deployment has
+        happened, or whether a supporting feature has been released. Update the
+        GitHub Project item state/fields when the evidence changes readiness.
+        Use fro-bot/.github#3512 as the routine status log; comment on tracked
+        issues only when there is issue-specific transition evidence that has
+        not already been acknowledged, and link those comments back to
+        fro-bot/.github#3512.
+
+        All status comments must begin with @fro-bot or explicitly mention
+        @fro-bot. Post status updates in a concise, structured format.
+
+        IMPORTANT: End every tracker comment on fro-bot/.github#3512 with the
+        machine-readable state marker on its own line, replacing any prior
+        marker. Use this preflight hash:
+        ${{ needs.preflight.outputs.hash }}
+        And this preflight snapshot JSON:
+        ${{ needs.preflight.outputs.snapshot }}
+        Format exactly:
+        <!-- gateway-rollout-tracker:{"hash":"${{ needs.preflight.outputs.hash }}","snapshot":${{ needs.preflight.outputs.snapshot }}} -->
+        Never parse prose tables as state — always read and write the marker.
+    secrets:
+      FRO_BOT_PAT: ${{ secrets.FRO_BOT_PAT }}
+      OPENCODE_AUTH_JSON: ${{ secrets.OPENCODE_AUTH_JSON }}
+      OMO_PROVIDERS: ${{ secrets.OMO_PROVIDERS }}
+      OPENCODE_CONFIG: ${{ secrets.OPENCODE_CONFIG }}
