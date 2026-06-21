@@ -2277,27 +2277,28 @@ Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/ha-config
 
-## [2026-06-21 02:00] ingest | repo:marcusrbrown/vbs
+## [2026-06-21 09:06] ingest | bfra-me/renovate-action
 
-Surveyed marcusrbrown/vbs (SHA `abe4998` → `85df074`). 11 commits over 11 days, **all Renovate-authored** (`mrbro-bot[bot]`) — pure dependency cadence, no structural or application code changes. The late-May CI consolidation work has settled; the repo is back in dependency-autopilot mode. The only non-Renovate signal is open PR #626, a Fro Bot-authored AGENTS.md drift fix — the autoheal "AGENTS.md accuracy" check landing exactly the kind of PR it exists for.
+Third survey of `bfra-me/renovate-action` (SHA `5cacb673`, was `5b2b2faf` on 2026-06-11, `bc9c4591` on 2026-05-20). Updated repo page `bfra-me--renovate-action.md` (frontmatter source + `updated`, identity block, version pins, Renovate preset, tooling table, observations, survey-history row), refreshed the index stub, and bumped the Fro Bot presence row in `github-actions-ci.md`. Reads limited to directory listings, README/manifest/workflow files, action.yaml, renovate.json5, and docker/entrypoint.sh per the untrusted-input policy.
 
-Version drift captured:
+Delta from prior survey (SHA `5b2b2faf`, 2026-06-11):
 
-- `fro-bot/agent` v0.55.4 → **v0.73.0** (SHA-pinned in `.github/workflows/fro-bot.yaml`, +18 minors in 11 days; #617, #619–#622, #624–#625, #627–#629). VBS continues tracking upstream agent releases at full cadence.
-- Renovate preset `marcusrbrown/renovate-config#5.2.1` → **#5.2.3**.
-- pnpm 10.34.1 → **10.34.3**.
-- Vitest stack (`vitest`, `@vitest/coverage-v8`, `@vitest/ui`) pinned to **4.1.9** (#623).
-- bfra-me tooling pins steady (`eslint-config` 0.51.1, `prettier-config` 0.16.9, `tsconfig` 0.13.1); prettier 3.8.4, `@types/node` 24.13.2.
+- **Fro Bot agent v0.60.0 → v0.73.0** (SHA `df121025`) — 13-minor jump in 10 days. Still the ecosystem version leader; canary hypothesis confirmed a third consecutive time (self-Renovate loop merges agent bumps continuously).
+- **Renovate pin 43.220.0 → 43.233.3** (`RENOVATE_VERSION` in `action.yaml`, self-bumped via the inline `# renovate:` comment).
+- **Latest release 9.113.0 → 9.123.0** (2026-06-20; 10 minors in 9 days — same semantic-release cadence).
+- **Internal Renovate preset v4.16.25 → v4.16.27** (`bfra-me/.github:internal.json5`).
+- **Tooling bumps:** Node 24.16.0 → 24.17.0, pnpm 10.34.1 → 10.34.3, ESLint 10.4.1 → 10.5.0, Prettier 3.8.3 → 3.8.4, Vitest 4.1.8 → 4.1.9, semantic-release 25.0.3 → 25.0.5, js-yaml 4.1.1 → 4.2.0, `@bfra.me/eslint-config@0.51.1`.
+- **Repo metadata:** stars 2 → 3, open issues 62 → 61. Last push 2026-06-21.
+- **Unchanged:** 8 workflows; `renovatebot/github-action@v46.1.4`, `create-github-app-token@v3.2.0`, `actions/cache/restore@v5.0.5`; fro-bot.yaml single-workflow three-mode structure (crons 03:30 + 15:30 UTC, `workflow_dispatch` default `autoheal`); branch protection contexts; v10 Docker-removal plan (no replacement implementation yet).
+- **Standing contradiction re-confirmed:** dead v8 analytics plumbing (`/tmp/renovate-analytics`, `record_docker_metric`, `record_failure`) still present in `docker/entrypoint.sh` — third consecutive survey across ~33 releases. Now durable enough to read as intentional-but-unaddressed; the autoheal sweep keeps it report-only.
+- **Fro Bot workflow present and active** — no onboarding follow-up needed.
 
-Activity shape (2026-06-21): 2 open PRs (#618 perpetual data, #626 Fro Bot AGENTS.md drift fix), 12 open issues (down from 13), **star count 1 → 2** (first net star movement since the page was created). No license file at root (still only `license: MIT` in `package.json`; carried forward, no contradiction). Workflows unchanged (7; `fro-bot.yaml` present and active).
+No contradictions overturned; all prior findings confirmed and extended additively.
 
-Fro Bot workflow present — no follow-up draft PR needed. Pages touched: `wiki/repos/marcusrbrown--vbs.md`, `index.md`, `log.md`. Working-dir delivery mode: no GitHub issue notice opened; this log entry is the canonical per-survey summary.
+Sources: https://github.com/bfra-me/renovate-action (SHA 5cacb673ba19c31b04df2b58913b87285842b193)
 
-Sources: https://github.com/marcusrbrown/vbs (SHA 85df074fc28bb01d7df5147623948b8bc29d93c8)
+## [2026-06-21 09:10] ingest | repo:bfra-me/renovate-action
 
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
 
-## [2026-06-21 09:06] ingest | repo:marcusrbrown/vbs
-
-Surveyed marcusrbrown/vbs and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/vbs
+Sources: https://github.com/bfra-me/renovate-action

@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-06-16
+updated: 2026-06-21
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - fro-bot--agent
@@ -103,7 +103,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--sparkle]]     | Present (`fro-bot.yaml`, agent **v0.65.0** as of 2026-06-16; landed 2026-06-05) | Autoheal `0 5 * * *`, Maintenance `0 17 * * *`; modes `review`/`maintenance`/`autoheal` via dispatch; comment-trigger fork-head refusal preflight |
 | [[marcusrbrown--ha-config]]   | **Not present**          | N/A                               |
 | [[bfra-me--works]]            | Present (`fro-bot.yaml`, single-file three-mode at v0.44.2) | Maintenance `0 16 * * *`, Autoheal `30 3 * * *`; both rolling-update single-issue reports (`Daily Maintenance Report` / `Daily Autohealing Report`) |
-| [[bfra-me--renovate-action]]  | Present (single-file three-mode `fro-bot.yaml` at **v0.60.0** as of 2026-06-11 — ecosystem version leader/canary) | Autoheal `30 3 * * *`, Maintenance `30 15 * * *`; dispatch defaults to autoheal; two perpetual issues (`Daily Maintenance Report` / `Daily Autohealing Report`); explicit Renovate-owns-dependency-bumps boundary in autoheal prompt |
+| [[bfra-me--renovate-action]]  | Present (single-file three-mode `fro-bot.yaml` at **v0.73.0** as of 2026-06-21 — ecosystem version leader/canary) | Autoheal `30 3 * * *`, Maintenance `30 15 * * *`; dispatch defaults to autoheal; two perpetual issues (`Daily Maintenance Report` / `Daily Autohealing Report`); explicit Renovate-owns-dependency-bumps boundary in autoheal prompt |
 
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
 
