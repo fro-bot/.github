@@ -2,12 +2,11 @@
  * Tests for capture-learnings-open.ts
  *
  * Structure:
- * - Pure function tests: `learningBodyHasPrivateLeak`, `planLearnings`
- * - Disk loader tests: `loadPrivateTokensFromDisk` (injectable readFile)
+ * - Integration test: open.ts still blocks private-laden bodies via the shared privacy module
+ * - Pure function tests: `planLearnings`
  * - I/O shell tests: `openLearningIssues`, `ensureLabelsExist` (mocked Octokit)
  *
- * Privacy mutation-proof: each privacy test includes a "without the gate" assertion
- * that proves removing the check would let the learning through.
+ * Privacy gate unit tests live in capture-learnings-privacy.test.ts (single source of truth).
  */
 
 import {describe, expect, it, vi} from 'vitest'
@@ -20,14 +19,13 @@ import {
 } from './capture-learnings-harvest.ts'
 import {
   ensureLabelsExist,
-  learningBodyHasPrivateLeak,
-  loadPrivateTokensFromDisk,
   openLearningIssues,
   planLearnings,
   type LabelDescriptor,
   type LearningToOpen,
   type PlanLearningsInput,
 } from './capture-learnings-open.ts'
+import {learningBodyHasPrivateLeak, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
 import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
@@ -39,6 +37,7 @@ function makeCandidate(overrides: Partial<Candidate> = {}): Candidate {
     mergeSha: 'abc123def456abc123def456abc123def456abc1',
     reviewRounds: 2,
     signals: {titleTokens: ['feat', 'scripts'], labels: []},
+    reviewExcerpts: [],
     ...overrides,
   }
 }
@@ -68,81 +67,43 @@ function makeToCreate(overrides: Partial<LearningToOpen> = {}): LearningToOpen {
 }
 
 // ---------------------------------------------------------------------------
-// learningBodyHasPrivateLeak — pure function tests
+// Integration: open.ts blocks private-laden authored bodies via the shared privacy module
 // ---------------------------------------------------------------------------
 
-describe('learningBodyHasPrivateLeak', () => {
-  describe('detection', () => {
-    it('detects the owner/name form (slash-separated)', () => {
-      // #given a body containing the owner/name form of a private repo
-      const tokens = makePrivateTokens('testowner/secret-repo')
-      const body = 'This PR touched testowner/secret-repo in the changes.'
+describe('open.ts privacy integration', () => {
+  it('planLearnings blocks a body containing a private token (gate imported from shared module)', () => {
+    // #given a body containing a private identifier and a token set from the shared module
+    const sha = 'abc123def456abc123def456abc123def456abc1'
+    const privateTokens = makePrivateTokens('testowner/secret-repo')
+    const body = 'This learning references testowner/secret-repo.'
 
-      // #when scanning
-      // #then the leak is detected
-      expect(learningBodyHasPrivateLeak(body, tokens)).toBe(true)
-    })
+    // #when the gate function (imported from capture-learnings-privacy) is used directly
+    // #then it detects the leak — proving open.ts behavior is unchanged after the move
+    expect(learningBodyHasPrivateLeak(body, privateTokens)).toBe(true)
 
-    it('detects the owner--name form (double-dash)', () => {
-      // #given a body containing the double-dash form
-      const tokens = makePrivateTokens('testowner/secret-repo')
-      const body = 'See testowner--secret-repo for context.'
-
-      // #when scanning
-      // #then the leak is detected
-      expect(learningBodyHasPrivateLeak(body, tokens)).toBe(true)
-    })
-
-    it('detects mixed-case occurrences (case-insensitive scan)', () => {
-      // #given a body with the token in mixed case
-      const tokens = makePrivateTokens('testowner/secret-repo')
-      const body = 'The repo TESTOWNER/SECRET-REPO was involved.'
-
-      // #when scanning
-      // #then the leak is detected (body is lowercased before scan)
-      expect(learningBodyHasPrivateLeak(body, tokens)).toBe(true)
-    })
-
-    it('detects the slug form produced by computeRepoSlug', () => {
-      // #given a body containing the wiki-slug form
-      const tokens = makePrivateTokens('testowner/secret-repo')
-      // The slug form is testowner--secret-repo (same as double-dash for simple names)
-      const body = 'Wiki page at testowner--secret-repo.'
-
-      // #when scanning
-      // #then the leak is detected
-      expect(learningBodyHasPrivateLeak(body, tokens)).toBe(true)
-    })
+    // #and planLearnings (which calls the same gate internally) also blocks it
+    const result = planLearnings(
+      makePlanInput({
+        candidates: [makeCandidate({mergeSha: sha})],
+        learningBodies: new Map([[sha, body]]),
+        privateTokens,
+      }),
+    )
+    expect(result.toCreate).toHaveLength(0)
+    expect(result.blockedOnPrivacy).toBe(1)
   })
 
-  describe('clean body', () => {
-    it('returns false for a body with no private tokens', () => {
-      // #given a body with no private identifiers
-      const tokens = makePrivateTokens('testowner/secret-repo')
-      const body = 'This is a clean learning about CI improvements.'
+  it('loadPrivateTokensFromDisk (shared module) still throws fail-closed when file is unreadable', async () => {
+    // #given the file cannot be read
+    const readFileFn = async (): Promise<string> => {
+      throw new Error('ENOENT: no such file or directory')
+    }
 
-      // #when scanning
-      // #then no leak is detected
-      expect(learningBodyHasPrivateLeak(body, tokens)).toBe(false)
-    })
-
-    it('returns false when the private token set is empty', () => {
-      // #given an empty token set (e.g. no private repos in metadata)
-      const body = 'Any body content here.'
-
-      // #when scanning with an empty token set
-      // #then no leak is detected (vacuously safe)
-      expect(learningBodyHasPrivateLeak(body, new Set())).toBe(false)
-    })
-
-    it('returns false for an empty body', () => {
-      // #given an empty body
-      const tokens = makePrivateTokens('testowner/secret-repo')
-
-      // #when scanning
-      // #then no leak is detected
-      expect(learningBodyHasPrivateLeak('', tokens)).toBe(false)
-    })
+    // #when loading private tokens via the shared module
+    // #then it throws — open.ts callers must not post proposals
+    await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
+      'capture-learnings-privacy: could not read metadata/repos.yaml',
+    )
   })
 })
 
@@ -375,115 +336,6 @@ describe('planLearnings', () => {
       expect(result.blockedOnPrivacy).toBe(1)
       expect(result.skippedDuplicate).toBe(1)
     })
-  })
-})
-
-// ---------------------------------------------------------------------------
-// loadPrivateTokensFromDisk — fail-closed behavior (injectable readFile)
-// ---------------------------------------------------------------------------
-
-describe('loadPrivateTokensFromDisk', () => {
-  it('throws when metadata/repos.yaml cannot be read (fail-closed)', async () => {
-    // #given the file cannot be read
-    const readFileFn = async () => {
-      throw new Error('ENOENT: no such file or directory')
-    }
-
-    // #when loading private tokens
-    // #then it throws — the caller must not post proposals
-    await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
-      'capture-learnings-open: could not read metadata/repos.yaml — privacy gate cannot operate; no learnings will be posted',
-    )
-  })
-
-  it('throws when metadata/repos.yaml cannot be parsed (fail-closed)', async () => {
-    // #given the file contains invalid YAML
-    const readFileFn = async () => '{ invalid yaml: [unclosed'
-
-    // #when loading private tokens
-    // #then it throws — the caller must not post proposals
-    await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
-      'capture-learnings-open: could not parse metadata/repos.yaml — privacy gate cannot operate; no learnings will be posted',
-    )
-  })
-
-  it('throws when repos.yaml has unexpected shape (not a record)', async () => {
-    // #given the file parses to a non-record (e.g. a list)
-    const readFileFn = async () => '- item1\n- item2\n'
-
-    // #when loading private tokens
-    // #then it throws
-    await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
-      'capture-learnings-open: metadata/repos.yaml has unexpected shape',
-    )
-  })
-
-  it('throws when repos.yaml is missing the repos array', async () => {
-    // #given the file has no repos key
-    const readFileFn = async () => 'other_key: value\n'
-
-    // #when loading private tokens
-    // #then it throws
-    await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
-      'capture-learnings-open: metadata/repos.yaml missing repos array',
-    )
-  })
-
-  it('returns a token set built from private non-redacted repos', async () => {
-    // #given a valid repos.yaml with one private repo and one public repo
-    const yaml = `
-repos:
-  - owner: testowner
-    name: secret-repo
-    private: true
-  - owner: testowner
-    name: public-repo
-    private: false
-`
-    const readFileFn = async () => yaml
-
-    // #when loading private tokens
-    const tokens = await loadPrivateTokensFromDisk(readFileFn)
-
-    // #then tokens include forms of the private repo but not the public one
-    expect(tokens.has('testowner/secret-repo')).toBe(true)
-    expect(tokens.has('testowner--secret-repo')).toBe(true)
-    // Public repo should not be in the token set
-    expect(tokens.has('testowner/public-repo')).toBe(false)
-  })
-
-  it('skips redacted entries', async () => {
-    // #given a repos.yaml with a redacted private entry
-    const yaml = `
-repos:
-  - owner: '[REDACTED]'
-    name: '[REDACTED]'
-    private: true
-`
-    const readFileFn = async () => yaml
-
-    // #when loading private tokens
-    const tokens = await loadPrivateTokensFromDisk(readFileFn)
-
-    // #then the token set is empty (redacted entries are skipped)
-    expect(tokens.size).toBe(0)
-  })
-
-  it('returns an empty set when there are no private repos', async () => {
-    // #given a repos.yaml with only public repos
-    const yaml = `
-repos:
-  - owner: testowner
-    name: public-repo
-    private: false
-`
-    const readFileFn = async () => yaml
-
-    // #when loading private tokens
-    const tokens = await loadPrivateTokensFromDisk(readFileFn)
-
-    // #then the token set is empty
-    expect(tokens.size).toBe(0)
   })
 })
 

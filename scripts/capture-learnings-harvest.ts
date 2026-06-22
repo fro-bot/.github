@@ -16,6 +16,8 @@ import process from 'node:process'
 import {Octokit} from '@octokit/rest'
 import {parse} from 'yaml'
 
+import {isRecord, learningBodyHasPrivateLeak, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -37,6 +39,13 @@ const MIN_CORRECTION_SIGNALS = 1
 
 /** Maximum number of candidates to emit per run. */
 const MAX_LEARNINGS_PER_RUN = 5
+
+/**
+ * Maximum total characters of review-prose excerpts per candidate.
+ * Ranked by correction signal so the correction sentence is never clipped first.
+ * Exported so tests can assert budget enforcement without hardcoding the value.
+ */
+export const MAX_EXCERPT_CHARS_PER_CANDIDATE = 1800
 
 /** Label used to identify learning-proposal issues. */
 export const LEARNING_PROPOSAL_LABEL = 'learning-proposal'
@@ -105,6 +114,12 @@ export interface CandidateSignals {
  * fully sanitized here. The deterministic open step is the privacy chokepoint: it scans
  * the final authored body for private identifiers and blocks before posting, so a private
  * token surfacing in a title token is gated downstream rather than leaked.
+ *
+ * `reviewExcerpts` carries privacy-scanned review prose (review bodies + line-level thread
+ * comments), ranked by correction signal (CHANGES_REQUESTED / thread replies first) and
+ * bounded to MAX_EXCERPT_CHARS_PER_CANDIDATE. Empty when enrichment was blocked by the
+ * upstream privacy scan or when no prose was available. Array form gives the agent clearer
+ * structure than a single concatenated string.
  */
 export interface Candidate {
   mergeSha: string
@@ -115,6 +130,14 @@ export interface Candidate {
    */
   reviewRounds: number
   signals: CandidateSignals
+  /**
+   * Privacy-scanned review-prose excerpts, ranked by correction signal.
+   * CHANGES_REQUESTED bodies and thread-comment bodies appear first (highest correction
+   * signal); DISMISSED next; APPROVED boilerplate last. Truncated to
+   * MAX_EXCERPT_CHARS_PER_CANDIDATE total. Empty when the upstream privacy scan blocked
+   * the enriched content or when no non-empty prose was available.
+   */
+  reviewExcerpts: string[]
 }
 
 /**
@@ -137,6 +160,12 @@ export interface DigestTelemetry {
   afterSeenDedup: number
   afterSolutionsDedup: number
   emitted: number
+  /**
+   * Number of candidates whose enriched review-prose content was dropped by the
+   * upstream privacy scan. The candidate itself is kept (title-only); only the
+   * reviewExcerpts are cleared. Counts-only — no private names logged.
+   */
+  enrichmentBlocked: number
 }
 
 /** Result of `buildCandidateDigest`. */
@@ -157,6 +186,15 @@ export interface BuildCandidateDigestInput {
   solutionsDocs: SolutionDoc[]
   /** Maximum candidates to emit. */
   maxLearnings: number
+  /**
+   * Private identifier token set for the upstream enrichment scan.
+   * Loaded from metadata/repos.yaml by main() before calling buildCandidateDigest.
+   * If loadPrivateTokensFromDisk threw, main() passes an empty Set and clears all
+   * reviewExcerpts before calling — so the pure core always receives a valid Set.
+   * An empty Set means no tokens to match (no private repos configured), which is
+   * distinct from "scan unavailable" — the latter is handled in main().
+   */
+  privateTokens: Set<string>
 }
 
 /** Minimal solutions doc shape needed for dedup. */
@@ -199,9 +237,13 @@ export function parseMergeShaMarker(body: string): string | null {
  * 1. Drop candidates whose mergeSha is already in openedLearningShas (seen-set dedup).
  * 2. Drop candidates whose signals strongly overlap an existing solutions doc (solutions dedup).
  * 3. Cap to maxLearnings.
- * 4. Return candidates + counts-only telemetry (harvest stage counts + dedup stage counts).
+ * 4. Upstream privacy scan: for each candidate's reviewExcerpts, scan with the private
+ *    token set. On a hit, clear reviewExcerpts (drop enriched content, keep the candidate
+ *    title-only) and increment enrichmentBlocked. Never logs private names — counts only.
+ * 5. Return candidates + counts-only telemetry (harvest stage counts + dedup stage counts
+ *    + enrichmentBlocked).
  *
- * No I/O. Fully unit-testable.
+ * No I/O. Fully unit-testable. The private token set is injected so the scan is pure.
  */
 export function buildCandidateDigest(input: BuildCandidateDigestInput): CandidateDigest {
   // drop already-proposed merge SHAs
@@ -211,7 +253,20 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
   const afterSolutionsDedup = afterSeenDedup.filter(pr => !overlapsAnySolutionsDoc(pr.signals, input.solutionsDocs))
 
   // cap to maxLearnings
-  const candidates = afterSolutionsDedup.slice(0, input.maxLearnings)
+  const capped = afterSolutionsDedup.slice(0, input.maxLearnings)
+
+  // upstream privacy scan: scan each candidate's reviewExcerpts fail-closed
+  // on a hit → drop enriched content (empty reviewExcerpts), keep the candidate
+  let enrichmentBlocked = 0
+  const candidates = capped.map(pr => {
+    if (pr.reviewExcerpts.length === 0) return pr
+    const excerptText = pr.reviewExcerpts.join('\n')
+    if (learningBodyHasPrivateLeak(excerptText, input.privateTokens)) {
+      enrichmentBlocked++
+      return {...pr, reviewExcerpts: []}
+    }
+    return pr
+  })
 
   return {
     candidates,
@@ -220,8 +275,24 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
       afterSeenDedup: afterSeenDedup.length,
       afterSolutionsDedup: afterSolutionsDedup.length,
       emitted: candidates.length,
+      enrichmentBlocked,
     },
   }
+}
+
+/**
+ * Apply fail-closed enrichment scan availability to a list of candidates.
+ *
+ * When `scanAvailable` is false (private token load failed), all `reviewExcerpts`
+ * are cleared so no unscanned prose reaches the digest. When `scanAvailable` is
+ * true, candidates are returned unchanged.
+ *
+ * Pure function: no I/O, fully unit-testable. Extracted so the fail-closed
+ * composition can be tested independently of the I/O shell.
+ */
+export function applyEnrichmentScanAvailability(candidates: Candidate[], scanAvailable: boolean): Candidate[] {
+  if (scanAvailable) return candidates
+  return candidates.map(c => ({...c, reviewExcerpts: [] as string[]}))
 }
 
 /**
@@ -398,14 +469,6 @@ export async function createOctokitFromEnv(): Promise<OctokitClient> {
 }
 
 // ---------------------------------------------------------------------------
-// Type guards
-// ---------------------------------------------------------------------------
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-// ---------------------------------------------------------------------------
 // I/O shell helpers
 // ---------------------------------------------------------------------------
 
@@ -432,6 +495,74 @@ export interface HarvestResult {
 }
 
 /**
+ * Rank value for a review state when building excerpts.
+ * Lower number = higher priority (appears first in the ranked list).
+ * CHANGES_REQUESTED and thread comments (treated as correction-signal-high) rank first.
+ * DISMISSED next. APPROVED boilerplate last.
+ */
+function reviewStateRank(state: string): number {
+  if (state === 'CHANGES_REQUESTED') return 0
+  if (state === 'DISMISSED') return 1
+  if (state === 'APPROVED') return 2
+  return 3
+}
+
+/**
+ * Build ranked, budgeted review-prose excerpts for a candidate.
+ *
+ * Collects review bodies (tagged with their state for ranking) and thread-comment bodies
+ * (treated as correction-signal-high, rank 0). Ranks by correction signal so truncation
+ * does not clip the correction sentence. Concatenates items until MAX_EXCERPT_CHARS_PER_CANDIDATE
+ * is reached, truncating the last item that would overflow. Skips empty/whitespace bodies.
+ *
+ * Returns a string[] — array form gives the agent clearer structure than a single string.
+ *
+ * Privacy ordering invariant: this truncation runs in the harvest I/O shell, BEFORE the
+ * upstream privacy scan in `buildCandidateDigest`. The scan must always read the final,
+ * already-truncated excerpt array. Never move truncation after the scan — scanning a token
+ * and then truncating around it could leave a surviving tail that escapes the gate.
+ */
+function buildReviewExcerpts(reviewBodies: {state: string; body: string}[], threadCommentBodies: string[]): string[] {
+  // Collect all prose items with their rank
+  const items: {rank: number; text: string}[] = []
+
+  // Review bodies — ranked by state
+  for (const {state, body} of reviewBodies) {
+    const trimmed = body.trim()
+    if (trimmed === '') continue
+    items.push({rank: reviewStateRank(state), text: trimmed})
+  }
+
+  // Thread comment bodies — correction-signal-high (rank 0, same as CHANGES_REQUESTED)
+  for (const body of threadCommentBodies) {
+    const trimmed = body.trim()
+    if (trimmed === '') continue
+    items.push({rank: 0, text: trimmed})
+  }
+
+  // Sort by rank (stable sort preserves chronological order within same rank)
+  items.sort((a, b) => a.rank - b.rank)
+
+  // Apply per-candidate char budget
+  const excerpts: string[] = []
+  let remaining = MAX_EXCERPT_CHARS_PER_CANDIDATE
+
+  for (const {text} of items) {
+    if (remaining <= 0) break
+    if (text.length <= remaining) {
+      excerpts.push(text)
+      remaining -= text.length
+    } else {
+      // Truncate the last item to fit within budget
+      excerpts.push(text.slice(0, remaining))
+      remaining = 0
+    }
+  }
+
+  return excerpts
+}
+
+/**
  * Fetch all merged PRs in the lookback window and return those where Fro Bot's
  * substantive reviews meet the predicate:
  *   substantiveReviewCount >= MIN_SUBSTANTIVE_REVIEW_ROUNDS
@@ -442,6 +573,11 @@ export interface HarvestResult {
  *
  * Only reviews by logins in FRO_BOT_REVIEWER_LOGINS are counted.
  * Dependency-automation PRs (by author login or label) are excluded before counting.
+ *
+ * For each qualifying candidate, retains review bodies from the already-fetched listReviews
+ * and fetches line-level thread comments via listReviewComments. Builds ranked, budgeted
+ * reviewExcerpts (correction prose first). A transient listReviewComments error for one
+ * candidate degrades it to title-only (empty reviewExcerpts) without aborting the run.
  *
  * Transient listReviews errors for a single PR are caught and that PR is skipped.
  * Returns candidates alongside explicit harvest-stage counts for honest telemetry.
@@ -504,8 +640,10 @@ export async function harvestCandidates(
 
     // Fetch Fro Bot's reviews and apply the predicate.
     // Paginate to avoid undercounting when reviews span >1 page (default page = 30).
+    // Retain r.body for enrichment — zero new calls, already fetched for the count.
     let substantiveReviewCount: number
     let correctionSignalCount: number
+    let reviewBodies: {state: string; body: string}[]
     try {
       const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
         owner,
@@ -529,6 +667,12 @@ export async function harvestCandidates(
       correctionSignalCount = froBotReviews.filter(r => {
         return r.state === 'DISMISSED' || r.state === 'CHANGES_REQUESTED'
       }).length
+
+      // Retain review bodies for enrichment (all fro-bot reviews, not just substantive)
+      reviewBodies = froBotReviews.map(r => ({
+        state: r.state,
+        body: typeof r.body === 'string' ? r.body : '',
+      }))
     } catch (error: unknown) {
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
       process.stderr.write(
@@ -541,6 +685,32 @@ export async function harvestCandidates(
       continue
     }
 
+    // Fetch line-level thread comments for enrichment.
+    // A transient error here degrades this candidate to review-bodies-only (no thread comments)
+    // without aborting the run — mirrors the listReviews skip pattern but continues WITH
+    // the candidate rather than skipping it entirely.
+    let threadCommentBodies: string[] = []
+    try {
+      const reviewComments = await octokit.paginate(octokit.rest.pulls.listReviewComments, {
+        owner,
+        repo,
+        pull_number: pr.number,
+        per_page: 100,
+      } as unknown as Parameters<OctokitClient['rest']['pulls']['listReviewComments']>[0])
+
+      threadCommentBodies = reviewComments
+        .map(c => (typeof c.body === 'string' ? c.body : ''))
+        .filter(b => b.trim() !== '')
+    } catch (error: unknown) {
+      const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
+      process.stderr.write(
+        `capture-learnings-harvest: PR #${pr.number} — listReviewComments failed (status=${status}), proceeding with review bodies only\n`,
+      )
+      // threadCommentBodies stays [] — candidate proceeds with review bodies only
+    }
+
+    const reviewExcerpts = buildReviewExcerpts(reviewBodies, threadCommentBodies)
+
     candidates.push({
       mergeSha: pr.merge_commit_sha,
       reviewRounds: substantiveReviewCount,
@@ -548,6 +718,7 @@ export async function harvestCandidates(
         title: pr.title,
         labels: prLabels.map(name => ({name})),
       }),
+      reviewExcerpts,
     })
   }
 
@@ -616,12 +787,34 @@ async function main(): Promise<void> {
 
     const solutionsDocs = collectSolutionDocs(solutionsFiles)
 
+    // Load private tokens BEFORE building the digest — fail-closed.
+    // If loadPrivateTokensFromDisk throws (metadata unreadable), we must NOT emit any
+    // enriched content. Catch the throw, log counts-only, and proceed with all candidates
+    // title-only (reviewExcerpts cleared). Never pass unscanned prose to the digest.
+    let privateTokens: Set<string>
+    let enrichmentScanAvailable = true
+    try {
+      privateTokens = await loadPrivateTokensFromDisk()
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'unknown'
+      process.stderr.write(
+        `capture-learnings-harvest: private token load failed (${errorMessage}), proceeding title-only — no enriched content will be emitted\n`,
+      )
+      privateTokens = new Set()
+      enrichmentScanAvailable = false
+    }
+
+    // If the scan is unavailable, clear all reviewExcerpts before passing to the pure core.
+    // This ensures no unscanned prose reaches the digest under any path.
+    const safeMergedPrs = applyEnrichmentScanAvailability(mergedPrs, enrichmentScanAvailable)
+
     const digest = buildCandidateDigest({
-      mergedPrs,
+      mergedPrs: safeMergedPrs,
       stageCounts,
       openedLearningShas,
       solutionsDocs,
       maxLearnings: MAX_LEARNINGS_PER_RUN,
+      privateTokens,
     })
 
     await writeDigestFile(digest)
@@ -641,6 +834,7 @@ async function main(): Promise<void> {
         afterSeenDedup: 0,
         afterSolutionsDedup: 0,
         emitted: 0,
+        enrichmentBlocked: 0,
       },
     }
     try {
