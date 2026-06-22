@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/marcusrbrown"
 created: 2026-04-18
-updated: 2026-06-12
+updated: 2026-06-22
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: 3ed89ff3878705f43aa1e17c0def2f6f71efa077
+    accessed: 2026-06-22
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: b26dd18884df26ac593c8d423ed0ed8b0e9bb393
     accessed: 2026-06-12
@@ -37,7 +40,7 @@ Marcus R. Brown's GitHub profile README repository. A TypeScript-powered automat
 - **Default branch:** `main`
 - **Language:** TypeScript
 - **Created:** 2020-12-09
-- **Last push:** 2026-06-12
+- **Last push:** 2026-06-22
 - **License:** MIT
 - **Topics:** `github`, `readme-profile`, `profile-readme`, `awesome-readme`, `typescript`, `markdown`
 - **Collaborators:** `marcusrbrown` (admin), `fro-bot` (push)
@@ -106,7 +109,7 @@ A/B test variants live in `templates/variants/` (e.g., `SPONSORME-benefits.tpl.m
 | Renovate | `renovate.yaml` | issue/PR edit, push, dispatch, Main completion | Dependency updates |
 | Update Repo Settings | `update-repo-settings.yaml` | push to `main`, daily cron, dispatch | Probot settings sync |
 | Cleanup Cache | `cleanup-cache.yaml` | PR close, weekly, dispatch | Prune stale GHA cache entries |
-| **Fro Bot** | `fro-bot.yaml` | PR events, issues (opened/edited), `@fro-bot` mentions, cron 04:30 + 16:30 UTC, dispatch | Three-mode agent: PR review / autoheal / maintenance (added 2026-06-02; `fro-bot/agent@v0.61.0` SHA-pinned `6794bf5` as of 2026-06-12) |
+| **Fro Bot** | `fro-bot.yaml` | PR events, issues (opened/edited), `@fro-bot` mentions, cron 04:30 + 16:30 UTC, dispatch | Three-mode agent: PR review / autoheal / maintenance (added 2026-06-02; `fro-bot/agent@v0.75.0` SHA-pinned `a12463f` as of 2026-06-22) |
 
 ### Profile Update Pipeline (update-profile.yaml)
 
@@ -162,6 +165,17 @@ Required status checks on `main`: CI, Renovate, Prepare, Finalize. Linear histor
 | `jiti`                  | 2.6.1    | TypeScript config loader            |
 
 ## Fro Bot Integration
+
+### 2026-06-22 update: maintenance issue closed, agent at v0.75.0
+
+Ten more days of pure version-treadmill motion. The `fro-bot.yaml` workflow body is structurally unchanged from 2026-06-12 — same three-mode design, same fork-head refusal preflight, same `IS_SUNDAY_UTC` category-7 gate, same `persist-credentials: false` checkout. Only the agent pin moved: **`fro-bot/agent` v0.61.0 → v0.75.0** (`a12463f`), 14 Renovate-authored bumps in 10 days (#982–#1008, frequently several per day). The action stays SHA-pinned, consistent with the PR review prompt's own third-party-action rule.
+
+Notable operational shift on the perpetual-issue front:
+
+- **The maintenance issue oscillation has settled — closed, not churning.** On 2026-06-12 the "Daily Maintenance Report" #936 was caught in a daily close/reopen loop between the autoheal (closes ~06:00 UTC) and maintenance (reopens ~17:30 UTC) runs. As of 2026-06-22, **#936 is closed (closed 2026-06-22) and is no longer in the open set.** Only one perpetual issue remains open: "Daily Autohealing Report" #926 (created 2026-05-23, still active). This means the maintenance schedule (cron `30 16 * * *`) is no longer reopening #936 — either the maintenance run stopped resurrecting it or it is now consolidating into a different surface. The perpetual-issue contract ("exactly one *open* maintenance issue at all times") is therefore **not currently satisfied** for maintenance: there is zero open maintenance issue, not one. This is the inverse of the 2026-06-12 churn — worth watching against tracker #925's schedule-concurrency follow-up.
+- **Open items down to 3:** #926 (autoheal report), #925 (evolution tracker), #284 (dependency dashboard). PR #960 (the long-lived `build/update-readme` generated-content PR) has cycled; the current generated-content PR is **#1007** (`build/update-readme`, `mrbro-bot[bot]`, opened 2026-06-22) — same 6-hour-refresh steady state, new PR number.
+
+The composite `.github/actions/setup` action and `mrbro-bot[bot]`/`fro-bot` identity separation remain unchanged. No drift in the prompt bodies, trigger surface, or hardening posture since the 2026-06-12 survey.
 
 ### 2026-06-12 update: Renovate version treadmill, agent at v0.61.0
 
@@ -226,6 +240,27 @@ The repo references `fro-bot/.github:common-settings.yaml` in its Probot setting
 - **Dependency drift risk:** With Renovate stalled since 2026-03-12, this repo is accumulating dependency drift. Other Marcus repos have moved to `marcusrbrown/renovate-config#4.5.8`, `pnpm 10.33.0`, `Prettier 3.8.3`, and `bfra-me/.github` v4.16.8. This repo remains pinned at older versions across the board.
 
 ## Version Comparison (vs. Ecosystem)
+
+### 2026-06-22 snapshot
+
+| Dependency | This Repo | Delta vs 2026-06-12 |
+| --- | --- | --- |
+| `fro-bot/agent` | v0.75.0 (`a12463f`, SHA-pinned) | v0.61.0 → v0.75.0 — 14 Renovate bumps in 10 days (#982–#1008) tracking [[fro-bot--agent]] release cadence |
+| `marcusrbrown/renovate-config` | `#5.2.3` | 5.2.1 → 5.2.3 (#983) |
+| `bfra-me/.github` | v4.16.27 | v4.16.25 → v4.16.27 (#988, #995) |
+| `pnpm` | 10.34.4 | 10.34.1 → 10.34.4 (#984, #987) |
+| `Node.js` | 24.17.0 | 24.16.0 → 24.17.0 (#997, `.mise.toml`) |
+| `vitest` / `@vitest/ui` | 4.1.9 | 4.1.8 → 4.1.9 (#999) |
+| `tsx` | 4.22.4 | unchanged |
+| `Prettier` | 3.8.4 | 3.8.3 → 3.8.4 (#981) |
+| `@types/node` | 24.13.2 | 24.12.4 → 24.13.2 (#991) |
+| `@bfra.me/eslint-config` | 0.51.1 | unchanged |
+| `@bfra.me/prettier-config` | 0.16.9 | unchanged |
+| `@bfra.me/tsconfig` | 0.13.1 | unchanged |
+| `jiti` | 2.7.0 | unchanged |
+| `markdownlint-cli2` | 0.20.0 | unchanged |
+
+Renovate remains fully healthy; the merge stream is still dominated by `fro-bot/agent` releases. This repo continues to lead the ecosystem on the agent pin.
 
 ### 2026-06-12 snapshot
 
@@ -337,3 +372,4 @@ Backlog is back to baseline. The profile update pipeline (every 6 hours) and Ren
 | 2026-05-18 | `de594cd` | Renovate thaw confirmed (#895 closed, preset → 5.2.0 via #897); 18 dependency PRs landed 2026-05-14 → 2026-05-18; bumped `bfra-me/.github` v4.4.0 → v4.16.18, `pnpm` 10.31.0 → 10.33.4, `vitest` 4.0.18 → 4.1.6, `tsx` 4.20.3 → 4.22.0, `Node.js` 24.14.0 → 24.15.0, `Prettier` 3.8.1 → 3.8.3; new pinned deps added (`@bfra.me/prettier-config` 0.16.9, `@bfra.me/tsconfig` 0.13.1, `@types/node` 24.12.4); `@bfra.me/eslint-config` 0.50.1 still trailing; no Fro Bot workflow yet — follow-up PR still warranted |
 | 2026-06-02 | `e39577c` | **Fro Bot onboarded** — `fro-bot.yaml` single-file three-mode workflow landed via #924 (evolution tracker #925), `fro-bot/agent` v0.44.3 → v0.50.0; contradicts prior "no Fro Bot workflow" claim, now resolved. New `.agents/skills/sync-sponsors-bio/` skill + `sponsors:bio:sync` script. Dep deltas: `pnpm` 10.33.4 → 10.34.1, `Node.js` 24.15.0 → 24.16.0, `@bfra.me/eslint-config` 0.50.1 → 0.51.1 (trailing item resolved), `vitest` 4.1.6 → 4.1.7, `tsx` 4.22.0 → 4.22.3. Perpetual issues live: Daily Maintenance Report #936, Daily Autohealing Report #926 |
 | 2026-06-12 | `b26dd18` | **Steady state, version treadmill** — `fro-bot/agent` v0.50.0 → v0.61.0 (17 Renovate bumps, now SHA-pinned `6794bf5`); renovate-config preset 5.2.0 → 5.2.1; `bfra-me/.github` → v4.16.25; vitest → 4.1.8, tsx → 4.22.4; `issues: [opened, edited]` trigger + dispatch `mode` input added to `fro-bot.yaml`. Operational finding: daily close/reopen oscillation on maintenance issue #936 between autoheal (closes ~06:00 UTC) and maintenance (reopens ~17:30 UTC) runs — perpetual-issue churn anticipated in #925 now observable. Open items down to 4 |
+| 2026-06-22 | `3ed89ff` | **Treadmill continues, maintenance issue now closed** — `fro-bot/agent` v0.61.0 → v0.75.0 (14 Renovate bumps #982–#1008, SHA `a12463f`); renovate-config 5.2.1 → 5.2.3; `bfra-me/.github` → v4.16.27; pnpm → 10.34.4; Node → 24.17.0; vitest → 4.1.9; Prettier → 3.8.4; `@types/node` → 24.13.2. `fro-bot.yaml` body unchanged (no trigger/prompt/hardening drift). Operational shift: the #936 close/reopen oscillation resolved into a **closed** state — #936 closed 2026-06-22, no longer in open set; only #926 (autoheal) remains open, so there is now *zero* open maintenance issue (inverse of prior churn, contract still unsatisfied). Generated-content PR rotated #960 → #1007. Open items: 3 (#926, #925, #284) |

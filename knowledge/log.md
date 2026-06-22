@@ -2329,3 +2329,25 @@ Sources: https://github.com/bfra-me/works (SHA fb5c29876d21212793147eccf77d33c9d
 Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-06-22 13:31] ingest | marcusrbrown/marcusrbrown
+
+Sixth survey of `marcusrbrown/marcusrbrown` (HEAD `3ed89ff`, last push 2026-06-22; prior `b26dd18` on 2026-06-12). Reads limited to repo metadata, root + workflow directory listings, `package.json`, `.mise.toml`, `.github/renovate.json5`, the full `fro-bot.yaml` workflow, recent commit list, and the open issue/PR lists per the untrusted-input constraint. Updated repo page `marcusrbrown--marcusrbrown.md` (frontmatter source + updated date, last-push, CI table Fro Bot pin, new 2026-06-22 integration section, 2026-06-22 version snapshot, survey-history row), the `github-actions-ci.md` topic row, and a downstream-consumer note on `fro-bot--agent.md`. Refreshed three `index.md` entries. No new topic/entity/comparison pages warranted — all deltas are version advances and one operational state change, not structural.
+
+Material deltas (additive; no contradictions with prior surveys):
+
+- **Fro Bot agent v0.61.0 → v0.75.0** (SHA `6794bf5` → `a12463f`) — 14 Renovate-authored bumps in 10 days (#982–#1008), continuing the fast [[fro-bot--agent]] cadence. Workflow body otherwise unchanged: same three-mode design, fork-head refusal preflight, `IS_SUNDAY_UTC` category-7 gate, `persist-credentials: false`. This repo sits at the leading edge of consumer pins alongside [[bfra-me--works]] (also v0.75.0).
+- **Operational state change — maintenance issue oscillation resolved into a closed state.** The 2026-06-12 daily close/reopen churn on perpetual issue #936 ("Daily Maintenance Report") has settled: #936 is now **closed** (2026-06-22) and absent from the open set. Only #926 ("Daily Autohealing Report") remains open, so there is now *zero* open maintenance issue — the inverse of the prior churn, and still not the "exactly one open" the perpetual-issue contract expects. Worth watching against tracker #925's schedule-concurrency follow-up.
+- **Dependency bumps:** renovate-config preset 5.2.1 → 5.2.3 (#983); `bfra-me/.github` v4.16.25 → v4.16.27; pnpm 10.34.1 → 10.34.4; Node 24.16.0 → 24.17.0; vitest/@vitest/ui 4.1.8 → 4.1.9; Prettier 3.8.3 → 3.8.4; `@types/node` 24.12.4 → 24.13.2. tsx, eslint/prettier/tsconfig configs unchanged.
+- **Generated-content PR rotated:** the long-lived #960 has cycled; current build PR is #1007 (`build/update-readme`, `mrbro-bot[bot]`, 2026-06-22) — same 6-hour-refresh steady state.
+- **Open items: 3** (#926 autoheal, #925 tracker, #284 dependency dashboard). Renovate fully healthy; merge stream dominated by `fro-bot/agent` releases.
+
+Fro Bot workflow present and active (`fro-bot.yaml`, agent v0.75.0) — no onboarding follow-up draft needed. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown (SHA 3ed89ff3878705f43aa1e17c0def2f6f71efa077)
+
+## [2026-06-22 13:31] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown

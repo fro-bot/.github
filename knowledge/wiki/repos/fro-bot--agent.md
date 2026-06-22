@@ -2,7 +2,7 @@
 type: repo
 title: "fro-bot/agent"
 created: 2026-05-07
-updated: 2026-06-14
+updated: 2026-06-22
 sources:
   - url: https://github.com/fro-bot/agent
     sha: a23ae97c433d815974cfd009bec64748c0a63ad6
@@ -427,6 +427,8 @@ A `PRD.md` contains the full product requirements document. `RFCS.md` indexes th
 ## Ecosystem Role
 
 This is the **central runtime** consumed by all Fro Bot-managed repositories. Every repo with a `fro-bot.yaml` workflow depends on `fro-bot/agent` as a GitHub Action reference (e.g., `fro-bot/agent@v0.42.8`). The action auto-installs and configures [[marcusrbrown--systematic]] as an OpenCode plugin, connecting the agent to 45+ skills and 50 agents.
+
+**Note (2026-06-22):** A survey of consumer [[marcusrbrown--marcusrbrown]] observed its `fro-bot.yaml` pinning agent **v0.75.0** (`a12463f`) — at the leading edge of consumer pins (matching [[bfra-me--works]] at v0.75.0), well ahead of this page's last-surveyed v0.63.0. The 14-bump-in-10-days cadence on that consumer (#982–#1008) implies the agent has shipped ~v0.64–v0.75 since 2026-06-14; this page is due for a fresh source survey to capture what those releases contain (consumer pins record version only, not agent-internal changes).
 
 **Note (2026-06-15):** [[fro-bot--dashboard]] (new) is a downstream consumer of a *different* surface than the action — it reads the Fro Bot **Agent App's installations** (not the action) to build a read-only cross-repo monitoring view, and it deliberately mirrors `packages/gateway` + `packages/runtime` primitives (`Result<T,E>`, `Logger` + `redactSensitiveFields`, `readSecret`/`readMultilineSecret`, the read-only `installAuth` permissions pattern, and the app-factory/serve split) as the staging ground for a future shared `@fro.bot/runtime` package. Its `fro-bot.yaml` pins agent **v0.64.0** — a minor ahead of this page's last-surveyed v0.63.0.
 
