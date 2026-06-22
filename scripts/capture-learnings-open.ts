@@ -1,11 +1,11 @@
 /**
- * Proposal-issue opening for the C1 learning-capture pipeline.
+ * Opens learning-proposal issues from harvested candidate pull requests.
  *
  * Given a set of candidates (from the harvest digest) and agent-authored proposal bodies,
  * opens `learning-proposal` issues — but only after each body passes a fail-closed
  * private-identifier scan, with same-run in-memory dedup.
  *
- * Architecture: pure planning core (`planProposals`) + I/O shell (`createProposals`).
+ * Architecture: pure planning core (`planLearnings`) + I/O shell (`openLearningIssues`).
  * The pure core is fully unit-testable with injected inputs.
  * The I/O shell does Octokit calls and disk reads.
  *
@@ -29,7 +29,7 @@ import {
   type Candidate,
   type CandidateDigest,
   type OctokitClient,
-} from './capture-c1-harvest.ts'
+} from './capture-learnings-harvest.ts'
 import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
@@ -37,37 +37,37 @@ import {buildPrivateTokenSet} from './wiki-slug.ts'
 // ---------------------------------------------------------------------------
 
 /** Input to the pure planning core. */
-export interface PlanProposalsInput {
+export interface PlanLearningsInput {
   /** Candidates from the harvest digest. */
   candidates: Candidate[]
   /**
    * Agent-authored proposal body per mergeSha.
    * Candidates with no entry in this map are skipped.
    */
-  proposalBodies: Map<string, string>
+  learningBodies: Map<string, string>
   /** Private identifier tokens for the privacy gate (R4). */
   privateTokens: Set<string>
   /**
    * merge_shas already created this run (same-run dedup guard, R3).
-   * Populated by the caller from prior createProposals calls or from
-   * the cross-run seen-set built by fetchProposedMergeShas.
+   * Populated by the caller from prior openLearningIssues calls or from
+   * the cross-run seen-set built by fetchOpenedLearningShas.
    */
   alreadyCreatedShas: Set<string>
 }
 
-/** A single proposal ready to be created as a GitHub issue. */
-export interface ProposalToCreate {
+/** A single learning ready to be created as a GitHub issue. */
+export interface LearningToOpen {
   mergeSha: string
   /** Body with the merge-SHA marker already appended. */
   body: string
 }
 
 /** Result of the pure planning core. */
-export interface PlanProposalsResult {
-  toCreate: ProposalToCreate[]
-  /** Number of proposals blocked by the privacy gate (R4). */
+export interface PlanLearningsResult {
+  toCreate: LearningToOpen[]
+  /** Number of learnings blocked by the privacy gate (R4). */
   blockedOnPrivacy: number
-  /** Number of proposals skipped because the mergeSha was already created. */
+  /** Number of learnings skipped because the mergeSha was already created. */
   skippedDuplicate: number
 }
 
@@ -78,8 +78,8 @@ export interface LabelDescriptor {
   description: string
 }
 
-/** Counts returned by createProposals. */
-export interface CreateProposalsCounts {
+/** Counts returned by openLearningIssues. */
+export interface OpenLearningsCounts {
   created: number
   failed: number
   blockedOnPrivacy: number
@@ -92,14 +92,14 @@ export interface CreateProposalsCounts {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns true if the proposal body contains any private identifier token.
+ * Returns true if the learning body contains any private identifier token.
  *
  * The body is lowercased before scanning. The caller MUST block (skip) the
- * proposal on true. Never redacts — block only. Counts-only telemetry.
+ * learning on true. Never redacts — block only. Counts-only telemetry.
  *
  * Pure function: no I/O, fully testable.
  */
-export function proposalBodyHasPrivateLeak(body: string, privateTokens: Set<string>): boolean {
+export function learningBodyHasPrivateLeak(body: string, privateTokens: Set<string>): boolean {
   const lower = body.toLowerCase()
   for (const token of privateTokens) {
     if (lower.includes(token)) return true
@@ -148,7 +148,7 @@ export async function loadPrivateTokensFromDisk(
     reposYaml = await readFileFn('metadata/repos.yaml', 'utf8')
   } catch (error: unknown) {
     throw new Error(
-      'capture-c1-propose: could not read metadata/repos.yaml — privacy gate cannot operate; no proposals will be posted',
+      'capture-learnings-open: could not read metadata/repos.yaml — privacy gate cannot operate; no proposals will be posted',
       {cause: error},
     )
   }
@@ -158,21 +158,21 @@ export async function loadPrivateTokensFromDisk(
     parsed = parse(reposYaml)
   } catch (error: unknown) {
     throw new Error(
-      'capture-c1-propose: could not parse metadata/repos.yaml — privacy gate cannot operate; no proposals will be posted',
+      'capture-learnings-open: could not parse metadata/repos.yaml — privacy gate cannot operate; no proposals will be posted',
       {cause: error},
     )
   }
 
   if (!isRecord(parsed)) {
     throw new TypeError(
-      'capture-c1-propose: metadata/repos.yaml has unexpected shape — privacy gate cannot operate; no proposals will be posted',
+      'capture-learnings-open: metadata/repos.yaml has unexpected shape — privacy gate cannot operate; no proposals will be posted',
     )
   }
 
   const repos = parsed.repos
   if (!Array.isArray(repos)) {
     throw new TypeError(
-      'capture-c1-propose: metadata/repos.yaml missing repos array — privacy gate cannot operate; no proposals will be posted',
+      'capture-learnings-open: metadata/repos.yaml missing repos array — privacy gate cannot operate; no proposals will be posted',
     )
   }
 
@@ -190,7 +190,7 @@ export async function loadPrivateTokensFromDisk(
 
   const tokenSet = buildPrivateTokenSet(privateNames)
   process.stderr.write(
-    `capture-c1-propose: loaded private token set (private-repo count=${privateNames.length}, token-count=${tokenSet.size})\n`,
+    `capture-learnings-open: loaded private token set (private-repo count=${privateNames.length}, token-count=${tokenSet.size})\n`,
   )
   return tokenSet
 }
@@ -200,7 +200,7 @@ export async function loadPrivateTokensFromDisk(
 // ---------------------------------------------------------------------------
 
 /**
- * Plan which proposals to create, applying the privacy gate and same-run dedup.
+ * Plan which learnings to create, applying the privacy gate and same-run dedup.
  *
  * For each candidate:
  * 1. Skip if no agent-authored body is available.
@@ -210,13 +210,13 @@ export async function loadPrivateTokensFromDisk(
  *
  * Pure function: no I/O, fully testable.
  */
-export function planProposals(input: PlanProposalsInput): PlanProposalsResult {
-  const toCreate: ProposalToCreate[] = []
+export function planLearnings(input: PlanLearningsInput): PlanLearningsResult {
+  const toCreate: LearningToOpen[] = []
   let blockedOnPrivacy = 0
   let skippedDuplicate = 0
 
   for (const candidate of input.candidates) {
-    const body = input.proposalBodies.get(candidate.mergeSha)
+    const body = input.learningBodies.get(candidate.mergeSha)
 
     // Skip candidates with no agent-authored body
     if (body === undefined || body === '') {
@@ -230,7 +230,7 @@ export function planProposals(input: PlanProposalsInput): PlanProposalsResult {
     }
 
     // Privacy gate (R4): block if body contains a private identifier
-    if (proposalBodyHasPrivateLeak(body, input.privateTokens)) {
+    if (learningBodyHasPrivateLeak(body, input.privateTokens)) {
       blockedOnPrivacy += 1
       continue
     }
@@ -275,7 +275,7 @@ export async function ensureLabelsExist(
       if (!isApiStatus(getError, 404)) {
         const status = isRecord(getError) && typeof getError.status === 'number' ? getError.status : 'unknown'
         process.stderr.write(
-          `capture-c1-propose: label check failed for "${name}" (status=${status}); excluding from issue labels\n`,
+          `capture-learnings-open: label check failed for "${name}" (status=${status}); excluding from issue labels\n`,
         )
         continue
       }
@@ -292,7 +292,7 @@ export async function ensureLabelsExist(
       } else {
         const status = isRecord(createError) && typeof createError.status === 'number' ? createError.status : 'unknown'
         process.stderr.write(
-          `capture-c1-propose: label creation failed for "${name}" (status=${status}); excluding from issue labels\n`,
+          `capture-learnings-open: label creation failed for "${name}" (status=${status}); excluding from issue labels\n`,
         )
       }
     }
@@ -306,17 +306,17 @@ export async function ensureLabelsExist(
 // ---------------------------------------------------------------------------
 
 /**
- * Derive a proposal issue title from a mergeSha.
+ * Derive a learning issue title from a mergeSha.
  * Uses only the merge SHA (public, safe for this public repo) — no owner/repo/number prose.
  * Short SHA = first 8 chars.
  */
-function deriveProposalTitle(mergeSha: string): string {
+function deriveLearningTitle(mergeSha: string): string {
   const shortSha = mergeSha.slice(0, 8)
   return `Learning proposal: review-heavy PR (${shortSha})`
 }
 
 // ---------------------------------------------------------------------------
-// I/O shell: createProposals
+// I/O shell: openLearningIssues
 // ---------------------------------------------------------------------------
 
 const LEARNING_PROPOSAL_LABEL_DESCRIPTOR: LabelDescriptor = {
@@ -327,7 +327,7 @@ const LEARNING_PROPOSAL_LABEL_DESCRIPTOR: LabelDescriptor = {
 }
 
 /**
- * Open GitHub issues for the planned proposals.
+ * Open GitHub issues for the planned learnings.
  *
  * Steps:
  * 1. Label preflight: ensureLabelsExist([LEARNING_PROPOSAL_LABEL]).
@@ -339,11 +339,11 @@ const LEARNING_PROPOSAL_LABEL_DESCRIPTOR: LabelDescriptor = {
  *
  * Returns counts-only telemetry. No private names in any output.
  */
-export async function createProposals(
+export async function openLearningIssues(
   octokit: OctokitClient,
   owner: string,
   repo: string,
-  toCreate: ProposalToCreate[],
+  toCreate: LearningToOpen[],
 ): Promise<{created: number; failed: number; skippedLabelUnavailable: number}> {
   if (toCreate.length === 0) {
     return {created: 0, failed: 0, skippedLabelUnavailable: 0}
@@ -352,12 +352,12 @@ export async function createProposals(
   // Label preflight
   const confirmedLabels = await ensureLabelsExist(octokit, owner, repo, [LEARNING_PROPOSAL_LABEL_DESCRIPTOR])
 
-  // Fail-closed on labeling: if the required label is not confirmed, skip ALL proposals.
-  // An unlabeled proposal is invisible to the seen-set query (which filters by label)
+  // Fail-closed on labeling: if the required label is not confirmed, skip ALL learnings.
+  // An unlabeled learning is invisible to the seen-set query (which filters by label)
   // and would be re-proposed forever — worse than skipping.
   if (!confirmedLabels.has(LEARNING_PROPOSAL_LABEL)) {
     process.stderr.write(
-      `capture-c1-propose: label "${LEARNING_PROPOSAL_LABEL}" unavailable; skipping ${toCreate.length} proposal(s) (label-unavailable)\n`,
+      `capture-learnings-open: label "${LEARNING_PROPOSAL_LABEL}" unavailable; skipping ${toCreate.length} learning(s) (label-unavailable)\n`,
     )
     return {created: 0, failed: 0, skippedLabelUnavailable: toCreate.length}
   }
@@ -371,11 +371,13 @@ export async function createProposals(
   for (const item of toCreate) {
     // Same-run Set guard: skip if this mergeSha was already created in this invocation
     if (createdThisRun.has(item.mergeSha)) {
-      process.stderr.write(`capture-c1-propose: same-run duplicate skipped (sha-prefix=${item.mergeSha.slice(0, 8)})\n`)
+      process.stderr.write(
+        `capture-learnings-open: same-run duplicate skipped (sha-prefix=${item.mergeSha.slice(0, 8)})\n`,
+      )
       continue
     }
 
-    const title = deriveProposalTitle(item.mergeSha)
+    const title = deriveLearningTitle(item.mergeSha)
 
     try {
       await octokit.rest.issues.create({
@@ -392,31 +394,31 @@ export async function createProposals(
     } catch (error: unknown) {
       failed += 1
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
-      process.stderr.write(`capture-c1-propose: issue creation failed (status=${status}); continuing\n`)
+      process.stderr.write(`capture-learnings-open: issue creation failed (status=${status}); continuing\n`)
     }
   }
 
-  process.stderr.write(`capture-c1-propose: proposals created=${created} failed=${failed}\n`)
+  process.stderr.write(`capture-learnings-open: learnings created=${created} failed=${failed}\n`)
 
   return {created, failed, skippedLabelUnavailable: 0}
 }
 
 // ---------------------------------------------------------------------------
-// Entry point (SHAPE B: deterministic propose step reads digest + agent bodies)
+// Entry point (SHAPE B: deterministic open step reads digest + agent bodies)
 // ---------------------------------------------------------------------------
 
 /**
- * CLI entry point for the deterministic propose step.
+ * CLI entry point for the deterministic open step.
  *
  * Handoff contract (SHAPE B):
- * - Reads the harvest digest from the path in CAPTURE_C1_DIGEST_PATH env var
+ * - Reads the harvest digest from the path in CAPTURE_LEARNINGS_DIGEST_PATH env var
  *   (a JSON file containing a CandidateDigest written by the harvest step).
- * - Reads agent-authored proposal bodies from the path in CAPTURE_C1_BODIES_PATH
+ * - Reads agent-authored proposal bodies from the path in CAPTURE_LEARNINGS_BODIES_PATH
  *   env var (a JSON file: Record<mergeSha, bodyText> written by the agent step).
  * - Loads the private token set from metadata/repos.yaml (fail-closed: throws if
  *   the file cannot be read or parsed — no proposals posted without the privacy gate).
- * - Calls planProposals (privacy gate + same-run dedup) then createProposals.
- * - Writes a counts-only JSON result to CAPTURE_C1_RESULT_PATH (if set) and stdout.
+ * - Calls planLearnings (privacy gate + same-run dedup) then openLearningIssues.
+ * - Writes a counts-only JSON result to CAPTURE_LEARNINGS_RESULT_PATH (if set) and stdout.
  *
  * Privacy guarantee: the agent never receives owner/repo/number prose (the digest
  * carries only merge_sha + signals). The privacy gate runs here, deterministically,
@@ -425,11 +427,11 @@ export async function createProposals(
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */
 
-/** Counts-only result written to stdout and CAPTURE_C1_RESULT_PATH. */
-interface ProposeResult {
+/** Counts-only result written to stdout and CAPTURE_LEARNINGS_RESULT_PATH. */
+interface OpenResult {
   examined: number
   candidatesAfterDedup: number
-  proposalsOpened: number
+  learningsOpened: number
   blockedOnPrivacy: number
   skippedDuplicate: number
   skippedLabelUnavailable: number
@@ -441,25 +443,25 @@ async function readJsonFile<T>(path: string, label: string): Promise<T> {
   try {
     raw = await readFile(path, 'utf8')
   } catch (error: unknown) {
-    throw new Error(`capture-c1-propose: could not read ${label} at ${path}`, {cause: error})
+    throw new Error(`capture-learnings-open: could not read ${label} at ${path}`, {cause: error})
   }
   try {
     return JSON.parse(raw) as T
   } catch (error: unknown) {
-    throw new Error(`capture-c1-propose: could not parse ${label} at ${path}`, {cause: error})
+    throw new Error(`capture-learnings-open: could not parse ${label} at ${path}`, {cause: error})
   }
 }
 
 async function main(): Promise<void> {
-  const digestPath = process.env.CAPTURE_C1_DIGEST_PATH
-  const bodiesPath = process.env.CAPTURE_C1_BODIES_PATH
-  const resultPath = process.env.CAPTURE_C1_RESULT_PATH
+  const digestPath = process.env.CAPTURE_LEARNINGS_DIGEST_PATH
+  const bodiesPath = process.env.CAPTURE_LEARNINGS_BODIES_PATH
+  const resultPath = process.env.CAPTURE_LEARNINGS_RESULT_PATH
 
   if (digestPath === undefined || digestPath === '') {
-    throw new Error('capture-c1-propose: CAPTURE_C1_DIGEST_PATH is required')
+    throw new Error('capture-learnings-open: CAPTURE_LEARNINGS_DIGEST_PATH is required')
   }
   if (bodiesPath === undefined || bodiesPath === '') {
-    throw new Error('capture-c1-propose: CAPTURE_C1_BODIES_PATH is required')
+    throw new Error('capture-learnings-open: CAPTURE_LEARNINGS_BODIES_PATH is required')
   }
 
   // Read the harvest digest (written by the harvest step)
@@ -467,7 +469,7 @@ async function main(): Promise<void> {
 
   // Read agent-authored bodies (written by the agent step): Record<mergeSha, bodyText>
   const bodiesRecord = await readJsonFile<Record<string, string>>(bodiesPath, 'agent bodies')
-  const proposalBodies = new Map<string, string>(Object.entries(bodiesRecord))
+  const learningBodies = new Map<string, string>(Object.entries(bodiesRecord))
 
   // Fail-closed: load private tokens — throws if metadata/repos.yaml is unreadable
   const privateTokens = await loadPrivateTokensFromDisk()
@@ -476,21 +478,21 @@ async function main(): Promise<void> {
   const owner = 'fro-bot'
   const repo = '.github'
 
-  // Plan proposals: privacy gate + same-run dedup
-  const plan = planProposals({
+  // Plan learnings: privacy gate + same-run dedup
+  const plan = planLearnings({
     candidates: digest.candidates,
-    proposalBodies,
+    learningBodies,
     privateTokens,
     alreadyCreatedShas: new Set<string>(),
   })
 
-  // Create the planned proposals
-  const {created, failed, skippedLabelUnavailable} = await createProposals(octokit, owner, repo, plan.toCreate)
+  // Open the planned learning issues
+  const {created, failed, skippedLabelUnavailable} = await openLearningIssues(octokit, owner, repo, plan.toCreate)
 
-  const result: ProposeResult = {
-    examined: digest.telemetry.examined,
+  const result: OpenResult = {
+    examined: digest.telemetry.multiRoundCandidates,
     candidatesAfterDedup: digest.telemetry.afterSolutionsDedup,
-    proposalsOpened: created,
+    learningsOpened: created,
     blockedOnPrivacy: plan.blockedOnPrivacy,
     skippedDuplicate: plan.skippedDuplicate,
     skippedLabelUnavailable,
@@ -504,7 +506,7 @@ async function main(): Promise<void> {
     try {
       await writeFile(resultPath, resultJson, {flag: 'w'})
     } catch (error: unknown) {
-      process.stderr.write(`capture-c1-propose: could not write result to ${resultPath}: ${String(error)}\n`)
+      process.stderr.write(`capture-learnings-open: could not write result to ${resultPath}: ${String(error)}\n`)
     }
   }
 }

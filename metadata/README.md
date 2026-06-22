@@ -227,9 +227,9 @@ The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data �
 
 ## Learning-proposal capture
 
-A weekly scheduled run (`capture-c1-proposals.yaml`, Sunday 22:30 UTC) examines this repo's merged PRs for those that required multiple rounds of changes-requested reviews — the richest mistake→correction signal — and opens a GitHub issue proposing a candidate learning for each.
+A weekly scheduled run (`capture-learnings.yaml`, Sunday 22:30 UTC) examines this repo's merged PRs for those that required multiple rounds of changes-requested reviews — the richest mistake→correction signal — and opens a GitHub issue proposing a candidate learning for each.
 
-Each proposal is labeled `learning-proposal` and carries an immutable body marker (`<!-- capture-c1:merge_sha=<sha> -->`). The marker is the reset-resilient decision log: the run rebuilds its seen-set each week by querying all `learning-proposal` issues (state: all, including closed), so a data-branch reset cannot wipe the log.
+Each proposal is labeled `learning-proposal` and carries an immutable body marker (`<!-- captured-learning:merge_sha=<sha> -->`). The marker is the reset-resilient decision log: the run rebuilds its seen-set each week by querying all `learning-proposal` issues (state: all, including closed), so a data-branch reset cannot wipe the log.
 
 **Privacy:** the harvest digest identifies candidates by merge commit SHA only — no owner, repo name, PR number, or title reaches the agent or the proposal body. The agent authors proposal bodies referencing the source by merge SHA only. Before any issue is created, the body is scanned against the private-repo token set from `metadata/repos.yaml` (fail-closed: a missing or unreadable overlay aborts the propose step with no issues posted).
 

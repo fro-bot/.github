@@ -98,7 +98,7 @@ describe('buildPrivateNameTokens', () => {
 })
 
 // ---------------------------------------------------------------------------
-// buildPrivateTokenSet (FIX 10 — extracted from capture-c1-propose + solutions-query)
+// buildPrivateTokenSet — shared by the learning-proposal privacy gate and solutions-query
 // ---------------------------------------------------------------------------
 
 describe('buildPrivateTokenSet', () => {

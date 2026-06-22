@@ -1,10 +1,10 @@
 /**
- * Tests for capture-c1-harvest.ts
+ * Tests for capture-learnings-harvest.ts
  *
  * Structure:
  * - Pure core tests: drive `buildCandidateDigest` with injected data
  * - Marker helper tests: `buildMergeShaMarker` / `parseMergeShaMarker`
- * - I/O shell tests: `harvestCandidates` and `fetchProposedMergeShas` with mocked Octokit
+ * - I/O shell tests: `harvestCandidates` and `fetchOpenedLearningShas` with mocked Octokit
  */
 
 import {describe, expect, it, vi} from 'vitest'
@@ -12,16 +12,19 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   buildCandidateDigest,
   buildMergeShaMarker,
-  fetchProposedMergeShas,
+  DEPENDENCY_LABELS,
+  fetchOpenedLearningShas,
+  FRO_BOT_REVIEWER_LOGINS,
   harvestCandidates,
   LEARNING_PROPOSAL_LABEL,
   parseMergeShaMarker,
   type BuildCandidateDigestInput,
   type Candidate,
   type CandidateDigest,
+  type HarvestStageCounts,
   type OctokitClient,
   type SolutionDoc,
-} from './capture-c1-harvest.ts'
+} from './capture-learnings-harvest.ts'
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -46,12 +49,22 @@ function makeSolutionDoc(overrides: Partial<SolutionDoc> = {}): SolutionDoc {
   }
 }
 
+function makeZeroStageCounts(): HarvestStageCounts {
+  return {
+    closedPrsFetched: 0,
+    mergedPrsInLookback: 0,
+    excludedAutomation: 0,
+    multiRoundCandidates: 0,
+  }
+}
+
 function makeDigestInput(overrides: Partial<BuildCandidateDigestInput> = {}): BuildCandidateDigestInput {
   return {
     mergedPrs: [makeCandidate()],
-    proposedMergeShas: new Set(),
+    stageCounts: makeZeroStageCounts(),
+    openedLearningShas: new Set(),
     solutionsDocs: [],
-    maxProposals: 5,
+    maxLearnings: 5,
     ...overrides,
   }
 }
@@ -65,14 +78,14 @@ describe('buildMergeShaMarker', () => {
     // #given a merge SHA
     // #when building the marker
     // #then it matches the expected format
-    expect(buildMergeShaMarker('abc123')).toBe('<!-- capture-c1:merge_sha=abc123 -->')
+    expect(buildMergeShaMarker('abc123')).toBe('<!-- captured-learning:merge_sha=abc123 -->')
   })
 })
 
 describe('parseMergeShaMarker', () => {
   it('extracts the SHA from a well-formed marker', () => {
     // #given a body containing the marker
-    const body = 'Some text\n<!-- capture-c1:merge_sha=abc123def456 -->\nMore text'
+    const body = 'Some text\n<!-- captured-learning:merge_sha=abc123def456 -->\nMore text'
     // #when parsing
     // #then the SHA is returned
     expect(parseMergeShaMarker(body)).toBe('abc123def456')
@@ -89,7 +102,7 @@ describe('parseMergeShaMarker', () => {
     // #given a body with a malformed marker
     // #when parsing
     // #then null is returned (regex requires 7-40 hex chars)
-    expect(parseMergeShaMarker('<!-- capture-c1:merge_sha= -->')).toBeNull()
+    expect(parseMergeShaMarker('<!-- captured-learning:merge_sha= -->')).toBeNull()
   })
 
   it('returns null for an empty body', () => {
@@ -142,12 +155,12 @@ describe('buildCandidateDigest', () => {
   })
 
   describe('proposal dedup (R3)', () => {
-    it('excludes a candidate whose mergeSha is in proposedMergeShas', () => {
+    it('excludes a candidate whose mergeSha is in openedLearningShas', () => {
       // #given a candidate whose SHA is already in the seen-set
       const sha = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
       const input = makeDigestInput({
         mergedPrs: [makeCandidate({mergeSha: sha})],
-        proposedMergeShas: new Set([sha]),
+        openedLearningShas: new Set([sha]),
       })
 
       // #when building the digest
@@ -155,7 +168,7 @@ describe('buildCandidateDigest', () => {
 
       // #then the candidate is excluded
       expect(result.candidates).toHaveLength(0)
-      expect(result.telemetry.afterProposalDedup).toBe(0)
+      expect(result.telemetry.afterSeenDedup).toBe(0)
     })
 
     it('mutation proof: removing the seen-set filter makes the candidate reappear', () => {
@@ -167,7 +180,7 @@ describe('buildCandidateDigest', () => {
       const withDedup = buildCandidateDigest(
         makeDigestInput({
           mergedPrs: [candidate],
-          proposedMergeShas: new Set([sha]),
+          openedLearningShas: new Set([sha]),
         }),
       )
       // #then the candidate is excluded
@@ -177,7 +190,7 @@ describe('buildCandidateDigest', () => {
       const withoutDedup = buildCandidateDigest(
         makeDigestInput({
           mergedPrs: [candidate],
-          proposedMergeShas: new Set(),
+          openedLearningShas: new Set(),
         }),
       )
       // #then the candidate reappears — proving the dedup was the gate
@@ -185,10 +198,10 @@ describe('buildCandidateDigest', () => {
       expect(withoutDedup.candidates[0]?.mergeSha).toBe(sha)
     })
 
-    it('includes a candidate whose mergeSha is NOT in proposedMergeShas', () => {
+    it('includes a candidate whose mergeSha is NOT in openedLearningShas', () => {
       // #given a candidate with a SHA not in the seen-set
       const input = makeDigestInput({
-        proposedMergeShas: new Set(['other-sha-not-matching']),
+        openedLearningShas: new Set(['other-sha-not-matching']),
       })
 
       // #when building the digest
@@ -273,14 +286,14 @@ describe('buildCandidateDigest', () => {
   })
 
   describe('cap (R6)', () => {
-    it('caps candidates to maxProposals when more are available', () => {
+    it('caps candidates to maxLearnings when more are available', () => {
       // #given 7 candidates and a cap of 3
       const candidates = Array.from({length: 7}, (_, i) =>
         makeCandidate({mergeSha: `sha${i}${'0'.repeat(35 - String(i).length)}`}),
       )
       const input = makeDigestInput({
         mergedPrs: candidates,
-        maxProposals: 3,
+        maxLearnings: 3,
       })
 
       // #when building the digest
@@ -297,7 +310,7 @@ describe('buildCandidateDigest', () => {
         makeCandidate({mergeSha: `sha1${'0'.repeat(36)}`}),
         makeCandidate({mergeSha: `sha2${'0'.repeat(36)}`}),
       ]
-      const input = makeDigestInput({mergedPrs: candidates, maxProposals: 5})
+      const input = makeDigestInput({mergedPrs: candidates, maxLearnings: 5})
 
       // #when building the digest
       const result = buildCandidateDigest(input)
@@ -311,32 +324,44 @@ describe('buildCandidateDigest', () => {
   describe('telemetry counts', () => {
     it('reports correct counts through the dedup pipeline', () => {
       // #given 5 candidates: 2 already proposed, 1 overlaps a doc (2 shared tags), 2 clean
-      const proposedSha1 = `proposed1${'0'.repeat(31)}`
-      const proposedSha2 = `proposed2${'0'.repeat(31)}`
+      const seenSha1 = `proposed1${'0'.repeat(31)}`
+      const seenSha2 = `proposed2${'0'.repeat(31)}`
       const overlapSha = `overlap1${'0'.repeat(32)}`
       const cleanSha1 = `clean001${'0'.repeat(32)}`
       const cleanSha2 = `clean002${'0'.repeat(32)}`
 
+      const stageCounts: HarvestStageCounts = {
+        closedPrsFetched: 20,
+        mergedPrsInLookback: 10,
+        excludedAutomation: 2,
+        multiRoundCandidates: 5,
+      }
+
       const input = makeDigestInput({
         mergedPrs: [
-          makeCandidate({mergeSha: proposedSha1}),
-          makeCandidate({mergeSha: proposedSha2}),
+          makeCandidate({mergeSha: seenSha1}),
+          makeCandidate({mergeSha: seenSha2}),
           // Two shared tags (automation + ci) = 20 pts >= threshold of 20 → excluded
           makeCandidate({mergeSha: overlapSha, signals: {titleTokens: [], labels: ['automation', 'ci']}}),
           makeCandidate({mergeSha: cleanSha1}),
           makeCandidate({mergeSha: cleanSha2}),
         ],
-        proposedMergeShas: new Set([proposedSha1, proposedSha2]),
+        stageCounts,
+        openedLearningShas: new Set([seenSha1, seenSha2]),
         solutionsDocs: [makeSolutionDoc({tags: ['automation', 'ci'], problemType: '', module: ''})],
-        maxProposals: 5,
+        maxLearnings: 5,
       })
 
       // #when building the digest
       const result = buildCandidateDigest(input)
 
-      // #then telemetry reflects each dedup stage
-      expect(result.telemetry.examined).toBe(5)
-      expect(result.telemetry.afterProposalDedup).toBe(3) // 5 - 2 proposed
+      // #then harvest-stage telemetry is threaded through
+      expect(result.telemetry.closedPrsFetched).toBe(20)
+      expect(result.telemetry.mergedPrsInLookback).toBe(10)
+      expect(result.telemetry.excludedAutomation).toBe(2)
+      expect(result.telemetry.multiRoundCandidates).toBe(5)
+      // #then dedup-stage telemetry reflects each stage
+      expect(result.telemetry.afterSeenDedup).toBe(3) // 5 - 2 proposed
       expect(result.telemetry.afterSolutionsDedup).toBe(2) // 3 - 1 overlap
       expect(result.telemetry.emitted).toBe(2) // 2 clean, under cap
     })
@@ -346,15 +371,14 @@ describe('buildCandidateDigest', () => {
       const sha = `allproposed${'0'.repeat(29)}`
       const input = makeDigestInput({
         mergedPrs: [makeCandidate({mergeSha: sha})],
-        proposedMergeShas: new Set([sha]),
+        openedLearningShas: new Set([sha]),
       })
 
       // #when building the digest
       const result = buildCandidateDigest(input)
 
-      // #then all counts are zero except examined
-      expect(result.telemetry.examined).toBe(1)
-      expect(result.telemetry.afterProposalDedup).toBe(0)
+      // #then dedup counts are zero
+      expect(result.telemetry.afterSeenDedup).toBe(0)
       expect(result.telemetry.afterSolutionsDedup).toBe(0)
       expect(result.telemetry.emitted).toBe(0)
     })
@@ -367,8 +391,7 @@ describe('buildCandidateDigest', () => {
       const result = buildCandidateDigest(input)
 
       // #then all counts are zero
-      expect(result.telemetry.examined).toBe(0)
-      expect(result.telemetry.afterProposalDedup).toBe(0)
+      expect(result.telemetry.afterSeenDedup).toBe(0)
       expect(result.telemetry.afterSolutionsDedup).toBe(0)
       expect(result.telemetry.emitted).toBe(0)
     })
@@ -385,10 +408,12 @@ interface PullsListItem {
   merge_commit_sha: string | null
   title: string
   labels: {name: string}[]
+  user: {login: string} | null
 }
 
 interface ReviewItem {
   state: string
+  user: {login: string} | null
 }
 
 function makePullsListItem(overrides: Partial<PullsListItem> = {}): PullsListItem {
@@ -398,12 +423,13 @@ function makePullsListItem(overrides: Partial<PullsListItem> = {}): PullsListIte
     merge_commit_sha: 'abc123def456abc123def456abc123def456abc1',
     title: 'feat: add new feature',
     labels: [],
+    user: {login: 'some-human'},
     ...overrides,
   }
 }
 
-function makeReviewItem(state: string): ReviewItem {
-  return {state}
+function makeReviewItem(state: string, login = 'fro-bot'): ReviewItem {
+  return {state, user: {login}}
 }
 
 function mockOctokit(
@@ -452,6 +478,10 @@ function mockOctokit(
 }
 
 describe('harvestCandidates', () => {
+  // -------------------------------------------------------------------------
+  // Basic exclusion (merged_at / lookback / merge_commit_sha)
+  // -------------------------------------------------------------------------
+
   it('excludes a PR with merged_at === null (unmerged)', async () => {
     // #given a closed PR that was never merged
     const pr = makePullsListItem({merged_at: null})
@@ -460,10 +490,10 @@ describe('harvestCandidates', () => {
     })
 
     // #when harvesting
-    const result = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
 
     // #then the PR is excluded
-    expect(result).toHaveLength(0)
+    expect(candidates).toHaveLength(0)
   })
 
   it('excludes a PR merged outside the lookback window', async () => {
@@ -476,29 +506,167 @@ describe('harvestCandidates', () => {
     })
 
     // #when harvesting
-    const result = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
 
     // #then the PR is excluded
-    expect(result).toHaveLength(0)
+    expect(candidates).toHaveLength(0)
   })
 
-  it('excludes a PR with only COMMENTED reviews (reviewRounds = 0)', async () => {
-    // #given a merged PR with only COMMENTED reviews
-    const pr = makePullsListItem()
+  // -------------------------------------------------------------------------
+  // Dependency-automation exclusion
+  // -------------------------------------------------------------------------
+
+  it('excludes a PR authored by renovate[bot]', async () => {
+    // #given a merged PR authored by renovate[bot] with qualifying fro-bot reviews
+    const pr = makePullsListItem({user: {login: 'renovate[bot]'}})
     const octokit = mockOctokit({
       paginatePrList: async () => [pr],
-      paginateListReviews: async () => [makeReviewItem('COMMENTED'), makeReviewItem('COMMENTED')],
+      paginateListReviews: async () => [makeReviewItem('APPROVED'), makeReviewItem('DISMISSED')],
     })
 
     // #when harvesting
-    const result = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+    const {candidates, stageCounts} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
 
-    // #then the PR is excluded (0 CHANGES_REQUESTED < threshold of 2)
-    expect(result).toHaveLength(0)
+    // #then the PR is excluded by author, not counted as a candidate
+    expect(candidates).toHaveLength(0)
+    expect(stageCounts.excludedAutomation).toBe(1)
   })
 
-  it('excludes a PR with only APPROVED reviews (reviewRounds = 0)', async () => {
-    // #given a merged PR with only APPROVED reviews
+  it('excludes a PR authored by dependabot[bot]', async () => {
+    // #given a merged PR authored by dependabot[bot]
+    const pr = makePullsListItem({user: {login: 'dependabot[bot]'}})
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('APPROVED'), makeReviewItem('DISMISSED')],
+    })
+
+    // #when harvesting
+    const {candidates, stageCounts} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is excluded by author
+    expect(candidates).toHaveLength(0)
+    expect(stageCounts.excludedAutomation).toBe(1)
+  })
+
+  it('excludes a PR carrying a "dependencies" label', async () => {
+    // #given a merged PR with a 'dependencies' label and qualifying fro-bot reviews
+    const pr = makePullsListItem({labels: [{name: 'dependencies'}]})
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('APPROVED'), makeReviewItem('DISMISSED')],
+    })
+
+    // #when harvesting
+    const {candidates, stageCounts} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is excluded by label
+    expect(candidates).toHaveLength(0)
+    expect(stageCounts.excludedAutomation).toBe(1)
+  })
+
+  it('excludes a PR carrying a "renovate" label', async () => {
+    // #given a merged PR with a 'renovate' label
+    const pr = makePullsListItem({labels: [{name: 'renovate'}]})
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('APPROVED'), makeReviewItem('DISMISSED')],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is excluded by label
+    expect(candidates).toHaveLength(0)
+  })
+
+  it('DEPENDENCY_LABELS set contains the expected labels', () => {
+    // #given the exported constant
+    // #then it contains the three expected labels
+    expect(DEPENDENCY_LABELS.has('dependencies')).toBe(true)
+    expect(DEPENDENCY_LABELS.has('renovate')).toBe(true)
+    expect(DEPENDENCY_LABELS.has('dependencies:github-actions')).toBe(true)
+  })
+
+  // -------------------------------------------------------------------------
+  // New predicate: fro-bot login keying + substantive/correction counts
+  // -------------------------------------------------------------------------
+
+  it('APPROVED 1 + DISMISSED 1 → CANDIDATE (substantive=2, correction=1) — #3540/#3543 shape', async () => {
+    // #given a merged PR where fro-bot submitted APPROVED then DISMISSED
+    // DISMISSED = prior APPROVED auto-dismissed by a new push = real correction round
+    const sha = 'abc123def456abc123def456abc123def456abc1'
+    const pr = makePullsListItem({merge_commit_sha: sha})
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('APPROVED'), makeReviewItem('DISMISSED')],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is a candidate with reviewRounds = 2 (substantive count)
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]?.mergeSha).toBe(sha)
+    expect(candidates[0]?.reviewRounds).toBe(2)
+  })
+
+  it('CHANGES_REQUESTED 1 + APPROVED 1 → CANDIDATE (substantive=2, correction=1) — #3530/#3517 shape', async () => {
+    // #given a merged PR where fro-bot submitted CHANGES_REQUESTED then APPROVED
+    const sha = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+    const pr = makePullsListItem({merge_commit_sha: sha})
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('CHANGES_REQUESTED'), makeReviewItem('APPROVED')],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is a candidate (CR still counts as correction signal)
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]?.reviewRounds).toBe(2)
+  })
+
+  it('APPROVED 2 + DISMISSED 1 → CANDIDATE (substantive=3, correction=1) — #3526 shape', async () => {
+    // #given a merged PR with 3 substantive fro-bot reviews, 1 correction
+    const sha = `sha3526${'0'.repeat(34)}`
+    const pr = makePullsListItem({merge_commit_sha: sha})
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [
+        makeReviewItem('APPROVED'),
+        makeReviewItem('DISMISSED'),
+        makeReviewItem('APPROVED'),
+      ],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is a candidate with reviewRounds = 3
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]?.reviewRounds).toBe(3)
+  })
+
+  it('DISMISSED 2 → CANDIDATE (substantive=2, correction=2) — #3514 shape', async () => {
+    // #given a merged PR where fro-bot submitted 2 DISMISSED reviews
+    const sha = `sha3514${'0'.repeat(34)}`
+    const pr = makePullsListItem({merge_commit_sha: sha})
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('DISMISSED'), makeReviewItem('DISMISSED')],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is a candidate
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]?.reviewRounds).toBe(2)
+  })
+
+  it('APPROVED 1 only → NOT candidate (substantive=1 < MIN_SUBSTANTIVE_REVIEW_ROUNDS) — #3539 shape', async () => {
+    // #given a merged PR with only 1 fro-bot APPROVED review (clean single-round approval)
     const pr = makePullsListItem()
     const octokit = mockOctokit({
       paginatePrList: async () => [pr],
@@ -506,64 +674,100 @@ describe('harvestCandidates', () => {
     })
 
     // #when harvesting
-    const result = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
 
-    // #then the PR is excluded
-    expect(result).toHaveLength(0)
+    // #then the PR is NOT a candidate (below MIN_SUBSTANTIVE_REVIEW_ROUNDS)
+    expect(candidates).toHaveLength(0)
   })
 
-  it('excludes a PR with only 1 CHANGES_REQUESTED review (below threshold)', async () => {
-    // #given a merged PR with 1 CHANGES_REQUESTED review
+  it('APPROVED 2, no correction → NOT candidate (substantive=2 but correction=0) — key edge case', async () => {
+    // #given a merged PR with 2 fro-bot APPROVED reviews but zero correction signals
+    // This proves correction >= MIN_CORRECTION_SIGNALS is required, not just rounds >= 2.
     const pr = makePullsListItem()
     const octokit = mockOctokit({
       paginatePrList: async () => [pr],
-      paginateListReviews: async () => [makeReviewItem('CHANGES_REQUESTED')],
+      paginateListReviews: async () => [makeReviewItem('APPROVED'), makeReviewItem('APPROVED')],
     })
 
     // #when harvesting
-    const result = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
 
-    // #then the PR is excluded (1 < threshold of 2)
-    expect(result).toHaveLength(0)
+    // #then the PR is NOT a candidate (no correction signal)
+    expect(candidates).toHaveLength(0)
   })
 
-  it('includes a PR with exactly 2 CHANGES_REQUESTED reviews', async () => {
-    // #given a merged PR with 2 CHANGES_REQUESTED reviews
-    const sha = 'abc123def456abc123def456abc123def456abc1'
-    const pr = makePullsListItem({merge_commit_sha: sha})
-    const octokit = mockOctokit({
-      paginatePrList: async () => [pr],
-      paginateListReviews: async () => [makeReviewItem('CHANGES_REQUESTED'), makeReviewItem('CHANGES_REQUESTED')],
-    })
-
-    // #when harvesting
-    const result = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
-
-    // #then the PR is included with its mergeSha and reviewRounds
-    expect(result).toHaveLength(1)
-    expect(result[0]?.mergeSha).toBe(sha)
-    expect(result[0]?.reviewRounds).toBe(2)
-  })
-
-  it('counts only CHANGES_REQUESTED reviews, not COMMENTED or APPROVED', async () => {
-    // #given a merged PR with mixed review states
+  it('reviews by a non-fro-bot login are NOT counted — login keying proof', async () => {
+    // #given a merged PR where 'someone-else' submitted APPROVED + DISMISSED
+    // (qualifying if login filter were absent, but fro-bot has no reviews)
     const pr = makePullsListItem()
     const octokit = mockOctokit({
       paginatePrList: async () => [pr],
       paginateListReviews: async () => [
-        makeReviewItem('CHANGES_REQUESTED'),
-        makeReviewItem('COMMENTED'),
-        makeReviewItem('APPROVED'),
-        makeReviewItem('CHANGES_REQUESTED'),
+        makeReviewItem('APPROVED', 'someone-else'),
+        makeReviewItem('DISMISSED', 'someone-else'),
       ],
     })
 
     // #when harvesting
-    const result = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
 
-    // #then reviewRounds is 2 (only CHANGES_REQUESTED counted)
-    expect(result).toHaveLength(1)
-    expect(result[0]?.reviewRounds).toBe(2)
+    // #then the PR is NOT a candidate (non-fro-bot reviews are ignored)
+    expect(candidates).toHaveLength(0)
+  })
+
+  it('mutation proof: removing login filter makes non-fro-bot multi-review PR a candidate', async () => {
+    // #given a PR with 'someone-else' APPROVED + DISMISSED (would qualify without login filter)
+    // This test proves the login filter is the gate — if you remove it, the PR wrongly qualifies.
+    // We verify by checking FRO_BOT_REVIEWER_LOGINS does NOT contain 'someone-else'.
+    expect(FRO_BOT_REVIEWER_LOGINS.has('someone-else')).toBe(false)
+    expect(FRO_BOT_REVIEWER_LOGINS.has('fro-bot')).toBe(true)
+
+    // #when the same reviews are attributed to fro-bot instead
+    const sha = `mutationproof${'0'.repeat(28)}`
+    const pr = makePullsListItem({merge_commit_sha: sha})
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('APPROVED', 'fro-bot'), makeReviewItem('DISMISSED', 'fro-bot')],
+    })
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then with fro-bot login the PR IS a candidate — proving login keying is the gate
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]?.mergeSha).toBe(sha)
+  })
+
+  it('COMMENTED reviews do not count toward substantive (2 COMMENTED → not candidate)', async () => {
+    // #given a merged PR where fro-bot submitted 2 COMMENTED reviews only
+    const pr = makePullsListItem()
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('COMMENTED'), makeReviewItem('COMMENTED')],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is NOT a candidate (COMMENTED excluded from substantive count)
+    expect(candidates).toHaveLength(0)
+  })
+
+  it('COMMENTED reviews mixed with 1 APPROVED → not candidate (substantive=1)', async () => {
+    // #given fro-bot submitted 2 COMMENTED + 1 APPROVED
+    const pr = makePullsListItem()
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [
+        makeReviewItem('COMMENTED'),
+        makeReviewItem('COMMENTED'),
+        makeReviewItem('APPROVED'),
+      ],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is NOT a candidate (only 1 substantive review)
+    expect(candidates).toHaveLength(0)
   })
 
   it('skips a PR when paginate(listReviews) throws a transient error, continues processing others', async () => {
@@ -576,7 +780,7 @@ describe('harvestCandidates', () => {
     const paginateListReviews = vi
       .fn()
       .mockRejectedValueOnce(Object.assign(new Error('Service Unavailable'), {status: 503}))
-      .mockResolvedValueOnce([makeReviewItem('CHANGES_REQUESTED'), makeReviewItem('CHANGES_REQUESTED')])
+      .mockResolvedValueOnce([makeReviewItem('APPROVED'), makeReviewItem('DISMISSED')])
 
     const octokit = mockOctokit({
       paginatePrList: async () => [badPr, goodPr],
@@ -584,25 +788,26 @@ describe('harvestCandidates', () => {
     })
 
     // #when harvesting
-    const result = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
 
     // #then the bad PR is skipped, the good PR is included
-    expect(result).toHaveLength(1)
-    expect(result[0]?.mergeSha).toBe(goodSha)
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]?.mergeSha).toBe(goodSha)
   })
 
-  it('counts CHANGES_REQUESTED reviews across multiple pages (pagination correctness)', async () => {
+  it('counts substantive reviews across multiple pages (pagination correctness)', async () => {
     // #given a PR whose reviews span 2 pages (simulated by paginateListReviews returning all)
     const sha = 'abc123def456abc123def456abc123def456abc1'
     const pr = makePullsListItem({merge_commit_sha: sha})
 
-    // Simulate paginate returning reviews from both pages combined
+    // Simulate paginate returning reviews from both pages combined:
+    // fro-bot: APPROVED, DISMISSED, APPROVED (3 substantive, 1 correction)
+    // COMMENTED is excluded from substantive count
     const allReviews: ReviewItem[] = [
-      makeReviewItem('CHANGES_REQUESTED'), // page 1
-      makeReviewItem('COMMENTED'),
-      makeReviewItem('CHANGES_REQUESTED'), // page 2
-      makeReviewItem('APPROVED'),
-      makeReviewItem('CHANGES_REQUESTED'), // page 2 continued
+      makeReviewItem('APPROVED'), // page 1
+      makeReviewItem('COMMENTED'), // excluded
+      makeReviewItem('DISMISSED'), // page 2 — correction signal
+      makeReviewItem('APPROVED'), // page 2 continued
     ]
 
     const octokit = mockOctokit({
@@ -611,16 +816,80 @@ describe('harvestCandidates', () => {
     })
 
     // #when harvesting
-    const result = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
 
-    // #then all 3 CHANGES_REQUESTED reviews are counted (not just the first page)
-    expect(result).toHaveLength(1)
-    expect(result[0]?.reviewRounds).toBe(3)
+    // #then all 3 substantive reviews are counted (not just the first page)
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]?.reviewRounds).toBe(3)
+  })
+
+  // -------------------------------------------------------------------------
+  // Telemetry: explicit stage counts
+  // -------------------------------------------------------------------------
+
+  it('telemetry: reports correct stage counts through a multi-PR scenario', async () => {
+    // #given 6 closed PRs:
+    //   - 1 unmerged (excluded before mergedPrsInLookback)
+    //   - 1 merged outside lookback (excluded before mergedPrsInLookback)
+    //   - 1 merged in lookback, renovate[bot] author (excludedAutomation)
+    //   - 1 merged in lookback, no fro-bot substantive review (not a candidate)
+    //   - 1 merged in lookback, APPROVED only (not a candidate)
+    //   - 2 merged in lookback, qualifying fro-bot reviews (candidates)
+    const oldDate = new Date()
+    oldDate.setDate(oldDate.getDate() - 60)
+
+    const unmergedPr = makePullsListItem({number: 1, merged_at: null})
+    const oldPr = makePullsListItem({number: 2, merged_at: oldDate.toISOString()})
+    const renovatePr = makePullsListItem({number: 3, user: {login: 'renovate[bot]'}})
+    const noReviewPr = makePullsListItem({number: 4, merge_commit_sha: `norev${'0'.repeat(35)}`})
+    const approvedOnlyPr = makePullsListItem({number: 5, merge_commit_sha: `appr1${'0'.repeat(35)}`})
+    const candidate1Pr = makePullsListItem({number: 6, merge_commit_sha: `cand1${'0'.repeat(35)}`})
+    const candidate2Pr = makePullsListItem({number: 7, merge_commit_sha: `cand2${'0'.repeat(35)}`})
+
+    const reviewsByPr: Record<number, ReviewItem[]> = {
+      3: [makeReviewItem('APPROVED'), makeReviewItem('DISMISSED')], // renovate — excluded before reviews
+      4: [], // no reviews
+      5: [makeReviewItem('APPROVED')], // only 1 substantive
+      6: [makeReviewItem('APPROVED'), makeReviewItem('DISMISSED')], // candidate
+      7: [makeReviewItem('CHANGES_REQUESTED'), makeReviewItem('APPROVED')], // candidate
+    }
+
+    let reviewCallCount = 0
+    const paginateListReviews = vi.fn(async () => {
+      // PRs are processed in order: renovate is excluded before reviews are fetched.
+      // Remaining: noReviewPr(4), approvedOnlyPr(5), candidate1Pr(6), candidate2Pr(7)
+      const prNumbers = [4, 5, 6, 7]
+      const prNum = prNumbers[reviewCallCount++]
+      return reviewsByPr[prNum ?? 4] ?? []
+    })
+
+    const octokit = mockOctokit({
+      paginatePrList: async () => [
+        unmergedPr,
+        oldPr,
+        renovatePr,
+        noReviewPr,
+        approvedOnlyPr,
+        candidate1Pr,
+        candidate2Pr,
+      ],
+      paginateListReviews: paginateListReviews as () => Promise<ReviewItem[]>,
+    })
+
+    // #when harvesting
+    const {candidates, stageCounts} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then stage counts are explicit and correct
+    expect(stageCounts.closedPrsFetched).toBe(7)
+    expect(stageCounts.mergedPrsInLookback).toBe(5) // excludes unmerged + old
+    expect(stageCounts.excludedAutomation).toBe(1) // renovate[bot]
+    expect(stageCounts.multiRoundCandidates).toBe(2) // cand1 + cand2
+    expect(candidates).toHaveLength(2)
   })
 })
 
 // ---------------------------------------------------------------------------
-// I/O shell: fetchProposedMergeShas (mocked Octokit)
+// I/O shell: fetchOpenedLearningShas (mocked Octokit)
 // ---------------------------------------------------------------------------
 
 interface IssueListItem {
@@ -661,7 +930,7 @@ function mockOctokitForIssues(
   } as unknown as OctokitClient
 }
 
-describe('fetchProposedMergeShas', () => {
+describe('fetchOpenedLearningShas', () => {
   it('parses the merge SHA from a learning-proposal issue body', async () => {
     // #given an issue with a valid marker in its body
     const sha = 'abc123def456abc123def456abc123def456abc1'
@@ -671,7 +940,7 @@ describe('fetchProposedMergeShas', () => {
     })
 
     // #when fetching proposed SHAs
-    const result = await fetchProposedMergeShas(octokit, 'fro-bot', '.github')
+    const result = await fetchOpenedLearningShas(octokit, 'fro-bot', '.github')
 
     // #then the SHA is in the seen-set
     expect(result.has(sha)).toBe(true)
@@ -687,7 +956,7 @@ describe('fetchProposedMergeShas', () => {
     })
 
     // #when fetching proposed SHAs
-    const result = await fetchProposedMergeShas(octokit, 'fro-bot', '.github')
+    const result = await fetchOpenedLearningShas(octokit, 'fro-bot', '.github')
 
     // #then the SHA from the closed issue is in the seen-set
     expect(result.has(sha)).toBe(true)
@@ -701,7 +970,7 @@ describe('fetchProposedMergeShas', () => {
     })
 
     // #when fetching proposed SHAs
-    const result = await fetchProposedMergeShas(octokit, 'fro-bot', '.github')
+    const result = await fetchOpenedLearningShas(octokit, 'fro-bot', '.github')
 
     // #then the result is an empty set (no crash)
     expect(result.size).toBe(0)
@@ -715,7 +984,7 @@ describe('fetchProposedMergeShas', () => {
     })
 
     // #when fetching proposed SHAs
-    const result = await fetchProposedMergeShas(octokit, 'fro-bot', '.github')
+    const result = await fetchOpenedLearningShas(octokit, 'fro-bot', '.github')
 
     // #then the result is an empty set (no crash)
     expect(result.size).toBe(0)
@@ -729,7 +998,7 @@ describe('fetchProposedMergeShas', () => {
     })
 
     // #when fetching proposed SHAs
-    const result = await fetchProposedMergeShas(octokit, 'fro-bot', '.github')
+    const result = await fetchOpenedLearningShas(octokit, 'fro-bot', '.github')
 
     // #then the result is an empty set
     expect(result.size).toBe(0)
@@ -748,7 +1017,7 @@ describe('fetchProposedMergeShas', () => {
     })
 
     // #when fetching proposed SHAs
-    const result = await fetchProposedMergeShas(octokit, 'fro-bot', '.github')
+    const result = await fetchOpenedLearningShas(octokit, 'fro-bot', '.github')
 
     // #then both SHAs are in the seen-set
     expect(result.has(sha1)).toBe(true)
@@ -762,7 +1031,7 @@ describe('fetchProposedMergeShas', () => {
     const octokit = mockOctokitForIssues({paginate: paginateSpy as (fn: unknown, opts: unknown) => Promise<unknown[]>})
 
     // #when fetching proposed SHAs
-    await fetchProposedMergeShas(octokit, 'fro-bot', '.github')
+    await fetchOpenedLearningShas(octokit, 'fro-bot', '.github')
 
     // #then the paginate call includes the learning-proposal label
     expect(paginateSpy).toHaveBeenCalledOnce()
@@ -772,7 +1041,7 @@ describe('fetchProposedMergeShas', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Contract test: harvest→propose schema round-trip (FIX 1)
+// Contract test: harvest→propose schema round-trip
 // ---------------------------------------------------------------------------
 
 describe('harvest→propose schema contract', () => {
@@ -792,13 +1061,21 @@ describe('harvest→propose schema contract', () => {
     ]
     const digest: CandidateDigest = {
       candidates,
-      telemetry: {examined: 5, afterProposalDedup: 3, afterSolutionsDedup: 2, emitted: 2},
+      telemetry: {
+        closedPrsFetched: 20,
+        mergedPrsInLookback: 10,
+        excludedAutomation: 1,
+        multiRoundCandidates: 5,
+        afterSeenDedup: 3,
+        afterSolutionsDedup: 2,
+        emitted: 2,
+      },
     }
 
-    // #when serializing (as harvest writes to CAPTURE_C1_DIGEST_PATH)
+    // #when serializing (as harvest writes to CAPTURE_LEARNINGS_DIGEST_PATH)
     const serialized = JSON.stringify(digest)
 
-    // #when deserializing (as propose reads from CAPTURE_C1_DIGEST_PATH)
+    // #when deserializing (as propose reads from CAPTURE_LEARNINGS_DIGEST_PATH)
     const deserialized = JSON.parse(serialized) as CandidateDigest
 
     // #then the shape is {candidates, telemetry} — not a bare array
@@ -813,13 +1090,13 @@ describe('harvest→propose schema contract', () => {
     expect(deserialized.candidates[1]?.mergeSha).toBe('deadbeefdeadbeefdeadbeefdeadbeefdeadbeef')
 
     // #then telemetry round-trips correctly
-    expect(deserialized.telemetry.examined).toBe(5)
+    expect(deserialized.telemetry.closedPrsFetched).toBe(20)
+    expect(deserialized.telemetry.mergedPrsInLookback).toBe(10)
+    expect(deserialized.telemetry.excludedAutomation).toBe(1)
+    expect(deserialized.telemetry.multiRoundCandidates).toBe(5)
     expect(deserialized.telemetry.emitted).toBe(2)
 
     // #then propose can iterate candidates without TypeError
-    // (the old bug: harvest wrote candidates array directly, propose read {candidates,telemetry}
-    //  → digest.candidates was undefined → for...of undefined → crash)
-    // Iterating must not throw — the old bug caused TypeError: undefined is not iterable
     const shas = deserialized.candidates.map(c => c.mergeSha)
     expect(shas).toHaveLength(2)
   })

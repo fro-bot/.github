@@ -1,28 +1,33 @@
 /**
- * Tests for capture-c1-propose.ts
+ * Tests for capture-learnings-open.ts
  *
  * Structure:
- * - Pure function tests: `proposalBodyHasPrivateLeak`, `planProposals`
+ * - Pure function tests: `learningBodyHasPrivateLeak`, `planLearnings`
  * - Disk loader tests: `loadPrivateTokensFromDisk` (injectable readFile)
- * - I/O shell tests: `createProposals`, `ensureLabelsExist` (mocked Octokit)
+ * - I/O shell tests: `openLearningIssues`, `ensureLabelsExist` (mocked Octokit)
  *
  * Privacy mutation-proof: each privacy test includes a "without the gate" assertion
- * that proves removing the check would let the proposal through.
+ * that proves removing the check would let the learning through.
  */
 
 import {describe, expect, it, vi} from 'vitest'
 
-import {buildMergeShaMarker, LEARNING_PROPOSAL_LABEL, type Candidate, type OctokitClient} from './capture-c1-harvest.ts'
 import {
-  createProposals,
+  buildMergeShaMarker,
+  LEARNING_PROPOSAL_LABEL,
+  type Candidate,
+  type OctokitClient,
+} from './capture-learnings-harvest.ts'
+import {
   ensureLabelsExist,
+  learningBodyHasPrivateLeak,
   loadPrivateTokensFromDisk,
-  planProposals,
-  proposalBodyHasPrivateLeak,
+  openLearningIssues,
+  planLearnings,
   type LabelDescriptor,
-  type PlanProposalsInput,
-  type ProposalToCreate,
-} from './capture-c1-propose.ts'
+  type LearningToOpen,
+  type PlanLearningsInput,
+} from './capture-learnings-open.ts'
 import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
@@ -38,10 +43,10 @@ function makeCandidate(overrides: Partial<Candidate> = {}): Candidate {
   }
 }
 
-function makePlanInput(overrides: Partial<PlanProposalsInput> = {}): PlanProposalsInput {
+function makePlanInput(overrides: Partial<PlanLearningsInput> = {}): PlanLearningsInput {
   return {
     candidates: [makeCandidate()],
-    proposalBodies: new Map([['abc123def456abc123def456abc123def456abc1', 'A clean proposal body.']]),
+    learningBodies: new Map([['abc123def456abc123def456abc123def456abc1', 'A clean learning body.']]),
     privateTokens: new Set(),
     alreadyCreatedShas: new Set(),
     ...overrides,
@@ -53,20 +58,20 @@ function makePrivateTokens(nameWithOwner: string): Set<string> {
   return buildPrivateTokenSet([nameWithOwner])
 }
 
-function makeToCreate(overrides: Partial<ProposalToCreate> = {}): ProposalToCreate {
+function makeToCreate(overrides: Partial<LearningToOpen> = {}): LearningToOpen {
   const sha = 'abc123def456abc123def456abc123def456abc1'
   return {
     mergeSha: sha,
-    body: `A clean proposal.\n\n${buildMergeShaMarker(sha)}`,
+    body: `A clean learning.\n\n${buildMergeShaMarker(sha)}`,
     ...overrides,
   }
 }
 
 // ---------------------------------------------------------------------------
-// proposalBodyHasPrivateLeak — pure function tests
+// learningBodyHasPrivateLeak — pure function tests
 // ---------------------------------------------------------------------------
 
-describe('proposalBodyHasPrivateLeak', () => {
+describe('learningBodyHasPrivateLeak', () => {
   describe('detection', () => {
     it('detects the owner/name form (slash-separated)', () => {
       // #given a body containing the owner/name form of a private repo
@@ -75,7 +80,7 @@ describe('proposalBodyHasPrivateLeak', () => {
 
       // #when scanning
       // #then the leak is detected
-      expect(proposalBodyHasPrivateLeak(body, tokens)).toBe(true)
+      expect(learningBodyHasPrivateLeak(body, tokens)).toBe(true)
     })
 
     it('detects the owner--name form (double-dash)', () => {
@@ -85,7 +90,7 @@ describe('proposalBodyHasPrivateLeak', () => {
 
       // #when scanning
       // #then the leak is detected
-      expect(proposalBodyHasPrivateLeak(body, tokens)).toBe(true)
+      expect(learningBodyHasPrivateLeak(body, tokens)).toBe(true)
     })
 
     it('detects mixed-case occurrences (case-insensitive scan)', () => {
@@ -95,7 +100,7 @@ describe('proposalBodyHasPrivateLeak', () => {
 
       // #when scanning
       // #then the leak is detected (body is lowercased before scan)
-      expect(proposalBodyHasPrivateLeak(body, tokens)).toBe(true)
+      expect(learningBodyHasPrivateLeak(body, tokens)).toBe(true)
     })
 
     it('detects the slug form produced by computeRepoSlug', () => {
@@ -106,7 +111,7 @@ describe('proposalBodyHasPrivateLeak', () => {
 
       // #when scanning
       // #then the leak is detected
-      expect(proposalBodyHasPrivateLeak(body, tokens)).toBe(true)
+      expect(learningBodyHasPrivateLeak(body, tokens)).toBe(true)
     })
   })
 
@@ -114,11 +119,11 @@ describe('proposalBodyHasPrivateLeak', () => {
     it('returns false for a body with no private tokens', () => {
       // #given a body with no private identifiers
       const tokens = makePrivateTokens('testowner/secret-repo')
-      const body = 'This is a clean proposal about CI improvements.'
+      const body = 'This is a clean learning about CI improvements.'
 
       // #when scanning
       // #then no leak is detected
-      expect(proposalBodyHasPrivateLeak(body, tokens)).toBe(false)
+      expect(learningBodyHasPrivateLeak(body, tokens)).toBe(false)
     })
 
     it('returns false when the private token set is empty', () => {
@@ -127,7 +132,7 @@ describe('proposalBodyHasPrivateLeak', () => {
 
       // #when scanning with an empty token set
       // #then no leak is detected (vacuously safe)
-      expect(proposalBodyHasPrivateLeak(body, new Set())).toBe(false)
+      expect(learningBodyHasPrivateLeak(body, new Set())).toBe(false)
     })
 
     it('returns false for an empty body', () => {
@@ -136,28 +141,28 @@ describe('proposalBodyHasPrivateLeak', () => {
 
       // #when scanning
       // #then no leak is detected
-      expect(proposalBodyHasPrivateLeak('', tokens)).toBe(false)
+      expect(learningBodyHasPrivateLeak('', tokens)).toBe(false)
     })
   })
 })
 
 // ---------------------------------------------------------------------------
-// planProposals — pure core tests
+// planLearnings — pure core tests
 // ---------------------------------------------------------------------------
 
-describe('planProposals', () => {
+describe('planLearnings', () => {
   describe('happy path', () => {
     it('includes a clean candidate with the merge-SHA marker appended to the body', () => {
       // #given a candidate with a clean body, not duplicate, no private leak
       const sha = 'abc123def456abc123def456abc123def456abc1'
-      const body = 'A clean proposal body.'
+      const body = 'A clean learning body.'
       const input = makePlanInput({
         candidates: [makeCandidate({mergeSha: sha})],
-        proposalBodies: new Map([[sha, body]]),
+        learningBodies: new Map([[sha, body]]),
       })
 
       // #when planning
-      const result = planProposals(input)
+      const result = planLearnings(input)
 
       // #then the candidate is in toCreate with the marker appended
       expect(result.toCreate).toHaveLength(1)
@@ -171,14 +176,14 @@ describe('planProposals', () => {
     it('appends the marker AFTER the body content', () => {
       // #given a candidate with a body
       const sha = 'abc123def456abc123def456abc123def456abc1'
-      const body = 'Proposal content here.'
+      const body = 'Learning content here.'
       const input = makePlanInput({
         candidates: [makeCandidate({mergeSha: sha})],
-        proposalBodies: new Map([[sha, body]]),
+        learningBodies: new Map([[sha, body]]),
       })
 
       // #when planning
-      const result = planProposals(input)
+      const result = planLearnings(input)
 
       // #then the marker appears after the body
       const fullBody = result.toCreate[0]?.body ?? ''
@@ -194,15 +199,15 @@ describe('planProposals', () => {
       // #given a body containing a private identifier
       const sha = 'abc123def456abc123def456abc123def456abc1'
       const privateTokens = makePrivateTokens('testowner/secret-repo')
-      const body = 'This proposal references testowner/secret-repo.'
+      const body = 'This learning references testowner/secret-repo.'
       const input = makePlanInput({
         candidates: [makeCandidate({mergeSha: sha})],
-        proposalBodies: new Map([[sha, body]]),
+        learningBodies: new Map([[sha, body]]),
         privateTokens,
       })
 
       // #when planning
-      const result = planProposals(input)
+      const result = planLearnings(input)
 
       // #then the candidate is blocked, not in toCreate
       expect(result.toCreate).toHaveLength(0)
@@ -213,13 +218,13 @@ describe('planProposals', () => {
       // #given the same body with a private token
       const sha = 'abc123def456abc123def456abc123def456abc1'
       const privateTokens = makePrivateTokens('testowner/secret-repo')
-      const body = 'This proposal references testowner/secret-repo.'
+      const body = 'This learning references testowner/secret-repo.'
 
       // #when planning WITH the privacy gate (non-empty token set)
-      const withGate = planProposals(
+      const withGate = planLearnings(
         makePlanInput({
           candidates: [makeCandidate({mergeSha: sha})],
-          proposalBodies: new Map([[sha, body]]),
+          learningBodies: new Map([[sha, body]]),
           privateTokens,
         }),
       )
@@ -228,10 +233,10 @@ describe('planProposals', () => {
       expect(withGate.blockedOnPrivacy).toBe(1)
 
       // #when planning WITHOUT the privacy gate (empty token set — gate removed)
-      const withoutGate = planProposals(
+      const withoutGate = planLearnings(
         makePlanInput({
           candidates: [makeCandidate({mergeSha: sha})],
-          proposalBodies: new Map([[sha, body]]),
+          learningBodies: new Map([[sha, body]]),
           privateTokens: new Set(), // gate removed
         }),
       )
@@ -247,7 +252,7 @@ describe('planProposals', () => {
       const privateTokens = makePrivateTokens('testowner/secret-repo')
       const input = makePlanInput({
         candidates: [makeCandidate({mergeSha: sha1}), makeCandidate({mergeSha: sha2})],
-        proposalBodies: new Map([
+        learningBodies: new Map([
           [sha1, 'References testowner/secret-repo here.'],
           [sha2, 'Also mentions testowner/secret-repo.'],
         ]),
@@ -255,7 +260,7 @@ describe('planProposals', () => {
       })
 
       // #when planning
-      const result = planProposals(input)
+      const result = planLearnings(input)
 
       // #then both are blocked
       expect(result.toCreate).toHaveLength(0)
@@ -269,12 +274,12 @@ describe('planProposals', () => {
       const sha = 'abc123def456abc123def456abc123def456abc1'
       const input = makePlanInput({
         candidates: [makeCandidate({mergeSha: sha})],
-        proposalBodies: new Map([[sha, 'A clean body.']]),
+        learningBodies: new Map([[sha, 'A clean body.']]),
         alreadyCreatedShas: new Set([sha]),
       })
 
       // #when planning
-      const result = planProposals(input)
+      const result = planLearnings(input)
 
       // #then the candidate is skipped as a duplicate
       expect(result.toCreate).toHaveLength(0)
@@ -287,12 +292,12 @@ describe('planProposals', () => {
       const sha = 'abc123def456abc123def456abc123def456abc1'
       const input = makePlanInput({
         candidates: [makeCandidate({mergeSha: sha})],
-        proposalBodies: new Map([[sha, 'A clean body.']]),
+        learningBodies: new Map([[sha, 'A clean body.']]),
         alreadyCreatedShas: new Set(['other-sha-not-matching']),
       })
 
       // #when planning
-      const result = planProposals(input)
+      const result = planLearnings(input)
 
       // #then the candidate is included
       expect(result.toCreate).toHaveLength(1)
@@ -301,16 +306,16 @@ describe('planProposals', () => {
   })
 
   describe('no body for a candidate', () => {
-    it('skips a candidate with no entry in proposalBodies without crashing', () => {
+    it('skips a candidate with no entry in learningBodies without crashing', () => {
       // #given a candidate with no body in the map
       const sha = 'abc123def456abc123def456abc123def456abc1'
       const input = makePlanInput({
         candidates: [makeCandidate({mergeSha: sha})],
-        proposalBodies: new Map(), // empty — no body for this candidate
+        learningBodies: new Map(), // empty — no body for this candidate
       })
 
       // #when planning
-      const result = planProposals(input)
+      const result = planLearnings(input)
 
       // #then the candidate is silently skipped
       expect(result.toCreate).toHaveLength(0)
@@ -323,11 +328,11 @@ describe('planProposals', () => {
       const sha = 'abc123def456abc123def456abc123def456abc1'
       const input = makePlanInput({
         candidates: [makeCandidate({mergeSha: sha})],
-        proposalBodies: new Map([[sha, '']]),
+        learningBodies: new Map([[sha, '']]),
       })
 
       // #when planning
-      const result = planProposals(input)
+      const result = planLearnings(input)
 
       // #then the candidate is silently skipped
       expect(result.toCreate).toHaveLength(0)
@@ -351,10 +356,10 @@ describe('planProposals', () => {
           makeCandidate({mergeSha: dupSha}),
           makeCandidate({mergeSha: noBodySha}),
         ],
-        proposalBodies: new Map([
-          [cleanSha, 'A clean proposal.'],
+        learningBodies: new Map([
+          [cleanSha, 'A clean learning.'],
           [blockedSha, 'References testowner/secret-repo.'],
-          [dupSha, 'Another clean proposal.'],
+          [dupSha, 'Another clean learning.'],
           // noBodySha intentionally absent
         ]),
         privateTokens,
@@ -362,7 +367,7 @@ describe('planProposals', () => {
       })
 
       // #when planning
-      const result = planProposals(input)
+      const result = planLearnings(input)
 
       // #then only the clean candidate is in toCreate
       expect(result.toCreate).toHaveLength(1)
@@ -387,7 +392,7 @@ describe('loadPrivateTokensFromDisk', () => {
     // #when loading private tokens
     // #then it throws — the caller must not post proposals
     await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
-      'capture-c1-propose: could not read metadata/repos.yaml',
+      'capture-learnings-open: could not read metadata/repos.yaml',
     )
   })
 
@@ -398,7 +403,7 @@ describe('loadPrivateTokensFromDisk', () => {
     // #when loading private tokens
     // #then it throws — the caller must not post proposals
     await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
-      'capture-c1-propose: could not parse metadata/repos.yaml',
+      'capture-learnings-open: could not parse metadata/repos.yaml',
     )
   })
 
@@ -409,7 +414,7 @@ describe('loadPrivateTokensFromDisk', () => {
     // #when loading private tokens
     // #then it throws
     await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
-      'capture-c1-propose: metadata/repos.yaml has unexpected shape',
+      'capture-learnings-open: metadata/repos.yaml has unexpected shape',
     )
   })
 
@@ -420,7 +425,7 @@ describe('loadPrivateTokensFromDisk', () => {
     // #when loading private tokens
     // #then it throws
     await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
-      'capture-c1-propose: metadata/repos.yaml missing repos array',
+      'capture-learnings-open: metadata/repos.yaml missing repos array',
     )
   })
 
@@ -603,19 +608,19 @@ describe('ensureLabelsExist', () => {
 })
 
 // ---------------------------------------------------------------------------
-// createProposals — I/O shell tests
+// openLearningIssues — I/O shell tests
 // ---------------------------------------------------------------------------
 
-describe('createProposals', () => {
+describe('openLearningIssues', () => {
   it('creates an issue with the learning-proposal label and the merge-SHA marker in the body', async () => {
-    // #given a single proposal to create
+    // #given a single learning to create
     const sha = 'abc123def456abc123def456abc123def456abc1'
     const createSpy = vi.fn().mockResolvedValue({data: {number: 42}})
     const octokit = mockOctokit({getLabelResult: 'found', issuesCreateSpy: createSpy})
     const toCreate = [makeToCreate({mergeSha: sha})]
 
-    // #when creating proposals
-    const counts = await createProposals(octokit, 'fro-bot', '.github', toCreate)
+    // #when opening learning issues
+    const counts = await openLearningIssues(octokit, 'fro-bot', '.github', toCreate)
 
     // #then the issue was created with the correct label and marker
     expect(counts.created).toBe(1)
@@ -631,8 +636,8 @@ describe('createProposals', () => {
     const createSpy = vi.fn().mockResolvedValue({data: {number: 1}})
     const octokit = mockOctokit({getLabelResult: 404, createLabelResult: 'created', issuesCreateSpy: createSpy})
 
-    // #when creating proposals
-    const counts = await createProposals(octokit, 'fro-bot', '.github', [makeToCreate()])
+    // #when opening learning issues
+    const counts = await openLearningIssues(octokit, 'fro-bot', '.github', [makeToCreate()])
 
     // #then the issue was created
     expect(counts.created).toBe(1)
@@ -640,15 +645,15 @@ describe('createProposals', () => {
     expect(callArg.labels).toContain(LEARNING_PROPOSAL_LABEL)
   })
 
-  it('skips ALL proposals when the label cannot be confirmed (fail-closed on labeling)', async () => {
+  it('skips ALL learnings when the label cannot be confirmed (fail-closed on labeling)', async () => {
     // #given the label cannot be confirmed (getLabel 500 error)
-    // An unlabeled proposal is invisible to the seen-set query (filtered by label)
+    // An unlabeled learning is invisible to the seen-set query (filtered by label)
     // and would be re-proposed forever — worse than skipping.
     const createSpy = vi.fn().mockResolvedValue({data: {number: 1}})
     const octokit = mockOctokit({getLabelResult: 'error', issuesCreateSpy: createSpy})
 
-    // #when creating proposals
-    const counts = await createProposals(octokit, 'fro-bot', '.github', [makeToCreate()])
+    // #when opening learning issues
+    const counts = await openLearningIssues(octokit, 'fro-bot', '.github', [makeToCreate()])
 
     // #then NO issue is created and skippedLabelUnavailable is incremented
     expect(counts.created).toBe(0)
@@ -663,16 +668,16 @@ describe('createProposals', () => {
     const octokit = mockOctokit({getLabelResult: 'found', issuesCreateSpy: createSpy})
     const toCreate = [makeToCreate({mergeSha: sha}), makeToCreate({mergeSha: sha})]
 
-    // #when creating proposals
-    const counts = await createProposals(octokit, 'fro-bot', '.github', toCreate)
+    // #when opening learning issues
+    const counts = await openLearningIssues(octokit, 'fro-bot', '.github', toCreate)
 
     // #then only one issue was created (the second was suppressed by the in-memory Set)
     expect(counts.created).toBe(1)
     expect(createSpy).toHaveBeenCalledOnce()
   })
 
-  it('continues creating other proposals when one fails', async () => {
-    // #given two proposals: the first create call fails, the second succeeds
+  it('continues creating other learnings when one fails', async () => {
+    // #given two learnings: the first create call fails, the second succeeds
     const sha1 = `sha1${'0'.repeat(36)}`
     const sha2 = `sha2${'0'.repeat(36)}`
     const createSpy = vi
@@ -685,8 +690,8 @@ describe('createProposals', () => {
       makeToCreate({mergeSha: sha2, body: `Body 2\n\n${buildMergeShaMarker(sha2)}`}),
     ]
 
-    // #when creating proposals
-    const counts = await createProposals(octokit, 'fro-bot', '.github', toCreate)
+    // #when opening learning issues
+    const counts = await openLearningIssues(octokit, 'fro-bot', '.github', toCreate)
 
     // #then the first failed but the second succeeded
     expect(counts.created).toBe(1)
@@ -695,11 +700,11 @@ describe('createProposals', () => {
   })
 
   it('returns zero counts when toCreate is empty', async () => {
-    // #given no proposals to create
+    // #given no learnings to create
     const octokit = mockOctokit()
 
-    // #when creating proposals with an empty list
-    const counts = await createProposals(octokit, 'fro-bot', '.github', [])
+    // #when opening learning issues with an empty list
+    const counts = await openLearningIssues(octokit, 'fro-bot', '.github', [])
 
     // #then no API calls are made and counts are zero
     expect(counts.created).toBe(0)
@@ -707,13 +712,13 @@ describe('createProposals', () => {
   })
 
   it('includes the title derived from the mergeSha (short SHA, no private info)', async () => {
-    // #given a proposal with a known mergeSha
+    // #given a learning with a known mergeSha
     const sha = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
     const createSpy = vi.fn().mockResolvedValue({data: {number: 1}})
     const octokit = mockOctokit({getLabelResult: 'found', issuesCreateSpy: createSpy})
 
-    // #when creating proposals
-    await createProposals(octokit, 'fro-bot', '.github', [
+    // #when opening learning issues
+    await openLearningIssues(octokit, 'fro-bot', '.github', [
       makeToCreate({mergeSha: sha, body: `Body\n\n${buildMergeShaMarker(sha)}`}),
     ])
 
