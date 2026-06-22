@@ -191,7 +191,7 @@ fro-bot.yaml run (any event)
 
 ## Implementation Units
 
-- [ ] **Unit 1: `scripts/solutions-query.ts` — retrieval engine (test-first)**
+- [x] **Unit 1: `scripts/solutions-query.ts` — retrieval engine (test-first)**
 
 **Goal:** A script that loads `docs/solutions/**`, scores docs against the current run's
 event context, applies the privacy body-scan and freshness handling, packs the top matches
@@ -258,7 +258,7 @@ into a byte budget, and writes the excerpt + metadata to `GITHUB_OUTPUT`.
 Node strip-only (`Test Scripts Load` semantics); no resolved private identifier appears in
 any output for the privacy fixture; excerpt respects the byte budget.
 
-- [ ] **Unit 2: wire the retrieval step + injection into `fro-bot.yaml`**
+- [x] **Unit 2: wire the retrieval step + injection into `fro-bot.yaml`**
 
 **Goal:** Run `solutions-query.ts` on every Fro Bot run and inject its excerpt into the
 agent prompt as a `<solutions_context>` block, with a prompt instruction to consult and cite
