@@ -516,6 +516,11 @@ function reviewStateRank(state: string): number {
  * is reached, truncating the last item that would overflow. Skips empty/whitespace bodies.
  *
  * Returns a string[] — array form gives the agent clearer structure than a single string.
+ *
+ * Privacy ordering invariant: this truncation runs in the harvest I/O shell, BEFORE the
+ * upstream privacy scan in `buildCandidateDigest`. The scan must always read the final,
+ * already-truncated excerpt array. Never move truncation after the scan — scanning a token
+ * and then truncating around it could leave a surviving tail that escapes the gate.
  */
 function buildReviewExcerpts(reviewBodies: {state: string; body: string}[], threadCommentBodies: string[]): string[] {
   // Collect all prose items with their rank
