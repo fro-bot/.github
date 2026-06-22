@@ -3,6 +3,7 @@ title: Verify the Whole Public Perimeter Before Declaring a Value Non-Leaking
 date: 2026-06-22
 last_updated: 2026-06-22
 problem_type: security_issue
+category: security-issues
 component: development_workflow
 module: github-workflows
 severity: high

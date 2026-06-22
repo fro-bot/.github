@@ -3,6 +3,7 @@ title: A Second Credential Gives Rotation Isolation, Not Permission Isolation â€
 date: 2026-06-22
 last_updated: 2026-06-22
 problem_type: best_practice
+category: best-practices
 component: development_workflow
 module: github-workflows
 severity: high

@@ -3,6 +3,7 @@ title: Pure-Core Privacy Gates with a Shared Module and Mutation-Proof Tests
 date: 2026-06-22
 last_updated: 2026-06-22
 problem_type: best_practice
+category: best-practices
 component: development_workflow
 module: github-workflows
 severity: high
@@ -106,11 +107,12 @@ it('blocks private prose from entering the digest', () => {
   expect(() => scanForPrivateTokens(prose, tokens)).toThrow(PrivacyGateError)
 })
 
-it('mutation proof: removing the gate lets private prose through', () => {
-  // Directly push prose into the digest without scanning — asserts the gate is the only barrier
-  const digest: string[] = []
-  digest.push('see acme/private-repo for context')
-  expect(digest[0]).toContain('acme/private-repo')  // proves the gate is what stops this
+it('mutation proof: digest assembly drops private prose', () => {
+  // Exercise the REAL assembly path. This goes green only while the gate is wired
+  // into assembleDigest; delete or short-circuit the gate and this turns red.
+  const tokens = buildPrivateTokenSet([{nameWithOwner: 'acme/private-repo'}])
+  const digest = assembleDigest(['see acme/private-repo for context'], tokens)
+  expect(digest.join('\n')).not.toContain('acme/private-repo')
 })
 ```
 

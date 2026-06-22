@@ -3,6 +3,7 @@ title: Derive State from the System of Record Without Widening Shell Injection S
 date: 2026-06-22
 last_updated: 2026-06-22
 problem_type: best_practice
+category: best-practices
 component: development_workflow
 module: github-workflows
 severity: high
