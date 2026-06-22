@@ -101,18 +101,18 @@ The capture run therefore reasons over **structured GitHub API outcome metadata*
 took 3 rounds; these runs failed CI then passed; this triage decided skip-with-reason) rather
 than over raw transcripts.
 
-### Triggers (Phase 2 v1 — C1 only)
+### Triggers (Phase 2 v1 — multi-round-review only)
 
 Phase 2 v1 narrows to the single highest-signal trigger. C2 and C3 move to Phase 2.5 once
-C1 precision is proven. C4 remains Phase 3.
+multi-round-review precision is proven. Cross-run synthesis remains Phase 3.
 
-- **C1 — Multi-round-review PRs (v1 only).** PRs that needed several review rounds /
+- **Multi-round-review PRs (v1 only).** PRs that needed several review rounds /
   changes-requested before merging encode a mistake-then-correction — the richest learning
   shape, and directly queryable from PR review history. A scheduled harvest collects merged
   PRs whose review history shows multiple rounds above a threshold (exact threshold: planning
   decision, O6). Lead trigger for v1.
-- **C2 — Failed-then-fixed runs. DEFERRED to Phase 2.5.** Add once C1 precision is proven.
-- **C3 — Issue triages. DEFERRED to Phase 2.5.** Add once C1 precision is proven.
+- **Failed-then-fixed runs. DEFERRED to Phase 2.5.** Add once multi-round-review precision is proven.
+- **Issue triages. DEFERRED to Phase 2.5.** Add once multi-round-review precision is proven.
 - **C4 — Recurring patterns across runs (cross-run synthesis). DEFERRED to Phase 3.**
 
 ### Mechanism (resolved): script harvests + pre-filters → agent judges → proposal issue
@@ -121,7 +121,7 @@ The established repo pattern — a deterministic script feeds the agent curated 
 here, with the output being a GitHub issue proposal rather than an authored doc:
 
 - **Script harvests + pre-filters (deterministic, testable).** A TS script queries the GitHub
-  API for the C1 cohort (merged PRs + review-round counts above threshold), dedups candidates
+  API for the multi-round-review cohort (merged PRs + review-round counts above threshold), dedups candidates
   against the existing `docs/solutions/` corpus (module / tags / problem_type overlap — so it
   does not propose a learning that already exists), and emits a **structured, counts-only
   candidate digest** (opaque/redacted where private). This mirrors how
@@ -135,8 +135,8 @@ here, with the output being a GitHub issue proposal rather than an authored doc:
   evidence (which PR, how many rounds, the correction pattern). No doc is authored into
   `docs/solutions/`. No data-branch write occurs for the learning itself. A human (Marcus)
   decides whether to author it via `ce:compound` later.
-- **Decision log is script-maintained state**, not agent-managed, so it is deterministic and
-  durable.
+- **The proposal issues are the decision log** (see below), so the record is deterministic,
+  durable, and reset-resilient by construction.
 
 ### Harvest → redact → publish pipeline (privacy-first)
 
@@ -160,19 +160,19 @@ separation:
 This pipeline is a first-class requirement, not an assertion. A proposal that cannot be
 cleanly redacted must be discarded, not posted with caveats.
 
-### Decision log — reset-resilient
-
-A **script-maintained** durable decision log records which run cohorts were examined, which
-candidates were proposed (issue opened), and which were deliberately skipped and why. This
-lets the capture run avoid re-proposing the same candidate.
+### Decision log — the proposal issues themselves
 
 **Reset-resilience is a hard requirement.** The `data` branch is recreated from `main` on
-squash-merge (the repo bootstraps/recreates `data` from `main`). A decision log living only
-on `data` would be wiped on reset and re-propose everything. The log must survive data-branch
-lifecycle events — e.g. keyed by immutable PR identity (PR number + merge commit SHA) so
-re-derivation is idempotent, and/or stored where a reset does not wipe it. The exact
-persistence mechanism is a planning decision (O4), but reset-resilience is a requirement, not
-a nice-to-have.
+squash-merge (the repo bootstraps/recreates `data` from `main`), so a log living only on
+`data` would be wiped on reset and re-propose everything.
+
+The shipped design satisfies this by making the **proposal issues themselves the decision
+log**: each proposal carries an immutable body marker keyed by the source PR's merge SHA, and
+the capture run rebuilds its seen-set each run by querying all `learning-proposal` issues
+(`state: all`, including closed). GitHub issues live independent of branches, so a data-branch
+reset cannot wipe the record — a closed proposal still means "examined, do not re-propose."
+The one accepted tradeoff: an operator manually deleting a proposal issue makes that PR
+eligible again.
 
 The decision log is **operational metadata / control-plane state** — not a fourth knowledge
 substrate, and not published to the operator web in early phases (operator-web surfacing is
@@ -272,8 +272,8 @@ value before the harvest pipeline is built.
             │  │     for low-confidence matches                          │
             │  └─────────────────────────────────────────────────────────┘
             │
-   ┌────────▼─────────┐   PHASE 2 v1: C1-only · propose-only
-   │ A. capture run   │   harvest C1 cohort (private, counts-only digest)
+   ┌────────▼─────────┐   PHASE 2 v1: multi-round-review only · propose-only
+   │ A. capture run   │   harvest multi-round cohort (private, counts-only digest)
    │ (suggest only)   │   → agent judges → proposal issue (no doc authored)
    └────────┬─────────┘   privacy gate: scan issue body before posting
             │ proposal issue opened · decision log updated (reset-resilient)
@@ -313,18 +313,18 @@ value before the harvest pipeline is built.
   (no doc authoring). Confirm Systematic `ce:compound` is *enabled* (not just present) in the
   scheduled capture run when authoring is added, and whether capture is its own scheduled
   workflow or rides the existing daily oversight run.
-- **O4 — Decision-log persistence / reset-resilience.** Where the script-maintained decision
-  log lives and how it survives data-branch resets — a `metadata/` file keyed by immutable PR
-  identity, a dedicated log file on `main`, or another channel — and its exact schema
-  (examined cohorts, proposed, skipped+reason). Reset-resilience is a requirement; the
-  mechanism is a planning decision.
+- **O4 — Decision-log persistence / reset-resilience. RESOLVED (shipped).** The proposal
+  issues themselves are the log: each carries an immutable merge-SHA body marker, and the run
+  rebuilds its seen-set by querying all `learning-proposal` issues (`state: all`). Issues live
+  independent of branches, so a data-branch reset cannot wipe the record — no separate
+  state file is needed.
 - **O5 — Quarantine mechanism. DEFERRED to Phase 2.5+.** No quarantine docs in v1 (no
   authoring). When authoring lands: `origin: autonomous` frontmatter marker vs. a
   `docs/solutions/proposed/` subdir. Both keep autonomous captures visibly separable; the
   frontmatter marker is lighter and keeps Phase 1 retrieval working unchanged. Planning picks
   one — and quarantine docs MUST be excluded from Phase 1 solutions-query retrieval.
-- **O6 — C1 round-count threshold.** The concrete threshold for "multi-round" (how many
-  review rounds / changes-requested events counts as C1-qualifying). Calibration against real
+- **O6 — round-count threshold.** The concrete threshold for "multi-round" (how many
+  review rounds / correction signals counts as qualifying). Calibration against real
   run history, planning-time.
 - **O7 — Harvest snapshot protocol.** How far back the harvest looks (rolling window in days
   vs. since-last-run cursor), how pagination is handled, and how the per-PR immutable dedup
@@ -343,7 +343,7 @@ value before the harvest pipeline is built.
 
 - **SC1** — Fro Bot reliably consults `docs/solutions/` before acting on a class of work
   with prior learnings, and the applied learning is visible in the run's reasoning. (Phase 1)
-- **SC2** — A capture run examines a C1 cohort (multi-round-review PRs above threshold),
+- **SC2** — A capture run examines a multi-round-review cohort (PRs above threshold),
   opens at least one proposal issue with evidence (which PR, how many rounds, the correction
   pattern), deduped against existing `docs/solutions/`, with no operator invoking `ce:compound`
   to trigger the run. The proposal issue body passes the private-identifier scan before
@@ -369,16 +369,30 @@ value before the harvest pipeline is built.
   `docs/solutions/` docs: reliable consultation before acting, relevance-ranked,
   freshness-gated, candidate-mode for low-confidence matches. Lower-risk, immediately
   testable, proves compounding value before the harvest pipeline is built.
-- **Phase 2 — GitHub API outcome harvest, C1-only, propose-only.** A scheduled capture run
-  harvests merged PRs whose review history shows multiple rounds (C1 trigger only). The run
-  opens GitHub issue proposals with evidence; no doc is authored. A human decides whether to
-  author via `ce:compound`. Includes: counts-only digest, proposal-issue-body privacy scan,
-  reset-resilient decision log, idempotent harvest (per-PR dedup key), and hard cost budget.
-  Operator-web surfacing stays strictly Phase 3.
-- **Phase 2.5 — Add C2/C3 triggers + authoring machinery (once C1 precision is proven).**
-  Add C2 (failed-then-fixed) and C3 (issue triages) triggers. Add autonomous doc authoring
-  into a quarantine lane, the `docs/solutions/` data-branch authority path (O2), and the
-  quarantine-exclusion guard for Phase 1 retrieval.
+- **Phase 2 — GitHub API outcome harvest, multi-round-only, propose-only (shipped + validated).**
+  A scheduled capture run harvests merged PRs whose review history shows genuine multi-round
+  Fro Bot review. The run opens GitHub issue proposals with evidence; no doc is authored. A
+  human decides whether to author via `ce:compound`. Includes: counts-only digest,
+  proposal-issue-body privacy scan, reset-resilient decision log (the proposal issues
+  themselves, deduped by a merge-SHA marker), idempotent harvest, and hard cost budget. The
+  first production run examined 97 merged PRs, found 33 multi-round candidates, and opened 4
+  proposals; two were authored into `docs/solutions/`, two closed as low-signal.
+
+  Two learnings from shipping Phase 2, both feeding Phase 2.5:
+  - The detection signal must model the reviewer's actual behavior. Fro Bot rarely submits
+    `CHANGES_REQUESTED`; it approves and is `DISMISSED` on re-push. The shipped predicate keys
+    on the reviewer login and counts substantive rounds plus correction signals
+    (`DISMISSED | CHANGES_REQUESTED`), not `CHANGES_REQUESTED` alone.
+  - Proposal quality is capped by a title-only digest: the agent receives merge-SHA + title
+    tokens, so it infers the learning rather than reading the review threads. Enriching the
+    digest with (privacy-gated) review-thread/diff content is the next quality lever, tracked
+    as a follow-up before broadening triggers.
+- **Phase 2.5 — Enrich the digest, then add C2/C3 triggers + authoring machinery.** First
+  enrich the harvest digest with review-thread content (the Phase 2 quality finding) so
+  proposals distill from what the rounds said. Then add C2 (failed-then-fixed) and C3 (issue
+  triages) triggers, and autonomous doc authoring into a quarantine lane, the
+  `docs/solutions/` data-branch authority path (O2), and the quarantine-exclusion guard for
+  Phase 1 retrieval.
 - **Phase 3 — Wiki traversal + observability.** Capability C-deep (agent-invoked wikilink
   traversal with concrete numeric guardrails, gate-passed content only), C4 cross-run
   synthesis, operator-web surfacing of the decision log, and improvement metric definition
