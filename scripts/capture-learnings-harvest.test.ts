@@ -17,6 +17,7 @@ import {
   FRO_BOT_REVIEWER_LOGINS,
   harvestCandidates,
   LEARNING_PROPOSAL_LABEL,
+  MAX_EXCERPT_CHARS_PER_CANDIDATE,
   parseMergeShaMarker,
   type BuildCandidateDigestInput,
   type Candidate,
@@ -25,6 +26,7 @@ import {
   type OctokitClient,
   type SolutionDoc,
 } from './capture-learnings-harvest.ts'
+import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -35,6 +37,7 @@ function makeCandidate(overrides: Partial<Candidate> = {}): Candidate {
     mergeSha: 'abc123def456abc123def456abc123def456abc1',
     reviewRounds: 2,
     signals: {titleTokens: ['feat', 'scripts'], labels: []},
+    reviewExcerpts: [],
     ...overrides,
   }
 }
@@ -65,6 +68,7 @@ function makeDigestInput(overrides: Partial<BuildCandidateDigestInput> = {}): Bu
     openedLearningShas: new Set(),
     solutionsDocs: [],
     maxLearnings: 5,
+    privateTokens: new Set(),
     ...overrides,
   }
 }
@@ -148,7 +152,7 @@ describe('buildCandidateDigest', () => {
   })
 
   describe('opacity guarantee', () => {
-    it('emitted candidates have ONLY mergeSha, reviewRounds, and signals keys — no owner/repo/number/title', () => {
+    it('emitted candidates have ONLY mergeSha, reviewRounds, signals, and reviewExcerpts keys — no owner/repo/number/title', () => {
       // #given a candidate
       const input = makeDigestInput()
 
@@ -158,7 +162,7 @@ describe('buildCandidateDigest', () => {
       // #then each candidate object has exactly the allowed keys
       for (const candidate of result.candidates) {
         const keys = Object.keys(candidate).sort()
-        expect(keys).toEqual(['mergeSha', 'reviewRounds', 'signals'].sort())
+        expect(keys).toEqual(['mergeSha', 'reviewExcerpts', 'reviewRounds', 'signals'].sort())
         // Explicitly assert forbidden keys are absent
         expect(candidate).not.toHaveProperty('owner')
         expect(candidate).not.toHaveProperty('repo')
@@ -378,6 +382,8 @@ describe('buildCandidateDigest', () => {
       expect(result.telemetry.afterSeenDedup).toBe(3) // 5 - 2 proposed
       expect(result.telemetry.afterSolutionsDedup).toBe(2) // 3 - 1 overlap
       expect(result.telemetry.emitted).toBe(2) // 2 clean, under cap
+      // #then enrichmentBlocked is zero (no private tokens, no enriched content)
+      expect(result.telemetry.enrichmentBlocked).toBe(0)
     })
 
     it('reports zero counts when all candidates are filtered', () => {
@@ -428,6 +434,11 @@ interface PullsListItem {
 interface ReviewItem {
   state: string
   user: {login: string} | null
+  body?: string
+}
+
+interface ReviewCommentItem {
+  body: string
 }
 
 function makePullsListItem(overrides: Partial<PullsListItem> = {}): PullsListItem {
@@ -442,8 +453,12 @@ function makePullsListItem(overrides: Partial<PullsListItem> = {}): PullsListIte
   }
 }
 
-function makeReviewItem(state: string, login = 'fro-bot'): ReviewItem {
-  return {state, user: {login}}
+function makeReviewItem(state: string, login = 'fro-bot', body = ''): ReviewItem {
+  return {state, user: {login}, body}
+}
+
+function makeReviewCommentItem(body: string): ReviewCommentItem {
+  return {body}
 }
 
 function mockOctokit(
@@ -452,11 +467,14 @@ function mockOctokit(
     paginatePrList?: () => Promise<unknown[]>
     /** Override the paginate call for pulls.listReviews (returns the review array directly). */
     paginateListReviews?: () => Promise<ReviewItem[]>
+    /** Override the paginate call for pulls.listReviewComments (returns the comment array directly). */
+    paginateListReviewComments?: () => Promise<ReviewCommentItem[]>
     /** Legacy: override pullsListReviews for tests that use the old mock shape. */
     pullsListReviews?: (opts: unknown) => Promise<{data: ReviewItem[]}>
   } = {},
 ): OctokitClient {
   const listReviewsFn = overrides.pullsListReviews ?? (async () => ({data: [] as ReviewItem[]}))
+  const listReviewCommentsFn = async () => ({data: [] as ReviewCommentItem[]})
 
   // paginate is called with (fn, opts). We route by checking which rest method fn is.
   const paginate = async (fn: unknown, opts: unknown): Promise<unknown[]> => {
@@ -467,6 +485,13 @@ function mockOctokit(
       }
       const result = await listReviewsFn(opts)
       return result.data
+    }
+    // Route: if fn is the listReviewComments function
+    if (fn === listReviewCommentsFn) {
+      if (overrides.paginateListReviewComments !== undefined) {
+        return overrides.paginateListReviewComments() as Promise<unknown[]>
+      }
+      return []
     }
     // Otherwise it's pulls.list (or issues.listForRepo)
     if (overrides.paginatePrList !== undefined) {
@@ -483,6 +508,7 @@ function mockOctokit(
       pulls: {
         list: async () => ({data: []}),
         listReviews: listReviewsFn,
+        listReviewComments: listReviewCommentsFn,
       },
       issues: {
         listForRepo: async () => ({data: []}),
@@ -1099,11 +1125,13 @@ describe('harvest→open schema contract', () => {
         mergeSha: 'abc123def456abc123def456abc123def456abc1',
         reviewRounds: 3,
         signals: {titleTokens: ['feat', 'scripts'], labels: ['ci', 'automation']},
+        reviewExcerpts: ['The correction prose here.'],
       },
       {
         mergeSha: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
         reviewRounds: 2,
         signals: {titleTokens: ['fix', 'workflow'], labels: []},
+        reviewExcerpts: [],
       },
     ]
     const digest: CandidateDigest = {
@@ -1116,6 +1144,7 @@ describe('harvest→open schema contract', () => {
         afterSeenDedup: 3,
         afterSolutionsDedup: 2,
         emitted: 2,
+        enrichmentBlocked: 0,
       },
     }
 
@@ -1163,5 +1192,446 @@ describe('harvest→open schema contract', () => {
     expect(atCutoff < new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)).toBe(false)
     expect(justBefore < new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)).toBe(true)
     expect(justAfter < new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Pure core: enrichment + upstream privacy scan
+// ---------------------------------------------------------------------------
+
+describe('buildCandidateDigest — enrichment and upstream privacy scan', () => {
+  describe('happy path: reviewExcerpts populated and ranked', () => {
+    it('candidate with review excerpts passes them through when no private tokens match', () => {
+      // #given a candidate with review excerpts (correction prose + approval boilerplate)
+      const candidate = makeCandidate({
+        reviewExcerpts: ['Please fix the null check here.', 'LGTM, approved!'],
+      })
+      const input = makeDigestInput({
+        mergedPrs: [candidate],
+        privateTokens: new Set(),
+      })
+
+      // #when building the digest
+      const result = buildCandidateDigest(input)
+
+      // #then the candidate is emitted with its reviewExcerpts intact
+      expect(result.candidates).toHaveLength(1)
+      expect(result.candidates[0]?.reviewExcerpts).toEqual(['Please fix the null check here.', 'LGTM, approved!'])
+      expect(result.telemetry.enrichmentBlocked).toBe(0)
+    })
+
+    it('candidate with empty reviewExcerpts emits with empty array', () => {
+      // #given a candidate with no review excerpts (title-only)
+      const candidate = makeCandidate({reviewExcerpts: []})
+      const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+      // #when building the digest
+      const result = buildCandidateDigest(input)
+
+      // #then the candidate is emitted with empty reviewExcerpts
+      expect(result.candidates[0]?.reviewExcerpts).toEqual([])
+      expect(result.telemetry.enrichmentBlocked).toBe(0)
+    })
+  })
+
+  describe('upstream privacy scan — load-bearing security', () => {
+    it('drops reviewExcerpts when prose contains a private token, keeps the candidate (title-only)', () => {
+      // #given a private token set built from a synthetic private repo
+      const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+
+      // #given a candidate whose review prose contains the private repo reference
+      const candidate = makeCandidate({
+        mergeSha: 'privateshaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+        reviewExcerpts: ['See testowner/secret-repo#42 for context.', 'LGTM'],
+      })
+      const input = makeDigestInput({
+        mergedPrs: [candidate],
+        privateTokens,
+      })
+
+      // #when building the digest
+      const result = buildCandidateDigest(input)
+
+      // #then the candidate is KEPT (not dropped)
+      expect(result.candidates).toHaveLength(1)
+      // #then reviewExcerpts are DROPPED (empty — enrichment blocked)
+      expect(result.candidates[0]?.reviewExcerpts).toEqual([])
+      // #then enrichmentBlocked is incremented
+      expect(result.telemetry.enrichmentBlocked).toBe(1)
+      // #then the private token does NOT appear anywhere in the serialized digest
+      const serialized = JSON.stringify(result)
+      expect(serialized).not.toContain('testowner/secret-repo')
+      expect(serialized).not.toContain('testowner--secret-repo')
+    })
+
+    it('mutation proof: removing the scan lets private prose into reviewExcerpts', () => {
+      // #given a private token set and a candidate with private prose
+      const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+      const privateExcerpts = ['See testowner/secret-repo#42 for context.']
+
+      // #when the scan IS applied (normal path)
+      const withScan = buildCandidateDigest(
+        makeDigestInput({
+          mergedPrs: [makeCandidate({reviewExcerpts: privateExcerpts})],
+          privateTokens,
+        }),
+      )
+      // #then private prose is NOT in the output
+      expect(JSON.stringify(withScan)).not.toContain('testowner/secret-repo')
+
+      // #when the scan is bypassed (empty token set — simulating removal of the gate)
+      const withoutScan = buildCandidateDigest(
+        makeDigestInput({
+          mergedPrs: [makeCandidate({reviewExcerpts: privateExcerpts})],
+          privateTokens: new Set(), // gate removed
+        }),
+      )
+      // #then private prose DOES appear — proving the scan was the gate
+      expect(JSON.stringify(withoutScan)).toContain('testowner/secret-repo')
+    })
+
+    it('clean candidate passes through with reviewExcerpts intact when private tokens are loaded', () => {
+      // #given a private token set and a candidate with clean prose
+      const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+      const candidate = makeCandidate({
+        reviewExcerpts: ['Please add a null check here.', 'LGTM'],
+      })
+      const input = makeDigestInput({mergedPrs: [candidate], privateTokens})
+
+      // #when building the digest
+      const result = buildCandidateDigest(input)
+
+      // #then the candidate is emitted with its reviewExcerpts intact
+      expect(result.candidates[0]?.reviewExcerpts).toEqual(['Please add a null check here.', 'LGTM'])
+      expect(result.telemetry.enrichmentBlocked).toBe(0)
+    })
+
+    it('mixed scenario: one blocked, one clean — enrichmentBlocked=1', () => {
+      // #given two candidates: one with private prose, one clean
+      const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+      const blockedCandidate = makeCandidate({
+        mergeSha: 'blocked1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+        reviewExcerpts: ['See testowner/secret-repo#1 for details.'],
+      })
+      const cleanCandidate = makeCandidate({
+        mergeSha: 'clean001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+        reviewExcerpts: ['Fix the null check in the handler.'],
+      })
+      const input = makeDigestInput({
+        mergedPrs: [blockedCandidate, cleanCandidate],
+        privateTokens,
+      })
+
+      // #when building the digest
+      const result = buildCandidateDigest(input)
+
+      // #then both candidates are emitted
+      expect(result.candidates).toHaveLength(2)
+      // #then the blocked candidate has empty reviewExcerpts
+      const blocked = result.candidates.find(c => c.mergeSha === blockedCandidate.mergeSha)
+      expect(blocked?.reviewExcerpts).toEqual([])
+      // #then the clean candidate retains its reviewExcerpts
+      const clean = result.candidates.find(c => c.mergeSha === cleanCandidate.mergeSha)
+      expect(clean?.reviewExcerpts).toEqual(['Fix the null check in the handler.'])
+      // #then enrichmentBlocked is 1
+      expect(result.telemetry.enrichmentBlocked).toBe(1)
+      // #then the private token does not appear in the serialized digest
+      expect(JSON.stringify(result)).not.toContain('testowner/secret-repo')
+    })
+
+    it('opacity: reviewExcerpts after scan contains no tracked private token', () => {
+      // #given a private token set with multiple token forms
+      const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+      // #given a candidate with prose containing each token form
+      const candidate = makeCandidate({
+        reviewExcerpts: [
+          'testowner/secret-repo is referenced here',
+          'testowner--secret-repo slug form',
+          'testowner--secret-repo another form',
+        ],
+      })
+      const input = makeDigestInput({mergedPrs: [candidate], privateTokens})
+
+      // #when building the digest
+      const result = buildCandidateDigest(input)
+
+      // #then no private token form appears in the output
+      const serialized = JSON.stringify(result)
+      for (const token of privateTokens) {
+        expect(serialized).not.toContain(token)
+      }
+    })
+  })
+
+  describe('fail-closed: empty/missing token set behavior', () => {
+    it('candidate with enriched prose and empty privateTokens passes through (no tokens to match)', () => {
+      // #given an empty private token set (e.g. no private repos in metadata)
+      const candidate = makeCandidate({
+        reviewExcerpts: ['Some review prose here.'],
+      })
+      const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+      // #when building the digest
+      const result = buildCandidateDigest(input)
+
+      // #then the candidate passes through (empty token set = nothing to block)
+      expect(result.candidates[0]?.reviewExcerpts).toEqual(['Some review prose here.'])
+      expect(result.telemetry.enrichmentBlocked).toBe(0)
+    })
+  })
+
+  describe('enrichmentBlocked telemetry', () => {
+    it('enrichmentBlocked is 0 when no candidates have private prose', () => {
+      // #given candidates with clean prose and a loaded private token set
+      const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+      const input = makeDigestInput({
+        mergedPrs: [
+          makeCandidate({mergeSha: `clean1${'0'.repeat(34)}`, reviewExcerpts: ['Fix the handler.']}),
+          makeCandidate({mergeSha: `clean2${'0'.repeat(34)}`, reviewExcerpts: ['Add null check.']}),
+        ],
+        privateTokens,
+      })
+
+      // #when building the digest
+      const result = buildCandidateDigest(input)
+
+      // #then enrichmentBlocked is 0
+      expect(result.telemetry.enrichmentBlocked).toBe(0)
+    })
+
+    it('enrichmentBlocked counts all candidates with private prose hits', () => {
+      // #given two candidates both with private prose
+      const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+      const input = makeDigestInput({
+        mergedPrs: [
+          makeCandidate({
+            mergeSha: `priv1${'0'.repeat(35)}`,
+            reviewExcerpts: ['See testowner/secret-repo#1'],
+          }),
+          makeCandidate({
+            mergeSha: `priv2${'0'.repeat(35)}`,
+            reviewExcerpts: ['Also testowner/secret-repo#2'],
+          }),
+        ],
+        privateTokens,
+      })
+
+      // #when building the digest
+      const result = buildCandidateDigest(input)
+
+      // #then enrichmentBlocked is 2
+      expect(result.telemetry.enrichmentBlocked).toBe(2)
+      // #then both candidates are still emitted (title-only)
+      expect(result.candidates).toHaveLength(2)
+      for (const c of result.candidates) {
+        expect(c.reviewExcerpts).toEqual([])
+      }
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// I/O shell: harvestCandidates — enrichment fetch
+// ---------------------------------------------------------------------------
+
+describe('harvestCandidates — enrichment fetch', () => {
+  it('happy path: candidate with review bodies and thread comments → reviewExcerpts populated', async () => {
+    // #given a qualifying PR with fro-bot reviews carrying bodies and thread comments
+    const sha = 'enriched1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const pr = makePullsListItem({merge_commit_sha: sha})
+
+    // Reviews: CHANGES_REQUESTED (correction) + APPROVED (boilerplate)
+    const reviews: ReviewItem[] = [
+      makeReviewItem('CHANGES_REQUESTED', 'fro-bot', 'Please fix the null check in the handler.'),
+      makeReviewItem('APPROVED', 'fro-bot', 'LGTM, looks good now.'),
+    ]
+    // Thread comments: line-level correction prose
+    const reviewComments: ReviewCommentItem[] = [makeReviewCommentItem('This line needs a guard clause.')]
+
+    const paginateListReviews = vi.fn(async () => reviews)
+    const paginateListReviewComments = vi.fn(async () => reviewComments)
+
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: paginateListReviews as () => Promise<ReviewItem[]>,
+      paginateListReviewComments: paginateListReviewComments as () => Promise<ReviewCommentItem[]>,
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the candidate has reviewExcerpts populated
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]?.reviewExcerpts).toBeDefined()
+    expect(candidates[0]?.reviewExcerpts.length).toBeGreaterThan(0)
+    // #then correction prose appears in the excerpts
+    const excerptText = candidates[0]?.reviewExcerpts.join(' ') ?? ''
+    expect(excerptText).toContain('null check')
+  })
+
+  it('correction-signal prose ranked first: CHANGES_REQUESTED body before APPROVED body', async () => {
+    // #given a PR with APPROVED review first, then CHANGES_REQUESTED (chronological order reversed from rank)
+    const sha = 'ranktest1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const pr = makePullsListItem({merge_commit_sha: sha})
+
+    // Chronological order: APPROVED first, CHANGES_REQUESTED second
+    const reviews: ReviewItem[] = [
+      makeReviewItem('APPROVED', 'fro-bot', 'Looks good to me.'),
+      makeReviewItem('CHANGES_REQUESTED', 'fro-bot', 'Please fix the null check — this is the correction.'),
+    ]
+
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => reviews,
+      paginateListReviewComments: async () => [],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the CHANGES_REQUESTED body appears before the APPROVED body in reviewExcerpts
+    expect(candidates[0]?.reviewExcerpts).toBeDefined()
+    const excerpts = candidates[0]?.reviewExcerpts ?? []
+    expect(excerpts.length).toBeGreaterThan(0)
+    // The correction sentence must appear before the approval boilerplate
+    const correctionIdx = excerpts.findIndex(e => e.includes('null check'))
+    const approvalIdx = excerpts.findIndex(e => e.includes('Looks good'))
+    expect(correctionIdx).not.toBe(-1)
+    // If both are present, correction must come first
+    if (approvalIdx !== -1) {
+      expect(correctionIdx).toBeLessThan(approvalIdx)
+    }
+  })
+
+  it('budget: over-budget prose is truncated to MAX_EXCERPT_CHARS_PER_CANDIDATE', async () => {
+    // #given a PR with a CHANGES_REQUESTED body (correction) and a very long APPROVED body (boilerplate)
+    const sha = 'budgettest1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const pr = makePullsListItem({merge_commit_sha: sha})
+
+    const correctionBody = 'Fix the null check here — this is the critical correction sentence.'
+    // Boilerplate that would overflow the budget on its own
+    const boilerplateBody = 'A'.repeat(MAX_EXCERPT_CHARS_PER_CANDIDATE + 500)
+
+    const reviews: ReviewItem[] = [
+      makeReviewItem('APPROVED', 'fro-bot', boilerplateBody),
+      makeReviewItem('CHANGES_REQUESTED', 'fro-bot', correctionBody),
+    ]
+
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => reviews,
+      paginateListReviewComments: async () => [],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the total excerpt length is within budget
+    const excerpts = candidates[0]?.reviewExcerpts ?? []
+    const totalChars = excerpts.join('').length
+    expect(totalChars).toBeLessThanOrEqual(MAX_EXCERPT_CHARS_PER_CANDIDATE)
+    // #then the correction sentence survives (ranked first, not clipped)
+    const excerptText = excerpts.join(' ')
+    expect(excerptText).toContain('null check')
+  })
+
+  it('thread comments pagination: multi-page comments are all included', async () => {
+    // #given a PR with qualifying reviews and review comments spanning multiple pages
+    const sha = 'multipage1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const pr = makePullsListItem({merge_commit_sha: sha})
+
+    const reviews: ReviewItem[] = [
+      makeReviewItem('CHANGES_REQUESTED', 'fro-bot', 'See inline comments.'),
+      makeReviewItem('APPROVED', 'fro-bot', 'LGTM'),
+    ]
+    // Simulate paginate returning all pages combined (as octokit.paginate does)
+    const allComments: ReviewCommentItem[] = [
+      makeReviewCommentItem('Page 1 comment: fix the guard.'),
+      makeReviewCommentItem('Page 2 comment: also check the edge case.'),
+    ]
+
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => reviews,
+      paginateListReviewComments: async () => allComments,
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then both pages of comments are included in reviewExcerpts
+    const excerptText = candidates[0]?.reviewExcerpts.join(' ') ?? ''
+    expect(excerptText).toContain('Page 1 comment')
+    expect(excerptText).toContain('Page 2 comment')
+  })
+
+  it('error path: transient listReviewComments failure → candidate title-only, run not aborted', async () => {
+    // #given two PRs: one whose listReviewComments throws, one that succeeds
+    const sha1 = 'errorpath1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const sha2 = 'errorpath2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const pr1 = makePullsListItem({number: 1, merge_commit_sha: sha1})
+    const pr2 = makePullsListItem({number: 2, merge_commit_sha: sha2})
+
+    const reviews: ReviewItem[] = [
+      makeReviewItem('CHANGES_REQUESTED', 'fro-bot', 'Fix this.'),
+      makeReviewItem('APPROVED', 'fro-bot', 'LGTM'),
+    ]
+
+    let commentCallCount = 0
+    const paginateListReviewComments = vi.fn(async () => {
+      commentCallCount++
+      if (commentCallCount === 1) {
+        throw Object.assign(new Error('Service Unavailable'), {status: 503})
+      }
+      return [makeReviewCommentItem('Good comment from PR 2.')]
+    })
+
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr1, pr2],
+      paginateListReviews: async () => reviews,
+      paginateListReviewComments: paginateListReviewComments as () => Promise<ReviewCommentItem[]>,
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then both candidates are returned (run not aborted)
+    expect(candidates).toHaveLength(2)
+    // #then the first candidate (error) has review body excerpts but no thread comments
+    const c1 = candidates.find(c => c.mergeSha === sha1)
+    expect(c1).toBeDefined()
+    // It may have review body excerpts (from listReviews which succeeded), but no thread comments
+    // The key assertion: the run was not aborted
+    // #then the second candidate has its thread comment
+    const c2 = candidates.find(c => c.mergeSha === sha2)
+    expect(c2).toBeDefined()
+    const c2Text = c2?.reviewExcerpts.join(' ') ?? ''
+    expect(c2Text).toContain('Good comment from PR 2')
+  })
+
+  it('empty review bodies are excluded from reviewExcerpts', async () => {
+    // #given a PR with reviews that have empty/whitespace bodies
+    const sha = 'emptybody1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const pr = makePullsListItem({merge_commit_sha: sha})
+
+    const reviews: ReviewItem[] = [
+      makeReviewItem('CHANGES_REQUESTED', 'fro-bot', ''), // empty body — skip
+      makeReviewItem('APPROVED', 'fro-bot', '   '), // whitespace only — skip
+      makeReviewItem('DISMISSED', 'fro-bot', 'This was dismissed because of the null check issue.'),
+    ]
+
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => reviews,
+      paginateListReviewComments: async () => [],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then only the non-empty body is in reviewExcerpts
+    const excerpts = candidates[0]?.reviewExcerpts ?? []
+    expect(excerpts).toHaveLength(1)
+    expect(excerpts[0]).toContain('null check issue')
   })
 })

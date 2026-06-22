@@ -37,6 +37,7 @@ function makeCandidate(overrides: Partial<Candidate> = {}): Candidate {
     mergeSha: 'abc123def456abc123def456abc123def456abc1',
     reviewRounds: 2,
     signals: {titleTokens: ['feat', 'scripts'], labels: []},
+    reviewExcerpts: [],
     ...overrides,
   }
 }
