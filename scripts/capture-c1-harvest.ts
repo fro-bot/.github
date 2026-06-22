@@ -78,7 +78,12 @@ export interface CandidateSignals {
 
 /**
  * A candidate PR for a learning proposal.
- * OPAQUE: carries only merge_sha, reviewRounds, and signals — NO owner/repo/number/title prose.
+ *
+ * Carries no owner, repo, or PR number. `signals` includes tokens derived from the PR
+ * title and labels, so title-derived tokens do reach the consuming agent — they are not
+ * fully sanitized here. The deterministic propose step is the privacy chokepoint: it scans
+ * the final authored body for private identifiers and blocks before posting, so a private
+ * token surfacing in a title token is gated downstream rather than leaked.
  */
 export interface Candidate {
   mergeSha: string
