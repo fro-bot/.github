@@ -1,8 +1,9 @@
 ---
 title: 'feat: auto-star contributor/collaborator repos during reconcile'
 type: feat
-status: active
+status: complete
 date: 2026-06-21
+completed: 2026-06-20
 origin: operator request (auto-star repos Fro Bot is a contributor/collaborator of)
 ---
 
@@ -79,7 +80,7 @@ to keep the star set in sync.
 
 ## Implementation Units
 
-- [ ] **Unit 1: reconcile-time star sync (test-first)**
+- [x] **Unit 1: reconcile-time star sync (test-first)**
 
 **Goal:** Star collab/contrib-channel accessible repos that `@fro-bot` has not yet starred,
 during each reconcile run, idempotently and non-blocking.

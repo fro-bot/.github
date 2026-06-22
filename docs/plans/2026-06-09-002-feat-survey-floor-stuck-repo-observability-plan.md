@@ -1,8 +1,9 @@
 ---
 title: 'feat: Survey floor stuck-repo observability'
 type: feat
-status: active
+status: complete
 date: 2026-06-09
+completed: 2026-06-10
 origin: docs/brainstorms/2026-06-09-survey-floor-stuck-repo-observability-requirements.md
 ---
 
@@ -74,7 +75,7 @@ schema change (see origin: docs/brainstorms/2026-06-09-survey-floor-stuck-repo-o
 
 ## Implementation Units
 
-- [ ] **Unit 1: Stateless stuck-candidate detector + telemetry**
+- [x] **Unit 1: Stateless stuck-candidate detector + telemetry**
 
 **Goal:** Derive a stuck-candidate count in the reconcile engine and surface it as counts-only telemetry in the JSON summary and step summary.
 
@@ -114,7 +115,7 @@ schema change (see origin: docs/brainstorms/2026-06-09-survey-floor-stuck-repo-o
 - Step summary renders the counter; run logs contain no canonical identifiers for stuck candidates.
 - `pnpm check-types`, `pnpm lint`, `pnpm test`, and actionlint pass.
 
-- [ ] **Unit 2: Document the accepted residual**
+- [x] **Unit 2: Document the accepted residual**
 
 **Goal:** Record the cancel-before-resolve window as a known, accepted residual and the trigger for revisiting the structural fix.
 
