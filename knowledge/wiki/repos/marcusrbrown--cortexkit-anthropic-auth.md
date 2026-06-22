@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/cortexkit_anthropic-auth
 created: 2026-05-28
-updated: 2026-06-09
+updated: 2026-06-19
 sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
     sha: 517d38596432429a8fc5f78612edc80a1c3f3dc6
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
     sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
     accessed: 2026-06-09
+  - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+    sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
+    accessed: 2026-06-19
 tags: [opencode, pi, anthropic, oauth, claude, bun, typescript, monorepo, biome, fork, relay, cloudflare-worker, mitmproxy, fro-bot]
 related: [marcusrbrown--opencode-copilot-delegate, marcusrbrown--systematic, marcusrbrown--dotfiles]
 ---
@@ -32,6 +35,8 @@ This is a Bun workspace monorepo with three packages: a shared core, an OpenCode
 - Pi package `@cortexkit/pi-anthropic-auth` is `private: true` in this fork at upstream version `1.2.5` — explicitly excluded from publish jobs.
 - Recommended install pin: `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3`.
 - Fro Bot workflow active since the `1.2.5-mb.3` release cycle — see [Fro Bot Status](#fro-bot-status).
+
+**No-delta re-survey (2026-06-19):** HEAD is still `99fdbe9` (`chore(release): bump fork packages to 1.2.5-mb.3`, committed 2026-05-31T04:03Z) — no upstream sync or fork release since the 2026-06-09 survey. Workflow set unchanged (`ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`); published versions hold at `1.2.5-mb.3`; Pi package still `private`; repo still public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1 star / 0 forks, 520 KB. The fork is parked at the last release with no drift. Every prior fact below re-verified, nothing contradicted.
 
 **Fork status (2026-05-28, SHA `517d385`):** _(prior survey — preserved for delta tracking)_
 

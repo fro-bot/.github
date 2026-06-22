@@ -2,7 +2,7 @@
 type: entity
 title: ESPHome
 created: 2026-04-23
-updated: 2026-06-07
+updated: 2026-06-18
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: bd5aa8885780aebdacefc9714a5f4d6b344158c9
     accessed: 2026-06-07
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: ce8df7225573e4a38b1992b05bb81cb869406e89
+    accessed: 2026-06-18
 tags: [esphome, iot, esp32, firmware, home-assistant, bluetooth-proxy]
 aliases: [esphome, esphome-life]
 related:
@@ -44,7 +47,7 @@ ESPHome is an open-source framework for configuring and building custom firmware
 
 ## Version Pinning
 
-ESPHome version is pinned across CI and devcontainer (currently 2025.12.7, unchanged across five surveys spanning 2026-04 → 2026-06). The Renovate configuration tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types — but no major/minor bumps have arrived since at least early March 2026, which is a remarkably quiet stretch for an actively-developed framework. The upstream ESPHome project has continued releasing (2026.x series), so either Renovate isn't picking up the newer versions or the loose versioning + `separateMajorMinor: false` config is suppressing them.
+ESPHome version is pinned across CI and devcontainer (currently 2025.12.7, unchanged across six surveys spanning 2026-04 → 2026-06-18). The Renovate configuration tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types — but no major/minor bumps have arrived since at least early March 2026, which is a remarkably quiet stretch for an actively-developed framework. Renovate keeps the surrounding dependency stack (`bfra-me/.github`, preset, Prettier) current weekly, yet the ESPHome pin never moves — strong evidence the loose versioning + `separateMajorMinor: false` config is suppressing the 2026.x bumps rather than Renovate simply not running. The upstream ESPHome project has continued releasing (2026.x series).
 
 ## External Links
 

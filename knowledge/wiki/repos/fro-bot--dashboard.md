@@ -164,6 +164,8 @@ The dashboard is the **read-only observability layer** over the Fro Bot fleet. I
 
 It also enforces the same redaction contract that governs this knowledge wiki: `metadata/repos.yaml`'s denylist is the single source of truth for which repos stay private, used here to gate live queries and elsewhere to gate wiki promotion.
 
+**Deploy surface (confirmed 2026-06-19):** the released image is built here and shipped from [[marcusrbrown--infra]]'s `apps/dashboard/` deploy package — a two-service Caddy + dashboard compose stack at `dashboard.fro.bot`, consuming `ghcr.io/fro-bot/dashboard` by tag + digest (no on-droplet build). infra is the operator-facing deploy/runbook home; this repo remains the build/source home.
+
 ## Fro Bot Workflow Status
 
 **Present and self-hosted.** `fro-bot.yaml` pins `fro-bot/agent@854072f` (v0.64.0) with full three-mode coverage (PR review, mention/issue triage, daily midnight-UTC oversight+autohealing, manual dispatch). No follow-up workflow draft is needed.

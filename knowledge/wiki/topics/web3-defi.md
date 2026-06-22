@@ -2,7 +2,7 @@
 type: topic
 title: "Web3 & DeFi Development"
 created: 2026-04-18
-updated: 2026-06-04
+updated: 2026-06-20
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -22,6 +22,9 @@ sources:
   - url: https://github.com/fro-bot/tokentoilet
     sha: a141424e89c133a3c8e1a7544f31193afc5af21c
     accessed: 2026-06-04
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 3be6b7675bab3d7f207c3ea6e1dc439c541cb0c8
+    accessed: 2026-06-20
 tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721]
 ---
 
