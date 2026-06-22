@@ -152,7 +152,7 @@ live. (Tracked as issue #3552.)
 
 # Implementation Units
 
-- [ ] **Unit 1: Extract the privacy gate to a shared module**
+- [x] **Unit 1: Extract the privacy gate to a shared module**
 
 **Goal:** Move the fail-closed gate functions into a shared module both harvest and open import,
 so there is one source of truth for the contract.
@@ -188,7 +188,7 @@ existing `loadPrivateTokensFromDisk` injectable-`readFile` test seam.
 **Verification:** gates green; open-step tests pass unchanged against the shared module; strip-only
 load clean.
 
-- [ ] **Unit 2: Harvest enrichment + upstream fail-closed privacy scan (test-first)**
+- [x] **Unit 2: Harvest enrichment + upstream fail-closed privacy scan (test-first)**
 
 **Goal:** Retain review-body prose, fetch line-level thread comments per candidate, privacy-scan
 the enriched content fail-closed before it enters the digest, and bound it ranked by correction
@@ -244,7 +244,7 @@ pure-core/I/O-shell split; the `loadPrivateTokensFromDisk` fail-closed contract 
 **Verification:** gates green (~1212+ baseline plus new tests); strip-only load clean; the privacy
 mutation-proof bites; no private identifier in any digest/output for the private-prose fixture.
 
-- [ ] **Unit 3: Update the agent prompt to distill from review excerpts**
+- [x] **Unit 3: Update the agent prompt to distill from review excerpts**
 
 **Goal:** Point the agent at `reviewExcerpts` as the primary substance, so it distills from review
 prose rather than title tokens.
