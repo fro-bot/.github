@@ -10,6 +10,7 @@
 import {describe, expect, it, vi} from 'vitest'
 
 import {
+  applyEnrichmentScanAvailability,
   buildCandidateDigest,
   buildMergeShaMarker,
   DEPENDENCY_LABELS,
@@ -1431,6 +1432,71 @@ describe('buildCandidateDigest — enrichment and upstream privacy scan', () => 
 })
 
 // ---------------------------------------------------------------------------
+// Pure helper: applyEnrichmentScanAvailability — fail-closed composition
+// ---------------------------------------------------------------------------
+
+describe('applyEnrichmentScanAvailability', () => {
+  it('scanAvailable=true → candidates returned unchanged', () => {
+    // #given candidates with reviewExcerpts
+    const candidates: Candidate[] = [
+      makeCandidate({mergeSha: `sha1${'0'.repeat(35)}`, reviewExcerpts: ['Fix the null check.']}),
+      makeCandidate({mergeSha: `sha2${'0'.repeat(35)}`, reviewExcerpts: ['Another correction.']}),
+    ]
+
+    // #when scan is available
+    const result = applyEnrichmentScanAvailability(candidates, true)
+
+    // #then candidates are returned unchanged (same references)
+    expect(result).toBe(candidates)
+    expect(result[0]?.reviewExcerpts).toEqual(['Fix the null check.'])
+    expect(result[1]?.reviewExcerpts).toEqual(['Another correction.'])
+  })
+
+  it('scanAvailable=false → all reviewExcerpts cleared (fail-closed)', () => {
+    // #given candidates with reviewExcerpts
+    const candidates: Candidate[] = [
+      makeCandidate({mergeSha: `sha1${'0'.repeat(35)}`, reviewExcerpts: ['Fix the null check.']}),
+      makeCandidate({mergeSha: `sha2${'0'.repeat(35)}`, reviewExcerpts: ['Another correction.']}),
+    ]
+
+    // #when scan is unavailable (token load failed)
+    const result = applyEnrichmentScanAvailability(candidates, false)
+
+    // #then all reviewExcerpts are cleared — no unscanned prose reaches the digest
+    expect(result[0]?.reviewExcerpts).toEqual([])
+    expect(result[1]?.reviewExcerpts).toEqual([])
+    // #then other candidate fields are preserved
+    expect(result[0]?.mergeSha).toBe(candidates[0]?.mergeSha)
+    expect(result[1]?.mergeSha).toBe(candidates[1]?.mergeSha)
+  })
+
+  it('mutation proof: removing the clearing makes the false-case test fail', () => {
+    // #given a candidate with reviewExcerpts
+    const candidates: Candidate[] = [
+      makeCandidate({mergeSha: `sha1${'0'.repeat(35)}`, reviewExcerpts: ['Sensitive prose.']}),
+    ]
+
+    // #when scan is unavailable
+    const result = applyEnrichmentScanAvailability(candidates, false)
+
+    // #then reviewExcerpts must be empty — if the clearing logic were removed,
+    // result[0].reviewExcerpts would still be ['Sensitive prose.'] and this assertion fails
+    expect(result[0]?.reviewExcerpts).toEqual([])
+  })
+
+  it('scanAvailable=false with empty reviewExcerpts → still returns empty (no-op, no crash)', () => {
+    // #given candidates already with empty reviewExcerpts
+    const candidates: Candidate[] = [makeCandidate({mergeSha: `sha1${'0'.repeat(35)}`, reviewExcerpts: []})]
+
+    // #when scan is unavailable
+    const result = applyEnrichmentScanAvailability(candidates, false)
+
+    // #then still empty — no crash
+    expect(result[0]?.reviewExcerpts).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
 // I/O shell: harvestCandidates — enrichment fetch
 // ---------------------------------------------------------------------------
 
@@ -1460,13 +1526,14 @@ describe('harvestCandidates — enrichment fetch', () => {
     // #when harvesting
     const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
 
-    // #then the candidate has reviewExcerpts populated
+    // #then the candidate has exactly 3 reviewExcerpts (2 review bodies + 1 thread comment)
     expect(candidates).toHaveLength(1)
-    expect(candidates[0]?.reviewExcerpts).toBeDefined()
-    expect(candidates[0]?.reviewExcerpts.length).toBeGreaterThan(0)
-    // #then correction prose appears in the excerpts
-    const excerptText = candidates[0]?.reviewExcerpts.join(' ') ?? ''
-    expect(excerptText).toContain('null check')
+    const excerpts = candidates[0]?.reviewExcerpts ?? []
+    expect(excerpts).toHaveLength(3)
+    // #then ranked order: CHANGES_REQUESTED (rank 0) first, thread comment (rank 0) second, APPROVED (rank 2) last
+    expect(excerpts[0]).toBe('Please fix the null check in the handler.')
+    expect(excerpts[1]).toBe('This line needs a guard clause.')
+    expect(excerpts[2]).toBe('LGTM, looks good now.')
   })
 
   it('correction-signal prose ranked first: CHANGES_REQUESTED body before APPROVED body', async () => {
@@ -1533,6 +1600,64 @@ describe('harvestCandidates — enrichment fetch', () => {
     // #then the correction sentence survives (ranked first, not clipped)
     const excerptText = excerpts.join(' ')
     expect(excerptText).toContain('null check')
+  })
+
+  it('budget: first ranked item alone exceeds MAX_EXCERPT_CHARS_PER_CANDIDATE → truncated to exactly MAX_EXCERPT_CHARS_PER_CANDIDATE chars', async () => {
+    // #given a PR where the FIRST ranked item (CHANGES_REQUESTED body) alone overflows the budget
+    const sha = 'budgetfirst1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const pr = makePullsListItem({merge_commit_sha: sha})
+
+    // A CHANGES_REQUESTED body that is larger than the entire budget
+    const oversizedCorrectionBody = 'C'.repeat(MAX_EXCERPT_CHARS_PER_CANDIDATE + 200)
+
+    const reviews: ReviewItem[] = [
+      makeReviewItem('CHANGES_REQUESTED', 'fro-bot', oversizedCorrectionBody),
+      makeReviewItem('APPROVED', 'fro-bot', 'LGTM'),
+    ]
+
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => reviews,
+      paginateListReviewComments: async () => [],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then exactly one excerpt (the truncated first item)
+    const excerpts = candidates[0]?.reviewExcerpts ?? []
+    expect(excerpts).toHaveLength(1)
+    // #then it is truncated to exactly MAX_EXCERPT_CHARS_PER_CANDIDATE chars
+    expect(excerpts[0]).toHaveLength(MAX_EXCERPT_CHARS_PER_CANDIDATE)
+    expect(excerpts[0]).toBe('C'.repeat(MAX_EXCERPT_CHARS_PER_CANDIDATE))
+  })
+
+  it('DISMISSED ranking: reviews [APPROVED, DISMISSED, CHANGES_REQUESTED] → excerpt order CHANGES_REQUESTED → DISMISSED → APPROVED', async () => {
+    // #given a PR with three review states in non-ranked chronological order
+    const sha = 'dismissedrank1aaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const pr = makePullsListItem({merge_commit_sha: sha})
+
+    const reviews: ReviewItem[] = [
+      makeReviewItem('APPROVED', 'fro-bot', 'Looks good to me.'),
+      makeReviewItem('DISMISSED', 'fro-bot', 'This was dismissed due to scope change.'),
+      makeReviewItem('CHANGES_REQUESTED', 'fro-bot', 'Please fix the null check.'),
+    ]
+
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => reviews,
+      paginateListReviewComments: async () => [],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then excerpts are ordered by correction signal rank: CHANGES_REQUESTED (0) → DISMISSED (1) → APPROVED (2)
+    const excerpts = candidates[0]?.reviewExcerpts ?? []
+    expect(excerpts).toHaveLength(3)
+    expect(excerpts[0]).toBe('Please fix the null check.')
+    expect(excerpts[1]).toBe('This was dismissed due to scope change.')
+    expect(excerpts[2]).toBe('Looks good to me.')
   })
 
   it('thread comments pagination: multi-page comments are all included', async () => {

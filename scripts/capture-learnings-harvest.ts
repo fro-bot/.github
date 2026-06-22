@@ -16,7 +16,7 @@ import process from 'node:process'
 import {Octokit} from '@octokit/rest'
 import {parse} from 'yaml'
 
-import {learningBodyHasPrivateLeak, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
+import {isRecord, learningBodyHasPrivateLeak, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -281,6 +281,21 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
 }
 
 /**
+ * Apply fail-closed enrichment scan availability to a list of candidates.
+ *
+ * When `scanAvailable` is false (private token load failed), all `reviewExcerpts`
+ * are cleared so no unscanned prose reaches the digest. When `scanAvailable` is
+ * true, candidates are returned unchanged.
+ *
+ * Pure function: no I/O, fully unit-testable. Extracted so the fail-closed
+ * composition can be tested independently of the I/O shell.
+ */
+export function applyEnrichmentScanAvailability(candidates: Candidate[], scanAvailable: boolean): Candidate[] {
+  if (scanAvailable) return candidates
+  return candidates.map(c => ({...c, reviewExcerpts: [] as string[]}))
+}
+
+/**
  * Returns true if the candidate's signals overlap any existing solutions doc
  * above the SOLUTIONS_OVERLAP_THRESHOLD.
  *
@@ -451,14 +466,6 @@ export async function createOctokitFromEnv(): Promise<OctokitClient> {
   }
   const LoadedOctokit = await loadOctokitConstructor()
   return new LoadedOctokit({auth: token})
-}
-
-// ---------------------------------------------------------------------------
-// Type guards
-// ---------------------------------------------------------------------------
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 // ---------------------------------------------------------------------------
@@ -674,7 +681,7 @@ export async function harvestCandidates(
     }
 
     // Fetch line-level thread comments for enrichment.
-    // A transient error here degrades this candidate to title-only (empty reviewExcerpts)
+    // A transient error here degrades this candidate to review-bodies-only (no thread comments)
     // without aborting the run — mirrors the listReviews skip pattern but continues WITH
     // the candidate rather than skipping it entirely.
     let threadCommentBodies: string[] = []
@@ -692,7 +699,7 @@ export async function harvestCandidates(
     } catch (error: unknown) {
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
       process.stderr.write(
-        `capture-learnings-harvest: PR #${pr.number} — listReviewComments failed (status=${status}), proceeding title-only\n`,
+        `capture-learnings-harvest: PR #${pr.number} — listReviewComments failed (status=${status}), proceeding with review bodies only\n`,
       )
       // threadCommentBodies stays [] — candidate proceeds with review bodies only
     }
@@ -784,9 +791,9 @@ async function main(): Promise<void> {
     try {
       privateTokens = await loadPrivateTokensFromDisk()
     } catch (error: unknown) {
-      const errorName = error instanceof Error ? error.name : 'unknown'
+      const errorMessage = error instanceof Error ? error.message : 'unknown'
       process.stderr.write(
-        `capture-learnings-harvest: private token load failed (${errorName}), proceeding title-only — no enriched content will be emitted\n`,
+        `capture-learnings-harvest: private token load failed (${errorMessage}), proceeding title-only — no enriched content will be emitted\n`,
       )
       privateTokens = new Set()
       enrichmentScanAvailable = false
@@ -794,9 +801,7 @@ async function main(): Promise<void> {
 
     // If the scan is unavailable, clear all reviewExcerpts before passing to the pure core.
     // This ensures no unscanned prose reaches the digest under any path.
-    const safeMergedPrs = enrichmentScanAvailable
-      ? mergedPrs
-      : mergedPrs.map(pr => ({...pr, reviewExcerpts: [] as string[]}))
+    const safeMergedPrs = applyEnrichmentScanAvailability(mergedPrs, enrichmentScanAvailable)
 
     const digest = buildCandidateDigest({
       mergedPrs: safeMergedPrs,
