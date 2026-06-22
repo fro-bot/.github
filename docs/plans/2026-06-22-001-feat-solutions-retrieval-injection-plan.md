@@ -1,7 +1,7 @@
 ---
 title: 'feat: solutions retrieval — inject relevant prior learnings into the agent prompt'
 type: feat
-status: active
+status: complete
 date: 2026-06-22
 origin: docs/brainstorms/2026-06-22-skill-saving-grow-and-learn-requirements.md
 ---
