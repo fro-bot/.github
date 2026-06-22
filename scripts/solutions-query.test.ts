@@ -415,4 +415,325 @@ describe('assembleSolutionsContext', () => {
     expect(result.selectedPaths).toContain('docs/solutions/best-practices/reconcile-repos-pattern.md')
     expect(result.selectedPaths).not.toContain('docs/solutions/best-practices/malformed.md')
   })
+
+  it('does not time-demote a doc with verified: date-string (ISO date form)', () => {
+    // #given a doc that is old but has verified: <ISO-date-string> (the real-world form)
+    const verifiedDateDoc = makeDoc(
+      'docs/solutions/best-practices/reconcile-repos-pattern.md',
+      {
+        title: 'Reconcile Repos Pattern',
+        module: 'scripts/reconcile-repos.ts',
+        problem_type: 'best_practice',
+        last_updated: '2026-01-01', // old — exceeds 60-day staleness vs now=2026-06-22
+        verified: '2026-01-01', // date-string form used by 21 of 22 real docs
+        tags: ['reconcile', 'repos'],
+      },
+      'Use reconcile-repos to sync settings.',
+    )
+
+    // #when the freshness check sees verified: date-string
+    const result = assembleSolutionsContext({
+      files: verifiedDateDoc,
+      event: {
+        eventName: 'pull_request',
+        title: 'feat: reconcile repos',
+        body: 'automation',
+      },
+      privateNames: [],
+      now: new Date('2026-06-22'),
+    })
+
+    // #then no candidate marker is added (date-string verified suppresses staleness)
+    expect(result.excerpt).not.toContain('candidate')
+    expect(result.selectedPaths).toContain('docs/solutions/best-practices/reconcile-repos-pattern.md')
+  })
+
+  it('mutation-proves verified:date fix — reverting to boolean-only makes old date-string doc stale', () => {
+    // #given a doc with verified: date-string and old last_updated
+    // This test proves the fix by showing the doc IS stale without the date-string check.
+    // We simulate the old behavior by using verified: false (no verified field) to confirm
+    // the stale path fires, then confirm verified: date-string suppresses it.
+    const unverifiedOldDoc = makeDoc(
+      'docs/solutions/best-practices/reconcile-repos-pattern.md',
+      {
+        title: 'Reconcile Repos Pattern',
+        module: 'scripts/reconcile-repos.ts',
+        problem_type: 'best_practice',
+        last_updated: '2026-01-01', // old
+        // no verified field → verified=false → stale
+        tags: ['reconcile', 'repos'],
+      },
+      'Use reconcile-repos to sync settings.',
+    )
+
+    const staleResult = assembleSolutionsContext({
+      files: unverifiedOldDoc,
+      event: {eventName: 'pull_request', title: 'feat: reconcile repos', body: 'automation'},
+      privateNames: [],
+      now: new Date('2026-06-22'),
+    })
+
+    // #when verified is absent the doc IS flagged stale (mutation baseline)
+    expect(staleResult.excerpt).toContain('candidate')
+
+    // #when verified is a date-string the doc is NOT flagged stale (the fix)
+    const verifiedDateDoc = makeDoc(
+      'docs/solutions/best-practices/reconcile-repos-pattern.md',
+      {
+        title: 'Reconcile Repos Pattern',
+        module: 'scripts/reconcile-repos.ts',
+        problem_type: 'best_practice',
+        last_updated: '2026-01-01',
+        verified: '2026-01-01',
+        tags: ['reconcile', 'repos'],
+      },
+      'Use reconcile-repos to sync settings.',
+    )
+
+    const freshResult = assembleSolutionsContext({
+      files: verifiedDateDoc,
+      event: {eventName: 'pull_request', title: 'feat: reconcile repos', body: 'automation'},
+      privateNames: [],
+      now: new Date('2026-06-22'),
+    })
+
+    expect(freshResult.excerpt).not.toContain('candidate')
+  })
+
+  it('excludes a doc whose FRONTMATTER (not body) contains a private token (full-content scan)', () => {
+    // #given a doc with a clean body but the private token only in frontmatter title
+    const privateName = 'testowner/secret-repo'
+    const frontmatterLeakDoc = makeDoc(
+      'docs/solutions/best-practices/reconcile-repos-pattern.md',
+      {
+        title: 'Fix for testowner/secret-repo integration', // private token in frontmatter
+        module: 'scripts/reconcile-repos.ts',
+        problem_type: 'best_practice',
+        last_updated: '2026-06-01',
+        verified: '2026-06-01',
+        tags: ['reconcile', 'repos', 'automation'],
+      },
+      'Use reconcile-repos to sync settings.', // clean body — no private token here
+    )
+
+    const result = assembleSolutionsContext({
+      files: frontmatterLeakDoc,
+      event: {
+        eventName: 'pull_request',
+        title: 'feat: improve reconcile-repos logic',
+        body: 'Refactors the reconcile-repos automation script.',
+      },
+      privateNames: [privateName],
+      now: new Date('2026-06-22'),
+    })
+
+    // #when the privacy gate scans the full content (frontmatter + body)
+    // #then the doc is excluded even though the body is clean
+    expect(result.selectedPaths).not.toContain('docs/solutions/best-practices/reconcile-repos-pattern.md')
+    expect(result.excerpt).toBe('')
+  })
+
+  it('excludes a doc whose body contains the owner--name token form', () => {
+    // #given a doc whose body contains the double-dash form of the private token
+    const privateName = 'testowner/secret-repo'
+    const doubleDashDoc = makeDoc(
+      'docs/solutions/best-practices/reconcile-repos-pattern.md',
+      {
+        title: 'Reconcile Repos Pattern',
+        module: 'scripts/reconcile-repos.ts',
+        problem_type: 'best_practice',
+        last_updated: '2026-06-01',
+        verified: '2026-06-01',
+        tags: ['reconcile', 'repos', 'automation'],
+      },
+      'See testowner--secret-repo for the wiki page reference.', // double-dash form
+    )
+
+    const result = assembleSolutionsContext({
+      files: doubleDashDoc,
+      event: {
+        eventName: 'pull_request',
+        title: 'feat: improve reconcile-repos logic',
+        body: 'Refactors the reconcile-repos automation script.',
+      },
+      privateNames: [privateName],
+      now: new Date('2026-06-22'),
+    })
+
+    // #when the privacy gate checks the owner--name token form
+    // #then the doc is excluded fail-closed
+    expect(result.selectedPaths).not.toContain('docs/solutions/best-practices/reconcile-repos-pattern.md')
+    expect(result.excerpt).toBe('')
+  })
+
+  it('excludes a doc with a MIXED-CASE private name in body (case-insensitive scan)', () => {
+    // #given a private name registered as lowercase, but the doc body uses mixed case
+    const privateName = 'testowner/secret-repo' // registered lowercase
+    const mixedCaseDoc = makeDoc(
+      'docs/solutions/best-practices/reconcile-repos-pattern.md',
+      {
+        title: 'Reconcile Repos Pattern',
+        module: 'scripts/reconcile-repos.ts',
+        problem_type: 'best_practice',
+        last_updated: '2026-06-01',
+        verified: '2026-06-01',
+        tags: ['reconcile', 'repos', 'automation'],
+      },
+      'See TestOwner/Secret-Repo for reference.', // mixed-case form in body
+    )
+
+    const result = assembleSolutionsContext({
+      files: mixedCaseDoc,
+      event: {
+        eventName: 'pull_request',
+        title: 'feat: improve reconcile-repos logic',
+        body: 'Refactors the reconcile-repos automation script.',
+      },
+      privateNames: [privateName],
+      now: new Date('2026-06-22'),
+    })
+
+    // #when the privacy gate lowercases both the content and the tokens
+    // #then the mixed-case occurrence is still detected and the doc is excluded
+    expect(result.selectedPaths).not.toContain('docs/solutions/best-practices/reconcile-repos-pattern.md')
+    expect(result.excerpt).toBe('')
+  })
+
+  it('security bonus isolation: security_issue doc ranks higher than equal-scoring best_practice on security event', () => {
+    // #given two docs that score EQUAL on all non-bonus dimensions (same tokens in title/tags/module/body)
+    // Only problem_type differs: one is security_issue, one is best_practice.
+    const securityBonusDoc = makeDoc(
+      'docs/solutions/security-issues/equal-score-security.md',
+      {
+        title: 'Token Handling Pattern',
+        module: 'scripts/token-handler.ts',
+        problem_type: 'security_issue',
+        last_updated: '2026-06-01',
+        verified: '2026-06-01',
+        tags: ['token', 'handler'],
+      },
+      'Handle tokens carefully to avoid leaks.',
+    )
+
+    const bestPracticeEqualDoc = makeDoc(
+      'docs/solutions/best-practices/equal-score-best-practice.md',
+      {
+        title: 'Token Handling Pattern',
+        module: 'scripts/token-handler.ts',
+        problem_type: 'best_practice',
+        last_updated: '2026-06-01',
+        verified: '2026-06-01',
+        tags: ['token', 'handler'],
+      },
+      'Handle tokens carefully to avoid leaks.',
+    )
+
+    // #when the event is security-flavored (contains 'token' which is in SECURITY_EVENT_TOKENS)
+    const result = assembleSolutionsContext({
+      files: {...securityBonusDoc, ...bestPracticeEqualDoc},
+      event: {
+        eventName: 'pull_request',
+        title: 'fix: token handler leak',
+        body: 'Addresses a token leak in the handler.',
+      },
+      privateNames: [],
+      now: new Date('2026-06-22'),
+    })
+
+    // #then the security_issue doc ranks BEFORE the best_practice doc due to the +20 bonus
+    const securityIdx = result.selectedPaths.indexOf('docs/solutions/security-issues/equal-score-security.md')
+    const bestPracticeIdx = result.selectedPaths.indexOf('docs/solutions/best-practices/equal-score-best-practice.md')
+    expect(securityIdx).toBeGreaterThanOrEqual(0)
+    expect(bestPracticeIdx).toBeGreaterThanOrEqual(0)
+    expect(securityIdx).toBeLessThan(bestPracticeIdx)
+  })
+
+  it('mutation-proves security bonus: without the bonus the equal-scoring docs do NOT sort security-first', () => {
+    // #given the same two equal-scoring docs on a NON-security-flavored event
+    // (no security tokens → bonus does not apply → tie broken by insertion order)
+    // best-practice doc is spread FIRST so it appears first in Object.entries without the bonus
+    const bestPracticeEqualDoc = makeDoc(
+      'docs/solutions/best-practices/equal-score-best-practice.md',
+      {
+        title: 'Token Handling Pattern',
+        module: 'scripts/token-handler.ts',
+        problem_type: 'best_practice',
+        last_updated: '2026-06-01',
+        verified: '2026-06-01',
+        tags: ['token', 'handler'],
+      },
+      'Handle tokens carefully to avoid leaks.',
+    )
+
+    const securityBonusDoc = makeDoc(
+      'docs/solutions/security-issues/equal-score-security.md',
+      {
+        title: 'Token Handling Pattern',
+        module: 'scripts/token-handler.ts',
+        problem_type: 'security_issue',
+        last_updated: '2026-06-01',
+        verified: '2026-06-01',
+        tags: ['token', 'handler'],
+      },
+      'Handle tokens carefully to avoid leaks.',
+    )
+
+    // #when the event has NO security-flavored tokens (no 'token'/'secret'/etc in event)
+    const result = assembleSolutionsContext({
+      files: {...bestPracticeEqualDoc, ...securityBonusDoc},
+      event: {
+        eventName: 'pull_request',
+        title: 'refactor handler module',
+        body: 'Updating the handler module.',
+      },
+      privateNames: [],
+      now: new Date('2026-06-22'),
+    })
+
+    // #then both docs appear and security_issue does NOT rank first (no bonus → insertion order)
+    // best-practice was inserted first → it appears first without the security bonus
+    const securityIdx = result.selectedPaths.indexOf('docs/solutions/security-issues/equal-score-security.md')
+    const bestPracticeIdx = result.selectedPaths.indexOf('docs/solutions/best-practices/equal-score-best-practice.md')
+    expect(securityIdx).toBeGreaterThanOrEqual(0)
+    expect(bestPracticeIdx).toBeGreaterThanOrEqual(0)
+    // Without bonus, best-practice (inserted first) appears before security_issue
+    expect(bestPracticeIdx).toBeLessThan(securityIdx)
+  })
+
+  it('multi-byte truncation: emoji at budget boundary emits no U+FFFD replacement chars', () => {
+    // #given content with a 4-byte emoji positioned so the byte budget would split it
+    // We use assembleSolutionsContext with a tight maxBytes to exercise truncateToBytes
+    const emojiBody = 'reconcile repos 😀 automation notes'
+    const emojiDoc = makeDoc(
+      'docs/solutions/best-practices/reconcile-repos-pattern.md',
+      {
+        title: 'Reconcile Repos Pattern',
+        module: 'scripts/reconcile-repos.ts',
+        problem_type: 'best_practice',
+        last_updated: '2026-06-01',
+        verified: '2026-06-01',
+        tags: ['reconcile', 'repos'],
+      },
+      emojiBody,
+    )
+
+    // Budget is set to force truncation mid-emoji (the header + path lines are ~80 bytes,
+    // so 120 bytes total leaves very little for the body, splitting the emoji)
+    const result = assembleSolutionsContext({
+      files: emojiDoc,
+      event: {
+        eventName: 'pull_request',
+        title: 'feat: reconcile repos automation',
+        body: 'emoji handling',
+      },
+      privateNames: [],
+      now: new Date('2026-06-22'),
+      maxBytes: 120,
+    })
+
+    // #when the byte-budget truncation slices through emoji bytes
+    // #then the output contains NO U+FFFD replacement chars
+    expect(result.excerpt).not.toContain('\uFFFD')
+    expect(result.byteLength).toBeLessThanOrEqual(120)
+  })
 })

@@ -1,10 +1,11 @@
+import type {Dirent} from 'node:fs'
 import {Buffer} from 'node:buffer'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 
 import {parse} from 'yaml'
 
-import {computeRepoSlug} from './wiki-slug.ts'
+import {buildPrivateNameTokens} from './wiki-slug.ts'
 
 const MAX_CONTEXT_BYTES = 4 * 1024
 const SOLUTIONS_ROOT = 'docs/solutions'
@@ -154,7 +155,9 @@ function collectDocs(files: Record<string, string>, privateTokens: Set<string>):
         ? frontmatter.applies_when.filter((t): t is string => typeof t === 'string')
         : [],
       lastUpdated: typeof frontmatter.last_updated === 'string' ? frontmatter.last_updated : null,
-      verified: frontmatter.verified === true,
+      verified:
+        frontmatter.verified === true ||
+        (typeof frontmatter.verified === 'string' && frontmatter.verified.trim() !== ''),
       body,
       score: 0,
     })
@@ -238,15 +241,10 @@ function buildPrivateTokenSet(privateNames: string[]): Set<string> {
     if (slashIndex < 1) continue
     const owner = nameWithOwner.slice(0, slashIndex)
     const name = nameWithOwner.slice(slashIndex + 1)
-    if (owner === '' || name === '' || owner === '[REDACTED]' || name === '[REDACTED]') continue
+    if (owner === '[REDACTED]' || name === '[REDACTED]') continue
 
-    tokens.add(nameWithOwner.toLowerCase())
-    tokens.add(`${owner.toLowerCase()}--${name.toLowerCase()}`)
-
-    try {
-      tokens.add(computeRepoSlug(owner, name).toLowerCase())
-    } catch {
-      // computeRepoSlug throws on empty segments — skip slug form
+    for (const token of buildPrivateNameTokens(nameWithOwner)) {
+      tokens.add(token.toLowerCase())
     }
   }
 
@@ -327,7 +325,12 @@ function truncateToBytes(value: string, maxBytes: number): string {
     return ''
   }
 
-  const truncated = Buffer.from(value).subarray(0, contentBudget).toString('utf8')
+  // Slice at the byte boundary then strip any trailing replacement chars that
+  // result from splitting a multi-byte codepoint mid-sequence.
+  const truncated = Buffer.from(value)
+    .subarray(0, contentBudget)
+    .toString('utf8')
+    .replaceAll(/\uFFFD+$/gu, '')
 
   return truncated === '' ? '' : `${truncated}${ellipsis}`
 }
@@ -349,23 +352,26 @@ async function loadSolutionsFilesFromDisk(): Promise<Record<string, string>> {
 
   for (const subdir of SOLUTIONS_SUBDIRS) {
     const dirPath = `${SOLUTIONS_ROOT}/${subdir}`
-    let entries: string[]
+    let entries: Dirent[]
 
     try {
-      const dirents = await readdir(dirPath)
-      entries = dirents
+      entries = await readdir(dirPath, {withFileTypes: true})
     } catch {
       // Directory may not exist in some environments — skip
       continue
     }
 
-    for (const name of entries) {
-      if (!name.endsWith('.md')) {
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.md')) {
         continue
       }
 
-      const path = `${dirPath}/${name}`
-      files[path] = await readFile(path, 'utf8')
+      const path = `${dirPath}/${entry.name}`
+      try {
+        files[path] = await readFile(path, 'utf8')
+      } catch {
+        process.stderr.write(`solutions-query: could not read file (path: ${path})\n`)
+      }
     }
   }
 
@@ -469,6 +475,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${JSON.stringify(result)}\n`)
   } catch {
     // Best-effort: any error → empty output, exit 0 — retrieval must never fail the workflow step
+    process.stderr.write('solutions-query: unexpected error, falling back to empty context\n')
     const empty: AssembleSolutionsContextResult = {excerpt: '', selectedPaths: [], byteLength: 0}
     try {
       await writeGithubOutput(empty)

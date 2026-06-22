@@ -348,6 +348,24 @@ jobs:
             }}
         run: node scripts/wiki-query.ts
 
+      # Overlay metadata/ from the data branch so the scheduled run can derive
+      # digest counts from live metadata/repos.yaml. Mirrors the precedented guard
+      # in reconcile-repos.yaml: tolerate a missing data branch (skip, don't fail).
+      # Runs BEFORE solutions-query so the privacy scan reads the freshest repos.yaml.
+      - name: ⤵ Overlay metadata from data branch
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            overlay_err=$(
+              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
+            ) || {
+              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
+            }
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
       - name: Query solutions context
         id: solutions-query
         env:
@@ -369,23 +387,6 @@ jobs:
               ''
             }}
         run: node scripts/solutions-query.ts
-
-      # Overlay metadata/ from the data branch so the scheduled run can derive
-      # digest counts from live metadata/repos.yaml. Mirrors the precedented guard
-      # in reconcile-repos.yaml: tolerate a missing data branch (skip, don't fail).
-      - name: ⤵ Overlay metadata from data branch
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            overlay_err=$(
-              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
-            ) || {
-              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
-            }
-          else
-            echo "data branch not yet established; skipping metadata overlay."
-          fi
 
       - name: Run Fro Bot
         id: fro-bot-agent

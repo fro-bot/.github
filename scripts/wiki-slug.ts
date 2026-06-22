@@ -1,6 +1,33 @@
 import process from 'node:process'
 
 /**
+ * Build the canonical private-name token set for a single `owner/name` string.
+ *
+ * Returns up to three forms — [nameWithOwner, owner--name, computeRepoSlug(owner,name)] —
+ * deduplicated via a Set round-trip. The raw double-dash form is always present even if
+ * computeRepoSlug throws. Bare name is intentionally excluded (false-positive risk on short names).
+ *
+ * Returns an empty array when the input has no slash, or when owner/name is empty.
+ */
+export function buildPrivateNameTokens(nameWithOwner: string): string[] {
+  const slashIndex = nameWithOwner.indexOf('/')
+  if (slashIndex < 1) return []
+  const owner = nameWithOwner.slice(0, slashIndex)
+  const name = nameWithOwner.slice(slashIndex + 1)
+  if (owner === '' || name === '') return []
+  // Raw double-dash form — original chars, no sanitization. Always added first.
+  const rawDoubleDash = `${owner}--${name}`
+  const tokens: string[] = [nameWithOwner, rawDoubleDash]
+  try {
+    tokens.push(computeRepoSlug(owner, name))
+  } catch {
+    // computeRepoSlug throws on empty segments — skip slug form
+  }
+  // Dedup: identical forms (e.g. simple names where raw == slug) don't double up.
+  return [...new Set(tokens)]
+}
+
+/**
  * Canonical wiki slug for a repo page.
  *
  * Produces `{owner-slug}--{repo-slug}` with:

@@ -7,7 +7,7 @@ import process from 'node:process'
 import {parse as parseYaml} from 'yaml'
 import {isRecord, makeGhNodeIdResolver} from './private-repo-resolution.ts'
 import {assertReposFile} from './schemas.ts'
-import {computeRepoSlug} from './wiki-slug.ts'
+import {buildPrivateNameTokens} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -682,21 +682,7 @@ function postOverrideComment(prNumber: number, author: string): void {
  * Duplicate forms are collapsed via a Set round-trip.
  */
 function buildTokensForName(nameWithOwner: string): string[] {
-  const slashIndex = nameWithOwner.indexOf('/')
-  if (slashIndex < 1) return []
-  const owner = nameWithOwner.slice(0, slashIndex)
-  const name = nameWithOwner.slice(slashIndex + 1)
-  if (owner === '' || name === '') return []
-  // Raw double-dash form — original chars, no sanitization. Always added first.
-  const rawDoubleDash = `${owner}--${name}`
-  const tokens: string[] = [nameWithOwner, rawDoubleDash]
-  try {
-    tokens.push(computeRepoSlug(owner, name))
-  } catch {
-    // computeRepoSlug throws on empty segments — skip slug form
-  }
-  // Dedup: identical forms (e.g. simple names where raw == slug) don't double up.
-  return [...new Set(tokens)]
+  return buildPrivateNameTokens(nameWithOwner)
 }
 
 /**
