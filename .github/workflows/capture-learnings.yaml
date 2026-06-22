@@ -1,5 +1,5 @@
 ---
-name: Capture Learning Proposals
+name: Capture Learnings
 
 on:
   schedule:
@@ -10,13 +10,13 @@ permissions:
   contents: read
 
 # Serialize runs; never cancel an in-progress run (a partial run could leave
-# the agent step mid-flight with no propose step to follow).
+# the agent step mid-flight with no open step to follow).
 concurrency:
-  group: capture-c1-proposals
+  group: capture-learnings
   cancel-in-progress: false
 
 jobs:
-  capture-c1-proposals:
+  capture-learnings:
     name: Capture learning proposals from multi-round-review PRs
     runs-on: ubuntu-latest
     # Agent step is the long pole; 30 minutes provides headroom without
@@ -54,50 +54,52 @@ jobs:
             echo "data branch not yet established; skipping metadata overlay."
           fi
 
-      # Harvest merged PRs with ≥2 CHANGES_REQUESTED reviews, dedup against
+      # Harvest merged PRs where Fro Bot's substantive reviews meet the predicate
+      # (substantiveReviewCount >= 2 AND correctionSignalCount >= 1), dedup against
       # existing learning-proposal issues and docs/solutions/, cap to
-      # MAX_PROPOSALS_PER_RUN, and write an opaque digest (merge_sha + signals —
-      # no owner/repo/number prose) directly to CAPTURE_C1_DIGEST_PATH.
+      # MAX_LEARNINGS_PER_RUN, and write an opaque digest (merge_sha + signals —
+      # no owner/repo/number prose) directly to CAPTURE_LEARNINGS_DIGEST_PATH.
       # Writing the file directly avoids the shell-injection vector that existed
       # when the digest was echoed via GITHUB_OUTPUT multiline syntax.
       - name: 🌾 Harvest candidates
         id: harvest
         env:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
-          CAPTURE_C1_DIGEST_PATH: ${{ runner.temp }}/capture-c1-digest.json
-        run: node scripts/capture-c1-harvest.ts | tee "$RUNNER_TEMP/harvest-result.json"
+          CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
+        run: node scripts/capture-learnings-harvest.ts | tee "$RUNNER_TEMP/harvest-result.json"
         shell: bash
 
       # The agent's ONLY job: read the digest (merge_sha + signals, no private
       # identifiers), author a concise learning-proposal body for each candidate
       # worth proposing, and write the bodies as a JSON object keyed by merge_sha
-      # to $RUNNER_TEMP/capture-c1-bodies.json. Nothing else — no code edits,
+      # to $RUNNER_TEMP/capture-learnings-bodies.json. Nothing else — no code edits,
       # no doc edits, no other issues, no API exploration.
       #
-      # The privacy gate and issue-create run deterministically in the propose
-      # step below (SHAPE B). The agent cannot bypass the privacy gate.
+      # The privacy gate and issue-create run deterministically in the open
+      # step below. The agent cannot bypass the privacy gate.
       #
       # The agent action requires a github-token input, so one is supplied. It is
       # the workflow's auto-provisioned GITHUB_TOKEN, scoped to `contents: read` by
       # this job's permissions block — it carries no `issues: write`. Issue creation
       # is prevented by that scope, not by omitting the token. The agent only reads
       # the digest file and writes the bodies file; issue creation stays exclusively
-      # in the deterministic propose step under the App token.
+      # in the deterministic open step under the App token.
       - name: 🤖 Author proposal bodies
         id: agent
         uses: fro-bot/agent@a12463fab12958ed122856db287c061b623c2834 # v0.75.0
         env:
-          CAPTURE_C1_DIGEST_PATH: ${{ runner.temp }}/capture-c1-digest.json
+          CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
           TASK_PROMPT: |
-            You are authoring learning-proposal bodies for the C1 capture pipeline.
+            You are authoring learning-proposal bodies. Each body distills a reusable
+            learning from a pull request that went through multiple substantive review rounds.
 
             Your ONLY job in this step:
-            1. Read the harvest digest from $CAPTURE_C1_DIGEST_PATH (or equivalently
-               $RUNNER_TEMP/capture-c1-digest.json). The digest is a JSON object:
+            1. Read the harvest digest from $CAPTURE_LEARNINGS_DIGEST_PATH (or equivalently
+               $RUNNER_TEMP/capture-learnings-digest.json). The digest is a JSON object:
                { "candidates": [...], "telemetry": {...} }
                Each candidate in the candidates array has:
                - mergeSha: opaque merge commit SHA (the ONLY identifier you receive)
-               - reviewRounds: number of CHANGES_REQUESTED review rounds
+               - reviewRounds: number of substantive Fro Bot review rounds (approved, changes-requested, or dismissed — a dismissed approval marks a re-review forced by a new push)
                - signals: { titleTokens: string[], labels: string[] }
             2. For each candidate you judge worth proposing (reviewRounds ≥ 2 is
                already guaranteed; use signals to assess value), write a concise
@@ -108,7 +110,7 @@ jobs:
                  information and must not attempt to retrieve it)
                - Proposes what the learning would be
                - Is suitable for a human to review and author into docs/solutions/
-            3. Write the bodies as a JSON object to $RUNNER_TEMP/capture-c1-bodies.json:
+            3. Write the bodies as a JSON object to $RUNNER_TEMP/capture-learnings-bodies.json:
                { "<mergeSha>": "<body text>", ... }
                Include only candidates you judge worth proposing. Omit candidates
                you judge low-value (empty object {} is valid if none merit a proposal).
@@ -117,14 +119,14 @@ jobs:
 
             Hard boundaries:
             - Never look up PR details, owner, repo name, PR number, or author.
-            - Never create issues yourself — the propose step does that.
-            - Never write to any path other than $RUNNER_TEMP/capture-c1-bodies.json.
+            - Never create issues yourself — the open step does that.
+            - Never write to any path other than $RUNNER_TEMP/capture-learnings-bodies.json.
             - Output only the bodies file. No summary issue. No comments.
         with:
           # The action requires a github-token input. Pass the workflow's auto-provisioned
           # GITHUB_TOKEN, which is scoped to `contents: read` by this job's permissions — it
           # cannot create issues. Issue creation remains exclusively in the deterministic
-          # propose step (via the App token), so the agent still cannot bypass the privacy
+          # open step (via the App token), so the agent still cannot bypass the privacy
           # gate or open issues directly.
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
@@ -133,18 +135,18 @@ jobs:
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           prompt: ${{ env.TASK_PROMPT }}
 
-      # Deterministic propose step (SHAPE B): reads the harvest digest and the
+      # Deterministic open step: reads the harvest digest and the
       # agent-authored bodies, runs the privacy gate (fail-closed against
       # metadata/repos.yaml), applies same-run dedup, and opens the issues.
       # The privacy gate runs here — not at agent discretion.
       - name: 📬 Open learning-proposal issues
-        id: propose
+        id: open
         env:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
-          CAPTURE_C1_DIGEST_PATH: ${{ runner.temp }}/capture-c1-digest.json
-          CAPTURE_C1_BODIES_PATH: ${{ runner.temp }}/capture-c1-bodies.json
-          CAPTURE_C1_RESULT_PATH: ${{ runner.temp }}/capture-c1-result.json
-        run: node scripts/capture-c1-propose.ts | tee "$RUNNER_TEMP/propose-output.json"
+          CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
+          CAPTURE_LEARNINGS_BODIES_PATH: ${{ runner.temp }}/capture-learnings-bodies.json
+          CAPTURE_LEARNINGS_RESULT_PATH: ${{ runner.temp }}/capture-learnings-result.json
+        run: node scripts/capture-learnings-open.ts | tee "$RUNNER_TEMP/open-output.json"
         shell: bash
 
       - if: always()
@@ -152,30 +154,33 @@ jobs:
         run: |
           set -euo pipefail
           harvest="$RUNNER_TEMP/harvest-result.json"
-          result="$RUNNER_TEMP/capture-c1-result.json"
+          result="$RUNNER_TEMP/capture-learnings-result.json"
 
           {
-            echo "## Capture Learning Proposals Summary"
+            echo "## Capture Learnings Summary"
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
 
             if [[ -s "$harvest" ]]; then
-              echo "| PRs examined | $(jq '.telemetry.examined // 0' "$harvest") |"
-              echo "| After proposal dedup | $(jq '.telemetry.afterProposalDedup // 0' "$harvest") |"
+              echo "| Closed PRs fetched | $(jq '.telemetry.closedPrsFetched // 0' "$harvest") |"
+              echo "| Merged PRs in lookback | $(jq '.telemetry.mergedPrsInLookback // 0' "$harvest") |"
+              echo "| Excluded automation | $(jq '.telemetry.excludedAutomation // 0' "$harvest") |"
+              echo "| Multi-round candidates | $(jq '.telemetry.multiRoundCandidates // 0' "$harvest") |"
+              echo "| After seen dedup | $(jq '.telemetry.afterSeenDedup // 0' "$harvest") |"
               echo "| After solutions dedup | $(jq '.telemetry.afterSolutionsDedup // 0' "$harvest") |"
               echo "| Candidates emitted | $(jq '.telemetry.emitted // 0' "$harvest") |"
             else
-              echo "| PRs examined | (harvest result unavailable) |"
+              echo "| Closed PRs fetched | (harvest result unavailable) |"
             fi
 
             if [[ -s "$result" ]]; then
-              echo "| Proposals opened | $(jq '.proposalsOpened // 0' "$result") |"
+              echo "| Learnings opened | $(jq '.learningsOpened // 0' "$result") |"
               echo "| Blocked on privacy | $(jq '.blockedOnPrivacy // 0' "$result") |"
               echo "| Skipped duplicate | $(jq '.skippedDuplicate // 0' "$result") |"
               echo "| Failed | $(jq '.failed // 0' "$result") |"
             else
-              echo "| Proposals opened | (propose result unavailable) |"
+              echo "| Learnings opened | (open result unavailable) |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
         shell: bash

@@ -5,7 +5,7 @@ import process from 'node:process'
  * Tokens: [owner/name, owner--name, computeRepoSlug(owner, name)] — lowercased, deduplicated.
  * Entries with `[REDACTED]` owner or name are skipped.
  *
- * Shared by capture-c1-propose.ts and solutions-query.ts — single source of truth.
+ * Shared by capture-learnings-open.ts and solutions-query.ts — single source of truth.
  */
 export function buildPrivateTokenSet(privateNames: string[]): Set<string> {
   const tokens = new Set<string>()
