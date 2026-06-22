@@ -20,7 +20,6 @@
 
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
-import {parse} from 'yaml'
 
 import {
   buildMergeShaMarker,
@@ -30,7 +29,7 @@ import {
   type CandidateDigest,
   type OctokitClient,
 } from './capture-learnings-harvest.ts'
-import {buildPrivateTokenSet} from './wiki-slug.ts'
+import {isRecord, learningBodyHasPrivateLeak, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -88,111 +87,11 @@ export interface OpenLearningsCounts {
 }
 
 // ---------------------------------------------------------------------------
-// Privacy gate — pure, fail-closed
+// Type guards (local — used by ensureLabelsExist / openLearningIssues)
 // ---------------------------------------------------------------------------
-
-/**
- * Returns true if the learning body contains any private identifier token.
- *
- * The body is lowercased before scanning. The caller MUST block (skip) the
- * learning on true. Never redacts — block only. Counts-only telemetry.
- *
- * Pure function: no I/O, fully testable.
- */
-export function learningBodyHasPrivateLeak(body: string, privateTokens: Set<string>): boolean {
-  const lower = body.toLowerCase()
-  for (const token of privateTokens) {
-    if (lower.includes(token)) return true
-  }
-  return false
-}
-
-// ---------------------------------------------------------------------------
-// Type guards
-// ---------------------------------------------------------------------------
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function isApiStatus(error: unknown, status: number): boolean {
   return isRecord(error) && typeof error.status === 'number' && error.status === status
-}
-
-// ---------------------------------------------------------------------------
-// Disk loader for private token set
-// ---------------------------------------------------------------------------
-
-/**
- * Load the private identifier token set from `metadata/repos.yaml`.
- *
- * Reads the overlay-checked-out metadata file, filters `private: true` non-redacted
- * entries, and builds the token set via `buildPrivateNameTokens`.
- *
- * Fail-closed contract:
- * - If the file cannot be read or parsed, this function THROWS.
- * - The caller MUST NOT post any proposals when this throws (no private set ⇒ no proposals).
- * - This is intentional: a missing overlay means the privacy gate cannot operate,
- *   and posting unscanned proposals would violate the privacy-gate contract.
- *
- * Counts-only: private names are never logged; only counts appear in stderr.
- *
- * @param readFileFn - Injectable readFile for testing (defaults to node:fs/promises readFile).
- */
-export async function loadPrivateTokensFromDisk(
-  readFileFn: (path: string, encoding: BufferEncoding) => Promise<string> = readFile,
-): Promise<Set<string>> {
-  let reposYaml: string
-
-  try {
-    reposYaml = await readFileFn('metadata/repos.yaml', 'utf8')
-  } catch (error: unknown) {
-    throw new Error(
-      'capture-learnings-open: could not read metadata/repos.yaml — privacy gate cannot operate; no learnings will be posted',
-      {cause: error},
-    )
-  }
-
-  let parsed: unknown
-  try {
-    parsed = parse(reposYaml)
-  } catch (error: unknown) {
-    throw new Error(
-      'capture-learnings-open: could not parse metadata/repos.yaml — privacy gate cannot operate; no learnings will be posted',
-      {cause: error},
-    )
-  }
-
-  if (!isRecord(parsed)) {
-    throw new TypeError(
-      'capture-learnings-open: metadata/repos.yaml has unexpected shape — privacy gate cannot operate; no learnings will be posted',
-    )
-  }
-
-  const repos = parsed.repos
-  if (!Array.isArray(repos)) {
-    throw new TypeError(
-      'capture-learnings-open: metadata/repos.yaml missing repos array — privacy gate cannot operate; no learnings will be posted',
-    )
-  }
-
-  const privateNames: string[] = []
-  for (const entry of repos) {
-    if (!isRecord(entry)) continue
-    if (entry.private !== true) continue
-    const owner = entry.owner
-    const name = entry.name
-    if (typeof owner !== 'string' || typeof name !== 'string' || owner === '[REDACTED]' || name === '[REDACTED]') {
-      continue
-    }
-    privateNames.push(`${owner}/${name}`)
-  }
-
-  const tokenSet = buildPrivateTokenSet(privateNames)
-  process.stderr.write(
-    `capture-learnings-open: loaded private token set (private-repo count=${privateNames.length}, token-count=${tokenSet.size})\n`,
-  )
-  return tokenSet
 }
 
 // ---------------------------------------------------------------------------
