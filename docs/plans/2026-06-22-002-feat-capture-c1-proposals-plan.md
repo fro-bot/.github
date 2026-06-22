@@ -190,7 +190,7 @@ weekly cron (Sunday, post-merge-data)
 
 ## Implementation Units
 
-- [ ] **Unit 1: `scripts/capture-c1-harvest.ts` — harvest + dedup + digest (test-first)**
+- [x] **Unit 1: `scripts/capture-c1-harvest.ts` — harvest + dedup + digest (test-first)**
 
 **Goal:** A script that paginates this repo's (`fro-bot/.github`) merged PRs in the lookback
 window, keeps those with ≥2 `CHANGES_REQUESTED` reviews, drops any already represented by a
@@ -250,7 +250,7 @@ and emits an opaque candidate digest to `$GITHUB_OUTPUT`.
 **Verification:** `pnpm check-types`, `pnpm lint`, `pnpm test` green; strip-only load clean;
 the digest carries no `owner/repo/number` prose; the seen-set dedup is mutation-proven.
 
-- [ ] **Unit 2: proposal-issue opening with body privacy-scan + dedup (test-first)**
+- [x] **Unit 2: proposal-issue opening with body privacy-scan + dedup (test-first)**
 
 **Goal:** Given the digest and an agent-authored proposal body per candidate, open a
 `learning-proposal` issue with the merge-SHA marker — but only after the body passes the
@@ -292,7 +292,7 @@ private-identifier scan, with same-run and cross-run dedup.
 **Verification:** gates green; the privacy block is mutation-proven; the same-run Set prevents
 duplicates; created issues carry the label + marker.
 
-- [ ] **Unit 3: scheduled workflow + `learning-proposal` label + agent wiring**
+- [x] **Unit 3: scheduled workflow + `learning-proposal` label + agent wiring**
 
 **Goal:** A weekly workflow that mints the App token, overlays metadata, runs the harvest over
 this repo, feeds the opaque digest to a tight propose-only agent step, and surfaces counts-only
