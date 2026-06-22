@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/works
 created: 2026-05-20
-updated: 2026-06-11
+updated: 2026-06-22
 sources:
   - url: https://github.com/bfra-me/works
     sha: ef14b26085dab318fffad1b6c3062292f8ae60b8
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/bfra-me/works
     sha: 499b2156515414fd1d85561b52efcce4fb93536d
     accessed: 2026-06-11
+  - url: https://github.com/bfra-me/works
+    sha: fb5c29876d21212793147eccf77d33c9d5888e4e
+    accessed: 2026-06-22
 tags:
   [
     bfra-me,
@@ -59,14 +62,14 @@ automation actions), `bfra-me/works` is the **shared library plane**.
 - **License:** MIT
 - **Default branch:** `main`
 - **Created:** 2020-10-27
-- **Last push:** 2026-06-10
+- **Last push:** 2026-06-22
 - **Topics:** `bfra-me`, `works`, `components`, `semantic-release`, `tools`, `tsconfig`
-- **Stars:** 3
-- **Open issues / PRs:** 42 total / 4 open PRs (2026-06-11)
-- **Latest release:** `@bfra.me/workspace-analyzer@0.2.8` (2026-05-16) — unchanged since 2026-05-16; a pending Changesets publish PR (#3652) queues `@bfra.me/create@0.7.15` and sibling patch bumps
+- **Stars:** 4 (was 3)
+- **Open issues / PRs:** 38 open issues / 7 open PRs (2026-06-22; was 42 total / 4 open PRs on 2026-06-11)
+- **Latest release:** `@bfra.me/workspace-analyzer@0.2.8` (2026-05-16) — still unchanged across the 2026-06-22 survey; no npm publish in ~5 weeks despite continuous Renovate churn. All nine published package versions are byte-identical to the 2026-06-11 survey.
 - **Primary language:** TypeScript (~99%)
-- **Node:** 24.16.0 (`.node-version`; was 24.15.0 on 2026-05-31) — packages target ES2022+/Node 20+
-- **Package manager:** pnpm 10.34.1 (was 10.33.4 on 2026-05-20)
+- **Node:** 24.17.0 (`.node-version`; was 24.16.0 on 2026-06-11, 24.15.0 on 2026-05-31) — packages target ES2022+/Node 20+
+- **Package manager:** pnpm 10.34.4 (was 10.34.1 on 2026-06-11, 10.33.4 on 2026-05-20)
 - **TypeScript:** 6.0.3, strict (`noUncheckedIndexedAccess`)
 - **Root package:** `@bfra.me/works` v0.0.0-development (private)
 
@@ -104,7 +107,12 @@ automation actions), `bfra-me/works` is the **shared library plane**.
 ├── CLAUDE.md
 ├── CONTRIBUTING.md
 ├── PERFORMANCE.md
+├── .git-blame-ignore-revs            # (new 2026-06-22) blame-noise suppression
+├── .mailmap                          # (new 2026-06-22) contributor identity canonicalization
+├── .mise.toml                        # mise toolchain (was `mise.toml`, dot-prefixed since 2026-06-22)
+├── .playwright-mcp/                  # (new 2026-06-22) Playwright MCP fixtures/output
 ├── eslint.config.ts
+├── json                              # (new 2026-06-22) standalone file
 ├── llms.txt
 ├── package.json                      # @bfra.me/works (private root)
 ├── pnpm-workspace.yaml
@@ -122,10 +130,14 @@ automation actions), `bfra-me/works` is the **shared library plane**.
   `strictPeerDependencies: true`, `savePrefix: ''`,
   `shellEmulator: true`
 - `onlyBuiltDependencies`: `esbuild`, `msw`, `sharp`, `unrs-resolver`
-- Overrides: `fast-uri >=3.1.2`; `handlebars` pinned `^4.7.9`;
-  `lodash ^4.17.23`; `picomatch` patches; `read-pkg-up^11` redirected to
-  `read-package-up`; `undici` ranges forced to safe minimums (`^6.24.0`,
-  `^7.24.0`)
+- **Override split (observed 2026-06-22):** `fast-uri >=3.1.2` now lives
+  in the **root `package.json`** `pnpm.overrides`, while the rest of the
+  override surface stays in `pnpm-workspace.yaml`: `handlebars` pinned
+  `^4.7.9`; `lodash ^4.17.23`; `picomatch` range patches (`2.3.2`,
+  `4.0.4`); `read-pkg-up@^11` redirected to `read-package-up`; `undici`
+  ranges forced safe — **`undici@<6.24.0 → ^8.0.0`** (was `^6.24.0` on
+  2026-06-11, a major bump in the floor) and `undici@>=7.17.0 <7.24.0 →
+  ^7.24.0`
 - `packageExtensions` extend ESLint plugin peer ranges to ESLint 10
 - `peerDependencyRules.allowedVersions` carries the TypeScript 6.0
   transition for the eslint-react family, type-coverage, tsconfck, and
@@ -186,9 +198,10 @@ Surface area:
   when package READMEs, sources, or `package.json` files change. Has a
   `dry-run` dispatch input.
 - **`renovate.yaml`** — calls reusable
-  `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.25` (v4.16.18
-  → v4.16.21 → v4.16.25 across surveys) after the Release workflow
-  succeeds, with `log-level` and `print-config` dispatch inputs.
+  `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.28` (v4.16.18
+  → v4.16.21 → v4.16.25 → v4.16.28 across surveys) after the Release
+  workflow succeeds, with `log-level` and `print-config` dispatch
+  inputs.
 - **`renovate-changeset.yaml`** — auto-generates changesets for
   `bfra-me[bot]` / `renovate[bot]` PRs. Triggers on `merge_group`,
   `pull_request_target`, and `workflow_dispatch`. Uses
@@ -211,14 +224,24 @@ setup and cache restoration.
 ## Fro Bot Integration
 
 `bfra-me/works` runs a **single-file three-mode Fro Bot** at
-`fro-bot/agent@f2f3c08f # v0.60.0` (as of 2026-06-11) — the leading
-agent pin in the surveyed ecosystem. The pin advanced v0.44.2 →
+`fro-bot/agent@a12463fa # v0.75.0` (as of 2026-06-22) — still the
+leading agent pin in the surveyed ecosystem. The pin advanced v0.44.2 →
 v0.46.1 (#3503) → v0.47.0 (#3510) on 2026-05-30, then rode the full
-Renovate cadence through v0.55.x–v0.59.x to v0.60.0 (#3649) on
-2026-06-10 — 13 agent bumps in the 2026-05-31 → 2026-06-10 window
-alone, all automerged. PR #3491 ("Fix Fro Bot mode/prompt resolution
-for dispatch and reusable runs") patched the inline shell mode
-resolution for `workflow_dispatch` and `workflow_call` paths.
+Renovate cadence through v0.55.x–v0.60.x to **v0.75.0** by 2026-06-22 —
+another 15-minor jump in the 11 days since the prior survey, all
+automerged. PR #3491 ("Fix Fro Bot mode/prompt resolution for dispatch
+and reusable runs") patched the inline shell mode resolution for
+`workflow_dispatch` and `workflow_call` paths.
+
+**Pending major (v0 → v1):** Renovate PR **#3691** (`chore(deps): update
+fro-bot/agent to v1`, opened 2026-06-14 by `app/bfra-me`) proposes the
+`v0.62.0 → v1.18.0` jump — the v1 boundary for the [[fro-bot--agent]]
+harness. It sits open and un-automerged (major updates require
+dashboard approval), while the minor-version automerge stream keeps the
+live pin climbing through the v0.7x line. The repo is effectively
+holding at the v0 tag train until the v1 cutover is reviewed
+deliberately. Worth watching whether #3691 lands or is superseded by a
+later v1.x once the minor stream catches up to the v1 tag.
 
 ### Triggers
 
@@ -360,8 +383,9 @@ create a new report per cycle.
 ## Renovate
 
 - `.github/renovate.json5` extends:
-  - `github>bfra-me/.github:internal.json5#v4.16.25` (org baseline;
-    `#v4.16.18` on 2026-05-20, `#v4.16.21` on 2026-05-31)
+  - `github>bfra-me/.github:internal.json5#v4.16.28` (org baseline;
+    `#v4.16.18` on 2026-05-20, `#v4.16.21` on 2026-05-31,
+    `#v4.16.25` on 2026-06-11)
   - `github>sanity-io/renovate-config:semantic-commit-type`
   - `security:minimumReleaseAgeNpm`
 - `addLabels: ['{{{parentDir}}}']` auto-labels by directory (clean
@@ -434,19 +458,20 @@ Release pipeline:
 ## Cross-Repo Relationships
 
 - **[[bfra-me--github]]** — the org control plane. Provides the
-  reusable workflows this repo calls (`renovate.yaml@v4.16.25` as of
-  2026-06-11, `update-repo-settings.yaml@v4.16.0`), the
+  reusable workflows this repo calls (`renovate.yaml@v4.16.28` as of
+  2026-06-22, `update-repo-settings.yaml@v4.16.0`), the
   `internal.json5` Renovate baseline, and the `common-settings.yaml`
   Probot template. `bfra-me/works` is currently leading the agent pin
-  at `v0.60.0`; sibling repos should be re-surveyed to confirm whether
+  at `v0.75.0`; sibling repos should be re-surveyed to confirm whether
   the org control plane and HA add-on template have followed.
 - **[[bfra-me--ha-addon-repository]]** — sibling `bfra-me` org repo.
   Shares the `Daily Autohealing Report` single-issue rolling-update
   convention, and also extends `.github:common-settings.yaml`. Stark
   contrast in update health: ha-addon-repository is review-deadlocked
-  at agent v0.43.1 while `works` automerges its way to v0.60.0.
-- **[[fro-bot--agent]]** — this repo runs `v0.60.0`, at the leading
-  edge of the surveyed fleet.
+  at agent v0.43.1 while `works` automerges its way to v0.75.0.
+- **[[fro-bot--agent]]** — this repo runs `v0.75.0`, at the leading
+  edge of the surveyed fleet; Renovate PR #3691 holds the pending
+  v0 → v1 (`v1.18.0`) cutover for deliberate review.
 - **[[marcusrbrown--renovate-config]]** — parallel Renovate preset
   family in the `marcusrbrown/*` ecosystem; `bfra-me/works` extends
   the `bfra-me/.github:internal.json5` baseline instead.
@@ -459,16 +484,23 @@ Release pipeline:
 
 ## Open Questions / Follow-Ups
 
-- Three Fro Bot-authored PRs are open as of 2026-06-11: #3508
-  (`fix(workspace-analyzer): accept comparator peer ranges`, open
-  since ~2026-05-30), #3619 (`fix(security): update create templates
-  vitest`), and #3620 (`docs: update AGENTS package count`). The
-  autoheal loop generates fixes but nothing merges them — same
-  review-pipeline gap as [[bfra-me--ha-addon-repository]], in milder
-  form. Worth watching whether these age out or land.
-- No npm publish since 2026-05-16 despite continuous dependency churn;
-  the Changesets PR #3652 accumulates patch bumps. Not a fault — just
-  a release-cadence observation.
+- The Fro Bot-authored PR backlog has grown, not drained, since
+  2026-06-11. Open as of 2026-06-22: #3508 (`workspace-analyzer` peer
+  ranges, now open ~3+ weeks), #3619 (`fix(security): update create
+  templates vitest`), #3620 + **#3724** (two open copies of `docs:
+  update AGENTS package count`), and **#3704 + #3713** (two open copies
+  of `fix(security): override esbuild to ^0.28.1 to remediate HIGH/LOW
+  alerts`). The autoheal loop is now **re-emitting duplicate fixes** for
+  the same unresolved problem because the prior PR never merged — the
+  dedup-against-existing-bot-items guard in `AUTOHEAL_PROMPT` is not
+  catching its own stale PRs across runs. This is the review-pipeline
+  gap from [[bfra-me--ha-addon-repository]] mutating into duplicate
+  churn. Worth flagging: the esbuild override remediation here mirrors
+  the same HIGH advisory autoheal handled cleanly in [[bfra-me--github]]
+  (PR #2292), but `works` can't land it.
+- No npm publish since 2026-05-16 (~5 weeks) despite continuous
+  dependency churn; package versions are byte-identical across two
+  surveys. Release cadence observation, not a fault.
 
 - The `docs` package uses Astro Starlight; its quality infrastructure
   (MDX lint, content tests, version-badge sync) is sophisticated
@@ -490,3 +522,4 @@ Release pipeline:
 | 2026-05-20 | `ef14b26` | Initial survey. `fro-bot/agent@v0.44.2`, 11 workflows, 8 published packages + docs site, manypkg-enforced workspace protocol. |
 | 2026-05-31 | `cd4a52d` | Re-survey. `fro-bot/agent` v0.44.2 → v0.47.0 (via v0.46.1, same day 2026-05-30). PR #3491 patched dispatch/reusable-call mode resolution in the inline shell. `bfra-me/.github` reusable workflows + `internal.json5` baseline v4.16.18 → v4.16.21. pnpm 10.33.4 → 10.34.1. Published package versions unchanged. Workflow inventory, package layout, Probot settings, branch protection, build/release pipeline all identical. Open PRs 1 → 2. |
 | 2026-06-11 | `499b215` | Third survey. `fro-bot/agent` v0.47.0 → v0.60.0 (13 automerged bumps in 10 days — fastest agent cadence in the fleet). `bfra-me/.github` reusable renovate workflow + `internal.json5` baseline v4.16.21 → v4.16.25 (`update-repo-settings` still v4.16.0). Node 24.15.0 → 24.16.0. Changesets publish PR #3652 pending (`@bfra.me/create@0.7.15` + sibling patches); last actual npm release still 2026-05-16. Three Fro Bot-authored PRs open (#3508 workspace-analyzer peer-range fix, #3619 security template bump, #3620 docs). Workflow inventory, layout, workspace config, conventions all unchanged. Open PRs 2 → 4. |
+| 2026-06-22 | `fb5c298` | Fourth survey. `fro-bot/agent` v0.60.0 → **v0.75.0** (another 15-minor automerge jump in 11 days; still fleet pin leader). **Pending v0 → v1:** Renovate PR #3691 proposes `v0.62.0 → v1.18.0`, open and un-automerged. `bfra-me/.github` reusable renovate + `internal.json5` v4.16.25 → v4.16.28. Node 24.16.0 → 24.17.0; pnpm 10.34.1 → 10.34.4. `fast-uri` override migrated to root `package.json`; `undici` floor `^6.24.0 → ^8.0.0`. New root files: `.git-blame-ignore-revs`, `.mailmap`, `.playwright-mcp/`, `json`; `mise.toml` → `.mise.toml`. All nine published package versions unchanged (no publish since 2026-05-16). Fro Bot PR backlog grew to 5+ with **duplicate** security/docs PRs (#3704/#3713 esbuild, #3620/#3724 docs) — autoheal re-emitting fixes the review pipeline never merges. Stars 3 → 4; open 38 issues / 7 PRs. Workflow inventory, branch protection, Probot settings, conventions otherwise unchanged. |

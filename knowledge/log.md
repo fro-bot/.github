@@ -2302,3 +2302,30 @@ Sources: https://github.com/bfra-me/renovate-action (SHA 5cacb673ba19c31b04df2b5
 Surveyed bfra-me/renovate-action and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/renovate-action
+
+## [2026-06-22 10:52] ingest | bfra-me/works
+
+Fourth survey of `bfra-me/works` (HEAD `fb5c298`, was `499b215` on 2026-06-11). Reads limited to directory listings, README/manifest/workflow files, root + package `package.json`, `.node-version`, `pnpm-workspace.yaml`, `.github/renovate.json5`, and `.github/workflows/*` per the untrusted-input policy. Updated repo page `bfra-me--works.md` (frontmatter source + `updated`, identity, layout, workspace overrides, Fro Bot Integration, Renovate, cross-repo refs, open-questions, survey-history row), the index stub, and the Fro Bot presence row in `github-actions-ci.md`.
+
+Delta from prior survey (SHA `499b215`, 2026-06-11):
+
+- **Fro Bot agent v0.60.0 → v0.75.0** (SHA `a12463fa`) — another 15-minor automerge jump in 11 days. Still the fleet pin leader.
+- **Pending v0 → v1:** Renovate PR **#3691** (`chore(deps): update fro-bot/agent to v1`, `v0.62.0 → v1.18.0`, opened 2026-06-14 by `app/bfra-me`) is open and un-automerged. Major updates require dashboard approval; the minor automerge stream keeps the live pin climbing through v0.7x while the v1 cutover waits for deliberate review.
+- **`bfra-me/.github` reusable renovate workflow + `internal.json5` baseline v4.16.25 → v4.16.28** (`update-repo-settings` still v4.16.0).
+- **Node 24.16.0 → 24.17.0; pnpm 10.34.1 → 10.34.4.**
+- **Override surface split:** `fast-uri >=3.1.2` migrated to the **root `package.json`** `pnpm.overrides`; the rest stays in `pnpm-workspace.yaml`. `undici` floor raised a major: `undici@<6.24.0 → ^8.0.0` (was `^6.24.0`).
+- **New root files:** `.git-blame-ignore-revs`, `.mailmap`, `.playwright-mcp/`, `json`; `mise.toml` → `.mise.toml`.
+- **No npm publish since 2026-05-16** (~5 weeks) — all nine published package versions byte-identical to the prior survey.
+- **Repo metadata:** stars 3 → 4; open counts 38 issues / 7 PRs.
+- **Contradiction-of-trend, additively noted:** the Fro Bot autoheal backlog grew rather than drained, and is now re-emitting **duplicate** fixes for unresolved problems — #3704 + #3713 (two copies of the esbuild `^0.28.1` security override) and #3620 + #3724 (two copies of `docs: update AGENTS package count`), on top of the long-open #3508/#3619. The `AUTOHEAL_PROMPT` dedup-against-existing-bot-items guard is not catching its own stale PRs across runs. This is the [[bfra-me--ha-addon-repository]] review-pipeline gap mutating into duplicate churn; the same esbuild HIGH advisory was handled cleanly via autoheal in [[bfra-me--github]] (#2292) but cannot land here.
+- **Fro Bot workflow present and active** — no onboarding follow-up needed.
+
+Unchanged: 11 workflows + 1 doc, workflow structure (crons 16:00 + 03:30 UTC, three-mode dispatch default `autoheal`, `workflow_call`), branch protection (12 status checks), Probot `_extends: .github:common-settings.yaml`, AGENTS.md conventions, build/release pipeline. No prior findings overturned; all confirmed and extended additively. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/bfra-me/works (SHA fb5c29876d21212793147eccf77d33c9d5888e4e)
+
+## [2026-06-22 10:53] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works
