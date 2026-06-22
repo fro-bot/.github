@@ -1,6 +1,28 @@
 import process from 'node:process'
 
 /**
+ * Build a flat set of private identifier tokens from a list of `owner/name` strings.
+ * Tokens: [owner/name, owner--name, computeRepoSlug(owner, name)] — lowercased, deduplicated.
+ * Entries with `[REDACTED]` owner or name are skipped.
+ *
+ * Shared by capture-c1-propose.ts and solutions-query.ts — single source of truth.
+ */
+export function buildPrivateTokenSet(privateNames: string[]): Set<string> {
+  const tokens = new Set<string>()
+  for (const nameWithOwner of privateNames) {
+    const slashIndex = nameWithOwner.indexOf('/')
+    if (slashIndex < 1) continue
+    const owner = nameWithOwner.slice(0, slashIndex)
+    const name = nameWithOwner.slice(slashIndex + 1)
+    if (owner === '[REDACTED]' || name === '[REDACTED]') continue
+    for (const token of buildPrivateNameTokens(nameWithOwner)) {
+      tokens.add(token.toLowerCase())
+    }
+  }
+  return tokens
+}
+
+/**
  * Build the canonical private-name token set for a single `owner/name` string.
  *
  * Returns up to three forms — [nameWithOwner, owner--name, computeRepoSlug(owner,name)] —

@@ -65,88 +65,160 @@ the last, instead of standing on what prior runs learned.
 - **v1/early phases explicitly exclude:** C4 cross-run synthesis, C-deep wiki traversal, and
   operator-web decision-log surfacing. These are Phase 3 scope.
 
-## Capability A — Autonomous capture (retrospective, batch)
+## Capability A — Autonomous capture (Phase 2)
 
-A dedicated compounding run that retrospectively examines **cohorts of prior Fro Bot runs**
-and distills reusable learnings, rather than detecting a learnable moment mid-run. Seeing a
-collection of runs lets it find patterns invisible in any single run.
+A scheduled capture run that retrospectively examines **cohorts of prior Fro Bot runs** and
+proposes reusable learnings for human review, rather than detecting a learnable moment
+mid-run. Seeing a collection of runs lets it find patterns invisible in any single run.
 
-> **Identity bet:** the existing 22 `docs/solutions/` docs are hand-curated and high-signal.
-> Autonomous capture must not pollute this corpus. All autonomous captures land in a
-> **quarantine lane** (separately labeled, not in the canonical `docs/solutions/` set) until
-> precision is proven. Only clearly high-confidence captures promote to canonical. This
-> protects the hand-curated corpus as the authoritative signal source.
+> **Phase 2 v1 is a suggestion engine, not fully autonomous capture.** The capture run
+> proposes candidate learnings by opening GitHub issues with evidence; a human (Marcus)
+> decides whether to author the final learning via `ce:compound`. This deliberately keeps
+> Marcus in the loop to protect the curated `docs/solutions/` corpus and prove quality before
+> any authoring machinery is built. The premise — that reasoning over outcome metadata like
+> "this PR took 3 rounds" yields learnings comparable to human-noticed insights — is
+> **unproven**; propose-only v1 exists precisely to test it cheaply. If proposals are shallow,
+> that is a cheap, valuable negative result.
 
-### Triggers (v1 — the high-signal set, Phase 2)
+> **Phase 1's outcome-impact is not yet measured.** Capture proceeds as a cheap,
+> directly-informative experiment. Measuring whether retrieval changes run outcomes is a
+> Phase 3 concern (the deferred improvement metric, O8). Phase 2 v1 does not depend on that
+> measurement.
 
-- **C1 — Multi-round-review PRs.** PRs that needed several review rounds /
+### Harvest substrate (resolved): GitHub API outcome metadata, not prompt artifacts
+
+The reliable substrate is what GitHub durably retains about run **outcomes**, not raw agent
+transcripts. Verified during this brainstorm:
+
+- **Merged PRs carry durable signals** — review-round counts, titles, `Closes #N`, CI
+  conclusions, and review threads are all queryable via the GitHub API (e.g. a PR that took 2+
+  review rounds is a clean multi-round signal).
+- **Prompt artifacts are ephemeral/inconsistent** — only ~1 of 5 recent runs retained an
+  `OPENCODE_PROMPT_ARTIFACT` upload, and GitHub artifacts expire. There is no run-journal in
+  the agent. So the prompt artifact is **bonus enrichment when present**, never the foundation.
+
+The capture run therefore reasons over **structured GitHub API outcome metadata** (this PR
+took 3 rounds; these runs failed CI then passed; this triage decided skip-with-reason) rather
+than over raw transcripts.
+
+### Triggers (Phase 2 v1 — C1 only)
+
+Phase 2 v1 narrows to the single highest-signal trigger. C2 and C3 move to Phase 2.5 once
+C1 precision is proven. C4 remains Phase 3.
+
+- **C1 — Multi-round-review PRs (v1 only).** PRs that needed several review rounds /
   changes-requested before merging encode a mistake-then-correction — the richest learning
-  shape. Lead trigger.
-- **C2 — Failed-then-fixed runs.** Runs/PRs whose first attempt failed CI or was wrong and
-  then got corrected. The delta between broken and fixed *is* the learning. (This is the
-  shape of the strongest existing compound docs — the `jq //` trap, the Octokit method
-  hallucinations, the strip-only TypeScript failures.)
-- **C3 — Issue triages.** The daily oversight+autoheal run triages issues with fix/skip/defer
-  rationale. That judgment is reusable and teaches future triage.
-- **C4 — Recurring patterns across runs (cross-run synthesis). DEFERRED to Phase 3.** When
-  the *same kind* of issue recurs across multiple runs (repeated rate-limit failures, repeated
-  privacy-gate catches), compound the **pattern**. This is materially harder (clustering,
-  temporal comparison, sameness judgment) and is out of scope for v1.
+  shape, and directly queryable from PR review history. A scheduled harvest collects merged
+  PRs whose review history shows multiple rounds above a threshold (exact threshold: planning
+  decision, O6). Lead trigger for v1.
+- **C2 — Failed-then-fixed runs. DEFERRED to Phase 2.5.** Add once C1 precision is proven.
+- **C3 — Issue triages. DEFERRED to Phase 2.5.** Add once C1 precision is proven.
+- **C4 — Recurring patterns across runs (cross-run synthesis). DEFERRED to Phase 3.**
+
+### Mechanism (resolved): script harvests + pre-filters → agent judges → proposal issue
+
+The established repo pattern — a deterministic script feeds the agent curated context — applies
+here, with the output being a GitHub issue proposal rather than an authored doc:
+
+- **Script harvests + pre-filters (deterministic, testable).** A TS script queries the GitHub
+  API for the C1 cohort (merged PRs + review-round counts above threshold), dedups candidates
+  against the existing `docs/solutions/` corpus (module / tags / problem_type overlap — so it
+  does not propose a learning that already exists), and emits a **structured, counts-only
+  candidate digest** (opaque/redacted where private). This mirrors how
+  `scripts/reconcile-repos.ts` and `scripts/wiki-query.ts` produce structured context for the
+  agent.
+- **Agent judges (judgment only).** The `fro-bot.yaml` agent run receives the digest and does
+  only what it is good at: decide which candidates are genuinely proposal-worthy. It does not
+  do open-ended API exploration (the over-prompting failure mode).
+- **Output: proposal issue, not authored doc.** For each candidate the agent judges
+  proposal-worthy, the run **opens a GitHub issue** proposing the candidate learning, with
+  evidence (which PR, how many rounds, the correction pattern). No doc is authored into
+  `docs/solutions/`. No data-branch write occurs for the learning itself. A human (Marcus)
+  decides whether to author it via `ce:compound` later.
+- **Decision log is script-maintained state**, not agent-managed, so it is deterministic and
+  durable.
 
 ### Harvest → redact → publish pipeline (privacy-first)
 
-Raw artifact harvesting may contain private-repo content (repo names, org identifiers, issue
-titles, PR descriptions). The pipeline enforces a hard separation:
+The harvested signals and any authored proposal may reference private-repo content (repo
+names, org identifiers, issue titles, PR descriptions). The pipeline enforces a hard
+separation:
 
-1. **Harvest (private control-plane state).** Raw run artifacts are written to the `data`
-   branch as private operational state. They are never directly published.
-2. **Redact / extract.** The capture run extracts only the reusable, non-attributable
-   learning from the raw artifact. Private-repo identifiers, org names, and any content that
-   would identify a private repo are stripped at this step.
-3. **Gate.** Before any extracted learning reaches `docs/solutions/` or any public surface,
-   it MUST pass through the existing promotion-time gates:
-   - `scripts/check-private-leak.ts` — scans for private-repo names on the `data → main`
-     path.
-   - `scripts/check-wiki-private-presence.ts` — wiki promotion gate semantics.
-   Both gates must pass. Failure blocks promotion; the capture stays in quarantine.
+1. **Harvest (counts-only / opaque).** The candidate digest is counts-only and opaque where
+   private — no private-repo identifier appears in the digest, the decision log, or any
+   workflow log line. Opaque keys (e.g. a hash or ordinal) are used for "examined cohort"
+   entries; never "PR #X about `<private repo>`".
+2. **Proposal issue body scan (gate).** The agent-authored proposal issue body — including any
+   examples or correction-pattern prose — is scanned for private identifiers (reusing the
+   token forms from `scripts/check-private-leak.ts`) **before the issue is posted**. A hit
+   blocks or redacts the proposal. A counts-only digest does not prevent the agent from
+   embedding a private repo name in its authored prose; the scan closes that gap.
+3. **No promotion path in v1.** Because no doc is authored, the `docs/solutions/` promotion
+   gates (`scripts/check-private-leak.ts`, `scripts/check-wiki-private-presence.ts`) are not
+   on the v1 critical path. They remain the gates for when authoring is added in a later phase.
 
-This pipeline is a first-class requirement, not an assertion. Capture that cannot be cleanly
-redacted must be discarded, not published with caveats.
+This pipeline is a first-class requirement, not an assertion. A proposal that cannot be
+cleanly redacted must be discarded, not posted with caveats.
 
-### Capture mechanics
+### Decision log — reset-resilient
 
-- **Rides Systematic `ce:compound`.** Systematic is present in the agent workspace
-  (`src/services/setup/systematic-config.ts` in `fro-bot/agent`), so capture can use the
-  existing compound-doc authoring rather than new machinery. _Open question O3: confirm
-  Systematic is enabled (not merely present) in the relevant run surface._
-- **Quarantine lane first.** Autonomous captures land in a quarantine lane (separately
-  labeled, not in the canonical `docs/solutions/` set) until precision is proven. Only
-  clearly high-confidence, gate-passed captures promote to canonical.
-- **Autonomous write → data branch → promotion PR.** Captures (quarantine and promoted) are
-  written under Fro Bot identity to the `data` branch and promoted to `main` via the existing
-  conditional promotion PR. _Open question O2: `docs/solutions/` is today human-authored on
-  `main`; A1 brings it onto the data-branch authority path. This is an architectural change
-  for planning to resolve._
-- **Quality gate (specified).** Capture must avoid noise and duplication:
-  - **Dedup:** similarity check against existing docs; prefer updating an existing doc over
-    creating a near-duplicate (the `ce:compound` overlap behavior already does this for human
-    runs).
-  - **Genuine reusable delta:** the learning must be applicable beyond the specific run that
-    generated it — not a one-off fix for a unique situation.
-  - **Evidence threshold:** the capture must cite the run cohort and the pattern it
-    generalizes; unsupported assertions are rejected.
-  - **Quarantine path:** ambiguous captures (borderline dedup, unclear generalizability) go
-    to quarantine, not canonical. They are not discarded — they wait for human review or
-    additional evidence.
+A **script-maintained** durable decision log records which run cohorts were examined, which
+candidates were proposed (issue opened), and which were deliberately skipped and why. This
+lets the capture run avoid re-proposing the same candidate.
 
-### Decision log (G4 — internal audit trail)
+**Reset-resilience is a hard requirement.** The `data` branch is recreated from `main` on
+squash-merge (the repo bootstraps/recreates `data` from `main`). A decision log living only
+on `data` would be wiped on reset and re-propose everything. The log must survive data-branch
+lifecycle events — e.g. keyed by immutable PR identity (PR number + merge commit SHA) so
+re-derivation is idempotent, and/or stored where a reset does not wipe it. The exact
+persistence mechanism is a planning decision (O4), but reset-resilience is a requirement, not
+a nice-to-have.
 
-Fro Bot maintains a durable decision log of what it has compounded: which run cohorts it
-examined, what learnings it captured or updated, and what it deliberately skipped and why.
-This lets it (a) avoid re-compounding the same thing, and (b) provide an internal audit
-trail for later metric definition. The decision log is **operational metadata / control-plane
-state on the `data` branch** — it is not a fourth knowledge substrate, and it is not
-published to the operator web in early phases. Operator-web surfacing is Phase 3 scope.
+The decision log is **operational metadata / control-plane state** — not a fourth knowledge
+substrate, and not published to the operator web in early phases (operator-web surfacing is
+Phase 3).
+
+### Idempotent harvest
+
+GitHub review state is mutable, paginated, and eventually consistent. The harvest must be
+**idempotent**: each PR is identified by an immutable dedup key (PR number + merge commit
+SHA) so reruns cannot double-count or miss late updates. The exact snapshot protocol (how far
+back the harvest looks, how pagination is handled) is a planning decision (O7), but
+idempotency is a requirement.
+
+### Hard cost budget
+
+Scheduled agent runs cost money. The following are acceptance-criteria-level bounds, not
+vague guidance:
+
+- **Cadence:** weekly (planning confirms or adjusts).
+- **Max candidates per run:** a hard cap on how many proposal issues a single run may open
+  (exact number: planning decision, O9).
+- **Max cohort size:** a hard cap on how far back the harvest looks (e.g. merged PRs in the
+  last N days; exact window: planning decision, O9).
+
+Exceeding either cap causes the run to truncate and log the truncation, not silently expand.
+
+### Deferred: authoring machinery (Phase 2.5+)
+
+The following are explicitly **out of v1 scope** because propose-only dissolves the need:
+
+- **No quarantine lane in `docs/solutions/`.** There is no autonomous authoring in v1, so no
+  quarantine docs are created, and Phase 1 retrieval is untouched. _When authoring is added
+  in a later phase, quarantine docs MUST be excluded from Phase 1 solutions-query retrieval —
+  that is the deferred P0 mitigation._
+- **No `docs/solutions/` data-branch authority path change (O2).** Propose-only does not
+  write `docs/solutions/` at all. The authority-migration (bringing `docs/solutions/` onto
+  the data-branch path, new guard logic, coexistence of human-authored and Fro-Bot-authored
+  docs) moves to Phase 2.5+ when authoring lands. O2 remains an open question for that phase,
+  not v1.
+- **Human-reviewed promotion.** The requirement that captured-learning promotion is
+  human-reviewed (not auto-merge) applies when authoring is added. In v1, the "promotion" is
+  a human reading a proposal issue and deciding to run `ce:compound` — no PR promotion
+  machinery is needed.
+- **Systematic `ce:compound` in the capture run.** Not needed in v1 (the agent opens an
+  issue, not a doc). Confirm Systematic is enabled in the capture run surface when authoring
+  is added (deferred O3).
 
 ## Capability B — Retrieve + apply
 
@@ -191,26 +263,29 @@ value before the harvest pipeline is built.
 ## How the loop compounds (text diagram)
 
 ```
-   prior Fro Bot runs (prompt artifacts, harvested durably to data branch)
+   prior Fro Bot runs (GitHub API outcome metadata; prompt artifacts are optional enrichment)
             │
             │  ┌─────────────────────────────────────────────────────────┐
-            │  │  PHASE 1 (first): retrieve + apply                      │
+            │  │  PHASE 1 (shipped): retrieve + apply                    │
             │  │  B. consult docs/solutions/ (22 existing docs)          │
             │  │     relevance-ranked · freshness-gated · candidate-mode │
             │  │     for low-confidence matches                          │
             │  └─────────────────────────────────────────────────────────┘
             │
-   ┌────────▼─────────┐   PHASE 2: triggers C1 · C2 · C3
-   │ A. capture run   │   harvest (private) → redact → gate → quarantine
-   │ (ce:compound)    │   → promote (high-confidence, gate-passed only)
-   └────────┬─────────┘
-            │ autonomous write → data branch → promotion PR
-            │ gates: check-private-leak.ts · check-wiki-private-presence.ts
+   ┌────────▼─────────┐   PHASE 2 v1: C1-only · propose-only
+   │ A. capture run   │   harvest C1 cohort (private, counts-only digest)
+   │ (suggest only)   │   → agent judges → proposal issue (no doc authored)
+   └────────┬─────────┘   privacy gate: scan issue body before posting
+            │ proposal issue opened · decision log updated (reset-resilient)
+            │ human (Marcus) decides → ce:compound later if warranted
+            │
+            │ [authoring + quarantine lane + data-authority path: Phase 2.5+]
+            │
             ▼
-   quarantine lane  →  (proven) →  docs/solutions/ canonical
-            │                              │
-            │                    decision log (internal audit trail,
-            │                    data branch, NOT operator web in v1)
+   docs/solutions/ canonical  (unchanged by Phase 2 v1)
+            │
+            │  decision log (internal audit trail, reset-resilient,
+            │  NOT operator web in v1; operator-web surfacing: Phase 3)
    ┌────────▼─────────┐
    │ C. wiki grounding│  baseline always-on
    │ (C-deep: Ph. 3)  │  deep traversal: Phase 3, gate-passed content only
@@ -222,71 +297,100 @@ value before the harvest pipeline is built.
 
 ## Open questions (resolve at planning)
 
-- **O1 — Durable run harvest.** Verified: `OPENCODE_PROMPT_ARTIFACT='true'` is set in
-  `fro-bot.yaml` (line 372) and honored by the agent runtime, **but the artifacts are
-  ephemeral and inconsistent** — of three recent runs, only one had an artifact, and GitHub
-  artifacts expire. Capture cannot rely on artifacts still being present. Planning must
-  decide how run data is durably harvested (harvest-as-you-go into the data branch vs.
-  best-effort read of unexpired artifacts vs. another channel).
-- **O2 — `docs/solutions/` authority path.** Today human-authored on `main`; A1 brings
-  autonomous captures onto the data-branch authority + promotion path. Resolve the promotion
-  model (auto-merge vs. human-reviewed for captured learnings) and how human-authored and
-  Fro-Bot-authored docs coexist. **Note:** this is a bigger change than it appears —
-  `scripts/check-wiki-authority.ts` today guards only `knowledge/wiki/` and `metadata/`
-  paths, not `docs/solutions/`; `scripts/commit-metadata.ts` is path-restricted to
-  `metadata/*.yaml`. Bringing `docs/solutions/` onto the data-authority path requires new
-  guard logic and new promotion behavior, not just a config change.
-- **O3 — Systematic in the run surface.** Confirm Systematic `ce:compound` is *enabled* (not
-  just present) in the surface that runs capture, and whether capture is its own scheduled
+- **O1 — Harvest substrate. RESOLVED (this brainstorm).** The reliable substrate is GitHub
+  API outcome metadata (merged PRs + review-round counts, CI conclusions, issue triage
+  history), not prompt artifacts. `OPENCODE_PROMPT_ARTIFACT='true'` is set but artifacts are
+  ephemeral/inconsistent (~1 of 5 recent runs) and expire, so they are bonus enrichment when
+  present, never the foundation. No new durable-harvest pipeline is required for v1 — the
+  capture script reads what GitHub already retains.
+- **O2 — `docs/solutions/` authority path. DEFERRED to Phase 2.5+.** Propose-only v1 does
+  not write `docs/solutions/` at all, so the authority-migration is out of v1 scope. When
+  authoring lands: `scripts/check-wiki-authority.ts` today guards only `knowledge/wiki/` and
+  `metadata/` paths; bringing `docs/solutions/` onto the data-authority path requires new
+  guard logic, a new promotion rule, and a coexistence model for human-authored and
+  Fro-Bot-authored docs. Planning question for Phase 2.5+.
+- **O3 — Systematic in the capture run surface. DEFERRED to Phase 2.5+.** Not needed in v1
+  (no doc authoring). Confirm Systematic `ce:compound` is *enabled* (not just present) in the
+  scheduled capture run when authoring is added, and whether capture is its own scheduled
   workflow or rides the existing daily oversight run.
-- **O4 — Retrieval injection mechanism.** How the consulted learnings reach the agent's
-  working context (extend the existing `wiki-query` injection step, a new retrieval step, or
-  an agent-invoked tool) — parallels the wiki-traversal tool decision.
-- **O5 — Improvement metric.** What "compounding is improving outcomes" concretely measures
-  (fewer repeat failures of a compounded class, fewer review rounds on a learned pattern,
-  etc.) so the decision log's G4 claim is testable, not narrative. Metric definition is Phase
-  3 scope; early phases need only the internal audit trail.
+- **O4 — Decision-log persistence / reset-resilience.** Where the script-maintained decision
+  log lives and how it survives data-branch resets — a `metadata/` file keyed by immutable PR
+  identity, a dedicated log file on `main`, or another channel — and its exact schema
+  (examined cohorts, proposed, skipped+reason). Reset-resilience is a requirement; the
+  mechanism is a planning decision.
+- **O5 — Quarantine mechanism. DEFERRED to Phase 2.5+.** No quarantine docs in v1 (no
+  authoring). When authoring lands: `origin: autonomous` frontmatter marker vs. a
+  `docs/solutions/proposed/` subdir. Both keep autonomous captures visibly separable; the
+  frontmatter marker is lighter and keeps Phase 1 retrieval working unchanged. Planning picks
+  one — and quarantine docs MUST be excluded from Phase 1 solutions-query retrieval.
+- **O6 — C1 round-count threshold.** The concrete threshold for "multi-round" (how many
+  review rounds / changes-requested events counts as C1-qualifying). Calibration against real
+  run history, planning-time.
+- **O7 — Harvest snapshot protocol.** How far back the harvest looks (rolling window in days
+  vs. since-last-run cursor), how pagination is handled, and how the per-PR immutable dedup
+  key (PR number + merge commit SHA) is stored. Planning decision.
+- **O8 — Improvement metric. Phase 3 scope.** What "compounding is improving outcomes"
+  concretely measures (fewer repeat failures of a compounded class, fewer review rounds on a
+  learned pattern). Early phases need only the internal audit trail. Phase 1's outcome-impact
+  is not yet measured; that measurement is deferred here.
+- **O9 — Cost budget specifics.** The hard caps for max candidates per run and max cohort
+  size (harvest lookback window). Cadence is weekly as a default; planning confirms or
+  adjusts. These are acceptance-criteria-level, not vague.
+- **O10 — Proposal issue location and label.** Which repo the proposal issue is filed in,
+  what label(s) it carries, and how Marcus discovers and acts on it. Planning decision.
 
 ## Success criteria
 
 - **SC1** — Fro Bot reliably consults `docs/solutions/` before acting on a class of work
   with prior learnings, and the applied learning is visible in the run's reasoning. (Phase 1)
-- **SC2** — A capture run examines a cohort of prior Fro Bot runs and produces at least one
-  genuine, deduplicated learning via the quarantine lane and data-branch promotion path, with
-  no operator invoking `ce:compound`. (Phase 2)
+- **SC2** — A capture run examines a C1 cohort (multi-round-review PRs above threshold),
+  opens at least one proposal issue with evidence (which PR, how many rounds, the correction
+  pattern), deduped against existing `docs/solutions/`, with no operator invoking `ce:compound`
+  to trigger the run. The proposal issue body passes the private-identifier scan before
+  posting. (Phase 2 v1)
 - **SC3** — A later run of a class with a relevant prior learning demonstrably consults and
   applies it (or surfaces it as a candidate for low-confidence matches), visible in the run's
   reasoning/decision log. (Phase 2)
 - **SC4** — An agent run grounds itself from the repo's wiki page and, when it judges it
   needs more, traverses at least one wikilink to a related page within the guardrail budget,
   reading only gate-passed wiki content. (Phase 3)
-- **SC5** — Capture produces no private-repo identifiers in any public surface. All
-  autonomous writes pass through `scripts/check-private-leak.ts` and
-  `scripts/check-wiki-private-presence.ts` before promotion to `main`. Raw harvest artifacts
-  remain private control-plane state on the `data` branch and are never directly published.
-- **SC6** — The decision log records what was compounded (and what was skipped and why) as
-  internal operational metadata on the `data` branch.
+- **SC5** — Capture produces no private-repo identifiers in any public surface. The proposal
+  issue body (including agent-authored prose and examples) is scanned for private identifiers
+  before posting; a hit blocks or redacts the proposal. The candidate digest, decision log,
+  and workflow logs are counts-only / opaque — no private repo name, org, issue title, or PR
+  description appears in any of them.
+- **SC6** — The decision log records what was proposed (and what was skipped and why) as
+  internal operational metadata, is keyed by immutable PR identity, and survives data-branch
+  resets without re-proposing already-examined candidates.
 
 ## Phasing (directional — planning refines)
 
-- **Phase 1 — Retrieve + apply.** Capability B over the existing 22 `docs/solutions/` docs:
-  reliable consultation before acting, relevance-ranked, freshness-gated, candidate-mode for
-  low-confidence matches. Lower-risk, immediately testable, proves compounding value before
-  the harvest pipeline is built.
-- **Phase 2 — Autonomous capture, narrow.** Durable run harvest (O1) + a capture run over
-  the two highest-signal triggers (C1 multi-round-review, C2 failed-then-fixed), with the
-  full harvest→redact→gate→quarantine→promote pipeline, the quality gate, and the decision
-  log. Add C3 (issue triages) once C1/C2 precision is proven.
+- **Phase 1 — Retrieve + apply (shipped).** Capability B over the existing 22
+  `docs/solutions/` docs: reliable consultation before acting, relevance-ranked,
+  freshness-gated, candidate-mode for low-confidence matches. Lower-risk, immediately
+  testable, proves compounding value before the harvest pipeline is built.
+- **Phase 2 — GitHub API outcome harvest, C1-only, propose-only.** A scheduled capture run
+  harvests merged PRs whose review history shows multiple rounds (C1 trigger only). The run
+  opens GitHub issue proposals with evidence; no doc is authored. A human decides whether to
+  author via `ce:compound`. Includes: counts-only digest, proposal-issue-body privacy scan,
+  reset-resilient decision log, idempotent harvest (per-PR dedup key), and hard cost budget.
+  Operator-web surfacing stays strictly Phase 3.
+- **Phase 2.5 — Add C2/C3 triggers + authoring machinery (once C1 precision is proven).**
+  Add C2 (failed-then-fixed) and C3 (issue triages) triggers. Add autonomous doc authoring
+  into a quarantine lane, the `docs/solutions/` data-branch authority path (O2), and the
+  quarantine-exclusion guard for Phase 1 retrieval.
 - **Phase 3 — Wiki traversal + observability.** Capability C-deep (agent-invoked wikilink
   traversal with concrete numeric guardrails, gate-passed content only), C4 cross-run
-  synthesis, and operator-web surfacing of the decision log + improvement metric definition.
+  synthesis, operator-web surfacing of the decision log, and improvement metric definition
+  (O8).
 
 ## Dependencies & relationships
 
 - **Depends on:** nothing in the operator spine (control-plane-native). Builds on existing
   `docs/solutions/`, `knowledge/wiki/`, `scripts/wiki-query.ts`,
-  `scripts/check-private-leak.ts`, `scripts/check-wiki-private-presence.ts`, the
-  data-branch authority model, and Systematic `ce:compound`.
+  `scripts/check-private-leak.ts`, `scripts/check-wiki-private-presence.ts`, and the
+  data-branch authority model. Systematic `ce:compound` is used by the human after reviewing
+  a proposal; it is not invoked by the capture run in v1.
 - **Soft relationship to operator web:** G4's decision-log surfacing is Phase 3 scope. A1's
   core loop does not block on the dashboard — the internal audit trail is durable
   control-plane state regardless of whether the web view exists yet.
