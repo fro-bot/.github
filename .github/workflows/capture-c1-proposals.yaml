@@ -77,9 +77,12 @@ jobs:
       # The privacy gate and issue-create run deterministically in the propose
       # step below (SHAPE B). The agent cannot bypass the privacy gate.
       #
-      # No github-token is passed: the agent only needs to read the digest file
-      # and write the bodies file — no GitHub API access required. Omitting the
-      # token ensures the agent cannot create issues directly, bypassing the gate.
+      # The agent action requires a github-token input, so one is supplied. It is
+      # the workflow's auto-provisioned GITHUB_TOKEN, scoped to `contents: read` by
+      # this job's permissions block — it carries no `issues: write`. Issue creation
+      # is prevented by that scope, not by omitting the token. The agent only reads
+      # the digest file and writes the bodies file; issue creation stays exclusively
+      # in the deterministic propose step under the App token.
       - name: 🤖 Author proposal bodies
         id: agent
         uses: fro-bot/agent@a12463fab12958ed122856db287c061b623c2834 # v0.75.0
@@ -118,6 +121,12 @@ jobs:
             - Never write to any path other than $RUNNER_TEMP/capture-c1-bodies.json.
             - Output only the bodies file. No summary issue. No comments.
         with:
+          # The action requires a github-token input. Pass the workflow's auto-provisioned
+          # GITHUB_TOKEN, which is scoped to `contents: read` by this job's permissions — it
+          # cannot create issues. Issue creation remains exclusively in the deterministic
+          # propose step (via the App token), so the agent still cannot bypass the privacy
+          # gate or open issues directly.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ vars.FRO_BOT_MODEL }}
           omo-providers: ${{ secrets.OMO_PROVIDERS }}
