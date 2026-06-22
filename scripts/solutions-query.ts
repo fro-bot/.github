@@ -382,6 +382,11 @@ async function loadSolutionsFilesFromDisk(): Promise<Record<string, string>> {
 // Private names loader
 // ---------------------------------------------------------------------------
 
+// This scan is defense-in-depth, not the primary privacy control. The docs/solutions/
+// corpus lives on main and has already cleared the promotion leak gate, so by construction
+// it carries no private identifier. Canonical private names live on the data branch and are
+// overlaid only for schedule/workflow_dispatch runs; on other events this returns 0 names
+// and the scan is inert over already-gated content. The trust chokepoint remains promotion.
 async function loadPrivateNamesFromDisk(): Promise<string[]> {
   let reposYaml: string
 
