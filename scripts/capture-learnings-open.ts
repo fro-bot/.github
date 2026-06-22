@@ -492,7 +492,9 @@ async function main(): Promise<void> {
 
   const result: OpenResult = {
     examined: digest.telemetry.multiRoundCandidates,
-    candidatesAfterDedup: digest.telemetry.afterSolutionsDedup,
+    // The count actually fed into planning — digest.candidates is already capped to
+    // MAX_LEARNINGS_PER_RUN, so this reflects what was processed, not the pre-cap total.
+    candidatesAfterDedup: digest.candidates.length,
     learningsOpened: created,
     blockedOnPrivacy: plan.blockedOnPrivacy,
     skippedDuplicate: plan.skippedDuplicate,
