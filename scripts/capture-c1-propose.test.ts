@@ -23,7 +23,7 @@ import {
   type PlanProposalsInput,
   type ProposalToCreate,
 } from './capture-c1-propose.ts'
-import {buildPrivateNameTokens} from './wiki-slug.ts'
+import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -50,11 +50,7 @@ function makePlanInput(overrides: Partial<PlanProposalsInput> = {}): PlanProposa
 
 /** Build a private token set from a synthetic owner/name for test isolation. */
 function makePrivateTokens(nameWithOwner: string): Set<string> {
-  const tokens = new Set<string>()
-  for (const token of buildPrivateNameTokens(nameWithOwner)) {
-    tokens.add(token.toLowerCase())
-  }
-  return tokens
+  return buildPrivateTokenSet([nameWithOwner])
 }
 
 function makeToCreate(overrides: Partial<ProposalToCreate> = {}): ProposalToCreate {
@@ -546,7 +542,7 @@ function mockOctokit(
 // ---------------------------------------------------------------------------
 
 describe('ensureLabelsExist', () => {
-  const labels: LabelDescriptor[] = [{name: LEARNING_PROPOSAL_LABEL, color: '0075ca', description: 'Test label'}]
+  const labels: LabelDescriptor[] = [{name: LEARNING_PROPOSAL_LABEL, color: '0e8a16', description: 'Test label'}]
 
   it('confirms a label that already exists (getLabel succeeds)', async () => {
     // #given the label already exists
@@ -644,18 +640,20 @@ describe('createProposals', () => {
     expect(callArg.labels).toContain(LEARNING_PROPOSAL_LABEL)
   })
 
-  it('ships with an empty labels array when the label cannot be confirmed', async () => {
+  it('skips ALL proposals when the label cannot be confirmed (fail-closed on labeling)', async () => {
     // #given the label cannot be confirmed (getLabel 500 error)
+    // An unlabeled proposal is invisible to the seen-set query (filtered by label)
+    // and would be re-proposed forever — worse than skipping.
     const createSpy = vi.fn().mockResolvedValue({data: {number: 1}})
     const octokit = mockOctokit({getLabelResult: 'error', issuesCreateSpy: createSpy})
 
     // #when creating proposals
     const counts = await createProposals(octokit, 'fro-bot', '.github', [makeToCreate()])
 
-    // #then the issue is still created (with empty labels — confirmed subset)
-    expect(counts.created).toBe(1)
-    const callArg = createSpy.mock.calls[0]?.[0] as IssuesCreateCall
-    expect(callArg.labels).toHaveLength(0)
+    // #then NO issue is created and skippedLabelUnavailable is incremented
+    expect(counts.created).toBe(0)
+    expect(counts.skippedLabelUnavailable).toBe(1)
+    expect(createSpy).not.toHaveBeenCalled()
   })
 
   it('same-run Set guard: two toCreate items with the same mergeSha → only one created', async () => {

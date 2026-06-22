@@ -30,7 +30,7 @@ import {
   type CandidateDigest,
   type OctokitClient,
 } from './capture-c1-harvest.ts'
-import {buildPrivateNameTokens} from './wiki-slug.ts'
+import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -84,6 +84,7 @@ export interface CreateProposalsCounts {
   failed: number
   blockedOnPrivacy: number
   skippedDuplicate: number
+  skippedLabelUnavailable: number
 }
 
 // ---------------------------------------------------------------------------
@@ -104,30 +105,6 @@ export function proposalBodyHasPrivateLeak(body: string, privateTokens: Set<stri
     if (lower.includes(token)) return true
   }
   return false
-}
-
-// ---------------------------------------------------------------------------
-// Private token set builder (mirrors solutions-query.ts buildPrivateTokenSet)
-// ---------------------------------------------------------------------------
-
-/**
- * Build a flat set of private identifier tokens from a list of `owner/name` strings.
- * Tokens: [owner/name, owner--name, computeRepoSlug(owner, name)] — lowercased.
- * Entries with `[REDACTED]` owner or name are skipped.
- */
-function buildPrivateTokenSet(privateNames: string[]): Set<string> {
-  const tokens = new Set<string>()
-  for (const nameWithOwner of privateNames) {
-    const slashIndex = nameWithOwner.indexOf('/')
-    if (slashIndex < 1) continue
-    const owner = nameWithOwner.slice(0, slashIndex)
-    const name = nameWithOwner.slice(slashIndex + 1)
-    if (owner === '[REDACTED]' || name === '[REDACTED]') continue
-    for (const token of buildPrivateNameTokens(nameWithOwner)) {
-      tokens.add(token.toLowerCase())
-    }
-  }
-  return tokens
 }
 
 // ---------------------------------------------------------------------------
@@ -344,8 +321,9 @@ function deriveProposalTitle(mergeSha: string): string {
 
 const LEARNING_PROPOSAL_LABEL_DESCRIPTOR: LabelDescriptor = {
   name: LEARNING_PROPOSAL_LABEL,
-  color: '0075ca',
-  description: 'Candidate learning from a multi-round-review PR',
+  // Color matches .github/settings.yml (hex without '#', as GitHub createLabel requires)
+  color: '0e8a16',
+  description: 'Candidate learning proposed from a multi-round-review PR',
 }
 
 /**
@@ -366,13 +344,23 @@ export async function createProposals(
   owner: string,
   repo: string,
   toCreate: ProposalToCreate[],
-): Promise<{created: number; failed: number}> {
+): Promise<{created: number; failed: number; skippedLabelUnavailable: number}> {
   if (toCreate.length === 0) {
-    return {created: 0, failed: 0}
+    return {created: 0, failed: 0, skippedLabelUnavailable: 0}
   }
 
   // Label preflight
   const confirmedLabels = await ensureLabelsExist(octokit, owner, repo, [LEARNING_PROPOSAL_LABEL_DESCRIPTOR])
+
+  // Fail-closed on labeling: if the required label is not confirmed, skip ALL proposals.
+  // An unlabeled proposal is invisible to the seen-set query (which filters by label)
+  // and would be re-proposed forever — worse than skipping.
+  if (!confirmedLabels.has(LEARNING_PROPOSAL_LABEL)) {
+    process.stderr.write(
+      `capture-c1-propose: label "${LEARNING_PROPOSAL_LABEL}" unavailable; skipping ${toCreate.length} proposal(s) (label-unavailable)\n`,
+    )
+    return {created: 0, failed: 0, skippedLabelUnavailable: toCreate.length}
+  }
 
   // Same-run in-memory Set (guards eventual-consistency race, R3)
   const createdThisRun = new Set<string>()
@@ -388,7 +376,6 @@ export async function createProposals(
     }
 
     const title = deriveProposalTitle(item.mergeSha)
-    const labels = [LEARNING_PROPOSAL_LABEL].filter(l => confirmedLabels.has(l))
 
     try {
       await octokit.rest.issues.create({
@@ -396,7 +383,7 @@ export async function createProposals(
         repo,
         title,
         body: item.body,
-        labels,
+        labels: [LEARNING_PROPOSAL_LABEL],
       } as unknown as Parameters<OctokitClient['rest']['issues']['create']>[0])
 
       // Mark as created only after the API call succeeds
@@ -411,7 +398,7 @@ export async function createProposals(
 
   process.stderr.write(`capture-c1-propose: proposals created=${created} failed=${failed}\n`)
 
-  return {created, failed}
+  return {created, failed, skippedLabelUnavailable: 0}
 }
 
 // ---------------------------------------------------------------------------
@@ -445,6 +432,7 @@ interface ProposeResult {
   proposalsOpened: number
   blockedOnPrivacy: number
   skippedDuplicate: number
+  skippedLabelUnavailable: number
   failed: number
 }
 
@@ -497,7 +485,7 @@ async function main(): Promise<void> {
   })
 
   // Create the planned proposals
-  const {created, failed} = await createProposals(octokit, owner, repo, plan.toCreate)
+  const {created, failed, skippedLabelUnavailable} = await createProposals(octokit, owner, repo, plan.toCreate)
 
   const result: ProposeResult = {
     examined: digest.telemetry.examined,
@@ -505,6 +493,7 @@ async function main(): Promise<void> {
     proposalsOpened: created,
     blockedOnPrivacy: plan.blockedOnPrivacy,
     skippedDuplicate: plan.skippedDuplicate,
+    skippedLabelUnavailable,
     failed,
   }
 

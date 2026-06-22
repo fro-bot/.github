@@ -34,11 +34,12 @@ export const LEARNING_PROPOSAL_LABEL = 'learning-proposal'
 
 /**
  * Minimum overlap score (inclusive) between a candidate's signals and an existing
- * solutions doc to trigger dedup. Exact problem_type match = 100; tag/module overlap
- * is additive at 10 per shared token. Threshold of 10 means any single shared tag
- * or module token triggers dedup.
+ * solutions doc to trigger dedup. Exact problem_type match = 100 (always triggers).
+ * Tag/module overlap is additive at 10 per shared token; threshold of 20 requires
+ * at least 2 shared tokens before dedup fires — a single common tag (e.g. 'ci',
+ * 'security') no longer triggers dedup on its own.
  */
-const SOLUTIONS_OVERLAP_THRESHOLD = 10
+const SOLUTIONS_OVERLAP_THRESHOLD = 20
 
 const SOLUTIONS_ROOT = 'docs/solutions'
 const SOLUTIONS_SUBDIRS = [
@@ -316,8 +317,23 @@ async function loadSolutionsFilesFromDisk(): Promise<Record<string, string>> {
 }
 
 // ---------------------------------------------------------------------------
-// GITHUB_OUTPUT writer
+// Digest file writer + GITHUB_OUTPUT writer
 // ---------------------------------------------------------------------------
+
+/**
+ * Write the full CandidateDigest ({candidates, telemetry}) as JSON to the path
+ * specified by CAPTURE_C1_DIGEST_PATH. This eliminates the shell-injection vector
+ * that existed when the digest was echoed via GITHUB_OUTPUT multiline syntax.
+ *
+ * Also writes scalar telemetry counters to GITHUB_OUTPUT for step-summary use.
+ * The multiline `digest` key is intentionally dropped — consumers read the file.
+ */
+async function writeDigestFile(digest: CandidateDigest): Promise<void> {
+  const digestPath = process.env.CAPTURE_C1_DIGEST_PATH
+  if (digestPath !== undefined && digestPath !== '') {
+    await writeFile(digestPath, `${JSON.stringify(digest)}\n`, {flag: 'w'})
+  }
+}
 
 async function writeGithubOutput(digest: CandidateDigest): Promise<void> {
   const outputPath = process.env.GITHUB_OUTPUT
@@ -325,11 +341,8 @@ async function writeGithubOutput(digest: CandidateDigest): Promise<void> {
     return
   }
 
-  const delimiter = `EOF_${Math.random().toString(16).slice(2)}`
+  // Scalar counters only — no multiline digest key (consumers read CAPTURE_C1_DIGEST_PATH).
   const lines = [
-    `digest<<${delimiter}`,
-    JSON.stringify(digest.candidates),
-    delimiter,
     `candidate-count=${digest.telemetry.emitted}`,
     `examined=${digest.telemetry.examined}`,
     `after-proposal-dedup=${digest.telemetry.afterProposalDedup}`,
@@ -398,6 +411,8 @@ export async function harvestCandidates(
   repo: string,
   now: Date,
 ): Promise<Candidate[]> {
+  // Use now.getTime() — the injected `now` is already UTC ms (Date.now() in main).
+  // Both sides of the comparison are UTC ms, so timezone drift cannot occur.
   const cutoff = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
 
   const allPrs = await octokit.paginate(octokit.rest.pulls.list, {
@@ -426,15 +441,17 @@ export async function harvestCandidates(
       continue
     }
 
-    // Count CHANGES_REQUESTED reviews — transient errors skip this PR
+    // Count CHANGES_REQUESTED reviews across ALL pages — transient errors skip this PR.
+    // Paginate to avoid undercounting when reviews span >1 page (default page = 30).
     let reviewRounds: number
     try {
-      const reviews = await octokit.rest.pulls.listReviews({
+      const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
         owner,
         repo,
         pull_number: pr.number,
-      })
-      reviewRounds = reviews.data.filter(r => r.state === 'CHANGES_REQUESTED').length
+        per_page: 100,
+      } as unknown as Parameters<OctokitClient['rest']['pulls']['listReviews']>[0])
+      reviewRounds = reviews.filter(r => (r as {state: string}).state === 'CHANGES_REQUESTED').length
     } catch (error: unknown) {
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
       process.stderr.write(`capture-c1-harvest: skipping PR #${pr.number} — listReviews failed (status=${status})\n`)
@@ -501,7 +518,8 @@ async function main(): Promise<void> {
 
   try {
     const octokit = await createOctokitFromEnv()
-    const now = new Date()
+    // Use Date.now() — UTC ms — as the reference point for the lookback cutoff.
+    const now = new Date(Date.now())
 
     const [mergedPrs, proposedMergeShas, solutionsFiles] = await Promise.all([
       harvestCandidates(octokit, owner, repo, now),
@@ -518,16 +536,20 @@ async function main(): Promise<void> {
       maxProposals: MAX_PROPOSALS_PER_RUN,
     })
 
+    await writeDigestFile(digest)
     await writeGithubOutput(digest)
     process.stdout.write(`${JSON.stringify(digest)}\n`)
-  } catch {
-    // Best-effort: any error → empty digest, exit 0 — harvest must never fail the workflow step
-    process.stderr.write('capture-c1-harvest: unexpected error, falling back to empty digest\n')
+  } catch (error: unknown) {
+    // Best-effort: any error → empty digest, exit 0 — harvest must never fail the workflow step.
+    // Log error class only — no message that could leak content.
+    const errorName = error instanceof Error ? error.name : 'unknown'
+    process.stderr.write(`capture-c1-harvest: unexpected error (${errorName}), falling back to empty digest\n`)
     const empty: CandidateDigest = {
       candidates: [],
       telemetry: {examined: 0, afterProposalDedup: 0, afterSolutionsDedup: 0, emitted: 0},
     }
     try {
+      await writeDigestFile(empty)
       await writeGithubOutput(empty)
     } catch {
       // ignore

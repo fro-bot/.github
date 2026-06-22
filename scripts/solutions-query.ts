@@ -5,7 +5,7 @@ import process from 'node:process'
 
 import {parse} from 'yaml'
 
-import {buildPrivateNameTokens} from './wiki-slug.ts'
+import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 const MAX_CONTEXT_BYTES = 4 * 1024
 const SOLUTIONS_ROOT = 'docs/solutions'
@@ -226,30 +226,6 @@ function isSecurityFlavored(tokens: Set<string>): boolean {
 // ---------------------------------------------------------------------------
 // Privacy gate
 // ---------------------------------------------------------------------------
-
-/**
- * Build a flat set of private identifier tokens from a list of `owner/name` strings.
- * Mirrors the buildTokensForName logic from check-private-leak.ts.
- * Tokens: [owner/name, owner--name, computeRepoSlug(owner, name)] — deduplicated.
- * Entries with `[REDACTED]` owner or name are skipped (no canonical name to scan for).
- */
-function buildPrivateTokenSet(privateNames: string[]): Set<string> {
-  const tokens = new Set<string>()
-
-  for (const nameWithOwner of privateNames) {
-    const slashIndex = nameWithOwner.indexOf('/')
-    if (slashIndex < 1) continue
-    const owner = nameWithOwner.slice(0, slashIndex)
-    const name = nameWithOwner.slice(slashIndex + 1)
-    if (owner === '[REDACTED]' || name === '[REDACTED]') continue
-
-    for (const token of buildPrivateNameTokens(nameWithOwner)) {
-      tokens.add(token.toLowerCase())
-    }
-  }
-
-  return tokens
-}
 
 function containsPrivateToken(lowerText: string, privateTokens: Set<string>): boolean {
   for (const token of privateTokens) {

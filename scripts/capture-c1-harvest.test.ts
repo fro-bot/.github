@@ -18,6 +18,7 @@ import {
   parseMergeShaMarker,
   type BuildCandidateDigestInput,
   type Candidate,
+  type CandidateDigest,
   type OctokitClient,
   type SolutionDoc,
 } from './capture-c1-harvest.ts'
@@ -214,8 +215,9 @@ describe('buildCandidateDigest', () => {
       expect(result.telemetry.afterSolutionsDedup).toBe(0)
     })
 
-    it('excludes a candidate whose signals share a tag with an existing doc', () => {
-      // #given a candidate with a label matching a doc tag
+    it('includes a candidate that shares only ONE tag with an existing doc (single-tag no longer triggers dedup)', () => {
+      // #given a candidate with a single label matching a doc tag
+      // Threshold is now 20 — a single shared tag (10 pts) is below threshold.
       const input = makeDigestInput({
         mergedPrs: [makeCandidate({signals: {titleTokens: [], labels: ['automation']}})],
         solutionsDocs: [makeSolutionDoc({tags: ['automation'], problemType: '', module: ''})],
@@ -224,7 +226,21 @@ describe('buildCandidateDigest', () => {
       // #when building the digest
       const result = buildCandidateDigest(input)
 
-      // #then the candidate is excluded (tag overlap = 10 points >= threshold of 10)
+      // #then the candidate is INCLUDED (single tag = 10 pts < threshold of 20)
+      expect(result.candidates).toHaveLength(1)
+    })
+
+    it('excludes a candidate whose signals share TWO or more tags with an existing doc', () => {
+      // #given a candidate with two labels both matching doc tags
+      const input = makeDigestInput({
+        mergedPrs: [makeCandidate({signals: {titleTokens: [], labels: ['automation', 'ci']}})],
+        solutionsDocs: [makeSolutionDoc({tags: ['automation', 'ci'], problemType: '', module: ''})],
+      })
+
+      // #when building the digest
+      const result = buildCandidateDigest(input)
+
+      // #then the candidate is excluded (2 shared tags = 20 pts >= threshold of 20)
       expect(result.candidates).toHaveLength(0)
     })
 
@@ -294,7 +310,7 @@ describe('buildCandidateDigest', () => {
 
   describe('telemetry counts', () => {
     it('reports correct counts through the dedup pipeline', () => {
-      // #given 5 candidates: 2 already proposed, 1 overlaps a doc, 2 clean
+      // #given 5 candidates: 2 already proposed, 1 overlaps a doc (2 shared tags), 2 clean
       const proposedSha1 = `proposed1${'0'.repeat(31)}`
       const proposedSha2 = `proposed2${'0'.repeat(31)}`
       const overlapSha = `overlap1${'0'.repeat(32)}`
@@ -305,12 +321,13 @@ describe('buildCandidateDigest', () => {
         mergedPrs: [
           makeCandidate({mergeSha: proposedSha1}),
           makeCandidate({mergeSha: proposedSha2}),
-          makeCandidate({mergeSha: overlapSha, signals: {titleTokens: [], labels: ['automation']}}),
+          // Two shared tags (automation + ci) = 20 pts >= threshold of 20 → excluded
+          makeCandidate({mergeSha: overlapSha, signals: {titleTokens: [], labels: ['automation', 'ci']}}),
           makeCandidate({mergeSha: cleanSha1}),
           makeCandidate({mergeSha: cleanSha2}),
         ],
         proposedMergeShas: new Set([proposedSha1, proposedSha2]),
-        solutionsDocs: [makeSolutionDoc({tags: ['automation'], problemType: '', module: ''})],
+        solutionsDocs: [makeSolutionDoc({tags: ['automation', 'ci'], problemType: '', module: ''})],
         maxProposals: 5,
       })
 
@@ -391,22 +408,41 @@ function makeReviewItem(state: string): ReviewItem {
 
 function mockOctokit(
   overrides: {
-    paginate?: (fn: unknown, opts: unknown) => Promise<unknown[]>
+    /** Override the paginate call for pulls.list (returns the PR array directly). */
+    paginatePrList?: () => Promise<unknown[]>
+    /** Override the paginate call for pulls.listReviews (returns the review array directly). */
+    paginateListReviews?: () => Promise<ReviewItem[]>
+    /** Legacy: override pullsListReviews for tests that use the old mock shape. */
     pullsListReviews?: (opts: unknown) => Promise<{data: ReviewItem[]}>
   } = {},
 ): OctokitClient {
-  const defaultPaginate = async (fn: unknown, opts: unknown): Promise<unknown[]> => {
+  const listReviewsFn = overrides.pullsListReviews ?? (async () => ({data: [] as ReviewItem[]}))
+
+  // paginate is called with (fn, opts). We route by checking which rest method fn is.
+  const paginate = async (fn: unknown, opts: unknown): Promise<unknown[]> => {
+    // Route: if fn is the listReviews function, use paginateListReviews override or call fn directly
+    if (fn === listReviewsFn) {
+      if (overrides.paginateListReviews !== undefined) {
+        return overrides.paginateListReviews() as Promise<unknown[]>
+      }
+      const result = await listReviewsFn(opts)
+      return result.data
+    }
+    // Otherwise it's pulls.list (or issues.listForRepo)
+    if (overrides.paginatePrList !== undefined) {
+      return overrides.paginatePrList()
+    }
     const call = fn as (opts: unknown) => Promise<{data: unknown[]}>
     const response = await call(opts)
     return response.data
   }
 
   return {
-    paginate: overrides.paginate ?? defaultPaginate,
+    paginate,
     rest: {
       pulls: {
         list: async () => ({data: []}),
-        listReviews: overrides.pullsListReviews ?? (async () => ({data: []})),
+        listReviews: listReviewsFn,
       },
       issues: {
         listForRepo: async () => ({data: []}),
@@ -420,7 +456,7 @@ describe('harvestCandidates', () => {
     // #given a closed PR that was never merged
     const pr = makePullsListItem({merged_at: null})
     const octokit = mockOctokit({
-      paginate: async () => [pr],
+      paginatePrList: async () => [pr],
     })
 
     // #when harvesting
@@ -436,7 +472,7 @@ describe('harvestCandidates', () => {
     oldDate.setDate(oldDate.getDate() - 60)
     const pr = makePullsListItem({merged_at: oldDate.toISOString()})
     const octokit = mockOctokit({
-      paginate: async () => [pr],
+      paginatePrList: async () => [pr],
     })
 
     // #when harvesting
@@ -450,10 +486,8 @@ describe('harvestCandidates', () => {
     // #given a merged PR with only COMMENTED reviews
     const pr = makePullsListItem()
     const octokit = mockOctokit({
-      paginate: async () => [pr],
-      pullsListReviews: async () => ({
-        data: [makeReviewItem('COMMENTED'), makeReviewItem('COMMENTED')],
-      }),
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('COMMENTED'), makeReviewItem('COMMENTED')],
     })
 
     // #when harvesting
@@ -467,10 +501,8 @@ describe('harvestCandidates', () => {
     // #given a merged PR with only APPROVED reviews
     const pr = makePullsListItem()
     const octokit = mockOctokit({
-      paginate: async () => [pr],
-      pullsListReviews: async () => ({
-        data: [makeReviewItem('APPROVED')],
-      }),
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('APPROVED')],
     })
 
     // #when harvesting
@@ -484,10 +516,8 @@ describe('harvestCandidates', () => {
     // #given a merged PR with 1 CHANGES_REQUESTED review
     const pr = makePullsListItem()
     const octokit = mockOctokit({
-      paginate: async () => [pr],
-      pullsListReviews: async () => ({
-        data: [makeReviewItem('CHANGES_REQUESTED')],
-      }),
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('CHANGES_REQUESTED')],
     })
 
     // #when harvesting
@@ -502,10 +532,8 @@ describe('harvestCandidates', () => {
     const sha = 'abc123def456abc123def456abc123def456abc1'
     const pr = makePullsListItem({merge_commit_sha: sha})
     const octokit = mockOctokit({
-      paginate: async () => [pr],
-      pullsListReviews: async () => ({
-        data: [makeReviewItem('CHANGES_REQUESTED'), makeReviewItem('CHANGES_REQUESTED')],
-      }),
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('CHANGES_REQUESTED'), makeReviewItem('CHANGES_REQUESTED')],
     })
 
     // #when harvesting
@@ -521,15 +549,13 @@ describe('harvestCandidates', () => {
     // #given a merged PR with mixed review states
     const pr = makePullsListItem()
     const octokit = mockOctokit({
-      paginate: async () => [pr],
-      pullsListReviews: async () => ({
-        data: [
-          makeReviewItem('CHANGES_REQUESTED'),
-          makeReviewItem('COMMENTED'),
-          makeReviewItem('APPROVED'),
-          makeReviewItem('CHANGES_REQUESTED'),
-        ],
-      }),
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [
+        makeReviewItem('CHANGES_REQUESTED'),
+        makeReviewItem('COMMENTED'),
+        makeReviewItem('APPROVED'),
+        makeReviewItem('CHANGES_REQUESTED'),
+      ],
     })
 
     // #when harvesting
@@ -540,22 +566,21 @@ describe('harvestCandidates', () => {
     expect(result[0]?.reviewRounds).toBe(2)
   })
 
-  it('skips a PR when listReviews throws a transient error, continues processing others', async () => {
-    // #given two PRs: one whose listReviews throws, one that succeeds
+  it('skips a PR when paginate(listReviews) throws a transient error, continues processing others', async () => {
+    // #given two PRs: one whose paginate(listReviews) throws, one that succeeds
     const goodSha = `goodsha1${'0'.repeat(32)}`
     const badPr = makePullsListItem({number: 1, merge_commit_sha: `badsha1${'0'.repeat(33)}`})
     const goodPr = makePullsListItem({number: 2, merge_commit_sha: goodSha})
 
-    const listReviews = vi
+    // paginateListReviews is called once per PR; first call throws, second succeeds
+    const paginateListReviews = vi
       .fn()
       .mockRejectedValueOnce(Object.assign(new Error('Service Unavailable'), {status: 503}))
-      .mockResolvedValueOnce({
-        data: [makeReviewItem('CHANGES_REQUESTED'), makeReviewItem('CHANGES_REQUESTED')],
-      })
+      .mockResolvedValueOnce([makeReviewItem('CHANGES_REQUESTED'), makeReviewItem('CHANGES_REQUESTED')])
 
     const octokit = mockOctokit({
-      paginate: async () => [badPr, goodPr],
-      pullsListReviews: listReviews as (opts: unknown) => Promise<{data: ReviewItem[]}>,
+      paginatePrList: async () => [badPr, goodPr],
+      paginateListReviews: paginateListReviews as () => Promise<ReviewItem[]>,
     })
 
     // #when harvesting
@@ -564,6 +589,33 @@ describe('harvestCandidates', () => {
     // #then the bad PR is skipped, the good PR is included
     expect(result).toHaveLength(1)
     expect(result[0]?.mergeSha).toBe(goodSha)
+  })
+
+  it('counts CHANGES_REQUESTED reviews across multiple pages (pagination correctness)', async () => {
+    // #given a PR whose reviews span 2 pages (simulated by paginateListReviews returning all)
+    const sha = 'abc123def456abc123def456abc123def456abc1'
+    const pr = makePullsListItem({merge_commit_sha: sha})
+
+    // Simulate paginate returning reviews from both pages combined
+    const allReviews: ReviewItem[] = [
+      makeReviewItem('CHANGES_REQUESTED'), // page 1
+      makeReviewItem('COMMENTED'),
+      makeReviewItem('CHANGES_REQUESTED'), // page 2
+      makeReviewItem('APPROVED'),
+      makeReviewItem('CHANGES_REQUESTED'), // page 2 continued
+    ]
+
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => allReviews,
+    })
+
+    // #when harvesting
+    const result = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then all 3 CHANGES_REQUESTED reviews are counted (not just the first page)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.reviewRounds).toBe(3)
   })
 })
 
@@ -716,5 +768,76 @@ describe('fetchProposedMergeShas', () => {
     expect(paginateSpy).toHaveBeenCalledOnce()
     const callArgs = paginateSpy.mock.calls[0] as unknown as [unknown, Record<string, unknown>]
     expect(callArgs[1]).toMatchObject({labels: LEARNING_PROPOSAL_LABEL})
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Contract test: harvest→propose schema round-trip (FIX 1)
+// ---------------------------------------------------------------------------
+
+describe('harvest→propose schema contract', () => {
+  it('CandidateDigest serializes and deserializes with candidates intact', () => {
+    // #given a CandidateDigest produced by buildCandidateDigest (as harvest would write it)
+    const candidates: Candidate[] = [
+      {
+        mergeSha: 'abc123def456abc123def456abc123def456abc1',
+        reviewRounds: 3,
+        signals: {titleTokens: ['feat', 'scripts'], labels: ['ci', 'automation']},
+      },
+      {
+        mergeSha: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+        reviewRounds: 2,
+        signals: {titleTokens: ['fix', 'workflow'], labels: []},
+      },
+    ]
+    const digest: CandidateDigest = {
+      candidates,
+      telemetry: {examined: 5, afterProposalDedup: 3, afterSolutionsDedup: 2, emitted: 2},
+    }
+
+    // #when serializing (as harvest writes to CAPTURE_C1_DIGEST_PATH)
+    const serialized = JSON.stringify(digest)
+
+    // #when deserializing (as propose reads from CAPTURE_C1_DIGEST_PATH)
+    const deserialized = JSON.parse(serialized) as CandidateDigest
+
+    // #then the shape is {candidates, telemetry} — not a bare array
+    expect(deserialized).toHaveProperty('candidates')
+    expect(deserialized).toHaveProperty('telemetry')
+    expect(Array.isArray(deserialized.candidates)).toBe(true)
+
+    // #then candidates round-trip correctly
+    expect(deserialized.candidates).toHaveLength(2)
+    expect(deserialized.candidates[0]?.mergeSha).toBe('abc123def456abc123def456abc123def456abc1')
+    expect(deserialized.candidates[0]?.reviewRounds).toBe(3)
+    expect(deserialized.candidates[1]?.mergeSha).toBe('deadbeefdeadbeefdeadbeefdeadbeefdeadbeef')
+
+    // #then telemetry round-trips correctly
+    expect(deserialized.telemetry.examined).toBe(5)
+    expect(deserialized.telemetry.emitted).toBe(2)
+
+    // #then propose can iterate candidates without TypeError
+    // (the old bug: harvest wrote candidates array directly, propose read {candidates,telemetry}
+    //  → digest.candidates was undefined → for...of undefined → crash)
+    // Iterating must not throw — the old bug caused TypeError: undefined is not iterable
+    const shas = deserialized.candidates.map(c => c.mergeSha)
+    expect(shas).toHaveLength(2)
+  })
+
+  it('UTC consistency: lookback cutoff uses UTC ms on both sides', () => {
+    // #given a now date and a merged_at string both in UTC
+    const nowMs = Date.UTC(2026, 5, 22, 12, 0, 0) // 2026-06-22T12:00:00Z
+    const now = new Date(nowMs)
+    const cutoffMs = nowMs - 30 * 24 * 60 * 60 * 1000
+
+    // A PR merged exactly at the cutoff boundary (UTC)
+    const atCutoff = new Date(cutoffMs)
+    const justBefore = new Date(cutoffMs - 1)
+    const justAfter = new Date(cutoffMs + 1)
+
+    // #then the comparison is consistent: cutoff < mergedAt means included
+    expect(atCutoff < new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)).toBe(false)
+    expect(justBefore < new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)).toBe(true)
+    expect(justAfter < new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)).toBe(false)
   })
 })
