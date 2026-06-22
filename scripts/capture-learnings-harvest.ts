@@ -102,7 +102,7 @@ export interface CandidateSignals {
  *
  * Carries no owner, repo, or PR number. `signals` includes tokens derived from the PR
  * title and labels, so title-derived tokens do reach the consuming agent — they are not
- * fully sanitized here. The deterministic propose step is the privacy chokepoint: it scans
+ * fully sanitized here. The deterministic open step is the privacy chokepoint: it scans
  * the final authored body for private identifiers and blocks before posting, so a private
  * token surfacing in a title token is gated downstream rather than leaked.
  */
@@ -153,7 +153,7 @@ export interface BuildCandidateDigestInput {
   stageCounts: HarvestStageCounts
   /** merge_shas already represented by a learning-proposal issue. */
   openedLearningShas: Set<string>
-  /** Existing solutions docs for R5 dedup. */
+  /** Existing solutions docs for solutions dedup. */
   solutionsDocs: SolutionDoc[]
   /** Maximum candidates to emit. */
   maxLearnings: number
@@ -196,21 +196,21 @@ export function parseMergeShaMarker(body: string): string | null {
  * Build the opaque candidate digest from injected inputs.
  *
  * Steps:
- * 1. Drop candidates whose mergeSha is already in openedLearningShas (R3 dedup).
- * 2. Drop candidates whose signals strongly overlap an existing solutions doc (R5 dedup).
- * 3. Cap to maxLearnings (R6).
+ * 1. Drop candidates whose mergeSha is already in openedLearningShas (seen-set dedup).
+ * 2. Drop candidates whose signals strongly overlap an existing solutions doc (solutions dedup).
+ * 3. Cap to maxLearnings.
  * 4. Return candidates + counts-only telemetry (harvest stage counts + dedup stage counts).
  *
  * No I/O. Fully unit-testable.
  */
 export function buildCandidateDigest(input: BuildCandidateDigestInput): CandidateDigest {
-  // R3: drop already-proposed merge SHAs
+  // drop already-proposed merge SHAs
   const afterSeenDedup = input.mergedPrs.filter(pr => !input.openedLearningShas.has(pr.mergeSha))
 
-  // R5: drop candidates whose signals overlap an existing solutions doc
+  // drop candidates whose signals overlap an existing solutions doc
   const afterSolutionsDedup = afterSeenDedup.filter(pr => !overlapsAnySolutionsDoc(pr.signals, input.solutionsDocs))
 
-  // R6: cap to maxLearnings
+  // cap to maxLearnings
   const candidates = afterSolutionsDedup.slice(0, input.maxLearnings)
 
   return {
@@ -369,34 +369,12 @@ async function loadSolutionsFilesFromDisk(): Promise<Record<string, string>> {
  * Write the full CandidateDigest ({candidates, telemetry}) as JSON to the path
  * specified by CAPTURE_LEARNINGS_DIGEST_PATH. This eliminates the shell-injection vector
  * that existed when the digest was echoed via GITHUB_OUTPUT multiline syntax.
- *
- * Also writes scalar telemetry counters to GITHUB_OUTPUT for step-summary use.
- * The multiline `digest` key is intentionally dropped — consumers read the file.
  */
 async function writeDigestFile(digest: CandidateDigest): Promise<void> {
   const digestPath = process.env.CAPTURE_LEARNINGS_DIGEST_PATH
   if (digestPath !== undefined && digestPath !== '') {
     await writeFile(digestPath, `${JSON.stringify(digest)}\n`, {flag: 'w'})
   }
-}
-
-async function writeGithubOutput(digest: CandidateDigest): Promise<void> {
-  const outputPath = process.env.GITHUB_OUTPUT
-  if (outputPath === undefined || outputPath === '') {
-    return
-  }
-
-  // Scalar counters only — no multiline digest key (consumers read CAPTURE_LEARNINGS_DIGEST_PATH).
-  const lines = [
-    `candidate-count=${digest.telemetry.emitted}`,
-    `closed-prs-fetched=${digest.telemetry.closedPrsFetched}`,
-    `merged-prs-in-lookback=${digest.telemetry.mergedPrsInLookback}`,
-    `excluded-automation=${digest.telemetry.excludedAutomation}`,
-    `multi-round-candidates=${digest.telemetry.multiRoundCandidates}`,
-    `after-seen-dedup=${digest.telemetry.afterSeenDedup}`,
-    `after-solutions-dedup=${digest.telemetry.afterSolutionsDedup}`,
-  ]
-  await writeFile(outputPath, `${lines.join('\n')}\n`, {flag: 'a'})
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +385,7 @@ async function loadOctokitConstructor(): Promise<OctokitConstructor> {
   if (typeof Octokit !== 'function') {
     throw new TypeError('Failed to load @octokit/rest Octokit constructor')
   }
-  return Octokit as unknown as OctokitConstructor
+  return Octokit as OctokitConstructor
 }
 
 export async function createOctokitFromEnv(): Promise<OctokitClient> {
@@ -511,14 +489,14 @@ export async function harvestCandidates(
     mergedPrsInLookback++
 
     // Exclude dependency-automation PRs by author login
-    const authorLogin = (pr.user as {login?: string} | null)?.login ?? ''
+    const authorLogin = pr.user?.login ?? ''
     if (authorLogin === 'renovate[bot]' || authorLogin === 'dependabot[bot]') {
       excludedAutomation++
       continue
     }
 
     // Exclude dependency-automation PRs by label
-    const prLabels = pr.labels.map(l => (typeof l === 'string' ? l : (l as {name: string}).name))
+    const prLabels = pr.labels.map(l => (typeof l === 'string' ? l : l.name))
     if (prLabels.some(name => DEPENDENCY_LABELS.has(name))) {
       excludedAutomation++
       continue
@@ -538,20 +516,18 @@ export async function harvestCandidates(
 
       // Key all counting on Fro Bot reviewer logins only.
       const froBotReviews = reviews.filter(r => {
-        const login = (r as {user?: {login?: string}}).user?.login ?? ''
+        const login = r.user?.login ?? ''
         return FRO_BOT_REVIEWER_LOGINS.has(login)
       })
 
       // Substantive: APPROVED | CHANGES_REQUESTED | DISMISSED (COMMENTED excluded).
       substantiveReviewCount = froBotReviews.filter(r => {
-        const state = (r as {state: string}).state
-        return state === 'APPROVED' || state === 'CHANGES_REQUESTED' || state === 'DISMISSED'
+        return r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED' || r.state === 'DISMISSED'
       }).length
 
       // Correction signals: DISMISSED | CHANGES_REQUESTED.
       correctionSignalCount = froBotReviews.filter(r => {
-        const state = (r as {state: string}).state
-        return state === 'DISMISSED' || state === 'CHANGES_REQUESTED'
+        return r.state === 'DISMISSED' || r.state === 'CHANGES_REQUESTED'
       }).length
     } catch (error: unknown) {
       const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
@@ -649,7 +625,6 @@ async function main(): Promise<void> {
     })
 
     await writeDigestFile(digest)
-    await writeGithubOutput(digest)
     process.stdout.write(`${JSON.stringify(digest)}\n`)
   } catch (error: unknown) {
     // Best-effort: any error → empty digest, exit 0 — harvest must never fail the workflow step.
@@ -670,7 +645,6 @@ async function main(): Promise<void> {
     }
     try {
       await writeDigestFile(empty)
-      await writeGithubOutput(empty)
     } catch {
       // ignore
     }

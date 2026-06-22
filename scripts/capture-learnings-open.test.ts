@@ -194,7 +194,7 @@ describe('planLearnings', () => {
     })
   })
 
-  describe('privacy gate (R4)', () => {
+  describe('privacy gate', () => {
     it('blocks a candidate whose body contains a private token', () => {
       // #given a body containing a private identifier
       const sha = 'abc123def456abc123def456abc123def456abc1'
@@ -268,7 +268,7 @@ describe('planLearnings', () => {
     })
   })
 
-  describe('same-run dedup (R3)', () => {
+  describe('same-run dedup', () => {
     it('skips a candidate whose mergeSha is in alreadyCreatedShas', () => {
       // #given a candidate whose SHA is already in the created set
       const sha = 'abc123def456abc123def456abc123def456abc1'
@@ -392,7 +392,7 @@ describe('loadPrivateTokensFromDisk', () => {
     // #when loading private tokens
     // #then it throws — the caller must not post proposals
     await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
-      'capture-learnings-open: could not read metadata/repos.yaml',
+      'capture-learnings-open: could not read metadata/repos.yaml — privacy gate cannot operate; no learnings will be posted',
     )
   })
 
@@ -403,7 +403,7 @@ describe('loadPrivateTokensFromDisk', () => {
     // #when loading private tokens
     // #then it throws — the caller must not post proposals
     await expect(loadPrivateTokensFromDisk(readFileFn)).rejects.toThrow(
-      'capture-learnings-open: could not parse metadata/repos.yaml',
+      'capture-learnings-open: could not parse metadata/repos.yaml — privacy gate cannot operate; no learnings will be posted',
     )
   })
 

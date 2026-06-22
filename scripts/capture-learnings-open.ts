@@ -45,10 +45,10 @@ export interface PlanLearningsInput {
    * Candidates with no entry in this map are skipped.
    */
   learningBodies: Map<string, string>
-  /** Private identifier tokens for the privacy gate (R4). */
+  /** Private identifier tokens for the privacy gate. */
   privateTokens: Set<string>
   /**
-   * merge_shas already created this run (same-run dedup guard, R3).
+   * merge_shas already created this run (same-run dedup guard).
    * Populated by the caller from prior openLearningIssues calls or from
    * the cross-run seen-set built by fetchOpenedLearningShas.
    */
@@ -65,7 +65,7 @@ export interface LearningToOpen {
 /** Result of the pure planning core. */
 export interface PlanLearningsResult {
   toCreate: LearningToOpen[]
-  /** Number of learnings blocked by the privacy gate (R4). */
+  /** Number of learnings blocked by the privacy gate. */
   blockedOnPrivacy: number
   /** Number of learnings skipped because the mergeSha was already created. */
   skippedDuplicate: number
@@ -88,7 +88,7 @@ export interface OpenLearningsCounts {
 }
 
 // ---------------------------------------------------------------------------
-// Privacy gate (R4) — pure, fail-closed
+// Privacy gate — pure, fail-closed
 // ---------------------------------------------------------------------------
 
 /**
@@ -133,7 +133,7 @@ function isApiStatus(error: unknown, status: number): boolean {
  * - If the file cannot be read or parsed, this function THROWS.
  * - The caller MUST NOT post any proposals when this throws (no private set ⇒ no proposals).
  * - This is intentional: a missing overlay means the privacy gate cannot operate,
- *   and posting unscanned proposals would violate R4.
+ *   and posting unscanned proposals would violate the privacy-gate contract.
  *
  * Counts-only: private names are never logged; only counts appear in stderr.
  *
@@ -148,7 +148,7 @@ export async function loadPrivateTokensFromDisk(
     reposYaml = await readFileFn('metadata/repos.yaml', 'utf8')
   } catch (error: unknown) {
     throw new Error(
-      'capture-learnings-open: could not read metadata/repos.yaml — privacy gate cannot operate; no proposals will be posted',
+      'capture-learnings-open: could not read metadata/repos.yaml — privacy gate cannot operate; no learnings will be posted',
       {cause: error},
     )
   }
@@ -158,21 +158,21 @@ export async function loadPrivateTokensFromDisk(
     parsed = parse(reposYaml)
   } catch (error: unknown) {
     throw new Error(
-      'capture-learnings-open: could not parse metadata/repos.yaml — privacy gate cannot operate; no proposals will be posted',
+      'capture-learnings-open: could not parse metadata/repos.yaml — privacy gate cannot operate; no learnings will be posted',
       {cause: error},
     )
   }
 
   if (!isRecord(parsed)) {
     throw new TypeError(
-      'capture-learnings-open: metadata/repos.yaml has unexpected shape — privacy gate cannot operate; no proposals will be posted',
+      'capture-learnings-open: metadata/repos.yaml has unexpected shape — privacy gate cannot operate; no learnings will be posted',
     )
   }
 
   const repos = parsed.repos
   if (!Array.isArray(repos)) {
     throw new TypeError(
-      'capture-learnings-open: metadata/repos.yaml missing repos array — privacy gate cannot operate; no proposals will be posted',
+      'capture-learnings-open: metadata/repos.yaml missing repos array — privacy gate cannot operate; no learnings will be posted',
     )
   }
 
@@ -204,8 +204,8 @@ export async function loadPrivateTokensFromDisk(
  *
  * For each candidate:
  * 1. Skip if no agent-authored body is available.
- * 2. Skip if the mergeSha is already in alreadyCreatedShas (same-run dedup, R3).
- * 3. Skip if the body contains a private token (privacy gate, R4).
+ * 2. Skip if the mergeSha is already in alreadyCreatedShas (same-run dedup).
+ * 3. Skip if the body contains a private token (privacy gate).
  * 4. Otherwise: append the merge-SHA marker to the body and add to toCreate.
  *
  * Pure function: no I/O, fully testable.
@@ -223,13 +223,13 @@ export function planLearnings(input: PlanLearningsInput): PlanLearningsResult {
       continue
     }
 
-    // Same-run dedup (R3): skip if already created this run
+    // Same-run dedup: skip if already created this run
     if (input.alreadyCreatedShas.has(candidate.mergeSha)) {
       skippedDuplicate += 1
       continue
     }
 
-    // Privacy gate (R4): block if body contains a private identifier
+    // Privacy gate: block if body contains a private identifier
     if (learningBodyHasPrivateLeak(body, input.privateTokens)) {
       blockedOnPrivacy += 1
       continue
@@ -362,7 +362,7 @@ export async function openLearningIssues(
     return {created: 0, failed: 0, skippedLabelUnavailable: toCreate.length}
   }
 
-  // Same-run in-memory Set (guards eventual-consistency race, R3)
+  // Same-run in-memory Set (guards eventual-consistency race)
   const createdThisRun = new Set<string>()
 
   let created = 0
@@ -404,13 +404,13 @@ export async function openLearningIssues(
 }
 
 // ---------------------------------------------------------------------------
-// Entry point (SHAPE B: deterministic open step reads digest + agent bodies)
+// Entry point (deterministic open step reads digest + agent bodies)
 // ---------------------------------------------------------------------------
 
 /**
  * CLI entry point for the deterministic open step.
  *
- * Handoff contract (SHAPE B):
+ * Handoff contract:
  * - Reads the harvest digest from the path in CAPTURE_LEARNINGS_DIGEST_PATH env var
  *   (a JSON file containing a CandidateDigest written by the harvest step).
  * - Reads agent-authored proposal bodies from the path in CAPTURE_LEARNINGS_BODIES_PATH
@@ -423,6 +423,7 @@ export async function openLearningIssues(
  * Privacy guarantee: the agent never receives owner/repo/number prose (the digest
  * carries only merge_sha + signals). The privacy gate runs here, deterministically,
  * not at agent discretion. A missing or unreadable metadata/repos.yaml is fatal.
+ *
  *
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */

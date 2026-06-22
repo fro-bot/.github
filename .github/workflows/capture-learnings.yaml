@@ -75,8 +75,8 @@ jobs:
       # to $RUNNER_TEMP/capture-learnings-bodies.json. Nothing else — no code edits,
       # no doc edits, no other issues, no API exploration.
       #
-      # The privacy gate and issue-create run deterministically in the propose
-      # step below (SHAPE B). The agent cannot bypass the privacy gate.
+      # The privacy gate and issue-create run deterministically in the open
+      # step below. The agent cannot bypass the privacy gate.
       #
       # The agent action requires a github-token input, so one is supplied. It is
       # the workflow's auto-provisioned GITHUB_TOKEN, scoped to `contents: read` by
@@ -99,7 +99,7 @@ jobs:
                { "candidates": [...], "telemetry": {...} }
                Each candidate in the candidates array has:
                - mergeSha: opaque merge commit SHA (the ONLY identifier you receive)
-               - reviewRounds: number of CHANGES_REQUESTED review rounds
+               - reviewRounds: number of substantive Fro Bot review rounds (approved, changes-requested, or dismissed — a dismissed approval marks a re-review forced by a new push)
                - signals: { titleTokens: string[], labels: string[] }
             2. For each candidate you judge worth proposing (reviewRounds ≥ 2 is
                already guaranteed; use signals to assess value), write a concise
@@ -135,7 +135,7 @@ jobs:
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           prompt: ${{ env.TASK_PROMPT }}
 
-      # Deterministic open step (SHAPE B): reads the harvest digest and the
+      # Deterministic open step: reads the harvest digest and the
       # agent-authored bodies, runs the privacy gate (fail-closed against
       # metadata/repos.yaml), applies same-run dedup, and opens the issues.
       # The privacy gate runs here — not at agent discretion.
@@ -167,7 +167,7 @@ jobs:
               echo "| Merged PRs in lookback | $(jq '.telemetry.mergedPrsInLookback // 0' "$harvest") |"
               echo "| Excluded automation | $(jq '.telemetry.excludedAutomation // 0' "$harvest") |"
               echo "| Multi-round candidates | $(jq '.telemetry.multiRoundCandidates // 0' "$harvest") |"
-              echo "| After proposal dedup | $(jq '.telemetry.afterSeenDedup // 0' "$harvest") |"
+              echo "| After seen dedup | $(jq '.telemetry.afterSeenDedup // 0' "$harvest") |"
               echo "| After solutions dedup | $(jq '.telemetry.afterSolutionsDedup // 0' "$harvest") |"
               echo "| Candidates emitted | $(jq '.telemetry.emitted // 0' "$harvest") |"
             else
@@ -175,12 +175,12 @@ jobs:
             fi
 
             if [[ -s "$result" ]]; then
-              echo "| Proposals opened | $(jq '.learningsOpened // 0' "$result") |"
+              echo "| Learnings opened | $(jq '.learningsOpened // 0' "$result") |"
               echo "| Blocked on privacy | $(jq '.blockedOnPrivacy // 0' "$result") |"
               echo "| Skipped duplicate | $(jq '.skippedDuplicate // 0' "$result") |"
               echo "| Failed | $(jq '.failed // 0' "$result") |"
             else
-              echo "| Proposals opened | (propose result unavailable) |"
+              echo "| Learnings opened | (open result unavailable) |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
         shell: bash

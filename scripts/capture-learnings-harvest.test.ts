@@ -80,6 +80,20 @@ describe('buildMergeShaMarker', () => {
     // #then it matches the expected format
     expect(buildMergeShaMarker('abc123')).toBe('<!-- captured-learning:merge_sha=abc123 -->')
   })
+
+  it('marker round-trip: buildMergeShaMarker output is parsed back by parseMergeShaMarker', () => {
+    // #given a full-length merge SHA
+    const sha = 'abc123def456abc123def456abc123def456abc1'
+
+    // #when building the marker and parsing it back
+    const marker = buildMergeShaMarker(sha)
+    const parsed = parseMergeShaMarker(marker)
+
+    // #then the SHA round-trips correctly
+    expect(parsed).toBe(sha)
+    // #then the marker string starts with the expected prefix
+    expect(marker.startsWith('<!-- captured-learning:')).toBe(true)
+  })
 })
 
 describe('parseMergeShaMarker', () => {
@@ -133,7 +147,7 @@ describe('buildCandidateDigest', () => {
     })
   })
 
-  describe('opacity guarantee (R4)', () => {
+  describe('opacity guarantee', () => {
     it('emitted candidates have ONLY mergeSha, reviewRounds, and signals keys — no owner/repo/number/title', () => {
       // #given a candidate
       const input = makeDigestInput()
@@ -154,7 +168,7 @@ describe('buildCandidateDigest', () => {
     })
   })
 
-  describe('proposal dedup (R3)', () => {
+  describe('seen-set dedup', () => {
     it('excludes a candidate whose mergeSha is in openedLearningShas', () => {
       // #given a candidate whose SHA is already in the seen-set
       const sha = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
@@ -212,7 +226,7 @@ describe('buildCandidateDigest', () => {
     })
   })
 
-  describe('solutions dedup (R5)', () => {
+  describe('solutions dedup', () => {
     it('excludes a candidate whose signals exactly match an existing doc problem_type', () => {
       // #given a candidate with a label matching a doc's problem_type
       const input = makeDigestInput({
@@ -285,7 +299,7 @@ describe('buildCandidateDigest', () => {
     })
   })
 
-  describe('cap (R6)', () => {
+  describe('cap', () => {
     it('caps candidates to maxLearnings when more are available', () => {
       // #given 7 candidates and a cap of 3
       const candidates = Array.from({length: 7}, (_, i) =>
@@ -573,9 +587,42 @@ describe('harvestCandidates', () => {
     })
 
     // #when harvesting
-    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+    const {candidates, stageCounts} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
 
     // #then the PR is excluded by label
+    expect(candidates).toHaveLength(0)
+    expect(stageCounts.excludedAutomation).toBe(1)
+  })
+
+  it('excludes a PR carrying a "dependencies:github-actions" label', async () => {
+    // #given a merged PR with a 'dependencies:github-actions' label and qualifying fro-bot reviews
+    const pr = makePullsListItem({labels: [{name: 'dependencies:github-actions'}]})
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('APPROVED'), makeReviewItem('DISMISSED')],
+    })
+
+    // #when harvesting
+    const {candidates, stageCounts} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is excluded by label, counted as automation
+    expect(candidates).toHaveLength(0)
+    expect(stageCounts.excludedAutomation).toBe(1)
+  })
+
+  it('excludes a PR with merge_commit_sha === null even when merged_at is valid', async () => {
+    // #given a merged PR with a valid merged_at but null merge_commit_sha
+    // (can happen when a merge commit is not recorded, e.g. squash-merge edge cases)
+    const pr = makePullsListItem({merge_commit_sha: null})
+    const octokit = mockOctokit({
+      paginatePrList: async () => [pr],
+      paginateListReviews: async () => [makeReviewItem('APPROVED'), makeReviewItem('DISMISSED')],
+    })
+
+    // #when harvesting
+    const {candidates} = await harvestCandidates(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is excluded (no merge SHA to use as the candidate identifier)
     expect(candidates).toHaveLength(0)
   })
 
@@ -1044,7 +1091,7 @@ describe('fetchOpenedLearningShas', () => {
 // Contract test: harvest→propose schema round-trip
 // ---------------------------------------------------------------------------
 
-describe('harvest→propose schema contract', () => {
+describe('harvest→open schema contract', () => {
   it('CandidateDigest serializes and deserializes with candidates intact', () => {
     // #given a CandidateDigest produced by buildCandidateDigest (as harvest would write it)
     const candidates: Candidate[] = [
@@ -1075,7 +1122,7 @@ describe('harvest→propose schema contract', () => {
     // #when serializing (as harvest writes to CAPTURE_LEARNINGS_DIGEST_PATH)
     const serialized = JSON.stringify(digest)
 
-    // #when deserializing (as propose reads from CAPTURE_LEARNINGS_DIGEST_PATH)
+    // #when deserializing (as the open step reads from CAPTURE_LEARNINGS_DIGEST_PATH)
     const deserialized = JSON.parse(serialized) as CandidateDigest
 
     // #then the shape is {candidates, telemetry} — not a bare array
@@ -1096,7 +1143,7 @@ describe('harvest→propose schema contract', () => {
     expect(deserialized.telemetry.multiRoundCandidates).toBe(5)
     expect(deserialized.telemetry.emitted).toBe(2)
 
-    // #then propose can iterate candidates without TypeError
+    // #then the open step can iterate candidates without TypeError
     const shas = deserialized.candidates.map(c => c.mergeSha)
     expect(shas).toHaveLength(2)
   })
