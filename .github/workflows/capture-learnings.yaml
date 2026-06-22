@@ -100,11 +100,16 @@ jobs:
                Each candidate in the candidates array has:
                - mergeSha: opaque merge commit SHA (the ONLY identifier you receive)
                - reviewRounds: number of substantive Fro Bot review rounds (approved, changes-requested, or dismissed — a dismissed approval marks a re-review forced by a new push)
-               - signals: { titleTokens: string[], labels: string[] }
+               - reviewExcerpts: string[] — the actual review prose from the rounds (review bodies and line-level review comments), ranked with the correction feedback first. This is your PRIMARY signal: it is what the reviewer actually said about what was wrong and how it was fixed. It has been privacy-scanned; use it as given. May be empty for some candidates.
+               - signals: { titleTokens: string[], labels: string[] } — secondary context only
             2. For each candidate you judge worth proposing (reviewRounds ≥ 2 is
-               already guaranteed; use signals to assess value), write a concise
-               learning-proposal body (2–4 paragraphs) that:
-               - Describes the pattern or mistake the multi-round review suggests
+               already guaranteed), write a concise learning-proposal body (2–4
+               paragraphs) that:
+               - Distills the reusable learning from reviewExcerpts — what the
+                 review rounds actually said was wrong and how it was corrected.
+                 Ground the learning in that prose, not in the title tokens. When
+                 reviewExcerpts is empty, fall back to signals but keep the body
+                 modest and clearly general rather than inventing specifics.
                - References the source PR by merge SHA ONLY (never look up or
                  include owner/repo/PR number/title/author — you do not have that
                  information and must not attempt to retrieve it)
