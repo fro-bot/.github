@@ -351,6 +351,7 @@ jobs:
       # Overlay metadata/ from the data branch so the scheduled run can derive
       # digest counts from live metadata/repos.yaml. Mirrors the precedented guard
       # in reconcile-repos.yaml: tolerate a missing data branch (skip, don't fail).
+      # Runs BEFORE solutions-query so the privacy scan reads the freshest repos.yaml.
       - name: ⤵ Overlay metadata from data branch
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
@@ -365,6 +366,28 @@ jobs:
             echo "data branch not yet established; skipping metadata overlay."
           fi
 
+      - name: Query solutions context
+        id: solutions-query
+        env:
+          SOLUTIONS_QUERY_EVENT_NAME: ${{ github.event_name }}
+          SOLUTIONS_QUERY_OWNER: ${{ github.repository_owner }}
+          SOLUTIONS_QUERY_REPO: ${{ github.event.repository.name }}
+          SOLUTIONS_QUERY_TITLE: >-
+            ${{
+              github.event.pull_request.title ||
+              github.event.issue.title ||
+              github.event.discussion.title ||
+              ''
+            }}
+          SOLUTIONS_QUERY_BODY: >-
+            ${{
+              github.event.pull_request.body ||
+              github.event.issue.body ||
+              github.event.comment.body ||
+              ''
+            }}
+        run: node scripts/solutions-query.ts
+
       - name: Run Fro Bot
         id: fro-bot-agent
         uses: fro-bot/agent@9b89fb3acadec6f26fdfe49412b9c5cbd5a039d1 # v0.71.0
@@ -372,6 +395,7 @@ jobs:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
+          SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
           TASK_PROMPT: >-
             ${{
               (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
@@ -397,8 +421,15 @@ jobs:
             ${{ env.WIKI_CONTEXT }}
             </wiki_context>
 
+            <solutions_context>
+            ${{ env.SOLUTIONS_CONTEXT }}
+            </solutions_context>
+
             <knowledge_persistence>
             Use the wiki context when it materially improves the response.
+            Consult the solutions context for prior learnings relevant to this work;
+            when one applies, follow it and cite its `Path:` in your reasoning. Treat
+            entries marked as candidate suggestions as hints to verify, not settled facts.
             If this interaction surfaces durable knowledge worth keeping, update only
             `knowledge/wiki/**`, `knowledge/index.md`, and `knowledge/log.md` following
             `knowledge/schema.md`. Keep changes additive, preserve contradictions with
