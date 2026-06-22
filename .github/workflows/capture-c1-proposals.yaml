@@ -1,0 +1,171 @@
+---
+name: Capture Learning Proposals
+
+on:
+  schedule:
+    - cron: '30 22 * * 0' # Every Sunday at 22:30 UTC (30 min after Merge Data at 22:00)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize runs; never cancel an in-progress run (a partial run could leave
+# the agent step mid-flight with no propose step to follow).
+concurrency:
+  group: capture-c1-proposals
+  cancel-in-progress: false
+
+jobs:
+  capture-c1-proposals:
+    name: Capture learning proposals from multi-round-review PRs
+    runs-on: ubuntu-latest
+    # Agent step is the long pole; 30 minutes provides headroom without
+    # permitting a truly-stuck run.
+    timeout-minutes: 30
+    steps:
+      - id: get-workflow-app-token
+        name: Get Workflow Access Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          # Scope to the whole installation for consistency with reconcile-repos.yaml.
+          # The harvest and issue-create are same-repo; the owner scope is harmless.
+          owner: ${{ github.repository_owner }}
+
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # Overlay metadata/ from the data branch so the privacy gate reads the
+      # authoritative private-repo list from metadata/repos.yaml.
+      # Hard-fail if the data branch exists but the overlay fails — the privacy
+      # gate cannot operate without metadata/repos.yaml (fail-closed by design).
+      # Tolerate a missing data branch (first run, fresh clone) like reconcile does.
+      - name: ⤵ Overlay metadata from data branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch --no-tags origin data
+            git checkout origin/data -- metadata/
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
+      # Harvest merged PRs with ≥2 CHANGES_REQUESTED reviews, dedup against
+      # existing learning-proposal issues and docs/solutions/, cap to
+      # MAX_PROPOSALS_PER_RUN, and emit an opaque digest (merge_sha only —
+      # no owner/repo/number prose) to GITHUB_OUTPUT and a temp file.
+      - name: 🌾 Harvest candidates
+        id: harvest
+        env:
+          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+        run: node scripts/capture-c1-harvest.ts | tee "$RUNNER_TEMP/harvest-result.json"
+        shell: bash
+
+      # Write the harvest digest to a file the agent and propose steps can read.
+      # The digest is already in GITHUB_OUTPUT (multiline `digest` key); writing
+      # it to a path avoids shell-quoting issues when passing large JSON blobs.
+      - name: 📝 Write digest file
+        run: |
+          set -euo pipefail
+          echo '${{ steps.harvest.outputs.digest }}' > "$RUNNER_TEMP/capture-c1-digest.json"
+
+      # The agent's ONLY job: read the digest (merge_sha + signals, no private
+      # identifiers), author a concise learning-proposal body for each candidate
+      # worth proposing, and write the bodies as a JSON object keyed by merge_sha
+      # to $RUNNER_TEMP/capture-c1-bodies.json. Nothing else — no code edits,
+      # no doc edits, no other issues, no API exploration.
+      #
+      # The privacy gate and issue-create run deterministically in the propose
+      # step below (SHAPE B). The agent cannot bypass the privacy gate.
+      - name: 🤖 Author proposal bodies
+        id: agent
+        uses: fro-bot/agent@a12463fab12958ed122856db287c061b623c2834 # v0.75.0
+        env:
+          TASK_PROMPT: |
+            You are authoring learning-proposal bodies for the C1 capture pipeline.
+
+            Your ONLY job in this step:
+            1. Read the harvest digest from $RUNNER_TEMP/capture-c1-digest.json.
+               The digest is a JSON array of candidates. Each candidate has:
+               - mergeSha: opaque merge commit SHA (the ONLY identifier you receive)
+               - reviewRounds: number of CHANGES_REQUESTED review rounds
+               - signals: { titleTokens: string[], labels: string[] }
+            2. For each candidate you judge worth proposing (reviewRounds ≥ 2 is
+               already guaranteed; use signals to assess value), write a concise
+               learning-proposal body (2–4 paragraphs) that:
+               - Describes the pattern or mistake the multi-round review suggests
+               - References the source PR by merge SHA ONLY (never look up or
+                 include owner/repo/PR number/title/author — you do not have that
+                 information and must not attempt to retrieve it)
+               - Proposes what the learning would be
+               - Is suitable for a human to review and author into docs/solutions/
+            3. Write the bodies as a JSON object to $RUNNER_TEMP/capture-c1-bodies.json:
+               { "<mergeSha>": "<body text>", ... }
+               Include only candidates you judge worth proposing. Omit candidates
+               you judge low-value (empty object {} is valid if none merit a proposal).
+            4. DO NOTHING ELSE. No code edits. No doc edits. No other issues.
+               No API calls beyond reading the digest file. No branch operations.
+
+            Hard boundaries:
+            - Never look up PR details, owner, repo name, PR number, or author.
+            - Never create issues yourself — the propose step does that.
+            - Never write to any path other than $RUNNER_TEMP/capture-c1-bodies.json.
+            - Output only the bodies file. No summary issue. No comments.
+        with:
+          github-token: ${{ secrets.FRO_BOT_PAT }}
+          auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
+          model: ${{ vars.FRO_BOT_MODEL }}
+          omo-providers: ${{ secrets.OMO_PROVIDERS }}
+          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          prompt: ${{ env.TASK_PROMPT }}
+
+      # Deterministic propose step (SHAPE B): reads the harvest digest and the
+      # agent-authored bodies, runs the privacy gate (fail-closed against
+      # metadata/repos.yaml), applies same-run dedup, and opens the issues.
+      # The privacy gate runs here — not at agent discretion.
+      - name: 📬 Open learning-proposal issues
+        id: propose
+        env:
+          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          CAPTURE_C1_DIGEST_PATH: ${{ runner.temp }}/capture-c1-digest.json
+          CAPTURE_C1_BODIES_PATH: ${{ runner.temp }}/capture-c1-bodies.json
+          CAPTURE_C1_RESULT_PATH: ${{ runner.temp }}/capture-c1-result.json
+        run: node scripts/capture-c1-propose.ts | tee "$RUNNER_TEMP/propose-output.json"
+        shell: bash
+
+      - if: always()
+        name: 📋 Write step summary
+        run: |
+          set -euo pipefail
+          harvest="$RUNNER_TEMP/harvest-result.json"
+          result="$RUNNER_TEMP/capture-c1-result.json"
+
+          {
+            echo "## Capture Learning Proposals Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$harvest" ]]; then
+              echo "| PRs examined | $(jq '.telemetry.examined // 0' "$harvest") |"
+              echo "| After proposal dedup | $(jq '.telemetry.afterProposalDedup // 0' "$harvest") |"
+              echo "| After solutions dedup | $(jq '.telemetry.afterSolutionsDedup // 0' "$harvest") |"
+              echo "| Candidates emitted | $(jq '.telemetry.emitted // 0' "$harvest") |"
+            else
+              echo "| PRs examined | (harvest result unavailable) |"
+            fi
+
+            if [[ -s "$result" ]]; then
+              echo "| Proposals opened | $(jq '.proposalsOpened // 0' "$result") |"
+              echo "| Blocked on privacy | $(jq '.blockedOnPrivacy // 0' "$result") |"
+              echo "| Skipped duplicate | $(jq '.skippedDuplicate // 0' "$result") |"
+              echo "| Failed | $(jq '.failed // 0' "$result") |"
+            else
+              echo "| Proposals opened | (propose result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+        shell: bash

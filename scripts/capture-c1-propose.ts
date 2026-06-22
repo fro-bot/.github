@@ -18,11 +18,18 @@
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */
 
-import {readFile} from 'node:fs/promises'
+import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 import {parse} from 'yaml'
 
-import {buildMergeShaMarker, LEARNING_PROPOSAL_LABEL, type Candidate, type OctokitClient} from './capture-c1-harvest.ts'
+import {
+  buildMergeShaMarker,
+  createOctokitFromEnv,
+  LEARNING_PROPOSAL_LABEL,
+  type Candidate,
+  type CandidateDigest,
+  type OctokitClient,
+} from './capture-c1-harvest.ts'
 import {buildPrivateNameTokens} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
@@ -405,4 +412,114 @@ export async function createProposals(
   process.stderr.write(`capture-c1-propose: proposals created=${created} failed=${failed}\n`)
 
   return {created, failed}
+}
+
+// ---------------------------------------------------------------------------
+// Entry point (SHAPE B: deterministic propose step reads digest + agent bodies)
+// ---------------------------------------------------------------------------
+
+/**
+ * CLI entry point for the deterministic propose step.
+ *
+ * Handoff contract (SHAPE B):
+ * - Reads the harvest digest from the path in CAPTURE_C1_DIGEST_PATH env var
+ *   (a JSON file containing a CandidateDigest written by the harvest step).
+ * - Reads agent-authored proposal bodies from the path in CAPTURE_C1_BODIES_PATH
+ *   env var (a JSON file: Record<mergeSha, bodyText> written by the agent step).
+ * - Loads the private token set from metadata/repos.yaml (fail-closed: throws if
+ *   the file cannot be read or parsed — no proposals posted without the privacy gate).
+ * - Calls planProposals (privacy gate + same-run dedup) then createProposals.
+ * - Writes a counts-only JSON result to CAPTURE_C1_RESULT_PATH (if set) and stdout.
+ *
+ * Privacy guarantee: the agent never receives owner/repo/number prose (the digest
+ * carries only merge_sha + signals). The privacy gate runs here, deterministically,
+ * not at agent discretion. A missing or unreadable metadata/repos.yaml is fatal.
+ *
+ * Strip-only safe: no parameter properties, enums, or namespaces.
+ */
+
+/** Counts-only result written to stdout and CAPTURE_C1_RESULT_PATH. */
+interface ProposeResult {
+  examined: number
+  candidatesAfterDedup: number
+  proposalsOpened: number
+  blockedOnPrivacy: number
+  skippedDuplicate: number
+  failed: number
+}
+
+async function readJsonFile<T>(path: string, label: string): Promise<T> {
+  let raw: string
+  try {
+    raw = await readFile(path, 'utf8')
+  } catch (error: unknown) {
+    throw new Error(`capture-c1-propose: could not read ${label} at ${path}`, {cause: error})
+  }
+  try {
+    return JSON.parse(raw) as T
+  } catch (error: unknown) {
+    throw new Error(`capture-c1-propose: could not parse ${label} at ${path}`, {cause: error})
+  }
+}
+
+async function main(): Promise<void> {
+  const digestPath = process.env.CAPTURE_C1_DIGEST_PATH
+  const bodiesPath = process.env.CAPTURE_C1_BODIES_PATH
+  const resultPath = process.env.CAPTURE_C1_RESULT_PATH
+
+  if (digestPath === undefined || digestPath === '') {
+    throw new Error('capture-c1-propose: CAPTURE_C1_DIGEST_PATH is required')
+  }
+  if (bodiesPath === undefined || bodiesPath === '') {
+    throw new Error('capture-c1-propose: CAPTURE_C1_BODIES_PATH is required')
+  }
+
+  // Read the harvest digest (written by the harvest step)
+  const digest = await readJsonFile<CandidateDigest>(digestPath, 'harvest digest')
+
+  // Read agent-authored bodies (written by the agent step): Record<mergeSha, bodyText>
+  const bodiesRecord = await readJsonFile<Record<string, string>>(bodiesPath, 'agent bodies')
+  const proposalBodies = new Map<string, string>(Object.entries(bodiesRecord))
+
+  // Fail-closed: load private tokens — throws if metadata/repos.yaml is unreadable
+  const privateTokens = await loadPrivateTokensFromDisk()
+
+  const octokit = await createOctokitFromEnv()
+  const owner = 'fro-bot'
+  const repo = '.github'
+
+  // Plan proposals: privacy gate + same-run dedup
+  const plan = planProposals({
+    candidates: digest.candidates,
+    proposalBodies,
+    privateTokens,
+    alreadyCreatedShas: new Set<string>(),
+  })
+
+  // Create the planned proposals
+  const {created, failed} = await createProposals(octokit, owner, repo, plan.toCreate)
+
+  const result: ProposeResult = {
+    examined: digest.telemetry.examined,
+    candidatesAfterDedup: digest.telemetry.afterSolutionsDedup,
+    proposalsOpened: created,
+    blockedOnPrivacy: plan.blockedOnPrivacy,
+    skippedDuplicate: plan.skippedDuplicate,
+    failed,
+  }
+
+  const resultJson = `${JSON.stringify(result)}\n`
+  process.stdout.write(resultJson)
+
+  if (resultPath !== undefined && resultPath !== '') {
+    try {
+      await writeFile(resultPath, resultJson, {flag: 'w'})
+    } catch (error: unknown) {
+      process.stderr.write(`capture-c1-propose: could not write result to ${resultPath}: ${String(error)}\n`)
+    }
+  }
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  await main()
 }

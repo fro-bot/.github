@@ -41,3 +41,6 @@ labels:
   - name: reconcile:visibility-transition
     color: '#f97316'
     description: Tracked repo transitioned from public to private
+  - name: learning-proposal
+    color: '#0e8a16'
+    description: Candidate learning proposed from a multi-round-review PR

@@ -225,6 +225,18 @@ The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data �
 - Manual edits to `metadata/*.yaml` also target `data` and are promoted via the `Merge Data Branch` workflow — see above.
 - Metadata files are initialized in-repo first; automation updates existing files only.
 
+## Learning-proposal capture
+
+A weekly scheduled run (`capture-c1-proposals.yaml`, Sunday 22:30 UTC) examines this repo's merged PRs for those that required multiple rounds of changes-requested reviews — the richest mistake→correction signal — and opens a GitHub issue proposing a candidate learning for each.
+
+Each proposal is labeled `learning-proposal` and carries an immutable body marker (`<!-- capture-c1:merge_sha=<sha> -->`). The marker is the reset-resilient decision log: the run rebuilds its seen-set each week by querying all `learning-proposal` issues (state: all, including closed), so a data-branch reset cannot wipe the log.
+
+**Privacy:** the harvest digest identifies candidates by merge commit SHA only — no owner, repo name, PR number, or title reaches the agent or the proposal body. The agent authors proposal bodies referencing the source by merge SHA only. Before any issue is created, the body is scanned against the private-repo token set from `metadata/repos.yaml` (fail-closed: a missing or unreadable overlay aborts the propose step with no issues posted).
+
+**Human review:** proposals are human-reviewed. There is no auto-merge or auto-promotion path. A human authors the final learning into `docs/solutions/` via `ce:compound` when a proposal is accepted.
+
+**Cadence and cost:** weekly, capped at `MAX_PROPOSALS_PER_RUN` candidates, with a bounded lookback window. The step summary reports counts only (PRs examined, candidates after dedup, proposals opened, blocked on privacy).
+
 ## Metrics note
 
 `metrics.yaml` is intentionally deferred. Operational telemetry is routed through the journal issue system. The metrics pipeline belongs to the deferred self-improvement plan.
