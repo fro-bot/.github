@@ -16,7 +16,13 @@ import process from 'node:process'
 import {Octokit} from '@octokit/rest'
 import {parse} from 'yaml'
 
-import {isRecord, learningBodyHasPrivateLeak, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
+import {
+  isRecord,
+  learningBodyHasPrivateLeak,
+  loadPrivateTokensFromDisk,
+  logDiffHasSecret,
+  redactLogDiffSecrets,
+} from './capture-learnings-privacy.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -107,13 +113,20 @@ export interface CandidateSignals {
 }
 
 /**
- * A candidate PR for a learning proposal.
+ * A candidate PR for a learning proposal — discriminated union on `trigger`.
  *
- * Carries no owner, repo, or PR number. `signals` includes tokens derived from the PR
- * title and labels, so title-derived tokens do reach the consuming agent — they are not
- * fully sanitized here. The deterministic open step is the privacy chokepoint: it scans
- * the final authored body for private identifiers and blocks before posting, so a private
- * token surfacing in a title token is gated downstream rather than leaked.
+ * Both variants carry no owner, repo, or PR number. `signals` includes tokens derived
+ * from the PR title and labels. The deterministic open step is the privacy chokepoint:
+ * it scans the final authored body for private identifiers and blocks before posting.
+ *
+ * Design: top-level discriminated fields per variant (not a nested `evidence` block).
+ * This keeps the diff minimal, preserves the existing ReviewCandidate shape exactly
+ * (only adding `trigger`), and avoids over-engineering before Unit 3 adds CiFix evidence.
+ */
+export type Candidate = ReviewCandidate | CiFixCandidate
+
+/**
+ * A candidate sourced from a PR with multiple Fro Bot review rounds.
  *
  * `reviewExcerpts` carries privacy-scanned review prose (review bodies + line-level thread
  * comments), ranked by correction signal (CHANGES_REQUESTED / thread replies first) and
@@ -121,7 +134,8 @@ export interface CandidateSignals {
  * upstream privacy scan or when no prose was available. Array form gives the agent clearer
  * structure than a single concatenated string.
  */
-export interface Candidate {
+export interface ReviewCandidate {
+  trigger: 'review-heavy'
   mergeSha: string
   /**
    * Number of Fro Bot substantive review rounds (APPROVED | CHANGES_REQUESTED | DISMISSED).
@@ -138,6 +152,25 @@ export interface Candidate {
    * the enriched content or when no non-empty prose was available.
    */
   reviewExcerpts: string[]
+}
+
+/**
+ * A candidate sourced from a PR whose CI checks transitioned failed → passed before merge.
+ *
+ * Evidence fields (failingCheckName, lastFailingSha, firstPassingSha, diffExcerpt,
+ * logExcerpt) are populated in Unit 3. This placeholder carries the shared fields
+ * so the union type and digest pipeline are ready before the harvester is implemented.
+ */
+export interface CiFixCandidate {
+  trigger: 'ci-fail-then-pass'
+  mergeSha: string
+  signals: CandidateSignals
+  // Evidence fields populated in Unit 3:
+  // failingCheckName: string
+  // lastFailingSha: string
+  // firstPassingSha: string
+  // diffExcerpt: string
+  // logExcerpt?: string
 }
 
 /**
@@ -161,11 +194,18 @@ export interface DigestTelemetry {
   afterSolutionsDedup: number
   emitted: number
   /**
-   * Number of candidates whose enriched review-prose content was dropped by the
-   * upstream privacy scan. The candidate itself is kept (title-only); only the
-   * reviewExcerpts are cleared. Counts-only — no private names logged.
+   * Number of candidates whose enriched content was dropped by the private-name scan.
+   * The candidate itself is kept (title-only); only the enriched evidence is cleared.
+   * Counts-only — no private names logged.
    */
   enrichmentBlocked: number
+  /**
+   * Number of candidates whose enriched content was dropped because it contained a
+   * hard-secret shape (PAT, private key, credential-bearing connection string, etc.)
+   * detected by `logDiffHasSecret` after `redactLogDiffSecrets` was applied.
+   * Counts-only — no secret values logged.
+   */
+  enrichmentBlockedBySecret: number
 }
 
 /** Result of `buildCandidateDigest`. */
@@ -176,7 +216,7 @@ export interface CandidateDigest {
 
 /** Input to the pure core. */
 export interface BuildCandidateDigestInput {
-  /** Merged PRs that already passed the review-predicate filter. */
+  /** Candidates from all sources (review-heavy + ci-fail-then-pass). */
   mergedPrs: Candidate[]
   /** Harvest-stage counts to thread into the final telemetry. */
   stageCounts: HarvestStageCounts
@@ -234,6 +274,8 @@ export function parseMergeShaMarker(body: string): string | null {
  * Build the opaque candidate digest from injected inputs.
  *
  * Steps:
+ * 0. Within-run dedup: collapse to one candidate per mergeSha (a PR matching both triggers
+ *    appears once per source); review-heavy takes precedence (R4).
  * 1. Drop candidates whose mergeSha is already in openedLearningShas (seen-set dedup).
  * 2. Drop candidates whose signals strongly overlap an existing solutions doc (solutions dedup).
  * 3. Cap to maxLearnings.
@@ -246,8 +288,21 @@ export function parseMergeShaMarker(body: string): string | null {
  * No I/O. Fully unit-testable. The private token set is injected so the scan is pure.
  */
 export function buildCandidateDigest(input: BuildCandidateDigestInput): CandidateDigest {
+  // Within-run dedup: a PR that matched more than one trigger (e.g. review-heavy AND
+  // ci-fail-then-pass) appears once per source in mergedPrs. Collapse to one candidate per
+  // mergeSha so a single PR yields a single learning-proposal (R4). Precedence: review-heavy
+  // wins — review prose is the richer signal when a PR matched both.
+  const byMergeSha = new Map<string, Candidate>()
+  for (const pr of input.mergedPrs) {
+    const existing = byMergeSha.get(pr.mergeSha)
+    if (existing === undefined || (existing.trigger !== 'review-heavy' && pr.trigger === 'review-heavy')) {
+      byMergeSha.set(pr.mergeSha, pr)
+    }
+  }
+  const deduped = [...byMergeSha.values()]
+
   // drop already-proposed merge SHAs
-  const afterSeenDedup = input.mergedPrs.filter(pr => !input.openedLearningShas.has(pr.mergeSha))
+  const afterSeenDedup = deduped.filter(pr => !input.openedLearningShas.has(pr.mergeSha))
 
   // drop candidates whose signals overlap an existing solutions doc
   const afterSolutionsDedup = afterSeenDedup.filter(pr => !overlapsAnySolutionsDoc(pr.signals, input.solutionsDocs))
@@ -255,16 +310,51 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
   // cap to maxLearnings
   const capped = afterSolutionsDedup.slice(0, input.maxLearnings)
 
-  // upstream privacy scan: scan each candidate's reviewExcerpts fail-closed
-  // on a hit → drop enriched content (empty reviewExcerpts), keep the candidate
+  // upstream privacy scan: scan each candidate's evidence text fail-closed.
+  //
+  // Privacy-ordering invariant: scan the already-truncated evidence text (truncation
+  // happens in the I/O shell before this pure core is called). Never move truncation
+  // after the scan — scanning a token and then truncating around it could leave a
+  // surviving tail that escapes the gate.
+  //
+  // For ReviewCandidate:
+  //   1. Redact structural secrets (paths, hostnames, Bearer tokens) via redactLogDiffSecrets.
+  //   2. If learningBodyHasPrivateLeak (private repo name) OR logDiffHasSecret (hard secret)
+  //      still true after redaction → clear reviewExcerpts + increment enrichmentBlockedBySecret.
+  //   3. Otherwise use the redacted excerpts.
+  //
+  // For CiFixCandidate (Unit 3 placeholder):
+  //   Evidence fields are not yet populated; no scan needed until Unit 3 adds them.
   let enrichmentBlocked = 0
+  let enrichmentBlockedBySecret = 0
   const candidates = capped.map(pr => {
-    if (pr.reviewExcerpts.length === 0) return pr
-    const excerptText = pr.reviewExcerpts.join('\n')
-    if (learningBodyHasPrivateLeak(excerptText, input.privateTokens)) {
-      enrichmentBlocked++
-      return {...pr, reviewExcerpts: []}
+    if (pr.trigger === 'review-heavy') {
+      if (pr.reviewExcerpts.length === 0) return pr
+
+      // Step 1: redact structural secrets from the already-truncated excerpts
+      const redactedExcerpts = pr.reviewExcerpts.map(e => redactLogDiffSecrets(e))
+      const redactedText = redactedExcerpts.join('\n')
+
+      // Step 2: check for private-name leak or residual hard secret after redaction
+      const hasPrivateLeak = learningBodyHasPrivateLeak(redactedText, input.privateTokens)
+      const hasResidualSecret = logDiffHasSecret(redactedText)
+
+      if (hasPrivateLeak) {
+        // Private-name hit: clear enriched content, keep candidate title-only
+        enrichmentBlocked++
+        return {...pr, reviewExcerpts: []}
+      }
+      if (hasResidualSecret) {
+        // Hard-secret residual after redaction: clear enriched content
+        enrichmentBlockedBySecret++
+        return {...pr, reviewExcerpts: []}
+      }
+
+      // Step 3: use the redacted excerpts (structural secrets replaced with [REDACTED])
+      return {...pr, reviewExcerpts: redactedExcerpts}
     }
+
+    // CiFixCandidate: no evidence fields yet (Unit 3 placeholder)
     return pr
   })
 
@@ -276,6 +366,7 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
       afterSolutionsDedup: afterSolutionsDedup.length,
       emitted: candidates.length,
       enrichmentBlocked,
+      enrichmentBlockedBySecret,
     },
   }
 }
@@ -283,16 +374,23 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
 /**
  * Apply fail-closed enrichment scan availability to a list of candidates.
  *
- * When `scanAvailable` is false (private token load failed), all `reviewExcerpts`
- * are cleared so no unscanned prose reaches the digest. When `scanAvailable` is
- * true, candidates are returned unchanged.
+ * When `scanAvailable` is false (private token load failed), all enriched evidence
+ * is cleared so no unscanned content reaches the digest. For ReviewCandidate, this
+ * clears `reviewExcerpts`. For CiFixCandidate, no evidence fields exist yet (Unit 3).
+ * When `scanAvailable` is true, candidates are returned unchanged.
  *
  * Pure function: no I/O, fully unit-testable. Extracted so the fail-closed
  * composition can be tested independently of the I/O shell.
  */
 export function applyEnrichmentScanAvailability(candidates: Candidate[], scanAvailable: boolean): Candidate[] {
   if (scanAvailable) return candidates
-  return candidates.map(c => ({...c, reviewExcerpts: [] as string[]}))
+  return candidates.map(c => {
+    if (c.trigger === 'review-heavy') {
+      return {...c, reviewExcerpts: [] as string[]}
+    }
+    // CiFixCandidate: no evidence fields yet (Unit 3 placeholder)
+    return c
+  })
 }
 
 /**
@@ -712,6 +810,7 @@ export async function harvestCandidates(
     const reviewExcerpts = buildReviewExcerpts(reviewBodies, threadCommentBodies)
 
     candidates.push({
+      trigger: 'review-heavy',
       mergeSha: pr.merge_commit_sha,
       reviewRounds: substantiveReviewCount,
       signals: deriveSignals({
@@ -835,6 +934,7 @@ async function main(): Promise<void> {
         afterSolutionsDedup: 0,
         emitted: 0,
         enrichmentBlocked: 0,
+        enrichmentBlockedBySecret: 0,
       },
     }
     try {

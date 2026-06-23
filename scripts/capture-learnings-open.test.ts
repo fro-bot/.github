@@ -34,6 +34,7 @@ import {buildPrivateTokenSet} from './wiki-slug.ts'
 
 function makeCandidate(overrides: Partial<Candidate> = {}): Candidate {
   return {
+    trigger: 'review-heavy',
     mergeSha: 'abc123def456abc123def456abc123def456abc1',
     reviewRounds: 2,
     signals: {titleTokens: ['feat', 'scripts'], labels: []},
