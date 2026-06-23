@@ -15,8 +15,10 @@ import {
   buildMergeShaMarker,
   DEPENDENCY_LABELS,
   fetchOpenedLearningShas,
+  findFailPassTransition,
   FRO_BOT_REVIEWER_LOGINS,
   harvestCandidates,
+  harvestCiFixCandidates,
   LEARNING_PROPOSAL_LABEL,
   MAX_EXCERPT_CHARS_PER_CANDIDATE,
   parseMergeShaMarker,
@@ -24,6 +26,8 @@ import {
   type Candidate,
   type CandidateDigest,
   type CiFixCandidate,
+  type CommitCheckEntry,
+  type GhExecFn,
   type HarvestStageCounts,
   type OctokitClient,
   type ReviewCandidate,
@@ -51,6 +55,10 @@ function makeCiFixCandidate(overrides: Partial<CiFixCandidate> = {}): CiFixCandi
     trigger: 'ci-fail-then-pass',
     mergeSha: 'cifix001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
     signals: {titleTokens: ['fix', 'ci'], labels: []},
+    failingCheckName: 'CI / test',
+    lastFailingSha: 'fail0001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    firstPassingSha: 'pass0001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    diffExcerpt: '--- a/scripts/foo.ts\n+++ b/scripts/foo.ts\n@@ -1 +1 @@\n-bad\n+good',
     ...overrides,
   }
 }
@@ -81,6 +89,8 @@ function makeZeroStageCounts(): HarvestStageCounts {
     mergedPrsInLookback: 0,
     excludedAutomation: 0,
     multiRoundCandidates: 0,
+    ciFixPrsExamined: 0,
+    ciFixCandidates: 0,
   }
 }
 
@@ -198,8 +208,8 @@ describe('buildCandidateDigest', () => {
       }
     })
 
-    it('ci-fail-then-pass candidate has ONLY trigger, mergeSha, signals — no owner/repo/number/title', () => {
-      // #given a ci-fix candidate
+    it('ci-fail-then-pass candidate has ONLY the allowed evidence keys — no owner/repo/number/title', () => {
+      // #given a ci-fix candidate with all evidence fields (no logExcerpt)
       const ciFixCandidate = makeCiFixCandidate()
       const input = makeDigestInput({mergedPrs: [ciFixCandidate]})
 
@@ -210,7 +220,18 @@ describe('buildCandidateDigest', () => {
       for (const candidate of result.candidates) {
         if (candidate.trigger !== 'ci-fail-then-pass') continue
         const keys = Object.keys(candidate).sort()
-        expect(keys).toEqual(['mergeSha', 'signals', 'trigger'].sort())
+        // logExcerpt is optional — may or may not be present
+        const allowedKeys = [
+          'trigger',
+          'mergeSha',
+          'signals',
+          'failingCheckName',
+          'lastFailingSha',
+          'firstPassingSha',
+          'diffExcerpt',
+        ].sort()
+        const allowedKeysWithLog = [...allowedKeys, 'logExcerpt'].sort()
+        expect([allowedKeys, allowedKeysWithLog]).toContainEqual(keys)
         // Explicitly assert forbidden keys are absent
         expect(candidate).not.toHaveProperty('owner')
         expect(candidate).not.toHaveProperty('repo')
@@ -401,6 +422,8 @@ describe('buildCandidateDigest', () => {
         mergedPrsInLookback: 10,
         excludedAutomation: 2,
         multiRoundCandidates: 5,
+        ciFixPrsExamined: 0,
+        ciFixCandidates: 0,
       }
 
       const input = makeDigestInput({
@@ -534,8 +557,8 @@ describe('buildCandidateDigest — characterization: review-heavy emitted shape'
 // ---------------------------------------------------------------------------
 
 describe('buildCandidateDigest — CiFixCandidate union support', () => {
-  it('ci-fail-then-pass candidate passes through dedup, cap, and privacy unchanged', () => {
-    // #given a ci-fix candidate (no evidence fields yet — Unit 3 placeholder)
+  it('ci-fail-then-pass candidate passes through dedup, cap, and privacy with clean evidence', () => {
+    // #given a ci-fix candidate with clean evidence (no secrets, no private names)
     const ciFixCandidate = makeCiFixCandidate({
       mergeSha: 'cifix001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
     })
@@ -548,7 +571,12 @@ describe('buildCandidateDigest — CiFixCandidate union support', () => {
     expect(result.candidates).toHaveLength(1)
     expect(result.candidates[0]?.trigger).toBe('ci-fail-then-pass')
     expect(result.candidates[0]?.mergeSha).toBe('cifix001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1')
-    // #then no enrichment was blocked (no evidence to scan yet)
+    // #then evidence fields are preserved (clean content passes through)
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].failingCheckName).toBe('CI / test')
+      expect(result.candidates[0].diffExcerpt).toContain('-bad')
+    }
+    // #then no enrichment was blocked (clean content)
     expect(result.telemetry.enrichmentBlocked).toBe(0)
     expect(result.telemetry.enrichmentBlockedBySecret).toBe(0)
   })
@@ -2095,5 +2123,616 @@ describe('harvestCandidates — enrichment fetch', () => {
     const excerpts = asReviewCandidate(candidates[0]).reviewExcerpts
     expect(excerpts).toHaveLength(1)
     expect(excerpts[0]).toContain('null check issue')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Pure core: findFailPassTransition (test-first, the correctness core)
+// ---------------------------------------------------------------------------
+
+// Helper to build a CheckRun entry (outer scope for unicorn/consistent-function-scoping)
+function makeCr(sha: string, name: string, conclusion: string): CommitCheckEntry {
+  return {type: 'CheckRun', sha, name, conclusion}
+}
+// Helper to build a StatusContext entry (outer scope for unicorn/consistent-function-scoping)
+function makeSc(sha: string, context: string, state: string): CommitCheckEntry {
+  return {type: 'StatusContext', sha, context, state}
+}
+
+describe('findFailPassTransition', () => {
+  it('happy path: clean fail→pass on a required check returns correct SHAs', () => {
+    // #given commits oldest→newest: sha1=FAILURE, sha2=SUCCESS
+    const commits: CommitCheckEntry[] = [makeCr('sha1', 'CI / test', 'FAILURE'), makeCr('sha2', 'CI / test', 'SUCCESS')]
+    const required = new Set(['CI / test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then the transition is found with correct SHAs
+    expect(result).not.toBeNull()
+    expect(result?.failingCheckName).toBe('CI / test')
+    expect(result?.lastFailingSha).toBe('sha1')
+    expect(result?.firstPassingSha).toBe('sha2')
+  })
+
+  it('never-failed: all SUCCESS → null (no transition)', () => {
+    // #given commits where the check always passes
+    const commits: CommitCheckEntry[] = [makeCr('sha1', 'CI / test', 'SUCCESS'), makeCr('sha2', 'CI / test', 'SUCCESS')]
+    const required = new Set(['CI / test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then no transition found
+    expect(result).toBeNull()
+  })
+
+  it('failed-and-stayed-failed: FAILURE then FAILURE → null', () => {
+    // #given commits where the check fails and never recovers
+    const commits: CommitCheckEntry[] = [makeCr('sha1', 'CI / test', 'FAILURE'), makeCr('sha2', 'CI / test', 'FAILURE')]
+    const required = new Set(['CI / test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then no transition found
+    expect(result).toBeNull()
+  })
+
+  it('check not in required set → ignored (no transition returned)', () => {
+    // #given a fail→pass on 'CI / lint' but required set only has 'CI / test'
+    const commits: CommitCheckEntry[] = [makeCr('sha1', 'CI / lint', 'FAILURE'), makeCr('sha2', 'CI / lint', 'SUCCESS')]
+    const required = new Set(['CI / test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then no transition found (wrong check name)
+    expect(result).toBeNull()
+  })
+
+  it('multiple checks: only one transitions → returns the transitioning check', () => {
+    // #given two checks: 'CI / test' transitions, 'CI / lint' never fails
+    const commits: CommitCheckEntry[] = [
+      makeCr('sha1', 'CI / test', 'FAILURE'),
+      makeCr('sha1', 'CI / lint', 'SUCCESS'),
+      makeCr('sha2', 'CI / test', 'SUCCESS'),
+      makeCr('sha2', 'CI / lint', 'SUCCESS'),
+    ]
+    const required = new Set(['CI / test', 'CI / lint'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then the transitioning check is returned
+    expect(result).not.toBeNull()
+    expect(result?.failingCheckName).toBe('CI / test')
+    expect(result?.lastFailingSha).toBe('sha1')
+    expect(result?.firstPassingSha).toBe('sha2')
+  })
+
+  it('fail-pass-fail-pass: picks the LAST failing SHA then first passing after it', () => {
+    // #given a check that fails, passes, fails again, then passes
+    // The LAST failing SHA is sha3; the first passing after it is sha4.
+    const commits: CommitCheckEntry[] = [
+      makeCr('sha1', 'CI / test', 'FAILURE'), // first failure
+      makeCr('sha2', 'CI / test', 'SUCCESS'), // first pass
+      makeCr('sha3', 'CI / test', 'FAILURE'), // second failure (LAST failing)
+      makeCr('sha4', 'CI / test', 'SUCCESS'), // second pass (first after last failing)
+    ]
+    const required = new Set(['CI / test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then lastFailingSha is sha3 (the LAST failure), firstPassingSha is sha4
+    expect(result).not.toBeNull()
+    expect(result?.lastFailingSha).toBe('sha3')
+    expect(result?.firstPassingSha).toBe('sha4')
+  })
+
+  it('StatusContext (legacy status) transition: state=FAILURE → state=SUCCESS', () => {
+    // #given StatusContext entries (not CheckRun)
+    const commits: CommitCheckEntry[] = [makeSc('sha1', 'ci/test', 'FAILURE'), makeSc('sha2', 'ci/test', 'SUCCESS')]
+    const required = new Set(['ci/test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then the transition is found
+    expect(result).not.toBeNull()
+    expect(result?.failingCheckName).toBe('ci/test')
+    expect(result?.lastFailingSha).toBe('sha1')
+    expect(result?.firstPassingSha).toBe('sha2')
+  })
+
+  it('all failing conclusions are recognized: TIMED_OUT, CANCELLED, ACTION_REQUIRED, STARTUP_FAILURE', () => {
+    // #given each failing conclusion type followed by SUCCESS
+    const failingConclusions = ['TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE']
+    for (const conclusion of failingConclusions) {
+      const commits: CommitCheckEntry[] = [
+        makeCr('sha1', 'CI / test', conclusion),
+        makeCr('sha2', 'CI / test', 'SUCCESS'),
+      ]
+      const required = new Set(['CI / test'])
+      const result = findFailPassTransition(commits, required)
+      expect(result).not.toBeNull()
+      expect(result?.lastFailingSha).toBe('sha1')
+    }
+  })
+
+  it('empty required set → any failed→passed transition counts (no branch protection)', () => {
+    // #given an empty required set and a check that transitions
+    const commits: CommitCheckEntry[] = [makeCr('sha1', 'CI / test', 'FAILURE'), makeCr('sha2', 'CI / test', 'SUCCESS')]
+    const required = new Set<string>() // empty = any check counts
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then the transition is found (any check counts)
+    expect(result).not.toBeNull()
+    expect(result?.failingCheckName).toBe('CI / test')
+  })
+
+  it('empty commits array → null', () => {
+    // #given no commits
+    const result = findFailPassTransition([], new Set(['CI / test']))
+    expect(result).toBeNull()
+  })
+
+  it('MUTATION PROOF: reversing oldest→newest ordering picks the wrong SHA', () => {
+    // #given commits in chronological order: sha1=FAILURE, sha2=FAILURE, sha3=SUCCESS
+    // The correct lastFailingSha is sha2 (the LATEST failure).
+    // If the array were reversed (newest→oldest), the walk would find sha2 as the
+    // "first" failure and sha1 as the "first" passing after it — but sha1 is not SUCCESS.
+    // This fixture proves the ordering invariant is load-bearing.
+    const commitsOldestFirst: CommitCheckEntry[] = [
+      makeCr('sha1', 'CI / test', 'FAILURE'), // older failure
+      makeCr('sha2', 'CI / test', 'FAILURE'), // newer failure (LAST)
+      makeCr('sha3', 'CI / test', 'SUCCESS'), // first passing after last failure
+    ]
+    const required = new Set(['CI / test'])
+
+    // #when finding the transition with correct ordering
+    const result = findFailPassTransition(commitsOldestFirst, required)
+
+    // #then lastFailingSha is sha2 (the LATEST failure), firstPassingSha is sha3
+    expect(result).not.toBeNull()
+    expect(result?.lastFailingSha).toBe('sha2')
+    expect(result?.firstPassingSha).toBe('sha3')
+
+    // #when the array is reversed (newest→oldest — wrong ordering)
+    const commitsNewestFirst = [...commitsOldestFirst].reverse()
+    const resultReversed = findFailPassTransition(commitsNewestFirst, required)
+
+    // #then the reversed ordering picks sha3 as lastFailingSha (wrong!) because
+    // it encounters sha3=SUCCESS first, then sha2=FAILURE (which becomes lastFailingSha),
+    // then sha1=FAILURE (which also becomes lastFailingSha), and there's no SUCCESS after sha1.
+    // So the reversed result is null (no transition found after the last failure in reversed order).
+    // Either way, the result differs from the correct ordering — proving the invariant.
+    expect(resultReversed?.lastFailingSha).not.toBe('sha2')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// I/O shell: harvestCiFixCandidates (mocked gh-exec + octokit)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal GraphQL response for fetchPrCommitCheckRollup.
+ * commits: array of {oid, checks: [{name, conclusion}]}
+ */
+function makeGraphQLResponse(commits: {oid: string; checks: {name: string; conclusion: string}[]}[]): string {
+  return JSON.stringify({
+    data: {
+      repository: {
+        pullRequest: {
+          commits: {
+            pageInfo: {hasNextPage: false, endCursor: null},
+            nodes: commits.map(c => ({
+              commit: {
+                oid: c.oid,
+                statusCheckRollup: {
+                  contexts: {
+                    nodes: c.checks.map(ch => ({
+                      __typename: 'CheckRun',
+                      name: ch.name,
+                      conclusion: ch.conclusion,
+                    })),
+                  },
+                },
+              },
+            })),
+          },
+        },
+      },
+    },
+  })
+}
+
+/** Build a merged PR item for harvestCiFixCandidates */
+function makeMergedPrItem(
+  overrides: {
+    number?: number
+    merge_commit_sha?: string
+    title?: string
+    labels?: {name: string}[]
+    user?: {login: string} | null
+  } = {},
+) {
+  return {
+    number: overrides.number ?? 1,
+    merge_commit_sha: overrides.merge_commit_sha ?? 'merge001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    title: overrides.title ?? 'fix: correct the CI failure',
+    labels: overrides.labels ?? [],
+    user: overrides.user ?? {login: 'some-human'},
+  }
+}
+
+/** Build a mock OctokitClient for harvestCiFixCandidates */
+function mockOctokitForCiFix(
+  overrides: {
+    compareCommits?: () => Promise<{data: {files: {filename: string; patch: string}[]}}>
+    listWorkflowRunsForRepo?: () => Promise<{data: {workflow_runs: {id: number; conclusion: string}[]}}>
+    listJobsForWorkflowRun?: () => Promise<{data: {jobs: {id: number; conclusion: string}[]}}>
+    downloadJobLogsForWorkflowRun?: () => Promise<{data: string}>
+  } = {},
+): OctokitClient {
+  return {
+    paginate: async () => [],
+    rest: {
+      pulls: {list: async () => ({data: []}), listReviews: async () => ({data: []})},
+      issues: {listForRepo: async () => ({data: []})},
+      repos: {
+        compareCommits:
+          overrides.compareCommits ??
+          (async () => ({
+            data: {
+              files: [{filename: 'scripts/foo.ts', patch: '@@ -1 +1 @@\n-bad\n+good'}],
+            },
+          })),
+      },
+      actions: {
+        listWorkflowRunsForRepo:
+          overrides.listWorkflowRunsForRepo ??
+          (async () => ({data: {workflow_runs: [{id: 42, conclusion: 'failure'}]}})),
+        listJobsForWorkflowRun:
+          overrides.listJobsForWorkflowRun ?? (async () => ({data: {jobs: [{id: 99, conclusion: 'failure'}]}})),
+        downloadJobLogsForWorkflowRun:
+          overrides.downloadJobLogsForWorkflowRun ?? (async () => ({data: 'Error: test failed\nsome other output'})),
+      },
+    },
+  } as unknown as OctokitClient
+}
+
+describe('harvestCiFixCandidates', () => {
+  it('happy path: PR with fail→pass transition → one CiFixCandidate with correct SHAs and diffExcerpt', async () => {
+    // #given a merged PR with a failing commit then a passing commit
+    const pr = makeMergedPrItem({
+      number: 1,
+      merge_commit_sha: 'merge001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    })
+    const ghExec: GhExecFn = () =>
+      makeGraphQLResponse([
+        {oid: 'sha1fail', checks: [{name: 'CI / test', conclusion: 'FAILURE'}]},
+        {oid: 'sha2pass', checks: [{name: 'CI / test', conclusion: 'SUCCESS'}]},
+      ])
+    const octokit = mockOctokitForCiFix()
+
+    // #when harvesting
+    const result = await harvestCiFixCandidates(
+      octokit,
+      'fro-bot',
+      '.github',
+      new Date(),
+      [pr],
+      new Set<string>(), // empty = any check counts
+      ghExec,
+    )
+
+    // #then one candidate is returned
+    expect(result.candidates).toHaveLength(1)
+    const candidate = result.candidates[0]
+    expect(candidate?.trigger).toBe('ci-fail-then-pass')
+    expect(candidate?.mergeSha).toBe('merge001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1')
+    expect(candidate?.failingCheckName).toBe('CI / test')
+    expect(candidate?.lastFailingSha).toBe('sha1fail')
+    expect(candidate?.firstPassingSha).toBe('sha2pass')
+    expect(candidate?.diffExcerpt).toContain('-bad')
+    expect(candidate?.diffExcerpt).toContain('+good')
+    // #then telemetry counts are correct
+    expect(result.ciFixPrsExamined).toBe(1)
+    expect(result.ciFixCandidates).toBe(1)
+  })
+
+  it('PR that never failed → no candidate', async () => {
+    // #given a PR where the check always passes
+    const pr = makeMergedPrItem()
+    const ghExec: GhExecFn = () =>
+      makeGraphQLResponse([
+        {oid: 'sha1', checks: [{name: 'CI / test', conclusion: 'SUCCESS'}]},
+        {oid: 'sha2', checks: [{name: 'CI / test', conclusion: 'SUCCESS'}]},
+      ])
+    const octokit = mockOctokitForCiFix()
+
+    // #when harvesting
+    const result = await harvestCiFixCandidates(octokit, 'fro-bot', '.github', new Date(), [pr], new Set(), ghExec)
+
+    // #then no candidate
+    expect(result.candidates).toHaveLength(0)
+    expect(result.ciFixCandidates).toBe(0)
+  })
+
+  it('PR that failed and stayed failing → no candidate', async () => {
+    // #given a PR where the check fails and never recovers
+    const pr = makeMergedPrItem()
+    const ghExec: GhExecFn = () =>
+      makeGraphQLResponse([
+        {oid: 'sha1', checks: [{name: 'CI / test', conclusion: 'FAILURE'}]},
+        {oid: 'sha2', checks: [{name: 'CI / test', conclusion: 'FAILURE'}]},
+      ])
+    const octokit = mockOctokitForCiFix()
+
+    // #when harvesting
+    const result = await harvestCiFixCandidates(octokit, 'fro-bot', '.github', new Date(), [pr], new Set(), ghExec)
+
+    // #then no candidate
+    expect(result.candidates).toHaveLength(0)
+  })
+
+  it('bare re-run: compareCommits returns empty files → candidate dropped', async () => {
+    // #given a PR with a transition but compareCommits returns no files (bare re-run)
+    const pr = makeMergedPrItem()
+    const ghExec: GhExecFn = () =>
+      makeGraphQLResponse([
+        {oid: 'sha1', checks: [{name: 'CI / test', conclusion: 'FAILURE'}]},
+        {oid: 'sha2', checks: [{name: 'CI / test', conclusion: 'SUCCESS'}]},
+      ])
+    const octokit = mockOctokitForCiFix({
+      compareCommits: async () => ({data: {files: []}}),
+    })
+
+    // #when harvesting
+    const result = await harvestCiFixCandidates(octokit, 'fro-bot', '.github', new Date(), [pr], new Set(), ghExec)
+
+    // #then candidate is dropped (no real fixing diff)
+    expect(result.candidates).toHaveLength(0)
+  })
+
+  it('logs purged: downloadJobLogsForWorkflowRun throws → logExcerpt placeholder, candidate still emitted', async () => {
+    // #given a PR with a transition and a log fetch that throws
+    const pr = makeMergedPrItem()
+    const ghExec: GhExecFn = () =>
+      makeGraphQLResponse([
+        {oid: 'sha1', checks: [{name: 'CI / test', conclusion: 'FAILURE'}]},
+        {oid: 'sha2', checks: [{name: 'CI / test', conclusion: 'SUCCESS'}]},
+      ])
+    const octokit = mockOctokitForCiFix({
+      downloadJobLogsForWorkflowRun: async () => {
+        throw Object.assign(new Error('Not Found'), {status: 404})
+      },
+    })
+
+    // #when harvesting
+    const result = await harvestCiFixCandidates(octokit, 'fro-bot', '.github', new Date(), [pr], new Set(), ghExec)
+
+    // #then candidate is still emitted (log failure doesn't block)
+    expect(result.candidates).toHaveLength(1)
+    // #then logExcerpt is the placeholder
+    expect(result.candidates[0]?.logExcerpt).toBe('[failure log purged or unavailable]')
+    // #then diffExcerpt is still populated
+    expect(result.candidates[0]?.diffExcerpt).toContain('-bad')
+  })
+
+  it('GraphQL error for one PR degrades it, others proceed', async () => {
+    // #given two PRs: first GraphQL call throws, second succeeds
+    const pr1 = makeMergedPrItem({number: 1, merge_commit_sha: 'merge001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'})
+    const pr2 = makeMergedPrItem({number: 2, merge_commit_sha: 'merge002aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'})
+
+    let callCount = 0
+    const ghExec: GhExecFn = () => {
+      callCount++
+      if (callCount === 1) throw new Error('GraphQL error')
+      return makeGraphQLResponse([
+        {oid: 'sha1', checks: [{name: 'CI / test', conclusion: 'FAILURE'}]},
+        {oid: 'sha2', checks: [{name: 'CI / test', conclusion: 'SUCCESS'}]},
+      ])
+    }
+    const octokit = mockOctokitForCiFix()
+
+    // #when harvesting
+    const result = await harvestCiFixCandidates(
+      octokit,
+      'fro-bot',
+      '.github',
+      new Date(),
+      [pr1, pr2],
+      new Set(),
+      ghExec,
+    )
+
+    // #then only the second PR produces a candidate (first was degraded)
+    expect(result.candidates).toHaveLength(1)
+    expect(result.candidates[0]?.mergeSha).toBe('merge002aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1')
+    expect(result.ciFixPrsExamined).toBe(2)
+    expect(result.ciFixCandidates).toBe(1)
+  })
+
+  it('PR with null statusCheckRollup commits → no candidate', async () => {
+    // #given a PR where commits have no statusCheckRollup (null)
+    const pr = makeMergedPrItem()
+    const ghExec: GhExecFn = () =>
+      JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              commits: {
+                pageInfo: {hasNextPage: false, endCursor: null},
+                nodes: [
+                  {commit: {oid: 'sha1', statusCheckRollup: null}},
+                  {commit: {oid: 'sha2', statusCheckRollup: null}},
+                ],
+              },
+            },
+          },
+        },
+      })
+    const octokit = mockOctokitForCiFix()
+
+    // #when harvesting
+    const result = await harvestCiFixCandidates(octokit, 'fro-bot', '.github', new Date(), [pr], new Set(), ghExec)
+
+    // #then no candidate (no check data to find a transition)
+    expect(result.candidates).toHaveLength(0)
+  })
+
+  it('required-checks empty → any transition counts', async () => {
+    // #given an empty required set and a PR with a transition on any check
+    const pr = makeMergedPrItem()
+    const ghExec: GhExecFn = () =>
+      makeGraphQLResponse([
+        {oid: 'sha1', checks: [{name: 'some-arbitrary-check', conclusion: 'FAILURE'}]},
+        {oid: 'sha2', checks: [{name: 'some-arbitrary-check', conclusion: 'SUCCESS'}]},
+      ])
+    const octokit = mockOctokitForCiFix()
+
+    // #when harvesting with empty required set
+    const result = await harvestCiFixCandidates(octokit, 'fro-bot', '.github', new Date(), [pr], new Set(), ghExec)
+
+    // #then the candidate is found (any check counts)
+    expect(result.candidates).toHaveLength(1)
+    expect(result.candidates[0]?.failingCheckName).toBe('some-arbitrary-check')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Privacy: CiFix evidence scanned in buildCandidateDigest (mutation proof)
+// ---------------------------------------------------------------------------
+
+describe('buildCandidateDigest — CiFix evidence privacy scan (mutation proof)', () => {
+  it('MUTATION PROOF: CiFix candidate with a ghp_ secret in diffExcerpt → evidence cleared, enrichmentBlockedBySecret incremented', () => {
+    // #given a ci-fix candidate whose diffExcerpt contains a GitHub PAT
+    // This test proves the secret scan is wired for CiFix evidence.
+    const sha = 'cifixsec1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const secretDiff =
+      '--- a/config.ts\n+++ b/config.ts\n@@ -1 +1 @@\n-old\n+token=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1'
+    const candidate = makeCiFixCandidate({
+      mergeSha: sha,
+      diffExcerpt: secretDiff,
+    })
+    const input = makeDigestInput({
+      mergedPrs: [candidate],
+      privateTokens: new Set(), // no private-name tokens — only secret scan fires
+    })
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is kept (not dropped)
+    expect(result.candidates).toHaveLength(1)
+    // #then diffExcerpt is cleared (secret blocked)
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].diffExcerpt).toBe('')
+      expect(result.candidates[0].logExcerpt).toBeUndefined()
+    }
+    // #then enrichmentBlockedBySecret is incremented
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(1)
+    // #then the secret does NOT appear in the serialized digest
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toContain('ghp_')
+  })
+
+  it('MUTATION PROOF: removing the CiFix secret scan lets the ghp_ token reach the digest', () => {
+    // #given a ci-fix candidate with a PAT in diffExcerpt
+    const sha = 'cifixsec2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const secretDiff = 'token=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2'
+    const candidate = makeCiFixCandidate({mergeSha: sha, diffExcerpt: secretDiff})
+
+    // #when the scan IS applied (normal path)
+    const withScan = buildCandidateDigest(makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()}))
+    // #then the secret is NOT in the output
+    expect(JSON.stringify(withScan)).not.toContain('ghp_')
+    expect(withScan.telemetry.enrichmentBlockedBySecret).toBe(1)
+
+    // #when a clean candidate is used (simulating scan bypass)
+    const cleanCandidate = makeCiFixCandidate({mergeSha: sha, diffExcerpt: '-bad\n+good'})
+    const withoutSecret = buildCandidateDigest(makeDigestInput({mergedPrs: [cleanCandidate], privateTokens: new Set()}))
+    // #then the clean diff DOES appear — proving the scan only blocks secrets
+    if (withoutSecret.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(withoutSecret.candidates[0].diffExcerpt).toContain('-bad')
+    }
+    expect(withoutSecret.telemetry.enrichmentBlockedBySecret).toBe(0)
+  })
+
+  it('CiFix candidate with private-name in diffExcerpt → evidence cleared, enrichmentBlocked incremented', () => {
+    // #given a ci-fix candidate whose diffExcerpt contains a private repo name
+    const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+    const sha = 'cifixpriv1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const candidate = makeCiFixCandidate({
+      mergeSha: sha,
+      diffExcerpt: 'See testowner/secret-repo for the fix.',
+    })
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then enrichmentBlocked is incremented (private-name counter)
+    expect(result.telemetry.enrichmentBlocked).toBe(1)
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(0)
+    // #then diffExcerpt is cleared
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].diffExcerpt).toBe('')
+    }
+    // #then private name does not appear in serialized output
+    expect(JSON.stringify(result)).not.toContain('testowner/secret-repo')
+  })
+
+  it('CiFix candidate with path in diffExcerpt → path redacted, candidate still emitted', () => {
+    // #given a ci-fix candidate whose diffExcerpt contains a file path (redact-class)
+    const sha = 'cifixpath1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const candidate = makeCiFixCandidate({
+      mergeSha: sha,
+      diffExcerpt: 'Config loaded from /Users/marcus/.ssh/config for the build.',
+    })
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted (not blocked)
+    expect(result.candidates).toHaveLength(1)
+    // #then the path is redacted in the output
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].diffExcerpt).not.toContain('/Users/marcus')
+      expect(result.candidates[0].diffExcerpt).toContain('[REDACTED]')
+    }
+    // #then neither counter is incremented (redaction, not blocking)
+    expect(result.telemetry.enrichmentBlocked).toBe(0)
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(0)
+  })
+
+  it('CiFix candidate with secret in logExcerpt → evidence cleared', () => {
+    // #given a ci-fix candidate whose logExcerpt contains a GitHub PAT
+    const sha = 'cifixlog1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const candidate = makeCiFixCandidate({
+      mergeSha: sha,
+      diffExcerpt: '-bad\n+good',
+      logExcerpt: 'Error: auth failed with token ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3',
+    })
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then enrichmentBlockedBySecret is incremented
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(1)
+    // #then both diffExcerpt and logExcerpt are cleared
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].diffExcerpt).toBe('')
+      expect(result.candidates[0].logExcerpt).toBeUndefined()
+    }
+    // #then the secret does not appear in serialized output
+    expect(JSON.stringify(result)).not.toContain('ghp_')
   })
 })

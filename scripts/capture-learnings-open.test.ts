@@ -16,6 +16,7 @@ import {
   LEARNING_PROPOSAL_LABEL,
   type Candidate,
   type OctokitClient,
+  type ReviewCandidate,
 } from './capture-learnings-harvest.ts'
 import {
   ensureLabelsExist,
@@ -32,7 +33,7 @@ import {buildPrivateTokenSet} from './wiki-slug.ts'
 // Fixture helpers
 // ---------------------------------------------------------------------------
 
-function makeCandidate(overrides: Partial<Candidate> = {}): Candidate {
+function makeCandidate(overrides: Partial<ReviewCandidate> = {}): Candidate {
   return {
     trigger: 'review-heavy',
     mergeSha: 'abc123def456abc123def456abc123def456abc1',

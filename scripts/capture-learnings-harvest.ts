@@ -11,6 +11,7 @@
  */
 
 import type {Dirent} from 'node:fs'
+import {execFileSync} from 'node:child_process'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 import {Octokit} from '@octokit/rest'
@@ -157,20 +158,31 @@ export interface ReviewCandidate {
 /**
  * A candidate sourced from a PR whose CI checks transitioned failed → passed before merge.
  *
- * Evidence fields (failingCheckName, lastFailingSha, firstPassingSha, diffExcerpt,
- * logExcerpt) are populated in Unit 3. This placeholder carries the shared fields
- * so the union type and digest pipeline are ready before the harvester is implemented.
+ * Evidence fields carry the fixing diff (primary signal, always available) and a
+ * best-effort failing-log excerpt. Both are privacy-scanned before reaching the digest.
  */
 export interface CiFixCandidate {
   trigger: 'ci-fail-then-pass'
   mergeSha: string
   signals: CandidateSignals
-  // Evidence fields populated in Unit 3:
-  // failingCheckName: string
-  // lastFailingSha: string
-  // firstPassingSha: string
-  // diffExcerpt: string
-  // logExcerpt?: string
+  /** Name of the check that transitioned failed → passed. */
+  failingCheckName: string
+  /** SHA of the last commit where the check was in a failing conclusion. */
+  lastFailingSha: string
+  /** SHA of the first commit after lastFailingSha where the check is SUCCESS. */
+  firstPassingSha: string
+  /**
+   * Diff excerpt between lastFailingSha and firstPassingSha, truncated to
+   * MAX_EXCERPT_CHARS_PER_CANDIDATE. Empty string when no diff was available
+   * (bare re-run candidates are dropped before this point).
+   */
+  diffExcerpt: string
+  /**
+   * Best-effort excerpt from the failing job log, ranked toward error lines.
+   * '[failure log purged or unavailable]' when the log could not be fetched
+   * (404/410 purged, no run found, or any other error).
+   */
+  logExcerpt?: string
 }
 
 /**
@@ -182,6 +194,10 @@ export interface HarvestStageCounts {
   mergedPrsInLookback: number
   excludedAutomation: number
   multiRoundCandidates: number
+  /** Number of PRs examined for CI fail→pass transition. */
+  ciFixPrsExamined: number
+  /** Number of CI-fix candidates found (transition detected + real diff). */
+  ciFixCandidates: number
 }
 
 /** Counts-only telemetry returned by the pure core + harvest stage. */
@@ -354,7 +370,48 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
       return {...pr, reviewExcerpts: redactedExcerpts}
     }
 
-    // CiFixCandidate: no evidence fields yet (Unit 3 placeholder)
+    // CiFixCandidate: scan and redact diffExcerpt + logExcerpt (R3/R3a).
+    //
+    // Privacy-ordering invariant: diffExcerpt and logExcerpt are already truncated
+    // to budget in the I/O shell before this pure core is called. Never move
+    // truncation after the scan.
+    //
+    // Steps:
+    // 1. Redact structural secrets (paths, hostnames, Bearer tokens) from both fields.
+    // 2. If private-name leak OR residual hard secret after redaction → clear both
+    //    evidence fields (drop enriched content, keep candidate title-only) and
+    //    increment the appropriate counter.
+    // 3. Otherwise use the redacted values.
+    if (pr.trigger === 'ci-fail-then-pass') {
+      const rawDiff = pr.diffExcerpt
+      const rawLog = pr.logExcerpt ?? ''
+
+      // Step 1: redact structural secrets
+      const redactedDiff = redactLogDiffSecrets(rawDiff)
+      const redactedLog = rawLog === '' ? rawLog : redactLogDiffSecrets(rawLog)
+      const combinedText = `${redactedDiff}\n${redactedLog}`
+
+      // Step 2: check for private-name leak or residual hard secret
+      const hasPrivateLeak = learningBodyHasPrivateLeak(combinedText, input.privateTokens)
+      const hasResidualSecret = logDiffHasSecret(combinedText)
+
+      if (hasPrivateLeak) {
+        enrichmentBlocked++
+        return {...pr, diffExcerpt: '', logExcerpt: undefined}
+      }
+      if (hasResidualSecret) {
+        enrichmentBlockedBySecret++
+        return {...pr, diffExcerpt: '', logExcerpt: undefined}
+      }
+
+      // Step 3: use the redacted values
+      const result: CiFixCandidate = {...pr, diffExcerpt: redactedDiff}
+      if (redactedLog !== '') {
+        return {...result, logExcerpt: redactedLog}
+      }
+      return result
+    }
+
     return pr
   })
 
@@ -376,8 +433,8 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
  *
  * When `scanAvailable` is false (private token load failed), all enriched evidence
  * is cleared so no unscanned content reaches the digest. For ReviewCandidate, this
- * clears `reviewExcerpts`. For CiFixCandidate, no evidence fields exist yet (Unit 3).
- * When `scanAvailable` is true, candidates are returned unchanged.
+ * clears `reviewExcerpts`. For CiFixCandidate, this clears `diffExcerpt` and
+ * `logExcerpt`. When `scanAvailable` is true, candidates are returned unchanged.
  *
  * Pure function: no I/O, fully unit-testable. Extracted so the fail-closed
  * composition can be tested independently of the I/O shell.
@@ -388,7 +445,9 @@ export function applyEnrichmentScanAvailability(candidates: Candidate[], scanAva
     if (c.trigger === 'review-heavy') {
       return {...c, reviewExcerpts: [] as string[]}
     }
-    // CiFixCandidate: no evidence fields yet (Unit 3 placeholder)
+    if (c.trigger === 'ci-fail-then-pass') {
+      return {...c, diffExcerpt: '', logExcerpt: undefined}
+    }
     return c
   })
 }
@@ -660,6 +719,484 @@ function buildReviewExcerpts(reviewBodies: {state: string; body: string}[], thre
   return excerpts
 }
 
+// ---------------------------------------------------------------------------
+// CI fail→pass transition detection (pure, exported for testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-commit per-check conclusion entry, as parsed from the GraphQL statusCheckRollup.
+ * Supports both CheckRun (name + conclusion) and StatusContext (context + state).
+ */
+export type CommitCheckEntry =
+  | {type: 'CheckRun'; sha: string; name: string; conclusion: string}
+  | {type: 'StatusContext'; sha: string; context: string; state: string}
+
+/**
+ * Result of a successful fail→pass transition detection.
+ */
+export interface FailPassTransition {
+  failingCheckName: string
+  lastFailingSha: string
+  firstPassingSha: string
+}
+
+/**
+ * Failing conclusions for CheckRun (GitHub Actions).
+ * These are the states that count as "failed" for transition detection.
+ */
+const FAILING_CHECK_CONCLUSIONS = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE'])
+
+/**
+ * Find the first fail→pass transition across a set of commits for required checks.
+ *
+ * Takes commits ordered OLDEST→NEWEST (chronological ascending). For each required
+ * check name, finds:
+ *   - lastFailingSha: the LATEST commit where the check has a failing conclusion
+ *   - firstPassingSha: the FIRST commit AFTER lastFailingSha where the check is SUCCESS
+ *
+ * Returns the first such transition found (iterating required checks in insertion order),
+ * or null if no transition exists.
+ *
+ * When requiredCheckNames is empty, treats ALL checks as required (any failed→passed
+ * transition counts). This handles repos with no branch protection configured.
+ *
+ * CheckRun matches by `name`; StatusContext matches by `context`.
+ *
+ * Pure function: no I/O, fully unit-testable. The ordering invariant (oldest→newest)
+ * is the correctness core — reversing the order would pick the wrong SHA.
+ */
+export function findFailPassTransition(
+  commits: CommitCheckEntry[],
+  requiredCheckNames: Set<string>,
+): FailPassTransition | null {
+  // Collect all check names present in the commits
+  const allCheckNames = new Set<string>()
+  for (const entry of commits) {
+    const name = entry.type === 'CheckRun' ? entry.name : entry.context
+    allCheckNames.add(name)
+  }
+
+  // Determine which check names to evaluate
+  const checkNamesToEvaluate = requiredCheckNames.size > 0 ? requiredCheckNames : allCheckNames
+
+  for (const checkName of checkNamesToEvaluate) {
+    // Walk commits oldest→newest to find lastFailingSha and firstPassingSha
+    let lastFailingSha: string | null = null
+
+    for (const entry of commits) {
+      const entryName = entry.type === 'CheckRun' ? entry.name : entry.context
+      if (entryName !== checkName) continue
+
+      if (entry.type === 'CheckRun') {
+        if (FAILING_CHECK_CONCLUSIONS.has(entry.conclusion)) {
+          // Update lastFailingSha — we want the LATEST failing commit
+          lastFailingSha = entry.sha
+        }
+      } else if (entry.state === 'FAILURE') {
+        // StatusContext: FAILURE state counts as failing
+        lastFailingSha = entry.sha
+      }
+    }
+
+    if (lastFailingSha === null) continue
+
+    // Now find the FIRST commit AFTER lastFailingSha where the check is SUCCESS
+    let foundFailing = false
+    for (const entry of commits) {
+      const entryName = entry.type === 'CheckRun' ? entry.name : entry.context
+      if (entryName !== checkName) continue
+
+      if (entry.sha === lastFailingSha) {
+        foundFailing = true
+        continue
+      }
+
+      if (!foundFailing) continue
+
+      // We're past the lastFailingSha — look for first SUCCESS
+      const isSuccess = entry.type === 'CheckRun' ? entry.conclusion === 'SUCCESS' : entry.state === 'SUCCESS'
+
+      if (isSuccess) {
+        return {
+          failingCheckName: checkName,
+          lastFailingSha,
+          firstPassingSha: entry.sha,
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// GraphQL commit/check rollup fetch (I/O)
+// ---------------------------------------------------------------------------
+
+/**
+ * GraphQL query to fetch per-commit per-check conclusions for a PR.
+ * Returns commits in chronological order (oldest→newest for commits(first:N)).
+ * Pagination: cursor walk for PRs with >100 commits.
+ */
+const PR_COMMITS_ROLLUP_QUERY = `
+query($owner:String!,$repo:String!,$number:Int!,$after:String){
+  repository(owner:$owner,name:$repo){
+    pullRequest(number:$number){
+      commits(first:100,after:$after){
+        pageInfo{ hasNextPage endCursor }
+        nodes{
+          commit{
+            oid
+            statusCheckRollup{
+              contexts(first:100){
+                nodes{
+                  __typename
+                  ... on CheckRun{ name conclusion }
+                  ... on StatusContext{ context state }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+`.trim()
+
+/**
+ * Injectable type for the gh execFileSync call (for testability).
+ * Matches the signature used in private-repo-resolution.ts.
+ */
+export type GhExecFn = (args: string[], env?: NodeJS.ProcessEnv) => string
+
+/**
+ * Default gh exec implementation using execFileSync.
+ * Follows the pattern from private-repo-resolution.ts.
+ */
+export function defaultGhExec(args: string[], env?: NodeJS.ProcessEnv): string {
+  return execFileSync('gh', args, {
+    encoding: 'utf8',
+    env: env ?? process.env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+}
+
+/**
+ * Fetch per-commit per-check conclusions for a PR via GraphQL.
+ * Walks cursor pages for PRs with >100 commits.
+ * Returns commits in chronological order (oldest→newest).
+ * Returns null on any error (caller degrades the PR).
+ */
+export function fetchPrCommitCheckRollup(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  token: string | undefined,
+  ghExec: GhExecFn = defaultGhExec,
+): CommitCheckEntry[] | null {
+  const env: NodeJS.ProcessEnv = {...process.env}
+  if (token !== undefined && token !== '') {
+    env.GH_TOKEN = token
+    delete env.GITHUB_TOKEN
+  }
+
+  const allEntries: CommitCheckEntry[] = []
+  let after: string | null = null
+
+  // Cursor walk — handles PRs with >100 commits
+  for (;;) {
+    const args = [
+      'api',
+      'graphql',
+      '-f',
+      `query=${PR_COMMITS_ROLLUP_QUERY}`,
+      '-F',
+      `owner=${owner}`,
+      '-F',
+      `repo=${repo}`,
+      '-F',
+      `number=${prNumber}`,
+    ]
+    if (after !== null) {
+      args.push('-f', `after=${after}`)
+    }
+
+    let stdout: string
+    try {
+      stdout = ghExec(args, env)
+    } catch {
+      return null
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(stdout)
+    } catch {
+      return null
+    }
+
+    if (!isRecord(parsed)) return null
+    const data = parsed.data
+    if (!isRecord(data)) return null
+    const repository = data.repository
+    if (!isRecord(repository)) return null
+    const pullRequest = repository.pullRequest
+    if (!isRecord(pullRequest)) return null
+    const commits = pullRequest.commits
+    if (!isRecord(commits)) return null
+    const nodes = commits.nodes
+    if (!Array.isArray(nodes)) return null
+
+    for (const node of nodes) {
+      if (!isRecord(node)) continue
+      const commit = node.commit
+      if (!isRecord(commit)) continue
+      const oid = commit.oid
+      if (typeof oid !== 'string') continue
+      const rollup = commit.statusCheckRollup
+      if (!isRecord(rollup)) continue
+      const contexts = rollup.contexts
+      if (!isRecord(contexts)) continue
+      const contextNodes = contexts.nodes
+      if (!Array.isArray(contextNodes)) continue
+
+      for (const ctx of contextNodes) {
+        if (!isRecord(ctx)) continue
+        const typename = ctx.__typename
+        if (typename === 'CheckRun') {
+          const name = ctx.name
+          const conclusion = ctx.conclusion
+          if (typeof name === 'string' && typeof conclusion === 'string') {
+            allEntries.push({type: 'CheckRun', sha: oid, name, conclusion})
+          }
+        } else if (typename === 'StatusContext') {
+          const context = ctx.context
+          const state = ctx.state
+          if (typeof context === 'string' && typeof state === 'string') {
+            allEntries.push({type: 'StatusContext', sha: oid, context, state})
+          }
+        }
+      }
+    }
+
+    // Check pagination
+    const pageInfo = commits.pageInfo
+    if (!isRecord(pageInfo)) break
+    const hasNextPage = pageInfo.hasNextPage
+    if (hasNextPage !== true) break
+    const endCursor = pageInfo.endCursor
+    if (typeof endCursor !== 'string') break
+    after = endCursor
+  }
+
+  return allEntries
+}
+
+// ---------------------------------------------------------------------------
+// Diff excerpt builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a diff excerpt from compareCommits file patches, truncated to budget.
+ * Ranks toward changed hunks (lines starting with + or -).
+ * Returns empty string when no patches are available.
+ */
+function buildDiffExcerpt(files: {filename?: string; patch?: string}[], budget: number): string {
+  const parts: string[] = []
+  let remaining = budget
+
+  for (const file of files) {
+    if (remaining <= 0) break
+    const patch = file.patch
+    if (typeof patch !== 'string' || patch === '') continue
+    const header = `--- ${file.filename ?? 'unknown'}\n`
+    const chunk = header + patch
+    if (chunk.length <= remaining) {
+      parts.push(chunk)
+      remaining -= chunk.length
+    } else {
+      parts.push(chunk.slice(0, remaining))
+      remaining = 0
+    }
+  }
+
+  return parts.join('\n')
+}
+
+// ---------------------------------------------------------------------------
+// Log excerpt builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a log excerpt from raw job log text, ranked toward error lines.
+ * Truncates to budget. Returns the excerpt string.
+ */
+function buildLogExcerpt(logText: string, budget: number): string {
+  const lines = logText.split('\n')
+
+  // Rank error lines first (lines containing 'error', 'Error', 'ERROR', 'FAILED', 'failed')
+  const errorLines: string[] = []
+  const otherLines: string[] = []
+
+  for (const line of lines) {
+    if (/error|failed/i.test(line)) {
+      errorLines.push(line)
+    } else {
+      otherLines.push(line)
+    }
+  }
+
+  const ranked = [...errorLines, ...otherLines]
+  const joined = ranked.join('\n')
+  return joined.slice(0, budget)
+}
+
+// ---------------------------------------------------------------------------
+// CI fix harvester (I/O shell)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch merged PRs in the lookback window and detect CI fail→pass transitions.
+ *
+ * For each merged PR (reusing the same closed-PR list pattern as harvestCandidates):
+ * 1. Run the GraphQL commits/rollup query to get per-commit per-check conclusions.
+ * 2. Walk commits oldest→newest to find lastFailingSha/firstPassingSha for a required check.
+ * 3. compareCommits for the fixing diff (drop if no diff — bare re-run).
+ * 4. Best-effort downloadJobLogsForWorkflowRun for the failed job log excerpt.
+ * 5. Build CiFixCandidate with deriveSignals for the signals field.
+ *
+ * Per-PR errors (GraphQL/compare) degrade that PR (skip), never abort.
+ * Log fetch errors degrade to '[failure log purged or unavailable]' placeholder.
+ *
+ * Injectables: ghExec + octokit + now + mergedPrs (for testability).
+ * Counts-only telemetry — no owner/repo/name in any log.
+ */
+export async function harvestCiFixCandidates(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  _now: Date,
+  mergedPrs: {
+    number: number
+    merge_commit_sha: string
+    title: string
+    labels: {name: string}[]
+    user: {login: string} | null
+  }[],
+  requiredCheckNames: Set<string>,
+  ghExec: GhExecFn = defaultGhExec,
+): Promise<{candidates: CiFixCandidate[]; ciFixPrsExamined: number; ciFixCandidates: number}> {
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
+
+  let ciFixPrsExamined = 0
+  let ciFixCandidatesCount = 0
+  const candidates: CiFixCandidate[] = []
+
+  for (const pr of mergedPrs) {
+    ciFixPrsExamined++
+
+    // Step 1: fetch per-commit per-check conclusions via GraphQL
+    const entries = fetchPrCommitCheckRollup(owner, repo, pr.number, token, ghExec)
+    if (entries === null) {
+      // GraphQL error — degrade this PR, continue
+      process.stderr.write(`capture-learnings-harvest: ci-fix GraphQL failed (pr=${ciFixPrsExamined})\n`)
+      continue
+    }
+
+    // Step 2: find fail→pass transition
+    const transition = findFailPassTransition(entries, requiredCheckNames)
+    if (transition === null) {
+      // No transition — not a CI-fix candidate
+      continue
+    }
+
+    const {failingCheckName, lastFailingSha, firstPassingSha} = transition
+
+    // Step 3: compareCommits for the fixing diff
+    let diffExcerpt: string
+    try {
+      const compareResult = await octokit.rest.repos.compareCommits({
+        owner,
+        repo,
+        base: lastFailingSha,
+        head: firstPassingSha,
+      })
+      const files = compareResult.data.files ?? []
+      if (files.length === 0) {
+        // Bare re-run with no diff — drop the candidate (scope boundary)
+        continue
+      }
+      diffExcerpt = buildDiffExcerpt(files as {filename?: string; patch?: string}[], MAX_EXCERPT_CHARS_PER_CANDIDATE)
+      if (diffExcerpt === '') {
+        // No patches in any file — drop
+        continue
+      }
+    } catch {
+      // compareCommits error — degrade this PR
+      process.stderr.write(`capture-learnings-harvest: ci-fix compareCommits failed (pr=${ciFixPrsExamined})\n`)
+      continue
+    }
+
+    // Step 4: best-effort log fetch
+    let logExcerpt: string | undefined
+    try {
+      const runsResult = await octokit.rest.actions.listWorkflowRunsForRepo({
+        owner,
+        repo,
+        head_sha: lastFailingSha,
+        status: 'completed',
+        per_page: 10,
+      })
+      const failedRun = runsResult.data.workflow_runs.find(r => r.conclusion === 'failure')
+      if (failedRun !== undefined) {
+        const jobsResult = await octokit.rest.actions.listJobsForWorkflowRun({
+          owner,
+          repo,
+          run_id: failedRun.id,
+          per_page: 50,
+        })
+        const failedJob = jobsResult.data.jobs.find(j => j.conclusion === 'failure')
+        if (failedJob !== undefined) {
+          const logResponse = await octokit.rest.actions.downloadJobLogsForWorkflowRun({
+            owner,
+            repo,
+            job_id: failedJob.id,
+          })
+          const logText = typeof logResponse.data === 'string' ? logResponse.data : ''
+          if (logText !== '') {
+            logExcerpt = buildLogExcerpt(logText, MAX_EXCERPT_CHARS_PER_CANDIDATE)
+          }
+        }
+      }
+    } catch {
+      // Log fetch failed — degrade to placeholder, never block the candidate
+      logExcerpt = '[failure log purged or unavailable]'
+    }
+
+    // Step 5: build CiFixCandidate
+    const prLabels = pr.labels.map(l => l.name)
+    const candidate: CiFixCandidate = {
+      trigger: 'ci-fail-then-pass',
+      mergeSha: pr.merge_commit_sha,
+      signals: deriveSignals({
+        title: pr.title,
+        labels: prLabels.map(name => ({name})),
+      }),
+      failingCheckName,
+      lastFailingSha,
+      firstPassingSha,
+      diffExcerpt,
+      logExcerpt,
+    }
+
+    candidates.push(candidate)
+    ciFixCandidatesCount++
+  }
+
+  return {candidates, ciFixPrsExamined, ciFixCandidates: ciFixCandidatesCount}
+}
+
 /**
  * Fetch all merged PRs in the lookback window and return those where Fro Bot's
  * substantive reviews meet the predicate:
@@ -828,6 +1365,9 @@ export async function harvestCandidates(
       mergedPrsInLookback,
       excludedAutomation,
       multiRoundCandidates: candidates.length,
+      // CI-fix counts are populated by harvestCiFixCandidates separately
+      ciFixPrsExamined: 0,
+      ciFixCandidates: 0,
     },
   }
 }
