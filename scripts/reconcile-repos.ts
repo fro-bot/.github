@@ -2453,6 +2453,10 @@ async function fileIntegrityAlert(params: {
  * logs one counts-only warn and returns `{starsAdded: 0, starsAlreadyPresent: 0,
  * starFailures: candidates.length}` so all candidates retry next run.
  *
+ * This reads @fro-bot's full starred set once per run; the single-read win assumes the
+ * starred set stays close in size to the candidate set. If @fro-bot accumulates many stars
+ * outside the reconcile candidate set, revisit whether per-candidate checks become cheaper.
+ *
  * Telemetry is counts-only; canonical owner/name never appears in any log or warn message.
  *
  * A star is a user action — MUST use `userOctokit` (the FRO_BOT_POLL_PAT), never the App token.
@@ -2485,10 +2489,16 @@ export async function syncStars(params: {
   } catch (readError: unknown) {
     // Fail-safe: do NOT blind-star candidates. Return all as failures so they retry next run.
     const status = isRecord(readError) && typeof readError.status === 'number' ? readError.status : 'unknown'
-    const kind = readError instanceof Error ? readError.name : 'unknown'
-    params.logger.warn(
-      `reconcile: star sync skipped — could not read starred set (status=${status}, kind=${kind}); retrying next run.`,
-    )
+    if (isGitHubRateLimit(readError)) {
+      params.logger.warn(
+        `reconcile: star sync skipped — starred-set read rate limited (status=${status}); retrying next run.`,
+      )
+    } else {
+      const kind = readError instanceof Error ? readError.name : 'unknown'
+      params.logger.warn(
+        `reconcile: star sync skipped — could not read starred set (status=${status}, kind=${kind}); retrying next run.`,
+      )
+    }
     return {starsAdded: 0, starsAlreadyPresent: 0, starFailures: params.candidates.length}
   }
 

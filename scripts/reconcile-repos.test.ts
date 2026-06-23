@@ -7722,7 +7722,11 @@ describe('syncStars', () => {
       expect(starRepo).not.toHaveBeenCalled()
       expect(logger.warn).toHaveBeenCalledOnce()
       const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
+      expect(warnMsg).toContain('rate limit')
       expect(warnMsg).toContain('status=429')
+      // AND no owner/name in the warn (counts-only, mirroring the 500 case)
+      expect(warnMsg).not.toContain('owner-a')
+      expect(warnMsg).not.toContain('repo-a')
     })
   })
 
@@ -7771,6 +7775,43 @@ describe('syncStars', () => {
         expect(msg).not.toContain('private-owner')
         expect(msg).not.toContain('secret-repo')
       }
+    })
+  })
+
+  // (i) Starred set is a SUPERSET of candidates — extras in the starred set are ignored;
+  //     only candidates are counted, starsAdded=0, star never called.
+  //     Models the realistic @fro-bot state where it has starred many repos beyond candidates.
+  describe('(i) starred set is a superset of candidates', () => {
+    it('counts only candidates as starsAlreadyPresent; ignores extra starred repos; never calls star', async () => {
+      // GIVEN the starred set contains both candidates PLUS extra repos not in the candidate list
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        paginate: starredPaginate([
+          {owner: {login: 'owner-a'}, name: 'repo-a'},
+          {owner: {login: 'owner-b'}, name: 'repo-b'},
+          {owner: {login: 'extra-owner'}, name: 'extra-repo-1'},
+          {owner: {login: 'extra-owner'}, name: 'extra-repo-2'},
+        ]),
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      // WHEN syncStars runs with only two of the four starred repos as candidates
+      const result = await syncStars({
+        userOctokit,
+        candidates: [
+          {owner: 'owner-a', name: 'repo-a'},
+          {owner: 'owner-b', name: 'repo-b'},
+        ],
+        logger,
+      })
+
+      // THEN only the two candidates are counted as already present (extras are ignored)
+      expect(result.starsAlreadyPresent).toBe(2)
+      expect(result.starsAdded).toBe(0)
+      expect(result.starFailures).toBe(0)
+      // AND star is NEVER called (all candidates already in set)
+      expect(starRepo).not.toHaveBeenCalled()
     })
   })
 })
