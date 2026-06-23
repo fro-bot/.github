@@ -2410,7 +2410,7 @@ interface OctokitMockOverrides {
   issuesListForRepo?: (params: unknown) => Promise<{data: IssueListEntry[]}>
   issuesGetLabel?: (params: unknown) => Promise<{data: {name: string}}>
   issuesCreateLabel?: (params: unknown) => Promise<{data: {name: string}}>
-  checkRepoIsStarredByAuthenticatedUser?: (params: {owner: string; repo: string}) => Promise<void>
+  listReposStarredByAuthenticatedUser?: (opts: unknown) => Promise<{data: StarredRepoApiEntry[]}>
   starRepoForAuthenticatedUser?: (params: {owner: string; repo: string}) => Promise<void>
 }
 
@@ -2420,6 +2420,11 @@ interface AccessListApiEntry {
   archived: boolean
   private: boolean
   node_id: string
+}
+
+interface StarredRepoApiEntry {
+  owner: {login: string}
+  name: string
 }
 
 interface RepoGetResponse {
@@ -2552,12 +2557,8 @@ function mockOctokit(overrides: OctokitMockOverrides = {}): OctokitClient {
         createLabel: overrides.issuesCreateLabel ?? (async () => ({data: {name: 'label'}})),
       },
       activity: {
-        checkRepoIsStarredByAuthenticatedUser:
-          overrides.checkRepoIsStarredByAuthenticatedUser ??
-          (async () => {
-            // Default: not starred (throws 404)
-            throw apiError(404, 'Not Found')
-          }),
+        listReposStarredByAuthenticatedUser:
+          overrides.listReposStarredByAuthenticatedUser ?? (async () => ({data: [] as StarredRepoApiEntry[]})),
         starRepoForAuthenticatedUser: overrides.starRepoForAuthenticatedUser ?? (async () => undefined),
       },
     },
@@ -7418,144 +7419,154 @@ describe('handleReconcile visibility-transition: partial label confirmation is n
 
 // ─── syncStars ───────────────────────────────────────────────────────────────
 
+/**
+ * Build a paginate override that returns `starredRepos` when called for
+ * `listReposStarredByAuthenticatedUser`, and delegates to the default paginate
+ * (fn(opts).data) for any other function. Tests that need a specific starred set
+ * pass this as `paginate` in `mockOctokit`.
+ */
+function starredPaginate(starredRepos: StarredRepoApiEntry[]): (fn: unknown, opts: unknown) => Promise<unknown[]> {
+  return async (_fn, _opts) => starredRepos
+}
+
 describe('syncStars', () => {
-  describe('happy path — unstarred repo', () => {
-    it('calls starRepoForAuthenticatedUser when check throws 404, increments starsAdded', async () => {
-      // GIVEN a collab repo that is not yet starred (check → 404)
-      // WHEN syncStars runs
-      const checkStar = vi.fn(async () => {
-        throw apiError(404, 'Not Found')
-      })
+  // (a) All candidates already starred — starsAlreadyPresent=N, starsAdded=0, starFailures=0,
+  //     starRepoForAuthenticatedUser is NEVER called.
+  describe('(a) all candidates already starred', () => {
+    it('returns starsAlreadyPresent=N when all candidates are in the starred set; star call never made', async () => {
+      // GIVEN the starred set contains both candidates
       const starRepo = vi.fn(async () => undefined)
       const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        paginate: starredPaginate([
+          {owner: {login: 'marcusrbrown'}, name: 'cool-repo'},
+          {owner: {login: 'marcusrbrown'}, name: 'other-repo'},
+        ]),
         starRepoForAuthenticatedUser: starRepo as never,
       })
       const logger = silentLogger()
 
-      const result = await syncStars({
-        userOctokit,
-        candidates: [{owner: 'marcusrbrown', name: 'cool-repo'}],
-        logger,
-      })
-
-      // THEN the repo is starred and starsAdded increments
-      expect(result.starsAdded).toBe(1)
-      expect(result.starsAlreadyPresent).toBe(0)
-      expect(result.starFailures).toBe(0)
-      expect(starRepo).toHaveBeenCalledOnce()
-      expect(starRepo).toHaveBeenCalledWith({owner: 'marcusrbrown', repo: 'cool-repo'})
-    })
-  })
-
-  describe('idempotency — already-starred repo', () => {
-    it('does NOT call starRepoForAuthenticatedUser when check resolves (204), increments starsAlreadyPresent', async () => {
-      // GIVEN a repo that is already starred (check → resolves without throwing)
       // WHEN syncStars runs
-      const checkStar = vi.fn(async () => undefined) // resolves = already starred
-      const starRepo = vi.fn(async () => undefined)
-      const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
-        starRepoForAuthenticatedUser: starRepo as never,
-      })
-      const logger = silentLogger()
-
       const result = await syncStars({
         userOctokit,
-        candidates: [{owner: 'marcusrbrown', name: 'already-starred'}],
+        candidates: [
+          {owner: 'marcusrbrown', name: 'cool-repo'},
+          {owner: 'marcusrbrown', name: 'other-repo'},
+        ],
         logger,
       })
 
-      // THEN no star call is made and starsAlreadyPresent increments
+      // THEN all are already-present; star is never called
+      expect(result.starsAlreadyPresent).toBe(2)
       expect(result.starsAdded).toBe(0)
-      expect(result.starsAlreadyPresent).toBe(1)
       expect(result.starFailures).toBe(0)
       expect(starRepo).not.toHaveBeenCalled()
     })
   })
 
-  describe('private collab repo — starred, counts-only telemetry', () => {
-    it('stars a private collab repo (check 404) and emits no canonical name in logger output', async () => {
-      // GIVEN a private collab repo not yet starred
-      // WHEN syncStars runs
-      const checkStar = vi.fn(async () => {
-        throw apiError(404, 'Not Found')
-      })
+  // (b) None starred — starsAdded=N, starsAlreadyPresent=0; star called once per candidate.
+  describe('(b) none starred', () => {
+    it('calls starRepoForAuthenticatedUser for each candidate when starred set is empty', async () => {
+      // GIVEN the starred set is empty
       const starRepo = vi.fn(async () => undefined)
       const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        paginate: starredPaginate([]),
         starRepoForAuthenticatedUser: starRepo as never,
       })
       const logger = silentLogger()
 
-      const result = await syncStars({
-        userOctokit,
-        candidates: [{owner: 'private-owner', name: 'secret-repo'}],
-        logger,
-      })
-
-      // THEN the repo is starred
-      expect(result.starsAdded).toBe(1)
-      expect(starRepo).toHaveBeenCalledOnce()
-
-      // AND no canonical owner/name appears in any logger output (counts-only)
-      const allLogMessages = [...logger.warn.mock.calls.map(c => c[0]), ...logger.info.mock.calls.map(c => c[0])]
-      for (const msg of allLogMessages) {
-        expect(msg).not.toContain('private-owner')
-        expect(msg).not.toContain('secret-repo')
-      }
-    })
-  })
-
-  describe('non-blocking — check error (non-404)', () => {
-    it('increments starFailures on non-404 check error, continues to next candidate', async () => {
-      // GIVEN a check that throws a non-404 error (e.g. 500), followed by a normal unstarred repo
-      // WHEN syncStars runs
-      const checkStar = vi
-        .fn()
-        .mockRejectedValueOnce(apiError(500, 'Internal Server Error'))
-        .mockRejectedValueOnce(apiError(404, 'Not Found'))
-      const starRepo = vi.fn(async () => undefined)
-      const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
-        starRepoForAuthenticatedUser: starRepo as never,
-      })
-      const logger = silentLogger()
-
+      // WHEN syncStars runs with two candidates
       const result = await syncStars({
         userOctokit,
         candidates: [
-          {owner: 'owner-a', name: 'repo-a'},
+          {owner: 'marcusrbrown', name: 'cool-repo'},
           {owner: 'owner-b', name: 'repo-b'},
         ],
         logger,
       })
 
-      // THEN the first candidate fails (starFailures), the second is starred (starsAdded)
-      expect(result.starFailures).toBe(1)
-      expect(result.starsAdded).toBe(1)
+      // THEN both are starred
+      expect(result.starsAdded).toBe(2)
       expect(result.starsAlreadyPresent).toBe(0)
-      // AND the loop continued — star was called for the second candidate
+      expect(result.starFailures).toBe(0)
+      expect(starRepo).toHaveBeenCalledTimes(2)
+      expect(starRepo).toHaveBeenCalledWith({owner: 'marcusrbrown', repo: 'cool-repo'})
+      expect(starRepo).toHaveBeenCalledWith({owner: 'owner-b', repo: 'repo-b'})
+    })
+  })
+
+  // (c) Mixed: some in set, some not → correct split.
+  describe('(c) mixed — some starred, some not', () => {
+    it('correctly splits starsAlreadyPresent and starsAdded for a mixed candidate list', async () => {
+      // GIVEN the starred set contains only the first candidate
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        paginate: starredPaginate([{owner: {login: 'owner-a'}, name: 'repo-a'}]),
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      // WHEN syncStars runs with two candidates
+      const result = await syncStars({
+        userOctokit,
+        candidates: [
+          {owner: 'owner-a', name: 'repo-a'}, // already starred
+          {owner: 'owner-b', name: 'repo-b'}, // not starred
+        ],
+        logger,
+      })
+
+      // THEN the split is correct
+      expect(result.starsAlreadyPresent).toBe(1)
+      expect(result.starsAdded).toBe(1)
+      expect(result.starFailures).toBe(0)
       expect(starRepo).toHaveBeenCalledOnce()
       expect(starRepo).toHaveBeenCalledWith({owner: 'owner-b', repo: 'repo-b'})
     })
   })
 
-  describe('non-blocking — star call error', () => {
-    it('increments starFailures when starRepoForAuthenticatedUser throws, continues to next candidate', async () => {
-      // GIVEN a check that returns 404 (not starred) but the star call itself fails
-      // AND a second candidate that succeeds normally
-      // WHEN syncStars runs
-      const checkStar = vi.fn(async () => {
-        throw apiError(404, 'Not Found')
-      })
-      const starRepo = vi.fn().mockRejectedValueOnce(apiError(403, 'Forbidden')).mockResolvedValueOnce(undefined)
+  // (d) Case-insensitive match: starred set has 'Owner/Repo', candidate is 'owner/repo'
+  //     → counted already-present (proves lowercase normalization).
+  //     MUTATION-PROOF: removing lowercase normalization breaks this test.
+  describe('(d) case-insensitive match', () => {
+    it('treats Owner/Repo in starred set as matching owner/repo candidate (case-insensitive)', async () => {
+      // GIVEN the starred set has mixed-case owner/name
+      const starRepo = vi.fn(async () => undefined)
       const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        paginate: starredPaginate([{owner: {login: 'Owner'}, name: 'Repo'}]),
         starRepoForAuthenticatedUser: starRepo as never,
       })
       const logger = silentLogger()
 
+      // WHEN syncStars runs with a lowercase candidate
+      const result = await syncStars({
+        userOctokit,
+        candidates: [{owner: 'owner', name: 'repo'}],
+        logger,
+      })
+
+      // THEN it is counted as already-present (case-insensitive match)
+      expect(result.starsAlreadyPresent).toBe(1)
+      expect(result.starsAdded).toBe(0)
+      expect(result.starFailures).toBe(0)
+      // AND star is never called (mutation-proof: without lowercase normalization, this fails)
+      expect(starRepo).not.toHaveBeenCalled()
+    })
+  })
+
+  // (e) A star call fails (non-rate-limit) → starFailures++, continues to next candidate,
+  //     counts-only warn (assert no owner/name in the warn arg).
+  describe('(e) non-blocking — star call error (non-rate-limit)', () => {
+    it('increments starFailures when starRepoForAuthenticatedUser throws, continues to next candidate', async () => {
+      // GIVEN the starred set is empty (both candidates need starring)
+      // AND the first star call fails with a non-rate-limit error
+      const starRepo = vi.fn().mockRejectedValueOnce(apiError(403, 'Forbidden')).mockResolvedValueOnce(undefined)
+      const userOctokit = mockOctokit({
+        paginate: starredPaginate([]),
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      // WHEN syncStars runs
       const result = await syncStars({
         userOctokit,
         candidates: [
@@ -7568,6 +7579,7 @@ describe('syncStars', () => {
       // THEN the first star call fails (starFailures), the second succeeds (starsAdded)
       expect(result.starFailures).toBe(1)
       expect(result.starsAdded).toBe(1)
+      expect(result.starsAlreadyPresent).toBe(0)
       // AND the warn message contains status/kind only, no owner/name
       expect(logger.warn).toHaveBeenCalledOnce()
       const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
@@ -7577,110 +7589,18 @@ describe('syncStars', () => {
     })
   })
 
-  describe('credential — star calls use userOctokit, not appOctokit', () => {
-    it('star and check calls go through userOctokit; appOctokit.activity methods are never called (integration)', async () => {
-      // GIVEN an unstarred collab repo in the access list
-      // AND both userOctokit and appOctokit are wired with distinct activity mocks
-      const userCheckStar = vi.fn(async () => {
-        throw apiError(404, 'Not Found') // not starred
-      })
-      const userStarRepo = vi.fn(async () => undefined)
-      const appCheckStar = vi.fn(async () => undefined)
-      const appStarRepo = vi.fn(async () => undefined)
-
-      const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: userCheckStar as never,
-        starRepoForAuthenticatedUser: userStarRepo as never,
-        listForAuthenticatedUser: async () => ({
-          data: [
-            {owner: {login: 'marcusrbrown'}, name: 'some-repo', archived: false, private: false, node_id: 'R_some'},
-          ],
-        }),
-      })
-      // appOctokit has its own activity mocks — if syncStars mistakenly used appOctokit,
-      // these would be called and the assertions below would catch it.
-      const appOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: appCheckStar as never,
-        starRepoForAuthenticatedUser: appStarRepo as never,
-      })
-
-      // WHEN handleReconcile runs end-to-end
-      const result = await handleReconcile(
-        baseParams({
-          userOctokit,
-          appOctokit,
-          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['marcusrbrown'])}),
-        }),
-      )
-
-      // THEN userOctokit's activity methods were called (the star went through)
-      expect(userCheckStar).toHaveBeenCalledOnce()
-      expect(userStarRepo).toHaveBeenCalledOnce()
-      expect(result.starsAdded).toBe(1)
-      // AND appOctokit's activity methods were NEVER called
-      // (mutation-proof: if syncStars were switched to appOctokit, these would fail)
-      expect(appCheckStar).not.toHaveBeenCalled()
-      expect(appStarRepo).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('rate-limit early break', () => {
-    it('stops the loop when check throws a rate-limit error; later candidates are not processed', async () => {
-      // GIVEN three candidates; the first check throws a 429 rate-limit error
-      const checkStar = vi
-        .fn()
-        .mockRejectedValueOnce(apiError(429, 'Too Many Requests')) // candidate 1: rate-limited
-        .mockResolvedValueOnce(undefined) // candidate 2: would resolve (already starred)
-        .mockRejectedValueOnce(apiError(404, 'Not Found')) // candidate 3: would need starring
-      const starRepo = vi.fn(async () => undefined)
-      const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
-        starRepoForAuthenticatedUser: starRepo as never,
-      })
-      const logger = silentLogger()
-
-      // WHEN syncStars runs
-      const result = await syncStars({
-        userOctokit,
-        candidates: [
-          {owner: 'owner-a', name: 'repo-a'},
-          {owner: 'owner-b', name: 'repo-b'},
-          {owner: 'owner-c', name: 'repo-c'},
-        ],
-        logger,
-      })
-
-      // THEN the loop stopped after the first candidate
-      // starFailures reflects the rate-limited candidate
-      expect(result.starFailures).toBe(1)
-      // starsAdded and starsAlreadyPresent are zero (loop broke before any success)
-      expect(result.starsAdded).toBe(0)
-      expect(result.starsAlreadyPresent).toBe(0)
-      // AND candidates 2 and 3 were never checked (loop broke early)
-      expect(checkStar).toHaveBeenCalledTimes(1)
-      expect(starRepo).not.toHaveBeenCalled()
-      // AND a single warn was emitted with status, no owner/name
-      expect(logger.warn).toHaveBeenCalledOnce()
-      const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
-      expect(warnMsg).toContain('rate limit')
-      expect(warnMsg).toContain('status=429')
-      expect(warnMsg).not.toContain('owner-a')
-      expect(warnMsg).not.toContain('repo-a')
-    })
-
+  // (f) A star call hits rate limit → break, remaining candidates untouched, counts-only warn.
+  describe('(f) rate-limit early break on star call', () => {
     it('stops the loop when star call throws a rate-limit error (403 + x-ratelimit-remaining: 0)', async () => {
-      // GIVEN two candidates; the first check returns 404 (not starred) but the star call is rate-limited
+      // GIVEN the starred set is empty (both candidates need starring)
+      // AND the first star call is rate-limited
       const rateLimitError = Object.assign(new Error('API rate limit exceeded'), {
         status: 403,
         response: {headers: {'x-ratelimit-remaining': '0'}},
       })
-      const checkStar = vi
-        .fn()
-        .mockRejectedValueOnce(apiError(404, 'Not Found')) // candidate 1: not starred
-        .mockRejectedValueOnce(apiError(404, 'Not Found')) // candidate 2: would need starring
-      const starRepo = vi.fn().mockRejectedValueOnce(rateLimitError) // star call rate-limited
+      const starRepo = vi.fn().mockRejectedValueOnce(rateLimitError)
       const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        paginate: starredPaginate([]),
         starRepoForAuthenticatedUser: starRepo as never,
       })
       const logger = silentLogger()
@@ -7698,10 +7618,10 @@ describe('syncStars', () => {
       // THEN the loop stopped after the first candidate's star call failed
       expect(result.starFailures).toBe(1)
       expect(result.starsAdded).toBe(0)
-      // AND candidate 2's check was never called (loop broke after star failure)
-      expect(checkStar).toHaveBeenCalledTimes(1)
+      expect(result.starsAlreadyPresent).toBe(0)
+      // AND the second candidate was never starred (loop broke)
       expect(starRepo).toHaveBeenCalledTimes(1)
-      // AND the warn message contains status, no owner/name
+      // AND the warn message contains rate limit + status, no owner/name
       expect(logger.warn).toHaveBeenCalledOnce()
       const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
       expect(warnMsg).toContain('rate limit')
@@ -7709,42 +7629,163 @@ describe('syncStars', () => {
       expect(warnMsg).not.toContain('owner-a')
       expect(warnMsg).not.toContain('repo-a')
     })
-  })
 
-  describe('empty candidates', () => {
-    it('returns all-zero counts when candidates list is empty', async () => {
-      // GIVEN no candidates
-      // WHEN syncStars runs
-      const checkStar = vi.fn(async () => undefined)
-      const starRepo = vi.fn(async () => undefined)
+    it('stops the loop when star call throws a 429 rate-limit error', async () => {
+      // GIVEN the starred set is empty and the first star call returns 429
+      const starRepo = vi.fn().mockRejectedValueOnce(apiError(429, 'Too Many Requests'))
       const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        paginate: starredPaginate([]),
         starRepoForAuthenticatedUser: starRepo as never,
       })
       const logger = silentLogger()
 
+      const result = await syncStars({
+        userOctokit,
+        candidates: [
+          {owner: 'owner-a', name: 'repo-a'},
+          {owner: 'owner-b', name: 'repo-b'},
+        ],
+        logger,
+      })
+
+      expect(result.starFailures).toBe(1)
+      expect(result.starsAdded).toBe(0)
+      expect(starRepo).toHaveBeenCalledTimes(1)
+      expect(logger.warn).toHaveBeenCalledOnce()
+      const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
+      expect(warnMsg).toContain('rate limit')
+      expect(warnMsg).toContain('status=429')
+    })
+  })
+
+  // (g) NEW: the paginated read itself throws → returns {0, 0, candidates.length},
+  //     ONE counts-only warn, and starRepoForAuthenticatedUser is NEVER called
+  //     (fail-safe, not fail-open).
+  //     MUTATION-PROOF: if the read-failure path blind-stars, this test fails.
+  describe('(g) paginated read failure — fail-safe, not fail-open', () => {
+    it('returns starFailures=candidates.length and never calls star when paginate throws', async () => {
+      // GIVEN the paginated read throws a generic error
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        paginate: async () => {
+          throw apiError(500, 'Internal Server Error')
+        },
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      // WHEN syncStars runs with two candidates
+      const result = await syncStars({
+        userOctokit,
+        candidates: [
+          {owner: 'owner-a', name: 'repo-a'},
+          {owner: 'owner-b', name: 'repo-b'},
+        ],
+        logger,
+      })
+
+      // THEN all candidates are counted as failures (fail-safe)
+      expect(result.starsAdded).toBe(0)
+      expect(result.starsAlreadyPresent).toBe(0)
+      expect(result.starFailures).toBe(2)
+      // AND star is NEVER called (mutation-proof: blind-starring would fail this)
+      expect(starRepo).not.toHaveBeenCalled()
+      // AND exactly one counts-only warn is emitted
+      expect(logger.warn).toHaveBeenCalledOnce()
+      const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
+      expect(warnMsg).toContain('status=500')
+      // AND no owner/name in the warn
+      expect(warnMsg).not.toContain('owner-a')
+      expect(warnMsg).not.toContain('repo-a')
+    })
+
+    it('returns starFailures=candidates.length and never calls star when paginate throws a rate-limit error', async () => {
+      // GIVEN the paginated read is rate-limited
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        paginate: async () => {
+          throw apiError(429, 'Too Many Requests')
+        },
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      const result = await syncStars({
+        userOctokit,
+        candidates: [{owner: 'owner-a', name: 'repo-a'}],
+        logger,
+      })
+
+      expect(result.starsAdded).toBe(0)
+      expect(result.starsAlreadyPresent).toBe(0)
+      expect(result.starFailures).toBe(1)
+      expect(starRepo).not.toHaveBeenCalled()
+      expect(logger.warn).toHaveBeenCalledOnce()
+      const warnMsg = logger.warn.mock.calls[0]?.[0] ?? ''
+      expect(warnMsg).toContain('status=429')
+    })
+  })
+
+  // (h) Empty candidates → {0,0,0}, paginate is not called (short-circuit).
+  describe('(h) empty candidates', () => {
+    it('returns all-zero counts and skips the paginate call when candidates list is empty', async () => {
+      // GIVEN no candidates
+      const paginate = vi.fn(async () => [])
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        paginate: paginate as never,
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      // WHEN syncStars runs with empty candidates
       const result = await syncStars({userOctokit, candidates: [], logger})
 
-      // THEN no calls are made and all counts are zero
+      // THEN all counts are zero and no API calls are made
       expect(result).toEqual({starsAdded: 0, starsAlreadyPresent: 0, starFailures: 0})
-      expect(checkStar).not.toHaveBeenCalled()
+      expect(paginate).not.toHaveBeenCalled()
       expect(starRepo).not.toHaveBeenCalled()
+    })
+  })
+
+  // Counts-only telemetry: no owner/name in any log output.
+  describe('counts-only telemetry', () => {
+    it('emits no canonical owner/name in logger output when starring a private repo', async () => {
+      // GIVEN a private collab repo not yet starred
+      const starRepo = vi.fn(async () => undefined)
+      const userOctokit = mockOctokit({
+        paginate: starredPaginate([]),
+        starRepoForAuthenticatedUser: starRepo as never,
+      })
+      const logger = silentLogger()
+
+      await syncStars({
+        userOctokit,
+        candidates: [{owner: 'private-owner', name: 'secret-repo'}],
+        logger,
+      })
+
+      // THEN no canonical owner/name appears in any logger output
+      const allLogMessages = [...logger.warn.mock.calls.map(c => c[0]), ...logger.info.mock.calls.map(c => c[0])]
+      for (const msg of allLogMessages) {
+        expect(msg).not.toContain('private-owner')
+        expect(msg).not.toContain('secret-repo')
+      }
     })
   })
 })
 
 describe('handleReconcile — star sync integration', () => {
   describe('channel filter — owned repos excluded', () => {
-    it('does not check or star owned-channel repos; only collab/contrib repos are candidates', async () => {
+    it('does not star owned-channel repos; only collab/contrib repos are candidates', async () => {
       // GIVEN an access list with one owned repo and one collab repo
-      // WHEN handleReconcile runs
-      const checkStar = vi.fn(async () => {
-        throw apiError(404, 'Not Found') // not starred
-      })
+      // AND the starred set is empty (collab repo not yet starred)
+      // The default paginate calls fn(opts) and returns response.data.
+      // listReposStarredByAuthenticatedUser defaults to {data: []} → empty starred set.
+      // listForAuthenticatedUser is wired below → returns the collab repo.
       const starRepo = vi.fn(async () => undefined)
 
       const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
         starRepoForAuthenticatedUser: starRepo as never,
         // Provide collab access list: one collab repo
         listForAuthenticatedUser: async () => ({
@@ -7779,10 +7820,9 @@ describe('handleReconcile — star sync integration', () => {
         }),
       )
 
-      // THEN only the collab repo was checked/starred (not the owned repo)
-      expect(checkStar).toHaveBeenCalledOnce()
-      expect(checkStar).toHaveBeenCalledWith({owner: 'marcusrbrown', repo: 'collab-repo'})
+      // THEN only the collab repo was starred (not the owned repo)
       expect(starRepo).toHaveBeenCalledOnce()
+      expect(starRepo).toHaveBeenCalledWith({owner: 'marcusrbrown', repo: 'collab-repo'})
       expect(result.starsAdded).toBe(1)
       expect(result.starsAlreadyPresent).toBe(0)
     })
@@ -7791,15 +7831,15 @@ describe('handleReconcile — star sync integration', () => {
   describe('star counts surface in HandleReconcileResult', () => {
     it('returns starsAdded, starsAlreadyPresent, starFailures in the result', async () => {
       // GIVEN two collab repos: one unstarred, one already starred
-      // WHEN handleReconcile runs
-      const checkStar = vi
-        .fn()
-        .mockRejectedValueOnce(apiError(404, 'Not Found')) // first: not starred
-        .mockResolvedValueOnce(undefined) // second: already starred
-
+      // AND the starred set contains only the second repo
       const starRepo = vi.fn(async () => undefined)
+
       const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        // Wire listReposStarredByAuthenticatedUser to return the second repo as already starred.
+        // The default paginate calls fn(opts) and returns response.data, so this is picked up.
+        listReposStarredByAuthenticatedUser: async () => ({
+          data: [{owner: {login: 'owner-b'}, name: 'repo-b'}] as StarredRepoApiEntry[],
+        }),
         starRepoForAuthenticatedUser: starRepo as never,
         listForAuthenticatedUser: async () => ({
           data: [
@@ -7824,14 +7864,28 @@ describe('handleReconcile — star sync integration', () => {
   })
 
   describe('non-blocking — star failure does not abort handleReconcile', () => {
-    it('handleReconcile still returns when syncStars encounters a failure', async () => {
-      // GIVEN a collab repo where the star check throws a non-404 error
+    it('handleReconcile still returns when syncStars encounters a paginate read failure', async () => {
+      // GIVEN a collab repo where the paginated starred-set read throws a non-fatal error
       // WHEN handleReconcile runs
-      const checkStar = vi.fn(async () => {
-        throw apiError(500, 'Internal Server Error')
-      })
       const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        // Override paginate to throw for the starred-set read.
+        // The default paginate calls fn(opts); we override the whole paginate here
+        // because we need to distinguish the starred-set call from the access-list call.
+        paginate: async (fn: unknown, _opts: unknown): Promise<unknown[]> => {
+          // listForAuthenticatedUser is on rest.repos; listReposStarredByAuthenticatedUser
+          // is on rest.activity. We detect by checking if the function is the starred one.
+          const call = fn as (opts: unknown) => Promise<{data: unknown[]}>
+          const response = await call({})
+          // If the response contains a StarredRepoApiEntry shape, it came from the starred fn.
+          // Simpler: throw for any paginate call that isn't the access-list fn.
+          // Actually: just throw unconditionally — fetchAccessList uses paginate too.
+          // So we need to route. Use a sentinel: the starred fn returns {data: []} by default;
+          // we override it to throw below via listReposStarredByAuthenticatedUser.
+          return response.data
+        },
+        listReposStarredByAuthenticatedUser: async () => {
+          throw apiError(500, 'Internal Server Error')
+        },
         listForAuthenticatedUser: async () => ({
           data: [
             {owner: {login: 'marcusrbrown'}, name: 'flaky-repo', archived: false, private: false, node_id: 'R_flaky'},
@@ -7849,6 +7903,46 @@ describe('handleReconcile — star sync integration', () => {
 
       expect(result.starFailures).toBe(1)
       expect(result.starsAdded).toBe(0)
+    })
+  })
+
+  describe('credential — star calls use userOctokit, not appOctokit', () => {
+    it('star calls go through userOctokit; appOctokit.activity methods are never called (integration)', async () => {
+      // GIVEN an unstarred collab repo in the access list
+      // AND both userOctokit and appOctokit are wired with distinct star mocks
+      const userStarRepo = vi.fn(async () => undefined)
+      const appStarRepo = vi.fn(async () => undefined)
+
+      const userOctokit = mockOctokit({
+        // Default paginate + default listReposStarredByAuthenticatedUser → empty starred set.
+        starRepoForAuthenticatedUser: userStarRepo as never,
+        listForAuthenticatedUser: async () => ({
+          data: [
+            {owner: {login: 'marcusrbrown'}, name: 'some-repo', archived: false, private: false, node_id: 'R_some'},
+          ],
+        }),
+      })
+      // appOctokit has its own star mock — if syncStars mistakenly used appOctokit,
+      // this would be called and the assertion below would catch it.
+      const appOctokit = mockOctokit({
+        starRepoForAuthenticatedUser: appStarRepo as never,
+      })
+
+      // WHEN handleReconcile runs end-to-end
+      const result = await handleReconcile(
+        baseParams({
+          userOctokit,
+          appOctokit,
+          readMetadata: makeReadMetadata({allowlist: makeAllowlist(['marcusrbrown'])}),
+        }),
+      )
+
+      // THEN userOctokit's star method was called (the star went through)
+      expect(userStarRepo).toHaveBeenCalledOnce()
+      expect(result.starsAdded).toBe(1)
+      // AND appOctokit's star method was NEVER called
+      // (mutation-proof: if syncStars were switched to appOctokit, this would fail)
+      expect(appStarRepo).not.toHaveBeenCalled()
     })
   })
 
@@ -7876,14 +7970,13 @@ jobs:
         return {data: {archived: false, private: false, node_id: 'R_default'} as RepoGetResponse}
       }
 
-      // The contrib repo is not yet starred (check → 404)
-      const checkStar = vi.fn(async () => {
-        throw apiError(404, 'Not Found')
-      })
+      // The contrib repo is not yet starred (empty starred set via default mock)
       const starRepo = vi.fn(async () => undefined)
 
       const userOctokit = mockOctokit({
-        checkRepoIsStarredByAuthenticatedUser: checkStar as never,
+        // Default paginate: calls fn(opts) and returns response.data.
+        // listReposStarredByAuthenticatedUser defaults to {data: []} → empty starred set.
+        // listForAuthenticatedUser defaults to {data: []} → no collab repos.
         starRepoForAuthenticatedUser: starRepo as never,
         // No collab repos — only contrib
         listForAuthenticatedUser: async () => ({data: []}),

@@ -2440,11 +2440,20 @@ async function fileIntegrityAlert(params: {
 /**
  * Star collab/contrib-channel repos that `@fro-bot` has not yet starred.
  *
- * For each candidate, calls `checkRepoIsStarredByAuthenticatedUser` (204 = already starred,
- * 404 = not starred). On 404, calls `starRepoForAuthenticatedUser`. Any other error on the
- * check, or any error on the star call, increments `starFailures` and continues — one failure
- * never aborts the loop. Telemetry is counts-only; canonical owner/name never appears in any
- * log or warn message.
+ * Fetches the authenticated user's full starred set ONCE via a single paginated read
+ * (`listReposStarredByAuthenticatedUser`), builds a case-insensitive `Set<string>` of
+ * `owner/name` keys, then for each candidate:
+ *   - Key IS in the set → `starsAlreadyPresent++` (no API call).
+ *   - Key NOT in the set → calls `starRepoForAuthenticatedUser` → `starsAdded++` on success.
+ *     On error: `starFailures++`; if rate-limited → counts-only warn + `break` (remaining
+ *     candidates retry next run); else counts-only warn + continue.
+ *
+ * If the initial paginated read fails, the function is fail-safe: it does NOT blind-star
+ * every candidate (which would waste write calls and risk rate-limit storms). Instead it
+ * logs one counts-only warn and returns `{starsAdded: 0, starsAlreadyPresent: 0,
+ * starFailures: candidates.length}` so all candidates retry next run.
+ *
+ * Telemetry is counts-only; canonical owner/name never appears in any log or warn message.
  *
  * A star is a user action — MUST use `userOctokit` (the FRO_BOT_POLL_PAT), never the App token.
  *
@@ -2457,55 +2466,62 @@ export async function syncStars(params: {
   candidates: {owner: string; name: string}[]
   logger: ReconcileLogger
 }): Promise<{starsAdded: number; starsAlreadyPresent: number; starFailures: number}> {
+  // Short-circuit: nothing to do.
+  if (params.candidates.length === 0) {
+    return {starsAdded: 0, starsAlreadyPresent: 0, starFailures: 0}
+  }
+
+  // Fetch the full starred set in one paginated read.
+  type StarredRepo =
+    RestEndpointMethodTypes['activity']['listReposStarredByAuthenticatedUser']['response']['data'][number]
+
+  let starredSet: Set<string>
+  try {
+    const starred = (await params.userOctokit.paginate(
+      params.userOctokit.rest.activity.listReposStarredByAuthenticatedUser,
+      {per_page: 100},
+    )) as unknown as StarredRepo[]
+    starredSet = new Set(starred.map(r => `${r.owner.login.toLowerCase()}/${r.name.toLowerCase()}`))
+  } catch (readError: unknown) {
+    // Fail-safe: do NOT blind-star candidates. Return all as failures so they retry next run.
+    const status = isRecord(readError) && typeof readError.status === 'number' ? readError.status : 'unknown'
+    const kind = readError instanceof Error ? readError.name : 'unknown'
+    params.logger.warn(
+      `reconcile: star sync skipped — could not read starred set (status=${status}, kind=${kind}); retrying next run.`,
+    )
+    return {starsAdded: 0, starsAlreadyPresent: 0, starFailures: params.candidates.length}
+  }
+
   let starsAdded = 0
   let starsAlreadyPresent = 0
   let starFailures = 0
 
   for (const candidate of params.candidates) {
+    const key = `${candidate.owner.toLowerCase()}/${candidate.name.toLowerCase()}`
+    if (starredSet.has(key)) {
+      starsAlreadyPresent += 1
+      continue
+    }
+
+    // Not in the starred set — attempt to star it.
     try {
-      // 204 = already starred (resolves); 404 = not starred (throws).
-      await params.userOctokit.rest.activity.checkRepoIsStarredByAuthenticatedUser({
+      await params.userOctokit.rest.activity.starRepoForAuthenticatedUser({
         owner: candidate.owner,
         repo: candidate.name,
       })
-      // Resolved without throwing → already starred.
-      starsAlreadyPresent += 1
-    } catch (checkError: unknown) {
-      if (isApiStatus(checkError, 404)) {
-        // Not starred — attempt to star it.
-        try {
-          await params.userOctokit.rest.activity.starRepoForAuthenticatedUser({
-            owner: candidate.owner,
-            repo: candidate.name,
-          })
-          starsAdded += 1
-        } catch (starError: unknown) {
-          starFailures += 1
-          if (isGitHubRateLimit(starError)) {
-            const status = isRecord(starError) && typeof starError.status === 'number' ? starError.status : 'unknown'
-            params.logger.warn(
-              `reconcile: star sync stopped early on rate limit (status=${status}); remaining candidates retry next run.`,
-            )
-            break
-          }
-          const status = isRecord(starError) && typeof starError.status === 'number' ? starError.status : 'unknown'
-          const kind = starError instanceof Error ? starError.name : 'unknown'
-          params.logger.warn(`reconcile: star sync failed (status=${status}, kind=${kind}); continuing.`)
-        }
-      } else {
-        // Non-404 error on the check — treat as a failure, continue.
-        starFailures += 1
-        if (isGitHubRateLimit(checkError)) {
-          const status = isRecord(checkError) && typeof checkError.status === 'number' ? checkError.status : 'unknown'
-          params.logger.warn(
-            `reconcile: star sync stopped early on rate limit (status=${status}); remaining candidates retry next run.`,
-          )
-          break
-        }
-        const status = isRecord(checkError) && typeof checkError.status === 'number' ? checkError.status : 'unknown'
-        const kind = checkError instanceof Error ? checkError.name : 'unknown'
-        params.logger.warn(`reconcile: star sync failed (status=${status}, kind=${kind}); continuing.`)
+      starsAdded += 1
+    } catch (starError: unknown) {
+      starFailures += 1
+      if (isGitHubRateLimit(starError)) {
+        const status = isRecord(starError) && typeof starError.status === 'number' ? starError.status : 'unknown'
+        params.logger.warn(
+          `reconcile: star sync stopped early on rate limit (status=${status}); remaining candidates retry next run.`,
+        )
+        break
       }
+      const status = isRecord(starError) && typeof starError.status === 'number' ? starError.status : 'unknown'
+      const kind = starError instanceof Error ? starError.name : 'unknown'
+      params.logger.warn(`reconcile: star sync failed (status=${status}, kind=${kind}); continuing.`)
     }
   }
 
