@@ -628,7 +628,7 @@ describe('assembleSolutionsContext', () => {
       'Handle tokens carefully to avoid leaks.',
     )
 
-    // #when the event is security-flavored (contains 'token' which is in SECURITY_EVENT_TOKENS)
+    // #when the event is security-flavored (contains 'leak' which is in SECURITY_EVENT_TOKENS)
     const result = assembleSolutionsContext({
       files: {...securityBonusDoc, ...bestPracticeEqualDoc},
       event: {
@@ -697,6 +697,54 @@ describe('assembleSolutionsContext', () => {
     expect(securityIdx).toBeGreaterThanOrEqual(0)
     expect(bestPracticeIdx).toBeGreaterThanOrEqual(0)
     // Without bonus, best-practice (inserted first) appears before security_issue
+    expect(bestPracticeIdx).toBeLessThan(securityIdx)
+  })
+
+  it('does not apply the security bonus on an ordinary token/auth event with no genuine security word', () => {
+    // #given two equal-scoring docs, best-practice inserted first
+    const bestPracticeEqualDoc = makeDoc(
+      'docs/solutions/best-practices/equal-score-best-practice.md',
+      {
+        title: 'Token Handling Pattern',
+        module: 'scripts/token-handler.ts',
+        problem_type: 'best_practice',
+        last_updated: '2026-06-01',
+        verified: '2026-06-01',
+        tags: ['token', 'handler'],
+      },
+      'Handle tokens carefully.',
+    )
+    const securityBonusDoc = makeDoc(
+      'docs/solutions/security-issues/equal-score-security.md',
+      {
+        title: 'Token Handling Pattern',
+        module: 'scripts/token-handler.ts',
+        problem_type: 'security_issue',
+        last_updated: '2026-06-01',
+        verified: '2026-06-01',
+        tags: ['token', 'handler'],
+      },
+      'Handle tokens carefully.',
+    )
+
+    // #when the event reads as routine token/auth work — 'token' and 'auth' alone must
+    // NOT be treated as security-flavored (they fire on ordinary PRs like OAuth refresh)
+    const result = assembleSolutionsContext({
+      files: {...bestPracticeEqualDoc, ...securityBonusDoc},
+      event: {
+        eventName: 'pull_request',
+        title: 'refactor: OAuth token refresh handler',
+        body: 'Updating the auth token refresh path.',
+      },
+      privateNames: [],
+      now: new Date('2026-06-22'),
+    })
+
+    // #then no bonus applies → best-practice (inserted first) ranks before security_issue
+    const securityIdx = result.selectedPaths.indexOf('docs/solutions/security-issues/equal-score-security.md')
+    const bestPracticeIdx = result.selectedPaths.indexOf('docs/solutions/best-practices/equal-score-best-practice.md')
+    expect(securityIdx).toBeGreaterThanOrEqual(0)
+    expect(bestPracticeIdx).toBeGreaterThanOrEqual(0)
     expect(bestPracticeIdx).toBeLessThan(securityIdx)
   })
 

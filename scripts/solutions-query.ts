@@ -20,8 +20,10 @@ const SOLUTIONS_SUBDIRS = [
 
 const STALENESS_DAYS_DEFAULT = 60
 
-// Security-flavored tokens that boost problem_type: security_issue docs
-const SECURITY_EVENT_TOKENS = new Set(['security', 'private', 'leak', 'auth', 'token', 'secret', 'credential'])
+// Security-flavored tokens that boost problem_type: security_issue docs.
+// Deliberately excludes 'auth' and 'token' — they fire on ordinary PRs (OAuth token
+// refresh, GitHub token scope) that aren't security work, over-weighting security docs.
+const SECURITY_EVENT_TOKENS = new Set(['security', 'private', 'leak', 'secret', 'credential'])
 
 export interface SolutionsQueryEvent {
   eventName: string
