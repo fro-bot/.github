@@ -2352,24 +2352,24 @@ Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
 
-## [2026-06-23 00:00] ingest | marcusrbrown/marcusrbrown.github.io
+## [2026-06-23 00:00] ingest | repo:marcusrbrown/mrbro.dev
 
-No-op re-survey at SHA `b633e40` — `main` HEAD unchanged for 11 days since the 2026-06-12 ingest. Updated `marcusrbrown--marcusrbrown-github-io.md` (frontmatter `updated` + source row, new 2026-06-23 delta-log section, survey-history row) and refreshed its stale `index.md` entry (which still read agent v0.48.1; corrected to v0.61.0 + current state).
+No-delta re-survey of `marcusrbrown/mrbro.dev`. `main` HEAD is still `7a49abc3d2d945880cc1db1f4edbddcd71ad0142` (last main commit 2026-05-28T02:19Z). The repo's `pushed_at` advanced to 2026-06-19, but that reflects PR-branch activity (`renovate/*`, `fix/security-*`, `copilot/*`), not the default branch — every tracked tree-level fact is unchanged. Updated repo page `marcusrbrown--mrbro-dev.md` (added 2026-06-23 source entry, `updated` bump, refreshed issue/PR counts, survey-history row, dual-bot note) and refreshed the index entry.
 
-Key findings:
+Findings:
 
-- **Zero structural drift.** Stack (React 19 / TS 6 / Vite 7 / Vitest 4), workflow inventory (`ci.yaml`, `copilot-setup-steps.yaml`, `deploy.yaml`, `fro-bot.yaml`, `renovate.yaml`), single-file three-mode Fro Bot design, and crons (`30 3` autoheal / `30 15` maintenance UTC) all unchanged. Fro Bot agent pin still `fro-bot/agent@6794bf5… # v0.61.0`.
-- **Motion has left `main` for the staging lane.** Two unmerged Renovate PRs, both based on `main`: **#454** (`vite v7.3.5 [SECURITY]`, branch `renovate/npm-vite-vulnerability`, open since 2026-06-15, ~8 days) and **#453** (`all non-major dependencies`, branch `renovate/all-minor-patch`, open since 2026-06-13, ~10 days).
-- **Stalled security PR is the notable signal.** This repo normally automerges Renovate within hours; a flagged-security bump lingering >1 week suggests the automerge daemon is choking on a red quality gate — most likely issue #411's <80% branch-coverage floor. The autoheal that *files* coverage reports still isn't *closing* the gap, and that report-without-remediation pattern now has a concrete cost: a security fix held hostage to a coverage threshold.
-- `pushed_at` advanced to 2026-06-22 (PR-branch pushes, not trunk). API `open_issues_count` reads 6 (= 4 issues + 2 PRs); issue inventory steady at 4 (#411, #409, #260, #6). Stars/watchers 0 → 1.
-- Long-standing gaps hold: **no Probot `settings.yml`**, **no CodeQL/Scorecard**.
+- **`main` tree unchanged** — agent v0.43.0, TypeScript 5.9.3, Vite 7.3.2, Vitest 4.1.4, pnpm 10.33.4, Node >=22.6.0, React Router 7.7.1, 7 workflows (`ci`, `deploy`, `e2e-tests`, `performance`, `fro-bot`, `renovate`, `copilot-setup-steps`), still no `.github/settings.yml`. No new override, dependency, or workflow changes.
+- **Only delta is PR-queue movement:** open PRs 5 -> 6. New #181 `vite` 7.3.2 -> 7.3.5 `[SECURITY]` authored by `app/mrbro-bot` (labels `automerge`+`security`, opened 2026-06-15). Standing set unchanged: #180 `prettier` 3.8.3, #178 `tmp` pnpm-override (`fro-bot`), #175 `eslint-plugin-react-refresh` 0.5.2, #172 `@bfra.me/prettier-config` 0.16.8, #168 `@bfra.me/eslint-config` v0.51.0.
+- **Bot-split sharpened:** the `mrbro-bot`-drives-version-bumps / `fro-bot`-drives-override-remediation pattern now extends to security-labeled *upgrades* — `mrbro-bot` owns the Renovate `[SECURITY]` vite bump while `fro-bot` keeps the bespoke `tmp` override workaround. `mrbro-bot` = upstream-published security upgrades; `fro-bot` = override workarounds for advisories lacking a clean upstream fix.
+- Open issues unchanged at 4 (#162 autoheal, #13 maintenance, #1 Dependency Dashboard, #48 triage).
+- Fro Bot workflow present and active (`fro-bot.yaml`, single-file three-mode) — no onboarding follow-up draft needed.
 
-Fro Bot workflow present and active (`fro-bot.yaml`, agent v0.61.0) — no onboarding follow-up draft needed. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary. Treated target repo as untrusted input; reads limited to API metadata, directory listings, and the `fro-bot.yaml` agent-pin line.
+Reads limited to repo metadata, directory/branch listings, and PR/issue listings per untrusted-input constraints. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA b633e40df799fe239a3e55cce2cd5efd60d72b48)
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA 7a49abc3d2d945880cc1db1f4edbddcd71ad0142)
 
-## [2026-06-23 08:42] ingest | repo:marcusrbrown/marcusrbrown.github.io
+## [2026-06-23 08:44] ingest | repo:marcusrbrown/mrbro.dev
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+Sources: https://github.com/marcusrbrown/mrbro.dev
