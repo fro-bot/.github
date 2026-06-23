@@ -2249,9 +2249,10 @@ describe('findFailPassTransition', () => {
     expect(result?.firstPassingSha).toBe('sha2')
   })
 
-  it('all failing conclusions are recognized: TIMED_OUT, CANCELLED, ACTION_REQUIRED, STARTUP_FAILURE', () => {
+  it('all failing conclusions are recognized: FAILURE, TIMED_OUT, STARTUP_FAILURE', () => {
     // #given each failing conclusion type followed by SUCCESS
-    const failingConclusions = ['TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE']
+    // Note: CANCELLED and ACTION_REQUIRED are NOT failing conclusions (FIX 2)
+    const failingConclusions = ['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE']
     for (const conclusion of failingConclusions) {
       const commits: CommitCheckEntry[] = [
         makeCr('sha1', 'CI / test', conclusion),
@@ -2969,5 +2970,281 @@ describe('main() wiring: both candidate sources concatenated via buildCandidateD
     expect(parsed.telemetry.ciFixPrsExamined).toBe(0)
     expect(parsed.telemetry.ciFixCandidates).toBe(0)
     expect(parsed.telemetry.enrichmentBlockedBySecret).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 2: FAILING_CHECK_CONCLUSIONS — CANCELLED/ACTION_REQUIRED removed
+// ---------------------------------------------------------------------------
+
+describe('findFailPassTransition — FIX 2: CANCELLED and ACTION_REQUIRED are NOT failing conclusions', () => {
+  it('CANCELLED→SUCCESS is NOT a candidate (CANCELLED removed from failing set)', () => {
+    // #given a check that was CANCELLED then SUCCESS
+    // CANCELLED is a concurrency-cancelled run, not a code failure
+    const commits: CommitCheckEntry[] = [
+      makeCr('sha1', 'CI / test', 'CANCELLED'),
+      makeCr('sha2', 'CI / test', 'SUCCESS'),
+    ]
+    const required = new Set(['CI / test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then no transition found (CANCELLED is not a failing conclusion)
+    expect(result).toBeNull()
+  })
+
+  it('ACTION_REQUIRED→SUCCESS is NOT a candidate (ACTION_REQUIRED removed from failing set)', () => {
+    // #given a check that was ACTION_REQUIRED then SUCCESS
+    // ACTION_REQUIRED is a policy gate, not a code failure
+    const commits: CommitCheckEntry[] = [
+      makeCr('sha1', 'CI / test', 'ACTION_REQUIRED'),
+      makeCr('sha2', 'CI / test', 'SUCCESS'),
+    ]
+    const required = new Set(['CI / test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then no transition found (ACTION_REQUIRED is not a failing conclusion)
+    expect(result).toBeNull()
+  })
+
+  it('FAILURE→SUCCESS IS a candidate (FAILURE still in failing set)', () => {
+    // #given a check that was FAILURE then SUCCESS
+    const commits: CommitCheckEntry[] = [makeCr('sha1', 'CI / test', 'FAILURE'), makeCr('sha2', 'CI / test', 'SUCCESS')]
+    const required = new Set(['CI / test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then transition IS found
+    expect(result).not.toBeNull()
+    expect(result?.lastFailingSha).toBe('sha1')
+    expect(result?.firstPassingSha).toBe('sha2')
+  })
+
+  it('StatusContext ERROR→SUCCESS IS detected (FIX 2b: ERROR treated as failing)', () => {
+    // #given a StatusContext entry with state=ERROR then SUCCESS
+    const commits: CommitCheckEntry[] = [makeSc('sha1', 'ci/test', 'ERROR'), makeSc('sha2', 'ci/test', 'SUCCESS')]
+    const required = new Set(['ci/test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then the transition IS found (ERROR counts as failing)
+    expect(result).not.toBeNull()
+    expect(result?.failingCheckName).toBe('ci/test')
+    expect(result?.lastFailingSha).toBe('sha1')
+    expect(result?.firstPassingSha).toBe('sha2')
+  })
+
+  it('StatusContext PENDING→SUCCESS is NOT a candidate (PENDING is not failing)', () => {
+    // #given a StatusContext entry with state=PENDING then SUCCESS
+    const commits: CommitCheckEntry[] = [makeSc('sha1', 'ci/test', 'PENDING'), makeSc('sha2', 'ci/test', 'SUCCESS')]
+    const required = new Set(['ci/test'])
+
+    // #when finding the transition
+    const result = findFailPassTransition(commits, required)
+
+    // #then no transition found (PENDING is not a failing state)
+    expect(result).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 3: failingCheckName included in privacy scan
+// ---------------------------------------------------------------------------
+
+describe('buildCandidateDigest — FIX 3: failingCheckName scanned for private names', () => {
+  it('private repo name in failingCheckName → evidence cleared, enrichmentBlocked incremented', () => {
+    // #given a ci-fix candidate whose failingCheckName contains a private repo name
+    const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+    const sha = 'fix3priv1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const candidate = makeCiFixCandidate({
+      mergeSha: sha,
+      failingCheckName: 'testowner/secret-repo CI check',
+      diffExcerpt: '-bad\n+good',
+    })
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then enrichmentBlocked is incremented (private-name hit in failingCheckName)
+    expect(result.telemetry.enrichmentBlocked).toBe(1)
+    // #then evidence is cleared and failingCheckName is redacted
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].diffExcerpt).toBe('')
+      expect(result.candidates[0].failingCheckName).toBe('[REDACTED]')
+    }
+    // #then private name does not appear in serialized output
+    expect(JSON.stringify(result)).not.toContain('testowner/secret-repo')
+  })
+
+  it('clean failingCheckName passes through unmodified', () => {
+    // #given a ci-fix candidate with a clean failingCheckName
+    const sha = 'fix3clean1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const candidate = makeCiFixCandidate({
+      mergeSha: sha,
+      failingCheckName: 'CI / test',
+      diffExcerpt: '-bad\n+good',
+    })
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then candidate is emitted with failingCheckName intact
+    expect(result.candidates).toHaveLength(1)
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].failingCheckName).toBe('CI / test')
+    }
+    expect(result.telemetry.enrichmentBlocked).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 9: within-run dedup precedence (review-heavy wins regardless of array order)
+// ---------------------------------------------------------------------------
+
+describe('buildCandidateDigest — FIX 9: within-run dedup precedence by trigger, not array order', () => {
+  it('review-heavy FIRST, ci-fix SECOND → review-heavy wins (array-order-first case)', () => {
+    // #given review-heavy listed first, ci-fix second — same SHA
+    const sha = 'dedup001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const reviewCandidate = makeCandidate({mergeSha: sha})
+    const ciFixCandidate = makeCiFixCandidate({mergeSha: sha})
+    const input = makeDigestInput({mergedPrs: [reviewCandidate, ciFixCandidate]})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then exactly one candidate, review-heavy wins
+    expect(result.candidates).toHaveLength(1)
+    expect(result.candidates[0]?.trigger).toBe('review-heavy')
+  })
+
+  it('ci-fix FIRST, review-heavy SECOND → review-heavy STILL wins (proves precedence is by trigger, not array order)', () => {
+    // #given ci-fix listed first, review-heavy second — same SHA
+    // A 'last-wins' bug would emit ci-fail-then-pass here; correct behavior emits review-heavy
+    const sha = 'dedup002aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const ciFixCandidate = makeCiFixCandidate({mergeSha: sha})
+    const reviewCandidate = makeCandidate({mergeSha: sha})
+    const input = makeDigestInput({mergedPrs: [ciFixCandidate, reviewCandidate]})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then exactly one candidate, review-heavy wins regardless of array order
+    expect(result.candidates).toHaveLength(1)
+    expect(result.candidates[0]?.trigger).toBe('review-heavy')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 9: applyEnrichmentScanAvailability — ci-fix candidate test
+// ---------------------------------------------------------------------------
+
+describe('applyEnrichmentScanAvailability — FIX 9: ci-fix candidate clears diffExcerpt + logExcerpt', () => {
+  it('scanAvailable=false clears diffExcerpt and logExcerpt for ci-fix candidates', () => {
+    // #given a ci-fix candidate with evidence fields
+    const candidates: CiFixCandidate[] = [
+      makeCiFixCandidate({
+        mergeSha: `sha1${'0'.repeat(35)}`,
+        diffExcerpt: '-bad\n+good',
+        logExcerpt: 'Error: test failed',
+      }),
+    ]
+
+    // #when scan is unavailable
+    const result = applyEnrichmentScanAvailability(candidates, false)
+
+    // #then diffExcerpt is cleared and logExcerpt is undefined
+    const r0 = result[0]
+    if (r0?.trigger === 'ci-fail-then-pass') {
+      expect(r0.diffExcerpt).toBe('')
+      expect(r0.logExcerpt).toBeUndefined()
+    }
+    // #then other fields are preserved
+    expect(result[0]?.mergeSha).toBe(candidates[0]?.mergeSha)
+  })
+
+  it('scanAvailable=true → ci-fix candidate returned unchanged', () => {
+    // #given a ci-fix candidate with evidence fields
+    const candidates: CiFixCandidate[] = [
+      makeCiFixCandidate({
+        mergeSha: `sha1${'0'.repeat(35)}`,
+        diffExcerpt: '-bad\n+good',
+        logExcerpt: 'Error: test failed',
+      }),
+    ]
+
+    // #when scan is available
+    const result = applyEnrichmentScanAvailability(candidates, true)
+
+    // #then candidates are returned unchanged (same reference)
+    expect(result).toBe(candidates)
+    const r0 = result[0]
+    if (r0?.trigger === 'ci-fail-then-pass') {
+      expect(r0.diffExcerpt).toBe('-bad\n+good')
+      expect(r0.logExcerpt).toBe('Error: test failed')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 9: CiFix logExcerpt privacy — private name and path in logExcerpt
+// ---------------------------------------------------------------------------
+
+describe('buildCandidateDigest — FIX 9: CiFix logExcerpt privacy scan', () => {
+  it('private repo name in logExcerpt (not diffExcerpt) → evidence dropped', () => {
+    // #given a ci-fix candidate whose logExcerpt contains a private repo name
+    // but diffExcerpt is clean
+    const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+    const sha = 'fix9log1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const candidate = makeCiFixCandidate({
+      mergeSha: sha,
+      diffExcerpt: '-bad\n+good',
+      logExcerpt: 'Error: testowner/secret-repo check failed',
+    })
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then enrichmentBlocked is incremented (private name in logExcerpt)
+    expect(result.telemetry.enrichmentBlocked).toBe(1)
+    // #then both diffExcerpt and logExcerpt are cleared
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].diffExcerpt).toBe('')
+      expect(result.candidates[0].logExcerpt).toBeUndefined()
+    }
+    // #then private name does not appear in serialized output
+    expect(JSON.stringify(result)).not.toContain('testowner/secret-repo')
+  })
+
+  it('path in logExcerpt is redacted (not blocked), candidate still emitted', () => {
+    // #given a ci-fix candidate whose logExcerpt contains a file path (redact-class)
+    const sha = 'fix9log2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const candidate = makeCiFixCandidate({
+      mergeSha: sha,
+      diffExcerpt: '-bad\n+good',
+      logExcerpt: 'Config loaded from /Users/marcus/.ssh/config',
+    })
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted (not blocked)
+    expect(result.candidates).toHaveLength(1)
+    // #then the path is redacted in logExcerpt
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].logExcerpt).not.toContain('/Users/marcus')
+      expect(result.candidates[0].logExcerpt).toContain('[REDACTED]')
+    }
+    // #then neither counter is incremented (redaction, not blocking)
+    expect(result.telemetry.enrichmentBlocked).toBe(0)
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(0)
   })
 })

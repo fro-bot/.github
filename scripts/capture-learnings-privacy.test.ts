@@ -616,5 +616,112 @@ describe('redactLogDiffSecrets', () => {
       expect(result).toContain('called')
       expect(result).toContain('/endpoint')
     })
+
+    it('FIX 5: Bearer token with base64 chars (+/) is fully redacted', () => {
+      // #given a standalone Bearer token containing + and / (valid base64 chars)
+      // Note: using a standalone Bearer (not inside an Authorization header) so the
+      // Bearer pattern fires rather than the Authorization header pattern
+      const body = 'Request sent with Bearer abc+def/ghi12345 to the API'
+
+      // #when redacting
+      const result = redactLogDiffSecrets(body)
+
+      // #then the token value is fully redacted (no tail survives)
+      expect(result).not.toContain('abc+def/ghi12345')
+      expect(result).toContain('Bearer [REDACTED]')
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FIX 4: New SECRET_BLOCK_PATTERNS — Google API key, GitLab PAT, JWT, generic creds
+// ---------------------------------------------------------------------------
+
+describe('logDiffHasSecret — FIX 4: new block patterns', () => {
+  it('detects a Google API key (AIza prefix + 35 chars)', () => {
+    // #given a body containing a Google API key shape
+    // Using an obviously-fake key — 'A'.repeat(35) is not a real credential
+    const body = `GOOGLE_API_KEY=AIza${'A'.repeat(35)}`
+
+    // #when scanning
+    // #then the secret is detected and must block
+    expect(logDiffHasSecret(body)).toBe(true)
+  })
+
+  it('does NOT block a short AIza string (below 35 chars)', () => {
+    // #given a body with AIza prefix but too short
+    const body = `AIza${'A'.repeat(10)}`
+
+    // #when scanning
+    // #then not blocked (too short)
+    expect(logDiffHasSecret(body)).toBe(false)
+  })
+
+  it('detects a GitLab PAT (glpat- prefix + 20+ chars)', () => {
+    // #given a body containing a GitLab PAT shape
+    // Using an obviously-fake token — 'B'.repeat(20) is not a real credential
+    const body = `GITLAB_TOKEN=glpat-${'B'.repeat(20)}`
+
+    // #when scanning
+    // #then the secret is detected and must block
+    expect(logDiffHasSecret(body)).toBe(true)
+  })
+
+  it('detects a JWT (header.payload.signature format)', () => {
+    // #given a body containing a JWT shape
+    // Using obviously-fake base64url segments
+    const header = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
+    const payload = 'eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0'
+    const sig = 'SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
+    const body = `token=${header}.${payload}.${sig}`
+
+    // #when scanning
+    // #then the secret is detected and must block
+    expect(logDiffHasSecret(body)).toBe(true)
+  })
+
+  it('detects a generic password assignment (password= with 16+ char value)', () => {
+    // #given a body containing a password assignment
+    const body = `password=supersecretvalue123456`
+
+    // #when scanning
+    // #then the secret is detected and must block
+    expect(logDiffHasSecret(body)).toBe(true)
+  })
+
+  it('detects a generic secret assignment (secret: with 16+ char value)', () => {
+    // #given a body containing a secret assignment
+    const body = `secret: mysupersecretvalue123`
+
+    // #when scanning
+    // #then the secret is detected and must block
+    expect(logDiffHasSecret(body)).toBe(true)
+  })
+
+  it('detects a generic api_key assignment (api_key= with 16+ char value)', () => {
+    // #given a body containing an api_key assignment
+    const body = `api_key=abcdefghijklmnop`
+
+    // #when scanning
+    // #then the secret is detected and must block
+    expect(logDiffHasSecret(body)).toBe(true)
+  })
+
+  it('detects a generic access_token assignment (access_token= with 16+ char value)', () => {
+    // #given a body containing an access_token assignment
+    const body = `access_token=abcdefghijklmnopqrst`
+
+    // #when scanning
+    // #then the secret is detected and must block
+    expect(logDiffHasSecret(body)).toBe(true)
+  })
+
+  it('does NOT block a short generic credential value (below 16 chars)', () => {
+    // #given a body with a short password value (below the 16-char minimum)
+    const body = `password=short`
+
+    // #when scanning
+    // #then not blocked (too short to be a real credential)
+    expect(logDiffHasSecret(body)).toBe(false)
   })
 })

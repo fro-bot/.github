@@ -11,6 +11,7 @@
  */
 
 import type {Dirent} from 'node:fs'
+import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
@@ -390,10 +391,11 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
       const rawDiff = pr.diffExcerpt
       const rawLog = pr.logExcerpt ?? ''
 
-      // Step 1: redact structural secrets
+      // Step 1: redact structural secrets (including failingCheckName)
       const redactedDiff = redactLogDiffSecrets(rawDiff)
       const redactedLog = rawLog === '' ? rawLog : redactLogDiffSecrets(rawLog)
-      const combinedText = `${redactedDiff}\n${redactedLog}`
+      const redactedCheckName = redactLogDiffSecrets(pr.failingCheckName)
+      const combinedText = `${redactedDiff}\n${redactedLog}\n${redactedCheckName}`
 
       // Step 2: check for private-name leak or residual hard secret
       const hasPrivateLeak = learningBodyHasPrivateLeak(combinedText, input.privateTokens)
@@ -401,15 +403,17 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
 
       if (hasPrivateLeak) {
         enrichmentBlocked++
-        return {...pr, diffExcerpt: '', logExcerpt: undefined}
+        // Clear failingCheckName too — it may contain the private name that triggered the block
+        return {...pr, failingCheckName: '[REDACTED]', diffExcerpt: '', logExcerpt: undefined}
       }
       if (hasResidualSecret) {
         enrichmentBlockedBySecret++
-        return {...pr, diffExcerpt: '', logExcerpt: undefined}
+        // Clear failingCheckName too — it may contain the secret that triggered the block
+        return {...pr, failingCheckName: '[REDACTED]', diffExcerpt: '', logExcerpt: undefined}
       }
 
-      // Step 3: use the redacted values
-      const result: CiFixCandidate = {...pr, diffExcerpt: redactedDiff}
+      // Step 3: use the redacted values (including redacted failingCheckName)
+      const result: CiFixCandidate = {...pr, diffExcerpt: redactedDiff, failingCheckName: redactedCheckName}
       if (redactedLog !== '') {
         return {...result, logExcerpt: redactedLog}
       }
@@ -748,7 +752,7 @@ export interface FailPassTransition {
  * Failing conclusions for CheckRun (GitHub Actions).
  * These are the states that count as "failed" for transition detection.
  */
-const FAILING_CHECK_CONCLUSIONS = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE'])
+const FAILING_CHECK_CONCLUSIONS = new Set(['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE'])
 
 /**
  * Find the first fail→pass transition across a set of commits for required checks.
@@ -796,8 +800,8 @@ export function findFailPassTransition(
           // Update lastFailingSha — we want the LATEST failing commit
           lastFailingSha = entry.sha
         }
-      } else if (entry.state === 'FAILURE') {
-        // StatusContext: FAILURE state counts as failing
+      } else if (entry.state === 'FAILURE' || entry.state === 'ERROR') {
+        // StatusContext: FAILURE and ERROR states count as failing
         lastFailingSha = entry.sha
       }
     }
@@ -883,6 +887,7 @@ export function defaultGhExec(args: string[], env?: NodeJS.ProcessEnv): string {
     encoding: 'utf8',
     env: env ?? process.env,
     stdio: ['pipe', 'pipe', 'pipe'],
+    timeout: 30_000,
   })
 }
 
@@ -907,9 +912,13 @@ export function fetchPrCommitCheckRollup(
 
   const allEntries: CommitCheckEntry[] = []
   let after: string | null = null
+  const MAX_PAGES = 50
+  let pageCount = 0
 
   // Cursor walk — handles PRs with >100 commits
   for (;;) {
+    if (pageCount >= MAX_PAGES) break
+    pageCount++
     const args = [
       'api',
       'graphql',
@@ -930,6 +939,8 @@ export function fetchPrCommitCheckRollup(
     try {
       stdout = ghExec(args, env)
     } catch {
+      // If we already have entries from earlier pages, return partial data rather than discarding
+      if (allEntries.length > 0) break
       return null
     }
 
@@ -937,20 +948,39 @@ export function fetchPrCommitCheckRollup(
     try {
       parsed = JSON.parse(stdout)
     } catch {
+      if (allEntries.length > 0) break
       return null
     }
 
-    if (!isRecord(parsed)) return null
+    if (!isRecord(parsed)) {
+      if (allEntries.length > 0) break
+      return null
+    }
     const data = parsed.data
-    if (!isRecord(data)) return null
+    if (!isRecord(data)) {
+      if (allEntries.length > 0) break
+      return null
+    }
     const repository = data.repository
-    if (!isRecord(repository)) return null
+    if (!isRecord(repository)) {
+      if (allEntries.length > 0) break
+      return null
+    }
     const pullRequest = repository.pullRequest
-    if (!isRecord(pullRequest)) return null
+    if (!isRecord(pullRequest)) {
+      if (allEntries.length > 0) break
+      return null
+    }
     const commits = pullRequest.commits
-    if (!isRecord(commits)) return null
+    if (!isRecord(commits)) {
+      if (allEntries.length > 0) break
+      return null
+    }
     const nodes = commits.nodes
-    if (!Array.isArray(nodes)) return null
+    if (!Array.isArray(nodes)) {
+      if (allEntries.length > 0) break
+      return null
+    }
 
     for (const node of nodes) {
       if (!isRecord(node)) continue
@@ -1167,7 +1197,8 @@ export async function harvestCiFixCandidates(
             repo,
             job_id: failedJob.id,
           })
-          const logText = typeof logResponse.data === 'string' ? logResponse.data : ''
+          const raw = logResponse.data
+          const logText = typeof raw === 'string' ? raw : Buffer.isBuffer(raw) ? raw.toString('utf8') : ''
           if (logText !== '') {
             logExcerpt = buildLogExcerpt(logText, MAX_EXCERPT_CHARS_PER_CANDIDATE)
           }

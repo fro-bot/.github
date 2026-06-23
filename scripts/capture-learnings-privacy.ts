@@ -61,6 +61,14 @@ const SECRET_BLOCK_PATTERNS: RegExp[] = [
   /sk-[A-Za-z0-9\-]{20,}/,
   // Slack tokens
   /xox[bpars]-[\w-]{10,}/,
+  // Google API keys
+  /AIza[\w\-]{35}/,
+  // GitLab PATs
+  /glpat-[\w\-]{20,}/,
+  // JWT (header.payload.signature)
+  /eyJ[\w\-]+\.eyJ[\w\-]+\.[\w\-]+/,
+  // Generic credential assignment catch-all (password=, secret=, api_key=, etc.)
+  /(?:password|passwd|secret|api[._-]?key|auth[._-]?token|access[._-]?token)["']?\s*[=:]\s*["']?[^\s"']{16,}/i,
 ]
 
 /**
@@ -97,7 +105,8 @@ export function logDiffHasSecret(body: string): boolean {
  */
 const SECRET_REDACT_PATTERNS: [RegExp, string][] = [
   // Bearer tokens (min 8 chars to avoid over-redacting short placeholders)
-  [/Bearer\s+[\w\-.=]{8,}/g, 'Bearer [REDACTED]'],
+  // Includes +/ for base64-encoded values
+  [/Bearer\s+[\w\-.=+/]{8,}/g, 'Bearer [REDACTED]'],
   // Authorization header values: capture scheme + credential (e.g. 'Basic dXNlcjpwYXNz', 'Bearer token')
   // Matches two whitespace-delimited tokens after the colon, or one token of 8+ chars.
   [/Authorization:\s*(?:\S+\s+\S{4,}|\S{8,})/g, 'Authorization: [REDACTED]'],
