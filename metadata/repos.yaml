@@ -144,12 +144,12 @@ repos:
     name: mrbro.dev
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-13
+    last_survey_at: 2026-06-23
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-15
+    next_survey_eligible_at: 2026-07-26
     private: false
     node_id: R_kgDORgYjdA
     database_id: 1174807412
