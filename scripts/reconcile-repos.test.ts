@@ -7913,15 +7913,11 @@ describe('handleReconcile — star sync integration', () => {
         // The default paginate calls fn(opts); we override the whole paginate here
         // because we need to distinguish the starred-set call from the access-list call.
         paginate: async (fn: unknown, _opts: unknown): Promise<unknown[]> => {
-          // listForAuthenticatedUser is on rest.repos; listReposStarredByAuthenticatedUser
-          // is on rest.activity. We detect by checking if the function is the starred one.
+          // Invoke the paginated fn and return its data. The starred-set read fails because
+          // listReposStarredByAuthenticatedUser (overridden below) throws when called; other
+          // paginated reads (e.g. the access list) resolve normally.
           const call = fn as (opts: unknown) => Promise<{data: unknown[]}>
           const response = await call({})
-          // If the response contains a StarredRepoApiEntry shape, it came from the starred fn.
-          // Simpler: throw for any paginate call that isn't the access-list fn.
-          // Actually: just throw unconditionally — fetchAccessList uses paginate too.
-          // So we need to route. Use a sentinel: the starred fn returns {data: []} by default;
-          // we override it to throw below via listReposStarredByAuthenticatedUser.
           return response.data
         },
         listReposStarredByAuthenticatedUser: async () => {
