@@ -14,6 +14,7 @@ import {
   buildCandidateDigest,
   buildMergeShaMarker,
   DEPENDENCY_LABELS,
+  fetchMergedPrsInWindow,
   fetchOpenedLearningShas,
   findFailPassTransition,
   FRO_BOT_REVIEWER_LOGINS,
@@ -1492,6 +1493,8 @@ describe('harvest→open schema contract', () => {
         mergedPrsInLookback: 10,
         excludedAutomation: 1,
         multiRoundCandidates: 5,
+        ciFixPrsExamined: 0,
+        ciFixCandidates: 0,
         afterSeenDedup: 3,
         afterSolutionsDedup: 2,
         emitted: 2,
@@ -2734,5 +2737,237 @@ describe('buildCandidateDigest — CiFix evidence privacy scan (mutation proof)'
     }
     // #then the secret does not appear in serialized output
     expect(JSON.stringify(result)).not.toContain('ghp_')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// I/O shell: fetchMergedPrsInWindow (mocked Octokit)
+// ---------------------------------------------------------------------------
+
+function mockOctokitForFetch(prs: unknown[]): OctokitClient {
+  return {
+    paginate: async () => prs,
+    rest: {
+      pulls: {
+        list: async () => ({data: []}),
+        listReviews: async () => ({data: []}),
+      },
+      issues: {listForRepo: async () => ({data: []})},
+    },
+  } as unknown as OctokitClient
+}
+
+describe('fetchMergedPrsInWindow', () => {
+  it('returns merged PRs within the lookback window with required fields', async () => {
+    // #given a merged PR within the lookback window
+    const sha = 'merge001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const pr = {
+      number: 1,
+      merged_at: new Date().toISOString(),
+      merge_commit_sha: sha,
+      title: 'fix: correct the CI failure',
+      labels: [{name: 'ci'}],
+      user: {login: 'some-human'},
+    }
+    const octokit = mockOctokitForFetch([pr])
+
+    // #when fetching
+    const result = await fetchMergedPrsInWindow(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is returned with the required fields
+    expect(result).toHaveLength(1)
+    expect(result[0]?.merge_commit_sha).toBe(sha)
+    expect(result[0]?.number).toBe(1)
+    expect(result[0]?.title).toBe('fix: correct the CI failure')
+    expect(result[0]?.labels).toEqual([{name: 'ci'}])
+    expect(result[0]?.user).toEqual({login: 'some-human'})
+    expect(result[0]?.merged_at).toBeDefined()
+  })
+
+  it('excludes unmerged PRs (merged_at === null)', async () => {
+    // #given a closed but unmerged PR
+    const pr = {
+      number: 1,
+      merged_at: null,
+      merge_commit_sha: 'sha001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+      title: 'fix: something',
+      labels: [],
+      user: {login: 'human'},
+    }
+    const octokit = mockOctokitForFetch([pr])
+
+    // #when fetching
+    const result = await fetchMergedPrsInWindow(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is excluded
+    expect(result).toHaveLength(0)
+  })
+
+  it('excludes PRs merged outside the lookback window', async () => {
+    // #given a PR merged 60 days ago (beyond LOOKBACK_DAYS=30)
+    const oldDate = new Date()
+    oldDate.setDate(oldDate.getDate() - 60)
+    const pr = {
+      number: 1,
+      merged_at: oldDate.toISOString(),
+      merge_commit_sha: 'sha001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+      title: 'fix: old',
+      labels: [],
+      user: {login: 'human'},
+    }
+    const octokit = mockOctokitForFetch([pr])
+
+    // #when fetching
+    const result = await fetchMergedPrsInWindow(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is excluded
+    expect(result).toHaveLength(0)
+  })
+
+  it('excludes PRs with null merge_commit_sha', async () => {
+    // #given a merged PR with no merge commit SHA
+    const pr = {
+      number: 1,
+      merged_at: new Date().toISOString(),
+      merge_commit_sha: null,
+      title: 'fix: something',
+      labels: [],
+      user: {login: 'human'},
+    }
+    const octokit = mockOctokitForFetch([pr])
+
+    // #when fetching
+    const result = await fetchMergedPrsInWindow(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is excluded
+    expect(result).toHaveLength(0)
+  })
+
+  it('returns multiple PRs within the window', async () => {
+    // #given two merged PRs within the lookback window
+    const prs = [
+      {
+        number: 1,
+        merged_at: new Date().toISOString(),
+        merge_commit_sha: 'sha001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+        title: 'fix: first',
+        labels: [],
+        user: {login: 'human'},
+      },
+      {
+        number: 2,
+        merged_at: new Date().toISOString(),
+        merge_commit_sha: 'sha002aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+        title: 'fix: second',
+        labels: [],
+        user: {login: 'human'},
+      },
+    ]
+    const octokit = mockOctokitForFetch(prs)
+
+    // #when fetching
+    const result = await fetchMergedPrsInWindow(octokit, 'fro-bot', '.github', new Date())
+
+    // #then both PRs are returned
+    expect(result).toHaveLength(2)
+  })
+
+  it('handles null user gracefully', async () => {
+    // #given a merged PR with null user
+    const pr = {
+      number: 1,
+      merged_at: new Date().toISOString(),
+      merge_commit_sha: 'sha001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+      title: 'fix: something',
+      labels: [],
+      user: null,
+    }
+    const octokit = mockOctokitForFetch([pr])
+
+    // #when fetching
+    const result = await fetchMergedPrsInWindow(octokit, 'fro-bot', '.github', new Date())
+
+    // #then the PR is returned with null user
+    expect(result).toHaveLength(1)
+    expect(result[0]?.user).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// main() wiring: both harvesters concatenated (integration-level unit test)
+// ---------------------------------------------------------------------------
+
+describe('main() wiring: both candidate sources concatenated via buildCandidateDigest', () => {
+  it('review-heavy + ci-fix candidates from separate harvesters are both fed to buildCandidateDigest', () => {
+    // #given one review-heavy candidate and one ci-fix candidate (simulating both harvesters)
+    const reviewCandidate = makeCandidate({mergeSha: 'review01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'})
+    const ciFixCandidate = makeCiFixCandidate({mergeSha: 'cifix001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'})
+
+    // Concatenate as main() does
+    const allCandidates: Candidate[] = [reviewCandidate, ciFixCandidate]
+
+    // Merge stageCounts as main() does
+    const reviewStageCounts: HarvestStageCounts = {
+      closedPrsFetched: 10,
+      mergedPrsInLookback: 5,
+      excludedAutomation: 1,
+      multiRoundCandidates: 1,
+      ciFixPrsExamined: 0,
+      ciFixCandidates: 0,
+    }
+    const mergedStageCounts: HarvestStageCounts = {
+      ...reviewStageCounts,
+      ciFixPrsExamined: 3,
+      ciFixCandidates: 1,
+    }
+
+    // #when building the digest with both sources
+    const result = buildCandidateDigest({
+      mergedPrs: allCandidates,
+      stageCounts: mergedStageCounts,
+      openedLearningShas: new Set(),
+      solutionsDocs: [],
+      maxLearnings: 5,
+      privateTokens: new Set(),
+    })
+
+    // #then both candidates are emitted
+    expect(result.candidates).toHaveLength(2)
+    const triggers = result.candidates.map(c => c.trigger).sort()
+    expect(triggers).toEqual(['ci-fail-then-pass', 'review-heavy'])
+
+    // #then merged stage counts are threaded into telemetry
+    expect(result.telemetry.multiRoundCandidates).toBe(1)
+    expect(result.telemetry.ciFixPrsExamined).toBe(3)
+    expect(result.telemetry.ciFixCandidates).toBe(1)
+    expect(result.telemetry.closedPrsFetched).toBe(10)
+  })
+
+  it('fail-closed fallback telemetry includes ciFixPrsExamined and ciFixCandidates as 0', () => {
+    // #given the empty digest shape used in the catch block of main()
+    // This test verifies the shape is consistent (ciFixPrsExamined + ciFixCandidates present)
+    const empty: CandidateDigest = {
+      candidates: [],
+      telemetry: {
+        closedPrsFetched: 0,
+        mergedPrsInLookback: 0,
+        excludedAutomation: 0,
+        multiRoundCandidates: 0,
+        ciFixPrsExamined: 0,
+        ciFixCandidates: 0,
+        afterSeenDedup: 0,
+        afterSolutionsDedup: 0,
+        emitted: 0,
+        enrichmentBlocked: 0,
+        enrichmentBlockedBySecret: 0,
+      },
+    }
+
+    // #then the shape is consistent and serializes correctly
+    const serialized = JSON.stringify(empty)
+    const parsed = JSON.parse(serialized) as CandidateDigest
+    expect(parsed.telemetry.ciFixPrsExamined).toBe(0)
+    expect(parsed.telemetry.ciFixCandidates).toBe(0)
+    expect(parsed.telemetry.enrichmentBlockedBySecret).toBe(0)
   })
 })

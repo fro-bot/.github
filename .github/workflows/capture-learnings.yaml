@@ -91,30 +91,63 @@ jobs:
           CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
           TASK_PROMPT: |
             You are authoring learning-proposal bodies. Each body distills a reusable
-            learning from a pull request that went through multiple substantive review rounds.
+            learning from a pull request — either one that went through multiple substantive
+            review rounds, or one whose CI checks transitioned failed → passed before merge.
 
             Your ONLY job in this step:
             1. Read the harvest digest from $CAPTURE_LEARNINGS_DIGEST_PATH (or equivalently
                $RUNNER_TEMP/capture-learnings-digest.json). The digest is a JSON object:
                { "candidates": [...], "telemetry": {...} }
-               Each candidate in the candidates array has:
+               Each candidate has a `trigger` field that determines its shape:
+
+               trigger: "review-heavy" candidates have:
                - mergeSha: opaque merge commit SHA (the ONLY identifier you receive)
-               - reviewRounds: number of substantive Fro Bot review rounds (approved, changes-requested, or dismissed — a dismissed approval marks a re-review forced by a new push)
-               - reviewExcerpts: string[] — the actual review prose from the rounds (review bodies and line-level review comments), ranked with the correction feedback first. This is your PRIMARY signal: it is what the reviewer actually said about what was wrong and how it was fixed. It has been privacy-scanned; use it as given. May be empty for some candidates.
+               - reviewRounds: number of substantive Fro Bot review rounds (approved,
+                 changes-requested, or dismissed — a dismissed approval marks a re-review
+                 forced by a new push)
+               - reviewExcerpts: string[] — the actual review prose from the rounds (review
+                 bodies and line-level review comments), ranked with the correction feedback
+                 first. This is your PRIMARY signal: it is what the reviewer actually said
+                 about what was wrong and how it was fixed. It has been privacy-scanned; use
+                 it as given. May be empty for some candidates.
                - signals: { titleTokens: string[], labels: string[] } — secondary context only
-            2. For each candidate you judge worth proposing (reviewRounds ≥ 2 is
-               already guaranteed), write a concise learning-proposal body (2–4
-               paragraphs) that:
-               - Distills the reusable learning from reviewExcerpts — what the
-                 review rounds actually said was wrong and how it was corrected.
-                 Ground the learning in that prose, not in the title tokens. When
-                 reviewExcerpts is empty, fall back to signals but keep the body
-                 modest and clearly general rather than inventing specifics.
-               - References the source PR by merge SHA ONLY (never look up or
-                 include owner/repo/PR number/title/author — you do not have that
-                 information and must not attempt to retrieve it)
+
+               trigger: "ci-fail-then-pass" candidates have:
+               - mergeSha: opaque merge commit SHA (the ONLY identifier you receive)
+               - failingCheckName: name of the CI check that transitioned failed → passed
+               - diffExcerpt: string — the fixing diff between the last-failing and
+                 first-passing commit. This is your PRIMARY signal: it shows exactly what
+                 change turned the check green. It has been privacy-scanned; use it as given.
+                 May be empty if evidence was blocked by the privacy scan.
+               - logExcerpt: string (optional) — excerpt from the failing job log, ranked
+                 toward error lines. May be '[failure log purged or unavailable]' when the
+                 log could not be fetched. Secondary signal — the diff is primary.
+               - signals: { titleTokens: string[], labels: string[] } — tertiary context only
+
+            2. For each candidate you judge worth proposing, write a concise learning-proposal
+               body (2–4 paragraphs) that:
+
+               For trigger: "review-heavy" —
+               - Distills the reusable learning from reviewExcerpts — what the review rounds
+                 actually said was wrong and how it was corrected. Ground the learning in that
+                 prose, not in the title tokens. When reviewExcerpts is empty, fall back to
+                 signals but keep the body modest and clearly general rather than inventing
+                 specifics.
+
+               For trigger: "ci-fail-then-pass" —
+               - Distills the learning as "this failure → this fix": what the failing check
+                 caught (from failingCheckName + logExcerpt) and how diffExcerpt corrected it.
+                 Ground the learning in diffExcerpt — that is the concrete evidence of what
+                 changed. Do NOT invent specifics from the title tokens. When diffExcerpt is
+                 empty (evidence blocked), keep the body modest and clearly general.
+
+               For all triggers —
+               - References the source PR by merge SHA ONLY (never look up or include
+                 owner/repo/PR number/title/author — you do not have that information and
+                 must not attempt to retrieve it)
                - Proposes what the learning would be
                - Is suitable for a human to review and author into docs/solutions/
+
             3. Write the bodies as a JSON object to $RUNNER_TEMP/capture-learnings-bodies.json:
                { "<mergeSha>": "<body text>", ... }
                Include only candidates you judge worth proposing. Omit candidates
@@ -172,10 +205,13 @@ jobs:
               echo "| Merged PRs in lookback | $(jq '.telemetry.mergedPrsInLookback // 0' "$harvest") |"
               echo "| Excluded automation | $(jq '.telemetry.excludedAutomation // 0' "$harvest") |"
               echo "| Multi-round candidates | $(jq '.telemetry.multiRoundCandidates // 0' "$harvest") |"
+              echo "| CI fail-then-pass examined | $(jq '.telemetry.ciFixPrsExamined // 0' "$harvest") |"
+              echo "| CI fail-then-pass candidates | $(jq '.telemetry.ciFixCandidates // 0' "$harvest") |"
               echo "| After seen dedup | $(jq '.telemetry.afterSeenDedup // 0' "$harvest") |"
               echo "| After solutions dedup | $(jq '.telemetry.afterSolutionsDedup // 0' "$harvest") |"
               echo "| Candidates emitted | $(jq '.telemetry.emitted // 0' "$harvest") |"
               echo "| Enrichment blocked by privacy | $(jq '.telemetry.enrichmentBlocked // 0' "$harvest") |"
+              echo "| Enrichment blocked by secret | $(jq '.telemetry.enrichmentBlockedBySecret // 0' "$harvest") |"
             else
               echo "| Closed PRs fetched | (harvest result unavailable) |"
             fi

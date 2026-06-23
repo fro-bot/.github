@@ -164,7 +164,7 @@ open step — body privacy scan (private-name + secret block) → learning-propo
 
 ## Implementation Units
 
-- [ ] **Unit 1: Secret/redaction scan in the shared privacy module**
+- [x] **Unit 1: Secret/redaction scan in the shared privacy module**
 
 **Goal:** Add log/diff secret detection + structural redaction to the shared gate, callable from
 both chokepoints, without touching the existing private-repo-name scan.
@@ -201,7 +201,7 @@ both chokepoints, without touching the existing private-repo-name scan.
 **Verification:** gates green; the mutation-proof test bites; no secret value appears in any
 test assertion message.
 
-- [ ] **Unit 2: Discriminated Candidate union + generalized digest core**
+- [x] **Unit 2: Discriminated Candidate union + generalized digest core**
 
 **Goal:** Refactor `Candidate` into a `trigger`-discriminated union with per-source `evidence`,
 and generalize `buildCandidateDigest` to iterate the union uniformly (dedup, cap, privacy), with
@@ -243,7 +243,7 @@ test; `buildReviewExcerpts` ordering invariant.
 **Verification:** gates green; review-source output unchanged; opacity holds for both triggers;
 the privacy mutation-proof bites.
 
-- [ ] **Unit 3: CI fail→pass harvester (GraphQL detector + diff/log evidence)**
+- [x] **Unit 3: CI fail→pass harvester (GraphQL detector + diff/log evidence)**
 
 **Goal:** Implement `harvestCiFixCandidates` — detect fail→pass PRs via one GraphQL query each,
 derive the fixing diff and best-effort log excerpt, and emit `CiFixCandidate`s.
@@ -287,7 +287,7 @@ the existing merged-PR fetch + `now` injection; `buildReviewExcerpts` truncate-t
 **Verification:** gates green; the transition walk is mutation-proven (a fixture where removing the
 oldest→newest ordering picks the wrong SHA fails); degrade paths don't abort.
 
-- [ ] **Unit 4: Workflow wiring + trigger-branched agent prompt**
+- [x] **Unit 4: Workflow wiring + trigger-branched agent prompt**
 
 **Goal:** Concatenate both candidate sources into the digest, branch the agent prompt on `trigger`,
 and surface per-trigger + secret-blocked counts in the step summary.

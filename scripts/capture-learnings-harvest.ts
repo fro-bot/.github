@@ -206,6 +206,10 @@ export interface DigestTelemetry {
   mergedPrsInLookback: number
   excludedAutomation: number
   multiRoundCandidates: number
+  /** Number of PRs examined for CI fail→pass transition. Threaded from HarvestStageCounts. */
+  ciFixPrsExamined: number
+  /** Number of CI-fix candidates found (transition detected + real diff). Threaded from HarvestStageCounts. */
+  ciFixCandidates: number
   afterSeenDedup: number
   afterSolutionsDedup: number
   emitted: number
@@ -1406,6 +1410,81 @@ export async function fetchOpenedLearningShas(
 }
 
 // ---------------------------------------------------------------------------
+// Shared merged-PR fetch (for harvestCiFixCandidates in main)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch all merged PRs in the lookback window and return the raw list.
+ *
+ * This is a separate fetch from harvestCandidates's internal fetch. The two-fetch
+ * approach was chosen over refactoring harvestCandidates to accept a pre-fetched list
+ * because harvestCandidates's fetch is deeply entangled with its filtering logic
+ * (merged_at, cutoff, merge_commit_sha, automation exclusion). Extracting it would
+ * require changing the function signature and all its tests, increasing blast radius
+ * with no behavioral benefit. The extra pulls.list call is bounded by LOOKBACK_DAYS
+ * and is not on the hot path.
+ *
+ * Returns PRs with the fields required by harvestCiFixCandidates.
+ * Exported for testability.
+ */
+export async function fetchMergedPrsInWindow(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  now: Date,
+): Promise<
+  {
+    number: number
+    merge_commit_sha: string
+    title: string
+    labels: {name: string}[]
+    user: {login: string} | null
+    merged_at: string
+  }[]
+> {
+  const cutoff = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
+
+  const allPrs = await octokit.paginate(octokit.rest.pulls.list, {
+    owner,
+    repo,
+    state: 'closed',
+    per_page: 100,
+  } as unknown as Parameters<OctokitClient['rest']['pulls']['list']>[0])
+
+  const result: {
+    number: number
+    merge_commit_sha: string
+    title: string
+    labels: {name: string}[]
+    user: {login: string} | null
+    merged_at: string
+  }[] = []
+
+  for (const pr of allPrs) {
+    // Exclude unmerged PRs
+    if (pr.merged_at === null || pr.merged_at === undefined) continue
+
+    // Exclude PRs outside the lookback window
+    const mergedAt = new Date(pr.merged_at)
+    if (mergedAt < cutoff) continue
+
+    // Exclude PRs without a merge commit SHA
+    if (pr.merge_commit_sha === null || pr.merge_commit_sha === undefined) continue
+
+    result.push({
+      number: pr.number,
+      merge_commit_sha: pr.merge_commit_sha,
+      title: pr.title,
+      labels: pr.labels.map(l => ({name: typeof l === 'string' ? l : l.name})),
+      user: pr.user !== null && pr.user !== undefined ? {login: pr.user.login} : null,
+      merged_at: pr.merged_at,
+    })
+  }
+
+  return result
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -1418,11 +1497,53 @@ async function main(): Promise<void> {
     // Use Date.now() — UTC ms — as the reference point for the lookback cutoff.
     const now = new Date(Date.now())
 
-    const [{candidates: mergedPrs, stageCounts}, openedLearningShas, solutionsFiles] = await Promise.all([
-      harvestCandidates(octokit, owner, repo, now),
-      fetchOpenedLearningShas(octokit, owner, repo),
-      loadSolutionsFilesFromDisk(),
-    ])
+    // Fetch merged PRs once for the ci-fix harvester (separate from harvestCandidates's
+    // internal fetch — see fetchMergedPrsInWindow for the rationale).
+    const [{candidates: reviewCandidates, stageCounts}, openedLearningShas, solutionsFiles, mergedPrsForCiFix] =
+      await Promise.all([
+        harvestCandidates(octokit, owner, repo, now),
+        fetchOpenedLearningShas(octokit, owner, repo),
+        loadSolutionsFilesFromDisk(),
+        fetchMergedPrsInWindow(octokit, owner, repo, now),
+      ])
+
+    // Get the required-checks set from branch protection.
+    // Wrap in try/catch — if branch protection is absent (404) or the call fails,
+    // use an empty Set (findFailPassTransition treats empty = all checks count).
+    // Counts-only logging on failure.
+    let requiredCheckNames = new Set<string>()
+    try {
+      const branchProtection = await octokit.rest.repos.getBranchProtection({
+        owner,
+        repo,
+        branch: 'main',
+      })
+      const checks = branchProtection.data.required_status_checks?.checks ?? []
+      requiredCheckNames = new Set(checks.map((c: {context: string}) => c.context))
+    } catch {
+      // 404 = no branch protection configured; any other error = degrade gracefully.
+      // Empty set means all failed→passed transitions count (documented approximation).
+      process.stderr.write(
+        `capture-learnings-harvest: getBranchProtection failed or absent, using empty required-checks set (all transitions count)\n`,
+      )
+    }
+
+    // Harvest CI fail→pass candidates using the shared merged-PR list.
+    const {
+      candidates: ciFixCandidates,
+      ciFixPrsExamined,
+      ciFixCandidates: ciFixCandidatesCount,
+    } = await harvestCiFixCandidates(octokit, owner, repo, now, mergedPrsForCiFix, requiredCheckNames)
+
+    // Concatenate both candidate sources.
+    const allCandidates: Candidate[] = [...reviewCandidates, ...ciFixCandidates]
+
+    // Merge stage counts: add ci-fix counts into the review-harvester's stageCounts.
+    const mergedStageCounts: HarvestStageCounts = {
+      ...stageCounts,
+      ciFixPrsExamined,
+      ciFixCandidates: ciFixCandidatesCount,
+    }
 
     const solutionsDocs = collectSolutionDocs(solutionsFiles)
 
@@ -1443,13 +1564,15 @@ async function main(): Promise<void> {
       enrichmentScanAvailable = false
     }
 
-    // If the scan is unavailable, clear all reviewExcerpts before passing to the pure core.
+    // If the scan is unavailable, clear all enriched evidence before passing to the pure core.
     // This ensures no unscanned prose reaches the digest under any path.
-    const safeMergedPrs = applyEnrichmentScanAvailability(mergedPrs, enrichmentScanAvailable)
+    // applyEnrichmentScanAvailability handles both ReviewCandidate (clears reviewExcerpts)
+    // and CiFixCandidate (clears diffExcerpt + logExcerpt) — Unit 3 verified this.
+    const safeCandidates = applyEnrichmentScanAvailability(allCandidates, enrichmentScanAvailable)
 
     const digest = buildCandidateDigest({
-      mergedPrs: safeMergedPrs,
-      stageCounts,
+      mergedPrs: safeCandidates,
+      stageCounts: mergedStageCounts,
       openedLearningShas,
       solutionsDocs,
       maxLearnings: MAX_LEARNINGS_PER_RUN,
@@ -1470,6 +1593,8 @@ async function main(): Promise<void> {
         mergedPrsInLookback: 0,
         excludedAutomation: 0,
         multiRoundCandidates: 0,
+        ciFixPrsExamined: 0,
+        ciFixCandidates: 0,
         afterSeenDedup: 0,
         afterSolutionsDedup: 0,
         emitted: 0,
