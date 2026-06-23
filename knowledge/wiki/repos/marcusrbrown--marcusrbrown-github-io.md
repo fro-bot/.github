@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-06-12
+updated: 2026-06-23
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -22,6 +22,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: b633e40df799fe239a3e55cce2cd5efd60d72b48
     accessed: 2026-06-12
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: b633e40df799fe239a3e55cce2cd5efd60d72b48
+    accessed: 2026-06-23
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page]
 aliases: [marcusrbrown-github-io, marcusrbrown.com]
 related:
@@ -241,6 +244,22 @@ Eleven days, 27 commits since `1a428e2` — every one a Renovate bump touching o
 - **Open issues steady at 4** (#411, #409, #260, #6); 0 open PRs. Issue #411 (branch coverage <80%) has now sat open since mid-May — autoheal files reports but hasn't closed the coverage gap.
 - The two long-standing gaps still hold: **no Probot `settings.yml`**, **no CodeQL/Scorecard**. No contradictions with prior ingests.
 
+## Delta Log (2026-06-23, SHA `b633e40` — no-op re-survey)
+
+`main` HEAD is *still* `b633e40` — eleven days on, the same SHA as the 2026-06-12 survey. The default-branch ref hasn't advanced; the Fro Bot agent pin reads `fro-bot/agent@6794bf595059d0419d31abf027cfcf66ff0780ec # v0.61.0`, unchanged. Stack, workflow inventory (`ci.yaml`, `copilot-setup-steps.yaml`, `deploy.yaml`, `fro-bot.yaml`, `renovate.yaml`), single-file three-mode design, and crons all hold. No structural drift, no contradictions with prior ingests.
+
+The motion has moved off `main` and onto the staging lane — two open Renovate PRs, both based on `main`, neither yet merged:
+
+- **PR #454 — `chore(dev): update dependency vite to v7.3.5 [SECURITY]`** (branch `renovate/npm-vite-vulnerability`, opened 2026-06-15). A flagged-security bump that has sat open ~8 days. Worth watching: this repo normally automerges Renovate within hours, so a security PR lingering over a week is a small smell — either the quality gate is red or automerge isn't matching the security branch pattern. The earlier survey flagged issue #411 (branch coverage <80%) blocking the gate; a coverage-failing `main` would explain a stuck security PR.
+- **PR #453 — `chore(deps): update all non-major dependencies`** (branch `renovate/all-minor-patch`, opened 2026-06-13). The rolling non-major batch, also unmerged ~10 days.
+
+- **`pushed_at` advanced to 2026-06-22** despite a frozen `main` — consistent with ongoing pushes to the two Renovate branches, not to the trunk.
+- **GitHub `open_issues_count` reads 6** (vs. 4 tracked issues #411/#409/#260/#6) because the API count folds in the 2 open PRs. Issue inventory itself is steady at 4.
+- **Stars/watchers ticked 0 → 1.** Cosmetic.
+- The two long-standing gaps still hold: **no Probot `settings.yml`**, **no CodeQL/Scorecard**.
+
+The autopilot is still cruising, but the security PR stalling for over a week is the first sign the automerge daemon may be choking on a red gate. If #411's coverage floor is what's holding it, the autoheal that *files* the coverage report still isn't *closing* the loop — the report-without-remediation pattern noted at 2026-06-12 now has a concrete cost: a security fix held hostage to a coverage threshold.
+
 ## Survey History
 
 | Date | SHA | Notes |
@@ -251,3 +270,4 @@ Eleven days, 27 commits since `1a428e2` — every one a Renovate bump touching o
 | 2026-05-20 | `4cd8198` | No-op re-survey: HEAD still unchanged. Renovate PR #417 (fro-bot/agent v0.44.0 → v0.44.1, branch `renovate/all-minor-patch`) is open and will likely merge under `:automergePatch`. Open issues steady at 4 (#411, #409, #260, #6); open PRs now 1 (#417). `package.json` confirms `packageManager: pnpm@10.33.4`, `@types/node ^24.0.0`, React 19 / TypeScript ^6.0.0 / Vite ^7.0.6 / Vitest ^4.0.0 stack unchanged. No structural drift since 2026-05-18. |
 | 2026-06-01 | `1a428e2` | Dependency-drift re-survey: HEAD advanced 11 commits, all Renovate bumps. Fro Bot agent v0.44.0 → v0.48.1 (pin `80f1fa11…`), pnpm 10.33.4 → 10.34.1 (#423), `bfra-me/.github` v4.16.17 → v4.16.21 (#419). No structural change to stack, workflows, crons, or Fro Bot single-file three-mode design. Open issues steady at 4; 0 open PRs. Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) unchanged. |
 | 2026-06-12 | `b633e40` | Dependency-drift re-survey: 27 commits, all Renovate. Fro Bot agent v0.48.1 → **v0.61.0** (pin `6794bf5…`) — now ecosystem version leader. Renovate preset 5.2.0 → 5.2.1, `bfra-me/.github` → v4.16.25. Security overrides split between `pnpm-workspace.yaml` (~12 entries) and legacy `package.json` `pnpm.overrides` (2 entries). `mrbro-bot[bot]` co-authoring merges. Repo `homepage` field now null. Issues steady at 4; 0 open PRs. Gaps unchanged. |
+| 2026-06-23 | `b633e40` | No-op re-survey: `main` HEAD unchanged for 11 days, agent pin still v0.61.0 (`6794bf5…`). All structure/stack/workflows/crons hold. Motion is two unmerged Renovate PRs based on `main`: **#454** (vite v7.3.5 SECURITY, open ~8 days) and **#453** (all-minor-patch, ~10 days). Security PR stalling >1 week suggests automerge choking on a red quality gate — likely issue #411's <80% coverage floor. `pushed_at` 2026-06-22 (PR-branch pushes, not trunk); stars 0→1; issues steady at 4. Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) unchanged. |

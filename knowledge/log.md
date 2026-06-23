@@ -2351,3 +2351,25 @@ Sources: https://github.com/marcusrbrown/marcusrbrown (SHA 3ed89ff3878705f43aa1e
 Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-06-23 00:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey at SHA `b633e40` — `main` HEAD unchanged for 11 days since the 2026-06-12 ingest. Updated `marcusrbrown--marcusrbrown-github-io.md` (frontmatter `updated` + source row, new 2026-06-23 delta-log section, survey-history row) and refreshed its stale `index.md` entry (which still read agent v0.48.1; corrected to v0.61.0 + current state).
+
+Key findings:
+
+- **Zero structural drift.** Stack (React 19 / TS 6 / Vite 7 / Vitest 4), workflow inventory (`ci.yaml`, `copilot-setup-steps.yaml`, `deploy.yaml`, `fro-bot.yaml`, `renovate.yaml`), single-file three-mode Fro Bot design, and crons (`30 3` autoheal / `30 15` maintenance UTC) all unchanged. Fro Bot agent pin still `fro-bot/agent@6794bf5… # v0.61.0`.
+- **Motion has left `main` for the staging lane.** Two unmerged Renovate PRs, both based on `main`: **#454** (`vite v7.3.5 [SECURITY]`, branch `renovate/npm-vite-vulnerability`, open since 2026-06-15, ~8 days) and **#453** (`all non-major dependencies`, branch `renovate/all-minor-patch`, open since 2026-06-13, ~10 days).
+- **Stalled security PR is the notable signal.** This repo normally automerges Renovate within hours; a flagged-security bump lingering >1 week suggests the automerge daemon is choking on a red quality gate — most likely issue #411's <80% branch-coverage floor. The autoheal that *files* coverage reports still isn't *closing* the gap, and that report-without-remediation pattern now has a concrete cost: a security fix held hostage to a coverage threshold.
+- `pushed_at` advanced to 2026-06-22 (PR-branch pushes, not trunk). API `open_issues_count` reads 6 (= 4 issues + 2 PRs); issue inventory steady at 4 (#411, #409, #260, #6). Stars/watchers 0 → 1.
+- Long-standing gaps hold: **no Probot `settings.yml`**, **no CodeQL/Scorecard**.
+
+Fro Bot workflow present and active (`fro-bot.yaml`, agent v0.61.0) — no onboarding follow-up draft needed. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary. Treated target repo as untrusted input; reads limited to API metadata, directory listings, and the `fro-bot.yaml` agent-pin line.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA b633e40df799fe239a3e55cce2cd5efd60d72b48)
+
+## [2026-06-23 08:42] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
