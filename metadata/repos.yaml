@@ -264,7 +264,7 @@ repos:
     last_survey_at: 2026-06-14
     last_survey_status: success
     has_fro_bot_workflow: false
-    has_renovate: false
+    has_renovate: true
     discovery_channel: owned
     next_survey_eligible_at: 2026-06-30
     private: false
