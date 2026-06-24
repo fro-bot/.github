@@ -133,7 +133,7 @@ export interface CandidateSignals {
  *
  * Design: top-level discriminated fields per variant (not a nested `evidence` block).
  * This keeps the diff minimal, preserves the existing ReviewCandidate shape exactly
- * (only adding `trigger`), and avoids over-engineering before Unit 3 adds CiFix evidence.
+ * (only adding `trigger`), and avoids over-engineering.
  */
 export type Candidate = ReviewCandidate | CiFixCandidate
 
@@ -142,7 +142,7 @@ export type Candidate = ReviewCandidate | CiFixCandidate
  * trigger. Reuses the same field names as CiFixCandidate's evidence fields for consistency.
  * Present only when the same PR matched both triggers (within-run dedup attaches it).
  * A non-empty `diffExcerpt` means the evidence is substantive; an empty diffExcerpt means
- * the evidence was cleared (e.g. by the privacy scan in Unit 2).
+ * the evidence was cleared (e.g. by the privacy scan).
  */
 export interface CiFixEvidence {
   /** Name of the check that transitioned failed → passed. */
@@ -170,7 +170,7 @@ export interface CiFixEvidence {
  *
  * `ciFix` is present when the same PR also matched the ci-fail-then-pass trigger. The
  * within-run dedup attaches the ci-fix evidence to the surviving ReviewCandidate instead
- * of dropping it, so one proposal carries both signals (R1, R2).
+ * of dropping it, so one proposal carries both signals.
  */
 export interface ReviewCandidate {
   trigger: 'review-heavy'
@@ -261,17 +261,21 @@ export interface DigestTelemetry {
    * Number of dual-trigger candidates: a review-heavy candidate that also carried attached
    * ci-fix evidence (the PR drew review AND failed then fixed CI). Counts-only.
    */
-  mergedCandidates: number
+  dualTriggerCandidates: number
   /**
-   * Number of candidates whose enriched content was dropped by the private-name scan.
+   * Number of evidence fields dropped by the private-name scan.
    * The candidate itself is kept (title-only); only the enriched evidence is cleared.
+   * A single dual-trigger candidate can contribute up to 2 (one per evidence type:
+   * reviewExcerpts and attached ciFix are scanned independently).
    * Counts-only — no private names logged.
    */
   enrichmentBlocked: number
   /**
-   * Number of candidates whose enriched content was dropped because it contained a
-   * hard-secret shape (PAT, private key, credential-bearing connection string, etc.)
-   * detected by `logDiffHasSecret` after `redactLogDiffSecrets` was applied.
+   * Number of evidence fields dropped because they contained a hard-secret shape
+   * (PAT, private key, credential-bearing connection string, etc.) detected by
+   * `logDiffHasSecret` after `redactLogDiffSecrets` was applied.
+   * A single dual-trigger candidate can contribute up to 2 (one per evidence type:
+   * reviewExcerpts and attached ciFix are scanned independently).
    * Counts-only — no secret values logged.
    */
   enrichmentBlockedBySecret: number
@@ -411,13 +415,53 @@ export function selectWithCiFixFloor(ordered: Candidate[], cap: number, floor: n
   return ordered.filter(c => chosen.has(c)).slice(0, cap)
 }
 
+/**
+ * Shared pure helper: redact and scan ci-fix evidence fields.
+ *
+ * Redacts structural secrets from diffExcerpt, logExcerpt, and failingCheckName via
+ * redactLogDiffSecrets, then checks the combined text for private-name leaks and
+ * residual hard secrets. Returns the redacted values and boolean scan results so
+ * callers can apply their own clear-or-emit logic.
+ *
+ * Privacy-ordering invariant: inputs must already be truncated to budget before this
+ * call. Never move truncation after the scan.
+ *
+ * Pure function: no I/O, no side effects, no counter mutations.
+ */
+function scanCiFixEvidence(
+  diffExcerpt: string,
+  logExcerpt: string | undefined,
+  failingCheckName: string,
+  privateTokens: Set<string>,
+): {
+  redactedDiff: string
+  redactedLog: string
+  redactedCheckName: string
+  hasPrivateLeak: boolean
+  hasResidualSecret: boolean
+} {
+  const rawLog = logExcerpt ?? ''
+
+  // Step 1: redact structural secrets (paths, hostnames, Bearer tokens)
+  const redactedDiff = redactLogDiffSecrets(diffExcerpt)
+  const redactedLog = rawLog === '' ? rawLog : redactLogDiffSecrets(rawLog)
+  const redactedCheckName = redactLogDiffSecrets(failingCheckName)
+  const combinedText = `${redactedDiff}\n${redactedLog}\n${redactedCheckName}`
+
+  // Step 2: check for private-name leak or residual hard secret after redaction
+  const hasPrivateLeak = learningBodyHasPrivateLeak(combinedText, privateTokens)
+  const hasResidualSecret = logDiffHasSecret(combinedText)
+
+  return {redactedDiff, redactedLog, redactedCheckName, hasPrivateLeak, hasResidualSecret}
+}
+
 export function buildCandidateDigest(input: BuildCandidateDigestInput): CandidateDigest {
   // Within-run dedup: a PR that matched more than one trigger (e.g. review-heavy AND
   // ci-fail-then-pass) appears once per source in mergedPrs. Collapse to one candidate per
-  // mergeSha so a single PR yields a single learning-proposal (R4).
+  // mergeSha so a single PR yields a single learning-proposal.
   //
   // When a SHA has BOTH a review-heavy and a ci-fail-then-pass record, the ReviewCandidate
-  // SURVIVES with the CiFixCandidate's evidence ATTACHED to its `ciFix` field (R2). This
+  // SURVIVES with the CiFixCandidate's evidence ATTACHED to its `ciFix` field. This
   // preserves the richest signal (review prose) while keeping the ci-fix evidence so the
   // floor can reserve a slot for it. The review candidate keeps its original position in
   // the output (freshness order preserved).
@@ -450,7 +494,7 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
         // Pure review-heavy candidate — no ci-fix counterpart
         deduped.push(candidate)
       } else {
-        // Attach the ci-fix evidence to the surviving review candidate (R2)
+        // Attach the ci-fix evidence to the surviving review candidate
         const ciFix: CiFixEvidence = {
           failingCheckName: ciFixRecord.failingCheckName,
           diffExcerpt: ciFixRecord.diffExcerpt,
@@ -473,10 +517,10 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
   // review-heavy candidates can't starve the ci-fail-then-pass trigger.
   const capped = selectWithCiFixFloor(afterSolutionsDedup, input.maxLearnings, CIFIX_FLOOR)
 
-  // Count dual-trigger (merged) candidates: review-heavy candidates that carry attached ci-fix
-  // evidence (the PR drew review AND failed then fixed CI). Counted on the emitted set before the
-  // privacy scan, so a candidate whose evidence is later dropped still counts as dual-trigger.
-  const mergedCandidates = capped.filter(c => c.trigger === 'review-heavy' && c.ciFix !== undefined).length
+  // Count dual-trigger candidates: review-heavy candidates that carry attached ci-fix
+  // evidence (the PR drew review AND failed then fixed CI). Counted on the pre-scan capped set,
+  // so a candidate whose evidence is later dropped still counts as dual-trigger.
+  const dualTriggerCandidates = capped.filter(c => c.trigger === 'review-heavy' && c.ciFix !== undefined).length
 
   // upstream privacy scan: scan each candidate's evidence text fail-closed.
   //
@@ -492,7 +536,7 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
   //   3. Otherwise use the redacted excerpts.
   //   4. If ciFix is attached, scan it INDEPENDENTLY (same redact-then-drop-on-residual pattern).
   //      A hit in ciFix drops only ciFix; a hit in reviewExcerpts drops only reviewExcerpts.
-  //      Both fields are scanned every time — a private name in both is caught in both (R3).
+  //      Both fields are scanned every time — a private name in both is caught in both.
   //
   // For CiFixCandidate:
   //   Evidence fields are scanned and redacted (diffExcerpt + logExcerpt + failingCheckName).
@@ -526,32 +570,25 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
         }
       }
 
-      // --- attached ciFix scan (Unit 2, INDEPENDENT of reviewExcerpts scan) ---
+      // --- attached ciFix scan (INDEPENDENT of reviewExcerpts scan) ---
       // Scanned every time ciFix is present, regardless of the reviewExcerpts result.
       // A hit in ciFix drops only ciFix; a hit in reviewExcerpts drops only reviewExcerpts.
       if (resultPr.ciFix !== undefined) {
-        const rawDiff = resultPr.ciFix.diffExcerpt
-        const rawLog = resultPr.ciFix.logExcerpt ?? ''
-        const rawCheckName = resultPr.ciFix.failingCheckName
+        const {redactedDiff, redactedLog, redactedCheckName, hasPrivateLeak, hasResidualSecret} = scanCiFixEvidence(
+          resultPr.ciFix.diffExcerpt,
+          resultPr.ciFix.logExcerpt,
+          resultPr.ciFix.failingCheckName,
+          input.privateTokens,
+        )
 
-        // Step 1: redact structural secrets (including failingCheckName)
-        const redactedDiff = redactLogDiffSecrets(rawDiff)
-        const redactedLog = rawLog === '' ? rawLog : redactLogDiffSecrets(rawLog)
-        const redactedCheckName = redactLogDiffSecrets(rawCheckName)
-        const combinedText = `${redactedDiff}\n${redactedLog}\n${redactedCheckName}`
-
-        // Step 2: check for private-name leak or residual hard secret
-        const ciFixHasPrivateLeak = learningBodyHasPrivateLeak(combinedText, input.privateTokens)
-        const ciFixHasResidualSecret = logDiffHasSecret(combinedText)
-
-        if (ciFixHasPrivateLeak) {
+        if (hasPrivateLeak) {
           // Private-name hit in ciFix: clear ciFix evidence, keep reviewExcerpts result
           enrichmentBlocked++
           resultPr = {
             ...resultPr,
             ciFix: {failingCheckName: '[REDACTED]', diffExcerpt: ''},
           }
-        } else if (ciFixHasResidualSecret) {
+        } else if (hasResidualSecret) {
           // Hard-secret residual in ciFix: clear ciFix evidence
           enrichmentBlockedBySecret++
           resultPr = {
@@ -574,7 +611,7 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
       return resultPr
     }
 
-    // CiFixCandidate: scan and redact diffExcerpt + logExcerpt (R3/R3a).
+    // CiFixCandidate: scan and redact diffExcerpt + logExcerpt.
     //
     // Privacy-ordering invariant: diffExcerpt and logExcerpt are already truncated
     // to budget in the I/O shell before this pure core is called. Never move
@@ -587,18 +624,12 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
     //    increment the appropriate counter.
     // 3. Otherwise use the redacted values.
     if (pr.trigger === 'ci-fail-then-pass') {
-      const rawDiff = pr.diffExcerpt
-      const rawLog = pr.logExcerpt ?? ''
-
-      // Step 1: redact structural secrets (including failingCheckName)
-      const redactedDiff = redactLogDiffSecrets(rawDiff)
-      const redactedLog = rawLog === '' ? rawLog : redactLogDiffSecrets(rawLog)
-      const redactedCheckName = redactLogDiffSecrets(pr.failingCheckName)
-      const combinedText = `${redactedDiff}\n${redactedLog}\n${redactedCheckName}`
-
-      // Step 2: check for private-name leak or residual hard secret
-      const hasPrivateLeak = learningBodyHasPrivateLeak(combinedText, input.privateTokens)
-      const hasResidualSecret = logDiffHasSecret(combinedText)
+      const {redactedDiff, redactedLog, redactedCheckName, hasPrivateLeak, hasResidualSecret} = scanCiFixEvidence(
+        pr.diffExcerpt,
+        pr.logExcerpt,
+        pr.failingCheckName,
+        input.privateTokens,
+      )
 
       if (hasPrivateLeak) {
         enrichmentBlocked++
@@ -629,7 +660,7 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
       afterSeenDedup: afterSeenDedup.length,
       afterSolutionsDedup: afterSolutionsDedup.length,
       emitted: candidates.length,
-      mergedCandidates,
+      dualTriggerCandidates,
       enrichmentBlocked,
       enrichmentBlockedBySecret,
     },
@@ -651,7 +682,7 @@ export function applyEnrichmentScanAvailability(candidates: Candidate[], scanAva
   if (scanAvailable) return candidates
   return candidates.map(c => {
     if (c.trigger === 'review-heavy') {
-      // Clear reviewExcerpts (existing) and also clear any attached ciFix evidence (Unit 2).
+      // Clear reviewExcerpts (existing) and also clear any attached ciFix evidence.
       // No unscanned evidence of any type reaches the digest when the scan is unavailable.
       if (c.ciFix !== undefined) {
         return {
@@ -1831,7 +1862,7 @@ async function main(): Promise<void> {
     // If the scan is unavailable, clear all enriched evidence before passing to the pure core.
     // This ensures no unscanned prose reaches the digest under any path.
     // applyEnrichmentScanAvailability handles both ReviewCandidate (clears reviewExcerpts)
-    // and CiFixCandidate (clears diffExcerpt + logExcerpt) — Unit 3 verified this.
+    // and CiFixCandidate (clears diffExcerpt + logExcerpt).
     const safeCandidates = applyEnrichmentScanAvailability(allCandidates, enrichmentScanAvailable)
 
     const digest = buildCandidateDigest({
@@ -1862,7 +1893,7 @@ async function main(): Promise<void> {
         afterSeenDedup: 0,
         afterSolutionsDedup: 0,
         emitted: 0,
-        mergedCandidates: 0,
+        dualTriggerCandidates: 0,
         enrichmentBlocked: 0,
         enrichmentBlockedBySecret: 0,
       },

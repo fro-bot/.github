@@ -622,7 +622,7 @@ describe('buildCandidateDigest — CiFixCandidate union support', () => {
     expect(result.telemetry.afterSeenDedup).toBe(0)
   })
 
-  it('within-run dedup (R4): same SHA from both triggers yields one candidate, review-heavy wins WITH ci-fix attached', () => {
+  it('within-run dedup: same SHA from both triggers yields one candidate, review-heavy wins WITH ci-fix attached', () => {
     // #given a review-heavy and a ci-fix candidate with the SAME mergeSha, NOT yet proposed
     // (a PR that matched both triggers in this run)
     const sha = 'bothtrg1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
@@ -634,10 +634,10 @@ describe('buildCandidateDigest — CiFixCandidate union support', () => {
     // #when building the digest
     const result = buildCandidateDigest(input)
 
-    // #then exactly one candidate is emitted (R4), and it is the review-heavy one
+    // #then exactly one candidate is emitted, and it is the review-heavy one
     expect(result.candidates).toHaveLength(1)
     expect(result.candidates[0]?.trigger).toBe('review-heavy')
-    // #then the ci-fix evidence is ATTACHED to the surviving review candidate (R2)
+    // #then the ci-fix evidence is ATTACHED to the surviving review candidate
     // (not dropped — the dual-trigger PR is the richest learning source)
     if (result.candidates[0]?.trigger === 'review-heavy') {
       expect(result.candidates[0].ciFix).toBeDefined()
@@ -723,7 +723,7 @@ describe('buildCandidateDigest — CHARACTERIZATION: single-trigger behavior unc
 })
 
 // ---------------------------------------------------------------------------
-// Unit 1: hasCiFixEvidence helper
+// hasCiFixEvidence helper
 // ---------------------------------------------------------------------------
 
 describe('hasCiFixEvidence', () => {
@@ -784,10 +784,10 @@ describe('hasCiFixEvidence', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Unit 1: dual-trigger attach — the live-bug regression
+// dual-trigger attach — the live-bug regression
 // ---------------------------------------------------------------------------
 
-describe('buildCandidateDigest — dual-trigger attach (Unit 1 regression)', () => {
+describe('buildCandidateDigest — dual-trigger attach regression', () => {
   it('REGRESSION: same-SHA review+ci-fix pair → ONE ReviewCandidate with ciFix attached', () => {
     // #given a review-heavy and a ci-fix candidate with the SAME mergeSha
     // This is the live bug: before this fix, the ci-fix evidence was dropped.
@@ -826,7 +826,7 @@ describe('buildCandidateDigest — dual-trigger attach (Unit 1 regression)', () 
     }
   })
 
-  it('telemetry: a dual-trigger candidate increments mergedCandidates; pure candidates do not', () => {
+  it('telemetry: a dual-trigger candidate increments dualTriggerCandidates; pure candidates do not', () => {
     // #given one dual-trigger (review+ci-fix same SHA) and one pure-review candidate
     const dualSha = 'mergedcc1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
     const input = makeDigestInput({
@@ -840,8 +840,8 @@ describe('buildCandidateDigest — dual-trigger attach (Unit 1 regression)', () 
     // #when building the digest
     const result = buildCandidateDigest(input)
 
-    // #then exactly one candidate is counted as dual-trigger (merged)
-    expect(result.telemetry.mergedCandidates).toBe(1)
+    // #then exactly one candidate is counted as dual-trigger
+    expect(result.telemetry.dualTriggerCandidates).toBe(1)
   })
 
   it('dual-trigger: review listed first, ci-fix listed second → same attach result', () => {
@@ -906,7 +906,7 @@ describe('buildCandidateDigest — dual-trigger attach (Unit 1 regression)', () 
 })
 
 // ---------------------------------------------------------------------------
-// Unit 1: floor-fix — dual-trigger candidate is reserved by selectWithCiFixFloor
+// floor-fix — dual-trigger candidate is reserved by selectWithCiFixFloor
 // ---------------------------------------------------------------------------
 
 describe('selectWithCiFixFloor — floor-fix: dual-trigger candidate is reserved', () => {
@@ -1002,7 +1002,7 @@ describe('selectWithCiFixFloor — floor-fix: dual-trigger candidate is reserved
 })
 
 // ---------------------------------------------------------------------------
-// Unit 1: edge cases — same-trigger duplicates and freshness order
+// dual-trigger edge cases — same-trigger duplicates and freshness order
 // ---------------------------------------------------------------------------
 
 describe('buildCandidateDigest — dual-trigger edge cases', () => {
@@ -1945,7 +1945,7 @@ describe('harvest→open schema contract', () => {
         afterSeenDedup: 3,
         afterSolutionsDedup: 2,
         emitted: 2,
-        mergedCandidates: 0,
+        dualTriggerCandidates: 0,
         enrichmentBlocked: 0,
         enrichmentBlockedBySecret: 0,
       },
@@ -3525,7 +3525,7 @@ describe('main() wiring: both candidate sources concatenated via buildCandidateD
         afterSeenDedup: 0,
         afterSolutionsDedup: 0,
         emitted: 0,
-        mergedCandidates: 0,
+        dualTriggerCandidates: 0,
         enrichmentBlocked: 0,
         enrichmentBlockedBySecret: 0,
       },
@@ -3817,7 +3817,7 @@ describe('buildCandidateDigest — CiFix logExcerpt privacy scan', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Unit 2: Attached ciFix evidence scanned independently in ReviewCandidate
+// Attached ciFix evidence scanned independently in ReviewCandidate
 // ---------------------------------------------------------------------------
 
 // Helper: make a dual candidate (ReviewCandidate with ciFix attached)
@@ -3832,7 +3832,7 @@ function makeDualCandidate(
   }
 }
 
-describe('buildCandidateDigest — Unit 2: attached ciFix privacy scan (independent from reviewExcerpts)', () => {
+describe('buildCandidateDigest — attached ciFix privacy scan (independent from reviewExcerpts)', () => {
   it('HAPPY: dual candidate with clean review prose + clean diff → both survive, redacted', () => {
     // #given a dual candidate with clean review prose and clean ci-fix diff
     const candidate = makeDualCandidate(['Please fix the null check here.'], {
@@ -4163,5 +4163,89 @@ describe('buildCandidateDigest — Unit 2: attached ciFix privacy scan (independ
     expect(result.telemetry.enrichmentBlockedBySecret).toBe(1)
     // #then the secret does NOT appear in the serialized digest
     expect(JSON.stringify(result)).not.toContain('ghp_')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// counts-before-scan invariant — dualTriggerCandidates counted pre-scan
+// ---------------------------------------------------------------------------
+
+describe('buildCandidateDigest — dualTriggerCandidates counted before privacy scan', () => {
+  it('dual-trigger candidate whose ciFix is cleared by privacy scan still increments dualTriggerCandidates', () => {
+    // #given a dual-trigger candidate whose attached ciFix contains a private name
+    // (so the privacy scan will CLEAR the ciFix evidence)
+    const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+    const sha = 'dual0012aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const candidate = makeDualCandidate(
+      ['Fix the null check here.'],
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '-old testowner/secret-repo config\n+new config', // private name → will be cleared
+      },
+      sha,
+    )
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted
+    expect(result.candidates).toHaveLength(1)
+    const emitted = asReviewCandidate(result.candidates[0])
+
+    // #then ciFix is CLEARED (private name in diff)
+    expect(emitted.ciFix?.diffExcerpt).toBe('')
+
+    // #then dualTriggerCandidates is STILL 1 — counted on the pre-scan capped set,
+    // not on the post-scan output. The candidate had ciFix attached before the scan.
+    expect(result.telemetry.dualTriggerCandidates).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// mixed threat types — private NAME in reviewExcerpts, ghp_ SECRET in ciFix
+// ---------------------------------------------------------------------------
+
+describe('buildCandidateDigest — mixed threat types in dual-trigger candidate', () => {
+  it('private NAME in reviewExcerpts AND ghp_ SECRET in ciFix.diffExcerpt → both counters increment independently', () => {
+    // #given a dual-trigger candidate where:
+    //   - reviewExcerpts contains a private repo name (enrichmentBlocked counter)
+    //   - ciFix.diffExcerpt contains a GitHub PAT (enrichmentBlockedBySecret counter)
+    // This proves both counter classes increment correctly when each field has a different threat.
+    const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+    const sha = 'dual0013aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const candidate = makeDualCandidate(
+      ['See testowner/secret-repo#42 for context.'], // private NAME → enrichmentBlocked
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '-old\n+token=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA6', // ghp_ SECRET → enrichmentBlockedBySecret
+      },
+      sha,
+    )
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted
+    expect(result.candidates).toHaveLength(1)
+    const emitted = asReviewCandidate(result.candidates[0])
+
+    // #then reviewExcerpts are CLEARED (private name hit → enrichmentBlocked)
+    expect(emitted.reviewExcerpts).toEqual([])
+
+    // #then ciFix is CLEARED (ghp_ secret hit → enrichmentBlockedBySecret)
+    expect(emitted.ciFix?.diffExcerpt).toBe('')
+
+    // #then enrichmentBlocked is 1 (private name in reviewExcerpts)
+    expect(result.telemetry.enrichmentBlocked).toBe(1)
+
+    // #then enrichmentBlockedBySecret is 1 (ghp_ secret in ciFix.diffExcerpt)
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(1)
+
+    // #then neither secret appears in the serialized digest
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toContain('testowner/secret-repo')
+    expect(serialized).not.toContain('ghp_')
   })
 })

@@ -219,7 +219,7 @@ jobs:
               echo "| After seen dedup | $(jq '.telemetry.afterSeenDedup // 0' "$harvest") |"
               echo "| After solutions dedup | $(jq '.telemetry.afterSolutionsDedup // 0' "$harvest") |"
               echo "| Candidates emitted | $(jq '.telemetry.emitted // 0' "$harvest") |"
-              echo "| Dual-trigger (merged) candidates | $(jq '.telemetry.mergedCandidates // 0' "$harvest") |"
+              echo "| Dual-trigger candidates | $(jq '.telemetry.dualTriggerCandidates // 0' "$harvest") |"
               echo "| Enrichment blocked by privacy | $(jq '.telemetry.enrichmentBlocked // 0' "$harvest") |"
               echo "| Enrichment blocked by secret | $(jq '.telemetry.enrichmentBlockedBySecret // 0' "$harvest") |"
             else
