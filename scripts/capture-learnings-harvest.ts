@@ -329,6 +329,10 @@ export function parseMergeShaMarker(body: string): string | null {
  *
  * Pure and order-stable: when no ci-fix candidate exists, or the floor is 0, this is a plain
  * head-of-list cap.
+ *
+ * Expects `ordered` to contain reference-unique candidate objects (it does in production: the
+ * list flows from the `byMergeSha` dedup, so every element is a distinct reference). Selection
+ * keys on object identity, so feeding a list with duplicated references would skew the count.
  */
 export function selectWithCiFixFloor(ordered: Candidate[], cap: number, floor: number): Candidate[] {
   if (cap <= 0) return []
