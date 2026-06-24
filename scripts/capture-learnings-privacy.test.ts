@@ -617,7 +617,7 @@ describe('redactLogDiffSecrets', () => {
       expect(result).toContain('/endpoint')
     })
 
-    it('FIX 5: Bearer token with base64 chars (+/) is fully redacted', () => {
+    it('Bearer token with base64 chars (+/) is fully redacted', () => {
       // #given a standalone Bearer token containing + and / (valid base64 chars)
       // Note: using a standalone Bearer (not inside an Authorization header) so the
       // Bearer pattern fires rather than the Authorization header pattern
@@ -634,10 +634,10 @@ describe('redactLogDiffSecrets', () => {
 })
 
 // ---------------------------------------------------------------------------
-// FIX 4: New SECRET_BLOCK_PATTERNS — Google API key, GitLab PAT, JWT, generic creds
+// SECRET_BLOCK_PATTERNS — Google API key, GitLab PAT, JWT, generic creds
 // ---------------------------------------------------------------------------
 
-describe('logDiffHasSecret — FIX 4: new block patterns', () => {
+describe('logDiffHasSecret — additional block patterns', () => {
   it('detects a Google API key (AIza prefix + 35 chars)', () => {
     // #given a body containing a Google API key shape
     // Using an obviously-fake key — 'A'.repeat(35) is not a real credential

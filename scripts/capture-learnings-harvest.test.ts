@@ -12,6 +12,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   applyEnrichmentScanAvailability,
   buildCandidateDigest,
+  buildLogExcerpt,
   buildMergeShaMarker,
   DEPENDENCY_LABELS,
   fetchMergedPrsInWindow,
@@ -2142,6 +2143,54 @@ function makeSc(sha: string, context: string, state: string): CommitCheckEntry {
   return {type: 'StatusContext', sha, context, state}
 }
 
+describe('buildLogExcerpt', () => {
+  it('keeps the stack-trace context around an error line, not just the error line', () => {
+    // #given a log where an error line is surrounded by stack-trace context
+    const log = [
+      'Run tests',
+      'preamble line a',
+      'preamble line b',
+      'at module.load (foo.ts:10)',
+      'at caller (bar.ts:20)',
+      'Error: boom happened here',
+      'at deeper (baz.ts:30)',
+      'at deepest (qux.ts:40)',
+      'trailing line',
+    ].join('\n')
+
+    // #when building the excerpt with a generous budget
+    const excerpt = buildLogExcerpt(log, 10_000)
+
+    // #then the error line AND its surrounding stack-trace lines are present (context preserved)
+    expect(excerpt).toContain('Error: boom happened here')
+    expect(excerpt).toContain('at caller (bar.ts:20)') // before the error
+    expect(excerpt).toContain('at deeper (baz.ts:30)') // after the error
+  })
+
+  it('falls back to the head of the log when no error line is present', () => {
+    // #given a log with no error/failed lines
+    const log = Array.from({length: 50}, (_, i) => `info line ${i}`).join('\n')
+
+    // #when building the excerpt
+    const excerpt = buildLogExcerpt(log, 100)
+
+    // #then it returns the head of the log, truncated to budget
+    expect(excerpt.startsWith('info line 0')).toBe(true)
+    expect(excerpt.length).toBeLessThanOrEqual(100)
+  })
+
+  it('truncates to budget', () => {
+    // #given a log with an error and a large surrounding body
+    const log = ['error: start', ...Array.from({length: 500}, (_, i) => `line ${i}`)].join('\n')
+
+    // #when building with a small budget
+    const excerpt = buildLogExcerpt(log, 50)
+
+    // #then the result is capped at budget
+    expect(excerpt.length).toBeLessThanOrEqual(50)
+  })
+})
+
 describe('findFailPassTransition', () => {
   it('happy path: clean fail→pass on a required check returns correct SHAs', () => {
     // #given commits oldest→newest: sha1=FAILURE, sha2=SUCCESS
@@ -2251,7 +2300,7 @@ describe('findFailPassTransition', () => {
 
   it('all failing conclusions are recognized: FAILURE, TIMED_OUT, STARTUP_FAILURE', () => {
     // #given each failing conclusion type followed by SUCCESS
-    // Note: CANCELLED and ACTION_REQUIRED are NOT failing conclusions (FIX 2)
+    // Note: CANCELLED and ACTION_REQUIRED are NOT failing conclusions
     const failingConclusions = ['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE']
     for (const conclusion of failingConclusions) {
       const commits: CommitCheckEntry[] = [
@@ -2974,10 +3023,10 @@ describe('main() wiring: both candidate sources concatenated via buildCandidateD
 })
 
 // ---------------------------------------------------------------------------
-// FIX 2: FAILING_CHECK_CONCLUSIONS — CANCELLED/ACTION_REQUIRED removed
+// FAILING_CHECK_CONCLUSIONS — CANCELLED/ACTION_REQUIRED are not failures
 // ---------------------------------------------------------------------------
 
-describe('findFailPassTransition — FIX 2: CANCELLED and ACTION_REQUIRED are NOT failing conclusions', () => {
+describe('findFailPassTransition — cancelled and action-required are not failing conclusions', () => {
   it('CANCELLED→SUCCESS is NOT a candidate (CANCELLED removed from failing set)', () => {
     // #given a check that was CANCELLED then SUCCESS
     // CANCELLED is a concurrency-cancelled run, not a code failure
@@ -3024,7 +3073,7 @@ describe('findFailPassTransition — FIX 2: CANCELLED and ACTION_REQUIRED are NO
     expect(result?.firstPassingSha).toBe('sha2')
   })
 
-  it('StatusContext ERROR→SUCCESS IS detected (FIX 2b: ERROR treated as failing)', () => {
+  it('StatusContext ERROR→SUCCESS IS detected (ERROR treated as failing)', () => {
     // #given a StatusContext entry with state=ERROR then SUCCESS
     const commits: CommitCheckEntry[] = [makeSc('sha1', 'ci/test', 'ERROR'), makeSc('sha2', 'ci/test', 'SUCCESS')]
     const required = new Set(['ci/test'])
@@ -3053,10 +3102,10 @@ describe('findFailPassTransition — FIX 2: CANCELLED and ACTION_REQUIRED are NO
 })
 
 // ---------------------------------------------------------------------------
-// FIX 3: failingCheckName included in privacy scan
+// failingCheckName included in privacy scan
 // ---------------------------------------------------------------------------
 
-describe('buildCandidateDigest — FIX 3: failingCheckName scanned for private names', () => {
+describe('buildCandidateDigest — failingCheckName scanned for private names', () => {
   it('private repo name in failingCheckName → evidence cleared, enrichmentBlocked incremented', () => {
     // #given a ci-fix candidate whose failingCheckName contains a private repo name
     const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
@@ -3105,10 +3154,10 @@ describe('buildCandidateDigest — FIX 3: failingCheckName scanned for private n
 })
 
 // ---------------------------------------------------------------------------
-// FIX 9: within-run dedup precedence (review-heavy wins regardless of array order)
+// within-run dedup precedence (review-heavy wins regardless of array order)
 // ---------------------------------------------------------------------------
 
-describe('buildCandidateDigest — FIX 9: within-run dedup precedence by trigger, not array order', () => {
+describe('buildCandidateDigest — within-run dedup precedence by trigger, not array order', () => {
   it('review-heavy FIRST, ci-fix SECOND → review-heavy wins (array-order-first case)', () => {
     // #given review-heavy listed first, ci-fix second — same SHA
     const sha = 'dedup001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
@@ -3142,10 +3191,10 @@ describe('buildCandidateDigest — FIX 9: within-run dedup precedence by trigger
 })
 
 // ---------------------------------------------------------------------------
-// FIX 9: applyEnrichmentScanAvailability — ci-fix candidate test
+// applyEnrichmentScanAvailability — ci-fix candidate test
 // ---------------------------------------------------------------------------
 
-describe('applyEnrichmentScanAvailability — FIX 9: ci-fix candidate clears diffExcerpt + logExcerpt', () => {
+describe('applyEnrichmentScanAvailability — ci-fix candidate clears diffExcerpt + logExcerpt', () => {
   it('scanAvailable=false clears diffExcerpt and logExcerpt for ci-fix candidates', () => {
     // #given a ci-fix candidate with evidence fields
     const candidates: CiFixCandidate[] = [
@@ -3193,10 +3242,10 @@ describe('applyEnrichmentScanAvailability — FIX 9: ci-fix candidate clears dif
 })
 
 // ---------------------------------------------------------------------------
-// FIX 9: CiFix logExcerpt privacy — private name and path in logExcerpt
+// CiFix logExcerpt privacy — private name and path in logExcerpt
 // ---------------------------------------------------------------------------
 
-describe('buildCandidateDigest — FIX 9: CiFix logExcerpt privacy scan', () => {
+describe('buildCandidateDigest — CiFix logExcerpt privacy scan', () => {
   it('private repo name in logExcerpt (not diffExcerpt) → evidence dropped', () => {
     // #given a ci-fix candidate whose logExcerpt contains a private repo name
     // but diffExcerpt is clean

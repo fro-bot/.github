@@ -565,7 +565,7 @@ describe('openLearningIssues', () => {
     expect(counts.failed).toBe(0)
   })
 
-  it('FIX 7: title does NOT contain "review-heavy" (neutral title for all trigger types)', async () => {
+  it('title does NOT contain "review-heavy" (neutral title for all trigger types)', async () => {
     // #given a learning with a known mergeSha
     const sha = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
     const createSpy = vi.fn().mockResolvedValue({data: {number: 1}})
@@ -586,10 +586,10 @@ describe('openLearningIssues', () => {
 })
 
 // ---------------------------------------------------------------------------
-// FIX 6: planLearnings blocks bodies containing hard secrets (logDiffHasSecret)
+// planLearnings blocks bodies containing hard secrets (logDiffHasSecret)
 // ---------------------------------------------------------------------------
 
-describe('planLearnings — FIX 6: logDiffHasSecret as final defense-in-depth gate', () => {
+describe('planLearnings — logDiffHasSecret as final defense-in-depth gate', () => {
   it('blocks a body containing a ghp_ secret (logDiffHasSecret gate)', () => {
     // #given an agent-authored body containing a GitHub PAT
     const sha = 'abc123def456abc123def456abc123def456abc1'

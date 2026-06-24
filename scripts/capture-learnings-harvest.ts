@@ -1063,27 +1063,51 @@ function buildDiffExcerpt(files: {filename?: string; patch?: string}[], budget: 
 // ---------------------------------------------------------------------------
 
 /**
- * Build a log excerpt from raw job log text, ranked toward error lines.
- * Truncates to budget. Returns the excerpt string.
+ * Build a log excerpt from raw job log text, centered on error lines with context.
+ *
+ * Emits contiguous windows around each error line (a few lines before and after) rather
+ * than a global error-first partition, so each error keeps its surrounding stack-trace
+ * context — that context is what makes "this failure → this fix" legible. Windows are
+ * merged when they overlap, kept in original order, and the result is truncated to budget.
+ * Falls back to the head of the log when no error line is found.
  */
-function buildLogExcerpt(logText: string, budget: number): string {
+export function buildLogExcerpt(logText: string, budget: number): string {
   const lines = logText.split('\n')
+  const CONTEXT_BEFORE = 3
+  const CONTEXT_AFTER = 6
 
-  // Rank error lines first (lines containing 'error', 'Error', 'ERROR', 'FAILED', 'failed')
-  const errorLines: string[] = []
-  const otherLines: string[] = []
+  // Find error line indices.
+  const errorIndices: number[] = []
+  for (const [i, line] of lines.entries()) {
+    if (/error|failed/i.test(line ?? '')) errorIndices.push(i)
+  }
 
-  for (const line of lines) {
-    if (/error|failed/i.test(line)) {
-      errorLines.push(line)
+  // No error line found — fall back to the head of the log.
+  if (errorIndices.length === 0) return lines.join('\n').slice(0, budget)
+
+  // Build merged [start, end] windows around each error line (in original order).
+  const windows: {start: number; end: number}[] = []
+  for (const idx of errorIndices) {
+    const start = Math.max(0, idx - CONTEXT_BEFORE)
+    const end = Math.min(lines.length - 1, idx + CONTEXT_AFTER)
+    const last = windows.at(-1)
+    if (last !== undefined && start <= last.end + 1) {
+      // Overlaps or is adjacent to the previous window — merge.
+      last.end = Math.max(last.end, end)
     } else {
-      otherLines.push(line)
+      windows.push({start, end})
     }
   }
 
-  const ranked = [...errorLines, ...otherLines]
-  const joined = ranked.join('\n')
-  return joined.slice(0, budget)
+  // Emit the windows in order, separated by an elision marker when they are non-contiguous.
+  const segments: string[] = []
+  for (const [w, win] of windows.entries()) {
+    if (win === undefined) continue
+    if (w > 0) segments.push('...')
+    segments.push(lines.slice(win.start, win.end + 1).join('\n'))
+  }
+
+  return segments.join('\n').slice(0, budget)
 }
 
 // ---------------------------------------------------------------------------
