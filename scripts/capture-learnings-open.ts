@@ -29,7 +29,12 @@ import {
   type CandidateDigest,
   type OctokitClient,
 } from './capture-learnings-harvest.ts'
-import {isRecord, learningBodyHasPrivateLeak, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
+import {
+  isRecord,
+  learningBodyHasPrivateLeak,
+  loadPrivateTokensFromDisk,
+  logDiffHasSecret,
+} from './capture-learnings-privacy.ts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -128,8 +133,8 @@ export function planLearnings(input: PlanLearningsInput): PlanLearningsResult {
       continue
     }
 
-    // Privacy gate: block if body contains a private identifier
-    if (learningBodyHasPrivateLeak(body, input.privateTokens)) {
+    // Privacy gate: block if body contains a private identifier or a hard secret
+    if (learningBodyHasPrivateLeak(body, input.privateTokens) || logDiffHasSecret(body)) {
       blockedOnPrivacy += 1
       continue
     }
@@ -208,10 +213,14 @@ export async function ensureLabelsExist(
  * Derive a learning issue title from a mergeSha.
  * Uses only the merge SHA (public, safe for this public repo) — no owner/repo/number prose.
  * Short SHA = first 8 chars.
+ *
+ * The open step works off agent-authored bodies keyed by mergeSha and does not have
+ * the trigger at title-derivation time. A neutral title avoids misleading 'review-heavy'
+ * for ci-fail-then-pass candidates.
  */
 function deriveLearningTitle(mergeSha: string): string {
   const shortSha = mergeSha.slice(0, 8)
-  return `Learning proposal: review-heavy PR (${shortSha})`
+  return `Learning proposal: (${shortSha})`
 }
 
 // ---------------------------------------------------------------------------
