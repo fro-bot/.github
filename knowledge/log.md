@@ -2374,28 +2374,25 @@ Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mrbro.dev
 
-## [2026-06-24 00:00] ingest | marcusrbrown/opencode-copilot-delegate
+## [2026-06-24 08:42] ingest | repo:fro-bot/agent
 
-Incremental re-survey of `marcusrbrown/opencode-copilot-delegate` (SHA `bea97ea`, up from `60cbe42`). Updated repo page `marcusrbrown--opencode-copilot-delegate.md` additively (new 2026-06-24 Status block, frontmatter source + `updated` bump, tech-stack Biome/peer/dev pins, mise pins, Fro Bot agent version, Renovate reusable pin, Open PRs refresh, Survey History row). Refreshed the index entry. No related topic/entity edits justified — `opencode-plugins.md` already reflects v0.12.0 / 4 tools and no new architectural patterns surfaced.
+Seventh survey of `fro-bot/agent` (HEAD `20e9f346f2129f28800029b47489cd14bc6ce847`, last push 2026-06-24; prior surveyed SHA `a23ae97` @ v0.63.0 on 2026-06-14). Reads limited to repo metadata, release notes, root + `apps/` + `packages/` + gateway-`src/` + `.github/workflows` directory listings, `package.json`, `packages/harness/harness.config.json`, `packages/runtime/src/shared/constants.ts`, `.github/renovate.json5`, `fro-bot.yaml`, and the open issue/PR lists per the untrusted-input constraint. Updated repo page `fro-bot--agent.md` (frontmatter source/updated/tags, Overview table, Workspace Layout + Workspace Packages Bun-migration notes, new "Operator Web Surface" gateway section, gateway-evolution table rows v0.65.0–v0.67.0, harness base/refs/carry-squash, Renovate constants table + Bun managers, Build-pipeline hardening, deps table, ecosystem-role resolution note, new top-level surface note, survey-history row), `github-actions-ci.md` (fro-bot--agent CI row: SBOM + Bun-CI cohort), and the `index.md` entry. No new topic/entity/comparison pages warranted — the deltas are structural-within-repo (package manager swap, a new daemon-side control plane) rather than new cross-cutting concepts; the existing `github-actions-ci` topic absorbed the Bun-CI note.
 
-Delta from prior survey (SHA `60cbe42`, 2026-06-13):
+Material deltas since v0.63.0 (additive; one explicit reversal of a prior recorded fact, flagged below):
 
-- Still **v0.12.0** on npm; no release, no source-tree change. Tree at `bea97ea` is byte-for-byte the documented v0.12.0 layout (4 tools, `runtime/`, `discovery/`, `lib/`, `tui/`). Window is pure dependency-update churn.
-- **Biome 2.4.16 → 2.5.0** — config schema migration in #223, which also replaced the now-deprecated `recommended` field. Open PR #169 (Biome schema sync) is now likely redundant as a result.
-- **Fro Bot agent v0.62.0 → v0.76.0** (SHA `07d86219`) — a 14-minor jump in eleven days, tracking the ecosystem-wide rollout.
-- `@opencode-ai/plugin` dev pin 1.17.2 → **1.17.8**; `opencode-ai` mise pin 1.17.2 → **1.17.8**; `@github/copilot` CLI 1.0.61 → **1.0.63**; `@types/node` 24.13.1 → **24.13.2** (still within 24.x LTS).
-- `bfra-me/.github` Renovate reusable workflow v4.16.25 → **v4.16.28** (SHA `1fcc99e`). Renovate preset held at `marcusrbrown/renovate-config#5.2.3` (config lives at `.github/renovate.json5`). `@opentui/*` held at 0.2.6; zod still `^4.3.0`.
-- Open PR shift: #127 (`@types/node` 24 → 25 major) **closed**, new #241 (24 → 26 major) opened 2026-06-22 — subject to the same LTS-only (even majors) rule. Carry-over PRs #130/#134/#135/#169 still open.
-- Open issues unchanged across all surveys: #38 (re-add integration tests to CI), #26 (Daily Autohealing Report), #25 (Dependency Dashboard).
-- Six workflows present including `fro-bot.yaml` — Fro Bot workflow active, no onboarding follow-up draft needed.
-- No contradictions with prior ingests.
+- **Release cadence: v0.63.0 → v0.76.1** (2026-06-14 → 2026-06-23), 13 minors + patches in 9 days. v0.76.2 pending (#1007, `app/fro-bot`).
+- **pnpm → Bun migration (CONTRADICTION with prior surveys, resolved in favor of the live tree).** Prior pages recorded pnpm 11.5.3 with `pnpm-workspace.yaml`-hosted `overrides`. On HEAD `20e9f34`: `package.json` declares `packageManager: bun@1.3.14`, root `bun.lock` + `bunfig.toml` exist, `pnpm-lock.yaml`/`pnpm-workspace.yaml` are gone, scripts run `bun run --filter`, hooks run `bunx`/`bun run`, `trustedDependencies` replaces `onlyBuiltDependencies`, and `overrides` moved back into root `package.json`. The v0.45.0 "overrides migrated to pnpm-workspace.yaml" fact is now reversed. Harness native build is also Bun-based (`HARNESS_BUN_VERSION`, `bun-version` workflow inputs).
+- **Gateway operator web surface ("web-command spine", #907)** — the dominant v0.64–v0.76 theme. New gateway `src/` dirs `web/`, `operator-contract/`, `redaction/`. Built on the v0.65.0 transport-agnostic execution seam (#920). Delivers: operator GitHub OAuth + sessions + browser auth gate (#936/#944/#939), repo-authz + session-info routes (#947/#948), frozen+pinned operator API contract (#952/#996), authenticated SSE run status + output streaming (#961/#962/#974), web operator launch surface (#968), web tool-approval flow (#986), and a `metadata/repos.yaml`-driven redaction gate on operator surfaces (#955). Two freshly-landed wiring gaps are open: #1001 (`GET /operator/repos` never mounted → 404) and #1000 (redaction strips keyless bindings, no backfill entrypoint in shipped image).
+- **OpenCode harness rebased 1.17.6 → 1.17.9** (#893 → #984, SQLite-reliability carries); `harness.config.json` now carries 5 integration refs (was 3); `DEFAULT_OPENCODE_VERSION = '1.17.9+harness.bd89c818'`. Carries squashed into a single fingerprint commit listed in release notes (#982). SBOM + deterministic-notice build hardening (#978) and dist license/unicode pipeline decoupled from the bundler (#991/#988, v0.76.1). A harness postinstall shim (#992) and a Renovate `pnpm install --force` (#998) were both tried and reverted (#995/#999).
+- **Deps:** systematic 2.31.0 → 2.32.0, hono 4.12.26, tsdown 0.22.3, `@aws-sdk/client-s3` 3.1071.0, `@opencode-ai/sdk` 1.17.9, eslint 10.5.0, Node 24.17.0, vitest 4.1.9.
+- **Open issues 6 → 9** (#1003 Bun-install hardening in deploy Dockerfiles, #1001/#1000 web-surface wiring, #919 example-workflow fork-PR secret exposure, #907 web-command spine, plus carried #775/#763/#579/#252). 1 open PR (pending release).
 
-Reads limited to repo metadata, directory/tree listings, and manifest/workflow files per untrusted-input constraints. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
+Fro Bot workflow present and self-hosted (`fro-bot.yaml`, daily DMR 15:30 UTC, weekly wiki Sun 20:00 UTC, `workflow_call` interface) — no onboarding follow-up draft needed. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
 
-Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA bea97eaf9db3ef529ec9011de59d83e1e4b08ec0)
+Sources: https://github.com/fro-bot/agent (SHA 20e9f346f2129f28800029b47489cd14bc6ce847)
 
-## [2026-06-24 08:39] ingest | repo:marcusrbrown/opencode-copilot-delegate
+## [2026-06-24 08:44] ingest | repo:fro-bot/agent
 
-Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+Surveyed fro-bot/agent and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+Sources: https://github.com/fro-bot/agent
