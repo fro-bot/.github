@@ -97,3 +97,6 @@ Prose describes intent. Live data describes reality. Ground the review in realit
 - [Agent and automation steps need their GitHub token wired explicitly](../workflow-issues/required-github-token-for-agent-steps-2026-06-22.md) — the companion pattern: restrict capability by token scope, not by token absence; keep privileged operations in a separate step with its own credential.
 - [Survey workflow-side privacy gate](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md) — the same separate-step-with-its-own-credential pattern, where a privacy gate runs under a distinct token so the boundary is enforced by which step holds which credential.
 - [Diagnostic patches observability discipline](../best-practices/diagnostic-patches-observability-discipline-2026-05-20.md) — verify behavior against live state rather than assumptions; the same discipline applied to observability patches.
+- [Writing a requirements doc that survives verification](requirements-doc-survives-verification-2026-06-24.md) —
+  validate a plan's security invariants against live data, not its prose; the same "ground the
+  review in reality" discipline applied to requirements documents.

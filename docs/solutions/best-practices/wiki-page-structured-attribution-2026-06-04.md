@@ -140,7 +140,8 @@ if (structuredSources !== null) {
 
 - `docs/solutions/best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md` — the
   companion promotion-diff gate; same fail-closed-under-uncertainty principle, different surface
-  (content scan vs slug attribution).
+  (content scan vs slug attribution). See also its "See also — privacy-gate correctness patterns"
+  index for the full cluster of gate docs.
 - `docs/solutions/security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md` — the
   fail-closed-on-unknown predicate this attribution model extends.
 - `docs/solutions/security-issues/survey-workflow-side-privacy-gate-2026-05-16.md` — verifying
