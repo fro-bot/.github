@@ -49,6 +49,16 @@ const MIN_CORRECTION_SIGNALS = 1
 const MAX_LEARNINGS_PER_RUN = 5
 
 /**
+ * Minimum cap slots reserved for ci-fail-then-pass candidates when any exist.
+ *
+ * Without a floor, a backlog of review-heavy candidates sorts ahead of ci-fix ones and
+ * saturates the cap, so a working ci-fix trigger can detect candidates yet never author a
+ * proposal. Reserving at least this many slots guarantees the trigger delivers when it fires,
+ * while keeping the per-run total bounded by MAX_LEARNINGS_PER_RUN.
+ */
+const CIFIX_FLOOR = 1
+
+/**
  * Maximum total characters of review-prose excerpts per candidate.
  * Ranked by correction signal so the correction sentence is never clipped first.
  * Exported so tests can assert budget enforcement without hardcoding the value.
@@ -308,6 +318,37 @@ export function parseMergeShaMarker(body: string): string | null {
  *
  * No I/O. Fully unit-testable. The private token set is injected so the scan is pure.
  */
+/**
+ * Select up to `cap` candidates from `ordered` (freshness-ordered), guaranteeing that at least
+ * `floor` ci-fail-then-pass candidates are included when that many exist.
+ *
+ * Without this, a long run of review-heavy candidates at the front of `ordered` fills the cap
+ * before any ci-fix candidate is reached. The floor reserves slots for the freshest ci-fix
+ * candidates, then fills the remaining slots from `ordered` (skipping the ci-fix candidates
+ * already taken), preserving the original relative order of everything that is emitted.
+ *
+ * Pure and order-stable: when no ci-fix candidate exists, or the floor is 0, this is a plain
+ * head-of-list cap.
+ */
+export function selectWithCiFixFloor(ordered: Candidate[], cap: number, floor: number): Candidate[] {
+  if (cap <= 0) return []
+  if (floor <= 0) return ordered.slice(0, cap)
+
+  const ciFix = ordered.filter(c => c.trigger === 'ci-fail-then-pass')
+  if (ciFix.length === 0) return ordered.slice(0, cap)
+
+  // Reserve the freshest ci-fix candidates (bounded by floor and cap), then fill the rest of
+  // the budget from the freshness-ordered list, skipping anything already reserved.
+  const chosen = new Set<Candidate>(ciFix.slice(0, Math.min(floor, cap)))
+  for (const candidate of ordered) {
+    if (chosen.size >= cap) break
+    chosen.add(candidate)
+  }
+
+  // Emit in original (freshness) order, capped.
+  return ordered.filter(c => chosen.has(c)).slice(0, cap)
+}
+
 export function buildCandidateDigest(input: BuildCandidateDigestInput): CandidateDigest {
   // Within-run dedup: a PR that matched more than one trigger (e.g. review-heavy AND
   // ci-fail-then-pass) appears once per source in mergedPrs. Collapse to one candidate per
@@ -328,8 +369,9 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
   // drop candidates whose signals overlap an existing solutions doc
   const afterSolutionsDedup = afterSeenDedup.filter(pr => !overlapsAnySolutionsDoc(pr.signals, input.solutionsDocs))
 
-  // cap to maxLearnings
-  const capped = afterSolutionsDedup.slice(0, input.maxLearnings)
+  // cap to maxLearnings, reserving a floor of slots for ci-fix candidates so a backlog of
+  // review-heavy candidates can't starve the ci-fail-then-pass trigger.
+  const capped = selectWithCiFixFloor(afterSolutionsDedup, input.maxLearnings, CIFIX_FLOOR)
 
   // upstream privacy scan: scan each candidate's evidence text fail-closed.
   //

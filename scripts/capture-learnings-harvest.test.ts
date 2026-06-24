@@ -24,6 +24,7 @@ import {
   LEARNING_PROPOSAL_LABEL,
   MAX_EXCERPT_CHARS_PER_CANDIDATE,
   parseMergeShaMarker,
+  selectWithCiFixFloor,
   type BuildCandidateDigestInput,
   type Candidate,
   type CandidateDigest,
@@ -2142,6 +2143,76 @@ function makeCr(sha: string, name: string, conclusion: string): CommitCheckEntry
 function makeSc(sha: string, context: string, state: string): CommitCheckEntry {
   return {type: 'StatusContext', sha, context, state}
 }
+
+describe('selectWithCiFixFloor', () => {
+  const sha = (n: number): string => `${n}`.padStart(40, '0')
+
+  it('reserves a ci-fix slot when review-heavy candidates would otherwise fill the cap', () => {
+    // #given the production starvation scenario: many review-heavy candidates sorted ahead
+    // of a single ci-fix candidate, with a cap smaller than the review-heavy count
+    const reviewHeavy = Array.from({length: 8}, (_, i) => makeCandidate({mergeSha: sha(i)}))
+    const ciFix = makeCiFixCandidate({mergeSha: sha(99)})
+    const ordered = [...reviewHeavy, ciFix] // ci-fix sorts LAST (loses a flat slice)
+
+    // #when selecting with cap=5, floor=1
+    const selected = selectWithCiFixFloor(ordered, 5, 1)
+
+    // #then the ci-fix candidate is included despite sorting past the cap
+    expect(selected).toHaveLength(5)
+    expect(selected).toContain(ciFix)
+    // and the rest are the freshest review-heavy ones (4 of them)
+    expect(selected.filter(c => c.trigger === 'review-heavy')).toHaveLength(4)
+  })
+
+  it('preserves freshness order among the selected candidates', () => {
+    const ordered = [
+      makeCandidate({mergeSha: sha(1)}),
+      makeCandidate({mergeSha: sha(2)}),
+      makeCiFixCandidate({mergeSha: sha(3)}),
+      makeCandidate({mergeSha: sha(4)}),
+    ]
+    const selected = selectWithCiFixFloor(ordered, 3, 1)
+    // original order preserved (not reordered to put the reserved ci-fix first)
+    expect(selected.map(c => c.mergeSha)).toEqual([sha(1), sha(2), sha(3)])
+  })
+
+  it('is a plain head cap when no ci-fix candidate exists', () => {
+    const ordered = Array.from({length: 6}, (_, i) => makeCandidate({mergeSha: sha(i)}))
+    const selected = selectWithCiFixFloor(ordered, 5, 1)
+    expect(selected).toHaveLength(5)
+    expect(selected.map(c => c.mergeSha)).toEqual([sha(0), sha(1), sha(2), sha(3), sha(4)])
+  })
+
+  it('is a plain head cap when floor is 0', () => {
+    const ciFix = makeCiFixCandidate({mergeSha: sha(99)})
+    const ordered = [...Array.from({length: 5}, (_, i) => makeCandidate({mergeSha: sha(i)})), ciFix]
+    const selected = selectWithCiFixFloor(ordered, 5, 0)
+    expect(selected).not.toContain(ciFix) // floor 0 → no reservation, ci-fix sorts out
+  })
+
+  it('reserves up to floor ci-fix candidates (the freshest) when several exist', () => {
+    const ciFixA = makeCiFixCandidate({mergeSha: sha(50)})
+    const ciFixB = makeCiFixCandidate({mergeSha: sha(51)})
+    const reviewHeavy = Array.from({length: 8}, (_, i) => makeCandidate({mergeSha: sha(i)}))
+    const ordered = [...reviewHeavy, ciFixA, ciFixB]
+    // floor=2 → both ci-fix reserved
+    const selected = selectWithCiFixFloor(ordered, 5, 2)
+    expect(selected).toContain(ciFixA)
+    expect(selected).toContain(ciFixB)
+    expect(selected).toHaveLength(5)
+  })
+
+  it('floor never exceeds the cap', () => {
+    const ciFix = Array.from({length: 4}, (_, i) => makeCiFixCandidate({mergeSha: sha(50 + i)}))
+    const selected = selectWithCiFixFloor(ciFix, 2, 3) // floor 3 > cap 2
+    expect(selected).toHaveLength(2) // capped at 2, not 3
+  })
+
+  it('returns empty when cap is 0', () => {
+    const ordered = [makeCiFixCandidate({mergeSha: sha(1)})]
+    expect(selectWithCiFixFloor(ordered, 0, 1)).toEqual([])
+  })
+})
 
 describe('buildLogExcerpt', () => {
   it('keeps the stack-trace context around an error line, not just the error line', () => {
