@@ -826,6 +826,24 @@ describe('buildCandidateDigest — dual-trigger attach (Unit 1 regression)', () 
     }
   })
 
+  it('telemetry: a dual-trigger candidate increments mergedCandidates; pure candidates do not', () => {
+    // #given one dual-trigger (review+ci-fix same SHA) and one pure-review candidate
+    const dualSha = 'mergedcc1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const input = makeDigestInput({
+      mergedPrs: [
+        makeCiFixCandidate({mergeSha: dualSha, failingCheckName: 'CI / test', diffExcerpt: '-bad\n+good'}),
+        makeCandidate({mergeSha: dualSha, reviewExcerpts: ['Fix it.']}),
+        makeCandidate({mergeSha: 'purerev1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1', reviewExcerpts: ['Other.']}),
+      ],
+    })
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then exactly one candidate is counted as dual-trigger (merged)
+    expect(result.telemetry.mergedCandidates).toBe(1)
+  })
+
   it('dual-trigger: review listed first, ci-fix listed second → same attach result', () => {
     // #given review-heavy listed BEFORE ci-fix (opposite order from the regression test)
     const sha = 'dualtrg2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
@@ -1927,6 +1945,7 @@ describe('harvest→open schema contract', () => {
         afterSeenDedup: 3,
         afterSolutionsDedup: 2,
         emitted: 2,
+        mergedCandidates: 0,
         enrichmentBlocked: 0,
         enrichmentBlockedBySecret: 0,
       },
@@ -3506,6 +3525,7 @@ describe('main() wiring: both candidate sources concatenated via buildCandidateD
         afterSeenDedup: 0,
         afterSolutionsDedup: 0,
         emitted: 0,
+        mergedCandidates: 0,
         enrichmentBlocked: 0,
         enrichmentBlockedBySecret: 0,
       },

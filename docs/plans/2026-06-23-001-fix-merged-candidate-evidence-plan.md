@@ -140,7 +140,7 @@ agent prompt: review branch notes the optional attached failure→fix evidence
 
 ## Implementation Units
 
-- [ ] **Unit 1: Attach ci-fix evidence in within-run dedup + `hasCiFixEvidence` + floor predicate**
+- [x] **Unit 1: Attach ci-fix evidence in within-run dedup + `hasCiFixEvidence` + floor predicate**
 
 **Goal:** A same-SHA dual-trigger PR keeps its ci-fix evidence (attached to the review candidate),
 and the floor reserves slots for any candidate carrying ci-fix evidence.
@@ -177,7 +177,7 @@ evidence fields.
 
 **Verification:** gates green; the dual-trigger PR retains ci-fix evidence and the floor reserves it.
 
-- [ ] **Unit 2: Scan attached ci-fix evidence in the privacy step**
+- [x] **Unit 2: Scan attached ci-fix evidence in the privacy step**
 
 **Goal:** A `ReviewCandidate` with attached `ciFix` has BOTH its review prose and its diff/log
 scanned independently, fail-closed, on the final candidate.
@@ -214,7 +214,7 @@ drop-on-residual), the truncate-then-scan ordering invariant.
 
 **Verification:** gates green; no unscanned attached evidence reaches the digest; mutation proof bites.
 
-- [ ] **Unit 3: Prompt + telemetry for dual-trigger candidates**
+- [x] **Unit 3: Prompt + telemetry for dual-trigger candidates**
 
 **Goal:** The agent distills from both evidence sets when present; telemetry counts dual-trigger
 candidates and per-evidence-type blocks.

@@ -258,6 +258,11 @@ export interface DigestTelemetry {
   afterSolutionsDedup: number
   emitted: number
   /**
+   * Number of dual-trigger candidates: a review-heavy candidate that also carried attached
+   * ci-fix evidence (the PR drew review AND failed then fixed CI). Counts-only.
+   */
+  mergedCandidates: number
+  /**
    * Number of candidates whose enriched content was dropped by the private-name scan.
    * The candidate itself is kept (title-only); only the enriched evidence is cleared.
    * Counts-only — no private names logged.
@@ -468,6 +473,11 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
   // review-heavy candidates can't starve the ci-fail-then-pass trigger.
   const capped = selectWithCiFixFloor(afterSolutionsDedup, input.maxLearnings, CIFIX_FLOOR)
 
+  // Count dual-trigger (merged) candidates: review-heavy candidates that carry attached ci-fix
+  // evidence (the PR drew review AND failed then fixed CI). Counted on the emitted set before the
+  // privacy scan, so a candidate whose evidence is later dropped still counts as dual-trigger.
+  const mergedCandidates = capped.filter(c => c.trigger === 'review-heavy' && c.ciFix !== undefined).length
+
   // upstream privacy scan: scan each candidate's evidence text fail-closed.
   //
   // Privacy-ordering invariant: scan the already-truncated evidence text (truncation
@@ -619,6 +629,7 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
       afterSeenDedup: afterSeenDedup.length,
       afterSolutionsDedup: afterSolutionsDedup.length,
       emitted: candidates.length,
+      mergedCandidates,
       enrichmentBlocked,
       enrichmentBlockedBySecret,
     },
@@ -1851,6 +1862,7 @@ async function main(): Promise<void> {
         afterSeenDedup: 0,
         afterSolutionsDedup: 0,
         emitted: 0,
+        mergedCandidates: 0,
         enrichmentBlocked: 0,
         enrichmentBlockedBySecret: 0,
       },
