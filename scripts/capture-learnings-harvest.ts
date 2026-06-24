@@ -478,38 +478,90 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): Candidat
   // For ReviewCandidate:
   //   1. Redact structural secrets (paths, hostnames, Bearer tokens) via redactLogDiffSecrets.
   //   2. If learningBodyHasPrivateLeak (private repo name) OR logDiffHasSecret (hard secret)
-  //      still true after redaction → clear reviewExcerpts + increment enrichmentBlockedBySecret.
+  //      still true after redaction → clear reviewExcerpts + increment the appropriate counter.
   //   3. Otherwise use the redacted excerpts.
+  //   4. If ciFix is attached, scan it INDEPENDENTLY (same redact-then-drop-on-residual pattern).
+  //      A hit in ciFix drops only ciFix; a hit in reviewExcerpts drops only reviewExcerpts.
+  //      Both fields are scanned every time — a private name in both is caught in both (R3).
   //
-  // For CiFixCandidate (Unit 3 placeholder):
-  //   Evidence fields are not yet populated; no scan needed until Unit 3 adds them.
+  // For CiFixCandidate:
+  //   Evidence fields are scanned and redacted (diffExcerpt + logExcerpt + failingCheckName).
   let enrichmentBlocked = 0
   let enrichmentBlockedBySecret = 0
   const candidates = capped.map(pr => {
     if (pr.trigger === 'review-heavy') {
-      if (pr.reviewExcerpts.length === 0) return pr
+      // --- reviewExcerpts scan (existing) ---
+      let resultPr: ReviewCandidate = pr
 
-      // Step 1: redact structural secrets from the already-truncated excerpts
-      const redactedExcerpts = pr.reviewExcerpts.map(e => redactLogDiffSecrets(e))
-      const redactedText = redactedExcerpts.join('\n')
+      if (pr.reviewExcerpts.length > 0) {
+        // Step 1: redact structural secrets from the already-truncated excerpts
+        const redactedExcerpts = pr.reviewExcerpts.map(e => redactLogDiffSecrets(e))
+        const redactedText = redactedExcerpts.join('\n')
 
-      // Step 2: check for private-name leak or residual hard secret after redaction
-      const hasPrivateLeak = learningBodyHasPrivateLeak(redactedText, input.privateTokens)
-      const hasResidualSecret = logDiffHasSecret(redactedText)
+        // Step 2: check for private-name leak or residual hard secret after redaction
+        const hasPrivateLeak = learningBodyHasPrivateLeak(redactedText, input.privateTokens)
+        const hasResidualSecret = logDiffHasSecret(redactedText)
 
-      if (hasPrivateLeak) {
-        // Private-name hit: clear enriched content, keep candidate title-only
-        enrichmentBlocked++
-        return {...pr, reviewExcerpts: []}
+        if (hasPrivateLeak) {
+          // Private-name hit: clear enriched content, keep candidate title-only
+          enrichmentBlocked++
+          resultPr = {...pr, reviewExcerpts: []}
+        } else if (hasResidualSecret) {
+          // Hard-secret residual after redaction: clear enriched content
+          enrichmentBlockedBySecret++
+          resultPr = {...pr, reviewExcerpts: []}
+        } else {
+          // Step 3: use the redacted excerpts (structural secrets replaced with [REDACTED])
+          resultPr = {...pr, reviewExcerpts: redactedExcerpts}
+        }
       }
-      if (hasResidualSecret) {
-        // Hard-secret residual after redaction: clear enriched content
-        enrichmentBlockedBySecret++
-        return {...pr, reviewExcerpts: []}
+
+      // --- attached ciFix scan (Unit 2, INDEPENDENT of reviewExcerpts scan) ---
+      // Scanned every time ciFix is present, regardless of the reviewExcerpts result.
+      // A hit in ciFix drops only ciFix; a hit in reviewExcerpts drops only reviewExcerpts.
+      if (resultPr.ciFix !== undefined) {
+        const rawDiff = resultPr.ciFix.diffExcerpt
+        const rawLog = resultPr.ciFix.logExcerpt ?? ''
+        const rawCheckName = resultPr.ciFix.failingCheckName
+
+        // Step 1: redact structural secrets (including failingCheckName)
+        const redactedDiff = redactLogDiffSecrets(rawDiff)
+        const redactedLog = rawLog === '' ? rawLog : redactLogDiffSecrets(rawLog)
+        const redactedCheckName = redactLogDiffSecrets(rawCheckName)
+        const combinedText = `${redactedDiff}\n${redactedLog}\n${redactedCheckName}`
+
+        // Step 2: check for private-name leak or residual hard secret
+        const ciFixHasPrivateLeak = learningBodyHasPrivateLeak(combinedText, input.privateTokens)
+        const ciFixHasResidualSecret = logDiffHasSecret(combinedText)
+
+        if (ciFixHasPrivateLeak) {
+          // Private-name hit in ciFix: clear ciFix evidence, keep reviewExcerpts result
+          enrichmentBlocked++
+          resultPr = {
+            ...resultPr,
+            ciFix: {failingCheckName: '[REDACTED]', diffExcerpt: ''},
+          }
+        } else if (ciFixHasResidualSecret) {
+          // Hard-secret residual in ciFix: clear ciFix evidence
+          enrichmentBlockedBySecret++
+          resultPr = {
+            ...resultPr,
+            ciFix: {failingCheckName: '[REDACTED]', diffExcerpt: ''},
+          }
+        } else {
+          // Step 3: use the redacted values
+          const redactedCiFix: CiFixEvidence = {
+            failingCheckName: redactedCheckName,
+            diffExcerpt: redactedDiff,
+          }
+          if (redactedLog !== '') {
+            redactedCiFix.logExcerpt = redactedLog
+          }
+          resultPr = {...resultPr, ciFix: redactedCiFix}
+        }
       }
 
-      // Step 3: use the redacted excerpts (structural secrets replaced with [REDACTED])
-      return {...pr, reviewExcerpts: redactedExcerpts}
+      return resultPr
     }
 
     // CiFixCandidate: scan and redact diffExcerpt + logExcerpt (R3/R3a).
@@ -588,6 +640,15 @@ export function applyEnrichmentScanAvailability(candidates: Candidate[], scanAva
   if (scanAvailable) return candidates
   return candidates.map(c => {
     if (c.trigger === 'review-heavy') {
+      // Clear reviewExcerpts (existing) and also clear any attached ciFix evidence (Unit 2).
+      // No unscanned evidence of any type reaches the digest when the scan is unavailable.
+      if (c.ciFix !== undefined) {
+        return {
+          ...c,
+          reviewExcerpts: [] as string[],
+          ciFix: {failingCheckName: c.ciFix.failingCheckName, diffExcerpt: '', logExcerpt: undefined},
+        }
+      }
       return {...c, reviewExcerpts: [] as string[]}
     }
     if (c.trigger === 'ci-fail-then-pass') {

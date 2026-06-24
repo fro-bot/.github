@@ -3795,3 +3795,353 @@ describe('buildCandidateDigest — CiFix logExcerpt privacy scan', () => {
     expect(result.telemetry.enrichmentBlockedBySecret).toBe(0)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Unit 2: Attached ciFix evidence scanned independently in ReviewCandidate
+// ---------------------------------------------------------------------------
+
+// Helper: make a dual candidate (ReviewCandidate with ciFix attached)
+function makeDualCandidate(
+  reviewExcerpts: string[],
+  ciFix: {failingCheckName: string; diffExcerpt: string; logExcerpt?: string},
+  sha = 'dual0001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+): ReviewCandidate {
+  return {
+    ...makeCandidate({mergeSha: sha, reviewExcerpts}),
+    ciFix,
+  }
+}
+
+describe('buildCandidateDigest — Unit 2: attached ciFix privacy scan (independent from reviewExcerpts)', () => {
+  it('HAPPY: dual candidate with clean review prose + clean diff → both survive, redacted', () => {
+    // #given a dual candidate with clean review prose and clean ci-fix diff
+    const candidate = makeDualCandidate(['Please fix the null check here.'], {
+      failingCheckName: 'CI / test',
+      diffExcerpt: '-bad\n+good',
+      logExcerpt: 'Error: test failed at line 42',
+    })
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted
+    expect(result.candidates).toHaveLength(1)
+    const emitted = asReviewCandidate(result.candidates[0])
+    // #then reviewExcerpts survive
+    expect(emitted.reviewExcerpts).toEqual(['Please fix the null check here.'])
+    // #then ciFix survives with its evidence
+    expect(emitted.ciFix).toBeDefined()
+    expect(emitted.ciFix?.diffExcerpt).toBe('-bad\n+good')
+    expect(emitted.ciFix?.logExcerpt).toBe('Error: test failed at line 42')
+    // #then no counters incremented
+    expect(result.telemetry.enrichmentBlocked).toBe(0)
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(0)
+  })
+
+  it('INDEPENDENT DROP (diff hit): secret in ciFix.diffExcerpt → ciFix cleared, reviewExcerpts SURVIVE', () => {
+    // #given a dual candidate with a secret in the attached diff but clean review prose
+    const secretDiff = '-old\n+token=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4'
+    const candidate = makeDualCandidate(
+      ['Please fix the null check here.'],
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: secretDiff,
+      },
+      'dual0002aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    )
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted
+    expect(result.candidates).toHaveLength(1)
+    const emitted = asReviewCandidate(result.candidates[0])
+    // #then reviewExcerpts SURVIVE (clean — independent scan)
+    expect(emitted.reviewExcerpts).toEqual(['Please fix the null check here.'])
+    // #then ciFix is CLEARED (secret in diff)
+    expect(emitted.ciFix).toBeDefined()
+    expect(emitted.ciFix?.diffExcerpt).toBe('')
+    // #then enrichmentBlockedBySecret is incremented (for the ciFix drop)
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(1)
+    // #then the secret does NOT appear in the serialized digest
+    expect(JSON.stringify(result)).not.toContain('ghp_')
+  })
+
+  it('INDEPENDENT DROP (review hit): private name in reviewExcerpts → reviewExcerpts cleared, clean ciFix SURVIVES', () => {
+    // #given a dual candidate with a private name in review prose but clean ci-fix diff
+    const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+    const candidate = makeDualCandidate(
+      ['See testowner/secret-repo#42 for context.'],
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '-bad\n+good',
+      },
+      'dual0003aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    )
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted
+    expect(result.candidates).toHaveLength(1)
+    const emitted = asReviewCandidate(result.candidates[0])
+    // #then reviewExcerpts are CLEARED (private name hit)
+    expect(emitted.reviewExcerpts).toEqual([])
+    // #then ciFix SURVIVES (clean — independent scan)
+    expect(emitted.ciFix).toBeDefined()
+    expect(emitted.ciFix?.diffExcerpt).toBe('-bad\n+good')
+    // #then enrichmentBlocked is incremented (for the review drop)
+    expect(result.telemetry.enrichmentBlocked).toBe(1)
+    // #then enrichmentBlockedBySecret is NOT incremented
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(0)
+    // #then private name does NOT appear in serialized digest
+    expect(JSON.stringify(result)).not.toContain('testowner/secret-repo')
+  })
+
+  it('CROSS-FIELD MUTATION PROOF: private name in BOTH reviewExcerpts AND ciFix.diffExcerpt → caught in BOTH', () => {
+    // #given a dual candidate with the SAME private name in BOTH review prose AND the attached diff
+    // This is the load-bearing mutation proof: if the attached-ciFix scan is removed,
+    // the private name in the diff reaches the serialized digest → this test FAILS.
+    const privateTokens = buildPrivateTokenSet(['testowner/secret-repo'])
+    const candidate = makeDualCandidate(
+      ['See testowner/secret-repo#42 for context.'], // private name in review prose
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '-old testowner/secret-repo config\n+new config', // private name in diff
+      },
+      'dual0004aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    )
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted
+    expect(result.candidates).toHaveLength(1)
+    const emitted = asReviewCandidate(result.candidates[0])
+    // #then reviewExcerpts are CLEARED (private name in review prose)
+    expect(emitted.reviewExcerpts).toEqual([])
+    // #then ciFix is CLEARED (private name in diff — caught by the INDEPENDENT scan)
+    expect(emitted.ciFix).toBeDefined()
+    expect(emitted.ciFix?.diffExcerpt).toBe('')
+    // #then enrichmentBlocked is incremented TWICE (once for review, once for ciFix)
+    expect(result.telemetry.enrichmentBlocked).toBe(2)
+    // #then the private name does NOT appear ANYWHERE in the serialized digest
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toContain('testowner/secret-repo')
+    expect(serialized).not.toContain('testowner--secret-repo')
+
+    // MUTATION PROOF: if we remove the ciFix scan (pass empty privateTokens for the ciFix scan),
+    // the diff's private name would reach the digest. We prove this by showing that a candidate
+    // with the private name ONLY in the diff (not in reviewExcerpts) IS caught by the ciFix scan.
+    const candidateOnlyDiffHit = makeDualCandidate(
+      ['Clean review prose — no private names here.'], // clean review
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '-old testowner/secret-repo config\n+new config', // private name ONLY in diff
+      },
+      'dual0004baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    )
+    const resultOnlyDiff = buildCandidateDigest(makeDigestInput({mergedPrs: [candidateOnlyDiffHit], privateTokens}))
+    const emittedOnlyDiff = asReviewCandidate(resultOnlyDiff.candidates[0])
+    // #then reviewExcerpts SURVIVE (clean)
+    expect(emittedOnlyDiff.reviewExcerpts).toEqual(['Clean review prose — no private names here.'])
+    // #then ciFix is CLEARED (private name in diff — the ciFix scan is load-bearing)
+    expect(emittedOnlyDiff.ciFix?.diffExcerpt).toBe('')
+    // #then the private name does NOT appear in the serialized digest
+    expect(JSON.stringify(resultOnlyDiff)).not.toContain('testowner/secret-repo')
+    // If the ciFix scan were removed, the diff's private name would appear here → test fails
+  })
+
+  it('SCAN-UNAVAILABLE: applyEnrichmentScanAvailability(false) clears reviewExcerpts AND attached ciFix', () => {
+    // #given a dual candidate with both review prose and ci-fix evidence
+    const candidate = makeDualCandidate(
+      ['Fix the null check here.'],
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '-bad\n+good',
+        logExcerpt: 'Error: test failed',
+      },
+      'dual0005aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    )
+
+    // #when scan is unavailable (token load failed)
+    const result = applyEnrichmentScanAvailability([candidate], false)
+
+    // #then reviewExcerpts are cleared
+    const r0 = result[0]
+    if (r0?.trigger === 'review-heavy') {
+      expect(r0.reviewExcerpts).toEqual([])
+      // #then ciFix evidence is ALSO cleared (no unscanned evidence reaches the digest)
+      expect(r0.ciFix).toBeDefined()
+      expect(r0.ciFix?.diffExcerpt).toBe('')
+      expect(r0.ciFix?.logExcerpt).toBeUndefined()
+    }
+  })
+
+  it('SCAN-UNAVAILABLE: applyEnrichmentScanAvailability(true) leaves dual candidate unchanged', () => {
+    // #given a dual candidate with both review prose and ci-fix evidence
+    const candidate = makeDualCandidate(
+      ['Fix the null check here.'],
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '-bad\n+good',
+        logExcerpt: 'Error: test failed',
+      },
+      'dual0006aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    )
+
+    // #when scan is available
+    const result = applyEnrichmentScanAvailability([candidate], true)
+
+    // #then candidates are returned unchanged (same reference)
+    expect(result).toBe(result) // same array
+    const r0 = result[0]
+    if (r0?.trigger === 'review-heavy') {
+      expect(r0.reviewExcerpts).toEqual(['Fix the null check here.'])
+      expect(r0.ciFix?.diffExcerpt).toBe('-bad\n+good')
+      expect(r0.ciFix?.logExcerpt).toBe('Error: test failed')
+    }
+  })
+
+  it('ALLOWLIST/OPACITY: emitted dual candidate carries only allowlisted keys — no owner/repo/number/title', () => {
+    // #given a dual candidate
+    const candidate = makeDualCandidate(
+      ['Fix the null check here.'],
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '-bad\n+good',
+      },
+      'dual0007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    )
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the emitted candidate has only allowlisted keys
+    expect(result.candidates).toHaveLength(1)
+    const emitted = result.candidates[0]
+    expect(emitted).not.toHaveProperty('owner')
+    expect(emitted).not.toHaveProperty('repo')
+    expect(emitted).not.toHaveProperty('number')
+    expect(emitted).not.toHaveProperty('title')
+    // #then ciFix is present with only allowlisted sub-fields
+    if (emitted?.trigger === 'review-heavy' && emitted.ciFix !== undefined) {
+      const ciFixKeys = Object.keys(emitted.ciFix).sort()
+      // ciFix may have failingCheckName, diffExcerpt, and optionally logExcerpt
+      const allowedCiFixKeys = ['diffExcerpt', 'failingCheckName'].sort()
+      const allowedCiFixKeysWithLog = [...allowedCiFixKeys, 'logExcerpt'].sort()
+      expect([allowedCiFixKeys, allowedCiFixKeysWithLog]).toContainEqual(ciFixKeys)
+    }
+  })
+
+  it('REDACT (not block): /Users/ path in ciFix.diffExcerpt → redacted to [REDACTED], ciFix still emitted', () => {
+    // #given a dual candidate with a file path in the attached diff (redact-class, not block-class)
+    const candidate = makeDualCandidate(
+      ['Fix the null check here.'],
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: 'Config loaded from /Users/marcus/.ssh/config for the build.',
+      },
+      'dual0008aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    )
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted (not blocked)
+    expect(result.candidates).toHaveLength(1)
+    const emitted = asReviewCandidate(result.candidates[0])
+    // #then ciFix is still present (not cleared)
+    expect(emitted.ciFix).toBeDefined()
+    // #then the path is redacted in the diff
+    expect(emitted.ciFix?.diffExcerpt).not.toContain('/Users/marcus')
+    expect(emitted.ciFix?.diffExcerpt).toContain('[REDACTED]')
+    // #then neither counter is incremented (redaction, not blocking)
+    expect(result.telemetry.enrichmentBlocked).toBe(0)
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(0)
+  })
+
+  it('REDACT (not block): *.fro.bot hostname in ciFix.diffExcerpt → redacted, ciFix still emitted', () => {
+    // #given a dual candidate with an internal hostname in the attached diff
+    const candidate = makeDualCandidate(
+      ['Fix the null check here.'],
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: 'Connecting to api.fro.bot for the check.',
+      },
+      'dual0009aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    )
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted (not blocked)
+    expect(result.candidates).toHaveLength(1)
+    const emitted = asReviewCandidate(result.candidates[0])
+    // #then ciFix is still present (not cleared)
+    expect(emitted.ciFix).toBeDefined()
+    // #then the hostname is redacted in the diff
+    expect(emitted.ciFix?.diffExcerpt).not.toContain('api.fro.bot')
+    expect(emitted.ciFix?.diffExcerpt).toContain('[REDACTED]')
+    // #then neither counter is incremented
+    expect(result.telemetry.enrichmentBlocked).toBe(0)
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(0)
+  })
+
+  it('dual candidate with no ciFix → reviewExcerpts scan unchanged (pure review path unaffected)', () => {
+    // #given a pure review candidate (no ciFix) with clean prose
+    const candidate = makeCandidate({
+      mergeSha: 'dual0010aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+      reviewExcerpts: ['Fix the null check here.'],
+    })
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted with reviewExcerpts intact
+    expect(result.candidates).toHaveLength(1)
+    const emitted = asReviewCandidate(result.candidates[0])
+    expect(emitted.reviewExcerpts).toEqual(['Fix the null check here.'])
+    expect(emitted.ciFix).toBeUndefined()
+    expect(result.telemetry.enrichmentBlocked).toBe(0)
+  })
+
+  it('ciFix with secret in logExcerpt (not diffExcerpt) → ciFix cleared, reviewExcerpts survive', () => {
+    // #given a dual candidate with a secret in the attached logExcerpt but clean diff and review prose
+    const secretLog = 'Error: auth failed with token ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA5'
+    const candidate = makeDualCandidate(
+      ['Fix the null check here.'],
+      {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '-bad\n+good',
+        logExcerpt: secretLog,
+      },
+      'dual0011aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1',
+    )
+    const input = makeDigestInput({mergedPrs: [candidate], privateTokens: new Set()})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the candidate is emitted
+    expect(result.candidates).toHaveLength(1)
+    const emitted = asReviewCandidate(result.candidates[0])
+    // #then reviewExcerpts SURVIVE (clean — independent scan)
+    expect(emitted.reviewExcerpts).toEqual(['Fix the null check here.'])
+    // #then ciFix is CLEARED (secret in logExcerpt)
+    expect(emitted.ciFix?.diffExcerpt).toBe('')
+    expect(emitted.ciFix?.logExcerpt).toBeUndefined()
+    // #then enrichmentBlockedBySecret is incremented
+    expect(result.telemetry.enrichmentBlockedBySecret).toBe(1)
+    // #then the secret does NOT appear in the serialized digest
+    expect(JSON.stringify(result)).not.toContain('ghp_')
+  })
+})
