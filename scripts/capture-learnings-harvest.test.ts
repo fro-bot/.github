@@ -21,6 +21,7 @@ import {
   FRO_BOT_REVIEWER_LOGINS,
   harvestCandidates,
   harvestCiFixCandidates,
+  hasCiFixEvidence,
   LEARNING_PROPOSAL_LABEL,
   MAX_EXCERPT_CHARS_PER_CANDIDATE,
   parseMergeShaMarker,
@@ -191,18 +192,21 @@ describe('buildCandidateDigest', () => {
   })
 
   describe('opacity guarantee', () => {
-    it('review-heavy candidate has ONLY trigger, mergeSha, reviewRounds, signals, reviewExcerpts — no owner/repo/number/title', () => {
-      // #given a review-heavy candidate
+    it('review-heavy candidate has ONLY allowed keys — no owner/repo/number/title', () => {
+      // #given a review-heavy candidate (pure review, no ci-fix)
       const input = makeDigestInput()
 
       // #when building the digest
       const result = buildCandidateDigest(input)
 
-      // #then each review-heavy candidate has exactly the allowed keys
+      // #then each review-heavy candidate has only the allowed keys
+      // ciFix is optional — present only when the PR also matched ci-fail-then-pass
+      const baseAllowedKeys = ['mergeSha', 'reviewExcerpts', 'reviewRounds', 'signals', 'trigger'].sort()
+      const allowedKeysWithCiFix = [...baseAllowedKeys, 'ciFix'].sort()
       for (const candidate of result.candidates) {
         if (candidate.trigger !== 'review-heavy') continue
         const keys = Object.keys(candidate).sort()
-        expect(keys).toEqual(['mergeSha', 'reviewExcerpts', 'reviewRounds', 'signals', 'trigger'].sort())
+        expect([baseAllowedKeys, allowedKeysWithCiFix]).toContainEqual(keys)
         // Explicitly assert forbidden keys are absent
         expect(candidate).not.toHaveProperty('owner')
         expect(candidate).not.toHaveProperty('repo')
@@ -618,7 +622,7 @@ describe('buildCandidateDigest — CiFixCandidate union support', () => {
     expect(result.telemetry.afterSeenDedup).toBe(0)
   })
 
-  it('within-run dedup (R4): same SHA from both triggers yields one candidate, review-heavy wins', () => {
+  it('within-run dedup (R4): same SHA from both triggers yields one candidate, review-heavy wins WITH ci-fix attached', () => {
     // #given a review-heavy and a ci-fix candidate with the SAME mergeSha, NOT yet proposed
     // (a PR that matched both triggers in this run)
     const sha = 'bothtrg1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
@@ -633,6 +637,429 @@ describe('buildCandidateDigest — CiFixCandidate union support', () => {
     // #then exactly one candidate is emitted (R4), and it is the review-heavy one
     expect(result.candidates).toHaveLength(1)
     expect(result.candidates[0]?.trigger).toBe('review-heavy')
+    // #then the ci-fix evidence is ATTACHED to the surviving review candidate (R2)
+    // (not dropped — the dual-trigger PR is the richest learning source)
+    if (result.candidates[0]?.trigger === 'review-heavy') {
+      expect(result.candidates[0].ciFix).toBeDefined()
+      expect(result.candidates[0].ciFix?.failingCheckName).toBe(ciFixCandidate.failingCheckName)
+      expect(result.candidates[0].ciFix?.diffExcerpt).toBe(ciFixCandidate.diffExcerpt)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// CHARACTERIZATION: pure-review and pure-ci-fix single-trigger behavior is unchanged
+// ---------------------------------------------------------------------------
+
+describe('buildCandidateDigest — CHARACTERIZATION: single-trigger behavior unchanged', () => {
+  it('CHARACTERIZATION: pure-review PR (distinct SHA) still produces a ReviewCandidate with no ciFix', () => {
+    // #given a pure review-heavy candidate with a unique SHA (no ci-fix counterpart)
+    // This locks the current behavior: pure-review PRs are unaffected by the dual-trigger attach.
+    const sha = 'purereview1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const reviewCandidate = makeCandidate({
+      mergeSha: sha,
+      reviewRounds: 3,
+      reviewExcerpts: ['Fix the null check.'],
+    })
+    const input = makeDigestInput({mergedPrs: [reviewCandidate]})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then exactly one candidate is emitted
+    expect(result.candidates).toHaveLength(1)
+    // #then it is a ReviewCandidate with the expected fields
+    expect(result.candidates[0]?.trigger).toBe('review-heavy')
+    if (result.candidates[0]?.trigger === 'review-heavy') {
+      expect(result.candidates[0].mergeSha).toBe(sha)
+      expect(result.candidates[0].reviewRounds).toBe(3)
+      expect(result.candidates[0].reviewExcerpts).toEqual(['Fix the null check.'])
+      // #then NO ciFix is attached (pure review — no ci-fix counterpart)
+      expect(result.candidates[0].ciFix).toBeUndefined()
+    }
+  })
+
+  it('CHARACTERIZATION: pure-ci-fix PR (distinct SHA) still produces a CiFixCandidate unchanged', () => {
+    // #given a pure ci-fix candidate with a unique SHA (no review counterpart)
+    // This locks the current behavior: pure-ci-fix PRs are unaffected by the dual-trigger attach.
+    const sha = 'purefix001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const ciFixCandidate = makeCiFixCandidate({
+      mergeSha: sha,
+      failingCheckName: 'CI / lint',
+      diffExcerpt: '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-bad\n+good',
+    })
+    const input = makeDigestInput({mergedPrs: [ciFixCandidate]})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then exactly one candidate is emitted
+    expect(result.candidates).toHaveLength(1)
+    // #then it is a CiFixCandidate with the expected fields
+    expect(result.candidates[0]?.trigger).toBe('ci-fail-then-pass')
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].mergeSha).toBe(sha)
+      expect(result.candidates[0].failingCheckName).toBe('CI / lint')
+      expect(result.candidates[0].diffExcerpt).toContain('-bad')
+    }
+  })
+
+  it('CHARACTERIZATION: selectWithCiFixFloor still reserves a slot for a pure-ci-fix candidate', () => {
+    // #given the production starvation scenario with a pure ci-fix candidate
+    // This locks the floor behavior for pure-ci-fix candidates (unchanged by this unit).
+    const sha = (n: number): string => `${n}`.padStart(40, '0')
+    const reviewHeavy = Array.from({length: 8}, (_, i) => makeCandidate({mergeSha: sha(i)}))
+    const pureCiFix = makeCiFixCandidate({mergeSha: sha(99)})
+    const ordered = [...reviewHeavy, pureCiFix]
+
+    // #when selecting with cap=5, floor=1
+    const selected = selectWithCiFixFloor(ordered, 5, 1)
+
+    // #then the pure ci-fix candidate is reserved (unchanged behavior)
+    expect(selected).toHaveLength(5)
+    expect(selected).toContain(pureCiFix)
+    expect(selected.filter(c => c.trigger === 'review-heavy')).toHaveLength(4)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit 1: hasCiFixEvidence helper
+// ---------------------------------------------------------------------------
+
+describe('hasCiFixEvidence', () => {
+  it('returns true for a pure CiFixCandidate', () => {
+    // #given a pure ci-fix candidate
+    const candidate = makeCiFixCandidate()
+    // #then hasCiFixEvidence is true
+    expect(hasCiFixEvidence(candidate)).toBe(true)
+  })
+
+  it('returns true for a ReviewCandidate with a non-empty ciFix.diffExcerpt', () => {
+    // #given a review candidate with attached ci-fix evidence (non-empty diff)
+    const candidate: ReviewCandidate = {
+      ...makeCandidate(),
+      ciFix: {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-bad\n+good',
+      },
+    }
+    // #then hasCiFixEvidence is true
+    expect(hasCiFixEvidence(candidate)).toBe(true)
+  })
+
+  it('returns false for a pure ReviewCandidate (no ciFix)', () => {
+    // #given a pure review candidate with no ciFix field
+    const candidate = makeCandidate()
+    // #then hasCiFixEvidence is false
+    expect(hasCiFixEvidence(candidate)).toBe(false)
+  })
+
+  it('returns false for a ReviewCandidate with an empty ciFix.diffExcerpt', () => {
+    // #given a review candidate with a ciFix field but empty diffExcerpt
+    // (evidence was cleared, e.g. by the privacy scan)
+    const candidate: ReviewCandidate = {
+      ...makeCandidate(),
+      ciFix: {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '', // empty — not substantive
+      },
+    }
+    // #then hasCiFixEvidence is false (empty diff = no substantive evidence)
+    expect(hasCiFixEvidence(candidate)).toBe(false)
+  })
+
+  it('returns true for a ReviewCandidate with ciFix that has a logExcerpt but non-empty diff', () => {
+    // #given a review candidate with attached ci-fix evidence including a log excerpt
+    const candidate: ReviewCandidate = {
+      ...makeCandidate(),
+      ciFix: {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-bad\n+good',
+        logExcerpt: 'Error: test failed at line 42',
+      },
+    }
+    // #then hasCiFixEvidence is true (non-empty diff is the key signal)
+    expect(hasCiFixEvidence(candidate)).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit 1: dual-trigger attach — the live-bug regression
+// ---------------------------------------------------------------------------
+
+describe('buildCandidateDigest — dual-trigger attach (Unit 1 regression)', () => {
+  it('REGRESSION: same-SHA review+ci-fix pair → ONE ReviewCandidate with ciFix attached', () => {
+    // #given a review-heavy and a ci-fix candidate with the SAME mergeSha
+    // This is the live bug: before this fix, the ci-fix evidence was dropped.
+    const sha = 'dualtrg1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const ciFixCandidate = makeCiFixCandidate({
+      mergeSha: sha,
+      failingCheckName: 'CI / test',
+      diffExcerpt: '--- a/scripts/foo.ts\n+++ b/scripts/foo.ts\n@@ -1 +1 @@\n-bad\n+good',
+    })
+    const reviewCandidate = makeCandidate({
+      mergeSha: sha,
+      reviewRounds: 3,
+      reviewExcerpts: ['Fix the null check.'],
+    })
+    // ci-fix listed first to prove precedence is by trigger, not array order
+    const input = makeDigestInput({mergedPrs: [ciFixCandidate, reviewCandidate]})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then exactly ONE candidate is emitted (one proposal per SHA)
+    expect(result.candidates).toHaveLength(1)
+
+    // #then the survivor is a ReviewCandidate (review prose is the richer base)
+    expect(result.candidates[0]?.trigger).toBe('review-heavy')
+
+    // #then the ci-fix evidence IS ATTACHED (not dropped — the regression fix)
+    if (result.candidates[0]?.trigger === 'review-heavy') {
+      const emitted = result.candidates[0]
+      expect(emitted.ciFix).toBeDefined()
+      expect(emitted.ciFix?.failingCheckName).toBe('CI / test')
+      expect(emitted.ciFix?.diffExcerpt).toContain('-bad')
+      // #then the review evidence is also preserved
+      expect(emitted.reviewRounds).toBe(3)
+      expect(emitted.reviewExcerpts).toEqual(['Fix the null check.'])
+    }
+  })
+
+  it('dual-trigger: review listed first, ci-fix listed second → same attach result', () => {
+    // #given review-heavy listed BEFORE ci-fix (opposite order from the regression test)
+    const sha = 'dualtrg2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const reviewCandidate = makeCandidate({mergeSha: sha, reviewRounds: 2})
+    const ciFixCandidate = makeCiFixCandidate({
+      mergeSha: sha,
+      failingCheckName: 'CI / lint',
+      diffExcerpt: '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-x\n+y',
+    })
+    const input = makeDigestInput({mergedPrs: [reviewCandidate, ciFixCandidate]})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then one ReviewCandidate with ciFix attached regardless of input order
+    expect(result.candidates).toHaveLength(1)
+    expect(result.candidates[0]?.trigger).toBe('review-heavy')
+    if (result.candidates[0]?.trigger === 'review-heavy') {
+      expect(result.candidates[0].ciFix).toBeDefined()
+      expect(result.candidates[0].ciFix?.failingCheckName).toBe('CI / lint')
+    }
+  })
+
+  it('dual-trigger: logExcerpt is attached when present on the ci-fix candidate', () => {
+    // #given a ci-fix candidate with a logExcerpt
+    const sha = 'dualtrg3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const ciFixCandidate = makeCiFixCandidate({
+      mergeSha: sha,
+      failingCheckName: 'CI / test',
+      diffExcerpt: '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-bad\n+good',
+      logExcerpt: 'Error: test failed at line 42',
+    })
+    const reviewCandidate = makeCandidate({mergeSha: sha})
+    const input = makeDigestInput({mergedPrs: [ciFixCandidate, reviewCandidate]})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then the logExcerpt is also attached
+    if (result.candidates[0]?.trigger === 'review-heavy') {
+      expect(result.candidates[0].ciFix?.logExcerpt).toBe('Error: test failed at line 42')
+    }
+  })
+
+  it('dual-trigger: logExcerpt is absent when not present on the ci-fix candidate', () => {
+    // #given a ci-fix candidate WITHOUT a logExcerpt
+    const sha = 'dualtrg4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const ciFixCandidate = makeCiFixCandidate({mergeSha: sha}) // no logExcerpt in fixture
+    const reviewCandidate = makeCandidate({mergeSha: sha})
+    const input = makeDigestInput({mergedPrs: [ciFixCandidate, reviewCandidate]})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then logExcerpt is absent (not set to undefined explicitly — just not present)
+    if (result.candidates[0]?.trigger === 'review-heavy') {
+      expect(result.candidates[0].ciFix?.logExcerpt).toBeUndefined()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit 1: floor-fix — dual-trigger candidate is reserved by selectWithCiFixFloor
+// ---------------------------------------------------------------------------
+
+describe('selectWithCiFixFloor — floor-fix: dual-trigger candidate is reserved', () => {
+  const sha = (n: number): string => `${n}`.padStart(40, '0')
+
+  it('FLOOR FIX: a dual-trigger ReviewCandidate (with ciFix) is reserved by the floor even when review-heavy candidates fill the rest', () => {
+    // #given the production starvation scenario, now with a dual-trigger candidate
+    // (review-heavy + attached ci-fix) instead of a pure ci-fix candidate.
+    // Before this fix, the dual-trigger candidate would NOT be reserved (trigger !== 'ci-fail-then-pass').
+    const dualTriggerCandidate: ReviewCandidate = {
+      ...makeCandidate({mergeSha: sha(99)}),
+      ciFix: {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-bad\n+good',
+      },
+    }
+    const reviewHeavy = Array.from({length: 8}, (_, i) => makeCandidate({mergeSha: sha(i)}))
+    const ordered = [...reviewHeavy, dualTriggerCandidate] // dual-trigger sorts LAST
+
+    // #when selecting with cap=5, floor=1
+    const selected = selectWithCiFixFloor(ordered, 5, 1)
+
+    // #then the dual-trigger candidate IS included (hasCiFixEvidence is true for it)
+    expect(selected).toHaveLength(5)
+    expect(selected).toContain(dualTriggerCandidate)
+    // #then 4 review-heavy candidates fill the rest (pure review, no ciFix)
+    const pureReviewSelected = selected.filter(
+      c => c.trigger === 'review-heavy' && !('ciFix' in c && c.ciFix !== undefined),
+    )
+    expect(pureReviewSelected).toHaveLength(4)
+  })
+
+  it('FLOOR FIX: a ReviewCandidate with empty ciFix.diffExcerpt is NOT reserved (evidence cleared)', () => {
+    // #given a review candidate with a ciFix field but empty diffExcerpt (evidence cleared)
+    const clearedCiFix: ReviewCandidate = {
+      ...makeCandidate({mergeSha: sha(99)}),
+      ciFix: {
+        failingCheckName: 'CI / test',
+        diffExcerpt: '', // cleared — not substantive
+      },
+    }
+    const reviewHeavy = Array.from({length: 8}, (_, i) => makeCandidate({mergeSha: sha(i)}))
+    const ordered = [...reviewHeavy, clearedCiFix]
+
+    // #when selecting with cap=5, floor=1
+    const selected = selectWithCiFixFloor(ordered, 5, 1)
+
+    // #then the cleared-ciFix candidate is NOT reserved (hasCiFixEvidence is false)
+    // It may or may not be included depending on position, but NOT via the floor reservation
+    // With 8 review-heavy + 1 cleared-ciFix, cap=5 → only the first 5 review-heavy are taken
+    expect(selected).not.toContain(clearedCiFix)
+  })
+
+  it('FLOOR FIX: buildCandidateDigest end-to-end — dual-trigger candidate is reserved by the floor', () => {
+    // #given the production starvation scenario end-to-end:
+    // - A same-SHA review+ci-fix pair (will be collapsed to a dual-trigger ReviewCandidate)
+    // - Enough pure review-heavy candidates to fill the cap without the floor
+    const dualSha = 'dualfloor1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const ciFixForDual = makeCiFixCandidate({
+      mergeSha: dualSha,
+      failingCheckName: 'CI / test',
+      diffExcerpt: '--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-bad\n+good',
+    })
+    const reviewForDual = makeCandidate({mergeSha: dualSha, reviewRounds: 2})
+
+    // 8 pure review-heavy candidates that would fill the cap without the floor
+    const pureReview = Array.from({length: 8}, (_, i) =>
+      makeCandidate({mergeSha: `purereview${i}${'0'.repeat(30 - String(i).length)}`}),
+    )
+
+    // ci-fix listed first, then review, then pure review (ci-fix sorts last in the list)
+    const input = makeDigestInput({
+      mergedPrs: [...pureReview, ciFixForDual, reviewForDual],
+      maxLearnings: 5,
+    })
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then exactly 5 candidates are emitted (cap)
+    expect(result.candidates).toHaveLength(5)
+
+    // #then the dual-trigger candidate IS in the output (floor reserved it)
+    const dualCandidate = result.candidates.find(c => c.mergeSha === dualSha)
+    expect(dualCandidate).toBeDefined()
+    expect(dualCandidate?.trigger).toBe('review-heavy')
+    if (dualCandidate?.trigger === 'review-heavy') {
+      // #then the ci-fix evidence is attached
+      expect(dualCandidate.ciFix).toBeDefined()
+      expect(dualCandidate.ciFix?.failingCheckName).toBe('CI / test')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit 1: edge cases — same-trigger duplicates and freshness order
+// ---------------------------------------------------------------------------
+
+describe('buildCandidateDigest — dual-trigger edge cases', () => {
+  it('EDGE: two review-heavy records with same SHA → first-seen wins (existing behavior unchanged)', () => {
+    // #given two review-heavy candidates with the SAME SHA
+    const sha = 'tworev001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const review1 = makeCandidate({mergeSha: sha, reviewRounds: 2})
+    const review2 = makeCandidate({mergeSha: sha, reviewRounds: 5}) // different rounds
+    const input = makeDigestInput({mergedPrs: [review1, review2]})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then exactly one candidate is emitted (first-seen wins for same-trigger)
+    expect(result.candidates).toHaveLength(1)
+    expect(result.candidates[0]?.trigger).toBe('review-heavy')
+    // #then no ciFix is attached (no ci-fix counterpart)
+    if (result.candidates[0]?.trigger === 'review-heavy') {
+      expect(result.candidates[0].ciFix).toBeUndefined()
+    }
+  })
+
+  it('EDGE: two ci-fix records with same SHA → first-seen wins (existing behavior unchanged)', () => {
+    // #given two ci-fix candidates with the SAME SHA
+    const sha = 'twocifix1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const cifix1 = makeCiFixCandidate({mergeSha: sha, failingCheckName: 'CI / test'})
+    const cifix2 = makeCiFixCandidate({mergeSha: sha, failingCheckName: 'CI / lint'})
+    const input = makeDigestInput({mergedPrs: [cifix1, cifix2]})
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then exactly one candidate is emitted (first-seen wins for same-trigger)
+    expect(result.candidates).toHaveLength(1)
+    expect(result.candidates[0]?.trigger).toBe('ci-fail-then-pass')
+    // #then the first ci-fix candidate's check name is used
+    if (result.candidates[0]?.trigger === 'ci-fail-then-pass') {
+      expect(result.candidates[0].failingCheckName).toBe('CI / test')
+    }
+  })
+
+  it('ORDER: dual-trigger candidate keeps its review candidate position in the output', () => {
+    // #given a mix of candidates where the dual-trigger review candidate is at position N
+    // The review candidate's position in the output should be preserved (freshness order).
+    const sha1 = 'order001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+    const sha2 = 'order002aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1' // dual-trigger SHA
+    const sha3 = 'order003aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+
+    const review1 = makeCandidate({mergeSha: sha1})
+    const reviewForDual = makeCandidate({mergeSha: sha2, reviewRounds: 3})
+    const ciFixForDual = makeCiFixCandidate({mergeSha: sha2})
+    const review3 = makeCandidate({mergeSha: sha3})
+
+    // Input order: review1, reviewForDual, ciFixForDual, review3
+    // The dual-trigger review candidate is at position 1 (0-indexed)
+    const input = makeDigestInput({
+      mergedPrs: [review1, reviewForDual, ciFixForDual, review3],
+      maxLearnings: 10,
+    })
+
+    // #when building the digest
+    const result = buildCandidateDigest(input)
+
+    // #then 3 candidates are emitted (review1, dual-trigger, review3)
+    expect(result.candidates).toHaveLength(3)
+
+    // #then the dual-trigger candidate is at position 1 (its original review position)
+    expect(result.candidates[1]?.mergeSha).toBe(sha2)
+    expect(result.candidates[1]?.trigger).toBe('review-heavy')
+    if (result.candidates[1]?.trigger === 'review-heavy') {
+      expect(result.candidates[1].ciFix).toBeDefined()
+    }
+
+    // #then the overall order is preserved: sha1, sha2 (dual), sha3
+    expect(result.candidates.map(c => c.mergeSha)).toEqual([sha1, sha2, sha3])
   })
 })
 

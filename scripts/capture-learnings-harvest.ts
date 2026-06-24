@@ -138,6 +138,28 @@ export interface CandidateSignals {
 export type Candidate = ReviewCandidate | CiFixCandidate
 
 /**
+ * Attached ci-fix evidence on a ReviewCandidate that also matched the ci-fail-then-pass
+ * trigger. Reuses the same field names as CiFixCandidate's evidence fields for consistency.
+ * Present only when the same PR matched both triggers (within-run dedup attaches it).
+ * A non-empty `diffExcerpt` means the evidence is substantive; an empty diffExcerpt means
+ * the evidence was cleared (e.g. by the privacy scan in Unit 2).
+ */
+export interface CiFixEvidence {
+  /** Name of the check that transitioned failed → passed. */
+  failingCheckName: string
+  /**
+   * Diff excerpt between lastFailingSha and firstPassingSha, truncated to
+   * MAX_EXCERPT_CHARS_PER_CANDIDATE. Empty string when evidence was cleared.
+   */
+  diffExcerpt: string
+  /**
+   * Best-effort excerpt from the failing job log.
+   * '[failure log purged or unavailable]' when the log could not be fetched.
+   */
+  logExcerpt?: string
+}
+
+/**
  * A candidate sourced from a PR with multiple Fro Bot review rounds.
  *
  * `reviewExcerpts` carries privacy-scanned review prose (review bodies + line-level thread
@@ -145,6 +167,10 @@ export type Candidate = ReviewCandidate | CiFixCandidate
  * bounded to MAX_EXCERPT_CHARS_PER_CANDIDATE. Empty when enrichment was blocked by the
  * upstream privacy scan or when no prose was available. Array form gives the agent clearer
  * structure than a single concatenated string.
+ *
+ * `ciFix` is present when the same PR also matched the ci-fail-then-pass trigger. The
+ * within-run dedup attaches the ci-fix evidence to the surviving ReviewCandidate instead
+ * of dropping it, so one proposal carries both signals (R1, R2).
  */
 export interface ReviewCandidate {
   trigger: 'review-heavy'
@@ -164,6 +190,13 @@ export interface ReviewCandidate {
    * the enriched content or when no non-empty prose was available.
    */
   reviewExcerpts: string[]
+  /**
+   * Attached ci-fix evidence when this PR also matched the ci-fail-then-pass trigger.
+   * Populated by within-run dedup when a same-SHA dual-trigger pair is collapsed.
+   * Absent for pure review-heavy PRs. A non-empty diffExcerpt means the evidence is
+   * substantive; hasCiFixEvidence() checks this boundary precisely.
+   */
+  ciFix?: CiFixEvidence
 }
 
 /**
@@ -305,8 +338,8 @@ export function parseMergeShaMarker(body: string): string | null {
  * Build the opaque candidate digest from injected inputs.
  *
  * Steps:
- * 0. Within-run dedup: collapse to one candidate per mergeSha (a PR matching both triggers
- *    appears once per source); review-heavy takes precedence (R4).
+ * 0. Within-run dedup: collapse to one candidate per mergeSha. A PR matching both triggers
+ *    keeps its review-heavy candidate with the ci-fix evidence attached (one proposal per SHA).
  * 1. Drop candidates whose mergeSha is already in openedLearningShas (seen-set dedup).
  * 2. Drop candidates whose signals strongly overlap an existing solutions doc (solutions dedup).
  * 3. Cap to maxLearnings.
@@ -318,6 +351,26 @@ export function parseMergeShaMarker(body: string): string | null {
  *
  * No I/O. Fully unit-testable. The private token set is injected so the scan is pure.
  */
+/**
+ * Returns true when a candidate carries ci-fix evidence that should count toward the
+ * `selectWithCiFixFloor` reservation.
+ *
+ * A candidate "carries" ci-fix evidence when:
+ * - It is a pure CiFixCandidate (trigger === 'ci-fail-then-pass'), OR
+ * - It is a ReviewCandidate with a `ciFix` field whose `diffExcerpt` is non-empty.
+ *
+ * An empty-but-present `ciFix` (diffExcerpt === '') does NOT count — that means the
+ * evidence was cleared (e.g. by the privacy scan) and there is nothing substantive to
+ * reserve a slot for.
+ */
+export function hasCiFixEvidence(candidate: Candidate): boolean {
+  if (candidate.trigger === 'ci-fail-then-pass') return true
+  if (candidate.trigger === 'review-heavy' && candidate.ciFix !== undefined) {
+    return candidate.ciFix.diffExcerpt !== ''
+  }
+  return false
+}
+
 /**
  * Select up to `cap` candidates from `ordered` (freshness-ordered), guaranteeing that at least
  * `floor` ci-fail-then-pass candidates are included when that many exist.
@@ -338,7 +391,7 @@ export function selectWithCiFixFloor(ordered: Candidate[], cap: number, floor: n
   if (cap <= 0) return []
   if (floor <= 0) return ordered.slice(0, cap)
 
-  const ciFix = ordered.filter(c => c.trigger === 'ci-fail-then-pass')
+  const ciFix = ordered.filter(c => hasCiFixEvidence(c))
   if (ciFix.length === 0) return ordered.slice(0, cap)
 
   // Reserve the freshest ci-fix candidates (bounded by floor and cap), then fill the rest of
@@ -356,16 +409,54 @@ export function selectWithCiFixFloor(ordered: Candidate[], cap: number, floor: n
 export function buildCandidateDigest(input: BuildCandidateDigestInput): CandidateDigest {
   // Within-run dedup: a PR that matched more than one trigger (e.g. review-heavy AND
   // ci-fail-then-pass) appears once per source in mergedPrs. Collapse to one candidate per
-  // mergeSha so a single PR yields a single learning-proposal (R4). Precedence: review-heavy
-  // wins — review prose is the richer signal when a PR matched both.
+  // mergeSha so a single PR yields a single learning-proposal (R4).
+  //
+  // When a SHA has BOTH a review-heavy and a ci-fail-then-pass record, the ReviewCandidate
+  // SURVIVES with the CiFixCandidate's evidence ATTACHED to its `ciFix` field (R2). This
+  // preserves the richest signal (review prose) while keeping the ci-fix evidence so the
+  // floor can reserve a slot for it. The review candidate keeps its original position in
+  // the output (freshness order preserved).
+  //
+  // Same-trigger duplicates (two review or two ci-fix same SHA) keep existing behavior:
+  // first-seen wins (the Map only updates when review-heavy takes precedence over ci-fix).
+  // Unique SHAs are unchanged.
   const byMergeSha = new Map<string, Candidate>()
+  // Track ci-fix candidates separately so we can attach their evidence to review candidates.
+  const ciFixBySha = new Map<string, CiFixCandidate>()
+
   for (const pr of input.mergedPrs) {
+    // Record the first ci-fix candidate per SHA for potential attachment to a review candidate.
+    if (pr.trigger === 'ci-fail-then-pass' && !ciFixBySha.has(pr.mergeSha)) {
+      ciFixBySha.set(pr.mergeSha, pr)
+    }
+
     const existing = byMergeSha.get(pr.mergeSha)
     if (existing === undefined || (existing.trigger !== 'review-heavy' && pr.trigger === 'review-heavy')) {
       byMergeSha.set(pr.mergeSha, pr)
     }
   }
-  const deduped = [...byMergeSha.values()]
+
+  // Attach ci-fix evidence to any review-heavy candidate that has a matching ci-fix record.
+  const deduped: Candidate[] = []
+  for (const candidate of byMergeSha.values()) {
+    if (candidate.trigger === 'review-heavy') {
+      const ciFixRecord = ciFixBySha.get(candidate.mergeSha)
+      if (ciFixRecord === undefined) {
+        // Pure review-heavy candidate — no ci-fix counterpart
+        deduped.push(candidate)
+      } else {
+        // Attach the ci-fix evidence to the surviving review candidate (R2)
+        const ciFix: CiFixEvidence = {
+          failingCheckName: ciFixRecord.failingCheckName,
+          diffExcerpt: ciFixRecord.diffExcerpt,
+          ...(ciFixRecord.logExcerpt === undefined ? {} : {logExcerpt: ciFixRecord.logExcerpt}),
+        }
+        deduped.push({...candidate, ciFix})
+      }
+    } else {
+      deduped.push(candidate)
+    }
+  }
 
   // drop already-proposed merge SHAs
   const afterSeenDedup = deduped.filter(pr => !input.openedLearningShas.has(pr.mergeSha))
