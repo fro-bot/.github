@@ -115,3 +115,13 @@ Bad split:
 - reusable tracker calls inherit every repository secret
 - tracker runs have no concurrency group
 - daily-digest announce steps run during custom tracker prompts
+
+## Related
+
+- [Safe workflow consolidation: trace every invariant and caller](workflow-consolidation-invariant-trace-2026-06-24.md) —
+  when collapsing two scheduled workflows into one, trace each safety invariant and remaining
+  caller explicitly; the concurrency-group and dispatch-entry-point patterns here are the
+  invariants that consolidation must preserve.
+- [Safely deleting a superseded workflow or signal path](safe-superseded-workflow-removal-2026-06-24.md) —
+  the inverse lesson: before retiring a duplicate execution path, confirm no remaining callers,
+  full replacement coverage, shared dependencies preserved, and no dangling declarations.

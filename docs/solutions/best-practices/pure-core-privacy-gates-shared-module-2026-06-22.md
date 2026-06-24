@@ -118,7 +118,7 @@ it('mutation proof: digest assembly drops private prose', () => {
 
 ## Related
 
-- [Privacy-gate promotion leak prevention](../best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md) — the trusted-chokepoint and fail-closed-resolution patterns this gate extends into the pure core.
-- [Wiki page structured attribution](../best-practices/wiki-page-structured-attribution-2026-06-04.md) — the present-but-empty vs absent distinction recurs here; encode it as a habit.
+- [Privacy-gate promotion leak prevention](../best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md) — the trusted-chokepoint and fail-closed-resolution patterns this gate extends into the pure core. Its "See also — privacy-gate correctness patterns" section indexes the full cluster of gate docs, including this one.
+- [Wiki page structured attribution](../best-practices/wiki-page-structured-attribution-2026-06-04.md) — the present-but-empty vs absent distinction recurs here; encode it as a habit. The three-state frontmatter read (absent / present-but-malformed / present-with-URLs) is the same discipline applied to structured provenance.
 - [Survey workflow-side privacy gate](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md) — verify privacy inside the trusted workflow before any public side effect.
 - [Private repo dispatch visibility gate](../security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md) — the fail-closed predicate and opaque-identifier redaction this gate builds on.

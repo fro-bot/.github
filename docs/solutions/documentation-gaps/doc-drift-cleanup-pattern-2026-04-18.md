@@ -167,3 +167,4 @@ git log --oneline -15                      # recent-change context
 
 - `.agents/skills/generating-project-docs/SKILL.md` — the skill this pattern operationalizes
 - `docs/solutions/runtime-errors/octokit-invitation-method-names-2026-04-17.md` — sibling discipline doc
+- `docs/solutions/workflow-issues/safe-superseded-workflow-removal-2026-06-24.md` — the workflow-file analog: retiring a superseded workflow requires the same "no remaining callers, shared dependencies preserved" confirmation before deletion.
