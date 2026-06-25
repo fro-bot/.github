@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-05-07
+updated: 2026-06-25
 tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll, astro, starlight]
 related:
   - marcusrbrown--mrbro-dev
@@ -70,6 +70,8 @@ The pattern used in [[marcusrbrown--systematic]] → [[fro-bot--systematic]]:
 6. `.well-known/ocx.json` serves the OCX component registry, enabling `ocx` CLI to install skills/agents from the docs URL
 
 This cross-repo pattern separates the docs deployment surface from the source repo, keeping the source repo's Pages available for other uses and giving the docs site its own URL under the `fro-bot` org.
+
+**Footgun — config files on a build-output branch.** On 2026-06-24, [[fro-bot--systematic]] merged a `.github/renovate.json5` directly onto `gh-pages` (its default, build-output branch). Because every other commit on that branch is a `fro-bot[bot]` "Deploy docs from ..." overwrite, hand-authored config living there is fragile: the next docs build can clobber or orphan it unless the source-repo build pipeline explicitly preserves the path. Onboarding a build-output-only repo into Renovate also adds operational surface (and, in this case, a config-error issue that halted Renovate) without a dependency target to update — there is no `package.json` on a pure static-output branch. When a deploy-target repo is one branch of build artifacts, repo automation that assumes a normal source branch tends to mis-fire.
 
 ## Performance Monitoring
 

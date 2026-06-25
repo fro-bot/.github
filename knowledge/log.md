@@ -2396,3 +2396,26 @@ Sources: https://github.com/fro-bot/agent (SHA 20e9f346f2129f28800029b47489cd14b
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-06-25 00:00] ingest | repo:fro-bot/systematic
+
+Fifth survey of `fro-bot/systematic` (gh-pages HEAD `e75ddeb`, last push 2026-06-24; prior surveyed SHA `28400b1` on 2026-06-14). Confirmed public (`isPrivate: false`) before ingest. Reads limited to repo metadata, branch list, open issue/PR lists, dynamic-workflow list, and `gh-pages` directory listings + a few served files (`.well-known/ocx.json`, `index.json` registry, `schemas/{latest,v2}/systematic-config.schema.json`, `.github/renovate.json5`, commit history) per the untrusted-input constraint. Updated repo page `fro-bot--systematic.md` (frontmatter source/updated/tags, Overview last-push + open-issues, registry-stable note, schema-stable note, Branches table, Open Issues table, Renovate section rewrite, relationship-table Renovate row, two new deploy rows, survey-history row), topic page `github-pages.md` (new "config-on-build-branch footgun" note under the cross-repo Starlight pattern + frontmatter `updated`), and `index.md` (repo line + github-pages topic line).
+
+Material deltas since the 2026-06-14 survey (additive; one explicit contradiction of a prior recorded fact, flagged):
+
+- **Structural shift on the deploy branch.** Renovate PR #2 merged `.github/renovate.json5` directly onto `gh-pages` (commit `e75ddeb`, 2026-06-24) and the `renovate/configure` branch was deleted. This is the first non-build, human-intent commit ever landed on the deploy branch — HEAD is no longer docs build output. Recorded as a github-pages footgun: config on a build-output branch is fragile (next build can clobber/orphan it) and onboarding a static-output-only repo into Renovate adds operational surface with no dependency target.
+- **CONTRADICTION (preset source swapped).** The 2026-06-14 survey recorded the unmerged branch extending `github>bfra-me/renovate-config`. The version that actually merged extends `github>fro-bot/renovate-config`. Both versions noted with dates in the repo page.
+- **Renovate is wired but broken.** The merged preset fails to resolve; Renovate opened issue #3 "Action Required: Fix Renovate Configuration" (2026-06-24), halting all PRs. `fro-bot/renovate-config` is not a tracked wiki page and may not exist / lack a default config; the tracked analogue is [[marcusrbrown--renovate-config]].
+- **Registry steady.** `index.json` unchanged at v2.32.0 / 104 components (51 agents, 48 skills, 2 bundles, 2 profiles, 1 plugin) — still matches the latest source release (v2.32.0, published 2026-06-15). `.well-known/ocx.json` unchanged.
+- **Schemas byte-stable.** `latest` and `v2` still identical: draft-07, `$id` hard-pinned at the v2 URL, no top-level `title`, same `description` label, same 7-property set. No new schema changes this interval.
+- **Deploy cadence cooled** to 2 deploys (gh-pages `d0dfd32` 2026-06-14, `1821a92` 2026-06-15) clustered on the v2.32.0 release window, down from the early-June multi-per-day burst.
+
+Still no Fro Bot agent workflow (only GitHub `pages-build-deployment` + `Dependency Graph` dynamic workflows) — expected for a build-output-only repo; the source repo [[marcusrbrown--systematic]] carries full Fro Bot integration. No onboarding follow-up draft needed. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/fro-bot/systematic (gh-pages SHA e75ddeb)
+
+## [2026-06-25 08:37] ingest | repo:fro-bot/systematic
+
+Surveyed fro-bot/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/systematic
