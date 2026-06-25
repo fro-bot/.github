@@ -2397,25 +2397,25 @@ Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
 
-## [2026-06-25 00:00] ingest | repo:fro-bot/systematic
+## [2026-06-25 08:36] ingest | marcusrbrown/renovate-config
 
-Fifth survey of `fro-bot/systematic` (gh-pages HEAD `e75ddeb`, last push 2026-06-24; prior surveyed SHA `28400b1` on 2026-06-14). Confirmed public (`isPrivate: false`) before ingest. Reads limited to repo metadata, branch list, open issue/PR lists, dynamic-workflow list, and `gh-pages` directory listings + a few served files (`.well-known/ocx.json`, `index.json` registry, `schemas/{latest,v2}/systematic-config.schema.json`, `.github/renovate.json5`, commit history) per the untrusted-input constraint. Updated repo page `fro-bot--systematic.md` (frontmatter source/updated/tags, Overview last-push + open-issues, registry-stable note, schema-stable note, Branches table, Open Issues table, Renovate section rewrite, relationship-table Renovate row, two new deploy rows, survey-history row), topic page `github-pages.md` (new "config-on-build-branch footgun" note under the cross-repo Starlight pattern + frontmatter `updated`), and `index.md` (repo line + github-pages topic line).
+Fifth survey of `marcusrbrown/renovate-config` (HEAD `561289f610aa17406424b945395de9d71c1dc69f`, last push 2026-06-25; prior surveyed SHA `42ee3cd` @ 2026-06-14). Reads limited per the untrusted-input constraint to repo metadata, latest release, `.github/workflows` directory listing, manifests (`package.json`, `.node-version`), the three preset files (`default.json`, `onboarding.json`, `archived-repository.json`), self-referential `.github/renovate.json5`, the `fro-bot.yaml` / `renovate.yaml` workflow sources, and the open issue/PR lists.
 
-Material deltas since the 2026-06-14 survey (additive; one explicit contradiction of a prior recorded fact, flagged):
+Dependency-churn survey — **no preset policy change**. `default.json` extends list, packageRules (semantic-release grouping, own-project + source-URL fast-track, `>=5.0.0` floor, 0.x ungrouping), schedule, and the onboarding/archived presets are all byte-identical in shape; the bfra-me base pin holds at `#5.2.3`. Latest release unchanged at `5.2.3`. `renovate.json5` custom regex manager unchanged.
 
-- **Structural shift on the deploy branch.** Renovate PR #2 merged `.github/renovate.json5` directly onto `gh-pages` (commit `e75ddeb`, 2026-06-24) and the `renovate/configure` branch was deleted. This is the first non-build, human-intent commit ever landed on the deploy branch — HEAD is no longer docs build output. Recorded as a github-pages footgun: config on a build-output branch is fragile (next build can clobber/orphan it) and onboarding a static-output-only repo into Renovate adds operational surface with no dependency target.
-- **CONTRADICTION (preset source swapped).** The 2026-06-14 survey recorded the unmerged branch extending `github>bfra-me/renovate-config`. The version that actually merged extends `github>fro-bot/renovate-config`. Both versions noted with dates in the repo page.
-- **Renovate is wired but broken.** The merged preset fails to resolve; Renovate opened issue #3 "Action Required: Fix Renovate Configuration" (2026-06-24), halting all PRs. `fro-bot/renovate-config` is not a tracked wiki page and may not exist / lack a default config; the tracked analogue is [[marcusrbrown--renovate-config]].
-- **Registry steady.** `index.json` unchanged at v2.32.0 / 104 components (51 agents, 48 skills, 2 bundles, 2 profiles, 1 plugin) — still matches the latest source release (v2.32.0, published 2026-06-15). `.well-known/ocx.json` unchanged.
-- **Schemas byte-stable.** `latest` and `v2` still identical: draft-07, `$id` hard-pinned at the v2 URL, no top-level `title`, same `description` label, same 7-property set. No new schema changes this interval.
-- **Deploy cadence cooled** to 2 deploys (gh-pages `d0dfd32` 2026-06-14, `1821a92` 2026-06-15) clustered on the v2.32.0 release window, down from the early-June multi-per-day burst.
+Deltas (additive):
 
-Still no Fro Bot agent workflow (only GitHub `pages-build-deployment` + `Dependency Graph` dynamic workflows) — expected for a build-output-only repo; the source repo [[marcusrbrown--systematic]] carries full Fro Bot integration. No onboarding follow-up draft needed. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
+- **Fro Bot agent v0.63.0 → v0.76.2** (`69aedbc`). Crosses the agent's pnpm→Bun migration and gateway operator-web-surface shifts recorded on `fro-bot--agent` — those are runtime-internal to the agent; this repo's workflow invocation surface is unaffected.
+- **Action/tooling bumps:** `pnpm/action-setup` v6.0.8 → v6.0.9 (`0ebf471`); `actions/checkout` v6.0.3 / `actions/setup-node` v6.4.0 unchanged; bfra-me renovate reusable workflow v4.16.25 → v4.16.30 (`a2676c9`); node 24.16.0 → 24.18.0; pnpm 11.5.3 → 11.8.0; eslint 10.4.1 → 10.5.0; lint-staged 17.0.7 → 17.0.8.
+- **Public-only-invariant note:** the daily autoheal category-5 ("Cross-Project Intelligence") focus repos are now spelled out in plaintext in the workflow `SCHEDULE_PROMPT` (`marcusrbrown/yield-farmer`, `marcusrbrown/poly`). Both re-verified `PRIVATE` at survey time, so their names stay withheld from the wiki — the source leaking the slugs does not relax the invariant. The wiki records that two private repos are surveyed, not which.
+- **First star** (0 → 1). **Open PRs 1 → 2:** #1311 (picomatch@2 v4, mrbro-bot) still open + new #1402 (`fro-bot`-authored `undici` → 7.28.0, CVE-2026-9697 / CVE-2026-9678 remediation) — a live example of the category-2 security-override autoheal path; not yet merged. Open-issue set stable at 6, with the same legacy `Daily Maintenance` / `Weekly Maintenance` report issues (#1111/#1096/#1079/#1068) still lingering outside the autoheal cleanup matcher.
 
-Sources: https://github.com/fro-bot/systematic (gh-pages SHA e75ddeb)
+Fro Bot workflow present and active (`fro-bot.yaml`, six-category daily autoheal, 15:30 UTC schedule) — no onboarding follow-up draft needed. Updated repo page `marcusrbrown--renovate-config.md` (frontmatter source/updated, Repository Basics, Fro Bot Integration agent + action pins + category-5 note, renovate.yaml pin, Dev Tooling table, pnpm-overrides in-flight note, survey-history row) and the `index.md` entry. No new topic/entity/comparison pages warranted — deltas are version churn plus a source-disclosure nuance already covered by the public-only invariant. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
 
-## [2026-06-25 08:37] ingest | repo:fro-bot/systematic
+Sources: https://github.com/marcusrbrown/renovate-config (SHA 561289f610aa17406424b945395de9d71c1dc69f)
 
-Surveyed fro-bot/systematic and updated the control-plane wiki.
+## [2026-06-25 08:38] ingest | repo:marcusrbrown/renovate-config
 
-Sources: https://github.com/fro-bot/systematic
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
