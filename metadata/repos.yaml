@@ -157,12 +157,12 @@ repos:
     name: renovate-config
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-14
+    last_survey_at: 2026-06-25
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-16
+    next_survey_eligible_at: 2026-07-27
     private: false
     node_id: R_kgDOHRfvyQ
     database_id: 488107977
