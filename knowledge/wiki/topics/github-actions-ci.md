@@ -87,12 +87,23 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 - A thin orchestrator workflow dispatches all of them via `workflow_call` for manual "deploy everything" scenarios
 - Benefit: one app's deploy failure doesn't block the others; each workflow is independently triggerable
 - Validated at scale: as of 2026-05-27, infra has 3 per-app deploy workflows (`deploy-keeweb.yaml`, `deploy-cliproxy.yaml`, `deploy-gateway.yaml`) gated by a thin `deploy.yaml` orchestrator. The Discord gateway (`apps/gateway`, added #264) is the third app onboarded to this pattern
+- **Cross-repo build→deploy dispatch (observed 2026-06-26):** [[fro-bot--dashboard]]'s `release.yaml` extends this beyond a single repo — after publishing a CalVer GHCR image it best-effort `gh workflow run`s [[marcusrbrown--infra]]'s `deploy-dashboard.yaml` (passing `version` + `digest`) using a short-lived token from a dedicated infra-scoped GitHub App. The deploy job is `continue-on-error` for its whole scope, so a dispatch/secret gap warns without reddening a published release, and it only reaches infra's operator-approval gate (never bypasses it).
+
+### CalVer GHCR Release with Digest-Promote + Smoke-Test
+
+[[fro-bot--dashboard]]'s `release.yaml` (2026-06-26) is the ecosystem's reference for image-only releases decoupled from `package.json` version:
+
+- **Guard job** runs a script over the changed-file range + a base-vs-head `package.json` diff to decide whether to release at all.
+- **Candidate-then-promote:** build + push a throwaway `ci-<run>-<attempt>` tag, smoke-test it **by digest**, then `docker buildx imagetools create` to promote the *same digest* to `<calver>`/`latest`/`sha-<short>`, verifying each promoted tag resolves back to the smoke-tested digest (no rebuild between test and release).
+- **Layered smoke test:** host-port `/api/healthz` poll (catches `127.0.0.1`-bind regressions), sibling-container reachability by service name (catches a 127.0.0.1-only bind that 502s behind a reverse proxy), SPA `/manifest.webmanifest` served, and a CSP `script-src 'self'` header assertion.
+- **Identity split:** GHCR push uses `GITHUB_TOKEN` (App installation tokens cannot push GHCR); a `fro-bot[bot]` App token is reserved for the identity-sensitive tag push + GitHub Release; failure cleanup deletes the tag + partial release.
 
 ### Fro Bot Agent
 
 | Repo                          | Fro Bot Workflow         | Schedule                          |
 | ----------------------------- | ------------------------ | --------------------------------- |
 | [[fro-bot--agent]]            | Present (`fro-bot.yaml`, self-hosted) | Daily 15:30 UTC DMR, Weekly Sun 20:00 UTC wiki update |
+| [[fro-bot--dashboard]]        | Present (single-file three-mode `fro-bot.yaml`, self-hosted at agent **v0.77.0** as of 2026-06-26 — ecosystem version leader) | Daily `0 0 * * *` (midnight UTC) oversight + autohealing; modes review/triage/schedule + dispatch; checkout pins to default ref (never PR-head) to protect `FRO_BOT_PAT` |
 | [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`, agent v0.55.0) | Daily 14:30 UTC autohealing       |
 | [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]]       | Present (`fro-bot.yaml`, agent v0.44.3) | Daily 03:30 UTC autohealing (8 categories incl. CLIProxy + Gateway + cross-project + upstream modernization watch on Sundays) |

@@ -135,6 +135,7 @@ Fro Bot operator dashboard at `dashboard.fro.bot`, added post-2026-06-09 survey.
 - GitHub OAuth App login gated to a single operator (`DASHBOARD_OPERATOR_LOGIN`)
 - Rollback runbook: `docs/runbooks/dashboard-released-image-rollback.md` (revert to a prior image digest)
 - Anti-patterns: never `docker compose down -v` (destroys `caddy_data` TLS volume); never add `--build` (no on-droplet builds supported)
+- **Upstream dispatch (observed from dashboard survey 2026-06-26):** [[fro-bot--dashboard]]'s `release.yaml` now best-effort `gh workflow run`s this repo's `deploy-dashboard.yaml` (inputs `version` + `digest`) after each CalVer GHCR release, using a short-lived token from an infra-scoped GitHub App (`actions:write` on `marcusrbrown/infra`). The dispatch only reaches the operator-approval gate here; it does not bypass it. (Survey-side detail; re-confirm against infra source on the next infra survey.)
 
 #### WireGuard VPN (`apps/vpn`)
 

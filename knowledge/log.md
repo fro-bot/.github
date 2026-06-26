@@ -2420,23 +2420,27 @@ Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
 
-## [2026-06-26 08:39] ingest | repo:fro-bot/fro-bot.github.io
+## [2026-06-26 08:42] ingest | fro-bot/dashboard
 
-No-delta re-survey of `fro-bot/fro-bot.github.io` (HEAD `3e44653`, unchanged). The repo remains the org-level GitHub Pages custom-domain holder for the `fro-bot` org — a single `CNAME` blob (`fro.bot`) is the entire tree, serving the legacy build from `main:/`. HEAD frozen since the 2026-02-09 `Create CNAME` commit (140 days).
+Second survey of `fro-bot/dashboard` (HEAD `5c631a5589b405d3e7d704c08db9e455630dbabf`, last push 2026-06-26; prior surveyed SHA `2504939` @ 2026-06-15). Reads limited per the untrusted-input constraint to repo metadata, directory listings (`src/`, `web/`, `src/github`, `src/gateway`, `src/routes`, `web/src`, `.github/workflows`, `.impeccable`), README, manifests (`package.json`, `pnpm-workspace.yaml`), the three workflows (`main.yaml`, `fro-bot.yaml`, `release.yaml`), and the open issue/PR + release lists.
 
-Key findings:
+Material deltas (additive; the page now distinguishes the 2026-06-15 SSR-only description from the 2026-06-26 two-tier reality):
 
-- Pages config byte-for-byte identical to the 2026-06-15 survey: `legacy` build, source `main:/`, `custom_404: false`, `https_enforced: false`, `protected_domain_state: unverified`, cert `approved` for `fro.bot`/`www.fro.bot` expiring **2026-09-07**.
-- Issue #1 (CodeQL/Scorecard parity, opened 2026-03-09) is still the only open issue.
-- Still **no Fro Bot workflow**, no Probot Settings, no README, no license — all four follow-up recommendations carried forward unchanged. The onboarding follow-up draft PR remains warranted but out of scope for this working-dir survey.
-- Recorded the repo `description` ("Custom domain pages for @fro-bot") in the Overview table for the first time.
+- **Frontend added — React PWA SPA.** New `web/` Vite workspace: React 19.2.7 + Tailwind 4.3.1 + Vite 8.0.16 + `vite-plugin-pwa`/Workbox 7.4.x (`web/src/{sw.ts,pwa/,api/,shell/,views/,styles/}`, `@testing-library/react` + jsdom tests). README tagline shifted "monitoring dashboard" → **"Command center for Fro Bot operations."** Backend Hono `src/` is unchanged in kind but now serves a client SPA baked into the image (`web/dist/`), not just `hono/html` SSR.
+- **New `src/gateway/` operator-client layer** (`operator-client`, `operator-config`, `operator-copy`, `operator-fixtures`, `operator-server-fetch`, `operator-sse-reader`, `operator-contract/`) + `src/routes/operator.ts` — consumes [[fro-bot--agent]]'s gateway operator API (mirrors agent's "web-command spine").
+- **New `release.yaml` CalVer GHCR pipeline.** Guard (`should-release.ts` over changed-file range + package.json diff) → candidate GHCR build → smoke-test by digest (host-port `/api/healthz` + sibling-container reachability by service name + SPA `/manifest.webmanifest` + CSP `script-src 'self'` header) → digest-verified `imagetools` promote to `<calver>`/`latest`/`sha-<short>` → `fro-bot[bot]`-authored tag + GitHub Release → best-effort, `continue-on-error`, `environment: release` dispatch of [[marcusrbrown--infra]] `deploy-dashboard.yaml` (separate infra-scoped App token; only reaches the operator-approval gate). 30 releases, latest `2026.06.50`. `package.json` version stays `0.0.0` — releases are image-only.
+- **CI 4 → 6 jobs** in `main.yaml`: added **Design Check** (`impeccable detect web/src`) + **Check Workflows** (actionlint); Test now `build:web` before `vitest run`; `check-types` covers both root + `web/tsconfig.json`. New top-level `DESIGN.md`/`PRODUCT.md` + `.impeccable/config.json`.
+- **Agent pin v0.64.0 → v0.77.0** (`f51adbd`) — newest agent pin in the surveyed ecosystem (ahead of [[fro-bot--agent]]'s last-surveyed v0.76.x). Daily report issue #113 live.
+- **Tooling:** pnpm 11.5.0 → 11.8.0; eslint 10.5.0; vitest 4.1.9; `@bfra.me/eslint-config` 0.51.1 / `@bfra.me/tsconfig` 0.13.1; `pnpm-workspace.yaml` `allowBuilds` adds `@swc/core` (React SWC plugin). First star (0 → 1). Open issues #113/#112/#108/#8; no open PRs.
 
-Touched pages: `wiki/repos/fro-bot--fro-bot-github-io.md` (frontmatter `updated`/`sources`, description field, survey-history row), `index.md` (entry freshness 126→140 days). No topic/entity/comparison pages warranted — the only deltas are survey freshness and the newly recorded description. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
+Fro Bot workflow present and self-hosted (`fro-bot.yaml`, daily midnight-UTC three-mode oversight+autohealing) — no onboarding follow-up draft needed.
 
-Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+Updated pages: `wiki/repos/fro-bot--dashboard.md` (frontmatter source/updated/tags, intro, Overview table, Architecture + new SPA subsection, CI Pipeline incl. new `release.yaml`, agent pin, Dependencies, Deployment, Ecosystem deploy note, Fro Bot Workflow Status, survey-history row); `wiki/repos/marcusrbrown--infra.md` (additive dashboard→infra release-dispatch cross-ref under `apps/dashboard`, flagged for re-confirm on next infra survey); `wiki/topics/github-actions-ci.md` (cross-repo build→deploy dispatch bullet, new "CalVer GHCR Release with Digest-Promote + Smoke-Test" pattern, Fro Bot Agent table row for dashboard); `index.md` (expanded dashboard catalog entry). Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
 
-## [2026-06-26 08:40] ingest | repo:fro-bot/fro-bot.github.io
+Sources: https://github.com/fro-bot/dashboard (SHA 5c631a5589b405d3e7d704c08db9e455630dbabf)
 
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+## [2026-06-26 08:43] ingest | repo:fro-bot/dashboard
 
-Sources: https://github.com/fro-bot/fro-bot.github.io
+Surveyed fro-bot/dashboard and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/dashboard
