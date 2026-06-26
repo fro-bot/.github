@@ -2419,3 +2419,24 @@ Sources: https://github.com/marcusrbrown/renovate-config (SHA 561289f610aa174064
 Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-06-26 08:39] ingest | repo:fro-bot/fro-bot.github.io
+
+No-delta re-survey of `fro-bot/fro-bot.github.io` (HEAD `3e44653`, unchanged). The repo remains the org-level GitHub Pages custom-domain holder for the `fro-bot` org — a single `CNAME` blob (`fro.bot`) is the entire tree, serving the legacy build from `main:/`. HEAD frozen since the 2026-02-09 `Create CNAME` commit (140 days).
+
+Key findings:
+
+- Pages config byte-for-byte identical to the 2026-06-15 survey: `legacy` build, source `main:/`, `custom_404: false`, `https_enforced: false`, `protected_domain_state: unverified`, cert `approved` for `fro.bot`/`www.fro.bot` expiring **2026-09-07**.
+- Issue #1 (CodeQL/Scorecard parity, opened 2026-03-09) is still the only open issue.
+- Still **no Fro Bot workflow**, no Probot Settings, no README, no license — all four follow-up recommendations carried forward unchanged. The onboarding follow-up draft PR remains warranted but out of scope for this working-dir survey.
+- Recorded the repo `description` ("Custom domain pages for @fro-bot") in the Overview table for the first time.
+
+Touched pages: `wiki/repos/fro-bot--fro-bot-github-io.md` (frontmatter `updated`/`sources`, description field, survey-history row), `index.md` (entry freshness 126→140 days). No topic/entity/comparison pages warranted — the only deltas are survey freshness and the newly recorded description. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+
+## [2026-06-26 08:40] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
