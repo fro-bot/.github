@@ -37,7 +37,7 @@ Before writing anything, gather these from the live repo:
 | `package.json`                                        | name, description, scripts, packageManager (pnpm version), engines, repository         |
 | `README.md` (current)                                 | banner, badges, navigation, section order, voice                                       |
 | `.github/workflows/`                                  | workflow names, triggers, purposes (read each `name:` and top-level `on:` block)       |
-| `scripts/*.ts`                                        | TypeScript entrypoints, exported functions, test counts (`pnpm test --reporter=basic`) |
+| `scripts/*.ts`                                        | TypeScript entrypoints, exported functions, test summary (`pnpm test`)                 |
 | `metadata/*.yaml`                                     | metadata files in scope and their schemas                                              |
 | `knowledge/{schema,index,log}.md` + `knowledge/wiki/` | wiki coverage stats (counts of repos/topics/entities)                                  |
 | `persona/`, `branding/`, `assets/`                    | character + brand asset inventory                                                      |
@@ -101,7 +101,7 @@ For section-scoped updates: read the current document, locate the section by hea
 
 **Accuracy (always):**
 
-- Every count matches the inventory (`ls`, `find`, `pnpm test` output)
+- Every count matches the inventory (`ls`, `find`, `pnpm test` output — do not pipe or truncate test output)
 - Every workflow listed has a real `.github/workflows/*.yaml` file
 - Every script listed has a real `scripts/*.ts` file
 - Every link resolves (relative paths exist, external URLs are correct)
@@ -134,7 +134,7 @@ For section-scoped updates: read the current document, locate the section by hea
 ls .github/workflows/                      # workflow count + names
 ls scripts/*.ts | grep -v test             # production script count
 ls scripts/*.test.ts                       # test file count
-pnpm test --reporter=basic 2>&1 | tail -5  # actual test count
+pnpm test                                  # test summary (do not pipe or truncate)
 ls metadata/*.yaml                         # metadata file count
 find knowledge/wiki -name '*.md' | wc -l   # wiki page count
 git log --oneline -15                      # recent change context
