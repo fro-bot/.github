@@ -248,12 +248,12 @@ repos:
     name: fro-bot.github.io
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-06-15
+    last_survey_at: 2026-06-26
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: owned
-    next_survey_eligible_at: 2026-07-01
+    next_survey_eligible_at: 2026-07-10
     private: false
     node_id: R_kgDORLxXng
     database_id: 1153193886
