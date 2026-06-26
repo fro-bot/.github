@@ -97,7 +97,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ### Prerequisites
 
 - **Node.js** 24 (pinned in [`mise.toml`](mise.toml); native TypeScript execution, no build step)
-- **pnpm** 11.6.0 (pinned in `packageManager`)
+- **pnpm** 11.8.0 (pinned in `packageManager`)
 - **Git** for version control
 - Optional: [`mise`](https://mise.jdx.dev/) to auto-install the pinned toolchain
 
@@ -150,7 +150,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ├── .github/                # GitHub-specific configurations
 │   ├── actions/setup/      # Composite bootstrap action
 │   ├── hooks/              # Copilot governance hooks
-│   ├── workflows/          # 21 GitHub Actions workflows (see Automation)
+│   ├── workflows/          # 23 GitHub Actions workflows (see Automation)
 │   ├── copilot-instructions.md  # Canonical AI-assistant guidance
 │   ├── renovate.json5      # Dependency management config
 │   └── settings.yml        # Repository settings via Probot
@@ -194,29 +194,31 @@ This repository provides shared configurations and automation for the Fro Bot ec
 
 Quality gates:
 
-| Workflow                | Purpose                                                 | Trigger                    |
-| ----------------------- | ------------------------------------------------------- | -------------------------- |
-| **Main**                | Lint, type checking, tests, workflow validation, CodeQL | PR, push to main, dispatch |
-| **CodeQL**              | Security vulnerability analysis                         | PR, push to main, weekly   |
-| **Dependency Review**   | Block PRs introducing known-vulnerable packages         | Pull request               |
-| **Scorecard**           | OpenSSF supply-chain security posture                   | Push to main, weekly       |
-| **Copilot Setup Steps** | Environment bootstrap for GitHub Copilot coding agent   | PR/push touching the file  |
+| Workflow | Purpose | Trigger |
+| --- | --- | --- |
+| **Main** | Lint, type checking, tests, and workflow validation | PR, push to main, dispatch |
+| **CodeQL** | Security vulnerability analysis | PR, push to main, weekly |
+| **Dependency Review** | Block PRs introducing known-vulnerable packages | Pull request |
+| **Scorecard supply-chain security** | OpenSSF supply-chain security posture | Push to main, weekly |
+| **Copilot Setup Steps** | Environment bootstrap for GitHub Copilot coding agent | PR/push touching the file |
+| **Check Private Leak** | Triggered follow-up on private-leak sentinel findings | Workflow run |
+| **Private Leak Sentinel** | Scan PRs for accidental private-data exposure | Pull request |
 
 Fro Bot control plane:
 
 | Workflow | Purpose | Trigger |
 | --- | --- | --- |
-| **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Issues, PR events, schedule, dispatch |
-| **Fro Bot Autoheal** | Scheduled self-repair pass | Daily 03:30 UTC, dispatch |
+| **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Issues, PR events, schedule, dispatch, workflow_call |
+| **Capture Learnings** | Capture and commit knowledge-wiki learnings to the `data` branch | Schedule, dispatch |
 | **Poll Invitations** | Accept allowlisted collaboration invitations | Every 15 minutes, dispatch |
 | **Reconcile Repos** | Reconcile collaborator access against `metadata/repos.yaml`; dispatch surveys for stale repos; auto-stars collab/contrib repos | Daily 05:17 UTC, dispatch |
 | **Survey Repo** | Ingest a repository into the knowledge wiki; dispatched by Reconcile Repos or manually via `gh workflow run survey-repo.yaml -f node_id=<node_id>` | Dispatch (by Reconcile Repos) |
 | **Merge Data Branch** | Promote autonomous `data`-branch commits to `main` | Sunday 22:00 UTC, dispatch |
 | **Update Metadata** | Refresh `metadata/renovate.yaml` from the fro-bot org scan | Daily 04:30 UTC, dispatch |
 | **Dispatch Renovate** | Dispatch Renovate runs across repos tracked in `metadata/renovate.yaml` | Every 4 hours at `:30`, dispatch |
+| **Gateway Rollout Tracker** | Track and report on gateway rollout status across managed repos | Schedule, dispatch |
 | **Reset Survey Status** | Manually clear stale survey state for one or more tracked repos on `data` | Manual dispatch |
 | **Wiki Lint** | Lint the authoritative wiki snapshot restored from `origin/data` | Sunday 20:00 UTC, dispatch |
-| **Social Broadcast** | Reusable Discord, Bluesky, and journal fan-out for Fro Bot events | Reusable `workflow_call` |
 
 Repository management:
 
