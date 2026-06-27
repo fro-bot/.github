@@ -2444,3 +2444,28 @@ Sources: https://github.com/fro-bot/dashboard (SHA 5c631a5589b405d3e7d704c08db9e
 Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
+
+## [2026-06-27 08:10] ingest | repo:marcusrbrown/sparkle
+
+Re-surveyed marcusrbrown/sparkle (public, HEAD `81cbd99`) — eighth survey of an existing page. Reads limited to directory listings, README/manifest/workflow files per untrusted-input constraints. No structural or architecture changes; deltas are toolchain, agent-pin, and issue/PR-state movement, ingested additively.
+
+Durable findings:
+
+- **Fro Bot agent v0.65.0 → v0.79.1** (`720b721`) — fourteen more minors in eleven days; the repo keeps tracking the agent cadence aggressively. `actions/checkout` pinned `df4cb1c` v6.0.3 in the job. PR-review / maintenance / autoheal (categories 1–8) prompt structure unchanged.
+- **`.node-version` 24.16.0 → 24.18.0** — first Node minor since 24.16.0 held across four surveys. pnpm `10.34.3 → 10.34.4`. Turborepo 2.9.18, `@bfra.me/*` (eslint 0.51.1 / prettier 0.16.9 `120-proof` / tsconfig 0.13.1), TypeScript 5.9.3 — all unchanged.
+- **#1666 "Daily Maintenance Report" now OPEN** (was CLOSED at 2026-06-16). Resolves the prior flagged lifecycle question: the MAINTENANCE_PROMPT's reopen-if-closed rule matches the observed CLOSED → OPEN transition on the same issue number. Earlier closure was transient, not a bug.
+- **Open PRs 0 → 3:** #1773 (pnpm v11 `[SECURITY]`, Renovate), #1771 (grouped non-majors, Renovate), #1745 (fro-bot docs regen). Open issues 4 → 5 (the +1 is #1666 returning to open).
+- **llms.txt drift persists and widened:** still pins `pnpm@10.33.4` (now 3 patches behind actual `10.34.4`) and Node `24.x` (no longer naming concrete `.node-version`). The autoheal category-3 llms.txt-accuracy check is told to open an issue on drift but the drift survives multiple surveys — flagged to confirm the check is firing.
+- Workspace layout (`apps/`: fro-jive, moo-dang; `packages/`: config, error-testing, storybook, test-utils, theme, types, ui, utils; `docs/`, `scripts/`) unchanged. `docs-legacy/` confirmed gone. AGENTS.md and `copilot-setup-steps` still absent.
+
+Fro Bot workflow present (`fro-bot.yaml`, agent v0.79.1) — no onboarding follow-up draft needed.
+
+Updated pages: `wiki/repos/marcusrbrown--sparkle.md` (frontmatter updated-date + new source SHA `81cbd99`, toolchain-drift note, agent-version line, Active Perpetual Issues #1666 resolution, ecosystem-table agent version, new Open PRs/Issues block prepended, survey-history row); `index.md` (refreshed sparkle catalog entry). No topic/entity/comparison page changes justified — deltas were repo-local version/state movement. Working-dir delivery mode: no GitHub issue notice opened; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/sparkle (SHA 81cbd991dadc2c3b7b5de173e03edd672684a71d)
+
+## [2026-06-27 08:13] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
