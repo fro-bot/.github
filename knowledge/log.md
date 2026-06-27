@@ -2445,27 +2445,27 @@ Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
 
-## [2026-06-27 08:10] ingest | repo:marcusrbrown/sparkle
+## [2026-06-27 08:09] ingest | marcusrbrown/.dotfiles
 
-Re-surveyed marcusrbrown/sparkle (public, HEAD `81cbd99`) — eighth survey of an existing page. Reads limited to directory listings, README/manifest/workflow files per untrusted-input constraints. No structural or architecture changes; deltas are toolchain, agent-pin, and issue/PR-state movement, ingested additively.
+Survey of `marcusrbrown/.dotfiles` (HEAD `debcb8e26da6977fb80d6f531bb9e956e129e0ee`, last push 2026-06-27; prior surveyed SHA `4df0c2d` @ 2026-06-16). Reads limited per the untrusted-input constraint to repo metadata, the `4df0c2d...main` commit list, and manifest/workflow/config files only: `.config/mise/config.toml`, `.config/opencode/{opencode.json,tui.json,magic-context.jsonc,oh-my-opencode-slim.jsonc,aft.jsonc}`, `.github/workflows/{fro-bot.yaml,main.yaml}`, `.dotfiles/docs/opencode-doctor.md`, and the feature-commit patches for `.config/bash/exports`.
 
-Durable findings:
+Material deltas (additive; contradictions preserved):
 
-- **Fro Bot agent v0.65.0 → v0.79.1** (`720b721`) — fourteen more minors in eleven days; the repo keeps tracking the agent cadence aggressively. `actions/checkout` pinned `df4cb1c` v6.0.3 in the job. PR-review / maintenance / autoheal (categories 1–8) prompt structure unchanged.
-- **`.node-version` 24.16.0 → 24.18.0** — first Node minor since 24.16.0 held across four surveys. pnpm `10.34.3 → 10.34.4`. Turborepo 2.9.18, `@bfra.me/*` (eslint 0.51.1 / prettier 0.16.9 `120-proof` / tsconfig 0.13.1), TypeScript 5.9.3 — all unchanged.
-- **#1666 "Daily Maintenance Report" now OPEN** (was CLOSED at 2026-06-16). Resolves the prior flagged lifecycle question: the MAINTENANCE_PROMPT's reopen-if-closed rule matches the observed CLOSED → OPEN transition on the same issue number. Earlier closure was transient, not a bug.
-- **Open PRs 0 → 3:** #1773 (pnpm v11 `[SECURITY]`, Renovate), #1771 (grouped non-majors, Renovate), #1745 (fro-bot docs regen). Open issues 4 → 5 (the +1 is #1666 returning to open).
-- **llms.txt drift persists and widened:** still pins `pnpm@10.33.4` (now 3 patches behind actual `10.34.4`) and Node `24.x` (no longer naming concrete `.node-version`). The autoheal category-3 llms.txt-accuracy check is told to open an issue on drift but the drift survives multiple surveys — flagged to confirm the check is firing.
-- Workspace layout (`apps/`: fro-jive, moo-dang; `packages/`: config, error-testing, storybook, test-utils, theme, types, ui, utils; `docs/`, `scripts/`) unchanged. `docs-legacy/` confirmed gone. AGENTS.md and `copilot-setup-steps` still absent.
+- **License still undetectable (2nd consecutive survey).** `licenseInfo: null`, no `LICENSE`/`UNLICENSE` in tree. Confirms — does not overwrite — the 2026-06-16 contradiction vs. the earlier The-Unlicense recording. Page now treats license as unspecified across two surveys.
+- **opencode-doctor SQLite maintenance (new, #1923/#1926).** `opencode-doctor.ts` now prunes the OpenCode session DB then VACUUMs (root cause: ~13 GB `opencode.db` bloat, no auto-prune; VACUUM alone reclaims nothing). `--set-incremental-vacuum` converts `auto_vacuum=NONE → INCREMENTAL` for self-reclaiming DB. New repo docs at `.dotfiles/docs/opencode-doctor.md` + `docs/solutions/2026-06-25-opencode-sqlite-db-bloat-prune-vacuum.md`. Local-machine counterpart to the agent harness SQLite-reliability work.
+- **magic-context 0.24.1 → 0.26.0 (#1932): historian switched** `openai/gpt-5.5` → `opencode-go/deepseek-v4-flash` (gpt-5.5 demoted to first fallback); gpt-5.5[-fast] gain 10m cache TTL + 80% execute threshold; `embedding.provider: off`.
+- **AFT (#1921): `search_index` + `semantic_search` flipped true → false.** Plus OMO-slim `designer`/`fixer` standardized on `["agent-browser","impeccable","systematic:*"]` (impeccable new — same skill as dashboard's CI Design Check; fixer gained agent-browser). Models unchanged.
+- **New bash OpenCode env toggles (#1932):** `OPENCODE_DISABLE_FFF=1`, `OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true` — coherent "turn off background indexing/watching" theme with the AFT shutoff.
+- **Plugin/tool bumps:** agent v0.65.0 → v0.79.1 (14 minors; now ecosystem version leader), `@fro.bot/harness` 1.17.6 → 1.17.9-harness.bd89c818 (aligns mise pin with agent base rebase), auth 1.9.2 → 1.10.3, aft 0.39.2 → 0.39.4, magic-context 0.24.1 → 0.26.0, systematic 2.32.0 → 2.32.1; `mise-action@v4.2.0` / `MISE_VERSION 2026.6.14`; node 24.18.0, pnpm 11.9.0, deno 2.9.0, biome 2.5.1, agent-browser 0.29.1, puppeteer 25.2.0, playwright 1.61.1, copilot 1.0.64, skills 1.5.13. Stars 18 → 20, open issues 4 → 6.
 
-Fro Bot workflow present (`fro-bot.yaml`, agent v0.79.1) — no onboarding follow-up draft needed.
+**Fro Bot workflow present** (`fro-bot.yaml`, `fro-bot/agent@v0.79.1`) — no onboarding follow-up draft needed.
 
-Updated pages: `wiki/repos/marcusrbrown--sparkle.md` (frontmatter updated-date + new source SHA `81cbd99`, toolchain-drift note, agent-version line, Active Perpetual Issues #1666 resolution, ecosystem-table agent version, new Open PRs/Issues block prepended, survey-history row); `index.md` (refreshed sparkle catalog entry). No topic/entity/comparison page changes justified — deltas were repo-local version/state movement. Working-dir delivery mode: no GitHub issue notice opened; this log entry is the canonical per-survey summary.
+Updated pages: `wiki/repos/marcusrbrown--dotfiles.md` (frontmatter source/updated/tags; Overview license/stars/issues; mise tool table → `debcb8e` + harness-bump note; OpenCode plugin table + auth-steady note; aft/tui config; magic-context + OMO-slim deltas; new opencode-doctor SQLite + env-toggle subsections; Fro Bot/mise-action workflow refs; cross-refs; survey-history row); `wiki/topics/dotfiles.md` (refreshed stale `oh-my-openagent`/magic-context v0.13.0 prose to current `oh-my-opencode-slim`/0.26.0 stack + pruned-skills note; `updated` date); `index.md` (refreshed dotfiles repo catalog entry). Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
 
-Sources: https://github.com/marcusrbrown/sparkle (SHA 81cbd991dadc2c3b7b5de173e03edd672684a71d)
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA debcb8e26da6977fb80d6f531bb9e956e129e0ee)
 
-## [2026-06-27 08:13] ingest | repo:marcusrbrown/sparkle
+## [2026-06-27 08:15] ingest | repo:marcusrbrown/.dotfiles
 
-Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/sparkle
+Sources: https://github.com/marcusrbrown/.dotfiles
