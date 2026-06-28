@@ -2470,20 +2470,26 @@ Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
 
-## [2026-06-28 00:00] ingest | repo:marcusrbrown/.github
+## [2026-06-28 08:32] ingest | repo:marcusrbrown/containers
 
-Re-surveyed marcusrbrown/.github at HEAD `d516b2f` (was `1c97ca8` on 2026-06-17). Pure dependency-only churn — no structural or content changes.
+Incremental re-survey of `marcusrbrown/containers` at HEAD `289d8009` (last push 2026-06-27). Reads limited to directory listings, manifests (`pyproject.toml`, `mise.toml`, `renovate.json5`), the `fro-bot.yaml` workflow, and PR/issue listings. Repo is public — public-only invariant satisfied.
 
-- **Sole delta:** `bfra-me/.github` reusable workflows advanced v4.16.26 → v4.16.31 via PRs #383 (2026-06-18), #384 (2026-06-22), #385/#386/#387 (all 2026-06-25), now pinned at SHA `7c7e50a5` in both `renovate.yaml` and `update-repo-settings.yaml`. Three bumps on a single day account for the `pushed_at` jump to 2026-06-25T20:55Z.
-- **Unchanged:** `common-settings.yaml` (`b120b52`, last edited 2025-10-12), `.github/settings.yml`, `.prettierrc.yaml`, `main.yaml` (Prettier still 3.8.4), 16-blob file tree (no new paths). `renovate.json5` preset still `marcusrbrown/renovate-config#4.5.9` — v4.x holdout, ~10 weeks behind renovate-config's v5.2.3.
-- **Fro Bot status:** Still no `fro-bot.yaml` workflow. `fro-bot` retains `push` collaborator access but is not in the merge loop; all PRs #376–#387 are Renovate bumps auto-merged by `mrbro-bot[bot]`. Follow-up draft PR to add the canonical three-mode workflow remains open as a recommendation.
-- **Counts:** 4 stars (3→4), 2 watchers, 2 open issues (#37, #214 Dependency Dashboard), 0 open PRs.
-- **Pages touched:** `wiki/repos/marcusrbrown--github.md` (frontmatter, source, workflow SHA, Fro Bot PR range, survey-history row), `wiki/topics/probot-settings.md` (reusable-workflow version refresh), `index.md` (repo catalog entry).
+Material deltas (additive; no contradictions with prior surveys):
 
-Sources: https://github.com/marcusrbrown/.github (SHA d516b2f6ea9f8efe2fe5222d32d24d3a876032a0)
+- **pnpm crossed the v10 → v11 major boundary.** `mise.toml` now pins pnpm `11.9.0` (was 10.34.1), driven by two security PRs — #670 (`pnpm` → v11 [SECURITY]) and #671 (`pnpm` → v11.8.0 [SECURITY]) merged 2026-06-27, then rolled to 11.9.0 in the #672 non-major bundle. First major-version bump of the package manager in this repo's survey history.
+- **Fro Bot agent v0.65.0 → v0.79.1** (SHA `720b7216...`) across the daily Renovate cadence (#653–#669). Workflow structure unchanged: same 14:30 UTC schedule, same structured PR review prompt, same four autoheal categories, same single perpetual "Daily Autohealing Report" issue (#533), setup via local composite `./.github/actions/setup`.
+- **Toolchain:** Node.js 24.16.0 → 24.18.0; pnpm 11.9.0; Python 3.13 (unchanged).
+- **Python deps:** `openai` 2.41.0 → 2.44.0; rest unchanged. Coverage gate (`--cov-fail-under=35`) from PR #583 intact.
+- **Open PRs:** 4 — #673 (fro-bot: `actions/cache` v5 → v6 in setup action), #655 (fro-bot: GitHub Actions latest majors), #646 (fro-bot: FastAPI-template `python-multipart`/`pydantic-settings` security, still open), #611 (mrbro-bot pin deps). PR #647 from prior survey merged. **Open issues:** 2 (#533, #415).
 
-## [2026-06-28 08:32] ingest | repo:marcusrbrown/.github
+**Fro Bot workflow present** (`fro-bot.yaml`, `fro-bot/agent@v0.79.1`) — no onboarding follow-up draft needed.
 
-Surveyed marcusrbrown/.github and updated the control-plane wiki.
+Updated pages: `wiki/repos/marcusrbrown--containers.md` (frontmatter source/updated; agent + mise current-state refs; new survey-history row and 2026-06-28 Delta section); `index.md` (refreshed containers catalog entry). The `docker-containers` topic was reviewed — no edit warranted, as this delta is dependency/toolchain hygiene, not container-pattern knowledge. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
 
-Sources: https://github.com/marcusrbrown/.github
+Sources: https://github.com/marcusrbrown/containers (SHA 289d80097d358d919d86a94e21c08e992620fdb7)
+
+## [2026-06-28 08:35] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers
