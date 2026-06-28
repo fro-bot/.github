@@ -2469,3 +2469,21 @@ Sources: https://github.com/marcusrbrown/.dotfiles (SHA debcb8e26da6977fb80d6f53
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-06-28 00:00] ingest | repo:marcusrbrown/.github
+
+Re-surveyed marcusrbrown/.github at HEAD `d516b2f` (was `1c97ca8` on 2026-06-17). Pure dependency-only churn — no structural or content changes.
+
+- **Sole delta:** `bfra-me/.github` reusable workflows advanced v4.16.26 → v4.16.31 via PRs #383 (2026-06-18), #384 (2026-06-22), #385/#386/#387 (all 2026-06-25), now pinned at SHA `7c7e50a5` in both `renovate.yaml` and `update-repo-settings.yaml`. Three bumps on a single day account for the `pushed_at` jump to 2026-06-25T20:55Z.
+- **Unchanged:** `common-settings.yaml` (`b120b52`, last edited 2025-10-12), `.github/settings.yml`, `.prettierrc.yaml`, `main.yaml` (Prettier still 3.8.4), 16-blob file tree (no new paths). `renovate.json5` preset still `marcusrbrown/renovate-config#4.5.9` — v4.x holdout, ~10 weeks behind renovate-config's v5.2.3.
+- **Fro Bot status:** Still no `fro-bot.yaml` workflow. `fro-bot` retains `push` collaborator access but is not in the merge loop; all PRs #376–#387 are Renovate bumps auto-merged by `mrbro-bot[bot]`. Follow-up draft PR to add the canonical three-mode workflow remains open as a recommendation.
+- **Counts:** 4 stars (3→4), 2 watchers, 2 open issues (#37, #214 Dependency Dashboard), 0 open PRs.
+- **Pages touched:** `wiki/repos/marcusrbrown--github.md` (frontmatter, source, workflow SHA, Fro Bot PR range, survey-history row), `wiki/topics/probot-settings.md` (reusable-workflow version refresh), `index.md` (repo catalog entry).
+
+Sources: https://github.com/marcusrbrown/.github (SHA d516b2f6ea9f8efe2fe5222d32d24d3a876032a0)
+
+## [2026-06-28 08:32] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
