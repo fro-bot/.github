@@ -2493,3 +2493,25 @@ Sources: https://github.com/marcusrbrown/containers (SHA 289d80097d358d919d86a94
 Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
+
+## [2026-06-29 10:00] ingest | repo:marcusrbrown/esphome.life
+
+Incremental re-survey of `marcusrbrown/esphome.life` at HEAD `9e1618f` (last push 2026-06-29). Reads limited to directory listing (git tree), workflow files (`ci.yaml`, `renovate.yaml`, `update-repo-settings.yaml`), manifests (`renovate.json5`, `settings.yml`), and PR/issue listings. Repo is public — public-only invariant satisfied. Seventh survey of this repo.
+
+Material deltas (additive; no contradictions with prior surveys):
+
+- **Dependency-only delta** since `ce8df72` (2026-06-18). `bfra-me/.github` reusable workflows v4.16.27 → **v4.16.32** (SHA `bbf77bc`) via PRs #367/#370/#371 plus non-major bundles #368/#369; all authored by `mrbro-bot[bot]`.
+- **Unchanged:** Renovate preset `#5.2.3`, Prettier 3.8.4, `esphome/build-action@v7.3.0`, ESPHome version 2025.12.7 (now flat across all 7 surveys), every CI action SHA, and both Olimex ESP32-PoE-ISO Bluetooth Proxy device configs. Structure identical (only `1349f4` built in CI; `13451c` still excluded).
+- **`update-repo-settings.yaml` footgun reconfirmed** — still delegates to `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.32` (the Renovate workflow path, not a settings-specific one). Renovate keeps bumping the version in lockstep, so the daily 12:23 UTC cron runs Renovate twice rather than syncing Probot settings. Fourth consecutive survey flagging this with no patch landing; remains a follow-up-issue candidate.
+- **No Fro Bot agent workflow** (no `fro-bot.yaml`). Repo participates in the ecosystem only via Probot settings extending `fro-bot/.github:common-settings.yaml`. Onboarding draft-PR recommendation carried to a seventh survey.
+- **Open issues unchanged:** #8 (Uplift meta-issue), #26 (Renovate Dependency Dashboard), #298 (community BPPLUG note, spam-adjacent).
+
+Updated pages: `wiki/repos/marcusrbrown--esphome-life.md` (frontmatter source/updated; reusable-workflow pin + footgun count + Fro Bot survey count + last-push; new 2026-06-29 survey-history row); `wiki/entities/esphome.md` (frontmatter source/updated; quiet-pin narrative now spans 7 surveys); `index.md` (enriched esphome-life catalog entry from bare slug to current-state summary). Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/esphome.life (SHA 9e1618fb6fd30e0fb00e1548188bbd7a5a5aeda4)
+
+## [2026-06-29 10:03] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life

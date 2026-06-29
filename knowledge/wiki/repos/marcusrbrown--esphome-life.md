@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/esphome.life"
 created: 2026-04-18
-updated: 2026-06-18
+updated: 2026-06-29
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -19,6 +19,9 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: ce8df7225573e4a38b1992b05bb81cb869406e89
     accessed: 2026-06-18
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 9e1618fb6fd30e0fb00e1548188bbd7a5a5aeda4
+    accessed: 2026-06-29
 tags: [esphome, iot, esp32, bluetooth-proxy, home-assistant, firmware, github-pages]
 aliases: [esphome-life, esphome.life]
 related:
@@ -35,7 +38,7 @@ ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forke
 - **Purpose:** ESPHome device firmware definitions, CI-built and deployed to GitHub Pages
 - **Default branch:** `main`
 - **Created:** 2022-11-09
-- **Last push:** 2026-06-18
+- **Last push:** 2026-06-29
 - **Visibility:** Public
 - **License:** None specified
 - **Topics:** _(none set)_
@@ -105,9 +108,9 @@ All actions are SHA-pinned with version comments. As of 2026-06-07: `actions/che
 
 ### Reusable Workflow Pins
 
-Both `renovate.yaml` and `update-repo-settings.yaml` delegate to `bfra-me/.github` reusable workflows at v4.16.27 (SHA `3f97c92`, bumped from v4.16.23 on 2026-06-07 → v4.16.24 → v4.16.25 → v4.16.26 → v4.16.27 by 2026-06-18 via #361/#362/#365/#366). Earlier chain: v4.16.20 (2026-05-25) → v4.16.21 → v4.16.22 → v4.16.23.
+Both `renovate.yaml` and `update-repo-settings.yaml` delegate to `bfra-me/.github` reusable workflows at v4.16.32 (SHA `bbf77bc`, bumped from v4.16.27 on 2026-06-18 → v4.16.28 → v4.16.31 → v4.16.32 by 2026-06-29 via #367/#370/#371, with intermediate non-major bundles #368/#369). Earlier chain: v4.16.20 (2026-05-25) → v4.16.23 (2026-06-07) → v4.16.27 (2026-06-18).
 
-**Footgun (first noted 2026-05-26; reconfirmed 2026-06-07 and 2026-06-18):** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.27` — the same path used by the Renovate workflow, rather than a settings-specific reusable workflow. Renovate has continued to bump this version alongside the Renovate workflow across every weekly release, meaning the footgun is actively maintained by automation. The daily settings-sync cron is running Renovate twice, not syncing settings. Three consecutive surveys have flagged this without a patch landing; it remains a candidate for a follow-up issue.
+**Footgun (first noted 2026-05-26; reconfirmed 2026-06-07, 2026-06-18, and 2026-06-29):** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.32` — the same path used by the Renovate workflow, rather than a settings-specific reusable workflow. Renovate has continued to bump this version alongside the Renovate workflow across every weekly release, meaning the footgun is actively maintained by automation. The daily settings-sync cron is running Renovate twice, not syncing settings. Four consecutive surveys have flagged this without a patch landing; it remains a candidate for a follow-up issue.
 
 ### Branch Protection
 
@@ -136,7 +139,7 @@ The site content (`static/index.md`) is minimal — the upstream template placeh
 
 **No Fro Bot agent workflow detected.** The repository does not contain a `fro-bot.yaml` workflow. It does extend `fro-bot/.github:common-settings.yaml` via Probot settings, confirming it is part of the Fro Bot-managed ecosystem.
 
-A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage. This recommendation has been carried forward across six surveys (2026-04-18, 2026-04-21, 2026-04-23, 2026-05-26, 2026-06-07, 2026-06-18).
+A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage. This recommendation has been carried forward across seven surveys (2026-04-18, 2026-04-21, 2026-04-23, 2026-05-26, 2026-06-07, 2026-06-18, 2026-06-29).
 
 ## Notable Patterns
 
@@ -145,7 +148,7 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 - **Template heritage:** The repo was generated from `esphome/esphome-project-template`. Template artifacts remain in `docs/readme.md` and `static/index.md` without customization.
 - **Ethernet-only devices:** All devices use ESP32-PoE-ISO with LAN8720 Ethernet — no Wi-Fi. This is notable for a Bluetooth Proxy setup where wired backhaul provides more reliable connectivity.
 - **Git submodule consumer:** This repo is referenced as a submodule from [[marcusrbrown--ha-config]] at the `esphome/` path, linking ESPHome device firmware to the Home Assistant configuration.
-- **Renovate-only commit log:** Every commit since the prior content change (2026-03-12) has been a Renovate dependency bump. No human-authored changes to device configs, workflows, or static site in over three months. The repo is on autopilot: `mrbro-bot[bot]` authors all commits. The last human-authored commit was `2d315c2` (2026-05-14, Renovate preset v4 → 5.2.0).
+- **Renovate-only commit log:** Every commit since the prior content change (2026-03-12) has been a Renovate dependency bump. No human-authored changes to device configs, workflows, or static site in over three and a half months. The repo is on autopilot: `mrbro-bot[bot]` authors all commits. The last human-authored commit was `2d315c2` (2026-05-14, Renovate preset v4 → 5.2.0).
 - **Open issues:** 3 open — the Dependency Dashboard (Renovate, issue #26), the `Uplift esphome-life` meta-issue (#8, longstanding), and a community note about BPPLUG devices (#298, spam-adjacent — not a real bug report).
 
 ## Survey History
@@ -158,3 +161,4 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 | 2026-05-26 | `fc5adc2` | Renovate preset crossed v4 → v5 boundary (`#5.2.0`); `bfra-me/.github` v4.4.0 → v4.16.20; `esphome/build-action` v7.1.0 → v7.2.0 plus action SHA refreshes; Prettier 3.8.1 → 3.8.3. Surfaced `update-repo-settings.yaml` reusable-workflow-path footgun (calls `renovate.yaml` instead of a settings workflow). Still no Fro Bot agent workflow. |
 | 2026-06-07 | `bd5aa88` | Renovate preset bumped `#5.2.0` → `#5.2.1` (PR #360, 2026-06-06); `bfra-me/.github` v4.16.20 → v4.16.23 (three weekly bumps); `esphome/build-action` v7.2.0 → v7.3.0 (2026-05-26). Footgun in `update-repo-settings.yaml` confirmed persisting — Renovate is actively bumping the wrong workflow path alongside the real Renovate workflow. ESPHome device config unchanged (2025.12.7, Olimex Bluetooth Proxy); no Fro Bot workflow; Uplift issue #8 still open. |
 | 2026-06-18 | `ce8df72` | Dependency-only delta. `bfra-me/.github` v4.16.23 → v4.16.27 (four weekly bumps: #361/#362/#365/#366, SHA `3f97c92`); Renovate preset `#5.2.1` → `#5.2.3` (#364); Prettier 3.8.3 → 3.8.4 (#363). `esphome/build-action` (v7.3.0), ESPHome version (2025.12.7), CI action pins, and Olimex device configs all unchanged. `update-repo-settings.yaml` footgun reconfirmed (now `renovate.yaml@v4.16.27`) — three surveys flagged, no patch. No Fro Bot workflow; open issues unchanged (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). |
+| 2026-06-29 | `9e1618f` | Dependency-only delta. `bfra-me/.github` v4.16.27 → v4.16.32 (SHA `bbf77bc`; #367/#370/#371 plus non-major bundles #368/#369). Renovate preset (`#5.2.3`), Prettier (3.8.4), `esphome/build-action` (v7.3.0), ESPHome version (2025.12.7), all CI action SHAs, and Olimex device configs unchanged. `update-repo-settings.yaml` footgun reconfirmed (now `renovate.yaml@v4.16.32`) — fourth survey flagged, no patch. No Fro Bot workflow; open issues unchanged (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). |
