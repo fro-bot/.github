@@ -208,7 +208,7 @@ flowchart TD
 
 ## Implementation Units
 
-- [ ] **Unit 1: Status-claim model and detector core**
+- [x] **Unit 1: Status-claim model and detector core**
 
 **Goal:** Define the typed claim inventory and pure detection core for public status-truth claims.
 
