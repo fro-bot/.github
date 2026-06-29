@@ -462,6 +462,47 @@ describe('applyPublicOutputGate — integration: all surfaces use one gate', () 
 })
 
 // ---------------------------------------------------------------------------
+// Fix #8: MUTATION PROOF — gate adapter is load-bearing for private-token content
+// ---------------------------------------------------------------------------
+
+describe('MUTATION PROOF — applyPublicOutputGate blocks private-token content', () => {
+  it('content with a private token would be allowed absent the gate but applyPublicOutputGate blocks it', () => {
+    // MUTATION PROOF: if applyPublicOutputGate were replaced with an identity passthrough,
+    // this test would fail because the private token would leak into the output.
+    const privateToken = 'acme/secret-internal-repo'
+    const tokens = makePrivateTokens([privateToken])
+    const contentWithPrivateToken = `Status drift: PR #42 in ${privateToken} is closed (was open).`
+
+    // Without the gate (identity passthrough), this content would be returned as-is.
+    // The gate must block it.
+    const result = applyPublicOutputGate({
+      surface: 'proposal-body',
+      content: contentWithPrivateToken,
+      tokens,
+      fingerprint: 'abcdef0123456789',
+    })
+
+    // Gate blocks the content — private token must not appear in any output field
+    expect(result.allowed).toBe(false)
+    if (!result.allowed) {
+      expect(result.blockedCount).toBe(1)
+      // No sanitizedContent or blockedContent fields (private token must not leak)
+      expect('sanitizedContent' in result).toBe(false)
+      expect('blockedContent' in result).toBe(false)
+    }
+
+    // Verify the raw privacy check confirms the content is private
+    // (proving the gate wraps the correct underlying check)
+    // learningBodyHasPrivateLeak is already imported at the top of this file
+    const rawCheck = learningBodyHasPrivateLeak(
+      contentWithPrivateToken,
+      tokens.loaded ? tokens.privateTokens : new Set(),
+    )
+    expect(rawCheck).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Type contract: SafePublicOutput discriminated union
 // ---------------------------------------------------------------------------
 

@@ -1048,6 +1048,42 @@ describe('extractStatusTruthClaimsFromText', () => {
     })
     expect(claims[0]?.normalizedText).toBe('pr #42 is open')
   })
+
+  // Fix #1: Cross-repo PR/issue references must not resolve as current-repo references.
+  // When text contains "fro-bot/agent#1033 PR #1033 is open", the extractor must NOT
+  // produce a bare #1033 sourceRef that the resolver would treat as current-repo.
+  it('cross-repo PR reference: text with owner/repo prefix near claim does not produce bare #N sourceRef', () => {
+    // This text has a cross-repo context: "fro-bot/agent#1033" followed by "PR #1033 is open"
+    // The extractor currently produces bare #1033 which the resolver treats as current-repo.
+    // After fix: either the sourceRef is prefixed (fro-bot/agent#1033) or the claim is skipped.
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'See fro-bot/agent#1033 PR #1033 is open for context.',
+    })
+    // Assert directly: no bare #1033 sourceRef must be extracted
+    expect(claims.filter(c => c.sourceRef === '#1033')).toHaveLength(0)
+    // If a claim is extracted, its sourceRef must NOT be bare #1033
+    for (const claim of claims) {
+      if (claim.kind === 'pr-state' && claim.claimedState === 'open') {
+        expect(claim.sourceRef).not.toBe('#1033')
+      }
+    }
+  })
+
+  it('cross-repo issue reference: text with owner/repo prefix near claim does not produce bare #N sourceRef', () => {
+    // "fro-bot/dashboard#48 issue #48 is open" — must not produce bare #48
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'Tracked in fro-bot/dashboard#48 issue #48 is open.',
+    })
+    // Assert directly: no bare #48 sourceRef must be extracted
+    expect(claims.filter(c => c.sourceRef === '#48')).toHaveLength(0)
+    for (const claim of claims) {
+      if (claim.kind === 'issue-state' && claim.claimedState === 'open') {
+        expect(claim.sourceRef).not.toBe('#48')
+      }
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1239,18 +1275,19 @@ describe('resolveClaimLiveState', () => {
     expect(result.status).toBe('unavailable')
   })
 
-  it('plan-status resolves to current (file-parse: claimedState is live state)', async () => {
-    const octokit = makeMockDetectOctokit()
-    const claim = makeTestClaim({kind: 'plan-status', sourceRef: 'docs/plans/foo.md#status', claimedState: 'active'})
-    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
-    expect(result.status).toBe('resolved')
-    if (result.status === 'resolved') expect(result.state).toBe('active')
-  })
-
   it('rollout-tracker-status returns unavailable (Phase 1 scope cut)', async () => {
     const octokit = makeMockDetectOctokit()
     const claim = makeTestClaim({kind: 'rollout-tracker-status', sourceRef: '#3512', claimedState: 'active'})
     const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('unavailable')
+  })
+
+  // Fix #3: plan-status resolver must not return claimedState as live state
+  it('plan-status returns unavailable (not resolved with claimedState as live state)', async () => {
+    const octokit = makeMockDetectOctokit()
+    const claim = makeTestClaim({kind: 'plan-status', sourceRef: 'docs/plans/foo.md#status', claimedState: 'active'})
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    // plan-status has no real file-parse resolver yet; must be unavailable, not resolved
     expect(result.status).toBe('unavailable')
   })
 })
@@ -1319,6 +1356,35 @@ describe('Unit 4: extract → resolve → detect pipeline', () => {
     expect(findings).toHaveLength(1)
     expect(findings[0]?.verdict).toBe('unresolved')
     expect(findings[0]?.proposalEligible).toBe(false)
+  })
+
+  // Fix #1: cross-repo text that produces a bare #N must not classify as current-repo drifted
+  it('cross-repo context text: extracted claim (if any) classifies as unresolved, not drifted', async () => {
+    // Text: "fro-bot/agent#1033 PR #1033 is open" — if extractor produces bare #1033,
+    // the resolver must return unavailable (not resolved), so detect classifies as unresolved.
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'See fro-bot/agent#1033 PR #1033 is open for context.',
+    })
+
+    const octokit = makeMockDetectOctokit({prState: 'closed'}) // would drift if resolved as current-repo
+    const {resolverResults} = await resolveAllClaims({
+      claims,
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+    })
+
+    const findings = detectStatusTruthClaims(claims, resolverResults)
+    // Any pr-state finding for #1033 must be unresolved (not drifted/current)
+    for (const finding of findings) {
+      if (finding.kind === 'pr-state' && finding.verdict !== 'unsafe') {
+        // If a bare #1033 was extracted and resolved as current-repo, it would be drifted.
+        // After fix: either no claim extracted, or sourceRef is non-bare and verdict is unresolved.
+        expect(finding.verdict).not.toBe('drifted')
+        expect(finding.verdict).not.toBe('current')
+      }
+    }
   })
 
   it('detect with no claims emits clean zero counts', () => {

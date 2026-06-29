@@ -395,6 +395,36 @@ export function planStatusTruthProposalActions(
     }
   }
 
+  // 1b. Fail-closed on incomplete/failed scans.
+  // Detection uncertainty (execution-failure or scan_complete=false) blocks all
+  // public proposal actions. Findings from an incomplete scan cannot be trusted
+  // as ground truth — opening/reopening/updating proposals on uncertain data
+  // would create noise and potentially incorrect lifecycle transitions.
+  // Close-on-clear is also blocked (handled separately below via canClose).
+  if (!report.scan_complete || report.status === 'execution-failure') {
+    // Count proposal-eligible findings as blocked for operator visibility
+    const blockedCount = report.findings.filter(f => f.proposalEligible).length
+    return {
+      actions: [],
+      counts: {
+        opened: 0,
+        updated: 0,
+        reopened: 0,
+        closed: 0,
+        suppressed: 0,
+        blocked: blockedCount,
+        noAction: 0,
+        sameRunDeduplicated: 0,
+        malformedMarkers: 0,
+        versionRejected: 0,
+        closedWithoutOutcome: 0,
+        malformedOutcomeMarkers: 0,
+        usefulnessByKind: {},
+      },
+      countsByKind: {},
+    }
+  }
+
   // 2. Build lookup maps from existing issues
   const openByFingerprint = new Map<string, ExistingProposalIssue>()
   const closedByFingerprint = new Map<string, ExistingProposalIssue>()
@@ -493,6 +523,11 @@ export function planStatusTruthProposalActions(
   // Track which fingerprints are active in this report (for close-on-clear)
   const activeFingerprintsInReport = new Set<string>()
 
+  // Track fingerprints planned for open in this planner call (same-run dedup within one report).
+  // Prevents duplicate open actions when the same fingerprint appears in multiple findings
+  // (e.g. same claim text in two files) within a single report.
+  const plannedOpenFingerprints = new Set<string>(sameRunCreatedFingerprints)
+
   // 3. Process proposal-eligible findings
   for (const finding of report.findings) {
     // Skip unsafe findings — they have no identity-bearing fields and are never proposal-eligible
@@ -504,8 +539,9 @@ export function planStatusTruthProposalActions(
     const {fingerprint, kind} = finding
     activeFingerprintsInReport.add(fingerprint)
 
-    // a. Same-run dedup: skip if already created this run
-    if (sameRunCreatedFingerprints.has(fingerprint)) {
+    // a. Same-run dedup: skip if already created this run or already planned in this call.
+    // plannedOpenFingerprints starts with sameRunCreatedFingerprints and grows as we plan opens.
+    if (plannedOpenFingerprints.has(fingerprint)) {
       sameRunDeduplicated++
       continue
     }
@@ -584,6 +620,12 @@ export function planStatusTruthProposalActions(
     }
 
     // e. New finding — open a proposal after privacy gating
+    // Mark this fingerprint as seen before gating so that if the gate blocks,
+    // subsequent same-fingerprint findings in this report are still deduplicated.
+    // Without this, a second finding with the same fingerprint but a safe correction
+    // would slip through after the first was blocked, opening an unintended proposal.
+    plannedOpenFingerprints.add(fingerprint)
+
     const title = buildProposalTitle(finding)
     const body = buildProposalBody(finding, report.generated_at)
 
@@ -620,8 +662,10 @@ export function planStatusTruthProposalActions(
     incrementKindCount(kind, 'opened')
   }
 
-  // 4. Close-on-clear: only when scan is complete and not execution-failure
-  const canClose = report.status !== 'execution-failure' && report.scan_complete
+  // 4. Close-on-clear: only when scan is complete and not execution-failure.
+  // At this point we have already returned early for execution-failure and scan_complete=false,
+  // so report.scan_complete is always true here. The check is kept for clarity.
+  const canClose = report.scan_complete
   let closed = 0
 
   if (canClose) {
@@ -687,7 +731,7 @@ export interface IssueListItem {
   readonly state: string
   readonly title: string
   readonly body: string | null | undefined
-  readonly labels: readonly {readonly name?: string | null | undefined}[]
+  readonly labels: readonly (string | {readonly name?: string | null | undefined})[]
 }
 
 /**
@@ -978,8 +1022,15 @@ async function ensureStatusTruthLabels(
       confirmed.add(name)
     } catch (createError: unknown) {
       if (isApiStatus(createError, 422)) {
-        // Race with another writer — label now exists
-        confirmed.add(name)
+        // Race with another writer — label may now exist. Confirm with getLabel
+        // before adding to confirmed set. A 422 alone is not sufficient proof
+        // because it could also indicate a validation error on the label name.
+        try {
+          await octokit.rest.issues.getLabel({owner, repo, name})
+          confirmed.add(name)
+        } catch {
+          // getLabel failed after 422 — cannot confirm label exists
+        }
       }
       // Other failure: label not confirmed
     }
@@ -1180,7 +1231,7 @@ export async function executeStatusTruthProposalActions(
 // Unit 4: CLI shell for the open/proposals step
 // ---------------------------------------------------------------------------
 
-type OctokitConstructor = new (params: {auth: string}) => StatusTruthOctokitClient
+type OctokitConstructor = new (params: {auth: string; request?: {timeout?: number}}) => StatusTruthOctokitClient
 
 async function loadOctokitConstructor(): Promise<OctokitConstructor> {
   if (typeof Octokit !== 'function') {
@@ -1195,7 +1246,7 @@ async function createOctokitFromEnv(): Promise<StatusTruthOctokitClient> {
     throw new Error('status-truth-proposals: GITHUB_TOKEN is required in the environment')
   }
   const LoadedOctokit = await loadOctokitConstructor()
-  return new LoadedOctokit({auth: token})
+  return new LoadedOctokit({auth: token, request: {timeout: 10_000}})
 }
 
 /** Counts-only result written to stdout and STATUS_TRUTH_OPEN_RESULT_PATH. */
@@ -1210,6 +1261,11 @@ interface OpenResult {
    * any identity-bearing fields.
    */
   plannedCountsByKind: Readonly<Record<string, KindActionCounts>>
+  /**
+   * Aggregate planned counts from the planner (counts-only).
+   * Includes versionRejected and other planner-level counters not present in executor counts.
+   */
+  plannedCounts: Pick<ProposalCounts, 'versionRejected' | 'blocked' | 'sameRunDeduplicated'>
 }
 
 /**
@@ -1307,7 +1363,7 @@ async function runOpen(): Promise<void> {
     if (dryRunToken !== undefined && dryRunToken !== '' && owner !== '' && repo !== '') {
       try {
         const LoadedOctokit = await loadOctokitConstructor()
-        const dryRunOctokit = new LoadedOctokit({auth: dryRunToken})
+        const dryRunOctokit = new LoadedOctokit({auth: dryRunToken, request: {timeout: 10_000}})
         existingIssues = await fetchExistingProposalIssues({octokit: dryRunOctokit, owner, repo})
       } catch {
         // Non-fatal in dry-run: proceed with empty list (counts may over-estimate opens)
@@ -1367,6 +1423,11 @@ async function runOpen(): Promise<void> {
     labelGateFailed: executeResult.labelGateFailed,
     counts: executeResult.counts,
     plannedCountsByKind: planResult.countsByKind,
+    plannedCounts: {
+      versionRejected: planResult.counts.versionRejected,
+      blocked: planResult.counts.blocked,
+      sameRunDeduplicated: planResult.counts.sameRunDeduplicated,
+    },
   }
 
   const resultJson = `${JSON.stringify(result)}\n`

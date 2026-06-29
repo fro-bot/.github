@@ -48,9 +48,8 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      # Overlay metadata/ from the data branch so the privacy gate reads the
-      # authoritative private-repo list from metadata/repos.yaml.
-      # Tolerate a missing data branch (first run, fresh clone).
+      # Best-effort metadata overlay for parity with workflow consumers. The detect
+      # step does not load private-token metadata; public writes are gated in `open`.
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
@@ -145,9 +144,8 @@ jobs:
         uses: ./.github/actions/setup
 
       # Overlay metadata/ from the data branch so the privacy gate reads the
-      # authoritative private-repo list from metadata/repos.yaml.
-      # Hard-fail if the data branch exists but the overlay fails — the privacy
-      # gate cannot operate without metadata/repos.yaml (fail-closed by design).
+      # authoritative private-repo list from metadata/repos.yaml. The overlay is
+      # best-effort; `loadPrivateTokensFromDisk()` is the fail-closed chokepoint.
       - name: ⤵ Overlay metadata from data branch
         run: |
           set -euo pipefail
@@ -205,8 +203,8 @@ jobs:
             echo "| --- | --- |"
 
             if [[ -s "$result" ]]; then
-              echo "| Dry run | $(jq -r '.dryRun // false' "$result") |"
-              echo "| Label gate failed | $(jq -r '.labelGateFailed // false' "$result") |"
+              echo "| Dry run | $(jq -r 'if .dryRun then "true" else "false" end' "$result") |"
+              echo "| Label gate failed | $(jq -r 'if .labelGateFailed then "true" else "false" end' "$result") |"
               echo "| Opened | $(jq '.counts.opened // 0' "$result") |"
               echo "| Updated | $(jq '.counts.updated // 0' "$result") |"
               echo "| Reopened | $(jq '.counts.reopened // 0' "$result") |"
@@ -214,6 +212,8 @@ jobs:
               echo "| Suppressed | $(jq '.counts.suppressed // 0' "$result") |"
               echo "| Failed | $(jq '.counts.failed // 0' "$result") |"
               echo "| Same-run deduplicated | $(jq '.counts.sameRunDeduplicated // 0' "$result") |"
+              echo "| Version rejected | $(jq '.plannedCounts.versionRejected // 0' "$result") |"
+              echo "| Blocked | $(jq '(.plannedCounts.blocked // 0)' "$result") |"
 
               # Planned per-kind counts (from planner; counts-only, no paths or fingerprints)
               kind_count=$(jq '.plannedCountsByKind | length' "$result" 2>/dev/null || echo 0)

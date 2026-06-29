@@ -462,7 +462,7 @@ opens proposal issues with separated credentials.
 - The workflow can run in dry or mocked mode during tests without public writes.
 - Script-load CI can import every new production script under Node 24 strip-only execution.
 
-- [ ] **Unit 5: Accuracy signal and operator-facing proposal UX**
+- [x] **Unit 5: Accuracy signal and operator-facing proposal UX**
 
 **Goal:** Make accepted/rejected outcomes visible enough for Fro Bot to improve claim-kind quality.
 
@@ -505,7 +505,7 @@ opens proposal issues with separated credentials.
 **Verification:**
 - A reviewer can classify proposal usefulness without reading workflow logs.
 
-- [ ] **Unit 6: Bounded PR graduation gate**
+- [x] **Unit 6: Bounded PR graduation gate**
 
 **Goal:** Add the second-phase pathway for reliable claim kinds to open tightly scoped correction
 PRs after proposal signal exists.

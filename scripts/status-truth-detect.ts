@@ -409,6 +409,29 @@ function isExcludedPath(filePath: string): boolean {
 }
 
 /**
+ * Pattern to detect cross-repo references in text (owner/repo#N format).
+ * Used to suppress bare #N extraction when the same number appears in a
+ * cross-repo context nearby, preventing misresolution as current-repo.
+ */
+const CROSS_REPO_REF_PATTERN = /\b[\w.-]+\/[\w.-]+#(\d+)\b/gu
+
+/**
+ * Build a set of issue/PR numbers that appear in cross-repo references
+ * within the given text. These numbers must not be extracted as bare #N
+ * current-repo references.
+ *
+ * Example: "fro-bot/agent#1033 PR #1033 is open" → Set{'1033'}
+ */
+function extractCrossRepoNumbers(text: string): Set<string> {
+  const crossRepoNumbers = new Set<string>()
+  for (const match of text.matchAll(CROSS_REPO_REF_PATTERN)) {
+    const num = match[1]
+    if (num !== undefined) crossRepoNumbers.add(num)
+  }
+  return crossRepoNumbers
+}
+
+/**
  * Extract status-truth claims from a single document's text.
  *
  * Pure function: no I/O. Exported for testing.
@@ -421,11 +444,17 @@ function isExcludedPath(filePath: string): boolean {
  * - claimedState: the state captured in the match
  * - normalizedText: the normalized match text
  *
- * Cross-repo references are NOT filtered here — the resolver handles them.
+ * Cross-repo references: if a number appears in an owner/repo#N context
+ * anywhere in the text, bare #N claims for that number are skipped to
+ * prevent misresolution as current-repo references.
  */
 export function extractStatusTruthClaimsFromText(params: {path: string; text: string}): StatusTruthClaim[] {
   const {path, text} = params
   const claims: StatusTruthClaim[] = []
+
+  // Pre-compute numbers that appear in cross-repo references (owner/repo#N).
+  // These must not be extracted as bare current-repo #N references.
+  const crossRepoNumbers = extractCrossRepoNumbers(text)
 
   for (const def of CLAIM_KIND_DEFINITIONS) {
     // Use global flag for multi-match scanning
@@ -446,6 +475,10 @@ export function extractStatusTruthClaimsFromText(params: {path: string; text: st
         const number = match[1]
         const state = match[2]
         if (number === undefined || state === undefined) continue
+        // Skip if this number appears in a cross-repo reference in the same text.
+        // This prevents "fro-bot/agent#1033 PR #1033 is open" from producing
+        // a bare #1033 that the resolver would treat as a current-repo reference.
+        if (crossRepoNumbers.has(number)) continue
         sourceRef = `#${number}`
         claimedState = state.toLowerCase()
       } else if (def.kind === 'release-tag-state') {
@@ -569,11 +602,11 @@ export async function resolveClaimLiveState(params: {
   const {claim, octokit, owner, repo} = params
 
   if (claim.kind === 'plan-status') {
-    // plan-status is resolved via file-parse: the claimedState IS the live state
-    // (the frontmatter is the source of truth for itself). Mark as resolved with
-    // the claimed state so it shows as 'current' — drift detection for plan-status
-    // requires cross-file comparison which is out of Phase 1 scope.
-    return {status: 'resolved', state: claim.claimedState}
+    // plan-status requires cross-file comparison to detect drift, which is out of
+    // Phase 1 scope. Returning the claimedState as live state would always show
+    // 'current' and mask real drift. Mark as unavailable so the finding is
+    // classified as unresolved (honest scope-cut, same as rollout-tracker).
+    return {status: 'unavailable'}
   }
 
   if (claim.kind === 'rollout-tracker-status') {
@@ -833,7 +866,7 @@ async function runDetect(): Promise<void> {
 
     if (token !== undefined && token !== '') {
       const {Octokit} = await import('@octokit/rest')
-      const octokit = new Octokit({auth: token}) as unknown as DetectOctokitClient
+      const octokit = new Octokit({auth: token, request: {timeout: 10_000}}) as unknown as DetectOctokitClient
       const resolved = await resolveAllClaims({claims, octokit, owner, repo})
       resolverResults = resolved.resolverResults
       resolveErrors = resolved.resolveErrors

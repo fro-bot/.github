@@ -323,6 +323,40 @@ describe('planStatusTruthProposalActions', () => {
       expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
       expect(counts.sameRunDeduplicated).toBe(1)
     })
+
+    it('same-fingerprint second finding is deduplicated when first was blocked by privacy gate', () => {
+      // Two drifted findings with the same fingerprint.
+      // First has a private token in proposedCorrection → privacy gate blocks it.
+      // Second has a safe correction.
+      // Expected: zero open actions, blocked=1, sameRunDeduplicated=1.
+      // The fingerprint must be tracked as "seen" even when the first attempt is blocked,
+      // so the second attempt does not slip through as a new open.
+      const fingerprint = 'abc123def456abcd'
+      const blockedFinding = {
+        ...makeDriftedFinding(fingerprint),
+        proposedCorrection: 'pr #42 is closed (private-repo-name)',
+      }
+      const safeFinding = {
+        ...makeDriftedFinding(fingerprint),
+        path: 'docs/plans/other.md', // different path, same fingerprint
+        proposedCorrection: 'pr #42 is closed',
+      }
+      const report = makeReport({
+        findings: [blockedFinding, safeFinding],
+        counts: {total: 2, current: 0, drifted: 2, unresolved: 0, unsafe: 0, proposal_eligible: 2},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(
+        makePlanInput({report, existingIssues: [], publicOutputTokens: makeBlockingTokens()}),
+      )
+
+      // Zero open actions: first was blocked, second was deduplicated
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+      // First finding was blocked by privacy gate
+      expect(counts.blocked).toBe(1)
+      // Second finding was deduplicated (fingerprint already seen)
+      expect(counts.sameRunDeduplicated).toBe(1)
+    })
   })
 
   describe('close-on-clear', () => {
@@ -2065,5 +2099,224 @@ describe('proposal body conciseness', () => {
     // Must not contain file paths or fingerprint-like hex strings
     expect(json).not.toMatch(/docs\/plans|scripts\/|\.github\//)
     expect(json).not.toMatch(/[a-f0-9]{16,}/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fix #2: Incomplete/failed scans must not create public proposals
+// ---------------------------------------------------------------------------
+
+describe('Fix #2: execution-failure or scan_complete=false blocks all proposal actions', () => {
+  it('execution-failure report with drifted proposal-eligible findings yields zero open/reopen/update/close actions', () => {
+    const finding = makeDriftedFinding()
+    const report = makeReport({
+      status: 'execution-failure',
+      scan_complete: false,
+      failure_class: 'api-unavailable',
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+    // No open/reopen/update/close actions when scan is incomplete
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    expect(actions.filter(a => a.type === 'update-comment')).toHaveLength(0)
+    expect(actions.filter(a => a.type === 'close')).toHaveLength(0)
+    // Findings should be counted as blocked
+    expect(counts.blocked).toBeGreaterThanOrEqual(1)
+    expect(counts.opened).toBe(0)
+  })
+
+  it('scan_complete=false with drifted findings yields zero proposal actions regardless of status field', () => {
+    const finding = makeDriftedFinding()
+    // Even if status is somehow 'findings' but scan_complete is false
+    const report = makeReport({
+      status: 'findings',
+      scan_complete: false,
+      failure_class: null,
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(counts.blocked).toBeGreaterThanOrEqual(1)
+    expect(counts.opened).toBe(0)
+  })
+
+  it('versionRejected behavior is preserved when scan is also incomplete', () => {
+    const report = makeReport({
+      schema_version: 99,
+      status: 'execution-failure',
+      scan_complete: false,
+    })
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report}))
+
+    expect(actions).toHaveLength(0)
+    expect(counts.versionRejected).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fix #4: Label preflight 422 must not silently pass unless label truly exists
+// ---------------------------------------------------------------------------
+
+describe('Fix #4: createLabel 422 requires getLabel confirmation', () => {
+  it('createLabel returns 422 and follow-up getLabel fails (non-404) => label gate fails', async () => {
+    // Scenario: label does not exist (404 on first getLabel), createLabel returns 422 (race),
+    // but follow-up getLabel also fails (non-404 error) => cannot confirm => gate fails
+    const octokit = {
+      rest: {
+        issues: {
+          getLabel: async ({name}: {owner: string; repo: string; name: string}) => {
+            // First call: 404 (not found). Second call (confirmation after 422): 500 error
+            // We track call count per label name
+            const callKey = `getLabel:${name}`
+            const count = ((octokit as unknown as Record<string, number>)[callKey] ?? 0) + 1
+            ;(octokit as unknown as Record<string, number>)[callKey] = count
+            if (count === 1) {
+              // First call: label not found
+              const err = Object.assign(new Error('Not Found'), {status: 404})
+              throw err
+            }
+            // Second call (confirmation): non-404 error
+            const err = Object.assign(new Error('Server Error'), {status: 500})
+            throw err
+          },
+          createLabel: async (_params: {
+            owner: string
+            repo: string
+            name: string
+            color: string
+            description: string
+          }) => {
+            // Returns 422 (race condition — label already exists)
+            const err = Object.assign(new Error('Unprocessable'), {status: 422})
+            throw err
+          },
+          create: async () => ({data: {number: 1}}),
+          createComment: async () => ({data: {id: 1}}),
+          update: async () => ({data: {number: 1}}),
+          removeLabel: async () => ({data: []}),
+          addLabels: async () => ({data: []}),
+        },
+      },
+    } as unknown as StatusTruthOctokitClient
+
+    const actions = [
+      {
+        type: 'open' as const,
+        fingerprint: 'abc123def456abcd',
+        title: 'Status truth: pr-state drift',
+        body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+        labels: [PROPOSAL_LABEL],
+      },
+    ]
+
+    const result = await executeStatusTruthProposalActions({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      actions,
+      dryRun: false,
+      sameRunCreatedFingerprints: new Set<string>(),
+    })
+
+    // Cannot confirm label => gate fails
+    expect(result.labelGateFailed).toBe(true)
+    expect(result.counts.opened).toBe(0)
+  })
+
+  it('createLabel returns 422 and follow-up getLabel succeeds => label confirmed', async () => {
+    // Scenario: label does not exist (404 on first getLabel), createLabel returns 422 (race),
+    // follow-up getLabel succeeds => label confirmed => gate passes
+    const callCounts: Record<string, number> = {}
+    const octokit = {
+      rest: {
+        issues: {
+          getLabel: async ({name}: {owner: string; repo: string; name: string}) => {
+            callCounts[name] = (callCounts[name] ?? 0) + 1
+            if (callCounts[name] === 1) {
+              // First call: label not found
+              const err = Object.assign(new Error('Not Found'), {status: 404})
+              throw err
+            }
+            // Second call (confirmation after 422): label exists
+            return {data: {name}}
+          },
+          createLabel: async (_params: {
+            owner: string
+            repo: string
+            name: string
+            color: string
+            description: string
+          }) => {
+            // Returns 422 (race condition — label already exists)
+            const err = Object.assign(new Error('Unprocessable'), {status: 422})
+            throw err
+          },
+          create: async (params: {owner: string; repo: string; title: string; body: string; labels: string[]}) => ({
+            data: {number: 1001, title: params.title},
+          }),
+          createComment: async () => ({data: {id: 1}}),
+          update: async () => ({data: {number: 1}}),
+          removeLabel: async () => ({data: []}),
+          addLabels: async () => ({data: []}),
+        },
+      },
+    } as unknown as StatusTruthOctokitClient
+
+    const actions = [
+      {
+        type: 'open' as const,
+        fingerprint: 'abc123def456abcd',
+        title: 'Status truth: pr-state drift',
+        body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+        labels: [PROPOSAL_LABEL],
+      },
+    ]
+
+    const result = await executeStatusTruthProposalActions({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      actions,
+      dryRun: false,
+      sameRunCreatedFingerprints: new Set<string>(),
+    })
+
+    // Label confirmed via getLabel after 422 => gate passes
+    expect(result.labelGateFailed).toBe(false)
+    expect(result.counts.opened).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fix #9: Same-run duplicate proposal test
+// ---------------------------------------------------------------------------
+
+describe('Fix #9: same-run duplicate proposal deduplication', () => {
+  it('two drifted findings with same fingerprint in one report result in only one open proposal and sameRunDeduplicated=1', () => {
+    const fingerprint = 'abc123def456abcd'
+    // Two findings with the same fingerprint (e.g. same claim in two places)
+    const finding1 = makeDriftedFinding(fingerprint)
+    const finding2 = {...makeDriftedFinding(fingerprint), path: 'docs/plans/other.md'}
+    const report = makeReport({
+      findings: [finding1, finding2],
+      counts: {total: 2, current: 0, drifted: 2, unresolved: 0, unsafe: 0, proposal_eligible: 2},
+    })
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+    // Only one open action (first occurrence)
+    const openActions = actions.filter(a => a.type === 'open')
+    expect(openActions).toHaveLength(1)
+    // Second occurrence is deduplicated
+    expect(counts.sameRunDeduplicated).toBe(1)
+    expect(counts.opened).toBe(1)
   })
 })
