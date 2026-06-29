@@ -79,8 +79,10 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: status-truth-report
-          # Artifact contains only machine-safe fields and counters.
-          # No raw claim text, source snippets, private identity, or rendered bodies.
+          # Artifact is workflow-internal (detect → open). It may contain public
+          # finding fields needed by the open step (e.g. fingerprints, verdicts,
+          # proposal-eligible flags). It must not contain private identity, source
+          # snippets, API responses, credentials, or rendered proposal bodies.
           path: ${{ runner.temp }}/status-truth-report.json
           retention-days: 7
 
@@ -231,3 +233,56 @@ jobs:
               echo "| Status | (open result unavailable) |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # PRs job: Bounded correction PR graduation gate.
+  #
+  # DISABLED PLACEHOLDER: This job is intentionally a no-op. It exists to
+  # document the intended future shape of the PR graduation gate. Enabling real
+  # PR execution requires a reviewed workflow and script change — not just
+  # flipping the `if: false` condition below. The job steps are stubs only.
+  #
+  # Graduation criteria (all must be met before a real implementation is added):
+  # 1. Phase 1 proposal issues have produced accepted/rejected outcome signal.
+  # 2. A claim kind has been added to GRADUATED_CLAIM_KINDS in status-truth-prs.ts
+  #    via a reviewed repo change.
+  # 3. The workflow steps below have been replaced with a real implementation
+  #    (script invocation, artifact download, token minting, etc.) in a
+  #    separate reviewed PR — toggling `if: false` alone is not sufficient.
+  #
+  # Safety constraints (enforced in scripts/status-truth-prs.ts):
+  # - enabled=false → all candidates downgrade to proposal-only (no PR actions).
+  # - Forbidden paths (workflows, hooks, metadata, knowledge, persona, etc.) → proposal-only.
+  # - Privacy gate blocks PR metadata containing private tokens → proposal-only.
+  # - Existing PR rediscovery requires opaque digest match + bot ownership + main target.
+  # - No merge, approve, automerge, force-push, or retarget actions are possible.
+  # ---------------------------------------------------------------------------
+  prs:
+    name: Plan status-truth correction PRs (disabled placeholder)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: open
+    # Disabled: this is a no-op placeholder. Enabling real PR execution requires
+    # a reviewed workflow and script change, not just removing `if: false`.
+    if: false
+    permissions:
+      contents: read
+
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🔍 Plan status-truth correction PRs (dry-run only)
+        # Placeholder only. A future implementation must replace this step with
+        # reviewed script invocation, artifact download, and scoped credentials.
+        env:
+          STATUS_TRUTH_PRS_ENABLED: 'false'
+        run: |
+          echo "PR graduation gate: disabled (no claim kinds graduated yet)"
+          echo "PR actions planned: 0"
+          echo "Downgraded to proposal-only: 0"
