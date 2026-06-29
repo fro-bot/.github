@@ -261,6 +261,49 @@ gh workflow run survey-repo.yaml -f node_id=<node_id>
 
 The `node_id` for each tracked repo is stored in `metadata/repos.yaml` on the `data` branch.
 
+### Status-Truth Proposals
+
+The **Status Truth** workflow detects drift between documented status claims and live GitHub state, then opens fingerprinted proposal issues for review. Each proposal contains structured evidence fields (kind, claimed state, live state, proposed correction) and a hidden fingerprint marker for lifecycle tracking.
+
+**Reviewing a proposal:**
+
+Apply one of the following labels to record your decision. The loop reads these labels on the next run.
+
+| Label | Meaning | Effect on future runs |
+| --- | --- | --- |
+| `status-truth:accepted` | Drift is real; correction is valid | Non-terminal: issue may reopen if drift recurs |
+| `status-truth:rejected` | Claim was correct; finding was wrong | **Terminal:** suppresses future matching findings |
+| `status-truth:false-positive` | Finding is a systematic false alarm | **Terminal:** suppresses future matching findings |
+| `status-truth:manually-fixed` | Drift corrected by hand | Non-terminal: auto-closes when drift clears |
+| `status-truth:superseded` | A newer finding replaces this one | Non-terminal: preserved for history; may reopen if the same drift recurs |
+
+**Terminal labels** (`rejected`, `false-positive`) permanently suppress future findings with the same fingerprint. Use them when the claim kind is systematically wrong for this source, not just transiently stale.
+
+**Non-terminal labels** (`accepted`, `manually-fixed`, `superseded`) preserve history and allow the loop to reopen the issue if the same drift returns, or auto-close it when the drift clears.
+
+**Marking a proposal false-positive:**
+
+1. Open the proposal issue.
+2. Apply the `status-truth:false-positive` label.
+3. Optionally add a comment explaining why (e.g., "this PR reference is intentionally historical").
+4. Close the issue. The loop will not reopen it for the same fingerprint.
+
+**Marking a proposal accepted:**
+
+1. Apply the `status-truth:accepted` label.
+2. Make the correction (update the doc, close the PR, etc.).
+3. Close the issue or leave it open — the loop will auto-close it when the drift clears on the next complete scan.
+
+**Marking a proposal superseded:**
+
+Use `status-truth:superseded` when a newer finding or a broader correction makes this specific proposal obsolete, but you want to preserve the history.
+
+1. Apply the `status-truth:superseded` label.
+2. Optionally add a comment linking to the replacement issue or correction.
+3. Close the issue. The loop treats `superseded` as non-terminal: if the same drift fingerprint returns, the issue will be reopened.
+
+**Workflow summary:** Each run emits aggregate counts by claim kind (opened, updated, reopened, closed, suppressed). No file paths, fingerprints, or claim text appear in workflow logs — evidence lives in the proposal issues after privacy gating.
+
 ## Development
 
 ### Code Quality Standards
