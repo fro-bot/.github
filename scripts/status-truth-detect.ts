@@ -1,4 +1,6 @@
 import {createHash} from 'node:crypto'
+import {readFile, writeFile} from 'node:fs/promises'
+import process from 'node:process'
 
 export type ClaimKind = 'pr-state' | 'issue-state' | 'release-tag-state' | 'plan-status' | 'rollout-tracker-status'
 
@@ -165,6 +167,12 @@ export function normalizeClaimText(text: string): string {
   return text.trim().toLowerCase().replaceAll(/\s+/gu, ' ')
 }
 
+export function selectFailureClass(scanErrors: number, resolveErrors: number): FailureClass | null {
+  if (scanErrors > 0) return 'file-parse-error'
+  if (resolveErrors > 0) return 'api-unavailable'
+  return null
+}
+
 /**
  * Compute a stable 16-hex-char fingerprint for a claim.
  *
@@ -187,10 +195,12 @@ export function computeClaimFingerprint(
  * Replaces the claimed state with the live state in the normalized text.
  */
 function buildProposedCorrection(claim: StatusTruthClaim, liveState: string): string {
-  // Replace the claimed state token in the normalized text with the live state
+  // Replace the claimed state token in the normalized text with the live state.
+  // Use a replacement function (not a string) so that live-state values containing
+  // special replacement tokens like `$&`, `$1`, `$$` are inserted literally.
   const escaped = claim.claimedState.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`)
   const pattern = new RegExp(String.raw`\b${escaped}\b`, 'iu')
-  const corrected = claim.normalizedText.replace(pattern, liveState)
+  const corrected = claim.normalizedText.replace(pattern, () => liveState)
   // If replacement didn't change anything, append the correction explicitly
   if (corrected === claim.normalizedText) {
     return `${claim.normalizedText} [live: ${liveState}]`
@@ -370,4 +380,513 @@ export function buildStatusTruthReport(params: BuildStatusTruthReportParams): St
  */
 export function isKnownReportVersion(report: StatusTruthJsonReport): boolean {
   return report.schema_version === KNOWN_SCHEMA_VERSION && report.fingerprint_version === KNOWN_FINGERPRINT_VERSION
+}
+
+// ---------------------------------------------------------------------------
+// Unit 4: Text extraction and file scanning
+// ---------------------------------------------------------------------------
+
+/**
+ * Bounded allowlist of glob patterns for public docs paths to scan.
+ * Excludes generated/proposal state (metadata/, data branch paths).
+ */
+export const SCAN_GLOB_PATTERNS: readonly string[] = [
+  'README.md',
+  'SECURITY.md',
+  'docs/**/*.md',
+  'knowledge/**/*.md',
+  '.github/**/*.md',
+]
+
+/**
+ * Paths to exclude from scanning (generated/proposal state).
+ * These paths may contain status-truth proposal bodies that would self-reference.
+ */
+const SCAN_EXCLUDE_PATTERNS: readonly RegExp[] = [/^metadata\//u, /^\.github\/workflows\//u, /^node_modules\//u]
+
+function isExcludedPath(filePath: string): boolean {
+  return SCAN_EXCLUDE_PATTERNS.some(pattern => pattern.test(filePath))
+}
+
+/**
+ * Extract status-truth claims from a single document's text.
+ *
+ * Pure function: no I/O. Exported for testing.
+ *
+ * For each CLAIM_KIND_DEFINITIONS pattern, scans the text for all matches.
+ * Returns one StatusTruthClaim per match with:
+ * - kind: the claim kind
+ * - path: the file path (caller-provided)
+ * - sourceRef: derived from the match groups (number or tag)
+ * - claimedState: the state captured in the match
+ * - normalizedText: the normalized match text
+ *
+ * Cross-repo references are NOT filtered here — the resolver handles them.
+ */
+export function extractStatusTruthClaimsFromText(params: {path: string; text: string}): StatusTruthClaim[] {
+  const {path, text} = params
+  const claims: StatusTruthClaim[] = []
+
+  for (const def of CLAIM_KIND_DEFINITIONS) {
+    // Use global flag for multi-match scanning
+    const globalPattern = new RegExp(
+      def.pattern.source,
+      def.pattern.flags.includes('g') ? def.pattern.flags : `${def.pattern.flags}g`,
+    )
+
+    for (const match of text.matchAll(globalPattern)) {
+      const fullMatch = match[0]
+      if (fullMatch === undefined) continue
+
+      let sourceRef: string
+      let claimedState: string
+
+      if (def.kind === 'pr-state' || def.kind === 'issue-state' || def.kind === 'rollout-tracker-status') {
+        // Groups: [number, state]
+        const number = match[1]
+        const state = match[2]
+        if (number === undefined || state === undefined) continue
+        sourceRef = `#${number}`
+        claimedState = state.toLowerCase()
+      } else if (def.kind === 'release-tag-state') {
+        // Groups: [tag, state]
+        const tag = match[1]
+        const state = match[2]
+        if (tag === undefined || state === undefined) continue
+        sourceRef = `@${tag}`
+        claimedState = state.toLowerCase()
+      } else if (def.kind === 'plan-status') {
+        // Groups: [state] — frontmatter status field
+        const state = match[1]
+        if (state === undefined) continue
+        sourceRef = `${path}#status`
+        claimedState = state.toLowerCase()
+      } else {
+        continue
+      }
+
+      const normalizedText = normalizeClaimText(fullMatch)
+      claims.push({kind: def.kind, path, sourceRef, claimedState, normalizedText})
+    }
+  }
+
+  return claims
+}
+
+/**
+ * Injected file reader type for testability.
+ * Production: reads from disk. Tests: returns fixture content.
+ */
+export type FileReader = (filePath: string) => Promise<string>
+
+/**
+ * Injected file lister type for testability.
+ * Production: globs the filesystem. Tests: returns fixture paths.
+ */
+export type FileLister = () => Promise<string[]>
+
+/**
+ * Scan a bounded set of public docs paths for status-truth claims.
+ *
+ * @param params - Scan parameters.
+ * @param params.fileLister - Injected function that returns the list of paths to scan.
+ * @param params.fileReader - Injected function that reads a file's text content.
+ * @returns All extracted claims from all scanned files.
+ *
+ * Scan failures for individual files are counted but do not abort the scan.
+ * If the file lister itself fails, throws so the caller can emit execution-failure.
+ */
+export async function scanStatusTruthClaims(params: {
+  fileLister: FileLister
+  fileReader: FileReader
+}): Promise<{claims: StatusTruthClaim[]; scanErrors: number}> {
+  const {fileLister, fileReader} = params
+  const paths = await fileLister()
+  const claims: StatusTruthClaim[] = []
+  let scanErrors = 0
+
+  for (const filePath of paths) {
+    if (isExcludedPath(filePath)) continue
+    try {
+      const text = await fileReader(filePath)
+      const fileClaims = extractStatusTruthClaimsFromText({path: filePath, text})
+      claims.push(...fileClaims)
+    } catch {
+      // Count per-file read errors; do not abort the scan
+      scanErrors++
+    }
+  }
+
+  return {claims, scanErrors}
+}
+
+// ---------------------------------------------------------------------------
+// Unit 4: Current-repo resolver helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal Octokit-like client for the detect step (read-only).
+ * Injected for testability; production code uses @octokit/rest Octokit.
+ */
+export interface DetectOctokitClient {
+  readonly rest: {
+    readonly pulls: {
+      readonly get: (params: {owner: string; repo: string; pull_number: number}) => Promise<{
+        data: {state: string; merged: boolean}
+      }>
+    }
+    readonly issues: {
+      readonly get: (params: {owner: string; repo: string; issue_number: number}) => Promise<{
+        data: {state: string}
+      }>
+    }
+    readonly repos: {
+      readonly getReleaseByTag: (params: {owner: string; repo: string; tag: string}) => Promise<{
+        data: {draft: boolean; prerelease: boolean}
+      }>
+    }
+  }
+}
+
+/**
+ * Resolve a single claim's live state using the injected Octokit client.
+ *
+ * Current-repo scoped: only resolves claims whose sourceRef is a bare `#N` or `@tag`
+ * (no `owner/repo` prefix). Cross-repo or unsupported refs return `unavailable`.
+ *
+ * PR state: 'open' | 'closed' | 'merged'
+ * Issue state: 'open' | 'closed'
+ * Release state: 'published' | 'draft'
+ * Plan-status: resolved via file-parse (not this function)
+ * Rollout-tracker: compound — returns unavailable (Phase 1 scope cut)
+ */
+export async function resolveClaimLiveState(params: {
+  claim: StatusTruthClaim
+  octokit: DetectOctokitClient
+  owner: string
+  repo: string
+}): Promise<ResolverResult> {
+  const {claim, octokit, owner, repo} = params
+
+  if (claim.kind === 'plan-status') {
+    // plan-status is resolved via file-parse: the claimedState IS the live state
+    // (the frontmatter is the source of truth for itself). Mark as resolved with
+    // the claimed state so it shows as 'current' — drift detection for plan-status
+    // requires cross-file comparison which is out of Phase 1 scope.
+    return {status: 'resolved', state: claim.claimedState}
+  }
+
+  if (claim.kind === 'rollout-tracker-status') {
+    // Compound resolver: Phase 1 scope cut — mark unavailable
+    return {status: 'unavailable'}
+  }
+
+  if (claim.kind === 'pr-state') {
+    // sourceRef must be bare `#N` for current-repo
+    const match = /^#(\d+)$/u.exec(claim.sourceRef)
+    if (match === null || match[1] === undefined) {
+      // Cross-repo or malformed ref — unavailable
+      return {status: 'unavailable'}
+    }
+    const prNumber = Number.parseInt(match[1], 10)
+    try {
+      const {data} = await octokit.rest.pulls.get({owner, repo, pull_number: prNumber})
+      if (data.merged) return {status: 'resolved', state: 'merged'}
+      return {status: 'resolved', state: data.state === 'open' ? 'open' : 'closed'}
+    } catch {
+      return {status: 'unavailable'}
+    }
+  }
+
+  if (claim.kind === 'issue-state') {
+    const match = /^#(\d+)$/u.exec(claim.sourceRef)
+    if (match === null || match[1] === undefined) {
+      return {status: 'unavailable'}
+    }
+    const issueNumber = Number.parseInt(match[1], 10)
+    try {
+      const {data} = await octokit.rest.issues.get({owner, repo, issue_number: issueNumber})
+      return {status: 'resolved', state: data.state === 'open' ? 'open' : 'closed'}
+    } catch {
+      return {status: 'unavailable'}
+    }
+  }
+
+  if (claim.kind === 'release-tag-state') {
+    const match = /^@(.+)$/u.exec(claim.sourceRef)
+    if (match === null || match[1] === undefined) {
+      return {status: 'unavailable'}
+    }
+    const tag = match[1]
+    try {
+      const {data} = await octokit.rest.repos.getReleaseByTag({owner, repo, tag})
+      return {status: 'resolved', state: data.draft ? 'draft' : 'published'}
+    } catch {
+      return {status: 'unavailable'}
+    }
+  }
+
+  return {status: 'unavailable'}
+}
+
+/**
+ * Resolve all claims against live state using the injected Octokit client.
+ *
+ * Returns a resolver results map keyed by `kind:sourceRef`.
+ * Resolution failures for individual claims are counted but do not abort.
+ */
+export async function resolveAllClaims(params: {
+  claims: readonly StatusTruthClaim[]
+  octokit: DetectOctokitClient
+  owner: string
+  repo: string
+}): Promise<{resolverResults: Record<string, ResolverResult>; resolveErrors: number}> {
+  const {claims, octokit, owner, repo} = params
+  const resolverResults: Record<string, ResolverResult> = {}
+  let resolveErrors = 0
+
+  // Deduplicate by kind:sourceRef to avoid redundant API calls
+  const seen = new Set<string>()
+
+  for (const claim of claims) {
+    const key = `${claim.kind}:${claim.sourceRef}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    try {
+      resolverResults[key] = await resolveClaimLiveState({claim, octokit, owner, repo})
+    } catch {
+      resolveErrors++
+      resolverResults[key] = {status: 'unavailable'}
+    }
+  }
+
+  return {resolverResults, resolveErrors}
+}
+
+// ---------------------------------------------------------------------------
+// Unit 4: Artifact validation helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Prohibited fields that must not appear in a handoff artifact.
+ * These fields would expose raw claim text, source snippets, or private identity.
+ */
+const PROHIBITED_ARTIFACT_FIELDS: readonly string[] = ['normalizedText', 'rawText', 'sourceSnippet', 'apiResponse']
+
+/**
+ * Validate a parsed report artifact before the open step can write.
+ *
+ * Checks (in order):
+ * 1. Known schema and fingerprint versions.
+ * 2. Required top-level fields are present.
+ * 3. Prohibited fields are absent (sanitized artifact contract).
+ * 4. Aggregate count consistency: counts.total === findings.length.
+ *
+ * Returns an object with `valid: boolean` and `reason: string` on failure.
+ */
+export function validateStatusTruthArtifact(
+  raw: unknown,
+): {valid: true; report: StatusTruthJsonReport} | {valid: false; reason: string} {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return {valid: false, reason: 'artifact is not an object'}
+  }
+
+  const obj = raw as Record<string, unknown>
+
+  // 1. Version check
+  if (typeof obj.schema_version !== 'number' || typeof obj.fingerprint_version !== 'number') {
+    return {valid: false, reason: 'artifact missing schema_version or fingerprint_version'}
+  }
+  if (obj.schema_version !== KNOWN_SCHEMA_VERSION || obj.fingerprint_version !== KNOWN_FINGERPRINT_VERSION) {
+    return {
+      valid: false,
+      reason: `unknown artifact version: schema=${obj.schema_version} fingerprint=${obj.fingerprint_version}`,
+    }
+  }
+
+  // 2. Required fields
+  const requiredFields = [
+    'status',
+    'scan_complete',
+    'generated_at',
+    'failure_class',
+    'repair_eligible',
+    'findings',
+    'counts',
+  ]
+  for (const field of requiredFields) {
+    if (!(field in obj)) {
+      return {valid: false, reason: `artifact missing required field: ${field}`}
+    }
+  }
+
+  if (!Array.isArray(obj.findings)) {
+    return {valid: false, reason: 'artifact findings is not an array'}
+  }
+
+  // 3. Prohibited fields (sanitized artifact contract)
+  for (const field of PROHIBITED_ARTIFACT_FIELDS) {
+    if (field in obj) {
+      return {valid: false, reason: `artifact contains prohibited field: ${field}`}
+    }
+    // Also check within each finding
+    for (const finding of obj.findings as unknown[]) {
+      if (typeof finding === 'object' && finding !== null && field in (finding as Record<string, unknown>)) {
+        return {valid: false, reason: `artifact finding contains prohibited field: ${field}`}
+      }
+    }
+  }
+
+  // 4. Count consistency
+  const counts = obj.counts as Record<string, unknown>
+  if (typeof counts !== 'object' || counts === null) {
+    return {valid: false, reason: 'artifact counts is not an object'}
+  }
+  if (typeof counts.total !== 'number') {
+    return {valid: false, reason: 'artifact counts.total is not a number'}
+  }
+  if (counts.total !== (obj.findings as unknown[]).length) {
+    return {
+      valid: false,
+      reason: `artifact count mismatch: counts.total=${counts.total} but findings.length=${(obj.findings as unknown[]).length}`,
+    }
+  }
+
+  return {valid: true, report: raw as StatusTruthJsonReport}
+}
+
+// ---------------------------------------------------------------------------
+// Unit 4: CLI shell
+// ---------------------------------------------------------------------------
+
+/**
+ * CLI entry point for the status-truth detect step.
+ *
+ * Environment variables:
+ * - STATUS_TRUTH_REPORT_PATH: path to write the JSON report artifact (required)
+ * - STATUS_TRUTH_DRY_RUN: set to 'true' for dry-run mode (optional)
+ * - GITHUB_TOKEN: read-only token for current-repo API resolution (optional;
+ *   without it, all API claims are classified as unavailable/unresolved)
+ * - GITHUB_REPOSITORY: owner/repo for current-repo resolution (optional;
+ *   defaults to 'fro-bot/.github')
+ *
+ * Behavior:
+ * - Scans public docs paths (README.md, SECURITY.md, docs/**, knowledge/**,
+ *   .github/**\/*.md) for status-truth claims using CLAIM_KIND_DEFINITIONS patterns.
+ * - Resolves live state for current-repo PR/issues/releases/tags using the
+ *   read-only GITHUB_TOKEN. Cross-repo references are classified as unavailable.
+ * - Emits a structured report artifact plus counts-only summary to stdout.
+ * - stdout/stderr carry counts only; no raw claim text, source paths, or fingerprints.
+ * - If scanning/resolution fails unexpectedly, emits an execution-failure report.
+ *   Never emits a fake clean report when scanning has not run.
+ *
+ * Strip-only safe: no parameter properties, enums, or namespaces.
+ */
+async function runDetect(): Promise<void> {
+  const reportPath = process.env.STATUS_TRUTH_REPORT_PATH
+
+  if (reportPath === undefined || reportPath === '') {
+    process.stderr.write('status-truth-detect: STATUS_TRUTH_REPORT_PATH is required\n')
+    process.exit(1)
+  }
+
+  const generatedAt = new Date().toISOString()
+
+  // Determine owner/repo from environment
+  const githubRepository = process.env.GITHUB_REPOSITORY ?? 'fro-bot/.github'
+  const slashIndex = githubRepository.indexOf('/')
+  const owner = slashIndex === -1 ? githubRepository : githubRepository.slice(0, slashIndex)
+  const repo = slashIndex === -1 ? '' : githubRepository.slice(slashIndex + 1)
+
+  if (owner === '' || repo === '') {
+    process.stderr.write('status-truth-detect: GITHUB_REPOSITORY must be in owner/repo format\n')
+    process.exit(1)
+  }
+
+  // Build file lister using Node 24 native glob
+  const fileLister: FileLister = async () => {
+    const {glob: fsGlob} = await import('node:fs/promises')
+    const paths: string[] = []
+    for (const pattern of SCAN_GLOB_PATTERNS) {
+      for await (const entry of fsGlob(pattern, {cwd: process.cwd()})) {
+        paths.push(entry)
+      }
+    }
+    return paths
+  }
+
+  // Build file reader
+  const fileReader: FileReader = async (filePath: string) => readFile(filePath, 'utf8')
+
+  let report: StatusTruthJsonReport
+
+  try {
+    // Step 1: Scan for claims
+    const {claims, scanErrors} = await scanStatusTruthClaims({fileLister, fileReader})
+
+    // Step 2: Resolve live state
+    // Build Octokit client if token is available; otherwise all claims become unavailable
+    const token = process.env.GITHUB_TOKEN
+    let resolverResults: Record<string, ResolverResult> = {}
+    let resolveErrors = 0
+
+    if (token !== undefined && token !== '') {
+      const {Octokit} = await import('@octokit/rest')
+      const octokit = new Octokit({auth: token}) as unknown as DetectOctokitClient
+      const resolved = await resolveAllClaims({claims, octokit, owner, repo})
+      resolverResults = resolved.resolverResults
+      resolveErrors = resolved.resolveErrors
+    }
+    // If no token: all API claims remain unresolved (resolverResults stays empty)
+
+    // Step 3: Classify claims into findings
+    const findings = detectStatusTruthClaims(claims, resolverResults)
+
+    // Scan is complete if no per-file or resolve errors occurred.
+    // Failure class distinguishes the error source:
+    // - file-parse-error: per-file read/parse errors during scanning
+    // - api-unavailable: resolver/API errors after scanning succeeded
+    const totalErrors = scanErrors + resolveErrors
+    const scanComplete = totalErrors === 0
+
+    const failureClass = selectFailureClass(scanErrors, resolveErrors)
+
+    report = buildStatusTruthReport({
+      findings,
+      scanComplete,
+      generatedAt,
+      failureClass,
+    })
+  } catch {
+    // Unexpected failure — emit execution-failure report, not fake clean
+    process.stderr.write('status-truth-detect: unexpected scan failure: error-class=execution-error\n')
+    report = buildStatusTruthReport({
+      findings: [],
+      scanComplete: false,
+      generatedAt,
+      failureClass: 'execution-error',
+    })
+  }
+
+  const reportJson = `${JSON.stringify(report, null, 2)}\n`
+
+  try {
+    await writeFile(reportPath, reportJson, {flag: 'w'})
+  } catch {
+    process.stderr.write('status-truth-detect: could not write report: error-class=write-failure\n')
+    process.exit(1)
+  }
+
+  // Counts-only summary to stdout — no raw claim text, source paths, or fingerprints
+  const summary = {
+    status: report.status,
+    scan_complete: report.scan_complete,
+    counts: report.counts,
+  }
+  process.stdout.write(`${JSON.stringify(summary)}\n`)
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  await runDetect()
 }

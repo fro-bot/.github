@@ -390,7 +390,7 @@ open step.
 **Verification:**
 - Lifecycle planning is deterministic from report plus existing issue state.
 
-- [ ] **Unit 4: Detect/open CLI shells and workflow wiring**
+- [x] **Unit 4: Detect/open CLI shells and workflow wiring**
 
 **Goal:** Add runnable scripts and a scheduled/manual workflow that detects status-truth drift and
 opens proposal issues with separated credentials.

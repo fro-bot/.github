@@ -1,19 +1,29 @@
 /**
- * Tests for the status-truth proposal lifecycle planner (Unit 3).
+ * Tests for the status-truth proposal lifecycle planner (Unit 3) and
+ * I/O executor (Unit 4).
  *
  * TDD: tests written before implementation.
  * All tests are pure — no Octokit, no disk I/O.
  */
 
 import type {StatusTruthJsonReport} from './status-truth-detect.ts'
-import type {ExistingProposalIssue, PlanStatusTruthProposalActionsInput} from './status-truth-proposals.ts'
+import type {
+  ExecuteStatusTruthProposalActionsInput,
+  ExistingProposalIssue,
+  IssueListItem,
+  PlanStatusTruthProposalActionsInput,
+  StatusTruthOctokitClient,
+} from './status-truth-proposals.ts'
 import type {PublicOutputTokens} from './status-truth-public-output.ts'
 import {describe, expect, it} from 'vitest'
 import {
+  executeStatusTruthProposalActions,
   extractProposalFingerprint,
+  fetchExistingProposalIssues,
   OUTCOME_LABELS,
   planStatusTruthProposalActions,
   PROPOSAL_LABEL,
+  REQUIRED_LABELS,
 } from './status-truth-proposals.ts'
 
 // ---------------------------------------------------------------------------
@@ -715,5 +725,951 @@ describe('planStatusTruthProposalActions', () => {
       expect(OUTCOME_LABELS.resolved).toBeTruthy()
       expect(OUTCOME_LABELS.recurring).toBeTruthy()
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit 4: executeStatusTruthProposalActions (I/O shell with injected client)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Minimal Octokit mock for Unit 4 tests
+// ---------------------------------------------------------------------------
+
+interface MockIssueStore {
+  created: {title: string; body: string; labels: string[]}[]
+  comments: {issueNumber: number; body: string}[]
+  reopened: {issueNumber: number}[]
+  closed: {issueNumber: number; labels: string[]}[]
+  labelChecks: string[]
+  labelCreations: string[]
+}
+
+function makeMockOctokit(
+  overrides: {
+    labelExists?: boolean
+    labelCreateFails?: boolean
+    issueCreateFails?: boolean
+    commentFails?: boolean
+  } = {},
+): {octokit: StatusTruthOctokitClient; store: MockIssueStore} {
+  const store: MockIssueStore = {
+    created: [],
+    comments: [],
+    reopened: [],
+    closed: [],
+    labelChecks: [],
+    labelCreations: [],
+  }
+
+  const octokit = {
+    rest: {
+      issues: {
+        getLabel: async ({name}: {owner: string; repo: string; name: string}) => {
+          store.labelChecks.push(name)
+          if (overrides.labelExists === false) {
+            const err = Object.assign(new Error('Not Found'), {status: 404})
+            throw err
+          }
+          return {data: {name}}
+        },
+        createLabel: async ({
+          name,
+        }: {
+          owner: string
+          repo: string
+          name: string
+          color: string
+          description: string
+        }) => {
+          store.labelCreations.push(name)
+          if (overrides.labelCreateFails === true) {
+            const err = Object.assign(new Error('Unprocessable'), {status: 422})
+            throw err
+          }
+          return {data: {name}}
+        },
+        create: async (params: {owner: string; repo: string; title: string; body: string; labels: string[]}) => {
+          if (overrides.issueCreateFails === true) {
+            const err = Object.assign(new Error('Internal Server Error'), {status: 500})
+            throw err
+          }
+          store.created.push({title: params.title, body: params.body, labels: params.labels})
+          return {data: {number: 1000 + store.created.length}}
+        },
+        createComment: async (params: {owner: string; repo: string; issue_number: number; body: string}) => {
+          if (overrides.commentFails === true) {
+            const err = Object.assign(new Error('Internal Server Error'), {status: 500})
+            throw err
+          }
+          store.comments.push({issueNumber: params.issue_number, body: params.body})
+          return {data: {id: 1}}
+        },
+        update: async (params: {
+          owner: string
+          repo: string
+          issue_number: number
+          state?: string
+          labels?: string[]
+        }) => {
+          if (params.state === 'open') {
+            store.reopened.push({issueNumber: params.issue_number})
+          } else if (params.state === 'closed') {
+            store.closed.push({issueNumber: params.issue_number, labels: params.labels ?? []})
+          }
+          return {data: {number: params.issue_number}}
+        },
+        removeLabel: async (_params: {owner: string; repo: string; issue_number: number; name: string}) => {
+          return {data: []}
+        },
+        addLabels: async (_params: {owner: string; repo: string; issue_number: number; labels: string[]}) => {
+          return {data: []}
+        },
+      },
+    },
+  } as unknown as StatusTruthOctokitClient
+
+  return {octokit, store}
+}
+
+function makeExecuteInput(
+  overrides: Partial<ExecuteStatusTruthProposalActionsInput> = {},
+): ExecuteStatusTruthProposalActionsInput {
+  const {octokit} = makeMockOctokit()
+  return {
+    octokit,
+    owner: 'fro-bot',
+    repo: '.github',
+    actions: [],
+    dryRun: false,
+    sameRunCreatedFingerprints: new Set<string>(),
+    ...overrides,
+  }
+}
+
+describe('executeStatusTruthProposalActions', () => {
+  describe('REQUIRED_LABELS export', () => {
+    it('exports REQUIRED_LABELS array containing the proposal label and outcome labels', () => {
+      expect(Array.isArray(REQUIRED_LABELS)).toBe(true)
+      expect(REQUIRED_LABELS.length).toBeGreaterThan(0)
+      // Must include the primary proposal label
+      const names = REQUIRED_LABELS.map(l => l.name)
+      expect(names).toContain(PROPOSAL_LABEL)
+    })
+  })
+
+  describe('dry-run mode', () => {
+    it('dry-run: emits planned action counts and performs no issue mutations', async () => {
+      const {octokit, store} = makeMockOctokit()
+      const actions = [
+        {
+          type: 'open' as const,
+          fingerprint: 'abc123def456abcd',
+          title: 'Status truth: pr-state drift in docs/plans/example.md',
+          body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+          labels: [PROPOSAL_LABEL],
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions({
+        octokit,
+        owner: 'fro-bot',
+        repo: '.github',
+        actions,
+        dryRun: true,
+        sameRunCreatedFingerprints: new Set<string>(),
+      })
+
+      // No mutations in dry-run
+      expect(store.created).toHaveLength(0)
+      expect(store.comments).toHaveLength(0)
+      expect(store.reopened).toHaveLength(0)
+      expect(store.closed).toHaveLength(0)
+
+      // But counts are reported
+      expect(result.dryRun).toBe(true)
+      expect(result.counts.opened).toBe(1)
+      expect(result.counts.failed).toBe(0)
+    })
+
+    it('dry-run: reports zero mutations even with multiple action types', async () => {
+      const {octokit, store} = makeMockOctokit()
+      const actions = [
+        {
+          type: 'open' as const,
+          fingerprint: 'fp1',
+          title: 'Title 1',
+          body: '<!-- status-truth:fingerprint=fp1 -->\n\nBody.',
+          labels: [PROPOSAL_LABEL],
+        },
+        {
+          type: 'update-comment' as const,
+          issueNumber: 100,
+          comment: 'Updated live state.',
+        },
+        {
+          type: 'close' as const,
+          issueNumber: 200,
+          labels: [OUTCOME_LABELS.resolved],
+          comment: 'Drift cleared.',
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions({
+        octokit,
+        owner: 'fro-bot',
+        repo: '.github',
+        actions,
+        dryRun: true,
+        sameRunCreatedFingerprints: new Set<string>(),
+      })
+
+      expect(store.created).toHaveLength(0)
+      expect(store.comments).toHaveLength(0)
+      expect(store.closed).toHaveLength(0)
+      expect(result.dryRun).toBe(true)
+      expect(result.counts.opened).toBe(1)
+      expect(result.counts.updated).toBe(1)
+      expect(result.counts.closed).toBe(1)
+    })
+  })
+
+  describe('label gating', () => {
+    it('fails closed when required label cannot be confirmed (label check fails non-404)', async () => {
+      const octokit = {
+        rest: {
+          issues: {
+            getLabel: async () => {
+              const err = Object.assign(new Error('Server Error'), {status: 500})
+              throw err
+            },
+            createLabel: async () => {
+              return {data: {name: 'status-truth'}}
+            },
+            create: async () => {
+              return {data: {number: 1}}
+            },
+            createComment: async () => {
+              return {data: {id: 1}}
+            },
+            update: async () => {
+              return {data: {number: 1}}
+            },
+            removeLabel: async () => {
+              return {data: []}
+            },
+            addLabels: async () => {
+              return {data: []}
+            },
+          },
+        },
+      } as unknown as StatusTruthOctokitClient
+
+      const actions = [
+        {
+          type: 'open' as const,
+          fingerprint: 'abc123def456abcd',
+          title: 'Status truth: pr-state drift',
+          body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+          labels: [PROPOSAL_LABEL],
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions({
+        octokit,
+        owner: 'fro-bot',
+        repo: '.github',
+        actions,
+        dryRun: false,
+        sameRunCreatedFingerprints: new Set<string>(),
+      })
+
+      // No proposals opened when required label cannot be confirmed
+      expect(result.counts.opened).toBe(0)
+      expect(result.labelGateFailed).toBe(true)
+    })
+
+    it('creates label when it does not exist (404) and proceeds', async () => {
+      const {octokit, store} = makeMockOctokit({labelExists: false})
+      const actions = [
+        {
+          type: 'open' as const,
+          fingerprint: 'abc123def456abcd',
+          title: 'Status truth: pr-state drift',
+          body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+          labels: [PROPOSAL_LABEL],
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions({
+        octokit,
+        owner: 'fro-bot',
+        repo: '.github',
+        actions,
+        dryRun: false,
+        sameRunCreatedFingerprints: new Set<string>(),
+      })
+
+      // Label was created
+      expect(store.labelCreations.length).toBeGreaterThan(0)
+      // Issue was opened after label creation
+      expect(result.counts.opened).toBe(1)
+      expect(result.labelGateFailed).toBe(false)
+    })
+  })
+
+  describe('issue mutations', () => {
+    it('opens a new proposal issue for an open action', async () => {
+      const {octokit, store} = makeMockOctokit()
+      const fingerprint = 'abc123def456abcd'
+      const actions = [
+        {
+          type: 'open' as const,
+          fingerprint,
+          title: 'Status truth: pr-state drift in docs/plans/example.md',
+          body: `<!-- status-truth:fingerprint=${fingerprint} -->\n\nBody.`,
+          labels: [PROPOSAL_LABEL],
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions(makeExecuteInput({octokit, actions}))
+
+      expect(store.created).toHaveLength(1)
+      expect(store.created[0]?.title).toContain('pr-state')
+      expect(result.counts.opened).toBe(1)
+      expect(result.counts.failed).toBe(0)
+    })
+
+    it('adds a comment for an update-comment action', async () => {
+      const {octokit, store} = makeMockOctokit()
+      const actions = [
+        {
+          type: 'update-comment' as const,
+          issueNumber: 100,
+          comment: 'Live-state details changed.',
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions(makeExecuteInput({octokit, actions}))
+
+      expect(store.comments).toHaveLength(1)
+      expect(store.comments[0]?.issueNumber).toBe(100)
+      expect(result.counts.updated).toBe(1)
+    })
+
+    it('reopens a closed issue for a reopen action', async () => {
+      const {octokit, store} = makeMockOctokit()
+      const actions = [
+        {
+          type: 'reopen' as const,
+          issueNumber: 200,
+          comment: 'Drift recurrence detected.',
+          removeLabels: [OUTCOME_LABELS.resolved],
+          addLabels: [OUTCOME_LABELS.recurring],
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions(makeExecuteInput({octokit, actions}))
+
+      expect(store.reopened).toHaveLength(1)
+      expect(store.reopened[0]?.issueNumber).toBe(200)
+      expect(result.counts.reopened).toBe(1)
+    })
+
+    it('closes an issue for a close action', async () => {
+      const {octokit, store} = makeMockOctokit()
+      const actions = [
+        {
+          type: 'close' as const,
+          issueNumber: 300,
+          labels: [OUTCOME_LABELS.resolved],
+          comment: 'Drift cleared.',
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions(makeExecuteInput({octokit, actions}))
+
+      expect(store.closed).toHaveLength(1)
+      expect(store.closed[0]?.issueNumber).toBe(300)
+      expect(result.counts.closed).toBe(1)
+    })
+
+    it('suppress action increments suppressed count without API calls', async () => {
+      const {octokit, store} = makeMockOctokit()
+      const actions = [
+        {
+          type: 'suppress' as const,
+          fingerprint: 'abc123def456abcd',
+          reason: 'terminal outcome label on closed proposal',
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions(makeExecuteInput({octokit, actions}))
+
+      expect(store.created).toHaveLength(0)
+      expect(result.counts.suppressed).toBe(1)
+    })
+  })
+
+  describe('error resilience', () => {
+    it('write API failure leaves report artifact intact and counts failure without leaking raw claim text', async () => {
+      const {octokit} = makeMockOctokit({issueCreateFails: true})
+      const actions = [
+        {
+          type: 'open' as const,
+          fingerprint: 'abc123def456abcd',
+          title: 'Status truth: pr-state drift',
+          body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+          labels: [PROPOSAL_LABEL],
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions(makeExecuteInput({octokit, actions}))
+
+      // Failure is counted, not thrown
+      expect(result.counts.failed).toBe(1)
+      expect(result.counts.opened).toBe(0)
+      // Result is a structured counts object, not raw error text
+      expect(typeof result.counts.failed).toBe('number')
+    })
+
+    it('one failure does not block unrelated safe proposals', async () => {
+      let callCount = 0
+      const octokit = {
+        rest: {
+          issues: {
+            getLabel: async () => ({data: {name: PROPOSAL_LABEL}}),
+            createLabel: async () => ({data: {name: PROPOSAL_LABEL}}),
+            create: async (_params: {title: string; body: string; labels: string[]}) => {
+              callCount++
+              if (callCount === 1) {
+                const err = Object.assign(new Error('Server Error'), {status: 500})
+                throw err
+              }
+              return {data: {number: 1000 + callCount}}
+            },
+            createComment: async () => ({data: {id: 1}}),
+            update: async () => ({data: {number: 1}}),
+            removeLabel: async () => ({data: []}),
+            addLabels: async () => ({data: []}),
+          },
+        },
+      } as unknown as StatusTruthOctokitClient
+
+      const actions = [
+        {
+          type: 'open' as const,
+          fingerprint: 'fp1',
+          title: 'Title 1',
+          body: '<!-- status-truth:fingerprint=fp1 -->\n\nBody 1.',
+          labels: [PROPOSAL_LABEL],
+        },
+        {
+          type: 'open' as const,
+          fingerprint: 'fp2',
+          title: 'Title 2',
+          body: '<!-- status-truth:fingerprint=fp2 -->\n\nBody 2.',
+          labels: [PROPOSAL_LABEL],
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions(makeExecuteInput({octokit, actions}))
+
+      // First failed, second succeeded
+      expect(result.counts.failed).toBe(1)
+      expect(result.counts.opened).toBe(1)
+    })
+
+    it('privacy gate blocks one proposal but does not block unrelated safe proposal', async () => {
+      // This is tested at the planning layer (planStatusTruthProposalActions).
+      // At the execute layer, actions are already planned and gated.
+      // A suppress action for one fingerprint does not affect other open actions.
+      const {octokit, store} = makeMockOctokit()
+      const actions = [
+        {
+          type: 'suppress' as const,
+          fingerprint: 'blocked-fp',
+          reason: 'terminal outcome label on closed proposal',
+        },
+        {
+          type: 'open' as const,
+          fingerprint: 'safe-fp',
+          title: 'Status truth: safe proposal',
+          body: '<!-- status-truth:fingerprint=safe-fp -->\n\nSafe body.',
+          labels: [PROPOSAL_LABEL],
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions(makeExecuteInput({octokit, actions}))
+
+      expect(result.counts.suppressed).toBe(1)
+      expect(result.counts.opened).toBe(1)
+      expect(store.created).toHaveLength(1)
+    })
+  })
+
+  describe('same-run dedup in execute layer', () => {
+    it('does not open a proposal if fingerprint is already in sameRunCreatedFingerprints', async () => {
+      const {octokit, store} = makeMockOctokit()
+      const fingerprint = 'abc123def456abcd'
+      const actions = [
+        {
+          type: 'open' as const,
+          fingerprint,
+          title: 'Status truth: pr-state drift',
+          body: `<!-- status-truth:fingerprint=${fingerprint} -->\n\nBody.`,
+          labels: [PROPOSAL_LABEL],
+        },
+      ]
+
+      const result = await executeStatusTruthProposalActions(
+        makeExecuteInput({octokit, actions, sameRunCreatedFingerprints: new Set([fingerprint])}),
+      )
+
+      expect(store.created).toHaveLength(0)
+      expect(result.counts.sameRunDeduplicated).toBe(1)
+      expect(result.counts.opened).toBe(0)
+    })
+  })
+
+  describe('result shape', () => {
+    it('returns a complete ExecuteStatusTruthProposalActionsResult with all expected fields', async () => {
+      const result = await executeStatusTruthProposalActions(makeExecuteInput())
+
+      expect(typeof result.dryRun).toBe('boolean')
+      expect(typeof result.labelGateFailed).toBe('boolean')
+      expect(typeof result.counts.opened).toBe('number')
+      expect(typeof result.counts.updated).toBe('number')
+      expect(typeof result.counts.reopened).toBe('number')
+      expect(typeof result.counts.closed).toBe('number')
+      expect(typeof result.counts.suppressed).toBe('number')
+      expect(typeof result.counts.failed).toBe('number')
+      expect(typeof result.counts.sameRunDeduplicated).toBe('number')
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit 4 corrections: fetchExistingProposalIssues tests
+// ---------------------------------------------------------------------------
+
+function makeIssueListItem(
+  number: number,
+  state: 'open' | 'closed',
+  labels: string[],
+  body: string | null = null,
+): IssueListItem {
+  return {
+    number,
+    state,
+    title: `Status truth: pr-state drift in docs/plans/example.md`,
+    body,
+    labels: labels.map(name => ({name})),
+  }
+}
+
+function makeFetchOctokit(
+  overrides: {
+    openIssues?: IssueListItem[]
+    closedIssues?: IssueListItem[]
+    openThrows?: boolean
+    closedThrows?: boolean
+    closedPage2Throws?: boolean
+  } = {},
+): StatusTruthOctokitClient {
+  const openIssues = overrides.openIssues ?? []
+  const closedIssues = overrides.closedIssues ?? []
+
+  return {
+    rest: {
+      issues: {
+        getLabel: async ({name}: {owner: string; repo: string; name: string}) => ({data: {name}}),
+        createLabel: async ({
+          name,
+        }: {
+          owner: string
+          repo: string
+          name: string
+          color: string
+          description: string
+        }) => ({
+          data: {name},
+        }),
+        create: async () => ({data: {number: 1}}),
+        createComment: async () => ({data: {id: 1}}),
+        update: async (params: {owner: string; repo: string; issue_number: number}) => ({
+          data: {number: params.issue_number},
+        }),
+        removeLabel: async () => ({data: []}),
+        addLabels: async () => ({data: []}),
+        listForRepo: async (params: {
+          owner: string
+          repo: string
+          labels: string
+          state: 'open' | 'closed' | 'all'
+          per_page: number
+          page: number
+        }) => {
+          if (params.state === 'open') {
+            if (overrides.openThrows === true) throw new Error('API error')
+            return {data: openIssues}
+          }
+          if (overrides.closedThrows === true) throw new Error('API error')
+          if (overrides.closedPage2Throws === true && params.page === 2) throw new Error('API error page 2')
+          // Return closed issues only on page 1; empty on page 2
+          return {data: params.page === 1 ? closedIssues : []}
+        },
+      },
+    },
+  } as unknown as StatusTruthOctokitClient
+}
+
+describe('fetchExistingProposalIssues', () => {
+  it('fetches open proposal issues filtered by PROPOSAL_LABEL', async () => {
+    const fp = 'abc123def456abcd'
+    const openIssues = [makeIssueListItem(101, 'open', [PROPOSAL_LABEL], `<!-- status-truth:fingerprint=${fp} -->`)]
+    const octokit = makeFetchOctokit({openIssues})
+
+    const issues = await fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})
+
+    expect(issues.filter(i => i.state === 'open')).toHaveLength(1)
+    expect(issues[0]?.number).toBe(101)
+    expect(issues[0]?.labels).toContain(PROPOSAL_LABEL)
+  })
+
+  it('fetches recent closed proposal issues filtered by PROPOSAL_LABEL', async () => {
+    const fp = 'deadbeef12345678'
+    const closedIssues = [
+      makeIssueListItem(
+        200,
+        'closed',
+        [PROPOSAL_LABEL, OUTCOME_LABELS.resolved],
+        `<!-- status-truth:fingerprint=${fp} -->`,
+      ),
+    ]
+    const octokit = makeFetchOctokit({closedIssues})
+
+    const issues = await fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})
+
+    expect(issues.filter(i => i.state === 'closed')).toHaveLength(1)
+    expect(issues.find(i => i.number === 200)?.labels).toContain(OUTCOME_LABELS.resolved)
+  })
+
+  it('filters out issues that do not have PROPOSAL_LABEL', async () => {
+    const openIssues = [
+      makeIssueListItem(101, 'open', ['some-other-label']),
+      makeIssueListItem(102, 'open', [PROPOSAL_LABEL]),
+    ]
+    const octokit = makeFetchOctokit({openIssues})
+
+    const issues = await fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})
+
+    // Only the issue with PROPOSAL_LABEL should be included
+    expect(issues.filter(i => i.state === 'open')).toHaveLength(1)
+    expect(issues[0]?.number).toBe(102)
+  })
+
+  it('throws when open fetch throws (fail-closed for live mode)', async () => {
+    const octokit = makeFetchOctokit({openThrows: true})
+
+    // fetchExistingProposalIssues now propagates errors so live runOpen can exit(1)
+    await expect(fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})).rejects.toThrow()
+  })
+
+  it('throws when closed page-1 fetch throws (fail-closed for live mode)', async () => {
+    const fp = 'abc123def456abcd'
+    const openIssues = [makeIssueListItem(101, 'open', [PROPOSAL_LABEL], `<!-- status-truth:fingerprint=${fp} -->`)]
+    const octokit = makeFetchOctokit({openIssues, closedThrows: true})
+
+    // First closed page failure is fatal — propagated to caller
+    await expect(fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})).rejects.toThrow()
+  })
+
+  it('returns empty list when no issues exist', async () => {
+    const octokit = makeFetchOctokit()
+
+    const issues = await fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})
+
+    expect(issues).toHaveLength(0)
+  })
+
+  it('returns page-1 closed issues when page-2 closed fetch throws (best-effort pagination)', async () => {
+    const fp = 'abc123def456abcd'
+    const closedIssues = [
+      makeIssueListItem(
+        200,
+        'closed',
+        [PROPOSAL_LABEL, OUTCOME_LABELS.resolved],
+        `<!-- status-truth:fingerprint=${fp} -->`,
+      ),
+    ]
+    const octokit = makeFetchOctokit({closedIssues, closedPage2Throws: true})
+
+    // Page-2 failure is best-effort; page-1 results should still be returned
+    const issues = await fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})
+
+    expect(issues.filter(i => i.state === 'closed')).toHaveLength(1)
+    expect(issues[0]?.number).toBe(200)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit 4 hardening: label gate must block on ANY missing required label
+// ---------------------------------------------------------------------------
+
+describe('executeStatusTruthProposalActions label gate — all required labels', () => {
+  it('fails closed when a non-primary outcome label cannot be confirmed (non-404 error)', async () => {
+    // Primary label (status-truth) succeeds; one outcome label fails with 500
+    const failingLabel = REQUIRED_LABELS.find(l => l.name !== PROPOSAL_LABEL)
+    if (failingLabel === undefined) throw new Error('No non-primary required label found')
+
+    const octokit = {
+      rest: {
+        issues: {
+          getLabel: async ({name}: {owner: string; repo: string; name: string}) => {
+            if (name === failingLabel.name) {
+              const err = Object.assign(new Error('Server Error'), {status: 500})
+              throw err
+            }
+            return {data: {name}}
+          },
+          createLabel: async ({
+            name,
+          }: {
+            owner: string
+            repo: string
+            name: string
+            color: string
+            description: string
+          }) => ({
+            data: {name},
+          }),
+          create: async () => ({data: {number: 1}}),
+          createComment: async () => ({data: {id: 1}}),
+          update: async () => ({data: {number: 1}}),
+          removeLabel: async () => ({data: []}),
+          addLabels: async () => ({data: []}),
+        },
+      },
+    } as unknown as StatusTruthOctokitClient
+
+    const actions = [
+      {
+        type: 'open' as const,
+        fingerprint: 'abc123def456abcd',
+        title: 'Status truth: pr-state drift',
+        body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+        labels: [PROPOSAL_LABEL],
+      },
+    ]
+
+    const result = await executeStatusTruthProposalActions({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      actions,
+      dryRun: false,
+      sameRunCreatedFingerprints: new Set<string>(),
+    })
+
+    // No proposals opened when any required label cannot be confirmed
+    expect(result.labelGateFailed).toBe(true)
+    expect(result.counts.opened).toBe(0)
+  })
+
+  it('fails closed when a non-primary outcome label cannot be created (non-422 error)', async () => {
+    const failingLabel = REQUIRED_LABELS.find(l => l.name !== PROPOSAL_LABEL)
+    if (failingLabel === undefined) throw new Error('No non-primary required label found')
+
+    const octokit = {
+      rest: {
+        issues: {
+          getLabel: async (_params: {owner: string; repo: string; name: string}) => {
+            // All labels return 404 (not found)
+            const err = Object.assign(new Error('Not Found'), {status: 404})
+            throw err
+          },
+          createLabel: async ({
+            name,
+          }: {
+            owner: string
+            repo: string
+            name: string
+            color: string
+            description: string
+          }) => {
+            if (name === failingLabel.name) {
+              // Non-422 create failure — cannot confirm this label
+              const err = Object.assign(new Error('Forbidden'), {status: 403})
+              throw err
+            }
+            return {data: {name}}
+          },
+          create: async () => ({data: {number: 1}}),
+          createComment: async () => ({data: {id: 1}}),
+          update: async () => ({data: {number: 1}}),
+          removeLabel: async () => ({data: []}),
+          addLabels: async () => ({data: []}),
+        },
+      },
+    } as unknown as StatusTruthOctokitClient
+
+    const actions = [
+      {
+        type: 'open' as const,
+        fingerprint: 'abc123def456abcd',
+        title: 'Status truth: pr-state drift',
+        body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+        labels: [PROPOSAL_LABEL],
+      },
+    ]
+
+    const result = await executeStatusTruthProposalActions({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      actions,
+      dryRun: false,
+      sameRunCreatedFingerprints: new Set<string>(),
+    })
+
+    expect(result.labelGateFailed).toBe(true)
+    expect(result.counts.opened).toBe(0)
+  })
+
+  it('proceeds when all required labels are confirmed (primary + all outcome labels)', async () => {
+    // All labels exist — gate should pass and proposal should open
+    const {octokit, store} = makeMockOctokit()
+    const actions = [
+      {
+        type: 'open' as const,
+        fingerprint: 'abc123def456abcd',
+        title: 'Status truth: pr-state drift',
+        body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+        labels: [PROPOSAL_LABEL],
+      },
+    ]
+
+    const result = await executeStatusTruthProposalActions({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      actions,
+      dryRun: false,
+      sameRunCreatedFingerprints: new Set<string>(),
+    })
+
+    expect(result.labelGateFailed).toBe(false)
+    expect(result.counts.opened).toBe(1)
+    expect(store.created).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit 4 hardening: live fetch failure blocks mutations
+// ---------------------------------------------------------------------------
+
+describe('fetchExistingProposalIssues fail-closed behavior', () => {
+  it('propagates open-fetch error so live runOpen can exit before planning mutations', async () => {
+    const octokit = makeFetchOctokit({openThrows: true})
+
+    // Must throw — caller (live runOpen) catches and calls process.exit(1)
+    await expect(fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})).rejects.toThrow('API error')
+  })
+
+  it('propagates closed page-1 error so live runOpen can exit before planning mutations', async () => {
+    const fp = 'abc123def456abcd'
+    const openIssues = [makeIssueListItem(101, 'open', [PROPOSAL_LABEL], `<!-- status-truth:fingerprint=${fp} -->`)]
+    const octokit = makeFetchOctokit({openIssues, closedThrows: true})
+
+    await expect(fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})).rejects.toThrow('API error')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Unit 4 corrections: open planning uses fetched existing issues
+// ---------------------------------------------------------------------------
+
+describe('planStatusTruthProposalActions with fetched existing issues', () => {
+  it('no-ops when fetched existing open issue matches the drifted finding fingerprint', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    // Simulate fetched existing issue with matching fingerprint
+    const existingIssue = makeOpenIssue(fingerprint)
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [existingIssue]}))
+
+    // Should not open a duplicate
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(counts.noAction).toBeGreaterThanOrEqual(1)
+  })
+
+  it('reopens when fetched existing closed non-terminal issue matches the drifted finding fingerprint', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    // Simulate fetched closed issue with matching fingerprint (non-terminal)
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.resolved])
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(1)
+    expect(counts.reopened).toBe(1)
+  })
+
+  it('suppresses when fetched existing closed terminal issue matches the drifted finding fingerprint', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    // Simulate fetched closed issue with terminal label
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.falsePositive])
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(counts.suppressed).toBe(1)
+  })
+
+  it('dry-run with planned actions performs no mutations but reports counts', async () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const {actions} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(1)
+
+    // Execute in dry-run mode
+    const {octokit, store} = makeMockOctokit()
+    const result = await executeStatusTruthProposalActions({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      actions,
+      dryRun: true,
+      sameRunCreatedFingerprints: new Set<string>(),
+    })
+
+    // No mutations
+    expect(store.created).toHaveLength(0)
+    expect(store.comments).toHaveLength(0)
+    // But counts are reported
+    expect(result.dryRun).toBe(true)
+    expect(result.counts.opened).toBe(1)
   })
 })
