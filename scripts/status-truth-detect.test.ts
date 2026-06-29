@@ -1154,6 +1154,23 @@ describe('scanStatusTruthClaims', () => {
     expect(report.scan_complete).toBe(false)
     expect(report.failure_class).toBe('execution-error')
   })
+
+  it('excludes docs/brainstorms/ paths so example prose like "PR #907 is open" produces zero claims', async () => {
+    // Brainstorm documents may contain illustrative status-truth patterns as examples.
+    // These must not self-trigger proposals. The path is excluded before file reading.
+    const brainstormPath = 'docs/brainstorms/2026-06-26-a2-self-maintenance-portfolio-requirements.md'
+    const fileLister: FileLister = async () => [brainstormPath, 'README.md']
+    const fileReader: FileReader = async (path: string) => {
+      if (path === brainstormPath) return 'Acceptance example: PR #907 is open and issue #908 is closed.'
+      if (path === 'README.md') return 'No claims here.'
+      return ''
+    }
+
+    const {claims, scanErrors} = await scanStatusTruthClaims({fileLister, fileReader})
+    // The brainstorm file must be excluded entirely — zero claims from it
+    expect(claims.filter(c => c.path === brainstormPath)).toHaveLength(0)
+    expect(scanErrors).toBe(0)
+  })
 })
 
 // ---------------------------------------------------------------------------

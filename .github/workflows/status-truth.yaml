@@ -240,7 +240,8 @@ jobs:
   # DISABLED PLACEHOLDER: This job is intentionally a no-op. It exists to
   # document the intended future shape of the PR graduation gate. Enabling real
   # PR execution requires a reviewed workflow and script change — not just
-  # flipping the `if: false` condition below. The job steps are stubs only.
+  # setting the STATUS_TRUTH_PRS_ENABLED variable below. The job steps are
+  # stubs only.
   #
   # Graduation criteria (all must be met before a real implementation is added):
   # 1. Phase 1 proposal issues have produced accepted/rejected outcome signal.
@@ -248,7 +249,7 @@ jobs:
   #    via a reviewed repo change.
   # 3. The workflow steps below have been replaced with a real implementation
   #    (script invocation, artifact download, token minting, etc.) in a
-  #    separate reviewed PR — toggling `if: false` alone is not sufficient.
+  #    separate reviewed PR — toggling the variable alone is not sufficient.
   #
   # Safety constraints (enforced in scripts/status-truth-prs.ts):
   # - enabled=false → all candidates downgrade to proposal-only (no PR actions).
@@ -262,9 +263,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: open
-    # Disabled: this is a no-op placeholder. Enabling real PR execution requires
-    # a reviewed workflow and script change, not just removing `if: false`.
-    if: false
+    # Disabled placeholder: the variable STATUS_TRUTH_PRS_ENABLED is not set in
+    # this repo, so this job never runs. Enabling real PR execution requires a
+    # reviewed workflow and script change — setting the variable alone is not
+    # sufficient to produce real PR actions.
+    if: ${{ vars.STATUS_TRUTH_PRS_ENABLED == 'true' }}
     permissions:
       contents: read
 

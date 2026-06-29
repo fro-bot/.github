@@ -399,10 +399,16 @@ export const SCAN_GLOB_PATTERNS: readonly string[] = [
 ]
 
 /**
- * Paths to exclude from scanning (generated/proposal state).
- * These paths may contain status-truth proposal bodies that would self-reference.
+ * Paths to exclude from scanning (generated/proposal state, and example/brainstorm
+ * prose that may contain illustrative status-truth patterns that must not trigger
+ * real proposals).
  */
-const SCAN_EXCLUDE_PATTERNS: readonly RegExp[] = [/^metadata\//u, /^\.github\/workflows\//u, /^node_modules\//u]
+const SCAN_EXCLUDE_PATTERNS: readonly RegExp[] = [
+  /^metadata\//u,
+  /^\.github\/workflows\//u,
+  /^node_modules\//u,
+  /^docs\/brainstorms\//u,
+]
 
 function isExcludedPath(filePath: string): boolean {
   return SCAN_EXCLUDE_PATTERNS.some(pattern => pattern.test(filePath))
