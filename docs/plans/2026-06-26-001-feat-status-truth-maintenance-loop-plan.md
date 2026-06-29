@@ -280,7 +280,7 @@ flowchart TD
 **Verification:**
 - The detector can produce a structured report without performing any GitHub writes.
 
-- [ ] **Unit 2: Public-output privacy gate adapter**
+- [x] **Unit 2: Public-output privacy gate adapter**
 
 **Goal:** Centralize the rendering safety gate for every proposal, comment, summary, and future PR
 surface.
