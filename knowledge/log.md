@@ -2494,24 +2494,18 @@ Surveyed marcusrbrown/containers and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/containers
 
-## [2026-06-29 10:00] ingest | repo:marcusrbrown/esphome.life
+## [2026-06-29 00:00] ingest | marcusrbrown/extend-vscode
 
-Incremental re-survey of `marcusrbrown/esphome.life` at HEAD `9e1618f` (last push 2026-06-29). Reads limited to directory listing (git tree), workflow files (`ci.yaml`, `renovate.yaml`, `update-repo-settings.yaml`), manifests (`renovate.json5`, `settings.yml`), and PR/issue listings. Repo is public — public-only invariant satisfied. Seventh survey of this repo.
+Incremental re-survey of `marcusrbrown/extend-vscode` (HEAD `347447ca`, last push 2026-06-27, up from `5724bd8b` 2026-06-18). Reads limited to repo metadata, root + `.github/workflows` directory listings, `package.json`, `.node-version`, and the open issue/PR lists per the untrusted-input constraint.
 
-Material deltas (additive; no contradictions with prior surveys):
+Four dependency bumps merged 2026-06-22→2026-06-25 (#504 playwright v1.61.0, #505 `tmp` v0.2.7 [SECURITY], #506 grouped non-major, #507 typescript-eslint v8.62.0). No structural, architectural, or workflow changes — six workflows unchanged, still no `fro-bot.yaml`. Notable signals: Node bumped to 24.18.0; `tmp` is the third consecutive survey to carry a CVE patch (now patched twice: #494 v0.2.6, #505 v0.2.7); new open PR #508 bumps `pnpm` to v11 (`security`+`automerge` labels) — a major runtime bump to watch since `packageManager: pnpm@10.34.0` must move with it. Stars ticked 1→2. `typescript` v6 (#466) still the sole pending major (~9 weeks). Open issue set unchanged (#142, #162, #317–#319).
 
-- **Dependency-only delta** since `ce8df72` (2026-06-18). `bfra-me/.github` reusable workflows v4.16.27 → **v4.16.32** (SHA `bbf77bc`) via PRs #367/#370/#371 plus non-major bundles #368/#369; all authored by `mrbro-bot[bot]`.
-- **Unchanged:** Renovate preset `#5.2.3`, Prettier 3.8.4, `esphome/build-action@v7.3.0`, ESPHome version 2025.12.7 (now flat across all 7 surveys), every CI action SHA, and both Olimex ESP32-PoE-ISO Bluetooth Proxy device configs. Structure identical (only `1349f4` built in CI; `13451c` still excluded).
-- **`update-repo-settings.yaml` footgun reconfirmed** — still delegates to `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.32` (the Renovate workflow path, not a settings-specific one). Renovate keeps bumping the version in lockstep, so the daily 12:23 UTC cron runs Renovate twice rather than syncing Probot settings. Fourth consecutive survey flagging this with no patch landing; remains a follow-up-issue candidate.
-- **No Fro Bot agent workflow** (no `fro-bot.yaml`). Repo participates in the ecosystem only via Probot settings extending `fro-bot/.github:common-settings.yaml`. Onboarding draft-PR recommendation carried to a seventh survey.
-- **Open issues unchanged:** #8 (Uplift meta-issue), #26 (Renovate Dependency Dashboard), #298 (community BPPLUG note, spam-adjacent).
+Updated repo page `marcusrbrown--extend-vscode.md` (new source entry, frontmatter `updated`, 2026-06-29 delta log), `index.md` summary line, and bumped `updated` on topic page `vscode-extensions.md`. No new topic/entity/comparison pages warranted — existing [[vscode-extensions]] and [[marcusrbrown--renovate-config]] coverage absorbs the deltas (pure dependency maintenance, no new cross-cutting pattern). **Fro Bot workflow still absent** — follow-up draft PR recommendation carried forward (~10 weeks).
 
-Updated pages: `wiki/repos/marcusrbrown--esphome-life.md` (frontmatter source/updated; reusable-workflow pin + footgun count + Fro Bot survey count + last-push; new 2026-06-29 survey-history row); `wiki/entities/esphome.md` (frontmatter source/updated; quiet-pin narrative now spans 7 surveys); `index.md` (enriched esphome-life catalog entry from bare slug to current-state summary). Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA 347447ca73e25364c3917e2169c9b80efc075e98)
 
-Sources: https://github.com/marcusrbrown/esphome.life (SHA 9e1618fb6fd30e0fb00e1548188bbd7a5a5aeda4)
+## [2026-06-29 10:04] ingest | repo:marcusrbrown/extend-vscode
 
-## [2026-06-29 10:03] ingest | repo:marcusrbrown/esphome.life
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
-Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/esphome.life
+Sources: https://github.com/marcusrbrown/extend-vscode
