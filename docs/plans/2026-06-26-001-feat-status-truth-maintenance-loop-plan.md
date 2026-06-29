@@ -335,7 +335,7 @@ open step.
 **Verification:**
 - No public-render helper can bypass the shared gate.
 
-- [ ] **Unit 3: Proposal lifecycle planner**
+- [x] **Unit 3: Proposal lifecycle planner**
 
 **Goal:** Convert drifted, privacy-safe status claims into GitHub issue lifecycle actions.
 
