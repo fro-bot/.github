@@ -212,6 +212,21 @@ jobs:
               echo "| Suppressed | $(jq '.counts.suppressed // 0' "$result") |"
               echo "| Failed | $(jq '.counts.failed // 0' "$result") |"
               echo "| Same-run deduplicated | $(jq '.counts.sameRunDeduplicated // 0' "$result") |"
+
+              # Planned per-kind counts (from planner; counts-only, no paths or fingerprints)
+              kind_count=$(jq '.plannedCountsByKind | length' "$result" 2>/dev/null || echo 0)
+              if [[ "$kind_count" -gt 0 ]]; then
+                echo ""
+                echo "### Planned counts by claim kind"
+                echo ""
+                echo "| Kind | Opened | Updated | Reopened | Closed | Suppressed |"
+                echo "| --- | --- | --- | --- | --- | --- |"
+                jq -r '
+                  .plannedCountsByKind
+                  | to_entries[]
+                  | "| \(.key) | \(.value.opened // 0) | \(.value.updated // 0) | \(.value.reopened // 0) | \(.value.closed // 0) | \(.value.suppressed // 0) |"
+                ' "$result"
+              fi
             else
               echo "| Status | (open result unavailable) |"
             fi

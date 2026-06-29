@@ -1673,3 +1673,397 @@ describe('planStatusTruthProposalActions with fetched existing issues', () => {
     expect(result.counts.opened).toBe(1)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Unit 5: Accuracy signal and operator-facing proposal UX
+// ---------------------------------------------------------------------------
+
+describe('per-kind usefulness counters', () => {
+  it('accepted outcome label on a closed issue increments usefulnessByKind.accepted for that kind', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    // Closed issue with accepted label — non-terminal, so drift returns → reopen
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.accepted])
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    // accepted is non-terminal so it reopens, but usefulness counter should be incremented
+    expect(counts.usefulnessByKind).toBeDefined()
+    expect(counts.usefulnessByKind?.['pr-state']?.accepted).toBeGreaterThanOrEqual(1)
+  })
+
+  it('rejected outcome label on a closed issue increments usefulnessByKind.rejected for that kind', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.rejected])
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    expect(counts.usefulnessByKind).toBeDefined()
+    expect(counts.usefulnessByKind?.['pr-state']?.rejected).toBeGreaterThanOrEqual(1)
+  })
+
+  it('false-positive outcome label on a closed issue increments usefulnessByKind.falsePositive for that kind', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.falsePositive])
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    expect(counts.usefulnessByKind).toBeDefined()
+    expect(counts.usefulnessByKind?.['pr-state']?.falsePositive).toBeGreaterThanOrEqual(1)
+  })
+
+  it('malformed outcome markers are excluded from usefulnessByKind accuracy math', () => {
+    const malformedIssue: ExistingProposalIssue = {
+      number: 300,
+      state: 'closed',
+      labels: [PROPOSAL_LABEL, 'status-truth:unknown-outcome'],
+      title: 'Status truth: something',
+      body: '<!-- status-truth:fingerprint=deadbeef12345678 -->\n\nBody.',
+    }
+    const report = makeReport({
+      findings: [],
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [malformedIssue]}))
+
+    // Unknown/malformed outcome labels must not appear in usefulnessByKind
+    const kindCounts = counts.usefulnessByKind
+    if (kindCounts !== undefined) {
+      for (const kind of Object.keys(kindCounts)) {
+        const entry = kindCounts[kind]
+        if (entry !== undefined) {
+          // Only accepted/rejected/falsePositive are valid accuracy signals
+          expect(typeof entry.accepted).toBe('number')
+          expect(typeof entry.rejected).toBe('number')
+          expect(typeof entry.falsePositive).toBe('number')
+        }
+      }
+    }
+    // malformedOutcomeMarkers should be counted for operator attention
+    expect(counts.malformedOutcomeMarkers).toBeGreaterThanOrEqual(1)
+  })
+
+  it('closed proposal with BOTH a recognized accuracy signal label and an unrecognized status-truth:* label is treated as malformed — recognized label excluded from usefulnessByKind', () => {
+    // Conservative guard: mixed outcome markers make the issue ambiguous.
+    // The recognized label (accepted) must NOT be counted in usefulnessByKind.
+    const fingerprint = 'deadbeef12345678'
+    const mixedIssue: ExistingProposalIssue = {
+      number: 301,
+      state: 'closed',
+      labels: [PROPOSAL_LABEL, OUTCOME_LABELS.accepted, 'status-truth:unknown-extra'],
+      title: 'Status truth: pr-state drift in docs/plans/example.md',
+      body: `<!-- status-truth:fingerprint=${fingerprint} -->\n\nBody.`,
+    }
+    const report = makeReport({
+      findings: [],
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [mixedIssue]}))
+
+    // Must be counted as malformed, not as an accuracy signal
+    expect(counts.malformedOutcomeMarkers).toBeGreaterThanOrEqual(1)
+    // The recognized accepted label must NOT appear in usefulnessByKind accuracy math
+    const kindCounts = counts.usefulnessByKind
+    if (kindCounts !== undefined) {
+      for (const kind of Object.keys(kindCounts)) {
+        const entry = kindCounts[kind]
+        if (entry !== undefined) {
+          // No accuracy signals should be counted from this malformed issue
+          expect(entry.accepted).toBe(0)
+          expect(entry.rejected).toBe(0)
+          expect(entry.falsePositive).toBe(0)
+        }
+      }
+    }
+  })
+
+  it('non-outcome labels (resolved, manually-fixed, recurring, superseded) are excluded from accuracy math', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    // resolved is non-terminal but not an accuracy signal
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.resolved])
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    // resolved should not appear in usefulnessByKind accuracy counters
+    const kindCounts = counts.usefulnessByKind
+    if (kindCounts !== undefined) {
+      for (const kind of Object.keys(kindCounts)) {
+        const entry = kindCounts[kind]
+        if (entry !== undefined) {
+          // Accuracy counters should only reflect accepted/rejected/falsePositive
+          // resolved does not increment any of these
+          expect(entry.accepted + entry.rejected + entry.falsePositive).toBe(0)
+        }
+      }
+    }
+  })
+})
+
+describe('countsByKind in planner result', () => {
+  it('countsByKind aggregates opened proposals by claim kind', () => {
+    const finding = makeDriftedFinding()
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const {countsByKind} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+    expect(countsByKind).toBeDefined()
+    expect(countsByKind?.['pr-state']?.opened).toBeGreaterThanOrEqual(1)
+  })
+
+  it('countsByKind is counts-only and does not contain paths or fingerprints', () => {
+    const finding = makeDriftedFinding()
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const {countsByKind} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+    // countsByKind values must be numeric counts only
+    if (countsByKind !== undefined) {
+      for (const kind of Object.keys(countsByKind)) {
+        const entry = countsByKind[kind]
+        if (entry !== undefined) {
+          expect(typeof entry.opened).toBe('number')
+          expect(typeof entry.updated).toBe('number')
+          expect(typeof entry.reopened).toBe('number')
+          expect(typeof entry.closed).toBe('number')
+          expect(typeof entry.suppressed).toBe('number')
+          // No path or fingerprint fields — KindActionCounts only has numeric count fields
+          const entryKeys = Object.keys(entry as object)
+          expect(entryKeys).not.toContain('path')
+          expect(entryKeys).not.toContain('fingerprint')
+        }
+      }
+    }
+  })
+})
+
+describe('terminal vs non-terminal label semantics', () => {
+  it('rejected label suppresses future matching findings (terminal)', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.rejected])
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    // Terminal: no reopen, no open — only suppress
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    expect(counts.suppressed).toBe(1)
+  })
+
+  it('false-positive label suppresses future matching findings (terminal)', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.falsePositive])
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    expect(counts.suppressed).toBe(1)
+  })
+
+  it('accepted label does NOT suppress — allows reopen when drift returns (non-terminal)', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.accepted])
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    // Non-terminal: drift returned → reopen
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(1)
+    expect(counts.suppressed).toBe(0)
+  })
+
+  it('manually-fixed label does NOT suppress — allows reopen when drift returns (non-terminal)', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.manuallyFixed])
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(1)
+    expect(counts.suppressed).toBe(0)
+  })
+
+  it('recurring label does NOT suppress — allows reopen when drift returns (non-terminal)', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.recurring])
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(1)
+    expect(counts.suppressed).toBe(0)
+  })
+
+  it('superseded label does NOT suppress — allows reopen when drift returns (non-terminal)', () => {
+    // superseded is a lifecycle state label, not a terminal suppressor.
+    // If the same drift returns after a proposal was superseded, the loop reopens it.
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.superseded])
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(1)
+    expect(counts.suppressed).toBe(0)
+  })
+})
+
+describe('manually-fixed auto-close when drift clears', () => {
+  it('closes a manually-fixed open proposal with resolved label when drift clears (scan complete)', () => {
+    const fingerprint = 'abc123def456abcd'
+    // No findings in report — drift cleared
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    // Open proposal with manually-fixed label (drift was manually fixed but issue still open)
+    const openIssue = makeOpenIssue(fingerprint, {
+      labels: [PROPOSAL_LABEL, OUTCOME_LABELS.manuallyFixed],
+    })
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [openIssue]}))
+
+    const closeActions = actions.filter(a => a.type === 'close')
+    expect(closeActions).toHaveLength(1)
+    const closeAction = closeActions[0]
+    if (closeAction?.type === 'close') {
+      expect(closeAction.issueNumber).toBe(openIssue.number)
+      expect(closeAction.labels).toContain(OUTCOME_LABELS.resolved)
+    }
+    expect(counts.closed).toBe(1)
+  })
+})
+
+describe('closed proposal without outcome marker — conservative treatment', () => {
+  it('closed proposal with fingerprint but no outcome label is treated as non-terminal (reopen when drift returns)', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    // Closed with only the proposal label — no outcome label
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL])
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    // Conservative: no brand-new open; reopen instead
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(1)
+    expect(counts.reopened).toBe(1)
+  })
+
+  it('closed proposal without outcome marker is NOT silently treated as clean (counted for operator attention)', () => {
+    const fingerprint = 'abc123def456abcd'
+    // No findings — drift cleared
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    // Closed with only the proposal label — no outcome label
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL])
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
+
+    // The closed issue without outcome marker should be counted for operator attention
+    expect(counts.closedWithoutOutcome).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('proposal body conciseness', () => {
+  it('proposal body contains evidence fields but no raw claim text or session narration', () => {
+    const finding = makeDriftedFinding()
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const {actions} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+    const openAction = actions.find(a => a.type === 'open')
+    if (openAction?.type === 'open') {
+      // Must contain structured evidence fields
+      expect(openAction.body).toContain('Kind')
+      expect(openAction.body).toContain('Claimed state')
+      // Must NOT contain session narration phrases
+      expect(openAction.body).not.toMatch(/I (found|detected|noticed|analyzed|checked)/i)
+      expect(openAction.body).not.toMatch(/session|agent|workflow log/i)
+      // Must contain the fingerprint marker (machine-readable, not raw claim text)
+      expect(openAction.body).toContain(`<!-- status-truth:fingerprint=${finding.fingerprint} -->`)
+    }
+  })
+
+  it('workflow/open result summary is counts-only by claim kind — no paths or fingerprints', () => {
+    const finding = makeDriftedFinding()
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const result = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+    // countsByKind must be present and counts-only
+    expect(result.countsByKind).toBeDefined()
+    const json = JSON.stringify(result.countsByKind)
+    // Must not contain file paths or fingerprint-like hex strings
+    expect(json).not.toMatch(/docs\/plans|scripts\/|\.github\//)
+    expect(json).not.toMatch(/[a-f0-9]{16,}/)
+  })
+})

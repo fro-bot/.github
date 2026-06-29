@@ -68,6 +68,32 @@ const TERMINAL_LABELS: readonly string[] = [OUTCOME_LABELS.rejected, OUTCOME_LAB
 /** Labels that are removed when a non-terminal closed issue is reopened. */
 const RESOLVING_LABELS: readonly string[] = [OUTCOME_LABELS.resolved, OUTCOME_LABELS.manuallyFixed]
 
+/**
+ * Outcome labels that count as accuracy signals for per-kind usefulness math.
+ * Only accepted, rejected, and false-positive are accuracy signals.
+ * Other outcome labels (resolved, manually-fixed, recurring, superseded) are lifecycle
+ * state labels, not accuracy signals.
+ */
+const ACCURACY_SIGNAL_LABELS: readonly string[] = [
+  OUTCOME_LABELS.accepted,
+  OUTCOME_LABELS.rejected,
+  OUTCOME_LABELS.falsePositive,
+]
+
+/**
+ * All recognized outcome labels (accuracy signals + lifecycle state labels).
+ * Labels outside this set on a proposal issue are malformed outcome markers.
+ */
+const ALL_RECOGNIZED_OUTCOME_LABELS: readonly string[] = [
+  OUTCOME_LABELS.accepted,
+  OUTCOME_LABELS.rejected,
+  OUTCOME_LABELS.falsePositive,
+  OUTCOME_LABELS.superseded,
+  OUTCOME_LABELS.manuallyFixed,
+  OUTCOME_LABELS.resolved,
+  OUTCOME_LABELS.recurring,
+]
+
 // ---------------------------------------------------------------------------
 // Hidden marker constants
 // ---------------------------------------------------------------------------
@@ -142,6 +168,22 @@ export interface SuppressAction {
 /** Discriminated union of all proposal lifecycle actions. */
 export type ProposalAction = OpenAction | UpdateCommentAction | ReopenAction | CloseAction | SuppressAction
 
+/** Per-kind accuracy signal from accepted/rejected/false-positive outcomes. */
+export interface KindUsefulnessCounts {
+  readonly accepted: number
+  readonly rejected: number
+  readonly falsePositive: number
+}
+
+/** Per-kind action counts for workflow/open result summary (counts-only, no paths or fingerprints). */
+export interface KindActionCounts {
+  readonly opened: number
+  readonly updated: number
+  readonly reopened: number
+  readonly closed: number
+  readonly suppressed: number
+}
+
 /** Aggregate counts returned by the planner. */
 export interface ProposalCounts {
   readonly opened: number
@@ -154,6 +196,22 @@ export interface ProposalCounts {
   readonly sameRunDeduplicated: number
   readonly malformedMarkers: number
   readonly versionRejected: number
+  /**
+   * Closed issues with a valid fingerprint but no recognized outcome label.
+   * Counted for operator attention; not included in accuracy math.
+   */
+  readonly closedWithoutOutcome: number
+  /**
+   * Closed issues with a valid fingerprint but an unrecognized/malformed outcome label.
+   * Counted for operator attention; excluded from usefulnessByKind accuracy math.
+   */
+  readonly malformedOutcomeMarkers: number
+  /**
+   * Per-kind accuracy signal from accepted/rejected/false-positive outcomes.
+   * Computed from all existing issues with recognized outcome labels.
+   * Excludes malformed/unknown labels.
+   */
+  readonly usefulnessByKind: Readonly<Record<string, KindUsefulnessCounts>>
 }
 
 /** Input to the pure lifecycle planner. */
@@ -175,6 +233,11 @@ export interface PlanStatusTruthProposalActionsInput {
 export interface PlanStatusTruthProposalActionsResult {
   readonly actions: readonly ProposalAction[]
   readonly counts: ProposalCounts
+  /**
+   * Per-kind action counts for workflow/open result summary.
+   * Counts-only: no paths, fingerprints, or claim text.
+   */
+  readonly countsByKind: Readonly<Record<string, KindActionCounts>>
 }
 
 // ---------------------------------------------------------------------------
@@ -324,7 +387,11 @@ export function planStatusTruthProposalActions(
         sameRunDeduplicated: 0,
         malformedMarkers: 0,
         versionRejected: 1,
+        closedWithoutOutcome: 0,
+        malformedOutcomeMarkers: 0,
+        usefulnessByKind: {},
       },
+      countsByKind: {},
     }
   }
 
@@ -332,6 +399,10 @@ export function planStatusTruthProposalActions(
   const openByFingerprint = new Map<string, ExistingProposalIssue>()
   const closedByFingerprint = new Map<string, ExistingProposalIssue>()
   let malformedMarkers = 0
+
+  const usefulnessByKind: Record<string, {accepted: number; rejected: number; falsePositive: number}> = {}
+  let closedWithoutOutcome = 0
+  let malformedOutcomeMarkers = 0
 
   for (const issue of existingIssues) {
     const fp = extractProposalFingerprint(issue.body)
@@ -348,6 +419,49 @@ export function planStatusTruthProposalActions(
     } else {
       // Closed: keep the most recently seen (map will hold last one; caller should sort by updated desc)
       closedByFingerprint.set(fp, issue)
+
+      // Only accuracy signal labels (accepted, rejected, false-positive) count for usefulness math.
+      // Malformed/unknown outcome labels are counted for operator attention but excluded from math.
+      const outcomeLabels = issue.labels.filter(l => l !== PROPOSAL_LABEL && l.startsWith('status-truth:'))
+      const recognizedOutcomeLabels = outcomeLabels.filter(l => ALL_RECOGNIZED_OUTCOME_LABELS.includes(l))
+      const unrecognizedOutcomeLabels = outcomeLabels.filter(l => !ALL_RECOGNIZED_OUTCOME_LABELS.includes(l))
+
+      if (unrecognizedOutcomeLabels.length > 0) {
+        // Mixed or malformed outcome markers: increment counter and skip accuracy math entirely.
+        // Conservative: if ANY unrecognized status-truth:* label is present alongside a recognized
+        // accuracy signal label, the issue is treated as malformed for accuracy purposes.
+        // The recognized label is NOT included in usefulnessByKind to avoid polluting accuracy math
+        // with ambiguous outcome state.
+        malformedOutcomeMarkers++
+      } else if (outcomeLabels.length === 0) {
+        // Closed with no outcome label at all — count for operator attention
+        closedWithoutOutcome++
+      } else {
+        // Only accumulate accuracy signals when there are NO unrecognized outcome labels.
+        // This is intentionally conservative: we only count recognized accuracy signal labels
+        // on issues that have no malformed/unknown outcome markers.
+        for (const label of recognizedOutcomeLabels) {
+          if (!ACCURACY_SIGNAL_LABELS.includes(label)) continue
+
+          // Infer kind from issue title: "Status truth: <kind> drift in <path>"
+          const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(issue.title)
+          const kind = titleMatch?.[1] ?? 'unknown'
+
+          if (usefulnessByKind[kind] === undefined) {
+            usefulnessByKind[kind] = {accepted: 0, rejected: 0, falsePositive: 0}
+          }
+          const entry = usefulnessByKind[kind]
+          if (entry !== undefined) {
+            if (label === OUTCOME_LABELS.accepted) {
+              usefulnessByKind[kind] = {...entry, accepted: entry.accepted + 1}
+            } else if (label === OUTCOME_LABELS.rejected) {
+              usefulnessByKind[kind] = {...entry, rejected: entry.rejected + 1}
+            } else if (label === OUTCOME_LABELS.falsePositive) {
+              usefulnessByKind[kind] = {...entry, falsePositive: entry.falsePositive + 1}
+            }
+          }
+        }
+      }
     }
   }
 
@@ -360,6 +474,22 @@ export function planStatusTruthProposalActions(
   let noAction = 0
   let sameRunDeduplicated = 0
 
+  // Per-kind action counts for workflow/open result summary (counts-only, no paths or fingerprints).
+  const countsByKind: Record<
+    string,
+    {opened: number; updated: number; reopened: number; closed: number; suppressed: number}
+  > = {}
+
+  function incrementKindCount(kind: string, field: 'opened' | 'updated' | 'reopened' | 'closed' | 'suppressed'): void {
+    if (countsByKind[kind] === undefined) {
+      countsByKind[kind] = {opened: 0, updated: 0, reopened: 0, closed: 0, suppressed: 0}
+    }
+    const entry = countsByKind[kind]
+    if (entry !== undefined) {
+      countsByKind[kind] = {...entry, [field]: entry[field] + 1}
+    }
+  }
+
   // Track which fingerprints are active in this report (for close-on-clear)
   const activeFingerprintsInReport = new Set<string>()
 
@@ -371,7 +501,7 @@ export function planStatusTruthProposalActions(
     // Skip non-proposal-eligible findings (unresolved, current)
     if (!finding.proposalEligible) continue
 
-    const {fingerprint} = finding
+    const {fingerprint, kind} = finding
     activeFingerprintsInReport.add(fingerprint)
 
     // a. Same-run dedup: skip if already created this run
@@ -389,6 +519,7 @@ export function planStatusTruthProposalActions(
         reason: 'terminal outcome label on closed proposal',
       })
       suppressed++
+      incrementKindCount(kind, 'suppressed')
       continue
     }
 
@@ -418,6 +549,7 @@ export function planStatusTruthProposalActions(
           comment: gateResult.sanitizedContent,
         })
         updated++
+        incrementKindCount(kind, 'updated')
       } else {
         // Drift unchanged — no action to avoid comment spam
         noAction++
@@ -447,6 +579,7 @@ export function planStatusTruthProposalActions(
         addLabels: [OUTCOME_LABELS.recurring],
       })
       reopened++
+      incrementKindCount(kind, 'reopened')
       continue
     }
 
@@ -484,6 +617,7 @@ export function planStatusTruthProposalActions(
       labels: [PROPOSAL_LABEL],
     })
     opened++
+    incrementKindCount(kind, 'opened')
   }
 
   // 4. Close-on-clear: only when scan is complete and not execution-failure
@@ -511,6 +645,10 @@ export function planStatusTruthProposalActions(
           comment: gateResult.sanitizedContent,
         })
         closed++
+        // Infer kind from open issue title for countsByKind
+        const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(openIssue.title)
+        const kind = titleMatch?.[1] ?? 'unknown'
+        incrementKindCount(kind, 'closed')
       }
     }
   }
@@ -528,7 +666,11 @@ export function planStatusTruthProposalActions(
       sameRunDeduplicated,
       malformedMarkers,
       versionRejected: 0,
+      closedWithoutOutcome,
+      malformedOutcomeMarkers,
+      usefulnessByKind,
     },
+    countsByKind,
   }
 }
 
@@ -1061,6 +1203,13 @@ interface OpenResult {
   dryRun: boolean
   labelGateFailed: boolean
   counts: ExecuteStatusTruthProposalActionsCounts
+  /**
+   * Planned per-kind action counts from the planner (counts-only, no paths or fingerprints).
+   * These are the counts the planner intended to execute, not the executed counts.
+   * Allows downstream workflow steps to report per-kind summaries without exposing
+   * any identity-bearing fields.
+   */
+  plannedCountsByKind: Readonly<Record<string, KindActionCounts>>
 }
 
 /**
@@ -1217,6 +1366,7 @@ async function runOpen(): Promise<void> {
     dryRun: executeResult.dryRun,
     labelGateFailed: executeResult.labelGateFailed,
     counts: executeResult.counts,
+    plannedCountsByKind: planResult.countsByKind,
   }
 
   const resultJson = `${JSON.stringify(result)}\n`
