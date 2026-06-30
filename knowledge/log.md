@@ -2509,3 +2509,21 @@ Sources: https://github.com/marcusrbrown/extend-vscode (SHA 347447ca73e25364c391
 Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-06-30 08:39] ingest | marcusrbrown/cortexkit_anthropic-auth
+
+Third consecutive no-delta re-survey of `marcusrbrown/cortexkit_anthropic-auth` (HEAD still `99fdbe9`, last push 2026-05-31T04:03Z — unchanged since the 2026-06-09 and 2026-06-19 surveys). Reads limited to repo metadata, `.github/workflows` listing, root + per-package `package.json`, and `fro-bot.yaml` per the untrusted-input constraint.
+
+Zero drift over 30 days. Re-verified live: 4 workflows unchanged (`ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`); root manifest `@cortexkit/anthropic-auth` (`private`, `workspaces: packages/*`); published packages hold at `1.2.5-mb.3` (`@marcusrbrown/anthropic-auth-core`, `@marcusrbrown/opencode-anthropic-auth`); Pi package `@cortexkit/pi-anthropic-auth` still `private` at upstream `1.2.5`; Biome 2.4.15, `@opencode-ai/plugin` 1.15.5, Pi peers `@earendil-works/pi-*` 0.75.3. Public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1 star / 0 forks, 520 KB.
+
+Only notable signal: Fro Bot agent pin still **v0.45.0** (SHA `8aac0fc`) — now an ecosystem laggard against fleet leaders at v0.77.0+, but the parked fork has had no PR or maintenance churn to carry a Renovate bump. Fro Bot workflow present and active (no gap to flag). No new topic/entity/comparison pages warranted; existing [[opencode-plugins]], [[marcusrbrown--opencode-copilot-delegate]], and [[marcusrbrown--dotfiles]] coverage already absorbs the (absent) deltas.
+
+Updated repo page `marcusrbrown--cortexkit-anthropic-auth.md` (new source entry SHA `99fdbe9`, frontmatter `updated` → 2026-06-30, 2026-06-30 no-delta block) and `index.md` summary line.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 99fdbe906c5875893d363c904f6e6bc066d997b1)
+
+## [2026-06-30 08:41] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
