@@ -22,6 +22,7 @@ import {
   buildStatusTruthReport,
   CLAIM_KIND_DEFINITIONS,
   computeClaimFingerprint,
+  DEFAULT_ENABLED_KINDS,
   detectStatusTruthClaims,
   extractStatusTruthClaimsFromText,
   isKnownReportVersion,
@@ -32,6 +33,8 @@ import {
   normalizeClaimText,
   resolveAllClaims,
   resolveClaimLiveState,
+  resolveFileParseClaims,
+  resolvePlanStatusClaim,
   scanIssueStatusTruthClaims,
   scanStatusTruthClaims,
   selectDetectFailureClass,
@@ -827,11 +830,8 @@ describe('validateStatusTruthArtifact', () => {
 // Unit 4: Artifact safety contract tests
 // ---------------------------------------------------------------------------
 
-describe('Unit 4: artifact safety contract', () => {
+describe('artifact safety contract', () => {
   it('detect output artifact contains safe machine fields and counters but no raw claim text or source snippets', () => {
-    // The report envelope must not expose raw claim text or source snippets.
-    // Findings carry typed fields (kind, path, sourceRef, verdict, fingerprint,
-    // claimedState, liveState) but NOT raw document text or API response bodies.
     const claim = makeClaim({
       kind: 'pr-state',
       path: 'docs/plans/example.md',
@@ -974,10 +974,6 @@ describe('Unit 4: artifact safety contract', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Unit 4 corrections: extractStatusTruthClaimsFromText tests
-// ---------------------------------------------------------------------------
-
 describe('extractStatusTruthClaimsFromText', () => {
   it('extracts a pr-state claim from text containing "PR #42 is open"', () => {
     const claims = extractStatusTruthClaimsFromText({
@@ -1017,15 +1013,16 @@ describe('extractStatusTruthClaimsFromText', () => {
     expect(claim?.claimedState).toBe('published')
   })
 
-  it('extracts a plan-status claim from frontmatter "status: active"', () => {
+  it('extracts a plan-status claim from cross-file prose reference "docs/plans/my-plan.md is active"', () => {
     const claims = extractStatusTruthClaimsFromText({
-      path: 'docs/plans/my-plan.md',
-      text: '---\nstatus: active\ntitle: My Plan\n---\n\nContent.',
+      path: 'README.md',
+      text: 'The plan docs/plans/my-plan.md is active.',
     })
     expect(claims).toHaveLength(1)
     const claim = claims[0]
     expect(claim?.kind).toBe('plan-status')
-    expect(claim?.sourceRef).toBe('docs/plans/my-plan.md#status')
+    // sourceRef is the plan path itself (not path#status) for cross-file claims
+    expect(claim?.sourceRef).toBe('docs/plans/my-plan.md')
     expect(claim?.claimedState).toBe('active')
   })
 
@@ -1056,20 +1053,12 @@ describe('extractStatusTruthClaimsFromText', () => {
     expect(claims[0]?.normalizedText).toBe('pr #42 is open')
   })
 
-  // Fix #1: Cross-repo PR/issue references must not resolve as current-repo references.
-  // When text contains "fro-bot/agent#1033 PR #1033 is open", the extractor must NOT
-  // produce a bare #1033 sourceRef that the resolver would treat as current-repo.
   it('cross-repo PR reference: text with owner/repo prefix near claim does not produce bare #N sourceRef', () => {
-    // This text has a cross-repo context: "fro-bot/agent#1033" followed by "PR #1033 is open"
-    // The extractor currently produces bare #1033 which the resolver treats as current-repo.
-    // After fix: either the sourceRef is prefixed (fro-bot/agent#1033) or the claim is skipped.
     const claims = extractStatusTruthClaimsFromText({
       path: 'docs/plans/example.md',
       text: 'See fro-bot/agent#1033 PR #1033 is open for context.',
     })
-    // Assert directly: no bare #1033 sourceRef must be extracted
     expect(claims.filter(c => c.sourceRef === '#1033')).toHaveLength(0)
-    // If a claim is extracted, its sourceRef must NOT be bare #1033
     for (const claim of claims) {
       if (claim.kind === 'pr-state' && claim.claimedState === 'open') {
         expect(claim.sourceRef).not.toBe('#1033')
@@ -1078,12 +1067,10 @@ describe('extractStatusTruthClaimsFromText', () => {
   })
 
   it('cross-repo issue reference: text with owner/repo prefix near claim does not produce bare #N sourceRef', () => {
-    // "fro-bot/dashboard#48 issue #48 is open" — must not produce bare #48
     const claims = extractStatusTruthClaimsFromText({
       path: 'docs/plans/example.md',
       text: 'Tracked in fro-bot/dashboard#48 issue #48 is open.',
     })
-    // Assert directly: no bare #48 sourceRef must be extracted
     expect(claims.filter(c => c.sourceRef === '#48')).toHaveLength(0)
     for (const claim of claims) {
       if (claim.kind === 'issue-state' && claim.claimedState === 'open') {
@@ -1092,10 +1079,6 @@ describe('extractStatusTruthClaimsFromText', () => {
     }
   })
 })
-
-// ---------------------------------------------------------------------------
-// Unit 4 corrections: scanStatusTruthClaims tests
-// ---------------------------------------------------------------------------
 
 describe('scanStatusTruthClaims', () => {
   it('scans files returned by fileLister and extracts claims', async () => {
@@ -1179,10 +1162,6 @@ describe('scanStatusTruthClaims', () => {
     expect(scanErrors).toBe(0)
   })
 })
-
-// ---------------------------------------------------------------------------
-// Unit 4 corrections: resolveClaimLiveState tests
-// ---------------------------------------------------------------------------
 
 function makeMockDetectOctokit(
   overrides: {
@@ -1310,21 +1289,15 @@ describe('resolveClaimLiveState', () => {
     expect(result.status).toBe('unavailable')
   })
 
-  // Fix #3: plan-status resolver must not return claimedState as live state
-  it('plan-status returns unavailable (not resolved with claimedState as live state)', async () => {
+  it('plan-status without fileReader returns unavailable', async () => {
     const octokit = makeMockDetectOctokit()
-    const claim = makeTestClaim({kind: 'plan-status', sourceRef: 'docs/plans/foo.md#status', claimedState: 'active'})
+    const claim = makeTestClaim({kind: 'plan-status', sourceRef: 'docs/plans/foo.md', claimedState: 'active'})
     const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
-    // plan-status has no real file-parse resolver yet; must be unavailable, not resolved
     expect(result.status).toBe('unavailable')
   })
 })
 
-// ---------------------------------------------------------------------------
-// Unit 4 corrections: end-to-end extract → resolve → detect pipeline tests
-// ---------------------------------------------------------------------------
-
-describe('Unit 4: extract → resolve → detect pipeline', () => {
+describe('extract → resolve → detect pipeline', () => {
   it('text fixture "PR #42 is open" extracts pr-state claim; when resolver says closed, report contains one drifted finding', async () => {
     // Extract
     const claims = extractStatusTruthClaimsFromText({
@@ -1386,10 +1359,7 @@ describe('Unit 4: extract → resolve → detect pipeline', () => {
     expect(findings[0]?.proposalEligible).toBe(false)
   })
 
-  // Fix #1: cross-repo text that produces a bare #N must not classify as current-repo drifted
   it('cross-repo context text: extracted claim (if any) classifies as unresolved, not drifted', async () => {
-    // Text: "fro-bot/agent#1033 PR #1033 is open" — if extractor produces bare #1033,
-    // the resolver must return unavailable (not resolved), so detect classifies as unresolved.
     const claims = extractStatusTruthClaimsFromText({
       path: 'docs/plans/example.md',
       text: 'See fro-bot/agent#1033 PR #1033 is open for context.',
@@ -1404,11 +1374,8 @@ describe('Unit 4: extract → resolve → detect pipeline', () => {
     })
 
     const findings = detectStatusTruthClaims(claims, resolverResults)
-    // Any pr-state finding for #1033 must be unresolved (not drifted/current)
     for (const finding of findings) {
       if (finding.kind === 'pr-state' && finding.verdict !== 'unsafe') {
-        // If a bare #1033 was extracted and resolved as current-repo, it would be drifted.
-        // After fix: either no claim extracted, or sourceRef is non-bare and verdict is unresolved.
         expect(finding.verdict).not.toBe('drifted')
         expect(finding.verdict).not.toBe('current')
       }
@@ -1490,10 +1457,6 @@ describe('Unit 4: extract → resolve → detect pipeline', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Unit 4 fix 1: buildProposedCorrection uses replacement function ($ safety)
-// ---------------------------------------------------------------------------
-
 describe('buildProposedCorrection: $ token safety via detectStatusTruthClaims', () => {
   it('live state containing $& is inserted literally, not expanded as a replacement token', () => {
     // If String.replace used a string replacement, '$&' would expand to the matched text.
@@ -1566,10 +1529,6 @@ describe('buildStatusTruthReport failure-class integration', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// selectDetectFailureClass: issue/comment API failures must map to api-unavailable
-// ---------------------------------------------------------------------------
-
 describe('selectDetectFailureClass', () => {
   it('returns null when all error counts are zero', () => {
     expect(selectDetectFailureClass({fileScanErrors: 0, issueScanErrors: 0, resolveErrors: 0})).toBeNull()
@@ -1602,42 +1561,40 @@ describe('selectDetectFailureClass', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// CALIBRATION: plan-status exclusion from production scans
-// ---------------------------------------------------------------------------
-
-describe('scanStatusTruthClaims: plan-status exclusion (calibration)', () => {
-  it('production scan (default) excludes plan-status claims so dry-run produces zero unresolved plan-status noise', async () => {
-    // A plan doc with frontmatter status: active — production scan must NOT emit plan-status claims
+describe('scanStatusTruthClaims: plan-status no-noise behavior', () => {
+  it('production scan (default): self-referential plan frontmatter does NOT produce plan-status claims', async () => {
     const fileLister: FileLister = async () => ['docs/plans/my-plan.md']
     const fileReader: FileReader = async () => '---\nstatus: active\ntitle: My Plan\n---\n\nContent.'
 
     const {claims} = await scanStatusTruthClaims({fileLister, fileReader})
-    // Default production scan must exclude plan-status
+    // Self-referential frontmatter must not produce plan-status claims
     const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
     expect(planStatusClaims).toHaveLength(0)
   })
 
-  it('pure extractor still extracts plan-status when all kinds are enabled', () => {
-    // extractStatusTruthClaimsFromText is a pure function and always extracts all kinds
+  it('pure extractor: self-referential frontmatter does NOT produce plan-status claims', () => {
     const claims = extractStatusTruthClaimsFromText({
       path: 'docs/plans/my-plan.md',
       text: '---\nstatus: active\ntitle: My Plan\n---\n\nContent.',
     })
     const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planStatusClaims).toHaveLength(0)
+  })
+
+  it('pure extractor: cross-file prose reference DOES produce plan-status claims', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan docs/plans/my-plan.md is active.',
+    })
+    const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
     expect(planStatusClaims).toHaveLength(1)
   })
 
-  it('production scan with explicit enabledKinds including plan-status does emit plan-status claims', async () => {
-    // When caller explicitly opts in, plan-status is included
-    const fileLister: FileLister = async () => ['docs/plans/my-plan.md']
-    const fileReader: FileReader = async () => '---\nstatus: active\ntitle: My Plan\n---\n\nContent.'
+  it('production scan with default kinds: cross-file prose reference emits plan-status claim', async () => {
+    const fileLister: FileLister = async () => ['README.md']
+    const fileReader: FileReader = async () => 'The plan docs/plans/my-plan.md is active.'
 
-    const {claims} = await scanStatusTruthClaims({
-      fileLister,
-      fileReader,
-      enabledKinds: ['pr-state', 'issue-state', 'release-tag-state', 'plan-status', 'rollout-tracker-status'],
-    })
+    const {claims} = await scanStatusTruthClaims({fileLister, fileReader})
     const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
     expect(planStatusClaims).toHaveLength(1)
   })
@@ -1652,11 +1609,7 @@ describe('scanStatusTruthClaims: plan-status exclusion (calibration)', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// CALIBRATION: GitHub issue body/comment scanning
-// ---------------------------------------------------------------------------
-
-describe('scanIssueStatusTruthClaims: issue body/comment scanning (calibration)', () => {
+describe('scanIssueStatusTruthClaims: issue body/comment scanning', () => {
   it('issue body containing "PR #42 is open" yields a pr-state claim with synthetic issue body path', async () => {
     const issues: IssueListItem[] = [{number: 3512, title: 'Rollout tracker', body: 'PR #42 is open', labels: []}]
     const issueLister: IssueLister = async () => issues
@@ -1781,27 +1734,20 @@ describe('scanIssueStatusTruthClaims: issue body/comment scanning (calibration)'
       commentFetcher,
     })
 
-    // Body claims still extracted; comment fetch failure counted
     expect(result.scanErrors).toBeGreaterThan(0)
-    // Body claim from issue 300 should still be present (path uses `current`)
     expect(result.claims.filter(c => c.path === 'github-issue://current/issues/300#body')).toHaveLength(1)
   })
 
   it('synthetic issue paths use current scheme and do not contain owner/repo identity', () => {
-    // Structural test: synthetic paths use `current` (not owner/repo) so generic
-    // code does not leak identity before explicit publicness proof.
     const syntheticBodyPath = 'github-issue://current/issues/3512#body'
     const syntheticCommentPath = 'github-issue://current/issues/3512#comment-9001'
 
-    // These paths use the `current` scheme
     expect(syntheticBodyPath).toMatch(/^github-issue:\/\/current\/issues\/\d+#body$/)
     expect(syntheticCommentPath).toMatch(/^github-issue:\/\/current\/issues\/\d+#comment-\d+$/)
 
-    // The path scheme must not contain raw body text or private identifiers
     expect(syntheticBodyPath).not.toContain('PR #42 is open')
     expect(syntheticCommentPath).not.toContain('issue #55 is closed')
 
-    // Must not contain owner/repo identity
     expect(syntheticBodyPath).not.toContain('fro-bot')
     expect(syntheticBodyPath).not.toContain('.github')
   })
@@ -1839,10 +1785,6 @@ describe('scanIssueStatusTruthClaims: issue body/comment scanning (calibration)'
   })
 })
 
-// ---------------------------------------------------------------------------
-// Blocker 1: Synthetic issue paths must use `current`, not owner/repo
-// ---------------------------------------------------------------------------
-
 describe('synthetic issue paths use current, not owner/repo', () => {
   it('issue body path uses github-issue://current/issues/<n>#body, not owner/repo', async () => {
     const issues: IssueListItem[] = [{number: 3512, title: 'Rollout tracker', body: 'PR #42 is open', labels: []}]
@@ -1858,7 +1800,6 @@ describe('synthetic issue paths use current, not owner/repo', () => {
 
     expect(claims).toHaveLength(1)
     const claim = claims[0]
-    // Must use `current`, not owner/repo
     expect(claim?.path).toBe('github-issue://current/issues/3512#body')
     expect(claim?.path).not.toContain('fro-bot')
     expect(claim?.path).not.toContain('.github')
@@ -1878,14 +1819,12 @@ describe('synthetic issue paths use current, not owner/repo', () => {
 
     expect(claims).toHaveLength(1)
     const claim = claims[0]
-    // Must use `current`, not owner/repo
     expect(claim?.path).toBe('github-issue://current/issues/100#comment-9001')
     expect(claim?.path).not.toContain('fro-bot')
     expect(claim?.path).not.toContain('.github')
   })
 
   it('scanner output for issue body uses current path regardless of owner/repo passed in', async () => {
-    // Even with a different owner/repo, the path must always use `current`
     const issues: IssueListItem[] = [{number: 7, title: 'Test', body: 'issue #1 is open', labels: []}]
     const issueLister: IssueLister = async () => issues
     const commentFetcher: IssueCommentFetcher = async () => []
@@ -1921,8 +1860,7 @@ describe('synthetic issue paths use current, not owner/repo', () => {
     expect(claims[0]?.path).not.toContain('some-other-repo')
   })
 
-  it('no public finding path or sourceRef test regresses: public finding path is still present', async () => {
-    // Regression guard: public findings still have path and sourceRef fields
+  it('public finding path and sourceRef fields are still present after issue scan', async () => {
     const issues: IssueListItem[] = [{number: 3512, title: 'Rollout tracker', body: 'PR #42 is open', labels: []}]
     const issueLister: IssueLister = async () => issues
     const commentFetcher: IssueCommentFetcher = async () => []
@@ -1942,7 +1880,6 @@ describe('synthetic issue paths use current, not owner/repo', () => {
     expect(findings).toHaveLength(1)
     const finding = findings[0]
     expect(finding?.verdict).toBe('drifted')
-    // Public finding must still have path and sourceRef
     if (finding?.verdict === 'drifted') {
       expect(finding.path).toBe('github-issue://current/issues/3512#body')
       expect(finding.sourceRef).toBe('#42')
@@ -1951,13 +1888,8 @@ describe('synthetic issue paths use current, not owner/repo', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Blocker 2: Production issue/comment fetchers must paginate
-// ---------------------------------------------------------------------------
-
 describe('listCurrentRepoIssues: pagination helper fetches all pages', () => {
   it('fetches multiple pages until exhausted', async () => {
-    // Simulate two pages: page 1 has 2 items, page 2 has 1 item, page 3 is empty
     const page1 = [
       {number: 1, title: 'Issue 1', body: 'body1', labels: [] as {name?: string}[]},
       {number: 2, title: 'Issue 2', body: 'body2', labels: [] as {name?: string}[]},
@@ -2077,11 +2009,6 @@ describe('listCurrentRepoIssueComments: pagination helper fetches all pages', ()
   })
 })
 
-// ---------------------------------------------------------------------------
-// Cross-repo status-truth signal: grammar, publicness proof, privacy gates
-// ---------------------------------------------------------------------------
-
-// Helper: build a mock DetectOctokitClient that supports repos.get for publicness
 function makeCrossRepoOctokit(
   overrides: {
     repoPublic?: boolean
@@ -2129,10 +2056,6 @@ function makeCrossRepoOctokit(
     },
   }
 }
-
-// ---------------------------------------------------------------------------
-// Cross-repo claim grammar: extractStatusTruthClaimsFromText
-// ---------------------------------------------------------------------------
 
 describe('cross-repo claim grammar: extractStatusTruthClaimsFromText', () => {
   // PR forms
@@ -2257,10 +2180,6 @@ describe('cross-repo claim grammar: extractStatusTruthClaimsFromText', () => {
     }
   })
 })
-
-// ---------------------------------------------------------------------------
-// Cross-repo publicness proof and resolver
-// ---------------------------------------------------------------------------
 
 describe('resolveClaimLiveState: cross-repo publicness proof', () => {
   it('cross-repo PR claim resolves to merged when repo is public and PR is merged', async () => {
@@ -2421,10 +2340,6 @@ describe('resolveClaimLiveState: cross-repo publicness proof', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Privacy gate: unsafe finding must not expose identity fields
-// ---------------------------------------------------------------------------
-
 describe('cross-repo privacy gate: unsafe finding omits identity fields', () => {
   it('private cross-repo PR claim produces unsafe finding with no path/sourceRef/claimedState/fingerprint', () => {
     const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
@@ -2481,17 +2396,8 @@ describe('cross-repo privacy gate: unsafe finding omits identity fields', () => 
   })
 })
 
-// ---------------------------------------------------------------------------
-// #3512-style coordination signal: end-to-end cross-repo fixture
-// ---------------------------------------------------------------------------
-
-describe('#3512-style cross-repo coordination signal (synthetic public-safe fixtures)', () => {
-  // Inspired by real coordination patterns in issue #3512 (rollout tracker).
-  // All fixtures are synthetic and use public repos only.
-
-  it('synthetic #3512-style: cross-repo closed PR claim becomes drifted when live state is merged', async () => {
-    // Fixture: a coordination comment says "fro-bot/agent#1033 is closed"
-    // but the live PR is actually merged. This is a real drift signal.
+describe('cross-repo coordination signal (synthetic public-safe fixtures)', () => {
+  it('cross-repo closed PR claim becomes drifted when live state is merged', async () => {
     const text = 'Coordination: fro-bot/agent#1033 is closed'
     const claims = extractStatusTruthClaimsFromText({path: 'docs/plans/rollout.md', text})
     const crossRepoClaims = claims.filter(c => 'targetOwner' in c && c.kind === 'pr-state')
@@ -2515,7 +2421,7 @@ describe('#3512-style cross-repo coordination signal (synthetic public-safe fixt
     }
   })
 
-  it('synthetic #3512-style: cross-repo open issue claim becomes current when live state is open', async () => {
+  it('cross-repo open issue claim becomes current when live state is open', async () => {
     const text = 'Tracking: issue fro-bot/dashboard#48 is open'
     const claims = extractStatusTruthClaimsFromText({path: 'docs/plans/rollout.md', text})
     const crossRepoClaims = claims.filter(c => 'targetOwner' in c && c.kind === 'issue-state')
@@ -2534,7 +2440,7 @@ describe('#3512-style cross-repo coordination signal (synthetic public-safe fixt
     expect(current.length).toBeGreaterThan(0)
   })
 
-  it('synthetic #3512-style: cross-repo merged PR claim is current when live state is merged', async () => {
+  it('cross-repo merged PR claim is current when live state is merged', async () => {
     const text = 'Merged: fro-bot/agent#1033 is merged'
     const claims = extractStatusTruthClaimsFromText({path: 'docs/plans/rollout.md', text})
     const crossRepoClaims = claims.filter(c => 'targetOwner' in c && c.kind === 'pr-state')
@@ -2553,7 +2459,7 @@ describe('#3512-style cross-repo coordination signal (synthetic public-safe fixt
     expect(current.length).toBeGreaterThan(0)
   })
 
-  it('synthetic #3512-style: private cross-repo claim produces unsafe finding (zero identity fields)', async () => {
+  it('private cross-repo claim produces unsafe finding (zero identity fields)', async () => {
     const text = 'Blocked by: private-org/private-repo#99 is open'
     const claims = extractStatusTruthClaimsFromText({path: 'docs/plans/rollout.md', text})
     const crossRepoClaims = claims.filter(c => 'targetOwner' in c && c.kind === 'pr-state')
@@ -2578,8 +2484,7 @@ describe('#3512-style cross-repo coordination signal (synthetic public-safe fixt
     }
   })
 
-  it('plan-status default exclusion is intact: cross-repo scan does not break plan-status exclusion', async () => {
-    // Regression guard: adding cross-repo support must not re-enable plan-status in default scan
+  it('cross-repo scan does not break plan-status no-noise behavior', async () => {
     const fileLister: FileLister = async () => ['docs/plans/my-plan.md']
     const fileReader: FileReader = async () =>
       '---\nstatus: active\ntitle: My Plan\n---\n\nfro-bot/agent#1033 is merged'
@@ -2587,25 +2492,13 @@ describe('#3512-style cross-repo coordination signal (synthetic public-safe fixt
     const {claims} = await scanStatusTruthClaims({fileLister, fileReader})
     const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
     expect(planStatusClaims).toHaveLength(0)
-    // Cross-repo claim should still be extracted (if in DEFAULT_ENABLED_KINDS)
     const crossRepoClaims = claims.filter(c => 'targetOwner' in c)
-    // Cross-repo pr-state is in DEFAULT_ENABLED_KINDS, so it should be present
     expect(crossRepoClaims.length).toBeGreaterThan(0)
   })
 })
 
-// ---------------------------------------------------------------------------
-// Ambiguous cross-repo open/closed: PR-first with issue fallback
-// ---------------------------------------------------------------------------
-
 describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () => {
-  // Problem: "marcusrbrown/infra#579 is closed" defaults to pr-state.
-  // When PR lookup 404s but issue lookup succeeds, the finding must be
-  // issue-state (current), not pr-state (unresolved).
-
-  it('RED: ambiguous public owner/repo#N is closed — PR 404, issue closed → issue-state current finding', async () => {
-    // Claim extracted as ambiguous (open/closed without explicit issue prefix)
-    // PR lookup 404s, issue lookup returns closed → must produce issue-state current finding
+  it('ambiguous public owner/repo#N is closed — PR 404, issue closed → issue-state current finding', async () => {
     const octokit = makeCrossRepoOctokit({
       repoPublic: true,
       prThrows: true, // PR 404
@@ -2614,11 +2507,11 @@ describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () =>
     const claim: StatusTruthClaim = {
       kind: 'pr-state',
       path: 'docs/plans/example.md',
-      sourceRef: 'marcusrbrown/infra#579',
+      sourceRef: 'example-org/example-repo#579',
       claimedState: 'closed',
-      normalizedText: 'marcusrbrown/infra#579 is closed',
-      targetOwner: 'marcusrbrown',
-      targetRepo: 'infra',
+      normalizedText: 'example-org/example-repo#579 is closed',
+      targetOwner: 'example-org',
+      targetRepo: 'example-repo',
       targetNumberKind: 'ambiguous',
     }
 
@@ -2632,8 +2525,7 @@ describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () =>
     }
   })
 
-  it('RED: ambiguous public owner/repo#N is open — PR lookup succeeds → pr-state current finding', async () => {
-    // When PR lookup succeeds, kind stays pr-state
+  it('ambiguous public owner/repo#N is open — PR lookup succeeds → pr-state current finding', async () => {
     const octokit = makeCrossRepoOctokit({
       repoPublic: true,
       prState: 'open',
@@ -2659,8 +2551,7 @@ describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () =>
     }
   })
 
-  it('RED: ambiguous claim — publicness check still happens before PR/issue lookup', async () => {
-    // repos.get throws 404 → private, no PR or issue lookup attempted
+  it('ambiguous claim — publicness check still happens before PR/issue lookup', async () => {
     const octokit = makeCrossRepoOctokit({repoThrows: true, repoThrowsStatus: 404})
     const claim: StatusTruthClaim = {
       kind: 'pr-state',
@@ -2677,7 +2568,7 @@ describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () =>
     expect(result.status).toBe('private')
   })
 
-  it('RED: ambiguous claim — private repo (private:true) still produces unsafe/no identity fields', async () => {
+  it('ambiguous claim — private repo (private:true) still produces unsafe/no identity fields', async () => {
     const octokit = makeCrossRepoOctokit({repoPublic: false})
     const claim: StatusTruthClaim = {
       kind: 'pr-state',
@@ -2694,7 +2585,7 @@ describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () =>
     expect(result.status).toBe('private')
   })
 
-  it('RED: ambiguous claim — PR 404 and issue 404 → unresolved (both unavailable after publicness proof)', async () => {
+  it('ambiguous claim — PR 404 and issue 404 → unresolved (both unavailable after publicness proof)', async () => {
     const octokit = makeCrossRepoOctokit({
       repoPublic: true,
       prThrows: true,
@@ -2715,21 +2606,21 @@ describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () =>
     expect(result.status).toBe('unavailable')
   })
 
-  it('RED: detectStatusTruthClaims uses resolvedKind to emit issue-state finding for ambiguous claim resolved as issue', () => {
+  it('detectStatusTruthClaims uses resolvedKind to emit issue-state finding for ambiguous claim resolved as issue', () => {
     // When resolver returns resolvedKind: 'issue-state', the finding kind must be issue-state
     const claim: StatusTruthClaim = {
       kind: 'pr-state',
       path: 'docs/plans/example.md',
-      sourceRef: 'marcusrbrown/infra#579',
+      sourceRef: 'example-org/example-repo#579',
       claimedState: 'closed',
-      normalizedText: 'marcusrbrown/infra#579 is closed',
-      targetOwner: 'marcusrbrown',
-      targetRepo: 'infra',
+      normalizedText: 'example-org/example-repo#579 is closed',
+      targetOwner: 'example-org',
+      targetRepo: 'example-repo',
       targetNumberKind: 'ambiguous',
     }
 
     const resolverResults: Record<string, ResolverResult> = {
-      'pr-state:marcusrbrown/infra#579': {
+      'pr-state:example-org/example-repo#579': {
         status: 'resolved',
         state: 'closed',
         resolvedKind: 'issue-state',
@@ -2744,11 +2635,11 @@ describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () =>
     expect(finding?.verdict).toBe('current')
   })
 
-  it('RED: extractStatusTruthClaimsFromText marks ambiguous open/closed cross-repo refs with targetNumberKind=ambiguous', () => {
-    // "marcusrbrown/infra#579 is closed" — no explicit issue prefix, not merged → ambiguous
+  it('extractStatusTruthClaimsFromText marks ambiguous open/closed cross-repo refs with targetNumberKind=ambiguous', () => {
+    // "example-org/example-repo#579 is closed" — no explicit issue prefix, not merged → ambiguous
     const claims = extractStatusTruthClaimsFromText({
       path: 'docs/plans/example.md',
-      text: 'marcusrbrown/infra#579 is closed',
+      text: 'example-org/example-repo#579 is closed',
     })
     const crossRepoClaims = claims.filter(c => 'targetOwner' in c)
     expect(crossRepoClaims.length).toBeGreaterThan(0)
@@ -2756,7 +2647,7 @@ describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () =>
     expect(claim?.targetNumberKind).toBe('ambiguous')
   })
 
-  it('RED: explicit "issue" prefix sets targetNumberKind=issue (not ambiguous)', () => {
+  it('explicit "issue" prefix sets targetNumberKind=issue (not ambiguous)', () => {
     const claims = extractStatusTruthClaimsFromText({
       path: 'docs/plans/example.md',
       text: 'issue fro-bot/dashboard#48 is closed',
@@ -2768,7 +2659,7 @@ describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () =>
     expect(claim?.targetNumberKind).not.toBe('ambiguous')
   })
 
-  it('RED: "merged" state sets targetNumberKind=pr (not ambiguous)', () => {
+  it('"merged" state sets targetNumberKind=pr (not ambiguous)', () => {
     const claims = extractStatusTruthClaimsFromText({
       path: 'docs/plans/example.md',
       text: 'fro-bot/agent#1033 is merged',
@@ -2781,38 +2672,147 @@ describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () =>
   })
 })
 
-// ---------------------------------------------------------------------------
-// Blocker 1: Fingerprint stability for ambiguous cross-repo claims
-// ---------------------------------------------------------------------------
+describe('runDetect-equivalent: plan-status resolves without GITHUB_TOKEN', () => {
+  // These tests exercise the exact logic that runDetect() must perform in the no-token path.
+  // They use resolveFileParseClaims (the exported helper that runDetect calls) to prove
+  // that plan-status claims are resolved via file-parse even when no Octokit client exists.
+
+  it('file-parse plan-status claim resolves to current without Octokit when target frontmatter matches', async () => {
+    // Simulates the no-token path in runDetect:
+    // scan → resolveFileParseClaims → detect
+    // The claim is in a scanning file; the target plan file has matching frontmatter.
+    const scanningFileContent = 'docs/plans/example.md is active'
+    const planFileContent = '---\nstatus: active\ntitle: Example Plan\n---\n\nContent.'
+
+    const fileReader: FileReader = async (filePath: string) => {
+      if (filePath === 'docs/plans/example.md') return planFileContent
+      return ''
+    }
+
+    const fileLister: FileLister = async () => ['README.md']
+    const scanFileReader: FileReader = async () => scanningFileContent
+
+    const {claims} = await scanStatusTruthClaims({fileLister, fileReader: scanFileReader})
+    const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planStatusClaims).toHaveLength(1)
+
+    // No-token path: resolve only file-parse claims using the exported helper
+    const resolverResults = await resolveFileParseClaims({claims, fileReader})
+
+    // Detect: plan-status claim must be current, not unresolved
+    const findings = detectStatusTruthClaims(claims, resolverResults)
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    expect(finding?.verdict).toBe('current')
+    expect(finding?.proposalEligible).toBe(false)
+    if (finding?.verdict === 'current') {
+      expect(finding.liveState).toBe('active')
+      expect(finding.kind).toBe('plan-status')
+    }
+  })
+
+  it('file-parse plan-status claim resolves to drifted without Octokit when frontmatter differs', async () => {
+    // Claim says "active" but plan file says "complete"
+    const planFileContent = '---\nstatus: complete\ntitle: Example Plan\n---\n\nContent.'
+
+    const fileReader: FileReader = async (filePath: string) => {
+      if (filePath === 'docs/plans/example.md') return planFileContent
+      return ''
+    }
+
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'docs/plans/example.md is active',
+    })
+    const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planStatusClaims).toHaveLength(1)
+
+    const resolverResults = await resolveFileParseClaims({claims: planStatusClaims, fileReader})
+
+    const findings = detectStatusTruthClaims(planStatusClaims, resolverResults)
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    expect(finding?.verdict).toBe('drifted')
+    expect(finding?.proposalEligible).toBe(true)
+    if (finding?.verdict === 'drifted') {
+      expect(finding.liveState).toBe('complete')
+      expect(finding.claimedState).toBe('active')
+    }
+  })
+
+  it('API-backed claims (pr-state) remain unresolved without token in the no-token path', async () => {
+    // resolveFileParseClaims only resolves file-parse kinds; API claims get no entry.
+    const claims = extractStatusTruthClaimsFromText({path: 'README.md', text: 'PR #42 is open'})
+    const prClaims = claims.filter(c => c.kind === 'pr-state')
+    expect(prClaims).toHaveLength(1)
+
+    const fileReader: FileReader = async () => ''
+    const resolverResults = await resolveFileParseClaims({claims: prClaims, fileReader})
+
+    // pr-state is API-backed; resolveFileParseClaims must not add an entry for it
+    expect(Object.keys(resolverResults)).toHaveLength(0)
+
+    const findings = detectStatusTruthClaims(prClaims, resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('unresolved')
+    expect(findings[0]?.proposalEligible).toBe(false)
+  })
+
+  it('mixed scan: plan-status resolves via file-parse, pr-state stays unresolved, without token', async () => {
+    // Simulates the full no-token runDetect flow with both claim kinds present.
+    const planFileContent = '---\nstatus: active\ntitle: Example Plan\n---\n\nContent.'
+
+    const fileReader: FileReader = async (filePath: string) => {
+      if (filePath === 'docs/plans/example.md') return planFileContent
+      return ''
+    }
+
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'docs/plans/example.md is active and PR #42 is open',
+    })
+    const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
+    const prClaims = claims.filter(c => c.kind === 'pr-state')
+    expect(planStatusClaims).toHaveLength(1)
+    expect(prClaims).toHaveLength(1)
+
+    // No-token path: resolveFileParseClaims resolves plan-status; API claims get no entry
+    const resolverResults = await resolveFileParseClaims({claims, fileReader})
+
+    const findings = detectStatusTruthClaims(claims, resolverResults)
+    expect(findings).toHaveLength(2)
+
+    const planFinding = findings.find(f => f.kind === 'plan-status')
+    const prFinding = findings.find(f => f.kind === 'pr-state')
+
+    expect(planFinding?.verdict).toBe('current')
+    expect(prFinding?.verdict).toBe('unresolved')
+  })
+})
 
 describe('fingerprint stability: ambiguous cross-repo claim resolved as pr-state vs issue-state', () => {
   it('same claim/path/sourceRef/normalizedText produces identical fingerprint regardless of resolvedKind', () => {
-    // The fingerprint must be computed from the extracted claim kind (claim.kind),
-    // not the effective kind (resolvedKind). This prevents fingerprint churn when
-    // the same ambiguous claim resolves differently across runs.
     const claim: StatusTruthClaim = {
       kind: 'pr-state',
       path: 'docs/plans/example.md',
-      sourceRef: 'marcusrbrown/infra#579',
+      sourceRef: 'example-org/example-repo#579',
       claimedState: 'closed',
-      normalizedText: 'marcusrbrown/infra#579 is closed',
-      targetOwner: 'marcusrbrown',
-      targetRepo: 'infra',
+      normalizedText: 'example-org/example-repo#579 is closed',
+      targetOwner: 'example-org',
+      targetRepo: 'example-repo',
       targetNumberKind: 'ambiguous',
     }
 
-    // Resolver result 1: resolves as pr-state
     const resolverResultsPr: Record<string, ResolverResult> = {
-      'pr-state:marcusrbrown/infra#579': {
+      'pr-state:example-org/example-repo#579': {
         status: 'resolved',
         state: 'closed',
         resolvedKind: 'pr-state',
       },
     }
 
-    // Resolver result 2: resolves as issue-state (PR 404, issue fallback)
     const resolverResultsIssue: Record<string, ResolverResult> = {
-      'pr-state:marcusrbrown/infra#579': {
+      'pr-state:example-org/example-repo#579': {
         status: 'resolved',
         state: 'closed',
         resolvedKind: 'issue-state',
@@ -2828,29 +2828,20 @@ describe('fingerprint stability: ambiguous cross-repo claim resolved as pr-state
     const fpPr = findingsPr[0]
     const fpIssue = findingsIssue[0]
 
-    // Both must be public findings (current verdict)
     expect(fpPr?.verdict).toBe('current')
     expect(fpIssue?.verdict).toBe('current')
 
-    // Fingerprints must be identical — stable identity regardless of resolution path
     if (fpPr?.verdict !== 'unsafe' && fpIssue?.verdict !== 'unsafe') {
       expect(fpPr?.fingerprint).toBe(fpIssue?.fingerprint)
     }
 
-    // The emitted kind may differ (pr-state vs issue-state) — that's fine
     expect(fpPr?.kind).toBe('pr-state')
     expect(fpIssue?.kind).toBe('issue-state')
   })
 })
 
-// ---------------------------------------------------------------------------
-// Blocker 2: proveRepoPublic must be explicit (private === false)
-// ---------------------------------------------------------------------------
-
 describe('proveRepoPublic: explicit private === false check', () => {
   it('repos.get returning private:undefined is treated as private (not public)', async () => {
-    // When the API returns an unknown/unexpected shape (private: undefined),
-    // the resolver must treat it as private/unsafe — not public.
     const octokit: DetectOctokitClient = {
       paginate: async () => [],
       rest: {
@@ -2862,7 +2853,6 @@ describe('proveRepoPublic: explicit private === false check', () => {
         },
         repos: {
           getReleaseByTag: async () => ({data: {draft: false, prerelease: false}}),
-          // Returns private: undefined — unknown shape
           get: async () => ({data: {private: undefined as unknown as boolean}}),
         },
       },
@@ -2880,20 +2870,12 @@ describe('proveRepoPublic: explicit private === false check', () => {
     }
 
     const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
-    // private: undefined must NOT be treated as public — must be private/unsafe
     expect(result.status).toBe('private')
   })
 })
 
-// ---------------------------------------------------------------------------
-// Detect Octokit construction: no-op log handlers suppress request URL leaks
-// ---------------------------------------------------------------------------
-
 describe('detect Octokit options: log suppression', () => {
-  it('RED: buildDetectOctokitOptions returns options with no-op log handlers', () => {
-    // The detect Octokit must not log request URLs to stderr.
-    // buildDetectOctokitOptions must export options with a log object
-    // whose methods are no-ops (do not write to stderr).
+  it('buildDetectOctokitOptions returns options with no-op log handlers', () => {
     const options = buildDetectOctokitOptions('test-token')
     expect(options).toHaveProperty('log')
     const log = options.log as Record<string, unknown>
@@ -2901,15 +2883,813 @@ describe('detect Octokit options: log suppression', () => {
     expect(typeof log.info).toBe('function')
     expect(typeof log.warn).toBe('function')
     expect(typeof log.error).toBe('function')
-    // No-op: calling them must not throw and must not write to stderr
-    ;(log.debug as (msg: string) => void)('GET /repos/marcusrbrown/infra/pulls/579 - 404')
+    ;(log.debug as (msg: string) => void)('GET /repos/example-org/example-repo/pulls/579 - 404')
     ;(log.info as (msg: string) => void)('test')
     ;(log.warn as (msg: string) => void)('test')
     ;(log.error as (msg: string) => void)('test')
   })
 
-  it('RED: buildDetectOctokitOptions includes auth token', () => {
+  it('buildDetectOctokitOptions includes auth token', () => {
     const options = buildDetectOctokitOptions('my-secret-token')
     expect(options.auth).toBe('my-secret-token')
+  })
+})
+
+describe('resolvePlanStatusClaim', () => {
+  it('happy path: explicit plan path claim matches frontmatter status => current', async () => {
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/my-plan.md') {
+        return '---\ntitle: My Plan\nstatus: active\ntype: feat\ndate: 2026-06-30\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/my-plan.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') {
+      expect(result.state).toBe('active')
+    }
+  })
+
+  it('happy path: explicit plan path claim conflicts with frontmatter status => drifted (resolved with different state)', async () => {
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/my-plan.md') {
+        return '---\ntitle: My Plan\nstatus: complete\ntype: feat\ndate: 2026-06-30\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/my-plan.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    // Resolver returns the live state; detectStatusTruthClaims will classify as drifted
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') {
+      expect(result.state).toBe('complete')
+    }
+  })
+
+  it('edge: referenced plan file is missing => unavailable (not proposal-eligible)', async () => {
+    const fileReader: FileReader = async () => {
+      throw Object.assign(new Error('ENOENT: no such file'), {code: 'ENOENT'})
+    }
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/nonexistent.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    expect(result.status).toBe('unavailable')
+  })
+
+  it('edge: frontmatter missing status field => unavailable', async () => {
+    const fileReader: FileReader = async () => {
+      return '---\ntitle: My Plan\ntype: feat\n---\n\nNo status field.'
+    }
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/my-plan.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    expect(result.status).toBe('unavailable')
+  })
+
+  it('edge: frontmatter status is unsupported value => unavailable', async () => {
+    const fileReader: FileReader = async () => {
+      return '---\ntitle: My Plan\nstatus: in-progress\ntype: feat\n---\n\nContent.'
+    }
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/my-plan.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    expect(result.status).toBe('unavailable')
+  })
+
+  it('edge: no frontmatter at all => unavailable', async () => {
+    const fileReader: FileReader = async () => {
+      return '# My Plan\n\nNo frontmatter here.'
+    }
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/my-plan.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    expect(result.status).toBe('unavailable')
+  })
+
+  it('error: file read failure returns unavailable (caller increments file-parse error count)', async () => {
+    const fileReader: FileReader = async () => {
+      throw new Error('permission denied')
+    }
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/my-plan.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    // File read failure must not throw — returns unavailable so caller can count it
+    expect(result.status).toBe('unavailable')
+  })
+
+  it('supports all conservative status values: active, complete, draft, cancelled, superseded', async () => {
+    const supportedStatuses = ['active', 'complete', 'draft', 'cancelled', 'superseded']
+
+    for (const status of supportedStatuses) {
+      const fileReader: FileReader = async () => {
+        return `---\ntitle: My Plan\nstatus: ${status}\ntype: feat\n---\n\nContent.`
+      }
+
+      const result = await resolvePlanStatusClaim({
+        claimedPath: 'docs/plans/my-plan.md',
+        claimedStatus: status,
+        fileReader,
+      })
+
+      expect(result.status).toBe('resolved')
+      if (result.status === 'resolved') {
+        expect(result.state).toBe(status)
+      }
+    }
+  })
+})
+
+describe('plan-status claim grammar — extractStatusTruthClaimsFromText', () => {
+  it('edge: ambiguous implicit plan-status claim with no explicit path => no claim extracted', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan is active and progressing well.',
+    })
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(0)
+  })
+
+  it('edge: self-referential frontmatter status in a plan file does NOT produce a cross-file plan-status claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/my-plan.md',
+      text: '---\nstatus: active\ntitle: My Plan\n---\n\nContent.',
+    })
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(0)
+  })
+
+  it('happy path: explicit docs/plans/...md path reference in prose produces a plan-status claim', () => {
+    // Grammar: "plan docs/plans/foo.md is active" or "docs/plans/foo.md is active"
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan docs/plans/my-plan.md is active.',
+    })
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(1)
+    const claim = planClaims[0]
+    expect(claim?.sourceRef).toBe('docs/plans/my-plan.md')
+    expect(claim?.claimedState).toBe('active')
+  })
+
+  it('happy path: explicit docs/plans/...md path with complete status produces a plan-status claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/other-plan.md',
+      text: 'See docs/plans/my-plan.md is complete for prior work.',
+    })
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(1)
+    const claim = planClaims[0]
+    expect(claim?.sourceRef).toBe('docs/plans/my-plan.md')
+    expect(claim?.claimedState).toBe('complete')
+  })
+
+  it('edge: plan path reference without a supported status value produces no claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan docs/plans/my-plan.md is in-progress.',
+    })
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(0)
+  })
+
+  it('edge: plan path reference without explicit status produces no claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'See docs/plans/my-plan.md for details.',
+    })
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(0)
+  })
+
+  it('edge: plan path not under docs/plans/ produces no claim', () => {
+    // Only docs/plans/...md paths are authoritative plan paths
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan some/other/path.md is active.',
+    })
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(0)
+  })
+
+  it('sourceRef is the plan path (not path#status) for cross-file plan-status claims', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan docs/plans/my-plan.md is active.',
+    })
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(1)
+    // sourceRef must be the plan path itself, not path#status
+    expect(planClaims[0]?.sourceRef).toBe('docs/plans/my-plan.md')
+    expect(planClaims[0]?.sourceRef).not.toContain('#status')
+  })
+})
+
+describe('plan-status end-to-end — extract → resolve → detect pipeline', () => {
+  it('happy path: explicit plan path claim matches frontmatter => current finding, not proposal-eligible', async () => {
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/my-plan.md') {
+        return '---\ntitle: My Plan\nstatus: active\ntype: feat\ndate: 2026-06-30\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    // Extract cross-file plan-status claim from prose
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan docs/plans/my-plan.md is active.',
+    })
+    const claim = claims.find(c => c.kind === 'plan-status')
+    expect(claim).toBeDefined()
+    if (claim === undefined) return
+
+    // Resolve using file-parse resolver
+    const resolverResult = await resolvePlanStatusClaim({
+      claimedPath: claim.sourceRef,
+      claimedStatus: claim.claimedState,
+      fileReader,
+    })
+
+    const resolverResults: Record<string, ResolverResult> = {
+      [`plan-status:${claim.sourceRef}`]: resolverResult,
+    }
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('current')
+    expect(findings[0]?.proposalEligible).toBe(false)
+  })
+
+  it('happy path: explicit plan path claim conflicts with frontmatter => drifted finding, proposal-eligible', async () => {
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/my-plan.md') {
+        return '---\ntitle: My Plan\nstatus: complete\ntype: feat\ndate: 2026-06-30\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan docs/plans/my-plan.md is active.',
+    })
+    const claim = claims.find(c => c.kind === 'plan-status')
+    expect(claim).toBeDefined()
+    if (claim === undefined) return
+
+    const resolverResult = await resolvePlanStatusClaim({
+      claimedPath: claim.sourceRef,
+      claimedStatus: claim.claimedState,
+      fileReader,
+    })
+
+    const resolverResults: Record<string, ResolverResult> = {
+      [`plan-status:${claim.sourceRef}`]: resolverResult,
+    }
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('drifted')
+    expect(findings[0]?.proposalEligible).toBe(true)
+    if (findings[0]?.verdict === 'drifted') {
+      expect(findings[0].claimedState).toBe('active')
+      expect(findings[0].liveState).toBe('complete')
+    }
+  })
+
+  it('edge: missing plan file => unresolved finding, not proposal-eligible', async () => {
+    const fileReader: FileReader = async () => {
+      throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+    }
+
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan docs/plans/nonexistent.md is active.',
+    })
+    const claim = claims.find(c => c.kind === 'plan-status')
+    expect(claim).toBeDefined()
+    if (claim === undefined) return
+
+    const resolverResult = await resolvePlanStatusClaim({
+      claimedPath: claim.sourceRef,
+      claimedStatus: claim.claimedState,
+      fileReader,
+    })
+
+    const resolverResults: Record<string, ResolverResult> = {
+      [`plan-status:${claim.sourceRef}`]: resolverResult,
+    }
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('unresolved')
+    expect(findings[0]?.proposalEligible).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// plan-status wiring — runDetect/CLI-level resolution must pass fileReader
+// ---------------------------------------------------------------------------
+
+describe('plan-status wiring — resolveAllClaims with fileReader', () => {
+  it('resolveAllClaims with fileReader resolves plan-status claim to current', async () => {
+    const planStatusClaim: StatusTruthClaim = {
+      kind: 'plan-status',
+      path: 'README.md',
+      sourceRef: 'docs/plans/example.md',
+      claimedState: 'active',
+      normalizedText: 'docs/plans/example.md is active',
+    }
+
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/example.md') {
+        return '---\ntitle: Example Plan\nstatus: active\ntype: feat\ndate: 2026-06-30\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    const octokit = makeMockDetectOctokit()
+
+    const {resolverResults} = await resolveAllClaims({
+      claims: [planStatusClaim],
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      fileReader,
+    })
+
+    const findings = detectStatusTruthClaims([planStatusClaim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('current')
+    expect(findings[0]?.proposalEligible).toBe(false)
+  })
+
+  it('resolveAllClaims with fileReader resolves plan-status claim to drifted when status conflicts', async () => {
+    const planStatusClaim: StatusTruthClaim = {
+      kind: 'plan-status',
+      path: 'README.md',
+      sourceRef: 'docs/plans/example.md',
+      claimedState: 'active',
+      normalizedText: 'docs/plans/example.md is active',
+    }
+
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/example.md') {
+        return '---\ntitle: Example Plan\nstatus: complete\ntype: feat\ndate: 2026-06-30\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    const octokit = makeMockDetectOctokit()
+
+    const {resolverResults} = await resolveAllClaims({
+      claims: [planStatusClaim],
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      fileReader,
+    })
+
+    const findings = detectStatusTruthClaims([planStatusClaim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('drifted')
+    expect(findings[0]?.proposalEligible).toBe(true)
+    if (findings[0]?.verdict === 'drifted') {
+      expect(findings[0].claimedState).toBe('active')
+      expect(findings[0].liveState).toBe('complete')
+    }
+  })
+
+  it('missing plan file via resolveAllClaims with fileReader stays unresolved', async () => {
+    const planStatusClaim: StatusTruthClaim = {
+      kind: 'plan-status',
+      path: 'README.md',
+      sourceRef: 'docs/plans/nonexistent.md',
+      claimedState: 'active',
+      normalizedText: 'docs/plans/nonexistent.md is active',
+    }
+
+    const fileReader: FileReader = async () => {
+      throw Object.assign(new Error('ENOENT: no such file'), {code: 'ENOENT'})
+    }
+
+    const octokit = makeMockDetectOctokit()
+
+    const {resolverResults} = await resolveAllClaims({
+      claims: [planStatusClaim],
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      fileReader,
+    })
+
+    const findings = detectStatusTruthClaims([planStatusClaim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('unresolved')
+    expect(findings[0]?.proposalEligible).toBe(false)
+  })
+
+  it('full scan→resolve→detect pipeline with fileReader resolves plan-status claim from scanned doc', async () => {
+    const fileLister: FileLister = async () => ['README.md', 'docs/plans/example.md']
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'README.md') return 'The plan docs/plans/example.md is active.'
+      if (path === 'docs/plans/example.md') {
+        return '---\ntitle: Example Plan\nstatus: active\ntype: feat\ndate: 2026-06-30\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    const {claims} = await scanStatusTruthClaims({fileLister, fileReader})
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(1)
+
+    const octokit = makeMockDetectOctokit()
+
+    const {resolverResults} = await resolveAllClaims({
+      claims,
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      fileReader,
+    })
+
+    const findings = detectStatusTruthClaims(claims, resolverResults)
+    const planFindings = findings.filter(f => f.kind === 'plan-status')
+    expect(planFindings).toHaveLength(1)
+    // Plan file has matching status → current
+    expect(planFindings[0]?.verdict).toBe('current')
+  })
+})
+
+describe('plan-status DEFAULT_ENABLED_KINDS inclusion', () => {
+  it('plan-status is included in DEFAULT_ENABLED_KINDS now that a real resolver exists', () => {
+    expect(DEFAULT_ENABLED_KINDS).toContain('plan-status')
+  })
+
+  it('production scan with default kinds includes plan-status claims from prose', async () => {
+    const fileLister: FileLister = async () => ['README.md']
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'README.md') return 'The plan docs/plans/my-plan.md is active.'
+      throw new Error(`unexpected: ${path}`)
+    }
+
+    const {claims} = await scanStatusTruthClaims({fileLister, fileReader})
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(1)
+  })
+})
+
+describe('plan-status privacy/output safety', () => {
+  it('privacy: plan-status finding artifact contains no raw claim text, source snippets, or private identity tokens', async () => {
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/my-plan.md') {
+        return '---\ntitle: My Plan\nstatus: complete\ntype: feat\ndate: 2026-06-30\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan docs/plans/my-plan.md is active.',
+    })
+    const claim = claims.find(c => c.kind === 'plan-status')
+    expect(claim).toBeDefined()
+    if (claim === undefined) return
+
+    const resolverResult = await resolvePlanStatusClaim({
+      claimedPath: claim.sourceRef,
+      claimedStatus: claim.claimedState,
+      fileReader,
+    })
+
+    const resolverResults: Record<string, ResolverResult> = {
+      [`plan-status:${claim.sourceRef}`]: resolverResult,
+    }
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    const report = buildStatusTruthReport({
+      findings,
+      scanComplete: true,
+      generatedAt: '2026-06-30T00:00:00Z',
+      failureClass: null,
+    })
+
+    const artifactJson = JSON.stringify(report)
+
+    // Must not contain raw claim text
+    expect(artifactJson).not.toContain('"normalizedText"')
+    expect(artifactJson).not.toContain('"rawText"')
+    expect(artifactJson).not.toContain('"sourceSnippet"')
+
+    // Fingerprint must be an opaque hex hash, not raw text
+    const finding = report.findings[0]
+    if (finding !== undefined && finding.verdict !== 'unsafe') {
+      expect(finding.fingerprint).toMatch(/^[a-f0-9]{16}$/)
+    }
+
+    // Report must not contain the raw prose claim text
+    expect(artifactJson).not.toContain('The plan docs/plans/my-plan.md is active')
+  })
+
+  it('privacy: validateStatusTruthArtifact rejects plan-status finding with normalizedText field', () => {
+    const finding = makeFinding({
+      kind: 'plan-status',
+      sourceRef: 'docs/plans/my-plan.md',
+      claimedState: 'active',
+      liveState: 'complete',
+      verdict: 'drifted',
+      proposalEligible: true,
+    })
+    // Inject prohibited field
+    const taintedFinding = {...finding, normalizedText: 'the plan docs/plans/my-plan.md is active'}
+    const report = makeReport({
+      status: 'findings',
+      findings: [taintedFinding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const result = validateStatusTruthArtifact(report)
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.reason).toContain('prohibited field')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// plan-status path traversal
+// ---------------------------------------------------------------------------
+
+describe('plan-status path traversal rejection', () => {
+  it('extraction: path with .. segment is not extracted as a plan-status claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'docs/plans/../../etc/passwd is active',
+    })
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(0)
+  })
+
+  it('extraction: path with encoded traversal segment is not extracted', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'docs/plans/../secret.md is active',
+    })
+    const planClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planClaims).toHaveLength(0)
+  })
+
+  it('resolver: claimedPath with .. segment returns unavailable without calling fileReader', async () => {
+    let readerCalled = false
+    const fileReader: FileReader = async () => {
+      readerCalled = true
+      return '---\nstatus: active\n---\n'
+    }
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/../../etc/passwd',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    expect(result.status).toBe('unavailable')
+    expect(readerCalled).toBe(false)
+  })
+
+  it('resolver: claimedPath resolving outside docs/plans/ returns unavailable without calling fileReader', async () => {
+    let readerCalled = false
+    const fileReader: FileReader = async () => {
+      readerCalled = true
+      return '---\nstatus: active\n---\n'
+    }
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/../other/secret.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    expect(result.status).toBe('unavailable')
+    expect(readerCalled).toBe(false)
+  })
+
+  it('resolver: valid path under docs/plans/ still resolves correctly', async () => {
+    const fileReader: FileReader = async () => '---\nstatus: active\n---\n'
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/valid-plan.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') expect(result.state).toBe('active')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// tokenless local run — plan-status resolves without GITHUB_TOKEN
+// ---------------------------------------------------------------------------
+
+describe('plan-status tokenless resolution', () => {
+  it('plan-status claim with fileReader resolves to current without an Octokit/token', async () => {
+    const planStatusClaim: StatusTruthClaim = {
+      kind: 'plan-status',
+      path: 'README.md',
+      sourceRef: 'docs/plans/example.md',
+      claimedState: 'active',
+      normalizedText: 'docs/plans/example.md is active',
+    }
+
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/example.md') {
+        return '---\ntitle: Example Plan\nstatus: active\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    // Resolve plan-status claims using only fileReader — no octokit/token needed
+    const resolverResults: Record<string, ResolverResult> = {}
+    const result = await resolvePlanStatusClaim({
+      claimedPath: planStatusClaim.sourceRef,
+      claimedStatus: planStatusClaim.claimedState,
+      fileReader,
+    })
+    resolverResults[`plan-status:${planStatusClaim.sourceRef}`] = result
+
+    const findings = detectStatusTruthClaims([planStatusClaim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('current')
+    expect(findings[0]?.proposalEligible).toBe(false)
+  })
+
+  it('plan-status claim with fileReader resolves to drifted without an Octokit/token', async () => {
+    const planStatusClaim: StatusTruthClaim = {
+      kind: 'plan-status',
+      path: 'README.md',
+      sourceRef: 'docs/plans/example.md',
+      claimedState: 'active',
+      normalizedText: 'docs/plans/example.md is active',
+    }
+
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/example.md') {
+        return '---\ntitle: Example Plan\nstatus: complete\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    const resolverResults: Record<string, ResolverResult> = {}
+    const result = await resolvePlanStatusClaim({
+      claimedPath: planStatusClaim.sourceRef,
+      claimedStatus: planStatusClaim.claimedState,
+      fileReader,
+    })
+    resolverResults[`plan-status:${planStatusClaim.sourceRef}`] = result
+
+    const findings = detectStatusTruthClaims([planStatusClaim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('drifted')
+    expect(findings[0]?.proposalEligible).toBe(true)
+    if (findings[0]?.verdict === 'drifted') {
+      expect(findings[0].proposedCorrection).toContain('complete')
+    }
+  })
+
+  it('API-backed claims remain unresolved without token (no fake resolution)', async () => {
+    const prClaim: StatusTruthClaim = {
+      kind: 'pr-state',
+      path: 'README.md',
+      sourceRef: '#42',
+      claimedState: 'open',
+      normalizedText: 'pr #42 is open',
+    }
+
+    // No resolver results for API claims (simulates no-token path)
+    const resolverResults: Record<string, ResolverResult> = {}
+
+    const findings = detectStatusTruthClaims([prClaim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('unresolved')
+    expect(findings[0]?.proposalEligible).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Opportunistic: quoted status values and CRLF frontmatter
+// ---------------------------------------------------------------------------
+
+describe('parsePlanFrontmatterStatus: quoted values and CRLF', () => {
+  it('quoted status value "active" resolves correctly', async () => {
+    const fileReader: FileReader = async () => '---\nstatus: "active"\n---\n\nContent.'
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/my-plan.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') expect(result.state).toBe('active')
+  })
+
+  it("single-quoted status value 'complete' resolves correctly", async () => {
+    const fileReader: FileReader = async () => "---\nstatus: 'complete'\n---\n\nContent."
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/my-plan.md',
+      claimedStatus: 'complete',
+      fileReader,
+    })
+
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') expect(result.state).toBe('complete')
+  })
+
+  it('CRLF frontmatter resolves correctly', async () => {
+    const fileReader: FileReader = async () => '---\r\nstatus: active\r\ntitle: My Plan\r\n---\r\n\r\nContent.'
+
+    const result = await resolvePlanStatusClaim({
+      claimedPath: 'docs/plans/my-plan.md',
+      claimedStatus: 'active',
+      fileReader,
+    })
+
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') expect(result.state).toBe('active')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Opportunistic: plan-status drift proposedCorrection content
+// ---------------------------------------------------------------------------
+
+describe('plan-status drift: proposedCorrection contains expected status replacement', () => {
+  it('drifted plan-status finding proposedCorrection replaces claimed status with live status', async () => {
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/my-plan.md') {
+        return '---\ntitle: My Plan\nstatus: complete\n---\n\nContent.'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'The plan docs/plans/my-plan.md is active.',
+    })
+    const claim = claims.find(c => c.kind === 'plan-status')
+    expect(claim).toBeDefined()
+    if (claim === undefined) return
+
+    const resolverResult = await resolvePlanStatusClaim({
+      claimedPath: claim.sourceRef,
+      claimedStatus: claim.claimedState,
+      fileReader,
+    })
+
+    const resolverResults: Record<string, ResolverResult> = {
+      [`plan-status:${claim.sourceRef}`]: resolverResult,
+    }
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    expect(finding?.verdict).toBe('drifted')
+    if (finding?.verdict === 'drifted') {
+      expect(finding.proposedCorrection).toBeDefined()
+      // proposedCorrection must contain the live status 'complete'
+      expect(finding.proposedCorrection).toContain('complete')
+      // proposedCorrection must not still say 'active' as the status
+      // (it should have replaced 'active' with 'complete')
+      expect(finding.proposedCorrection).not.toMatch(/\bactive\b/)
+    }
   })
 })
