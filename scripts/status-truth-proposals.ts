@@ -1816,7 +1816,10 @@ interface OpenResult {
    * Includes versionRejected, blocked, overflowed, and other planner-level counters
    * not present in executor counts.
    */
-  plannedCounts: Pick<ProposalCounts, 'versionRejected' | 'blocked' | 'overflowed' | 'sameRunDeduplicated'>
+  plannedCounts: Pick<
+    ProposalCounts,
+    'versionRejected' | 'blocked' | 'overflowed' | 'sameRunDeduplicated' | 'needsOutcomeCooldown'
+  >
   /**
    * Aggregate outcome counts from all existing proposal issues (read-model).
    * Separate from action counts (counts) and planned counts (plannedCounts).
@@ -1989,6 +1992,7 @@ async function runOpen(): Promise<void> {
       blocked: planResult.counts.blocked,
       overflowed: planResult.counts.overflowed,
       sameRunDeduplicated: planResult.counts.sameRunDeduplicated,
+      needsOutcomeCooldown: planResult.counts.needsOutcomeCooldown,
     },
     outcomeCounts: planResult.outcomeCounts,
   }

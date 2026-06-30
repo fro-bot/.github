@@ -245,6 +245,7 @@ jobs:
               echo "| Version rejected | $(jq '.plannedCounts.versionRejected // 0' "$result") |"
               echo "| Blocked | $(jq '(.plannedCounts.blocked // 0)' "$result") |"
               echo "| Overflowed | $(jq '(.plannedCounts.overflowed // 0)' "$result") |"
+              echo "| Needs outcome cooldown | $(jq '(.plannedCounts.needsOutcomeCooldown // 0)' "$result") |"
 
               # Outcome counts (read-model: current state of all proposal issues)
               if jq -e '.outcomeCounts' "$result" >/dev/null 2>&1; then

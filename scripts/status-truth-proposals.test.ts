@@ -827,6 +827,30 @@ describe('planStatusTruthProposalActions', () => {
       expect(typeof counts.sameRunDeduplicated).toBe('number')
       expect(typeof counts.malformedMarkers).toBe('number')
       expect(typeof counts.versionRejected).toBe('number')
+      expect(typeof counts.needsOutcomeCooldown).toBe('number')
+    })
+
+    it('needsOutcomeCooldown is surfaced in plannedCounts when a closed-without-outcome issue is within cooldown', () => {
+      const fingerprint = 'abc123def456abcd'
+      const finding = makeDriftedFinding(fingerprint)
+      const report = makeReport({
+        findings: [finding],
+        counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+      })
+      // Closed 2 days ago with no outcome label — within the 7-day cooldown window
+      const closedAt = '2026-06-28T00:00:00Z'
+      const now = new Date('2026-06-30T00:00:00Z')
+      const closedIssue: ExistingProposalIssue = {
+        ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL]),
+        closedAt,
+      }
+
+      const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue], now}))
+
+      // Planner must count the cooldown-blocked issue
+      expect(counts.needsOutcomeCooldown).toBe(1)
+      // No reopen during cooldown
+      expect(counts.reopened).toBe(0)
     })
   })
 
@@ -4687,5 +4711,46 @@ describe('manual closure cooldown — workflow summary counts-only', () => {
     // Must not contain raw claim text
     expect(countsJson).not.toContain('docs/plans/example.md')
     expect(countsJson).not.toContain('pr #42')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// plannedCounts assembly — needsOutcomeCooldown surfaced in open result
+// ---------------------------------------------------------------------------
+
+describe('plannedCounts assembly', () => {
+  it('needsOutcomeCooldown from planner is present in the plannedCounts shape', () => {
+    // Simulate the plannedCounts assembly that runOpen() performs.
+    // Verifies that needsOutcomeCooldown is included and not silently dropped.
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    // Closed 1 day ago with no outcome label — within the 7-day cooldown window
+    const closedAt = '2026-06-29T00:00:00Z'
+    const now = new Date('2026-06-30T00:00:00Z')
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL]),
+      closedAt,
+    }
+
+    const planResult = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue], now}))
+
+    // Assemble plannedCounts the same way runOpen() does
+    const plannedCounts = {
+      versionRejected: planResult.counts.versionRejected,
+      blocked: planResult.counts.blocked,
+      overflowed: planResult.counts.overflowed,
+      sameRunDeduplicated: planResult.counts.sameRunDeduplicated,
+      needsOutcomeCooldown: planResult.counts.needsOutcomeCooldown,
+    }
+
+    // needsOutcomeCooldown must be present and reflect the planner's count
+    expect(typeof plannedCounts.needsOutcomeCooldown).toBe('number')
+    expect(plannedCounts.needsOutcomeCooldown).toBe(1)
+    // No reopen during cooldown
+    expect(planResult.counts.reopened).toBe(0)
   })
 })
