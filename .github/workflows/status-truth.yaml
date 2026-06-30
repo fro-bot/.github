@@ -243,6 +243,24 @@ jobs:
               echo "| Blocked | $(jq '(.plannedCounts.blocked // 0)' "$result") |"
               echo "| Overflowed | $(jq '(.plannedCounts.overflowed // 0)' "$result") |"
 
+              # Outcome counts (read-model: current state of all proposal issues)
+              if jq -e '.outcomeCounts' "$result" >/dev/null 2>&1; then
+                echo ""
+                echo "### Proposal outcome counts"
+                echo ""
+                echo "| Outcome | Count |"
+                echo "| --- | --- |"
+                echo "| Proposed pending | $(jq '.outcomeCounts.proposedPending // 0' "$result") |"
+                echo "| Accepted | $(jq '.outcomeCounts.explicitAccepted // 0' "$result") |"
+                echo "| Rejected | $(jq '.outcomeCounts.explicitRejected // 0' "$result") |"
+                echo "| False positive | $(jq '.outcomeCounts.falsePositive // 0' "$result") |"
+                echo "| Resolved positive | $(jq '.outcomeCounts.resolvedPositive // 0' "$result") |"
+                echo "| Superseded | $(jq '.outcomeCounts.superseded // 0' "$result") |"
+                echo "| Needs outcome | $(jq '.outcomeCounts.needsOutcome // 0' "$result") |"
+                echo "| Conflicting labels | $(jq '.outcomeCounts.conflictingLabels // 0' "$result") |"
+                echo "| Malformed outcome | $(jq '.outcomeCounts.malformedOutcome // 0' "$result") |"
+              fi
+
               # Planned per-kind counts (from planner; counts-only, no paths or fingerprints)
               kind_count=$(jq '.plannedCountsByKind | length' "$result" 2>/dev/null || echo 0)
               if [[ "$kind_count" -gt 0 ]]; then

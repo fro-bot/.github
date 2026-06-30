@@ -463,7 +463,7 @@ export function isKnownReportVersion(report: StatusTruthJsonReport): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: Text extraction and file scanning
+// Text extraction and file scanning
 // ---------------------------------------------------------------------------
 
 /**
@@ -754,7 +754,7 @@ export async function scanStatusTruthClaims(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: GitHub issue body/comment scanning
+// GitHub issue body/comment scanning
 // ---------------------------------------------------------------------------
 
 /**
@@ -905,7 +905,7 @@ export async function scanIssueStatusTruthClaims(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: Current-repo resolver helpers
+// Current-repo resolver helpers
 // ---------------------------------------------------------------------------
 
 /**
@@ -1312,7 +1312,7 @@ export async function resolvePlanStatusClaim(params: {
 }
 
 // ---------------------------------------------------------------------------
-// U2: Rollout-tracker compound resolver
+// Rollout-tracker compound resolver
 // ---------------------------------------------------------------------------
 
 /**
@@ -1487,7 +1487,7 @@ export async function resolveAllClaims(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 2: Snapshot loading helper
+// Snapshot loading helper
 // ---------------------------------------------------------------------------
 
 /**
@@ -1610,7 +1610,7 @@ export async function loadRolloutSnapshot(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: Artifact validation helper
+// Artifact validation helper
 // ---------------------------------------------------------------------------
 
 /**
@@ -1702,7 +1702,7 @@ export function validateStatusTruthArtifact(
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: Octokit construction helpers
+// Octokit construction helpers
 // ---------------------------------------------------------------------------
 
 /**
@@ -1743,7 +1743,7 @@ export function buildDetectOctokitOptions(token: string): {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: CLI shell
+// CLI shell
 // ---------------------------------------------------------------------------
 
 /**

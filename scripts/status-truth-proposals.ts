@@ -188,6 +188,231 @@ const FINGERPRINT_MARKER_PATTERN = /<!-- status-truth:fingerprint=([a-f0-9]+) --
 const LIVE_STATE_MARKER_PATTERN = /<!-- status-truth:live-state=([\w-]+) -->/u
 
 // ---------------------------------------------------------------------------
+// Outcome classification read-model
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical outcome states for a proposal issue.
+ *
+ * These states are derived from the issue's labels and open/closed state.
+ * They are read-only classifications — no mutation behavior here.
+ *
+ * | State | Derivation |
+ * |---|---|
+ * | proposed-pending | Open issue with no terminal/resolution label |
+ * | explicit-accepted | Closed with `status-truth:accepted` label |
+ * | explicit-rejected | Closed with `status-truth:rejected` label (terminal) |
+ * | false-positive | Closed with `status-truth:false-positive` label (terminal) |
+ * | resolved-positive | Closed with `status-truth:resolved` or `status-truth:manually-fixed` |
+ * | superseded | Closed with `status-truth:superseded` label |
+ * | needs-outcome | Closed with no recognized outcome label |
+ * | conflicting-labels | Closed with mutually exclusive outcome labels (e.g. accepted+rejected) |
+ * | malformed-outcome | Closed with unrecognized `status-truth:*` label |
+ */
+export type ProposalOutcomeState =
+  | 'proposed-pending'
+  | 'explicit-accepted'
+  | 'explicit-rejected'
+  | 'false-positive'
+  | 'resolved-positive'
+  | 'superseded'
+  | 'needs-outcome'
+  | 'conflicting-labels'
+  | 'malformed-outcome'
+
+/**
+ * Mutually exclusive accuracy signal labels.
+ * An issue with more than one of these is conflicting.
+ */
+const ACCURACY_SIGNAL_LABELS_SET: readonly string[] = [
+  OUTCOME_LABELS.accepted,
+  OUTCOME_LABELS.rejected,
+  OUTCOME_LABELS.falsePositive,
+]
+
+/**
+ * Classify a proposal issue into a canonical outcome state.
+ *
+ * Pure function: no I/O, no side effects. Deterministic from inputs.
+ *
+ * Classification rules (in priority order):
+ * 1. Open issue → proposed-pending (regardless of labels)
+ * 2. Closed issue with multiple mutually exclusive accuracy signal labels → conflicting-labels
+ * 3. Closed issue with unrecognized `status-truth:*` label → malformed-outcome
+ * 4. Closed issue with `accepted` label → explicit-accepted
+ * 5. Closed issue with `rejected` label → explicit-rejected
+ * 6. Closed issue with `false-positive` label → false-positive
+ * 7. Closed issue with `resolved` or `manually-fixed` label → resolved-positive
+ * 8. Closed issue with `superseded` label → superseded
+ * 9. Closed issue with no recognized outcome label + drift still active → needs-outcome
+ * 10. Closed issue with no recognized outcome label + drift cleared → resolved-positive
+ *
+ * @param issue - The proposal issue to classify.
+ * @param driftActive - Whether the same drift fingerprint is still active in the current scan.
+ *   When false, a closed issue with no terminal/resolution label is classified as resolved-positive
+ *   (drift cleared without an explicit label). When true, it remains needs-outcome.
+ */
+export function classifyProposalOutcome(issue: ExistingProposalIssue, driftActive: boolean): ProposalOutcomeState {
+  // Rule 1: Open issue → proposed-pending
+  if (issue.state === 'open') {
+    return 'proposed-pending'
+  }
+
+  // Extract status-truth:* outcome labels (excluding the primary proposal label)
+  const outcomeLabels = issue.labels.filter(l => l !== PROPOSAL_LABEL && l.startsWith('status-truth:'))
+
+  // Rule 2: Conflicting accuracy signal labels (mutually exclusive)
+  const accuracySignals = outcomeLabels.filter(l => ACCURACY_SIGNAL_LABELS_SET.includes(l))
+  if (accuracySignals.length > 1) {
+    return 'conflicting-labels'
+  }
+
+  // Rule 3: Unrecognized status-truth:* label → malformed-outcome
+  const unrecognized = outcomeLabels.filter(l => !ALL_RECOGNIZED_OUTCOME_LABELS.includes(l))
+  if (unrecognized.length > 0) {
+    return 'malformed-outcome'
+  }
+
+  // Rules 4-8: Single recognized outcome label
+  if (outcomeLabels.includes(OUTCOME_LABELS.accepted)) return 'explicit-accepted'
+  if (outcomeLabels.includes(OUTCOME_LABELS.rejected)) return 'explicit-rejected'
+  if (outcomeLabels.includes(OUTCOME_LABELS.falsePositive)) return 'false-positive'
+  if (outcomeLabels.includes(OUTCOME_LABELS.resolved) || outcomeLabels.includes(OUTCOME_LABELS.manuallyFixed)) {
+    return 'resolved-positive'
+  }
+  if (outcomeLabels.includes(OUTCOME_LABELS.superseded)) return 'superseded'
+
+  // Rules 9-10: No recognized outcome label — use driftActive to distinguish
+  // If drift is no longer active (fingerprint not in current scan), the issue was
+  // closed without an explicit label but the drift has cleared → resolved-positive.
+  // If drift is still active, the issue needs operator attention → needs-outcome.
+  if (!driftActive) return 'resolved-positive'
+  return 'needs-outcome'
+}
+
+/**
+ * Aggregate outcome counts from a set of proposal issues.
+ *
+ * Pure function: no I/O, no side effects.
+ * Output is counts-only: no raw issue bodies, titles, paths, or fingerprints.
+ *
+ * Counts are separated from action counts (opened/updated/reopened/closed/suppressed).
+ * This is the read-model for operator outcome signal — used for accuracy math and
+ * operator attention, not for lifecycle mutation decisions.
+ */
+export interface OutcomeCounts {
+  /** Open proposals with no terminal/resolution label. */
+  readonly proposedPending: number
+  /** Closed proposals with explicit `accepted` label (human-confirmed positive). */
+  readonly explicitAccepted: number
+  /** Closed proposals with explicit `rejected` label (terminal suppression). */
+  readonly explicitRejected: number
+  /** Closed proposals with `false-positive` label (terminal suppression). */
+  readonly falsePositive: number
+  /**
+   * Closed proposals with `resolved` or `manually-fixed` label.
+   * Positive signal without impersonating explicit human acceptance.
+   */
+  readonly resolvedPositive: number
+  /** Closed proposals with `superseded` label. */
+  readonly superseded: number
+  /**
+   * Closed proposals with no recognized outcome label.
+   * Excluded from accuracy math; counted for operator attention.
+   */
+  readonly needsOutcome: number
+  /**
+   * Closed proposals with mutually exclusive outcome labels (e.g. accepted+rejected).
+   * Excluded from accuracy math; counted for operator attention.
+   */
+  readonly conflictingLabels: number
+  /**
+   * Closed proposals with unrecognized `status-truth:*` labels.
+   * Excluded from accuracy math; counted for operator attention.
+   */
+  readonly malformedOutcome: number
+}
+
+/**
+ * Build aggregate outcome counts from a list of existing proposal issues.
+ *
+ * Pure function: no I/O, no side effects. Deterministic from inputs.
+ * Output is counts-only — no raw issue bodies, titles, paths, or fingerprints.
+ *
+ * @param issues - Existing proposal issues (open and closed).
+ * @param driftActiveFingerprints - Set of fingerprints that are still active in the current scan.
+ *   Used to distinguish resolved-positive (drift cleared) from needs-outcome (drift still active)
+ *   for closed issues with no terminal/resolution label. Defaults to empty set (all drift cleared).
+ */
+export function buildOutcomeCounts(
+  issues: readonly ExistingProposalIssue[],
+  driftActiveFingerprints: ReadonlySet<string> = new Set<string>(),
+): OutcomeCounts {
+  let proposedPending = 0
+  let explicitAccepted = 0
+  let explicitRejected = 0
+  let falsePositive = 0
+  let resolvedPositive = 0
+  let superseded = 0
+  let needsOutcome = 0
+  let conflictingLabels = 0
+  let malformedOutcome = 0
+
+  for (const issue of issues) {
+    // Only classify issues that have the proposal label
+    if (!issue.labels.includes(PROPOSAL_LABEL)) continue
+
+    // Determine if this issue's fingerprint is still active in the current scan.
+    // Extract fingerprint from body to check against driftActiveFingerprints.
+    const fp = extractProposalFingerprint(issue.body)
+    const driftActive = fp !== null && driftActiveFingerprints.has(fp)
+
+    const state = classifyProposalOutcome(issue, driftActive)
+    switch (state) {
+      case 'proposed-pending':
+        proposedPending++
+        break
+      case 'explicit-accepted':
+        explicitAccepted++
+        break
+      case 'explicit-rejected':
+        explicitRejected++
+        break
+      case 'false-positive':
+        falsePositive++
+        break
+      case 'resolved-positive':
+        resolvedPositive++
+        break
+      case 'superseded':
+        superseded++
+        break
+      case 'needs-outcome':
+        needsOutcome++
+        break
+      case 'conflicting-labels':
+        conflictingLabels++
+        break
+      case 'malformed-outcome':
+        malformedOutcome++
+        break
+    }
+  }
+
+  return {
+    proposedPending,
+    explicitAccepted,
+    explicitRejected,
+    falsePositive,
+    resolvedPositive,
+    superseded,
+    needsOutcome,
+    conflictingLabels,
+    malformedOutcome,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Input/output types
 // ---------------------------------------------------------------------------
 
@@ -290,6 +515,13 @@ export interface ProposalCounts {
    */
   readonly malformedOutcomeMarkers: number
   /**
+   * Closed issues with mutually exclusive outcome labels present together
+   * (e.g. accepted+rejected, accepted+false-positive, rejected+false-positive).
+   * Excluded from accuracy math; counted for operator attention.
+   * These are distinct from malformedOutcomeMarkers (which have unrecognized labels).
+   */
+  readonly conflictingLabels: number
+  /**
    * Per-kind accuracy signal from accepted/rejected/false-positive outcomes.
    * Computed from all existing issues with recognized outcome labels.
    * Excludes malformed/unknown labels.
@@ -328,6 +560,13 @@ export interface PlanStatusTruthProposalActionsResult {
    * Counts-only: no paths, fingerprints, or claim text.
    */
   readonly countsByKind: Readonly<Record<string, KindActionCounts>>
+  /**
+   * Aggregate outcome counts from all existing proposal issues.
+   * Read-model for operator outcome signal — separate from action counts (counts)
+   * and planned per-kind counts (countsByKind). Reflects the current state of all
+   * proposal issues, not the actions taken in this run.
+   */
+  readonly outcomeCounts: OutcomeCounts
 }
 
 // ---------------------------------------------------------------------------
@@ -480,9 +719,11 @@ export function planStatusTruthProposalActions(
         versionRejected: 1,
         closedWithoutOutcome: 0,
         malformedOutcomeMarkers: 0,
+        conflictingLabels: 0,
         usefulnessByKind: {},
       },
       countsByKind: {},
+      outcomeCounts: buildOutcomeCounts(existingIssues),
     }
   }
 
@@ -511,9 +752,11 @@ export function planStatusTruthProposalActions(
         versionRejected: 0,
         closedWithoutOutcome: 0,
         malformedOutcomeMarkers: 0,
+        conflictingLabels: 0,
         usefulnessByKind: {},
       },
       countsByKind: {},
+      outcomeCounts: buildOutcomeCounts(existingIssues),
     }
   }
 
@@ -525,6 +768,7 @@ export function planStatusTruthProposalActions(
   const usefulnessByKind: Record<string, {accepted: number; rejected: number; falsePositive: number}> = {}
   let closedWithoutOutcome = 0
   let malformedOutcomeMarkers = 0
+  let conflictingLabels = 0
 
   for (const issue of existingIssues) {
     const fp = extractProposalFingerprint(issue.body)
@@ -548,6 +792,12 @@ export function planStatusTruthProposalActions(
       const recognizedOutcomeLabels = outcomeLabels.filter(l => ALL_RECOGNIZED_OUTCOME_LABELS.includes(l))
       const unrecognizedOutcomeLabels = outcomeLabels.filter(l => !ALL_RECOGNIZED_OUTCOME_LABELS.includes(l))
 
+      // Check for conflicting accuracy signal labels (mutually exclusive).
+      // This is distinct from malformedOutcomeMarkers (which have unrecognized labels).
+      // Conflicting = multiple accuracy signal labels on the same issue (e.g. accepted+rejected).
+      const accuracySignalsPresent = recognizedOutcomeLabels.filter(l => ACCURACY_SIGNAL_LABELS.includes(l))
+      const hasConflictingAccuracySignals = accuracySignalsPresent.length > 1
+
       if (unrecognizedOutcomeLabels.length > 0) {
         // Mixed or malformed outcome markers: increment counter and skip accuracy math entirely.
         // Conservative: if ANY unrecognized status-truth:* label is present alongside a recognized
@@ -555,13 +805,19 @@ export function planStatusTruthProposalActions(
         // The recognized label is NOT included in usefulnessByKind to avoid polluting accuracy math
         // with ambiguous outcome state.
         malformedOutcomeMarkers++
+      } else if (hasConflictingAccuracySignals) {
+        // Conflicting accuracy signal labels (e.g. accepted+rejected, accepted+false-positive).
+        // Excluded from accuracy math; counted for operator attention.
+        // These are recognized labels but mutually exclusive — the issue state is ambiguous.
+        conflictingLabels++
       } else if (outcomeLabels.length === 0) {
         // Closed with no outcome label at all — count for operator attention
         closedWithoutOutcome++
       } else {
-        // Only accumulate accuracy signals when there are NO unrecognized outcome labels.
+        // Only accumulate accuracy signals when there are NO unrecognized outcome labels
+        // and NO conflicting accuracy signal labels.
         // This is intentionally conservative: we only count recognized accuracy signal labels
-        // on issues that have no malformed/unknown outcome markers.
+        // on issues that have no malformed/unknown outcome markers and no conflicts.
         for (const label of recognizedOutcomeLabels) {
           if (!ACCURACY_SIGNAL_LABELS.includes(label)) continue
 
@@ -907,14 +1163,16 @@ export function planStatusTruthProposalActions(
       versionRejected: 0,
       closedWithoutOutcome,
       malformedOutcomeMarkers,
+      conflictingLabels,
       usefulnessByKind,
     },
     countsByKind,
+    outcomeCounts: buildOutcomeCounts(existingIssues, activeFingerprintsInReport),
   }
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: I/O executor types
+// I/O executor types
 // ---------------------------------------------------------------------------
 
 /**
@@ -1165,7 +1423,7 @@ export interface ExecuteStatusTruthProposalActionsResult {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: Label preflight helper
+// Label preflight helper
 // ---------------------------------------------------------------------------
 
 function isApiStatus(error: unknown, status: number): boolean {
@@ -1235,7 +1493,7 @@ async function ensureStatusTruthLabels(
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: I/O executor
+// I/O executor
 // ---------------------------------------------------------------------------
 
 /**
@@ -1423,7 +1681,7 @@ export async function executeStatusTruthProposalActions(
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: CLI shell for the open/proposals step
+// CLI shell for the open/proposals step
 // ---------------------------------------------------------------------------
 
 /** No-op log handler object — suppresses all Octokit default logger output. */
@@ -1474,6 +1732,13 @@ interface OpenResult {
    * not present in executor counts.
    */
   plannedCounts: Pick<ProposalCounts, 'versionRejected' | 'blocked' | 'overflowed' | 'sameRunDeduplicated'>
+  /**
+   * Aggregate outcome counts from all existing proposal issues (read-model).
+   * Separate from action counts (counts) and planned counts (plannedCounts).
+   * Reflects the current state of all proposal issues, not the actions taken this run.
+   * Counts-only: no raw issue bodies, titles, paths, or fingerprints.
+   */
+  outcomeCounts: OutcomeCounts
 }
 
 /**
@@ -1640,6 +1905,7 @@ async function runOpen(): Promise<void> {
       overflowed: planResult.counts.overflowed,
       sameRunDeduplicated: planResult.counts.sameRunDeduplicated,
     },
+    outcomeCounts: planResult.outcomeCounts,
   }
 
   const resultJson = `${JSON.stringify(result)}\n`

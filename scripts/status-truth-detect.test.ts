@@ -730,7 +730,7 @@ describe('type contracts', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Unit 4: validateStatusTruthArtifact tests
+// validateStatusTruthArtifact tests
 // ---------------------------------------------------------------------------
 
 describe('validateStatusTruthArtifact', () => {
@@ -832,7 +832,7 @@ describe('validateStatusTruthArtifact', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Unit 4: Artifact safety contract tests
+// Artifact safety contract tests
 // ---------------------------------------------------------------------------
 
 describe('artifact safety contract', () => {
@@ -3700,7 +3700,7 @@ describe('plan-status drift: proposedCorrection contains expected status replace
 })
 
 // ---------------------------------------------------------------------------
-// U2: Rollout-tracker compound resolver tests
+// Rollout-tracker compound resolver tests
 // ---------------------------------------------------------------------------
 
 /** Build a minimal SnapshotItem for test fixtures. */

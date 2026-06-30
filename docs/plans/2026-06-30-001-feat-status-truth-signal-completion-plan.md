@@ -404,6 +404,8 @@ findings.
 
 ### U4. Outcome classification and accuracy math
 
+Status: complete.
+
 **Goal:** Classify proposal outcomes into a stable usefulness signal without mutating issue state.
 
 **Requirements:** R7, R8

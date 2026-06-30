@@ -9,12 +9,15 @@ import type {
   ExecuteStatusTruthProposalActionsInput,
   ExistingProposalIssue,
   IssueListItem,
+  OutcomeCounts,
   PlanStatusTruthProposalActionsInput,
   StatusTruthOctokitClient,
 } from './status-truth-proposals.ts'
 import type {PublicOutputTokens} from './status-truth-public-output.ts'
 import {describe, expect, it} from 'vitest'
 import {
+  buildOutcomeCounts,
+  classifyProposalOutcome,
   executeStatusTruthProposalActions,
   extractProposalFingerprint,
   extractRedactedCanonicalIds,
@@ -765,11 +768,11 @@ describe('planStatusTruthProposalActions', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Unit 4: executeStatusTruthProposalActions (I/O shell with injected client)
+// executeStatusTruthProposalActions (I/O shell with injected client)
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Minimal Octokit mock for Unit 4 tests
+// Minimal Octokit mock for executor tests
 // ---------------------------------------------------------------------------
 
 interface MockIssueStore {
@@ -1286,7 +1289,7 @@ describe('executeStatusTruthProposalActions', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Unit 4 corrections: fetchExistingProposalIssues tests
+// fetchExistingProposalIssues tests
 // ---------------------------------------------------------------------------
 
 function makeIssueListItem(
@@ -1750,7 +1753,7 @@ describe('redactedCanonicalIds mutation test — private node_id blocks proposal
 })
 
 // ---------------------------------------------------------------------------
-// Unit 4 hardening: label gate must block on ANY missing required label
+// Label gate must block on any missing required label
 // ---------------------------------------------------------------------------
 
 describe('executeStatusTruthProposalActions label gate — all required labels', () => {
@@ -1902,7 +1905,7 @@ describe('executeStatusTruthProposalActions label gate — all required labels',
 })
 
 // ---------------------------------------------------------------------------
-// Unit 4 hardening: live fetch failure blocks mutations
+// Live fetch failure blocks mutations
 // ---------------------------------------------------------------------------
 
 describe('fetchExistingProposalIssues fail-closed behavior', () => {
@@ -1923,7 +1926,7 @@ describe('fetchExistingProposalIssues fail-closed behavior', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Unit 4 corrections: open planning uses fetched existing issues
+// Open planning uses fetched existing issues
 // ---------------------------------------------------------------------------
 
 describe('planStatusTruthProposalActions with fetched existing issues', () => {
@@ -2011,7 +2014,7 @@ describe('planStatusTruthProposalActions with fetched existing issues', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Unit 5: Accuracy signal and operator-facing proposal UX
+// Accuracy signal and operator-facing proposal UX
 // ---------------------------------------------------------------------------
 
 describe('per-kind usefulness counters', () => {
@@ -2979,7 +2982,7 @@ repos:
 })
 
 // ---------------------------------------------------------------------------
-// U3: Proposal cap and overflow visibility
+// Proposal cap and overflow visibility
 // ---------------------------------------------------------------------------
 
 // Helper: make N distinct drifted findings with unique fingerprints (hex-safe)
@@ -2997,7 +3000,7 @@ function makeCapDriftedFindings(count: number) {
   }))
 }
 
-describe('U3: planStatusTruthProposalActions — mutation cap and overflow', () => {
+describe('planStatusTruthProposalActions — mutation cap and overflow', () => {
   describe('scenario 1: more than 5 eligible new proposals — only 5 execute, rest are overflow', () => {
     it('with 8 new drifted findings, only 5 open actions are planned and 3 are overflow', () => {
       const findings = makeCapDriftedFindings(8)
@@ -3508,5 +3511,545 @@ describe('U3: planStatusTruthProposalActions — mutation cap and overflow', () 
       expect(counts.opened).toBe(0)
       expect(counts.overflowed).toBe(3)
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Outcome classification read-model
+// ---------------------------------------------------------------------------
+
+describe('classifyProposalOutcome — pure outcome state classifier', () => {
+  // Scenario 1: Open proposal without terminal labels => proposed/pending
+  it('open proposal with only the proposal label classifies as proposed-pending', () => {
+    const issue = makeOpenIssue('abc123def456abcd')
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('proposed-pending')
+  })
+
+  it('open proposal with no outcome labels classifies as proposed-pending', () => {
+    const issue = makeOpenIssue('abc123def456abcd', {labels: [PROPOSAL_LABEL]})
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('proposed-pending')
+  })
+
+  // Scenario 2: Accepted/rejected/false-positive labels classify terminal outcomes
+  it('closed proposal with accepted label classifies as explicit-accepted', () => {
+    const issue = makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL, OUTCOME_LABELS.accepted])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('explicit-accepted')
+  })
+
+  it('closed proposal with rejected label classifies as explicit-rejected', () => {
+    const issue = makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL, OUTCOME_LABELS.rejected])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('explicit-rejected')
+  })
+
+  it('closed proposal with false-positive label classifies as false-positive', () => {
+    const issue = makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL, OUTCOME_LABELS.falsePositive])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('false-positive')
+  })
+
+  // Scenario 3: Drift-cleared proposal classifies resolved-positive without adding accepted
+  it('closed proposal with resolved label classifies as resolved-positive (not explicit-accepted)', () => {
+    const issue = makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL, OUTCOME_LABELS.resolved])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('resolved-positive')
+    // Must NOT be explicit-accepted — resolved positive is bot-inferred, not human-confirmed
+    expect(outcome).not.toBe('explicit-accepted')
+  })
+
+  it('closed proposal with manually-fixed label classifies as resolved-positive', () => {
+    const issue = makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL, OUTCOME_LABELS.manuallyFixed])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('resolved-positive')
+  })
+
+  // Scenario 4: Closed issue without terminal/resolution label — outcome depends on driftActive
+  it('closed proposal with only the proposal label (no outcome label) and driftActive=false classifies as resolved-positive', () => {
+    // Drift cleared (fingerprint not in current scan) → resolved-positive
+    const issue = makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('resolved-positive')
+    // Must NOT be explicit-rejected
+    expect(outcome).not.toBe('explicit-rejected')
+  })
+
+  it('closed proposal with only the proposal label (no outcome label) and driftActive=true classifies as needs-outcome', () => {
+    // Drift still active (fingerprint in current scan) → needs-outcome
+    const issue = makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL])
+    const outcome = classifyProposalOutcome(issue, true)
+    expect(outcome).toBe('needs-outcome')
+    // Must NOT be explicit-rejected
+    expect(outcome).not.toBe('explicit-rejected')
+  })
+
+  // Conflicting labels: mutually exclusive outcome labels present together
+  it('closed proposal with both accepted and rejected labels classifies as conflicting-labels', () => {
+    const issue = makeClosedIssue('abc123def456abcd', [
+      PROPOSAL_LABEL,
+      OUTCOME_LABELS.accepted,
+      OUTCOME_LABELS.rejected,
+    ])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('conflicting-labels')
+  })
+
+  it('closed proposal with both accepted and false-positive labels classifies as conflicting-labels', () => {
+    const issue = makeClosedIssue('abc123def456abcd', [
+      PROPOSAL_LABEL,
+      OUTCOME_LABELS.accepted,
+      OUTCOME_LABELS.falsePositive,
+    ])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('conflicting-labels')
+  })
+
+  it('closed proposal with both rejected and false-positive labels classifies as conflicting-labels', () => {
+    const issue = makeClosedIssue('abc123def456abcd', [
+      PROPOSAL_LABEL,
+      OUTCOME_LABELS.rejected,
+      OUTCOME_LABELS.falsePositive,
+    ])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('conflicting-labels')
+  })
+
+  // Superseded lifecycle state
+  it('closed proposal with superseded label classifies as superseded', () => {
+    const issue = makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL, OUTCOME_LABELS.superseded])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('superseded')
+  })
+
+  // Malformed: unrecognized status-truth:* label
+  it('closed proposal with unrecognized status-truth:* label classifies as malformed-outcome', () => {
+    const issue = makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL, 'status-truth:unknown-state'])
+    const outcome = classifyProposalOutcome(issue, false)
+    expect(outcome).toBe('malformed-outcome')
+  })
+
+  // Error path: malformed outcome markers do not crash
+  it('issue with no fingerprint marker still classifies without throwing', () => {
+    const issue: ExistingProposalIssue = {
+      number: 999,
+      state: 'closed',
+      labels: [PROPOSAL_LABEL, OUTCOME_LABELS.accepted],
+      title: 'Status truth: something',
+      body: null,
+    }
+    // Should not throw — returns a valid outcome state
+    expect(() => classifyProposalOutcome(issue, false)).not.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Outcome counts are emitted separately from action counts
+// ---------------------------------------------------------------------------
+
+describe('buildOutcomeCounts — outcome read-model counts separate from action counts', () => {
+  // Scenario 5: Outcome counts are emitted separately from action counts
+  it('buildOutcomeCounts returns outcome counts without action counts', () => {
+    // fp5 has no outcome label; with no driftActiveFingerprints (default empty set),
+    // driftActive=false → resolved-positive (drift cleared without explicit label).
+    // To get needsOutcome=1, pass fp5's fingerprint as drift-active.
+    const fp5Fingerprint = 'deadbeef12345678'
+    const fp5Issue = makeClosedIssue(fp5Fingerprint, [PROPOSAL_LABEL], {
+      body: `<!-- status-truth:fingerprint=${fp5Fingerprint} -->\n\nSome body text.`,
+    })
+    const issues: ExistingProposalIssue[] = [
+      makeClosedIssue('fp1', [PROPOSAL_LABEL, OUTCOME_LABELS.accepted]),
+      makeClosedIssue('fp2', [PROPOSAL_LABEL, OUTCOME_LABELS.rejected]),
+      makeClosedIssue('fp3', [PROPOSAL_LABEL, OUTCOME_LABELS.falsePositive]),
+      makeClosedIssue('fp4', [PROPOSAL_LABEL, OUTCOME_LABELS.resolved]),
+      fp5Issue,
+      makeOpenIssue('fp6'),
+    ]
+
+    // Pass fp5's fingerprint as drift-active so it classifies as needs-outcome
+    const outcomeCounts = buildOutcomeCounts(issues, new Set([fp5Fingerprint]))
+
+    // Outcome counts are present and correct
+    expect(outcomeCounts.explicitAccepted).toBe(1)
+    expect(outcomeCounts.explicitRejected).toBe(1)
+    expect(outcomeCounts.falsePositive).toBe(1)
+    expect(outcomeCounts.resolvedPositive).toBe(1)
+    expect(outcomeCounts.needsOutcome).toBe(1)
+    expect(outcomeCounts.proposedPending).toBe(1)
+
+    // Outcome counts object must NOT contain action-level fields
+    const keys = Object.keys(outcomeCounts)
+    expect(keys).not.toContain('opened')
+    expect(keys).not.toContain('updated')
+    expect(keys).not.toContain('reopened')
+    expect(keys).not.toContain('closed')
+    expect(keys).not.toContain('suppressed')
+    expect(keys).not.toContain('blocked')
+    expect(keys).not.toContain('overflowed')
+  })
+
+  it('buildOutcomeCounts counts conflicting-labels issues for operator attention', () => {
+    const issues: ExistingProposalIssue[] = [
+      makeClosedIssue('fp1', [PROPOSAL_LABEL, OUTCOME_LABELS.accepted, OUTCOME_LABELS.rejected]),
+      makeClosedIssue('fp2', [PROPOSAL_LABEL, OUTCOME_LABELS.accepted, OUTCOME_LABELS.falsePositive]),
+    ]
+
+    const outcomeCounts = buildOutcomeCounts(issues)
+
+    expect(outcomeCounts.conflictingLabels).toBe(2)
+    // Conflicting issues must NOT contribute to accuracy math
+    expect(outcomeCounts.explicitAccepted).toBe(0)
+    expect(outcomeCounts.explicitRejected).toBe(0)
+    expect(outcomeCounts.falsePositive).toBe(0)
+  })
+
+  it('buildOutcomeCounts counts malformed-outcome issues for operator attention', () => {
+    const issues: ExistingProposalIssue[] = [makeClosedIssue('fp1', [PROPOSAL_LABEL, 'status-truth:unknown-state'])]
+
+    const outcomeCounts = buildOutcomeCounts(issues)
+
+    expect(outcomeCounts.malformedOutcome).toBe(1)
+    // Malformed issues must NOT contribute to accuracy math
+    expect(outcomeCounts.explicitAccepted).toBe(0)
+    expect(outcomeCounts.explicitRejected).toBe(0)
+    expect(outcomeCounts.falsePositive).toBe(0)
+  })
+
+  it('buildOutcomeCounts returns zero counts for empty issue list', () => {
+    const outcomeCounts = buildOutcomeCounts([])
+
+    expect(outcomeCounts.explicitAccepted).toBe(0)
+    expect(outcomeCounts.explicitRejected).toBe(0)
+    expect(outcomeCounts.falsePositive).toBe(0)
+    expect(outcomeCounts.resolvedPositive).toBe(0)
+    expect(outcomeCounts.needsOutcome).toBe(0)
+    expect(outcomeCounts.proposedPending).toBe(0)
+    expect(outcomeCounts.conflictingLabels).toBe(0)
+    expect(outcomeCounts.malformedOutcome).toBe(0)
+    expect(outcomeCounts.superseded).toBe(0)
+  })
+
+  // Scenario 6: No raw issue body/title/fingerprint leaks into outcome summary/output
+  it('buildOutcomeCounts output contains only numeric counts — no raw issue body, title, or fingerprint', () => {
+    const issues: ExistingProposalIssue[] = [
+      makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL, OUTCOME_LABELS.accepted], {
+        title: 'Status truth: pr-state drift in docs/plans/secret-path.md',
+        body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nSensitive body content.',
+      }),
+    ]
+
+    const outcomeCounts = buildOutcomeCounts(issues)
+    const json = JSON.stringify(outcomeCounts)
+
+    // No raw issue body, title, or fingerprint in the output
+    expect(json).not.toContain('secret-path')
+    expect(json).not.toContain('Sensitive body content')
+    expect(json).not.toContain('abc123def456abcd')
+    expect(json).not.toContain('Status truth:')
+
+    // Only numeric counts
+    for (const value of Object.values(outcomeCounts)) {
+      expect(typeof value).toBe('number')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// conflictingLabels count in ProposalCounts
+// ---------------------------------------------------------------------------
+
+describe('conflictingLabels count in planStatusTruthProposalActions', () => {
+  it('issue with conflicting accepted+rejected labels increments conflictingLabels count', () => {
+    const fingerprint = 'abc123def456abcd'
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    const conflictingIssue = makeClosedIssue(fingerprint, [
+      PROPOSAL_LABEL,
+      OUTCOME_LABELS.accepted,
+      OUTCOME_LABELS.rejected,
+    ])
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [conflictingIssue]}))
+
+    expect(counts.conflictingLabels).toBeGreaterThanOrEqual(1)
+    // Must NOT contribute to usefulnessByKind accuracy math
+    const kindCounts = counts.usefulnessByKind
+    for (const kind of Object.keys(kindCounts)) {
+      const entry = kindCounts[kind]
+      if (entry !== undefined) {
+        expect(entry.accepted).toBe(0)
+        expect(entry.rejected).toBe(0)
+        expect(entry.falsePositive).toBe(0)
+      }
+    }
+  })
+
+  it('issue with conflicting accepted+false-positive labels increments conflictingLabels count', () => {
+    const fingerprint = 'abc123def456abcd'
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    const conflictingIssue = makeClosedIssue(fingerprint, [
+      PROPOSAL_LABEL,
+      OUTCOME_LABELS.accepted,
+      OUTCOME_LABELS.falsePositive,
+    ])
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [conflictingIssue]}))
+
+    expect(counts.conflictingLabels).toBeGreaterThanOrEqual(1)
+  })
+
+  it('conflictingLabels count is separate from malformedOutcomeMarkers count', () => {
+    const fingerprint1 = 'abc123def456abcd'
+    const fingerprint2 = 'deadbeef12345678'
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    // One conflicting (accepted+rejected), one malformed (unknown label)
+    const conflictingIssue = makeClosedIssue(fingerprint1, [
+      PROPOSAL_LABEL,
+      OUTCOME_LABELS.accepted,
+      OUTCOME_LABELS.rejected,
+    ])
+    const malformedIssue: ExistingProposalIssue = {
+      number: 301,
+      state: 'closed',
+      labels: [PROPOSAL_LABEL, 'status-truth:unknown-state'],
+      title: 'Status truth: pr-state drift in docs/plans/example.md',
+      body: `<!-- status-truth:fingerprint=${fingerprint2} -->\n\nBody.`,
+    }
+
+    const {counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [conflictingIssue, malformedIssue]}),
+    )
+
+    expect(counts.conflictingLabels).toBe(1)
+    expect(counts.malformedOutcomeMarkers).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// classifyProposalOutcome — driftActive parameter
+// ---------------------------------------------------------------------------
+
+describe('classifyProposalOutcome — driftActive parameter', () => {
+  it('closed issue with no terminal label and driftActive=false classifies as resolved-positive', () => {
+    // Closed with only the proposal label (no outcome label), drift no longer active.
+    // The fingerprint is not in the current scan → resolved-positive (drift cleared without explicit label).
+    const issue: ExistingProposalIssue = {
+      number: 100,
+      state: 'closed',
+      labels: [PROPOSAL_LABEL],
+      title: 'Status truth: pr-state drift in docs/plans/example.md',
+      body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+    }
+    expect(classifyProposalOutcome(issue, false)).toBe('resolved-positive')
+  })
+
+  it('closed issue with no terminal label and driftActive=true classifies as needs-outcome', () => {
+    // Closed with only the proposal label (no outcome label), drift still active.
+    // The fingerprint is still in the current scan → needs-outcome (operator attention required).
+    const issue: ExistingProposalIssue = {
+      number: 100,
+      state: 'closed',
+      labels: [PROPOSAL_LABEL],
+      title: 'Status truth: pr-state drift in docs/plans/example.md',
+      body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+    }
+    expect(classifyProposalOutcome(issue, true)).toBe('needs-outcome')
+  })
+
+  it('open issue always classifies as proposed-pending regardless of driftActive', () => {
+    const issue: ExistingProposalIssue = {
+      number: 100,
+      state: 'open',
+      labels: [PROPOSAL_LABEL],
+      title: 'Status truth: pr-state drift in docs/plans/example.md',
+      body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+    }
+    expect(classifyProposalOutcome(issue, false)).toBe('proposed-pending')
+    expect(classifyProposalOutcome(issue, true)).toBe('proposed-pending')
+  })
+
+  it('closed issue with resolved label classifies as resolved-positive regardless of driftActive', () => {
+    const issue: ExistingProposalIssue = {
+      number: 100,
+      state: 'closed',
+      labels: [PROPOSAL_LABEL, OUTCOME_LABELS.resolved],
+      title: 'Status truth: pr-state drift in docs/plans/example.md',
+      body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+    }
+    expect(classifyProposalOutcome(issue, false)).toBe('resolved-positive')
+    expect(classifyProposalOutcome(issue, true)).toBe('resolved-positive')
+  })
+
+  it('closed issue with manually-fixed label classifies as resolved-positive regardless of driftActive', () => {
+    const issue: ExistingProposalIssue = {
+      number: 100,
+      state: 'closed',
+      labels: [PROPOSAL_LABEL, OUTCOME_LABELS.manuallyFixed],
+      title: 'Status truth: pr-state drift in docs/plans/example.md',
+      body: '<!-- status-truth:fingerprint=abc123def456abcd -->\n\nBody.',
+    }
+    expect(classifyProposalOutcome(issue, false)).toBe('resolved-positive')
+    expect(classifyProposalOutcome(issue, true)).toBe('resolved-positive')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// outcomeCounts in planStatusTruthProposalActions result
+// ---------------------------------------------------------------------------
+
+describe('planStatusTruthProposalActions — outcomeCounts in result', () => {
+  it('result includes outcomeCounts field separate from counts and countsByKind', () => {
+    const {counts, countsByKind, outcomeCounts} = planStatusTruthProposalActions(makePlanInput()) as {
+      counts: unknown
+      countsByKind: unknown
+      outcomeCounts: OutcomeCounts
+    }
+
+    expect(outcomeCounts).toBeDefined()
+    expect(counts).toBeDefined()
+    expect(countsByKind).toBeDefined()
+    // outcomeCounts must be a separate object from counts
+    expect(outcomeCounts).not.toBe(counts)
+  })
+
+  it('outcomeCounts has all required fields as numbers', () => {
+    const result = planStatusTruthProposalActions(makePlanInput()) as {outcomeCounts: OutcomeCounts}
+
+    const oc = result.outcomeCounts
+    expect(typeof oc.proposedPending).toBe('number')
+    expect(typeof oc.explicitAccepted).toBe('number')
+    expect(typeof oc.explicitRejected).toBe('number')
+    expect(typeof oc.falsePositive).toBe('number')
+    expect(typeof oc.resolvedPositive).toBe('number')
+    expect(typeof oc.superseded).toBe('number')
+    expect(typeof oc.needsOutcome).toBe('number')
+    expect(typeof oc.conflictingLabels).toBe('number')
+    expect(typeof oc.malformedOutcome).toBe('number')
+  })
+
+  it('outcomeCounts.proposedPending counts open proposal issues', () => {
+    const fingerprint = 'abc123def456abcd'
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    const openIssue = makeOpenIssue(fingerprint)
+
+    const result = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [openIssue]})) as {
+      outcomeCounts: OutcomeCounts
+    }
+
+    expect(result.outcomeCounts.proposedPending).toBe(1)
+  })
+
+  it('outcomeCounts.explicitAccepted counts closed issues with accepted label', () => {
+    const fingerprint = 'abc123def456abcd'
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.accepted])
+
+    const result = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]})) as {
+      outcomeCounts: OutcomeCounts
+    }
+
+    expect(result.outcomeCounts.explicitAccepted).toBe(1)
+  })
+
+  it('outcomeCounts.resolvedPositive counts closed issues with resolved label', () => {
+    const fingerprint = 'abc123def456abcd'
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.resolved])
+
+    const result = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]})) as {
+      outcomeCounts: OutcomeCounts
+    }
+
+    expect(result.outcomeCounts.resolvedPositive).toBe(1)
+  })
+
+  it('outcomeCounts.needsOutcome counts closed issues with no outcome label when drift is active', () => {
+    // Closed with only proposal label, drift still active (fingerprint in report findings)
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    // Closed with no outcome label — drift is active so this is needs-outcome
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL])
+
+    const result = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]})) as {
+      outcomeCounts: OutcomeCounts
+    }
+
+    expect(result.outcomeCounts.needsOutcome).toBe(1)
+  })
+
+  it('outcomeCounts.resolvedPositive counts closed issues with no outcome label when drift is NOT active', () => {
+    // Closed with only proposal label, drift cleared (fingerprint not in report findings)
+    const fingerprint = 'abc123def456abcd'
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    // Closed with no outcome label — drift cleared so this is resolved-positive
+    const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL])
+
+    const result = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]})) as {
+      outcomeCounts: OutcomeCounts
+    }
+
+    expect(result.outcomeCounts.resolvedPositive).toBe(1)
+    expect(result.outcomeCounts.needsOutcome).toBe(0)
+  })
+
+  it('outcomeCounts is separate from action counts (counts) and plannedCounts', () => {
+    // outcomeCounts reflects existing issue state, not actions taken this run
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const openIssue = makeOpenIssue(fingerprint)
+
+    const result = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [openIssue]})) as {
+      counts: {opened: number; noAction: number}
+      outcomeCounts: OutcomeCounts
+    }
+
+    // Action counts: no-action (existing open issue, drift unchanged)
+    expect(result.counts.noAction).toBeGreaterThanOrEqual(1)
+    expect(result.counts.opened).toBe(0)
+    // Outcome counts: one proposed-pending (the existing open issue)
+    expect(result.outcomeCounts.proposedPending).toBe(1)
   })
 })
