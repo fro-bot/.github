@@ -271,7 +271,7 @@ describe('hashSnapshot', () => {
           content_repo: 'fro-bot/dashboard',
           status: 'Todo',
           readiness: 'ready now',
-          gate: 'Unit 3',
+          gate: 'Gateway stage 3',
           issue_state: 'open',
           issue_closed_at: null,
           issue_labels: [],
@@ -286,7 +286,7 @@ describe('hashSnapshot', () => {
           ...baseItem,
           status: 'In Progress',
           readiness: 'blocked',
-          gate: 'Unit 4',
+          gate: 'Gateway stage 4',
         },
       ],
     }
@@ -302,7 +302,7 @@ describe('hashSnapshot', () => {
           content_repo: 'fro-bot/dashboard',
           status: 'Todo',
           readiness: 'ready now',
-          gate: 'Unit 3',
+          gate: 'Gateway stage 3',
           issue_state: 'open',
           issue_closed_at: null,
           issue_labels: [],
@@ -514,7 +514,7 @@ describe('decideComment', () => {
 
 describe('rollout-tracker-snapshot CLI fixture path', () => {
   it('gates comments only on tracked identity or issue-state transitions', () => {
-    const items = [makeProjectItem({content_number: 24, content_repo: 'fro-bot/dashboard', gate: 'Unit 3'})]
+    const items = [makeProjectItem({content_number: 24, content_repo: 'fro-bot/dashboard', gate: 'Gateway stage 3'})]
     const issues = [makeIssueState({number: 24, repo: 'fro-bot/dashboard', state: 'open'})]
 
     const first = runCliFixture({items, issues})
@@ -713,6 +713,10 @@ describe('deriveTrackedIssueRefs', () => {
     expect(refs).not.toContain('#907')
     expect(refs).toContain('fro-bot/agent#929')
     expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('unsupported'))
+    // stderr must not contain repo names or item IDs
+    const written = stderrSpy.mock.calls.map(c => String(c[0])).join('')
+    expect(written).not.toContain('fro-bot/agent')
+    expect(written).not.toContain('907')
     stderrSpy.mockRestore()
   })
 
@@ -727,6 +731,9 @@ describe('deriveTrackedIssueRefs', () => {
     expect(refs).not.toContain('fro-bot/agent#0')
     expect(refs).toContain('fro-bot/agent#929')
     expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('unsupported'))
+    // stderr must not contain repo names or item IDs
+    const written = stderrSpy.mock.calls.map(c => String(c[0])).join('')
+    expect(written).not.toContain('fro-bot/agent')
     stderrSpy.mockRestore()
   })
 
@@ -789,6 +796,10 @@ describe('unsupported Project items excluded from snapshot', () => {
     expect(snapshot.items).toHaveLength(1)
     expect(snapshot.items[0]?.content_number).toBe(929)
     expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('unsupported'))
+    // stderr must not contain repo names or item IDs
+    const written = stderrSpy.mock.calls.map(c => String(c[0])).join('')
+    expect(written).not.toContain('fro-bot/agent')
+    expect(written).not.toContain('907')
     stderrSpy.mockRestore()
   })
 
@@ -804,6 +815,9 @@ describe('unsupported Project items excluded from snapshot', () => {
     expect(snapshot.items).toHaveLength(1)
     expect(snapshot.items[0]?.content_number).toBe(929)
     expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('unsupported'))
+    // stderr must not contain repo names or item IDs
+    const written = stderrSpy.mock.calls.map(c => String(c[0])).join('')
+    expect(written).not.toContain('fro-bot/agent')
     stderrSpy.mockRestore()
   })
 

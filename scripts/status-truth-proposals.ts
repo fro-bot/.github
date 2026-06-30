@@ -1092,10 +1092,11 @@ export function planStatusTruthProposalActions(
     })
   }
 
-  // 4. Close-on-clear candidates: only when scan is complete and not execution-failure.
-  // At this point we have already returned early for execution-failure and scan_complete=false,
-  // so report.scan_complete is always true here. The check is kept for clarity.
-  const canClose = report.scan_complete
+  // 4. Close-on-clear candidates: only when scan is complete, not execution-failure,
+  // and no unsafe findings are present. Unsafe findings indicate that some claims
+  // could not be proven public — prior drift may simply be inaccessible/private now,
+  // not genuinely cleared. Closing proposals under that uncertainty would be incorrect.
+  const canClose = report.scan_complete && report.counts.unsafe === 0
 
   if (canClose) {
     for (const [fp, openIssue] of openByFingerprint) {
@@ -1315,10 +1316,30 @@ export interface StatusTruthOctokitClient {
 }
 
 /**
+ * Fetch all pages of issues from a single `listForRepo` call until an empty page is returned.
+ *
+ * Any API error is propagated to the caller (fail-closed).
+ */
+async function paginateAll(
+  listFn: (page: number) => Promise<{data: IssueListItem[]}>,
+  perPage = 100,
+): Promise<IssueListItem[]> {
+  const all: IssueListItem[] = []
+  let page = 1
+  for (;;) {
+    const response = await listFn(page)
+    all.push(...response.data)
+    if (response.data.length < perPage) break
+    page++
+  }
+  return all
+}
+
+/**
  * Fetch existing status-truth proposal issues from GitHub.
  *
- * Fetches open issues and recent closed issues (last 2 pages) labeled with
- * PROPOSAL_LABEL. Filters to only issues that have the proposal label.
+ * Fetches all open and all closed issues labeled with PROPOSAL_LABEL using
+ * exhaustive pagination. Filters to only issues that have the proposal label.
  * Returns them as ExistingProposalIssue[] for the lifecycle planner.
  *
  * Fail-closed in live mode: any API error is re-thrown so the caller can
@@ -1335,17 +1356,22 @@ export async function fetchExistingProposalIssues(params: {
   const {octokit, owner, repo} = params
   const issues: ExistingProposalIssue[] = []
 
-  // Fetch open issues with the proposal label.
+  // Fetch all open issues with the proposal label.
   // Any error is propagated to the caller (fail-closed in live mode).
-  const openResponse = await octokit.rest.issues.listForRepo({
-    owner,
-    repo,
-    labels: PROPOSAL_LABEL,
-    state: 'open',
-    per_page: 100,
-    page: 1,
-  })
-  for (const issue of openResponse.data) {
+  const perPage = 100
+  const openItems = await paginateAll(
+    async page =>
+      octokit.rest.issues.listForRepo({
+        owner,
+        repo,
+        labels: PROPOSAL_LABEL,
+        state: 'open',
+        per_page: perPage,
+        page,
+      }),
+    perPage,
+  )
+  for (const issue of openItems) {
     const labelNames = issue.labels.map(l => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean)
     if (!labelNames.includes(PROPOSAL_LABEL)) continue
     issues.push({
@@ -1357,40 +1383,31 @@ export async function fetchExistingProposalIssues(params: {
     })
   }
 
-  // Fetch recent closed issues with the proposal label (2 pages).
-  // Any error on the first page is propagated; subsequent pages are best-effort.
-  for (const page of [1, 2]) {
-    let closedResponse: {data: IssueListItem[]}
-    try {
-      closedResponse = await octokit.rest.issues.listForRepo({
+  // Fetch all closed issues with the proposal label.
+  // Any error is propagated to the caller (fail-closed in live mode).
+  const closedItems = await paginateAll(
+    async page =>
+      octokit.rest.issues.listForRepo({
         owner,
         repo,
         labels: PROPOSAL_LABEL,
         state: 'closed',
-        per_page: 50,
+        per_page: perPage,
         page,
-      })
-    } catch (error: unknown) {
-      if (page === 1) {
-        // First closed page failure is fatal — propagate to caller
-        throw error
-      }
-      // Subsequent pages: best-effort; stop pagination
-      break
-    }
-    if (closedResponse.data.length === 0) break
-    for (const issue of closedResponse.data) {
-      const labelNames = issue.labels.map(l => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean)
-      if (!labelNames.includes(PROPOSAL_LABEL)) continue
-      issues.push({
-        number: issue.number,
-        state: 'closed',
-        labels: labelNames,
-        title: issue.title,
-        body: issue.body,
-        closedAt: issue.closed_at ?? null,
-      })
-    }
+      }),
+    perPage,
+  )
+  for (const issue of closedItems) {
+    const labelNames = issue.labels.map(l => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean)
+    if (!labelNames.includes(PROPOSAL_LABEL)) continue
+    issues.push({
+      number: issue.number,
+      state: 'closed',
+      labels: labelNames,
+      title: issue.title,
+      body: issue.body,
+      closedAt: issue.closed_at ?? null,
+    })
   }
 
   return issues

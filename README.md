@@ -217,7 +217,7 @@ Fro Bot control plane:
 | **Update Metadata** | Refresh `metadata/renovate.yaml` from the fro-bot org scan | Daily 04:30 UTC, dispatch |
 | **Dispatch Renovate** | Dispatch Renovate runs across repos tracked in `metadata/renovate.yaml` | Every 4 hours at `:30`, dispatch |
 | **Gateway Rollout Tracker** | Track and report on gateway rollout status across managed repos | Schedule, dispatch |
-| **Status Truth** | Detect drift in typed public coordination claims and manage proposal issues with counts-only summaries | Sunday 19:00 UTC, dispatch |
+| **Status Truth** | Detect drift in typed public coordination claims and manage proposal issues with counts-only summaries | Sunday 21:00 UTC, dispatch |
 | **Reset Survey Status** | Manually clear stale survey state for one or more tracked repos on `data` | Manual dispatch |
 | **Wiki Lint** | Lint the authoritative wiki snapshot restored from `origin/data` | Sunday 20:00 UTC, dispatch |
 

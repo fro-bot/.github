@@ -1150,7 +1150,6 @@ export async function resolveClaimLiveState(params: {
     }
     return resolvePlanStatusClaim({
       claimedPath: claim.sourceRef,
-      claimedStatus: claim.claimedState,
       fileReader,
     })
   }
@@ -1269,12 +1268,10 @@ function parsePlanFrontmatterStatus(content: string): string | null {
  *
  * @param params - Resolver parameters.
  * @param params.claimedPath - Repo-relative path to the target plan file (e.g., `docs/plans/foo.md`).
- * @param params.claimedStatus - The status value claimed in the source document.
  * @param params.fileReader - Injected file reader for testability.
  */
 export async function resolvePlanStatusClaim(params: {
   claimedPath: string
-  claimedStatus: string
   fileReader: FileReader
 }): Promise<ResolverResult> {
   const {claimedPath, fileReader} = params
@@ -1428,7 +1425,6 @@ export async function resolveFileParseClaims(params: {
     if (claim.kind === 'plan-status') {
       resolverResults[key] = await resolvePlanStatusClaim({
         claimedPath: claim.sourceRef,
-        claimedStatus: claim.claimedState,
         fileReader,
       })
     }
@@ -1817,17 +1813,13 @@ async function runDetect(): Promise<void> {
     let issueScanErrors = 0
     let issueClaims: StatusTruthClaim[] = []
 
-    // Resolve file-parse claims (plan-status) without a token — no API needed.
-    let resolverResults: Record<string, ResolverResult> = await resolveFileParseClaims({
-      claims: fileClaims,
-      fileReader,
-    })
-
     // Load rollout snapshot (best-effort; absence/failure → null, not a hard error).
     // The snapshot path is exported by the pre-detect workflow step via env var.
     // If absent or malformed, rollout-tracker claims remain unresolved (no fake drift).
     const snapshotPath = process.env.STATUS_TRUTH_ROLLOUT_SNAPSHOT_PATH
     const snapshot = await loadRolloutSnapshot({snapshotPath, fileReader})
+
+    let resolverResults: Record<string, ResolverResult>
 
     if (token !== undefined && token !== '') {
       const {Octokit} = await import('@octokit/rest')
@@ -1846,16 +1838,16 @@ async function runDetect(): Promise<void> {
       issueScanErrors = issueResult.scanErrors
 
       // Resolve all claims (file + issue) against live state.
-      // fileReader is passed so plan-status claims can be resolved via file-parse.
-      // snapshot is passed so rollout-tracker-status claims can be resolved via snapshot.
-      // resolveAllClaims will overwrite any file-parse entries already in resolverResults
-      // with the same result (idempotent), and add API-backed results.
+      // resolveAllClaims handles file-parse (plan-status) via fileReader, API-backed
+      // claims via octokit, and compound claims via snapshot. No pre-pass needed.
       const allClaims = [...fileClaims, ...issueClaims]
       const resolved = await resolveAllClaims({claims: allClaims, octokit, owner, repo, fileReader, snapshot})
       resolverResults = resolved.resolverResults
       resolveErrors = resolved.resolveErrors
+    } else {
+      // No token: resolve file-parse claims (plan-status) locally; API claims remain unresolved.
+      resolverResults = await resolveFileParseClaims({claims: fileClaims, fileReader})
     }
-    // If no token: API claims remain unresolved; file-parse claims resolved above
 
     // Step 3: Classify all claims into findings
     const allClaims = [...fileClaims, ...issueClaims]

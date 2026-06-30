@@ -493,6 +493,24 @@ describe('planStatusTruthProposalActions', () => {
       expect(actions.filter(a => a.type === 'close')).toHaveLength(0)
     })
 
+    it('does NOT close open proposal when report includes unsafe findings (fail-closed on inaccessible prior drift)', () => {
+      const fingerprint = 'abc123def456abcd'
+      const report = makeReport({
+        findings: [makeUnsafeFinding()],
+        status: 'findings',
+        scan_complete: true,
+        counts: {total: 1, current: 0, drifted: 0, unresolved: 0, unsafe: 1, proposal_eligible: 0},
+      })
+      // An open proposal whose fingerprint is NOT in the current findings (drift appears cleared)
+      const existingIssue = makeOpenIssue(fingerprint)
+
+      const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [existingIssue]}))
+
+      // Must NOT close: unsafe findings mean prior drift may be inaccessible/private, not genuinely cleared
+      expect(actions.filter(a => a.type === 'close')).toHaveLength(0)
+      expect(counts.closed).toBe(0)
+    })
+
     it('does NOT close when close-comment is blocked by token-load failure', () => {
       const fingerprint = 'abc123def456abcd'
       const report = makeReport({
@@ -1409,12 +1427,15 @@ function makeFetchOctokit(
         }) => {
           if (params.state === 'open') {
             if (overrides.openThrows === true) throw new Error('API error')
-            return {data: openIssues}
+            // Paginate: slice by per_page and page
+            const start = (params.page - 1) * params.per_page
+            return {data: openIssues.slice(start, start + params.per_page)}
           }
           if (overrides.closedThrows === true) throw new Error('API error')
           if (overrides.closedPage2Throws === true && params.page === 2) throw new Error('API error page 2')
-          // Return closed issues only on page 1; empty on page 2
-          return {data: params.page === 1 ? closedIssues : []}
+          // Paginate: slice by per_page and page
+          const start = (params.page - 1) * params.per_page
+          return {data: closedIssues.slice(start, start + params.per_page)}
         },
       },
     },
@@ -1490,23 +1511,69 @@ describe('fetchExistingProposalIssues', () => {
     expect(issues).toHaveLength(0)
   })
 
-  it('returns page-1 closed issues when page-2 closed fetch throws (best-effort pagination)', async () => {
-    const fp = 'abc123def456abcd'
-    const closedIssues = [
-      makeIssueListItem(
-        200,
-        'closed',
-        [PROPOSAL_LABEL, OUTCOME_LABELS.resolved],
-        `<!-- status-truth:fingerprint=${fp} -->`,
-      ),
-    ]
+  it('throws when closed page-2 fetch throws (fail-closed: all pagination errors propagate)', async () => {
+    // Build exactly per_page (100) closed issues on page 1 so pagination continues to page 2.
+    const closedIssues: IssueListItem[] = Array.from({length: 100}, (_, i) =>
+      makeIssueListItem(200 + i, 'closed', [PROPOSAL_LABEL, OUTCOME_LABELS.resolved], null),
+    )
     const octokit = makeFetchOctokit({closedIssues, closedPage2Throws: true})
 
-    // Page-2 failure is best-effort; page-1 results should still be returned
+    // Page-2 failure propagates — fail-closed, no partial results
+    await expect(fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})).rejects.toThrow(
+      'API error page 2',
+    )
+  })
+
+  it('fetches all closed issues across multiple pages (no truncation beyond 100)', async () => {
+    // Build 150 closed issues spread across two pages of 100 each.
+    // The mock slices by per_page/page, so page 1 returns items 0-99 and page 2 returns items 100-149.
+    const closedIssues: IssueListItem[] = Array.from({length: 150}, (_, i) =>
+      makeIssueListItem(
+        300 + i,
+        'closed',
+        [PROPOSAL_LABEL, OUTCOME_LABELS.resolved],
+        `<!-- status-truth:fingerprint=${String(i).padStart(16, '0')} -->`,
+      ),
+    )
+    const octokit = makeFetchOctokit({closedIssues})
+
     const issues = await fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})
 
-    expect(issues.filter(i => i.state === 'closed')).toHaveLength(1)
-    expect(issues[0]?.number).toBe(200)
+    const closed = issues.filter(i => i.state === 'closed')
+    expect(closed).toHaveLength(150)
+    // Verify issues from the second page (numbers 400-449) are present
+    const secondPageNumbers = closed.map(i => i.number).filter(n => n >= 400)
+    expect(secondPageNumbers.length).toBe(50)
+  })
+
+  it('outcome counts include closed issues beyond the first 100', async () => {
+    // 120 closed issues: first 100 are accepted, last 20 are rejected.
+    // Without full pagination, the 20 rejected issues on page 2 would be missed.
+    const closedIssues: IssueListItem[] = [
+      ...Array.from({length: 100}, (_, i) =>
+        makeIssueListItem(
+          500 + i,
+          'closed',
+          [PROPOSAL_LABEL, OUTCOME_LABELS.accepted],
+          `<!-- status-truth:fingerprint=${String(i).padStart(16, '0')} -->`,
+        ),
+      ),
+      ...Array.from({length: 20}, (_, i) =>
+        makeIssueListItem(
+          600 + i,
+          'closed',
+          [PROPOSAL_LABEL, OUTCOME_LABELS.rejected],
+          `<!-- status-truth:fingerprint=${String(100 + i).padStart(16, '0')} -->`,
+        ),
+      ),
+    ]
+    const octokit = makeFetchOctokit({closedIssues})
+
+    const issues = await fetchExistingProposalIssues({octokit, owner: 'fro-bot', repo: '.github'})
+    const counts = buildOutcomeCounts(issues)
+
+    expect(counts.explicitAccepted).toBe(100)
+    expect(counts.explicitRejected).toBe(20)
   })
 })
 

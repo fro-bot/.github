@@ -2911,7 +2911,6 @@ describe('resolvePlanStatusClaim', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/my-plan.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -2931,7 +2930,6 @@ describe('resolvePlanStatusClaim', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/my-plan.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -2949,7 +2947,6 @@ describe('resolvePlanStatusClaim', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/nonexistent.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -2963,7 +2960,6 @@ describe('resolvePlanStatusClaim', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/my-plan.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -2977,7 +2973,6 @@ describe('resolvePlanStatusClaim', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/my-plan.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -2991,7 +2986,6 @@ describe('resolvePlanStatusClaim', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/my-plan.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -3005,7 +2999,6 @@ describe('resolvePlanStatusClaim', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/my-plan.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -3023,7 +3016,6 @@ describe('resolvePlanStatusClaim', () => {
 
       const result = await resolvePlanStatusClaim({
         claimedPath: 'docs/plans/my-plan.md',
-        claimedStatus: status,
         fileReader,
       })
 
@@ -3141,7 +3133,6 @@ describe('plan-status end-to-end — extract → resolve → detect pipeline', (
     // Resolve using file-parse resolver
     const resolverResult = await resolvePlanStatusClaim({
       claimedPath: claim.sourceRef,
-      claimedStatus: claim.claimedState,
       fileReader,
     })
 
@@ -3173,7 +3164,6 @@ describe('plan-status end-to-end — extract → resolve → detect pipeline', (
 
     const resolverResult = await resolvePlanStatusClaim({
       claimedPath: claim.sourceRef,
-      claimedStatus: claim.claimedState,
       fileReader,
     })
 
@@ -3206,7 +3196,6 @@ describe('plan-status end-to-end — extract → resolve → detect pipeline', (
 
     const resolverResult = await resolvePlanStatusClaim({
       claimedPath: claim.sourceRef,
-      claimedStatus: claim.claimedState,
       fileReader,
     })
 
@@ -3392,7 +3381,6 @@ describe('plan-status privacy/output safety', () => {
 
     const resolverResult = await resolvePlanStatusClaim({
       claimedPath: claim.sourceRef,
-      claimedStatus: claim.claimedState,
       fileReader,
     })
 
@@ -3481,7 +3469,6 @@ describe('plan-status path traversal rejection', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/../../etc/passwd',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -3498,7 +3485,6 @@ describe('plan-status path traversal rejection', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/../other/secret.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -3511,7 +3497,6 @@ describe('plan-status path traversal rejection', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/valid-plan.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -3545,7 +3530,6 @@ describe('plan-status tokenless resolution', () => {
     const resolverResults: Record<string, ResolverResult> = {}
     const result = await resolvePlanStatusClaim({
       claimedPath: planStatusClaim.sourceRef,
-      claimedStatus: planStatusClaim.claimedState,
       fileReader,
     })
     resolverResults[`plan-status:${planStatusClaim.sourceRef}`] = result
@@ -3575,7 +3559,6 @@ describe('plan-status tokenless resolution', () => {
     const resolverResults: Record<string, ResolverResult> = {}
     const result = await resolvePlanStatusClaim({
       claimedPath: planStatusClaim.sourceRef,
-      claimedStatus: planStatusClaim.claimedState,
       fileReader,
     })
     resolverResults[`plan-status:${planStatusClaim.sourceRef}`] = result
@@ -3618,7 +3601,6 @@ describe('parsePlanFrontmatterStatus: quoted values and CRLF', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/my-plan.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -3631,7 +3613,6 @@ describe('parsePlanFrontmatterStatus: quoted values and CRLF', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/my-plan.md',
-      claimedStatus: 'complete',
       fileReader,
     })
 
@@ -3644,7 +3625,6 @@ describe('parsePlanFrontmatterStatus: quoted values and CRLF', () => {
 
     const result = await resolvePlanStatusClaim({
       claimedPath: 'docs/plans/my-plan.md',
-      claimedStatus: 'active',
       fileReader,
     })
 
@@ -3676,7 +3656,6 @@ describe('plan-status drift: proposedCorrection contains expected status replace
 
     const resolverResult = await resolvePlanStatusClaim({
       claimedPath: claim.sourceRef,
-      claimedStatus: claim.claimedState,
       fileReader,
     })
 
@@ -4061,6 +4040,33 @@ describe('resolveRolloutTrackerClaim', () => {
     expect(trackerClaims).toHaveLength(1)
     expect(trackerClaims[0]?.claimedState).toBe('closed')
   })
+
+  it('issue_state merged: snapshot with merged state resolves to "merged" and classifies correctly', async () => {
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 931, issue_state: 'merged'})])
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#931',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #931 is open',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot})
+
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') {
+      expect(result.state).toBe('merged')
+    }
+
+    // Classify via detectStatusTruthClaims: claimed 'open' vs live 'merged' => drifted
+    const resolverResults = makeResolverResults([{kind: 'rollout-tracker-status', sourceRef: '#931', result}])
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('drifted')
+    expect(findings[0]?.proposalEligible).toBe(true)
+    if (findings[0]?.verdict === 'drifted') {
+      expect(findings[0].liveState).toBe('merged')
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -4374,6 +4380,32 @@ describe('loadRolloutSnapshot: snapshot file loading and validation', () => {
     const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
     // Must return null (validation failed), not the raw object
     expect(result).toBeNull()
+  })
+
+  it('loadRolloutSnapshot writes a generic diagnostic to stderr on file read failure (no path info)', async () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const fileReader = async (_path: string) => {
+      throw new Error('ENOENT: no such file or directory, open /tmp/secret-path.json')
+    }
+    await loadRolloutSnapshot({snapshotPath: '/tmp/secret-path.json', fileReader})
+    // Must write a diagnostic to stderr
+    expect(stderrSpy).toHaveBeenCalled()
+    // The diagnostic must not contain the raw error detail (which may include path info)
+    const written = stderrSpy.mock.calls.map(c => String(c[0])).join('')
+    expect(written).toContain('snapshot file unavailable')
+    expect(written).not.toContain('secret-path.json')
+    stderrSpy.mockRestore()
+  })
+
+  it('loadRolloutSnapshot writes a generic diagnostic to stderr on malformed JSON (no raw payload)', async () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const fileReader = async (_path: string) => 'SENSITIVE_PAYLOAD{{{not-json'
+    await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    expect(stderrSpy).toHaveBeenCalled()
+    const written = stderrSpy.mock.calls.map(c => String(c[0])).join('')
+    expect(written).toContain('snapshot JSON malformed')
+    expect(written).not.toContain('SENSITIVE_PAYLOAD')
+    stderrSpy.mockRestore()
   })
 })
 

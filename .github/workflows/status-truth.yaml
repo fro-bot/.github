@@ -35,9 +35,12 @@ jobs:
     name: Detect status-truth drift
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Detect job uses only the default read-only permissions.
+    # Detect job needs read access to contents, issues, and pull-requests for
+    # API-backed claim resolution (PR/issue/release state lookups).
     permissions:
       contents: read
+      issues: read
+      pull-requests: read
 
     steps:
       - name: ⤵ Checkout Branch
