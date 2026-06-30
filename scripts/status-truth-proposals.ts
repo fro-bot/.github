@@ -29,14 +29,91 @@
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */
 
+import type {RepoEntry} from './schemas.ts'
 import type {PublicStatusTruthFinding, StatusTruthFinding, StatusTruthJsonReport} from './status-truth-detect.ts'
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 
 import {Octokit} from '@octokit/rest'
-import {loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
+import {parse} from 'yaml'
+import {isRecord, loadPrivateTokensFromDisk} from './capture-learnings-privacy.ts'
+import {assertReposFile} from './schemas.ts'
 import {KNOWN_FINGERPRINT_VERSION, KNOWN_SCHEMA_VERSION, validateStatusTruthArtifact} from './status-truth-detect.ts'
 import {applyPublicOutputGate, makePublicOutputTokens, type PublicOutputTokens} from './status-truth-public-output.ts'
+
+// ---------------------------------------------------------------------------
+// Redacted canonical ID helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract redacted canonical IDs (node_id and database_id as string) from private repo entries.
+ *
+ * Only entries with `private === true` contribute IDs. Public entries and entries with
+ * `private` absent are excluded. This is the secondary denylist guard: node_id and
+ * database_id values must never appear in any public output surface.
+ *
+ * Pure function: no I/O, no side effects.
+ */
+export function extractRedactedCanonicalIds(repos: readonly RepoEntry[]): Set<string> {
+  const ids = new Set<string>()
+  for (const entry of repos) {
+    if (entry.private !== true) continue
+    if (entry.node_id !== undefined && entry.node_id !== '') {
+      ids.add(entry.node_id)
+    }
+    if (entry.database_id !== undefined) {
+      ids.add(String(entry.database_id))
+    }
+  }
+  return ids
+}
+
+/**
+ * Load redacted canonical IDs from `metadata/repos.yaml`.
+ *
+ * Reads and validates the repos file, then delegates to `extractRedactedCanonicalIds`.
+ *
+ * Fail-closed contract:
+ * - If the file cannot be read, parsed, or validated, this function THROWS.
+ * - The caller MUST NOT emit any public output when this throws.
+ * - Never use an empty set as a proxy for a failed load.
+ *
+ * @param readFileFn - Injectable readFile for testing (defaults to node:fs/promises readFile).
+ */
+export async function loadRedactedCanonicalIdsFromDisk(
+  readFileFn: (path: string, encoding: BufferEncoding) => Promise<string> = readFile,
+): Promise<Set<string>> {
+  let reposYaml: string
+  try {
+    reposYaml = await readFileFn('metadata/repos.yaml', 'utf8')
+  } catch (error: unknown) {
+    throw new Error(
+      'status-truth-proposals: could not read metadata/repos.yaml — redacted canonical ID gate cannot operate',
+      {cause: error},
+    )
+  }
+
+  let parsed: unknown
+  try {
+    parsed = parse(reposYaml)
+  } catch (error: unknown) {
+    throw new Error(
+      'status-truth-proposals: could not parse metadata/repos.yaml — redacted canonical ID gate cannot operate',
+      {cause: error},
+    )
+  }
+
+  if (!isRecord(parsed)) {
+    throw new TypeError(
+      'status-truth-proposals: metadata/repos.yaml has unexpected shape — redacted canonical ID gate cannot operate',
+    )
+  }
+
+  // Validate schema — throws SchemaValidationError on invalid shape
+  assertReposFile(parsed, 'repos')
+
+  return extractRedactedCanonicalIds(parsed.repos)
+}
 
 // ---------------------------------------------------------------------------
 // Label constants
@@ -1231,7 +1308,19 @@ export async function executeStatusTruthProposalActions(
 // Unit 4: CLI shell for the open/proposals step
 // ---------------------------------------------------------------------------
 
-type OctokitConstructor = new (params: {auth: string; request?: {timeout?: number}}) => StatusTruthOctokitClient
+/** No-op log handler object — suppresses all Octokit default logger output. */
+export const NOOP_LOG = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+}
+
+type OctokitConstructor = new (params: {
+  auth: string
+  request?: {timeout?: number}
+  log?: {debug: () => void; info: () => void; warn: () => void; error: () => void}
+}) => StatusTruthOctokitClient
 
 async function loadOctokitConstructor(): Promise<OctokitConstructor> {
   if (typeof Octokit !== 'function') {
@@ -1246,7 +1335,7 @@ async function createOctokitFromEnv(): Promise<StatusTruthOctokitClient> {
     throw new Error('status-truth-proposals: GITHUB_TOKEN is required in the environment')
   }
   const LoadedOctokit = await loadOctokitConstructor()
-  return new LoadedOctokit({auth: token, request: {timeout: 10_000}})
+  return new LoadedOctokit({auth: token, request: {timeout: 10_000}, log: NOOP_LOG})
 }
 
 /** Counts-only result written to stdout and STATUS_TRUTH_OPEN_RESULT_PATH. */
@@ -1327,10 +1416,13 @@ async function runOpen(): Promise<void> {
   // Load privacy tokens (fail-closed)
   let publicOutputTokens: ReturnType<typeof makePublicOutputTokens>
   try {
-    const privateTokens = await loadPrivateTokensFromDisk()
+    const [privateTokens, redactedCanonicalIds] = await Promise.all([
+      loadPrivateTokensFromDisk(),
+      loadRedactedCanonicalIdsFromDisk(),
+    ])
     publicOutputTokens = makePublicOutputTokens({
       privateTokens,
-      redactedCanonicalIds: new Set<string>(),
+      redactedCanonicalIds,
     })
   } catch {
     process.stderr.write('status-truth-proposals: privacy token load failed: error-class=token-load-failure\n')
@@ -1363,7 +1455,7 @@ async function runOpen(): Promise<void> {
     if (dryRunToken !== undefined && dryRunToken !== '' && owner !== '' && repo !== '') {
       try {
         const LoadedOctokit = await loadOctokitConstructor()
-        const dryRunOctokit = new LoadedOctokit({auth: dryRunToken, request: {timeout: 10_000}})
+        const dryRunOctokit = new LoadedOctokit({auth: dryRunToken, request: {timeout: 10_000}, log: NOOP_LOG})
         existingIssues = await fetchExistingProposalIssues({octokit: dryRunOctokit, owner, repo})
       } catch {
         // Non-fatal in dry-run: proceed with empty list (counts may over-estimate opens)

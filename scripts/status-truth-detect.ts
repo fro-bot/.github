@@ -15,6 +15,8 @@ export type FailureClass = 'api-unavailable' | 'file-parse-error' | 'sub-resolve
  *
  * - `resolved`: live state was successfully fetched; `state` holds the value.
  *   Compound resolvers may include `subResolverResults` for required sub-resolvers.
+ *   `resolvedKind` is set when the resolver determined a different kind than the
+ *   claim's declared kind (e.g., ambiguous open/closed resolved as issue-state).
  * - `unavailable`: the source could not be reached (API down, file missing, etc.).
  * - `private`: the source exists but identity is private/unknown — must not be
  *   exposed in findings.
@@ -23,6 +25,7 @@ export type ResolverResult =
   | {
       readonly status: 'resolved'
       readonly state: string
+      readonly resolvedKind?: ClaimKind
       readonly subResolverResults?: Readonly<Record<string, ResolverResult>>
     }
   | {readonly status: 'unavailable'}
@@ -96,6 +99,18 @@ export interface StatusTruthClaim {
   readonly sourceRef: string
   readonly claimedState: string
   readonly normalizedText: string
+  /** Present only for cross-repo claims. Proven public before any identity is emitted. */
+  readonly targetOwner?: string
+  /** Present only for cross-repo claims. Proven public before any identity is emitted. */
+  readonly targetRepo?: string
+  /**
+   * Disambiguation hint for cross-repo open/closed claims.
+   * - `'pr'`: explicitly a PR (e.g., state is 'merged', or explicit PR grammar)
+   * - `'issue'`: explicitly an issue (e.g., 'issue owner/repo#N is ...' prefix)
+   * - `'ambiguous'`: open/closed without explicit prefix — try PR first, then issue
+   * - `undefined`: not a cross-repo claim, or kind is unambiguous
+   */
+  readonly targetNumberKind?: 'pr' | 'issue' | 'ambiguous'
 }
 
 /**
@@ -167,9 +182,28 @@ export function normalizeClaimText(text: string): string {
   return text.trim().toLowerCase().replaceAll(/\s+/gu, ' ')
 }
 
-export function selectFailureClass(scanErrors: number, resolveErrors: number): FailureClass | null {
-  if (scanErrors > 0) return 'file-parse-error'
-  if (resolveErrors > 0) return 'api-unavailable'
+/**
+ * Select the failure class for the detect step, distinguishing file-system scan
+ * errors from GitHub API/issue errors.
+ *
+ * Precedence:
+ * - `file-parse-error`: per-file read/parse errors during file-system scanning
+ * - `api-unavailable`: issue list/comment fetch failures or resolver API errors
+ * - `null`: no errors
+ *
+ * Issue scan errors (issueScanErrors) are API failures — the GitHub issue list
+ * or comment endpoints were unreachable — and must not be reported as
+ * `file-parse-error`. Only `fileScanErrors` (local file read failures) map to
+ * `file-parse-error`.
+ */
+export function selectDetectFailureClass(params: {
+  fileScanErrors: number
+  issueScanErrors: number
+  resolveErrors: number
+}): FailureClass | null {
+  const {fileScanErrors, issueScanErrors, resolveErrors} = params
+  if (fileScanErrors > 0) return 'file-parse-error'
+  if (issueScanErrors > 0 || resolveErrors > 0) return 'api-unavailable'
   return null
 }
 
@@ -239,11 +273,20 @@ function compoundSubResolversAllResolved(
  * - Compound: any required sub-resolver not resolved → unresolved
  * - Live state matches claimed state → current
  * - Live state differs from claimed state → drifted
+ *
+ * When the resolver returns `resolvedKind`, the effective kind for the finding
+ * is `resolvedKind` (e.g., ambiguous open/closed resolved as issue-state).
  */
 function classifyClaim(
   claim: StatusTruthClaim,
   result: ResolverResult | undefined,
-): {verdict: ClaimVerdict; proposalEligible: boolean; proposedCorrection?: string; liveState?: string} {
+): {
+  verdict: ClaimVerdict
+  proposalEligible: boolean
+  proposedCorrection?: string
+  liveState?: string
+  effectiveKind?: ClaimKind
+} {
   if (!result) {
     return {verdict: 'unresolved', proposalEligible: false}
   }
@@ -256,19 +299,20 @@ function classifyClaim(
     return {verdict: 'unresolved', proposalEligible: false}
   }
 
-  const {state: liveState, subResolverResults} = result
+  const {state: liveState, subResolverResults, resolvedKind} = result
+  const effectiveKind = resolvedKind ?? claim.kind
 
-  const def = CLAIM_KIND_DEFINITIONS.find(d => d.kind === claim.kind)
-  if (def?.resolverType === 'compound' && !compoundSubResolversAllResolved(claim.kind, subResolverResults)) {
+  const def = CLAIM_KIND_DEFINITIONS.find(d => d.kind === effectiveKind)
+  if (def?.resolverType === 'compound' && !compoundSubResolversAllResolved(effectiveKind, subResolverResults)) {
     return {verdict: 'unresolved', proposalEligible: false}
   }
 
   if (liveState === claim.claimedState) {
-    return {verdict: 'current', proposalEligible: false, liveState}
+    return {verdict: 'current', proposalEligible: false, liveState, effectiveKind}
   }
 
   const proposedCorrection = buildProposedCorrection(claim, liveState)
-  return {verdict: 'drifted', proposalEligible: true, proposedCorrection, liveState}
+  return {verdict: 'drifted', proposalEligible: true, proposedCorrection, liveState, effectiveKind}
 }
 
 /** Resolver type processing order: file-parse → api → compound. */
@@ -299,19 +343,24 @@ export function detectStatusTruthClaims(
   for (const claim of sorted) {
     const resultKey = `${claim.kind}:${claim.sourceRef}`
     const result = resolverResults[resultKey]
-    const {verdict, proposalEligible, proposedCorrection, liveState} = classifyClaim(claim, result)
+    const {verdict, proposalEligible, proposedCorrection, liveState, effectiveKind} = classifyClaim(claim, result)
+    // Use effectiveKind when the resolver determined a different kind (e.g., ambiguous → issue-state)
+    const findingKind = effectiveKind ?? claim.kind
 
     if (verdict === 'unsafe') {
       const finding: UnsafeStatusTruthFinding = {
-        kind: claim.kind,
+        kind: findingKind,
         verdict: 'unsafe',
         proposalEligible: false,
       }
       findings.push(finding)
     } else {
+      // Fingerprint uses the extracted claim kind (claim.kind), not the effective kind.
+      // This keeps proposal identity stable even when ambiguous claims resolve differently
+      // across runs (e.g., pr-state vs issue-state fallback for open/closed cross-repo refs).
       const fingerprint = computeClaimFingerprint(claim.kind, claim.path, claim.sourceRef, claim.normalizedText)
       const finding: PublicStatusTruthFinding = {
-        kind: claim.kind,
+        kind: findingKind,
         path: claim.path,
         sourceRef: claim.sourceRef,
         verdict,
@@ -422,6 +471,27 @@ function isExcludedPath(filePath: string): boolean {
 const CROSS_REPO_REF_PATTERN = /\b[\w.-]+\/[\w.-]+#(\d+)\b/gu
 
 /**
+ * Cross-repo PR/issue claim grammar patterns.
+ *
+ * Matches:
+ *   - `owner/repo#N is merged|open|closed`  (PR or issue — disambiguated by state)
+ *   - `issue owner/repo#N is open|closed`   (explicit issue prefix)
+ *   - `release owner/repo@tag is published|draft|unpublished`
+ *
+ * Groups: [owner, repo, number, state]
+ */
+const CROSS_REPO_PR_ISSUE_PATTERN = /\b(?:(issue)\s+)?([\w.-]+)\/([\w.-]+)#(\d+)\s+is\s+(merged|open|closed)\b/giu
+
+/**
+ * Cross-repo release/tag claim grammar pattern.
+ *
+ * Matches: `release owner/repo@tag is published|draft|unpublished`
+ * Groups: [owner, repo, tag, state]
+ */
+const CROSS_REPO_RELEASE_PATTERN =
+  /\brelease\s+([\w.-]+)\/([\w.-]+)@([\w.-]+)\s+is\s+(published|draft|unpublished)\b/giu
+
+/**
  * Build a set of issue/PR numbers that appear in cross-repo references
  * within the given text. These numbers must not be extracted as bare #N
  * current-repo references.
@@ -509,6 +579,76 @@ export function extractStatusTruthClaimsFromText(params: {path: string; text: st
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Cross-repo claim extraction
+  // ---------------------------------------------------------------------------
+
+  // Extract cross-repo PR/issue claims: `[issue] owner/repo#N is merged|open|closed`
+  for (const match of text.matchAll(CROSS_REPO_PR_ISSUE_PATTERN)) {
+    const issuePrefix = match[1] // 'issue' or undefined
+    const owner = match[2]
+    const repo = match[3]
+    const number = match[4]
+    const state = match[5]
+    if (owner === undefined || repo === undefined || number === undefined || state === undefined) continue
+
+    const fullMatch = match[0]
+    const normalizedText = normalizeClaimText(fullMatch)
+    const claimedState = state.toLowerCase()
+
+    // Disambiguate: if state is 'merged', it's a PR. If 'issue' prefix, it's an issue.
+    // Otherwise 'open'/'closed' could be either — mark as ambiguous for PR-first resolution.
+    let kind: ClaimKind
+    let targetNumberKind: 'pr' | 'issue' | 'ambiguous'
+    if (issuePrefix !== undefined) {
+      kind = 'issue-state'
+      targetNumberKind = 'issue'
+    } else if (claimedState === 'merged') {
+      kind = 'pr-state'
+      targetNumberKind = 'pr'
+    } else {
+      // 'open' or 'closed' without 'issue' prefix — ambiguous (PR or issue)
+      kind = 'pr-state'
+      targetNumberKind = 'ambiguous'
+    }
+
+    const sourceRef = `${owner}/${repo}#${number}`
+    claims.push({
+      kind,
+      path,
+      sourceRef,
+      claimedState,
+      normalizedText,
+      targetOwner: owner,
+      targetRepo: repo,
+      targetNumberKind,
+    })
+  }
+
+  // Extract cross-repo release claims: `release owner/repo@tag is published|draft|unpublished`
+  for (const match of text.matchAll(CROSS_REPO_RELEASE_PATTERN)) {
+    const owner = match[1]
+    const repo = match[2]
+    const tag = match[3]
+    const state = match[4]
+    if (owner === undefined || repo === undefined || tag === undefined || state === undefined) continue
+
+    const fullMatch = match[0]
+    const normalizedText = normalizeClaimText(fullMatch)
+    const claimedState = state.toLowerCase()
+    const sourceRef = `${owner}/${repo}@${tag}`
+
+    claims.push({
+      kind: 'release-tag-state',
+      path,
+      sourceRef,
+      claimedState,
+      normalizedText,
+      targetOwner: owner,
+      targetRepo: repo,
+    })
+  }
+
   return claims
 }
 
@@ -525,11 +665,30 @@ export type FileReader = (filePath: string) => Promise<string>
 export type FileLister = () => Promise<string[]>
 
 /**
+ * Claim kinds enabled by default in production scans.
+ *
+ * `plan-status` is intentionally excluded from the default set because
+ * `resolveClaimLiveState` returns `unavailable` for it (no file-parse resolver
+ * exists yet). Including it would produce 100% unresolved findings with zero
+ * signal — pure noise in dry-run output.
+ *
+ * Callers may opt in by passing `enabledKinds` explicitly.
+ */
+export const DEFAULT_ENABLED_KINDS: readonly ClaimKind[] = [
+  'pr-state',
+  'issue-state',
+  'release-tag-state',
+  'rollout-tracker-status',
+]
+
+/**
  * Scan a bounded set of public docs paths for status-truth claims.
  *
  * @param params - Scan parameters.
  * @param params.fileLister - Injected function that returns the list of paths to scan.
  * @param params.fileReader - Injected function that reads a file's text content.
+ * @param params.enabledKinds - Claim kinds to include. Defaults to DEFAULT_ENABLED_KINDS
+ *   (excludes plan-status until a real file-parse resolver exists).
  * @returns All extracted claims from all scanned files.
  *
  * Scan failures for individual files are counted but do not abort the scan.
@@ -538,8 +697,9 @@ export type FileLister = () => Promise<string[]>
 export async function scanStatusTruthClaims(params: {
   fileLister: FileLister
   fileReader: FileReader
+  enabledKinds?: readonly ClaimKind[]
 }): Promise<{claims: StatusTruthClaim[]; scanErrors: number}> {
-  const {fileLister, fileReader} = params
+  const {fileLister, fileReader, enabledKinds = DEFAULT_ENABLED_KINDS} = params
   const paths = await fileLister()
   const claims: StatusTruthClaim[] = []
   let scanErrors = 0
@@ -548,10 +708,163 @@ export async function scanStatusTruthClaims(params: {
     if (isExcludedPath(filePath)) continue
     try {
       const text = await fileReader(filePath)
-      const fileClaims = extractStatusTruthClaimsFromText({path: filePath, text})
+      const fileClaims = extractStatusTruthClaimsFromText({path: filePath, text}).filter(c =>
+        enabledKinds.includes(c.kind),
+      )
       claims.push(...fileClaims)
     } catch {
       // Count per-file read errors; do not abort the scan
+      scanErrors++
+    }
+  }
+
+  return {claims, scanErrors}
+}
+
+// ---------------------------------------------------------------------------
+// Unit 4: GitHub issue body/comment scanning
+// ---------------------------------------------------------------------------
+
+/**
+ * A minimal issue list item returned by the issue lister.
+ * Injected for testability; production uses Octokit list response.
+ */
+export interface IssueListItem {
+  readonly number: number
+  readonly title: string
+  readonly body: string | null
+  readonly labels: readonly {readonly name: string}[]
+}
+
+/**
+ * A minimal issue comment returned by the comment fetcher.
+ * Injected for testability; production uses Octokit list response.
+ */
+export interface IssueComment {
+  readonly id: number
+  readonly body: string | null
+}
+
+/**
+ * Injected issue lister type for testability.
+ * Production: calls Octokit issues.listForRepo. Tests: returns fixture data.
+ */
+export type IssueLister = (params: {owner: string; repo: string}) => Promise<IssueListItem[]>
+
+/**
+ * Injected issue comment fetcher type for testability.
+ * Production: calls Octokit issues.listComments. Tests: returns fixture data.
+ */
+export type IssueCommentFetcher = (params: {
+  owner: string
+  repo: string
+  issueNumber: number
+}) => Promise<IssueComment[]>
+
+/**
+ * Labels and title markers that identify status-truth proposal issues.
+ * Issues matching any of these are excluded from scanning to prevent
+ * the loop from scanning its own proposal state.
+ */
+const STATUS_TRUTH_PROPOSAL_LABELS: readonly string[] = ['status-truth']
+const STATUS_TRUTH_PROPOSAL_TITLE_MARKER = '[status-truth-proposal]'
+
+/**
+ * Check whether an issue is a status-truth proposal issue that should be excluded.
+ * Matches by label name or title prefix/marker.
+ */
+function isStatusTruthProposalIssue(issue: IssueListItem): boolean {
+  for (const label of issue.labels) {
+    if (STATUS_TRUTH_PROPOSAL_LABELS.includes(label.name)) return true
+  }
+  return issue.title.toLowerCase().includes(STATUS_TRUTH_PROPOSAL_TITLE_MARKER)
+}
+
+/**
+ * Build a synthetic public-safe path for an issue body source.
+ * Format: `github-issue://current/issues/<number>#body`
+ *
+ * Uses `current` instead of `owner/repo` so that generic code does not
+ * embed identity before explicit publicness proof. The resolver already
+ * knows the owner/repo from its own context.
+ */
+function issueBodyPath(issueNumber: number): string {
+  return `github-issue://current/issues/${issueNumber}#body`
+}
+
+/**
+ * Build a synthetic public-safe path for an issue comment source.
+ * Format: `github-issue://current/issues/<number>#comment-<id>`
+ *
+ * Uses `current` instead of `owner/repo` for the same reason as issueBodyPath.
+ */
+function issueCommentPath(issueNumber: number, commentId: number): string {
+  return `github-issue://current/issues/${issueNumber}#comment-${commentId}`
+}
+
+/**
+ * Scan current-repo GitHub issue bodies and comments for status-truth claims.
+ *
+ * @param params - Scan parameters.
+ * @param params.owner - Repository owner.
+ * @param params.repo - Repository name.
+ * @param params.issueLister - Injected function that returns open issues.
+ * @param params.commentFetcher - Injected function that returns comments for an issue.
+ * @param params.enabledKinds - Claim kinds to include. Defaults to DEFAULT_ENABLED_KINDS.
+ * @returns Extracted claims and scan error count.
+ *
+ * Failure behavior:
+ * - If the issue list fetch fails, returns scanErrors > 0 and empty claims (non-clean).
+ * - Per-issue comment fetch failures count as scan errors but do not abort body scanning.
+ * - Issues labeled `status-truth` or containing the proposal marker are skipped.
+ * - Null bodies/comments are silently skipped (no error).
+ */
+export async function scanIssueStatusTruthClaims(params: {
+  owner: string
+  repo: string
+  issueLister: IssueLister
+  commentFetcher: IssueCommentFetcher
+  enabledKinds?: readonly ClaimKind[]
+}): Promise<{claims: StatusTruthClaim[]; scanErrors: number}> {
+  const {owner, repo, issueLister, commentFetcher, enabledKinds = DEFAULT_ENABLED_KINDS} = params
+  const claims: StatusTruthClaim[] = []
+  let scanErrors = 0
+
+  let issues: IssueListItem[]
+  try {
+    issues = await issueLister({owner, repo})
+  } catch {
+    // Issue list fetch failure — non-clean, report as scan error
+    scanErrors++
+    return {claims, scanErrors}
+  }
+
+  for (const issue of issues) {
+    // Skip status-truth proposal issues to prevent self-scanning
+    if (isStatusTruthProposalIssue(issue)) continue
+
+    // Scan issue body
+    if (issue.body !== null && issue.body !== '') {
+      const bodyPath = issueBodyPath(issue.number)
+      const bodyClaims = extractStatusTruthClaimsFromText({path: bodyPath, text: issue.body}).filter(c =>
+        enabledKinds.includes(c.kind),
+      )
+      claims.push(...bodyClaims)
+    }
+
+    // Scan issue comments
+    try {
+      const comments = await commentFetcher({owner, repo, issueNumber: issue.number})
+      for (const comment of comments) {
+        if (comment.body === null || comment.body === '') continue
+        const commentPath = issueCommentPath(issue.number, comment.id)
+        const commentClaims = extractStatusTruthClaimsFromText({path: commentPath, text: comment.body}).filter(c =>
+          enabledKinds.includes(c.kind),
+        )
+        claims.push(...commentClaims)
+      }
+    } catch {
+      // Per-issue comment fetch failure — count as scan error, continue with other issues
       scanErrors++
     }
   }
@@ -566,8 +879,13 @@ export async function scanStatusTruthClaims(params: {
 /**
  * Minimal Octokit-like client for the detect step (read-only).
  * Injected for testability; production code uses @octokit/rest Octokit.
+ *
+ * `paginate` mirrors the Octokit paginate API: given a REST endpoint function
+ * and its params, it fetches all pages and returns the flattened data array.
+ * This is the only supported pagination mechanism for issue/comment listing.
  */
 export interface DetectOctokitClient {
+  readonly paginate: <T>(fn: unknown, params: unknown) => Promise<T[]>
   readonly rest: {
     readonly pulls: {
       readonly get: (params: {owner: string; repo: string; pull_number: number}) => Promise<{
@@ -578,13 +896,87 @@ export interface DetectOctokitClient {
       readonly get: (params: {owner: string; repo: string; issue_number: number}) => Promise<{
         data: {state: string}
       }>
+      readonly listForRepo: (params: {
+        owner: string
+        repo: string
+        state: 'open' | 'closed' | 'all'
+        per_page: number
+      }) => Promise<{
+        data: {
+          number: number
+          title: string
+          body: string | null
+          labels: {name?: string | undefined}[]
+        }[]
+      }>
+      readonly listComments: (params: {
+        owner: string
+        repo: string
+        issue_number: number
+        per_page: number
+      }) => Promise<{
+        data: {id: number; body?: string | null | undefined}[]
+      }>
     }
     readonly repos: {
       readonly getReleaseByTag: (params: {owner: string; repo: string; tag: string}) => Promise<{
         data: {draft: boolean; prerelease: boolean}
       }>
+      /**
+       * Used for cross-repo publicness proof.
+       * Returns `{data: {private: boolean}}`.
+       * Throws with `.status` 403 or 404 when the repo is inaccessible/private.
+       */
+      readonly get: (params: {owner: string; repo: string}) => Promise<{
+        data: {private: boolean}
+      }>
     }
   }
+}
+
+/**
+ * Fetch all open issues for the current repo using Octokit pagination.
+ *
+ * Uses `octokit.paginate` to fetch every page, so "clean" cannot mean
+ * "nothing in the first 100 results". Exported for unit-testability.
+ */
+export async function listCurrentRepoIssues(
+  octokit: DetectOctokitClient,
+  owner: string,
+  repo: string,
+): Promise<IssueListItem[]> {
+  const raw = await octokit.paginate<{
+    number: number
+    title: string
+    body: string | null
+    labels: {name?: string | undefined}[]
+  }>(octokit.rest.issues.listForRepo, {owner, repo, state: 'open', per_page: 100})
+  return raw.map(issue => ({
+    number: issue.number,
+    title: issue.title,
+    body: issue.body,
+    labels: issue.labels.map(l => ({name: l.name ?? ''})),
+  }))
+}
+
+/**
+ * Fetch all comments for a single issue using Octokit pagination.
+ *
+ * Uses `octokit.paginate` to fetch every page. Exported for unit-testability.
+ */
+export async function listCurrentRepoIssueComments(
+  octokit: DetectOctokitClient,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<IssueComment[]> {
+  const raw = await octokit.paginate<{id: number; body?: string | null | undefined}>(octokit.rest.issues.listComments, {
+    owner,
+    repo,
+    issue_number: issueNumber,
+    per_page: 100,
+  })
+  return raw.map(c => ({id: c.id, body: c.body ?? null}))
 }
 
 /**
@@ -599,6 +991,25 @@ export interface DetectOctokitClient {
  * Plan-status: resolved via file-parse (not this function)
  * Rollout-tracker: compound — returns unavailable (Phase 1 scope cut)
  */
+/**
+ * Prove that a target repo is public using `repos.get`.
+ *
+ * Returns `true` if the repo is confirmed public.
+ * Returns `false` if the repo is private (`data.private === true`).
+ * Throws with `{status: 'private'}` sentinel if the API throws 403/404 or any
+ * other error before publicness is confirmed — callers must treat this as private.
+ *
+ * This is the ONLY gate before cross-repo identity is exposed in findings.
+ */
+async function proveRepoPublic(
+  octokit: DetectOctokitClient,
+  targetOwner: string,
+  targetRepo: string,
+): Promise<boolean> {
+  const {data} = await octokit.rest.repos.get({owner: targetOwner, repo: targetRepo})
+  return data.private === false
+}
+
 export async function resolveClaimLiveState(params: {
   claim: StatusTruthClaim
   octokit: DetectOctokitClient
@@ -606,6 +1017,92 @@ export async function resolveClaimLiveState(params: {
   repo: string
 }): Promise<ResolverResult> {
   const {claim, octokit, owner, repo} = params
+
+  // ---------------------------------------------------------------------------
+  // Cross-repo resolution: publicness proof required before any identity exposure
+  // ---------------------------------------------------------------------------
+  if (claim.targetOwner !== undefined && claim.targetRepo !== undefined) {
+    const targetOwner = claim.targetOwner
+    const targetRepo = claim.targetRepo
+
+    // Step 1: Prove publicness. Any failure before proof → private.
+    let isPublic: boolean
+    try {
+      isPublic = await proveRepoPublic(octokit, targetOwner, targetRepo)
+    } catch {
+      // 403, 404, or any other error before proof → treat as private
+      return {status: 'private'}
+    }
+
+    if (!isPublic) {
+      return {status: 'private'}
+    }
+
+    // Step 2: Publicness proven. Resolve against target repo.
+    // API failure AFTER proof → unavailable (identity already proven public).
+    if (claim.kind === 'pr-state') {
+      const match = /^[\w.-]+\/[\w.-]+#(\d+)$/u.exec(claim.sourceRef)
+      if (match === null || match[1] === undefined) return {status: 'unavailable'}
+      const prNumber = Number.parseInt(match[1], 10)
+
+      // Ambiguous open/closed: try PR first, fall back to issue if PR lookup fails
+      if (claim.targetNumberKind === 'ambiguous') {
+        try {
+          const {data} = await octokit.rest.pulls.get({owner: targetOwner, repo: targetRepo, pull_number: prNumber})
+          if (data.merged) return {status: 'resolved', state: 'merged', resolvedKind: 'pr-state'}
+          return {status: 'resolved', state: data.state === 'open' ? 'open' : 'closed', resolvedKind: 'pr-state'}
+        } catch {
+          // PR lookup failed — try issue fallback
+        }
+        try {
+          const {data} = await octokit.rest.issues.get({
+            owner: targetOwner,
+            repo: targetRepo,
+            issue_number: prNumber,
+          })
+          return {status: 'resolved', state: data.state === 'open' ? 'open' : 'closed', resolvedKind: 'issue-state'}
+        } catch {
+          return {status: 'unavailable'}
+        }
+      }
+
+      // Explicit PR (merged, or targetNumberKind === 'pr')
+      try {
+        const {data} = await octokit.rest.pulls.get({owner: targetOwner, repo: targetRepo, pull_number: prNumber})
+        if (data.merged) return {status: 'resolved', state: 'merged'}
+        return {status: 'resolved', state: data.state === 'open' ? 'open' : 'closed'}
+      } catch {
+        return {status: 'unavailable'}
+      }
+    }
+
+    if (claim.kind === 'issue-state') {
+      const match = /^[\w.-]+\/[\w.-]+#(\d+)$/u.exec(claim.sourceRef)
+      if (match === null || match[1] === undefined) return {status: 'unavailable'}
+      const issueNumber = Number.parseInt(match[1], 10)
+      try {
+        const {data} = await octokit.rest.issues.get({owner: targetOwner, repo: targetRepo, issue_number: issueNumber})
+        return {status: 'resolved', state: data.state === 'open' ? 'open' : 'closed'}
+      } catch {
+        return {status: 'unavailable'}
+      }
+    }
+
+    if (claim.kind === 'release-tag-state') {
+      const match = /^[\w.-]+\/[\w.-]+@(.+)$/u.exec(claim.sourceRef)
+      if (match === null || match[1] === undefined) return {status: 'unavailable'}
+      const tag = match[1]
+      try {
+        const {data} = await octokit.rest.repos.getReleaseByTag({owner: targetOwner, repo: targetRepo, tag})
+        return {status: 'resolved', state: data.draft ? 'draft' : 'published'}
+      } catch {
+        return {status: 'unavailable'}
+      }
+    }
+
+    // Unsupported cross-repo claim kind
+    return {status: 'unavailable'}
+  }
 
   if (claim.kind === 'plan-status') {
     // plan-status requires cross-file comparison to detect drift, which is out of
@@ -796,6 +1293,47 @@ export function validateStatusTruthArtifact(
 }
 
 // ---------------------------------------------------------------------------
+// Unit 4: Octokit construction helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * No-op logger that satisfies the Octokit log interface without writing to stderr.
+ *
+ * The default Octokit logger writes request URLs and error details to stderr,
+ * which leaks raw source refs (e.g., `GET /repos/owner/repo/pulls/579 - 404`)
+ * from caught errors. This no-op logger suppresses all output while still
+ * satisfying the interface contract.
+ */
+const NOOP_LOGGER = {
+  debug: (_msg: string) => undefined,
+  info: (_msg: string) => undefined,
+  warn: (_msg: string) => undefined,
+  error: (_msg: string) => undefined,
+}
+
+/**
+ * Build Octokit constructor options for the detect step.
+ *
+ * Includes:
+ * - `auth`: the GitHub token
+ * - `request.timeout`: 10 second timeout
+ * - `log`: no-op logger to suppress request URL leaks to stderr
+ *
+ * Exported for testability — callers can verify the log handlers are no-ops.
+ */
+export function buildDetectOctokitOptions(token: string): {
+  auth: string
+  request: {timeout: number}
+  log: typeof NOOP_LOGGER
+} {
+  return {
+    auth: token,
+    request: {timeout: 10_000},
+    log: NOOP_LOGGER,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Unit 4: CLI shell
 // ---------------------------------------------------------------------------
 
@@ -861,35 +1399,51 @@ async function runDetect(): Promise<void> {
   let report: StatusTruthJsonReport
 
   try {
-    // Step 1: Scan for claims
-    const {claims, scanErrors} = await scanStatusTruthClaims({fileLister, fileReader})
+    // Step 1: Scan file-system docs for claims (plan-status excluded by default)
+    const {claims: fileClaims, scanErrors: fileScanErrors} = await scanStatusTruthClaims({fileLister, fileReader})
 
-    // Step 2: Resolve live state
-    // Build Octokit client if token is available; otherwise all claims become unavailable
+    // Step 2: Resolve live state and scan GitHub issues (if token available)
     const token = process.env.GITHUB_TOKEN
     let resolverResults: Record<string, ResolverResult> = {}
     let resolveErrors = 0
+    let issueScanErrors = 0
+    let issueClaims: StatusTruthClaim[] = []
 
     if (token !== undefined && token !== '') {
       const {Octokit} = await import('@octokit/rest')
-      const octokit = new Octokit({auth: token, request: {timeout: 10_000}}) as unknown as DetectOctokitClient
-      const resolved = await resolveAllClaims({claims, octokit, owner, repo})
+      const octokit = new Octokit(buildDetectOctokitOptions(token)) as unknown as DetectOctokitClient
+
+      // Build injected issue lister/comment fetcher using paginated helpers
+      // (avoids the per_page:100 truncation bug — fetches all pages)
+      const issueLister: IssueLister = async ({owner: o, repo: r}) => listCurrentRepoIssues(octokit, o, r)
+
+      const commentFetcher: IssueCommentFetcher = async ({owner: o, repo: r, issueNumber}) =>
+        listCurrentRepoIssueComments(octokit, o, r, issueNumber)
+
+      // Scan GitHub issue bodies and comments
+      const issueResult = await scanIssueStatusTruthClaims({owner, repo, issueLister, commentFetcher})
+      issueClaims = issueResult.claims
+      issueScanErrors = issueResult.scanErrors
+
+      // Resolve all claims (file + issue) against live state
+      const allClaims = [...fileClaims, ...issueClaims]
+      const resolved = await resolveAllClaims({claims: allClaims, octokit, owner, repo})
       resolverResults = resolved.resolverResults
       resolveErrors = resolved.resolveErrors
     }
     // If no token: all API claims remain unresolved (resolverResults stays empty)
 
-    // Step 3: Classify claims into findings
-    const findings = detectStatusTruthClaims(claims, resolverResults)
+    // Step 3: Classify all claims into findings
+    const allClaims = [...fileClaims, ...issueClaims]
+    const findings = detectStatusTruthClaims(allClaims, resolverResults)
 
-    // Scan is complete if no per-file or resolve errors occurred.
+    // Scan is complete if no per-file, issue-scan, or resolve errors occurred.
     // Failure class distinguishes the error source:
-    // - file-parse-error: per-file read/parse errors during scanning
-    // - api-unavailable: resolver/API errors after scanning succeeded
-    const totalErrors = scanErrors + resolveErrors
-    const scanComplete = totalErrors === 0
+    // - file-parse-error: per-file read/parse errors during file-system scanning
+    // - api-unavailable: issue list/comment fetch failures or resolver API errors
+    const scanComplete = fileScanErrors === 0 && issueScanErrors === 0 && resolveErrors === 0
 
-    const failureClass = selectFailureClass(scanErrors, resolveErrors)
+    const failureClass = selectDetectFailureClass({fileScanErrors, issueScanErrors, resolveErrors})
 
     report = buildStatusTruthReport({
       findings,
