@@ -2510,20 +2510,20 @@ Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/extend-vscode
 
-## [2026-06-30 08:39] ingest | marcusrbrown/cortexkit_anthropic-auth
+## [2026-06-30 06:00] ingest | marcusrbrown/gpt
 
-Third consecutive no-delta re-survey of `marcusrbrown/cortexkit_anthropic-auth` (HEAD still `99fdbe9`, last push 2026-05-31T04:03Z — unchanged since the 2026-06-09 and 2026-06-19 surveys). Reads limited to repo metadata, `.github/workflows` listing, root + per-package `package.json`, and `fro-bot.yaml` per the untrusted-input constraint.
+Incremental re-survey of `marcusrbrown/gpt` (HEAD `174e517`, last push 2026-06-30, up from `182e23d` 2026-06-19). Reads limited to repo metadata, the `182e23d...174e517` compare file list, `.tool-versions`, `package.json`, `.github/renovate.json5`, `.github/workflows/fro-bot.yaml`, and `.github/actions/setup-pnpm/action.yaml` per the untrusted-input constraint. 41 commits; changed files confined to dependency/workflow hygiene plus one CI structural addition.
 
-Zero drift over 30 days. Re-verified live: 4 workflows unchanged (`ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`); root manifest `@cortexkit/anthropic-auth` (`private`, `workspaces: packages/*`); published packages hold at `1.2.5-mb.3` (`@marcusrbrown/anthropic-auth-core`, `@marcusrbrown/opencode-anthropic-auth`); Pi package `@cortexkit/pi-anthropic-auth` still `private` at upstream `1.2.5`; Biome 2.4.15, `@opencode-ai/plugin` 1.15.5, Pi peers `@earendil-works/pi-*` 0.75.3. Public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1 star / 0 forks, 520 KB.
+One genuine structural change: a **new `.github/actions/setup-pnpm` composite action** (adapted from `bfra-me/works` `pnpm-install`) now centralizes pnpm + Node + optional Playwright bootstrap across all four workflows (`fro-bot`, `main`, `renovate`, `update-repo-settings`), pinning `pnpm/action-setup@v5.0.0`, `actions/setup-node@v6.4.0`, `actions/cache@v5.1.0` and reading Node from `.tool-versions`. DRY consolidation — no behavior change, no application-code change. `fro-bot/agent` v0.70.0 → v0.79.4 (SHA `b3384d37fb3c66e4249c0fb35037c6d244f34314`). Node 24.17.0 → 24.18.0; pnpm 10.34.3 → 10.34.4. Dependency line: LangChain.js advanced to the 1.5.x line (`langchain` 1.5.2, `@langchain/core` 1.2.1, `@langchain/openai` 1.5.3, `@langchain/anthropic` 1.5.1, `@langchain/langgraph` 1.4.7); `vite` 8.1.0, `react-router-dom` 7.18.0, `dexie` 4.4.4, `openai` 6.45.0, `eslint` 10.6.0, `prettier` 3.8.5, `@playwright/test` 1.61.1, `@typescript/native-preview` dev.20260626.1. HeroUI 2.8.10, Monaco 4.7.0, Zod 4.4.3, MCP SDK 1.29.0 unchanged. Renovate presets steady (`#5.2.3`). Open issues 22→23; HeroUI v2→v3 PR #2165 still open; recurring Ollama a11y-contrast autoheal cluster (#2628/#2612/#2557) and undici/hono security pins (#2587/#2586).
 
-Only notable signal: Fro Bot agent pin still **v0.45.0** (SHA `8aac0fc`) — now an ecosystem laggard against fleet leaders at v0.77.0+, but the parked fork has had no PR or maintenance churn to carry a Renovate bump. Fro Bot workflow present and active (no gap to flag). No new topic/entity/comparison pages warranted; existing [[opencode-plugins]], [[marcusrbrown--opencode-copilot-delegate]], and [[marcusrbrown--dotfiles]] coverage already absorbs the (absent) deltas.
+Full Fro Bot integration present (consolidated three-mode `fro-bot.yaml`) — no follow-up workflow draft needed.
 
-Updated repo page `marcusrbrown--cortexkit-anthropic-auth.md` (new source entry SHA `99fdbe9`, frontmatter `updated` → 2026-06-30, 2026-06-30 no-delta block) and `index.md` summary line.
+Updated repo page `marcusrbrown--gpt.md` (new source entry, frontmatter `updated`, tech-stack versions, setup-pnpm note, agent pin, open-work items, 2026-06-30 survey-history row), topic page `langchain.md` (1.5.x version notes + `updated`), and `index.md` summary line. No new entity/comparison pages warranted — the setup-pnpm consolidation echoes the existing [[github-actions-ci]] composite-action pattern and the dependency deltas are absorbed by [[langchain]] and [[marcusrbrown--renovate-config]].
 
-Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 99fdbe906c5875893d363c904f6e6bc066d997b1)
+Sources: https://github.com/marcusrbrown/gpt (SHA 174e5179026331ef6cc72549c2519af5acae3dc0)
 
-## [2026-06-30 08:41] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+## [2026-06-30 08:45] ingest | repo:marcusrbrown/gpt
 
-Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+Sources: https://github.com/marcusrbrown/gpt
