@@ -499,6 +499,8 @@ Status: complete.
 
 ### U6. Documentation and operational calibration
 
+Status: complete.
+
 **Goal:** Keep the plan, operator docs, and reusable learnings aligned with the completed signal slice.
 
 **Requirements:** R5, R6, R7, R8
