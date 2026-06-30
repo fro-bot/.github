@@ -4376,3 +4376,80 @@ describe('loadRolloutSnapshot: snapshot file loading and validation', () => {
     expect(result).toBeNull()
   })
 })
+
+// ---------------------------------------------------------------------------
+// buildProposedCorrection — trailing-state-only replacement
+// When the claimed state word appears in the path/tag (e.g. active-plan.md,
+// v1.0-active), the correction must replace only the trailing state token,
+// not the first occurrence in the path.
+// ---------------------------------------------------------------------------
+
+describe('buildProposedCorrection: trailing-state replacement via detect pipeline', () => {
+  it('plan-status path containing claimed state word with hyphen: correction replaces only trailing state', async () => {
+    // normalizedText = "plan docs/plans/active-plan.md is active"
+    // claimedState   = "active"
+    // Bug: \bactive\b matches "active" in "active-plan.md" first → corrupts path
+    // Fix: replace only the trailing "active" (the last occurrence)
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'README.md',
+      text: 'plan docs/plans/active-plan.md is active',
+    })
+    const claim = claims.find(c => c.kind === 'plan-status')
+    expect(claim).toBeDefined()
+    if (claim === undefined) return
+
+    // Verify the claim was extracted correctly
+    expect(claim.claimedState).toBe('active')
+    expect(claim.normalizedText).toBe('plan docs/plans/active-plan.md is active')
+
+    const resolverResults: Record<string, ResolverResult> = {
+      [`plan-status:${claim.sourceRef}`]: {status: 'resolved', state: 'complete'},
+    }
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    expect(finding?.verdict).toBe('drifted')
+    if (finding?.verdict === 'drifted') {
+      expect(finding.proposedCorrection).toBeDefined()
+      // Must contain the live state
+      expect(finding.proposedCorrection).toContain('complete')
+      // Must NOT corrupt the path — "active-plan.md" must remain intact
+      expect(finding.proposedCorrection).toContain('active-plan.md')
+      // The trailing state must be replaced
+      expect(finding.proposedCorrection).not.toMatch(/\bactive\s*$/)
+    }
+  })
+
+  it('release-tag-state tag containing claimed state word with hyphen: correction replaces only trailing state', () => {
+    // normalizedText = "release v1.0-published is published"
+    // claimedState   = "published"
+    // Bug: \bpublished\b matches "published" in "v1.0-published" first → corrupts tag
+    // Fix: replace only the trailing "published" (the last occurrence)
+    const claim: StatusTruthClaim = {
+      kind: 'release-tag-state',
+      path: 'README.md',
+      sourceRef: '@v1.0-published',
+      claimedState: 'published',
+      normalizedText: 'release v1.0-published is published',
+    }
+
+    const resolverResults = makeResolverResults([
+      {kind: 'release-tag-state', sourceRef: '@v1.0-published', result: {status: 'resolved', state: 'draft'}},
+    ])
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    expect(finding?.verdict).toBe('drifted')
+    if (finding?.verdict === 'drifted') {
+      expect(finding.proposedCorrection).toBeDefined()
+      // Must contain the live state
+      expect(finding.proposedCorrection).toContain('draft')
+      // Must NOT corrupt the tag — "v1.0-published" must remain intact
+      expect(finding.proposedCorrection).toContain('v1.0-published')
+      // The trailing state must be replaced
+      expect(finding.proposedCorrection).not.toMatch(/\bpublished\s*$/)
+    }
+  })
+})

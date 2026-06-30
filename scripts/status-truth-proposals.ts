@@ -1,11 +1,11 @@
 /**
  * Proposal lifecycle planner and I/O executor for the status-truth maintenance loop.
  *
- * Unit 3 — Pure lifecycle planner:
+ * Planner:
  * Converts drifted, privacy-safe status claims into deterministic GitHub issue
  * lifecycle actions without touching GitHub.
  *
- * Unit 4 — I/O executor:
+ * Executor:
  * Executes planned proposal actions against GitHub via an injected Octokit-like
  * client. Supports dry-run mode (counts only, no mutations), label gating
  * (fail-closed if required labels cannot be confirmed), and same-run dedup.
@@ -269,6 +269,12 @@ export interface ProposalCounts {
   readonly closed: number
   readonly suppressed: number
   readonly blocked: number
+  /**
+   * Mutating actions that were planned but blocked by the per-run mutation cap.
+   * These are distinct from privacy-blocked actions (counted in `blocked`).
+   * Overflow is a blocked outcome, not failed work — it must not hide scan completeness.
+   */
+  readonly overflowed: number
   readonly noAction: number
   readonly sameRunDeduplicated: number
   readonly malformedMarkers: number
@@ -304,6 +310,13 @@ export interface PlanStatusTruthProposalActionsInput {
    * Prevents duplicate proposals when GitHub issue listing lags same-run writes.
    */
   readonly sameRunCreatedFingerprints: ReadonlySet<string>
+  /**
+   * Maximum number of mutating proposal actions (open, update-comment, reopen, close)
+   * allowed per run. Evaluated after privacy blocking and same-run dedupe.
+   * Actions beyond the cap are counted as overflowed (planned-but-blocked).
+   * Defaults to 5.
+   */
+  readonly mutationCap?: number
 }
 
 /** Result of the pure lifecycle planner. */
@@ -460,6 +473,7 @@ export function planStatusTruthProposalActions(
         closed: 0,
         suppressed: 0,
         blocked: 0,
+        overflowed: 0,
         noAction: 0,
         sameRunDeduplicated: 0,
         malformedMarkers: 0,
@@ -490,6 +504,7 @@ export function planStatusTruthProposalActions(
         closed: 0,
         suppressed: 0,
         blocked: blockedCount,
+        overflowed: 0,
         noAction: 0,
         sameRunDeduplicated: 0,
         malformedMarkers: 0,
@@ -572,14 +587,9 @@ export function planStatusTruthProposalActions(
     }
   }
 
-  const actions: ProposalAction[] = []
-  let opened = 0
-  let updated = 0
-  let reopened = 0
-  let suppressed = 0
-  let blocked = 0
-  let noAction = 0
-  let sameRunDeduplicated = 0
+  // Per-run mutation cap (default 5). Evaluated after privacy blocking and same-run dedupe.
+  // Suppress actions are not mutating and do not count against the cap.
+  const mutationCap = input.mutationCap ?? 5
 
   // Per-kind action counts for workflow/open result summary (counts-only, no paths or fingerprints).
   const countsByKind: Record<
@@ -605,7 +615,32 @@ export function planStatusTruthProposalActions(
   // (e.g. same claim text in two files) within a single report.
   const plannedOpenFingerprints = new Set<string>(sameRunCreatedFingerprints)
 
-  // 3. Process proposal-eligible findings
+  // ---------------------------------------------------------------------------
+  // Two-pass cap approach:
+  // Pass 1: Collect all candidate mutating actions (privacy-gated, deduplicated)
+  //         into priority buckets. Privacy-blocked and deduplicated actions do NOT
+  //         consume cap budget.
+  // Pass 2: Apply cap across buckets in deterministic priority order:
+  //         close > update > reopen > open
+  //         Actions beyond the cap become overflow (planned-but-blocked counts).
+  // ---------------------------------------------------------------------------
+
+  // Priority buckets for cap enforcement
+  const candidateCloses: CloseAction[] = []
+  const candidateUpdates: UpdateCommentAction[] = []
+  const candidateReopens: ReopenAction[] = []
+  const candidateOpens: OpenAction[] = []
+  const suppressActions: SuppressAction[] = []
+
+  // Track per-kind for suppressed (not cap-limited)
+  const suppressedKinds: string[] = []
+
+  let suppressed = 0
+  let blocked = 0
+  let noAction = 0
+  let sameRunDeduplicated = 0
+
+  // 3. Process proposal-eligible findings — collect candidates into priority buckets
   for (const finding of report.findings) {
     // Skip unsafe findings — they have no identity-bearing fields and are never proposal-eligible
     if (!isPublicFinding(finding)) continue
@@ -626,13 +661,13 @@ export function planStatusTruthProposalActions(
     // b. Check for terminal suppression
     const closedIssue = closedByFingerprint.get(fingerprint)
     if (closedIssue !== undefined && hasTerminalLabel(closedIssue.labels)) {
-      actions.push({
+      suppressActions.push({
         type: 'suppress',
         fingerprint,
         reason: 'terminal outcome label on closed proposal',
       })
       suppressed++
-      incrementKindCount(kind, 'suppressed')
+      suppressedKinds.push(kind)
       continue
     }
 
@@ -644,7 +679,7 @@ export function planStatusTruthProposalActions(
       const currentLiveState = finding.liveState
 
       if (recordedLiveState !== null && currentLiveState !== undefined && recordedLiveState !== currentLiveState) {
-        // Live-state details changed — plan one update comment
+        // Live-state details changed — candidate update comment (privacy-gated)
         const comment = buildUpdateComment(finding, report.generated_at)
         const gateResult = applyPublicOutputGate({
           surface: 'proposal-comment',
@@ -653,16 +688,15 @@ export function planStatusTruthProposalActions(
           fingerprint,
         })
         if (!gateResult.allowed) {
+          // Privacy-blocked: does NOT consume cap budget
           blocked++
           continue
         }
-        actions.push({
+        candidateUpdates.push({
           type: 'update-comment',
           issueNumber: openIssue.number,
           comment: gateResult.sanitizedContent,
         })
-        updated++
-        incrementKindCount(kind, 'updated')
       } else {
         // Drift unchanged — no action to avoid comment spam
         noAction++
@@ -670,7 +704,7 @@ export function planStatusTruthProposalActions(
       continue
     }
 
-    // d. Check for matching non-terminal closed issue → reopen
+    // d. Check for matching non-terminal closed issue → candidate reopen
     if (closedIssue !== undefined && !hasTerminalLabel(closedIssue.labels)) {
       const comment = buildRecurrenceComment(report.generated_at)
       const gateResult = applyPublicOutputGate({
@@ -680,23 +714,22 @@ export function planStatusTruthProposalActions(
         fingerprint,
       })
       if (!gateResult.allowed) {
+        // Privacy-blocked: does NOT consume cap budget
         blocked++
         continue
       }
       const removeLabels = closedIssue.labels.filter(l => RESOLVING_LABELS.includes(l))
-      actions.push({
+      candidateReopens.push({
         type: 'reopen',
         issueNumber: closedIssue.number,
         comment: gateResult.sanitizedContent,
         removeLabels,
         addLabels: [OUTCOME_LABELS.recurring],
       })
-      reopened++
-      incrementKindCount(kind, 'reopened')
       continue
     }
 
-    // e. New finding — open a proposal after privacy gating
+    // e. New finding — candidate open after privacy gating
     // Mark this fingerprint as seen before gating so that if the gate blocks,
     // subsequent same-fingerprint findings in this report are still deduplicated.
     // Without this, a second finding with the same fingerprint but a safe correction
@@ -713,6 +746,7 @@ export function planStatusTruthProposalActions(
       fingerprint,
     })
     if (!titleGate.allowed) {
+      // Privacy-blocked: does NOT consume cap budget
       blocked++
       continue
     }
@@ -724,26 +758,24 @@ export function planStatusTruthProposalActions(
       fingerprint,
     })
     if (!bodyGate.allowed) {
+      // Privacy-blocked: does NOT consume cap budget
       blocked++
       continue
     }
 
-    actions.push({
+    candidateOpens.push({
       type: 'open',
       fingerprint,
       title: titleGate.sanitizedContent,
       body: bodyGate.sanitizedContent,
       labels: [PROPOSAL_LABEL],
     })
-    opened++
-    incrementKindCount(kind, 'opened')
   }
 
-  // 4. Close-on-clear: only when scan is complete and not execution-failure.
+  // 4. Close-on-clear candidates: only when scan is complete and not execution-failure.
   // At this point we have already returned early for execution-failure and scan_complete=false,
   // so report.scan_complete is always true here. The check is kept for clarity.
   const canClose = report.scan_complete
-  let closed = 0
 
   if (canClose) {
     for (const [fp, openIssue] of openByFingerprint) {
@@ -756,22 +788,107 @@ export function planStatusTruthProposalActions(
           fingerprint: fp,
         })
         if (!gateResult.allowed) {
+          // Privacy-blocked: does NOT consume cap budget
           blocked++
           continue
         }
-        actions.push({
+        candidateCloses.push({
           type: 'close',
           issueNumber: openIssue.number,
           labels: [OUTCOME_LABELS.resolved],
           comment: gateResult.sanitizedContent,
         })
-        closed++
-        // Infer kind from open issue title for countsByKind
-        const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(openIssue.title)
-        const kind = titleMatch?.[1] ?? 'unknown'
-        incrementKindCount(kind, 'closed')
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pass 2: Apply mutation cap in priority order: close > update > reopen > open
+  // Actions beyond the cap are counted as overflowed (planned-but-blocked).
+  // Suppress actions are not mutating and are always included.
+  // ---------------------------------------------------------------------------
+
+  const actions: ProposalAction[] = [...suppressActions]
+  let opened = 0
+  let updated = 0
+  let reopened = 0
+  let closed = 0
+  let overflowed = 0
+  let remainingCap = mutationCap
+
+  // Priority 1: close actions
+  for (const action of candidateCloses) {
+    if (remainingCap > 0) {
+      actions.push(action)
+      closed++
+      remainingCap--
+      // Infer kind from open issue title for countsByKind
+      const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(
+        openByFingerprint.get(
+          // Extract fingerprint from close action — find the open issue by number
+          [...openByFingerprint.entries()].find(([, issue]) => issue.number === action.issueNumber)?.[0] ?? '',
+        )?.title ?? '',
+      )
+      const kind = titleMatch?.[1] ?? 'unknown'
+      incrementKindCount(kind, 'closed')
+    } else {
+      overflowed++
+    }
+  }
+
+  // Priority 2: update-comment actions
+  // We need to track which finding corresponds to each update to get the kind.
+  // Since candidateUpdates are collected in finding order, we need to look up kind
+  // from the openByFingerprint map via issueNumber.
+  for (const action of candidateUpdates) {
+    if (remainingCap > 0) {
+      actions.push(action)
+      updated++
+      remainingCap--
+      // Infer kind from open issue title
+      const openIssue = [...openByFingerprint.values()].find(i => i.number === action.issueNumber)
+      const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(openIssue?.title ?? '')
+      const kind = titleMatch?.[1] ?? 'unknown'
+      incrementKindCount(kind, 'updated')
+    } else {
+      overflowed++
+    }
+  }
+
+  // Priority 3: reopen actions
+  for (const action of candidateReopens) {
+    if (remainingCap > 0) {
+      actions.push(action)
+      reopened++
+      remainingCap--
+      // Infer kind from closed issue title
+      const closedIssue = [...closedByFingerprint.values()].find(i => i.number === action.issueNumber)
+      const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(closedIssue?.title ?? '')
+      const kind = titleMatch?.[1] ?? 'unknown'
+      incrementKindCount(kind, 'reopened')
+    } else {
+      overflowed++
+    }
+  }
+
+  // Priority 4: open actions (lowest priority)
+  for (const action of candidateOpens) {
+    if (remainingCap > 0) {
+      actions.push(action)
+      opened++
+      remainingCap--
+      // Infer kind from the action's title
+      const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(action.title)
+      const kind = titleMatch?.[1] ?? 'unknown'
+      incrementKindCount(kind, 'opened')
+    } else {
+      overflowed++
+    }
+  }
+
+  // Add suppressed kind counts (not cap-limited)
+  for (const kind of suppressedKinds) {
+    incrementKindCount(kind, 'suppressed')
   }
 
   return {
@@ -783,6 +900,7 @@ export function planStatusTruthProposalActions(
       closed,
       suppressed,
       blocked,
+      overflowed,
       noAction,
       sameRunDeduplicated,
       malformedMarkers,
@@ -1352,9 +1470,10 @@ interface OpenResult {
   plannedCountsByKind: Readonly<Record<string, KindActionCounts>>
   /**
    * Aggregate planned counts from the planner (counts-only).
-   * Includes versionRejected and other planner-level counters not present in executor counts.
+   * Includes versionRejected, blocked, overflowed, and other planner-level counters
+   * not present in executor counts.
    */
-  plannedCounts: Pick<ProposalCounts, 'versionRejected' | 'blocked' | 'sameRunDeduplicated'>
+  plannedCounts: Pick<ProposalCounts, 'versionRejected' | 'blocked' | 'overflowed' | 'sameRunDeduplicated'>
 }
 
 /**
@@ -1518,6 +1637,7 @@ async function runOpen(): Promise<void> {
     plannedCounts: {
       versionRejected: planResult.counts.versionRejected,
       blocked: planResult.counts.blocked,
+      overflowed: planResult.counts.overflowed,
       sameRunDeduplicated: planResult.counts.sameRunDeduplicated,
     },
   }

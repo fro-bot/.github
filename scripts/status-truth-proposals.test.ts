@@ -1,8 +1,6 @@
 /**
- * Tests for the status-truth proposal lifecycle planner (Unit 3) and
- * I/O executor (Unit 4).
+ * Tests for the status-truth proposal lifecycle planner and I/O executor.
  *
- * TDD: tests written before implementation.
  * All tests are pure — no Octokit, no disk I/O.
  */
 
@@ -2977,5 +2975,538 @@ repos:
         expect(action.comment).not.toContain(fixtureNodeId)
       }
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// U3: Proposal cap and overflow visibility
+// ---------------------------------------------------------------------------
+
+// Helper: make N distinct drifted findings with unique fingerprints (hex-safe)
+function makeCapDriftedFindings(count: number) {
+  return Array.from({length: count}, (_, i) => ({
+    kind: 'pr-state' as const,
+    path: `docs/plans/example-${i}.md`,
+    sourceRef: `#${100 + i}`,
+    verdict: 'drifted' as const,
+    fingerprint: `ca${String(i).padStart(14, '0')}`,
+    claimedState: 'open',
+    liveState: 'closed',
+    proposalEligible: true,
+    proposedCorrection: `pr #${100 + i} is closed`,
+  }))
+}
+
+describe('U3: planStatusTruthProposalActions — mutation cap and overflow', () => {
+  describe('scenario 1: more than 5 eligible new proposals — only 5 execute, rest are overflow', () => {
+    it('with 8 new drifted findings, only 5 open actions are planned and 3 are overflow', () => {
+      const findings = makeCapDriftedFindings(8)
+      const report = makeReport({
+        findings,
+        counts: {total: 8, current: 0, drifted: 8, unresolved: 0, unsafe: 0, proposal_eligible: 8},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+      const openActions = actions.filter(a => a.type === 'open')
+      expect(openActions).toHaveLength(5)
+      expect(counts.opened).toBe(5)
+      expect(counts.overflowed).toBe(3)
+    })
+
+    it('with exactly 5 new drifted findings, all 5 execute and overflow is 0', () => {
+      const findings = makeCapDriftedFindings(5)
+      const report = makeReport({
+        findings,
+        counts: {total: 5, current: 0, drifted: 5, unresolved: 0, unsafe: 0, proposal_eligible: 5},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(5)
+      expect(counts.opened).toBe(5)
+      expect(counts.overflowed).toBe(0)
+    })
+
+    it('with 4 new drifted findings, all 4 execute and overflow is 0', () => {
+      const findings = makeCapDriftedFindings(4)
+      const report = makeReport({
+        findings,
+        counts: {total: 4, current: 0, drifted: 4, unresolved: 0, unsafe: 0, proposal_eligible: 4},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(4)
+      expect(counts.opened).toBe(4)
+      expect(counts.overflowed).toBe(0)
+    })
+  })
+
+  describe('scenario 2: privacy-blocked proposals do not consume cap slots', () => {
+    it('privacy-blocked findings do not count against the mutation cap', () => {
+      // 3 privacy-blocked findings + 5 safe findings = 5 safe opens, 0 overflow
+      // (blocked findings consume no cap budget)
+      const safeFindings = makeCapDriftedFindings(5)
+      const blockedFindings = Array.from({length: 3}, (_, i) => ({
+        kind: 'pr-state' as const,
+        path: `docs/plans/blocked-${i}.md`,
+        sourceRef: `#${200 + i}`,
+        verdict: 'drifted' as const,
+        fingerprint: `blk${String(i).padStart(13, '0')}`,
+        claimedState: 'open',
+        liveState: 'closed',
+        proposalEligible: true,
+        proposedCorrection: `pr #${200 + i} is closed (private-repo-name)`,
+      }))
+
+      const allFindings = [...blockedFindings, ...safeFindings]
+      const report = makeReport({
+        findings: allFindings,
+        counts: {total: 8, current: 0, drifted: 8, unresolved: 0, unsafe: 0, proposal_eligible: 8},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(
+        makePlanInput({report, existingIssues: [], publicOutputTokens: makeBlockingTokens()}),
+      )
+
+      // 3 blocked by privacy gate (not cap), 5 safe opens
+      expect(counts.blocked).toBe(3)
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(5)
+      expect(counts.opened).toBe(5)
+      expect(counts.overflowed).toBe(0)
+    })
+
+    it('privacy-blocked findings before cap-eligible findings do not reduce cap budget', () => {
+      // 2 privacy-blocked + 7 safe = 5 opens + 2 overflow (cap=5, blocked don't count)
+      const blockedFindings = Array.from({length: 2}, (_, i) => ({
+        kind: 'pr-state' as const,
+        path: `docs/plans/blocked-${i}.md`,
+        sourceRef: `#${200 + i}`,
+        verdict: 'drifted' as const,
+        fingerprint: `blk${String(i).padStart(13, '0')}`,
+        claimedState: 'open',
+        liveState: 'closed',
+        proposalEligible: true,
+        proposedCorrection: `pr #${200 + i} is closed (private-repo-name)`,
+      }))
+      const safeFindings = makeCapDriftedFindings(7)
+      const allFindings = [...blockedFindings, ...safeFindings]
+      const report = makeReport({
+        findings: allFindings,
+        counts: {total: 9, current: 0, drifted: 9, unresolved: 0, unsafe: 0, proposal_eligible: 9},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(
+        makePlanInput({report, existingIssues: [], publicOutputTokens: makeBlockingTokens()}),
+      )
+
+      expect(counts.blocked).toBe(2)
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(5)
+      expect(counts.opened).toBe(5)
+      expect(counts.overflowed).toBe(2)
+    })
+  })
+
+  describe('scenario 3: same-run dedupe still prevents duplicates under a cap', () => {
+    it('same-run deduplicated fingerprints do not consume cap slots', () => {
+      // 3 already-created fingerprints + 6 new = 5 opens + 1 overflow
+      // (deduplicated ones don't count against cap)
+      const findings = makeCapDriftedFindings(6)
+      const alreadyCreated = new Set(findings.slice(0, 3).map(f => f.fingerprint))
+      const report = makeReport({
+        findings,
+        counts: {total: 6, current: 0, drifted: 6, unresolved: 0, unsafe: 0, proposal_eligible: 6},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(
+        makePlanInput({report, existingIssues: [], sameRunCreatedFingerprints: alreadyCreated}),
+      )
+
+      // 3 deduplicated, 3 remaining — all 3 open (under cap)
+      expect(counts.sameRunDeduplicated).toBe(3)
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(3)
+      expect(counts.opened).toBe(3)
+      expect(counts.overflowed).toBe(0)
+    })
+
+    it('cap does not allow duplicates when same fingerprint appears multiple times in findings', () => {
+      // Same fingerprint appearing twice — second should be deduplicated, not overflow
+      const fp = 'capdedup00000001'
+      const finding1 = {
+        kind: 'pr-state' as const,
+        path: 'docs/plans/a.md',
+        sourceRef: '#1',
+        verdict: 'drifted' as const,
+        fingerprint: fp,
+        claimedState: 'open',
+        liveState: 'closed',
+        proposalEligible: true,
+        proposedCorrection: 'pr #1 is closed',
+      }
+      const finding2 = {...finding1, path: 'docs/plans/b.md'}
+      const report = makeReport({
+        findings: [finding1, finding2],
+        counts: {total: 2, current: 0, drifted: 2, unresolved: 0, unsafe: 0, proposal_eligible: 2},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+      // Only 1 open (first occurrence), second is deduplicated
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(1)
+      expect(counts.sameRunDeduplicated).toBe(1)
+      expect(counts.overflowed).toBe(0)
+    })
+  })
+
+  describe('scenario 4: priority order — close/update/reopen before open when over cap', () => {
+    it('close actions get priority over open actions when cap is exhausted', () => {
+      // 3 open issues to close (drift cleared) + 4 new findings to open
+      // Cap=5: 3 closes + 2 opens = 5 total; 2 opens overflow
+      const openFingerprints = ['c105e0000000001a', 'c105e0000000002b', 'c105e0000000003c']
+      const openIssues = openFingerprints.map((fp, i) =>
+        makeOpenIssue(fp, {
+          number: 300 + i,
+          title: `Status truth: pr-state drift in docs/plans/close-${i}.md`,
+        }),
+      )
+
+      // 4 new drifted findings (no existing issues for these)
+      const newFindings = makeCapDriftedFindings(4)
+      // Report has no findings for the open issues (drift cleared) + 4 new findings
+      const report = makeReport({
+        findings: newFindings,
+        counts: {total: 4, current: 0, drifted: 4, unresolved: 0, unsafe: 0, proposal_eligible: 4},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: openIssues}))
+
+      // 3 closes (priority) + 2 opens (remaining cap) = 5 total
+      expect(actions.filter(a => a.type === 'close')).toHaveLength(3)
+      expect(counts.closed).toBe(3)
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(2)
+      expect(counts.opened).toBe(2)
+      expect(counts.overflowed).toBe(2)
+    })
+
+    it('update actions get priority over open actions when cap is exhausted', () => {
+      // 4 existing open issues with changed live-state (update-comment) + 4 new findings
+      // Cap=5: 4 updates + 1 open = 5; 3 opens overflow
+      const updateFingerprints = Array.from({length: 4}, (_, i) => `a1b2c3d4e5f6000${i + 1}`)
+      const existingOpenIssues = updateFingerprints.map((fp, i) =>
+        makeOpenIssue(fp, {
+          number: 400 + i,
+          title: `Status truth: pr-state drift in docs/plans/update-${i}.md`,
+          // Has a different live-state recorded → triggers update-comment
+          body: `<!-- status-truth:fingerprint=${fp} -->\n<!-- status-truth:live-state=open -->\n\nBody.`,
+        }),
+      )
+
+      // Findings for the existing issues (live-state changed to 'closed')
+      const updateFindings = updateFingerprints.map((fp, i) => ({
+        kind: 'pr-state' as const,
+        path: `docs/plans/update-${i}.md`,
+        sourceRef: `#${400 + i}`,
+        verdict: 'drifted' as const,
+        fingerprint: fp,
+        claimedState: 'open',
+        liveState: 'closed', // different from recorded 'open'
+        proposalEligible: true,
+        proposedCorrection: `pr #${400 + i} is closed`,
+      }))
+
+      // 4 new findings (no existing issues)
+      const newFindings = makeCapDriftedFindings(4)
+      const allFindings = [...updateFindings, ...newFindings]
+      const report = makeReport({
+        findings: allFindings,
+        counts: {total: 8, current: 0, drifted: 8, unresolved: 0, unsafe: 0, proposal_eligible: 8},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(
+        makePlanInput({report, existingIssues: existingOpenIssues}),
+      )
+
+      // 4 updates (priority) + 1 open (remaining cap) = 5; 3 opens overflow
+      expect(actions.filter(a => a.type === 'update-comment')).toHaveLength(4)
+      expect(counts.updated).toBe(4)
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(1)
+      expect(counts.opened).toBe(1)
+      expect(counts.overflowed).toBe(3)
+    })
+
+    it('reopen actions get priority over open actions when cap is exhausted', () => {
+      // 3 closed non-terminal issues (reopen) + 4 new findings
+      // Cap=5: 3 reopens + 2 opens = 5; 2 opens overflow
+      const reopenFingerprints = ['e0e0e0000000001a', 'e0e0e0000000002b', 'e0e0e0000000003c']
+      const closedIssues = reopenFingerprints.map((fp, i) =>
+        makeClosedIssue(fp, [PROPOSAL_LABEL, OUTCOME_LABELS.resolved], {
+          number: 500 + i,
+          title: `Status truth: pr-state drift in docs/plans/reopen-${i}.md`,
+        }),
+      )
+
+      // Findings for the closed issues (drift returned)
+      const reopenFindings = reopenFingerprints.map((fp, i) => ({
+        kind: 'pr-state' as const,
+        path: `docs/plans/reopen-${i}.md`,
+        sourceRef: `#${500 + i}`,
+        verdict: 'drifted' as const,
+        fingerprint: fp,
+        claimedState: 'open',
+        liveState: 'closed',
+        proposalEligible: true,
+        proposedCorrection: `pr #${500 + i} is closed`,
+      }))
+
+      // 4 new findings (no existing issues)
+      const newFindings = makeCapDriftedFindings(4)
+      const allFindings = [...reopenFindings, ...newFindings]
+      const report = makeReport({
+        findings: allFindings,
+        counts: {total: 7, current: 0, drifted: 7, unresolved: 0, unsafe: 0, proposal_eligible: 7},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: closedIssues}))
+
+      // 3 reopens (priority) + 2 opens (remaining cap) = 5; 2 opens overflow
+      expect(actions.filter(a => a.type === 'reopen')).toHaveLength(3)
+      expect(counts.reopened).toBe(3)
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(2)
+      expect(counts.opened).toBe(2)
+      expect(counts.overflowed).toBe(2)
+    })
+
+    it('full priority order: close > update > reopen > open when all compete for cap', () => {
+      // 2 closes + 1 update + 1 reopen + 4 new opens
+      // Cap=5: 2 closes + 1 update + 1 reopen + 1 open = 5; 3 opens overflow
+      const closeFps = ['c1a2b3d4e5f60001', 'c1a2b3d4e5f60002']
+      const updateFp = 'a1b2c3d4e5f60001'
+      const reopenFp = 'e0e0e0f0a0b00001'
+
+      const openIssuesToClose = closeFps.map((fp, i) =>
+        makeOpenIssue(fp, {
+          number: 600 + i,
+          title: `Status truth: pr-state drift in docs/plans/close-pri-${i}.md`,
+        }),
+      )
+
+      const openIssueToUpdate = makeOpenIssue(updateFp, {
+        number: 610,
+        title: 'Status truth: pr-state drift in docs/plans/update-pri.md',
+        body: `<!-- status-truth:fingerprint=${updateFp} -->\n<!-- status-truth:live-state=open -->\n\nBody.`,
+      })
+
+      const closedIssueToReopen = makeClosedIssue(reopenFp, [PROPOSAL_LABEL, OUTCOME_LABELS.resolved], {
+        number: 620,
+        title: 'Status truth: pr-state drift in docs/plans/reopen-pri.md',
+      })
+
+      // Findings: update finding (live-state changed), reopen finding, 4 new findings
+      const updateFinding = {
+        kind: 'pr-state' as const,
+        path: 'docs/plans/update-pri.md',
+        sourceRef: '#610',
+        verdict: 'drifted' as const,
+        fingerprint: updateFp,
+        claimedState: 'open',
+        liveState: 'closed',
+        proposalEligible: true,
+        proposedCorrection: 'pr #610 is closed',
+      }
+      const reopenFinding = {
+        kind: 'pr-state' as const,
+        path: 'docs/plans/reopen-pri.md',
+        sourceRef: '#620',
+        verdict: 'drifted' as const,
+        fingerprint: reopenFp,
+        claimedState: 'open',
+        liveState: 'closed',
+        proposalEligible: true,
+        proposedCorrection: 'pr #620 is closed',
+      }
+      const newFindings = makeCapDriftedFindings(4)
+      // Report has no findings for the close issues (drift cleared)
+      const allFindings = [updateFinding, reopenFinding, ...newFindings]
+      const report = makeReport({
+        findings: allFindings,
+        counts: {total: 6, current: 0, drifted: 6, unresolved: 0, unsafe: 0, proposal_eligible: 6},
+      })
+
+      const existingIssues = [...openIssuesToClose, openIssueToUpdate, closedIssueToReopen]
+      const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues}))
+
+      // Priority: 2 closes + 1 update + 1 reopen + 1 open = 5; 3 opens overflow
+      expect(actions.filter(a => a.type === 'close')).toHaveLength(2)
+      expect(counts.closed).toBe(2)
+      expect(actions.filter(a => a.type === 'update-comment')).toHaveLength(1)
+      expect(counts.updated).toBe(1)
+      expect(actions.filter(a => a.type === 'reopen')).toHaveLength(1)
+      expect(counts.reopened).toBe(1)
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(1)
+      expect(counts.opened).toBe(1)
+      expect(counts.overflowed).toBe(3)
+    })
+  })
+
+  describe('scenario 5: overflowed actions are visible in JSON output and summary fields', () => {
+    it('overflowed count is present in ProposalCounts and is a number', () => {
+      const findings = makeCapDriftedFindings(8)
+      const report = makeReport({
+        findings,
+        counts: {total: 8, current: 0, drifted: 8, unresolved: 0, unsafe: 0, proposal_eligible: 8},
+      })
+
+      const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+      expect(typeof counts.overflowed).toBe('number')
+      expect(counts.overflowed).toBe(3)
+    })
+
+    it('overflowed count is 0 when under cap', () => {
+      const findings = makeCapDriftedFindings(3)
+      const report = makeReport({
+        findings,
+        counts: {total: 3, current: 0, drifted: 3, unresolved: 0, unsafe: 0, proposal_eligible: 3},
+      })
+
+      const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+      expect(counts.overflowed).toBe(0)
+    })
+
+    it('counts shape includes overflowed field alongside existing fields', () => {
+      const {counts} = planStatusTruthProposalActions(makePlanInput())
+
+      // All existing fields still present
+      expect(typeof counts.opened).toBe('number')
+      expect(typeof counts.updated).toBe('number')
+      expect(typeof counts.reopened).toBe('number')
+      expect(typeof counts.closed).toBe('number')
+      expect(typeof counts.suppressed).toBe('number')
+      expect(typeof counts.blocked).toBe('number')
+      expect(typeof counts.noAction).toBe('number')
+      expect(typeof counts.sameRunDeduplicated).toBe('number')
+      expect(typeof counts.malformedMarkers).toBe('number')
+      expect(typeof counts.versionRejected).toBe('number')
+      // New overflow field
+      expect(typeof counts.overflowed).toBe('number')
+    })
+
+    it('overflowed actions do not appear as open/reopen/update/close actions in the actions array', () => {
+      const findings = makeCapDriftedFindings(8)
+      const report = makeReport({
+        findings,
+        counts: {total: 8, current: 0, drifted: 8, unresolved: 0, unsafe: 0, proposal_eligible: 8},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+      // Total mutating actions must not exceed cap
+      const mutatingActions = actions.filter(
+        a => a.type === 'open' || a.type === 'update-comment' || a.type === 'reopen' || a.type === 'close',
+      )
+      expect(mutatingActions.length).toBeLessThanOrEqual(5)
+      // Overflow is counted, not silently dropped
+      expect(counts.overflowed).toBe(3)
+      // opened + overflowed = total eligible new opens
+      expect(counts.opened + counts.overflowed).toBe(8)
+    })
+  })
+
+  describe('scenario 6: dry-run and live mode count accurately under cap', () => {
+    it('dry-run: planned counts reflect cap enforcement (opened=5, overflowed=3)', async () => {
+      const findings = makeCapDriftedFindings(8)
+      const report = makeReport({
+        findings,
+        counts: {total: 8, current: 0, drifted: 8, unresolved: 0, unsafe: 0, proposal_eligible: 8},
+      })
+
+      const planResult = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+      // Planner enforces cap
+      expect(planResult.counts.opened).toBe(5)
+      expect(planResult.counts.overflowed).toBe(3)
+      expect(planResult.actions.filter(a => a.type === 'open')).toHaveLength(5)
+
+      // Dry-run executor counts the planned actions (already capped)
+      const {octokit, store} = makeMockOctokit()
+      const execResult = await executeStatusTruthProposalActions({
+        octokit,
+        owner: 'fro-bot',
+        repo: '.github',
+        actions: planResult.actions,
+        dryRun: true,
+        sameRunCreatedFingerprints: new Set<string>(),
+      })
+
+      // No mutations in dry-run
+      expect(store.created).toHaveLength(0)
+      // Dry-run counts match planned (already capped at 5)
+      expect(execResult.counts.opened).toBe(5)
+      expect(execResult.dryRun).toBe(true)
+    })
+
+    it('live mode: executor opens exactly the capped number of issues', async () => {
+      const findings = makeCapDriftedFindings(8)
+      const report = makeReport({
+        findings,
+        counts: {total: 8, current: 0, drifted: 8, unresolved: 0, unsafe: 0, proposal_eligible: 8},
+      })
+
+      const planResult = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+      // Planner enforces cap
+      expect(planResult.actions.filter(a => a.type === 'open')).toHaveLength(5)
+
+      // Live executor opens exactly 5
+      const {octokit, store} = makeMockOctokit()
+      const execResult = await executeStatusTruthProposalActions({
+        octokit,
+        owner: 'fro-bot',
+        repo: '.github',
+        actions: planResult.actions,
+        dryRun: false,
+        sameRunCreatedFingerprints: new Set<string>(),
+      })
+
+      expect(store.created).toHaveLength(5)
+      expect(execResult.counts.opened).toBe(5)
+      expect(execResult.dryRun).toBe(false)
+    })
+  })
+
+  describe('custom cap via mutationCap parameter', () => {
+    it('mutationCap=3 limits to 3 opens from 8 findings', () => {
+      const findings = makeCapDriftedFindings(8)
+      const report = makeReport({
+        findings,
+        counts: {total: 8, current: 0, drifted: 8, unresolved: 0, unsafe: 0, proposal_eligible: 8},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(
+        makePlanInput({report, existingIssues: [], mutationCap: 3}),
+      )
+
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(3)
+      expect(counts.opened).toBe(3)
+      expect(counts.overflowed).toBe(5)
+    })
+
+    it('mutationCap=0 overflows all findings', () => {
+      const findings = makeCapDriftedFindings(3)
+      const report = makeReport({
+        findings,
+        counts: {total: 3, current: 0, drifted: 3, unresolved: 0, unsafe: 0, proposal_eligible: 3},
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(
+        makePlanInput({report, existingIssues: [], mutationCap: 0}),
+      )
+
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+      expect(counts.opened).toBe(0)
+      expect(counts.overflowed).toBe(3)
+    })
   })
 })

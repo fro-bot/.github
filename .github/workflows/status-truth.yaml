@@ -238,9 +238,10 @@ jobs:
               echo "| Closed | $(jq '.counts.closed // 0' "$result") |"
               echo "| Suppressed | $(jq '.counts.suppressed // 0' "$result") |"
               echo "| Failed | $(jq '.counts.failed // 0' "$result") |"
-              echo "| Same-run deduplicated | $(jq '.counts.sameRunDeduplicated // 0' "$result") |"
+              echo "| Same-run deduplicated | $(jq '.plannedCounts.sameRunDeduplicated // 0' "$result") |"
               echo "| Version rejected | $(jq '.plannedCounts.versionRejected // 0' "$result") |"
               echo "| Blocked | $(jq '(.plannedCounts.blocked // 0)' "$result") |"
+              echo "| Overflowed | $(jq '(.plannedCounts.overflowed // 0)' "$result") |"
 
               # Planned per-kind counts (from planner; counts-only, no paths or fingerprints)
               kind_count=$(jq '.plannedCountsByKind | length' "$result" 2>/dev/null || echo 0)

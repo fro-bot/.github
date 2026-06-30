@@ -248,13 +248,23 @@ export function computeClaimFingerprint(
 /**
  * Build a proposed correction string for a drifted claim.
  * Replaces the claimed state with the live state in the normalized text.
+ *
+ * All claim grammars place the state token at the end of normalizedText
+ * (e.g. "plan docs/plans/active-plan.md is active", "release v1.0-draft is draft").
+ * A first-match \b replacement would corrupt path/tag segments that happen to
+ * contain the same word (e.g. "active" in "active-plan.md"). Instead, we anchor
+ * the match to the trailing position — the last word-boundary occurrence of the
+ * claimed state followed only by non-word characters until end-of-string.
  */
 function buildProposedCorrection(claim: StatusTruthClaim, liveState: string): string {
   // Replace the claimed state token in the normalized text with the live state.
   // Use a replacement function (not a string) so that live-state values containing
   // special replacement tokens like `$&`, `$1`, `$$` are inserted literally.
   const escaped = claim.claimedState.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`)
-  const pattern = new RegExp(String.raw`\b${escaped}\b`, 'iu')
+  // Anchor to the last occurrence: match the claimed state only when followed by
+  // zero or more non-word characters until end-of-string. This prevents replacing
+  // the state word when it appears earlier in the text (e.g. inside a path segment).
+  const pattern = new RegExp(String.raw`\b${escaped}\b(?=\W*$)`, 'iu')
   const corrected = claim.normalizedText.replace(pattern, () => liveState)
   // If replacement didn't change anything, append the correction explicitly
   if (corrected === claim.normalizedText) {

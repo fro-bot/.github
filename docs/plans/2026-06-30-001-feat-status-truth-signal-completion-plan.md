@@ -361,6 +361,8 @@ foundation.
 
 ### U3. Proposal caps and overflow reporting
 
+Status: complete.
+
 **Goal:** Prevent a useful drift run from opening too many issues or comments at once.
 
 **Requirements:** R5, R6, R8
