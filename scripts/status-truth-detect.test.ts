@@ -4,6 +4,9 @@ import type {
   DetectOctokitClient,
   FileLister,
   FileReader,
+  IssueCommentFetcher,
+  IssueLister,
+  IssueListItem,
   PublicStatusTruthFinding,
   ResolverResult,
   ResolverType,
@@ -15,6 +18,7 @@ import type {
 import {describe, expect, it} from 'vitest'
 
 import {
+  buildDetectOctokitOptions,
   buildStatusTruthReport,
   CLAIM_KIND_DEFINITIONS,
   computeClaimFingerprint,
@@ -23,11 +27,14 @@ import {
   isKnownReportVersion,
   KNOWN_FINGERPRINT_VERSION,
   KNOWN_SCHEMA_VERSION,
+  listCurrentRepoIssueComments,
+  listCurrentRepoIssues,
   normalizeClaimText,
   resolveAllClaims,
   resolveClaimLiveState,
+  scanIssueStatusTruthClaims,
   scanStatusTruthClaims,
-  selectFailureClass,
+  selectDetectFailureClass,
   validateStatusTruthArtifact,
 } from './status-truth-detect.ts'
 
@@ -1189,6 +1196,7 @@ function makeMockDetectOctokit(
   } = {},
 ): DetectOctokitClient {
   return {
+    paginate: async () => [],
     rest: {
       pulls: {
         get: async () => {
@@ -1201,12 +1209,15 @@ function makeMockDetectOctokit(
           if (overrides.issueThrows === true) throw new Error('API error')
           return {data: {state: overrides.issueState ?? 'open'}}
         },
+        listForRepo: async () => ({data: []}),
+        listComments: async () => ({data: []}),
       },
       repos: {
         getReleaseByTag: async () => {
           if (overrides.releaseThrows === true) throw new Error('API error')
           return {data: {draft: overrides.releaseDraft ?? false, prerelease: false}}
         },
+        get: async () => ({data: {private: false}}),
       },
     },
   }
@@ -1447,6 +1458,7 @@ describe('Unit 4: extract → resolve → detect pipeline', () => {
   it('resolveAllClaims deduplicates by kind:sourceRef to avoid redundant API calls', async () => {
     let callCount = 0
     const octokit: DetectOctokitClient = {
+      paginate: async () => [],
       rest: {
         pulls: {
           get: async () => {
@@ -1454,8 +1466,15 @@ describe('Unit 4: extract → resolve → detect pipeline', () => {
             return {data: {state: 'open', merged: false}}
           },
         },
-        issues: {get: async () => ({data: {state: 'open'}})},
-        repos: {getReleaseByTag: async () => ({data: {draft: false, prerelease: false}})},
+        issues: {
+          get: async () => ({data: {state: 'open'}}),
+          listForRepo: async () => ({data: []}),
+          listComments: async () => ({data: []}),
+        },
+        repos: {
+          getReleaseByTag: async () => ({data: {draft: false, prerelease: false}}),
+          get: async () => ({data: {private: false}}),
+        },
       },
     }
 
@@ -1521,21 +1540,7 @@ describe('buildProposedCorrection: $ token safety via detectStatusTruthClaims', 
   })
 })
 
-describe('runDetect failure-class selection logic', () => {
-  it('returns file-parse-error when scanErrors > 0 regardless of resolveErrors', () => {
-    expect(selectFailureClass(1, 0)).toBe('file-parse-error')
-    expect(selectFailureClass(3, 2)).toBe('file-parse-error')
-  })
-
-  it('returns api-unavailable when scanErrors === 0 and resolveErrors > 0', () => {
-    expect(selectFailureClass(0, 1)).toBe('api-unavailable')
-    expect(selectFailureClass(0, 5)).toBe('api-unavailable')
-  })
-
-  it('returns null when both scanErrors and resolveErrors are 0', () => {
-    expect(selectFailureClass(0, 0)).toBeNull()
-  })
-
+describe('buildStatusTruthReport failure-class integration', () => {
   it('buildStatusTruthReport with file-parse-error failureClass produces execution-failure status', () => {
     const report = buildStatusTruthReport({
       findings: [],
@@ -1558,5 +1563,1353 @@ describe('runDetect failure-class selection logic', () => {
     })
     expect(report.status).toBe('execution-failure')
     expect(report.failure_class).toBe('api-unavailable')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// selectDetectFailureClass: issue/comment API failures must map to api-unavailable
+// ---------------------------------------------------------------------------
+
+describe('selectDetectFailureClass', () => {
+  it('returns null when all error counts are zero', () => {
+    expect(selectDetectFailureClass({fileScanErrors: 0, issueScanErrors: 0, resolveErrors: 0})).toBeNull()
+  })
+
+  it('returns file-parse-error when fileScanErrors > 0 and no other errors', () => {
+    expect(selectDetectFailureClass({fileScanErrors: 1, issueScanErrors: 0, resolveErrors: 0})).toBe('file-parse-error')
+    expect(selectDetectFailureClass({fileScanErrors: 3, issueScanErrors: 0, resolveErrors: 0})).toBe('file-parse-error')
+  })
+
+  it('returns api-unavailable when issueScanErrors > 0 and fileScanErrors === 0', () => {
+    // Issue list/comment fetch failures are API failures, not file-parse errors
+    expect(selectDetectFailureClass({fileScanErrors: 0, issueScanErrors: 1, resolveErrors: 0})).toBe('api-unavailable')
+    expect(selectDetectFailureClass({fileScanErrors: 0, issueScanErrors: 5, resolveErrors: 0})).toBe('api-unavailable')
+  })
+
+  it('returns api-unavailable when resolveErrors > 0 and fileScanErrors === 0', () => {
+    expect(selectDetectFailureClass({fileScanErrors: 0, issueScanErrors: 0, resolveErrors: 1})).toBe('api-unavailable')
+    expect(selectDetectFailureClass({fileScanErrors: 0, issueScanErrors: 0, resolveErrors: 4})).toBe('api-unavailable')
+  })
+
+  it('returns api-unavailable when both issueScanErrors and resolveErrors > 0 and fileScanErrors === 0', () => {
+    expect(selectDetectFailureClass({fileScanErrors: 0, issueScanErrors: 2, resolveErrors: 3})).toBe('api-unavailable')
+  })
+
+  it('returns file-parse-error when fileScanErrors > 0 even if issueScanErrors and resolveErrors are also > 0', () => {
+    // file-parse-error takes precedence when file scanning itself failed
+    expect(selectDetectFailureClass({fileScanErrors: 1, issueScanErrors: 1, resolveErrors: 1})).toBe('file-parse-error')
+    expect(selectDetectFailureClass({fileScanErrors: 2, issueScanErrors: 3, resolveErrors: 0})).toBe('file-parse-error')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// CALIBRATION: plan-status exclusion from production scans
+// ---------------------------------------------------------------------------
+
+describe('scanStatusTruthClaims: plan-status exclusion (calibration)', () => {
+  it('production scan (default) excludes plan-status claims so dry-run produces zero unresolved plan-status noise', async () => {
+    // A plan doc with frontmatter status: active — production scan must NOT emit plan-status claims
+    const fileLister: FileLister = async () => ['docs/plans/my-plan.md']
+    const fileReader: FileReader = async () => '---\nstatus: active\ntitle: My Plan\n---\n\nContent.'
+
+    const {claims} = await scanStatusTruthClaims({fileLister, fileReader})
+    // Default production scan must exclude plan-status
+    const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planStatusClaims).toHaveLength(0)
+  })
+
+  it('pure extractor still extracts plan-status when all kinds are enabled', () => {
+    // extractStatusTruthClaimsFromText is a pure function and always extracts all kinds
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/my-plan.md',
+      text: '---\nstatus: active\ntitle: My Plan\n---\n\nContent.',
+    })
+    const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planStatusClaims).toHaveLength(1)
+  })
+
+  it('production scan with explicit enabledKinds including plan-status does emit plan-status claims', async () => {
+    // When caller explicitly opts in, plan-status is included
+    const fileLister: FileLister = async () => ['docs/plans/my-plan.md']
+    const fileReader: FileReader = async () => '---\nstatus: active\ntitle: My Plan\n---\n\nContent.'
+
+    const {claims} = await scanStatusTruthClaims({
+      fileLister,
+      fileReader,
+      enabledKinds: ['pr-state', 'issue-state', 'release-tag-state', 'plan-status', 'rollout-tracker-status'],
+    })
+    const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planStatusClaims).toHaveLength(1)
+  })
+
+  it('production scan default still emits pr-state and issue-state claims', async () => {
+    const fileLister: FileLister = async () => ['README.md']
+    const fileReader: FileReader = async () => 'PR #42 is open and issue #10 is closed.'
+
+    const {claims} = await scanStatusTruthClaims({fileLister, fileReader})
+    expect(claims.filter(c => c.kind === 'pr-state')).toHaveLength(1)
+    expect(claims.filter(c => c.kind === 'issue-state')).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// CALIBRATION: GitHub issue body/comment scanning
+// ---------------------------------------------------------------------------
+
+describe('scanIssueStatusTruthClaims: issue body/comment scanning (calibration)', () => {
+  it('issue body containing "PR #42 is open" yields a pr-state claim with synthetic issue body path', async () => {
+    const issues: IssueListItem[] = [{number: 3512, title: 'Rollout tracker', body: 'PR #42 is open', labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => []
+
+    const {claims} = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    expect(claims).toHaveLength(1)
+    const claim = claims[0]
+    expect(claim?.kind).toBe('pr-state')
+    expect(claim?.sourceRef).toBe('#42')
+    expect(claim?.path).toBe('github-issue://current/issues/3512#body')
+  })
+
+  it('resolver saying PR is closed yields a drifted finding for issue body claim', async () => {
+    const issues: IssueListItem[] = [{number: 3512, title: 'Rollout tracker', body: 'PR #42 is open', labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => []
+
+    const {claims} = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    const resolverResults = makeResolverResults([
+      {kind: 'pr-state', sourceRef: '#42', result: {status: 'resolved', state: 'closed'}},
+    ])
+
+    const findings = detectStatusTruthClaims(claims, resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('drifted')
+  })
+
+  it('issue comments are scanned and can produce claims', async () => {
+    const issues: IssueListItem[] = [{number: 100, title: 'Some issue', body: null, labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => [{id: 9001, body: 'issue #55 is closed'}]
+
+    const {claims} = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    expect(claims).toHaveLength(1)
+    const claim = claims[0]
+    expect(claim?.kind).toBe('issue-state')
+    expect(claim?.path).toBe('github-issue://current/issues/100#comment-9001')
+  })
+
+  it('issues labeled "status-truth" are skipped', async () => {
+    const issues: IssueListItem[] = [
+      {number: 200, title: 'Status truth proposal', body: 'PR #42 is open', labels: [{name: 'status-truth'}]},
+    ]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => []
+
+    const {claims} = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    expect(claims).toHaveLength(0)
+  })
+
+  it('issues containing the proposal marker in title are skipped', async () => {
+    const issues: IssueListItem[] = [
+      {number: 201, title: '[status-truth-proposal] Fix PR #42', body: 'PR #42 is open', labels: []},
+    ]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => []
+
+    const {claims} = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    expect(claims).toHaveLength(0)
+  })
+
+  it('issue list fetch failure produces non-clean failure class (api-unavailable)', async () => {
+    const issueLister: IssueLister = async () => {
+      throw new Error('API rate limit')
+    }
+    const commentFetcher: IssueCommentFetcher = async () => []
+
+    const result = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    // Must not fake clean — must report failure
+    expect(result.scanErrors).toBeGreaterThan(0)
+    expect(result.claims).toHaveLength(0)
+  })
+
+  it('per-issue comment fetch failure counts as scan error and does not silently hide as clean', async () => {
+    const issues: IssueListItem[] = [{number: 300, title: 'Some issue', body: 'PR #42 is open', labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => {
+      throw new Error('comment fetch failed')
+    }
+
+    const result = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    // Body claims still extracted; comment fetch failure counted
+    expect(result.scanErrors).toBeGreaterThan(0)
+    // Body claim from issue 300 should still be present (path uses `current`)
+    expect(result.claims.filter(c => c.path === 'github-issue://current/issues/300#body')).toHaveLength(1)
+  })
+
+  it('synthetic issue paths use current scheme and do not contain owner/repo identity', () => {
+    // Structural test: synthetic paths use `current` (not owner/repo) so generic
+    // code does not leak identity before explicit publicness proof.
+    const syntheticBodyPath = 'github-issue://current/issues/3512#body'
+    const syntheticCommentPath = 'github-issue://current/issues/3512#comment-9001'
+
+    // These paths use the `current` scheme
+    expect(syntheticBodyPath).toMatch(/^github-issue:\/\/current\/issues\/\d+#body$/)
+    expect(syntheticCommentPath).toMatch(/^github-issue:\/\/current\/issues\/\d+#comment-\d+$/)
+
+    // The path scheme must not contain raw body text or private identifiers
+    expect(syntheticBodyPath).not.toContain('PR #42 is open')
+    expect(syntheticCommentPath).not.toContain('issue #55 is closed')
+
+    // Must not contain owner/repo identity
+    expect(syntheticBodyPath).not.toContain('fro-bot')
+    expect(syntheticBodyPath).not.toContain('.github')
+  })
+
+  it('issue body with null body produces no claims (graceful null handling)', async () => {
+    const issues: IssueListItem[] = [{number: 400, title: 'Empty body issue', body: null, labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => []
+
+    const {claims, scanErrors} = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    expect(claims).toHaveLength(0)
+    expect(scanErrors).toBe(0)
+  })
+
+  it('comment with null body produces no claims (graceful null handling)', async () => {
+    const issues: IssueListItem[] = [{number: 500, title: 'Issue with null comment', body: null, labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => [{id: 9002, body: null}]
+
+    const {claims, scanErrors} = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    expect(claims).toHaveLength(0)
+    expect(scanErrors).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Blocker 1: Synthetic issue paths must use `current`, not owner/repo
+// ---------------------------------------------------------------------------
+
+describe('synthetic issue paths use current, not owner/repo', () => {
+  it('issue body path uses github-issue://current/issues/<n>#body, not owner/repo', async () => {
+    const issues: IssueListItem[] = [{number: 3512, title: 'Rollout tracker', body: 'PR #42 is open', labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => []
+
+    const {claims} = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    expect(claims).toHaveLength(1)
+    const claim = claims[0]
+    // Must use `current`, not owner/repo
+    expect(claim?.path).toBe('github-issue://current/issues/3512#body')
+    expect(claim?.path).not.toContain('fro-bot')
+    expect(claim?.path).not.toContain('.github')
+  })
+
+  it('issue comment path uses github-issue://current/issues/<n>#comment-<id>, not owner/repo', async () => {
+    const issues: IssueListItem[] = [{number: 100, title: 'Some issue', body: null, labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => [{id: 9001, body: 'issue #55 is closed'}]
+
+    const {claims} = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    expect(claims).toHaveLength(1)
+    const claim = claims[0]
+    // Must use `current`, not owner/repo
+    expect(claim?.path).toBe('github-issue://current/issues/100#comment-9001')
+    expect(claim?.path).not.toContain('fro-bot')
+    expect(claim?.path).not.toContain('.github')
+  })
+
+  it('scanner output for issue body uses current path regardless of owner/repo passed in', async () => {
+    // Even with a different owner/repo, the path must always use `current`
+    const issues: IssueListItem[] = [{number: 7, title: 'Test', body: 'issue #1 is open', labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => []
+
+    const {claims} = await scanIssueStatusTruthClaims({
+      owner: 'some-other-org',
+      repo: 'some-other-repo',
+      issueLister,
+      commentFetcher,
+    })
+
+    expect(claims).toHaveLength(1)
+    expect(claims[0]?.path).toBe('github-issue://current/issues/7#body')
+    expect(claims[0]?.path).not.toContain('some-other-org')
+    expect(claims[0]?.path).not.toContain('some-other-repo')
+  })
+
+  it('scanner output for issue comment uses current path regardless of owner/repo passed in', async () => {
+    const issues: IssueListItem[] = [{number: 8, title: 'Test', body: null, labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => [{id: 42, body: 'PR #5 is open'}]
+
+    const {claims} = await scanIssueStatusTruthClaims({
+      owner: 'some-other-org',
+      repo: 'some-other-repo',
+      issueLister,
+      commentFetcher,
+    })
+
+    expect(claims).toHaveLength(1)
+    expect(claims[0]?.path).toBe('github-issue://current/issues/8#comment-42')
+    expect(claims[0]?.path).not.toContain('some-other-org')
+    expect(claims[0]?.path).not.toContain('some-other-repo')
+  })
+
+  it('no public finding path or sourceRef test regresses: public finding path is still present', async () => {
+    // Regression guard: public findings still have path and sourceRef fields
+    const issues: IssueListItem[] = [{number: 3512, title: 'Rollout tracker', body: 'PR #42 is open', labels: []}]
+    const issueLister: IssueLister = async () => issues
+    const commentFetcher: IssueCommentFetcher = async () => []
+
+    const {claims} = await scanIssueStatusTruthClaims({
+      owner: 'fro-bot',
+      repo: '.github',
+      issueLister,
+      commentFetcher,
+    })
+
+    const resolverResults = makeResolverResults([
+      {kind: 'pr-state', sourceRef: '#42', result: {status: 'resolved', state: 'closed'}},
+    ])
+
+    const findings = detectStatusTruthClaims(claims, resolverResults)
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    expect(finding?.verdict).toBe('drifted')
+    // Public finding must still have path and sourceRef
+    if (finding?.verdict === 'drifted') {
+      expect(finding.path).toBe('github-issue://current/issues/3512#body')
+      expect(finding.sourceRef).toBe('#42')
+      expect(typeof finding.fingerprint).toBe('string')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Blocker 2: Production issue/comment fetchers must paginate
+// ---------------------------------------------------------------------------
+
+describe('listCurrentRepoIssues: pagination helper fetches all pages', () => {
+  it('fetches multiple pages until exhausted', async () => {
+    // Simulate two pages: page 1 has 2 items, page 2 has 1 item, page 3 is empty
+    const page1 = [
+      {number: 1, title: 'Issue 1', body: 'body1', labels: [] as {name?: string}[]},
+      {number: 2, title: 'Issue 2', body: 'body2', labels: [] as {name?: string}[]},
+    ]
+    const page2 = [{number: 3, title: 'Issue 3', body: 'body3', labels: [] as {name?: string}[]}]
+
+    let callCount = 0
+    const mockPaginate = async (_fn: unknown, _params: unknown) => {
+      callCount++
+      // paginate returns all items flattened
+      return [...page1, ...page2]
+    }
+
+    const octokit = {
+      paginate: mockPaginate,
+      rest: {
+        pulls: {get: async () => ({data: {state: 'open', merged: false}})},
+        issues: {
+          get: async () => ({data: {state: 'open'}}),
+          listForRepo: async () => ({data: []}),
+          listComments: async () => ({data: []}),
+        },
+        repos: {getReleaseByTag: async () => ({data: {draft: false, prerelease: false}})},
+      },
+    } as unknown as DetectOctokitClient
+
+    const result = await listCurrentRepoIssues(octokit, 'fro-bot', '.github')
+    expect(callCount).toBe(1)
+    expect(result).toHaveLength(3)
+    expect(result[0]?.number).toBe(1)
+    expect(result[2]?.number).toBe(3)
+  })
+
+  it('maps labels correctly, defaulting missing name to empty string', async () => {
+    const rawIssues = [
+      {
+        number: 10,
+        title: 'Labeled issue',
+        body: 'body',
+        labels: [{name: 'bug'}, {name: undefined}] as {name?: string}[],
+      },
+    ]
+
+    const octokit = {
+      paginate: async () => rawIssues,
+      rest: {
+        pulls: {get: async () => ({data: {state: 'open', merged: false}})},
+        issues: {
+          get: async () => ({data: {state: 'open'}}),
+          listForRepo: async () => ({data: []}),
+          listComments: async () => ({data: []}),
+        },
+        repos: {getReleaseByTag: async () => ({data: {draft: false, prerelease: false}})},
+      },
+    } as unknown as DetectOctokitClient
+
+    const result = await listCurrentRepoIssues(octokit, 'fro-bot', '.github')
+    expect(result).toHaveLength(1)
+    expect(result[0]?.labels).toEqual([{name: 'bug'}, {name: ''}])
+  })
+})
+
+describe('listCurrentRepoIssueComments: pagination helper fetches all pages', () => {
+  it('fetches multiple pages of comments until exhausted', async () => {
+    const allComments = [
+      {id: 1, body: 'comment 1'},
+      {id: 2, body: 'comment 2'},
+      {id: 3, body: 'comment 3'},
+    ]
+
+    let callCount = 0
+    const octokit = {
+      paginate: async () => {
+        callCount++
+        return allComments
+      },
+      rest: {
+        pulls: {get: async () => ({data: {state: 'open', merged: false}})},
+        issues: {
+          get: async () => ({data: {state: 'open'}}),
+          listForRepo: async () => ({data: []}),
+          listComments: async () => ({data: []}),
+        },
+        repos: {getReleaseByTag: async () => ({data: {draft: false, prerelease: false}})},
+      },
+    } as unknown as DetectOctokitClient
+
+    const result = await listCurrentRepoIssueComments(octokit, 'fro-bot', '.github', 42)
+    expect(callCount).toBe(1)
+    expect(result).toHaveLength(3)
+    expect(result[0]?.id).toBe(1)
+  })
+
+  it('maps comment body correctly, defaulting undefined body to null', async () => {
+    const rawComments = [
+      {id: 5, body: undefined},
+      {id: 6, body: 'hello'},
+    ]
+
+    const octokit = {
+      paginate: async () => rawComments,
+      rest: {
+        pulls: {get: async () => ({data: {state: 'open', merged: false}})},
+        issues: {
+          get: async () => ({data: {state: 'open'}}),
+          listForRepo: async () => ({data: []}),
+          listComments: async () => ({data: []}),
+        },
+        repos: {getReleaseByTag: async () => ({data: {draft: false, prerelease: false}})},
+      },
+    } as unknown as DetectOctokitClient
+
+    const result = await listCurrentRepoIssueComments(octokit, 'fro-bot', '.github', 42)
+    expect(result).toHaveLength(2)
+    expect(result[0]?.body).toBeNull()
+    expect(result[1]?.body).toBe('hello')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Cross-repo status-truth signal: grammar, publicness proof, privacy gates
+// ---------------------------------------------------------------------------
+
+// Helper: build a mock DetectOctokitClient that supports repos.get for publicness
+function makeCrossRepoOctokit(
+  overrides: {
+    repoPublic?: boolean
+    repoThrows?: boolean
+    repoThrowsStatus?: number
+    prState?: string
+    prMerged?: boolean
+    issueState?: string
+    releaseDraft?: boolean
+    prThrows?: boolean
+    issueThrows?: boolean
+    releaseThrows?: boolean
+  } = {},
+): DetectOctokitClient {
+  return {
+    paginate: async () => [],
+    rest: {
+      pulls: {
+        get: async () => {
+          if (overrides.prThrows === true) throw new Error('API error')
+          return {data: {state: overrides.prState ?? 'open', merged: overrides.prMerged ?? false}}
+        },
+      },
+      issues: {
+        get: async () => {
+          if (overrides.issueThrows === true) throw new Error('API error')
+          return {data: {state: overrides.issueState ?? 'open'}}
+        },
+        listForRepo: async () => ({data: []}),
+        listComments: async () => ({data: []}),
+      },
+      repos: {
+        getReleaseByTag: async () => {
+          if (overrides.releaseThrows === true) throw new Error('API error')
+          return {data: {draft: overrides.releaseDraft ?? false, prerelease: false}}
+        },
+        get: async () => {
+          if (overrides.repoThrows === true) {
+            const err = Object.assign(new Error('Not Found'), {status: overrides.repoThrowsStatus ?? 404})
+            throw err
+          }
+          return {data: {private: !(overrides.repoPublic ?? true)}}
+        },
+      },
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-repo claim grammar: extractStatusTruthClaimsFromText
+// ---------------------------------------------------------------------------
+
+describe('cross-repo claim grammar: extractStatusTruthClaimsFromText', () => {
+  // PR forms
+  it('parses "fro-bot/agent#1033 is merged" as a cross-repo pr-state claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'fro-bot/agent#1033 is merged',
+    })
+    const crossRepoPr = claims.filter(c => c.kind === 'pr-state' && 'targetOwner' in c)
+    expect(crossRepoPr).toHaveLength(1)
+    const claim = crossRepoPr[0] as StatusTruthClaim & {targetOwner: string; targetRepo: string}
+    expect(claim.targetOwner).toBe('fro-bot')
+    expect(claim.targetRepo).toBe('agent')
+    expect(claim.claimedState).toBe('merged')
+    expect(claim.sourceRef).toMatch(/^fro-bot\/agent#1033/)
+  })
+
+  it('parses "fro-bot/agent#1033 is open" as a cross-repo pr-state claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'fro-bot/agent#1033 is open',
+    })
+    const crossRepoPr = claims.filter(c => c.kind === 'pr-state' && 'targetOwner' in c)
+    expect(crossRepoPr).toHaveLength(1)
+    const claim = crossRepoPr[0] as StatusTruthClaim & {targetOwner: string; targetRepo: string}
+    expect(claim.claimedState).toBe('open')
+  })
+
+  it('parses "fro-bot/agent#1033 is closed" as a cross-repo pr-state claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'fro-bot/agent#1033 is closed',
+    })
+    const crossRepoPr = claims.filter(c => c.kind === 'pr-state' && 'targetOwner' in c)
+    expect(crossRepoPr).toHaveLength(1)
+    const claim = crossRepoPr[0] as StatusTruthClaim & {targetOwner: string; targetRepo: string}
+    expect(claim.claimedState).toBe('closed')
+  })
+
+  // Issue forms
+  it('parses "issue fro-bot/dashboard#48 is open" as a cross-repo issue-state claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'issue fro-bot/dashboard#48 is open',
+    })
+    const crossRepoIssue = claims.filter(c => c.kind === 'issue-state' && 'targetOwner' in c)
+    expect(crossRepoIssue).toHaveLength(1)
+    const claim = crossRepoIssue[0] as StatusTruthClaim & {targetOwner: string; targetRepo: string}
+    expect(claim.targetOwner).toBe('fro-bot')
+    expect(claim.targetRepo).toBe('dashboard')
+    expect(claim.claimedState).toBe('open')
+    expect(claim.sourceRef).toMatch(/^fro-bot\/dashboard#48/)
+  })
+
+  it('parses "fro-bot/dashboard#48 is closed" as a cross-repo claim (pr-state or issue-state)', () => {
+    // Without an explicit "issue" prefix, "closed" is ambiguous (PR or issue).
+    // The extractor emits a pr-state claim (default for ambiguous open/closed).
+    // Use "issue fro-bot/dashboard#48 is closed" for unambiguous issue-state.
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'fro-bot/dashboard#48 is closed',
+    })
+    const crossRepoClaims = claims.filter(
+      c => (c.kind === 'issue-state' || c.kind === 'pr-state') && 'targetOwner' in c,
+    )
+    expect(crossRepoClaims.length).toBeGreaterThan(0)
+    const claim = crossRepoClaims[0] as StatusTruthClaim & {targetOwner: string; targetRepo: string}
+    expect(claim.claimedState).toBe('closed')
+    expect(claim.targetOwner).toBe('fro-bot')
+    expect(claim.targetRepo).toBe('dashboard')
+  })
+
+  // Release forms
+  it('parses "release fro-bot/agent@v0.78.0 is published" as a cross-repo release-tag-state claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'release fro-bot/agent@v0.78.0 is published',
+    })
+    const crossRepoRelease = claims.filter(c => c.kind === 'release-tag-state' && 'targetOwner' in c)
+    expect(crossRepoRelease).toHaveLength(1)
+    const claim = crossRepoRelease[0] as StatusTruthClaim & {targetOwner: string; targetRepo: string}
+    expect(claim.targetOwner).toBe('fro-bot')
+    expect(claim.targetRepo).toBe('agent')
+    expect(claim.claimedState).toBe('published')
+    expect(claim.sourceRef).toMatch(/^fro-bot\/agent@v0\.78\.0/)
+  })
+
+  it('parses "release fro-bot/agent@v0.78.0 is draft" as a cross-repo release-tag-state claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'release fro-bot/agent@v0.78.0 is draft',
+    })
+    const crossRepoRelease = claims.filter(c => c.kind === 'release-tag-state' && 'targetOwner' in c)
+    expect(crossRepoRelease).toHaveLength(1)
+    const claim = crossRepoRelease[0] as StatusTruthClaim & {targetOwner: string; targetRepo: string}
+    expect(claim.claimedState).toBe('draft')
+  })
+
+  // Bare #N near cross-repo ref must not be extracted as current-repo
+  it('bare #N near cross-repo ref is not extracted as current-repo (existing guard)', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'fro-bot/agent#1033 is merged and PR #1033 is open',
+    })
+    // No bare #1033 current-repo claim
+    expect(claims.filter(c => c.sourceRef === '#1033')).toHaveLength(0)
+    // Cross-repo claim may be present
+    const crossRepoClaims = claims.filter(c => 'targetOwner' in c)
+    expect(crossRepoClaims.length).toBeGreaterThanOrEqual(1)
+  })
+
+  // Cross-repo claim sourceRef must include owner/repo identity
+  it('cross-repo claim sourceRef includes owner/repo identity (not bare #N)', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'fro-bot/agent#1033 is merged',
+    })
+    const crossRepoClaims = claims.filter(c => 'targetOwner' in c)
+    for (const claim of crossRepoClaims) {
+      expect(claim.sourceRef).not.toMatch(/^#\d+$/)
+      expect(claim.sourceRef).toContain('fro-bot/agent')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Cross-repo publicness proof and resolver
+// ---------------------------------------------------------------------------
+
+describe('resolveClaimLiveState: cross-repo publicness proof', () => {
+  it('cross-repo PR claim resolves to merged when repo is public and PR is merged', async () => {
+    const octokit = makeCrossRepoOctokit({repoPublic: true, prState: 'closed', prMerged: true})
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'fro-bot/agent#1033',
+      claimedState: 'merged',
+      normalizedText: 'fro-bot/agent#1033 is merged',
+      targetOwner: 'fro-bot',
+      targetRepo: 'agent',
+    }
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') expect(result.state).toBe('merged')
+  })
+
+  it('cross-repo PR claim resolves to open when repo is public and PR is open', async () => {
+    const octokit = makeCrossRepoOctokit({repoPublic: true, prState: 'open', prMerged: false})
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'fro-bot/agent#1033',
+      claimedState: 'open',
+      normalizedText: 'fro-bot/agent#1033 is open',
+      targetOwner: 'fro-bot',
+      targetRepo: 'agent',
+    }
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') expect(result.state).toBe('open')
+  })
+
+  it('cross-repo issue claim resolves to closed when repo is public and issue is closed', async () => {
+    const octokit = makeCrossRepoOctokit({repoPublic: true, issueState: 'closed'})
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'issue-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'fro-bot/dashboard#48',
+      claimedState: 'open',
+      normalizedText: 'issue fro-bot/dashboard#48 is open',
+      targetOwner: 'fro-bot',
+      targetRepo: 'dashboard',
+    }
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') expect(result.state).toBe('closed')
+  })
+
+  it('cross-repo release claim resolves to published when repo is public and release is published', async () => {
+    const octokit = makeCrossRepoOctokit({repoPublic: true, releaseDraft: false})
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'release-tag-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'fro-bot/agent@v0.78.0',
+      claimedState: 'published',
+      normalizedText: 'release fro-bot/agent@v0.78.0 is published',
+      targetOwner: 'fro-bot',
+      targetRepo: 'agent',
+    }
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') expect(result.state).toBe('published')
+  })
+
+  it('cross-repo PR claim returns private when repo is private (repos.get returns private:true)', async () => {
+    const octokit = makeCrossRepoOctokit({repoPublic: false})
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'private-org/private-repo#99',
+      claimedState: 'open',
+      normalizedText: 'private-org/private-repo#99 is open',
+      targetOwner: 'private-org',
+      targetRepo: 'private-repo',
+    }
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('private')
+  })
+
+  it('cross-repo PR claim returns private when repos.get throws 404 (repo not found / private)', async () => {
+    const octokit = makeCrossRepoOctokit({repoThrows: true, repoThrowsStatus: 404})
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'unknown-org/unknown-repo#1',
+      claimedState: 'open',
+      normalizedText: 'unknown-org/unknown-repo#1 is open',
+      targetOwner: 'unknown-org',
+      targetRepo: 'unknown-repo',
+    }
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('private')
+  })
+
+  it('cross-repo PR claim returns private when repos.get throws 403 (forbidden)', async () => {
+    const octokit = makeCrossRepoOctokit({repoThrows: true, repoThrowsStatus: 403})
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'forbidden-org/forbidden-repo#1',
+      claimedState: 'open',
+      normalizedText: 'forbidden-org/forbidden-repo#1 is open',
+      targetOwner: 'forbidden-org',
+      targetRepo: 'forbidden-repo',
+    }
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('private')
+  })
+
+  it('cross-repo PR claim returns unavailable (not private) when repo is public but PR API fails after proof', async () => {
+    // Publicness is proven (repo is public), but the PR fetch itself fails.
+    // Identity is already proven public, so result is unavailable (not private).
+    const octokit = makeCrossRepoOctokit({repoPublic: true, prThrows: true})
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'fro-bot/agent#1033',
+      claimedState: 'open',
+      normalizedText: 'fro-bot/agent#1033 is open',
+      targetOwner: 'fro-bot',
+      targetRepo: 'agent',
+    }
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    // After publicness proof, API failure is unavailable (not private)
+    expect(result.status).toBe('unavailable')
+  })
+
+  it('cross-repo issue claim returns private when repos.get throws 404', async () => {
+    const octokit = makeCrossRepoOctokit({repoThrows: true, repoThrowsStatus: 404})
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'issue-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'unknown-org/unknown-repo#48',
+      claimedState: 'open',
+      normalizedText: 'issue unknown-org/unknown-repo#48 is open',
+      targetOwner: 'unknown-org',
+      targetRepo: 'unknown-repo',
+    }
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('private')
+  })
+
+  it('cross-repo release claim returns private when repos.get throws 403', async () => {
+    const octokit = makeCrossRepoOctokit({repoThrows: true, repoThrowsStatus: 403})
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'release-tag-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'forbidden-org/forbidden-repo@v1.0.0',
+      claimedState: 'published',
+      normalizedText: 'release forbidden-org/forbidden-repo@v1.0.0 is published',
+      targetOwner: 'forbidden-org',
+      targetRepo: 'forbidden-repo',
+    }
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('private')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Privacy gate: unsafe finding must not expose identity fields
+// ---------------------------------------------------------------------------
+
+describe('cross-repo privacy gate: unsafe finding omits identity fields', () => {
+  it('private cross-repo PR claim produces unsafe finding with no path/sourceRef/claimedState/fingerprint', () => {
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'private-org/private-repo#99',
+      claimedState: 'open',
+      normalizedText: 'private-org/private-repo#99 is open',
+      targetOwner: 'private-org',
+      targetRepo: 'private-repo',
+    }
+    const resolverResults = makeResolverResults([
+      {kind: 'pr-state', sourceRef: 'private-org/private-repo#99', result: {status: 'private'}},
+    ])
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    expect(finding?.verdict).toBe('unsafe')
+    expect(finding?.proposalEligible).toBe(false)
+    expect('path' in (finding ?? {})).toBe(false)
+    expect('sourceRef' in (finding ?? {})).toBe(false)
+    expect('claimedState' in (finding ?? {})).toBe(false)
+    expect('fingerprint' in (finding ?? {})).toBe(false)
+    expect('proposedCorrection' in (finding ?? {})).toBe(false)
+    expect('liveState' in (finding ?? {})).toBe(false)
+    // targetOwner/targetRepo must not appear in the finding
+    expect('targetOwner' in (finding ?? {})).toBe(false)
+    expect('targetRepo' in (finding ?? {})).toBe(false)
+  })
+
+  it('public cross-repo PR claim produces public finding with sourceRef including owner/repo identity', () => {
+    const claim: StatusTruthClaim & {targetOwner: string; targetRepo: string} = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'fro-bot/agent#1033',
+      claimedState: 'merged',
+      normalizedText: 'fro-bot/agent#1033 is merged',
+      targetOwner: 'fro-bot',
+      targetRepo: 'agent',
+    }
+    const resolverResults = makeResolverResults([
+      {kind: 'pr-state', sourceRef: 'fro-bot/agent#1033', result: {status: 'resolved', state: 'merged'}},
+    ])
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    expect(finding?.verdict).toBe('current')
+    if (finding?.verdict === 'current') {
+      // Public finding includes sourceRef with owner/repo identity (proven public)
+      expect(finding.sourceRef).toContain('fro-bot/agent')
+      expect(finding.path).toBe('docs/plans/example.md')
+      expect(typeof finding.fingerprint).toBe('string')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// #3512-style coordination signal: end-to-end cross-repo fixture
+// ---------------------------------------------------------------------------
+
+describe('#3512-style cross-repo coordination signal (synthetic public-safe fixtures)', () => {
+  // Inspired by real coordination patterns in issue #3512 (rollout tracker).
+  // All fixtures are synthetic and use public repos only.
+
+  it('synthetic #3512-style: cross-repo closed PR claim becomes drifted when live state is merged', async () => {
+    // Fixture: a coordination comment says "fro-bot/agent#1033 is closed"
+    // but the live PR is actually merged. This is a real drift signal.
+    const text = 'Coordination: fro-bot/agent#1033 is closed'
+    const claims = extractStatusTruthClaimsFromText({path: 'docs/plans/rollout.md', text})
+    const crossRepoClaims = claims.filter(c => 'targetOwner' in c && c.kind === 'pr-state')
+    expect(crossRepoClaims.length).toBeGreaterThan(0)
+
+    const octokit = makeCrossRepoOctokit({repoPublic: true, prState: 'closed', prMerged: true})
+    const {resolverResults} = await resolveAllClaims({
+      claims: crossRepoClaims,
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+    })
+
+    const findings = detectStatusTruthClaims(crossRepoClaims, resolverResults)
+    // At least one finding must be drifted (closed claimed, merged live)
+    const drifted = findings.filter(f => f.verdict === 'drifted')
+    expect(drifted.length).toBeGreaterThan(0)
+    if (drifted[0]?.verdict === 'drifted') {
+      expect(drifted[0].claimedState).toBe('closed')
+      expect(drifted[0].liveState).toBe('merged')
+    }
+  })
+
+  it('synthetic #3512-style: cross-repo open issue claim becomes current when live state is open', async () => {
+    const text = 'Tracking: issue fro-bot/dashboard#48 is open'
+    const claims = extractStatusTruthClaimsFromText({path: 'docs/plans/rollout.md', text})
+    const crossRepoClaims = claims.filter(c => 'targetOwner' in c && c.kind === 'issue-state')
+    expect(crossRepoClaims.length).toBeGreaterThan(0)
+
+    const octokit = makeCrossRepoOctokit({repoPublic: true, issueState: 'open'})
+    const {resolverResults} = await resolveAllClaims({
+      claims: crossRepoClaims,
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+    })
+
+    const findings = detectStatusTruthClaims(crossRepoClaims, resolverResults)
+    const current = findings.filter(f => f.verdict === 'current')
+    expect(current.length).toBeGreaterThan(0)
+  })
+
+  it('synthetic #3512-style: cross-repo merged PR claim is current when live state is merged', async () => {
+    const text = 'Merged: fro-bot/agent#1033 is merged'
+    const claims = extractStatusTruthClaimsFromText({path: 'docs/plans/rollout.md', text})
+    const crossRepoClaims = claims.filter(c => 'targetOwner' in c && c.kind === 'pr-state')
+    expect(crossRepoClaims.length).toBeGreaterThan(0)
+
+    const octokit = makeCrossRepoOctokit({repoPublic: true, prState: 'closed', prMerged: true})
+    const {resolverResults} = await resolveAllClaims({
+      claims: crossRepoClaims,
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+    })
+
+    const findings = detectStatusTruthClaims(crossRepoClaims, resolverResults)
+    const current = findings.filter(f => f.verdict === 'current')
+    expect(current.length).toBeGreaterThan(0)
+  })
+
+  it('synthetic #3512-style: private cross-repo claim produces unsafe finding (zero identity fields)', async () => {
+    const text = 'Blocked by: private-org/private-repo#99 is open'
+    const claims = extractStatusTruthClaimsFromText({path: 'docs/plans/rollout.md', text})
+    const crossRepoClaims = claims.filter(c => 'targetOwner' in c && c.kind === 'pr-state')
+    expect(crossRepoClaims.length).toBeGreaterThan(0)
+
+    const octokit = makeCrossRepoOctokit({repoPublic: false})
+    const {resolverResults} = await resolveAllClaims({
+      claims: crossRepoClaims,
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+    })
+
+    const findings = detectStatusTruthClaims(crossRepoClaims, resolverResults)
+    const unsafe = findings.filter(f => f.verdict === 'unsafe')
+    expect(unsafe.length).toBeGreaterThan(0)
+    for (const finding of unsafe) {
+      expect('path' in finding).toBe(false)
+      expect('sourceRef' in finding).toBe(false)
+      expect('targetOwner' in finding).toBe(false)
+      expect('targetRepo' in finding).toBe(false)
+    }
+  })
+
+  it('plan-status default exclusion is intact: cross-repo scan does not break plan-status exclusion', async () => {
+    // Regression guard: adding cross-repo support must not re-enable plan-status in default scan
+    const fileLister: FileLister = async () => ['docs/plans/my-plan.md']
+    const fileReader: FileReader = async () =>
+      '---\nstatus: active\ntitle: My Plan\n---\n\nfro-bot/agent#1033 is merged'
+
+    const {claims} = await scanStatusTruthClaims({fileLister, fileReader})
+    const planStatusClaims = claims.filter(c => c.kind === 'plan-status')
+    expect(planStatusClaims).toHaveLength(0)
+    // Cross-repo claim should still be extracted (if in DEFAULT_ENABLED_KINDS)
+    const crossRepoClaims = claims.filter(c => 'targetOwner' in c)
+    // Cross-repo pr-state is in DEFAULT_ENABLED_KINDS, so it should be present
+    expect(crossRepoClaims.length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Ambiguous cross-repo open/closed: PR-first with issue fallback
+// ---------------------------------------------------------------------------
+
+describe('ambiguous cross-repo open/closed: PR-first with issue fallback', () => {
+  // Problem: "marcusrbrown/infra#579 is closed" defaults to pr-state.
+  // When PR lookup 404s but issue lookup succeeds, the finding must be
+  // issue-state (current), not pr-state (unresolved).
+
+  it('RED: ambiguous public owner/repo#N is closed — PR 404, issue closed → issue-state current finding', async () => {
+    // Claim extracted as ambiguous (open/closed without explicit issue prefix)
+    // PR lookup 404s, issue lookup returns closed → must produce issue-state current finding
+    const octokit = makeCrossRepoOctokit({
+      repoPublic: true,
+      prThrows: true, // PR 404
+      issueState: 'closed',
+    })
+    const claim: StatusTruthClaim = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'marcusrbrown/infra#579',
+      claimedState: 'closed',
+      normalizedText: 'marcusrbrown/infra#579 is closed',
+      targetOwner: 'marcusrbrown',
+      targetRepo: 'infra',
+      targetNumberKind: 'ambiguous',
+    }
+
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    // Must resolve as issue-state, not be unavailable
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') {
+      expect(result.state).toBe('closed')
+      // resolvedKind must indicate this resolved as an issue
+      expect(result.resolvedKind).toBe('issue-state')
+    }
+  })
+
+  it('RED: ambiguous public owner/repo#N is open — PR lookup succeeds → pr-state current finding', async () => {
+    // When PR lookup succeeds, kind stays pr-state
+    const octokit = makeCrossRepoOctokit({
+      repoPublic: true,
+      prState: 'open',
+      prMerged: false,
+    })
+    const claim: StatusTruthClaim = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'fro-bot/agent#123',
+      claimedState: 'open',
+      normalizedText: 'fro-bot/agent#123 is open',
+      targetOwner: 'fro-bot',
+      targetRepo: 'agent',
+      targetNumberKind: 'ambiguous',
+    }
+
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') {
+      expect(result.state).toBe('open')
+      // resolvedKind must be pr-state (PR lookup succeeded)
+      expect(result.resolvedKind).toBe('pr-state')
+    }
+  })
+
+  it('RED: ambiguous claim — publicness check still happens before PR/issue lookup', async () => {
+    // repos.get throws 404 → private, no PR or issue lookup attempted
+    const octokit = makeCrossRepoOctokit({repoThrows: true, repoThrowsStatus: 404})
+    const claim: StatusTruthClaim = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'private-org/private-repo#579',
+      claimedState: 'closed',
+      normalizedText: 'private-org/private-repo#579 is closed',
+      targetOwner: 'private-org',
+      targetRepo: 'private-repo',
+      targetNumberKind: 'ambiguous',
+    }
+
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('private')
+  })
+
+  it('RED: ambiguous claim — private repo (private:true) still produces unsafe/no identity fields', async () => {
+    const octokit = makeCrossRepoOctokit({repoPublic: false})
+    const claim: StatusTruthClaim = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'private-org/private-repo#579',
+      claimedState: 'closed',
+      normalizedText: 'private-org/private-repo#579 is closed',
+      targetOwner: 'private-org',
+      targetRepo: 'private-repo',
+      targetNumberKind: 'ambiguous',
+    }
+
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('private')
+  })
+
+  it('RED: ambiguous claim — PR 404 and issue 404 → unresolved (both unavailable after publicness proof)', async () => {
+    const octokit = makeCrossRepoOctokit({
+      repoPublic: true,
+      prThrows: true,
+      issueThrows: true,
+    })
+    const claim: StatusTruthClaim = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'fro-bot/agent#999',
+      claimedState: 'closed',
+      normalizedText: 'fro-bot/agent#999 is closed',
+      targetOwner: 'fro-bot',
+      targetRepo: 'agent',
+      targetNumberKind: 'ambiguous',
+    }
+
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    expect(result.status).toBe('unavailable')
+  })
+
+  it('RED: detectStatusTruthClaims uses resolvedKind to emit issue-state finding for ambiguous claim resolved as issue', () => {
+    // When resolver returns resolvedKind: 'issue-state', the finding kind must be issue-state
+    const claim: StatusTruthClaim = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'marcusrbrown/infra#579',
+      claimedState: 'closed',
+      normalizedText: 'marcusrbrown/infra#579 is closed',
+      targetOwner: 'marcusrbrown',
+      targetRepo: 'infra',
+      targetNumberKind: 'ambiguous',
+    }
+
+    const resolverResults: Record<string, ResolverResult> = {
+      'pr-state:marcusrbrown/infra#579': {
+        status: 'resolved',
+        state: 'closed',
+        resolvedKind: 'issue-state',
+      },
+    }
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    // Finding kind must be issue-state (not pr-state)
+    expect(finding?.kind).toBe('issue-state')
+    expect(finding?.verdict).toBe('current')
+  })
+
+  it('RED: extractStatusTruthClaimsFromText marks ambiguous open/closed cross-repo refs with targetNumberKind=ambiguous', () => {
+    // "marcusrbrown/infra#579 is closed" — no explicit issue prefix, not merged → ambiguous
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'marcusrbrown/infra#579 is closed',
+    })
+    const crossRepoClaims = claims.filter(c => 'targetOwner' in c)
+    expect(crossRepoClaims.length).toBeGreaterThan(0)
+    const claim = crossRepoClaims[0]
+    expect(claim?.targetNumberKind).toBe('ambiguous')
+  })
+
+  it('RED: explicit "issue" prefix sets targetNumberKind=issue (not ambiguous)', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'issue fro-bot/dashboard#48 is closed',
+    })
+    const crossRepoClaims = claims.filter(c => 'targetOwner' in c && c.kind === 'issue-state')
+    expect(crossRepoClaims.length).toBeGreaterThan(0)
+    const claim = crossRepoClaims[0]
+    // Explicit issue prefix → not ambiguous
+    expect(claim?.targetNumberKind).not.toBe('ambiguous')
+  })
+
+  it('RED: "merged" state sets targetNumberKind=pr (not ambiguous)', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'fro-bot/agent#1033 is merged',
+    })
+    const crossRepoClaims = claims.filter(c => 'targetOwner' in c && c.kind === 'pr-state')
+    expect(crossRepoClaims.length).toBeGreaterThan(0)
+    const claim = crossRepoClaims[0]
+    // merged is unambiguously PR
+    expect(claim?.targetNumberKind).toBe('pr')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Blocker 1: Fingerprint stability for ambiguous cross-repo claims
+// ---------------------------------------------------------------------------
+
+describe('fingerprint stability: ambiguous cross-repo claim resolved as pr-state vs issue-state', () => {
+  it('same claim/path/sourceRef/normalizedText produces identical fingerprint regardless of resolvedKind', () => {
+    // The fingerprint must be computed from the extracted claim kind (claim.kind),
+    // not the effective kind (resolvedKind). This prevents fingerprint churn when
+    // the same ambiguous claim resolves differently across runs.
+    const claim: StatusTruthClaim = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'marcusrbrown/infra#579',
+      claimedState: 'closed',
+      normalizedText: 'marcusrbrown/infra#579 is closed',
+      targetOwner: 'marcusrbrown',
+      targetRepo: 'infra',
+      targetNumberKind: 'ambiguous',
+    }
+
+    // Resolver result 1: resolves as pr-state
+    const resolverResultsPr: Record<string, ResolverResult> = {
+      'pr-state:marcusrbrown/infra#579': {
+        status: 'resolved',
+        state: 'closed',
+        resolvedKind: 'pr-state',
+      },
+    }
+
+    // Resolver result 2: resolves as issue-state (PR 404, issue fallback)
+    const resolverResultsIssue: Record<string, ResolverResult> = {
+      'pr-state:marcusrbrown/infra#579': {
+        status: 'resolved',
+        state: 'closed',
+        resolvedKind: 'issue-state',
+      },
+    }
+
+    const findingsPr = detectStatusTruthClaims([claim], resolverResultsPr)
+    const findingsIssue = detectStatusTruthClaims([claim], resolverResultsIssue)
+
+    expect(findingsPr).toHaveLength(1)
+    expect(findingsIssue).toHaveLength(1)
+
+    const fpPr = findingsPr[0]
+    const fpIssue = findingsIssue[0]
+
+    // Both must be public findings (current verdict)
+    expect(fpPr?.verdict).toBe('current')
+    expect(fpIssue?.verdict).toBe('current')
+
+    // Fingerprints must be identical — stable identity regardless of resolution path
+    if (fpPr?.verdict !== 'unsafe' && fpIssue?.verdict !== 'unsafe') {
+      expect(fpPr?.fingerprint).toBe(fpIssue?.fingerprint)
+    }
+
+    // The emitted kind may differ (pr-state vs issue-state) — that's fine
+    expect(fpPr?.kind).toBe('pr-state')
+    expect(fpIssue?.kind).toBe('issue-state')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Blocker 2: proveRepoPublic must be explicit (private === false)
+// ---------------------------------------------------------------------------
+
+describe('proveRepoPublic: explicit private === false check', () => {
+  it('repos.get returning private:undefined is treated as private (not public)', async () => {
+    // When the API returns an unknown/unexpected shape (private: undefined),
+    // the resolver must treat it as private/unsafe — not public.
+    const octokit: DetectOctokitClient = {
+      paginate: async () => [],
+      rest: {
+        pulls: {get: async () => ({data: {state: 'open', merged: false}})},
+        issues: {
+          get: async () => ({data: {state: 'open'}}),
+          listForRepo: async () => ({data: []}),
+          listComments: async () => ({data: []}),
+        },
+        repos: {
+          getReleaseByTag: async () => ({data: {draft: false, prerelease: false}}),
+          // Returns private: undefined — unknown shape
+          get: async () => ({data: {private: undefined as unknown as boolean}}),
+        },
+      },
+    }
+
+    const claim: StatusTruthClaim = {
+      kind: 'pr-state',
+      path: 'docs/plans/example.md',
+      sourceRef: 'some-org/some-repo#1',
+      claimedState: 'open',
+      normalizedText: 'some-org/some-repo#1 is open',
+      targetOwner: 'some-org',
+      targetRepo: 'some-repo',
+      targetNumberKind: 'ambiguous',
+    }
+
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+    // private: undefined must NOT be treated as public — must be private/unsafe
+    expect(result.status).toBe('private')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Detect Octokit construction: no-op log handlers suppress request URL leaks
+// ---------------------------------------------------------------------------
+
+describe('detect Octokit options: log suppression', () => {
+  it('RED: buildDetectOctokitOptions returns options with no-op log handlers', () => {
+    // The detect Octokit must not log request URLs to stderr.
+    // buildDetectOctokitOptions must export options with a log object
+    // whose methods are no-ops (do not write to stderr).
+    const options = buildDetectOctokitOptions('test-token')
+    expect(options).toHaveProperty('log')
+    const log = options.log as Record<string, unknown>
+    expect(typeof log.debug).toBe('function')
+    expect(typeof log.info).toBe('function')
+    expect(typeof log.warn).toBe('function')
+    expect(typeof log.error).toBe('function')
+    // No-op: calling them must not throw and must not write to stderr
+    ;(log.debug as (msg: string) => void)('GET /repos/marcusrbrown/infra/pulls/579 - 404')
+    ;(log.info as (msg: string) => void)('test')
+    ;(log.warn as (msg: string) => void)('test')
+    ;(log.error as (msg: string) => void)('test')
+  })
+
+  it('RED: buildDetectOctokitOptions includes auth token', () => {
+    const options = buildDetectOctokitOptions('my-secret-token')
+    expect(options.auth).toBe('my-secret-token')
   })
 })

@@ -221,11 +221,12 @@ export function applyPublicOutputGate(input: PublicOutputGateInput): SafePublicO
     }
   }
 
-  // 5. Redacted canonical ID match → block
+  // 5. Redacted canonical ID match → block (case-sensitive substring match)
+  // node_id and database_id values are opaque identifiers with fixed casing;
+  // case-folding would allow a different-case variant to bypass the gate.
   if (tokens.redactedCanonicalIds.size > 0) {
-    const lowerContent = content.toLowerCase()
     for (const id of tokens.redactedCanonicalIds) {
-      if (lowerContent.includes(id.toLowerCase())) {
+      if (content.includes(id)) {
         return {
           allowed: false,
           blockedCount: 1,

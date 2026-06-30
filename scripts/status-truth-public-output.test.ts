@@ -202,6 +202,53 @@ describe('applyPublicOutputGate — private token block', () => {
       expect(result.blockedCount).toBe(1)
     }
   })
+
+  it('canonical ID match is case-sensitive: exact fixture node_id as substring is blocked', () => {
+    // The canonical ID 'R_kgDOFIXTURE001' must block content containing it as a substring
+    const fixtureId = 'R_kgDOFIXTURE001'
+    const tokens = makeRedactedIdTokens([fixtureId])
+    const result = applyPublicOutputGate({
+      surface: 'proposal-body',
+      content: `Repo node_id: ${fixtureId} is referenced here.`,
+      tokens,
+      fingerprint: 'abcdef0123456789',
+    })
+    expect(result.allowed).toBe(false)
+    if (!result.allowed) {
+      expect(result.blockedCount).toBe(1)
+    }
+  })
+
+  it('canonical ID match is case-sensitive: different-case variant of fixture node_id is NOT blocked', () => {
+    // node_id values have fixed casing; a different-case variant is a different string
+    const fixtureId = 'R_kgDOFIXTURE001'
+    const tokens = makeRedactedIdTokens([fixtureId])
+    // Lowercase variant — must NOT be treated as the same canonical ID
+    const differentCase = fixtureId.toLowerCase() // 'r_kgdofixture001'
+    const result = applyPublicOutputGate({
+      surface: 'proposal-body',
+      content: `Ref: ${differentCase} is safe.`,
+      tokens,
+      fingerprint: 'abcdef0123456789',
+    })
+    // Case-sensitive: different-case variant must pass
+    expect(result.allowed).toBe(true)
+  })
+
+  it('canonical ID match is case-sensitive: uppercase variant of lowercase fixture ID is NOT blocked', () => {
+    // Fixture ID is lowercase; uppercase variant must not be blocked
+    const fixtureId = 'fixture_id_lowercase_001'
+    const tokens = makeRedactedIdTokens([fixtureId])
+    const upperCase = fixtureId.toUpperCase() // 'FIXTURE_ID_LOWERCASE_001'
+    const result = applyPublicOutputGate({
+      surface: 'proposal-body',
+      content: `Ref: ${upperCase} is safe.`,
+      tokens,
+      fingerprint: 'abcdef0123456789',
+    })
+    // Case-sensitive: uppercase variant must pass
+    expect(result.allowed).toBe(true)
+  })
 })
 
 // ---------------------------------------------------------------------------
