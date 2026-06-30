@@ -168,9 +168,11 @@ first useful drift run from becoming noisy issue spam.
   fingerprint drift after the cooldown may reopen with a recurrence/needs-outcome comment.
 - **Schedules stay conservative:** Scheduled runs remain safe and low-noise. Any first live proposal
   run should be manually dispatched after dry-run counts are reviewed.
-- **Credential split is explicit:** Snapshot/detect paths run read-only. Proposal mutation paths mint
-  issue-write credentials only for non-dry-run proposal writes. This slice never mints contents-write
-  or pull-request-write credentials.
+- **Credential split is explicit:** The rollout snapshot path uses the existing tracker credential only
+  inside the snapshot step because the default `GITHUB_TOKEN` cannot read the Fro Bot Project. Proposal
+  mutation paths still mint issue-write credentials only for non-dry-run proposal writes. This slice
+  never mints contents-write or pull-request-write credentials; a dedicated Project-read credential is
+  a future hardening improvement.
 
 ### Outcome State Contract
 
@@ -303,6 +305,8 @@ claims.
   existing API-backed findings.
 
 ### U2. Rollout-tracker compound resolver
+
+Status: complete.
 
 **Goal:** Resolve rollout-tracker claims through the existing tracker snapshot rather than treating
 them as permanently unavailable.

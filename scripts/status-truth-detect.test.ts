@@ -1,3 +1,4 @@
+import type {RolloutSnapshot, SnapshotItem} from './rollout-tracker-snapshot.ts'
 import type {
   ClaimKind,
   ClaimVerdict,
@@ -15,7 +16,9 @@ import type {
   StatusTruthJsonReport,
 } from './status-truth-detect.ts'
 
-import {describe, expect, it} from 'vitest'
+import process from 'node:process'
+
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 import {
   buildDetectOctokitOptions,
@@ -30,11 +33,13 @@ import {
   KNOWN_SCHEMA_VERSION,
   listCurrentRepoIssueComments,
   listCurrentRepoIssues,
+  loadRolloutSnapshot,
   normalizeClaimText,
   resolveAllClaims,
   resolveClaimLiveState,
   resolveFileParseClaims,
   resolvePlanStatusClaim,
+  resolveRolloutTrackerClaim,
   scanIssueStatusTruthClaims,
   scanStatusTruthClaims,
   selectDetectFailureClass,
@@ -3691,5 +3696,683 @@ describe('plan-status drift: proposedCorrection contains expected status replace
       // (it should have replaced 'active' with 'complete')
       expect(finding.proposedCorrection).not.toMatch(/\bactive\b/)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// U2: Rollout-tracker compound resolver tests
+// ---------------------------------------------------------------------------
+
+/** Build a minimal SnapshotItem for test fixtures. */
+function makeSnapshotItem(overrides: Partial<SnapshotItem> = {}): SnapshotItem {
+  return {
+    content_number: 3512,
+    content_repo: 'fro-bot/.github',
+    status: 'In Progress',
+    readiness: null,
+    gate: null,
+    issue_state: 'open',
+    issue_closed_at: null,
+    issue_labels: [],
+    ...overrides,
+  }
+}
+
+/** Build a minimal RolloutSnapshot for test fixtures. */
+function makeRolloutSnapshot(items: SnapshotItem[] = [makeSnapshotItem()]): RolloutSnapshot {
+  return {items}
+}
+
+describe('resolveRolloutTrackerClaim', () => {
+  // ── Happy path: snapshot state matches claim ──────────────────────────────
+
+  it('happy path: snapshot issue_state matches claimed state => resolved with matching state', async () => {
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 3512, issue_state: 'open'})])
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot})
+
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') {
+      expect(result.state).toBe('open')
+    }
+  })
+
+  it('happy path: snapshot issue_state "closed" matches claimed "closed" => resolved current', async () => {
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 3512, issue_state: 'closed'})])
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'closed',
+      normalizedText: 'rollout tracker #3512 is closed',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot})
+
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') {
+      expect(result.state).toBe('closed')
+    }
+  })
+
+  // ── Happy path: snapshot state conflicts with claim => drifted ────────────
+
+  it('happy path: snapshot issue_state conflicts with claimed state => resolved with live state (drifted via detectStatusTruthClaims)', async () => {
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 3512, issue_state: 'closed'})])
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot})
+
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') {
+      // Live state is 'closed'; claim says 'open' → detectStatusTruthClaims will classify as drifted
+      expect(result.state).toBe('closed')
+    }
+  })
+
+  it('integration: drifted rollout-tracker claim produces drifted finding and is proposal-eligible', async () => {
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 3512, issue_state: 'closed'})])
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot})
+    const resolverResults = makeResolverResults([{kind: 'rollout-tracker-status', sourceRef: '#3512', result}])
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    expect(finding?.verdict).toBe('drifted')
+    expect(finding?.proposalEligible).toBe(true)
+  })
+
+  // ── Edge case: snapshot unavailable => unresolved ─────────────────────────
+
+  it('edge: snapshot is null (unavailable) => unavailable, no proposal eligibility', async () => {
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot: null})
+
+    expect(result.status).toBe('unavailable')
+  })
+
+  it('edge: snapshot unavailable => detectStatusTruthClaims classifies as unresolved, not drifted', async () => {
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot: null})
+    const resolverResults = makeResolverResults([{kind: 'rollout-tracker-status', sourceRef: '#3512', result}])
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('unresolved')
+    expect(findings[0]?.proposalEligible).toBe(false)
+  })
+
+  it('edge: snapshot item not found for sourceRef => unavailable', async () => {
+    // Snapshot has item #9999 but claim references #3512
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 9999, issue_state: 'open'})])
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot})
+
+    expect(result.status).toBe('unavailable')
+  })
+
+  // ── Edge case: malformed/unexpected snapshot schema => unresolved ─────────
+
+  it('edge: snapshot with null issue_state for matched item => unavailable (incomplete data)', async () => {
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 3512, issue_state: null})])
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot})
+
+    // null issue_state means we cannot determine live state → unavailable
+    expect(result.status).toBe('unavailable')
+  })
+
+  it('edge: snapshot with empty items array => unavailable', async () => {
+    const snapshot = makeRolloutSnapshot([])
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot})
+
+    expect(result.status).toBe('unavailable')
+  })
+
+  // ── Edge case: compound sub-resolver disagreement blocks proposal eligibility
+
+  it('edge: compound sub-resolver disagreement (issue-state unavailable) blocks proposal eligibility', async () => {
+    // The rollout-tracker-status resolver returns resolved, but sub-resolvers are unavailable.
+    // detectStatusTruthClaims must classify as unresolved when sub-resolvers are not all resolved.
+    const rolloutClaim = makeClaim({
+      kind: 'rollout-tracker-status',
+      path: 'docs/plans/rollout.md',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    const resolverResults = makeResolverResults([
+      {
+        kind: 'rollout-tracker-status',
+        sourceRef: '#3512',
+        result: {
+          status: 'resolved',
+          state: 'closed', // conflicts with claim
+          subResolverResults: {
+            'issue-state': {status: 'unavailable'},
+            'pr-state': {status: 'unavailable'},
+          },
+        },
+      },
+    ])
+
+    const findings = detectStatusTruthClaims([rolloutClaim], resolverResults)
+
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('unresolved')
+    expect(findings[0]?.proposalEligible).toBe(false)
+  })
+
+  // ── Public output safety: no raw snapshot payload in resolver result ───────
+
+  it('safety: resolver result does not echo raw snapshot payload, issue titles, or tracker internals', async () => {
+    const snapshot = makeRolloutSnapshot([
+      makeSnapshotItem({
+        content_number: 3512,
+        issue_state: 'closed',
+        // These fields must not appear in the resolver result
+        status: 'SENSITIVE_PROJECT_STATUS',
+        readiness: 'SENSITIVE_READINESS',
+        gate: 'SENSITIVE_GATE',
+        issue_labels: ['SENSITIVE_LABEL'],
+      }),
+    ])
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    const result = await resolveRolloutTrackerClaim({claim, snapshot})
+
+    // The result must only contain status and state — no raw snapshot fields
+    const resultJson = JSON.stringify(result)
+    expect(resultJson).not.toContain('SENSITIVE_PROJECT_STATUS')
+    expect(resultJson).not.toContain('SENSITIVE_READINESS')
+    expect(resultJson).not.toContain('SENSITIVE_GATE')
+    expect(resultJson).not.toContain('SENSITIVE_LABEL')
+    expect(resultJson).not.toContain('issue_labels')
+    expect(resultJson).not.toContain('issue_closed_at')
+  })
+
+  // ── resolveClaimLiveState integration: snapshot injection ─────────────────
+
+  it('integration: resolveClaimLiveState with snapshot resolves rollout-tracker-status claim', async () => {
+    const octokit = makeMockDetectOctokit()
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 3512, issue_state: 'closed'})])
+    const claim = makeTestClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+    })
+
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github', snapshot})
+
+    expect(result.status).toBe('resolved')
+    if (result.status === 'resolved') {
+      expect(result.state).toBe('closed')
+    }
+  })
+
+  it('integration: resolveClaimLiveState without snapshot returns unavailable for rollout-tracker-status', async () => {
+    const octokit = makeMockDetectOctokit()
+    const claim = makeTestClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+    })
+
+    // No snapshot provided — should remain unavailable (Phase 1 behavior preserved)
+    const result = await resolveClaimLiveState({claim, octokit, owner: 'fro-bot', repo: '.github'})
+
+    expect(result.status).toBe('unavailable')
+  })
+
+  // ── Dry-run path: no write credentials minted ─────────────────────────────
+
+  it('safety: resolveRolloutTrackerClaim is a pure read-only function (no Octokit, no write token)', async () => {
+    // The function signature must not require an Octokit client or any write credential.
+    // This test verifies the function can be called with only claim + snapshot.
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 3512, issue_state: 'open'})])
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    // Must not throw or require any additional credentials
+    const result = await resolveRolloutTrackerClaim({claim, snapshot})
+    expect(result.status).toBe('resolved')
+  })
+
+  // ── Durable report artifact even when snapshot unavailable ────────────────
+
+  it('integration: snapshot unavailable still produces a durable execution-failure report (not fake clean)', async () => {
+    const claim = makeClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+
+    // Simulate snapshot unavailable
+    const result = await resolveRolloutTrackerClaim({claim, snapshot: null})
+    const resolverResults = makeResolverResults([{kind: 'rollout-tracker-status', sourceRef: '#3512', result}])
+
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    const report = buildStatusTruthReport({
+      findings,
+      scanComplete: true,
+      generatedAt: '2026-06-30T00:00:00Z',
+      failureClass: 'sub-resolver-unavailable',
+    })
+
+    // Report must be execution-failure (not clean) when snapshot is unavailable
+    expect(report.status).toBe('execution-failure')
+    expect(report.failure_class).toBe('sub-resolver-unavailable')
+    expect(report.repair_eligible).toBe(false)
+    // The finding is still present as unresolved (not hidden)
+    expect(report.counts.unresolved).toBe(1)
+    expect(report.counts.proposal_eligible).toBe(0)
+  })
+
+  // ── Grammar tightening: unsupported claim forms => no claim extracted ──────
+
+  it('grammar: "rollout tracker #3512 is active" extracts a rollout-tracker-status claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/rollout.md',
+      text: 'The rollout tracker #3512 is active.',
+    })
+    const trackerClaims = claims.filter(c => c.kind === 'rollout-tracker-status')
+    expect(trackerClaims).toHaveLength(1)
+    expect(trackerClaims[0]?.sourceRef).toBe('#3512')
+    expect(trackerClaims[0]?.claimedState).toBe('active')
+  })
+
+  it('grammar: "rollout tracker #3512 is open" extracts a rollout-tracker-status claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/rollout.md',
+      text: 'rollout tracker #3512 is open',
+    })
+    const trackerClaims = claims.filter(c => c.kind === 'rollout-tracker-status')
+    expect(trackerClaims).toHaveLength(1)
+    expect(trackerClaims[0]?.claimedState).toBe('open')
+  })
+
+  it('grammar: "rollout tracker #3512 is closed" extracts a rollout-tracker-status claim', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/rollout.md',
+      text: 'rollout tracker #3512 is closed',
+    })
+    const trackerClaims = claims.filter(c => c.kind === 'rollout-tracker-status')
+    expect(trackerClaims).toHaveLength(1)
+    expect(trackerClaims[0]?.claimedState).toBe('closed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveAllClaims snapshot wiring
+// ---------------------------------------------------------------------------
+
+describe('resolveAllClaims: snapshot wiring for rollout-tracker-status', () => {
+  it('resolveAllClaims with snapshot resolves rollout-tracker-status claim to current', async () => {
+    // When a snapshot is provided and the item matches, the claim resolves to current/drifted
+    // instead of unavailable. This test proves the snapshot flows through resolveAllClaims
+    // into resolveClaimLiveState.
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 3512, issue_state: 'open'})])
+    const claim = makeTestClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+    const octokit = makeMockDetectOctokit()
+
+    const {resolverResults} = await resolveAllClaims({
+      claims: [claim],
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      snapshot,
+    })
+
+    const result = resolverResults['rollout-tracker-status:#3512']
+    expect(result).toBeDefined()
+    expect(result?.status).toBe('resolved')
+    if (result?.status === 'resolved') {
+      expect(result.state).toBe('open')
+    }
+  })
+
+  it('resolveAllClaims with snapshot resolves rollout-tracker-status claim to drifted state', async () => {
+    // Snapshot says issue is closed; claim says open → drifted
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 3512, issue_state: 'closed'})])
+    const claim = makeTestClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+    const octokit = makeMockDetectOctokit()
+
+    const {resolverResults} = await resolveAllClaims({
+      claims: [claim],
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      snapshot,
+    })
+
+    const result = resolverResults['rollout-tracker-status:#3512']
+    expect(result?.status).toBe('resolved')
+    if (result?.status === 'resolved') {
+      expect(result.state).toBe('closed')
+    }
+
+    // Verify the full pipeline: drifted finding produced
+    // The snapshot satisfies both sub-resolvers (issue-state + pr-state), so the compound
+    // claim is fully resolved and proposal-eligible when drifted.
+    const findings = detectStatusTruthClaims([claim], resolverResults)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('drifted')
+    expect(findings[0]?.proposalEligible).toBe(true) // compound: sub-resolvers satisfied by snapshot
+  })
+
+  it('resolveAllClaims without snapshot leaves rollout-tracker-status unavailable', async () => {
+    // No snapshot → rollout-tracker-status stays unavailable (not fake-resolved)
+    const claim = makeTestClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+    const octokit = makeMockDetectOctokit()
+
+    const {resolverResults} = await resolveAllClaims({
+      claims: [claim],
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      // No snapshot param
+    })
+
+    const result = resolverResults['rollout-tracker-status:#3512']
+    expect(result?.status).toBe('unavailable')
+  })
+
+  it('resolveAllClaims with null snapshot leaves rollout-tracker-status unavailable', async () => {
+    // Explicit null snapshot → unavailable (snapshot was attempted but failed)
+    const claim = makeTestClaim({
+      kind: 'rollout-tracker-status',
+      sourceRef: '#3512',
+      claimedState: 'open',
+      normalizedText: 'rollout tracker #3512 is open',
+    })
+    const octokit = makeMockDetectOctokit()
+
+    const {resolverResults} = await resolveAllClaims({
+      claims: [claim],
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      snapshot: null,
+    })
+
+    const result = resolverResults['rollout-tracker-status:#3512']
+    expect(result?.status).toBe('unavailable')
+  })
+
+  it('resolveAllClaims snapshot does not affect non-rollout-tracker claims', async () => {
+    // Snapshot presence must not change resolution of pr-state or issue-state claims
+    const snapshot = makeRolloutSnapshot([makeSnapshotItem({content_number: 42, issue_state: 'closed'})])
+    const prClaim = makeTestClaim({kind: 'pr-state', sourceRef: '#42', claimedState: 'open'})
+    const octokit = makeMockDetectOctokit({prState: 'open'})
+
+    const {resolverResults} = await resolveAllClaims({
+      claims: [prClaim],
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      snapshot,
+    })
+
+    // PR claim must resolve via API, not snapshot
+    const result = resolverResults['pr-state:#42']
+    expect(result?.status).toBe('resolved')
+    if (result?.status === 'resolved') {
+      expect(result.state).toBe('open') // API says open, not snapshot's closed
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// loadRolloutSnapshot helper
+// ---------------------------------------------------------------------------
+
+describe('loadRolloutSnapshot: snapshot file loading and validation', () => {
+  beforeEach(() => {
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('loadRolloutSnapshot returns null when env var is not set', async () => {
+    // No STATUS_TRUTH_ROLLOUT_SNAPSHOT_PATH → null (no snapshot available)
+    const result = await loadRolloutSnapshot({snapshotPath: undefined})
+    expect(result).toBeNull()
+  })
+
+  it('loadRolloutSnapshot returns null when env var is empty string', async () => {
+    const result = await loadRolloutSnapshot({snapshotPath: ''})
+    expect(result).toBeNull()
+  })
+
+  it('loadRolloutSnapshot returns a valid RolloutSnapshot from a well-formed JSON file', async () => {
+    // Inject a file reader that returns valid snapshot JSON
+    const snapshot: RolloutSnapshot = {
+      items: [
+        {
+          content_number: 3512,
+          content_repo: 'fro-bot/.github',
+          status: 'In Progress',
+          readiness: null,
+          gate: null,
+          issue_state: 'open',
+          issue_closed_at: null,
+          issue_labels: [],
+        },
+      ],
+    }
+    const fileReader = async (_path: string) => JSON.stringify(snapshot)
+
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    expect(result).not.toBeNull()
+    expect(result?.items).toHaveLength(1)
+    expect(result?.items[0]?.content_number).toBe(3512)
+    expect(result?.items[0]?.issue_state).toBe('open')
+  })
+
+  it('loadRolloutSnapshot returns null for malformed JSON', async () => {
+    // Malformed JSON → null, no throw, no raw payload in output
+    const fileReader = async (_path: string) => 'not-valid-json{{{}'
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    expect(result).toBeNull()
+  })
+
+  it('loadRolloutSnapshot returns null when JSON is valid but missing items array', async () => {
+    // Valid JSON but wrong shape → null
+    const fileReader = async (_path: string) => JSON.stringify({notItems: []})
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    expect(result).toBeNull()
+  })
+
+  it('loadRolloutSnapshot returns null when items is not an array', async () => {
+    const fileReader = async (_path: string) => JSON.stringify({items: 'not-an-array'})
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    expect(result).toBeNull()
+  })
+
+  it('loadRolloutSnapshot returns null when file read fails', async () => {
+    // File read failure → null, no throw
+    const fileReader = async (_path: string) => {
+      throw new Error('ENOENT: no such file or directory')
+    }
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/missing.json', fileReader})
+    expect(result).toBeNull()
+  })
+
+  it('loadRolloutSnapshot rejects items with non-number content_number', async () => {
+    // Item with string content_number → null (conservative validation)
+    const badSnapshot = {
+      items: [
+        {
+          content_number: 'not-a-number',
+          content_repo: 'fro-bot/.github',
+          status: null,
+          readiness: null,
+          gate: null,
+          issue_state: 'open',
+          issue_closed_at: null,
+          issue_labels: [],
+        },
+      ],
+    }
+    const fileReader = async (_path: string) => JSON.stringify(badSnapshot)
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    expect(result).toBeNull()
+  })
+
+  it('loadRolloutSnapshot rejects items with invalid issue_state value', async () => {
+    // issue_state must be "open" | "closed" | "merged" | null
+    const badSnapshot = {
+      items: [
+        {
+          content_number: 3512,
+          content_repo: 'fro-bot/.github',
+          status: null,
+          readiness: null,
+          gate: null,
+          issue_state: 'INVALID_STATE',
+          issue_closed_at: null,
+          issue_labels: [],
+        },
+      ],
+    }
+    const fileReader = async (_path: string) => JSON.stringify(badSnapshot)
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    expect(result).toBeNull()
+  })
+
+  it('loadRolloutSnapshot accepts items with null issue_state', async () => {
+    // null issue_state is valid (item exists but state not yet fetched)
+    const snapshot = {
+      items: [
+        {
+          content_number: 3512,
+          content_repo: 'fro-bot/.github',
+          status: null,
+          readiness: null,
+          gate: null,
+          issue_state: null,
+          issue_closed_at: null,
+          issue_labels: [],
+        },
+      ],
+    }
+    const fileReader = async (_path: string) => JSON.stringify(snapshot)
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    expect(result).not.toBeNull()
+    expect(result?.items[0]?.issue_state).toBeNull()
+  })
+
+  it('loadRolloutSnapshot accepts empty items array', async () => {
+    const fileReader = async (_path: string) => JSON.stringify({items: []})
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    expect(result).not.toBeNull()
+    expect(result?.items).toHaveLength(0)
+  })
+
+  it('loadRolloutSnapshot rejects items with non-array issue_labels', async () => {
+    const badSnapshot = {
+      items: [
+        {
+          content_number: 3512,
+          content_repo: 'fro-bot/.github',
+          status: null,
+          readiness: null,
+          gate: null,
+          issue_state: 'open',
+          issue_closed_at: null,
+          issue_labels: 'not-an-array',
+        },
+      ],
+    }
+    const fileReader = async (_path: string) => JSON.stringify(badSnapshot)
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    expect(result).toBeNull()
+  })
+
+  it('loadRolloutSnapshot does not leak raw payload in return value on malformed input', async () => {
+    // Even if the JSON is parseable but wrong shape, the return is null — not the raw object
+    const fileReader = async (_path: string) =>
+      JSON.stringify({items: [{content_number: 'SENSITIVE_VALUE', issue_state: 'SENSITIVE_STATE'}]})
+    const result = await loadRolloutSnapshot({snapshotPath: '/tmp/snapshot.json', fileReader})
+    // Must return null (validation failed), not the raw object
+    expect(result).toBeNull()
   })
 })
