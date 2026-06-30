@@ -449,6 +449,8 @@ changes.
 
 ### U5. Manual closure cooldown and recurrence behavior
 
+Status: complete.
+
 **Goal:** Prevent bot-versus-operator loops while preserving recurrence handling for unresolved drift.
 
 **Requirements:** R7, R8

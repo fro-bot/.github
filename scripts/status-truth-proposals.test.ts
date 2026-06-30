@@ -22,6 +22,7 @@ import {
   extractProposalFingerprint,
   extractRedactedCanonicalIds,
   fetchExistingProposalIssues,
+  isWithinCooldown,
   loadRedactedCanonicalIdsFromDisk,
   NOOP_LOG,
   OUTCOME_LABELS,
@@ -360,6 +361,63 @@ describe('planStatusTruthProposalActions', () => {
       // First finding was blocked by privacy gate
       expect(counts.blocked).toBe(1)
       // Second finding was deduplicated (fingerprint already seen)
+      expect(counts.sameRunDeduplicated).toBe(1)
+    })
+
+    it('second finding with same fingerprint as an update-comment path is deduplicated', () => {
+      // Two findings share a fingerprint. The first matches an open issue whose
+      // live-state differs → update-comment. The second (same fingerprint) must
+      // be deduplicated rather than opening a new proposal.
+      const fingerprint = 'abc123def456abcd'
+      const finding1 = makeDriftedFinding(fingerprint)
+      const finding2 = {...makeDriftedFinding(fingerprint), path: 'docs/plans/other.md'}
+      const report = makeReport({
+        findings: [finding1, finding2],
+        counts: {total: 2, current: 0, drifted: 2, unresolved: 0, unsafe: 0, proposal_eligible: 2},
+      })
+      // Open issue with a different recorded live-state → triggers update-comment for finding1
+      const openIssue = makeOpenIssue(fingerprint, {
+        body: `<!-- status-truth:fingerprint=${fingerprint} -->\n<!-- status-truth:live-state=open -->\n\nBody.`,
+      })
+
+      const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [openIssue]}))
+
+      // Exactly one update-comment for the first finding
+      expect(actions.filter(a => a.type === 'update-comment')).toHaveLength(1)
+      // No open actions — second finding must be deduplicated
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+      // Second finding counted as same-run deduplicated
+      expect(counts.sameRunDeduplicated).toBe(1)
+    })
+
+    it('second finding with same fingerprint as a reopen path is deduplicated', () => {
+      // Two findings share a fingerprint. The first matches a non-terminal closed
+      // issue past cooldown → reopen. The second (same fingerprint) must be
+      // deduplicated rather than opening a new proposal.
+      const fingerprint = 'abc123def456abcd'
+      const finding1 = makeDriftedFinding(fingerprint)
+      const finding2 = {...makeDriftedFinding(fingerprint), path: 'docs/plans/other.md'}
+      const report = makeReport({
+        findings: [finding1, finding2],
+        counts: {total: 2, current: 0, drifted: 2, unresolved: 0, unsafe: 0, proposal_eligible: 2},
+      })
+      // Closed non-terminal issue past the 7-day cooldown
+      const pastCooldown = '2026-06-01T00:00:00Z'
+      const closedIssue: ExistingProposalIssue = {
+        ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.resolved]),
+        closedAt: pastCooldown,
+      }
+      const now = new Date('2026-06-30T00:00:00Z')
+
+      const {actions, counts} = planStatusTruthProposalActions(
+        makePlanInput({report, existingIssues: [closedIssue], now}),
+      )
+
+      // Exactly one reopen for the first finding
+      expect(actions.filter(a => a.type === 'reopen')).toHaveLength(1)
+      // No open actions — second finding must be deduplicated
+      expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+      // Second finding counted as same-run deduplicated
       expect(counts.sameRunDeduplicated).toBe(1)
     })
   })
@@ -2329,22 +2387,48 @@ describe('manually-fixed auto-close when drift clears', () => {
 })
 
 describe('closed proposal without outcome marker — conservative treatment', () => {
-  it('closed proposal with fingerprint but no outcome label is treated as non-terminal (reopen when drift returns)', () => {
+  it('closed proposal with fingerprint but no outcome label and no closedAt is conservative — no reopen, counted for attention', () => {
     const fingerprint = 'abc123def456abcd'
     const finding = makeDriftedFinding(fingerprint)
     const report = makeReport({
       findings: [finding],
       counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
     })
-    // Closed with only the proposal label — no outcome label
+    // Closed with only the proposal label — no outcome label, no closedAt
     const closedIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL])
 
     const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue]}))
 
-    // Conservative: no brand-new open; reopen instead
+    // Conservative: no reopen without closedAt (cannot determine cooldown)
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    // Counted for operator attention
+    expect(counts.needsOutcomeCooldown).toBeGreaterThanOrEqual(1)
+  })
+
+  it('closed proposal with fingerprint but no outcome label reopens after cooldown when closedAt is past 7 days', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-21T12:00:00Z' // 10 days ago — past cooldown
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL]),
+      closedAt,
+    }
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [closedIssue], now}),
+    )
+
+    // Past cooldown: reopen
     expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
     expect(actions.filter(a => a.type === 'reopen')).toHaveLength(1)
     expect(counts.reopened).toBe(1)
+    expect(counts.needsOutcomeCooldown).toBe(0)
   })
 
   it('closed proposal without outcome marker is NOT silently treated as clean (counted for operator attention)', () => {
@@ -4051,5 +4135,490 @@ describe('planStatusTruthProposalActions — outcomeCounts in result', () => {
     expect(result.counts.opened).toBe(0)
     // Outcome counts: one proposed-pending (the existing open issue)
     expect(result.outcomeCounts.proposedPending).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isWithinCooldown — pure date helper
+// ---------------------------------------------------------------------------
+
+describe('isWithinCooldown', () => {
+  it('returns true when closedAt is less than 7 days before now', () => {
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-28T12:00:00Z' // 3 days ago
+    expect(isWithinCooldown(closedAt, now)).toBe(true)
+  })
+
+  it('returns false when closedAt is exactly 7 days before now', () => {
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-24T12:00:00Z' // exactly 7 days ago
+    expect(isWithinCooldown(closedAt, now)).toBe(false)
+  })
+
+  it('returns false when closedAt is more than 7 days before now', () => {
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-20T12:00:00Z' // 11 days ago
+    expect(isWithinCooldown(closedAt, now)).toBe(false)
+  })
+
+  it('returns true when closedAt is 1 second before the 7-day boundary', () => {
+    const now = new Date('2026-07-01T12:00:00Z')
+    // 7 days = 604800 seconds; 1 second less = 604799 seconds ago
+    const closedAt = new Date(now.getTime() - 604799 * 1000).toISOString()
+    expect(isWithinCooldown(closedAt, now)).toBe(true)
+  })
+
+  it('returns false when closedAt is 1 second after the 7-day boundary', () => {
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = new Date(now.getTime() - 604801 * 1000).toISOString()
+    expect(isWithinCooldown(closedAt, now)).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Manual closure cooldown and recurrence behavior
+// ---------------------------------------------------------------------------
+
+describe('manual closure cooldown — closed-without-outcome during cooldown', () => {
+  it('does not reopen and does not open duplicate when closed-without-outcome is within 7-day cooldown', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    // Closed 2 days ago with no outcome label (needs-outcome state)
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-29T12:00:00Z' // 2 days ago — within cooldown
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL]),
+      closedAt,
+    }
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [closedIssue], now}),
+    )
+
+    // Must not reopen during cooldown
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    // Must not open a duplicate
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    // Must count as cooldown-blocked for operator attention
+    expect(counts.needsOutcomeCooldown).toBeGreaterThanOrEqual(1)
+  })
+
+  it('counts cooldown-blocked separately from other blocked counts', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-29T12:00:00Z' // within cooldown
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL]),
+      closedAt,
+    }
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue], now}))
+
+    // needsOutcomeCooldown is distinct from privacy-blocked (blocked)
+    expect(typeof counts.needsOutcomeCooldown).toBe('number')
+    expect(counts.needsOutcomeCooldown).toBeGreaterThanOrEqual(1)
+    // Privacy-blocked count should not be inflated by cooldown
+    expect(counts.blocked).toBe(0)
+  })
+})
+
+describe('manual closure cooldown — closed-without-outcome after cooldown', () => {
+  it('reopens with recurrence comment when closed-without-outcome is past 7-day cooldown and drift persists', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    // Closed 10 days ago with no outcome label — past cooldown
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-21T12:00:00Z' // 10 days ago
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL]),
+      closedAt,
+    }
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [closedIssue], now}),
+    )
+
+    const reopenActions = actions.filter(a => a.type === 'reopen')
+    expect(reopenActions).toHaveLength(1)
+    const reopenAction = reopenActions[0]
+    if (reopenAction?.type === 'reopen') {
+      expect(reopenAction.issueNumber).toBe(closedIssue.number)
+      expect(reopenAction.comment).toBeTruthy()
+      // Comment must mention recurrence or needs-outcome — not raw claim text
+      expect(reopenAction.comment).toMatch(/recurrence|recurring|needs.?outcome/i)
+    }
+    expect(counts.reopened).toBe(1)
+    expect(counts.needsOutcomeCooldown).toBe(0)
+  })
+
+  it('reopen after cooldown removes resolving labels and adds recurring label', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-21T12:00:00Z' // 10 days ago — past cooldown
+    // Closed with no outcome label (needs-outcome state)
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL]),
+      closedAt,
+    }
+
+    const {actions} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue], now}))
+
+    const reopenAction = actions.find(a => a.type === 'reopen')
+    if (reopenAction?.type === 'reopen') {
+      // Must add recurring label
+      expect(reopenAction.addLabels).toContain(OUTCOME_LABELS.recurring)
+      // removeLabels should not include non-resolving labels
+      for (const label of reopenAction.removeLabels) {
+        expect([OUTCOME_LABELS.resolved, OUTCOME_LABELS.manuallyFixed]).toContain(label)
+      }
+    }
+  })
+})
+
+describe('manual closure cooldown — terminal labels override cooldown', () => {
+  it('rejected label suppresses recurrence regardless of cooldown period', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    // Closed 10 days ago (past cooldown) but with terminal rejected label
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-21T12:00:00Z'
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.rejected]),
+      closedAt,
+    }
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [closedIssue], now}),
+    )
+
+    // Terminal: suppress, not reopen
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(counts.suppressed).toBe(1)
+    expect(counts.needsOutcomeCooldown).toBe(0)
+  })
+
+  it('false-positive label suppresses recurrence regardless of cooldown period', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-21T12:00:00Z'
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.falsePositive]),
+      closedAt,
+    }
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [closedIssue], now}),
+    )
+
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    expect(counts.suppressed).toBe(1)
+    expect(counts.needsOutcomeCooldown).toBe(0)
+  })
+
+  it('rejected label within cooldown still suppresses (terminal overrides cooldown)', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    // Within cooldown AND terminal — terminal wins
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-29T12:00:00Z' // 2 days ago — within cooldown
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.rejected]),
+      closedAt,
+    }
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [closedIssue], now}),
+    )
+
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    expect(counts.suppressed).toBe(1)
+    expect(counts.needsOutcomeCooldown).toBe(0)
+  })
+})
+
+describe('manual closure cooldown — resolved/manually-fixed clears cooldown', () => {
+  it('resolved label stays quiet when drift is cleared (no reopen, no cooldown count)', () => {
+    const fingerprint = 'abc123def456abcd'
+    // No findings — drift cleared
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-29T12:00:00Z' // within cooldown, but drift cleared
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.resolved]),
+      closedAt,
+    }
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [closedIssue], now}),
+    )
+
+    // Drift cleared — no reopen, no cooldown count
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    expect(counts.needsOutcomeCooldown).toBe(0)
+    // No open either (no drift)
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+  })
+
+  it('manually-fixed label stays quiet when drift is cleared', () => {
+    const fingerprint = 'abc123def456abcd'
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-29T12:00:00Z'
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.manuallyFixed]),
+      closedAt,
+    }
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [closedIssue], now}),
+    )
+
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    expect(counts.needsOutcomeCooldown).toBe(0)
+  })
+
+  it('changed fingerprint (new drift) can open a new proposal even when old fingerprint was resolved', () => {
+    const oldFingerprint = 'abc123def456abcd'
+    const newFingerprint = 'deadbeef12345678'
+    // New drift with different fingerprint
+    const newFinding = makeDriftedFinding(newFingerprint)
+    const report = makeReport({
+      findings: [newFinding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-29T12:00:00Z'
+    // Old fingerprint closed with resolved label
+    const oldClosedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(oldFingerprint, [PROPOSAL_LABEL, OUTCOME_LABELS.resolved]),
+      closedAt,
+    }
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [oldClosedIssue], now}),
+    )
+
+    // New fingerprint → new open action
+    const openActions = actions.filter(a => a.type === 'open')
+    expect(openActions).toHaveLength(1)
+    if (openActions[0]?.type === 'open') {
+      expect(openActions[0].fingerprint).toBe(newFingerprint)
+    }
+    expect(counts.opened).toBe(1)
+    expect(counts.needsOutcomeCooldown).toBe(0)
+  })
+})
+
+describe('manual closure cooldown — missing closedAt is conservative', () => {
+  it('closed-without-outcome with missing closedAt is counted for attention with no mutation', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const now = new Date('2026-07-01T12:00:00Z')
+    // Closed with no outcome label and no closedAt — conservative: needs attention, no mutation
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL]),
+      closedAt: null,
+    }
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [closedIssue], now}),
+    )
+
+    // No reopen (conservative — cannot determine cooldown without closedAt)
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    // No open (fingerprint already has a closed issue)
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    // Counted for operator attention
+    expect(counts.needsOutcomeCooldown).toBeGreaterThanOrEqual(1)
+  })
+
+  it('closed-without-outcome with undefined closedAt is also conservative', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const now = new Date('2026-07-01T12:00:00Z')
+    // No closedAt field at all
+    const closedIssue: ExistingProposalIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL])
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [closedIssue], now}),
+    )
+
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(0)
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(counts.needsOutcomeCooldown).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('manual closure cooldown — mutation cap applies to reopen after cooldown', () => {
+  it('reopen-after-cooldown actions are subject to the mutation cap (priority after update, before open)', () => {
+    const fingerprint1 = 'abc123def456abcd'
+    const fingerprint2 = 'deadbeef12345678'
+    const fingerprint3 = 'cafebabe12345678'
+    const fingerprint4 = 'feedface12345678'
+    const fingerprint5 = 'baadf00d12345678'
+    const fingerprint6 = 'c0ffee0012345678'
+
+    const now = new Date('2026-07-01T12:00:00Z')
+    const pastCooldown = '2026-06-21T12:00:00Z' // 10 days ago
+
+    // 5 closed-without-outcome issues past cooldown + 1 new finding
+    // Cap is 5 — all 5 reopens should fit, but the new open should overflow
+    const closedIssues: ExistingProposalIssue[] = [
+      {...makeClosedIssue(fingerprint1, [PROPOSAL_LABEL], {number: 201}), closedAt: pastCooldown},
+      {...makeClosedIssue(fingerprint2, [PROPOSAL_LABEL], {number: 202}), closedAt: pastCooldown},
+      {...makeClosedIssue(fingerprint3, [PROPOSAL_LABEL], {number: 203}), closedAt: pastCooldown},
+      {...makeClosedIssue(fingerprint4, [PROPOSAL_LABEL], {number: 204}), closedAt: pastCooldown},
+      {...makeClosedIssue(fingerprint5, [PROPOSAL_LABEL], {number: 205}), closedAt: pastCooldown},
+    ]
+
+    // New finding with a different fingerprint (no existing issue)
+    const newFinding = makeDriftedFinding(fingerprint6)
+    const report = makeReport({
+      findings: [
+        makeDriftedFinding(fingerprint1),
+        makeDriftedFinding(fingerprint2),
+        makeDriftedFinding(fingerprint3),
+        makeDriftedFinding(fingerprint4),
+        makeDriftedFinding(fingerprint5),
+        newFinding,
+      ],
+      counts: {total: 6, current: 0, drifted: 6, unresolved: 0, unsafe: 0, proposal_eligible: 6},
+    })
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: closedIssues, mutationCap: 5, now}),
+    )
+
+    // 5 reopens should fit within cap
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(5)
+    // The new open should overflow
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(counts.overflowed).toBeGreaterThanOrEqual(1)
+    expect(counts.reopened).toBe(5)
+  })
+
+  it('reopen-after-cooldown has lower priority than update-comment but higher than open', () => {
+    const fingerprint1 = 'abc123def456abcd' // open issue with changed live-state → update
+    const fingerprint2 = 'deadbeef12345678' // closed-without-outcome past cooldown → reopen
+    const fingerprint3 = 'cafebabe12345678' // new finding → open
+
+    const now = new Date('2026-07-01T12:00:00Z')
+    const pastCooldown = '2026-06-21T12:00:00Z'
+
+    const openIssueWithChangedState = makeOpenIssue(fingerprint1, {
+      body: `<!-- status-truth:fingerprint=${fingerprint1} -->\n<!-- status-truth:live-state=open -->\n\nBody.`,
+    })
+    const closedWithoutOutcome: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint2, [PROPOSAL_LABEL], {number: 202}),
+      closedAt: pastCooldown,
+    }
+
+    const report = makeReport({
+      findings: [
+        makeDriftedFinding(fingerprint1), // will trigger update-comment
+        makeDriftedFinding(fingerprint2), // will trigger reopen-after-cooldown
+        makeDriftedFinding(fingerprint3), // will trigger open (new)
+      ],
+      counts: {total: 3, current: 0, drifted: 3, unresolved: 0, unsafe: 0, proposal_eligible: 3},
+    })
+
+    // Cap of 2: update + reopen should fit; open should overflow
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({
+        report,
+        existingIssues: [openIssueWithChangedState, closedWithoutOutcome],
+        mutationCap: 2,
+        now,
+      }),
+    )
+
+    expect(actions.filter(a => a.type === 'update-comment')).toHaveLength(1)
+    expect(actions.filter(a => a.type === 'reopen')).toHaveLength(1)
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(counts.overflowed).toBe(1)
+    expect(counts.updated).toBe(1)
+    expect(counts.reopened).toBe(1)
+  })
+})
+
+describe('manual closure cooldown — workflow summary counts-only', () => {
+  it('counts object contains needsOutcomeCooldown field as a number', () => {
+    const {counts} = planStatusTruthProposalActions(makePlanInput())
+    expect(typeof counts.needsOutcomeCooldown).toBe('number')
+  })
+
+  it('counts object does not expose raw claim text or fingerprints in cooldown fields', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding(fingerprint)
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const now = new Date('2026-07-01T12:00:00Z')
+    const closedAt = '2026-06-29T12:00:00Z'
+    const closedIssue: ExistingProposalIssue = {
+      ...makeClosedIssue(fingerprint, [PROPOSAL_LABEL]),
+      closedAt,
+    }
+
+    const {counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [closedIssue], now}))
+
+    // Counts must be numeric — no raw text
+    const countsJson = JSON.stringify(counts)
+    // Must not contain fingerprint hex strings in the counts output
+    expect(countsJson).not.toContain(fingerprint)
+    // Must not contain raw claim text
+    expect(countsJson).not.toContain('docs/plans/example.md')
+    expect(countsJson).not.toContain('pr #42')
   })
 })

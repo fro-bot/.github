@@ -221,16 +221,6 @@ export type ProposalOutcomeState =
   | 'malformed-outcome'
 
 /**
- * Mutually exclusive accuracy signal labels.
- * An issue with more than one of these is conflicting.
- */
-const ACCURACY_SIGNAL_LABELS_SET: readonly string[] = [
-  OUTCOME_LABELS.accepted,
-  OUTCOME_LABELS.rejected,
-  OUTCOME_LABELS.falsePositive,
-]
-
-/**
  * Classify a proposal issue into a canonical outcome state.
  *
  * Pure function: no I/O, no side effects. Deterministic from inputs.
@@ -262,7 +252,7 @@ export function classifyProposalOutcome(issue: ExistingProposalIssue, driftActiv
   const outcomeLabels = issue.labels.filter(l => l !== PROPOSAL_LABEL && l.startsWith('status-truth:'))
 
   // Rule 2: Conflicting accuracy signal labels (mutually exclusive)
-  const accuracySignals = outcomeLabels.filter(l => ACCURACY_SIGNAL_LABELS_SET.includes(l))
+  const accuracySignals = outcomeLabels.filter(l => ACCURACY_SIGNAL_LABELS.includes(l))
   if (accuracySignals.length > 1) {
     return 'conflicting-labels'
   }
@@ -423,6 +413,12 @@ export interface ExistingProposalIssue {
   readonly labels: readonly string[]
   readonly title: string
   readonly body: string | null | undefined
+  /**
+   * ISO 8601 timestamp when the issue was closed, if available from the API.
+   * Used to compute cooldown for closed-without-outcome issues.
+   * Absent or null when the API does not return this field.
+   */
+  readonly closedAt?: string | null
 }
 
 /** Open a new proposal issue. */
@@ -510,6 +506,13 @@ export interface ProposalCounts {
    */
   readonly closedWithoutOutcome: number
   /**
+   * Closed-without-outcome issues that are within the seven-day cooldown window,
+   * or that have no closedAt timestamp (conservative: treated as needs-attention).
+   * These are not reopened; counted for operator attention.
+   * Distinct from privacy-blocked (blocked) and overflow (overflowed).
+   */
+  readonly needsOutcomeCooldown: number
+  /**
    * Closed issues with a valid fingerprint but an unrecognized/malformed outcome label.
    * Counted for operator attention; excluded from usefulnessByKind accuracy math.
    */
@@ -549,6 +552,11 @@ export interface PlanStatusTruthProposalActionsInput {
    * Defaults to 5.
    */
   readonly mutationCap?: number
+  /**
+   * Current timestamp for cooldown calculations. Defaults to `new Date()`.
+   * Injectable for deterministic tests.
+   */
+  readonly now?: Date
 }
 
 /** Result of the pure lifecycle planner. */
@@ -612,6 +620,27 @@ function buildFingerprintMarker(fingerprint: string): string {
  */
 function buildLiveStateMarker(liveState: string): string {
   return `<!-- ${LIVE_STATE_MARKER_PREFIX}${liveState} -->`
+}
+
+// ---------------------------------------------------------------------------
+// Cooldown helper
+// ---------------------------------------------------------------------------
+
+/** Seven-day cooldown duration in milliseconds. */
+const COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * Returns true when the given ISO 8601 closedAt timestamp is within the
+ * seven-day cooldown window relative to `now`.
+ *
+ * Pure function: no I/O, no side effects. Accepts `now` for deterministic tests.
+ *
+ * Boundary: exactly seven days ago is NOT within cooldown (returns false).
+ */
+export function isWithinCooldown(closedAt: string, now: Date): boolean {
+  const closedMs = new Date(closedAt).getTime()
+  const elapsedMs = now.getTime() - closedMs
+  return elapsedMs < COOLDOWN_MS
 }
 
 // ---------------------------------------------------------------------------
@@ -700,6 +729,7 @@ export function planStatusTruthProposalActions(
   input: PlanStatusTruthProposalActionsInput,
 ): PlanStatusTruthProposalActionsResult {
   const {report, existingIssues, publicOutputTokens, sameRunCreatedFingerprints} = input
+  const now = input.now ?? new Date()
 
   // 1. Reject unknown report versions
   if (report.schema_version !== KNOWN_SCHEMA_VERSION || report.fingerprint_version !== KNOWN_FINGERPRINT_VERSION) {
@@ -718,6 +748,7 @@ export function planStatusTruthProposalActions(
         malformedMarkers: 0,
         versionRejected: 1,
         closedWithoutOutcome: 0,
+        needsOutcomeCooldown: 0,
         malformedOutcomeMarkers: 0,
         conflictingLabels: 0,
         usefulnessByKind: {},
@@ -751,6 +782,7 @@ export function planStatusTruthProposalActions(
         malformedMarkers: 0,
         versionRejected: 0,
         closedWithoutOutcome: 0,
+        needsOutcomeCooldown: 0,
         malformedOutcomeMarkers: 0,
         conflictingLabels: 0,
         usefulnessByKind: {},
@@ -866,10 +898,10 @@ export function planStatusTruthProposalActions(
   // Track which fingerprints are active in this report (for close-on-clear)
   const activeFingerprintsInReport = new Set<string>()
 
-  // Track fingerprints planned for open in this planner call (same-run dedup within one report).
-  // Prevents duplicate open actions when the same fingerprint appears in multiple findings
+  // Track fingerprints handled in this planner call (same-run dedup within one report).
+  // Prevents duplicate lifecycle actions when the same fingerprint appears in multiple findings
   // (e.g. same claim text in two files) within a single report.
-  const plannedOpenFingerprints = new Set<string>(sameRunCreatedFingerprints)
+  const plannedActionFingerprints = new Set<string>(sameRunCreatedFingerprints)
 
   // ---------------------------------------------------------------------------
   // Two-pass cap approach:
@@ -895,6 +927,7 @@ export function planStatusTruthProposalActions(
   let blocked = 0
   let noAction = 0
   let sameRunDeduplicated = 0
+  let needsOutcomeCooldown = 0
 
   // 3. Process proposal-eligible findings — collect candidates into priority buckets
   for (const finding of report.findings) {
@@ -908,8 +941,8 @@ export function planStatusTruthProposalActions(
     activeFingerprintsInReport.add(fingerprint)
 
     // a. Same-run dedup: skip if already created this run or already planned in this call.
-    // plannedOpenFingerprints starts with sameRunCreatedFingerprints and grows as we plan opens.
-    if (plannedOpenFingerprints.has(fingerprint)) {
+    // plannedActionFingerprints starts with sameRunCreatedFingerprints and grows as actions are planned.
+    if (plannedActionFingerprints.has(fingerprint)) {
       sameRunDeduplicated++
       continue
     }
@@ -917,6 +950,8 @@ export function planStatusTruthProposalActions(
     // b. Check for terminal suppression
     const closedIssue = closedByFingerprint.get(fingerprint)
     if (closedIssue !== undefined && hasTerminalLabel(closedIssue.labels)) {
+      // Mark fingerprint as handled so any duplicate finding in this report is skipped.
+      plannedActionFingerprints.add(fingerprint)
       suppressActions.push({
         type: 'suppress',
         fingerprint,
@@ -930,6 +965,9 @@ export function planStatusTruthProposalActions(
     // c. Check for matching open issue
     const openIssue = openByFingerprint.get(fingerprint)
     if (openIssue !== undefined) {
+      // Mark fingerprint as handled so any duplicate finding in this report is skipped.
+      plannedActionFingerprints.add(fingerprint)
+
       // Compare recorded live-state to current live-state
       const recordedLiveState = extractRecordedLiveState(openIssue.body)
       const currentLiveState = finding.liveState
@@ -960,8 +998,34 @@ export function planStatusTruthProposalActions(
       continue
     }
 
-    // d. Check for matching non-terminal closed issue → candidate reopen
+    // d. Check for matching non-terminal closed issue → candidate reopen (with cooldown check)
     if (closedIssue !== undefined && !hasTerminalLabel(closedIssue.labels)) {
+      // Mark fingerprint as handled so any duplicate finding in this report is skipped.
+      plannedActionFingerprints.add(fingerprint)
+
+      // Determine if this is a closed-without-outcome (needs-outcome) issue.
+      // A closed issue with no recognized outcome label is in needs-outcome state.
+      const outcomeLabels = closedIssue.labels.filter(l => l !== PROPOSAL_LABEL && l.startsWith('status-truth:'))
+      const hasRecognizedOutcomeLabel = outcomeLabels.some(l => ALL_RECOGNIZED_OUTCOME_LABELS.includes(l))
+      const isClosedWithoutOutcome = !hasRecognizedOutcomeLabel
+
+      if (isClosedWithoutOutcome) {
+        // Apply cooldown: if closedAt is missing or within 7 days, block reopen.
+        // Conservative: missing closedAt → treat as needs-attention, no mutation.
+        const closedAt = closedIssue.closedAt
+        if (closedAt === null || closedAt === undefined) {
+          // Cannot determine cooldown — conservative: count for attention, no mutation
+          needsOutcomeCooldown++
+          continue
+        }
+        if (isWithinCooldown(closedAt, now)) {
+          // Within cooldown — do not reopen, count for operator attention
+          needsOutcomeCooldown++
+          continue
+        }
+        // Past cooldown — fall through to reopen with recurrence comment
+      }
+
       const comment = buildRecurrenceComment(report.generated_at)
       const gateResult = applyPublicOutputGate({
         surface: 'recurrence-comment',
@@ -990,7 +1054,7 @@ export function planStatusTruthProposalActions(
     // subsequent same-fingerprint findings in this report are still deduplicated.
     // Without this, a second finding with the same fingerprint but a safe correction
     // would slip through after the first was blocked, opening an unintended proposal.
-    plannedOpenFingerprints.add(fingerprint)
+    plannedActionFingerprints.add(fingerprint)
 
     const title = buildProposalTitle(finding)
     const body = buildProposalBody(finding, report.generated_at)
@@ -1162,6 +1226,7 @@ export function planStatusTruthProposalActions(
       malformedMarkers,
       versionRejected: 0,
       closedWithoutOutcome,
+      needsOutcomeCooldown,
       malformedOutcomeMarkers,
       conflictingLabels,
       usefulnessByKind,
@@ -1185,6 +1250,8 @@ export interface IssueListItem {
   readonly title: string
   readonly body: string | null | undefined
   readonly labels: readonly (string | {readonly name?: string | null | undefined})[]
+  /** ISO 8601 timestamp when the issue was closed, if available from the API. */
+  readonly closed_at?: string | null
 }
 
 /**
@@ -1321,6 +1388,7 @@ export async function fetchExistingProposalIssues(params: {
         labels: labelNames,
         title: issue.title,
         body: issue.body,
+        closedAt: issue.closed_at ?? null,
       })
     }
   }
