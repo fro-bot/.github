@@ -276,6 +276,8 @@ The release workflow is fenced (manual `workflow_dispatch` with `integration_com
 - **`optionalDependencies` injected at publish time** — the per-platform packages are deliberately *not* in the source `package.json` (keeps `pnpm-lock.yaml` clean since they only exist on npm after a release); the workflow injects version-pinned `optionalDependencies` into the published main package.
 - **Bootstrap caveat:** npm trusted publishing requires a package to already exist; the first release of the five packages needs a one-time token-authenticated bootstrap (or pending-publisher flow), after which OIDC governs all subsequent publishes.
 
+**Credential-broker consumer side (observed from [[marcusrbrown--infra]] survey 2026-07-01):** infra shipped an OIDC-authenticated credential broker (`apps/broker`, `broker.fro.bot`) that exchanges a GitHub Actions OIDC token for a short-lived, revocable cliproxy key so the durable provider key never lands on a CI runner. The consuming integration — an integrate job requesting an OIDC token for the broker audience, POSTing to `/v1/mint`, and injecting the returned OpenCode `auth.json` — is expected to land here and is tracked in `fro-bot/agent#1060`. infra's `BROKER_TRUST_POLICY` carries placeholder `repository_id`/`repository_owner_id`/`workflow_ref` values that must be replaced with this repo's real IDs before the broker deploys. (Survey-side detail; re-confirm against agent source on the next agent survey.)
+
 ### Harness-as-Default-OpenCode Cutover (v0.63.0, 2026-06-14)
 
 The harness moved from "a published npm CLI" to **the binary the action and workspace executor run by default.** Three converging changes landed across v0.54.0–v0.63.0:

@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/infra"
 created: 2026-04-18
-updated: 2026-06-19
+updated: 2026-07-01
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: 390cb5fafe9d4d1fceecd4976c3e2abc29c8aa11
+    accessed: 2026-07-01
   - url: https://github.com/marcusrbrown/infra
     sha: ac7946892a6a12c7b1720e273d4c7398e7d738c0
     accessed: 2026-06-19
@@ -28,7 +31,7 @@ sources:
   - url: https://github.com/marcusrbrown/infra
     sha: 20de04713bf01294217dee4d3b64d5d7cfb2426e
     accessed: 2026-04-18
-tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, gateway, umami, dashboard, vpn, wireguard, aws-lightsail, mcp, cli, typescript, conventions, discord, analytics, codeql]
+tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, gateway, umami, dashboard, vpn, wireguard, aws-lightsail, mcp, cli, typescript, conventions, discord, analytics, codeql, broker, oidc, credential-broker]
 aliases: [infra]
 related:
   - marcusrbrown--ha-config
@@ -39,16 +42,16 @@ related:
 
 # marcusrbrown/infra
 
-Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), the [[fro-bot--agent]] Discord gateway deployment, self-hosted Umami analytics, the [[fro-bot--dashboard]] operator dashboard deploy, a WireGuard VPN egress box on AWS Lightsail, and an operational CLI with MCP bridge.
+Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), the [[fro-bot--agent]] Discord gateway deployment, self-hosted Umami analytics, the [[fro-bot--dashboard]] operator dashboard deploy, a WireGuard VPN egress box on AWS Lightsail, an OIDC-authenticated credential broker (short-lived off-runner cliproxy keys for the harness pipeline), and an operational CLI with MCP bridge.
 
 ## Overview
 
 - **Purpose:** Deploy automation, operational CLI, and infrastructure tooling
 - **Default branch:** `main`
 - **Created:** 2026-04-03
-- **Last push:** 2026-06-19 (`ac79468`)
+- **Last push:** 2026-07-01 (`390cb5f`)
 - **Runtime:** Bun v1.0+
-- **Published package:** `@marcusrbrown/infra` v0.12.2 on npm
+- **Published package:** `@marcusrbrown/infra` v0.13.13 on npm (latest release 2026-06-28)
 - **Open issues:** active Renovate Dependency Dashboard + autohealing reports; exact count fluctuates
 - **Topics:** `bun`, `deploy`, `github-actions`, `infra`, `keeweb`
 - **License:** MIT
@@ -67,6 +70,7 @@ Bun workspace monorepo with `apps/*` and `packages/*` workspaces.
 | `apps/umami/`         | Umami analytics Docker Compose stack (umami + postgres + caddy) at `metrics.fro.bot` |
 | `apps/dashboard/`     | Fro Bot operator dashboard deploy (2-service compose, digest-pinned upstream image) at `dashboard.fro.bot` |
 | `apps/vpn/`           | WireGuard VPN egress box on AWS Lightsail (`eu-west-1`); native `wg-quick`/systemd, no Docker |
+| `apps/broker/`        | OIDC-authenticated credential broker (`broker.fro.bot`); mints short-lived cliproxy keys for CI runs |
 | `packages/cli/`       | `@marcusrbrown/infra` CLI — health checks, deploy triggers, MCP bridge |
 | `packages/shared/`    | Shared TypeScript helpers for DigitalOcean droplet provisioning (private) |
 | `docs/brainstorms/`   | Requirements and brainstorm documents                                  |
@@ -148,6 +152,22 @@ WireGuard egress box at a static IP on **AWS Lightsail** (`eu-west-1`, Ireland) 
 - **Host validation:** `validateVpnHost` rejects `-`-prefixed values (SSH treats them as flags) before any SSH invocation — same pattern as `validateGatewayHost`.
 - Deploy never reads the server private key locally — reads back only `server.pub`.
 
+#### Credential Broker (`apps/broker`)
+
+OIDC-authenticated credential broker at `broker.fro.bot`, added post-2026-06-19 survey. Two-service Docker Compose stack (Caddy + a Bun HTTP service on `:3000`) on a dedicated DigitalOcean droplet (`s-1vcpu-1gb`, `nyc1`). Its job: exchange a GitHub Actions OIDC token for a **short-lived, revocable cliproxy API key** so the durable provider key never lands on a CI runner. This is the credential half of the [[fro-bot--agent]] harness pipeline — a shift from static per-repo cliproxy keys toward per-run minted keys.
+
+- **Mint flow:** a `fro-bot/agent` integrate job requests a GitHub OIDC token for the broker audience, POSTs it to `https://broker.fro.bot/v1/mint`. The broker verifies the JWT (`jose` JWKS, RS256 only, GitHub issuer, broker-minted `aud`, `exp`/`nbf`/`jti` replay denylist keyed `(jti, iss)`), evaluates claims against the code-owned `BROKER_TRUST_POLICY` allowlist (`repository_id`, `repository_owner_id`, `workflow_ref`, `ref`, `ref_type`, `ref_protected`, `event_name`, `runner_environment`, `repository_visibility`), then mints a `ghact-<run_id>-<random>` key in cliproxy via the management API (GET-modify-write + read-back, single-flight lock) and returns an OpenCode `auth.json` payload. The durable cliproxy management key stays inside the broker boundary.
+- **Revocation is sweeper-only** — there is no run-end revoke endpoint. A **TTL sweep** (60s tick) revokes live entries past their 30-minute `expiresAt`; a **reconcile sweep** (5 min tick) lists cliproxy `api-keys` and deletes any `ghact-`-prefixed key not in the live set (recovers from a broker restart). Reconcile **never touches non-`ghact-` keys**.
+- **Startup gate:** on boot the broker runs a reconcile sweep before accepting `/v1/mint`; `/healthz` serves during startup but `/v1/mint` returns 503 until the startup reconcile completes, bounding the stale-key window after a restart.
+- **Broker→cliproxy is public-internet** — the broker runs on its own droplet (not co-located with cliproxy) and reaches cliproxy via `https://cliproxy.fro.bot`. The DO NAT-loopback hairpin concern does not apply (that only affects same-host container-to-container calls).
+- **Bundle-based deploy:** `bun build src/main.ts --target bun --outfile dist/main.js` produces a self-contained ~300KB bundle (`jose` inlined via Web Crypto) that is mounted read-only into the `oven/bun:1.3.14-alpine` container. `dist/main.js` is gitignored — a deploy-time artifact, never committed. No source bind-mount, no `node_modules` on the droplet.
+- **Deploy flow:** preflight (GET cliproxy `/v0/management/api-keys` with the management key; abort on 401/403 key drift or network failure before any compose change) → build → SCP compose + Caddyfile + bundle to `/opt/broker/` → write `.env` via SSH stdin → `docker compose pull && up -d --wait --wait-timeout 90` → GET `https://<BROKER_HOST>/healthz`. All SSH calls share one ControlPath socket (avoids UFW rate-limit at 6 conns/30s).
+- **Caddyfile exposes `/v1/mint` and `/healthz` only** — all other paths 404. No public surface beyond mint + health.
+- **Audit events** are structured JSON lines to stdout (`type: broker-audit`): decisions `mint` / `deny` / `deny-ratelimit` / `revoke` / `error`, carrying `srcIp`, `runId`, `jti`, `repositoryId`, `workflowRef` — **never** token bytes, minted key value, OIDC bearer, or management key. `Authorization` header always redacted before logging.
+- **Host validation:** `validateBrokerHost` rejects `-`-prefixed / out-of-alphabet values before any SSH argv — same pattern as `validateGatewayHost`/`validateVpnHost`.
+- **Security property delivered:** short-lived + revocable + off-runner. cliproxy has no per-key capability surface, so a minted key is **fungible with the durable key for its TTL** — in-run abuse during the TTL window is a documented non-goal (Pattern B / egress containment deferred). Never scale the broker horizontally: the single-flight lock is valid only because there is exactly one instance.
+- **Cross-repo dependency:** `BROKER_TRUST_POLICY` in `apps/broker/src/policy.ts` ships with **placeholder** `repository_id`/`repository_owner_id`/`workflow_ref` values that must be replaced with real `fro-bot/agent` numeric IDs before deploy (tracked in `fro-bot/agent#1060`). The consuming-side integration (OIDC token request, broker call, `auth.json` injection) lands in [[fro-bot--agent]].
+
 ### CLI (`packages/cli`)
 
 Published as `@marcusrbrown/infra` on npm. Built with [goke](https://github.com/remorses/goke) (CLI framework) + Zod Standard Schemas. Key commands:
@@ -181,6 +201,9 @@ Published as `@marcusrbrown/infra` on npm. Built with [goke](https://github.com/
 | `infra vpn deploy`      | Trigger VPN deploy (remote or `--local`; `--force-server-key` rotates server key) |
 | `infra vpn logs [--tail N]` | Stream `journalctl -u wg-quick@wg0`                                  |
 | `infra vpn client add\|list\|remove <name>` | Manage peers — generate keypair, assign tunnel IP, write `.conf`, redeploy (CLI-only, sensitive) |
+| `infra broker status`  | GET `/healthz` on `broker.fro.bot` — HTTP reachability (MCP-exposed, read-only) |
+| `infra broker deploy`  | Trigger Deploy Broker workflow (remote, default) or `--local` (runs `apps/broker/src/deploy.ts`) |
+| `infra broker logs [--tail N] [--service broker]` | Stream broker service logs over SSH; may contain run identities (CLI-only) |
 | `infra mcp`             | Start stdio MCP server exposing all CLI commands as tools (read-only allowlist) |
 
 The MCP bridge (`infra mcp`) lets coding agents (Fro Bot, Copilot) call commands programmatically via the [Model Context Protocol](https://modelcontextprotocol.io).
@@ -199,6 +222,7 @@ The MCP bridge (`infra mcp`) lets coding agents (Fro Bot, Copilot) call commands
 | Deploy Umami | `deploy-umami.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy Umami analytics stack (path-filtered, `umami` environment) |
 | Deploy Dashboard | `deploy-dashboard.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy Fro Bot dashboard stack (path-filtered, `dashboard` environment) |
 | Deploy VPN | `deploy-vpn.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy WireGuard VPN box (path-filtered, `vpn` environment) |
+| Deploy Broker | `deploy-broker.yaml` | Dispatch, `workflow_call` | Deploy OIDC credential broker (path-filtered, `broker` environment) |
 | Release | `release.yaml` | Push to `main`, dispatch | Version and publish `@marcusrbrown/infra` via Changesets |
 | Renovate | `renovate.yaml` | Schedule, issue/PR edits, post-deploy | Automated dependency updates |
 | Renovate Changesets | `renovate-changesets.yaml` | `pull_request_target` (Renovate PRs) | Auto-create changeset files for dependency updates |
@@ -223,7 +247,7 @@ As of 2026-04-20 (#165), the deploy pipeline was split from a single `deploy.yam
 
 - **`deploy-keeweb.yaml`** — `keeweb` environment, triggered on push-to-main (path-filtered), dispatch, or `workflow_call`. Builds dist, deploys content via SSH/rsync, optionally deploys nginx config if changed. Post-deploy health check: `curl` to `https://kw.igg.ms/`. Secret validation step rejects early if `DEPLOY_SSH_KEY` or `DROPBOX_APP_SECRET` are missing.
 - **`deploy-cliproxy.yaml`** — `cliproxy` environment, triggered on push-to-main (path-filtered), dispatch, or `workflow_call`. Deploys via `bun run --cwd apps/cliproxy deploy`. Post-deploy health check against management API (`/v0/management/config` with management key). Secret validation for `CLIPROXY_SSH_KEY`, `CLIPROXY_MANAGEMENT_KEY`, `CLIPROXY_DOMAIN`.
-- **`deploy.yaml`** — Now a thin orchestrator (dispatch-only) that calls all six per-app deploy workflows via `workflow_call` (keeweb, cliproxy, gateway, umami, vpn, dashboard), passing secrets explicitly. Each is independently path-gated by `dorny/paths-filter` so one app's failure cannot block the others.
+- **`deploy.yaml`** — Now a thin orchestrator that detects changes with `dorny/paths-filter` (`predicate-quantifier: every`) and calls all **seven** per-app deploy workflows via `workflow_call` (keeweb, cliproxy, gateway, umami, vpn, dashboard, broker), passing secrets explicitly. Each is independently path-gated so one app's failure cannot block the others. The broker leg passes `broker_aud: ${{ vars.BROKER_AUD }}` plus `BROKER_SSH_KEY`/`BROKER_HOST` and (optional) `CLIPROXY_MANAGEMENT_KEY`.
 
 Both deploy workflows use `dorny/paths-filter` for change detection (native `paths:` breaks `workflow_dispatch`). Path filters exclude markdown, test, fixture, and snapshot files.
 
@@ -264,7 +288,7 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.71.0` (SHA `9b89fb3acadec6f26fdfe49412b9c5cbd5a039d1`; bumped from v0.59.0 via v0.60.x–v0.70.x over 2026-06-09 → 2026-06-19). The workflow includes:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.79.4` (SHA `b3384d37fb3c66e4249c0fb35037c6d244f34314`; bumped from v0.71.0 over 2026-06-19 → 2026-07-01). The workflow includes:
 
 - **PR review** with structured verdict format (PASS / CONDITIONAL / REJECT) and sections for blocking issues, non-blocking concerns, missing tests, and risk assessment
 - **Daily autohealing schedule** (03:30 UTC) with 8 operational categories: errored PRs, security, code quality, developer experience, deploy pipeline health, live site review (via `agent-browser`), cross-project intelligence, and **upstream modernization watch** (Sunday-only)
@@ -305,6 +329,8 @@ The autohealing schedule monitors:
 
 **`vpn` environment (added post-2026-06-09):** Required: `VPN_SSH_KEY`, `VPN_HOST` (static IP). Optional: `VPN_PEERS` (peer roster JSON; empty roster valid). AWS provisioning credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) are operator-local only — **not** in the `vpn` Environment and not used by deploy or status.
 
+**`broker` environment (added post-2026-06-19):** Secrets: `BROKER_SSH_KEY`, `BROKER_HOST` (both required), `CLIPROXY_MANAGEMENT_KEY` (broker uses it to mint/revoke `ghact-` keys in cliproxy). Variable: `BROKER_AUD` — the broker-minted OIDC audience, set as a GitHub Environment **variable** (not a secret; it is a cross-context replay defense), flows at both provision time and deploy time. Environment gated with a required reviewer + main-only branch policy (pre-create before merge — auto-create is ungated). `DIGITALOCEAN_ACCESS_TOKEN` is repo-level.
+
 **Repository secrets:** `APPLICATION_ID`, `APPLICATION_PRIVATE_KEY`, `DIGITALOCEAN_ACCESS_TOKEN`, `FRO_BOT_PAT`, `NPM_TOKEN`, `OPENCODE_AUTH_JSON`, `OPENCODE_CONFIG`
 
 **Repository variables:** `FRO_BOT_MODEL`
@@ -328,6 +354,7 @@ The autohealing schedule monitors:
 - **Dashboard GitHub App key:** File-mounted only — never an env var. Never `docker compose down -v` (destroys `caddy_data` TLS volume); never `--build` (the deploy pulls the digest-pinned `ghcr.io/fro-bot/dashboard` image, no on-droplet builds).
 - **VPN host validation:** Never skip `validateVpnHost`. Never read the server private key locally — deploy reads back only `server.pub`. AWS credentials are provisioning-only; deploy and status are SSH-only.
 - **VPN server key:** Reprovisioning a fresh disk destroys the server key and breaks all clients — follow the recovery paths in `apps/vpn/AGENTS.md`.
+- **Broker key material:** Never log the OIDC bearer, minted key, management key, or raw claims; the `Authorization` header is redacted before any logging. Never full-array PUT against cliproxy `api-keys` (GET → append → PUT → read-back assert; a wholesale replace drops other consumers' keys). Never retry on management-API HTTP error (cliproxy IP-bans after ~5 bad-key attempts, ~30 min). The sweeper/reconcile only delete `ghact-`-prefixed keys — never durable or other consumers' keys. Never skip `validateBrokerHost`; never pass broker secret bytes via argv (SSH stdin only); never scale the broker horizontally (single-flight lock assumes exactly one instance).
 - **`bundledDependencies`:** Banned (enforced). Bun's `.bun/` symlink layout creates `../../` paths that npm rejects with E415.
 
 ## Cross-Repository Patterns
@@ -361,7 +388,8 @@ This approach avoids relying solely on human review or agent-driven linting for 
 - **Scoped deploy user:** `deploy-kw` on the target server has write access to the site directory only, with sudo for a single activation script. Minimal privilege surface.
 - **Compound learning:** `docs/solutions/` contains solved-problem documentation with YAML frontmatter, following the compound knowledge pattern.
 - **Agent skills:** `.agents/skills/goke/SKILL.md` provides domain context for the goke CLI framework.
-- **Split deploy pipeline:** Each of the six apps deploys independently via dedicated path-gated workflows (keeweb, cliproxy, gateway, umami, dashboard, vpn), preventing cascading failures. A thin `deploy.yaml` orchestrator exists for manual dispatch of all simultaneously.
+- **Split deploy pipeline:** Each of the seven apps deploys independently via dedicated path-gated workflows (keeweb, cliproxy, gateway, umami, dashboard, vpn, broker), preventing cascading failures. A thin `deploy.yaml` orchestrator exists for manual dispatch of all simultaneously.
+- **OIDC credential broker (off-runner keys):** The broker exchanges a GitHub Actions OIDC token for a short-lived, revocable cliproxy key so the durable provider key never touches a CI runner. Revocation is sweeper-only (TTL + reconcile) — no run-end revoke endpoint — with a startup reconcile gate that blocks `/v1/mint` until stale `ghact-` keys are cleared. This is the ecosystem moving from static per-repo cliproxy keys toward per-run minted credentials, with the consuming half landing in [[fro-bot--agent]].
 - **Digest-pinned upstream image consumption:** The dashboard app consumes the upstream-built `ghcr.io/fro-bot/dashboard` image by tag + digest and verifies the running container's `RepoDigests` against the pin before serving — a no-build deploy that keeps the build surface in [[fro-bot--dashboard]].
 - **Multi-cloud:** Most apps run on DigitalOcean droplets, but the VPN egress box runs on **AWS Lightsail** (`eu-west-1`) — the first AWS-backed deployable, provisioned via the AWS SDK with credentials kept operator-local (deploy/status remain SSH-only).
 
@@ -372,11 +400,11 @@ This approach avoids relying solely on human review or agent-driven linting for 
 | Component | Image | Version |
 | --- | --- | --- |
 | Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned |
-| CLIProxyAPI | `eceasy/cli-proxy-api:v7.2.20` | Digest-pinned |
+| CLIProxyAPI | `eceasy/cli-proxy-api:v7.2.48` | Digest-pinned |
 
 Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest rotations with changelog context sourced from upstream repositories (`router-for-me/CLIProxyAPI`, `caddyserver/caddy`).
 
-**Version note:** CLIProxyAPI crossed v6→v7 major boundary between 2026-05-27 and 2026-06-09. As of 2026-06-19 the deployment is **v7.2.20** (up from v7.1.56 at the prior survey). Caddy steady at `2.11.3-alpine` (digest shared across cliproxy/umami/dashboard).
+**Version note:** CLIProxyAPI crossed v6→v7 major boundary between 2026-05-27 and 2026-06-09. As of 2026-07-01 the deployment is **v7.2.48** (up from v7.2.20 at the prior survey). Caddy steady at `2.11.3-alpine` (digest `86deaf5e…`, shared across cliproxy/umami/dashboard/broker).
 
 **Healthcheck change:** As of #469 (2026-06-09), the deploy healthcheck was moved from the CLIProxyAPI endpoint to the Caddy endpoint for Debian-image compatibility. The docker-compose healthcheck itself (`wget --spider http://localhost:8317/healthz`) is unchanged.
 
@@ -385,7 +413,7 @@ Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest 
 | Component | Image | Version |
 | --- | --- | --- |
 | Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned (shared digest with cliproxy) |
-| Umami analytics | `umamisoftware/umami:3.1.0` | Digest-pinned |
+| Umami analytics | `umamisoftware/umami:3.2.0` | Digest-pinned (up from 3.1.0 at prior survey) |
 | Postgres | `postgres:15-alpine` | Digest-pinned |
 
 Digest-pinned images managed by Renovate. Postgres port 5432 is never published to the host — DB is only accessible on the internal compose network.
@@ -394,8 +422,8 @@ Digest-pinned images managed by Renovate. Postgres port 5432 is never published 
 
 | Component | Image | Version |
 | --- | --- | --- |
-| Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned (shared digest with cliproxy/umami) |
-| Dashboard | `ghcr.io/fro-bot/dashboard:2026.06.16` | Tag + digest-pinned (upstream released image) |
+| Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned (shared digest with cliproxy/umami/broker) |
+| Dashboard | `ghcr.io/fro-bot/dashboard:2026.06.57` | Tag + digest-pinned (upstream released image; up from `2026.06.16`) |
 
 The dashboard image is built upstream in [[fro-bot--dashboard]] and consumed here by digest — no on-droplet build. Deploy verifies the running container's `RepoDigests` matches the compose-pinned digest before fronting it with Caddy.
 
@@ -403,13 +431,22 @@ The dashboard image is built upstream in [[fro-bot--dashboard]] and consumed her
 
 | Component | Source | Notes |
 | --- | --- | --- |
-| Gateway daemon | `fro-bot/agent@v0.69.0` (pinned in `apps/gateway/upstream.json`) | Cloned + reset on the droplet each deploy |
+| Gateway daemon | `fro-bot/agent@v0.79.1` (pinned in `apps/gateway/upstream.json`) | Cloned + reset on the droplet each deploy |
 | Workspace executor | Same source | Runs inside the same Compose stack |
 | mitmproxy | Per upstream compose | Starts first; certificate in `mitmproxy-certs` named volume |
 
-**Upstream pin note:** Gateway daemon bumped to v0.69.0 (from v0.57.0 at the prior survey).
+**Upstream pin note:** Gateway daemon bumped to v0.79.1 (from v0.69.0 at the prior survey).
 
 Compose stack lives at `/opt/gateway/` on the droplet. Source materialization is `git clone || git fetch && git reset --hard && git clean -xfd` to the pinned SHA, isolated from `/opt/gateway/.secrets-checksum` so checksum survives `git clean -xfd`.
+
+### Credential Broker Stack
+
+| Component | Image | Notes |
+| --- | --- | --- |
+| Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned (shared digest with cliproxy/umami/dashboard); exposes `/v1/mint` + `/healthz` only |
+| Broker service | `oven/bun:1.3.14-alpine` | Digest-pinned (Renovate-managed); runs `bun main.js` against a read-only-mounted pre-built bundle on `:3000` (internal only) |
+
+Compose stack lives at `/opt/broker/` on the droplet. No source bind-mount and no `node_modules` — the deploy uploads a self-contained `dist/main.js` bundle (`jose` inlined via Web Crypto) mounted read-only at `/app/main.js`. The bundle is a gitignored deploy-time artifact rebuilt on every deploy.
 
 ## Survey History
 
@@ -423,3 +460,4 @@ Compose stack lives at `/opt/gateway/` on the droplet. Source materialization is
 | 2026-05-27 | `2f9bafd` | **Major expansion.** New `apps/gateway/` (Fro Bot Discord stack at `gateway.fro.bot`, #264, 2026-05-18); new `packages/shared/` for droplet provisioning helpers (#290). 12 workflows (added `deploy-gateway.yaml`). Fro Bot agent v0.42.2 → v0.44.3 (multiple bumps). Renovate preset bumped major v4→v5 (#242, `marcusrbrown/renovate-config#5.2.0`) with `group:allNonMajor`. TypeScript 6.0.3, ESLint 10.4.0, `@bfra.me/eslint-config` 0.51.1. CLI v0.4.6 → v0.7.0; MCP fidelity refactor for status-only commands (#296). CLIProxy: OpenAI/Codex device-code OAuth login (#303), OpenAI provider opt-in for `cliproxy setup --harness opencode` (#307); CLIProxyAPI v6.10.9, Caddy 2.11.3-alpine. Gateway hardening: ControlMaster multiplexing (#277), pinned droplet host keys (#272), checksum-after-success secret rotation. Discord token-lifecycle runbook (#284). Open issues 5→38, 0 open PRs. |
 | 2026-06-19 | `ac79468` | **Two new apps: dashboard + VPN.** Added `apps/dashboard/` — Fro Bot operator dashboard at `dashboard.fro.bot`, 2-service compose (caddy + digest-pinned `ghcr.io/fro-bot/dashboard:2026.06.16`), `deploy-dashboard.yaml`, `dashboard` GitHub Environment, GitHub App key file-mounted, CLI group (`dashboard status/deploy/logs`). Added `apps/vpn/` — WireGuard egress box on **AWS Lightsail** (`eu-west-1`), first AWS-backed deployable; native `wg-quick`/systemd, no Docker; provisioned via `@aws-sdk/client-lightsail`; `deploy-vpn.yaml`, `vpn` Environment, CLI group (`vpn status/deploy/logs/client add\|list\|remove`). Now **16 workflows** total (added deploy-dashboard, deploy-vpn, `codeql.yaml` — CodeQL JS/TS analysis). `deploy.yaml` orchestrator now fans out to 6 per-app deploy workflows. CLI v0.9.17 → v0.12.2. Fro Bot agent v0.59.0 → v0.71.0 (SHA `9b89fb3`). Gateway upstream pin v0.57.0 → v0.69.0. CLIProxyAPI v7.1.56 → v7.2.20. Root docs `ARCHITECTURE.md` + `STRUCTURE.md` added. ESLint 10.4.0 → 10.5.0, lint-staged 16 → 17, Prettier 3.8.3 → 3.8.4. |
 | 2026-06-09 | `9ce50f4` | **New app: Umami analytics.** Added `apps/umami/` — self-hosted Umami at `metrics.fro.bot`, 3-service Docker Compose (umami 3.1.0 + postgres 15-alpine + caddy 2.11.3-alpine), `deploy-umami.yaml` workflow, `umami` GitHub Environment, new CLI command group (`umami status/deploy/host/logs`). Now 13 workflows total. CLI v0.7.0 → v0.9.17. Fro Bot agent v0.44.3 → v0.59.0 (SHA `feb5365`). Gateway upstream daemon pin v0.44.2 → v0.57.0 (#466, `daily_digest` presence event). CLIProxyAPI v6.x → v7.1.56 (major version; v7.1.54/55 reverted #463 for health check regression, v7.1.56 stable). CLIProxy deploy healthcheck moved to Caddy endpoint for Debian-image compat (#469). Renovate config bumped `marcusrbrown/renovate-config#5.2.1`. Gateway secrets contract expanded (added GitHub App credentials, workspace OpenCode secrets, presence channel secrets). `OMO_PROVIDERS` removed from repo secrets; `WORKSPACE_OPENCODE_TOKEN/AUTH/MODEL/CONFIG` and `GH_APP_ID/PRIVATE_KEY`, `GATEWAY_TRIGGER_ROLE_ID`, `GATEWAY_WEBHOOK_SECRET`, `GATEWAY_PRESENCE_CHANNEL_ID` added. Provisioning management key now written to a 0600 file instead of stdout (#453). |
+| 2026-07-01 | `390cb5f` | **New app: OIDC credential broker.** Added `apps/broker/` — OIDC-authenticated credential broker at `broker.fro.bot`, 2-service Docker Compose (Caddy + `oven/bun:1.3.14-alpine` on its own `s-1vcpu-1gb`/`nyc1` droplet). Exchanges a GitHub Actions OIDC token for a short-lived, revocable cliproxy `ghact-` key so the durable provider key never lands on a CI runner; `jose` JWKS RS256 verify + replay denylist + code-owned `BROKER_TRUST_POLICY`; sweeper-only revocation (60s TTL + 5-min reconcile) with a startup reconcile gate; bundle-based deploy (`dist/main.js`, gitignored, mounted read-only). Added `deploy-broker.yaml` + `broker` GitHub Environment (`BROKER_SSH_KEY`/`BROKER_HOST`/`CLIPROXY_MANAGEMENT_KEY` secrets + `BROKER_AUD` variable) + CLI group (`broker status/deploy/logs`). Now **17 workflows** total; `deploy.yaml` orchestrator fans out to **7** per-app deploys. Consuming half tracked in `fro-bot/agent#1060` (trust-policy placeholders must be replaced before deploy). CLI v0.12.2 → v0.13.13. Fro Bot agent v0.71.0 → v0.79.4 (SHA `b3384d3`). Gateway upstream pin v0.69.0 → v0.79.1. CLIProxyAPI v7.2.20 → v7.2.48. Umami 3.1.0 → 3.2.0. Dashboard `2026.06.16` → `2026.06.57`. Renovate preset steady at `#5.2.3`. |

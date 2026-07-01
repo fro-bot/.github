@@ -2528,20 +2528,22 @@ Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
 
-## [2026-07-01 09:01] ingest | marcusrbrown/systematic
+## [2026-07-01 08:59] ingest | marcusrbrown/infra
 
-Incremental re-survey of `marcusrbrown/systematic` (HEAD `c2c43fd`, up from `11b12bf` 2026-06-19). Reads limited to repo metadata, the `11b12bf...c2c43fd` compare (23 commits), `package.json`, `.github/workflows/` listing, `fro-bot.yaml` (agent pin line only), `skills/`+`agents/` directory listings, release notes, and open-issue listing — per the untrusted-input constraint. Public confirmed (`private: false`, MIT, not archived).
+Incremental re-survey of `marcusrbrown/infra` (HEAD `390cb5f`, last push 2026-07-01, up from `ac79468` 2026-06-19). Reads limited to repo metadata, directory listings (`apps/`, `packages/`, `.github/workflows/`), README, per-app README/AGENTS.md + `docker-compose.yaml`, `upstream.json` manifests, `deploy.yaml`/`deploy-broker.yaml`/`fro-bot.yaml` workflows, and `package.json`/`renovate.json5` per the untrusted-input constraint.
 
-**Pure-maintenance interval — no durable structural change.** All 23 commits are Renovate/dep churn (22 `mrbro-bot[bot]`-authored bumps + 1 lint schema sync). Release v2.32.0 → v2.32.1 (2026-06-26): itself a maintenance-only release that pre-fixes two Biome 2.5.0 error-level rules in the docs workspace (`noSvgWithoutTitle` on `favicon.svg`, `noImportantStyles` on `custom.css` — no visual change, no source/skill/agent edits). Version deltas: `fro-bot/agent` v0.71.0 → **v0.79.4** (SHA `b3384d3`, 8 minors); OpenCode `@opencode-ai/plugin`/`sdk` 1.17.7 → 1.17.11; `@biomejs/biome` 2.4.16 → **2.5.1** (`biome.json` `$schema` synced, #571); `bfra-me/.github` reusable workflows → v4.16.32 (#567); Playwright → v1.61.1. Structure unchanged: 8 workflows, 51 agents (design 3 / docs 1 / document-review 7 / research 7 / review 28 / workflow 5), 48 bundled skill dirs, `node >=18` compat floor, Zod 4.4.3 config schema. Confirmed the top-level `.slim/` (`clonedeps.json`) and `.opencode/` (`themes/`, `tui.json`, `package-lock.json`) dev-config dirs are **pre-existing** (present at prior SHA `11b12bf`), not new. Stars 22 → 23; open issues unchanged (three rolling automation issues: #157, #153, #15); 0 open PRs.
+Headline change: a **new seventh deployable — `apps/broker/`**, an OIDC-authenticated credential broker at `broker.fro.bot`. It exchanges a GitHub Actions OIDC token for a short-lived, revocable cliproxy `ghact-<run_id>-<random>` key so the durable provider key never lands on a CI runner — the ecosystem moving from static per-repo cliproxy keys toward per-run minted credentials. Two-service Docker Compose (Caddy + `oven/bun:1.3.14-alpine`) on its own `s-1vcpu-1gb`/`nyc1` droplet; `jose` JWKS RS256 verify + `(jti,iss)` replay denylist + code-owned `BROKER_TRUST_POLICY` allowlist; **sweeper-only revocation** (60s TTL + 5-min reconcile, `ghact-`-only, never touches durable keys) with a **startup reconcile gate** blocking `/v1/mint` until stale keys clear; bundle-based deploy (`dist/main.js`, gitignored, mounted read-only — no source/`node_modules` on the droplet); Caddyfile exposes only `/v1/mint` + `/healthz`; audit events as redacted JSON lines. Security property delivered: short-lived + revocable + off-runner (not capability-restricted — a minted key is fungible with the durable key for its TTL; in-run abuse during TTL is a documented non-goal). Consuming half (OIDC token request + `/v1/mint` call + `auth.json` injection) lands in `fro-bot/agent`, tracked in `fro-bot/agent#1060`; `BROKER_TRUST_POLICY` ships with placeholder repo IDs that must be replaced before deploy.
 
-Full Fro Bot integration present (consolidated three-mode `fro-bot.yaml`) — no follow-up workflow draft needed.
+Added `deploy-broker.yaml` + `broker` GitHub Environment (`BROKER_SSH_KEY`/`BROKER_HOST`/`CLIPROXY_MANAGEMENT_KEY` secrets + `BROKER_AUD` variable) + CLI group (`broker status/deploy/logs`). Now **17 workflows** total; `deploy.yaml` orchestrator fans out to **7** per-app deploys. Version deltas: CLI v0.12.2 → v0.13.13; Fro Bot agent v0.71.0 → v0.79.4 (SHA `b3384d3`); gateway upstream pin v0.69.0 → v0.79.1; CLIProxyAPI v7.2.20 → v7.2.48; Umami 3.1.0 → 3.2.0; dashboard `ghcr.io/fro-bot/dashboard:2026.06.16` → `2026.06.57`; Caddy steady `2.11.3-alpine` (shared digest now across cliproxy/umami/dashboard/broker); Renovate preset steady `#5.2.3`.
 
-Updated repo page `marcusrbrown--systematic.md` (new source entry + frontmatter `updated`, overview stars/release/last-push, agent pin, notable-deps table to v2.32.1, v2.32.1 release-history row, open-issues note, 2026-07-01 survey-history row). Updated `index.md` summary line. No new topic/entity/comparison pages warranted — the interval is dependency maintenance with no new cross-cutting pattern; existing [[opencode-plugins]] and [[marcusrbrown--renovate-config]] coverage absorbs the deltas.
+Full Fro Bot integration present (`fro-bot.yaml`, agent v0.79.4) — no follow-up workflow draft needed.
 
-Sources: https://github.com/marcusrbrown/systematic (SHA c2c43fd828b324c31f93a1c22455caab2aa708e0)
+Updated repo page `marcusrbrown--infra.md` (new source entry, frontmatter `updated`/tags, broker app section + CLI/workflow/secrets/component/anti-pattern rows, 7-way split-deploy, agent/gateway/image version bumps, 2026-07-01 survey-history row) and cross-referenced [[fro-bot--agent]] with a dated, survey-side broker-consumer note (`agent#1060`) without overwriting its own survey frontmatter. Updated `index.md` summary line. No new topic/entity/comparison page warranted — the broker's OIDC/off-runner-credential pattern is repo-specific for now; if a second repo adopts a broker-style mint flow, promote it to a [[github-actions-ci]] sub-topic or a dedicated topic page.
 
-## [2026-07-01 09:03] ingest | repo:marcusrbrown/systematic
+Sources: https://github.com/marcusrbrown/infra (SHA 390cb5fafe9d4d1fceecd4976c3e2abc29c8aa11)
 
-Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+## [2026-07-01 09:04] ingest | repo:marcusrbrown/infra
 
-Sources: https://github.com/marcusrbrown/systematic
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra
