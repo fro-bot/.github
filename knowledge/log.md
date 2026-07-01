@@ -2527,3 +2527,21 @@ Sources: https://github.com/marcusrbrown/gpt (SHA 174e5179026331ef6cc72549c2519a
 Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-07-01 09:01] ingest | marcusrbrown/systematic
+
+Incremental re-survey of `marcusrbrown/systematic` (HEAD `c2c43fd`, up from `11b12bf` 2026-06-19). Reads limited to repo metadata, the `11b12bf...c2c43fd` compare (23 commits), `package.json`, `.github/workflows/` listing, `fro-bot.yaml` (agent pin line only), `skills/`+`agents/` directory listings, release notes, and open-issue listing — per the untrusted-input constraint. Public confirmed (`private: false`, MIT, not archived).
+
+**Pure-maintenance interval — no durable structural change.** All 23 commits are Renovate/dep churn (22 `mrbro-bot[bot]`-authored bumps + 1 lint schema sync). Release v2.32.0 → v2.32.1 (2026-06-26): itself a maintenance-only release that pre-fixes two Biome 2.5.0 error-level rules in the docs workspace (`noSvgWithoutTitle` on `favicon.svg`, `noImportantStyles` on `custom.css` — no visual change, no source/skill/agent edits). Version deltas: `fro-bot/agent` v0.71.0 → **v0.79.4** (SHA `b3384d3`, 8 minors); OpenCode `@opencode-ai/plugin`/`sdk` 1.17.7 → 1.17.11; `@biomejs/biome` 2.4.16 → **2.5.1** (`biome.json` `$schema` synced, #571); `bfra-me/.github` reusable workflows → v4.16.32 (#567); Playwright → v1.61.1. Structure unchanged: 8 workflows, 51 agents (design 3 / docs 1 / document-review 7 / research 7 / review 28 / workflow 5), 48 bundled skill dirs, `node >=18` compat floor, Zod 4.4.3 config schema. Confirmed the top-level `.slim/` (`clonedeps.json`) and `.opencode/` (`themes/`, `tui.json`, `package-lock.json`) dev-config dirs are **pre-existing** (present at prior SHA `11b12bf`), not new. Stars 22 → 23; open issues unchanged (three rolling automation issues: #157, #153, #15); 0 open PRs.
+
+Full Fro Bot integration present (consolidated three-mode `fro-bot.yaml`) — no follow-up workflow draft needed.
+
+Updated repo page `marcusrbrown--systematic.md` (new source entry + frontmatter `updated`, overview stars/release/last-push, agent pin, notable-deps table to v2.32.1, v2.32.1 release-history row, open-issues note, 2026-07-01 survey-history row). Updated `index.md` summary line. No new topic/entity/comparison pages warranted — the interval is dependency maintenance with no new cross-cutting pattern; existing [[opencode-plugins]] and [[marcusrbrown--renovate-config]] coverage absorbs the deltas.
+
+Sources: https://github.com/marcusrbrown/systematic (SHA c2c43fd828b324c31f93a1c22455caab2aa708e0)
+
+## [2026-07-01 09:03] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/systematic
