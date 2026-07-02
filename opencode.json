@@ -1,4 +1,4 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": [".github/copilot-instructions.md"]
+  "instructions": [".github/copilot-instructions.md", "persona/fro-bot-persona.md"]
 }
