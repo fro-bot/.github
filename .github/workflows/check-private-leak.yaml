@@ -27,11 +27,10 @@ on:
     workflows: [Private Leak Sentinel]
     types: [completed]
 
-# Minimum permissions: read the repo (checkout + gh api), write commit statuses,
+# Minimum permissions: read the repo (checkout + gh api) and
 # read PR metadata for the API fallback identity resolution.
 permissions:
   contents: read
-  statuses: write
   pull-requests: read
 
 # Cancel superseded runs for the same PR head SHA. cancel-in-progress: false so a
@@ -48,6 +47,11 @@ jobs:
   check-private-leak:
     name: Check Private Leak
     runs-on: ubuntu-latest
+    permissions:
+      # We need write access to post the commit status to the PR head SHA.
+      contents: read
+      statuses: write
+      pull-requests: read
     timeout-minutes: 10
     steps:
       # Checkout the DEFAULT branch (main) only — for the script + metadata/repos.yaml.
