@@ -1083,6 +1083,16 @@ describe('extractStatusTruthClaimsFromText', () => {
       }
     }
   })
+
+  it('rollout-tracker-status is exempt from cross-repo bare-#N suppression: "rollout tracker #3512 is open" is extracted despite fro-bot/.github#3512 elsewhere in text', () => {
+    const claims = extractStatusTruthClaimsFromText({
+      path: 'docs/plans/example.md',
+      text: 'See fro-bot/.github#3512 for context. rollout tracker #3512 is open.',
+    })
+    const trackerClaims = claims.filter(c => c.kind === 'rollout-tracker-status' && c.sourceRef === '#3512')
+    expect(trackerClaims).toHaveLength(1)
+    expect(trackerClaims[0]?.claimedState).toBe('open')
+  })
 })
 
 describe('scanStatusTruthClaims', () => {
