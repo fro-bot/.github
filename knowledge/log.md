@@ -2547,3 +2547,21 @@ Sources: https://github.com/marcusrbrown/infra (SHA 390cb5fafe9d4d1fceecd4976c3e
 Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/infra
+
+## [2026-07-02 08:30] ingest | bfra-me/ha-addon-repository
+
+Incremental re-survey of `bfra-me/ha-addon-repository` (target HEAD `0a163c3f`, `pushed_at` 2026-07-02). Reads limited to repo metadata, `main` commit head, open PR/issue listings, `.github/workflows/` directory listing, `.github/workflows/fro-bot.yaml`, and `example/config.yaml` per the untrusted-input constraint.
+
+No content drift on `main`: HEAD still frozen at `0a163c3fa8846704103658142fa742f40d165743` — no merge since #551 (prettier 3.8.3, 2026-05-16), now **47 days** stale. Four workflows unchanged (`fro-bot.yaml`, `main.yaml`, `renovate.yaml`, `update-repo-settings.yaml`); `fro-bot.yaml` still pinned to `fro-bot/agent@3ec8d72f` (v0.43.1) with the daily 15:30 UTC schedule; `example/` add-on still slug `example` at v1.2.2. Fro Bot workflow is present — no follow-up draft PR needed.
+
+The review-required deadlock is unbroken and deepening. The identical five Renovate PRs (#556–#560) are all `MERGEABLE`/`REVIEW_REQUIRED`, and Renovate has retargeted them upward again as upstream moved: #556 → `bfra-me/.github` **v4.16.33**, #557 → `fro-bot/agent` **v0.81.0** (a ~38-minor jump from the pinned v0.43.1, up from v0.72.0 twelve days ago), #558 → HA Add-ons v3.24 (unchanged), #559 → `docker/login-action` **v4.3.0** (was v4.2.0), #560 → `actions/checkout` v6.0.3 (unchanged). #556 has now waited 47 days. Live status rollup confirms green-but-blocked: `Prepare`/`Prettier`/`Renovate` SUCCESS, add-on lint/build and `Fro Bot` SKIPPED (no monitored-file changes). Open issues: #554 `Daily Autohealing Report` (fro-bot, updated 2026-07-01) and #4 `Dependency Dashboard` (bfra-me[bot]) — the perpetual-issue model holds.
+
+Updated repo page `bfra-me--ha-addon-repository.md` (new 2026-07-02 source entry, frontmatter `updated`, last-push line, 2026-07-02 survey-history row, refreshed Drift Watch agent-lag and deadlock values) and `index.md` summary line. No topic/entity/comparison page changes warranted — this is a zero-drift snapshot; [[home-assistant]] add-on framing is already current and nothing new was learned to add. The dominant fact is unchanged: CI is green, the bottleneck is purely governance, and the Renovate targets keep drifting away from the frozen pins.
+
+Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+
+## [2026-07-02 08:31] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository
