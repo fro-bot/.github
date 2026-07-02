@@ -1291,12 +1291,7 @@ const NODE_ID_MARKER_PATTERN = /<!-- reconcile:subject:node_id=([\w-]+) -->/
 const ROLLUP_OWNER_MARKER_PATTERN = /<!-- reconcile:subject:rollup-owner=([\w-]+) -->/
 
 export type ReconcileErrorCode =
-  | 'MISSING_TOKEN'
-  | 'OCTOKIT_LOAD_FAILED'
-  | 'METADATA_READ_ERROR'
-  | 'COMMIT_ERROR'
-  | 'DATA_BRANCH_TAMPER'
-  | 'API_ERROR'
+  'MISSING_TOKEN' | 'OCTOKIT_LOAD_FAILED' | 'METADATA_READ_ERROR' | 'COMMIT_ERROR' | 'DATA_BRANCH_TAMPER' | 'API_ERROR'
 
 /**
  * Structured error with a remediation hint. Thrown for every expected failure mode on
