@@ -552,8 +552,10 @@ function extractCrossRepoNumbers(text: string): Set<string> {
  * - normalizedText: the normalized match text
  *
  * Cross-repo references: if a number appears in an owner/repo#N context
- * anywhere in the text, bare #N claims for that number are skipped to
- * prevent misresolution as current-repo references.
+ * anywhere in the text, bare #N claims for pr-state/issue-state are skipped
+ * to prevent misresolution as current-repo references. rollout-tracker-status
+ * is exempt: its grammar ("rollout tracker #N is <state>") is unambiguous and
+ * resolves via the rollout board snapshot, which is cross-repo-aware.
  */
 export function extractStatusTruthClaimsFromText(params: {path: string; text: string}): StatusTruthClaim[] {
   const {path, text} = params
@@ -585,7 +587,9 @@ export function extractStatusTruthClaimsFromText(params: {path: string; text: st
         // Skip if this number appears in a cross-repo reference in the same text.
         // This prevents "fro-bot/agent#1033 PR #1033 is open" from producing
         // a bare #1033 that the resolver would treat as a current-repo reference.
-        if (crossRepoNumbers.has(number)) continue
+        // rollout-tracker-status is exempt: its grammar is unambiguous and its
+        // resolver is cross-repo-aware via the rollout board snapshot.
+        if (def.kind !== 'rollout-tracker-status' && crossRepoNumbers.has(number)) continue
         sourceRef = `#${number}`
         claimedState = state.toLowerCase()
       } else if (def.kind === 'release-tag-state') {
