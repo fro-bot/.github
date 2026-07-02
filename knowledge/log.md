@@ -2548,20 +2548,22 @@ Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/infra
 
-## [2026-07-02 08:30] ingest | bfra-me/ha-addon-repository
+## [2026-07-02 08:31] ingest | bfra-me/.github
 
-Incremental re-survey of `bfra-me/ha-addon-repository` (target HEAD `0a163c3f`, `pushed_at` 2026-07-02). Reads limited to repo metadata, `main` commit head, open PR/issue listings, `.github/workflows/` directory listing, `.github/workflows/fro-bot.yaml`, and `example/config.yaml` per the untrusted-input constraint.
+Fourth survey of `bfra-me/.github` (HEAD `d51473c`, last push 2026-07-02, up from `af0e41e` 2026-06-20). Reads limited to repo metadata, directory listings (`.github/workflows`, `.github/actions`), `package.json`, `.node-version`, `AGENTS.md`, `pnpm-workspace.yaml`, and `fro-bot.yaml` per the untrusted-input constraint, plus open issue/PR listings and targeted issue/PR states via `gh`.
 
-No content drift on `main`: HEAD still frozen at `0a163c3fa8846704103658142fa742f40d165743` — no merge since #551 (prettier 3.8.3, 2026-05-16), now **47 days** stale. Four workflows unchanged (`fro-bot.yaml`, `main.yaml`, `renovate.yaml`, `update-repo-settings.yaml`); `fro-bot.yaml` still pinned to `fro-bot/agent@3ec8d72f` (v0.43.1) with the daily 15:30 UTC schedule; `example/` add-on still slug `example` at v1.2.2. Fro Bot workflow is present — no follow-up draft PR needed.
+Headline: the **first structural change to this repo since the initial 2026-05-20 survey** — a three-into-one consolidation of the Fro Bot control plane. (1) `fro-bot-autoheal-org.yaml` was **deleted**; the org-wide sweep is now a branch of `fro-bot.yaml`'s daily run (17 → 16 workflows). (2) The `maintenance` mode and its `0 5 * * *` cron are **retired**; a single `30 15 * * *` "unified pass" now does both proactive oversight and reactive autohealing for this repo (categories 1–6) and across the org (categories 7–8), with a `target-repo` input narrowing only the org categories (3 modes → 2: review/autoheal). (3) The three standing report issues #2185/#1960/#1959 are **closed** and superseded by a single **#2344 Daily Fro Bot Report** (opened 2026-06-25). Fewer workflows, one prompt, one schedule, one report surface.
 
-The review-required deadlock is unbroken and deepening. The identical five Renovate PRs (#556–#560) are all `MERGEABLE`/`REVIEW_REQUIRED`, and Renovate has retargeted them upward again as upstream moved: #556 → `bfra-me/.github` **v4.16.33**, #557 → `fro-bot/agent` **v0.81.0** (a ~38-minor jump from the pinned v0.43.1, up from v0.72.0 twelve days ago), #558 → HA Add-ons v3.24 (unchanged), #559 → `docker/login-action` **v4.3.0** (was v4.2.0), #560 → `actions/checkout` v6.0.3 (unchanged). #556 has now waited 47 days. Live status rollup confirms green-but-blocked: `Prepare`/`Prettier`/`Renovate` SUCCESS, add-on lint/build and `Fro Bot` SKIPPED (no monitored-file changes). Open issues: #554 `Daily Autohealing Report` (fro-bot, updated 2026-07-01) and #4 `Dependency Dashboard` (bfra-me[bot]) — the perpetual-issue model holds.
+Two prior open threads closed the loop: **issue #2213** (settings-sync `Filter Changed Files` git exit 128, open 4+ weeks across three surveys) is **RESOLVED** (closed 2026-06-25 COMPLETED) — confirming the prior read that a workflow logic bug sat outside the autoheal scope cap and needed a deliberate fix; and **PR #2292** (Fro Bot esbuild HIGH-severity remediation, in-flight last survey) **MERGED** 2026-06-25 — the `esbuild@>=0.17.0 <0.28.1: '>=0.28.1'` override is now on `main` (HEAD overrides: esbuild, flatted, undici `<6.27.0→>=6.27.0`, vite).
 
-Updated repo page `bfra-me--ha-addon-repository.md` (new 2026-07-02 source entry, frontmatter `updated`, last-push line, 2026-07-02 survey-history row, refreshed Drift Watch agent-lag and deadlock values) and `index.md` summary line. No topic/entity/comparison page changes warranted — this is a zero-drift snapshot; [[home-assistant]] add-on framing is already current and nothing new was learned to add. The dominant fact is unchanged: CI is green, the bottleneck is purely governance, and the Renovate targets keep drifting away from the frozen pins.
+Version deltas: `@bfra.me/.github` v4.16.27 → v4.16.33; **pnpm 10.34.3 → 11.9.0 (major 10→11 migration**, echoing dotfiles/works); Node 24.17.0 → 24.18.0; fro-bot/agent v0.71.0 → **v0.81.0** (~10 more bumps, ~39 in six weeks; SHA `b13c6c4`); eslint 10.5.0 → 10.6.0; prettier 3.8.4 → 3.9.1; vite 8.0.16 → 8.1.0; @types/node 24.12.4 → 24.13.2. New toolchain: **husky + lint-staged** git hooks (`eslint --fix` on staged files), **manypkg** workspace checks, build-cache manager + incremental-build analyzer + TypeScript project-reference audit scripts. Custom actions unchanged (3). Open issues/PRs now 2/1 (was 4/2): #2344 report + #7 Dependency Dashboard, and release PR #2384.
 
-Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+Full Fro Bot workflow present (agent v0.81.0) — no follow-up draft needed. No new topic/entity/comparison page warranted; the workflow-consolidation pattern is repo-specific. The standing [[probot-settings]] three-source follow-up remains open (unchanged this survey). Updated repo page `bfra-me--github.md` (new source `d51473c`, frontmatter `updated`, Identity/Layout/Workspace/Workflows/Fro Bot Integration/Renovate/Conventions/Operational Notes/Survey History) and `index.md` summary line. Cross-refs to [[fro-bot--agent]], [[bfra-me--works]], [[marcusrbrown--dotfiles]], [[marcusrbrown--infra]] kept valid.
 
-## [2026-07-02 08:31] ingest | repo:bfra-me/ha-addon-repository
+Sources: https://github.com/bfra-me/.github (SHA d51473c932f5e4d801044930196560e6baba8af9)
 
-Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+## [2026-07-02 08:32] ingest | repo:bfra-me/.github
 
-Sources: https://github.com/bfra-me/ha-addon-repository
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github
