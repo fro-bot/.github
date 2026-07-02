@@ -264,6 +264,8 @@ The `node_id` for each tracked repo is stored in `metadata/repos.yaml` on the `d
 
 ### Status-Truth Proposals
 
+Machine-verifiable claims live in [docs/status.md](docs/status.md).
+
 The **Status Truth** workflow detects drift between documented status claims and live GitHub state, then opens fingerprinted proposal issues for review. Each proposal contains structured evidence fields (kind, claimed state, live state, proposed correction) and a hidden fingerprint marker for lifecycle tracking.
 
 **Reviewing a proposal:**

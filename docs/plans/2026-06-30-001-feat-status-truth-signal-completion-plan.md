@@ -1,8 +1,9 @@
 ---
 title: 'feat: Complete status-truth signal generation'
 type: feat
-status: active
+status: complete
 date: 2026-06-30
+completed: 2026-07-02
 origin: docs/brainstorms/2026-06-26-a2-self-maintenance-portfolio-requirements.md
 ---
 

@@ -1,9 +1,10 @@
 ---
 title: 'feat: Add status-truth maintenance loop'
 type: feat
-status: active
+status: complete
 date: 2026-06-26
 deepened: 2026-06-27
+completed: 2026-07-02
 origin: docs/brainstorms/2026-06-26-a2-self-maintenance-portfolio-requirements.md
 ---
 
@@ -31,6 +32,8 @@ Bounded correction PRs remain disabled until proposal outcomes establish per-kin
 The next dependency for downstream A2 features is collecting accepted, rejected, false-positive,
 resolved, and needs-outcome proposal signal against representative tracker/coordination claims before
 graduating any claim kind to correction PRs.
+
+The follow-up signal slice landed; docs/plans/2026-06-30-001-feat-status-truth-signal-completion-plan.md is complete.
 
 ## Problem Frame
 
