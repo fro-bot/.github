@@ -97,7 +97,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ### Prerequisites
 
 - **Node.js** 24 (pinned in [`mise.toml`](mise.toml); native TypeScript execution, no build step)
-- **pnpm** 11.8.0 (pinned in `packageManager`)
+- **pnpm** 11.9.0 (pinned in `packageManager`)
 - **Git** for version control
 - Optional: [`mise`](https://mise.jdx.dev/) to auto-install the pinned toolchain
 
@@ -150,7 +150,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ├── .github/                # GitHub-specific configurations
 │   ├── actions/setup/      # Composite bootstrap action
 │   ├── hooks/              # Copilot governance hooks
-│   ├── workflows/          # 23 GitHub Actions workflows (see Automation)
+│   ├── workflows/          # 24 GitHub Actions workflows (see Automation)
 │   ├── copilot-instructions.md  # Canonical AI-assistant guidance
 │   ├── renovate.json5      # Dependency management config
 │   └── settings.yml        # Repository settings via Probot
@@ -217,6 +217,7 @@ Fro Bot control plane:
 | **Update Metadata** | Refresh `metadata/renovate.yaml` from the fro-bot org scan | Daily 04:30 UTC, dispatch |
 | **Dispatch Renovate** | Dispatch Renovate runs across repos tracked in `metadata/renovate.yaml` | Every 4 hours at `:30`, dispatch |
 | **Gateway Rollout Tracker** | Track and report on gateway rollout status across managed repos | Schedule, dispatch |
+| **Status Truth** | Detect drift in typed public coordination claims and manage proposal issues with counts-only summaries | Sunday 21:00 UTC, dispatch |
 | **Reset Survey Status** | Manually clear stale survey state for one or more tracked repos on `data` | Manual dispatch |
 | **Wiki Lint** | Lint the authoritative wiki snapshot restored from `origin/data` | Sunday 20:00 UTC, dispatch |
 

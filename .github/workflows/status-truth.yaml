@@ -35,9 +35,12 @@ jobs:
     name: Detect status-truth drift
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Detect job uses only the default read-only permissions.
+    # Detect job needs read access to contents, issues, and pull-requests for
+    # API-backed claim resolution (PR/issue/release state lookups).
     permissions:
       contents: read
+      issues: read
+      pull-requests: read
 
     steps:
       - name: ⤵ Checkout Branch
@@ -60,6 +63,30 @@ jobs:
             echo "data branch not yet established; skipping metadata overlay."
           fi
 
+      # Best-effort rollout snapshot for rollout-tracker-status resolution.
+      # Raw snapshot output is streamed directly into jq and never echoed to logs.
+      - name: 📸 Load rollout snapshot (best-effort)
+        id: rollout-snapshot
+        env:
+          # Same credential class as gateway-rollout-tracker; scoped to this read-only snapshot step.
+          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          ROLLOUT_TRACKER_SNAPSHOT_PATH: ${{ runner.temp }}/rollout-snapshot.json
+        run: |
+          set -euo pipefail
+          snapshot_path="$ROLLOUT_TRACKER_SNAPSHOT_PATH"
+          tmp_snapshot="${snapshot_path}.tmp"
+          snapshot_error="${RUNNER_TEMP}/rollout-snapshot-error.log"
+          trap 'rm -f "$tmp_snapshot" "$snapshot_error"' EXIT
+
+          if node scripts/rollout-tracker-snapshot.ts 2>"$snapshot_error" | jq -e '.snapshot' > "$tmp_snapshot"; then
+            mv "$tmp_snapshot" "$snapshot_path"
+            item_count=$(jq '.items | length' "$snapshot_path" 2>/dev/null || echo 0)
+            echo "rollout-snapshot: loaded snapshot with ${item_count} item(s)"
+            echo "snapshot_path=${snapshot_path}" >> "$GITHUB_OUTPUT"
+          else
+            echo "rollout-snapshot: snapshot command unavailable; rollout-tracker claims will be unresolved"
+          fi
+
       - name: 🔍 Detect status-truth drift
         id: detect
         env:
@@ -69,6 +96,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           STATUS_TRUTH_REPORT_PATH: ${{ runner.temp }}/status-truth-report.json
+          # Snapshot path from the pre-detect step (empty string if unavailable).
+          # loadRolloutSnapshot in the script treats empty string as absent.
+          STATUS_TRUTH_ROLLOUT_SNAPSHOT_PATH: ${{ steps.rollout-snapshot.outputs.snapshot_path || '' }}
           # Scheduled runs default to dry-run=true; only workflow_dispatch can set false.
           STATUS_TRUTH_DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
         run: node scripts/status-truth-detect.ts
@@ -211,9 +241,29 @@ jobs:
               echo "| Closed | $(jq '.counts.closed // 0' "$result") |"
               echo "| Suppressed | $(jq '.counts.suppressed // 0' "$result") |"
               echo "| Failed | $(jq '.counts.failed // 0' "$result") |"
-              echo "| Same-run deduplicated | $(jq '.counts.sameRunDeduplicated // 0' "$result") |"
+              echo "| Same-run deduplicated | $(jq '.plannedCounts.sameRunDeduplicated // 0' "$result") |"
               echo "| Version rejected | $(jq '.plannedCounts.versionRejected // 0' "$result") |"
               echo "| Blocked | $(jq '(.plannedCounts.blocked // 0)' "$result") |"
+              echo "| Overflowed | $(jq '(.plannedCounts.overflowed // 0)' "$result") |"
+              echo "| Needs outcome cooldown | $(jq '(.plannedCounts.needsOutcomeCooldown // 0)' "$result") |"
+
+              # Outcome counts (read-model: current state of all proposal issues)
+              if jq -e '.outcomeCounts' "$result" >/dev/null 2>&1; then
+                echo ""
+                echo "### Proposal outcome counts"
+                echo ""
+                echo "| Outcome | Count |"
+                echo "| --- | --- |"
+                echo "| Proposed pending | $(jq '.outcomeCounts.proposedPending // 0' "$result") |"
+                echo "| Accepted | $(jq '.outcomeCounts.explicitAccepted // 0' "$result") |"
+                echo "| Rejected | $(jq '.outcomeCounts.explicitRejected // 0' "$result") |"
+                echo "| False positive | $(jq '.outcomeCounts.falsePositive // 0' "$result") |"
+                echo "| Resolved positive | $(jq '.outcomeCounts.resolvedPositive // 0' "$result") |"
+                echo "| Superseded | $(jq '.outcomeCounts.superseded // 0' "$result") |"
+                echo "| Needs outcome | $(jq '.outcomeCounts.needsOutcome // 0' "$result") |"
+                echo "| Conflicting labels | $(jq '.outcomeCounts.conflictingLabels // 0' "$result") |"
+                echo "| Malformed outcome | $(jq '.outcomeCounts.malformedOutcome // 0' "$result") |"
+              fi
 
               # Planned per-kind counts (from planner; counts-only, no paths or fingerprints)
               kind_count=$(jq '.plannedCountsByKind | length' "$result" 2>/dev/null || echo 0)

@@ -22,14 +22,14 @@ and diff gates.
 
 ## Implementation Status
 
-Phase 1 now provides the status-truth foundation: deterministic claim extraction, read-only live
+Phase 1 now provides the status-truth signal foundation: deterministic claim extraction, read-only live
 state resolution for current-repo and confirmed-public cross-repo issue/PR/release references,
-privacy-gated proposal planning, outcome labels for usefulness signal, and a dry-run-first workflow.
+file-backed `plan-status` resolution, rollout snapshot resolution, privacy-gated proposal planning,
+proposal caps, outcome counts, seven-day manual-closure cooldowns, and a dry-run-first workflow.
 
-The loop intentionally excludes unsupported `plan-status` claims from default scans until a real
-file-parse resolver exists. Bounded correction PRs remain disabled until proposal outcomes establish
-per-kind accuracy thresholds. The next dependency for downstream A2 features is collecting accepted,
-rejected, and false-positive proposal signal against representative tracker/coordination claims before
+Bounded correction PRs remain disabled until proposal outcomes establish per-kind accuracy thresholds.
+The next dependency for downstream A2 features is collecting accepted, rejected, false-positive,
+resolved, and needs-outcome proposal signal against representative tracker/coordination claims before
 graduating any claim kind to correction PRs.
 
 ## Problem Frame

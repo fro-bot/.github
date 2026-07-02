@@ -1,11 +1,11 @@
 /**
  * Proposal lifecycle planner and I/O executor for the status-truth maintenance loop.
  *
- * Unit 3 — Pure lifecycle planner:
+ * Planner:
  * Converts drifted, privacy-safe status claims into deterministic GitHub issue
  * lifecycle actions without touching GitHub.
  *
- * Unit 4 — I/O executor:
+ * Executor:
  * Executes planned proposal actions against GitHub via an injected Octokit-like
  * client. Supports dry-run mode (counts only, no mutations), label gating
  * (fail-closed if required labels cannot be confirmed), and same-run dedup.
@@ -188,6 +188,221 @@ const FINGERPRINT_MARKER_PATTERN = /<!-- status-truth:fingerprint=([a-f0-9]+) --
 const LIVE_STATE_MARKER_PATTERN = /<!-- status-truth:live-state=([\w-]+) -->/u
 
 // ---------------------------------------------------------------------------
+// Outcome classification read-model
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical outcome states for a proposal issue.
+ *
+ * These states are derived from the issue's labels and open/closed state.
+ * They are read-only classifications — no mutation behavior here.
+ *
+ * | State | Derivation |
+ * |---|---|
+ * | proposed-pending | Open issue with no terminal/resolution label |
+ * | explicit-accepted | Closed with `status-truth:accepted` label |
+ * | explicit-rejected | Closed with `status-truth:rejected` label (terminal) |
+ * | false-positive | Closed with `status-truth:false-positive` label (terminal) |
+ * | resolved-positive | Closed with `status-truth:resolved` or `status-truth:manually-fixed` |
+ * | superseded | Closed with `status-truth:superseded` label |
+ * | needs-outcome | Closed with no recognized outcome label |
+ * | conflicting-labels | Closed with mutually exclusive outcome labels (e.g. accepted+rejected) |
+ * | malformed-outcome | Closed with unrecognized `status-truth:*` label |
+ */
+export type ProposalOutcomeState =
+  | 'proposed-pending'
+  | 'explicit-accepted'
+  | 'explicit-rejected'
+  | 'false-positive'
+  | 'resolved-positive'
+  | 'superseded'
+  | 'needs-outcome'
+  | 'conflicting-labels'
+  | 'malformed-outcome'
+
+/**
+ * Classify a proposal issue into a canonical outcome state.
+ *
+ * Pure function: no I/O, no side effects. Deterministic from inputs.
+ *
+ * Classification rules (in priority order):
+ * 1. Open issue → proposed-pending (regardless of labels)
+ * 2. Closed issue with multiple mutually exclusive accuracy signal labels → conflicting-labels
+ * 3. Closed issue with unrecognized `status-truth:*` label → malformed-outcome
+ * 4. Closed issue with `accepted` label → explicit-accepted
+ * 5. Closed issue with `rejected` label → explicit-rejected
+ * 6. Closed issue with `false-positive` label → false-positive
+ * 7. Closed issue with `resolved` or `manually-fixed` label → resolved-positive
+ * 8. Closed issue with `superseded` label → superseded
+ * 9. Closed issue with no recognized outcome label + drift still active → needs-outcome
+ * 10. Closed issue with no recognized outcome label + drift cleared → resolved-positive
+ *
+ * @param issue - The proposal issue to classify.
+ * @param driftActive - Whether the same drift fingerprint is still active in the current scan.
+ *   When false, a closed issue with no terminal/resolution label is classified as resolved-positive
+ *   (drift cleared without an explicit label). When true, it remains needs-outcome.
+ */
+export function classifyProposalOutcome(issue: ExistingProposalIssue, driftActive: boolean): ProposalOutcomeState {
+  // Rule 1: Open issue → proposed-pending
+  if (issue.state === 'open') {
+    return 'proposed-pending'
+  }
+
+  // Extract status-truth:* outcome labels (excluding the primary proposal label)
+  const outcomeLabels = issue.labels.filter(l => l !== PROPOSAL_LABEL && l.startsWith('status-truth:'))
+
+  // Rule 2: Conflicting accuracy signal labels (mutually exclusive)
+  const accuracySignals = outcomeLabels.filter(l => ACCURACY_SIGNAL_LABELS.includes(l))
+  if (accuracySignals.length > 1) {
+    return 'conflicting-labels'
+  }
+
+  // Rule 3: Unrecognized status-truth:* label → malformed-outcome
+  const unrecognized = outcomeLabels.filter(l => !ALL_RECOGNIZED_OUTCOME_LABELS.includes(l))
+  if (unrecognized.length > 0) {
+    return 'malformed-outcome'
+  }
+
+  // Rules 4-8: Single recognized outcome label
+  if (outcomeLabels.includes(OUTCOME_LABELS.accepted)) return 'explicit-accepted'
+  if (outcomeLabels.includes(OUTCOME_LABELS.rejected)) return 'explicit-rejected'
+  if (outcomeLabels.includes(OUTCOME_LABELS.falsePositive)) return 'false-positive'
+  if (outcomeLabels.includes(OUTCOME_LABELS.resolved) || outcomeLabels.includes(OUTCOME_LABELS.manuallyFixed)) {
+    return 'resolved-positive'
+  }
+  if (outcomeLabels.includes(OUTCOME_LABELS.superseded)) return 'superseded'
+
+  // Rules 9-10: No recognized outcome label — use driftActive to distinguish
+  // If drift is no longer active (fingerprint not in current scan), the issue was
+  // closed without an explicit label but the drift has cleared → resolved-positive.
+  // If drift is still active, the issue needs operator attention → needs-outcome.
+  if (!driftActive) return 'resolved-positive'
+  return 'needs-outcome'
+}
+
+/**
+ * Aggregate outcome counts from a set of proposal issues.
+ *
+ * Pure function: no I/O, no side effects.
+ * Output is counts-only: no raw issue bodies, titles, paths, or fingerprints.
+ *
+ * Counts are separated from action counts (opened/updated/reopened/closed/suppressed).
+ * This is the read-model for operator outcome signal — used for accuracy math and
+ * operator attention, not for lifecycle mutation decisions.
+ */
+export interface OutcomeCounts {
+  /** Open proposals with no terminal/resolution label. */
+  readonly proposedPending: number
+  /** Closed proposals with explicit `accepted` label (human-confirmed positive). */
+  readonly explicitAccepted: number
+  /** Closed proposals with explicit `rejected` label (terminal suppression). */
+  readonly explicitRejected: number
+  /** Closed proposals with `false-positive` label (terminal suppression). */
+  readonly falsePositive: number
+  /**
+   * Closed proposals with `resolved` or `manually-fixed` label.
+   * Positive signal without impersonating explicit human acceptance.
+   */
+  readonly resolvedPositive: number
+  /** Closed proposals with `superseded` label. */
+  readonly superseded: number
+  /**
+   * Closed proposals with no recognized outcome label.
+   * Excluded from accuracy math; counted for operator attention.
+   */
+  readonly needsOutcome: number
+  /**
+   * Closed proposals with mutually exclusive outcome labels (e.g. accepted+rejected).
+   * Excluded from accuracy math; counted for operator attention.
+   */
+  readonly conflictingLabels: number
+  /**
+   * Closed proposals with unrecognized `status-truth:*` labels.
+   * Excluded from accuracy math; counted for operator attention.
+   */
+  readonly malformedOutcome: number
+}
+
+/**
+ * Build aggregate outcome counts from a list of existing proposal issues.
+ *
+ * Pure function: no I/O, no side effects. Deterministic from inputs.
+ * Output is counts-only — no raw issue bodies, titles, paths, or fingerprints.
+ *
+ * @param issues - Existing proposal issues (open and closed).
+ * @param driftActiveFingerprints - Set of fingerprints that are still active in the current scan.
+ *   Used to distinguish resolved-positive (drift cleared) from needs-outcome (drift still active)
+ *   for closed issues with no terminal/resolution label. Defaults to empty set (all drift cleared).
+ */
+export function buildOutcomeCounts(
+  issues: readonly ExistingProposalIssue[],
+  driftActiveFingerprints: ReadonlySet<string> = new Set<string>(),
+): OutcomeCounts {
+  let proposedPending = 0
+  let explicitAccepted = 0
+  let explicitRejected = 0
+  let falsePositive = 0
+  let resolvedPositive = 0
+  let superseded = 0
+  let needsOutcome = 0
+  let conflictingLabels = 0
+  let malformedOutcome = 0
+
+  for (const issue of issues) {
+    // Only classify issues that have the proposal label
+    if (!issue.labels.includes(PROPOSAL_LABEL)) continue
+
+    // Determine if this issue's fingerprint is still active in the current scan.
+    // Extract fingerprint from body to check against driftActiveFingerprints.
+    const fp = extractProposalFingerprint(issue.body)
+    const driftActive = fp !== null && driftActiveFingerprints.has(fp)
+
+    const state = classifyProposalOutcome(issue, driftActive)
+    switch (state) {
+      case 'proposed-pending':
+        proposedPending++
+        break
+      case 'explicit-accepted':
+        explicitAccepted++
+        break
+      case 'explicit-rejected':
+        explicitRejected++
+        break
+      case 'false-positive':
+        falsePositive++
+        break
+      case 'resolved-positive':
+        resolvedPositive++
+        break
+      case 'superseded':
+        superseded++
+        break
+      case 'needs-outcome':
+        needsOutcome++
+        break
+      case 'conflicting-labels':
+        conflictingLabels++
+        break
+      case 'malformed-outcome':
+        malformedOutcome++
+        break
+    }
+  }
+
+  return {
+    proposedPending,
+    explicitAccepted,
+    explicitRejected,
+    falsePositive,
+    resolvedPositive,
+    superseded,
+    needsOutcome,
+    conflictingLabels,
+    malformedOutcome,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Input/output types
 // ---------------------------------------------------------------------------
 
@@ -198,6 +413,12 @@ export interface ExistingProposalIssue {
   readonly labels: readonly string[]
   readonly title: string
   readonly body: string | null | undefined
+  /**
+   * ISO 8601 timestamp when the issue was closed, if available from the API.
+   * Used to compute cooldown for closed-without-outcome issues.
+   * Absent or null when the API does not return this field.
+   */
+  readonly closedAt?: string | null
 }
 
 /** Open a new proposal issue. */
@@ -269,6 +490,12 @@ export interface ProposalCounts {
   readonly closed: number
   readonly suppressed: number
   readonly blocked: number
+  /**
+   * Mutating actions that were planned but blocked by the per-run mutation cap.
+   * These are distinct from privacy-blocked actions (counted in `blocked`).
+   * Overflow is a blocked outcome, not failed work — it must not hide scan completeness.
+   */
+  readonly overflowed: number
   readonly noAction: number
   readonly sameRunDeduplicated: number
   readonly malformedMarkers: number
@@ -279,10 +506,24 @@ export interface ProposalCounts {
    */
   readonly closedWithoutOutcome: number
   /**
+   * Closed-without-outcome issues that are within the seven-day cooldown window,
+   * or that have no closedAt timestamp (conservative: treated as needs-attention).
+   * These are not reopened; counted for operator attention.
+   * Distinct from privacy-blocked (blocked) and overflow (overflowed).
+   */
+  readonly needsOutcomeCooldown: number
+  /**
    * Closed issues with a valid fingerprint but an unrecognized/malformed outcome label.
    * Counted for operator attention; excluded from usefulnessByKind accuracy math.
    */
   readonly malformedOutcomeMarkers: number
+  /**
+   * Closed issues with mutually exclusive outcome labels present together
+   * (e.g. accepted+rejected, accepted+false-positive, rejected+false-positive).
+   * Excluded from accuracy math; counted for operator attention.
+   * These are distinct from malformedOutcomeMarkers (which have unrecognized labels).
+   */
+  readonly conflictingLabels: number
   /**
    * Per-kind accuracy signal from accepted/rejected/false-positive outcomes.
    * Computed from all existing issues with recognized outcome labels.
@@ -304,6 +545,18 @@ export interface PlanStatusTruthProposalActionsInput {
    * Prevents duplicate proposals when GitHub issue listing lags same-run writes.
    */
   readonly sameRunCreatedFingerprints: ReadonlySet<string>
+  /**
+   * Maximum number of mutating proposal actions (open, update-comment, reopen, close)
+   * allowed per run. Evaluated after privacy blocking and same-run dedupe.
+   * Actions beyond the cap are counted as overflowed (planned-but-blocked).
+   * Defaults to 5.
+   */
+  readonly mutationCap?: number
+  /**
+   * Current timestamp for cooldown calculations. Defaults to `new Date()`.
+   * Injectable for deterministic tests.
+   */
+  readonly now?: Date
 }
 
 /** Result of the pure lifecycle planner. */
@@ -315,6 +568,13 @@ export interface PlanStatusTruthProposalActionsResult {
    * Counts-only: no paths, fingerprints, or claim text.
    */
   readonly countsByKind: Readonly<Record<string, KindActionCounts>>
+  /**
+   * Aggregate outcome counts from all existing proposal issues.
+   * Read-model for operator outcome signal — separate from action counts (counts)
+   * and planned per-kind counts (countsByKind). Reflects the current state of all
+   * proposal issues, not the actions taken in this run.
+   */
+  readonly outcomeCounts: OutcomeCounts
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +620,27 @@ function buildFingerprintMarker(fingerprint: string): string {
  */
 function buildLiveStateMarker(liveState: string): string {
   return `<!-- ${LIVE_STATE_MARKER_PREFIX}${liveState} -->`
+}
+
+// ---------------------------------------------------------------------------
+// Cooldown helper
+// ---------------------------------------------------------------------------
+
+/** Seven-day cooldown duration in milliseconds. */
+const COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * Returns true when the given ISO 8601 closedAt timestamp is within the
+ * seven-day cooldown window relative to `now`.
+ *
+ * Pure function: no I/O, no side effects. Accepts `now` for deterministic tests.
+ *
+ * Boundary: exactly seven days ago is NOT within cooldown (returns false).
+ */
+export function isWithinCooldown(closedAt: string, now: Date): boolean {
+  const closedMs = new Date(closedAt).getTime()
+  const elapsedMs = now.getTime() - closedMs
+  return elapsedMs < COOLDOWN_MS
 }
 
 // ---------------------------------------------------------------------------
@@ -448,6 +729,7 @@ export function planStatusTruthProposalActions(
   input: PlanStatusTruthProposalActionsInput,
 ): PlanStatusTruthProposalActionsResult {
   const {report, existingIssues, publicOutputTokens, sameRunCreatedFingerprints} = input
+  const now = input.now ?? new Date()
 
   // 1. Reject unknown report versions
   if (report.schema_version !== KNOWN_SCHEMA_VERSION || report.fingerprint_version !== KNOWN_FINGERPRINT_VERSION) {
@@ -460,15 +742,19 @@ export function planStatusTruthProposalActions(
         closed: 0,
         suppressed: 0,
         blocked: 0,
+        overflowed: 0,
         noAction: 0,
         sameRunDeduplicated: 0,
         malformedMarkers: 0,
         versionRejected: 1,
         closedWithoutOutcome: 0,
+        needsOutcomeCooldown: 0,
         malformedOutcomeMarkers: 0,
+        conflictingLabels: 0,
         usefulnessByKind: {},
       },
       countsByKind: {},
+      outcomeCounts: buildOutcomeCounts(existingIssues),
     }
   }
 
@@ -490,15 +776,19 @@ export function planStatusTruthProposalActions(
         closed: 0,
         suppressed: 0,
         blocked: blockedCount,
+        overflowed: 0,
         noAction: 0,
         sameRunDeduplicated: 0,
         malformedMarkers: 0,
         versionRejected: 0,
         closedWithoutOutcome: 0,
+        needsOutcomeCooldown: 0,
         malformedOutcomeMarkers: 0,
+        conflictingLabels: 0,
         usefulnessByKind: {},
       },
       countsByKind: {},
+      outcomeCounts: buildOutcomeCounts(existingIssues),
     }
   }
 
@@ -510,6 +800,7 @@ export function planStatusTruthProposalActions(
   const usefulnessByKind: Record<string, {accepted: number; rejected: number; falsePositive: number}> = {}
   let closedWithoutOutcome = 0
   let malformedOutcomeMarkers = 0
+  let conflictingLabels = 0
 
   for (const issue of existingIssues) {
     const fp = extractProposalFingerprint(issue.body)
@@ -533,6 +824,12 @@ export function planStatusTruthProposalActions(
       const recognizedOutcomeLabels = outcomeLabels.filter(l => ALL_RECOGNIZED_OUTCOME_LABELS.includes(l))
       const unrecognizedOutcomeLabels = outcomeLabels.filter(l => !ALL_RECOGNIZED_OUTCOME_LABELS.includes(l))
 
+      // Check for conflicting accuracy signal labels (mutually exclusive).
+      // This is distinct from malformedOutcomeMarkers (which have unrecognized labels).
+      // Conflicting = multiple accuracy signal labels on the same issue (e.g. accepted+rejected).
+      const accuracySignalsPresent = recognizedOutcomeLabels.filter(l => ACCURACY_SIGNAL_LABELS.includes(l))
+      const hasConflictingAccuracySignals = accuracySignalsPresent.length > 1
+
       if (unrecognizedOutcomeLabels.length > 0) {
         // Mixed or malformed outcome markers: increment counter and skip accuracy math entirely.
         // Conservative: if ANY unrecognized status-truth:* label is present alongside a recognized
@@ -540,13 +837,19 @@ export function planStatusTruthProposalActions(
         // The recognized label is NOT included in usefulnessByKind to avoid polluting accuracy math
         // with ambiguous outcome state.
         malformedOutcomeMarkers++
+      } else if (hasConflictingAccuracySignals) {
+        // Conflicting accuracy signal labels (e.g. accepted+rejected, accepted+false-positive).
+        // Excluded from accuracy math; counted for operator attention.
+        // These are recognized labels but mutually exclusive — the issue state is ambiguous.
+        conflictingLabels++
       } else if (outcomeLabels.length === 0) {
         // Closed with no outcome label at all — count for operator attention
         closedWithoutOutcome++
       } else {
-        // Only accumulate accuracy signals when there are NO unrecognized outcome labels.
+        // Only accumulate accuracy signals when there are NO unrecognized outcome labels
+        // and NO conflicting accuracy signal labels.
         // This is intentionally conservative: we only count recognized accuracy signal labels
-        // on issues that have no malformed/unknown outcome markers.
+        // on issues that have no malformed/unknown outcome markers and no conflicts.
         for (const label of recognizedOutcomeLabels) {
           if (!ACCURACY_SIGNAL_LABELS.includes(label)) continue
 
@@ -572,14 +875,9 @@ export function planStatusTruthProposalActions(
     }
   }
 
-  const actions: ProposalAction[] = []
-  let opened = 0
-  let updated = 0
-  let reopened = 0
-  let suppressed = 0
-  let blocked = 0
-  let noAction = 0
-  let sameRunDeduplicated = 0
+  // Per-run mutation cap (default 5). Evaluated after privacy blocking and same-run dedupe.
+  // Suppress actions are not mutating and do not count against the cap.
+  const mutationCap = input.mutationCap ?? 5
 
   // Per-kind action counts for workflow/open result summary (counts-only, no paths or fingerprints).
   const countsByKind: Record<
@@ -600,12 +898,38 @@ export function planStatusTruthProposalActions(
   // Track which fingerprints are active in this report (for close-on-clear)
   const activeFingerprintsInReport = new Set<string>()
 
-  // Track fingerprints planned for open in this planner call (same-run dedup within one report).
-  // Prevents duplicate open actions when the same fingerprint appears in multiple findings
+  // Track fingerprints handled in this planner call (same-run dedup within one report).
+  // Prevents duplicate lifecycle actions when the same fingerprint appears in multiple findings
   // (e.g. same claim text in two files) within a single report.
-  const plannedOpenFingerprints = new Set<string>(sameRunCreatedFingerprints)
+  const plannedActionFingerprints = new Set<string>(sameRunCreatedFingerprints)
 
-  // 3. Process proposal-eligible findings
+  // ---------------------------------------------------------------------------
+  // Two-pass cap approach:
+  // Pass 1: Collect all candidate mutating actions (privacy-gated, deduplicated)
+  //         into priority buckets. Privacy-blocked and deduplicated actions do NOT
+  //         consume cap budget.
+  // Pass 2: Apply cap across buckets in deterministic priority order:
+  //         close > update > reopen > open
+  //         Actions beyond the cap become overflow (planned-but-blocked counts).
+  // ---------------------------------------------------------------------------
+
+  // Priority buckets for cap enforcement
+  const candidateCloses: CloseAction[] = []
+  const candidateUpdates: UpdateCommentAction[] = []
+  const candidateReopens: ReopenAction[] = []
+  const candidateOpens: OpenAction[] = []
+  const suppressActions: SuppressAction[] = []
+
+  // Track per-kind for suppressed (not cap-limited)
+  const suppressedKinds: string[] = []
+
+  let suppressed = 0
+  let blocked = 0
+  let noAction = 0
+  let sameRunDeduplicated = 0
+  let needsOutcomeCooldown = 0
+
+  // 3. Process proposal-eligible findings — collect candidates into priority buckets
   for (const finding of report.findings) {
     // Skip unsafe findings — they have no identity-bearing fields and are never proposal-eligible
     if (!isPublicFinding(finding)) continue
@@ -617,8 +941,8 @@ export function planStatusTruthProposalActions(
     activeFingerprintsInReport.add(fingerprint)
 
     // a. Same-run dedup: skip if already created this run or already planned in this call.
-    // plannedOpenFingerprints starts with sameRunCreatedFingerprints and grows as we plan opens.
-    if (plannedOpenFingerprints.has(fingerprint)) {
+    // plannedActionFingerprints starts with sameRunCreatedFingerprints and grows as actions are planned.
+    if (plannedActionFingerprints.has(fingerprint)) {
       sameRunDeduplicated++
       continue
     }
@@ -626,25 +950,30 @@ export function planStatusTruthProposalActions(
     // b. Check for terminal suppression
     const closedIssue = closedByFingerprint.get(fingerprint)
     if (closedIssue !== undefined && hasTerminalLabel(closedIssue.labels)) {
-      actions.push({
+      // Mark fingerprint as handled so any duplicate finding in this report is skipped.
+      plannedActionFingerprints.add(fingerprint)
+      suppressActions.push({
         type: 'suppress',
         fingerprint,
         reason: 'terminal outcome label on closed proposal',
       })
       suppressed++
-      incrementKindCount(kind, 'suppressed')
+      suppressedKinds.push(kind)
       continue
     }
 
     // c. Check for matching open issue
     const openIssue = openByFingerprint.get(fingerprint)
     if (openIssue !== undefined) {
+      // Mark fingerprint as handled so any duplicate finding in this report is skipped.
+      plannedActionFingerprints.add(fingerprint)
+
       // Compare recorded live-state to current live-state
       const recordedLiveState = extractRecordedLiveState(openIssue.body)
       const currentLiveState = finding.liveState
 
       if (recordedLiveState !== null && currentLiveState !== undefined && recordedLiveState !== currentLiveState) {
-        // Live-state details changed — plan one update comment
+        // Live-state details changed — candidate update comment (privacy-gated)
         const comment = buildUpdateComment(finding, report.generated_at)
         const gateResult = applyPublicOutputGate({
           surface: 'proposal-comment',
@@ -653,16 +982,15 @@ export function planStatusTruthProposalActions(
           fingerprint,
         })
         if (!gateResult.allowed) {
+          // Privacy-blocked: does NOT consume cap budget
           blocked++
           continue
         }
-        actions.push({
+        candidateUpdates.push({
           type: 'update-comment',
           issueNumber: openIssue.number,
           comment: gateResult.sanitizedContent,
         })
-        updated++
-        incrementKindCount(kind, 'updated')
       } else {
         // Drift unchanged — no action to avoid comment spam
         noAction++
@@ -670,8 +998,34 @@ export function planStatusTruthProposalActions(
       continue
     }
 
-    // d. Check for matching non-terminal closed issue → reopen
+    // d. Check for matching non-terminal closed issue → candidate reopen (with cooldown check)
     if (closedIssue !== undefined && !hasTerminalLabel(closedIssue.labels)) {
+      // Mark fingerprint as handled so any duplicate finding in this report is skipped.
+      plannedActionFingerprints.add(fingerprint)
+
+      // Determine if this is a closed-without-outcome (needs-outcome) issue.
+      // A closed issue with no recognized outcome label is in needs-outcome state.
+      const outcomeLabels = closedIssue.labels.filter(l => l !== PROPOSAL_LABEL && l.startsWith('status-truth:'))
+      const hasRecognizedOutcomeLabel = outcomeLabels.some(l => ALL_RECOGNIZED_OUTCOME_LABELS.includes(l))
+      const isClosedWithoutOutcome = !hasRecognizedOutcomeLabel
+
+      if (isClosedWithoutOutcome) {
+        // Apply cooldown: if closedAt is missing or within 7 days, block reopen.
+        // Conservative: missing closedAt → treat as needs-attention, no mutation.
+        const closedAt = closedIssue.closedAt
+        if (closedAt === null || closedAt === undefined) {
+          // Cannot determine cooldown — conservative: count for attention, no mutation
+          needsOutcomeCooldown++
+          continue
+        }
+        if (isWithinCooldown(closedAt, now)) {
+          // Within cooldown — do not reopen, count for operator attention
+          needsOutcomeCooldown++
+          continue
+        }
+        // Past cooldown — fall through to reopen with recurrence comment
+      }
+
       const comment = buildRecurrenceComment(report.generated_at)
       const gateResult = applyPublicOutputGate({
         surface: 'recurrence-comment',
@@ -680,28 +1034,27 @@ export function planStatusTruthProposalActions(
         fingerprint,
       })
       if (!gateResult.allowed) {
+        // Privacy-blocked: does NOT consume cap budget
         blocked++
         continue
       }
       const removeLabels = closedIssue.labels.filter(l => RESOLVING_LABELS.includes(l))
-      actions.push({
+      candidateReopens.push({
         type: 'reopen',
         issueNumber: closedIssue.number,
         comment: gateResult.sanitizedContent,
         removeLabels,
         addLabels: [OUTCOME_LABELS.recurring],
       })
-      reopened++
-      incrementKindCount(kind, 'reopened')
       continue
     }
 
-    // e. New finding — open a proposal after privacy gating
+    // e. New finding — candidate open after privacy gating
     // Mark this fingerprint as seen before gating so that if the gate blocks,
     // subsequent same-fingerprint findings in this report are still deduplicated.
     // Without this, a second finding with the same fingerprint but a safe correction
     // would slip through after the first was blocked, opening an unintended proposal.
-    plannedOpenFingerprints.add(fingerprint)
+    plannedActionFingerprints.add(fingerprint)
 
     const title = buildProposalTitle(finding)
     const body = buildProposalBody(finding, report.generated_at)
@@ -713,6 +1066,7 @@ export function planStatusTruthProposalActions(
       fingerprint,
     })
     if (!titleGate.allowed) {
+      // Privacy-blocked: does NOT consume cap budget
       blocked++
       continue
     }
@@ -724,26 +1078,25 @@ export function planStatusTruthProposalActions(
       fingerprint,
     })
     if (!bodyGate.allowed) {
+      // Privacy-blocked: does NOT consume cap budget
       blocked++
       continue
     }
 
-    actions.push({
+    candidateOpens.push({
       type: 'open',
       fingerprint,
       title: titleGate.sanitizedContent,
       body: bodyGate.sanitizedContent,
       labels: [PROPOSAL_LABEL],
     })
-    opened++
-    incrementKindCount(kind, 'opened')
   }
 
-  // 4. Close-on-clear: only when scan is complete and not execution-failure.
-  // At this point we have already returned early for execution-failure and scan_complete=false,
-  // so report.scan_complete is always true here. The check is kept for clarity.
-  const canClose = report.scan_complete
-  let closed = 0
+  // 4. Close-on-clear candidates: only when scan is complete, not execution-failure,
+  // and no unsafe findings are present. Unsafe findings indicate that some claims
+  // could not be proven public — prior drift may simply be inaccessible/private now,
+  // not genuinely cleared. Closing proposals under that uncertainty would be incorrect.
+  const canClose = report.scan_complete && report.counts.unsafe === 0
 
   if (canClose) {
     for (const [fp, openIssue] of openByFingerprint) {
@@ -756,22 +1109,107 @@ export function planStatusTruthProposalActions(
           fingerprint: fp,
         })
         if (!gateResult.allowed) {
+          // Privacy-blocked: does NOT consume cap budget
           blocked++
           continue
         }
-        actions.push({
+        candidateCloses.push({
           type: 'close',
           issueNumber: openIssue.number,
           labels: [OUTCOME_LABELS.resolved],
           comment: gateResult.sanitizedContent,
         })
-        closed++
-        // Infer kind from open issue title for countsByKind
-        const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(openIssue.title)
-        const kind = titleMatch?.[1] ?? 'unknown'
-        incrementKindCount(kind, 'closed')
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pass 2: Apply mutation cap in priority order: close > update > reopen > open
+  // Actions beyond the cap are counted as overflowed (planned-but-blocked).
+  // Suppress actions are not mutating and are always included.
+  // ---------------------------------------------------------------------------
+
+  const actions: ProposalAction[] = [...suppressActions]
+  let opened = 0
+  let updated = 0
+  let reopened = 0
+  let closed = 0
+  let overflowed = 0
+  let remainingCap = mutationCap
+
+  // Priority 1: close actions
+  for (const action of candidateCloses) {
+    if (remainingCap > 0) {
+      actions.push(action)
+      closed++
+      remainingCap--
+      // Infer kind from open issue title for countsByKind
+      const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(
+        openByFingerprint.get(
+          // Extract fingerprint from close action — find the open issue by number
+          [...openByFingerprint.entries()].find(([, issue]) => issue.number === action.issueNumber)?.[0] ?? '',
+        )?.title ?? '',
+      )
+      const kind = titleMatch?.[1] ?? 'unknown'
+      incrementKindCount(kind, 'closed')
+    } else {
+      overflowed++
+    }
+  }
+
+  // Priority 2: update-comment actions
+  // We need to track which finding corresponds to each update to get the kind.
+  // Since candidateUpdates are collected in finding order, we need to look up kind
+  // from the openByFingerprint map via issueNumber.
+  for (const action of candidateUpdates) {
+    if (remainingCap > 0) {
+      actions.push(action)
+      updated++
+      remainingCap--
+      // Infer kind from open issue title
+      const openIssue = [...openByFingerprint.values()].find(i => i.number === action.issueNumber)
+      const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(openIssue?.title ?? '')
+      const kind = titleMatch?.[1] ?? 'unknown'
+      incrementKindCount(kind, 'updated')
+    } else {
+      overflowed++
+    }
+  }
+
+  // Priority 3: reopen actions
+  for (const action of candidateReopens) {
+    if (remainingCap > 0) {
+      actions.push(action)
+      reopened++
+      remainingCap--
+      // Infer kind from closed issue title
+      const closedIssue = [...closedByFingerprint.values()].find(i => i.number === action.issueNumber)
+      const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(closedIssue?.title ?? '')
+      const kind = titleMatch?.[1] ?? 'unknown'
+      incrementKindCount(kind, 'reopened')
+    } else {
+      overflowed++
+    }
+  }
+
+  // Priority 4: open actions (lowest priority)
+  for (const action of candidateOpens) {
+    if (remainingCap > 0) {
+      actions.push(action)
+      opened++
+      remainingCap--
+      // Infer kind from the action's title
+      const titleMatch = /^Status truth: ([\w-]+) drift/u.exec(action.title)
+      const kind = titleMatch?.[1] ?? 'unknown'
+      incrementKindCount(kind, 'opened')
+    } else {
+      overflowed++
+    }
+  }
+
+  // Add suppressed kind counts (not cap-limited)
+  for (const kind of suppressedKinds) {
+    incrementKindCount(kind, 'suppressed')
   }
 
   return {
@@ -783,20 +1221,24 @@ export function planStatusTruthProposalActions(
       closed,
       suppressed,
       blocked,
+      overflowed,
       noAction,
       sameRunDeduplicated,
       malformedMarkers,
       versionRejected: 0,
       closedWithoutOutcome,
+      needsOutcomeCooldown,
       malformedOutcomeMarkers,
+      conflictingLabels,
       usefulnessByKind,
     },
     countsByKind,
+    outcomeCounts: buildOutcomeCounts(existingIssues, activeFingerprintsInReport),
   }
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: I/O executor types
+// I/O executor types
 // ---------------------------------------------------------------------------
 
 /**
@@ -809,6 +1251,8 @@ export interface IssueListItem {
   readonly title: string
   readonly body: string | null | undefined
   readonly labels: readonly (string | {readonly name?: string | null | undefined})[]
+  /** ISO 8601 timestamp when the issue was closed, if available from the API. */
+  readonly closed_at?: string | null
 }
 
 /**
@@ -872,10 +1316,30 @@ export interface StatusTruthOctokitClient {
 }
 
 /**
+ * Fetch all pages of issues from a single `listForRepo` call until an empty page is returned.
+ *
+ * Any API error is propagated to the caller (fail-closed).
+ */
+async function paginateAll(
+  listFn: (page: number) => Promise<{data: IssueListItem[]}>,
+  perPage = 100,
+): Promise<IssueListItem[]> {
+  const all: IssueListItem[] = []
+  let page = 1
+  for (;;) {
+    const response = await listFn(page)
+    all.push(...response.data)
+    if (response.data.length < perPage) break
+    page++
+  }
+  return all
+}
+
+/**
  * Fetch existing status-truth proposal issues from GitHub.
  *
- * Fetches open issues and recent closed issues (last 2 pages) labeled with
- * PROPOSAL_LABEL. Filters to only issues that have the proposal label.
+ * Fetches all open and all closed issues labeled with PROPOSAL_LABEL using
+ * exhaustive pagination. Filters to only issues that have the proposal label.
  * Returns them as ExistingProposalIssue[] for the lifecycle planner.
  *
  * Fail-closed in live mode: any API error is re-thrown so the caller can
@@ -892,17 +1356,22 @@ export async function fetchExistingProposalIssues(params: {
   const {octokit, owner, repo} = params
   const issues: ExistingProposalIssue[] = []
 
-  // Fetch open issues with the proposal label.
+  // Fetch all open issues with the proposal label.
   // Any error is propagated to the caller (fail-closed in live mode).
-  const openResponse = await octokit.rest.issues.listForRepo({
-    owner,
-    repo,
-    labels: PROPOSAL_LABEL,
-    state: 'open',
-    per_page: 100,
-    page: 1,
-  })
-  for (const issue of openResponse.data) {
+  const perPage = 100
+  const openItems = await paginateAll(
+    async page =>
+      octokit.rest.issues.listForRepo({
+        owner,
+        repo,
+        labels: PROPOSAL_LABEL,
+        state: 'open',
+        per_page: perPage,
+        page,
+      }),
+    perPage,
+  )
+  for (const issue of openItems) {
     const labelNames = issue.labels.map(l => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean)
     if (!labelNames.includes(PROPOSAL_LABEL)) continue
     issues.push({
@@ -914,39 +1383,31 @@ export async function fetchExistingProposalIssues(params: {
     })
   }
 
-  // Fetch recent closed issues with the proposal label (2 pages).
-  // Any error on the first page is propagated; subsequent pages are best-effort.
-  for (const page of [1, 2]) {
-    let closedResponse: {data: IssueListItem[]}
-    try {
-      closedResponse = await octokit.rest.issues.listForRepo({
+  // Fetch all closed issues with the proposal label.
+  // Any error is propagated to the caller (fail-closed in live mode).
+  const closedItems = await paginateAll(
+    async page =>
+      octokit.rest.issues.listForRepo({
         owner,
         repo,
         labels: PROPOSAL_LABEL,
         state: 'closed',
-        per_page: 50,
+        per_page: perPage,
         page,
-      })
-    } catch (error: unknown) {
-      if (page === 1) {
-        // First closed page failure is fatal — propagate to caller
-        throw error
-      }
-      // Subsequent pages: best-effort; stop pagination
-      break
-    }
-    if (closedResponse.data.length === 0) break
-    for (const issue of closedResponse.data) {
-      const labelNames = issue.labels.map(l => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean)
-      if (!labelNames.includes(PROPOSAL_LABEL)) continue
-      issues.push({
-        number: issue.number,
-        state: 'closed',
-        labels: labelNames,
-        title: issue.title,
-        body: issue.body,
-      })
-    }
+      }),
+    perPage,
+  )
+  for (const issue of closedItems) {
+    const labelNames = issue.labels.map(l => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean)
+    if (!labelNames.includes(PROPOSAL_LABEL)) continue
+    issues.push({
+      number: issue.number,
+      state: 'closed',
+      labels: labelNames,
+      title: issue.title,
+      body: issue.body,
+      closedAt: issue.closed_at ?? null,
+    })
   }
 
   return issues
@@ -1047,7 +1508,7 @@ export interface ExecuteStatusTruthProposalActionsResult {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: Label preflight helper
+// Label preflight helper
 // ---------------------------------------------------------------------------
 
 function isApiStatus(error: unknown, status: number): boolean {
@@ -1117,7 +1578,7 @@ async function ensureStatusTruthLabels(
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: I/O executor
+// I/O executor
 // ---------------------------------------------------------------------------
 
 /**
@@ -1305,7 +1766,7 @@ export async function executeStatusTruthProposalActions(
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: CLI shell for the open/proposals step
+// CLI shell for the open/proposals step
 // ---------------------------------------------------------------------------
 
 /** No-op log handler object — suppresses all Octokit default logger output. */
@@ -1352,9 +1813,20 @@ interface OpenResult {
   plannedCountsByKind: Readonly<Record<string, KindActionCounts>>
   /**
    * Aggregate planned counts from the planner (counts-only).
-   * Includes versionRejected and other planner-level counters not present in executor counts.
+   * Includes versionRejected, blocked, overflowed, and other planner-level counters
+   * not present in executor counts.
    */
-  plannedCounts: Pick<ProposalCounts, 'versionRejected' | 'blocked' | 'sameRunDeduplicated'>
+  plannedCounts: Pick<
+    ProposalCounts,
+    'versionRejected' | 'blocked' | 'overflowed' | 'sameRunDeduplicated' | 'needsOutcomeCooldown'
+  >
+  /**
+   * Aggregate outcome counts from all existing proposal issues (read-model).
+   * Separate from action counts (counts) and planned counts (plannedCounts).
+   * Reflects the current state of all proposal issues, not the actions taken this run.
+   * Counts-only: no raw issue bodies, titles, paths, or fingerprints.
+   */
+  outcomeCounts: OutcomeCounts
 }
 
 /**
@@ -1518,8 +1990,11 @@ async function runOpen(): Promise<void> {
     plannedCounts: {
       versionRejected: planResult.counts.versionRejected,
       blocked: planResult.counts.blocked,
+      overflowed: planResult.counts.overflowed,
       sameRunDeduplicated: planResult.counts.sameRunDeduplicated,
+      needsOutcomeCooldown: planResult.counts.needsOutcomeCooldown,
     },
+    outcomeCounts: planResult.outcomeCounts,
   }
 
   const resultJson = `${JSON.stringify(result)}\n`

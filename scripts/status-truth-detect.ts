@@ -1,3 +1,5 @@
+import type {RolloutSnapshot, SnapshotItem} from './rollout-tracker-snapshot.ts'
+
 import {createHash} from 'node:crypto'
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
@@ -75,9 +77,28 @@ export const CLAIM_KIND_DEFINITIONS: readonly ClaimKindDefinition[] = [
   {
     kind: 'plan-status',
     resolverType: 'file-parse',
-    pattern: /^status:\s*(active|complete|draft|cancelled|superseded)\s*$/imu,
+    /**
+     * Cross-file plan-status claim grammar.
+     *
+     * Matches explicit prose references to a plan file with a supported status:
+     *   "docs/plans/<name>.md is active"
+     *   "plan docs/plans/<name>.md is complete"
+     *
+     * Groups: [planPath, status]
+     *
+     * Requires an explicit `docs/plans/...md` path so ambiguous self-references
+     * and implicit prose like "the plan is active" are not extracted.
+     * Self-referential frontmatter (status: active in the plan's own file) is
+     * intentionally NOT matched — only cross-file prose claims are extracted.
+     *
+     * Path segments are restricted to `[\w-]+` (word chars and hyphens only),
+     * which prevents `..` traversal segments from matching.
+     */
+    pattern:
+      /\b(?:plan\s+)?(docs\/plans\/(?:[\w-]+\/)*[\w-]+\.md)\s+is\s+(active|complete|draft|cancelled|superseded)\b/iu,
     confidenceRule: 'Current plan frontmatter wins over prose references to the same plan.',
-    suppressionRule: 'Conflicting frontmatter/prose is unresolved, not drifted.',
+    suppressionRule:
+      'Ambiguous self-references, missing files, malformed frontmatter, or unsupported status values are unresolved, not drifted.',
     proposalFields: ['kind', 'path', 'sourceRef', 'claimedState', 'liveState', 'proposedCorrection'],
   },
   {
@@ -227,13 +248,23 @@ export function computeClaimFingerprint(
 /**
  * Build a proposed correction string for a drifted claim.
  * Replaces the claimed state with the live state in the normalized text.
+ *
+ * All claim grammars place the state token at the end of normalizedText
+ * (e.g. "plan docs/plans/active-plan.md is active", "release v1.0-draft is draft").
+ * A first-match \b replacement would corrupt path/tag segments that happen to
+ * contain the same word (e.g. "active" in "active-plan.md"). Instead, we anchor
+ * the match to the trailing position — the last word-boundary occurrence of the
+ * claimed state followed only by non-word characters until end-of-string.
  */
 function buildProposedCorrection(claim: StatusTruthClaim, liveState: string): string {
   // Replace the claimed state token in the normalized text with the live state.
   // Use a replacement function (not a string) so that live-state values containing
   // special replacement tokens like `$&`, `$1`, `$$` are inserted literally.
   const escaped = claim.claimedState.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`)
-  const pattern = new RegExp(String.raw`\b${escaped}\b`, 'iu')
+  // Anchor to the last occurrence: match the claimed state only when followed by
+  // zero or more non-word characters until end-of-string. This prevents replacing
+  // the state word when it appears earlier in the text (e.g. inside a path segment).
+  const pattern = new RegExp(String.raw`\b${escaped}\b(?=\W*$)`, 'iu')
   const corrected = claim.normalizedText.replace(pattern, () => liveState)
   // If replacement didn't change anything, append the correction explicitly
   if (corrected === claim.normalizedText) {
@@ -432,7 +463,7 @@ export function isKnownReportVersion(report: StatusTruthJsonReport): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: Text extraction and file scanning
+// Text extraction and file scanning
 // ---------------------------------------------------------------------------
 
 /**
@@ -565,10 +596,13 @@ export function extractStatusTruthClaimsFromText(params: {path: string; text: st
         sourceRef = `@${tag}`
         claimedState = state.toLowerCase()
       } else if (def.kind === 'plan-status') {
-        // Groups: [state] — frontmatter status field
-        const state = match[1]
-        if (state === undefined) continue
-        sourceRef = `${path}#status`
+        // Groups: [planPath, state] — cross-file prose reference to a plan file
+        // Pattern: "docs/plans/<name>.md is <status>" or "plan docs/plans/<name>.md is <status>"
+        const planPath = match[1]
+        const state = match[2]
+        if (planPath === undefined || state === undefined) continue
+        // sourceRef is the plan path itself (not path#status) for cross-file claims
+        sourceRef = planPath
         claimedState = state.toLowerCase()
       } else {
         continue
@@ -667,17 +701,15 @@ export type FileLister = () => Promise<string[]>
 /**
  * Claim kinds enabled by default in production scans.
  *
- * `plan-status` is intentionally excluded from the default set because
- * `resolveClaimLiveState` returns `unavailable` for it (no file-parse resolver
- * exists yet). Including it would produce 100% unresolved findings with zero
- * signal — pure noise in dry-run output.
- *
- * Callers may opt in by passing `enabledKinds` explicitly.
+ * `plan-status` uses the file-parse resolver (`resolvePlanStatusClaim`).
+ * The grammar requires an explicit `docs/plans/...md` path reference, so
+ * self-referential frontmatter and ambiguous prose do not produce claims.
  */
 export const DEFAULT_ENABLED_KINDS: readonly ClaimKind[] = [
   'pr-state',
   'issue-state',
   'release-tag-state',
+  'plan-status',
   'rollout-tracker-status',
 ]
 
@@ -722,7 +754,7 @@ export async function scanStatusTruthClaims(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: GitHub issue body/comment scanning
+// GitHub issue body/comment scanning
 // ---------------------------------------------------------------------------
 
 /**
@@ -873,7 +905,7 @@ export async function scanIssueStatusTruthClaims(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: Current-repo resolver helpers
+// Current-repo resolver helpers
 // ---------------------------------------------------------------------------
 
 /**
@@ -980,24 +1012,12 @@ export async function listCurrentRepoIssueComments(
 }
 
 /**
- * Resolve a single claim's live state using the injected Octokit client.
- *
- * Current-repo scoped: only resolves claims whose sourceRef is a bare `#N` or `@tag`
- * (no `owner/repo` prefix). Cross-repo or unsupported refs return `unavailable`.
- *
- * PR state: 'open' | 'closed' | 'merged'
- * Issue state: 'open' | 'closed'
- * Release state: 'published' | 'draft'
- * Plan-status: resolved via file-parse (not this function)
- * Rollout-tracker: compound — returns unavailable (Phase 1 scope cut)
- */
-/**
  * Prove that a target repo is public using `repos.get`.
  *
  * Returns `true` if the repo is confirmed public.
  * Returns `false` if the repo is private (`data.private === true`).
- * Throws with `{status: 'private'}` sentinel if the API throws 403/404 or any
- * other error before publicness is confirmed — callers must treat this as private.
+ * Throws if the API throws 403/404 or any other error before publicness is
+ * confirmed — callers must treat this as private.
  *
  * This is the ONLY gate before cross-repo identity is exposed in findings.
  */
@@ -1010,13 +1030,29 @@ async function proveRepoPublic(
   return data.private === false
 }
 
+/**
+ * Resolve a single claim's live state using the injected Octokit client.
+ *
+ * Current-repo scoped: only resolves claims whose sourceRef is a bare `#N` or `@tag`
+ * (no `owner/repo` prefix). Cross-repo or unsupported refs return `unavailable`.
+ *
+ * PR state: 'open' | 'closed' | 'merged'
+ * Issue state: 'open' | 'closed'
+ * Release state: 'published' | 'draft'
+ * Plan-status: resolved via file-parse using the injected fileReader
+ * Rollout-tracker: compound — returns unavailable (Phase 1 scope cut)
+ */
 export async function resolveClaimLiveState(params: {
   claim: StatusTruthClaim
   octokit: DetectOctokitClient
   owner: string
   repo: string
+  /** Optional file reader for plan-status file-parse resolution. */
+  fileReader?: FileReader
+  /** Optional rollout snapshot for rollout-tracker-status compound resolution. */
+  snapshot?: RolloutSnapshot | null
 }): Promise<ResolverResult> {
-  const {claim, octokit, owner, repo} = params
+  const {claim, octokit, owner, repo, fileReader, snapshot} = params
 
   // ---------------------------------------------------------------------------
   // Cross-repo resolution: publicness proof required before any identity exposure
@@ -1105,16 +1141,27 @@ export async function resolveClaimLiveState(params: {
   }
 
   if (claim.kind === 'plan-status') {
-    // plan-status requires cross-file comparison to detect drift, which is out of
-    // Phase 1 scope. Returning the claimedState as live state would always show
-    // 'current' and mask real drift. Mark as unavailable so the finding is
-    // classified as unresolved (honest scope-cut, same as rollout-tracker).
-    return {status: 'unavailable'}
+    // plan-status uses the file-parse resolver: reads the target plan file's
+    // frontmatter and returns the live status value.
+    // sourceRef is the repo-relative plan path (e.g., docs/plans/foo.md).
+    if (fileReader === undefined) {
+      // No file reader injected — unavailable (e.g., called from API-only path)
+      return {status: 'unavailable'}
+    }
+    return resolvePlanStatusClaim({
+      claimedPath: claim.sourceRef,
+      fileReader,
+    })
   }
 
   if (claim.kind === 'rollout-tracker-status') {
-    // Compound resolver: Phase 1 scope cut — mark unavailable
-    return {status: 'unavailable'}
+    // Compound resolver: use snapshot when provided; otherwise unavailable.
+    // snapshot === undefined means no snapshot was passed (Phase 1 behavior preserved).
+    // snapshot === null means snapshot was explicitly passed as unavailable.
+    if (snapshot === undefined) {
+      return {status: 'unavailable'}
+    }
+    return resolveRolloutTrackerClaim({claim, snapshot})
   }
 
   if (claim.kind === 'pr-state') {
@@ -1165,19 +1212,254 @@ export async function resolveClaimLiveState(params: {
   return {status: 'unavailable'}
 }
 
+// ---------------------------------------------------------------------------
+// Plan-status file-parse resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * Conservative supported status vocabulary from existing plan frontmatter.
+ * Only these values are recognized as valid plan status; anything else is unresolved.
+ */
+export const SUPPORTED_PLAN_STATUSES: readonly string[] = ['active', 'complete', 'draft', 'cancelled', 'superseded']
+
+/**
+ * Parse YAML frontmatter from plan file content.
+ *
+ * Returns the `status` field value if present and non-empty, or null otherwise.
+ * Does not throw — malformed frontmatter returns null (caller treats as unresolved).
+ *
+ * Pure function: no I/O.
+ */
+function parsePlanFrontmatterStatus(content: string): string | null {
+  // Match YAML frontmatter block: ---\n...\n--- (supports both LF and CRLF line endings)
+  const frontmatterMatch = /^---\r?\n([\s\S]+?)\r?\n---/u.exec(content)
+  if (frontmatterMatch === null || frontmatterMatch[1] === undefined) {
+    return null
+  }
+
+  const frontmatterText = frontmatterMatch[1]
+
+  // Extract status field from frontmatter text using a simple line-based match.
+  // This avoids a full YAML parse dependency while being robust for the known
+  // plan frontmatter format (status is always a simple scalar string value).
+  // Supports unquoted, double-quoted, and single-quoted values (e.g. status: "active").
+  const statusMatch = /^status:\s*["']?(\w+)["']?\s*$/mu.exec(frontmatterText)
+  if (statusMatch === null || statusMatch[1] === undefined) {
+    return null
+  }
+
+  return statusMatch[1].toLowerCase()
+}
+
+/**
+ * Resolve a plan-status claim against the target plan file's frontmatter.
+ *
+ * Resolution rules:
+ * - File read failure → `unavailable` (caller counts as file-parse error)
+ * - No frontmatter or missing status field → `unavailable`
+ * - Status value not in SUPPORTED_PLAN_STATUSES → `unavailable`
+ * - Status present and supported → `resolved` with the live status value
+ *
+ * The resolver returns the live status regardless of whether it matches the
+ * claimed status. `detectStatusTruthClaims` performs the current/drifted
+ * classification by comparing live state to claimed state.
+ *
+ * Raw file content and frontmatter text are never emitted to public output.
+ *
+ * @param params - Resolver parameters.
+ * @param params.claimedPath - Repo-relative path to the target plan file (e.g., `docs/plans/foo.md`).
+ * @param params.fileReader - Injected file reader for testability.
+ */
+export async function resolvePlanStatusClaim(params: {
+  claimedPath: string
+  fileReader: FileReader
+}): Promise<ResolverResult> {
+  const {claimedPath, fileReader} = params
+
+  // Reject paths containing traversal segments before calling fileReader.
+  // This is a defense-in-depth check: the grammar already excludes `..` via
+  // the `[\w-]+` segment pattern, but the resolver validates independently
+  // so that callers passing arbitrary paths are also protected.
+  if (claimedPath.includes('..') || !claimedPath.startsWith('docs/plans/')) {
+    return {status: 'unavailable'}
+  }
+
+  let content: string
+  try {
+    content = await fileReader(claimedPath)
+  } catch {
+    // File read failure (ENOENT, permission denied, etc.) → unavailable
+    // Caller is responsible for incrementing the file-parse error count
+    return {status: 'unavailable'}
+  }
+
+  const liveStatus = parsePlanFrontmatterStatus(content)
+
+  if (liveStatus === null) {
+    // No frontmatter or missing status field → unresolved
+    return {status: 'unavailable'}
+  }
+
+  if (!SUPPORTED_PLAN_STATUSES.includes(liveStatus)) {
+    // Unsupported status value → unresolved (conservative vocabulary)
+    return {status: 'unavailable'}
+  }
+
+  return {status: 'resolved', state: liveStatus}
+}
+
+// ---------------------------------------------------------------------------
+// Rollout-tracker compound resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * Fixed claim-to-snapshot field map for rollout-tracker-status claims.
+ *
+ * The only field compared is `issue_state`. Project-specific fields (status,
+ * readiness, gate) and volatile fields (issue_labels, issue_closed_at) are
+ * intentionally excluded from claim comparison to prevent arbitrary snapshot
+ * fields from becoming claim sources by accident.
+ *
+ * This map is code-reviewed and tested; it is the sole source of truth for
+ * which snapshot fields are authoritative for rollout-tracker-status claims.
+ */
+const ROLLOUT_TRACKER_CLAIM_FIELD_MAP = {
+  /** The snapshot field that represents the live state for a rollout-tracker-status claim. */
+  liveStateField: 'issue_state',
+} as const
+
+/**
+ * Resolve a rollout-tracker-status claim against a sanitized snapshot.
+ *
+ * Resolution rules:
+ * - `snapshot` is null (unavailable) → `unavailable`
+ * - No matching item found for the claim's sourceRef number → `unavailable`
+ * - Matched item's `issue_state` is null (incomplete data) → `unavailable`
+ * - Matched item's `issue_state` is present → `resolved` with the live state
+ *
+ * The resolver compares claim state only against the fixed field map
+ * (`issue_state`). Raw snapshot payloads, Project field values, issue titles,
+ * and tracker internals are never echoed into the result.
+ *
+ * Pure function: no I/O, no write credentials, no Octokit dependency.
+ *
+ * @param params - Resolution parameters.
+ * @param params.claim - The rollout-tracker-status claim to resolve.
+ * @param params.snapshot - The sanitized snapshot, or null if unavailable.
+ */
+export async function resolveRolloutTrackerClaim(params: {
+  claim: StatusTruthClaim
+  snapshot: RolloutSnapshot | null
+}): Promise<ResolverResult> {
+  const {claim, snapshot} = params
+
+  // Snapshot unavailable → unresolved (never treat as no-drift)
+  if (snapshot === null) {
+    return {status: 'unavailable'}
+  }
+
+  // Extract the issue number from the sourceRef (bare #N format)
+  const match = /^#(\d+)$/u.exec(claim.sourceRef)
+  if (match === null || match[1] === undefined) {
+    return {status: 'unavailable'}
+  }
+  const issueNumber = Number.parseInt(match[1], 10)
+
+  // Find the matching snapshot item by content_number
+  const item = snapshot.items.find(i => i.content_number === issueNumber)
+  if (item === undefined) {
+    return {status: 'unavailable'}
+  }
+
+  // Read the live state from the fixed field map (issue_state only)
+  const liveState = item[ROLLOUT_TRACKER_CLAIM_FIELD_MAP.liveStateField]
+  if (liveState === null) {
+    // Incomplete data — cannot determine live state
+    return {status: 'unavailable'}
+  }
+
+  // Return the live state with sub-resolver results derived from the snapshot.
+  // The snapshot's issue_state satisfies the 'issue-state' sub-resolver requirement.
+  // The 'pr-state' sub-resolver is also satisfied via the same snapshot state
+  // (the snapshot is the authoritative compound source; both sub-resolvers read
+  // from the same issue_state field to avoid double-counting or cross-wiring).
+  // No raw snapshot payload, Project fields, or tracker internals are echoed.
+  const subResolverResults: Record<string, ResolverResult> = {
+    'issue-state': {status: 'resolved', state: liveState},
+    'pr-state': {status: 'resolved', state: liveState},
+  }
+  return {status: 'resolved', state: liveState, subResolverResults}
+}
+
+/**
+ * Resolve file-parse claims (plan-status) without an Octokit client.
+ *
+ * Only resolves claims whose resolver type is `file-parse`. API-backed and
+ * compound claims are skipped — they remain absent from the returned map,
+ * which `detectStatusTruthClaims` treats as unresolved.
+ *
+ * This is called in `runDetect` before the token-gated API resolution block
+ * so that plan-status findings are produced even when no GITHUB_TOKEN is set.
+ *
+ * @param params - Resolution parameters.
+ * @param params.claims - All extracted claims (mixed kinds).
+ * @param params.fileReader - File reader for reading plan frontmatter.
+ * @returns Resolver results map keyed by `kind:sourceRef` for file-parse claims only.
+ */
+export async function resolveFileParseClaims(params: {
+  claims: readonly StatusTruthClaim[]
+  fileReader: FileReader
+}): Promise<Record<string, ResolverResult>> {
+  const {claims, fileReader} = params
+  const resolverResults: Record<string, ResolverResult> = {}
+  const seen = new Set<string>()
+
+  for (const claim of claims) {
+    const def = CLAIM_KIND_DEFINITIONS.find(d => d.kind === claim.kind)
+    if (def?.resolverType !== 'file-parse') continue
+
+    const key = `${claim.kind}:${claim.sourceRef}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    if (claim.kind === 'plan-status') {
+      resolverResults[key] = await resolvePlanStatusClaim({
+        claimedPath: claim.sourceRef,
+        fileReader,
+      })
+    }
+  }
+
+  return resolverResults
+}
+
 /**
  * Resolve all claims against live state using the injected Octokit client.
  *
  * Returns a resolver results map keyed by `kind:sourceRef`.
  * Resolution failures for individual claims are counted but do not abort.
+ *
+ * @param params - Resolution parameters.
+ * @param params.claims - Claims to resolve.
+ * @param params.octokit - Octokit client for API-backed resolution.
+ * @param params.owner - Repository owner.
+ * @param params.repo - Repository name.
+ * @param params.fileReader - Optional file reader for plan-status file-parse resolution.
+ *   Required when plan-status claims are present in the claims list.
+ * @param params.snapshot - Optional rollout snapshot for rollout-tracker-status compound resolution.
+ *   `undefined` (absent) → rollout-tracker claims stay unavailable (Phase 1 behavior).
+ *   `null` → snapshot was attempted but unavailable; rollout-tracker claims stay unavailable.
+ *   `RolloutSnapshot` → snapshot available; rollout-tracker claims resolve against it.
  */
 export async function resolveAllClaims(params: {
   claims: readonly StatusTruthClaim[]
   octokit: DetectOctokitClient
   owner: string
   repo: string
+  fileReader?: FileReader
+  snapshot?: RolloutSnapshot | null
 }): Promise<{resolverResults: Record<string, ResolverResult>; resolveErrors: number}> {
-  const {claims, octokit, owner, repo} = params
+  const {claims, octokit, owner, repo, fileReader, snapshot} = params
   const resolverResults: Record<string, ResolverResult> = {}
   let resolveErrors = 0
 
@@ -1190,7 +1472,7 @@ export async function resolveAllClaims(params: {
     seen.add(key)
 
     try {
-      resolverResults[key] = await resolveClaimLiveState({claim, octokit, owner, repo})
+      resolverResults[key] = await resolveClaimLiveState({claim, octokit, owner, repo, fileReader, snapshot})
     } catch {
       resolveErrors++
       resolverResults[key] = {status: 'unavailable'}
@@ -1201,7 +1483,130 @@ export async function resolveAllClaims(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: Artifact validation helper
+// Snapshot loading helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Valid issue_state values for a SnapshotItem.
+ * Null is allowed (item exists but state not yet fetched).
+ */
+const VALID_SNAPSHOT_ISSUE_STATES: ReadonlySet<string> = new Set(['open', 'closed', 'merged'])
+
+/**
+ * Validate a single raw snapshot item from untrusted JSON.
+ *
+ * Conservative validation: rejects unexpected field types.
+ * Returns false if any required field has an unexpected type.
+ *
+ * Fields validated:
+ * - `content_number`: must be a number
+ * - `content_repo`: must be a string
+ * - `issue_state`: must be "open" | "closed" | "merged" | null
+ * - `issue_labels`: must be an array
+ *
+ * Other fields (status, readiness, gate, issue_closed_at) are accepted as-is
+ * since they are not used in claim resolution (only issue_state is authoritative).
+ */
+function isValidSnapshotItem(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return false
+  const obj = raw as Record<string, unknown>
+
+  if (typeof obj.content_number !== 'number') return false
+  if (typeof obj.content_repo !== 'string') return false
+
+  // issue_state must be a valid string or null
+  if (obj.issue_state !== null) {
+    if (typeof obj.issue_state !== 'string') return false
+    if (!VALID_SNAPSHOT_ISSUE_STATES.has(obj.issue_state)) return false
+  }
+
+  // issue_labels must be an array
+  if (!Array.isArray(obj.issue_labels)) return false
+
+  return true
+}
+
+/**
+ * Load and validate a rollout snapshot from a JSON file.
+ *
+ * Security: the snapshot file is untrusted input. Schema validation is applied
+ * conservatively; malformed or unexpected payloads return null without throwing
+ * raw payload content into output.
+ *
+ * @param params - Load parameters.
+ * @param params.snapshotPath - Path to the snapshot JSON file, or undefined/empty if absent.
+ * @param params.fileReader - Injected file reader for testability. Defaults to fs.readFile.
+ * @returns The validated snapshot, or null if absent/unavailable/malformed.
+ *
+ * Absence/malformed → null (rollout-tracker claims stay unresolved; no fake drift).
+ * Never throws; never echoes raw payload into output.
+ */
+export async function loadRolloutSnapshot(params: {
+  snapshotPath: string | undefined
+  fileReader?: FileReader
+}): Promise<RolloutSnapshot | null> {
+  const {snapshotPath, fileReader} = params
+
+  // No path → no snapshot available
+  if (snapshotPath === undefined || snapshotPath === '') {
+    return null
+  }
+
+  // Read the file
+  let raw: string
+  try {
+    const reader = fileReader ?? (async (p: string) => readFile(p, 'utf8'))
+    raw = await reader(snapshotPath)
+  } catch {
+    // File read failure (ENOENT, permission denied, etc.) → unavailable
+    // Do not echo the error detail (may contain path info)
+    process.stderr.write('status-truth-detect: snapshot file unavailable; rollout-tracker claims will be unresolved\n')
+    return null
+  }
+
+  // Parse JSON
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    // Malformed JSON → null; do not echo raw payload
+    process.stderr.write('status-truth-detect: snapshot JSON malformed; rollout-tracker claims will be unresolved\n')
+    return null
+  }
+
+  // Validate top-level shape: must be { items: [...] }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    process.stderr.write(
+      'status-truth-detect: snapshot has unexpected shape; rollout-tracker claims will be unresolved\n',
+    )
+    return null
+  }
+
+  const obj = parsed as Record<string, unknown>
+  if (!Array.isArray(obj.items)) {
+    process.stderr.write(
+      'status-truth-detect: snapshot missing items array; rollout-tracker claims will be unresolved\n',
+    )
+    return null
+  }
+
+  // Validate each item conservatively
+  for (const item of obj.items as unknown[]) {
+    if (!isValidSnapshotItem(item)) {
+      // Do not echo item content — may contain sensitive Project field values
+      process.stderr.write(
+        'status-truth-detect: snapshot item failed validation; rollout-tracker claims will be unresolved\n',
+      )
+      return null
+    }
+  }
+
+  // Safe to cast: all items passed validation
+  return {items: obj.items as SnapshotItem[]}
+}
+
+// ---------------------------------------------------------------------------
+// Artifact validation helper
 // ---------------------------------------------------------------------------
 
 /**
@@ -1293,7 +1698,7 @@ export function validateStatusTruthArtifact(
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: Octokit construction helpers
+// Octokit construction helpers
 // ---------------------------------------------------------------------------
 
 /**
@@ -1334,7 +1739,7 @@ export function buildDetectOctokitOptions(token: string): {
 }
 
 // ---------------------------------------------------------------------------
-// Unit 4: CLI shell
+// CLI shell
 // ---------------------------------------------------------------------------
 
 /**
@@ -1399,15 +1804,22 @@ async function runDetect(): Promise<void> {
   let report: StatusTruthJsonReport
 
   try {
-    // Step 1: Scan file-system docs for claims (plan-status excluded by default)
+    // Step 1: Scan file-system docs for claims (plan-status included via DEFAULT_ENABLED_KINDS)
     const {claims: fileClaims, scanErrors: fileScanErrors} = await scanStatusTruthClaims({fileLister, fileReader})
 
     // Step 2: Resolve live state and scan GitHub issues (if token available)
     const token = process.env.GITHUB_TOKEN
-    let resolverResults: Record<string, ResolverResult> = {}
     let resolveErrors = 0
     let issueScanErrors = 0
     let issueClaims: StatusTruthClaim[] = []
+
+    // Load rollout snapshot (best-effort; absence/failure → null, not a hard error).
+    // The snapshot path is exported by the pre-detect workflow step via env var.
+    // If absent or malformed, rollout-tracker claims remain unresolved (no fake drift).
+    const snapshotPath = process.env.STATUS_TRUTH_ROLLOUT_SNAPSHOT_PATH
+    const snapshot = await loadRolloutSnapshot({snapshotPath, fileReader})
+
+    let resolverResults: Record<string, ResolverResult>
 
     if (token !== undefined && token !== '') {
       const {Octokit} = await import('@octokit/rest')
@@ -1425,13 +1837,17 @@ async function runDetect(): Promise<void> {
       issueClaims = issueResult.claims
       issueScanErrors = issueResult.scanErrors
 
-      // Resolve all claims (file + issue) against live state
+      // Resolve all claims (file + issue) against live state.
+      // resolveAllClaims handles file-parse (plan-status) via fileReader, API-backed
+      // claims via octokit, and compound claims via snapshot. No pre-pass needed.
       const allClaims = [...fileClaims, ...issueClaims]
-      const resolved = await resolveAllClaims({claims: allClaims, octokit, owner, repo})
+      const resolved = await resolveAllClaims({claims: allClaims, octokit, owner, repo, fileReader, snapshot})
       resolverResults = resolved.resolverResults
       resolveErrors = resolved.resolveErrors
+    } else {
+      // No token: resolve file-parse claims (plan-status) locally; API claims remain unresolved.
+      resolverResults = await resolveFileParseClaims({claims: fileClaims, fileReader})
     }
-    // If no token: all API claims remain unresolved (resolverResults stays empty)
 
     // Step 3: Classify all claims into findings
     const allClaims = [...fileClaims, ...issueClaims]
