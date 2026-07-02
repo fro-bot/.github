@@ -307,6 +307,14 @@ Use `status-truth:superseded` when a newer finding or a broader correction makes
 
 **Workflow summary:** Each run emits aggregate counts by claim kind (opened, updated, reopened, closed, suppressed). No file paths, fingerprints, or claim text appear in workflow logs — evidence lives in the proposal issues after privacy gating.
 
+**Plan-consistency proposals:**
+
+Every plan under `docs/plans/` is checked automatically for consistency between its frontmatter `status` and its implementation-unit checkboxes (`- [x] **Unit N: ...**`). No prose claim is required — the checkboxes are the claim.
+
+The drift rule: a plan marked `active` whose units are all checked gets a proposal to flip its status to `complete`. Everything else is either current or unresolved — unchecked units on a `complete` plan, unsupported status values, and unrecognizable unit markers are all counted as unresolved and never proposed.
+
+Applying `status-truth:rejected` or `status-truth:false-positive` to a plan-consistency proposal permanently exempts that plan from future consistency proposals. Removing or renaming a plan file clears its finding on the next scan; any open proposal for it auto-closes as resolved.
+
 ## Development
 
 ### Code Quality Standards

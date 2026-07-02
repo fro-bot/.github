@@ -22,6 +22,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 import {
   buildDetectOctokitOptions,
+  buildPlanConsistencyClaim,
   buildStatusTruthReport,
   CLAIM_KIND_DEFINITIONS,
   computeClaimFingerprint,
@@ -35,12 +36,15 @@ import {
   listCurrentRepoIssues,
   loadRolloutSnapshot,
   normalizeClaimText,
+  parsePlanUnitCheckboxes,
   resolveAllClaims,
   resolveClaimLiveState,
   resolveFileParseClaims,
+  resolvePlanConsistencyVerdict,
   resolvePlanStatusClaim,
   resolveRolloutTrackerClaim,
   scanIssueStatusTruthClaims,
+  scanPlanConsistencyFindings,
   scanStatusTruthClaims,
   selectDetectFailureClass,
   validateStatusTruthArtifact,
@@ -155,6 +159,11 @@ describe('CLAIM_KIND_DEFINITIONS', () => {
   it('release-tag-state is an API resolver', () => {
     const def = CLAIM_KIND_DEFINITIONS.find(d => d.kind === 'release-tag-state')
     expect(def?.resolverType).toBe('api')
+  })
+
+  it('plan-consistency does NOT join the regex-extraction registry (synthetic claims only)', () => {
+    const def = CLAIM_KIND_DEFINITIONS.find(d => d.kind === 'plan-consistency')
+    expect(def).toBeUndefined()
   })
 })
 
@@ -723,9 +732,16 @@ describe('type contracts', () => {
     expect(types).toHaveLength(3)
   })
 
-  it('ClaimKind union covers all five expected values', () => {
-    const kinds: ClaimKind[] = ['pr-state', 'issue-state', 'release-tag-state', 'plan-status', 'rollout-tracker-status']
-    expect(kinds).toHaveLength(5)
+  it('ClaimKind union covers all six expected values', () => {
+    const kinds: ClaimKind[] = [
+      'pr-state',
+      'issue-state',
+      'release-tag-state',
+      'plan-status',
+      'rollout-tracker-status',
+      'plan-consistency',
+    ]
+    expect(kinds).toHaveLength(6)
   })
 })
 
@@ -4493,5 +4509,558 @@ describe('buildProposedCorrection: trailing-state replacement via detect pipelin
       // The trailing state must be replaced
       expect(finding.proposedCorrection).not.toMatch(/\bpublished\s*$/)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// parsePlanUnitCheckboxes — pure checkbox unit-marker parser
+// ---------------------------------------------------------------------------
+
+describe('parsePlanUnitCheckboxes', () => {
+  it('happy path: mixed checked/unchecked unit markers produce exact counts', () => {
+    const content = [
+      '## Implementation Units',
+      '',
+      '- [x] **Unit 1: First unit**',
+      '',
+      'Body text for unit 1.',
+      '',
+      '- [ ] **Unit 2: Second unit**',
+      '',
+      'Body text for unit 2.',
+      '',
+      '- [x] **Unit 3: Third unit**',
+      '',
+    ].join('\n')
+
+    const result = parsePlanUnitCheckboxes(content)
+    expect(result.recognized).toBe(true)
+    if (result.recognized) {
+      expect(result.checkedUnits).toBe(2)
+      expect(result.uncheckedUnits).toBe(1)
+    }
+  })
+
+  it('edge case: plain non-unit checkboxes are not counted', () => {
+    const content = [
+      '- [x] **Unit 1: Real unit**',
+      '',
+      '**Checklist:**',
+      '- [x] Provision the droplet',
+      '- [ ] Rotate the secret',
+      '',
+      '**Test scenarios:**',
+      '- [x] Happy path covered',
+      '  - [x] nested sub-task',
+      '  - [ ] another nested sub-task',
+    ].join('\n')
+
+    const result = parsePlanUnitCheckboxes(content)
+    expect(result.recognized).toBe(true)
+    if (result.recognized) {
+      expect(result.checkedUnits).toBe(1)
+      expect(result.uncheckedUnits).toBe(0)
+    }
+  })
+
+  it('edge case: no unit markers at all yields the no-markers signal', () => {
+    const content = '## Overview\n\nJust prose, no checkboxes anywhere in this plan.\n'
+    const result = parsePlanUnitCheckboxes(content)
+    expect(result.recognized).toBe(false)
+  })
+
+  it('edge case: heading-encoded units (### U1. + Status: lines) are unrecognized', () => {
+    const content = [
+      '### U1. Persona Document',
+      '',
+      'Status: complete.',
+      '',
+      '### U2. Metadata Structure',
+      '',
+      'Status: complete.',
+    ].join('\n')
+
+    const result = parsePlanUnitCheckboxes(content)
+    expect(result.recognized).toBe(false)
+  })
+
+  it('edge case: bold-less unit labels are not counted as units', () => {
+    const content = ['- [x] Unit 1: Not bold, should not count', '- [ ] Unit 2: Also not bold'].join('\n')
+    const result = parsePlanUnitCheckboxes(content)
+    expect(result.recognized).toBe(false)
+  })
+
+  it('edge case: malformed unit label missing the "Unit N:" prefix is not counted', () => {
+    const content = ['- [x] **Not a unit label**', '- [ ] **Also not a unit label**'].join('\n')
+    const result = parsePlanUnitCheckboxes(content)
+    expect(result.recognized).toBe(false)
+  })
+
+  it('indented unit-shaped checkboxes (not top-level) are not counted as units', () => {
+    const content = ['Some section', '', '  - [x] **Unit 1: Indented, should not count**'].join('\n')
+    const result = parsePlanUnitCheckboxes(content)
+    expect(result.recognized).toBe(false)
+  })
+
+  it('all-checked units: checkedUnits equals total, uncheckedUnits is zero', () => {
+    const content = ['- [x] **Unit 1: First**', '- [x] **Unit 2: Second**', '- [x] **Unit 3: Third**'].join('\n')
+    const result = parsePlanUnitCheckboxes(content)
+    expect(result.recognized).toBe(true)
+    if (result.recognized) {
+      expect(result.checkedUnits).toBe(3)
+      expect(result.uncheckedUnits).toBe(0)
+    }
+  })
+
+  it('all-unchecked units: uncheckedUnits equals total, checkedUnits is zero', () => {
+    const content = ['- [ ] **Unit 1: First**', '- [ ] **Unit 2: Second**'].join('\n')
+    const result = parsePlanUnitCheckboxes(content)
+    expect(result.recognized).toBe(true)
+    if (result.recognized) {
+      expect(result.checkedUnits).toBe(0)
+      expect(result.uncheckedUnits).toBe(2)
+    }
+  })
+
+  it('is a pure function: identical input produces identical output, no I/O', () => {
+    const content = '- [x] **Unit 1: A**\n- [ ] **Unit 2: B**\n'
+    const first = parsePlanUnitCheckboxes(content)
+    const second = parsePlanUnitCheckboxes(content)
+    expect(first).toEqual(second)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolvePlanConsistencyVerdict — the single drift-matrix resolver.
+// Table-tested over the full drift matrix.
+// ---------------------------------------------------------------------------
+
+describe('resolvePlanConsistencyVerdict', () => {
+  it('active + all units checked → drifted, proposal-eligible, correction status: complete', () => {
+    const result = resolvePlanConsistencyVerdict({
+      claimedState: 'active',
+      units: {recognized: true, checkedUnits: 3, uncheckedUnits: 0},
+    })
+    expect(result.verdict).toBe('drifted')
+    expect(result.proposalEligible).toBe(true)
+    expect(result.proposedCorrection).toBe('status: complete')
+  })
+
+  it('complete + all units checked → current', () => {
+    const result = resolvePlanConsistencyVerdict({
+      claimedState: 'complete',
+      units: {recognized: true, checkedUnits: 3, uncheckedUnits: 0},
+    })
+    expect(result.verdict).toBe('current')
+    expect(result.proposalEligible).toBe(false)
+  })
+
+  it('complete + one unchecked unit → unresolved, not proposal-eligible', () => {
+    const result = resolvePlanConsistencyVerdict({
+      claimedState: 'complete',
+      units: {recognized: true, checkedUnits: 2, uncheckedUnits: 1},
+    })
+    expect(result.verdict).toBe('unresolved')
+    expect(result.proposalEligible).toBe(false)
+  })
+
+  it('no recognizable unit markers → unresolved', () => {
+    const result = resolvePlanConsistencyVerdict({
+      claimedState: 'active',
+      units: {recognized: false},
+    })
+    expect(result.verdict).toBe('unresolved')
+    expect(result.proposalEligible).toBe(false)
+  })
+
+  it('unsupported claimed status → unresolved regardless of unit state', () => {
+    const result = resolvePlanConsistencyVerdict({
+      claimedState: 'unsupported',
+      units: {recognized: true, checkedUnits: 3, uncheckedUnits: 0},
+    })
+    expect(result.verdict).toBe('unresolved')
+    expect(result.proposalEligible).toBe(false)
+  })
+
+  it('active + unfinished units → current (not drifted — matrix is one-directional)', () => {
+    const result = resolvePlanConsistencyVerdict({
+      claimedState: 'active',
+      units: {recognized: true, checkedUnits: 1, uncheckedUnits: 2},
+    })
+    expect(result.verdict).toBe('current')
+    expect(result.proposalEligible).toBe(false)
+  })
+
+  it('draft status with any unit state → current', () => {
+    const result = resolvePlanConsistencyVerdict({
+      claimedState: 'draft',
+      units: {recognized: true, checkedUnits: 0, uncheckedUnits: 3},
+    })
+    expect(result.verdict).toBe('current')
+  })
+
+  it('cancelled status with all units checked → current', () => {
+    const result = resolvePlanConsistencyVerdict({
+      claimedState: 'cancelled',
+      units: {recognized: true, checkedUnits: 3, uncheckedUnits: 0},
+    })
+    expect(result.verdict).toBe('current')
+  })
+
+  it('superseded status with mixed unit state → current', () => {
+    const result = resolvePlanConsistencyVerdict({
+      claimedState: 'superseded',
+      units: {recognized: true, checkedUnits: 1, uncheckedUnits: 1},
+    })
+    expect(result.verdict).toBe('current')
+  })
+
+  it('active with zero total units (recognized but empty) never drifts', () => {
+    // Defensive: recognized:true always carries at least one counted unit by
+    // parsePlanUnitCheckboxes construction, but the resolver must not drift on
+    // a zero-unit plan even if a future caller passes this shape directly.
+    const result = resolvePlanConsistencyVerdict({
+      claimedState: 'active',
+      units: {recognized: true, checkedUnits: 0, uncheckedUnits: 0},
+    })
+    expect(result.verdict).not.toBe('drifted')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildPlanConsistencyClaim — synthetic per-plan claim construction
+// ---------------------------------------------------------------------------
+
+describe('buildPlanConsistencyClaim', () => {
+  it('claimedState is the frontmatter status when it is a supported value', () => {
+    const content = '---\nstatus: active\n---\n\nContent.'
+    const claim = buildPlanConsistencyClaim('docs/plans/example.md', content)
+    expect(claim.kind).toBe('plan-consistency')
+    expect(claim.claimedState).toBe('active')
+    expect(claim.path).toBe('docs/plans/example.md')
+    expect(claim.sourceRef).toBe('docs/plans/example.md')
+  })
+
+  it('claimedState collapses an unsupported status value to the fixed sentinel, never the raw text', () => {
+    const content = '---\nstatus: code-complete-pending-verification\n---\n\nContent.'
+    const claim = buildPlanConsistencyClaim('docs/plans/example.md', content)
+    expect(claim.claimedState).toBe('unsupported')
+    expect(claim.claimedState).not.toBe('code-complete-pending-verification')
+  })
+
+  it('missing frontmatter status collapses to the unsupported sentinel', () => {
+    const content = '## No frontmatter here\n\nJust prose.'
+    const claim = buildPlanConsistencyClaim('docs/plans/example.md', content)
+    expect(claim.claimedState).toBe('unsupported')
+  })
+
+  it('privacy: a malformed multi-word status value never survives verbatim into the claim', () => {
+    const content = '---\nstatus: totally made up multi word status\n---\n\nContent.'
+    const claim = buildPlanConsistencyClaim('docs/plans/example.md', content)
+    expect(claim.claimedState).toBe('unsupported')
+    expect(claim.claimedState).not.toContain('totally made up')
+  })
+
+  it('normalizedText is a constant, independent of frontmatter or unit content (fingerprint stability)', () => {
+    const activeContent = '---\nstatus: active\n---\n\n- [x] **Unit 1: A**\n'
+    const completeContent = '---\nstatus: complete\n---\n\n- [ ] **Unit 1: A**\n- [x] **Unit 2: B**\n'
+    const claimA = buildPlanConsistencyClaim('docs/plans/example.md', activeContent)
+    const claimB = buildPlanConsistencyClaim('docs/plans/example.md', completeContent)
+    expect(claimA.normalizedText).toBe(claimB.normalizedText)
+  })
+
+  it('fingerprint is identical for the same plan path across differing unit/status states', () => {
+    const activeContent = '---\nstatus: active\n---\n\n- [x] **Unit 1: A**\n'
+    const completeContent = '---\nstatus: complete\n---\n\n- [ ] **Unit 1: A**\n- [x] **Unit 2: B**\n'
+    const claimA = buildPlanConsistencyClaim('docs/plans/example.md', activeContent)
+    const claimB = buildPlanConsistencyClaim('docs/plans/example.md', completeContent)
+    const fpA = computeClaimFingerprint(claimA.kind, claimA.path, claimA.sourceRef, claimA.normalizedText)
+    const fpB = computeClaimFingerprint(claimB.kind, claimB.path, claimB.sourceRef, claimB.normalizedText)
+    expect(fpA).toBe(fpB)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// scanPlanConsistencyFindings — bounded second pass over docs/plans/*.md
+// ---------------------------------------------------------------------------
+
+describe('scanPlanConsistencyFindings', () => {
+  it('active plan with all units checked yields one drifted, proposal-eligible finding', async () => {
+    const fileLister: FileLister = async () => ['README.md', 'docs/plans/shipped.md']
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/shipped.md') {
+        return '---\nstatus: active\n---\n\n- [x] **Unit 1: A**\n- [x] **Unit 2: B**\n'
+      }
+      return 'unrelated content'
+    }
+
+    const {findings, scanErrors} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(scanErrors).toBe(0)
+    expect(findings).toHaveLength(1)
+    const finding = findings[0]
+    expect(finding?.kind).toBe('plan-consistency')
+    expect(finding?.path).toBe('docs/plans/shipped.md')
+    expect(finding?.verdict).toBe('drifted')
+    expect(finding?.proposalEligible).toBe(true)
+    expect(finding?.proposedCorrection).toBe('status: complete')
+  })
+
+  it('complete plan with one unchecked unit yields one unresolved finding', async () => {
+    const fileLister: FileLister = async () => ['docs/plans/partial.md']
+    const fileReader: FileReader = async () =>
+      '---\nstatus: complete\n---\n\n- [x] **Unit 1: A**\n- [ ] **Unit 2: B**\n'
+
+    const {findings} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('unresolved')
+    expect(findings[0]?.proposalEligible).toBe(false)
+  })
+
+  it('plan with no implementation-units section yields one unresolved finding', async () => {
+    const fileLister: FileLister = async () => ['docs/plans/no-units.md']
+    const fileReader: FileReader = async () => '---\nstatus: active\n---\n\nJust prose, no units.'
+
+    const {findings} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('unresolved')
+  })
+
+  it('unsupported frontmatter status yields unresolved with claimedState "unsupported"', async () => {
+    const fileLister: FileLister = async () => ['docs/plans/dashboard.md']
+    const fileReader: FileReader = async () =>
+      '---\nstatus: code-complete-pending-verification\n---\n\n- [x] **Unit 1: A**\n'
+
+    const {findings} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('unresolved')
+    expect(findings[0]?.claimedState).toBe('unsupported')
+    // The raw frontmatter text must never survive into the finding
+    expect(JSON.stringify(findings[0])).not.toContain('code-complete-pending-verification')
+  })
+
+  it('heading-encoded units yield an unresolved finding, not drifted', async () => {
+    const fileLister: FileLister = async () => ['docs/plans/legacy.md']
+    const fileReader: FileReader = async () =>
+      '---\nstatus: active\n---\n\n### U1. First\n\nStatus: complete.\n\n### U2. Second\n\nStatus: complete.\n'
+
+    const {findings} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('unresolved')
+  })
+
+  it('draft status with checked units yields current, not drifted', async () => {
+    const fileLister: FileLister = async () => ['docs/plans/draft.md']
+    const fileReader: FileReader = async () => '---\nstatus: draft\n---\n\n- [x] **Unit 1: A**\n'
+
+    const {findings} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.verdict).toBe('current')
+  })
+
+  it('only files matching docs/plans/*.md are scanned; other paths are ignored', async () => {
+    const fileLister: FileLister = async () => ['README.md', 'docs/solutions/example.md', 'docs/plans/real.md']
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/real.md') return '---\nstatus: active\n---\n\n- [x] **Unit 1: A**\n'
+      throw new Error(`unexpected path scanned: ${path}`)
+    }
+
+    const {findings} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.path).toBe('docs/plans/real.md')
+  })
+
+  it('fingerprint is stable across two runs of the same plan with differing unit states', async () => {
+    const fileLister: FileLister = async () => ['docs/plans/example.md']
+    const activeReader: FileReader = async () => '---\nstatus: active\n---\n\n- [x] **Unit 1: A**\n'
+    const completeReader: FileReader = async () =>
+      '---\nstatus: complete\n---\n\n- [ ] **Unit 1: A**\n- [x] **Unit 2: B**\n'
+
+    const runA = await scanPlanConsistencyFindings({fileLister, fileReader: activeReader})
+    const runB = await scanPlanConsistencyFindings({fileLister, fileReader: completeReader})
+
+    expect(runA.findings[0]?.fingerprint).toBe(runB.findings[0]?.fingerprint)
+  })
+
+  it('error path: file read failure increments scanErrors and emits no finding for that plan', async () => {
+    const fileLister: FileLister = async () => ['docs/plans/broken.md', 'docs/plans/ok.md']
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/broken.md') throw new Error('read failure')
+      return '---\nstatus: active\n---\n\n- [x] **Unit 1: A**\n'
+    }
+
+    const {findings, scanErrors} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(scanErrors).toBe(1)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.path).toBe('docs/plans/ok.md')
+  })
+
+  it('no docs/plans files present yields zero findings and zero errors', async () => {
+    const fileLister: FileLister = async () => ['README.md']
+    const fileReader: FileReader = async () => 'irrelevant'
+
+    const {findings, scanErrors} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(findings).toHaveLength(0)
+    expect(scanErrors).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Detect-flow integration — runDetect-equivalent: plan-consistency findings
+// alongside prose-claim findings in one report.
+// ---------------------------------------------------------------------------
+
+describe('runDetect-equivalent: plan-consistency findings alongside prose-claim findings', () => {
+  it('full pipeline over a fixture corpus produces plan-consistency findings alongside pr-state findings in one report with correct counts', async () => {
+    const fileLister: FileLister = async () => ['README.md', 'docs/plans/shipped.md', 'docs/plans/current.md']
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'README.md') return 'PR #42 is open.'
+      if (path === 'docs/plans/shipped.md') {
+        return '---\nstatus: active\n---\n\n- [x] **Unit 1: A**\n- [x] **Unit 2: B**\n'
+      }
+      if (path === 'docs/plans/current.md') {
+        return '---\nstatus: complete\n---\n\n- [x] **Unit 1: A**\n'
+      }
+      throw new Error(`unexpected path: ${path}`)
+    }
+
+    const {claims, scanErrors: fileScanErrors} = await scanStatusTruthClaims({fileLister, fileReader})
+    const {findings: planConsistencyFindings, scanErrors: planScanErrors} = await scanPlanConsistencyFindings({
+      fileLister,
+      fileReader,
+    })
+
+    const resolverResults = makeResolverResults([
+      {kind: 'pr-state', sourceRef: '#42', result: {status: 'resolved', state: 'closed'}},
+    ])
+
+    const findings = [...detectStatusTruthClaims(claims, resolverResults), ...planConsistencyFindings]
+    const report = buildStatusTruthReport({
+      findings,
+      scanComplete: fileScanErrors === 0 && planScanErrors === 0,
+      generatedAt: '2026-07-02T00:00:00Z',
+      failureClass: null,
+    })
+
+    expect(report.scan_complete).toBe(true)
+    expect(report.counts.total).toBe(3)
+    expect(report.counts.drifted).toBe(2) // pr-state drift + shipped.md drift
+    expect(report.counts.current).toBe(1) // current.md
+    const kinds = report.findings.map(f => f.kind)
+    expect(kinds).toContain('pr-state')
+    expect(kinds).toContain('plan-consistency')
+  })
+
+  it('deleting a fixture plan between two runs drops its finding from the next report (fingerprint clears)', async () => {
+    const firstLister: FileLister = async () => ['docs/plans/temp.md']
+    const firstReader: FileReader = async () => '---\nstatus: active\n---\n\n- [x] **Unit 1: A**\n'
+    const first = await scanPlanConsistencyFindings({fileLister: firstLister, fileReader: firstReader})
+    expect(first.findings).toHaveLength(1)
+    const firstFingerprint = first.findings[0]?.fingerprint
+
+    // Second run: the plan file is gone from the lister entirely.
+    const secondLister: FileLister = async () => []
+    const secondReader: FileReader = async () => ''
+    const second = await scanPlanConsistencyFindings({fileLister: secondLister, fileReader: secondReader})
+
+    expect(second.findings).toHaveLength(0)
+    expect(second.findings.map(f => f.fingerprint)).not.toContain(firstFingerprint)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Privacy: report JSON finding fields for plan-consistency carry only
+// normalized data — path, statuses, unit counts, correction. No raw plan
+// body text, unit titles, or frontmatter excerpts.
+// ---------------------------------------------------------------------------
+
+describe('plan-consistency privacy: report artifact surface', () => {
+  it('drifted finding report JSON contains only normalized fields — no plan body prose', async () => {
+    const secretSentence = 'This plan discusses fro-bot/super-secret-internal-project details.'
+    const fileLister: FileLister = async () => ['docs/plans/shipped.md']
+    const fileReader: FileReader = async () =>
+      `---\nstatus: active\n---\n\n${secretSentence}\n\n- [x] **Unit 1: A**\n- [x] **Unit 2: B**\n`
+
+    const {findings} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    const report = buildStatusTruthReport({
+      findings,
+      scanComplete: true,
+      generatedAt: '2026-07-02T00:00:00Z',
+      failureClass: null,
+    })
+
+    const artifactJson = JSON.stringify(report)
+    expect(artifactJson).not.toContain(secretSentence)
+    expect(artifactJson).not.toContain('fro-bot/super-secret-internal-project')
+    expect(artifactJson).toContain('"kind":"plan-consistency"')
+    expect(artifactJson).toContain('"path":"docs/plans/shipped.md"')
+    expect(artifactJson).toContain('"proposedCorrection":"status: complete"')
+  })
+
+  it('unresolved unsupported-status finding report JSON never contains the raw malformed status text', async () => {
+    const fileLister: FileLister = async () => ['docs/plans/dashboard.md']
+    const fileReader: FileReader = async () =>
+      '---\nstatus: code-complete-pending-verification\n---\n\n- [x] **Unit 1: A**\n'
+
+    const {findings} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    const report = buildStatusTruthReport({
+      findings,
+      scanComplete: true,
+      generatedAt: '2026-07-02T00:00:00Z',
+      failureClass: null,
+    })
+
+    const artifactJson = JSON.stringify(report)
+    expect(artifactJson).not.toContain('code-complete-pending-verification')
+    expect(artifactJson).toContain('"claimedState":"unsupported"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Replay test — reproduces the origin incident: three shipped capture plans
+// carrying status: active with all units checked (pre-reconciliation), and a
+// fixture shaped like the current (reconciled) corpus.
+// ---------------------------------------------------------------------------
+
+describe('plan-consistency replay: pre-reconciliation stale capture plans', () => {
+  it('three fixture plans shaped like the stale capture plans (active + all [x]) yield exactly three drifted', async () => {
+    const stalePlanContent = (name: string) =>
+      `---\ntitle: '${name}'\nstatus: active\n---\n\n- [x] **Unit 1: A**\n- [x] **Unit 2: B**\n- [x] **Unit 3: C**\n`
+
+    const fileLister: FileLister = async () => [
+      'docs/plans/2026-06-22-003-feat-enrich-capture-digest-plan.md',
+      'docs/plans/2026-06-22-004-feat-c2-failed-then-fixed-capture-plan.md',
+      'docs/plans/2026-06-23-001-fix-merged-candidate-evidence-plan.md',
+    ]
+    const fileReader: FileReader = async (path: string) => stalePlanContent(path)
+
+    const {findings, scanErrors} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(scanErrors).toBe(0)
+    expect(findings).toHaveLength(3)
+    expect(findings.every(f => f.verdict === 'drifted')).toBe(true)
+    expect(findings.every(f => f.proposalEligible)).toBe(true)
+    expect(findings.every(f => f.proposedCorrection === 'status: complete')).toBe(true)
+  })
+
+  it('a fixture shaped like the current corpus yields zero drifted and one unresolved (unsupported status)', async () => {
+    const fileLister: FileLister = async () => [
+      'docs/plans/2026-06-22-003-feat-enrich-capture-digest-plan.md',
+      'docs/plans/2026-06-15-001-feat-monitoring-dashboard-phase-1-plan.md',
+    ]
+    const fileReader: FileReader = async (path: string) => {
+      if (path === 'docs/plans/2026-06-22-003-feat-enrich-capture-digest-plan.md') {
+        // Reconciled: frontmatter flipped to complete, all units checked.
+        return '---\nstatus: complete\n---\n\n- [x] **Unit 1: A**\n- [x] **Unit 2: B**\n'
+      }
+      // The one plan with an unsupported status value in the real corpus.
+      return '---\nstatus: code-complete-pending-verification\n---\n\n- [x] **Unit 1: A**\n'
+    }
+
+    const {findings} = await scanPlanConsistencyFindings({fileLister, fileReader})
+    expect(findings).toHaveLength(2)
+    const drifted = findings.filter(f => f.verdict === 'drifted')
+    const unresolved = findings.filter(f => f.verdict === 'unresolved')
+    expect(drifted).toHaveLength(0)
+    expect(unresolved).toHaveLength(1)
+    expect(unresolved[0]?.claimedState).toBe('unsupported')
   })
 })

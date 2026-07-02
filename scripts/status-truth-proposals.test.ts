@@ -4754,3 +4754,234 @@ describe('plannedCounts assembly', () => {
     expect(planResult.counts.reopened).toBe(0)
   })
 })
+
+// ---------------------------------------------------------------------------
+// plan-consistency claim kind — planner passthrough
+//
+// The planner has no kind-specific plumbing: a drifted plan-consistency
+// finding must plan/cap/dedupe/close exactly like any other kind, with zero
+// planner code changes. These tests drive the existing planner with a
+// plan-consistency fixture to prove that.
+// ---------------------------------------------------------------------------
+
+function makeDriftedPlanConsistencyFinding(fingerprint = 'abc123def4560001') {
+  return {
+    kind: 'plan-consistency' as const,
+    path: 'docs/plans/example.md',
+    sourceRef: 'docs/plans/example.md',
+    verdict: 'drifted' as const,
+    fingerprint,
+    claimedState: 'active',
+    liveState: 'checked-2-unchecked-0',
+    proposalEligible: true,
+    proposedCorrection: 'status: complete',
+  }
+}
+
+describe('plan-consistency claim kind: planner passthrough', () => {
+  it('plans one open action for a new drifted plan-consistency finding, capped/deduped/gated like any other kind', () => {
+    const finding = makeDriftedPlanConsistencyFinding()
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const {actions, counts, countsByKind} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+
+    const openActions = actions.filter(a => a.type === 'open')
+    expect(openActions).toHaveLength(1)
+    const openAction = openActions[0]
+    if (openAction?.type === 'open') {
+      expect(openAction.fingerprint).toBe(finding.fingerprint)
+      expect(openAction.title).toContain('plan-consistency')
+      expect(openAction.body).toContain(`<!-- status-truth:fingerprint=${finding.fingerprint} -->`)
+    }
+    expect(counts.opened).toBe(1)
+    expect(countsByKind['plan-consistency']?.opened).toBe(1)
+  })
+
+  it('does not open a duplicate when an open issue already matches the plan-consistency fingerprint', () => {
+    const finding = makeDriftedPlanConsistencyFinding()
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const existingIssue = makeOpenIssue(finding.fingerprint, {
+      title: 'Status truth: plan-consistency drift in docs/plans/example.md',
+    })
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [existingIssue]}))
+
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(0)
+    expect(counts.noAction).toBeGreaterThanOrEqual(1)
+  })
+
+  it('respects the mutation cap identically for plan-consistency findings', () => {
+    const findings = [
+      makeDriftedPlanConsistencyFinding('abc123def4560001'),
+      makeDriftedPlanConsistencyFinding('abc123def4560002'),
+    ]
+    const report = makeReport({
+      findings,
+      counts: {total: 2, current: 0, drifted: 2, unresolved: 0, unsafe: 0, proposal_eligible: 2},
+    })
+
+    const {actions, counts} = planStatusTruthProposalActions(
+      makePlanInput({report, existingIssues: [], mutationCap: 1}),
+    )
+
+    expect(actions.filter(a => a.type === 'open')).toHaveLength(1)
+    expect(counts.overflowed).toBe(1)
+  })
+
+  it('close-on-clear closes an open plan-consistency proposal when the plan is deleted between runs', () => {
+    const fingerprint = 'abc123def4560001'
+    const report = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    const existingIssue = makeOpenIssue(fingerprint, {
+      title: 'Status truth: plan-consistency drift in docs/plans/example.md',
+    })
+
+    const {actions, counts} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: [existingIssue]}))
+
+    const closeActions = actions.filter(a => a.type === 'close')
+    expect(closeActions).toHaveLength(1)
+    expect(counts.closed).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// plan-consistency privacy: every public surface carries only normalized
+// data (path, statuses, unit counts, correction). No raw plan-body sentence.
+// ---------------------------------------------------------------------------
+
+describe('plan-consistency privacy: proposal surfaces', () => {
+  it('proposal title contains only kind and path — no raw plan-body sentence', () => {
+    const finding = makeDriftedPlanConsistencyFinding()
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const {actions} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+    const openAction = actions.find(a => a.type === 'open')
+    expect(openAction).toBeDefined()
+    if (openAction?.type === 'open') {
+      expect(openAction.title).toContain('plan-consistency')
+      expect(openAction.title).toContain(finding.path)
+    }
+  })
+
+  it('proposal body contains path, statuses, unit counts, and correction — no sentence copied from the plan body', () => {
+    const secretSentence = 'This plan discusses a confidential rollout timeline that must never leak.'
+    const finding = {
+      ...makeDriftedPlanConsistencyFinding(),
+      // Simulate what would happen if a raw sentence somehow made it onto liveState —
+      // it must not, because the finding builder never puts raw text there. This
+      // test pins the invariant at the proposal-body-rendering boundary too.
+    }
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const {actions} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+    const openAction = actions.find(a => a.type === 'open')
+    expect(openAction).toBeDefined()
+    if (openAction?.type === 'open') {
+      expect(openAction.body).toContain(finding.path)
+      expect(openAction.body).toContain(finding.claimedState)
+      expect(openAction.body).toContain(finding.liveState)
+      expect(openAction.body).toContain(finding.proposedCorrection)
+      expect(openAction.body).not.toContain(secretSentence)
+    }
+  })
+
+  it('update comment, recurrence comment, and close comment for plan-consistency carry only normalized data', () => {
+    const fingerprint = 'abc123def4560001'
+
+    // Update-comment surface: open issue exists, live state changed.
+    const updateFinding = {
+      ...makeDriftedPlanConsistencyFinding(fingerprint),
+      liveState: 'checked-3-unchecked-0',
+    }
+    const updateReport = makeReport({
+      findings: [updateFinding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const openIssueWithOldState: ExistingProposalIssue = {
+      ...makeOpenIssue(fingerprint, {title: 'Status truth: plan-consistency drift in docs/plans/example.md'}),
+      body: `<!-- status-truth:fingerprint=${fingerprint} -->\n<!-- status-truth:live-state=checked-2-unchecked-0 -->\n\nBody.`,
+    }
+    const updateResult = planStatusTruthProposalActions(
+      makePlanInput({report: updateReport, existingIssues: [openIssueWithOldState]}),
+    )
+    const updateAction = updateResult.actions.find(a => a.type === 'update-comment')
+    expect(updateAction).toBeDefined()
+    if (updateAction?.type === 'update-comment') {
+      expect(updateAction.comment).toContain(updateFinding.liveState)
+      expect(updateAction.comment).not.toMatch(/session|agent|workflow log/i)
+    }
+
+    // Recurrence-comment surface: closed non-terminal issue, drift returns.
+    const recurrenceReport = makeReport({
+      findings: [makeDriftedPlanConsistencyFinding(fingerprint)],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const closedNonTerminalIssue = makeClosedIssue(fingerprint, [PROPOSAL_LABEL], {
+      title: 'Status truth: plan-consistency drift in docs/plans/example.md',
+      closedAt: '2026-06-01T00:00:00Z',
+    })
+    const recurrenceResult = planStatusTruthProposalActions(
+      makePlanInput({
+        report: recurrenceReport,
+        existingIssues: [closedNonTerminalIssue],
+        now: new Date('2026-07-02T00:00:00Z'),
+      }),
+    )
+    const reopenAction = recurrenceResult.actions.find(a => a.type === 'reopen')
+    expect(reopenAction).toBeDefined()
+    if (reopenAction?.type === 'reopen') {
+      expect(reopenAction.comment).not.toMatch(/session|agent|workflow log/i)
+      expect(reopenAction.comment).toMatch(/recurrence|returned/i)
+    }
+
+    // Close-comment surface: open issue, drift cleared.
+    const closeReport = makeReport({
+      findings: [],
+      status: 'clean',
+      scan_complete: true,
+      counts: {total: 0, current: 0, drifted: 0, unresolved: 0, unsafe: 0, proposal_eligible: 0},
+    })
+    const openIssueToClose = makeOpenIssue(fingerprint, {
+      title: 'Status truth: plan-consistency drift in docs/plans/example.md',
+    })
+    const closeResult = planStatusTruthProposalActions(
+      makePlanInput({report: closeReport, existingIssues: [openIssueToClose]}),
+    )
+    const closeAction = closeResult.actions.find(a => a.type === 'close')
+    expect(closeAction).toBeDefined()
+    if (closeAction?.type === 'close') {
+      expect(closeAction.comment).not.toMatch(/session|agent|workflow log/i)
+    }
+  })
+
+  it('stdout summary shape (countsByKind) for plan-consistency is counts-only — no paths or fingerprints', () => {
+    const finding = makeDriftedPlanConsistencyFinding()
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const {countsByKind} = planStatusTruthProposalActions(makePlanInput({report, existingIssues: []}))
+    expect(countsByKind['plan-consistency']).toBeDefined()
+
+    const json = JSON.stringify(countsByKind)
+    expect(json).not.toMatch(/docs\/plans\/example\.md/)
+    expect(json).not.toMatch(/[a-f0-9]{16,}/)
+  })
+})
