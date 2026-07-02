@@ -34,10 +34,7 @@ export interface DataBranchBootstrapResult {
 export type OctokitClient = Octokit
 
 export type DataBranchBootstrapErrorCode =
-  | 'MISSING_TOKEN'
-  | 'OCTOKIT_LOAD_FAILED'
-  | 'MAIN_BRANCH_NOT_FOUND'
-  | 'API_ERROR'
+  'MISSING_TOKEN' | 'OCTOKIT_LOAD_FAILED' | 'MAIN_BRANCH_NOT_FOUND' | 'API_ERROR'
 
 export class DataBranchBootstrapError extends Error {
   readonly code: DataBranchBootstrapErrorCode
