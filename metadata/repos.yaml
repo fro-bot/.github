@@ -274,12 +274,12 @@ repos:
     name: .github
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-20
+    last_survey_at: 2026-07-02
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: contrib
-    next_survey_eligible_at: 2026-07-13
+    next_survey_eligible_at: 2026-07-23
     private: false
     node_id: R_kgDOHBEXpg
     database_id: 470882214
