@@ -1,8 +1,9 @@
 ---
 title: 'fix: attach ci-fix evidence to dual-trigger candidates'
 type: fix
-status: active
+status: complete
 date: 2026-06-23
+completed: 2026-06-24
 origin: docs/brainstorms/2026-06-23-merged-candidate-evidence-requirements.md
 ---
 

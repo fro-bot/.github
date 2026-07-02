@@ -1,8 +1,9 @@
 ---
 title: 'feat: enrich the learning-capture digest with review-thread content'
 type: feat
-status: active
+status: complete
 date: 2026-06-22
+completed: 2026-06-22
 origin: docs/brainstorms/2026-06-22-skill-saving-grow-and-learn-requirements.md
 ---
 
