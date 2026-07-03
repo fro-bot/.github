@@ -187,6 +187,30 @@ const FINGERPRINT_MARKER_PATTERN = /<!-- status-truth:fingerprint=([a-f0-9]+) --
 /** Pattern to extract live-state from hidden marker. */
 const LIVE_STATE_MARKER_PATTERN = /<!-- status-truth:live-state=([\w-]+) -->/u
 
+/** Marker prefix for claim kind in issue body. */
+const KIND_MARKER_PREFIX = 'status-truth:kind='
+
+/** Pattern to extract claim kind from hidden marker. Claim kinds are lowercase words and hyphens only. */
+const KIND_MARKER_PATTERN = /<!-- status-truth:kind=([a-z-]+) -->/u
+
+/** Pattern to extract claim kind from the visible `**Kind:** \`<kind>\`` proposal body line. */
+const VISIBLE_KIND_LINE_PATTERN = /\*\*Kind:\*\* `([a-z-]+)`/u
+
+/**
+ * Closed vocabulary of recognized claim kinds for telemetry bucketing.
+ * Kept in sync with `ClaimKind` in status-truth-detect.ts. Any recovered kind
+ * text outside this set is bucketed as 'unknown' — telemetry keys must never
+ * carry arbitrary body text.
+ */
+const KNOWN_CLAIM_KINDS: ReadonlySet<string> = new Set<string>([
+  'pr-state',
+  'issue-state',
+  'release-tag-state',
+  'plan-status',
+  'rollout-tracker-status',
+  'plan-consistency',
+])
+
 // ---------------------------------------------------------------------------
 // Outcome classification read-model
 // ---------------------------------------------------------------------------
@@ -334,19 +358,70 @@ export interface OutcomeCounts {
  *   Used to distinguish resolved-positive (drift cleared) from needs-outcome (drift still active)
  *   for closed issues with no terminal/resolution label. Defaults to empty set (all drift cleared).
  */
+/** Mutable accumulator shape backing an {@link OutcomeCounts} bucket. */
+interface OutcomeCountsAccumulator {
+  proposedPending: number
+  explicitAccepted: number
+  explicitRejected: number
+  falsePositive: number
+  resolvedPositive: number
+  superseded: number
+  needsOutcome: number
+  conflictingLabels: number
+  malformedOutcome: number
+}
+
+function makeOutcomeCountsAccumulator(): OutcomeCountsAccumulator {
+  return {
+    proposedPending: 0,
+    explicitAccepted: 0,
+    explicitRejected: 0,
+    falsePositive: 0,
+    resolvedPositive: 0,
+    superseded: 0,
+    needsOutcome: 0,
+    conflictingLabels: 0,
+    malformedOutcome: 0,
+  }
+}
+
+function applyOutcomeState(acc: OutcomeCountsAccumulator, state: ProposalOutcomeState): void {
+  switch (state) {
+    case 'proposed-pending':
+      acc.proposedPending++
+      break
+    case 'explicit-accepted':
+      acc.explicitAccepted++
+      break
+    case 'explicit-rejected':
+      acc.explicitRejected++
+      break
+    case 'false-positive':
+      acc.falsePositive++
+      break
+    case 'resolved-positive':
+      acc.resolvedPositive++
+      break
+    case 'superseded':
+      acc.superseded++
+      break
+    case 'needs-outcome':
+      acc.needsOutcome++
+      break
+    case 'conflicting-labels':
+      acc.conflictingLabels++
+      break
+    case 'malformed-outcome':
+      acc.malformedOutcome++
+      break
+  }
+}
+
 export function buildOutcomeCounts(
   issues: readonly ExistingProposalIssue[],
   driftActiveFingerprints: ReadonlySet<string> = new Set<string>(),
 ): OutcomeCounts {
-  let proposedPending = 0
-  let explicitAccepted = 0
-  let explicitRejected = 0
-  let falsePositive = 0
-  let resolvedPositive = 0
-  let superseded = 0
-  let needsOutcome = 0
-  let conflictingLabels = 0
-  let malformedOutcome = 0
+  const acc = makeOutcomeCountsAccumulator()
 
   for (const issue of issues) {
     // Only classify issues that have the proposal label
@@ -357,49 +432,51 @@ export function buildOutcomeCounts(
     const fp = extractProposalFingerprint(issue.body)
     const driftActive = fp !== null && driftActiveFingerprints.has(fp)
 
-    const state = classifyProposalOutcome(issue, driftActive)
-    switch (state) {
-      case 'proposed-pending':
-        proposedPending++
-        break
-      case 'explicit-accepted':
-        explicitAccepted++
-        break
-      case 'explicit-rejected':
-        explicitRejected++
-        break
-      case 'false-positive':
-        falsePositive++
-        break
-      case 'resolved-positive':
-        resolvedPositive++
-        break
-      case 'superseded':
-        superseded++
-        break
-      case 'needs-outcome':
-        needsOutcome++
-        break
-      case 'conflicting-labels':
-        conflictingLabels++
-        break
-      case 'malformed-outcome':
-        malformedOutcome++
-        break
-    }
+    applyOutcomeState(acc, classifyProposalOutcome(issue, driftActive))
   }
 
-  return {
-    proposedPending,
-    explicitAccepted,
-    explicitRejected,
-    falsePositive,
-    resolvedPositive,
-    superseded,
-    needsOutcome,
-    conflictingLabels,
-    malformedOutcome,
+  return {...acc}
+}
+
+/**
+ * Build per-claim-kind outcome counts from a list of existing proposal issues.
+ *
+ * Pure function: no I/O, no side effects. Shares the same classification pass
+ * as {@link buildOutcomeCounts} (one `classifyProposalOutcome` call per issue) —
+ * it does not classify each issue twice.
+ *
+ * Kind is recovered via {@link recoverProposalKind}, which validates against the
+ * closed vocabulary of known claim kinds; unrecognized or missing kind info is
+ * bucketed under 'unknown'. Only kinds with at least one issue are included in
+ * the result — no zero-filled kind keys.
+ *
+ * Output is counts-only — no raw issue bodies, titles, or fingerprints.
+ */
+export function buildOutcomeCountsByKind(
+  issues: readonly ExistingProposalIssue[],
+  driftActiveFingerprints: ReadonlySet<string> = new Set<string>(),
+): Readonly<Record<string, OutcomeCounts>> {
+  const accByKind: Record<string, OutcomeCountsAccumulator> = {}
+
+  for (const issue of issues) {
+    if (!issue.labels.includes(PROPOSAL_LABEL)) continue
+
+    const fp = extractProposalFingerprint(issue.body)
+    const driftActive = fp !== null && driftActiveFingerprints.has(fp)
+    const state = classifyProposalOutcome(issue, driftActive)
+
+    const kind = recoverProposalKind(issue.body)
+    const existing = accByKind[kind]
+    const acc = existing ?? makeOutcomeCountsAccumulator()
+    if (existing === undefined) accByKind[kind] = acc
+    applyOutcomeState(acc, state)
   }
+
+  const result: Record<string, OutcomeCounts> = {}
+  for (const [kind, acc] of Object.entries(accByKind)) {
+    result[kind] = {...acc}
+  }
+  return result
 }
 
 // ---------------------------------------------------------------------------
@@ -575,6 +652,13 @@ export interface PlanStatusTruthProposalActionsResult {
    * proposal issues, not the actions taken in this run.
    */
   readonly outcomeCounts: OutcomeCounts
+  /**
+   * Per-claim-kind aggregate outcome counts from all existing proposal issues.
+   * Same read-model as `outcomeCounts`, bucketed by kind (closed vocabulary;
+   * unrecognized/missing kind info buckets as 'unknown'). Only kinds with at
+   * least one issue are present. Counts-only: no paths, titles, or fingerprints.
+   */
+  readonly outcomeCountsByKind: Readonly<Record<string, OutcomeCounts>>
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +706,54 @@ function buildLiveStateMarker(liveState: string): string {
   return `<!-- ${LIVE_STATE_MARKER_PREFIX}${liveState} -->`
 }
 
+/**
+ * Extract the claim kind from a proposal issue body hidden marker.
+ * Returns null if the body is absent, empty, or the marker is malformed.
+ */
+export function extractProposalKind(body: string | null | undefined): string | null {
+  if (body === null || body === undefined || body === '') return null
+  const match = KIND_MARKER_PATTERN.exec(body)
+  if (match === null) return null
+  const value = match[1]
+  if (value === undefined || value === '') return null
+  return value
+}
+
+/**
+ * Build the hidden marker line for a claim kind.
+ */
+function buildKindMarker(kind: string): string {
+  return `<!-- ${KIND_MARKER_PREFIX}${kind} -->`
+}
+
+/**
+ * Recover the claim kind for a proposal issue, for telemetry bucketing only.
+ *
+ * Precedence:
+ * 1. Hidden `status-truth:kind=` marker (present on all proposals created after
+ *    this marker was introduced).
+ * 2. Visible `**Kind:** \`<kind>\`` body line (proposals created before the marker
+ *    existed).
+ * 3. 'unknown' when neither is present.
+ *
+ * Recovered text is validated against the closed vocabulary of known claim kinds
+ * (`KNOWN_CLAIM_KINDS`). Any unrecognized value — from a malicious or malformed
+ * body — is bucketed as 'unknown' rather than propagated into telemetry counts
+ * keys.
+ */
+export function recoverProposalKind(body: string | null | undefined): string {
+  const markerKind = extractProposalKind(body)
+  if (markerKind !== null && KNOWN_CLAIM_KINDS.has(markerKind)) return markerKind
+
+  if (body !== null && body !== undefined && body !== '') {
+    const visibleMatch = VISIBLE_KIND_LINE_PATTERN.exec(body)
+    const visibleKind = visibleMatch?.[1]
+    if (visibleKind !== undefined && KNOWN_CLAIM_KINDS.has(visibleKind)) return visibleKind
+  }
+
+  return 'unknown'
+}
+
 // ---------------------------------------------------------------------------
 // Cooldown helper
 // ---------------------------------------------------------------------------
@@ -658,6 +790,7 @@ function buildProposalBody(finding: PublicStatusTruthFinding, generatedAt: strin
 
   return [
     buildFingerprintMarker(finding.fingerprint),
+    buildKindMarker(finding.kind),
     liveStateMarker,
     '',
     `**Kind:** \`${finding.kind}\``,
@@ -755,6 +888,7 @@ export function planStatusTruthProposalActions(
       },
       countsByKind: {},
       outcomeCounts: buildOutcomeCounts(existingIssues),
+      outcomeCountsByKind: buildOutcomeCountsByKind(existingIssues),
     }
   }
 
@@ -789,6 +923,7 @@ export function planStatusTruthProposalActions(
       },
       countsByKind: {},
       outcomeCounts: buildOutcomeCounts(existingIssues),
+      outcomeCountsByKind: buildOutcomeCountsByKind(existingIssues),
     }
   }
 
@@ -1234,6 +1369,7 @@ export function planStatusTruthProposalActions(
     },
     countsByKind,
     outcomeCounts: buildOutcomeCounts(existingIssues, activeFingerprintsInReport),
+    outcomeCountsByKind: buildOutcomeCountsByKind(existingIssues, activeFingerprintsInReport),
   }
 }
 
@@ -1827,6 +1963,12 @@ interface OpenResult {
    * Counts-only: no raw issue bodies, titles, paths, or fingerprints.
    */
   outcomeCounts: OutcomeCounts
+  /**
+   * Per-claim-kind aggregate outcome counts from all existing proposal issues.
+   * Same read-model as `outcomeCounts`, bucketed by kind. Counts-only: no
+   * paths, titles, or fingerprints.
+   */
+  outcomeCountsByKind: Readonly<Record<string, OutcomeCounts>>
 }
 
 /**
@@ -1995,6 +2137,7 @@ async function runOpen(): Promise<void> {
       needsOutcomeCooldown: planResult.counts.needsOutcomeCooldown,
     },
     outcomeCounts: planResult.outcomeCounts,
+    outcomeCountsByKind: planResult.outcomeCountsByKind,
   }
 
   const resultJson = `${JSON.stringify(result)}\n`
