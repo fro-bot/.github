@@ -7,7 +7,7 @@ root_cause: missing_workflow_step
 resolution_type: workflow_improvement
 severity: medium
 date: 2026-05-02
-last_updated: 2026-05-02
+last_updated: 2026-07-04
 module: .github/workflows/wiki-lint.yaml + scripts/wiki-lint.ts
 related_components:
   - development_workflow
@@ -49,9 +49,9 @@ That also meant the failure path had to be explicit. If the workflow could not r
 
 ## Solution
 
-The implementation restores the authoritative snapshot, lints it, emits findings, uploads a report, and writes nothing back.
+The implementation restores the authoritative snapshot, lints it, emits findings, uploads a report artifact, and — as of the `wiki-repair` job — feeds deterministic findings into an automated repair path. Detection itself stays report-only; the `wiki-lint` job never writes.
 
-`.github/workflows/wiki-lint.yaml` restores `knowledge/` from `origin/data`, runs lint only on restore success, and routes restore failure through the same reporting surface:
+`.github/workflows/wiki-lint.yaml` restores `knowledge/` from `origin/data`, records the snapshot SHA, runs lint only on restore success, and routes restore failure through the same reporting surface:
 
 ```yaml
 - name: Restore wiki from data branch
@@ -59,8 +59,9 @@ The implementation restores the authoritative snapshot, lints it, emits findings
   continue-on-error: true
   run: |
     if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-      git fetch origin data
+      git fetch --depth=1 origin data
       git restore --source FETCH_HEAD --worktree -- knowledge
+      echo "data_sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
     else
       printf '%s\n' 'cannot lint wiki snapshot: origin/data is unavailable' >&2
       exit 1
@@ -70,15 +71,50 @@ The implementation restores the authoritative snapshot, lints it, emits findings
   if: steps.restore-wiki.outcome == 'success'
   env:
     WIKI_LINT_REPORT_PATH: wiki-lint-report.md
+    WIKI_LINT_JSON_PATH: wiki-lint-report.json
+    WIKI_LINT_SNAPSHOT_SHA: ${{ steps.restore-wiki.outputs.data_sha }}
   run: node scripts/wiki-lint.ts
+
+- name: Compute repairable output
+  id: repairable
+  if: always()
+  run: |
+    set -euo pipefail
+    report=wiki-lint-report.json
+    if [[ -s "$report" ]]; then
+      repairable=$(jq -r '
+        (.scan_complete == true and .failure_class == null and
+          ([.findings[]? | select(.kind == "index-drift" or .kind == "orphan-page" or .kind == "missing-frontmatter" or .kind == "invalid-frontmatter")] | length) > 0
+        )
+      ' "$report")
+      snapshot_sha=$(jq -r '.snapshot_sha // ""' "$report")
+    else
+      repairable=false
+      snapshot_sha=""
+    fi
+    echo "repairable=${repairable}" >> "$GITHUB_OUTPUT"
+    echo "snapshot_sha=${snapshot_sha}" >> "$GITHUB_OUTPUT"
 
 - name: Report restore failure
   if: steps.restore-wiki.outcome == 'failure'
   env:
     WIKI_LINT_REPORT_PATH: wiki-lint-report.md
+    WIKI_LINT_JSON_PATH: wiki-lint-report.json
     WIKI_LINT_FAILURE_MESSAGE: 'cannot lint wiki snapshot: origin/data is unavailable'
   run: node scripts/wiki-lint.ts
+
+- name: Upload wiki lint artifact
+  if: always()
+  uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+  with:
+    name: wiki-lint-report
+    path: |
+      wiki-lint-report.md
+      wiki-lint-report.json
+    retention-days: 7
 ```
+
+The `wiki-lint` job exposes `repairable` and `snapshot_sha` as job outputs. Two downstream jobs consume the uploaded artifact: `wiki-lint-issue-sync` (always runs; files issues for advisory and unaddressed findings) and `wiki-repair` (gated on `needs.wiki-lint.outputs.repairable == 'true'`). `wiki-repair` re-derives repairable findings itself via `scripts/wiki-repair.ts` rather than trusting the lint report as a write authority, mints its own least-privilege write token, and commits fixes for the deterministic finding classes (`index-drift`, `orphan-page`, `missing-frontmatter`, `invalid-frontmatter`) through `commitWikiChanges()`. Advisory/judgment findings (`stale-claim`, `missing-cross-reference`, `knowledge-gap`) remain issue-only — `wiki-repair` never touches them.
 
 `scripts/wiki-lint.ts` implements a detect/report-only engine around `lintWikiSnapshot()`, `writeWikiLintOutputs()`, `writeWikiLintFailureOutputs()`, and `runWikiLint()`.
 
@@ -121,16 +157,18 @@ The fix works because it matches the repo's `data`-branch wiki source and preser
 - **False positives are reduced:** alias-backed wikilinks resolve against both slugs and aliases.
 - **Page coverage is broader:** `missing-cross-reference` now applies to any page body with no wikilinks, not just repo pages.
 - **Failure is reported:** the workflow still routes restore failure through `writeWikiLintFailureOutputs()`, although the current workflow message is a fixed `origin/data is unavailable` string rather than a fully diagnosed restore error.
+- **Detection and repair stay separated:** `wiki-lint` never writes; `wiki-repair` only runs when the lint job's own `repairable` output says deterministic findings exist, and it re-derives those findings independently before committing.
 
 ## Prevention
 
 1. **Lint the authoritative snapshot, not checkout state.** Any future wiki health workflow should restore from `origin/data` first.
 2. **Keep the report artifact contract on script-handled paths.** Clean, findings, and `execution-failure` runs should keep producing the same markdown report surface.
 3. **Keep alias resolution and page-type coverage in tests.** If wiki schema or page types evolve, preserve regression coverage for aliases and non-repo `missing-cross-reference` behavior.
-4. **Do not smuggle remediation into v1.** Any future auto-fix or issue-escalation path should be an explicit follow-up, not a hidden side effect of linting.
+4. **Keep remediation an explicit, separately-gated job.** `wiki-repair` runs only when the lint job's own `repairable` output is true and re-derives findings independently — auto-fix must never become a hidden side effect of the detection step.
 
 ## Related Issues
 
 - Related issue: https://github.com/fro-bot/.github/issues/3148
 - Related learning: [`docs/solutions/runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md`](../runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md)
+- Related learning: [`docs/solutions/best-practices/status-truth-synthetic-self-audit-claim-kinds-2026-07-03.md`](../best-practices/status-truth-synthetic-self-audit-claim-kinds-2026-07-03.md)
 - Updated plan unit: `docs/plans/2025-04-15-001-feat-frobot-control-plane-plan.md`
