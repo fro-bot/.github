@@ -2567,3 +2567,21 @@ Sources: https://github.com/bfra-me/.github (SHA d51473c932f5e4d801044930196560e
 Surveyed bfra-me/.github and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/.github
+
+## [2026-07-03 06:40] ingest | fro-bot/space-bus
+
+First survey of `fro-bot/space-bus` (HEAD `ad8eefe`, created 2026-07-03 — a same-day-fresh repo). Reads limited per the untrusted-input constraint to repo metadata, the root + subdir directory listings (`.opencode/tools`, `src`, `docs/{brainstorms,plans,solutions}`, `scripts`), `README.md`, `package.json`, `workspace.json`, `AGENTS.md`, `HANDOFF.md`, and `tsconfig.json`. No code execution.
+
+What it is: `@fro.bot/space-bus`, a **workspace agent bus** for OpenCode. One control agent (an ordinary OpenCode TUI in this repo) tasks dedicated per-project agents across the Fro Bot fleet over a **single `opencode serve` instance via per-request directory routing** (`x-opencode-directory` header / `?directory=` / session's stored directory). Four custom tools, no broker — `bus_roster`, `bus_task` (optional `sessionId` steers/answers an existing session), `bus_status` (surfaces blocked/pending questions), `bus_result` (aggregated diff + delegated conclusion). A stdio MCP facade (`src/mcp.ts`, `@modelcontextprotocol/sdk`) re-exposes the same four tools to Claude Desktop. The OpenCode server API is the state store; all real logic lives in `src/core.ts` with thin `.opencode/tools/` + MCP adapters, keeping a later plugin conversion a packaging move (requirements + plan already drafted in `docs/`). Private-unpublished Bun/TS package (`"private": true`, v0.0.0), MIT, strict TS, `@opencode-ai/{sdk,plugin}` pinned lockstep at 1.17.13, zod boundary parsing, localhost-only + Basic-auth-from-`OPENCODE_SERVER_PASSWORD` + zero telemetry. MVP verified (Phases 0–2). Manifest binds `agent`, `dashboard`, `control-plane` (this repo), `infra`. Notable server-API quirks documented: global session store across directory headers (attribute via session's own `directory` field), and diff aggregation gated on `@fro.bot/harness` builds ≥ `1.17.13+harness.ee55e157` carrying upstream PR #33444 (else per-turn `GET /session/{id}/message` aggregation because opencode #30127 zeroes session-level diffs).
+
+**No Fro Bot workflow:** the repo has no `.github/` directory — no workflows, no CI, no `fro-bot.yaml`, no Probot Settings. Expected for a same-day dogfooded workspace-local tool, but flagged on the repo page as a candidate for a follow-up **draft PR** proposing a self-hosted `fro-bot.yaml` (consuming [[fro-bot--agent]]) + `common-settings.yaml` inheritance. Meta-note recorded: space-bus is itself a fleet agent-coordination surface yet isn't wired into the fleet's own agent automation.
+
+Created repo page `wiki/repos/fro-bot--space-bus.md`. Updated `wiki/topics/opencode-plugins.md` additively — new section on standalone `.opencode/tools/` custom tools (no Plugin factory) + the directory-routed OpenCode-server-API-as-control-plane pattern, plus frontmatter source/`updated`/tags and a Related-Pages wikilink. Updated `index.md` (new repo entry + opencode-plugins summary augmentation). No new entity/comparison page warranted this survey; if a second repo adopts the directory-routed multi-project server pattern, consider promoting it to its own topic. Cross-refs to [[fro-bot--agent]], [[fro-bot--dashboard]], [[marcusrbrown--infra]], [[marcusrbrown--opencode-copilot-delegate]], [[opencode-plugins]] kept valid.
+
+Sources: https://github.com/fro-bot/space-bus (SHA ad8eefe00c467ba342353d5bbd3d8cc6fbb61fc5)
+
+## [2026-07-03 08:33] ingest | repo:fro-bot/space-bus
+
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/space-bus
