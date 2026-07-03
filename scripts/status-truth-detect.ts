@@ -1489,6 +1489,59 @@ export function resolvePlanConsistencyVerdict(params: {
   return {verdict: 'current', proposalEligible: false}
 }
 
+/**
+ * Bounded pure corrector for the plan-consistency claim kind.
+ *
+ * Rewrites exactly the frontmatter `status:` line to `status: complete`,
+ * preserving every other byte of the input. Handles unquoted, double-quoted,
+ * and single-quoted status values; the corrected line is always the
+ * canonical unquoted form. `status:` occurrences in the plan body (outside
+ * the frontmatter block) are never touched.
+ *
+ * Returns `null` — a no-correction signal — when the content has no
+ * parseable frontmatter block or the frontmatter has no `status:` line.
+ * Never returns a mangled file: the output is always either the original
+ * content with only the frontmatter status line changed, or `null`.
+ *
+ * Pure function: no I/O.
+ */
+export function correctPlanConsistencyStatusLine(content: string): string | null {
+  const frontmatterMatch = /^(---\r?\n)([\s\S]+?)(\r?\n---)/u.exec(content)
+  if (frontmatterMatch === null) return null
+
+  const [fullMatch, openDelim, frontmatterText, closeDelim] = frontmatterMatch
+  if (openDelim === undefined || frontmatterText === undefined || closeDelim === undefined) return null
+
+  const statusLinePattern = /^status:\s*["']?(\w+)["']?\s*$/mu
+  const statusMatch = statusLinePattern.exec(frontmatterText)
+  if (statusMatch === null) return null
+
+  const correctedFrontmatterText = frontmatterText.replace(statusLinePattern, 'status: complete')
+  const correctedFrontmatterBlock = `${openDelim}${correctedFrontmatterText}${closeDelim}`
+
+  return (
+    content.slice(0, frontmatterMatch.index) +
+    correctedFrontmatterBlock +
+    content.slice((frontmatterMatch.index ?? 0) + fullMatch.length)
+  )
+}
+
+/**
+ * Re-verify a plan-consistency correction through the full resolver
+ * composition: corrected content → claim → checkbox parse → verdict.
+ *
+ * Exported for both the shell (live re-check, R6 TOCTOU guard) and tests.
+ * Pure function: no I/O.
+ */
+export function reverifyPlanConsistencyCorrection(
+  path: string,
+  correctedContent: string,
+): PlanConsistencyVerdictResult {
+  const claim = buildPlanConsistencyClaim(path, correctedContent)
+  const units = parsePlanUnitCheckboxes(correctedContent)
+  return resolvePlanConsistencyVerdict({claimedState: claim.claimedState, units})
+}
+
 /** Repo-relative plan paths this kind audits: top-level `docs/plans/*.md` only. */
 const PLAN_CONSISTENCY_PATH_PATTERN = /^docs\/plans\/[^/]+\.md$/u
 

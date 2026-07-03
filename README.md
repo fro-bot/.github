@@ -315,6 +315,26 @@ The drift rule: a plan marked `active` whose units are all checked gets a propos
 
 Applying `status-truth:rejected` or `status-truth:false-positive` to a plan-consistency proposal permanently exempts that plan from future consistency proposals. Removing or renaming a plan file clears its finding on the next scan; any open proposal for it auto-closes as resolved.
 
+**Correction PRs (currently disarmed):**
+
+The Status Truth workflow can, once armed, open a pull request that applies a proposal's correction directly instead of waiting on a human edit. No PR opens today. Three independent, reviewed keys must all be true at once before one can:
+
+1. The repository variable `STATUS_TRUTH_PRS_ENABLED` is set to `true`.
+2. At least one claim kind is present in the graduated-kinds set in `scripts/status-truth-prs.ts` — added only via a reviewed code change, never a config toggle.
+3. A manual `workflow_dispatch` run explicitly sets the `open_prs` input to `true`. Scheduled runs never open PRs, no matter how the other two keys are set.
+
+Any single key missing produces zero PR actions; eligible findings fall back to proposal-only, same as today.
+
+**Graduation policy:** a claim kind becomes eligible for the graduated set only after it has accumulated at least one explicit `status-truth:accepted` outcome on a real proposal — resolved-positive outcomes count toward this bar but can't satisfy it alone. Graduating a kind is a one-line reviewed code change adding it to the set, made after that evidence exists. A `status-truth:false-positive` outcome on a graduated kind removes it from the set via another reviewed change; re-graduating it later requires fresh accepted signal, not just reverting the removal.
+
+**Execution posture, once armed:**
+
+- At most one new correction PR opens per run; further eligible findings are counted as blocked and stay proposal-only. An already-open PR being rediscovered doesn't consume that slot, so a long-lived PR can't starve other findings.
+- Each correction PR touches exactly one file, within the same allowed-path prefixes as proposals. Forbidden paths and privacy-gate failures downgrade to proposal-only, same as the detect step.
+- Before any push, the corrected content is re-verified against the live base-branch file, not just the report snapshot — stale drift never gets force-corrected.
+- If a fingerprint's drift clears on a complete scan while its correction PR is still open, the bot closes its own PR with a brief comment and deletes the branch. If the linked proposal later gets a terminal label (`status-truth:rejected` or `status-truth:false-positive`), the same closure happens regardless of drift state. Merged PRs are never touched.
+- The bot never merges, approves, enables automerge, force-pushes, or retargets a correction PR — closing its own stale PRs and deleting its own branches are the only PR-state mutations it can make. A human always merges.
+
 ## Development
 
 ### Code Quality Standards

@@ -14,6 +14,14 @@ on:
         options:
           - 'true'
           - 'false'
+      open_prs:
+        description: Execute correction PR actions (requires STATUS_TRUTH_PRS_ENABLED variable)
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 # Default permissions: read-only. The open job overrides to issues: write.
 permissions:
@@ -285,39 +293,41 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
-  # PRs job: Bounded correction PR graduation gate.
+  # PRs job: Bounded correction PR execution, gated by three independent keys.
   #
-  # DISABLED PLACEHOLDER: This job is intentionally a no-op. It exists to
-  # document the intended future shape of the PR graduation gate. Enabling real
-  # PR execution requires a reviewed workflow and script change — not just
-  # setting the STATUS_TRUTH_PRS_ENABLED variable below. The job steps are
-  # stubs only.
+  # This job only produces real PR actions when ALL of the following hold:
+  # 1. The repository variable STATUS_TRUTH_PRS_ENABLED is set to 'true'.
+  # 2. At least one claim kind has been added to GRADUATED_CLAIM_KINDS in
+  #    scripts/status-truth-prs.ts via a reviewed repo change.
+  # 3. A workflow_dispatch run explicitly sets the open_prs input to 'true'.
   #
-  # Graduation criteria (all must be met before a real implementation is added):
-  # 1. Phase 1 proposal issues have produced accepted/rejected outcome signal.
-  # 2. A claim kind has been added to GRADUATED_CLAIM_KINDS in status-truth-prs.ts
-  #    via a reviewed repo change.
-  # 3. The workflow steps below have been replaced with a real implementation
-  #    (script invocation, artifact download, token minting, etc.) in a
-  #    separate reviewed PR — toggling the variable alone is not sufficient.
+  # Any single key alone produces zero PR actions. Scheduled runs are
+  # structurally excluded (event-type check) and never open PRs. The script
+  # re-checks all three keys at startup as defense in depth — the workflow
+  # if: condition below is not the only enforcement point.
   #
-  # Safety constraints (enforced in scripts/status-truth-prs.ts):
-  # - enabled=false → all candidates downgrade to proposal-only (no PR actions).
+  # Safety constraints (independently enforced in scripts/status-truth-prs.ts):
+  # - Ungraduated or disarmed candidates downgrade to proposal-only (no PR actions).
   # - Forbidden paths (workflows, hooks, metadata, knowledge, persona, etc.) → proposal-only.
-  # - Privacy gate blocks PR metadata containing private tokens → proposal-only.
-  # - Existing PR rediscovery requires opaque digest match + bot ownership + main target.
+  # - Corrected content must re-resolve as current before any write; failure downgrades.
+  # - At most one open PR per fingerprint; at most one new PR opened per run.
+  # - Every write independently re-validates the single-file diff and the
+  #   bot-owned correction-branch naming pattern before it happens.
+  # - Drift-cleared or terminal-labeled proposals close their own PR and delete
+  #   the correction branch; merged PRs are never touched.
   # - No merge, approve, automerge, force-push, or retarget actions are possible.
+  # - Titles, branches, bodies, and comments carry only opaque fingerprint
+  #   digests and normalized fields, and pass the public-output gate.
+  # - Workflow summaries and logs stay counts-only for PR actions.
   # ---------------------------------------------------------------------------
   prs:
-    name: Plan status-truth correction PRs (disabled placeholder)
+    name: Execute status-truth correction PRs
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    needs: open
-    # Disabled placeholder: the variable STATUS_TRUTH_PRS_ENABLED is not set in
-    # this repo, so this job never runs. Enabling real PR execution requires a
-    # reviewed workflow and script change — setting the variable alone is not
-    # sufficient to produce real PR actions.
-    if: ${{ vars.STATUS_TRUTH_PRS_ENABLED == 'true' }}
+    timeout-minutes: 10
+    needs: [detect, open]
+    if: ${{ vars.STATUS_TRUTH_PRS_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && github.event.inputs.open_prs == 'true' }}
+    # Read-only job token; write authority is minted separately below,
+    # scoped at mint time to this repo and this run only.
     permissions:
       contents: read
 
@@ -330,12 +340,72 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      - name: 🔍 Plan status-truth correction PRs (dry-run only)
-        # Placeholder only. A future implementation must replace this step with
-        # reviewed script invocation, artifact download, and scoped credentials.
+      - name: 📥 Download report artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: status-truth-report
+          path: ${{ runner.temp }}
+
+      # Mint a scoped app token only inside this job, only on armed dispatches.
+      # Raised above the open job's issues:write to include contents:write and
+      # pull-requests:write for branch/commit/PR mutations; issues:read covers
+      # live terminal-label lookups on proposal issues.
+      - name: 🔑 Mint write token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          # Scope to this repo only — smallest blast radius.
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: read
+
+      - name: 🛠 Execute status-truth correction PRs
+        id: prs
         env:
-          STATUS_TRUTH_PRS_ENABLED: 'false'
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          STATUS_TRUTH_REPORT_PATH: ${{ runner.temp }}/status-truth-report.json
+          STATUS_TRUTH_PRS_RESULT_PATH: ${{ runner.temp }}/status-truth-prs-result.json
+          STATUS_TRUTH_DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
+          STATUS_TRUTH_PRS_ENABLED: ${{ vars.STATUS_TRUTH_PRS_ENABLED }}
+          STATUS_TRUTH_PRS_DISPATCH_INPUT: ${{ github.event.inputs.open_prs || 'false' }}
+        run: node scripts/status-truth-prs.ts
+
+      - name: 📋 Write PR execution summary
+        if: always()
+        env:
+          STATUS_TRUTH_PRS_RESULT_PATH: ${{ runner.temp }}/status-truth-prs-result.json
         run: |
-          echo "PR graduation gate: disabled (no claim kinds graduated yet)"
-          echo "PR actions planned: 0"
-          echo "Downgraded to proposal-only: 0"
+          set -euo pipefail
+          result="$STATUS_TRUTH_PRS_RESULT_PATH"
+
+          {
+            echo "## Status Truth PR Execution Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$result" ]]; then
+              echo "| Armed | $(jq -r 'if .armed then "true" else "false" end' "$result") |"
+              echo "| Dry run | $(jq -r 'if .dryRun then "true" else "false" end' "$result") |"
+              echo "| Planned | $(jq '.plannedCounts.prActionsPlanned // 0' "$result") |"
+              echo "| Downgraded to proposal-only | $(jq '.plannedCounts.downgradedToProposalOnly // 0' "$result") |"
+              echo "| Path forbidden | $(jq '.plannedCounts.pathForbidden // 0' "$result") |"
+              echo "| Privacy gate blocked | $(jq '.plannedCounts.privacyGateBlocked // 0' "$result") |"
+              echo "| Overflow | $(jq '.plannedCounts.overflow // 0' "$result") |"
+              echo "| Version rejected | $(jq '.plannedCounts.versionRejected // 0' "$result") |"
+              echo "| Opened | $(jq '.executedCounts.opened // 0' "$result") |"
+              echo "| Closed | $(jq '.executedCounts.closed // 0' "$result") |"
+              echo "| Downgraded (execution) | $(jq '.executedCounts.downgraded // 0' "$result") |"
+              echo "| Safety refused | $(jq '.executedCounts.safetyRefused // 0' "$result") |"
+              echo "| Failed | $(jq '.executedCounts.failed // 0' "$result") |"
+              echo "| Branch delete failed | $(jq '.executedCounts.branchDeleteFailed // 0' "$result") |"
+              echo "| Would open (dry-run) | $(jq '.executedCounts.wouldOpen // 0' "$result") |"
+              echo "| Would close (dry-run) | $(jq '.executedCounts.wouldClose // 0' "$result") |"
+            else
+              echo "| Status | (PR execution result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
