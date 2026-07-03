@@ -1,8 +1,9 @@
 ---
 title: 'feat: C2 failed-then-fixed capture trigger'
 type: feat
-status: active
+status: complete
 date: 2026-06-22
+completed: 2026-06-24
 origin: docs/brainstorms/2026-06-22-c2-failed-then-fixed-capture-requirements.md
 ---
 
