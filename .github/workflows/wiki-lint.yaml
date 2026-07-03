@@ -200,6 +200,8 @@ jobs:
           # Scheduled runs carry no inputs, so a schedule run is always live (not dry-run).
           WIKI_REPAIR_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
           WIKI_REPAIR_DATA_TIP_SHA: ${{ steps.restore-data.outputs.data_sha }}
+          WIKI_REPAIR_OWNER: ${{ github.repository_owner }}
+          WIKI_REPAIR_REPO: ${{ github.event.repository.name }}
         run: node scripts/wiki-repair.ts
 
       - name: 📋 Write repair summary

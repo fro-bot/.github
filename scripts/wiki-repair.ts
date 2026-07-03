@@ -141,6 +141,15 @@ export function planWikiRepairs(params: PlanWikiRepairsParams): WikiRepairPlanRe
           targetedFindings.push(finding)
         }
       }
+    } else {
+      // Regeneration either threw or produced byte-identical output — the
+      // index-drift/orphan-page findings cannot be cleared by this repair.
+      // Count them out-of-scope rather than letting them vanish from the ledger.
+      for (const finding of baselineFindings) {
+        if (INDEX_KINDS.has(finding.kind)) {
+          outOfScope += 1
+        }
+      }
     }
   }
 

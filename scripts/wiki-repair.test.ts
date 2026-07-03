@@ -1,10 +1,10 @@
 import type {RepoEntry} from './schemas.ts'
 import type {CommitWikiChangesParams} from './wiki-ingest.ts'
 import {createHash} from 'node:crypto'
-
 import {describe, expect, it, vi} from 'vitest'
 
 import {buildPublicSlugMap} from './check-wiki-private-presence.ts'
+import {rebuildWikiIndex} from './wiki-ingest.ts'
 import {lintWikiSnapshot} from './wiki-lint.ts'
 import {
   gateWikiRepairs,
@@ -329,6 +329,22 @@ describe('planWikiRepairs', () => {
     const plan = planWikiRepairs({baselineFindings: baseline, wikiFiles: files})
 
     expect(plan.counts.pathRefused).toBe(1)
+  })
+
+  it('counts a stale index-drift finding as out-of-scope when regeneration is byte-identical', () => {
+    const files = buildCleanFiles()
+    // Regenerate the index once up front so `files['knowledge/index.md']` is
+    // already byte-identical to what rebuildWikiIndex would produce again —
+    // simulating a stale/false index-drift finding that regeneration cannot clear.
+    files['knowledge/index.md'] = rebuildWikiIndex({existingIndex: files['knowledge/index.md'], wikiFiles: files})
+    const baseline = [{kind: 'index-drift' as const, path: 'knowledge/index.md', target: 'ghost--repo', message: 'x'}]
+
+    const plan = planWikiRepairs({baselineFindings: baseline, wikiFiles: files})
+
+    expect(plan.counts.repaired).toBe(0)
+    expect(plan.counts.outOfScope).toBe(1)
+    expect(plan.targetedFindings.some(f => f.kind === 'index-drift')).toBe(false)
+    expect(plan.counts.repairableSeen).toBe(plan.counts.repaired + plan.counts.outOfScope + plan.counts.pathRefused)
   })
 
   it('returns a counted no-op when there is nothing repairable', () => {
