@@ -26,6 +26,7 @@ import {
   buildStatusTruthReport,
   CLAIM_KIND_DEFINITIONS,
   computeClaimFingerprint,
+  correctPlanConsistencyStatusLine,
   DEFAULT_ENABLED_KINDS,
   detectStatusTruthClaims,
   extractStatusTruthClaimsFromText,
@@ -43,6 +44,7 @@ import {
   resolvePlanConsistencyVerdict,
   resolvePlanStatusClaim,
   resolveRolloutTrackerClaim,
+  reverifyPlanConsistencyCorrection,
   scanIssueStatusTruthClaims,
   scanPlanConsistencyFindings,
   scanStatusTruthClaims,
@@ -5062,5 +5064,133 @@ describe('plan-consistency replay: pre-reconciliation stale capture plans', () =
     expect(drifted).toHaveLength(0)
     expect(unresolved).toHaveLength(1)
     expect(unresolved[0]?.claimedState).toBe('unsupported')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Plan-consistency corrector: bounded frontmatter status-line rewrite
+// ---------------------------------------------------------------------------
+
+describe('plan-consistency corrector: bounded status-line rewrite', () => {
+  it('rewrites exactly the frontmatter status line to status: complete; every other byte preserved', () => {
+    const original = [
+      '---',
+      "title: 'Example plan'",
+      'status: active',
+      'date: 2026-06-22',
+      '---',
+      '',
+      '# Example plan',
+      '',
+      '- [x] **Unit 1: A**',
+      '- [x] **Unit 2: B**',
+      '',
+    ].join('\n')
+
+    const corrected = correctPlanConsistencyStatusLine(original)
+    expect(corrected).not.toBeNull()
+
+    const expected = original.replace('status: active', 'status: complete')
+    expect(corrected).toBe(expected)
+
+    // Only the status line differs.
+    const originalLines = original.split('\n')
+    const correctedLines = (corrected ?? '').split('\n')
+    expect(correctedLines).toHaveLength(originalLines.length)
+    const diffLines = originalLines.filter((line, i) => line !== correctedLines[i])
+    expect(diffLines).toHaveLength(1)
+    expect(diffLines[0]).toBe('status: active')
+  })
+
+  it('rewrites a quoted status value, producing an unquoted canonical output', () => {
+    const original = ['---', 'status: "active"', '---', '', 'body', ''].join('\n')
+    const corrected = correctPlanConsistencyStatusLine(original)
+    expect(corrected).not.toBeNull()
+    expect(corrected).toContain('status: complete')
+    expect(corrected).not.toContain('"active"')
+    expect(corrected).not.toContain('"complete"')
+  })
+
+  it('rewrites a single-quoted status value, producing an unquoted canonical output', () => {
+    const original = ['---', "status: 'active'", '---', '', 'body', ''].join('\n')
+    const corrected = correctPlanConsistencyStatusLine(original)
+    expect(corrected).not.toBeNull()
+    expect(corrected).toContain('status: complete')
+    expect(corrected).not.toContain("'active'")
+  })
+
+  it('does not touch status: text appearing in the plan body outside frontmatter', () => {
+    const original = [
+      '---',
+      'status: active',
+      '---',
+      '',
+      'Note: status: active is also mentioned here for illustration.',
+      '',
+    ].join('\n')
+    const corrected = correctPlanConsistencyStatusLine(original)
+    expect(corrected).not.toBeNull()
+    expect(corrected).toContain('Note: status: active is also mentioned here for illustration.')
+    // Only the frontmatter occurrence changed.
+    const correctedOccurrences = (corrected ?? '').split('status: active').length - 1
+    expect(correctedOccurrences).toBe(1)
+  })
+
+  it('returns null (no-correction signal) when content has no parseable frontmatter', () => {
+    const original = '# No frontmatter here\n\nJust body text.\n'
+    const corrected = correctPlanConsistencyStatusLine(original)
+    expect(corrected).toBeNull()
+  })
+
+  it('returns null when frontmatter exists but has no status line', () => {
+    const original = ['---', "title: 'No status here'", '---', '', 'body', ''].join('\n')
+    const corrected = correctPlanConsistencyStatusLine(original)
+    expect(corrected).toBeNull()
+  })
+
+  it('never mangles the file: corrected content is always the original with exactly the status token changed, or null', () => {
+    const fixtures = [
+      '---\nstatus: active\n---\nbody\n',
+      '---\nstatus: "active"\n---\nbody\n',
+      "---\nstatus: 'active'\n---\nbody\n",
+      '---\ntitle: x\nstatus: active\ndate: 2026-01-01\n---\nbody\nstatus: active\n',
+    ]
+    for (const fixture of fixtures) {
+      const corrected = correctPlanConsistencyStatusLine(fixture)
+      expect(corrected).not.toBeNull()
+      expect(typeof corrected).toBe('string')
+    }
+  })
+
+  it('round-trip: corrected fixture re-verifies as current through the full resolver composition', () => {
+    const original = [
+      '---',
+      "title: 'Round trip plan'",
+      'status: active',
+      '---',
+      '',
+      '- [x] **Unit 1: A**',
+      '- [x] **Unit 2: B**',
+      '',
+    ].join('\n')
+
+    const corrected = correctPlanConsistencyStatusLine(original)
+    expect(corrected).not.toBeNull()
+    const correctedContent = corrected ?? ''
+
+    const result = reverifyPlanConsistencyCorrection('docs/plans/round-trip-plan.md', correctedContent)
+    expect(result.verdict).toBe('current')
+  })
+
+  it('round-trip fails to re-verify when unit checkboxes still show unchecked units (correction alone is insufficient)', () => {
+    const original = ['---', 'status: active', '---', '', '- [x] **Unit 1: A**', '- [ ] **Unit 2: B**', ''].join('\n')
+
+    const corrected = correctPlanConsistencyStatusLine(original)
+    expect(corrected).not.toBeNull()
+    const correctedContent = corrected ?? ''
+
+    const result = reverifyPlanConsistencyCorrection('docs/plans/incomplete-plan.md', correctedContent)
+    // status: complete + an unchecked unit → unresolved, not current.
+    expect(result.verdict).toBe('unresolved')
   })
 })

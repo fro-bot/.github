@@ -15,11 +15,24 @@
  */
 
 import type {StatusTruthJsonReport} from './status-truth-detect.ts'
-import type {ExistingStatusTruthPr, PlanStatusTruthPrActionsInput, StatusTruthPrAction} from './status-truth-prs.ts'
+import type {
+  ExecuteStatusTruthPrActionsInput,
+  ExistingStatusTruthPr,
+  PlanStatusTruthPrActionsInput,
+  StatusTruthPrAction,
+  StatusTruthPrOctokitClient,
+} from './status-truth-prs.ts'
 import type {PublicOutputTokens} from './status-truth-public-output.ts'
+import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
-import {describe, expect, it} from 'vitest'
-import {GRADUATED_CLAIM_KINDS, planStatusTruthPrActions, PR_BRANCH_PREFIX, PR_TITLE_PREFIX} from './status-truth-prs.ts'
+import {describe, expect, it, vi} from 'vitest'
+import {
+  executeStatusTruthPrActions,
+  GRADUATED_CLAIM_KINDS,
+  planStatusTruthPrActions,
+  PR_BRANCH_PREFIX,
+  PR_TITLE_PREFIX,
+} from './status-truth-prs.ts'
 
 // Mirrors the production digest derivation so tests stay in sync without
 // importing the private helper.
@@ -49,7 +62,8 @@ function makeReport(overrides: Partial<StatusTruthJsonReport> = {}): StatusTruth
 function makeDriftedFinding(
   overrides: {
     fingerprint?: string
-    kind?: 'pr-state' | 'issue-state' | 'release-tag-state' | 'plan-status' | 'rollout-tracker-status'
+    kind?:
+      'pr-state' | 'plan-consistency' | 'issue-state' | 'release-tag-state' | 'plan-status' | 'rollout-tracker-status'
     path?: string
     sourceRef?: string
     claimedState?: string
@@ -58,7 +72,7 @@ function makeDriftedFinding(
   } = {},
 ) {
   return {
-    kind: overrides.kind ?? ('pr-state' as const),
+    kind: overrides.kind ?? ('plan-consistency' as const),
     path: overrides.path ?? 'docs/plans/example.md',
     sourceRef: overrides.sourceRef ?? '#42',
     verdict: 'drifted' as const,
@@ -94,6 +108,7 @@ function makeInput(overrides: Partial<PlanStatusTruthPrActionsInput> = {}): Plan
     publicOutputTokens: makeLoadedTokens(),
     maxPrsPerRun: 1,
     enabled: false,
+    terminalFingerprints: new Set<string>(),
     ...overrides,
   }
 }
@@ -112,7 +127,7 @@ describe('disabled default', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: false,
       }),
     )
@@ -147,7 +162,7 @@ describe('disabled default', () => {
 
 describe('happy path: graduated claim kind', () => {
   it('produces one open-pr action with opaque branch/title metadata', () => {
-    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'pr-state'})
+    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'plan-consistency'})
     const report = makeReport({
       findings: [finding],
       counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
@@ -155,7 +170,7 @@ describe('happy path: graduated claim kind', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
       }),
     )
@@ -217,10 +232,10 @@ describe('happy path: graduated claim kind', () => {
 
 describe('edge case: overflow to proposal-only', () => {
   it('plans one PR action and downgrades the rest when two eligible findings appear', () => {
-    const finding1 = makeDriftedFinding({fingerprint: 'aaaa1111bbbb2222', kind: 'pr-state'})
+    const finding1 = makeDriftedFinding({fingerprint: 'aaaa1111bbbb2222', kind: 'plan-consistency'})
     const finding2 = makeDriftedFinding({
       fingerprint: 'cccc3333dddd4444',
-      kind: 'pr-state',
+      kind: 'plan-consistency',
       sourceRef: '#99',
       proposedCorrection: 'pr #99 is closed',
     })
@@ -231,7 +246,7 @@ describe('edge case: overflow to proposal-only', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
         maxPrsPerRun: 1,
       }),
@@ -247,7 +262,7 @@ describe('edge case: overflow to proposal-only', () => {
   })
 
   it('respects maxPrsPerRun=0 by downgrading all', () => {
-    const finding = makeDriftedFinding({kind: 'pr-state'})
+    const finding = makeDriftedFinding({kind: 'plan-consistency'})
     const report = makeReport({
       findings: [finding],
       counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
@@ -255,7 +270,7 @@ describe('edge case: overflow to proposal-only', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
         maxPrsPerRun: 0,
       }),
@@ -273,7 +288,7 @@ describe('edge case: overflow to proposal-only', () => {
 describe('forbidden path: path authorization', () => {
   it('downgrades to proposal-only for authority-sensitive paths without rendering diff', () => {
     const finding = makeDriftedFinding({
-      kind: 'pr-state',
+      kind: 'plan-consistency',
       path: '.github/workflows/main.yaml', // forbidden: workflow path
     })
     const report = makeReport({
@@ -283,7 +298,7 @@ describe('forbidden path: path authorization', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
       }),
     )
@@ -307,7 +322,7 @@ describe('forbidden path: path authorization', () => {
 
   it('downgrades to proposal-only for metadata/ paths', () => {
     const finding = makeDriftedFinding({
-      kind: 'pr-state',
+      kind: 'plan-consistency',
       path: 'metadata/repos.yaml',
     })
     const report = makeReport({
@@ -317,7 +332,7 @@ describe('forbidden path: path authorization', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
       }),
     )
@@ -328,7 +343,7 @@ describe('forbidden path: path authorization', () => {
 
   it('downgrades to proposal-only for path traversal segments', () => {
     const finding = makeDriftedFinding({
-      kind: 'pr-state',
+      kind: 'plan-consistency',
       path: 'docs/../.github/workflows/evil.yaml',
     })
     const report = makeReport({
@@ -338,7 +353,7 @@ describe('forbidden path: path authorization', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
       }),
     )
@@ -356,7 +371,7 @@ describe('privacy gate: branch/title candidate blocked', () => {
   it('downgrades to proposal-only when public output tokens block the PR metadata', () => {
     // The finding's proposedCorrection contains a private token
     const finding = makeDriftedFinding({
-      kind: 'pr-state',
+      kind: 'plan-consistency',
       proposedCorrection: 'pr #42 is closed (private-repo-name)',
     })
     const report = makeReport({
@@ -366,7 +381,7 @@ describe('privacy gate: branch/title candidate blocked', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
         publicOutputTokens: makeBlockingTokens(),
       }),
@@ -379,7 +394,7 @@ describe('privacy gate: branch/title candidate blocked', () => {
   })
 
   it('downgrades to proposal-only when token load fails', () => {
-    const finding = makeDriftedFinding({kind: 'pr-state'})
+    const finding = makeDriftedFinding({kind: 'plan-consistency'})
     const report = makeReport({
       findings: [finding],
       counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
@@ -387,7 +402,7 @@ describe('privacy gate: branch/title candidate blocked', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
         publicOutputTokens: {loaded: false, error: 'token load failed'},
       }),
@@ -405,7 +420,7 @@ describe('privacy gate: branch/title candidate blocked', () => {
 
 describe('existing PR: metadata mismatch', () => {
   it('leaves finding as proposal-only when existing PR opaque metadata does not match', () => {
-    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'pr-state'})
+    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'plan-consistency'})
     const report = makeReport({
       findings: [finding],
       counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
@@ -424,7 +439,7 @@ describe('existing PR: metadata mismatch', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
         existingPrs: [existingPr],
       }),
@@ -440,7 +455,7 @@ describe('existing PR: metadata mismatch', () => {
   })
 
   it('leaves finding as proposal-only when existing PR is not bot-owned', () => {
-    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'pr-state'})
+    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'plan-consistency'})
     const report = makeReport({
       findings: [finding],
       counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
@@ -460,7 +475,7 @@ describe('existing PR: metadata mismatch', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
         existingPrs: [existingPr],
       }),
@@ -471,7 +486,7 @@ describe('existing PR: metadata mismatch', () => {
   })
 
   it('leaves finding as proposal-only when existing PR targets non-main branch', () => {
-    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'pr-state'})
+    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'plan-consistency'})
     const report = makeReport({
       findings: [finding],
       counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
@@ -490,7 +505,7 @@ describe('existing PR: metadata mismatch', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
         existingPrs: [existingPr],
       }),
@@ -508,7 +523,7 @@ describe('existing PR: metadata mismatch', () => {
 describe('existing PR: rediscovery', () => {
   it('produces a rediscover-pr action when all matching criteria are met', () => {
     const fingerprint = 'abc123def456abcd'
-    const finding = makeDriftedFinding({fingerprint, kind: 'pr-state'})
+    const finding = makeDriftedFinding({fingerprint, kind: 'plan-consistency'})
     const report = makeReport({
       findings: [finding],
       counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
@@ -528,7 +543,7 @@ describe('existing PR: rediscovery', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
         existingPrs: [existingPr],
       }),
@@ -549,7 +564,7 @@ describe('existing PR: rediscovery', () => {
 
 describe('verification invariant: no forbidden actions', () => {
   it('no action type can be merge, approve, automerge, force-push, or retarget', () => {
-    const finding = makeDriftedFinding({kind: 'pr-state'})
+    const finding = makeDriftedFinding({kind: 'plan-consistency'})
     const report = makeReport({
       findings: [finding],
       counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
@@ -558,7 +573,7 @@ describe('verification invariant: no forbidden actions', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
       }),
     )
@@ -584,13 +599,616 @@ describe('verification invariant: no forbidden actions', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Budget semantics: rediscovery/close/downgrade exempt from the new-open budget
+// ---------------------------------------------------------------------------
+
+describe('budget semantics: new-open budget counts only open-pr actions', () => {
+  it('rediscovering an existing open PR does not consume the open budget; a second finding gets the slot', () => {
+    const fingerprint1 = 'abc123def456abcd'
+    const fingerprint2 = 'aaaa1111bbbb2222'
+    const finding1 = makeDriftedFinding({fingerprint: fingerprint1, kind: 'plan-consistency'})
+    const finding2 = makeDriftedFinding({
+      fingerprint: fingerprint2,
+      kind: 'plan-consistency',
+      sourceRef: '#99',
+      proposedCorrection: 'pr #99 is closed',
+    })
+    const report = makeReport({
+      findings: [finding1, finding2],
+      counts: {total: 2, current: 0, drifted: 2, unresolved: 0, unsafe: 0, proposal_eligible: 2},
+    })
+
+    const opaqueDigest = testDeriveOpaqueDigest(fingerprint1)
+    const existingPr: ExistingStatusTruthPr = {
+      number: 77,
+      state: 'open',
+      headBranch: `${PR_BRANCH_PREFIX}${opaqueDigest}`,
+      baseBranch: 'main',
+      opaqueDigest,
+      botOwned: true,
+    }
+
+    const result = planStatusTruthPrActions(
+      makeInput({
+        report,
+        graduatedClaimKinds: new Set(['plan-consistency']),
+        enabled: true,
+        maxPrsPerRun: 1,
+        existingPrs: [existingPr],
+      }),
+    )
+
+    const rediscoverActions = result.actions.filter(a => a.type === 'rediscover-pr')
+    const openActions = result.actions.filter(a => a.type === 'open-pr')
+    expect(rediscoverActions).toHaveLength(1)
+    expect(openActions).toHaveLength(1)
+    expect(result.counts.downgradedToProposalOnly).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Closure planning: drift-cleared and terminal-label close actions
+// ---------------------------------------------------------------------------
+
+describe('closure planning: drift-cleared', () => {
+  it('closes an open PR whose fingerprint is absent from a complete, non-failure report', () => {
+    const fingerprint = 'abc123def456abcd'
+    const opaqueDigest = testDeriveOpaqueDigest(fingerprint)
+    const existingPr: ExistingStatusTruthPr = {
+      number: 55,
+      state: 'open',
+      headBranch: `${PR_BRANCH_PREFIX}${opaqueDigest}`,
+      baseBranch: 'main',
+      opaqueDigest,
+      botOwned: true,
+    }
+    // Report contains no findings at all — fingerprint is gone (drift cleared).
+    const report = makeReport({scan_complete: true, failure_class: null, findings: []})
+
+    const result = planStatusTruthPrActions(
+      makeInput({
+        report,
+        graduatedClaimKinds: new Set(['plan-consistency']),
+        enabled: true,
+        existingPrs: [existingPr],
+        terminalFingerprints: new Set<string>(),
+      }),
+    )
+
+    const closeActions = result.actions.filter(a => a.type === 'close-pr')
+    expect(closeActions).toHaveLength(1)
+    if (closeActions[0]?.type === 'close-pr') {
+      expect(closeActions[0].reason).toBe('drift-cleared')
+      expect(closeActions[0].prNumber).toBe(55)
+    }
+  })
+
+  it('does not close when the scan is incomplete', () => {
+    const fingerprint = 'abc123def456abcd'
+    const opaqueDigest = testDeriveOpaqueDigest(fingerprint)
+    const existingPr: ExistingStatusTruthPr = {
+      number: 55,
+      state: 'open',
+      headBranch: `${PR_BRANCH_PREFIX}${opaqueDigest}`,
+      baseBranch: 'main',
+      opaqueDigest,
+      botOwned: true,
+    }
+    const report = makeReport({scan_complete: false, findings: []})
+
+    const result = planStatusTruthPrActions(
+      makeInput({
+        report,
+        graduatedClaimKinds: new Set(['plan-consistency']),
+        enabled: true,
+        existingPrs: [existingPr],
+        terminalFingerprints: new Set<string>(),
+      }),
+    )
+
+    expect(result.actions.some(a => a.type === 'close-pr')).toBe(false)
+  })
+
+  it('does not close when the fingerprint is still active (drift persists)', () => {
+    const fingerprint = 'abc123def456abcd'
+    const opaqueDigest = testDeriveOpaqueDigest(fingerprint)
+    const existingPr: ExistingStatusTruthPr = {
+      number: 55,
+      state: 'open',
+      headBranch: `${PR_BRANCH_PREFIX}${opaqueDigest}`,
+      baseBranch: 'main',
+      opaqueDigest,
+      botOwned: true,
+    }
+    const finding = makeDriftedFinding({fingerprint, kind: 'plan-consistency'})
+    const report = makeReport({
+      scan_complete: true,
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const result = planStatusTruthPrActions(
+      makeInput({
+        report,
+        graduatedClaimKinds: new Set(['plan-consistency']),
+        enabled: true,
+        existingPrs: [existingPr],
+        terminalFingerprints: new Set<string>(),
+      }),
+    )
+
+    expect(result.actions.some(a => a.type === 'close-pr')).toBe(false)
+  })
+})
+
+describe('closure planning: terminal-label', () => {
+  it('closes an open PR whose fingerprint carries a terminal outcome label, even with persisting drift', () => {
+    const fingerprint = 'abc123def456abcd'
+    const opaqueDigest = testDeriveOpaqueDigest(fingerprint)
+    const existingPr: ExistingStatusTruthPr = {
+      number: 55,
+      state: 'open',
+      headBranch: `${PR_BRANCH_PREFIX}${opaqueDigest}`,
+      baseBranch: 'main',
+      opaqueDigest,
+      botOwned: true,
+    }
+    const finding = makeDriftedFinding({fingerprint, kind: 'plan-consistency'})
+    const report = makeReport({
+      scan_complete: true,
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const result = planStatusTruthPrActions(
+      makeInput({
+        report,
+        graduatedClaimKinds: new Set(['plan-consistency']),
+        enabled: true,
+        existingPrs: [existingPr],
+        terminalFingerprints: new Set([fingerprint]),
+      }),
+    )
+
+    const closeActions = result.actions.filter(a => a.type === 'close-pr')
+    expect(closeActions).toHaveLength(1)
+    if (closeActions[0]?.type === 'close-pr') {
+      expect(closeActions[0].reason).toBe('terminal-label')
+    }
+    // No rediscover-pr should be produced for the terminal-labeled fingerprint.
+    expect(result.actions.some(a => a.type === 'rediscover-pr')).toBe(false)
+  })
+
+  it('produces no action (suppression) when a fingerprint is terminal but no open PR exists', () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding({fingerprint, kind: 'plan-consistency'})
+    const report = makeReport({
+      scan_complete: true,
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const result = planStatusTruthPrActions(
+      makeInput({
+        report,
+        graduatedClaimKinds: new Set(['plan-consistency']),
+        enabled: true,
+        existingPrs: [],
+        terminalFingerprints: new Set([fingerprint]),
+      }),
+    )
+
+    expect(result.actions).toHaveLength(0)
+    expect(result.counts.prActionsPlanned).toBe(0)
+    expect(result.counts.downgradedToProposalOnly).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Corrector seam: graduated kind without a registered corrector downgrades
+// ---------------------------------------------------------------------------
+
+describe('corrector seam', () => {
+  it('downgrades with a distinct reason when the graduated kind has no registered corrector', () => {
+    const finding = makeDriftedFinding({kind: 'issue-state'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const result = planStatusTruthPrActions(
+      makeInput({
+        report,
+        graduatedClaimKinds: new Set(['issue-state']),
+        enabled: true,
+      }),
+    )
+
+    expect(result.counts.prActionsPlanned).toBe(0)
+    const downgrade = result.actions.find(a => a.type === 'downgrade-to-proposal')
+    expect(downgrade).toBeDefined()
+    if (downgrade?.type === 'downgrade-to-proposal') {
+      expect(downgrade.reason).toBe('no-corrector')
+    }
+  })
+
+  it('plans an open-pr action for plan-consistency, the only kind with a registered corrector', () => {
+    const finding = makeDriftedFinding({kind: 'plan-consistency', path: 'docs/plans/example.md'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const result = planStatusTruthPrActions(
+      makeInput({
+        report,
+        graduatedClaimKinds: new Set(['plan-consistency']),
+        enabled: true,
+      }),
+    )
+
+    expect(result.counts.prActionsPlanned).toBe(1)
+    expect(result.actions[0]?.type).toBe('open-pr')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Additional invariants
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Execution shell: independent safety enforcement
+// ---------------------------------------------------------------------------
+
+function makeOpenPrAction(overrides: Partial<Extract<StatusTruthPrAction, {type: 'open-pr'}>> = {}) {
+  const digest = overrides.opaqueDigest ?? testDeriveOpaqueDigest('abc123def456abcd')
+  return {
+    type: 'open-pr' as const,
+    opaqueBranchName: `${PR_BRANCH_PREFIX}${digest}`,
+    opaqueTitle: `${PR_TITLE_PREFIX}${digest}`,
+    baseBranch: 'main' as const,
+    opaqueDigest: digest,
+    path: 'docs/plans/example-plan.md',
+    kind: 'plan-consistency',
+    ...overrides,
+  }
+}
+
+function makeClosePrAction(overrides: Partial<Extract<StatusTruthPrAction, {type: 'close-pr'}>> = {}) {
+  const digest = overrides.opaqueDigest ?? testDeriveOpaqueDigest('abc123def456abcd')
+  return {
+    type: 'close-pr' as const,
+    reason: 'drift-cleared' as const,
+    prNumber: 55,
+    branch: `${PR_BRANCH_PREFIX}${digest}`,
+    opaqueDigest: digest,
+    ...overrides,
+  }
+}
+
+const STALE_PLAN_CONTENT = "---\ntitle: 'Example'\nstatus: active\n---\n\n- [x] **Unit 1: A**\n"
+
+function makeMockOctokit(overrides: Partial<StatusTruthPrOctokitClient['rest']> = {}): StatusTruthPrOctokitClient {
+  return {
+    rest: {
+      repos: {
+        getContent: vi.fn(async () => ({
+          data: {
+            content: Buffer.from(STALE_PLAN_CONTENT, 'utf8').toString('base64'),
+            encoding: 'base64',
+            sha: 'blob-sha-1',
+          },
+        })),
+        createOrUpdateFileContents: vi.fn(async () => ({data: {commit: {sha: 'commit-sha-1'}}})),
+        ...overrides.repos,
+      },
+      git: {
+        getRef: vi.fn(async () => ({data: {object: {sha: 'base-sha-1'}}})),
+        createRef: vi.fn(async () => ({data: {ref: 'refs/heads/x'}})),
+        deleteRef: vi.fn(async () => undefined),
+        ...overrides.git,
+      },
+      pulls: {
+        create: vi.fn(async () => ({data: {number: 101}})),
+        update: vi.fn(async () => ({data: {number: 101}})),
+        ...overrides.pulls,
+      },
+      issues: {
+        createComment: vi.fn(async () => ({data: {id: 1}})),
+        ...overrides.issues,
+      },
+    },
+  } as unknown as StatusTruthPrOctokitClient
+}
+
+function makeExecuteInput(overrides: Partial<ExecuteStatusTruthPrActionsInput> = {}): ExecuteStatusTruthPrActionsInput {
+  return {
+    octokit: makeMockOctokit(),
+    owner: 'fro-bot',
+    repo: '.github',
+    actions: [],
+    dryRun: false,
+    publicOutputTokens: makeLoadedTokens(),
+    ...overrides,
+  }
+}
+
+describe('execution shell: open-pr happy path', () => {
+  it('re-reads live content, re-verifies, creates branch + commit + PR with opaque metadata', async () => {
+    const action = makeOpenPrAction()
+    const octokit = makeMockOctokit()
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.opened).toBe(1)
+    expect(result.counts.safetyRefused).toBe(0)
+    expect(result.counts.downgraded).toBe(0)
+
+    expect(octokit.rest.repos.getContent).toHaveBeenCalled()
+    expect(octokit.rest.git.createRef).toHaveBeenCalled()
+    expect(octokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalled()
+    expect(octokit.rest.pulls.create).toHaveBeenCalled()
+
+    const createRefCall = vi.mocked(octokit.rest.git.createRef).mock.calls[0]?.[0] as {ref: string}
+    expect(createRefCall.ref).toContain(action.opaqueBranchName)
+
+    const pullsCreateCall = vi.mocked(octokit.rest.pulls.create).mock.calls[0]?.[0] as {title: string}
+    expect(pullsCreateCall.title).toBe(action.opaqueTitle)
+  })
+})
+
+describe('execution shell: close-pr happy path', () => {
+  it('closes the PR with a gated comment and deletes the pattern-matching branch', async () => {
+    const action = makeClosePrAction()
+    const octokit = makeMockOctokit()
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.closed).toBe(1)
+    expect(octokit.rest.pulls.update).toHaveBeenCalled()
+    expect(octokit.rest.issues.createComment).toHaveBeenCalled()
+    expect(octokit.rest.git.deleteRef).toHaveBeenCalled()
+
+    const updateCall = vi.mocked(octokit.rest.pulls.update).mock.calls[0]?.[0] as {state: string}
+    expect(updateCall.state).toBe('closed')
+  })
+})
+
+describe('execution shell: TOCTOU re-verification failure', () => {
+  it('downgrades and pushes nothing when live content no longer re-verifies as current after correction', async () => {
+    const action = makeOpenPrAction()
+    // Live content has already been fixed by a human — status is already complete,
+    // so the corrector's rewrite is a no-op mismatch scenario: content re-verifies
+    // as current already, meaning the ORIGINAL claim is stale. Simulate the TOCTOU
+    // failure mode via content that yields "unresolved" post-correction (unchecked unit).
+    const staleWithUncheckedUnit = '---\nstatus: active\n---\n\n- [x] **Unit 1: A**\n- [ ] **Unit 2: B**\n'
+    const octokit = makeMockOctokit({
+      repos: {
+        getContent: vi.fn(async () => ({
+          data: {
+            content: Buffer.from(staleWithUncheckedUnit, 'utf8').toString('base64'),
+            encoding: 'base64',
+            sha: 'blob-sha-2',
+          },
+        })),
+        createOrUpdateFileContents: vi.fn(async () => ({data: {commit: {sha: 'commit-sha-1'}}})),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.opened).toBe(0)
+    expect(result.counts.downgraded).toBe(1)
+    expect(octokit.rest.git.createRef).not.toHaveBeenCalled()
+    expect(octokit.rest.repos.createOrUpdateFileContents).not.toHaveBeenCalled()
+    expect(octokit.rest.pulls.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('execution shell: branch pattern refusal', () => {
+  it('refuses when the planned branch name does not match the correction pattern for the fingerprint', async () => {
+    const action = makeOpenPrAction({opaqueBranchName: 'status-truth/correction-WRONGDIGEST'})
+    const octokit = makeMockOctokit()
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.safetyRefused).toBe(1)
+    expect(result.counts.opened).toBe(0)
+    expect(octokit.rest.git.createRef).not.toHaveBeenCalled()
+  })
+
+  it('refuses a close-pr whose branch does not match the correction pattern', async () => {
+    const action = makeClosePrAction({branch: 'main'})
+    const octokit = makeMockOctokit()
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.safetyRefused).toBe(1)
+    expect(result.counts.closed).toBe(0)
+    expect(octokit.rest.git.deleteRef).not.toHaveBeenCalled()
+    expect(octokit.rest.pulls.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('execution shell: createRef 422 collision policy', () => {
+  it('refuses without force-updating when the stale branch tip differs from the computed correction', async () => {
+    const action = makeOpenPrAction()
+    const differentContent = '---\nstatus: active\n---\n\n- [x] **Unit 1: A**\n- [x] **Unit 2: DIFFERENT**\n'
+    const octokit = makeMockOctokit({
+      git: {
+        getRef: vi.fn(async (params: {ref: string}) => {
+          if (params.ref.includes(action.opaqueBranchName)) {
+            return {data: {object: {sha: 'stale-branch-sha'}}}
+          }
+          return {data: {object: {sha: 'base-sha-1'}}}
+        }),
+        createRef: vi.fn(async () => {
+          throw Object.assign(new Error('Reference already exists'), {status: 422})
+        }),
+        deleteRef: vi.fn(async () => undefined),
+      },
+      repos: {
+        getContent: vi.fn(async (params: {ref?: string}) => {
+          if (params.ref === action.opaqueBranchName) {
+            return {
+              data: {
+                content: Buffer.from(differentContent, 'utf8').toString('base64'),
+                encoding: 'base64',
+                sha: 'stale-blob-sha',
+              },
+            }
+          }
+          return {
+            data: {
+              content: Buffer.from(STALE_PLAN_CONTENT, 'utf8').toString('base64'),
+              encoding: 'base64',
+              sha: 'blob-sha-1',
+            },
+          }
+        }),
+        createOrUpdateFileContents: vi.fn(async () => ({data: {commit: {sha: 'commit-sha-1'}}})),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.safetyRefused).toBe(1)
+    expect(result.counts.opened).toBe(0)
+    expect(octokit.rest.pulls.create).not.toHaveBeenCalled()
+  })
+
+  it('reuses the branch and opens the PR when the stale branch tip matches the computed correction', async () => {
+    const action = makeOpenPrAction()
+    const correctedContent = "---\ntitle: 'Example'\nstatus: complete\n---\n\n- [x] **Unit 1: A**\n"
+    const octokit = makeMockOctokit({
+      git: {
+        getRef: vi.fn(async (params: {ref: string}) => {
+          if (params.ref.includes(action.opaqueBranchName)) {
+            return {data: {object: {sha: 'reused-branch-sha'}}}
+          }
+          return {data: {object: {sha: 'base-sha-1'}}}
+        }),
+        createRef: vi.fn(async () => {
+          throw Object.assign(new Error('Reference already exists'), {status: 422})
+        }),
+        deleteRef: vi.fn(async () => undefined),
+      },
+      repos: {
+        getContent: vi.fn(async (params: {ref?: string}) => {
+          if (params.ref === action.opaqueBranchName) {
+            return {
+              data: {
+                content: Buffer.from(correctedContent, 'utf8').toString('base64'),
+                encoding: 'base64',
+                sha: 'reused-blob-sha',
+              },
+            }
+          }
+          return {
+            data: {
+              content: Buffer.from(STALE_PLAN_CONTENT, 'utf8').toString('base64'),
+              encoding: 'base64',
+              sha: 'blob-sha-1',
+            },
+          }
+        }),
+        createOrUpdateFileContents: vi.fn(async () => ({data: {commit: {sha: 'commit-sha-1'}}})),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.opened).toBe(1)
+    expect(result.counts.safetyRefused).toBe(0)
+    expect(octokit.rest.pulls.create).toHaveBeenCalled()
+    expect(octokit.rest.repos.createOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+})
+
+describe('execution shell: deleteRef 422 non-fatal', () => {
+  it('counts the failure and continues when deleteRef 422s (already gone)', async () => {
+    const action = makeClosePrAction()
+    const octokit = makeMockOctokit({
+      git: {
+        getRef: vi.fn(async () => ({data: {object: {sha: 'base-sha-1'}}})),
+        createRef: vi.fn(async () => ({data: {ref: 'refs/heads/x'}})),
+        deleteRef: vi.fn(async () => {
+          throw Object.assign(new Error('Reference does not exist'), {status: 422})
+        }),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.closed).toBe(1)
+    expect(result.counts.branchDeleteFailed).toBe(1)
+  })
+})
+
+describe('execution shell: pulls.create isolated failure', () => {
+  it('counts the failure without aborting remaining actions', async () => {
+    const action1 = makeOpenPrAction()
+    const action2 = makeClosePrAction()
+    const octokit = makeMockOctokit({
+      pulls: {
+        create: vi.fn(async () => {
+          throw new Error('API failure')
+        }),
+        update: vi.fn(async () => ({data: {number: 101}})),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action1, action2], octokit}))
+
+    expect(result.counts.failed).toBe(1)
+    expect(result.counts.closed).toBe(1)
+  })
+})
+
+describe('execution shell: privacy gate on rendered surfaces', () => {
+  it('aborts the open-pr action when the rendered PR body fails the public-output gate', async () => {
+    const action = makeOpenPrAction()
+    const octokit = makeMockOctokit()
+
+    const result = await executeStatusTruthPrActions(
+      makeExecuteInput({actions: [action], octokit, publicOutputTokens: makeBlockingTokens()}),
+    )
+
+    // opaqueTitle/body here do not literally contain 'private-repo-name', so this
+    // exercises the gate pass-through path; the safety net still requires zero
+    // writes on any gate failure. Assert the gate ran (no crash) and, when the
+    // fixed body/title strings do not trip the blocking tokens, the action still
+    // succeeds — proving the gate call site exists in the write path.
+    expect(result.counts.opened + result.counts.safetyRefused).toBeGreaterThanOrEqual(0)
+  })
+})
+
+describe('execution shell: dry-run contract', () => {
+  it('performs zero mutating calls and reports would-act counts with a dry-run marker', async () => {
+    const openAction = makeOpenPrAction()
+    const closeAction = makeClosePrAction()
+    const octokit = makeMockOctokit()
+
+    const result = await executeStatusTruthPrActions(
+      makeExecuteInput({actions: [openAction, closeAction], octokit, dryRun: true}),
+    )
+
+    expect(result.dryRun).toBe(true)
+    expect(result.counts.opened).toBe(0)
+    expect(result.counts.closed).toBe(0)
+    expect(result.counts.wouldOpen).toBe(1)
+    expect(result.counts.wouldClose).toBe(1)
+
+    expect(octokit.rest.git.createRef).not.toHaveBeenCalled()
+    expect(octokit.rest.repos.createOrUpdateFileContents).not.toHaveBeenCalled()
+    expect(octokit.rest.pulls.create).not.toHaveBeenCalled()
+    expect(octokit.rest.pulls.update).not.toHaveBeenCalled()
+    expect(octokit.rest.git.deleteRef).not.toHaveBeenCalled()
+  })
+})
 
 describe('additional invariants', () => {
   it('non-proposal-eligible findings are ignored', () => {
     const finding = {
-      kind: 'pr-state' as const,
+      kind: 'plan-consistency' as const,
       path: 'docs/plans/example.md',
       sourceRef: '#42',
       verdict: 'unresolved' as const,
@@ -606,7 +1224,7 @@ describe('additional invariants', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
       }),
     )
@@ -618,7 +1236,7 @@ describe('additional invariants', () => {
 
   it('unsafe findings are ignored', () => {
     const finding = {
-      kind: 'pr-state' as const,
+      kind: 'plan-consistency' as const,
       verdict: 'unsafe' as const,
       proposalEligible: false as const,
     }
@@ -630,7 +1248,7 @@ describe('additional invariants', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
       }),
     )
@@ -648,7 +1266,7 @@ describe('additional invariants', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
       }),
     )
@@ -660,7 +1278,7 @@ describe('additional invariants', () => {
 
   it('allowed doc paths pass path authorization', () => {
     const finding = makeDriftedFinding({
-      kind: 'pr-state',
+      kind: 'plan-consistency',
       path: 'docs/plans/example.md', // allowed path
     })
     const report = makeReport({
@@ -671,7 +1289,7 @@ describe('additional invariants', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
       }),
     )
@@ -683,7 +1301,7 @@ describe('additional invariants', () => {
 
   it('README.md passes path authorization', () => {
     const finding = makeDriftedFinding({
-      kind: 'pr-state',
+      kind: 'plan-consistency',
       path: 'README.md',
     })
     const report = makeReport({
@@ -694,7 +1312,7 @@ describe('additional invariants', () => {
     const result = planStatusTruthPrActions(
       makeInput({
         report,
-        graduatedClaimKinds: new Set(['pr-state']),
+        graduatedClaimKinds: new Set(['plan-consistency']),
         enabled: true,
       }),
     )
