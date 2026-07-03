@@ -1,7 +1,7 @@
 ---
 title: Structured-First Attribution for Public-Allowlist Privacy Gates
 date: 2026-06-04
-last_updated: 2026-06-04
+last_updated: 2026-07-04
 verified: 2026-06-04
 category: best-practices
 module: github-workflows
@@ -146,6 +146,10 @@ if (structuredSources !== null) {
   fail-closed-on-unknown predicate this attribution model extends.
 - `docs/solutions/security-issues/survey-workflow-side-privacy-gate-2026-05-16.md` — verifying
   privacy inside the trusted workflow before a public side effect.
+- `docs/solutions/best-practices/status-truth-synthetic-self-audit-claim-kinds-2026-07-03.md` —
+  cites this doc's structured-provenance-over-body-text pattern.
+- `docs/solutions/best-practices/closed-vocabulary-telemetry-keys-from-public-bodies-2026-07-03.md`
+  — cites this doc's structured-metadata-over-body-text pattern.
 - Issues: #3419 (this refresh), #3408 (operator-actionable blocked output), #3418 (self-asserted
   provenance residual — a page lying about its own `sources` is bounded by agent identity + data
   sole-writer, not closeable at this attribution layer).
