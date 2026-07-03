@@ -17,3 +17,7 @@ docs/plans/2026-06-23-001-fix-merged-candidate-evidence-plan.md is complete.
 docs/plans/2026-06-26-001-feat-status-truth-maintenance-loop-plan.md is complete.
 
 docs/plans/2026-06-30-001-feat-status-truth-signal-completion-plan.md is complete.
+
+docs/plans/2026-07-03-001-feat-bounded-correction-pr-execution-plan.md is complete.
+
+docs/plans/2026-07-03-002-feat-wiki-authority-repair-loop-plan.md is complete.

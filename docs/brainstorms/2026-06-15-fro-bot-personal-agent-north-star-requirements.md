@@ -50,8 +50,11 @@ this note rebaselines it:
   mock must remain a non-canonical fixture, never the de facto API design.
 - **A1 (Tier 2, grow-and-learn): SHIPPED + validated 2026-06-22.** The control-plane-native
   autonomy capability landed independently of the spine, as the dependency model predicted.
-  Retrieve + propose-only capture + review-prose enrichment are all live. A2
-  (self-maintenance) is the next control-plane-native Tier-2 thread.
+  Retrieve + propose-only capture + review-prose enrichment are all live.
+- **A2 (Tier 2, self-maintenance): first two surfaces SHIPPED as of 2026-07-03.** The
+  status-truth maintenance loop (detect, proposals, per-kind outcome telemetry) and the wiki
+  authority repair loop are both live, control-plane-native. Bounded correction PR machinery
+  shipped fully disarmed; graduation to real corrections is pending an accepted-outcome signal.
 
 So the operating truth is **concurrent workstreams**, not strict serial phases. The serial
 roadmap below is retained as the original strategic recommendation, not the current schedule.
@@ -145,9 +148,10 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   plane. Most control-plane-native of all capabilities — shipped without the spine, as
   predicted._
 - **A2 — Self-maintenance & good-GitHub-citizen depth.** Extend autoheal into broader
-  self-improvement of repo + control-plane operation. The natural next Tier-2 thread now
-  that A1 is done — also control-plane-native and startable without the spine. _Owner:
-  control plane. Depends on: nothing new (autoheal is the seed). Effort/risk: M._
+  self-improvement of repo + control-plane operation. **First two surfaces shipped
+  2026-07-03:** status-truth maintenance loop and wiki authority repair. Bounded-PR
+  correction machinery shipped disarmed; graduation pending accepted-outcome signal.
+  _Owner: control plane. Depends on: nothing new (autoheal is the seed). Effort/risk: M._
 - **A3 — Cross-repo planning & agent dispatch.** Plan work spanning related repos and
   dispatch agents in those repos to coordinate. _Owner: control plane + Systematic +
   agent. Depends on: A1/A2 maturity; partial on S1 for cross-agent coordination.
@@ -226,9 +230,10 @@ foundation and the autonomy engine follow.
   auth). S2 is the security keystone — a real browser-auth/session model replacing
   shared-secret HMAC — and is treated as a first-class hard problem, not Discord parity.
 - **Phase 3:** Upgrade the Phase-1 visibility surface into the full interactive dashboard
-  (launch missions, approve actions, push notifications, editable wiki) on top of the spine,
-  and land **A1 skill-learning / A2 self-maintenance** (control-plane-native, can begin
-  earlier if capacity allows since they don't need the spine).
+  (launch missions, approve actions, push notifications, editable wiki) on top of the spine.
+  **A1 skill-learning and A2 self-maintenance's first two surfaces have already shipped**
+  ahead of Phase 3, as the dependency model predicted (control-plane-native, no spine
+  needed); A2 bounded-PR graduation remains open.
 - **Phase 4:** A3 cross-repo coordination + Tier-3 frontier (negotiation, then
   beyond-software).
 
@@ -268,10 +273,11 @@ Rationale:
    replacing shared-secret HMAC, treated as a first-class hard problem. The Discord reframe
    de-risks the *interaction model* (what commands mean, the fail-closed approval flow), not
    the *web-auth implementation* — that remains genuinely hard.
-3. **A1/A2 autonomy is Phase 3, but unblocked.** Skill-learning and self-maintenance are
-   control-plane-native and need nothing new, so they can start whenever capacity allows.
-   They follow visibility + spine because those address the acute near-term pain and unlock
-   the whole outward program; A1/A2 compound value but don't relieve the stated problem.
+3. **A1/A2 autonomy was slated for Phase 3, but shipped ahead of it.** Skill-learning and
+   self-maintenance are control-plane-native and needed nothing new, so both started early;
+   A1 shipped 2026-06-22 and A2's first two surfaces (status-truth loop, wiki authority
+   repair) shipped 2026-07-03, all independent of the spine. A2's bounded-PR graduation is
+   still open, pending accepted-outcome signal.
 4. **The surfaces need one ownership model.** Discord is the proven command surface today.
    The web dashboard must be defined as either canonical or an augment to Discord — not a
    second, divergent control plane. Resolve this before Phase 3 (see Open decisions).
