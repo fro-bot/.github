@@ -139,6 +139,7 @@ export function planWikiRepairs(params: PlanWikiRepairsParams): WikiRepairPlanRe
       for (const finding of baselineFindings) {
         if (INDEX_KINDS.has(finding.kind)) {
           targetedFindings.push(finding)
+          repaired += 1
         }
       }
     } else {
