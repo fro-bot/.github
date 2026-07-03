@@ -1,7 +1,7 @@
 ---
 title: 'jq // operator silently coalesces false to fallback in shell-driven gates'
 date: 2026-05-17
-last_updated: 2026-05-17
+last_updated: 2026-07-04
 problem_type: workflow_issue
 component: development_workflow
 module: github-actions-workflows
@@ -102,7 +102,10 @@ The fix is procedural, not just textual: when writing a shell-driven gate that c
 - Any `scripts/**/*.ts` shell-outs that parse GitHub API booleans (less common, but the same trap exists for any tool using `jq`'s `//`).
 - Any review of an existing workflow gate — `git grep -nE 'jq -r .+ // "(null|false|true)"'` is a fast audit for this exact pattern across the repo.
 
-The audit also catches non-boolean cases that *should* use `//` (string fallbacks for missing fields), so review each hit by intent: if the fallback intentionally distinguishes `present-but-falsy` from `missing`, the `//` is wrong.
+The audit distinction is numeric vs. boolean, not "does it use `//`":
+
+- **Numeric count defaults are fine.** Every summary-table `jq` call across `status-truth.yaml`, `wiki-lint.yaml`, `reconcile-repos.yaml`, and `capture-learnings.yaml` uses `.field // 0` to default a missing/absent counter to zero for display — that's the correct, intended use of `//`, since a count is never legitimately the boolean `false`.
+- **Boolean decision gates must never use string-fallback coalescing.** The two gates that decide control flow from a boolean — `survey-repo.yaml`'s resolve step (`jq -er '... | select(.isPrivate == false) | ...'`) and its recheck step (`jq -e '.data.node.isPrivate == false'`) — use `jq -e` assertions with `select()`/strict equality, never `// "fallback"`. Any future boolean gate should follow the same `jq -e` pattern; reach for `// 0` only when the field is a display-only count.
 
 ## Examples
 
