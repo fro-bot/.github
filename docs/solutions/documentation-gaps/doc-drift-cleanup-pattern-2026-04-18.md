@@ -7,7 +7,7 @@ resolution_type: process_improvement
 severity: medium
 date: 2026-04-18
 last_updated: 2026-07-04
-module: README.md, .github/copilot-instructions.md, metadata/README.md, docs/solutions/, .agents/skills/generating-project-docs
+module: README.md, SECURITY.md, .github/copilot-instructions.md, metadata/README.md, docs/solutions/, .agents/skills/generating-project-docs
 tags:
   [documentation, drift, readme, security-policy, copilot-instructions, agent-skills, inventory, pr-sequencing]
 verified: 2026-04-18
@@ -15,7 +15,7 @@ verified: 2026-04-18
 
 ## Context
 
-The canonical docs — `README.md`, `.github/copilot-instructions.md`, `metadata/README.md`, `docs/solutions/`, and the
+The canonical docs — `README.md`, `SECURITY.md`, `.github/copilot-instructions.md`, `metadata/README.md`, `docs/solutions/`, and the
 repo-scoped skill `.agents/skills/generating-project-docs` — describe a live control plane whose surface keeps
 changing — workflows, scripts, metadata schemas, wiki pages, and persona assets land regularly. Without a disciplined refresh process, the docs drift: counts
 go stale, runtime claims contradict the live repo, tree diagrams list files that were deleted, and AI-assistant
