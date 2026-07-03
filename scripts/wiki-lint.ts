@@ -531,7 +531,11 @@ function collectWikilinks(content: string): string[] {
   return Array.from(matches, match => match[1]).filter((value): value is string => value !== undefined && value !== '')
 }
 
-function splitFrontmatter(content: string): {frontmatter: Record<string, unknown>; body: string; error?: string} {
+export function splitFrontmatter(content: string): {
+  frontmatter: Record<string, unknown>
+  body: string
+  error?: string
+} {
   const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
   if (match === null) {
     return {frontmatter: {}, body: content.trim()}

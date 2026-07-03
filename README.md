@@ -250,6 +250,8 @@ Runtime state lives in version-controlled YAML under [`metadata/`](metadata/) (a
 
 Fro Bot maintains a [Karpathy-style LLM wiki](knowledge/) (`schema.md`, `index.md`, `log.md`, plus `wiki/{repos,topics,entities,comparisons}/`) that compounds cross-repo knowledge. The **Survey Repo** workflow ingests repositories into the wiki; **Reconcile Repos** schedules those surveys; **Wiki Lint** validates the authoritative snapshot restored from `origin/data` before reporting findings.
 
+When a completed scan reports a purely mechanical finding, **Wiki Lint**'s `wiki-repair` job self-heals it in the same run: `index-drift` and `orphan-page` regenerate the wiki index, and `missing-frontmatter`/`invalid-frontmatter` get a per-page frontmatter repair limited to two derivable fields — `type` (from the page's directory) and `title` (copied verbatim from an existing H1). Every other finding, including any other frontmatter field, requires judgment and stays on the issue-only lifecycle (open/update/reopen/close via `wiki-lint-issue-sync`). Repairs commit to the `data` branch through the existing atomic-commit envelope and ride the normal `data → main` promotion path (auto-merge when the promoted diff is knowledge/metadata-only); they never touch `main` directly. Repair commit messages are a fixed, counts-free template — never page slugs, titles, or repo names. Issue closure for a repaired finding still runs through the next **Wiki Lint** scan's close-on-clear behavior, not the repair job itself.
+
 To manually re-survey a repo, pass its GitHub GraphQL `node_id` as the dispatch input:
 
 ```bash
