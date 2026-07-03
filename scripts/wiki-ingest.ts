@@ -637,7 +637,7 @@ function assertWikiPagePath(path: string): void {
   }
 }
 
-function pageTypeFromPath(path: string): WikiPageType {
+export function pageTypeFromPath(path: string): WikiPageType {
   if (path.includes('/repos/')) return 'repo'
   if (path.includes('/topics/')) return 'topic'
   if (path.includes('/entities/')) return 'entity'

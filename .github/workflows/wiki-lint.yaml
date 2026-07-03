@@ -5,6 +5,15 @@ on:
   schedule:
     - cron: '0 20 * * 0' # Every Sunday at 20:00 UTC
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run mode: run the repair pipeline but commit nothing'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 permissions:
   contents: read
@@ -18,6 +27,9 @@ jobs:
     name: Lint authoritative wiki snapshot
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      repairable: ${{ steps.repairable.outputs.repairable }}
+      snapshot_sha: ${{ steps.repairable.outputs.snapshot_sha }}
     steps:
       - name: ⤵ Checkout Branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -47,6 +59,26 @@ jobs:
           WIKI_LINT_JSON_PATH: wiki-lint-report.json
           WIKI_LINT_SNAPSHOT_SHA: ${{ steps.restore-wiki.outputs.data_sha }}
         run: node scripts/wiki-lint.ts
+
+      - name: Compute repairable output
+        id: repairable
+        if: always()
+        run: |
+          set -euo pipefail
+          report=wiki-lint-report.json
+          if [[ -s "$report" ]]; then
+            repairable=$(jq -r '
+              (.scan_complete == true and .failure_class == null and
+                ([.findings[]? | select(.kind == "index-drift" or .kind == "orphan-page" or .kind == "missing-frontmatter" or .kind == "invalid-frontmatter")] | length) > 0
+              )
+            ' "$report")
+            snapshot_sha=$(jq -r '.snapshot_sha // ""' "$report")
+          else
+            repairable=false
+            snapshot_sha=""
+          fi
+          echo "repairable=${repairable}" >> "$GITHUB_OUTPUT"
+          echo "snapshot_sha=${snapshot_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Report restore failure
         if: steps.restore-wiki.outcome == 'failure'
@@ -103,3 +135,98 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           WIKI_LINT_JSON_PATH: wiki-lint-report.json
         run: node scripts/wiki-lint-issues.ts
+
+  # ---------------------------------------------------------------------------
+  # Repair job: runs only when the lint job's dedicated repairable-classes
+  # output is true (deterministic findings only — index-drift, orphan-page,
+  # missing/invalid-frontmatter). Re-derives repairable findings by linting the
+  # tree it loads (the lint report is the trigger, not the source of truth) and
+  # mints its own least-privilege write token, scoped to this job only.
+  # ---------------------------------------------------------------------------
+  wiki-repair:
+    name: Repair wiki integrity findings
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: wiki-lint
+    if: needs.wiki-lint.outputs.repairable == 'true'
+    permissions:
+      contents: read
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      # Grandfather main's knowledge/wiki/repos BEFORE restoring data — mirrors
+      # merge-data.yaml's dual-tree wiring. main content never overwrites data
+      # content in the repair computation; it is a read-only privacy-gate input.
+      - name: 📦 Grandfather main's wiki repos
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/grandfather-wiki-repos"
+          if [[ -d knowledge/wiki/repos ]]; then
+            cp -R knowledge/wiki/repos/. "${RUNNER_TEMP}/grandfather-wiki-repos/"
+          fi
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: Restore data snapshot
+        id: restore-data
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin data
+          git restore --source FETCH_HEAD --worktree -- knowledge metadata/repos.yaml
+          echo "data_sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Least-privilege write token, minted only in this job, skipped entirely
+      # on dry-run dispatches (no write credential exists on a run that cannot write).
+      - name: 🔑 Mint write token
+        id: app-token
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: 🛠 Run wiki repair
+        id: repair
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          GRANDFATHER_WIKI_REPOS_DIR: ${{ runner.temp }}/grandfather-wiki-repos
+          WIKI_REPAIR_RESULT_PATH: ${{ runner.temp }}/wiki-repair-result.json
+          # Scheduled runs carry no inputs, so a schedule run is always live (not dry-run).
+          WIKI_REPAIR_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          WIKI_REPAIR_DATA_TIP_SHA: ${{ steps.restore-data.outputs.data_sha }}
+        run: node scripts/wiki-repair.ts
+
+      - name: 📋 Write repair summary
+        if: always()
+        env:
+          WIKI_REPAIR_RESULT_PATH: ${{ runner.temp }}/wiki-repair-result.json
+        run: |
+          set -euo pipefail
+          result="$WIKI_REPAIR_RESULT_PATH"
+
+          {
+            echo "## Wiki Repair Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$result" ]]; then
+              echo "| Dry run | $(jq -r 'if .dry_run then "true" else "false" end' "$result") |"
+              echo "| Repairable seen | $(jq '.repairable_seen // 0' "$result") |"
+              echo "| Repaired | $(jq '.repaired // 0' "$result") |"
+              echo "| Aborted | $(jq '.aborted // 0' "$result") |"
+              echo "| Out of scope | $(jq '.out_of_scope // 0' "$result") |"
+              echo "| Privacy blocked | $(jq '.privacy_blocked // 0' "$result") |"
+              echo "| Path refused | $(jq '.path_refused // 0' "$result") |"
+              echo "| Conflict retries | $(jq '.conflict_retries // 0' "$result") |"
+              echo "| No-op | $(jq '.noop // 0' "$result") |"
+            else
+              echo "| Status | (repair result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
