@@ -6,7 +6,7 @@ module: data-branch-bootstrap
 problem_type: integration_issue
 component: tooling
 severity: high
-last_updated: 2026-05-09
+last_updated: 2026-07-04
 verified: 2026-05-09
 symptoms:
   - GitHub deleted the data source branch after a data-to-main promotion PR was squash-merged.
@@ -119,11 +119,12 @@ if (shouldBootstrapDataBranch && isRecoverableDataBranchMissingError(error) && a
 }
 ```
 
-### Bootstrap and guard wiki ingest writes
+### Bootstrap and guard autonomous writes beyond metadata
 
-`commitWikiChanges()` now follows the same data-branch bootstrap pattern. It rejects literal `main`
-before bootstrap, and it checks branch protection before creating wiki blobs, trees, commits, or ref
-updates:
+This is not a metadata-only pattern. `scripts/wiki-ingest.ts`'s `commitWikiChanges()` follows the same
+data-branch bootstrap pattern: it rejects literal `main` before bootstrap, calls
+`bootstrapDataBranch()` when the target is the canonical `data` branch (`wiki-ingest.ts` ~188-196),
+and checks branch protection before creating wiki blobs, trees, commits, or ref updates:
 
 ```ts
 function rejectProtectedWikiBranchName(branch: string): void {
@@ -137,7 +138,14 @@ function rejectProtectedWikiBranchName(branch: string): void {
 }
 ```
 
-It retries when `data` disappears before reading the wiki head ref.
+It retries after re-bootstrapping on a recoverable 404 during the write loop (`wiki-ingest.ts`
+~241-258), the same shape as the metadata writer's retry-after-bootstrap loop.
+
+`scripts/data-branch-bootstrap.ts`'s `bootstrapDataBranch()` is the single shared primitive both
+writers call — it owns the `createRef` 422 race handling (re-read `data`; return the existing tip if
+present, otherwise raise) at `data-branch-bootstrap.ts` ~51-139. `scripts/wiki-repair.ts` also writes
+through `commitWikiChanges()`, so it inherits this bootstrap-then-retry behavior with no separate
+implementation.
 
 ## Why This Works
 
