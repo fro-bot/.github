@@ -142,7 +142,9 @@ describe('planWikiRepairs', () => {
 
     expect(plan.noop).toBe(false)
     expect(plan.repairedFiles['knowledge/index.md']).not.toContain('ghost--repo')
-    expect(plan.counts.repaired).toBe(0)
+    expect(plan.counts.repaired).toBe(1)
+    expect(plan.counts.outOfScope).toBe(0)
+    expect(plan.counts.repairableSeen).toBe(plan.counts.repaired + plan.counts.outOfScope + plan.counts.pathRefused)
     expect(plan.targetedFindings.some(f => f.kind === 'index-drift')).toBe(true)
 
     const verify = verifyWikiRepairs({
@@ -166,6 +168,8 @@ describe('planWikiRepairs', () => {
 
     const plan = planWikiRepairs({baselineFindings: baseline, wikiFiles: files})
     expect(plan.repairedFiles['knowledge/index.md']).toContain('orphan--page')
+    expect(plan.counts.repaired).toBe(1)
+    expect(plan.counts.repairableSeen).toBe(plan.counts.repaired + plan.counts.outOfScope + plan.counts.pathRefused)
 
     const verify = verifyWikiRepairs({
       baselineFindings: baseline,
@@ -173,6 +177,45 @@ describe('planWikiRepairs', () => {
       repairedFiles: plan.repairedFiles,
     })
     expect(verify.ok).toBe(true)
+  })
+
+  it('counts both index-drift and orphan-page findings as repaired when one regeneration clears both', () => {
+    const files = buildCleanFiles()
+    // Index references a slug that doesn't exist on disk (index-drift)...
+    files['knowledge/index.md'] = buildIndex([
+      '## Repos',
+      '',
+      '- [[fro-bot--github]] — Fro Bot .github',
+      '- [[ghost--repo]] — Ghost Repo',
+      '',
+      '## Topics',
+      '',
+      '- [[github-actions-ci]] — GitHub Actions CI',
+      '',
+      '## Entities',
+      '',
+      '_No entity pages yet._',
+      '',
+      '## Comparisons',
+      '',
+      '_No comparison pages yet._',
+    ])
+    // ...and a page on disk that the index doesn't reference (orphan-page).
+    files['knowledge/wiki/repos/orphan--page.md'] = buildPage({
+      path: 'knowledge/wiki/repos/orphan--page.md',
+      type: 'repo',
+      title: 'Orphan Page',
+    })[1]
+
+    const baseline = lintWikiSnapshot({files}).deterministicFindings
+    expect(baseline.some(f => f.kind === 'index-drift')).toBe(true)
+    expect(baseline.some(f => f.kind === 'orphan-page')).toBe(true)
+
+    const plan = planWikiRepairs({baselineFindings: baseline, wikiFiles: files})
+
+    expect(plan.counts.repaired).toBe(2)
+    expect(plan.counts.outOfScope).toBe(0)
+    expect(plan.counts.repairableSeen).toBe(plan.counts.repaired + plan.counts.outOfScope + plan.counts.pathRefused)
   })
 
   it('derives missing type from directory and copies missing title from H1 (AE2)', () => {
