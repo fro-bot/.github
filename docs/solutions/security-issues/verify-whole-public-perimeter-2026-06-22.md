@@ -1,7 +1,7 @@
 ---
 title: Verify the Whole Public Perimeter Before Declaring a Value Non-Leaking
 date: 2026-06-22
-last_updated: 2026-06-22
+last_updated: 2026-07-04
 problem_type: security_issue
 category: security-issues
 component: development_workflow
@@ -89,3 +89,4 @@ and verify the change against it, not against the author's description of what t
 - [Survey workflow-side privacy gate](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md) — the same fail-closed discipline applied to workflow-side privacy checks before any public side effect.
 - [Privacy-gate promotion leak prevention](../best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md) — scanning the full promotion diff (not just filenames) to catch in-body mentions of private identifiers.
 - [Byte-exact gateway signing and fail-soft telemetry](../best-practices/byte-exact-gateway-signing-and-fail-soft-telemetry-2026-06-04.md) — a related pattern of verifying exact values at a trust boundary rather than relying on prose descriptions.
+- `scripts/status-truth-public-output.ts` — a live example of whole-perimeter enforcement: every public output surface (proposal bodies, workflow summary rows, run display names) routes through one gate, and counts-only surfaces (`workflow-summary-row`, `workflow-step-summary`, `workflow-run-display-name`) are structurally forbidden from carrying a fingerprint or canonical-ID parameter — the gate blocks if one is provided.

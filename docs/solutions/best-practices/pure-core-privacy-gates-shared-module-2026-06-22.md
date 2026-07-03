@@ -1,7 +1,7 @@
 ---
 title: Pure-Core Privacy Gates with a Shared Module and Mutation-Proof Tests
 date: 2026-06-22
-last_updated: 2026-06-22
+last_updated: 2026-07-04
 problem_type: best_practice
 category: best-practices
 component: development_workflow
@@ -37,9 +37,13 @@ pure core**, before enriched content enters the digest, with a second independen
 authored body as a backstop.
 
 Two separate gate call sites create a divergence risk: if each builds its own token set from
-scratch, a future change to one path can silently leave the other stale. The fix is to extract
-the scan into a single shared module (e.g. `capture-learnings-privacy.ts`) that both call sites
-import. One module, two chokepoints — they cannot diverge.
+scratch, a future change to one path can silently leave the other stale. The fix splits the
+concern in two: the private-token-set **builder** (`buildPrivateTokenSet` /
+`buildPrivateNameTokens`) lives in `wiki-slug.ts` as the single source of truth for token
+shape, while `capture-learnings-privacy.ts` imports it and owns the **gate** itself —
+`learningBodyHasPrivateLeak` (the pure scan) and `loadPrivateTokensFromDisk` (the fail-closed
+disk loader). Both call sites import the gate module, and the gate module imports the builder.
+One builder, one gate, both chokepoints — they cannot diverge.
 
 A subtler correctness trap: the gate received a `Set<string>` of private tokens. An empty set
 (no private repos configured) is not the same as a failed load (the token set could not be
@@ -68,13 +72,18 @@ digest.push(reviewProse)
 ### 2. Extract one shared module so chokepoints can't diverge
 
 Two independent call sites that each build their own token set will eventually drift. Extract
-the scan logic and token-set construction into a single module. Both chokepoints import it.
-A change to the scan logic propagates to both automatically.
+the token-set builder into one module and the scan/load logic into another; both chokepoints
+import the gate module. A change to either propagates to both automatically.
 
 ```ts
-// capture-learnings-privacy.ts — one module, imported by both gate call sites
-export function buildPrivateTokenSet(repos: PrivateRepo[]): Set<string> { ... }
-export function scanForPrivateTokens(text: string, tokens: Set<string>): ScanResult { ... }
+// wiki-slug.ts — the single source of truth for token shape
+export function buildPrivateTokenSet(privateNames: string[]): Set<string> { ... }
+
+// capture-learnings-privacy.ts — imports the builder, owns the gate: both call
+// sites (open step, harvest step) import this module, not each other
+import {buildPrivateTokenSet} from './wiki-slug.ts'
+export function learningBodyHasPrivateLeak(body: string, privateTokens: Set<string>): boolean { ... }
+export async function loadPrivateTokensFromDisk(): Promise<Set<string>> { ... }
 ```
 
 ### 3. Handle empty-vs-absent in the I/O shell, not the pure core
@@ -122,3 +131,4 @@ it('mutation proof: digest assembly drops private prose', () => {
 - [Wiki page structured attribution](../best-practices/wiki-page-structured-attribution-2026-06-04.md) — the present-but-empty vs absent distinction recurs here; encode it as a habit. The three-state frontmatter read (absent / present-but-malformed / present-with-URLs) is the same discipline applied to structured provenance.
 - [Survey workflow-side privacy gate](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md) — verify privacy inside the trusted workflow before any public side effect.
 - [Private repo dispatch visibility gate](../security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md) — the fail-closed predicate and opaque-identifier redaction this gate builds on.
+- `scripts/status-truth-public-output.ts` — a third chokepoint (`applyPublicOutputGate`) built on the same shared module: it wraps `learningBodyHasPrivateLeak` / `logDiffHasSecret` rather than forking privacy logic, and fails closed the same way — a token-load failure blocks all output.

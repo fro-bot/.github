@@ -6,7 +6,7 @@ component: tooling
 module: .github/workflows/survey-repo.yaml
 severity: high
 date: 2026-05-16
-last_updated: 2026-05-23
+last_updated: 2026-07-04
 verified: 2026-05-16
 related_components:
   - development_workflow
@@ -36,6 +36,8 @@ symptoms:
 
 The `survey-repo` workflow trusted dispatch callers to pass `owner` and `repo` as inputs, making the privacy contract enforceable only outside the workflow. Any caller bug, operator misuse, or future regression could leak a canonical private-repo identity into public Actions surfaces (run name, concurrency key, log lines, step summaries, social broadcasts) before any privacy check ran. Even after the first version of the in-workflow gate landed, the recheck was scoped too narrowly: persistence and external-emit steps (metadata write, broadcast) ran on agent success regardless, leaving leak windows on no-op surveys.
 
+These leak channels are fixed. Current `.github/workflows/survey-repo.yaml` accepts only an opaque `node_id` input, uses a static `run-name`, and derives the `concurrency.group` from that same opaque input — none of the raw-input echo paths described below exist anymore. The privacy gate resolves and verifies before any other step runs, and the recheck now gates every persistence and external-emit step (wiki commit, metadata write, broadcast), not just the wiki commit. This doc is the record of the incident and the pattern that closed it — read on for the shape of the problem and why the fix generalizes.
+
 ## Symptoms
 
 - `workflow_dispatch` accepted any `{owner: string, repo: string}` from the caller with no validation.
@@ -50,7 +52,7 @@ The `survey-repo` workflow trusted dispatch callers to pass `owner` and `repo` a
 1. **Trusting the engine-side gate alone.** A separate doc (`docs/solutions/security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md`) hardened the dispatch-planning engine to fail-closed on non-public entries. But if anything bypassed that gate — a future caller bug, manual `gh workflow run` from an operator, or a regression — the workflow itself had no fallback verification. A single privacy boundary outside the trust boundary it was protecting is not a boundary.
 2. **Trusting the invitation API payload's `node_id`.** The invitation handler originally used the `node_id` from the invitation payload directly. But invitations can be stale (repo deleted and recreated between invitation send and acceptance), so dispatching under that node_id could survey the wrong repository entirely.
 3. **Echoing raw input in failure messages.** Even a "failed" workflow run logs its input — `printf 'Aborting %s' "$NODE_ID"` is a leak channel. Aborting loudly with the bad value defeats the point of aborting.
-4. **Gating only the wiki-commit step on the recheck.** The first attempt at the recheck scoped its `if:` to `steps.wiki-changes.outputs.changed == 'true'`. That closed the wiki leak but left two larger ones: the `Record survey result` step kept its hardcoded `REPO_PRIVATE: 'false'` sourced from the initial resolve, and the `broadcast` job depended only on `needs.survey-repo.result == 'success'`. On a no-op survey where the agent ran but wrote no wiki changes, both paths emitted post-flip identity to public surfaces.
+4. **Gating only the wiki-commit step on the recheck.** The first attempt at the recheck scoped its `if:` to `steps.wiki-changes.outputs.changed == 'true'`. That closed the wiki leak but left two larger ones: the `Record survey result` step kept its hardcoded `REPO_PRIVATE: 'false'` sourced from the initial resolve, and the `broadcast` job depended only on `needs.survey-repo.result == 'success'`. On a no-op survey where the agent ran but wrote no wiki changes, both paths emitted post-flip identity to public surfaces. The recheck now covers both persistence (`Record survey result`, sourcing `REPO_PRIVATE` from `steps.recheck.outputs.private`, never hardcoded) and broadcast (`Announce survey to gateway` gated on `steps.recheck.conclusion == 'success'`) — not just the wiki commit.
 
 ## Solution
 
