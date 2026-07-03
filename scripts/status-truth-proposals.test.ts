@@ -17,9 +17,11 @@ import type {PublicOutputTokens} from './status-truth-public-output.ts'
 import {describe, expect, it} from 'vitest'
 import {
   buildOutcomeCounts,
+  buildOutcomeCountsByKind,
   classifyProposalOutcome,
   executeStatusTruthProposalActions,
   extractProposalFingerprint,
+  extractProposalKind,
   extractRedactedCanonicalIds,
   fetchExistingProposalIssues,
   isWithinCooldown,
@@ -28,6 +30,7 @@ import {
   OUTCOME_LABELS,
   planStatusTruthProposalActions,
   PROPOSAL_LABEL,
+  recoverProposalKind,
   REQUIRED_LABELS,
 } from './status-truth-proposals.ts'
 import {applyPublicOutputGate, makePublicOutputTokens} from './status-truth-public-output.ts'
@@ -178,6 +181,86 @@ describe('extractProposalFingerprint', () => {
 })
 
 // ---------------------------------------------------------------------------
+// extractProposalKind / recoverProposalKind
+// ---------------------------------------------------------------------------
+
+describe('extractProposalKind', () => {
+  it('extracts kind from a valid hidden marker', () => {
+    const body = '<!-- status-truth:kind=pr-state -->\n\nBody text.'
+    expect(extractProposalKind(body)).toBe('pr-state')
+  })
+
+  it('returns null for body without marker', () => {
+    expect(extractProposalKind('No marker here.')).toBeNull()
+  })
+
+  it('returns null for null body', () => {
+    expect(extractProposalKind(null)).toBeNull()
+  })
+
+  it('returns null for undefined body', () => {
+    expect(extractProposalKind(undefined)).toBeNull()
+  })
+
+  it('returns null for empty body', () => {
+    expect(extractProposalKind('')).toBeNull()
+  })
+
+  it('returns null for malformed marker (missing value)', () => {
+    expect(extractProposalKind('<!-- status-truth:kind= -->')).toBeNull()
+  })
+})
+
+describe('recoverProposalKind — precedence and closed-vocabulary validation', () => {
+  it('prefers the hidden kind marker over the visible Kind body line', () => {
+    const body = '<!-- status-truth:kind=pr-state -->\n\n**Kind:** `issue-state`\n'
+    expect(recoverProposalKind(body)).toBe('pr-state')
+  })
+
+  it('falls back to the visible **Kind:** body line when the hidden marker is absent', () => {
+    const body = '**Kind:** `plan-consistency`\n\nSome other text.'
+    expect(recoverProposalKind(body)).toBe('plan-consistency')
+  })
+
+  it('returns unknown when neither the marker nor the body line is present', () => {
+    expect(recoverProposalKind('No kind information here.')).toBe('unknown')
+  })
+
+  it('returns unknown for a null body', () => {
+    expect(recoverProposalKind(null)).toBe('unknown')
+  })
+
+  it('returns unknown for an undefined body', () => {
+    expect(recoverProposalKind(undefined)).toBe('unknown')
+  })
+
+  it('buckets an unrecognized marker kind as unknown — closed vocabulary only', () => {
+    const body = '<!-- status-truth:kind=arbitrary-attacker-text -->\n\nBody.'
+    expect(recoverProposalKind(body)).toBe('unknown')
+  })
+
+  it('buckets an unrecognized visible Kind line as unknown — closed vocabulary only', () => {
+    const body = '**Kind:** `<script>alert(1)</script>`\n\nBody.'
+    expect(recoverProposalKind(body)).toBe('unknown')
+  })
+
+  it('recognizes every known ClaimKind value from the hidden marker', () => {
+    const knownKinds = [
+      'pr-state',
+      'issue-state',
+      'release-tag-state',
+      'plan-status',
+      'rollout-tracker-status',
+      'plan-consistency',
+    ]
+    for (const kind of knownKinds) {
+      const body = `<!-- status-truth:kind=${kind} -->\n\nBody.`
+      expect(recoverProposalKind(body)).toBe(kind)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
 // planStatusTruthProposalActions — happy paths
 // ---------------------------------------------------------------------------
 
@@ -200,6 +283,7 @@ describe('planStatusTruthProposalActions', () => {
         expect(openAction.fingerprint).toBe(finding.fingerprint)
         expect(openAction.title).toContain('pr-state')
         expect(openAction.body).toContain(`<!-- status-truth:fingerprint=${finding.fingerprint} -->`)
+        expect(openAction.body).toContain(`<!-- status-truth:kind=${finding.kind} -->`)
         expect(openAction.labels).toContain(PROPOSAL_LABEL)
       }
       expect(counts.opened).toBe(1)
@@ -3931,6 +4015,83 @@ describe('buildOutcomeCounts — outcome read-model counts separate from action 
 })
 
 // ---------------------------------------------------------------------------
+// buildOutcomeCountsByKind — per-kind outcome aggregation, single classification pass
+// ---------------------------------------------------------------------------
+
+describe('buildOutcomeCountsByKind', () => {
+  it('aggregates outcome counts per kind across open and closed issues with mixed kinds', () => {
+    const issues: ExistingProposalIssue[] = [
+      makeClosedIssue('fp1', [PROPOSAL_LABEL, OUTCOME_LABELS.accepted], {
+        body: `<!-- status-truth:fingerprint=fp1 -->\n<!-- status-truth:kind=pr-state -->\n\nBody.`,
+      }),
+      makeClosedIssue('fp2', [PROPOSAL_LABEL, OUTCOME_LABELS.rejected], {
+        body: `<!-- status-truth:fingerprint=fp2 -->\n<!-- status-truth:kind=issue-state -->\n\nBody.`,
+      }),
+      makeOpenIssue('fp3', {
+        body: `<!-- status-truth:fingerprint=fp3 -->\n<!-- status-truth:kind=pr-state -->\n\nBody.`,
+      }),
+    ]
+
+    const byKind = buildOutcomeCountsByKind(issues)
+
+    expect(byKind['pr-state']?.explicitAccepted).toBe(1)
+    expect(byKind['pr-state']?.proposedPending).toBe(1)
+    expect(byKind['issue-state']?.explicitRejected).toBe(1)
+  })
+
+  it('only includes kinds with at least one issue', () => {
+    const issues: ExistingProposalIssue[] = [
+      makeClosedIssue('fp1', [PROPOSAL_LABEL, OUTCOME_LABELS.accepted], {
+        body: `<!-- status-truth:fingerprint=fp1 -->\n<!-- status-truth:kind=pr-state -->\n\nBody.`,
+      }),
+    ]
+
+    const byKind = buildOutcomeCountsByKind(issues)
+
+    expect(Object.keys(byKind)).toEqual(['pr-state'])
+  })
+
+  it('buckets issues with unrecognized/missing kind info under unknown', () => {
+    const issues: ExistingProposalIssue[] = [
+      makeClosedIssue('fp1', [PROPOSAL_LABEL, OUTCOME_LABELS.accepted], {
+        body: `<!-- status-truth:fingerprint=fp1 -->\n\nNo kind info here.`,
+      }),
+    ]
+
+    const byKind = buildOutcomeCountsByKind(issues)
+
+    expect(byKind.unknown?.explicitAccepted).toBe(1)
+  })
+
+  it('returns an empty object for an empty issue list', () => {
+    expect(buildOutcomeCountsByKind([])).toEqual({})
+  })
+
+  it('output contains only numeric counts nested under kind keys — no raw body, title, or fingerprint', () => {
+    const issues: ExistingProposalIssue[] = [
+      makeClosedIssue('abc123def456abcd', [PROPOSAL_LABEL, OUTCOME_LABELS.accepted], {
+        title: 'Status truth: pr-state drift in docs/plans/secret-path.md',
+        body: `<!-- status-truth:fingerprint=abc123def456abcd -->\n<!-- status-truth:kind=pr-state -->\n\nSensitive body content.`,
+      }),
+    ]
+
+    const byKind = buildOutcomeCountsByKind(issues)
+    const json = JSON.stringify(byKind)
+
+    expect(json).not.toContain('secret-path')
+    expect(json).not.toContain('Sensitive body content')
+    expect(json).not.toContain('abc123def456abcd')
+    expect(json).not.toContain('Status truth:')
+
+    for (const counts of Object.values(byKind)) {
+      for (const value of Object.values(counts ?? {})) {
+        expect(typeof value).toBe('number')
+      }
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
 // conflictingLabels count in ProposalCounts
 // ---------------------------------------------------------------------------
 
@@ -4226,6 +4387,19 @@ describe('planStatusTruthProposalActions — outcomeCounts in result', () => {
     expect(result.counts.opened).toBe(0)
     // Outcome counts: one proposed-pending (the existing open issue)
     expect(result.outcomeCounts.proposedPending).toBe(1)
+  })
+
+  it('result includes outcomeCountsByKind, keyed by claim kind, derived from the same classification pass', () => {
+    const fingerprint = 'abc123def456abcd'
+    const openIssue = makeOpenIssue(fingerprint, {
+      body: `<!-- status-truth:fingerprint=${fingerprint} -->\n<!-- status-truth:kind=pr-state -->\n\nBody.`,
+    })
+
+    const result = planStatusTruthProposalActions(makePlanInput({existingIssues: [openIssue]})) as {
+      outcomeCountsByKind: Readonly<Record<string, OutcomeCounts>>
+    }
+
+    expect(result.outcomeCountsByKind['pr-state']?.proposedPending).toBe(1)
   })
 })
 
@@ -4752,6 +4926,38 @@ describe('plannedCounts assembly', () => {
     expect(plannedCounts.needsOutcomeCooldown).toBe(1)
     // No reopen during cooldown
     expect(planResult.counts.reopened).toBe(0)
+  })
+
+  it('outcomeCountsByKind from the planner is present in the OpenResult shape for dry-run and live paths', () => {
+    // Simulate the OpenResult assembly that runOpen() performs for both the
+    // dry-run and live execute paths — both reuse the same planResult.outcomeCountsByKind.
+    const fingerprint = 'abc123def456abcd'
+    const openIssue: ExistingProposalIssue = {
+      ...makeOpenIssue(fingerprint, {
+        body: `<!-- status-truth:fingerprint=${fingerprint} -->\n<!-- status-truth:kind=pr-state -->\n\nBody.`,
+      }),
+    }
+
+    const planResult = planStatusTruthProposalActions(makePlanInput({existingIssues: [openIssue]}))
+
+    // Assemble the OpenResult the same way runOpen() does for either dry-run or live.
+    const dryRunResult = {
+      dryRun: true,
+      outcomeCounts: planResult.outcomeCounts,
+      outcomeCountsByKind: planResult.outcomeCountsByKind,
+    }
+    const liveResult = {
+      dryRun: false,
+      outcomeCounts: planResult.outcomeCounts,
+      outcomeCountsByKind: planResult.outcomeCountsByKind,
+    }
+
+    expect(dryRunResult.outcomeCountsByKind['pr-state']?.proposedPending).toBe(1)
+    expect(liveResult.outcomeCountsByKind['pr-state']?.proposedPending).toBe(1)
+
+    const json = JSON.stringify(dryRunResult)
+    expect(json).not.toContain(fingerprint)
+    expect(json).not.toContain('docs/plans/example.md')
   })
 })
 

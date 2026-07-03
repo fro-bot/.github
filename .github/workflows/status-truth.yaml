@@ -287,6 +287,21 @@ jobs:
                   | "| \(.key) | \(.value.opened // 0) | \(.value.updated // 0) | \(.value.reopened // 0) | \(.value.closed // 0) | \(.value.suppressed // 0) |"
                 ' "$result"
               fi
+
+              # Proposal outcomes by claim kind (read-model; counts-only, no paths or fingerprints)
+              outcome_kind_count=$(jq '.outcomeCountsByKind | length' "$result" 2>/dev/null || echo 0)
+              if [[ "$outcome_kind_count" -gt 0 ]]; then
+                echo ""
+                echo "### Proposal outcomes by claim kind"
+                echo ""
+                echo "| Kind | Pending | Accepted | Rejected | False positive | Resolved | Superseded | Needs outcome | Conflicting | Malformed |"
+                echo "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+                jq -r '
+                  .outcomeCountsByKind
+                  | to_entries[]
+                  | "| \(.key) | \(.value.proposedPending // 0) | \(.value.explicitAccepted // 0) | \(.value.explicitRejected // 0) | \(.value.falsePositive // 0) | \(.value.resolvedPositive // 0) | \(.value.superseded // 0) | \(.value.needsOutcome // 0) | \(.value.conflictingLabels // 0) | \(.value.malformedOutcome // 0) |"
+                ' "$result"
+              fi
             else
               echo "| Status | (open result unavailable) |"
             fi
