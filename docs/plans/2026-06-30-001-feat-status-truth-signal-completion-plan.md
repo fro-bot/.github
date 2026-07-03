@@ -257,9 +257,7 @@ flowchart TB
 
 ## Implementation Units
 
-### U1. Plan-status file resolver
-
-Status: complete.
+- [x] **Unit 1: Plan-status file resolver**
 
 **Goal:** Resolve public claims about plan status against current plan metadata.
 
@@ -305,16 +303,14 @@ claims.
 - Plan-status findings participate in the same report contract and proposal eligibility rules as
   existing API-backed findings.
 
-### U2. Rollout-tracker compound resolver
-
-Status: complete.
+- [x] **Unit 2: Rollout-tracker compound resolver**
 
 **Goal:** Resolve rollout-tracker claims through the existing tracker snapshot rather than treating
 them as permanently unavailable.
 
 **Requirements:** R1, R3, R4, R5
 
-**Dependencies:** U1 only for shared test helpers; otherwise can proceed independently from the same
+**Dependencies:** Unit 1 only for shared test helpers; otherwise can proceed independently from the same
 foundation.
 
 **Files:**
@@ -360,15 +356,13 @@ foundation.
 - Rollout-tracker claims produce current/drifted/unresolved counts from the snapshot contract without
   adding Project writes or leaking tracker internals to public summaries.
 
-### U3. Proposal caps and overflow reporting
-
-Status: complete.
+- [x] **Unit 3: Proposal caps and overflow reporting**
 
 **Goal:** Prevent a useful drift run from opening too many issues or comments at once.
 
 **Requirements:** R5, R6, R8
 
-**Dependencies:** Existing proposal planner; can be developed before U1/U2 and exercised with fixture
+**Dependencies:** Existing proposal planner; can be developed before Unit 1/Unit 2 and exercised with fixture
 findings.
 
 **Files:**
@@ -403,15 +397,13 @@ findings.
 **Verification:**
 - A synthetic high-drift report cannot create unbounded issue noise in dry-run or live mode.
 
-### U4. Outcome classification and accuracy math
-
-Status: complete.
+- [x] **Unit 4: Outcome classification and accuracy math**
 
 **Goal:** Classify proposal outcomes into a stable usefulness signal without mutating issue state.
 
 **Requirements:** R7, R8
 
-**Dependencies:** U3 for cap-aware lifecycle planning.
+**Dependencies:** Unit 3 for cap-aware lifecycle planning.
 
 **Files:**
 - Modify: `scripts/status-truth-proposals.ts`
@@ -448,15 +440,13 @@ changes.
 **Verification:**
 - Operator outcome labels can drive future graduation decisions without requiring workflow-log review.
 
-### U5. Manual closure cooldown and recurrence behavior
-
-Status: complete.
+- [x] **Unit 5: Manual closure cooldown and recurrence behavior**
 
 **Goal:** Prevent bot-versus-operator loops while preserving recurrence handling for unresolved drift.
 
 **Requirements:** R7, R8
 
-**Dependencies:** U4.
+**Dependencies:** Unit 4.
 
 **Files:**
 - Modify: `scripts/status-truth-proposals.ts`
@@ -498,15 +488,13 @@ Status: complete.
 - Manual proposal closure cannot cause immediate bot aggression, and persistent recurrence still has a
   documented path back to operator attention.
 
-### U6. Documentation and operational calibration
-
-Status: complete.
+- [x] **Unit 6: Documentation and operational calibration**
 
 **Goal:** Keep the plan, operator docs, and reusable learnings aligned with the completed signal slice.
 
 **Requirements:** R5, R6, R7, R8
 
-**Dependencies:** U1-U5.
+**Dependencies:** Units 1-5.
 
 **Files:**
 - Modify: `docs/plans/2026-06-26-001-feat-status-truth-maintenance-loop-plan.md`
