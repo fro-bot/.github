@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/ha-config"
 created: 2025-06-18
-updated: 2026-06-20
+updated: 2026-07-03
 sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: 83784bc3a212c10cd358be4da9425e46aa6e90f0
@@ -25,6 +25,9 @@ sources:
   - url: https://github.com/marcusrbrown/ha-config
     sha: 6b04de1e1b4dc15936ccce169953914b1b5bcbce
     accessed: 2026-06-20
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 019cbe93087ac5ca22e5b27ee370ec11fd146586
+    accessed: 2026-07-03
 tags: [home-assistant, home-assistant-config, yaml, esphome, iot]
 aliases: [ha-config]
 related:
@@ -44,11 +47,11 @@ Marcus R. Brown's [[home-assistant]] configuration repository. Public, version-c
 - **Purpose:** Version-controlled Home Assistant configuration
 - **Default branch:** `main`
 - **Created:** 2023-07-25
-- **Last push:** 2026-06-18 (`6b04de1`)
-- **HA version tracked:** 2025.6.3 (pinned in `.HA_VERSION`; unchanged since initial survey — a notable drift between code and the broader HA release cadence, now ~12 months stale)
+- **Last push:** 2026-07-03 (`019cbe9`)
+- **HA version tracked:** 2025.6.3 (pinned in `.HA_VERSION`; unchanged since initial survey — a notable drift between code and the broader HA release cadence, now ~13 months stale)
 - **Topics:** `home-assistant`, `home-assistant-config`
 - **Open issues:** 1 (#427 Dependency Dashboard — confirmed still open 2026-06-20)
-- **Open PRs:** 2 (#766 asyncio-mqtt v0.16.2, #777 esphome v2026 — both long-parked Renovate PRs, unchanged since 2026-04/05)
+- **Open PRs:** 2 (#766 asyncio-mqtt v0.16.2, #777 esphome v2026 — both long-parked Renovate PRs, still unchanged as of 2026-07-03)
 - _Correction (2026-06-10):_ Earlier surveys recorded "3 open issues, 0 open PRs" — #766 and #777 are PRs that GitHub's `open_issues_count` includes; the underlying state has not changed, only its classification here.
 
 ## Repository Structure
@@ -122,7 +125,7 @@ The CI pipeline runs four sequential/parallel jobs:
 
 1. **YAML Lint** — `frenck/action-yamllint@v1.5.0` validates YAML syntax
 2. **Remark Lint** — Markdown linting via `pipelinecomponents/remark-lint` (continue-on-error)
-3. **Prettier** — Format check using Prettier 3.8.4 (diff-only on PRs via `creyD/prettier_action@v4.3`)
+3. **Prettier** — Format check using Prettier 3.9.4 (diff-only on PRs via `creyD/prettier_action@v4.3`)
 4. **Check Home Assistant Config** — Runs `frenck/action-home-assistant@v1.4.1` against the HA version in `.HA_VERSION` (depends on lint jobs)
 
 ### Branch Protection
@@ -131,7 +134,7 @@ Required status checks on `main`: YAML Lint, Remark Lint, Prettier, Check Home A
 
 ### Shared Workflows
 
-Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github`. As of 2026-06-18 both are pinned to **v4.16.27** (SHA `3f97c9262265bc1881a8d34e99ae83df22ea8b89`), up from v4.16.24 in the prior survey — three more patch bumps in ten days (#800 v4.16.25 → #806 v4.16.26 → #808 v4.16.27). Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
+Both `renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github`. As of 2026-07-03 both are pinned to **v4.16.33** (SHA `9a23d66d4579e92175093919a8bc8e55ecbab38f`), up from v4.16.27 in the prior survey — six more patch bumps in two weeks (#816 v4.16.31 → #818 v4.16.32 → #828 v4.16.33). This tracks the same v4.16.33 pin now on [[bfra-me--github]] itself. Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
 
 ### Renovate Trigger Model
 
@@ -146,7 +149,7 @@ This is the same event-driven Renovate pattern used in [[marcusrbrown--github]] 
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.3` (patch bump from `#5.2.1` via #804 on 2026-06-13; originally crossed the v4→v5 boundary on 2026-05-16 via PR #776). Custom managers for `.pre-commit-config.yaml` (Python version + pip packages) and `mise.toml` (pre-commit via aqua). Git submodules enabled. Post-upgrade runs `npx prettier@3.8.4 --no-color --write .` (bumped from 3.8.3 via #802 on 2026-06-12). Automerge on minor/patch pip updates. ESPHome version updates are unseparated (major+minor+patch treated as a single update). New `groupName: pre-commit` rule groups the `pre-commit` package updates together.
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.4` (patch bump from `#5.2.3` via #826 on 2026-07-01). Custom managers for `.pre-commit-config.yaml` (Python version + pip packages) and `mise.toml` (pre-commit via aqua). Git submodules enabled. Post-upgrade runs `npx prettier@3.9.4 --no-color --write .` — Prettier crossed a **minor boundary 3.8→3.9** this window (3.8.4 → 3.8.5 → 3.9.0 → … → 3.9.4 across #820, #822, #824, #830, #832), propagated to both the `ci.yaml` env and the post-upgrade task. Automerge on minor/patch pip updates. ESPHome version updates are unseparated (major+minor+patch treated as a single update). The `groupName: pre-commit` rule groups the `pre-commit` package updates together.
 - **Pre-commit:** Managed via `mise` (aqua, v4.6.0). Hooks: trailing whitespace, EOF fixer, double-quote string fixer, requirements-txt fixer, large file check, merge conflict check, TOML/YAML validation. Excludes `custom_components/`, `www/`, `.HA_VERSION`. Uses `--unsafe` YAML check to allow HA YAML extensions (`!include`, `!secret`, etc.).
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` for repository configuration sync.
 - **AI Rules:** `.cursorrules` defines HA-specific development conventions (YAML standards, package organization, security, testing).
@@ -155,11 +158,11 @@ This is the same event-driven Renovate pattern used in [[marcusrbrown--github]] 
 
 ## Fro Bot Integration
 
-**No Fro Bot workflow detected** (confirmed across six consecutive surveys: 2025-06, 2026-04 ×2, 2026-05, 2026-06 ×2). The three workflows remain `ci.yaml`, `renovate.yaml`, and `update-repo-settings.yaml`. The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration. A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage. The persistence of this gap across nearly a year suggests it is not on the maintenance critical path — Marcus is treating ha-config as a Renovate-only autopilot repo, with no PR-review or triage agent needed since virtually all merges are bot-authored.
+**No Fro Bot workflow detected** (confirmed across seven consecutive surveys: 2025-06, 2026-04 ×2, 2026-05, 2026-06 ×2, 2026-07). The three workflows remain `ci.yaml`, `renovate.yaml`, and `update-repo-settings.yaml`. The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration. A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage. The persistence of this gap across nearly a year suggests it is not on the maintenance critical path — Marcus is treating ha-config as a Renovate-only autopilot repo, with no PR-review or triage agent needed since virtually all merges are bot-authored.
 
 The repo does reference `fro-bot/.github:common-settings.yaml` in its Probot settings, confirming it is part of the Fro Bot-managed ecosystem.
 
-A separate write-author (`mrbro-bot[bot]`, GitHub ID 137683033) is co-authoring recent Renovate commits (first seen on #790, 2026-05-28). As of 2026-06-20, `mrbro-bot[bot]` is the commit author on *every* merge in the last 20+ commits (through #809) — it has fully and durably displaced the prior authorship pattern. This confirms `mrbro-bot` is the active Renovate merge identity for this repo. Whether it is a parallel automation identity or replaces fro-bot's role here remains open; no fro-bot-authored commits observed across the last two survey windows.
+A separate write-author (`mrbro-bot[bot]`, GitHub ID 137683033) is co-authoring recent Renovate commits (first seen on #790, 2026-05-28). As of 2026-07-03, `mrbro-bot[bot]` remains the commit author on *every* merge across the last window (#810→#833) — four survey windows of unbroken authorship, a durable, not transitional, pattern. This is the active Renovate merge identity for this repo. Whether it is a parallel automation identity or replaces fro-bot's role here remains open; no fro-bot-authored commits observed across the last three survey windows.
 
 ## Notable Patterns
 
@@ -181,3 +184,4 @@ A separate write-author (`mrbro-bot[bot]`, GitHub ID 137683033) is co-authoring 
 | 2026-05-29 | `33cca05` | Pure Renovate churn since prior survey: bfra-me/.github v4.16.17 → v4.16.21 (four patch bumps in 11 days), `pipelinecomponents/remark-lint` digest pinned to `829aa31` (#790), esphome submodule digest advanced four times (#782, #784, #786, #787, #789). Co-author `mrbro-bot[bot]` appears on recent Renovate merges — first sighting of a non-fro-bot automation identity on this repo. Same 3 open issues, same 0 open PRs, same `.HA_VERSION` 2025.6.3, same 11 packages, same 10 custom components. No structural drift. Still no Fro Bot workflow. |
 | 2026-06-10 | `906126b` | Renovate-only churn continues: bfra-me/.github v4.16.21 → v4.16.24 (#791, #794, #798), Renovate preset `#5.2.0` → `#5.2.1` (#796), `actions/checkout` v6.0.3 (#793), esphome submodule digest advanced four times (#792, #795, #797, #799). `mrbro-bot[bot]` now authors every merge in the last 15 commits — fully displaced prior authorship. Open items unchanged: #427 Dependency Dashboard, blocked PRs #766 (asyncio-mqtt) and #777 (esphome v2026) — note GitHub counts these PRs in `open_issues_count`. `.HA_VERSION` still 2025.6.3 (~12 months stale), `esphome==2025.12.7` in requirements while the v2026 bump PR (#777) stays parked. No structural drift. Still no Fro Bot workflow (fifth consecutive survey). |
 | 2026-06-20 | `6b04de1` | Pure Renovate churn since prior survey: bfra-me/.github v4.16.24 → v4.16.27 (#800, #806, #808), Renovate preset `#5.2.1` → `#5.2.3` (#804), Prettier 3.8.3 → 3.8.4 (#802, propagated to both `ci.yaml` env and the post-upgrade task), esphome submodule digest advanced ~six times (#799→#809). New `groupName: pre-commit` rule added to renovate config. `mrbro-bot[bot]` still authors every merge (through #809). Open items unchanged: #427 Dependency Dashboard (confirmed open), parked PRs #766 and #777. `.HA_VERSION` still 2025.6.3, `esphome==2025.12.7`, mise pre-commit 4.6.0 — all static. No structural drift, no package/custom-component changes. Still no Fro Bot workflow (sixth consecutive survey). |
+| 2026-07-03 | `019cbe9` | Pure Renovate churn since prior survey (#810→#833, all `mrbro-bot[bot]`): bfra-me/.github v4.16.27 → v4.16.33 (#816, #818, #828), Renovate preset `#5.2.3` → `#5.2.4` (#826), **Prettier crossed a minor boundary 3.8.4 → 3.9.4** (#820/#822/#824/#830/#832, propagated to `ci.yaml` env + post-upgrade task), esphome submodule digest advanced ~ten times. Open items unchanged: #427 Dependency Dashboard (confirmed open), parked PRs #766 and #777. `.HA_VERSION` still 2025.6.3 (~13 months stale), `esphome==2025.12.7`, `yamllint==1.38.0`, mise pre-commit 4.6.0, 11 packages, 10 custom components — all static. No structural drift. Still no Fro Bot workflow (seventh consecutive survey); `mrbro-bot[bot]` authorship now durable across four windows. |
