@@ -108,7 +108,7 @@ the loop's first per-kind outcome signal.
 
 ## Related
 
-- [structured-first-attribution-for-public-allowlist-privacy-gates](structured-first-attribution-for-public-allowlist-privacy-gates.md) — structured provenance over body text
+- [Wiki page structured attribution](wiki-page-structured-attribution-2026-06-04.md) — structured provenance over body text
 - [pure-core-privacy-gates-shared-module-2026-06-22](pure-core-privacy-gates-shared-module-2026-06-22.md) — pure-core/shell split with mutation-proof gate tests
 - [privacy-gate-promotion-leak-prevention-2026-06-04](privacy-gate-promotion-leak-prevention-2026-06-04.md) — fail closed on resolver ambiguity
 - [identity-guard-stable-scalar-fallback-2026-06-22](identity-guard-stable-scalar-fallback-2026-06-22.md) — stable scalar fallback normalization

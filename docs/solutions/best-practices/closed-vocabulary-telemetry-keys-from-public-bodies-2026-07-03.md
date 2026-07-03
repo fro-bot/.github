@@ -76,5 +76,5 @@ edits.
 ## Related
 
 - [status-truth-synthetic-self-audit-claim-kinds-2026-07-03](status-truth-synthetic-self-audit-claim-kinds-2026-07-03.md) — sentinel normalization at ingestion (same never-trust-file-text principle)
-- [structured-first-attribution-for-public-allowlist-privacy-gates](structured-first-attribution-for-public-allowlist-privacy-gates.md) — structured metadata over body text
+- [Wiki page structured attribution](wiki-page-structured-attribution-2026-06-04.md) — structured metadata over body text
 - Source event: PR #3620
