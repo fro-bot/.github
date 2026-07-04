@@ -812,13 +812,20 @@ export interface CoordinationIssueRef {
 }
 
 /**
- * Build the receipt-carrying dispatch prompt: the item's own prompt text
- * plus a machine-contract block carrying the correlation id, the RAW nonce
- * (delivered ONLY here — never in the public marker, R6/R13), the
- * coordination issue as structured fields + a canonical URL, a literal
- * example receipt for BOTH `success` and `noop`, the mandatory-receipt rule,
- * and a self-validate instruction. Pure string composition — no I/O, no
- * telemetry surface (R12: callers must never log this return value verbatim).
+ * Build the receipt-carrying dispatch prompt: the item's prompt text plus a
+ * machine-contract block with the correlation id, the raw nonce, the
+ * coordination issue as structured fields + canonical URL, literal `success`
+ * and `noop` receipt examples, the mandatory-receipt rule, and a self-validate
+ * step. The raw nonce is delivered ONLY here, never in the public marker;
+ * callers must never log the return value verbatim.
+ *
+ * Residual leak: this becomes the target's `prompt` workflow_dispatch input.
+ * A repo running the agent with `OPENCODE_PROMPT_ARTIFACT` enabled can publish
+ * the rendered prompt (raw nonce included) as a downloadable Actions artifact.
+ * Target workflows are autonomous and cannot be redacted from here, so where
+ * that setting is present item-level nonce isolation falls back to trusting
+ * the dispatched worker (already the loop's trust boundary). A real fix lives
+ * in the agent or per-target workflow, not here.
  */
 export function buildDispatchPrompt(input: {
   itemPrompt: string
@@ -996,7 +1003,7 @@ export interface RunDispatchInput {
     repo: string
     workflow_id: string
     ref: string
-    inputs: {prompt: string; correlation_id: string}
+    inputs: {prompt: string}
   }) => Promise<void>
   nonceSource: () => string
   resultPath?: string
@@ -1270,7 +1277,11 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
       repo: currentItem.target.name,
       workflow_id: TARGET_WORKFLOW_ID,
       ref: TARGET_WORKFLOW_REF,
-      inputs: {prompt: dispatchPrompt, correlation_id: correlationId},
+      // Prompt-only input: target repos' fro-bot.yaml universally declares
+      // only `prompt` via workflow_dispatch. A `correlation_id` input 422s
+      // ("Unexpected inputs provided") against that schema — the correlation
+      // id and nonce ride inside dispatchPrompt instead (see buildDispatchPrompt).
+      inputs: {prompt: dispatchPrompt},
     })
 
     // Flip to 'dispatched' + epoch via CAS.

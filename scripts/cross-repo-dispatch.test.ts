@@ -878,7 +878,7 @@ describe('runDispatch — happy sequential dispatch', () => {
         repo: string
         workflow_id: string
         ref: string
-        inputs: {prompt: string; correlation_id: string}
+        inputs: {prompt: string}
       }) => ({}),
     )
 
@@ -908,6 +908,8 @@ describe('runDispatch — happy sequential dispatch', () => {
       expect(call?.workflow_id).toBe('fro-bot.yaml')
       expect(call?.ref).toBe('main')
       expect(call?.inputs.prompt).toContain(`do work in ${target.name}`)
+      expect(call?.inputs).not.toHaveProperty('correlation_id')
+      expect(Object.keys(call?.inputs ?? {})).toEqual(['prompt'])
     }
   })
 })
@@ -945,12 +947,16 @@ describe('runDispatch — nonce mint + receipt-carrying prompt (Unit 2)', () => 
     })
 
     const call = createWorkflowDispatch.mock.calls[0]?.[0] as {
-      inputs: {prompt: string; correlation_id: string}
+      inputs: {prompt: string}
     }
+    expect(call.inputs).not.toHaveProperty('correlation_id')
+    expect(Object.keys(call.inputs)).toEqual(['prompt'])
     const prompt = call.inputs.prompt
-    const correlationId = call.inputs.correlation_id
+    const correlationIdMatch = /correlation_id: (\S+)/.exec(prompt)
+    const correlationId = correlationIdMatch?.[1]
+    expect(correlationId).toBeDefined()
 
-    expect(prompt).toContain(correlationId)
+    expect(prompt).toContain(correlationId as string)
     expect(prompt).toContain('raw-nonce-abc')
     expect(prompt).toContain(`owner: ${REPO.owner}`)
     expect(prompt).toContain(`repo: ${REPO.repo}`)
@@ -1217,7 +1223,7 @@ describe('runDispatch — seeds marker from decomposition checklist', () => {
         repo: string
         workflow_id: string
         ref: string
-        inputs: {prompt: string; correlation_id: string}
+        inputs: {prompt: string}
       }) => ({}),
     )
 

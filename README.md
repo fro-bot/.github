@@ -349,6 +349,10 @@ Fro Bot coordinates a single goal across multiple owner repos (`fro-bot/*`, `mar
 
 If you need to re-approve after reopening a closed goal issue, reopening automatically clears the prior approval — reapply the `dispatch-approved` label to fire a fresh dispatch.
 
+Each dispatch carries only the universal `prompt` input — no `correlation_id` or other custom input, since target repos are autonomous and only guarantee `prompt`. The correlation id and a per-item nonce ride inside the prompt itself; the worker reports completion by posting a receipt comment on the coordination issue, which a periodic tracker verifies (author, correlation id, and `hash(nonce)`) before resolving the item.
+
+The nonce binds a receipt to its item: the coordination issue stores only `hash(nonce)`, and the raw nonce reaches the worker only through the prompt. One caveat worth stating plainly — a repo running Fro Bot with `OPENCODE_PROMPT_ARTIFACT` enabled publishes the rendered prompt (raw nonce included) as a downloadable Actions artifact. Where that's set on a target, item-level nonce isolation falls back to trusting the dispatched worker itself, which is the same trust boundary the loop already assumes: every worker is a Fro Bot agent.
+
 ## Development
 
 ### Code Quality Standards
