@@ -337,6 +337,18 @@ Any single key missing produces zero PR actions; eligible findings fall back to 
 - If a fingerprint's drift clears on a complete scan while its correction PR is still open, the bot closes its own PR with a brief comment and deletes the branch. If the linked proposal later gets a terminal label (`status-truth:rejected` or `status-truth:false-positive`), the same closure happens regardless of drift state. Merged PRs are never touched.
 - The bot never merges, approves, enables automerge, force-pushes, or retargets a correction PR — closing its own stale PRs and deleting its own branches are the only PR-state mutations it can make. A human always merges.
 
+### Cross-Repo Goal Dispatch
+
+Fro Bot coordinates a single goal across multiple owner repos (`fro-bot/*`, `marcusrbrown/*`) through an open → decompose → approve → dispatch → track lifecycle:
+
+1. **Open a goal issue.** Describe a multi-repo goal and mention `@fro-bot`. Label the issue `cross-repo-goal`.
+2. **Review the proposed decomposition.** The bot posts a per-repo work-item checklist as a comment. Edit it freely before approving — nothing dispatches yet.
+3. **Approve.** Applying the `dispatch-approved` label triggers dispatch. Only an approval applied by the repository owner (the operator) is honored; any other applier has the label removed and nothing runs.
+4. **Dispatch.** Each approved item runs as a worker agent in its target repo. Targets are restricted to owner repos already onboarded to Fro Bot's automation.
+5. **Track to completion.** A periodic tracker snapshots each item's run outcome to the issue. The issue closes automatically once every item reaches a terminal state (completed, failed, or blocked).
+
+If you need to re-approve after reopening a closed goal issue, reopening automatically clears the prior approval — reapply the `dispatch-approved` label to fire a fresh dispatch.
+
 ## Development
 
 ### Code Quality Standards
