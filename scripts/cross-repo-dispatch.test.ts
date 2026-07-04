@@ -3019,9 +3019,257 @@ describe('golden path — real production composition (runDispatchCli then runTr
       expect(update).toHaveBeenCalledWith(expect.objectContaining({issue_number: 42, state: 'closed'}))
 
       const closedMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
-      expect(closedMarker?.state.items.every(item => item.status === 'completed')).toBe(true)
+      // A no-op receipt closes its item too, same as success (R7).
+      expect(closedMarker?.state.items.find(item => item.target.name === 'sparkle')?.status).toBe('completed')
+      expect(closedMarker?.state.items.find(item => item.target.name === 'renovate-config')?.status).toBe('completed')
     } finally {
       process.env = originalEnv
     }
+  })
+
+  it('hostile: a cross-item forgery receipt (correct correlation id, wrong/guessed nonce) never resolves the item — real receipt still can', async () => {
+    // This is the standing anti-recurrence contract for R6/R6c: an attacker
+    // who reads the PUBLIC marker only ever learns `nonceHash`, never the raw
+    // nonce, so a forged receipt can only ever GUESS at the raw nonce. This
+    // test drives the real dispatch->track composition and proves the guess
+    // never moves state, then proves the genuine receipt (extracted from the
+    // dispatch prompt exactly as a real worker would read it) still resolves
+    // the item afterward — forgery attempts don't poison the item permanently.
+    const originalEnv = {...process.env}
+    const {writeFile, mkdtemp} = await import('node:fs/promises')
+    const {tmpdir} = await import('node:os')
+    const path = await import('node:path')
+    const dir = await mkdtemp(path.join(tmpdir(), 'cross-repo-dispatch-golden-hostile-'))
+    const eventPath = path.join(dir, 'event.json')
+    await writeFile(
+      eventPath,
+      JSON.stringify({
+        label: {name: 'dispatch-approved'},
+        sender: {login: REQUIRED_APPROVER},
+        issue: {number: 42},
+      }),
+    )
+
+    process.env.GITHUB_TOKEN = 'test-token'
+    process.env.GITHUB_REPOSITORY = 'fro-bot/.github'
+    process.env.GITHUB_EVENT_PATH = eventPath
+    process.env.CROSS_REPO_DISPATCH_RESULT_PATH = ''
+
+    try {
+      const {octokit, comments} = mockOctokit()
+      comments.push({id: 1, body: PLANNER_COMMENT, login: 'fro-bot'})
+
+      const createComment = vi.fn(async (params: {owner: string; repo: string; issue_number: number; body: string}) => {
+        const comment = {id: comments.length + 1, body: params.body, login: 'fro-bot'}
+        comments.push(comment)
+        return {data: {id: comment.id}}
+      })
+      const updateComment = vi.fn(async (params: {comment_id: number; body: string}) => {
+        const existing = comments.find(c => c.id === params.comment_id)
+        if (existing !== undefined) existing.body = params.body
+        return {}
+      })
+      const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+      const listForRepo = vi.fn(async () => ({data: [{number: 42}]}))
+
+      const dispatchOctokit = {
+        ...octokit,
+        rest: {
+          ...octokit.rest,
+          issues: {...octokit.rest.issues, createComment, updateComment, listForRepo},
+          actions: {...octokit.rest.actions, createWorkflowDispatch},
+        },
+      }
+
+      await runDispatchCli(async () => dispatchOctokit, singleOwnerResolver(dispatchOctokit))
+      expect(createWorkflowDispatch).toHaveBeenCalledTimes(2)
+
+      const correlationIdFor = (repoName: string): string => {
+        const call = createWorkflowDispatch.mock.calls.find(c => (c[0] as {repo: string}).repo === repoName)?.[0] as
+          {inputs: {prompt: string}} | undefined
+        const prompt = call?.inputs.prompt ?? ''
+        const correlationId = /correlation_id: (\S+)/.exec(prompt)?.[1]
+        expect(correlationId).toBeDefined()
+        return correlationId as string
+      }
+
+      // ─── Phase 2a: post ONLY forged receipts (correct correlation id, a
+      // guessed/wrong raw nonce — the only thing a forger reading the public
+      // marker could ever attempt, since the marker stores nonceHash, not the
+      // raw nonce). Neither item may resolve.
+      for (const target of GOLDEN_TARGETS) {
+        comments.push({
+          id: comments.length + 1,
+          login: 'fro-bot',
+          body: buildResultMarker({
+            correlationId: correlationIdFor(target.name),
+            nonce: 'forged-guessed-nonce-does-not-hash',
+            status: 'success',
+            summary: 'Forged: I read the marker and guessed at a nonce.',
+          }),
+        })
+      }
+
+      const listWorkflowRunsForRepoHostile = vi.fn(async () => ({data: {workflow_runs: []}}))
+      const updateHostile = vi.fn(async (_params: unknown) => ({data: {}}))
+      const trackListForRepoHostile = vi.fn(async () => ({data: [{number: 42}]}))
+      const trackOctokitHostile = {
+        ...octokit,
+        rest: {
+          ...octokit.rest,
+          issues: {...octokit.rest.issues, listForRepo: trackListForRepoHostile, update: updateHostile},
+          actions: {...octokit.rest.actions, listWorkflowRunsForRepo: listWorkflowRunsForRepoHostile},
+        },
+      }
+      await runTrackCli(async () => trackOctokitHostile, singleOwnerResolver(trackOctokitHostile))
+
+      expect(updateHostile).not.toHaveBeenCalledWith(expect.objectContaining({state: 'closed'}))
+      const markerAfterForgery = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+      expect(markerAfterForgery?.state.items.every(item => item.status !== 'completed')).toBe(true)
+      expect(markerAfterForgery?.state.items.every(item => item.status !== 'failed')).toBe(true)
+
+      // ─── Phase 2b: the REAL workers post their genuine receipts (correct
+      // raw nonce extracted from their own dispatch prompt). The earlier
+      // forgery attempts must not have poisoned the item — it resolves now.
+      for (const target of GOLDEN_TARGETS) {
+        const call = createWorkflowDispatch.mock.calls.find(c => (c[0] as {repo: string}).repo === target.name)?.[0] as
+          {inputs: {prompt: string}} | undefined
+        const prompt = call?.inputs.prompt ?? ''
+        const correlationId = /correlation_id: (\S+)/.exec(prompt)?.[1]
+        const nonce = /^nonce: (\S+)$/m.exec(prompt)?.[1]
+        comments.push({
+          id: comments.length + 1,
+          login: 'fro-bot',
+          body: buildResultMarker({
+            correlationId: correlationId as string,
+            nonce: nonce as string,
+            status: 'success',
+            summary: `Confirmed README H1 for ${target.name}.`,
+          }),
+        })
+      }
+
+      const listWorkflowRunsForRepoReal = vi.fn(async () => ({data: {workflow_runs: []}}))
+      const updateReal = vi.fn(async (_params: unknown) => ({data: {}}))
+      const trackListForRepoReal = vi.fn(async () => ({data: [{number: 42}]}))
+      const trackOctokitReal = {
+        ...octokit,
+        rest: {
+          ...octokit.rest,
+          issues: {...octokit.rest.issues, listForRepo: trackListForRepoReal, update: updateReal},
+          actions: {...octokit.rest.actions, listWorkflowRunsForRepo: listWorkflowRunsForRepoReal},
+        },
+      }
+      await runTrackCli(async () => trackOctokitReal, singleOwnerResolver(trackOctokitReal))
+
+      expect(updateReal).toHaveBeenCalledWith(expect.objectContaining({issue_number: 42, state: 'closed'}))
+      const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+      expect(finalMarker?.state.items.every(item => item.status === 'completed')).toBe(true)
+    } finally {
+      process.env = originalEnv
+    }
+  })
+
+  it('early-receipt: a genuine receipt posted before the item is confirmed is retained, then resolves once confirmed (real runTrackCli composition)', async () => {
+    const originalEnv = {...process.env}
+    process.env.GITHUB_TOKEN = 'test-token'
+    process.env.GITHUB_REPOSITORY = 'fro-bot/.github'
+    process.env.CROSS_REPO_DISPATCH_RESULT_PATH = ''
+    try {
+      const RAW = 'raw-nonce-early-golden'
+      const target = GOLDEN_TARGETS[0] as DispatchTarget
+
+      // Pass 1: item is still 'intent' — confirmedAt (`epoch`) has not landed
+      // yet, but `correlationId`/`nonceHash` were already persisted at the
+      // preceding intent write (mirroring the real two-phase dispatch). A
+      // fast worker's genuine receipt arrives before confirm.
+      const unconfirmedItem: DispatchItem = {
+        id: 'item-1',
+        target,
+        promptHash: 'h',
+        status: 'intent',
+        correlationId: 'corr-early-golden',
+        nonceHash: hashNonce(RAW),
+      }
+      const goalUnconfirmed = makeOpenGoal({goal: 'g-early', items: [unconfirmedItem], markerHash: ''})
+      const {octokit: octokit1, comments: comments1} = mockOctokitForGoal(goalUnconfirmed, {
+        comments: [
+          makeReceiptComment(makeReceipt({correlationId: 'corr-early-golden', nonce: RAW, status: 'success'})),
+        ],
+        listForRepo: vi.fn(async () => ({data: [{number: goalUnconfirmed.issueNumber}]})),
+      })
+      await runTrackCli(async () => octokit1, singleOwnerResolver(octokit1))
+
+      const markerAfterPass1 = selectStateMarker(comments1.map(c => ({author: {login: c.login}, body: c.body})))
+      expect(markerAfterPass1?.state.items.find(candidate => candidate.id === 'item-1')?.status).toBe('intent')
+
+      // Pass 2: confirm has now landed (status 'dispatched', epoch set). The
+      // SAME genuine receipt — never dropped — resolves the item this pass.
+      const confirmedItem: DispatchItem = {...unconfirmedItem, status: 'dispatched', epoch: 0}
+      const goalConfirmed = makeOpenGoal({goal: 'g-early', items: [confirmedItem], markerHash: ''})
+      const {octokit: octokit2, comments: comments2} = mockOctokitForGoal(goalConfirmed, {
+        comments: [
+          makeReceiptComment(makeReceipt({correlationId: 'corr-early-golden', nonce: RAW, status: 'success'})),
+        ],
+        listForRepo: vi.fn(async () => ({data: [{number: goalConfirmed.issueNumber}]})),
+      })
+      await runTrackCli(async () => octokit2, singleOwnerResolver(octokit2))
+
+      const markerAfterPass2 = selectStateMarker(comments2.map(c => ({author: {login: c.login}, body: c.body})))
+      expect(markerAfterPass2?.state.items.find(candidate => candidate.id === 'item-1')?.status).toBe('completed')
+    } finally {
+      process.env = originalEnv
+    }
+  })
+
+  it('SLA + diagnostic: a no-receipt item past 24h surfaces needs-attention, annotated ran-no-report vs never-ran (production runTrack composition)', async () => {
+    const target = GOLDEN_TARGETS[0] as DispatchTarget
+    const itemRan: DispatchItem = {
+      id: 'item-ran',
+      target,
+      promptHash: 'h1',
+      status: 'dispatched',
+      correlationId: 'c-ran-golden',
+      epoch: 0,
+    }
+    const itemNeverRan: DispatchItem = {
+      id: 'item-never',
+      target,
+      promptHash: 'h2',
+      status: 'dispatched',
+      correlationId: 'c-never-golden',
+      epoch: 0,
+    }
+    const goalIssue = makeOpenGoal({goal: 'g-sla-golden', items: [itemRan, itemNeverRan], markerHash: ''})
+    const {octokit, comments} = mockOctokitForGoal(goalIssue)
+    const findRunConclusion = vi.fn(async (_t: DispatchTarget, correlationId: string) =>
+      correlationId === 'c-ran-golden' ? ('success' as const) : undefined,
+    )
+
+    const result = await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [gateEntryFor(target)],
+      findRunConclusion,
+      now: () => RECEIPT_SLA_MS + 1,
+    })
+
+    // No receipt past SLA -> needs-attention for both; goal stays open (R9,
+    // R11). The diagnostic run-lookup ONLY annotates a reason, never flips
+    // either item terminal (R8: run-lookup is non-authoritative).
+    expect(result.counts.itemsNeedsAttention).toBe(2)
+    expect(result.counts.itemsCompleted).toBe(0)
+    expect(result.counts.goalsClosed).toBe(0)
+
+    const marker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const ran = marker?.state.items.find(candidate => candidate.id === 'item-ran')
+    const neverRan = marker?.state.items.find(candidate => candidate.id === 'item-never')
+    expect(ran?.status).toBe('needs-attention')
+    expect(ran?.needsAttentionReason).toBe('no-receipt')
+    expect(ran?.noReceiptDiagnostic).toBe('ran-no-report')
+    expect(neverRan?.status).toBe('needs-attention')
+    expect(neverRan?.needsAttentionReason).toBe('no-receipt')
+    expect(neverRan?.noReceiptDiagnostic).toBe('never-ran')
   })
 })
