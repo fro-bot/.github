@@ -163,6 +163,10 @@ env:
       (owner/repo/number) and re-reads its own posted comment to confirm the
       marker round-trips; if the marker is missing, it edits the comment to
       add it before declaring the item done.
+    - `summary` must be plain text: no markdown formatting, backticks, or
+      backslash escapes, and the marker as a whole must be valid JSON — an
+      escaped character like `\#` breaks the parser and turns a successful
+      run into an unparseable receipt.
 
   SCHEDULE_PROMPT: |
     Run the daily Fro Bot pass for fro-bot/.github — the autonomous control

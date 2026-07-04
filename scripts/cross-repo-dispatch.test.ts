@@ -35,6 +35,7 @@ import {
   planDispatch,
   planSnapshot,
   RECEIPT_SLA_MS,
+  repairJsonStringEscapes,
   REQUIRED_APPROVER,
   resolveReceipts,
   runDispatch,
@@ -358,6 +359,49 @@ describe('buildResultMarker / parseResult round-trip', () => {
     expect(outcome.ok).toBe(true)
     expect(outcome.result).toEqual(receipt)
   })
+
+  it('parses a receipt whose summary contains a literal --> without truncating the payload', () => {
+    const receipt = makeReceipt({summary: 'see the arrow --> here; no change'})
+    const outcome = parseResult(buildResultMarker(receipt))
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result).toEqual(receipt)
+  })
+
+  it('tracks string scope correctly when an escaped quote precedes an in-string -->', () => {
+    const receipt = makeReceipt({summary: String.raw`note \"quoted\" then --> an arrow`})
+    const outcome = parseResult(buildResultMarker(receipt))
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result).toEqual(receipt)
+  })
+
+  it('still applies last-marker-wins when the winning payload contains a literal -->', () => {
+    const bareMarker = (receipt: CrossRepoResult) =>
+      `<!-- fro-bot:cross-repo-result ${JSON.stringify({
+        correlation_id: receipt.correlationId,
+        nonce: receipt.nonce,
+        status: receipt.status,
+        summary: receipt.summary,
+      })} -->`
+    const first = makeReceipt({correlationId: 'first-marker', summary: 'first'})
+    const second = makeReceipt({correlationId: 'second-marker', summary: 'second --> arrow'})
+    const body = `Some prose.\n${bareMarker(first)}\n${bareMarker(second)}\nMore prose.`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result?.correlationId).toBe('second-marker')
+    expect(outcome.result?.summary).toBe('second --> arrow')
+  })
+
+  it('treats a marker with no closing --> at all as absent', () => {
+    const body = `<!-- fro-bot:cross-repo-result ${JSON.stringify({
+      correlation_id: 'abc',
+      nonce: 'n',
+      status: 'success',
+      summary: 'unterminated',
+    })}`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('absent')
+  })
 })
 
 describe('parseResult — malformed vs absent', () => {
@@ -429,6 +473,95 @@ describe('parseResult — malformed vs absent', () => {
     const outcome = parseResult('<!-- fro-bot:cross-repo-result {"correlation_id":"abc"} -->')
     expect(outcome.ok).toBe(false)
     expect(outcome.result).toBeUndefined()
+  })
+})
+
+describe('repairJsonStringEscapes', () => {
+  it('drops the backslash from markdown-style escapes inside a string', () => {
+    expect(repairJsonStringEscapes(String.raw`"\# Renovate Config Presets"`)).toBe('"# Renovate Config Presets"')
+    expect(repairJsonStringEscapes(String.raw`"a \*bold\* b"`)).toBe('"a *bold* b"')
+    expect(repairJsonStringEscapes(String.raw`"a \_em\_ b"`)).toBe('"a _em_ b"')
+    expect(repairJsonStringEscapes(String.raw`"a \[link\] b"`)).toBe('"a [link] b"')
+  })
+
+  it('preserves valid JSON escapes unchanged, including a well-formed unicode escape', () => {
+    const raw = String.raw`"line\nbreak\ttab\"quote\\backslash\u00e9"`
+    expect(repairJsonStringEscapes(raw)).toBe(raw)
+  })
+
+  it('leaves a malformed unicode escape untouched (does not over-tolerate)', () => {
+    expect(repairJsonStringEscapes(String.raw`"bad\uxeee"`)).toBe(String.raw`"bad\uxeee"`)
+    expect(repairJsonStringEscapes(String.raw`"bad\u12"`)).toBe(String.raw`"bad\u12"`)
+  })
+
+  it('leaves a trailing lone backslash before the closing quote untouched', () => {
+    expect(repairJsonStringEscapes(String.raw`"trailing\"`)).toBe(String.raw`"trailing\"`)
+  })
+
+  it('does not touch a backslash outside a string literal', () => {
+    expect(repairJsonStringEscapes(String.raw`{\#not-a-string}`)).toBe(String.raw`{\#not-a-string}`)
+  })
+
+  it('does not toggle string state on an escaped quote', () => {
+    // Without \" being recognized as non-toggling, the markdown escape after
+    // it would incorrectly be treated as outside a string.
+    expect(repairJsonStringEscapes(String.raw`"a\"b\#c"`)).toBe(String.raw`"a\"b#c"`)
+  })
+})
+
+describe('parseResult — tolerant escape repair (markdown-escape drift)', () => {
+  it('repairs the real-world failing case: backslash-hash inside summary', () => {
+    const body = String.raw`<!-- fro-bot:cross-repo-result {"correlation_id":"abc123correlation","nonce":"raw-nonce-value-1234567890","status":"success","summary":"\# Renovate Config Presets"} -->`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result).toEqual({
+      correlationId: 'abc123correlation',
+      nonce: 'raw-nonce-value-1234567890',
+      status: 'success',
+      summary: '# Renovate Config Presets',
+    })
+  })
+
+  it('repairs asterisk, underscore, and bracket escapes in summary', () => {
+    const body = String.raw`<!-- fro-bot:cross-repo-result {"correlation_id":"c","nonce":"n","status":"success","summary":"\*bold\* \_em\_ \[link\]"} -->`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result?.summary).toBe('*bold* _em_ [link]')
+  })
+
+  it('leaves a valid escape sequence unaffected by the repair path (still parses via strict JSON.parse)', () => {
+    const payload = {
+      correlation_id: 'c',
+      nonce: 'n',
+      status: 'success' as const,
+      summary: 'line\nbreak\ttab"quote\\backslash\u00E9',
+    }
+    const body = `<!-- fro-bot:cross-repo-result ${JSON.stringify(payload)} -->`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result?.summary).toBe('line\nbreak\ttab"quote\\backslash\u00E9')
+  })
+
+  it('does not repair a malformed unicode escape — still malformed', () => {
+    const body = String.raw`<!-- fro-bot:cross-repo-result {"correlation_id":"c","nonce":"n","status":"success","summary":"bad\uxeee"} -->`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('malformed')
+  })
+
+  it('a genuinely broken marker (unterminated string) remains malformed after repair attempt', () => {
+    const body =
+      '<!-- fro-bot:cross-repo-result {"correlation_id":"c","nonce":"n","status":"success","summary":"unterminated -->'
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('malformed')
+  })
+
+  it('a canonical buildResultMarker receipt with no bad escapes parses via the strict-first path unchanged', () => {
+    const receipt = makeReceipt({summary: 'clean summary, no markdown escapes here'})
+    const outcome = parseResult(buildResultMarker(receipt))
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result).toEqual(receipt)
   })
 })
 
@@ -1935,6 +2068,19 @@ describe('resolveReceipts — three-gate trust + earliest-wins (pure core)', () 
         body: buildResultMarker(makeReceipt({correlationId: 'corr-1', nonce: 'wrong-nonce', status: 'success'})),
       },
     ]
+    const resolutions = resolveReceipts([item], comments)
+    expect(resolutions.get('item-1')?.terminal).toBeUndefined()
+  })
+
+  it('security: tolerant escape repair does not bypass the nonce hash gate — a repaired nonce that still mismatches nonceHash is rejected', () => {
+    // The nonce field itself contains a markdown-style escape that repairJsonStringEscapes
+    // will strip (\# -> #), so JSON.parse succeeds on the repaired copy. The repaired,
+    // human-readable nonce does NOT hash to this item's stored nonceHash (which was
+    // computed over the real raw nonce), so the receipt must still be rejected outright.
+    const body = String.raw`<!-- fro-bot:cross-repo-result {"correlation_id":"corr-1","nonce":"\# not-the-real-nonce","status":"success","summary":"done"} -->`
+    const comments: TrackerComment[] = [{author: {login: 'fro-bot'}, body}]
+    // Sanity: the repair does make this parseable at all (parseResult succeeds).
+    expect(parseResult(body).ok).toBe(true)
     const resolutions = resolveReceipts([item], comments)
     expect(resolutions.get('item-1')?.terminal).toBeUndefined()
   })
