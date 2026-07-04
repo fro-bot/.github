@@ -1,7 +1,8 @@
 ---
 title: 'feat: Fro Bot monitoring dashboard — Phase 1'
 type: feat
-status: code-complete-pending-verification
+status: complete
+completed: 2026-07-04
 date: 2026-06-15
 deepened: 2026-06-15
 reconciled: 2026-06-21
