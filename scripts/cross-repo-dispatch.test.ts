@@ -15,6 +15,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   buildMarkerComment,
   computeApprovalFingerprint,
+  createTargetClientResolver,
   CROSS_REPO_GOAL_LABEL,
   extractItemPrompts,
   extractMarker,
@@ -27,6 +28,7 @@ import {
   MARKER_PREFIX,
   MAX_ITEMS_PER_GOAL,
   parseDecomposition,
+  parseTargetTokens,
   planDispatch,
   planSnapshot,
   REQUIRED_APPROVER,
@@ -588,9 +590,25 @@ function makeLabeledEvent(overrides: Partial<LabeledEventPayload> = {}): Labeled
 
 const REPO = {owner: 'fro-bot', repo: '.github'}
 const TARGET_A = {owner: 'fro-bot', name: 'agent'}
+const TARGET_MARCUSRBROWN = {owner: 'marcusrbrown', name: 'sparkle'}
 
 function gateEntryFor(target: DispatchTarget): GateEntry {
   return {owner: target.owner, name: target.name, has_fro_bot_workflow: true, private: false}
+}
+
+/**
+ * Test-only single-client resolver: every owner routes to the SAME fake
+ * client — legacy single-client wiring adapted minimally so existing tests
+ * that don't care about owner routing keep passing.
+ */
+function singleOwnerResolver(client: CrossRepoDispatchOctokitClient) {
+  return async () =>
+    createTargetClientResolver(
+      new Map([
+        ['fro-bot', client],
+        ['marcusrbrown', client],
+      ]),
+    )
 }
 
 describe('runDispatch — actor gate', () => {
@@ -1573,6 +1591,348 @@ describe('findBotAuthoredPrs — anti-spoof', () => {
   })
 })
 
+describe('parseTargetTokens', () => {
+  it('parses a well-formed owner→token JSON map', () => {
+    expect(parseTargetTokens('{"fro-bot":"tok-a","marcusrbrown":"tok-b"}')).toEqual({
+      'fro-bot': 'tok-a',
+      marcusrbrown: 'tok-b',
+    })
+  })
+
+  it('returns an empty map for missing, empty, or malformed input', () => {
+    expect(parseTargetTokens(undefined)).toEqual({})
+    expect(parseTargetTokens('')).toEqual({})
+    expect(parseTargetTokens('not json')).toEqual({})
+    expect(parseTargetTokens('[]')).toEqual({})
+    expect(parseTargetTokens('null')).toEqual({})
+  })
+
+  it('drops non-string or empty-string token values', () => {
+    expect(parseTargetTokens('{"fro-bot":"","marcusrbrown":42,"good":"tok"}')).toEqual({good: 'tok'})
+  })
+
+  it('returns an empty map when every owner mint failed (both tokens empty)', () => {
+    // Mirrors the workflow's inline JSON when both per-owner mint steps
+    // continue-on-error past a failure (App not installed on either owner).
+    expect(parseTargetTokens('{"fro-bot":"","marcusrbrown":""}')).toEqual({})
+  })
+})
+
+describe('createTargetClientResolver — fail-closed owner routing', () => {
+  it('throws for an owner with no minted client', () => {
+    const {octokit} = mockOctokit()
+    const resolver = createTargetClientResolver(new Map([['fro-bot', octokit]]))
+    expect(resolver.hasTargetToken('fro-bot')).toBe(true)
+    expect(resolver.hasTargetToken('marcusrbrown')).toBe(false)
+    expect(() => resolver.targetClientFor('marcusrbrown')).toThrow(/no dispatch token minted/)
+  })
+})
+
+describe('owner-aware dispatch/track routing — fro-bot and marcusrbrown are separate App installations', () => {
+  it('routes a marcusrbrown target createWorkflowDispatch through the marcusrbrown client, not the control-plane client', async () => {
+    const originalEnv = {...process.env}
+    const {writeFile, mkdtemp} = await import('node:fs/promises')
+    const {tmpdir} = await import('node:os')
+    const path = await import('node:path')
+    const dir = await mkdtemp(path.join(tmpdir(), 'cross-repo-dispatch-owner-'))
+    const eventPath = path.join(dir, 'event.json')
+    await writeFile(eventPath, JSON.stringify(makeLabeledEvent()))
+
+    process.env.GITHUB_TOKEN = 'test-token'
+    process.env.GITHUB_REPOSITORY = 'fro-bot/.github'
+    process.env.GITHUB_EVENT_PATH = eventPath
+    process.env.CROSS_REPO_DISPATCH_RESULT_PATH = ''
+    try {
+      const decomposition = makeDecompositionBody([
+        {owner: 'marcusrbrown', name: 'sparkle', prompt: 'do the marcusrbrown thing'},
+      ])
+      const {octokit: controlPlaneOctokit} = mockOctokit({
+        comments: [{id: 1, body: decomposition, login: 'fro-bot'}],
+      })
+
+      const controlPlaneDispatch = vi.fn(async (_params: unknown) => ({}))
+      const marcusrbrownDispatch = vi.fn(async (_params: unknown) => ({}))
+
+      const controlPlane: CrossRepoDispatchOctokitClient = {
+        ...controlPlaneOctokit,
+        rest: {
+          ...controlPlaneOctokit.rest,
+          actions: {...controlPlaneOctokit.rest.actions, createWorkflowDispatch: controlPlaneDispatch},
+        },
+      }
+      const marcusrbrownClient: CrossRepoDispatchOctokitClient = {
+        ...controlPlaneOctokit,
+        rest: {
+          ...controlPlaneOctokit.rest,
+          actions: {...controlPlaneOctokit.rest.actions, createWorkflowDispatch: marcusrbrownDispatch},
+        },
+      }
+
+      await runDispatchCli(
+        async () => controlPlane,
+        async () =>
+          createTargetClientResolver(
+            new Map([
+              ['fro-bot', controlPlane],
+              ['marcusrbrown', marcusrbrownClient],
+            ]),
+          ),
+      )
+
+      expect(marcusrbrownDispatch).toHaveBeenCalledOnce()
+      expect(marcusrbrownDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({owner: 'marcusrbrown', repo: 'sparkle'}),
+      )
+      expect(controlPlaneDispatch).not.toHaveBeenCalled()
+    } finally {
+      process.env = originalEnv
+    }
+  })
+
+  it("dispatches a mixed goal (fro-bot + marcusrbrown targets) via each target owner's own client", async () => {
+    const originalEnv = {...process.env}
+    const {writeFile, mkdtemp} = await import('node:fs/promises')
+    const {tmpdir} = await import('node:os')
+    const path = await import('node:path')
+    const dir = await mkdtemp(path.join(tmpdir(), 'cross-repo-dispatch-mixed-'))
+    const eventPath = path.join(dir, 'event.json')
+    await writeFile(eventPath, JSON.stringify(makeLabeledEvent()))
+
+    process.env.GITHUB_TOKEN = 'test-token'
+    process.env.GITHUB_REPOSITORY = 'fro-bot/.github'
+    process.env.GITHUB_EVENT_PATH = eventPath
+    process.env.CROSS_REPO_DISPATCH_RESULT_PATH = ''
+    try {
+      const decomposition = makeDecompositionBody([
+        {owner: TARGET_A.owner, name: TARGET_A.name, prompt: 'do the fro-bot thing'},
+        {owner: TARGET_MARCUSRBROWN.owner, name: TARGET_MARCUSRBROWN.name, prompt: 'do the marcusrbrown thing'},
+      ])
+      const {octokit: controlPlaneOctokit} = mockOctokit({
+        comments: [{id: 1, body: decomposition, login: 'fro-bot'}],
+      })
+
+      const froBotDispatch = vi.fn(async (_params: unknown) => ({}))
+      const marcusrbrownDispatch = vi.fn(async (_params: unknown) => ({}))
+
+      const froBotClient: CrossRepoDispatchOctokitClient = {
+        ...controlPlaneOctokit,
+        rest: {
+          ...controlPlaneOctokit.rest,
+          actions: {...controlPlaneOctokit.rest.actions, createWorkflowDispatch: froBotDispatch},
+        },
+      }
+      const marcusrbrownClient: CrossRepoDispatchOctokitClient = {
+        ...controlPlaneOctokit,
+        rest: {
+          ...controlPlaneOctokit.rest,
+          actions: {...controlPlaneOctokit.rest.actions, createWorkflowDispatch: marcusrbrownDispatch},
+        },
+      }
+
+      await runDispatchCli(
+        async () => froBotClient,
+        async () =>
+          createTargetClientResolver(
+            new Map([
+              ['fro-bot', froBotClient],
+              ['marcusrbrown', marcusrbrownClient],
+            ]),
+          ),
+      )
+
+      expect(froBotDispatch).toHaveBeenCalledOnce()
+      expect(froBotDispatch).toHaveBeenCalledWith(expect.objectContaining({owner: TARGET_A.owner, repo: TARGET_A.name}))
+      expect(marcusrbrownDispatch).toHaveBeenCalledOnce()
+      expect(marcusrbrownDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({owner: TARGET_MARCUSRBROWN.owner, repo: TARGET_MARCUSRBROWN.name}),
+      )
+    } finally {
+      process.env = originalEnv
+    }
+  })
+
+  it('an eligible target owner with no minted token is blocked; other targets in the same goal still dispatch', async () => {
+    const item: DispatchItem = {
+      id: 'item-1',
+      target: TARGET_A,
+      promptHash: 'abcd1234abcd1234',
+      status: 'pending',
+    }
+    const missingTokenItem: DispatchItem = {
+      id: 'item-2',
+      target: TARGET_MARCUSRBROWN,
+      promptHash: 'ffff5678ffff5678',
+      status: 'pending',
+    }
+    const decomposition = makeDecompositionBody([
+      {owner: TARGET_A.owner, name: TARGET_A.name, prompt: 'do the fro-bot thing'},
+      {owner: TARGET_MARCUSRBROWN.owner, name: TARGET_MARCUSRBROWN.name, prompt: 'do the marcusrbrown thing'},
+    ])
+    const state: GoalState = {
+      goal: 'goal-mixed',
+      items: [
+        {...item, promptHash: extractPromptHash(decomposition, TARGET_A)},
+        {...missingTokenItem, promptHash: extractPromptHash(decomposition, TARGET_MARCUSRBROWN)},
+      ],
+      markerHash: '',
+    }
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    const result = await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(TARGET_A), gateEntryFor(TARGET_MARCUSRBROWN)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'nonce-owner-gap',
+      // Only fro-bot has a minted token — marcusrbrown is eligible per the
+      // registry gate but ops forgot to mint its dispatch token.
+      hasTargetToken: owner => owner === 'fro-bot',
+    })
+
+    expect(createWorkflowDispatch).toHaveBeenCalledOnce()
+    expect(createWorkflowDispatch).toHaveBeenCalledWith(expect.objectContaining({owner: 'fro-bot', repo: 'agent'}))
+    expect(result.counts.dispatched).toBe(1)
+
+    const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const marcusrbrownItem = finalMarker?.state.items.find(candidate => candidate.id === 'item-2')
+    expect(marcusrbrownItem?.status).toBe('blocked')
+  })
+
+  it('all eligible targets blocked when the token map is empty (both owner mints failed); no crash, no dispatches', async () => {
+    const decomposition = makeDecompositionBody([
+      {owner: TARGET_A.owner, name: TARGET_A.name, prompt: 'do the fro-bot thing'},
+      {owner: TARGET_MARCUSRBROWN.owner, name: TARGET_MARCUSRBROWN.name, prompt: 'do the marcusrbrown thing'},
+    ])
+    const state: GoalState = {
+      goal: 'goal-all-blocked',
+      items: [
+        {id: 'item-1', target: TARGET_A, promptHash: extractPromptHash(decomposition, TARGET_A), status: 'pending'},
+        {
+          id: 'item-2',
+          target: TARGET_MARCUSRBROWN,
+          promptHash: extractPromptHash(decomposition, TARGET_MARCUSRBROWN),
+          status: 'pending',
+        },
+      ],
+      markerHash: '',
+    }
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    const result = await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(TARGET_A), gateEntryFor(TARGET_MARCUSRBROWN)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'nonce-all-blocked',
+      // Simulates parseTargetTokens('{"fro-bot":"","marcusrbrown":""}') → {}
+      // → every owner lookup misses → every eligible item blocked.
+      hasTargetToken: () => false,
+    })
+
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+    expect(result.counts.dispatched).toBe(0)
+    expect(result.counts.blocked).toBe(2)
+  })
+
+  it('track: listWorkflowRunsForRepo for a marcusrbrown target goes through the marcusrbrown client', async () => {
+    const item: DispatchItem = {
+      id: 'item-1',
+      target: TARGET_MARCUSRBROWN,
+      promptHash: 'abcd1234abcd1234',
+      status: 'dispatched',
+      correlationId: 'corr-track-owner-1',
+    }
+    const goalIssue: OpenGoalIssue = {
+      issueNumber: 77,
+      marker: serializeMarker({goal: 'goal-track', items: [item], markerHash: ''}),
+    }
+
+    const {octokit: controlPlaneOctokit} = mockOctokit()
+    const listForRepo = vi.fn(async () => ({data: [{number: 77}]}))
+    const controlPlaneListComments = vi.fn(async () => ({
+      data: [
+        {
+          id: 1,
+          body: buildMarkerComment({...goalIssue.marker.state, markerHash: goalIssue.marker.hash}),
+          user: {login: 'fro-bot'},
+        },
+      ],
+    }))
+    const controlPlane: CrossRepoDispatchOctokitClient = {
+      ...controlPlaneOctokit,
+      rest: {
+        ...controlPlaneOctokit.rest,
+        issues: {...controlPlaneOctokit.rest.issues, listForRepo, listComments: controlPlaneListComments},
+      },
+    }
+
+    const froBotListWorkflowRunsForRepo = vi.fn(async () => ({data: {workflow_runs: []}}))
+    const froBotClient: CrossRepoDispatchOctokitClient = {
+      ...controlPlaneOctokit,
+      rest: {
+        ...controlPlaneOctokit.rest,
+        actions: {...controlPlaneOctokit.rest.actions, listWorkflowRunsForRepo: froBotListWorkflowRunsForRepo},
+      },
+    }
+    const marcusrbrownListWorkflowRunsForRepo = vi.fn(async () => ({data: {workflow_runs: []}}))
+    const marcusrbrownClient: CrossRepoDispatchOctokitClient = {
+      ...controlPlaneOctokit,
+      rest: {
+        ...controlPlaneOctokit.rest,
+        actions: {
+          ...controlPlaneOctokit.rest.actions,
+          listWorkflowRunsForRepo: marcusrbrownListWorkflowRunsForRepo,
+        },
+      },
+    }
+
+    const originalEnv = {...process.env}
+    process.env.GITHUB_TOKEN = 'test-token'
+    process.env.GITHUB_REPOSITORY = 'fro-bot/.github'
+    process.env.CROSS_REPO_DISPATCH_RESULT_PATH = ''
+    try {
+      await runTrackCli(
+        async () => controlPlane,
+        async () =>
+          createTargetClientResolver(
+            new Map([
+              ['fro-bot', froBotClient],
+              ['marcusrbrown', marcusrbrownClient],
+            ]),
+          ),
+      )
+    } finally {
+      process.env = originalEnv
+    }
+
+    expect(marcusrbrownListWorkflowRunsForRepo).toHaveBeenCalledWith(
+      expect.objectContaining({owner: TARGET_MARCUSRBROWN.owner, repo: TARGET_MARCUSRBROWN.name}),
+    )
+    expect(froBotListWorkflowRunsForRepo).not.toHaveBeenCalled()
+  })
+})
+
 describe('CLI wiring — real collaborators, not stubs', () => {
   it('runTrackCli invokes octokit issue enumeration (wired loadOpenGoalIssues)', async () => {
     const originalEnv = {...process.env}
@@ -1582,7 +1942,7 @@ describe('CLI wiring — real collaborators, not stubs', () => {
     try {
       const listForRepo = vi.fn(async () => ({data: []}))
       const {octokit} = mockOctokit({listForRepo})
-      await runTrackCli(async () => octokit)
+      await runTrackCli(async () => octokit, singleOwnerResolver(octokit))
       expect(listForRepo).toHaveBeenCalled()
     } finally {
       process.env = originalEnv
@@ -1631,7 +1991,7 @@ describe('CLI wiring — real collaborators, not stubs', () => {
         rest: {...octokit.rest, actions: {...octokit.rest.actions, listWorkflowRunsForRepo}},
       }
 
-      await runDispatchCli(async () => patched)
+      await runDispatchCli(async () => patched, singleOwnerResolver(patched))
       expect(listWorkflowRunsForRepo).toHaveBeenCalledWith(
         expect.objectContaining({owner: TARGET_A.owner, repo: TARGET_A.name}),
       )
@@ -1729,7 +2089,7 @@ describe('golden path — real production composition (runDispatchCli then runTr
         },
       }
 
-      await runDispatchCli(async () => dispatchOctokit)
+      await runDispatchCli(async () => dispatchOctokit, singleOwnerResolver(dispatchOctokit))
 
       expect(createComment).toHaveBeenCalledOnce()
       const seededBody = createComment.mock.calls[0]?.[0]?.body as string
@@ -1808,7 +2168,7 @@ describe('golden path — real production composition (runDispatchCli then runTr
         },
       }
 
-      await runTrackCli(async () => trackOctokit)
+      await runTrackCli(async () => trackOctokit, singleOwnerResolver(trackOctokit))
 
       expect(update).toHaveBeenCalledWith(expect.objectContaining({issue_number: 42, state: 'closed'}))
 

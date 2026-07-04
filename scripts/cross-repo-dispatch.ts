@@ -761,6 +761,15 @@ export interface RunDispatchInput {
   }) => Promise<void>
   nonceSource: () => string
   resultPath?: string
+  /**
+   * Owner-aware credential check. fro-bot and marcusrbrown are separate App
+   * installations, so a target's owner needs its OWN minted token — one
+   * token can't span both. When omitted, every owner is assumed reachable
+   * (single-client legacy wiring). Returning false fails an eligible target
+   * closed (counted `blocked`) instead of dispatching with the wrong owner's
+   * token and eating a 403.
+   */
+  hasTargetToken?: (owner: string) => boolean
 }
 
 export interface RunDispatchCounts {
@@ -896,8 +905,14 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
   const gatedItems = state.items.map(item => {
     if (item.status !== 'pending') return item
     const gate = gateTarget(registryByKey.get(`${item.target.owner}/${item.target.name}`))
-    if (gate === 'ok') return item
-    return {...item, status: 'blocked' as ItemStatus}
+    if (gate !== 'ok') return {...item, status: 'blocked' as ItemStatus}
+    // An eligible target owner missing a minted dispatch token is an ops
+    // misconfiguration (App-installation mint didn't cover this owner) —
+    // fail this item closed rather than dispatch with the wrong token.
+    if (input.hasTargetToken !== undefined && !input.hasTargetToken(item.target.owner)) {
+      return {...item, status: 'blocked' as ItemStatus}
+    }
+    return item
   })
   state = {...state, items: gatedItems}
 
@@ -1075,6 +1090,8 @@ export interface RunTrackInput {
   findRunConclusion: (target: DispatchTarget, correlationId: string) => Promise<'success' | 'failure' | undefined>
   findBotAuthoredPrs: (target: DispatchTarget, correlationId: string) => Promise<PrLookupResult[]>
   resultPath?: string
+  /** Same owner-aware credential check as `RunDispatchInput.hasTargetToken`. */
+  hasTargetToken?: (owner: string) => boolean
 }
 
 export interface RunTrackCounts {
@@ -1132,6 +1149,18 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
 
       const gate = gateTarget(registryByKey.get(`${item.target.owner}/${item.target.name}`))
       if (gate !== 'ok') {
+        signals[item.id] = {gateBlocked: true}
+        continue
+      }
+      // Invariant: this token-gap branch is only safe because the workflow's per-owner
+      // mint steps are NOT continue-on-error — a failed mint fails the whole job, so by
+      // the time this script runs the token map is always fully populated for every
+      // eligible owner. If continue-on-error is ever re-added to the mints (or an owner
+      // is dropped from the mint set while remaining in ELIGIBLE_OWNERS), an
+      // already-dispatched item could be silently re-marked blocked on the next track
+      // pass, overwriting a real completed/failed conclusion. Do not soften the mints
+      // without addressing this.
+      if (input.hasTargetToken !== undefined && !input.hasTargetToken(item.target.owner)) {
         signals[item.id] = {gateBlocked: true}
         continue
       }
@@ -1353,13 +1382,87 @@ async function loadOctokitConstructor(): Promise<CrossRepoOctokitConstructor> {
   return Octokit as unknown as CrossRepoOctokitConstructor
 }
 
+async function createOctokitForToken(token: string): Promise<CrossRepoDispatchOctokitClient> {
+  const LoadedOctokit = await loadOctokitConstructor()
+  return new LoadedOctokit({auth: token, request: {timeout: 15_000}})
+}
+
 async function createOctokitFromEnv(): Promise<CrossRepoDispatchOctokitClient> {
   const token = process.env.GITHUB_TOKEN
   if (token === undefined || token === '') {
     throw new Error('cross-repo-dispatch: GITHUB_TOKEN is required in the environment')
   }
-  const LoadedOctokit = await loadOctokitConstructor()
-  return new LoadedOctokit({auth: token, request: {timeout: 15_000}})
+  return createOctokitForToken(token)
+}
+
+/** Env var carrying the owner→token JSON map minted per-owner in the workflow. */
+const TARGET_TOKENS_ENV_VAR = 'CROSS_REPO_DISPATCH_TARGET_TOKENS'
+
+/**
+ * Parse the owner→token JSON map. The App private key never enters this
+ * script — only already-minted per-owner tokens, one per eligible owner
+ * (fro-bot and marcusrbrown are separate App installations; one token can't
+ * span both). Malformed/absent input yields an empty map (fail-closed: every
+ * target owner is then treated as missing a token).
+ */
+export function parseTargetTokens(raw: string | undefined): Record<string, string> {
+  if (raw === undefined || raw === '') return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const result: Record<string, string> = {}
+    for (const [owner, token] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof token === 'string' && token !== '') result[owner] = token
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Per-owner target-repo client resolver. fro-bot and marcusrbrown are
+ * separate App installations — a token minted for one owner 403s against
+ * the other's repos, so every target-repo operation (dispatch,
+ * run-lookup, PR search) must go through the client for THAT target's
+ * owner, never the control-plane client.
+ */
+export interface TargetClientResolver {
+  targetClientFor: (owner: string) => CrossRepoDispatchOctokitClient
+  hasTargetToken: (owner: string) => boolean
+}
+
+/** Build a resolver from an owner→client map. Missing owner throws (fail-closed misconfiguration). */
+export function createTargetClientResolver(
+  clientsByOwner: ReadonlyMap<string, CrossRepoDispatchOctokitClient>,
+): TargetClientResolver {
+  return {
+    targetClientFor: owner => {
+      const client = clientsByOwner.get(owner)
+      if (client === undefined) {
+        throw new Error(`cross-repo-dispatch: no dispatch token minted for owner "${owner}"`)
+      }
+      return client
+    },
+    hasTargetToken: owner => clientsByOwner.has(owner),
+  }
+}
+
+/** Build the owner→client map from the parsed token map, reusing one client per distinct token. */
+async function buildTargetClients(
+  tokens: Record<string, string>,
+): Promise<Map<string, CrossRepoDispatchOctokitClient>> {
+  const clientsByToken = new Map<string, CrossRepoDispatchOctokitClient>()
+  const clientsByOwner = new Map<string, CrossRepoDispatchOctokitClient>()
+  for (const [owner, token] of Object.entries(tokens)) {
+    let client = clientsByToken.get(token)
+    if (client === undefined) {
+      client = await createOctokitForToken(token)
+      clientsByToken.set(token, client)
+    }
+    clientsByOwner.set(owner, client)
+  }
+  return clientsByOwner
 }
 
 async function loadRegistryFromDisk(): Promise<GateEntry[]> {
@@ -1387,8 +1490,15 @@ function parseRepository(raw: string | undefined): RepoRepository {
   return {owner, repo}
 }
 
+async function targetClientResolverFromEnv(): Promise<TargetClientResolver> {
+  const tokens = parseTargetTokens(process.env[TARGET_TOKENS_ENV_VAR])
+  const clientsByOwner = await buildTargetClients(tokens)
+  return createTargetClientResolver(clientsByOwner)
+}
+
 export async function runDispatchCli(
   createOctokit: () => Promise<CrossRepoDispatchOctokitClient> = createOctokitFromEnv,
+  createTargetClientResolverFn: () => Promise<TargetClientResolver> = targetClientResolverFromEnv,
 ): Promise<void> {
   const eventPath = process.env.GITHUB_EVENT_PATH
   const approveLabel = process.env.CROSS_REPO_DISPATCH_APPROVE_LABEL ?? 'dispatch-approved'
@@ -1404,6 +1514,7 @@ export async function runDispatchCli(
   const event = JSON.parse(await readFile(eventPath, 'utf8')) as LabeledEventPayload
   const repo = parseRepository(process.env.GITHUB_REPOSITORY)
   const octokit = await createOctokit()
+  const {targetClientFor, hasTargetToken} = await createTargetClientResolverFn()
 
   await runDispatch({
     octokit,
@@ -1412,30 +1523,37 @@ export async function runDispatchCli(
     approveLabel,
     loadRegistry: loadRegistryFromDisk,
     loadOtherOpenGoalMarkers: async () => loadOtherOpenGoalMarkers(octokit, repo, event.issue.number),
-    findRunByCorrelationId: findRunByCorrelationId(octokit),
+    findRunByCorrelationId: async (target, correlationId) =>
+      findRunByCorrelationId(targetClientFor(target.owner))(target, correlationId),
     createWorkflowDispatch: async params => {
-      await octokit.rest.actions.createWorkflowDispatch(params)
+      await targetClientFor(params.owner).rest.actions.createWorkflowDispatch(params)
     },
     nonceSource: () => createHash('sha256').update(`${Date.now()}:${Math.random()}`).digest('hex').slice(0, 12),
     resultPath,
+    hasTargetToken,
   })
 }
 
 export async function runTrackCli(
   createOctokit: () => Promise<CrossRepoDispatchOctokitClient> = createOctokitFromEnv,
+  createTargetClientResolverFn: () => Promise<TargetClientResolver> = targetClientResolverFromEnv,
 ): Promise<void> {
   const resultPath = process.env.CROSS_REPO_DISPATCH_RESULT_PATH
   const repo = parseRepository(process.env.GITHUB_REPOSITORY)
   const octokit = await createOctokit()
+  const {targetClientFor, hasTargetToken} = await createTargetClientResolverFn()
 
   await runTrack({
     octokit,
     repo,
     loadOpenGoalIssues: async () => loadOpenGoalIssues(octokit, repo),
     loadRegistry: loadRegistryFromDisk,
-    findRunConclusion: findRunConclusion(octokit),
-    findBotAuthoredPrs: findBotAuthoredPrs(octokit),
+    findRunConclusion: async (target, correlationId) =>
+      findRunConclusion(targetClientFor(target.owner))(target, correlationId),
+    findBotAuthoredPrs: async (target, correlationId) =>
+      findBotAuthoredPrs(targetClientFor(target.owner))(target, correlationId),
     resultPath,
+    hasTargetToken,
   })
 }
 
