@@ -141,6 +141,29 @@ env:
     - If the goal cannot be decomposed into owner-repo targets, say so plainly
       instead of inventing items.
 
+    Downstream, once an item is approved and dispatched, the target repo's
+    worker run receives a prompt carrying this item's work plus a receipt
+    contract. That contract is generated automatically — you do not need to
+    restate it in <prompt> — but it is documented here so the shape of the
+    full loop is clear:
+
+    A dispatched worker must, after doing the item's work, post a completion
+    receipt as a comment on THIS coordination issue, wrapped in its own
+    delimited region:
+
+    <!-- fro-bot:cross-repo-result:start -->
+    <!-- fro-bot:cross-repo-result {"correlation_id":"...","nonce":"...","status":"success","summary":"...","pr":"https://github.com/owner/repo/pull/123"} -->
+    <!-- fro-bot:cross-repo-result:end -->
+
+    Receipt rules the worker follows:
+    - `status` is exactly one of `success`, `noop`, or `failed` — nothing else.
+    - A receipt is MANDATORY even when the outcome is a no-op; a missing
+      receipt reads as a failure to report, not as success.
+    - Before finishing, the worker echoes the coordination issue it resolved
+      (owner/repo/number) and re-reads its own posted comment to confirm the
+      marker round-trips; if the marker is missing, it edits the comment to
+      add it before declaring the item done.
+
   SCHEDULE_PROMPT: |
     Run the daily Fro Bot pass for fro-bot/.github — the autonomous control
     center for the fro-bot GitHub account. This single run does BOTH proactive

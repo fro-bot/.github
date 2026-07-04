@@ -1,10 +1,11 @@
-import {createHash} from 'node:crypto'
+import {createHash, randomBytes} from 'node:crypto'
 import process from 'node:process'
 import {assertReposFile} from './schemas.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ItemStatus = 'pending' | 'intent' | 'dispatched' | 'completed' | 'failed' | 'blocked' | 'deferred'
+export type ItemStatus =
+  'pending' | 'intent' | 'dispatched' | 'completed' | 'failed' | 'blocked' | 'deferred' | 'needs-attention'
 
 export interface DispatchTarget {
   owner: string
@@ -18,7 +19,33 @@ export interface DispatchItem {
   status: ItemStatus
   correlationId?: string
   epoch?: number
-  nonce?: string
+  /**
+   * Full SHA-256 hex digest of a CSPRNG-minted raw per-item nonce (R6). The
+   * raw nonce itself is NEVER persisted here or anywhere in the public
+   * marker — it is delivered only via the dispatch prompt. Set at
+   * confirmed-dispatch time (and, defensively, at the preceding intent
+   * write) alongside `correlationId`; never derived from `hashState`
+   * (64-bit truncation) or `Date.now()/Math.random()`.
+   */
+  nonceHash?: string
+  /**
+   * Set only when `status === 'needs-attention'` (R9/R9a): why no terminal
+   * receipt has resolved this item yet. `no-receipt` = no authentic receipt
+   * seen and the item is past the SLA; `unparseable-receipt` = a bot-authored
+   * receipt marker is present but failed strict field validation. Cleared
+   * the moment a later authentic well-formed receipt resolves the item.
+   */
+  needsAttentionReason?: 'no-receipt' | 'unparseable-receipt'
+  /**
+   * Diagnostic-only annotation (Unit 5), set ONLY when
+   * `needsAttentionReason === 'no-receipt'`: whether the demoted run-lookup
+   * collaborator found a concluded run for this item ('ran-no-report') or no
+   * run at all ('never-ran'). NEVER influences terminal/non-terminal state —
+   * receipts (R7), the SLA (R9), and the registry gate are the only state
+   * drivers. Purely forensic signal for the operator (R8: no PR polling for
+   * completion; run-lookup is diagnostic, not authoritative).
+   */
+  noReceiptDiagnostic?: 'ran-no-report' | 'never-ran'
 }
 
 export interface GoalState {
@@ -46,6 +73,35 @@ export interface DecompositionResult {
   reason?: 'too-many-items' | 'no-items' | 'malformed'
 }
 
+/** Worker-reported outcome vocabulary for a completion receipt. `blocked` is the pre-dispatch gate outcome, never a worker status. */
+export type ResultStatus = 'success' | 'noop' | 'failed'
+
+/**
+ * Completion receipt posted by a worker to the coordination issue. `nonce`
+ * is the RAW per-item nonce as posted by the worker — the parser never
+ * hashes it or compares it against a stored `nonceHash` (that gate lives in
+ * track's resolver, Unit 4).
+ */
+export interface CrossRepoResult {
+  correlationId: string
+  nonce: string
+  status: ResultStatus
+  summary: string
+  pr?: string
+}
+
+/**
+ * Outcome of parsing a receipt comment body. `absent` = no receipt marker
+ * present at all; `malformed` = a receipt marker was found but failed
+ * strict field validation — the two are distinct outcomes (mirrors
+ * `parseDecomposition`'s "checklist-shaped but invalid" vs "no checklist").
+ */
+export interface ParseResultOutcome {
+  ok: boolean
+  result?: CrossRepoResult
+  reason?: 'absent' | 'malformed'
+}
+
 export type GateResult = 'ok' | 'blocked-not-onboarded' | 'blocked-ineligible'
 
 /** Minimal shape of a registry entry needed for the gate — mirrors `RepoEntry`. */
@@ -55,14 +111,6 @@ export interface GateEntry {
   has_fro_bot_workflow: boolean
   private?: boolean
 }
-
-export interface TerminalStateInput {
-  runConclusion?: 'success' | 'failure'
-  prs?: {merged: boolean; closed: boolean; authorIsBot: boolean}[]
-  gateBlocked?: boolean
-}
-
-export type TerminalState = 'blocked' | 'failed' | 'completed' | 'dispatched'
 
 export interface DispatchPlanInput {
   state: GoalState
@@ -79,8 +127,15 @@ export interface DispatchPlanResult {
   blockedCount: number
 }
 
+/**
+ * Registry-gate signal only (Unit 5): the run/PR terminal-resolution
+ * precedence table is gone — receipts (R7) and the SLA (R9) are applied
+ * directly by `runTrack` before `planSnapshot` runs. The gate is the only
+ * remaining out-of-band signal `planSnapshot` still resolves, because it can
+ * flip an item to `blocked` independent of any receipt.
+ */
 export interface SnapshotSignals {
-  [itemId: string]: TerminalStateInput
+  [itemId: string]: {gateBlocked?: boolean}
 }
 
 export interface SnapshotPlanInput {
@@ -116,7 +171,11 @@ const ITEM_STATUSES: ReadonlySet<ItemStatus> = new Set([
   'failed',
   'blocked',
   'deferred',
+  'needs-attention',
 ])
+
+/** 24h SLA (R9), named tunable: wall-age from confirm-time `epoch` before a no-receipt item surfaces `needs-attention`. */
+export const RECEIPT_SLA_MS = 24 * 60 * 60 * 1000
 
 const TERMINAL_STATUSES: ReadonlySet<ItemStatus> = new Set(['completed', 'failed', 'blocked'])
 
@@ -142,7 +201,21 @@ function isDispatchItem(value: unknown): value is DispatchItem {
   if (typeof record.status !== 'string' || !ITEM_STATUSES.has(record.status as ItemStatus)) return false
   if (record.correlationId !== undefined && typeof record.correlationId !== 'string') return false
   if (record.epoch !== undefined && typeof record.epoch !== 'number') return false
-  if (record.nonce !== undefined && typeof record.nonce !== 'string') return false
+  if (record.nonceHash !== undefined && typeof record.nonceHash !== 'string') return false
+  if (
+    record.needsAttentionReason !== undefined &&
+    record.needsAttentionReason !== 'no-receipt' &&
+    record.needsAttentionReason !== 'unparseable-receipt'
+  ) {
+    return false
+  }
+  if (
+    record.noReceiptDiagnostic !== undefined &&
+    record.noReceiptDiagnostic !== 'ran-no-report' &&
+    record.noReceiptDiagnostic !== 'never-ran'
+  ) {
+    return false
+  }
   return true
 }
 
@@ -232,18 +305,42 @@ const LOOSE_TASK_LIST_PREFIX = /^[-*+]\s*\[[ x]\]/i
 const ITEMS_REGION_START = '<!-- fro-bot:cross-repo-items:start -->'
 const ITEMS_REGION_END = '<!-- fro-bot:cross-repo-items:end -->'
 
+/** Delimited region a worker emits around its completion receipt (see `fro-bot.yaml`). Optional. */
+const RESULT_REGION_START = '<!-- fro-bot:cross-repo-result:start -->'
+const RESULT_REGION_END = '<!-- fro-bot:cross-repo-result:end -->'
+
+/** Marker prefix identifying a completion-receipt HTML comment. */
+const RESULT_MARKER_PREFIX = 'fro-bot:cross-repo-result '
+
+const RESULT_STATUSES: ReadonlySet<ResultStatus> = new Set(['success', 'noop', 'failed'])
+
 /**
  * Extract the substring between the delimited region markers, if both are
  * present in order. Returns null when the region is absent (caller falls
  * back to scanning the whole body tolerantly).
  */
 function extractItemsRegion(body: string): string | null {
-  const startIndex = body.indexOf(ITEMS_REGION_START)
+  return extractDelimitedRegion(body, ITEMS_REGION_START, ITEMS_REGION_END)
+}
+
+/**
+ * Generic delimited-region extractor: returns the substring between
+ * `startMarker` and `endMarker` (in order) when both are present, else null
+ * so the caller falls back to scanning the whole body tolerantly. Shared by
+ * `extractItemsRegion` (decomposition) and the receipt region below.
+ */
+function extractDelimitedRegion(body: string, startMarker: string, endMarker: string): string | null {
+  const startIndex = body.indexOf(startMarker)
   if (startIndex === -1) return null
-  const afterStart = startIndex + ITEMS_REGION_START.length
-  const endIndex = body.indexOf(ITEMS_REGION_END, afterStart)
+  const afterStart = startIndex + startMarker.length
+  const endIndex = body.indexOf(endMarker, afterStart)
   if (endIndex === -1) return null
   return body.slice(afterStart, endIndex)
+}
+
+/** Extract the substring between the receipt region markers, if both present. */
+function extractResultRegion(body: string): string | null {
+  return extractDelimitedRegion(body, RESULT_REGION_START, RESULT_REGION_END)
 }
 
 interface ChecklistCollectResult {
@@ -362,6 +459,219 @@ export function extractItemPrompts(commentBody: string): Map<string, string> {
 }
 
 /**
+ * Build the completion-receipt comment body: the `:start`/`:end` delimited
+ * region wrapping the JSON marker, mirroring the decomposition region
+ * convention. `receipt.nonce` is the RAW nonce — callers are responsible for
+ * only calling this from a worker context where posting the raw nonce
+ * publicly is the intended, documented behavior (R6c).
+ */
+export function buildResultMarker(receipt: CrossRepoResult): string {
+  const payload = {
+    correlation_id: receipt.correlationId,
+    nonce: receipt.nonce,
+    status: receipt.status,
+    summary: receipt.summary,
+    ...(receipt.pr === undefined ? {} : {pr: receipt.pr}),
+  }
+  const marker = `<!-- ${RESULT_MARKER_PREFIX}${JSON.stringify(payload)} -->`
+  return [RESULT_REGION_START, marker, RESULT_REGION_END].join('\n')
+}
+
+/**
+ * Parse a single `fro-bot:cross-repo-result {json}` marker out of `scope`,
+ * scanning the WHOLE string (not anchored to region boundaries) so a bare
+ * marker amid prose or inside a fenced block still parses. Returns null when
+ * no such marker is found; throws nothing — malformed JSON/field validation
+ * is the caller's job so "marker found but invalid" and "no marker" stay
+ * distinguishable outcomes.
+ */
+function extractResultMarkerJson(scope: string): string | null {
+  const markerRegex = /<!--\s*fro-bot:cross-repo-result\s([\s\S]*?)-->/g
+  let lastMatch: RegExpExecArray | null = null
+  for (;;) {
+    const match = markerRegex.exec(scope)
+    if (match === null) break
+    lastMatch = match
+  }
+  return lastMatch?.[1] ?? null
+}
+
+/**
+ * Best-effort, non-trust-bearing extraction of a `correlation_id` string
+ * from a bot-authored receipt marker that failed strict JSON/field
+ * validation (R6b). Used ONLY to attribute a distinct `unparseable-receipt`
+ * non-terminal attention reason to the right item — never to resolve
+ * terminal state, so a loose/partial match here carries no security weight.
+ */
+function extractLooseCorrelationId(body: string): string | null {
+  const region = extractResultRegion(body)
+  const scope = region ?? body
+  const jsonStr = extractResultMarkerJson(scope)
+  if (jsonStr === null) return null
+  const match = /"correlation_id"\s*:\s*"([^"]+)"/.exec(jsonStr)
+  return match?.[1] ?? null
+}
+
+function isValidResultPayload(value: unknown): value is {
+  correlation_id: string
+  nonce: string
+  status: ResultStatus
+  summary: string
+  pr?: string
+} {
+  if (value === null || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  if (typeof record.correlation_id !== 'string' || record.correlation_id.length === 0) return false
+  if (typeof record.nonce !== 'string' || record.nonce.length === 0) return false
+  if (typeof record.status !== 'string' || !RESULT_STATUSES.has(record.status as ResultStatus)) return false
+  if (typeof record.summary !== 'string') return false
+  if (record.pr !== undefined && typeof record.pr !== 'string') return false
+  return true
+}
+
+/**
+ * Parse a worker completion-receipt comment body. Prefers the delimited
+ * `cross-repo-result` region when present (mirroring `extractItemsRegion`'s
+ * region-preference); a bare marker without the region still parses via the
+ * body-scan fallback for backward tolerance. Strict on fields: valid JSON,
+ * required `correlation_id` + `nonce` + `status` (status one of the closed
+ * vocabulary) — anything else is `malformed`, distinct from `absent` (no
+ * receipt marker found at all). Returns the RAW nonce as posted; this
+ * function never hashes it or sees a stored `nonceHash` (Unit 4's job).
+ */
+export function parseResult(body: string): ParseResultOutcome {
+  const region = extractResultRegion(body)
+  const scope = region ?? body
+
+  const jsonStr = extractResultMarkerJson(scope)
+  if (jsonStr === null) {
+    return {ok: false, reason: 'absent'}
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch {
+    return {ok: false, reason: 'malformed'}
+  }
+
+  if (!isValidResultPayload(parsed)) {
+    return {ok: false, reason: 'malformed'}
+  }
+
+  const result: CrossRepoResult = {
+    correlationId: parsed.correlation_id,
+    nonce: parsed.nonce,
+    status: parsed.status,
+    summary: parsed.summary,
+    ...(parsed.pr === undefined ? {} : {pr: parsed.pr}),
+  }
+  return {ok: true, result}
+}
+
+/**
+ * Per-item outcome of applying the three-gate receipt resolver to a single
+ * goal's comment stream. `terminal` carries the resolved `ResultStatus` when
+ * an authentic receipt won the earliest-wins race; `attentionReason` is set
+ * only when the item has no terminal receipt yet but is flagged
+ * `needs-attention` (R9/R9a); `retainedUnconfirmed` marks an authentic
+ * receipt seen for an item that is not yet confirmed-dispatched, so the
+ * caller can re-evaluate it next pass instead of dropping it (early-receipt
+ * tolerance).
+ */
+export interface ReceiptResolution {
+  terminal?: ResultStatus
+  attentionReason?: 'no-receipt' | 'unparseable-receipt'
+  retainedUnconfirmed?: boolean
+}
+
+/**
+ * Resolve the receipt-driven terminal/attention state for every item in
+ * `items`, given the goal's ordered comment stream (chronological — earliest
+ * first). Implements R6 (three-gate trust: author, correlation-id mapping,
+ * hash-bound nonce), R6c (earliest-authentic-receipt-wins, never
+ * `findLast`/latest), R6b (malformed bot-authored marker → distinct
+ * `unparseable-receipt`), and early-receipt tolerance (an authentic receipt
+ * for a not-yet-confirmed item is retained, never dropped). The SLA check
+ * (R9) is a separate, purely time-based concern applied by the caller
+ * (`runTrack`) using the injected clock — this resolver has no notion of
+ * wall time. Pure.
+ */
+export function resolveReceipts(items: DispatchItem[], comments: TrackerComment[]): Map<string, ReceiptResolution> {
+  const itemsByCorrelationId = new Map(
+    items.filter(item => item.correlationId !== undefined).map(item => [item.correlationId as string, item]),
+  )
+  const resolutions = new Map<string, ReceiptResolution>()
+
+  // Earliest-authentic-receipt-wins (R6c): walk comments in chronological
+  // (given) order, never `findLast`/latest-wins, and never let a later
+  // receipt overwrite an item that already has a terminal resolution.
+  for (const comment of comments) {
+    if (!FROBOT_COMMENT_AUTHORS.has(comment.author.login)) continue
+
+    const outcome = parseResult(comment.body)
+    if (!outcome.ok) {
+      // `absent` (no receipt marker in this comment at all) is not a signal.
+      if (outcome.reason !== 'malformed') continue
+
+      // A bot-authored marker IS receipt-shaped but failed strict field
+      // validation (R6b). Best-effort attribution to a dispatched item via a
+      // loosely-recovered `correlation_id` (NOT trust-bearing — this never
+      // resolves terminal state, it only flags non-terminal
+      // `unparseable-receipt`, distinct from `no-receipt`).
+      const looseCorrelationId = extractLooseCorrelationId(comment.body)
+      if (looseCorrelationId === null) continue
+      const item = itemsByCorrelationId.get(looseCorrelationId)
+      if (item === undefined) continue
+
+      const existing = resolutions.get(item.id)
+      if (existing?.terminal !== undefined) continue
+      resolutions.set(item.id, {...existing, attentionReason: 'unparseable-receipt'})
+      continue
+    }
+
+    const receipt = outcome.result
+    if (receipt === undefined) continue
+
+    const item = itemsByCorrelationId.get(receipt.correlationId)
+    if (item === undefined) {
+      // Bot-authored comment whose id matches no item on this goal — ignored
+      // entirely for state (gate b).
+      continue
+    }
+
+    if (item.nonceHash === undefined || hashNonce(receipt.nonce) !== item.nonceHash) {
+      // Gate (c) fails: forged/mismatched nonce. Ignored entirely — never
+      // resolves, never counted as an attention signal.
+      continue
+    }
+
+    // Early-receipt tolerance: an authentic receipt for an item that is not
+    // yet confirmed-dispatched (no epoch yet, e.g. still 'intent'/'pending')
+    // is retained for re-evaluation next pass, never dropped and never used
+    // to resolve state now.
+    if (item.epoch === undefined) {
+      const existing = resolutions.get(item.id)
+      if (existing?.terminal === undefined) {
+        resolutions.set(item.id, {...existing, retainedUnconfirmed: true})
+      }
+      continue
+    }
+
+    const existing = resolutions.get(item.id)
+    if (existing?.terminal !== undefined) {
+      // Item already resolved from an EARLIER authentic receipt in this same
+      // chronological walk — never flips (R6c replay safety).
+      continue
+    }
+
+    resolutions.set(item.id, {terminal: receipt.status})
+  }
+
+  return resolutions
+}
+
+/**
  * Stable, order-insensitive but membership-sensitive fingerprint: items are
  * sorted by a canonical key of target+promptHash before hashing, so cosmetic
  * reordering doesn't invalidate approval while adding/removing an item does.
@@ -408,33 +718,6 @@ export function gateTarget(entry: GateEntry | undefined): GateResult {
   if (entry.private !== false) return 'blocked-ineligible'
   if (!entry.has_fro_bot_workflow) return 'blocked-not-onboarded'
   return 'ok'
-}
-
-// ─── Planner: terminal-state resolver ────────────────────────────────────────
-
-/**
- * Precedence: gate-block > run-failure > PR-outcome > run-success.
- * Multi-PR: terminal only when the run has concluded; completed if >=1
- * bot-authored PR merged, else failed if any PR is closed-unmerged, else
- * (no PR) completed as a no-op success.
- */
-export function resolveItemTerminalState(input: TerminalStateInput): TerminalState {
-  if (input.gateBlocked === true) return 'blocked'
-  if (input.runConclusion === 'failure') return 'failed'
-  if (input.runConclusion === undefined) return 'dispatched'
-
-  const prs = input.prs ?? []
-  const botPrs = prs.filter(pr => pr.authorIsBot)
-
-  if (botPrs.length === 0) return 'completed'
-
-  const anyMerged = botPrs.some(pr => pr.merged)
-  if (anyMerged) return 'completed'
-
-  const allTerminalPrs = botPrs.every(pr => pr.merged || pr.closed)
-  if (!allTerminalPrs) return 'dispatched'
-
-  return 'failed'
 }
 
 // ─── Planner: dispatch plan ──────────────────────────────────────────────────
@@ -486,18 +769,19 @@ export function planDispatch(input: DispatchPlanInput): DispatchPlanResult {
 // ─── Planner: snapshot decision ──────────────────────────────────────────────
 
 /**
- * Apply resolveItemTerminalState per dispatched item, compute allTerminal
- * (→ close), and idempotency (identical markerHash → no write).
+ * Apply the registry-gate signal per dispatched item (the only remaining
+ * out-of-band terminal driver — receipts and the SLA are applied by the
+ * caller before this runs; Unit 5 removed the run/PR terminal-resolution
+ * precedence table entirely), compute allTerminal (→ close), and idempotency
+ * (identical markerHash → no write).
  */
 export function planSnapshot(input: SnapshotPlanInput): SnapshotPlanResult {
   const updatedItems = input.state.items.map(item => {
     const signal = input.signals[item.id]
     if (signal === undefined) return item
     if (TERMINAL_STATUSES.has(item.status)) return item
-
-    const resolved = resolveItemTerminalState(signal)
-    if (resolved === item.status) return item
-    return {...item, status: resolved}
+    if (signal.gateBlocked !== true) return item
+    return {...item, status: 'blocked' as ItemStatus}
   })
 
   const updatedState: GoalState = {
@@ -582,18 +866,6 @@ export interface CrossRepoDispatchOctokitClient {
         }
       }>
     }
-    readonly search: {
-      readonly issuesAndPullRequests: (params: {q: string; per_page?: number}) => Promise<{
-        data: {
-          items: {
-            number: number
-            state: string
-            user: {login: string} | null
-            pull_request?: {merged_at: string | null}
-          }[]
-        }
-      }>
-    }
   }
 }
 
@@ -632,6 +904,96 @@ export function isPromptSafe(prompt: string): boolean {
 /** Compute a compact opaque correlation id: goal + item id + nonce, hashed. */
 export function computeCorrelationId(goal: string, itemId: string, nonce: string): string {
   return createHash('sha256').update(`${goal}:${itemId}:${nonce}`).digest('hex').slice(0, 20)
+}
+
+/**
+ * Mint a raw, in-memory-only per-item nonce with a CSPRNG. 32 bytes (256
+ * bits) of entropy, base64url-encoded (URL/prompt-safe, no padding noise).
+ * NEVER derived from `hashState` (64-bit truncation) or
+ * `Date.now()`/`Math.random()` — those are not high-entropy secrets (R6).
+ */
+export function mintNonce(): string {
+  return randomBytes(32).toString('base64url')
+}
+
+/** Full SHA-256 hex digest of a raw nonce, for storage as `nonceHash` (R6). Never truncated. */
+export function hashNonce(rawNonce: string): string {
+  return createHash('sha256').update(rawNonce).digest('hex')
+}
+
+export interface CoordinationIssueRef {
+  owner: string
+  repo: string
+  number: number
+}
+
+/**
+ * Build the receipt-carrying dispatch prompt: the item's prompt text plus a
+ * machine-contract block with the correlation id, the raw nonce, the
+ * coordination issue as structured fields + canonical URL, literal `success`
+ * and `noop` receipt examples, the mandatory-receipt rule, and a self-validate
+ * step. The raw nonce is delivered ONLY here, never in the public marker;
+ * callers must never log the return value verbatim.
+ *
+ * Residual leak: this becomes the target's `prompt` workflow_dispatch input.
+ * A repo running the agent with `OPENCODE_PROMPT_ARTIFACT` enabled can publish
+ * the rendered prompt (raw nonce included) as a downloadable Actions artifact.
+ * Target workflows are autonomous and cannot be redacted from here, so where
+ * that setting is present item-level nonce isolation falls back to trusting
+ * the dispatched worker (already the loop's trust boundary). A real fix lives
+ * in the agent or per-target workflow, not here.
+ */
+export function buildDispatchPrompt(input: {
+  itemPrompt: string
+  correlationId: string
+  rawNonce: string
+  coordinationIssue: CoordinationIssueRef
+}): string {
+  const {itemPrompt, correlationId, rawNonce, coordinationIssue} = input
+  const issueUrl = `https://github.com/${coordinationIssue.owner}/${coordinationIssue.repo}/issues/${coordinationIssue.number}`
+
+  const successExample = buildResultMarker({
+    correlationId,
+    nonce: rawNonce,
+    status: 'success',
+    summary: 'Concise summary of what changed.',
+    pr: 'https://github.com/OWNER/REPO/pull/123',
+  })
+  const noopExample = buildResultMarker({
+    correlationId,
+    nonce: rawNonce,
+    status: 'noop',
+    summary: 'No change was needed; explain why.',
+  })
+
+  return [
+    itemPrompt,
+    '',
+    '--- fro-bot cross-repo receipt contract (machine-readable, do not omit) ---',
+    `correlation_id: ${correlationId}`,
+    `nonce: ${rawNonce}`,
+    'Coordination issue (post your receipt here, and ONLY here):',
+    `  owner: ${coordinationIssue.owner}`,
+    `  repo: ${coordinationIssue.repo}`,
+    `  number: ${coordinationIssue.number}`,
+    `  url: ${issueUrl}`,
+    '',
+    'RULE: You MUST post a completion receipt comment to the coordination issue above',
+    'when you finish this work — even if the outcome is a no-op (nothing needed changing).',
+    'A missing receipt is treated as a failure to report, not success.',
+    '',
+    'Example receipt for a successful change:',
+    successExample,
+    '',
+    'Example receipt for a no-op (nothing needed changing):',
+    noopExample,
+    '',
+    'Self-validate before finishing: echo the resolved destination',
+    `(owner=${coordinationIssue.owner}, repo=${coordinationIssue.repo}, number=${coordinationIssue.number}),`,
+    'post the receipt comment, then re-read your posted comment. If the',
+    'fro-bot:cross-repo-result marker is absent from what you posted, edit the',
+    'comment to add it before declaring the work done.',
+  ].join('\n')
 }
 
 /**
@@ -757,7 +1119,7 @@ export interface RunDispatchInput {
     repo: string
     workflow_id: string
     ref: string
-    inputs: {prompt: string; correlation_id: string}
+    inputs: {prompt: string}
   }) => Promise<void>
   nonceSource: () => string
   resultPath?: string
@@ -781,6 +1143,7 @@ export interface RunDispatchCounts {
   skippedUnsafePrompt: number
   casDeferred: number
   seedRejected: number
+  dispatchError: number
 }
 
 export interface RunDispatchResult {
@@ -797,6 +1160,7 @@ function emptyDispatchCounts(): RunDispatchCounts {
     skippedUnsafePrompt: 0,
     casDeferred: 0,
     seedRejected: 0,
+    dispatchError: 0,
   }
 }
 
@@ -990,13 +1354,21 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
       continue
     }
 
-    const nonce = currentItem.nonce ?? input.nonceSource()
-    const correlationId = currentItem.correlationId ?? computeCorrelationId(state.goal, currentItem.id, nonce)
+    // Mint the RAW nonce fresh, in-memory only, via a CSPRNG (input.nonceSource
+    // is the injectable CSPRNG collaborator — see runDispatchCli's default,
+    // which uses node:crypto randomBytes, never Date.now()/Math.random()).
+    // Only its full SHA-256 hash is ever persisted to the (public) marker;
+    // the raw value is never stored in `currentItem` — a re-dispatch of a
+    // still-pending item always mints a fresh nonce.
+    const rawNonce = input.nonceSource()
+    const nonceHash = hashNonce(rawNonce)
+    const correlationId = currentItem.correlationId ?? computeCorrelationId(state.goal, currentItem.id, rawNonce)
 
-    // Write 'intent' before dispatching (two-phase persistence).
+    // Write 'intent' before dispatching (two-phase persistence). Only the
+    // hash is persisted here; `epoch` is set only on confirmed dispatch below.
     const intentState = flipItemStatus(latestMarker, currentItem.id, 'intent', undefined, {
       correlationId,
-      nonce,
+      nonceHash,
     })
     const intentCas = await casWriteMarker({
       octokit: input.octokit,
@@ -1011,13 +1383,34 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
       continue
     }
 
-    await input.createWorkflowDispatch({
-      owner: currentItem.target.owner,
-      repo: currentItem.target.name,
-      workflow_id: TARGET_WORKFLOW_ID,
-      ref: TARGET_WORKFLOW_REF,
-      inputs: {prompt, correlation_id: correlationId},
+    const dispatchPrompt = buildDispatchPrompt({
+      itemPrompt: prompt,
+      correlationId,
+      rawNonce,
+      coordinationIssue: {owner: input.repo.owner, repo: input.repo.repo, number: issueNumber},
     })
+
+    try {
+      await input.createWorkflowDispatch({
+        owner: currentItem.target.owner,
+        repo: currentItem.target.name,
+        workflow_id: TARGET_WORKFLOW_ID,
+        ref: TARGET_WORKFLOW_REF,
+        // Prompt-only input: target repos' fro-bot.yaml universally declares
+        // only `prompt` via workflow_dispatch. A `correlation_id` input 422s
+        // ("Unexpected inputs provided") against that schema — the correlation
+        // id and nonce ride inside dispatchPrompt instead (see buildDispatchPrompt).
+        inputs: {prompt: dispatchPrompt},
+      })
+    } catch {
+      // Transient dispatch failure (403/network) on this target must not
+      // abort the whole cohort. The item is already persisted as 'intent'
+      // (crash-safe); a future labeled event resumes and reconciles it by
+      // correlation-id. Counts-only outcome — no error detail is logged,
+      // since it could leak transport/token context.
+      counts.dispatchError += 1
+      continue
+    }
 
     // Flip to 'dispatched' + epoch via CAS.
     const dispatchedState = flipItemStatus(
@@ -1052,7 +1445,7 @@ function flipItemStatus(
   itemId: string,
   status: ItemStatus,
   epoch: number | undefined,
-  extra: {correlationId?: string; nonce?: string} = {},
+  extra: {correlationId?: string; nonceHash?: string} = {},
 ): GoalState {
   const items = marker.state.items.map(item => {
     if (item.id !== itemId) return item
@@ -1061,7 +1454,7 @@ function flipItemStatus(
       status,
       ...(epoch === undefined ? {} : {epoch}),
       ...(extra.correlationId === undefined ? {} : {correlationId: extra.correlationId}),
-      ...(extra.nonce === undefined ? {} : {nonce: extra.nonce}),
+      ...(extra.nonceHash === undefined ? {} : {nonceHash: extra.nonceHash}),
     }
   })
   const nextState: GoalState = {...marker.state, items, markerHash: ''}
@@ -1076,22 +1469,27 @@ export interface OpenGoalIssue {
   marker: MarkerData
 }
 
-export interface PrLookupResult {
-  merged: boolean
-  closed: boolean
-  authorIsBot: boolean
-}
-
 export interface RunTrackInput {
   octokit: CrossRepoDispatchOctokitClient
   repo: RepoRepository
   loadOpenGoalIssues: () => Promise<OpenGoalIssue[]>
   loadRegistry: () => Promise<GateEntry[]>
+  /**
+   * Demoted to a NON-AUTHORITATIVE diagnostic (Unit 5, R8/R9/R12): consulted
+   * ONLY to annotate an already-`needs-attention`/`no-receipt` item with
+   * "ran but didn't report" vs "never ran". Its return value never changes
+   * any item's terminal/non-terminal state — receipts are the sole
+   * completion oracle (R7) and the SLA is the sole `needs-attention` driver
+   * (R9).
+   */
   findRunConclusion: (target: DispatchTarget, correlationId: string) => Promise<'success' | 'failure' | undefined>
-  findBotAuthoredPrs: (target: DispatchTarget, correlationId: string) => Promise<PrLookupResult[]>
   resultPath?: string
   /** Same owner-aware credential check as `RunDispatchInput.hasTargetToken`. */
   hasTargetToken?: (owner: string) => boolean
+  /** Injectable clock for the SLA check (R9) — defaults to `Date.now`. Tests inject a fixed value. */
+  now?: () => number
+  /** Overrides the default `RECEIPT_SLA_MS` tunable — test-only escape hatch. */
+  slaMs?: number
 }
 
 export interface RunTrackCounts {
@@ -1099,6 +1497,7 @@ export interface RunTrackCounts {
   itemsCompleted: number
   itemsFailed: number
   itemsBlocked: number
+  itemsNeedsAttention: number
   itemsStillOpen: number
   goalsClosed: number
   idempotentNoop: number
@@ -1115,6 +1514,7 @@ function emptyTrackCounts(): RunTrackCounts {
     itemsCompleted: 0,
     itemsFailed: 0,
     itemsBlocked: 0,
+    itemsNeedsAttention: 0,
     itemsStillOpen: 0,
     goalsClosed: 0,
     idempotentNoop: 0,
@@ -1123,10 +1523,18 @@ function emptyTrackCounts(): RunTrackCounts {
 }
 
 /**
- * Tracking shell: snapshots dispatched goals to terminal, closing the
- * coordination issue when every item is terminal. Run
- * correlation is by correlation-id (never epoch+actor alone). Reopen is
- * handled by the workflow's `issues.reopened` step, not here.
+ * Tracking shell: resolves each dispatched (or `needs-attention`) item's
+ * terminal state SOLELY from AUTHENTIC completion receipts (R6/R7) plus the
+ * 24h SLA (R9) and the registry gate — the receipt is the sole completion
+ * oracle (R8: no PR polling, no run polling for completion). Run-lookup is
+ * demoted to a NON-AUTHORITATIVE diagnostic (Unit 5): for an item that ends
+ * up `needs-attention`/`no-receipt`, it annotates whether the worker's run
+ * concluded ("ran but didn't report") or never ran ("never ran") — this
+ * NEVER changes terminal/non-terminal state, only the diagnostic detail
+ * surfaced to the operator. Closes the coordination issue when every item is
+ * terminal (`completed`/`failed`/`blocked`) — `needs-attention` and
+ * `pending`/`dispatched` keep it open (R11). Reopen is handled by the
+ * workflow's `issues.reopened` step, not here.
  */
 export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
   const counts = emptyTrackCounts()
@@ -1138,13 +1546,49 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
   }
 
   const openGoals = await input.loadOpenGoalIssues()
+  const now = input.now?.() ?? Date.now()
+  const slaMs = input.slaMs ?? RECEIPT_SLA_MS
 
   for (const goalIssue of openGoals) {
     counts.goalsProcessed += 1
     const state: GoalState = {...goalIssue.marker.state, markerHash: goalIssue.marker.hash}
 
+    const commentsResponse = await input.octokit.rest.issues.listComments({
+      owner: input.repo.owner,
+      repo: input.repo.repo,
+      issue_number: goalIssue.issueNumber,
+    })
+    const comments: TrackerComment[] = commentsResponse.data.map(comment => ({
+      author: {login: comment.user?.login ?? ''},
+      body: comment.body ?? '',
+    }))
+
+    // Receipts are the sole completion oracle (R7): resolve every eligible
+    // item (dispatched or already needs-attention — reversible per R9a) from
+    // its earliest authentic receipt (R6c) before falling back to the
+    // legacy run-lookup/PR-search signal path below for anything a receipt
+    // did not resolve.
+    const receiptResolutions = resolveReceipts(state.items, comments)
+
+    const preItems = state.items.map(item => {
+      if (TERMINAL_STATUSES.has(item.status)) return item
+
+      const resolution = receiptResolutions.get(item.id)
+      if (resolution?.terminal !== undefined) {
+        const nextStatus: ItemStatus = resolution.terminal === 'failed' ? 'failed' : 'completed'
+        return {...item, status: nextStatus, needsAttentionReason: undefined}
+      }
+      if (resolution?.attentionReason !== undefined) {
+        return {...item, status: 'needs-attention' as ItemStatus, needsAttentionReason: resolution.attentionReason}
+      }
+      return item
+    })
+
+    // Registry-gate signal only: the run/PR terminal-resolution precedence
+    // table is gone (R8) — a gate-block is the only remaining out-of-band
+    // driver `planSnapshot` still applies to a non-terminal item.
     const signals: SnapshotSignals = {}
-    for (const item of state.items) {
+    for (const item of preItems) {
       if (item.status !== 'dispatched') continue
 
       const gate = gateTarget(registryByKey.get(`${item.target.owner}/${item.target.name}`))
@@ -1162,19 +1606,39 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       // without addressing this.
       if (input.hasTargetToken !== undefined && !input.hasTargetToken(item.target.owner)) {
         signals[item.id] = {gateBlocked: true}
-        continue
       }
-
-      if (item.correlationId === undefined) continue
-
-      const runConclusion = await input.findRunConclusion(item.target, item.correlationId)
-      if (runConclusion === undefined) continue
-
-      const prs = await input.findBotAuthoredPrs(item.target, item.correlationId)
-      signals[item.id] = {runConclusion, prs}
     }
 
-    const snapshot = planSnapshot({state, signals})
+    // Apply the SLA needs-attention flag directly (R9). No authentic receipt
+    // and past the confirm-time SLA -> needs-attention/no-receipt. An item
+    // never confirmed (`epoch` unset) is never SLA-aged (a pre-confirm crash
+    // is a dispatch failure, not an SLA miss).
+    const preItemsWithSla = preItems.map(item => {
+      if (item.status !== 'dispatched') return item
+      if (item.epoch !== undefined && now - item.epoch > slaMs) {
+        return {...item, status: 'needs-attention' as ItemStatus, needsAttentionReason: 'no-receipt' as const}
+      }
+      return item
+    })
+
+    // Diagnostic-only annotation (Unit 5, R8/R9/R12): run-lookup is consulted
+    // ONLY for an item that just became `needs-attention`/`no-receipt`, and
+    // ONLY to distinguish "ran but didn't report" from "never ran" for the
+    // operator. This NEVER changes terminal/non-terminal state — the item
+    // stays `needs-attention` either way.
+    const preItemsWithDiagnostic = await Promise.all(
+      preItemsWithSla.map(async item => {
+        if (item.status !== 'needs-attention' || item.needsAttentionReason !== 'no-receipt') return item
+        if (item.correlationId === undefined) return item
+
+        const runConclusion = await input.findRunConclusion(item.target, item.correlationId)
+        const noReceiptDiagnostic: NonNullable<DispatchItem['noReceiptDiagnostic']> =
+          runConclusion === undefined ? 'never-ran' : 'ran-no-report'
+        return {...item, noReceiptDiagnostic}
+      }),
+    )
+
+    const snapshot = planSnapshot({state: {...state, items: preItemsWithDiagnostic}, signals})
 
     for (const item of snapshot.state.items) {
       const previous = state.items.find(candidate => candidate.id === item.id)
@@ -1182,8 +1646,11 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       if (item.status === 'completed') counts.itemsCompleted += 1
       else if (item.status === 'failed') counts.itemsFailed += 1
       else if (item.status === 'blocked') counts.itemsBlocked += 1
+      else if (item.status === 'needs-attention') counts.itemsNeedsAttention += 1
     }
-    counts.itemsStillOpen += snapshot.state.items.filter(item => item.status === 'dispatched').length
+    counts.itemsStillOpen += snapshot.state.items.filter(
+      item => item.status === 'dispatched' || item.status === 'needs-attention',
+    ).length
 
     if (!snapshot.shouldWrite) {
       counts.idempotentNoop += 1
@@ -1331,31 +1798,6 @@ export async function loadOtherOpenGoalMarkers(
     results.push({...marker.state, markerHash: marker.hash})
   }
   return results
-}
-
-/**
- * Factory: `findBotAuthoredPrs` collaborator. Searches for PRs in `target`
- * carrying `correlationId` via the GitHub search API, then keeps only
- * PRs authored by a Fro Bot identity (`FROBOT_COMMENT_AUTHORS`) —
- * the anti-spoofing check that stops a forged non-bot PR referencing the
- * same correlation id from producing a false completion signal.
- */
-export function findBotAuthoredPrs(
-  octokit: CrossRepoDispatchOctokitClient,
-): (target: DispatchTarget, correlationId: string) => Promise<PrLookupResult[]> {
-  return async (target, correlationId) => {
-    const response = await octokit.rest.search.issuesAndPullRequests({
-      q: `repo:${target.owner}/${target.name} type:pr ${correlationId}`,
-      per_page: 30,
-    })
-    return response.data.items
-      .filter(item => FROBOT_COMMENT_AUTHORS.has(item.user?.login ?? ''))
-      .map(item => ({
-        merged: item.pull_request?.merged_at !== null && item.pull_request?.merged_at !== undefined,
-        closed: item.state === 'closed',
-        authorIsBot: true,
-      }))
-  }
 }
 
 // ─── CLI shell ────────────────────────────────────────────────────────────────
@@ -1528,7 +1970,7 @@ export async function runDispatchCli(
     createWorkflowDispatch: async params => {
       await targetClientFor(params.owner).rest.actions.createWorkflowDispatch(params)
     },
-    nonceSource: () => createHash('sha256').update(`${Date.now()}:${Math.random()}`).digest('hex').slice(0, 12),
+    nonceSource: mintNonce,
     resultPath,
     hasTargetToken,
   })
@@ -1550,8 +1992,6 @@ export async function runTrackCli(
     loadRegistry: loadRegistryFromDisk,
     findRunConclusion: async (target, correlationId) =>
       findRunConclusion(targetClientFor(target.owner))(target, correlationId),
-    findBotAuthoredPrs: async (target, correlationId) =>
-      findBotAuthoredPrs(targetClientFor(target.owner))(target, correlationId),
     resultPath,
     hasTargetToken,
   })

@@ -349,6 +349,30 @@ Fro Bot coordinates a single goal across multiple owner repos (`fro-bot/*`, `mar
 
 If you need to re-approve after reopening a closed goal issue, reopening automatically clears the prior approval — reapply the `dispatch-approved` label to fire a fresh dispatch.
 
+Each dispatch carries only the universal `prompt` input — no `correlation_id` or other custom input, since target repos are autonomous and only guarantee `prompt`. The correlation id and a per-item nonce ride inside the prompt itself; the worker reports completion by posting a receipt comment on the coordination issue, which a periodic tracker verifies (author, correlation id, and `hash(nonce)`) before resolving the item.
+
+The nonce binds a receipt to its item: the coordination issue stores only `hash(nonce)`, and the raw nonce reaches the worker only through the prompt. One caveat worth stating plainly — a repo running Fro Bot with `OPENCODE_PROMPT_ARTIFACT` enabled publishes the rendered prompt (raw nonce included) as a downloadable Actions artifact. Where that's set on a target, item-level nonce isolation falls back to trusting the dispatched worker itself, which is the same trust boundary the loop already assumes: every worker is a Fro Bot agent.
+
+**Why push, not poll.** Tracking used to correlate a dispatched item to its worker run by matching a `correlation_id` against the run name — until target repos turned out to only guarantee a `prompt` input, and GitHub's dispatch API gives you a `204` with no run id back anyway. So the model flipped: the worker already knows how it went, and it already holds a credential that can write back to the coordination issue. The worker posts, a scheduled tracker reads. Tracking never polls PR state or the Actions API for completion; a `pr` URL in a receipt is operator-facing metadata, nothing more.
+
+**The receipt.** When a worker finishes an item — success, no-op, or failure — it posts a comment on the coordination issue containing a delimited region:
+
+```html
+<!-- fro-bot:cross-repo-result:start -->
+<!-- fro-bot:cross-repo-result {"correlation_id":"...","nonce":"...","status":"success","summary":"...","pr":"..."} -->
+<!-- fro-bot:cross-repo-result:end -->
+```
+
+`status` is exactly one of `success | noop | failed` — a no-op is a valid, mandatory receipt, not a missing one. The parser prefers the region but tolerates surrounding prose and a trailing run-summary block, same as the goal-decomposition checklist parser; a bot-authored comment that has a marker but botches the fields is `unparseable-receipt`, not silently accepted and not treated the same as no receipt at all.
+
+**Three gates before a receipt moves anything.** All of these have to hold: the comment is authored by `fro-bot`, its `correlation_id` matches a dispatched item, and `hash(nonce)` matches that item's stored `nonceHash`. Author alone isn't enough — every worker shares the same bot identity and correlation ids sit in plain sight on the issue — so a per-item nonce is the real lock. Its hash is the only thing that ever touches the public marker; the raw value only ever appears in that item's dispatch prompt. Reading the marker gets an attacker nothing to forge with. Whichever authentic receipt arrives first, by comment order, is the one that resolves the item, and a resolved item never flips again — which matters because the raw nonce becomes public the moment the real worker posts it, and a later replay of that now-public nonce still can't undo a completed or failed item.
+
+**24h SLA and the "did it even run" question.** An item with no authentic receipt within 24 hours of confirmed dispatch surfaces as `needs-attention` rather than sitting silently dispatched forever. It's reversible — a late, genuine receipt still resolves it — so a slow worker isn't punished for being slow. Because a missing receipt is the most likely failure mode (agents drift off prompt formats more often than you'd like), a diagnostic run-lookup kicks in at that point, purely for operator context: it checks whether the worker's run actually completed and tags the item "ran but didn't report" versus "never ran." That lookup never resolves state on its own — it's forensic signal, not a second completion oracle.
+
+**When an item gets stuck wrong.** First-authentic-receipt-wins is a deliberate anti-spoof choice, but it means a bad early receipt (or your own mistake) can lock an item somewhere you don't want it. There's no undo command for that yet — the fix is editing the coordination issue's state marker comment directly to correct the item's status.
+
+**What's still open.** Every worker authenticates as the same shared `FRO_BOT_PAT`, so this is a shared-trust-boundary design, not per-item authorization — a compromised PAT can still forge a receipt for any item whose nonce it can obtain. Scoping receipt tokens per dispatch, per coordination issue, is planned hardening, not yet shipped.
+
 ## Development
 
 ### Code Quality Standards
