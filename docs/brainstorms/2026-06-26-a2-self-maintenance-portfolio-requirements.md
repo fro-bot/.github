@@ -13,6 +13,13 @@ status-truth maintenance: Fro Bot detects public claims about issue, PR, release
 rollout state that have drifted from live GitHub reality, then creates durable proposals for
 operator review. Bounded correction PRs are a graduation path after the claim kind proves useful.
 
+> **Status (2026-07-04):** F1/F2 shipped end-to-end — detection, proposal issues, and per-kind
+> outcome telemetry are live. The plan-consistency self-audit claim kind shipped and completed its
+> first full proposal lifecycle. F3 bounded correction PR machinery shipped fully disarmed behind
+> a three-key arming model; graduation still requires an explicit accepted-outcome signal plus a
+> reviewed code change. The wiki authority repair loop shipped as the second self-maintenance
+> surface.
+
 ---
 
 ## Problem Frame
