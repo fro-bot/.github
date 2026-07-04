@@ -7,6 +7,7 @@ import type {
   GoalState,
   LabeledEventPayload,
   OpenGoalIssue,
+  RunDispatchResult,
   TrackerComment,
 } from './cross-repo-dispatch.ts'
 import process from 'node:process'
@@ -1078,6 +1079,68 @@ describe('runDispatch — nonce mint + receipt-carrying prompt (Unit 2)', () => 
     const storedItem = finalMarker?.state.items.find(i => i.id === 'item-1')
     expect(storedItem?.status).toBe('intent')
     expect(storedItem?.epoch).toBeUndefined()
+  })
+
+  it('a createWorkflowDispatch throw for one target does not abort the cohort: counts dispatchError, still dispatches the rest, leaves the failed item at intent', async () => {
+    const targetA = {owner: 'fro-bot', name: 'agent'}
+    const targetB = {owner: 'fro-bot', name: 'wiki'}
+    const decomposition = makeDecompositionBody([
+      {...targetA, prompt: 'work-a'},
+      {...targetB, prompt: 'work-b'},
+    ])
+    const items: DispatchItem[] = [
+      {id: 'item-1', target: targetA, promptHash: extractPromptHash(decomposition, targetA), status: 'pending'},
+      {id: 'item-2', target: targetB, promptHash: extractPromptHash(decomposition, targetB), status: 'pending'},
+    ]
+    const state: GoalState = {goal: 'goal-1', items, markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    const createWorkflowDispatch = vi.fn(async (params: {owner: string; repo: string}): Promise<void> => {
+      if (params.owner === targetA.owner && params.repo === targetA.name) {
+        throw new Error('simulated transient dispatch failure')
+      }
+    })
+
+    let result: RunDispatchResult | undefined
+    let thrown: unknown
+    try {
+      result = await runDispatch({
+        octokit,
+        event: makeLabeledEvent(),
+        repo: REPO,
+        approveLabel: 'dispatch-approved',
+        loadRegistry: async () => [gateEntryFor(targetA), gateEntryFor(targetB)],
+        loadOtherOpenGoalMarkers: async () => [],
+        findRunByCorrelationId: async () => false,
+        createWorkflowDispatch,
+        nonceSource: (() => {
+          let n = 0
+          return () => `nonce-${++n}`
+        })(),
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    // The createWorkflowDispatch throw must never propagate out of runDispatch.
+    expect(thrown).toBeUndefined()
+    expect(result).toBeDefined()
+    expect(result?.counts.dispatchError).toBe(1)
+    expect(result?.counts.dispatched).toBe(1)
+
+    const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const failedItem = finalMarker?.state.items.find(i => i.id === 'item-1')
+    const succeededItem = finalMarker?.state.items.find(i => i.id === 'item-2')
+    expect(failedItem?.status).toBe('intent')
+    expect(failedItem?.epoch).toBeUndefined()
+    expect(succeededItem?.status).toBe('dispatched')
+    expect(succeededItem?.epoch).toBeDefined()
+
+    // The loop completed and writeResult still ran (both items were attempted).
+    expect(createWorkflowDispatch).toHaveBeenCalledTimes(2)
   })
 
   it('telemetry: counts output for a dispatch run contains neither the raw nonce nor the hash', async () => {

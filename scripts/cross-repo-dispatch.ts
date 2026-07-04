@@ -1143,6 +1143,7 @@ export interface RunDispatchCounts {
   skippedUnsafePrompt: number
   casDeferred: number
   seedRejected: number
+  dispatchError: number
 }
 
 export interface RunDispatchResult {
@@ -1159,6 +1160,7 @@ function emptyDispatchCounts(): RunDispatchCounts {
     skippedUnsafePrompt: 0,
     casDeferred: 0,
     seedRejected: 0,
+    dispatchError: 0,
   }
 }
 
@@ -1388,17 +1390,27 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
       coordinationIssue: {owner: input.repo.owner, repo: input.repo.repo, number: issueNumber},
     })
 
-    await input.createWorkflowDispatch({
-      owner: currentItem.target.owner,
-      repo: currentItem.target.name,
-      workflow_id: TARGET_WORKFLOW_ID,
-      ref: TARGET_WORKFLOW_REF,
-      // Prompt-only input: target repos' fro-bot.yaml universally declares
-      // only `prompt` via workflow_dispatch. A `correlation_id` input 422s
-      // ("Unexpected inputs provided") against that schema — the correlation
-      // id and nonce ride inside dispatchPrompt instead (see buildDispatchPrompt).
-      inputs: {prompt: dispatchPrompt},
-    })
+    try {
+      await input.createWorkflowDispatch({
+        owner: currentItem.target.owner,
+        repo: currentItem.target.name,
+        workflow_id: TARGET_WORKFLOW_ID,
+        ref: TARGET_WORKFLOW_REF,
+        // Prompt-only input: target repos' fro-bot.yaml universally declares
+        // only `prompt` via workflow_dispatch. A `correlation_id` input 422s
+        // ("Unexpected inputs provided") against that schema — the correlation
+        // id and nonce ride inside dispatchPrompt instead (see buildDispatchPrompt).
+        inputs: {prompt: dispatchPrompt},
+      })
+    } catch {
+      // Transient dispatch failure (403/network) on this target must not
+      // abort the whole cohort. The item is already persisted as 'intent'
+      // (crash-safe); a future labeled event resumes and reconciles it by
+      // correlation-id. Counts-only outcome — no error detail is logged,
+      // since it could leak transport/token context.
+      counts.dispatchError += 1
+      continue
+    }
 
     // Flip to 'dispatched' + epoch via CAS.
     const dispatchedState = flipItemStatus(
