@@ -4,7 +4,8 @@ import {assertReposFile} from './schemas.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ItemStatus = 'pending' | 'intent' | 'dispatched' | 'completed' | 'failed' | 'blocked' | 'deferred'
+export type ItemStatus =
+  'pending' | 'intent' | 'dispatched' | 'completed' | 'failed' | 'blocked' | 'deferred' | 'needs-attention'
 
 export interface DispatchTarget {
   owner: string
@@ -27,6 +28,14 @@ export interface DispatchItem {
    * (64-bit truncation) or `Date.now()/Math.random()`.
    */
   nonceHash?: string
+  /**
+   * Set only when `status === 'needs-attention'` (R9/R9a): why no terminal
+   * receipt has resolved this item yet. `no-receipt` = no authentic receipt
+   * seen and the item is past the SLA; `unparseable-receipt` = a bot-authored
+   * receipt marker is present but failed strict field validation. Cleared
+   * the moment a later authentic well-formed receipt resolves the item.
+   */
+  needsAttentionReason?: 'no-receipt' | 'unparseable-receipt'
 }
 
 export interface GoalState {
@@ -153,7 +162,11 @@ const ITEM_STATUSES: ReadonlySet<ItemStatus> = new Set([
   'failed',
   'blocked',
   'deferred',
+  'needs-attention',
 ])
+
+/** 24h SLA (R9), named tunable: wall-age from confirm-time `epoch` before a no-receipt item surfaces `needs-attention`. */
+export const RECEIPT_SLA_MS = 24 * 60 * 60 * 1000
 
 const TERMINAL_STATUSES: ReadonlySet<ItemStatus> = new Set(['completed', 'failed', 'blocked'])
 
@@ -180,6 +193,13 @@ function isDispatchItem(value: unknown): value is DispatchItem {
   if (record.correlationId !== undefined && typeof record.correlationId !== 'string') return false
   if (record.epoch !== undefined && typeof record.epoch !== 'number') return false
   if (record.nonceHash !== undefined && typeof record.nonceHash !== 'string') return false
+  if (
+    record.needsAttentionReason !== undefined &&
+    record.needsAttentionReason !== 'no-receipt' &&
+    record.needsAttentionReason !== 'unparseable-receipt'
+  ) {
+    return false
+  }
   return true
 }
 
@@ -460,6 +480,22 @@ function extractResultMarkerJson(scope: string): string | null {
   return lastMatch?.[1] ?? null
 }
 
+/**
+ * Best-effort, non-trust-bearing extraction of a `correlation_id` string
+ * from a bot-authored receipt marker that failed strict JSON/field
+ * validation (R6b). Used ONLY to attribute a distinct `unparseable-receipt`
+ * non-terminal attention reason to the right item — never to resolve
+ * terminal state, so a loose/partial match here carries no security weight.
+ */
+function extractLooseCorrelationId(body: string): string | null {
+  const region = extractResultRegion(body)
+  const scope = region ?? body
+  const jsonStr = extractResultMarkerJson(scope)
+  if (jsonStr === null) return null
+  const match = /"correlation_id"\s*:\s*"([^"]+)"/.exec(jsonStr)
+  return match?.[1] ?? null
+}
+
 function isValidResultPayload(value: unknown): value is {
   correlation_id: string
   nonce: string
@@ -515,6 +551,108 @@ export function parseResult(body: string): ParseResultOutcome {
     ...(parsed.pr === undefined ? {} : {pr: parsed.pr}),
   }
   return {ok: true, result}
+}
+
+/**
+ * Per-item outcome of applying the three-gate receipt resolver to a single
+ * goal's comment stream. `terminal` carries the resolved `ResultStatus` when
+ * an authentic receipt won the earliest-wins race; `attentionReason` is set
+ * only when the item has no terminal receipt yet but is flagged
+ * `needs-attention` (R9/R9a); `retainedUnconfirmed` marks an authentic
+ * receipt seen for an item that is not yet confirmed-dispatched, so the
+ * caller can re-evaluate it next pass instead of dropping it (early-receipt
+ * tolerance).
+ */
+export interface ReceiptResolution {
+  terminal?: ResultStatus
+  attentionReason?: 'no-receipt' | 'unparseable-receipt'
+  retainedUnconfirmed?: boolean
+}
+
+/**
+ * Resolve the receipt-driven terminal/attention state for every item in
+ * `items`, given the goal's ordered comment stream (chronological — earliest
+ * first). Implements R6 (three-gate trust: author, correlation-id mapping,
+ * hash-bound nonce), R6c (earliest-authentic-receipt-wins, never
+ * `findLast`/latest), R6b (malformed bot-authored marker → distinct
+ * `unparseable-receipt`), and early-receipt tolerance (an authentic receipt
+ * for a not-yet-confirmed item is retained, never dropped). The SLA check
+ * (R9) is a separate, purely time-based concern applied by the caller
+ * (`runTrack`) using the injected clock — this resolver has no notion of
+ * wall time. Pure.
+ */
+export function resolveReceipts(items: DispatchItem[], comments: TrackerComment[]): Map<string, ReceiptResolution> {
+  const itemsByCorrelationId = new Map(
+    items.filter(item => item.correlationId !== undefined).map(item => [item.correlationId as string, item]),
+  )
+  const resolutions = new Map<string, ReceiptResolution>()
+
+  // Earliest-authentic-receipt-wins (R6c): walk comments in chronological
+  // (given) order, never `findLast`/latest-wins, and never let a later
+  // receipt overwrite an item that already has a terminal resolution.
+  for (const comment of comments) {
+    if (!FROBOT_COMMENT_AUTHORS.has(comment.author.login)) continue
+
+    const outcome = parseResult(comment.body)
+    if (!outcome.ok) {
+      // `absent` (no receipt marker in this comment at all) is not a signal.
+      if (outcome.reason !== 'malformed') continue
+
+      // A bot-authored marker IS receipt-shaped but failed strict field
+      // validation (R6b). Best-effort attribution to a dispatched item via a
+      // loosely-recovered `correlation_id` (NOT trust-bearing — this never
+      // resolves terminal state, it only flags non-terminal
+      // `unparseable-receipt`, distinct from `no-receipt`).
+      const looseCorrelationId = extractLooseCorrelationId(comment.body)
+      if (looseCorrelationId === null) continue
+      const item = itemsByCorrelationId.get(looseCorrelationId)
+      if (item === undefined) continue
+
+      const existing = resolutions.get(item.id)
+      if (existing?.terminal !== undefined) continue
+      resolutions.set(item.id, {...existing, attentionReason: 'unparseable-receipt'})
+      continue
+    }
+
+    const receipt = outcome.result
+    if (receipt === undefined) continue
+
+    const item = itemsByCorrelationId.get(receipt.correlationId)
+    if (item === undefined) {
+      // Bot-authored comment whose id matches no item on this goal — ignored
+      // entirely for state (gate b).
+      continue
+    }
+
+    if (item.nonceHash === undefined || hashNonce(receipt.nonce) !== item.nonceHash) {
+      // Gate (c) fails: forged/mismatched nonce. Ignored entirely — never
+      // resolves, never counted as an attention signal.
+      continue
+    }
+
+    // Early-receipt tolerance: an authentic receipt for an item that is not
+    // yet confirmed-dispatched (no epoch yet, e.g. still 'intent'/'pending')
+    // is retained for re-evaluation next pass, never dropped and never used
+    // to resolve state now.
+    if (item.epoch === undefined) {
+      const existing = resolutions.get(item.id)
+      if (existing?.terminal === undefined) {
+        resolutions.set(item.id, {...existing, retainedUnconfirmed: true})
+      }
+      continue
+    }
+
+    const existing = resolutions.get(item.id)
+    if (existing?.terminal !== undefined) {
+      // Item already resolved from an EARLIER authentic receipt in this same
+      // chronological walk — never flips (R6c replay safety).
+      continue
+    }
+
+    resolutions.set(item.id, {terminal: receipt.status})
+  }
+
+  return resolutions
 }
 
 /**
@@ -1357,6 +1495,10 @@ export interface RunTrackInput {
   resultPath?: string
   /** Same owner-aware credential check as `RunDispatchInput.hasTargetToken`. */
   hasTargetToken?: (owner: string) => boolean
+  /** Injectable clock for the SLA check (R9) — defaults to `Date.now`. Tests inject a fixed value. */
+  now?: () => number
+  /** Overrides the default `RECEIPT_SLA_MS` tunable — test-only escape hatch. */
+  slaMs?: number
 }
 
 export interface RunTrackCounts {
@@ -1364,6 +1506,7 @@ export interface RunTrackCounts {
   itemsCompleted: number
   itemsFailed: number
   itemsBlocked: number
+  itemsNeedsAttention: number
   itemsStillOpen: number
   goalsClosed: number
   idempotentNoop: number
@@ -1380,6 +1523,7 @@ function emptyTrackCounts(): RunTrackCounts {
     itemsCompleted: 0,
     itemsFailed: 0,
     itemsBlocked: 0,
+    itemsNeedsAttention: 0,
     itemsStillOpen: 0,
     goalsClosed: 0,
     idempotentNoop: 0,
@@ -1388,10 +1532,15 @@ function emptyTrackCounts(): RunTrackCounts {
 }
 
 /**
- * Tracking shell: snapshots dispatched goals to terminal, closing the
- * coordination issue when every item is terminal. Run
- * correlation is by correlation-id (never epoch+actor alone). Reopen is
- * handled by the workflow's `issues.reopened` step, not here.
+ * Tracking shell: resolves each dispatched (or `needs-attention`) item's
+ * terminal state from AUTHENTIC completion receipts (R6/R7) — the receipt is
+ * the sole completion oracle. The legacy run-lookup/PR-search signal path is
+ * still consulted, but ONLY as a fallback for an item with no authentic
+ * receipt yet and not past the SLA (kept for now; Unit 5 demotes it to a
+ * non-authoritative diagnostic). Closes the coordination issue when every
+ * item is terminal (`completed`/`failed`/`blocked`) — `needs-attention` and
+ * `pending`/`dispatched` keep it open (R11). Reopen is handled by the
+ * workflow's `issues.reopened` step, not here.
  */
 export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
   const counts = emptyTrackCounts()
@@ -1403,13 +1552,50 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
   }
 
   const openGoals = await input.loadOpenGoalIssues()
+  const now = input.now?.() ?? Date.now()
+  const slaMs = input.slaMs ?? RECEIPT_SLA_MS
 
   for (const goalIssue of openGoals) {
     counts.goalsProcessed += 1
     const state: GoalState = {...goalIssue.marker.state, markerHash: goalIssue.marker.hash}
 
+    const commentsResponse = await input.octokit.rest.issues.listComments({
+      owner: input.repo.owner,
+      repo: input.repo.repo,
+      issue_number: goalIssue.issueNumber,
+    })
+    const comments: TrackerComment[] = commentsResponse.data.map(comment => ({
+      author: {login: comment.user?.login ?? ''},
+      body: comment.body ?? '',
+    }))
+
+    // Receipts are the sole completion oracle (R7): resolve every eligible
+    // item (dispatched or already needs-attention — reversible per R9a) from
+    // its earliest authentic receipt (R6c) before falling back to the
+    // legacy run-lookup/PR-search signal path below for anything a receipt
+    // did not resolve.
+    const receiptResolutions = resolveReceipts(state.items, comments)
+
+    const preItems = state.items.map(item => {
+      if (TERMINAL_STATUSES.has(item.status)) return item
+
+      const resolution = receiptResolutions.get(item.id)
+      if (resolution?.terminal !== undefined) {
+        const nextStatus: ItemStatus = resolution.terminal === 'failed' ? 'failed' : 'completed'
+        return {...item, status: nextStatus, needsAttentionReason: undefined}
+      }
+      if (resolution?.attentionReason !== undefined) {
+        return {...item, status: 'needs-attention' as ItemStatus, needsAttentionReason: resolution.attentionReason}
+      }
+      return item
+    })
+
+    // Legacy signal path (run-lookup/PR-search): only consulted for items a
+    // receipt did NOT resolve. Kept callable per the Unit 4 scope note —
+    // Unit 5 demotes/removes it — but receipt resolution above always takes
+    // precedence and this path never overrides it.
     const signals: SnapshotSignals = {}
-    for (const item of state.items) {
+    for (const item of preItems) {
       if (item.status !== 'dispatched') continue
 
       const gate = gateTarget(registryByKey.get(`${item.target.owner}/${item.target.name}`))
@@ -1430,6 +1616,13 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
         continue
       }
 
+      // No authentic receipt and past the confirm-time SLA (R9): surface
+      // needs-attention/no-receipt instead of falling through to the legacy
+      // run+PR signal. An item never confirmed (`epoch` unset) is never
+      // SLA-aged (a pre-confirm crash is a dispatch failure, not an SLA miss).
+      // Handled separately below (`preItemsWithSla`); skip the legacy signal.
+      if (item.epoch !== undefined && now - item.epoch > slaMs) continue
+
       if (item.correlationId === undefined) continue
 
       const runConclusion = await input.findRunConclusion(item.target, item.correlationId)
@@ -1439,7 +1632,16 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       signals[item.id] = {runConclusion, prs}
     }
 
-    const snapshot = planSnapshot({state, signals})
+    // Apply the SLA needs-attention flag directly (bypassing planSnapshot,
+    // which only understands run/PR TerminalStateInput signals).
+    const preItemsWithSla = preItems.map(item => {
+      if (item.status !== 'dispatched') return item
+      if (item.epoch !== undefined && now - item.epoch > slaMs) {
+        return {...item, status: 'needs-attention' as ItemStatus, needsAttentionReason: 'no-receipt' as const}
+      }
+      return item
+    })
+    const snapshot = planSnapshot({state: {...state, items: preItemsWithSla}, signals})
 
     for (const item of snapshot.state.items) {
       const previous = state.items.find(candidate => candidate.id === item.id)
@@ -1447,8 +1649,11 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       if (item.status === 'completed') counts.itemsCompleted += 1
       else if (item.status === 'failed') counts.itemsFailed += 1
       else if (item.status === 'blocked') counts.itemsBlocked += 1
+      else if (item.status === 'needs-attention') counts.itemsNeedsAttention += 1
     }
-    counts.itemsStillOpen += snapshot.state.items.filter(item => item.status === 'dispatched').length
+    counts.itemsStillOpen += snapshot.state.items.filter(
+      item => item.status === 'dispatched' || item.status === 'needs-attention',
+    ).length
 
     if (!snapshot.shouldWrite) {
       counts.idempotentNoop += 1
