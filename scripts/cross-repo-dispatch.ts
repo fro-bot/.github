@@ -1,4 +1,4 @@
-import {createHash} from 'node:crypto'
+import {createHash, randomBytes} from 'node:crypto'
 import process from 'node:process'
 import {assertReposFile} from './schemas.ts'
 
@@ -18,7 +18,15 @@ export interface DispatchItem {
   status: ItemStatus
   correlationId?: string
   epoch?: number
-  nonce?: string
+  /**
+   * Full SHA-256 hex digest of a CSPRNG-minted raw per-item nonce (R6). The
+   * raw nonce itself is NEVER persisted here or anywhere in the public
+   * marker — it is delivered only via the dispatch prompt. Set at
+   * confirmed-dispatch time (and, defensively, at the preceding intent
+   * write) alongside `correlationId`; never derived from `hashState`
+   * (64-bit truncation) or `Date.now()/Math.random()`.
+   */
+  nonceHash?: string
 }
 
 export interface GoalState {
@@ -171,7 +179,7 @@ function isDispatchItem(value: unknown): value is DispatchItem {
   if (typeof record.status !== 'string' || !ITEM_STATUSES.has(record.status as ItemStatus)) return false
   if (record.correlationId !== undefined && typeof record.correlationId !== 'string') return false
   if (record.epoch !== undefined && typeof record.epoch !== 'number') return false
-  if (record.nonce !== undefined && typeof record.nonce !== 'string') return false
+  if (record.nonceHash !== undefined && typeof record.nonceHash !== 'string') return false
   return true
 }
 
@@ -783,6 +791,89 @@ export function computeCorrelationId(goal: string, itemId: string, nonce: string
 }
 
 /**
+ * Mint a raw, in-memory-only per-item nonce with a CSPRNG. 32 bytes (256
+ * bits) of entropy, base64url-encoded (URL/prompt-safe, no padding noise).
+ * NEVER derived from `hashState` (64-bit truncation) or
+ * `Date.now()`/`Math.random()` — those are not high-entropy secrets (R6).
+ */
+export function mintNonce(): string {
+  return randomBytes(32).toString('base64url')
+}
+
+/** Full SHA-256 hex digest of a raw nonce, for storage as `nonceHash` (R6). Never truncated. */
+export function hashNonce(rawNonce: string): string {
+  return createHash('sha256').update(rawNonce).digest('hex')
+}
+
+export interface CoordinationIssueRef {
+  owner: string
+  repo: string
+  number: number
+}
+
+/**
+ * Build the receipt-carrying dispatch prompt: the item's own prompt text
+ * plus a machine-contract block carrying the correlation id, the RAW nonce
+ * (delivered ONLY here — never in the public marker, R6/R13), the
+ * coordination issue as structured fields + a canonical URL, a literal
+ * example receipt for BOTH `success` and `noop`, the mandatory-receipt rule,
+ * and a self-validate instruction. Pure string composition — no I/O, no
+ * telemetry surface (R12: callers must never log this return value verbatim).
+ */
+export function buildDispatchPrompt(input: {
+  itemPrompt: string
+  correlationId: string
+  rawNonce: string
+  coordinationIssue: CoordinationIssueRef
+}): string {
+  const {itemPrompt, correlationId, rawNonce, coordinationIssue} = input
+  const issueUrl = `https://github.com/${coordinationIssue.owner}/${coordinationIssue.repo}/issues/${coordinationIssue.number}`
+
+  const successExample = buildResultMarker({
+    correlationId,
+    nonce: rawNonce,
+    status: 'success',
+    summary: 'Concise summary of what changed.',
+    pr: 'https://github.com/OWNER/REPO/pull/123',
+  })
+  const noopExample = buildResultMarker({
+    correlationId,
+    nonce: rawNonce,
+    status: 'noop',
+    summary: 'No change was needed; explain why.',
+  })
+
+  return [
+    itemPrompt,
+    '',
+    '--- fro-bot cross-repo receipt contract (machine-readable, do not omit) ---',
+    `correlation_id: ${correlationId}`,
+    `nonce: ${rawNonce}`,
+    'Coordination issue (post your receipt here, and ONLY here):',
+    `  owner: ${coordinationIssue.owner}`,
+    `  repo: ${coordinationIssue.repo}`,
+    `  number: ${coordinationIssue.number}`,
+    `  url: ${issueUrl}`,
+    '',
+    'RULE: You MUST post a completion receipt comment to the coordination issue above',
+    'when you finish this work — even if the outcome is a no-op (nothing needed changing).',
+    'A missing receipt is treated as a failure to report, not success.',
+    '',
+    'Example receipt for a successful change:',
+    successExample,
+    '',
+    'Example receipt for a no-op (nothing needed changing):',
+    noopExample,
+    '',
+    'Self-validate before finishing: echo the resolved destination',
+    `(owner=${coordinationIssue.owner}, repo=${coordinationIssue.repo}, number=${coordinationIssue.number}),`,
+    'post the receipt comment, then re-read your posted comment. If the',
+    'fro-bot:cross-repo-result marker is absent from what you posted, edit the',
+    'comment to add it before declaring the work done.',
+  ].join('\n')
+}
+
+/**
  * Compare-and-swap a marker comment write. Re-reads the latest bot marker
  * immediately before writing; aborts+retries on hash mismatch against the
  * caller's expected prior hash. Bounded retries; persistent mismatch defers
@@ -1138,13 +1229,21 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
       continue
     }
 
-    const nonce = currentItem.nonce ?? input.nonceSource()
-    const correlationId = currentItem.correlationId ?? computeCorrelationId(state.goal, currentItem.id, nonce)
+    // Mint the RAW nonce fresh, in-memory only, via a CSPRNG (input.nonceSource
+    // is the injectable CSPRNG collaborator — see runDispatchCli's default,
+    // which uses node:crypto randomBytes, never Date.now()/Math.random()).
+    // Only its full SHA-256 hash is ever persisted to the (public) marker;
+    // the raw value is never stored in `currentItem` — a re-dispatch of a
+    // still-pending item always mints a fresh nonce.
+    const rawNonce = input.nonceSource()
+    const nonceHash = hashNonce(rawNonce)
+    const correlationId = currentItem.correlationId ?? computeCorrelationId(state.goal, currentItem.id, rawNonce)
 
-    // Write 'intent' before dispatching (two-phase persistence).
+    // Write 'intent' before dispatching (two-phase persistence). Only the
+    // hash is persisted here; `epoch` is set only on confirmed dispatch below.
     const intentState = flipItemStatus(latestMarker, currentItem.id, 'intent', undefined, {
       correlationId,
-      nonce,
+      nonceHash,
     })
     const intentCas = await casWriteMarker({
       octokit: input.octokit,
@@ -1159,12 +1258,19 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
       continue
     }
 
+    const dispatchPrompt = buildDispatchPrompt({
+      itemPrompt: prompt,
+      correlationId,
+      rawNonce,
+      coordinationIssue: {owner: input.repo.owner, repo: input.repo.repo, number: issueNumber},
+    })
+
     await input.createWorkflowDispatch({
       owner: currentItem.target.owner,
       repo: currentItem.target.name,
       workflow_id: TARGET_WORKFLOW_ID,
       ref: TARGET_WORKFLOW_REF,
-      inputs: {prompt, correlation_id: correlationId},
+      inputs: {prompt: dispatchPrompt, correlation_id: correlationId},
     })
 
     // Flip to 'dispatched' + epoch via CAS.
@@ -1200,7 +1306,7 @@ function flipItemStatus(
   itemId: string,
   status: ItemStatus,
   epoch: number | undefined,
-  extra: {correlationId?: string; nonce?: string} = {},
+  extra: {correlationId?: string; nonceHash?: string} = {},
 ): GoalState {
   const items = marker.state.items.map(item => {
     if (item.id !== itemId) return item
@@ -1209,7 +1315,7 @@ function flipItemStatus(
       status,
       ...(epoch === undefined ? {} : {epoch}),
       ...(extra.correlationId === undefined ? {} : {correlationId: extra.correlationId}),
-      ...(extra.nonce === undefined ? {} : {nonce: extra.nonce}),
+      ...(extra.nonceHash === undefined ? {} : {nonceHash: extra.nonceHash}),
     }
   })
   const nextState: GoalState = {...marker.state, items, markerHash: ''}
@@ -1676,7 +1782,7 @@ export async function runDispatchCli(
     createWorkflowDispatch: async params => {
       await targetClientFor(params.owner).rest.actions.createWorkflowDispatch(params)
     },
-    nonceSource: () => createHash('sha256').update(`${Date.now()}:${Math.random()}`).digest('hex').slice(0, 12),
+    nonceSource: mintNonce,
     resultPath,
     hasTargetToken,
   })

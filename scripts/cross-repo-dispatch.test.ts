@@ -907,8 +907,289 @@ describe('runDispatch — happy sequential dispatch', () => {
       expect(call?.repo).toBe(target.name)
       expect(call?.workflow_id).toBe('fro-bot.yaml')
       expect(call?.ref).toBe('main')
-      expect(call?.inputs.prompt).toBe(`do work in ${target.name}`)
+      expect(call?.inputs.prompt).toContain(`do work in ${target.name}`)
     }
+  })
+})
+
+describe('runDispatch — nonce mint + receipt-carrying prompt (Unit 2)', () => {
+  it('stores a full-SHA-256 nonceHash and builds a prompt with correlation id, raw nonce, issue ref, and a literal receipt example', async () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(target)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'raw-nonce-abc',
+    })
+
+    const call = createWorkflowDispatch.mock.calls[0]?.[0] as {
+      inputs: {prompt: string; correlation_id: string}
+    }
+    const prompt = call.inputs.prompt
+    const correlationId = call.inputs.correlation_id
+
+    expect(prompt).toContain(correlationId)
+    expect(prompt).toContain('raw-nonce-abc')
+    expect(prompt).toContain(`owner: ${REPO.owner}`)
+    expect(prompt).toContain(`repo: ${REPO.repo}`)
+    expect(prompt).toContain('number: 42')
+    expect(prompt).toContain(`https://github.com/${REPO.owner}/${REPO.repo}/issues/42`)
+    expect(prompt).toContain('fro-bot:cross-repo-result')
+    expect(prompt).toContain('"status":"success"')
+    expect(prompt).toContain('"status":"noop"')
+
+    const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const storedItem = finalMarker?.state.items.find(i => i.id === 'item-1')
+    expect(storedItem?.nonceHash).toBeDefined()
+    expect(storedItem?.nonceHash).toMatch(/^[a-f0-9]{64}$/)
+  })
+
+  it('never stores the raw nonce in the marker, and the stored hash is not the 64-bit hashState truncation', async () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(target)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async () => undefined,
+      nonceSource: () => 'super-secret-raw-nonce',
+    })
+
+    const markerBodies = comments.map(c => c.body).join('\n')
+    expect(markerBodies).not.toContain('super-secret-raw-nonce')
+
+    const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const storedItem = finalMarker?.state.items.find(i => i.id === 'item-1')
+    expect(storedItem?.nonceHash).toBeDefined()
+    // Full SHA-256 hex is 64 chars; hashState truncates to 16.
+    expect(storedItem?.nonceHash).toHaveLength(64)
+  })
+
+  it('gives two items in one goal distinct nonces and distinct hashes', async () => {
+    const targets = [
+      {owner: 'fro-bot', name: 'agent'},
+      {owner: 'fro-bot', name: 'wiki'},
+    ]
+    const decomposition = makeDecompositionBody(targets.map(t => ({...t, prompt: `do work in ${t.name}`})))
+    const items: DispatchItem[] = targets.map((target, index) => ({
+      id: `item-${index + 1}`,
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }))
+    const state: GoalState = {goal: 'goal-1', items, markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+    const seenNonces: string[] = []
+
+    await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => targets.map(t => gateEntryFor(t)),
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: (() => {
+        let n = 0
+        return () => {
+          const nonce = `distinct-nonce-${++n}`
+          seenNonces.push(nonce)
+          return nonce
+        }
+      })(),
+    })
+
+    expect(new Set(seenNonces).size).toBe(2)
+
+    const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const hashes = finalMarker?.state.items.map(i => i.nonceHash) ?? []
+    expect(hashes).toHaveLength(2)
+    expect(new Set(hashes).size).toBe(2)
+  })
+
+  it('mint↔prompt consistency: sha256hex(raw nonce embedded in the prompt) equals the stored nonceHash', async () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(target)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'consistency-check-nonce',
+    })
+
+    const call = createWorkflowDispatch.mock.calls[0]?.[0] as {inputs: {prompt: string}}
+    const nonceLine = call.inputs.prompt.split('\n').find(line => line.startsWith('nonce: '))
+    const rawNonceFromPrompt = nonceLine?.slice('nonce: '.length)
+    expect(rawNonceFromPrompt).toBe('consistency-check-nonce')
+
+    const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const storedItem = finalMarker?.state.items.find(i => i.id === 'item-1')
+
+    expect(rawNonceFromPrompt).toBeDefined()
+    const {createHash} = await import('node:crypto')
+    const computedHash = createHash('sha256')
+      .update(rawNonceFromPrompt as string)
+      .digest('hex')
+    expect(storedItem?.nonceHash).toBe(computedHash)
+  })
+
+  it('sets epoch only at confirmed dispatch; an item left at intent has no SLA-eligible epoch', async () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    // The approval-fingerprint write (1st updateComment call) and the intent
+    // write (2nd call) are allowed to land normally; the confirm write (3rd
+    // call, which would set 'dispatched' + epoch) is accepted by the mock (no
+    // throw) but silently discarded — simulating a crash-after-confirm
+    // scenario where the item is stranded at 'intent'.
+    let writeCount = 0
+    const originalUpdateComment = octokit.rest.issues.updateComment
+    const droppingUpdateComment = async (params: {owner: string; repo: string; comment_id: number; body: string}) => {
+      writeCount += 1
+      if (writeCount >= 3) {
+        return {}
+      }
+      return originalUpdateComment(params)
+    }
+
+    const patchedOctokit = {
+      ...octokit,
+      rest: {
+        ...octokit.rest,
+        issues: {
+          ...octokit.rest.issues,
+          updateComment: droppingUpdateComment,
+        },
+      },
+    }
+
+    await runDispatch({
+      octokit: patchedOctokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(target)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async () => undefined,
+      nonceSource: () => 'intent-only-nonce',
+    })
+
+    const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const storedItem = finalMarker?.state.items.find(i => i.id === 'item-1')
+    expect(storedItem?.status).toBe('intent')
+    expect(storedItem?.epoch).toBeUndefined()
+  })
+
+  it('telemetry: counts output for a dispatch run contains neither the raw nonce nor the hash', async () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    const result = await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(target)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async () => undefined,
+      nonceSource: () => 'telemetry-check-nonce',
+    })
+
+    const countsJson = JSON.stringify(result.counts)
+    expect(countsJson).not.toContain('telemetry-check-nonce')
+    // No field on RunDispatchCounts carries nonce material at all — it's counts-only.
+    expect(Object.keys(result.counts).every(key => !key.toLowerCase().includes('nonce'))).toBe(true)
   })
 })
 
@@ -964,7 +1245,7 @@ describe('runDispatch — seeds marker from decomposition checklist', () => {
       const call = createWorkflowDispatch.mock.calls[index]?.[0]
       expect(call?.owner).toBe(target.owner)
       expect(call?.repo).toBe(target.name)
-      expect(call?.inputs.prompt).toBe(`do work in ${target.name}`)
+      expect(call?.inputs.prompt).toContain(`do work in ${target.name}`)
     }
   })
 
@@ -1305,7 +1586,7 @@ describe('runDispatch — resume reconciliation by correlation-id', () => {
       promptHash: 'abcd1234abcd1234',
       status: 'intent',
       correlationId: 'corr-existing-1',
-      nonce: 'nonce-1',
+      nonceHash: 'nonce-hash-1',
     }
     const state: GoalState = {
       goal: 'goal-1',
@@ -1366,7 +1647,7 @@ describe('runDispatch — CAS mismatch defers', () => {
       spin += 1
       const spinning: GoalState = {
         goal: 'goal-1',
-        items: [{...item, nonce: `spin-${spin}`}],
+        items: [{...item, nonceHash: `spin-${spin}`}],
         approvalFingerprint: fingerprint,
         markerHash: '',
       }
@@ -2171,7 +2452,7 @@ describe('CLI wiring — real collaborators, not stubs', () => {
         promptHash: 'abcd1234abcd1234',
         status: 'intent',
         correlationId: 'corr-resume-1',
-        nonce: 'nonce-1',
+        nonceHash: 'nonce-hash-1',
       }
       const state: GoalState = {
         goal: 'goal-1',
