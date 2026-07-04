@@ -577,6 +577,123 @@ describe('runDispatch — happy sequential dispatch', () => {
   })
 })
 
+describe('runDispatch — seeds marker from decomposition checklist', () => {
+  it('seeds a marker from the checklist, gates+dispatches items, and recovers prompts when no marker exists', async () => {
+    const targets = [
+      {owner: 'fro-bot', name: 'agent'},
+      {owner: 'fro-bot', name: 'wiki'},
+    ]
+    const decomposition = makeDecompositionBody(targets.map(t => ({...t, prompt: `do work in ${t.name}`})))
+
+    const {octokit, comments} = mockOctokit()
+    // Only the bot-authored decomposition checklist exists — no state marker yet.
+    comments.push({id: 1, body: decomposition, login: 'fro-bot'})
+
+    const createComment = vi.fn(async (params: {owner: string; repo: string; issue_number: number; body: string}) => {
+      const comment = {id: comments.length + 1, body: params.body, login: 'fro-bot'}
+      comments.push(comment)
+      return {data: {id: comment.id}}
+    })
+
+    const createWorkflowDispatch = vi.fn(
+      async (_params: {
+        owner: string
+        repo: string
+        workflow_id: string
+        ref: string
+        inputs: {prompt: string; correlation_id: string}
+      }) => ({}),
+    )
+
+    const result = await runDispatch({
+      octokit: {...octokit, rest: {...octokit.rest, issues: {...octokit.rest.issues, createComment}}},
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => targets.map(t => gateEntryFor(t)),
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: (() => {
+        let n = 0
+        return () => `nonce-${++n}`
+      })(),
+    })
+
+    expect(result.counts.dispatched).toBe(2)
+    expect(createComment).toHaveBeenCalledOnce()
+    expect(createWorkflowDispatch).toHaveBeenCalledTimes(2)
+    for (const [index, target] of targets.entries()) {
+      const call = createWorkflowDispatch.mock.calls[index]?.[0]
+      expect(call?.owner).toBe(target.owner)
+      expect(call?.repo).toBe(target.name)
+      expect(call?.inputs.prompt).toBe(`do work in ${target.name}`)
+    }
+  })
+
+  it('bails without dispatching when no marker exists and no decomposition checklist is found', async () => {
+    const {octokit, comments} = mockOctokit()
+    // A bot comment exists but it is not a valid decomposition checklist.
+    comments.push({id: 1, body: 'just a status update, nothing structured here', login: 'fro-bot'})
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    const result = await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'nonce-1',
+    })
+
+    expect(result.counts.dispatched).toBe(0)
+    expect(result.counts.refused).toBe(0)
+    expect(result.counts.seedRejected).toBe(0)
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+
+  it('bails with seedRejected:1 when the latest checklist exceeds the item cap', async () => {
+    const targets = Array.from({length: MAX_ITEMS_PER_GOAL + 1}, (_, i) => ({
+      owner: 'fro-bot',
+      name: `repo-${i}`,
+      prompt: `do thing ${i}`,
+    }))
+    const decomposition = makeDecompositionBody(targets)
+
+    const {octokit, comments} = mockOctokit()
+    // Over-cap checklist, no existing state marker.
+    comments.push({id: 1, body: decomposition, login: 'fro-bot'})
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    const result = await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'nonce-1',
+    })
+
+    expect(result.counts.dispatched).toBe(0)
+    expect(result.counts.seedRejected).toBe(1)
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+})
+
 describe('runDispatch — marker comment upsert (no comment spam)', () => {
   it('writes exactly one marker comment (created once) and updates it in place thereafter', async () => {
     const targets = [
