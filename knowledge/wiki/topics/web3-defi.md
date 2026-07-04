@@ -2,7 +2,7 @@
 type: topic
 title: "Web3 & DeFi Development"
 created: 2026-04-18
-updated: 2026-06-20
+updated: 2026-07-04
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -25,7 +25,10 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 3be6b7675bab3d7f207c3ea6e1dc439c541cb0c8
     accessed: 2026-06-20
-tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721]
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: c6e10e0515d83d00fcece101f1b6d6b0549f5a95
+    accessed: 2026-07-04
+tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721, alchemy, viem]
 ---
 
 # Web3 & DeFi Development
@@ -90,6 +93,29 @@ The first functional disposal flow (PR #911 in [[marcusrbrown--tokentoilet]]) us
 - **`NetworkGuard`** validates the connected wallet is on Sepolia before rendering disposal UI
 - **Keyed `DisposalExecutor`** — each token gets a fresh `useTokenDisposal` hook instance via React key, preventing stale `isSuccess`/`error` state across multi-token disposals
 - **Deployment:** Vercel GitHub integration handles preview (PRs) and production (main push) — no CI deploy jobs
+
+## Token Discovery via Alchemy (2026-07-03)
+
+The first non-scaffold discovery implementation landed in [[marcusrbrown--tokentoilet]] (PR #1179). Patterns worth carrying forward to other Web3 apps:
+
+- **Enumerate real holdings, not a static list.** `useTokenDiscovery` calls Alchemy's `alchemy_getTokenBalances` with the connected wallet address to list actual ERC-20 balances. The wallet address is sent to Alchemy — this is the required data flow for discovery to function and is documented as such in `.env.example`.
+- **Fail closed, never fall back to a hardcoded list.** With no `NEXT_PUBLIC_ALCHEMY_API_KEY`, the app renders a "discovery unavailable" state. A silent static-list fallback would mislead users about their actual holdings; the absence of a key is surfaced, not papered over.
+- **Browser-exposed key → domain allowlist.** The Alchemy key is a `NEXT_PUBLIC_*` var, so it reaches the client. The abuse control is not secrecy but a domain allowlist configured in the Alchemy dashboard.
+- **Rejected key ≠ transient error.** A 401/rejected key is classified as *unavailable* (permanent), not *retryable* (#1183). This prevents a hot retry loop hammering the provider with a key that will never succeed.
+- **Skip, don't abort.** An unmapped chain skips that chain rather than aborting the whole scan (#1180) — partial discovery beats total failure.
+- **Surface structured errors.** Discovery errors propagate to the UI as structured messages (#1184), not swallowed console noise. Provider error-shape captured as a `docs/solutions` learning (#1186).
+
+## Simulate Before Signing (2026-07-03)
+
+[[marcusrbrown--tokentoilet]] PR #1175 added a transfer simulation step before prompting the user for a signature. Simulating the transaction catches reverts before they cost a signature or gas. This is now an enforced expectation in the Fro Bot Web3-security review rubric ("simulate before prompting signature") — a pattern that should generalize to any signature-gated on-chain write.
+
+## Privacy: Telemetry Defaults Off (2026-07-03)
+
+Analytics telemetry in [[marcusrbrown--tokentoilet]] defaults to opt-in / off (PR #1174). The default was deliberately set to off rather than shipping opt-out telemetry, consistent with the no-unconsented-telemetry baseline that governs the ecosystem. When adding any analytics to a Web3 app here, off-by-default is the required posture.
+
+## Mainnet Readiness: Explicit No-Go (2026-07-03)
+
+A readiness spike (#1178) concluded [[marcusrbrown--tokentoilet]] stays Sepolia-only until token discovery is proven correct. The `SUPPORTED_CHAIN_IDS: [11155111]` lock is now a documented decision backed by a spike, not merely an unfinished feature. Stale multi-chain RPC env vars were removed (#1176) and invalid multi-chain integration tests deleted with E2E gaps tracked separately (#1172). Pattern: gate mainnet on read-path correctness (discovery) before write-path expansion.
 
 ## Migration Notes: Wagmi v2 → v3 (2026-05-28)
 
