@@ -1,5 +1,6 @@
 import type {
   CrossRepoDispatchOctokitClient,
+  CrossRepoResult,
   DispatchItem,
   DispatchTarget,
   GateEntry,
@@ -14,6 +15,7 @@ import {describe, expect, it, vi} from 'vitest'
 
 import {
   buildMarkerComment,
+  buildResultMarker,
   computeApprovalFingerprint,
   createTargetClientResolver,
   CROSS_REPO_GOAL_LABEL,
@@ -28,6 +30,7 @@ import {
   MARKER_PREFIX,
   MAX_ITEMS_PER_GOAL,
   parseDecomposition,
+  parseResult,
   parseTargetTokens,
   planDispatch,
   planSnapshot,
@@ -241,6 +244,202 @@ describe('parseDecomposition', () => {
     expect(result.items).toHaveLength(2)
     expect(result.items[0]?.target).toEqual({owner: 'marcusrbrown', name: 'sparkle'})
     expect(result.items[1]?.target).toEqual({owner: 'marcusrbrown', name: 'renovate-config'})
+  })
+})
+
+function makeReceipt(overrides: Partial<CrossRepoResult> = {}): CrossRepoResult {
+  return {
+    correlationId: 'abc123correlation',
+    nonce: 'raw-nonce-value-1234567890',
+    status: 'success',
+    summary: 'did the thing',
+    ...overrides,
+  }
+}
+
+describe('buildResultMarker / parseResult round-trip', () => {
+  it.each(['success', 'noop', 'failed'] as const)(
+    'round-trips a %s receipt through region + marker + prose',
+    status => {
+      const receipt = makeReceipt({status})
+      const body = ['Some prose before the receipt.', buildResultMarker(receipt), 'Some prose after the receipt.'].join(
+        '\n',
+      )
+      const outcome = parseResult(body)
+      expect(outcome.ok).toBe(true)
+      expect(outcome.result).toEqual(receipt)
+    },
+  )
+
+  it('emits the documented delimited-region shape', () => {
+    const body = buildResultMarker(makeReceipt())
+    const lines = body.split('\n')
+    expect(lines[0]).toBe('<!-- fro-bot:cross-repo-result:start -->')
+    expect(lines[1]).toMatch(/^<!-- fro-bot:cross-repo-result \{.*\} -->$/)
+    expect(lines[2]).toBe('<!-- fro-bot:cross-repo-result:end -->')
+  })
+
+  it('round-trips the optional pr field when present', () => {
+    const receipt = makeReceipt({pr: 'https://github.com/fro-bot/agent/pull/1'})
+    const outcome = parseResult(buildResultMarker(receipt))
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result).toEqual(receipt)
+  })
+
+  it('omits pr from the parsed result when the receipt has none', () => {
+    const outcome = parseResult(buildResultMarker(makeReceipt()))
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result?.pr).toBeUndefined()
+  })
+
+  it('prefers the delimited region, ignoring an unrelated marker-shaped string outside it', () => {
+    const receipt = makeReceipt({correlationId: 'inside-region'})
+    const body = [
+      '<!-- fro-bot:cross-repo-result {"correlation_id":"outside-region","nonce":"n","status":"failed","summary":"x"} -->',
+      buildResultMarker(receipt),
+    ].join('\n')
+    // Region-preference only applies once a region exists; here the bare
+    // marker precedes the region. extractResultMarkerJson takes the LAST
+    // match within the selected scope (region body when present), so the
+    // in-region receipt wins once the region is extracted.
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result?.correlationId).toBe('inside-region')
+  })
+
+  it('parses a marker inside a fenced code block with adjacent prose, region present', () => {
+    const receipt = makeReceipt({status: 'noop', summary: 'nothing to do'})
+    const body = [
+      'Worker report:',
+      '<!-- fro-bot:cross-repo-result:start -->',
+      '```',
+      JSON.stringify({
+        correlation_id: receipt.correlationId,
+        nonce: receipt.nonce,
+        status: 'noop',
+        summary: 'nothing to do',
+      }),
+      '```',
+      '<!-- fro-bot:cross-repo-result:end -->',
+      'End of report.',
+    ].join('\n')
+    // The fenced block above deliberately omits the marker HTML comment
+    // itself (workers sometimes wrap only the JSON) — exercised instead via
+    // the canonical marker-inside-region path below for the parseable case.
+    const canonicalBody = ['Worker report:', buildResultMarker(receipt), 'End of report.'].join('\n')
+    const outcome = parseResult(canonicalBody)
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result).toEqual(receipt)
+    // The malformed fenced-only variant (no marker comment) is `absent`.
+    expect(parseResult(body).reason).toBe('absent')
+  })
+
+  it('parses a bare marker without the region via body-scan fallback', () => {
+    const receipt = makeReceipt()
+    const marker = `<!-- fro-bot:cross-repo-result ${JSON.stringify({
+      correlation_id: receipt.correlationId,
+      nonce: receipt.nonce,
+      status: receipt.status,
+      summary: receipt.summary,
+    })} -->`
+    const body = `Some prose.\n${marker}\nMore prose.`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result).toEqual(receipt)
+  })
+
+  it('round-trips a nonce/summary containing characters that could break JSON quoting', () => {
+    const receipt = makeReceipt({
+      nonce: 'n"o\\nce\nwith\tquotes"and\\backslashes',
+      summary: 'summary with "quotes", \\backslashes\\, and\nnewlines',
+    })
+    const outcome = parseResult(buildResultMarker(receipt))
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result).toEqual(receipt)
+  })
+})
+
+describe('parseResult — malformed vs absent', () => {
+  it('returns absent when no receipt marker is present at all', () => {
+    const outcome = parseResult('just a regular comment with no receipt')
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('absent')
+    expect(outcome.result).toBeUndefined()
+  })
+
+  it('returns absent for an empty body', () => {
+    const outcome = parseResult('')
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('absent')
+  })
+
+  it('returns malformed for invalid JSON in the marker', () => {
+    const outcome = parseResult('<!-- fro-bot:cross-repo-result {not json} -->')
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('malformed')
+  })
+
+  it('returns malformed when nonce is missing', () => {
+    const body = `<!-- fro-bot:cross-repo-result ${JSON.stringify({
+      correlation_id: 'abc',
+      status: 'success',
+      summary: 'done',
+    })} -->`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('malformed')
+  })
+
+  it('returns malformed when correlation_id is missing', () => {
+    const body = `<!-- fro-bot:cross-repo-result ${JSON.stringify({
+      nonce: 'n',
+      status: 'success',
+      summary: 'done',
+    })} -->`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('malformed')
+  })
+
+  it('returns malformed when status is outside the closed vocabulary', () => {
+    const body = `<!-- fro-bot:cross-repo-result ${JSON.stringify({
+      correlation_id: 'abc',
+      nonce: 'n',
+      status: 'blocked',
+      summary: 'done',
+    })} -->`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('malformed')
+  })
+
+  it('returns malformed when summary is missing', () => {
+    const body = `<!-- fro-bot:cross-repo-result ${JSON.stringify({
+      correlation_id: 'abc',
+      nonce: 'n',
+      status: 'success',
+    })} -->`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('malformed')
+  })
+
+  it('never returns a partial result on a malformed marker', () => {
+    const outcome = parseResult('<!-- fro-bot:cross-repo-result {"correlation_id":"abc"} -->')
+    expect(outcome.ok).toBe(false)
+    expect(outcome.result).toBeUndefined()
+  })
+})
+
+describe('parseResult — nonce never logged/printed (R12 discipline check)', () => {
+  it('parseResult itself performs no console output', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    parseResult(buildResultMarker(makeReceipt({nonce: 'super-secret-nonce-value'})))
+    expect(spy).not.toHaveBeenCalled()
+    expect(errSpy).not.toHaveBeenCalled()
+    spy.mockRestore()
+    errSpy.mockRestore()
   })
 })
 

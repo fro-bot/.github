@@ -46,6 +46,35 @@ export interface DecompositionResult {
   reason?: 'too-many-items' | 'no-items' | 'malformed'
 }
 
+/** Worker-reported outcome vocabulary for a completion receipt. `blocked` is the pre-dispatch gate outcome, never a worker status. */
+export type ResultStatus = 'success' | 'noop' | 'failed'
+
+/**
+ * Completion receipt posted by a worker to the coordination issue. `nonce`
+ * is the RAW per-item nonce as posted by the worker — the parser never
+ * hashes it or compares it against a stored `nonceHash` (that gate lives in
+ * track's resolver, Unit 4).
+ */
+export interface CrossRepoResult {
+  correlationId: string
+  nonce: string
+  status: ResultStatus
+  summary: string
+  pr?: string
+}
+
+/**
+ * Outcome of parsing a receipt comment body. `absent` = no receipt marker
+ * present at all; `malformed` = a receipt marker was found but failed
+ * strict field validation — the two are distinct outcomes (mirrors
+ * `parseDecomposition`'s "checklist-shaped but invalid" vs "no checklist").
+ */
+export interface ParseResultOutcome {
+  ok: boolean
+  result?: CrossRepoResult
+  reason?: 'absent' | 'malformed'
+}
+
 export type GateResult = 'ok' | 'blocked-not-onboarded' | 'blocked-ineligible'
 
 /** Minimal shape of a registry entry needed for the gate — mirrors `RepoEntry`. */
@@ -232,18 +261,42 @@ const LOOSE_TASK_LIST_PREFIX = /^[-*+]\s*\[[ x]\]/i
 const ITEMS_REGION_START = '<!-- fro-bot:cross-repo-items:start -->'
 const ITEMS_REGION_END = '<!-- fro-bot:cross-repo-items:end -->'
 
+/** Delimited region a worker emits around its completion receipt (see `fro-bot.yaml`). Optional. */
+const RESULT_REGION_START = '<!-- fro-bot:cross-repo-result:start -->'
+const RESULT_REGION_END = '<!-- fro-bot:cross-repo-result:end -->'
+
+/** Marker prefix identifying a completion-receipt HTML comment. */
+const RESULT_MARKER_PREFIX = 'fro-bot:cross-repo-result '
+
+const RESULT_STATUSES: ReadonlySet<ResultStatus> = new Set(['success', 'noop', 'failed'])
+
 /**
  * Extract the substring between the delimited region markers, if both are
  * present in order. Returns null when the region is absent (caller falls
  * back to scanning the whole body tolerantly).
  */
 function extractItemsRegion(body: string): string | null {
-  const startIndex = body.indexOf(ITEMS_REGION_START)
+  return extractDelimitedRegion(body, ITEMS_REGION_START, ITEMS_REGION_END)
+}
+
+/**
+ * Generic delimited-region extractor: returns the substring between
+ * `startMarker` and `endMarker` (in order) when both are present, else null
+ * so the caller falls back to scanning the whole body tolerantly. Shared by
+ * `extractItemsRegion` (decomposition) and the receipt region below.
+ */
+function extractDelimitedRegion(body: string, startMarker: string, endMarker: string): string | null {
+  const startIndex = body.indexOf(startMarker)
   if (startIndex === -1) return null
-  const afterStart = startIndex + ITEMS_REGION_START.length
-  const endIndex = body.indexOf(ITEMS_REGION_END, afterStart)
+  const afterStart = startIndex + startMarker.length
+  const endIndex = body.indexOf(endMarker, afterStart)
   if (endIndex === -1) return null
   return body.slice(afterStart, endIndex)
+}
+
+/** Extract the substring between the receipt region markers, if both present. */
+function extractResultRegion(body: string): string | null {
+  return extractDelimitedRegion(body, RESULT_REGION_START, RESULT_REGION_END)
 }
 
 interface ChecklistCollectResult {
@@ -359,6 +412,101 @@ export function extractItemPrompts(commentBody: string): Map<string, string> {
   }
 
   return prompts
+}
+
+/**
+ * Build the completion-receipt comment body: the `:start`/`:end` delimited
+ * region wrapping the JSON marker, mirroring the decomposition region
+ * convention. `receipt.nonce` is the RAW nonce — callers are responsible for
+ * only calling this from a worker context where posting the raw nonce
+ * publicly is the intended, documented behavior (R6c).
+ */
+export function buildResultMarker(receipt: CrossRepoResult): string {
+  const payload = {
+    correlation_id: receipt.correlationId,
+    nonce: receipt.nonce,
+    status: receipt.status,
+    summary: receipt.summary,
+    ...(receipt.pr === undefined ? {} : {pr: receipt.pr}),
+  }
+  const marker = `<!-- ${RESULT_MARKER_PREFIX}${JSON.stringify(payload)} -->`
+  return [RESULT_REGION_START, marker, RESULT_REGION_END].join('\n')
+}
+
+/**
+ * Parse a single `fro-bot:cross-repo-result {json}` marker out of `scope`,
+ * scanning the WHOLE string (not anchored to region boundaries) so a bare
+ * marker amid prose or inside a fenced block still parses. Returns null when
+ * no such marker is found; throws nothing — malformed JSON/field validation
+ * is the caller's job so "marker found but invalid" and "no marker" stay
+ * distinguishable outcomes.
+ */
+function extractResultMarkerJson(scope: string): string | null {
+  const markerRegex = /<!--\s*fro-bot:cross-repo-result\s([\s\S]*?)-->/g
+  let lastMatch: RegExpExecArray | null = null
+  for (;;) {
+    const match = markerRegex.exec(scope)
+    if (match === null) break
+    lastMatch = match
+  }
+  return lastMatch?.[1] ?? null
+}
+
+function isValidResultPayload(value: unknown): value is {
+  correlation_id: string
+  nonce: string
+  status: ResultStatus
+  summary: string
+  pr?: string
+} {
+  if (value === null || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  if (typeof record.correlation_id !== 'string' || record.correlation_id.length === 0) return false
+  if (typeof record.nonce !== 'string' || record.nonce.length === 0) return false
+  if (typeof record.status !== 'string' || !RESULT_STATUSES.has(record.status as ResultStatus)) return false
+  if (typeof record.summary !== 'string') return false
+  if (record.pr !== undefined && typeof record.pr !== 'string') return false
+  return true
+}
+
+/**
+ * Parse a worker completion-receipt comment body. Prefers the delimited
+ * `cross-repo-result` region when present (mirroring `extractItemsRegion`'s
+ * region-preference); a bare marker without the region still parses via the
+ * body-scan fallback for backward tolerance. Strict on fields: valid JSON,
+ * required `correlation_id` + `nonce` + `status` (status one of the closed
+ * vocabulary) — anything else is `malformed`, distinct from `absent` (no
+ * receipt marker found at all). Returns the RAW nonce as posted; this
+ * function never hashes it or sees a stored `nonceHash` (Unit 4's job).
+ */
+export function parseResult(body: string): ParseResultOutcome {
+  const region = extractResultRegion(body)
+  const scope = region ?? body
+
+  const jsonStr = extractResultMarkerJson(scope)
+  if (jsonStr === null) {
+    return {ok: false, reason: 'absent'}
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch {
+    return {ok: false, reason: 'malformed'}
+  }
+
+  if (!isValidResultPayload(parsed)) {
+    return {ok: false, reason: 'malformed'}
+  }
+
+  const result: CrossRepoResult = {
+    correlationId: parsed.correlation_id,
+    nonce: parsed.nonce,
+    status: parsed.status,
+    summary: parsed.summary,
+    ...(parsed.pr === undefined ? {} : {pr: parsed.pr}),
+  }
+  return {ok: true, result}
 }
 
 /**
