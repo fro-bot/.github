@@ -225,60 +225,116 @@ export function selectStateMarker(comments: TrackerComment[]): MarkerData | null
 
 const CHECKLIST_LINE = /^-\s*\[[ x]\]\s+([\w-]+)\/([\w.-]+): (.+)$/i
 
+/** Loose task-list shape check — anything matching this MUST also satisfy `CHECKLIST_LINE`. */
+const LOOSE_TASK_LIST_PREFIX = /^-\s*\[[ x]\]/i
+
+/** Delimited region the planner emits around its checklist (see `fro-bot.yaml`). Optional. */
+const ITEMS_REGION_START = '<!-- fro-bot:cross-repo-items:start -->'
+const ITEMS_REGION_END = '<!-- fro-bot:cross-repo-items:end -->'
+
 /**
- * Parse a planner checklist comment body into closed-vocabulary items.
- * Grammar: `- [ ] <owner>/<name>: <prompt>` per line. Unrecognized lines →
- * parse error (no items), never free-text passthrough into item fields.
+ * Extract the substring between the delimited region markers, if both are
+ * present in order. Returns null when the region is absent (caller falls
+ * back to scanning the whole body tolerantly).
  */
-export function parseDecomposition(commentBody: string): DecompositionResult {
-  const lines = commentBody
+function extractItemsRegion(body: string): string | null {
+  const startIndex = body.indexOf(ITEMS_REGION_START)
+  if (startIndex === -1) return null
+  const afterStart = startIndex + ITEMS_REGION_START.length
+  const endIndex = body.indexOf(ITEMS_REGION_END, afterStart)
+  if (endIndex === -1) return null
+  return body.slice(afterStart, endIndex)
+}
+
+interface ChecklistCollectResult {
+  ok: boolean
+  items: DispatchItem[]
+}
+
+/**
+ * Scan `scope` line by line: task-list-shaped lines must fully match
+ * `CHECKLIST_LINE` or the whole scan fails malformed; anything else
+ * (prose, headers, HTML, table rows, footers) is skipped. Item ids are
+ * assigned by ORDINAL among collected items, not source line index, so
+ * surrounding prose can shift without changing ids.
+ */
+function collectChecklistItems(scope: string): ChecklistCollectResult {
+  const lines = scope
     .split('\n')
     .map(line => line.trim())
     .filter(line => line.length > 0)
 
-  if (lines.length === 0) {
-    return {ok: false, items: [], error: 'empty decomposition', reason: 'no-items'}
-  }
-
   const items: DispatchItem[] = []
-  for (const [index, line] of lines.entries()) {
+  for (const line of lines) {
+    if (!LOOSE_TASK_LIST_PREFIX.test(line)) continue
+
     const match = CHECKLIST_LINE.exec(line)
-    if (match === null) {
-      return {ok: false, items: [], error: `unrecognized checklist line ${index + 1}: ${line}`, reason: 'malformed'}
-    }
+    if (match === null) return {ok: false, items: []}
     const [, owner, name, prompt] = match
-    if (owner === undefined || name === undefined || prompt === undefined) {
-      return {ok: false, items: [], error: `unrecognized checklist line ${index + 1}: ${line}`, reason: 'malformed'}
-    }
+    if (owner === undefined || name === undefined || prompt === undefined) return {ok: false, items: []}
+
     items.push({
-      id: `item-${index + 1}`,
+      id: `item-${items.length + 1}`,
       target: {owner, name},
       promptHash: createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       status: 'pending',
     })
   }
 
-  if (items.length > MAX_ITEMS_PER_GOAL) {
-    return {
-      ok: false,
-      items: [],
-      error: `item count ${items.length} exceeds cap of ${MAX_ITEMS_PER_GOAL}`,
-      reason: 'too-many-items',
-    }
-  }
-
   return {ok: true, items}
 }
 
 /**
+ * Parse a planner checklist comment body into closed-vocabulary items.
+ * Grammar: `- [ ] <owner>/<name>: <prompt>` per line. Prefers the delimited
+ * `fro-bot:cross-repo-items` region when present; otherwise scans the whole
+ * body tolerantly, skipping non-checklist-shaped prose/HTML lines. A line
+ * that IS task-list-shaped but fails the strict grammar is still a parse
+ * error — never free-text passthrough into item fields.
+ */
+export function parseDecomposition(commentBody: string): DecompositionResult {
+  const region = extractItemsRegion(commentBody)
+  const scope = region ?? commentBody
+
+  const collected = collectChecklistItems(scope)
+  if (!collected.ok) {
+    return {
+      ok: false,
+      items: [],
+      error: 'checklist-shaped line failed to match the required grammar',
+      reason: 'malformed',
+    }
+  }
+
+  if (collected.items.length === 0) {
+    return {ok: false, items: [], error: 'empty decomposition', reason: 'no-items'}
+  }
+
+  if (collected.items.length > MAX_ITEMS_PER_GOAL) {
+    return {
+      ok: false,
+      items: [],
+      error: `item count ${collected.items.length} exceeds cap of ${MAX_ITEMS_PER_GOAL}`,
+      reason: 'too-many-items',
+    }
+  }
+
+  return {ok: true, items: collected.items}
+}
+
+/**
  * Extract a promptHash → raw prompt text map from a planner checklist body,
- * using the same closed-vocabulary grammar as `parseDecomposition`. Pure,
- * no I/O. Used by the dispatch shell to recover the item prompt text for a
- * `DispatchItem` (which stores only the hash) without trusting free text.
+ * using the same closed-vocabulary grammar and region preference as
+ * `parseDecomposition`. Pure, no I/O. Used by the dispatch shell to recover
+ * the item prompt text for a `DispatchItem` (which stores only the hash)
+ * without trusting free text.
  */
 export function extractItemPrompts(commentBody: string): Map<string, string> {
+  const region = extractItemsRegion(commentBody)
+  const scope = region ?? commentBody
+
   const prompts = new Map<string, string>()
-  const lines = commentBody
+  const lines = scope
     .split('\n')
     .map(line => line.trim())
     .filter(line => line.length > 0)
@@ -778,11 +834,12 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
         break
       }
       // The latest bot comment that looks like a checklist but failed to
-      // parse as one (e.g. over the item cap) is a distinct outcome from
-      // "no checklist found at all" — surface it instead of silently
-      // falling through to older comments or bailing indistinguishably.
-      const looksLikeChecklist = comment.body.split('\n').some(line => CHECKLIST_LINE.test(line.trim()))
-      if (looksLikeChecklist && parsed.reason === 'too-many-items') {
+      // parse as one (over the item cap, or a task-list-shaped line that
+      // fails the strict grammar) is a distinct outcome from "no checklist
+      // found at all" — surface it instead of silently falling through to
+      // older comments or bailing indistinguishably.
+      const looksLikeChecklist = comment.body.split('\n').some(line => LOOSE_TASK_LIST_PREFIX.test(line.trim()))
+      if (looksLikeChecklist && (parsed.reason === 'too-many-items' || parsed.reason === 'malformed')) {
         counts.seedRejected = 1
         await writeResult(input.resultPath, {counts})
         return {counts}

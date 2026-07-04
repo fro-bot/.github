@@ -130,11 +130,73 @@ describe('parseDecomposition', () => {
     expect(result.items[0]?.status).toBe('pending')
   })
 
-  it('returns a parse error on malformed input, no items', () => {
+  it('returns no-items for prose with no checklist-shaped lines (tolerant parser skips prose)', () => {
     const result = parseDecomposition('this is not a checklist line')
     expect(result.ok).toBe(false)
     expect(result.items).toHaveLength(0)
+    expect(result.reason).toBe('no-items')
     expect(result.error).toBeDefined()
+  })
+
+  it('returns malformed for a task-list-shaped line that fails the strict grammar', () => {
+    const result = parseDecomposition('- [ ] not-a-valid-target-format do the thing')
+    expect(result.ok).toBe(false)
+    expect(result.items).toHaveLength(0)
+    expect(result.reason).toBe('malformed')
+  })
+
+  it('tolerates surrounding prose, headers, and an HTML details block around a valid checklist', () => {
+    const body = [
+      'This is a clean cross-repo goal: confirm each target README opens with an H1.',
+      '',
+      '## Proposed per-repo work items',
+      '',
+      '- [ ] fro-bot/agent: do the thing',
+      '- [x] marcusrbrown/dotfiles: fix the config',
+      '',
+      '---',
+      '',
+      '<details>',
+      '<summary>Run Summary</summary>',
+      '',
+      '| Field | Value |',
+      '|-------|-------|',
+      '| Event | issues |',
+      '',
+      '</details>',
+    ].join('\n')
+    const result = parseDecomposition(body)
+    expect(result.ok).toBe(true)
+    expect(result.items).toHaveLength(2)
+    expect(result.items[0]?.id).toBe('item-1')
+    expect(result.items[1]?.id).toBe('item-2')
+  })
+
+  it('prefers the delimited region when present, ignoring prose-adjacent noise outside it', () => {
+    const body = [
+      'Prose intro that is not part of the checklist.',
+      '<!-- fro-bot:cross-repo-items:start -->',
+      '- [ ] fro-bot/agent: do the thing',
+      '<!-- fro-bot:cross-repo-items:end -->',
+      'Prose footer, also not part of the checklist.',
+    ].join('\n')
+    const result = parseDecomposition(body)
+    expect(result.ok).toBe(true)
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]?.target).toEqual({owner: 'fro-bot', name: 'agent'})
+  })
+
+  it('assigns ids by ordinal among collected items, not source line index', () => {
+    const body = [
+      'Some prose above the first item.',
+      '- [ ] fro-bot/agent: first item',
+      'Some prose between items.',
+      '- [ ] fro-bot/wiki: second item',
+    ].join('\n')
+    const result = parseDecomposition(body)
+    expect(result.ok).toBe(true)
+    expect(result.items[0]?.id).toBe('item-1')
+    expect(result.items[1]?.id).toBe('item-2')
   })
 
   it('returns a parse error on empty body', () => {
@@ -671,6 +733,33 @@ describe('runDispatch — seeds marker from decomposition checklist', () => {
     const {octokit, comments} = mockOctokit()
     // Over-cap checklist, no existing state marker.
     comments.push({id: 1, body: decomposition, login: 'fro-bot'})
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    const result = await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'nonce-1',
+    })
+
+    expect(result.counts.dispatched).toBe(0)
+    expect(result.counts.seedRejected).toBe(1)
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+
+  it('bails with seedRejected:1 when the latest checklist-shaped comment fails the strict grammar', async () => {
+    const {octokit, comments} = mockOctokit()
+    // Task-list-shaped but the target/prompt grammar is invalid — a visible
+    // rejected seed, not a silent no-op indistinguishable from "no checklist".
+    comments.push({id: 1, body: '- [ ] not-a-valid-target-format do the thing', login: 'fro-bot'})
 
     const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
 
@@ -1490,6 +1579,185 @@ describe('CLI wiring — real collaborators, not stubs', () => {
       expect(listWorkflowRunsForRepo).toHaveBeenCalledWith(
         expect.objectContaining({owner: TARGET_A.owner, repo: TARGET_A.name}),
       )
+    } finally {
+      process.env = originalEnv
+    }
+  })
+})
+
+describe('golden path — real production composition (runDispatchCli then runTrackCli)', () => {
+  // Captured shape of a real planner comment: prose intro, a checklist, prose
+  // footer, and a `<details><summary>Run Summary</summary></details>` block.
+  // This is the exact structure that broke the strict line-by-line parser —
+  // this test drives the REAL production wiring (runDispatchCli/runTrackCli),
+  // not runDispatch with hand-picked collaborators, so a prompt/parser
+  // contract mismatch here can't hide behind a unit-tested island again.
+  const PLANNER_COMMENT = [
+    'This is a clean cross-repo goal: confirm each target README opens with an H1 ... (prose intro paragraph)',
+    '',
+    'Both targets resolve to valid owner-repo entries ... (second prose paragraph)',
+    '',
+    'Proposed per-repo work items:',
+    '',
+    '- [ ] marcusrbrown/sparkle: Read README.md at the repo root. If the first non-blank line is already a top-level # H1, make no change. If no H1 is present, insert a minimal one (# sparkle) as the first line. Open a PR titled docs: ensure README H1 heading; do not touch other content.',
+    '- [ ] marcusrbrown/renovate-config: Read README.md at the repo root. If absent, insert # renovate-config as the first line. Open a PR titled docs: ensure README H1 heading; do not touch other content.',
+    '',
+    'This is a proposal only—no dispatch happened and this run has no dispatch capability.',
+    '',
+    '---',
+    '',
+    '<!-- fro-bot-agent -->',
+    '<details>',
+    '<summary>Run Summary</summary>',
+    '',
+    '| Field | Value |',
+    '|-------|-------|',
+    '| Event | issues |',
+    '| Repository | fro-bot/.github |',
+    '| Run ID | 0000000000 |',
+    '| Cache | hit |',
+    '',
+    '</details>',
+  ].join('\n')
+
+  const GOLDEN_TARGETS: DispatchTarget[] = [
+    {owner: 'marcusrbrown', name: 'sparkle'},
+    {owner: 'marcusrbrown', name: 'renovate-config'},
+  ]
+
+  it('parses the real planner comment shape, seeds+gates+dispatches both items, then closes the issue on success', async () => {
+    const originalEnv = {...process.env}
+    const {writeFile, mkdtemp} = await import('node:fs/promises')
+    const {tmpdir} = await import('node:os')
+    const path = await import('node:path')
+    const dir = await mkdtemp(path.join(tmpdir(), 'cross-repo-dispatch-golden-'))
+    const eventPath = path.join(dir, 'event.json')
+    await writeFile(
+      eventPath,
+      JSON.stringify({
+        label: {name: 'dispatch-approved'},
+        sender: {login: REQUIRED_APPROVER},
+        issue: {number: 42},
+      }),
+    )
+
+    process.env.GITHUB_TOKEN = 'test-token'
+    process.env.GITHUB_REPOSITORY = 'fro-bot/.github'
+    process.env.GITHUB_EVENT_PATH = eventPath
+    process.env.CROSS_REPO_DISPATCH_RESULT_PATH = ''
+
+    try {
+      // ─── Phase 1: runDispatchCli against a fake octokit factory ──────────
+      const {octokit, comments} = mockOctokit()
+      comments.push({id: 1, body: PLANNER_COMMENT, login: 'fro-bot'})
+
+      const createComment = vi.fn(async (params: {owner: string; repo: string; issue_number: number; body: string}) => {
+        const comment = {id: comments.length + 1, body: params.body, login: 'fro-bot'}
+        comments.push(comment)
+        return {data: {id: comment.id}}
+      })
+      const updateComment = vi.fn(async (params: {comment_id: number; body: string}) => {
+        const existing = comments.find(c => c.id === params.comment_id)
+        if (existing !== undefined) existing.body = params.body
+        return {}
+      })
+      const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+      const listForRepo = vi.fn(async () => ({data: [{number: 42}]}))
+
+      const dispatchOctokit = {
+        ...octokit,
+        rest: {
+          ...octokit.rest,
+          issues: {...octokit.rest.issues, createComment, updateComment, listForRepo},
+          actions: {...octokit.rest.actions, createWorkflowDispatch},
+        },
+      }
+
+      await runDispatchCli(async () => dispatchOctokit)
+
+      expect(createComment).toHaveBeenCalledOnce()
+      const seededBody = createComment.mock.calls[0]?.[0]?.body as string
+      expect(seededBody.startsWith(`<!-- ${MARKER_PREFIX}`)).toBe(true)
+
+      expect(createWorkflowDispatch).toHaveBeenCalledTimes(2)
+      for (const target of GOLDEN_TARGETS) {
+        const call = createWorkflowDispatch.mock.calls.find(
+          c =>
+            (c[0] as {owner: string; repo: string}).owner === target.owner &&
+            (c[0] as {repo: string}).repo === target.name,
+        )
+        expect(call).toBeDefined()
+      }
+      const sparkleCall = createWorkflowDispatch.mock.calls.find(
+        c => (c[0] as {repo: string}).repo === 'sparkle',
+      )?.[0] as {inputs: {prompt: string}} | undefined
+      expect(sparkleCall?.inputs.prompt).toContain('insert a minimal one (# sparkle)')
+
+      const renovateCall = createWorkflowDispatch.mock.calls.find(
+        c => (c[0] as {repo: string}).repo === 'renovate-config',
+      )?.[0] as {inputs: {prompt: string}} | undefined
+      expect(renovateCall?.inputs.prompt).toContain('insert # renovate-config')
+
+      // dispatch result is what runDispatchCli wrote via writeResult (stdout);
+      // re-derive counts from the marker state left on the issue instead.
+      const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+      expect(finalMarker).not.toBeNull()
+      const dispatchedItems = finalMarker?.state.items.filter(item => item.status === 'dispatched') ?? []
+      expect(dispatchedItems).toHaveLength(2)
+
+      // ─── Phase 2: runTrackCli against the seeded+dispatched marker ───────
+      const correlationIds = new Map(
+        (finalMarker?.state.items ?? []).map(item => [item.target.name, item.correlationId as string]),
+      )
+
+      const listWorkflowRunsForRepo = vi.fn(async (params: {repo: string}) => ({
+        data: {
+          workflow_runs: [
+            {
+              id: 1,
+              name: null,
+              display_title: `fro-bot (${correlationIds.get(params.repo)})`,
+              status: 'completed',
+              conclusion: 'success',
+            },
+          ],
+        },
+      }))
+      const issuesAndPullRequests = vi.fn(async (params: {q: string}) => {
+        const target = GOLDEN_TARGETS.find(t => params.q.includes(`repo:${t.owner}/${t.name}`))
+        if (target === undefined) return {data: {items: []}}
+        return {
+          data: {
+            items: [
+              {
+                number: 1,
+                state: 'closed',
+                user: {login: 'fro-bot'},
+                pull_request: {merged_at: '2026-07-01T00:00:00Z'},
+              },
+            ],
+          },
+        }
+      })
+      const update = vi.fn(async (_params: unknown) => ({data: {}}))
+
+      const trackListForRepo = vi.fn(async () => ({data: [{number: 42}]}))
+      const trackOctokit = {
+        ...octokit,
+        rest: {
+          ...octokit.rest,
+          issues: {...octokit.rest.issues, listForRepo: trackListForRepo, update},
+          actions: {...octokit.rest.actions, listWorkflowRunsForRepo},
+          search: {...octokit.rest.search, issuesAndPullRequests},
+        },
+      }
+
+      await runTrackCli(async () => trackOctokit)
+
+      expect(update).toHaveBeenCalledWith(expect.objectContaining({issue_number: 42, state: 'closed'}))
+
+      const closedMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+      expect(closedMarker?.state.items.every(item => item.status === 'completed')).toBe(true)
     } finally {
       process.env = originalEnv
     }
