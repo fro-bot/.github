@@ -529,6 +529,90 @@ function isValidResultPayload(value: unknown): value is {
   return true
 }
 
+const VALID_JSON_ESCAPES = new Set(['"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u'])
+const HEX_DIGIT = /[0-9a-f]/i
+
+/**
+ * Repair markdown-style backslash-escapes (`\#`, `` \` ``, `\*`, `\_`, `\[`,
+ * `\]`, etc.) that LLM workers occasionally emit inside JSON string values —
+ * the drift class where an agent markdown-escapes a special character before
+ * realizing it's writing JSON, not prose. Walks `raw` tracking whether the
+ * cursor is inside a double-quoted string (an escaped quote `\"` does not
+ * toggle string state) and only rewrites escapes found INSIDE strings; text
+ * outside strings is passed through untouched.
+ *
+ * Inside a string, for each `\X`:
+ * - a valid JSON escape (`\" \\ \/ \b \f \n \r \t`, or `\u` followed by
+ *   exactly 4 hex digits) is preserved unchanged.
+ * - a malformed `\u` (not followed by 4 hex digits) is left as-is —
+ *   deliberately NOT repaired, so parsing still fails on genuinely broken
+ *   unicode escapes rather than silently guessing at intent.
+ * - a trailing/lone backslash (end of string, or immediately before the
+ *   closing quote) is left as-is for the same reason.
+ * - anything else (`\#`, `` \` ``, `\*`, `\_`, `\[`, `\]`, `\(`, ...) has the
+ *   backslash dropped, keeping the literal character.
+ *
+ * Security note: this only widens which receipts can ATTEMPT JSON.parse.
+ * The three trust gates in `resolveReceipts` (Fro Bot author, correlation_id
+ * maps to a dispatched item, hash(nonce) === nonceHash) run unchanged AFTER
+ * parse — repairing escapes cannot forge a nonce preimage or an author.
+ */
+export function repairJsonStringEscapes(raw: string): string {
+  let result = ''
+  let inString = false
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]
+
+    if (!inString) {
+      result += ch
+      if (ch === '"') inString = true
+      continue
+    }
+
+    if (ch === '"') {
+      inString = false
+      result += ch
+      continue
+    }
+
+    if (ch !== '\\') {
+      result += ch
+      continue
+    }
+
+    const next = raw[i + 1]
+    if (next === undefined) {
+      // Trailing lone backslash: leave as-is, don't invent meaning.
+      result += ch
+      continue
+    }
+
+    if (next === 'u') {
+      const hex = raw.slice(i + 2, i + 6)
+      if (hex.length === 4 && [...hex].every(c => HEX_DIGIT.test(c))) {
+        result += raw.slice(i, i + 6)
+        i += 5
+      } else {
+        // Malformed unicode escape: leave untouched so parse still fails.
+        result += ch
+      }
+      continue
+    }
+
+    if (VALID_JSON_ESCAPES.has(next)) {
+      result += ch + next
+      i += 1
+      continue
+    }
+
+    // Not a valid JSON escape introducer (markdown-style escape): drop the
+    // backslash, keep the literal character.
+    result += next
+    i += 1
+  }
+  return result
+}
+
 /**
  * Parse a worker completion-receipt comment body. Prefers the delimited
  * `cross-repo-result` region when present (mirroring `extractItemsRegion`'s
@@ -552,7 +636,14 @@ export function parseResult(body: string): ParseResultOutcome {
   try {
     parsed = JSON.parse(jsonStr)
   } catch {
-    return {ok: false, reason: 'malformed'}
+    // Strict parse failed — retry once against a repaired copy tolerant of
+    // markdown-style backslash-escapes inside string values (e.g. `\#`). If
+    // this still throws, fall through to the existing `malformed` outcome.
+    try {
+      parsed = JSON.parse(repairJsonStringEscapes(jsonStr))
+    } catch {
+      return {ok: false, reason: 'malformed'}
+    }
   }
 
   if (!isValidResultPayload(parsed)) {
