@@ -16,6 +16,7 @@ import {
   buildMarkerComment,
   computeApprovalFingerprint,
   CROSS_REPO_GOAL_LABEL,
+  extractItemPrompts,
   extractMarker,
   findBotAuthoredPrs,
   findRunByCorrelationId,
@@ -223,6 +224,61 @@ describe('parseDecomposition', () => {
     const result = parseDecomposition('- [ ] not-a-valid-target-format do the thing')
     expect(result.ok).toBe(false)
     expect(result.items).toHaveLength(0)
+  })
+
+  it('accepts `*` and `+` task-list bullets identically to `-`', () => {
+    const body = [
+      'Some prose introducing the plan.',
+      '* [ ] marcusrbrown/sparkle: do thing',
+      'More prose in between items.',
+      '+ [ ] marcusrbrown/renovate-config: do thing',
+      'Trailing prose.',
+    ].join('\n')
+    const result = parseDecomposition(body)
+    expect(result.ok).toBe(true)
+    expect(result.items).toHaveLength(2)
+    expect(result.items[0]?.target).toEqual({owner: 'marcusrbrown', name: 'sparkle'})
+    expect(result.items[1]?.target).toEqual({owner: 'marcusrbrown', name: 'renovate-config'})
+  })
+})
+
+describe('extractItemPrompts', () => {
+  it('round-trips prompts for `*` and `+` bulleted items, matching parseDecomposition hashes', () => {
+    const body = [
+      'Some prose introducing the plan.',
+      '* [ ] marcusrbrown/sparkle: do thing',
+      'More prose in between items.',
+      '+ [ ] marcusrbrown/renovate-config: do thing',
+      'Trailing prose.',
+    ].join('\n')
+    const parsed = parseDecomposition(body)
+    expect(parsed.ok).toBe(true)
+    const prompts = extractItemPrompts(body)
+    for (const item of parsed.items) {
+      expect(prompts.get(item.promptHash)).toBeDefined()
+    }
+    expect(prompts.get(parsed.items[0]?.promptHash ?? '')).toBe('do thing')
+    expect(prompts.get(parsed.items[1]?.promptHash ?? '')).toBe('do thing')
+  })
+
+  it('agrees with parseDecomposition on a checklist-shaped but strictly invalid line: no prompts extracted', () => {
+    const body = '- [ ] bad-target-no-slash do thing'
+    const parsed = parseDecomposition(body)
+    expect(parsed.ok).toBe(false)
+    expect(parsed.reason).toBe('malformed')
+
+    const prompts = extractItemPrompts(body)
+    expect(prompts.size).toBe(0)
+  })
+
+  it('agrees with parseDecomposition when a valid item is mixed with a malformed item: neither is emitted', () => {
+    const body = ['- [ ] fro-bot/agent: do the thing', '- [ ] bad-target-no-slash do the other thing'].join('\n')
+    const parsed = parseDecomposition(body)
+    expect(parsed.ok).toBe(false)
+    expect(parsed.reason).toBe('malformed')
+
+    const prompts = extractItemPrompts(body)
+    expect(prompts.size).toBe(0)
   })
 })
 

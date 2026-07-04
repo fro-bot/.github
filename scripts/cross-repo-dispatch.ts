@@ -223,10 +223,10 @@ export function selectStateMarker(comments: TrackerComment[]): MarkerData | null
   return extractMarker(body)
 }
 
-const CHECKLIST_LINE = /^-\s*\[[ x]\]\s+([\w-]+)\/([\w.-]+): (.+)$/i
+const CHECKLIST_LINE = /^[-*+]\s*\[[ x]\]\s+([\w-]+)\/([\w.-]+): (.+)$/i
 
 /** Loose task-list shape check — anything matching this MUST also satisfy `CHECKLIST_LINE`. */
-const LOOSE_TASK_LIST_PREFIX = /^-\s*\[[ x]\]/i
+const LOOSE_TASK_LIST_PREFIX = /^[-*+]\s*\[[ x]\]/i
 
 /** Delimited region the planner emits around its checklist (see `fro-bot.yaml`). Optional. */
 const ITEMS_REGION_START = '<!-- fro-bot:cross-repo-items:start -->'
@@ -324,22 +324,32 @@ export function parseDecomposition(commentBody: string): DecompositionResult {
 
 /**
  * Extract a promptHash → raw prompt text map from a planner checklist body,
- * using the same closed-vocabulary grammar and region preference as
- * `parseDecomposition`. Pure, no I/O. Used by the dispatch shell to recover
- * the item prompt text for a `DispatchItem` (which stores only the hash)
- * without trusting free text.
+ * using the SAME `collectChecklistItems` helper (region preference + strict
+ * loose-then-strict line classification) as `parseDecomposition`. Pure, no
+ * I/O. If the scope is malformed (a task-list-shaped line fails the strict
+ * grammar), no items are collected and the map is empty — this deliberately
+ * mirrors `parseDecomposition`'s failure rather than silently emitting a
+ * partial map that hides the malformed line. Used by the dispatch shell to
+ * recover the item prompt text for a `DispatchItem` (which stores only the
+ * hash) without trusting free text.
  */
 export function extractItemPrompts(commentBody: string): Map<string, string> {
   const region = extractItemsRegion(commentBody)
   const scope = region ?? commentBody
 
+  const collected = collectChecklistItems(scope)
   const prompts = new Map<string, string>()
+  if (!collected.ok) return prompts
+
+  // Re-derive prompt text alongside the hash `collectChecklistItems` already
+  // computed, using the same line classification so both stay in lockstep.
   const lines = scope
     .split('\n')
     .map(line => line.trim())
     .filter(line => line.length > 0)
 
   for (const line of lines) {
+    if (!LOOSE_TASK_LIST_PREFIX.test(line)) continue
     const match = CHECKLIST_LINE.exec(line)
     if (match === null) continue
     const prompt = match[3]
