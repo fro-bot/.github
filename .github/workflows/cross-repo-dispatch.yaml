@@ -109,6 +109,10 @@ jobs:
           GITHUB_EVENT_PATH: ${{ github.event_path }}
           CROSS_REPO_DISPATCH_APPROVE_LABEL: dispatch-approved
           CROSS_REPO_DISPATCH_RESULT_PATH: ${{ runner.temp }}/cross-repo-dispatch-result.json
+          # Safe to interpolate directly into inline JSON: App installation tokens are
+          # ghs_-prefixed with charset [A-Za-z0-9_], which cannot break JSON quoting or
+          # inject a key. Do not interpolate arbitrary/user-controlled values here without
+          # proper encoding.
           CROSS_REPO_DISPATCH_TARGET_TOKENS: >-
             {"fro-bot":"${{ steps.dispatch-token-fro-bot.outputs.token }}","marcusrbrown":"${{ steps.dispatch-token-marcusrbrown.outputs.token }}"}
         run: node scripts/cross-repo-dispatch.ts dispatch
@@ -242,6 +246,10 @@ jobs:
           GITHUB_TOKEN: ${{ steps.control-plane-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           CROSS_REPO_DISPATCH_RESULT_PATH: ${{ runner.temp }}/cross-repo-dispatch-result.json
+          # Safe to interpolate directly into inline JSON: App installation tokens are
+          # ghs_-prefixed with charset [A-Za-z0-9_], which cannot break JSON quoting or
+          # inject a key. Do not interpolate arbitrary/user-controlled values here without
+          # proper encoding.
           CROSS_REPO_DISPATCH_TARGET_TOKENS: >-
             {"fro-bot":"${{ steps.track-token-fro-bot.outputs.token }}","marcusrbrown":"${{ steps.track-token-marcusrbrown.outputs.token }}"}
         run: node scripts/cross-repo-dispatch.ts track

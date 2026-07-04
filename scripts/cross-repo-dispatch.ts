@@ -1152,6 +1152,14 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
         signals[item.id] = {gateBlocked: true}
         continue
       }
+      // Invariant: this token-gap branch is only safe because the workflow's per-owner
+      // mint steps are NOT continue-on-error — a failed mint fails the whole job, so by
+      // the time this script runs the token map is always fully populated for every
+      // eligible owner. If continue-on-error is ever re-added to the mints (or an owner
+      // is dropped from the mint set while remaining in ELIGIBLE_OWNERS), an
+      // already-dispatched item could be silently re-marked blocked on the next track
+      // pass, overwriting a real completed/failed conclusion. Do not soften the mints
+      // without addressing this.
       if (input.hasTargetToken !== undefined && !input.hasTargetToken(item.target.owner)) {
         signals[item.id] = {gateBlocked: true}
         continue
