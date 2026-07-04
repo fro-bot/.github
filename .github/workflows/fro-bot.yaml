@@ -123,13 +123,21 @@ env:
     format (each line independently parseable):
     - [ ] <owner>/<name>: <prompt>
 
+    Wrap the checklist in a delimited region so the parser can find it
+    precisely even when you also write prose around it:
+
+    <!-- fro-bot:cross-repo-items:start -->
+    - [ ] <owner>/<name>: <prompt>
+    <!-- fro-bot:cross-repo-items:end -->
+
     Rules:
     - <owner>/<name> must be an owner-repo target (`fro-bot/*` or
       `marcusrbrown/*`) present in `metadata/repos.yaml`.
     - <prompt> is the exact task to hand to that repo's worker run — concise,
       concrete, self-contained.
-    - Emit nothing else that looks like a checklist item; free text outside
-      the checklist is fine but must not be mistaken for an item.
+    - Free text outside the delimited region is fine — an intro, an
+      explanation of why each target was chosen, a footer — as long as it
+      doesn't itself look like a checklist item.
     - If the goal cannot be decomposed into owner-repo targets, say so plainly
       instead of inventing items.
 
