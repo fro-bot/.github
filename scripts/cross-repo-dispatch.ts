@@ -754,10 +754,46 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
     author: {login: comment.user?.login ?? ''},
     body: comment.body ?? '',
   }))
-  const marker = selectStateMarker(comments)
+  let marker = selectStateMarker(comments)
   if (marker === null) {
-    await writeResult(input.resultPath, {counts})
-    return {counts}
+    // Cold start: no state marker exists yet. Seed one from the latest
+    // bot-authored decomposition checklist so approving a goal actually
+    // dispatches it instead of silently bailing.
+    const decompositionComment = comments.findLast(comment => {
+      if (!FROBOT_COMMENT_AUTHORS.has(comment.author.login)) return false
+      const parsed = parseDecomposition(comment.body)
+      return parsed.ok && parsed.items.length > 0
+    })
+    if (decompositionComment === undefined) {
+      await writeResult(input.resultPath, {counts})
+      return {counts}
+    }
+    const decomposition = parseDecomposition(decompositionComment.body)
+    if (!decomposition.ok) {
+      await writeResult(input.resultPath, {counts})
+      return {counts}
+    }
+    const seedState: GoalState = {
+      goal: `issue-${issueNumber}`,
+      items: decomposition.items,
+      markerHash: '',
+    }
+    const serializedSeed = serializeMarker(seedState)
+    const seededState: GoalState = {...seedState, markerHash: serializedSeed.hash}
+    const seedCas = await casWriteMarker({
+      octokit: input.octokit,
+      owner: input.repo.owner,
+      repo: input.repo.repo,
+      issueNumber,
+      expectedPriorHash: undefined,
+      nextState: seededState,
+    })
+    if (!seedCas.ok) {
+      counts.casDeferred = 1
+      await writeResult(input.resultPath, {counts})
+      return {counts}
+    }
+    marker = serializedSeed
   }
 
   const prompts = extractItemPrompts(comments.map(comment => comment.body).join('\n'))
