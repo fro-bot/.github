@@ -29,7 +29,7 @@ tags:
 
 The Status Truth loop originally detected drift only through prose extraction: every claim kind in
 `CLAIM_KIND_DEFINITIONS` carries a regex, and `extractStatusTruthClaimsFromText` scans documents
-for claim sentences ("PR #907 is open", "docs/plans/foo.md is complete"). That model is
+for claim sentences (`PR #N is open`, `docs/plans/<name>.md is complete`). That model is
 structurally blind to drift living inside a file rather than in prose about it. Three shipped
 plans sat with stale `status: active` frontmatter for a week while every implementation-unit
 checkbox was checked — no prose claim existed, so no resolver could fire. Signal starvation is the

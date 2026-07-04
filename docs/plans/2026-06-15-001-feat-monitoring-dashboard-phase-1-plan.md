@@ -1,7 +1,8 @@
 ---
 title: 'feat: Fro Bot monitoring dashboard — Phase 1'
 type: feat
-status: code-complete-pending-verification
+status: complete
+completed: 2026-07-04
 date: 2026-06-15
 deepened: 2026-06-15
 reconciled: 2026-06-21
@@ -22,6 +23,13 @@ origin: docs/brainstorms/2026-06-15-monitoring-dashboard-phase-1-requirements.md
 > Those verification steps are owned by the dedicated dashboard + infra sessions; this plan
 > stays `code-complete-pending-verification` until they pass. The unit checkboxes below
 > reflect code-merged status, not operational sign-off.
+>
+> **Closure (2026-07-04).** Marked `complete`: the dashboard has been live at its production
+> domain with continuous releases since late June, and the follow-on hardening, redaction, and
+> deploy-security work proceeded in the dashboard and infra repos' own sessions and reviews.
+> Weeks of production operation superseded the pending-verification posture recorded above;
+> remaining operator-rollout verification is tracked in the gateway rollout tracker, not this
+> plan.
 
 **Target repos:** `fro-bot/dashboard` (net-new, the app) and `marcusrbrown/infra`
 (deploy wiring as `apps/dashboard`). Both need creating. This plan doc lives in
