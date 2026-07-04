@@ -7,7 +7,6 @@ import type {
   GoalState,
   LabeledEventPayload,
   OpenGoalIssue,
-  PrLookupResult,
   TrackerComment,
 } from './cross-repo-dispatch.ts'
 import process from 'node:process'
@@ -21,7 +20,6 @@ import {
   CROSS_REPO_GOAL_LABEL,
   extractItemPrompts,
   extractMarker,
-  findBotAuthoredPrs,
   findRunByCorrelationId,
   findRunConclusion,
   gateTarget,
@@ -37,7 +35,6 @@ import {
   planSnapshot,
   RECEIPT_SLA_MS,
   REQUIRED_APPROVER,
-  resolveItemTerminalState,
   resolveReceipts,
   runDispatch,
   runDispatchCli,
@@ -544,84 +541,6 @@ describe('gateTarget', () => {
   })
 })
 
-describe('resolveItemTerminalState — precedence table', () => {
-  it('gate-block takes precedence over everything', () => {
-    expect(resolveItemTerminalState({gateBlocked: true, runConclusion: 'success'})).toBe('blocked')
-  })
-
-  it('run failure resolves to failed', () => {
-    expect(resolveItemTerminalState({runConclusion: 'failure'})).toBe('failed')
-  })
-
-  it('no run conclusion yet resolves to dispatched (non-terminal)', () => {
-    expect(resolveItemTerminalState({})).toBe('dispatched')
-  })
-
-  it('success with no PR (no-op success) resolves to completed', () => {
-    expect(resolveItemTerminalState({runConclusion: 'success', prs: []})).toBe('completed')
-  })
-
-  it('success with one merged bot PR resolves to completed', () => {
-    expect(
-      resolveItemTerminalState({
-        runConclusion: 'success',
-        prs: [{merged: true, closed: true, authorIsBot: true}],
-      }),
-    ).toBe('completed')
-  })
-
-  it('success with only closed-unmerged bot PRs resolves to failed', () => {
-    expect(
-      resolveItemTerminalState({
-        runConclusion: 'success',
-        prs: [{merged: false, closed: true, authorIsBot: true}],
-      }),
-    ).toBe('failed')
-  })
-
-  it('success with a still-open bot PR resolves to dispatched (non-terminal)', () => {
-    expect(
-      resolveItemTerminalState({
-        runConclusion: 'success',
-        prs: [{merged: false, closed: false, authorIsBot: true}],
-      }),
-    ).toBe('dispatched')
-  })
-
-  it('multi-PR: terminal only when all are terminal, completed if any merged', () => {
-    expect(
-      resolveItemTerminalState({
-        runConclusion: 'success',
-        prs: [
-          {merged: false, closed: true, authorIsBot: true},
-          {merged: true, closed: true, authorIsBot: true},
-        ],
-      }),
-    ).toBe('completed')
-  })
-
-  it('multi-PR: all closed-unmerged resolves to failed', () => {
-    expect(
-      resolveItemTerminalState({
-        runConclusion: 'success',
-        prs: [
-          {merged: false, closed: true, authorIsBot: true},
-          {merged: false, closed: true, authorIsBot: true},
-        ],
-      }),
-    ).toBe('failed')
-  })
-
-  it('a forged non-bot PR is ignored — no-op success completes', () => {
-    expect(
-      resolveItemTerminalState({
-        runConclusion: 'success',
-        prs: [{merged: true, closed: true, authorIsBot: false}],
-      }),
-    ).toBe('completed')
-  })
-})
-
 describe('planDispatch', () => {
   it('skips already-dispatched and terminal items', () => {
     const state = makeState({
@@ -670,10 +589,10 @@ describe('planDispatch', () => {
 })
 
 describe('planSnapshot', () => {
-  it('applies terminal resolution per dispatched item and flags allTerminal', () => {
+  it('applies a gate-block signal per dispatched item and flags allTerminal', () => {
     const state = makeState({items: [makeItem({id: 'a', status: 'dispatched'})], markerHash: 'old'})
-    const result = planSnapshot({state, signals: {a: {runConclusion: 'success', prs: []}}})
-    expect(result.state.items[0]?.status).toBe('completed')
+    const result = planSnapshot({state, signals: {a: {gateBlocked: true}}})
+    expect(result.state.items[0]?.status).toBe('blocked')
     expect(result.allTerminal).toBe(true)
     expect(result.shouldWrite).toBe(true)
   })
@@ -683,7 +602,7 @@ describe('planSnapshot', () => {
       items: [makeItem({id: 'a', status: 'dispatched'}), makeItem({id: 'b', status: 'dispatched'})],
       markerHash: 'old',
     })
-    const result = planSnapshot({state, signals: {a: {runConclusion: 'success', prs: []}}})
+    const result = planSnapshot({state, signals: {a: {gateBlocked: true}}})
     expect(result.allTerminal).toBe(false)
   })
 
@@ -715,7 +634,6 @@ function mockOctokit(
     update?: ReturnType<typeof vi.fn>
     listForRepo?: ReturnType<typeof vi.fn>
     listWorkflowRunsForRepo?: ReturnType<typeof vi.fn>
-    issuesAndPullRequests?: ReturnType<typeof vi.fn>
   } = {},
 ): {octokit: CrossRepoDispatchOctokitClient; comments: MockComment[]} {
   const comments = overrides.comments ?? []
@@ -760,12 +678,6 @@ function mockOctokit(
           vi.fn(async () => ({
             data: {workflow_runs: []},
           }))) as CrossRepoDispatchOctokitClient['rest']['actions']['listWorkflowRunsForRepo'],
-      },
-      search: {
-        issuesAndPullRequests: (overrides.issuesAndPullRequests ??
-          vi.fn(async () => ({
-            data: {items: []},
-          }))) as CrossRepoDispatchOctokitClient['rest']['search']['issuesAndPullRequests'],
       },
     },
   }
@@ -1706,46 +1618,44 @@ function mockOctokitForGoal(goalIssue: OpenGoalIssue, overrides: Parameters<type
   })
 }
 
-describe('runTrack — terminal precedence and closure', () => {
-  it('picks the correct run by correlation-id when a coincidental run shares the epoch window', async () => {
+describe('runTrack — run-lookup is diagnostic-only, never authoritative (Unit 5)', () => {
+  it('a dispatched item with no receipt and pre-SLA is untouched — run-lookup is not consulted at all', async () => {
     const item: DispatchItem = {
       id: 'item-1',
       target: TARGET_A,
-      promptHash: 'abcd1234abcd1234',
+      promptHash: 'h',
       status: 'dispatched',
-      correlationId: 'corr-real',
-      epoch: 1000,
+      correlationId: 'c1',
+      epoch: 0,
     }
-    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
-    const goalIssue = makeOpenGoal(state)
-
-    const findRunConclusion = vi.fn(async (_target: DispatchTarget, correlationId: string) =>
-      correlationId === 'corr-real' ? ('success' as const) : ('failure' as const),
-    )
-
+    const goalIssue = makeOpenGoal({goal: 'g', items: [item], markerHash: ''})
     const {octokit} = mockOctokitForGoal(goalIssue)
+    const findRunConclusion = vi.fn(async () => 'success' as const)
     const result = await runTrack({
       octokit,
       repo: REPO,
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion,
-      findBotAuthoredPrs: async () => [],
-      now: () => 1000,
+      now: () => RECEIPT_SLA_MS - 1,
     })
-
-    expect(findRunConclusion).toHaveBeenCalledWith(TARGET_A, 'corr-real')
-    expect(result.counts.itemsCompleted).toBe(1)
-    expect(result.counts.goalsClosed).toBe(1)
+    // Pre-SLA, no receipt: item stays dispatched (non-terminal), and
+    // run-lookup is never called — it only fires once an item is already
+    // needs-attention/no-receipt.
+    expect(findRunConclusion).not.toHaveBeenCalled()
+    expect(result.counts.itemsCompleted).toBe(0)
+    expect(result.counts.itemsFailed).toBe(0)
+    expect(result.counts.goalsClosed).toBe(0)
   })
 
-  it('run-success with no PR resolves to completed', async () => {
+  it('a concluded run for a no-receipt needs-attention item never flips it terminal, even on run success', async () => {
     const item: DispatchItem = {
       id: 'item-1',
       target: TARGET_A,
       promptHash: 'h',
       status: 'dispatched',
       correlationId: 'c1',
+      epoch: 0,
     }
     const goalIssue = makeOpenGoal({goal: 'g', items: [item], markerHash: ''})
     const {octokit} = mockOctokitForGoal(goalIssue)
@@ -1755,83 +1665,81 @@ describe('runTrack — terminal precedence and closure', () => {
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => 'success',
-      findBotAuthoredPrs: async () => [],
+      now: () => RECEIPT_SLA_MS + 1,
     })
-    expect(result.counts.itemsCompleted).toBe(1)
+    // Past SLA, no receipt -> needs-attention, NOT completed, regardless of
+    // the run-lookup's (diagnostic-only) success conclusion.
+    expect(result.counts.itemsCompleted).toBe(0)
+    expect(result.counts.itemsNeedsAttention).toBe(1)
+    expect(result.counts.goalsClosed).toBe(0)
   })
 
-  it('run-success with a bot-merged PR resolves to completed', async () => {
+  it('diagnostic: a no-receipt needs-attention item with a concluded run is annotated "ran-no-report"', async () => {
     const item: DispatchItem = {
       id: 'item-1',
       target: TARGET_A,
       promptHash: 'h',
       status: 'dispatched',
       correlationId: 'c1',
+      epoch: 0,
     }
     const goalIssue = makeOpenGoal({goal: 'g', items: [item], markerHash: ''})
-    const {octokit} = mockOctokitForGoal(goalIssue)
-    const result = await runTrack({
+    const {octokit, comments} = mockOctokitForGoal(goalIssue)
+    const findRunConclusion = vi.fn(async () => 'success' as const)
+    await runTrack({
       octokit,
       repo: REPO,
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
-      findRunConclusion: async () => 'success',
-      findBotAuthoredPrs: async (): Promise<PrLookupResult[]> => [{merged: true, closed: true, authorIsBot: true}],
+      findRunConclusion,
+      now: () => RECEIPT_SLA_MS + 1,
     })
-    expect(result.counts.itemsCompleted).toBe(1)
+    expect(findRunConclusion).toHaveBeenCalledWith(TARGET_A, 'c1')
+    const markerComment = comments.find(c => c.body.includes('cross-repo-dispatch'))
+    const marker = markerComment === undefined ? null : extractMarker(markerComment.body)
+    const updatedItem = marker?.state.items.find(candidate => candidate.id === 'item-1')
+    expect(updatedItem?.status).toBe('needs-attention')
+    expect(updatedItem?.needsAttentionReason).toBe('no-receipt')
+    expect(updatedItem?.noReceiptDiagnostic).toBe('ran-no-report')
   })
 
-  it('a forged non-bot PR is ignored — no false completion signal from it alone', async () => {
+  it('diagnostic: a no-receipt needs-attention item with no run at all is annotated "never-ran"', async () => {
     const item: DispatchItem = {
       id: 'item-1',
       target: TARGET_A,
       promptHash: 'h',
       status: 'dispatched',
       correlationId: 'c1',
+      epoch: 0,
     }
     const goalIssue = makeOpenGoal({goal: 'g', items: [item], markerHash: ''})
-    const {octokit} = mockOctokitForGoal(goalIssue)
-    const result = await runTrack({
+    const {octokit, comments} = mockOctokitForGoal(goalIssue)
+    const findRunConclusion = vi.fn(async () => undefined)
+    await runTrack({
       octokit,
       repo: REPO,
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
-      findRunConclusion: async () => 'success',
-      findBotAuthoredPrs: async (): Promise<PrLookupResult[]> => [{merged: true, closed: true, authorIsBot: false}],
+      findRunConclusion,
+      now: () => RECEIPT_SLA_MS + 1,
     })
-    // Forged PR is filtered out entirely -> no bot PRs -> no-op success -> completed,
-    // but crucially NOT because the forged PR's merged=true was trusted.
-    expect(result.counts.itemsCompleted).toBe(1)
+    expect(findRunConclusion).toHaveBeenCalledWith(TARGET_A, 'c1')
+    const markerComment = comments.find(c => c.body.includes('cross-repo-dispatch'))
+    const marker = markerComment === undefined ? null : extractMarker(markerComment.body)
+    const updatedItem = marker?.state.items.find(candidate => candidate.id === 'item-1')
+    expect(updatedItem?.status).toBe('needs-attention')
+    expect(updatedItem?.needsAttentionReason).toBe('no-receipt')
+    expect(updatedItem?.noReceiptDiagnostic).toBe('never-ran')
   })
 
-  it('run-success with closed-unmerged PR resolves to failed', async () => {
+  it('run-failure for a no-receipt needs-attention item does not resolve it to failed', async () => {
     const item: DispatchItem = {
       id: 'item-1',
       target: TARGET_A,
       promptHash: 'h',
       status: 'dispatched',
       correlationId: 'c1',
-    }
-    const goalIssue = makeOpenGoal({goal: 'g', items: [item], markerHash: ''})
-    const {octokit} = mockOctokitForGoal(goalIssue)
-    const result = await runTrack({
-      octokit,
-      repo: REPO,
-      loadOpenGoalIssues: async () => [goalIssue],
-      loadRegistry: async () => [gateEntryFor(TARGET_A)],
-      findRunConclusion: async () => 'success',
-      findBotAuthoredPrs: async (): Promise<PrLookupResult[]> => [{merged: false, closed: true, authorIsBot: true}],
-    })
-    expect(result.counts.itemsFailed).toBe(1)
-  })
-
-  it('run-failure resolves to failed', async () => {
-    const item: DispatchItem = {
-      id: 'item-1',
-      target: TARGET_A,
-      promptHash: 'h',
-      status: 'dispatched',
-      correlationId: 'c1',
+      epoch: 0,
     }
     const goalIssue = makeOpenGoal({goal: 'g', items: [item], markerHash: ''})
     const {octokit} = mockOctokitForGoal(goalIssue)
@@ -1841,70 +1749,35 @@ describe('runTrack — terminal precedence and closure', () => {
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => 'failure',
-      findBotAuthoredPrs: async () => [],
+      now: () => RECEIPT_SLA_MS + 1,
     })
-    expect(result.counts.itemsFailed).toBe(1)
+    expect(result.counts.itemsFailed).toBe(0)
+    expect(result.counts.itemsNeedsAttention).toBe(1)
   })
 
-  it('partial completion keeps the issue open (not all terminal)', async () => {
-    const items: DispatchItem[] = [
-      {id: 'item-1', target: TARGET_A, promptHash: 'h1', status: 'dispatched', correlationId: 'c1'},
-      {
-        id: 'item-2',
-        target: {owner: 'fro-bot', name: 'wiki'},
-        promptHash: 'h2',
-        status: 'dispatched',
-        correlationId: 'c2',
-      },
-    ]
-    const goalIssue = makeOpenGoal({goal: 'g', items, markerHash: ''})
+  it('gate-blocked item resolves to blocked without ever consulting run-lookup', async () => {
+    const item: DispatchItem = {
+      id: 'item-1',
+      target: TARGET_A,
+      promptHash: 'h',
+      status: 'dispatched',
+      correlationId: 'c1',
+      epoch: 0,
+    }
+    const goalIssue = makeOpenGoal({goal: 'g', items: [item], markerHash: ''})
     const {octokit} = mockOctokitForGoal(goalIssue)
+    const findRunConclusion = vi.fn(async () => 'success' as const)
     const result = await runTrack({
       octokit,
       repo: REPO,
       loadOpenGoalIssues: async () => [goalIssue],
-      loadRegistry: async () => [gateEntryFor(TARGET_A), gateEntryFor({owner: 'fro-bot', name: 'wiki'})],
-      findRunConclusion: async (_target, correlationId) => (correlationId === 'c1' ? 'success' : undefined),
-      findBotAuthoredPrs: async () => [],
+      loadRegistry: async () => [], // TARGET_A not registered -> ineligible
+      findRunConclusion,
+      now: () => 0,
     })
-    expect(result.counts.itemsCompleted).toBe(1)
-    expect(result.counts.goalsClosed).toBe(0)
-    expect(result.counts.itemsStillOpen).toBe(1)
-  })
-
-  it('all-terminal closes the issue and posts a counts-only summary', async () => {
-    const items: DispatchItem[] = [
-      {id: 'item-1', target: TARGET_A, promptHash: 'h1', status: 'dispatched', correlationId: 'c1'},
-      {
-        id: 'item-2',
-        target: {owner: 'fro-bot', name: 'wiki'},
-        promptHash: 'h2',
-        status: 'dispatched',
-        correlationId: 'c2',
-      },
-    ]
-    const goalIssue = makeOpenGoal({goal: 'g', items, markerHash: ''})
-    const createComment = vi.fn(async (_params: {body: string}) => ({data: {id: 1}}))
-    const updateComment = vi.fn(async (_params: {comment_id: number; body: string}) => ({}))
-    const update = vi.fn(async (_params: unknown) => ({data: {}}))
-    const {octokit} = mockOctokitForGoal(goalIssue, {createComment, updateComment, update})
-    const result = await runTrack({
-      octokit,
-      repo: REPO,
-      loadOpenGoalIssues: async () => [goalIssue],
-      loadRegistry: async () => [gateEntryFor(TARGET_A), gateEntryFor({owner: 'fro-bot', name: 'wiki'})],
-      findRunConclusion: async () => 'success',
-      findBotAuthoredPrs: async () => [],
-    })
+    expect(findRunConclusion).not.toHaveBeenCalled()
+    expect(result.counts.itemsBlocked).toBe(1)
     expect(result.counts.goalsClosed).toBe(1)
-    // The marker comment already exists (seeded) so its update is in-place;
-    // only the closing summary uses createComment (a distinct human-facing artifact).
-    expect(updateComment).toHaveBeenCalledOnce()
-    expect(createComment).toHaveBeenCalledOnce()
-    expect(update).toHaveBeenCalledWith(expect.objectContaining({state: 'closed'}))
-    const summaryBody = createComment.mock.calls[0]?.[0]?.body as string
-    expect(summaryBody).not.toContain('fro-bot/agent')
-    expect(summaryBody).not.toContain('fro-bot/wiki')
   })
 
   it('is idempotent — no signal change yields no write and no comment', async () => {
@@ -1921,7 +1794,6 @@ describe('runTrack — terminal precedence and closure', () => {
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => 'success',
-      findBotAuthoredPrs: async () => [],
     })
     expect(result.counts.idempotentNoop).toBe(1)
     expect(createComment).not.toHaveBeenCalled()
@@ -2161,7 +2033,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
         gateEntryFor({owner: 'fro-bot', name: 'sparkle'}),
       ],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => 1000,
     })
     expect(result.counts.itemsCompleted).toBe(2)
@@ -2181,7 +2052,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => 1000,
     })
     expect(result.counts.itemsCompleted).toBe(0)
@@ -2202,7 +2072,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => 1000,
     })
     expect(result.counts.itemsCompleted).toBe(0)
@@ -2225,7 +2094,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => 1000,
     })
     expect(result.counts.itemsCompleted).toBe(0)
@@ -2245,7 +2113,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => item.epoch ?? 0, // pre-SLA
     })
     expect(result.counts.itemsNeedsAttention).toBe(1)
@@ -2275,7 +2142,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalIssue1],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => 1000,
     })
     expect(result1.counts.itemsCompleted).toBe(0)
@@ -2293,7 +2159,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalIssue2],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => 1000,
     })
     expect(result2.counts.itemsCompleted).toBe(1)
@@ -2317,7 +2182,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalStale],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => RECEIPT_SLA_MS + 1,
     })
     expect(resultStale.counts.itemsNeedsAttention).toBe(1)
@@ -2339,7 +2203,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalFresh],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => RECEIPT_SLA_MS - 1,
     })
     expect(resultFresh.counts.itemsNeedsAttention).toBe(0)
@@ -2359,7 +2222,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalNever],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => RECEIPT_SLA_MS * 100,
     })
     expect(resultNever.counts.itemsNeedsAttention).toBe(0)
@@ -2388,7 +2250,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => 0,
     })
     expect(result.counts.itemsCompleted).toBe(1)
@@ -2410,7 +2271,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A)],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => 1_000_000,
     })
     expect(result.counts.itemsFailed).toBe(1)
@@ -2447,7 +2307,6 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
       loadOpenGoalIssues: async () => [goalIssue],
       loadRegistry: async () => [gateEntryFor(TARGET_A), gateEntryFor({owner: 'fro-bot', name: 'wiki'})],
       findRunConclusion: async () => undefined,
-      findBotAuthoredPrs: async () => [],
       now: () => RECEIPT_SLA_MS + 1,
     })
     expect(result.counts.itemsCompleted).toBe(1)
@@ -2576,36 +2435,6 @@ describe('loadOtherOpenGoalMarkers', () => {
     const result = await loadOtherOpenGoalMarkers(patched.octokit, REPO, 42)
     expect(result).toHaveLength(1)
     expect(result[0]?.goal).toBe('goal-other')
-  })
-})
-
-describe('findBotAuthoredPrs — anti-spoof', () => {
-  it('includes a bot-authored PR carrying the correlation id', async () => {
-    const issuesAndPullRequests = vi.fn(async () => ({
-      data: {
-        items: [{number: 1, state: 'closed', user: {login: 'fro-bot'}, pull_request: {merged_at: '2026-01-01'}}],
-      },
-    }))
-    const {octokit} = mockOctokit({issuesAndPullRequests})
-    const result = await findBotAuthoredPrs(octokit)(TARGET_A, 'corr-1')
-    expect(issuesAndPullRequests).toHaveBeenCalledWith(
-      expect.objectContaining({q: expect.stringContaining('corr-1') as string}),
-    )
-    expect(result).toEqual([{merged: true, closed: true, authorIsBot: true}])
-  })
-
-  it('excludes a forged PR authored by a non-bot login carrying the same correlation id', async () => {
-    const issuesAndPullRequests = vi.fn(async () => ({
-      data: {
-        items: [
-          {number: 1, state: 'closed', user: {login: 'fro-bot'}, pull_request: {merged_at: '2026-01-01'}},
-          {number: 2, state: 'closed', user: {login: 'some-random-user'}, pull_request: {merged_at: '2026-01-01'}},
-        ],
-      },
-    }))
-    const {octokit} = mockOctokit({issuesAndPullRequests})
-    const result = await findBotAuthoredPrs(octokit)(TARGET_A, 'corr-1')
-    expect(result).toHaveLength(1)
   })
 })
 
@@ -2873,13 +2702,16 @@ describe('owner-aware dispatch/track routing — fro-bot and marcusrbrown are se
     expect(result.counts.blocked).toBe(2)
   })
 
-  it('track: listWorkflowRunsForRepo for a marcusrbrown target goes through the marcusrbrown client', async () => {
+  it('track: listWorkflowRunsForRepo (diagnostic run-lookup) for a marcusrbrown target goes through the marcusrbrown client', async () => {
     const item: DispatchItem = {
       id: 'item-1',
       target: TARGET_MARCUSRBROWN,
       promptHash: 'abcd1234abcd1234',
       status: 'dispatched',
       correlationId: 'corr-track-owner-1',
+      // Past SLA with no receipt so the diagnostic run-lookup actually fires
+      // (Unit 5: it is never consulted for a non-needs-attention item).
+      epoch: 0,
     }
     const goalIssue: OpenGoalIssue = {
       issueNumber: 77,
@@ -3140,39 +2972,35 @@ describe('golden path — real production composition (runDispatchCli then runTr
       expect(dispatchedItems).toHaveLength(2)
 
       // ─── Phase 2: runTrackCli against the seeded+dispatched marker ───────
-      const correlationIds = new Map(
-        (finalMarker?.state.items ?? []).map(item => [item.target.name, item.correlationId as string]),
-      )
+      // Unit 5: the receipt is the SOLE completion oracle — run-lookup no
+      // longer resolves terminal state. Simulate each worker posting an
+      // authentic receipt (extracting the correlation id + raw nonce that
+      // were embedded in its dispatch prompt, exactly as a real worker would
+      // read them) instead of relying on the (now diagnostic-only) run/PR path.
+      for (const target of GOLDEN_TARGETS) {
+        const call = createWorkflowDispatch.mock.calls.find(c => (c[0] as {repo: string}).repo === target.name)?.[0] as
+          {inputs: {prompt: string}} | undefined
+        const prompt = call?.inputs.prompt ?? ''
+        const correlationId = /correlation_id: (\S+)/.exec(prompt)?.[1]
+        const nonce = /^nonce: (\S+)$/m.exec(prompt)?.[1]
+        expect(correlationId).toBeDefined()
+        expect(nonce).toBeDefined()
+        comments.push({
+          id: comments.length + 1,
+          login: 'fro-bot',
+          body: buildResultMarker({
+            correlationId: correlationId as string,
+            nonce: nonce as string,
+            status: 'success',
+            summary: `Confirmed README H1 for ${target.name}.`,
+          }),
+        })
+      }
 
-      const listWorkflowRunsForRepo = vi.fn(async (params: {repo: string}) => ({
-        data: {
-          workflow_runs: [
-            {
-              id: 1,
-              name: null,
-              display_title: `fro-bot (${correlationIds.get(params.repo)})`,
-              status: 'completed',
-              conclusion: 'success',
-            },
-          ],
-        },
-      }))
-      const issuesAndPullRequests = vi.fn(async (params: {q: string}) => {
-        const target = GOLDEN_TARGETS.find(t => params.q.includes(`repo:${t.owner}/${t.name}`))
-        if (target === undefined) return {data: {items: []}}
-        return {
-          data: {
-            items: [
-              {
-                number: 1,
-                state: 'closed',
-                user: {login: 'fro-bot'},
-                pull_request: {merged_at: '2026-07-01T00:00:00Z'},
-              },
-            ],
-          },
-        }
-      })
+      // Diagnostic run-lookup collaborator: still wired (R8 keeps `actions:
+      // read`), but never consulted here since every item resolves from its
+      // receipt before it can ever become `needs-attention`/`no-receipt`.
+      const listWorkflowRunsForRepo = vi.fn(async () => ({data: {workflow_runs: []}}))
       const update = vi.fn(async (_params: unknown) => ({data: {}}))
 
       const trackListForRepo = vi.fn(async () => ({data: [{number: 42}]}))
@@ -3182,11 +3010,11 @@ describe('golden path — real production composition (runDispatchCli then runTr
           ...octokit.rest,
           issues: {...octokit.rest.issues, listForRepo: trackListForRepo, update},
           actions: {...octokit.rest.actions, listWorkflowRunsForRepo},
-          search: {...octokit.rest.search, issuesAndPullRequests},
         },
       }
 
       await runTrackCli(async () => trackOctokit, singleOwnerResolver(trackOctokit))
+      expect(listWorkflowRunsForRepo).not.toHaveBeenCalled()
 
       expect(update).toHaveBeenCalledWith(expect.objectContaining({issue_number: 42, state: 'closed'}))
 

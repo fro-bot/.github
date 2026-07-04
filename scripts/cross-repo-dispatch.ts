@@ -36,6 +36,16 @@ export interface DispatchItem {
    * the moment a later authentic well-formed receipt resolves the item.
    */
   needsAttentionReason?: 'no-receipt' | 'unparseable-receipt'
+  /**
+   * Diagnostic-only annotation (Unit 5), set ONLY when
+   * `needsAttentionReason === 'no-receipt'`: whether the demoted run-lookup
+   * collaborator found a concluded run for this item ('ran-no-report') or no
+   * run at all ('never-ran'). NEVER influences terminal/non-terminal state —
+   * receipts (R7), the SLA (R9), and the registry gate are the only state
+   * drivers. Purely forensic signal for the operator (R8: no PR polling for
+   * completion; run-lookup is diagnostic, not authoritative).
+   */
+  noReceiptDiagnostic?: 'ran-no-report' | 'never-ran'
 }
 
 export interface GoalState {
@@ -102,14 +112,6 @@ export interface GateEntry {
   private?: boolean
 }
 
-export interface TerminalStateInput {
-  runConclusion?: 'success' | 'failure'
-  prs?: {merged: boolean; closed: boolean; authorIsBot: boolean}[]
-  gateBlocked?: boolean
-}
-
-export type TerminalState = 'blocked' | 'failed' | 'completed' | 'dispatched'
-
 export interface DispatchPlanInput {
   state: GoalState
   fingerprint: string
@@ -125,8 +127,15 @@ export interface DispatchPlanResult {
   blockedCount: number
 }
 
+/**
+ * Registry-gate signal only (Unit 5): the run/PR terminal-resolution
+ * precedence table is gone — receipts (R7) and the SLA (R9) are applied
+ * directly by `runTrack` before `planSnapshot` runs. The gate is the only
+ * remaining out-of-band signal `planSnapshot` still resolves, because it can
+ * flip an item to `blocked` independent of any receipt.
+ */
 export interface SnapshotSignals {
-  [itemId: string]: TerminalStateInput
+  [itemId: string]: {gateBlocked?: boolean}
 }
 
 export interface SnapshotPlanInput {
@@ -197,6 +206,13 @@ function isDispatchItem(value: unknown): value is DispatchItem {
     record.needsAttentionReason !== undefined &&
     record.needsAttentionReason !== 'no-receipt' &&
     record.needsAttentionReason !== 'unparseable-receipt'
+  ) {
+    return false
+  }
+  if (
+    record.noReceiptDiagnostic !== undefined &&
+    record.noReceiptDiagnostic !== 'ran-no-report' &&
+    record.noReceiptDiagnostic !== 'never-ran'
   ) {
     return false
   }
@@ -704,33 +720,6 @@ export function gateTarget(entry: GateEntry | undefined): GateResult {
   return 'ok'
 }
 
-// ─── Planner: terminal-state resolver ────────────────────────────────────────
-
-/**
- * Precedence: gate-block > run-failure > PR-outcome > run-success.
- * Multi-PR: terminal only when the run has concluded; completed if >=1
- * bot-authored PR merged, else failed if any PR is closed-unmerged, else
- * (no PR) completed as a no-op success.
- */
-export function resolveItemTerminalState(input: TerminalStateInput): TerminalState {
-  if (input.gateBlocked === true) return 'blocked'
-  if (input.runConclusion === 'failure') return 'failed'
-  if (input.runConclusion === undefined) return 'dispatched'
-
-  const prs = input.prs ?? []
-  const botPrs = prs.filter(pr => pr.authorIsBot)
-
-  if (botPrs.length === 0) return 'completed'
-
-  const anyMerged = botPrs.some(pr => pr.merged)
-  if (anyMerged) return 'completed'
-
-  const allTerminalPrs = botPrs.every(pr => pr.merged || pr.closed)
-  if (!allTerminalPrs) return 'dispatched'
-
-  return 'failed'
-}
-
 // ─── Planner: dispatch plan ──────────────────────────────────────────────────
 
 /**
@@ -780,18 +769,19 @@ export function planDispatch(input: DispatchPlanInput): DispatchPlanResult {
 // ─── Planner: snapshot decision ──────────────────────────────────────────────
 
 /**
- * Apply resolveItemTerminalState per dispatched item, compute allTerminal
- * (→ close), and idempotency (identical markerHash → no write).
+ * Apply the registry-gate signal per dispatched item (the only remaining
+ * out-of-band terminal driver — receipts and the SLA are applied by the
+ * caller before this runs; Unit 5 removed the run/PR terminal-resolution
+ * precedence table entirely), compute allTerminal (→ close), and idempotency
+ * (identical markerHash → no write).
  */
 export function planSnapshot(input: SnapshotPlanInput): SnapshotPlanResult {
   const updatedItems = input.state.items.map(item => {
     const signal = input.signals[item.id]
     if (signal === undefined) return item
     if (TERMINAL_STATUSES.has(item.status)) return item
-
-    const resolved = resolveItemTerminalState(signal)
-    if (resolved === item.status) return item
-    return {...item, status: resolved}
+    if (signal.gateBlocked !== true) return item
+    return {...item, status: 'blocked' as ItemStatus}
   })
 
   const updatedState: GoalState = {
@@ -872,18 +862,6 @@ export interface CrossRepoDispatchOctokitClient {
             display_title?: string | null
             status: string | null
             conclusion: string | null
-          }[]
-        }
-      }>
-    }
-    readonly search: {
-      readonly issuesAndPullRequests: (params: {q: string; per_page?: number}) => Promise<{
-        data: {
-          items: {
-            number: number
-            state: string
-            user: {login: string} | null
-            pull_request?: {merged_at: string | null}
           }[]
         }
       }>
@@ -1479,19 +1457,20 @@ export interface OpenGoalIssue {
   marker: MarkerData
 }
 
-export interface PrLookupResult {
-  merged: boolean
-  closed: boolean
-  authorIsBot: boolean
-}
-
 export interface RunTrackInput {
   octokit: CrossRepoDispatchOctokitClient
   repo: RepoRepository
   loadOpenGoalIssues: () => Promise<OpenGoalIssue[]>
   loadRegistry: () => Promise<GateEntry[]>
+  /**
+   * Demoted to a NON-AUTHORITATIVE diagnostic (Unit 5, R8/R9/R12): consulted
+   * ONLY to annotate an already-`needs-attention`/`no-receipt` item with
+   * "ran but didn't report" vs "never ran". Its return value never changes
+   * any item's terminal/non-terminal state — receipts are the sole
+   * completion oracle (R7) and the SLA is the sole `needs-attention` driver
+   * (R9).
+   */
   findRunConclusion: (target: DispatchTarget, correlationId: string) => Promise<'success' | 'failure' | undefined>
-  findBotAuthoredPrs: (target: DispatchTarget, correlationId: string) => Promise<PrLookupResult[]>
   resultPath?: string
   /** Same owner-aware credential check as `RunDispatchInput.hasTargetToken`. */
   hasTargetToken?: (owner: string) => boolean
@@ -1533,12 +1512,15 @@ function emptyTrackCounts(): RunTrackCounts {
 
 /**
  * Tracking shell: resolves each dispatched (or `needs-attention`) item's
- * terminal state from AUTHENTIC completion receipts (R6/R7) — the receipt is
- * the sole completion oracle. The legacy run-lookup/PR-search signal path is
- * still consulted, but ONLY as a fallback for an item with no authentic
- * receipt yet and not past the SLA (kept for now; Unit 5 demotes it to a
- * non-authoritative diagnostic). Closes the coordination issue when every
- * item is terminal (`completed`/`failed`/`blocked`) — `needs-attention` and
+ * terminal state SOLELY from AUTHENTIC completion receipts (R6/R7) plus the
+ * 24h SLA (R9) and the registry gate — the receipt is the sole completion
+ * oracle (R8: no PR polling, no run polling for completion). Run-lookup is
+ * demoted to a NON-AUTHORITATIVE diagnostic (Unit 5): for an item that ends
+ * up `needs-attention`/`no-receipt`, it annotates whether the worker's run
+ * concluded ("ran but didn't report") or never ran ("never ran") — this
+ * NEVER changes terminal/non-terminal state, only the diagnostic detail
+ * surfaced to the operator. Closes the coordination issue when every item is
+ * terminal (`completed`/`failed`/`blocked`) — `needs-attention` and
  * `pending`/`dispatched` keep it open (R11). Reopen is handled by the
  * workflow's `issues.reopened` step, not here.
  */
@@ -1590,10 +1572,9 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       return item
     })
 
-    // Legacy signal path (run-lookup/PR-search): only consulted for items a
-    // receipt did NOT resolve. Kept callable per the Unit 4 scope note —
-    // Unit 5 demotes/removes it — but receipt resolution above always takes
-    // precedence and this path never overrides it.
+    // Registry-gate signal only: the run/PR terminal-resolution precedence
+    // table is gone (R8) — a gate-block is the only remaining out-of-band
+    // driver `planSnapshot` still applies to a non-terminal item.
     const signals: SnapshotSignals = {}
     for (const item of preItems) {
       if (item.status !== 'dispatched') continue
@@ -1613,27 +1594,13 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       // without addressing this.
       if (input.hasTargetToken !== undefined && !input.hasTargetToken(item.target.owner)) {
         signals[item.id] = {gateBlocked: true}
-        continue
       }
-
-      // No authentic receipt and past the confirm-time SLA (R9): surface
-      // needs-attention/no-receipt instead of falling through to the legacy
-      // run+PR signal. An item never confirmed (`epoch` unset) is never
-      // SLA-aged (a pre-confirm crash is a dispatch failure, not an SLA miss).
-      // Handled separately below (`preItemsWithSla`); skip the legacy signal.
-      if (item.epoch !== undefined && now - item.epoch > slaMs) continue
-
-      if (item.correlationId === undefined) continue
-
-      const runConclusion = await input.findRunConclusion(item.target, item.correlationId)
-      if (runConclusion === undefined) continue
-
-      const prs = await input.findBotAuthoredPrs(item.target, item.correlationId)
-      signals[item.id] = {runConclusion, prs}
     }
 
-    // Apply the SLA needs-attention flag directly (bypassing planSnapshot,
-    // which only understands run/PR TerminalStateInput signals).
+    // Apply the SLA needs-attention flag directly (R9). No authentic receipt
+    // and past the confirm-time SLA -> needs-attention/no-receipt. An item
+    // never confirmed (`epoch` unset) is never SLA-aged (a pre-confirm crash
+    // is a dispatch failure, not an SLA miss).
     const preItemsWithSla = preItems.map(item => {
       if (item.status !== 'dispatched') return item
       if (item.epoch !== undefined && now - item.epoch > slaMs) {
@@ -1641,7 +1608,25 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       }
       return item
     })
-    const snapshot = planSnapshot({state: {...state, items: preItemsWithSla}, signals})
+
+    // Diagnostic-only annotation (Unit 5, R8/R9/R12): run-lookup is consulted
+    // ONLY for an item that just became `needs-attention`/`no-receipt`, and
+    // ONLY to distinguish "ran but didn't report" from "never ran" for the
+    // operator. This NEVER changes terminal/non-terminal state — the item
+    // stays `needs-attention` either way.
+    const preItemsWithDiagnostic = await Promise.all(
+      preItemsWithSla.map(async item => {
+        if (item.status !== 'needs-attention' || item.needsAttentionReason !== 'no-receipt') return item
+        if (item.correlationId === undefined) return item
+
+        const runConclusion = await input.findRunConclusion(item.target, item.correlationId)
+        const noReceiptDiagnostic: NonNullable<DispatchItem['noReceiptDiagnostic']> =
+          runConclusion === undefined ? 'never-ran' : 'ran-no-report'
+        return {...item, noReceiptDiagnostic}
+      }),
+    )
+
+    const snapshot = planSnapshot({state: {...state, items: preItemsWithDiagnostic}, signals})
 
     for (const item of snapshot.state.items) {
       const previous = state.items.find(candidate => candidate.id === item.id)
@@ -1801,31 +1786,6 @@ export async function loadOtherOpenGoalMarkers(
     results.push({...marker.state, markerHash: marker.hash})
   }
   return results
-}
-
-/**
- * Factory: `findBotAuthoredPrs` collaborator. Searches for PRs in `target`
- * carrying `correlationId` via the GitHub search API, then keeps only
- * PRs authored by a Fro Bot identity (`FROBOT_COMMENT_AUTHORS`) —
- * the anti-spoofing check that stops a forged non-bot PR referencing the
- * same correlation id from producing a false completion signal.
- */
-export function findBotAuthoredPrs(
-  octokit: CrossRepoDispatchOctokitClient,
-): (target: DispatchTarget, correlationId: string) => Promise<PrLookupResult[]> {
-  return async (target, correlationId) => {
-    const response = await octokit.rest.search.issuesAndPullRequests({
-      q: `repo:${target.owner}/${target.name} type:pr ${correlationId}`,
-      per_page: 30,
-    })
-    return response.data.items
-      .filter(item => FROBOT_COMMENT_AUTHORS.has(item.user?.login ?? ''))
-      .map(item => ({
-        merged: item.pull_request?.merged_at !== null && item.pull_request?.merged_at !== undefined,
-        closed: item.state === 'closed',
-        authorIsBot: true,
-      }))
-  }
 }
 
 // ─── CLI shell ────────────────────────────────────────────────────────────────
@@ -2020,8 +1980,6 @@ export async function runTrackCli(
     loadRegistry: loadRegistryFromDisk,
     findRunConclusion: async (target, correlationId) =>
       findRunConclusion(targetClientFor(target.owner))(target, correlationId),
-    findBotAuthoredPrs: async (target, correlationId) =>
-      findBotAuthoredPrs(targetClientFor(target.owner))(target, correlationId),
     resultPath,
     hasTargetToken,
   })

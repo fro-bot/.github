@@ -205,8 +205,10 @@ jobs:
       # Same two-role split as the dispatch job: a control-plane token
       # (issues:write, scoped to this repo's owner) for marker/close
       # operations in fro-bot/.github, plus a per-owner target token (fro-bot,
-      # marcusrbrown — separate App installations) for listWorkflowRunsForRepo
-      # + PR lookups against each target repo.
+      # marcusrbrown — separate App installations) for listWorkflowRunsForRepo.
+      # Receipts are the sole completion oracle (R7/R8); run-lookup is a
+      # diagnostic-only annotator (Unit 5), so the target token needs only
+      # `actions: read` — no `pull-requests: read` (PR search is removed).
       - name: 🔑 Mint control-plane token
         id: control-plane-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -225,7 +227,6 @@ jobs:
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: fro-bot
           permission-actions: read
-          permission-pull-requests: read
 
       # marcusrbrown is a separate App installation, so its token is minted
       # from the mrbro-bot App credentials (the fro-bot App cannot mint
@@ -238,7 +239,6 @@ jobs:
           private-key: ${{ secrets.MRBRO_BOT_APPLICATION_PRIVATE_KEY }}
           owner: marcusrbrown
           permission-actions: read
-          permission-pull-requests: read
 
       - name: 📡 Track dispatched goal items
         id: track
