@@ -656,6 +656,40 @@ describe('runDispatch — seeds marker from decomposition checklist', () => {
 
     expect(result.counts.dispatched).toBe(0)
     expect(result.counts.refused).toBe(0)
+    expect(result.counts.seedRejected).toBe(0)
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+
+  it('bails with seedRejected:1 when the latest checklist exceeds the item cap', async () => {
+    const targets = Array.from({length: MAX_ITEMS_PER_GOAL + 1}, (_, i) => ({
+      owner: 'fro-bot',
+      name: `repo-${i}`,
+      prompt: `do thing ${i}`,
+    }))
+    const decomposition = makeDecompositionBody(targets)
+
+    const {octokit, comments} = mockOctokit()
+    // Over-cap checklist, no existing state marker.
+    comments.push({id: 1, body: decomposition, login: 'fro-bot'})
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    const result = await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'nonce-1',
+    })
+
+    expect(result.counts.dispatched).toBe(0)
+    expect(result.counts.seedRejected).toBe(1)
     expect(createWorkflowDispatch).not.toHaveBeenCalled()
   })
 })

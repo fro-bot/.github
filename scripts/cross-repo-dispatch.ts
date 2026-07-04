@@ -42,6 +42,8 @@ export interface DecompositionResult {
   ok: boolean
   items: DispatchItem[]
   error?: string
+  /** Machine-checkable failure discriminant, set only when `ok` is false. */
+  reason?: 'too-many-items' | 'no-items' | 'malformed'
 }
 
 export type GateResult = 'ok' | 'blocked-not-onboarded' | 'blocked-ineligible'
@@ -235,18 +237,18 @@ export function parseDecomposition(commentBody: string): DecompositionResult {
     .filter(line => line.length > 0)
 
   if (lines.length === 0) {
-    return {ok: false, items: [], error: 'empty decomposition'}
+    return {ok: false, items: [], error: 'empty decomposition', reason: 'no-items'}
   }
 
   const items: DispatchItem[] = []
   for (const [index, line] of lines.entries()) {
     const match = CHECKLIST_LINE.exec(line)
     if (match === null) {
-      return {ok: false, items: [], error: `unrecognized checklist line ${index + 1}: ${line}`}
+      return {ok: false, items: [], error: `unrecognized checklist line ${index + 1}: ${line}`, reason: 'malformed'}
     }
     const [, owner, name, prompt] = match
     if (owner === undefined || name === undefined || prompt === undefined) {
-      return {ok: false, items: [], error: `unrecognized checklist line ${index + 1}: ${line}`}
+      return {ok: false, items: [], error: `unrecognized checklist line ${index + 1}: ${line}`, reason: 'malformed'}
     }
     items.push({
       id: `item-${index + 1}`,
@@ -257,7 +259,12 @@ export function parseDecomposition(commentBody: string): DecompositionResult {
   }
 
   if (items.length > MAX_ITEMS_PER_GOAL) {
-    return {ok: false, items: [], error: `item count ${items.length} exceeds cap of ${MAX_ITEMS_PER_GOAL}`}
+    return {
+      ok: false,
+      items: [],
+      error: `item count ${items.length} exceeds cap of ${MAX_ITEMS_PER_GOAL}`,
+      reason: 'too-many-items',
+    }
   }
 
   return {ok: true, items}
@@ -698,6 +705,7 @@ export interface RunDispatchCounts {
   reconciled: number
   skippedUnsafePrompt: number
   casDeferred: number
+  seedRejected: number
 }
 
 export interface RunDispatchResult {
@@ -713,6 +721,7 @@ function emptyDispatchCounts(): RunDispatchCounts {
     reconciled: 0,
     skippedUnsafePrompt: 0,
     casDeferred: 0,
+    seedRejected: 0,
   }
 }
 
@@ -759,17 +768,27 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
     // Cold start: no state marker exists yet. Seed one from the latest
     // bot-authored decomposition checklist so approving a goal actually
     // dispatches it instead of silently bailing.
-    const decompositionComment = comments.findLast(comment => {
-      if (!FROBOT_COMMENT_AUTHORS.has(comment.author.login)) return false
+    let decomposition: DecompositionResult | undefined
+    for (let i = comments.length - 1; i >= 0; i -= 1) {
+      const comment = comments[i]
+      if (comment === undefined || !FROBOT_COMMENT_AUTHORS.has(comment.author.login)) continue
       const parsed = parseDecomposition(comment.body)
-      return parsed.ok && parsed.items.length > 0
-    })
-    if (decompositionComment === undefined) {
-      await writeResult(input.resultPath, {counts})
-      return {counts}
+      if (parsed.ok && parsed.items.length > 0) {
+        decomposition = parsed
+        break
+      }
+      // The latest bot comment that looks like a checklist but failed to
+      // parse as one (e.g. over the item cap) is a distinct outcome from
+      // "no checklist found at all" — surface it instead of silently
+      // falling through to older comments or bailing indistinguishably.
+      const looksLikeChecklist = comment.body.split('\n').some(line => CHECKLIST_LINE.test(line.trim()))
+      if (looksLikeChecklist && parsed.reason === 'too-many-items') {
+        counts.seedRejected = 1
+        await writeResult(input.resultPath, {counts})
+        return {counts}
+      }
     }
-    const decomposition = parseDecomposition(decompositionComment.body)
-    if (!decomposition.ok) {
+    if (decomposition === undefined) {
       await writeResult(input.resultPath, {counts})
       return {counts}
     }
