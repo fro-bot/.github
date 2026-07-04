@@ -476,6 +476,13 @@ export interface CrossRepoDispatchOctokitClient {
         issue_number: number
         name: string
       }) => Promise<unknown>
+      readonly listForRepo: (params: {
+        owner: string
+        repo: string
+        labels?: string
+        state?: 'open' | 'closed' | 'all'
+        per_page?: number
+      }) => Promise<{data: {number: number}[]}>
     }
     readonly actions: {
       readonly createWorkflowDispatch: (params: {
@@ -485,6 +492,34 @@ export interface CrossRepoDispatchOctokitClient {
         ref: string
         inputs?: Record<string, string>
       }) => Promise<unknown>
+      readonly listWorkflowRunsForRepo: (params: {
+        owner: string
+        repo: string
+        workflow_id: string
+        per_page?: number
+      }) => Promise<{
+        data: {
+          workflow_runs: {
+            id: number
+            name?: string | null
+            display_title?: string | null
+            status: string | null
+            conclusion: string | null
+          }[]
+        }
+      }>
+    }
+    readonly search: {
+      readonly issuesAndPullRequests: (params: {q: string; per_page?: number}) => Promise<{
+        data: {
+          items: {
+            number: number
+            state: string
+            user: {login: string} | null
+            pull_request?: {merged_at: string | null}
+          }[]
+        }
+      }>
     }
   }
 }
@@ -1041,6 +1076,137 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
   return {counts}
 }
 
+// ─── Production collaborators ─────────────────────────────────────────────────
+
+/** Label marking a coordination issue as a cross-repo goal tracker. */
+export const CROSS_REPO_GOAL_LABEL = 'cross-repo-goal'
+
+/** Bounded page size for recent-run lookups — correlation ids are recent by construction. */
+const RUN_LOOKUP_PAGE_SIZE = 30
+
+/**
+ * Find the `fro-bot.yaml` run in `target` whose run-name/display_title
+ * contains `correlationId`. Matches the echo format in
+ * `.github/workflows/fro-bot.yaml`'s `run-name:` (` (correlationId)` suffix
+ * on manual dispatch runs). Bounded to the most recent runs — a correlation
+ * id is looked up shortly after the dispatch that minted it.
+ */
+export async function findWorkflowRunByCorrelationId(
+  octokit: CrossRepoDispatchOctokitClient,
+  target: DispatchTarget,
+  correlationId: string,
+): Promise<{id: number; status: string | null; conclusion: string | null} | null> {
+  const response = await octokit.rest.actions.listWorkflowRunsForRepo({
+    owner: target.owner,
+    repo: target.name,
+    workflow_id: TARGET_WORKFLOW_ID,
+    per_page: RUN_LOOKUP_PAGE_SIZE,
+  })
+  const match = response.data.workflow_runs.find(run => (run.display_title ?? run.name ?? '').includes(correlationId))
+  if (match === undefined) return null
+  return {id: match.id, status: match.status, conclusion: match.conclusion}
+}
+
+/** Factory: `findRunByCorrelationId` collaborator — run existence, any status. */
+export function findRunByCorrelationId(
+  octokit: CrossRepoDispatchOctokitClient,
+): (target: DispatchTarget, correlationId: string) => Promise<boolean> {
+  return async (target, correlationId) => {
+    const run = await findWorkflowRunByCorrelationId(octokit, target, correlationId)
+    return run !== null
+  }
+}
+
+/** Factory: `findRunConclusion` collaborator — conclusion only once the run has completed. */
+export function findRunConclusion(
+  octokit: CrossRepoDispatchOctokitClient,
+): (target: DispatchTarget, correlationId: string) => Promise<'success' | 'failure' | undefined> {
+  return async (target, correlationId) => {
+    const run = await findWorkflowRunByCorrelationId(octokit, target, correlationId)
+    if (run === null || run.status !== 'completed') return undefined
+    return run.conclusion === 'success' ? 'success' : 'failure'
+  }
+}
+
+/**
+ * Enumerate this repo's OPEN `cross-repo-goal`-labeled issues and resolve
+ * each one's latest bot-authored state marker. Issues without a readable
+ * marker are skipped (nothing to track yet).
+ */
+export async function loadOpenGoalIssues(
+  octokit: CrossRepoDispatchOctokitClient,
+  repo: RepoRepository,
+): Promise<OpenGoalIssue[]> {
+  const issuesResponse = await octokit.rest.issues.listForRepo({
+    owner: repo.owner,
+    repo: repo.repo,
+    labels: CROSS_REPO_GOAL_LABEL,
+    state: 'open',
+    per_page: 100,
+  })
+
+  const results: OpenGoalIssue[] = []
+  for (const issue of issuesResponse.data) {
+    const marker = await readLatestMarker(octokit, repo, issue.number)
+    if (marker === null) continue
+    results.push({issueNumber: issue.number, marker})
+  }
+  return results
+}
+
+/**
+ * Enumerate OTHER open `cross-repo-goal` issues' marker states (excluding
+ * `currentIssueNumber`) for same-target in-flight serialization in
+ * `planDispatch`.
+ */
+export async function loadOtherOpenGoalMarkers(
+  octokit: CrossRepoDispatchOctokitClient,
+  repo: RepoRepository,
+  currentIssueNumber: number,
+): Promise<GoalState[]> {
+  const issuesResponse = await octokit.rest.issues.listForRepo({
+    owner: repo.owner,
+    repo: repo.repo,
+    labels: CROSS_REPO_GOAL_LABEL,
+    state: 'open',
+    per_page: 100,
+  })
+
+  const results: GoalState[] = []
+  for (const issue of issuesResponse.data) {
+    if (issue.number === currentIssueNumber) continue
+    const marker = await readLatestMarker(octokit, repo, issue.number)
+    if (marker === null) continue
+    results.push({...marker.state, markerHash: marker.hash})
+  }
+  return results
+}
+
+/**
+ * Factory: `findBotAuthoredPrs` collaborator. Searches for PRs in `target`
+ * carrying `correlationId` via the GitHub search API, then keeps only
+ * PRs authored by a Fro Bot identity (`FROBOT_COMMENT_AUTHORS`) —
+ * the anti-spoofing check that stops a forged non-bot PR referencing the
+ * same correlation id from producing a false completion signal.
+ */
+export function findBotAuthoredPrs(
+  octokit: CrossRepoDispatchOctokitClient,
+): (target: DispatchTarget, correlationId: string) => Promise<PrLookupResult[]> {
+  return async (target, correlationId) => {
+    const response = await octokit.rest.search.issuesAndPullRequests({
+      q: `repo:${target.owner}/${target.name} type:pr ${correlationId}`,
+      per_page: 30,
+    })
+    return response.data.items
+      .filter(item => FROBOT_COMMENT_AUTHORS.has(item.user?.login ?? ''))
+      .map(item => ({
+        merged: item.pull_request?.merged_at !== null && item.pull_request?.merged_at !== undefined,
+        closed: item.state === 'closed',
+        authorIsBot: true,
+      }))
+  }
+}
+
 // ─── CLI shell ────────────────────────────────────────────────────────────────
 
 async function writeResult(resultPath: string | undefined, result: unknown): Promise<void> {
@@ -1099,7 +1265,9 @@ function parseRepository(raw: string | undefined): RepoRepository {
   return {owner, repo}
 }
 
-async function runDispatchCli(): Promise<void> {
+export async function runDispatchCli(
+  createOctokit: () => Promise<CrossRepoDispatchOctokitClient> = createOctokitFromEnv,
+): Promise<void> {
   const eventPath = process.env.GITHUB_EVENT_PATH
   const approveLabel = process.env.CROSS_REPO_DISPATCH_APPROVE_LABEL ?? 'dispatch-approved'
   const resultPath = process.env.CROSS_REPO_DISPATCH_RESULT_PATH
@@ -1113,7 +1281,7 @@ async function runDispatchCli(): Promise<void> {
   const {readFile} = await import('node:fs/promises')
   const event = JSON.parse(await readFile(eventPath, 'utf8')) as LabeledEventPayload
   const repo = parseRepository(process.env.GITHUB_REPOSITORY)
-  const octokit = await createOctokitFromEnv()
+  const octokit = await createOctokit()
 
   await runDispatch({
     octokit,
@@ -1121,8 +1289,8 @@ async function runDispatchCli(): Promise<void> {
     repo,
     approveLabel,
     loadRegistry: loadRegistryFromDisk,
-    loadOtherOpenGoalMarkers: async () => [],
-    findRunByCorrelationId: async () => false,
+    loadOtherOpenGoalMarkers: async () => loadOtherOpenGoalMarkers(octokit, repo, event.issue.number),
+    findRunByCorrelationId: findRunByCorrelationId(octokit),
     createWorkflowDispatch: async params => {
       await octokit.rest.actions.createWorkflowDispatch(params)
     },
@@ -1131,18 +1299,20 @@ async function runDispatchCli(): Promise<void> {
   })
 }
 
-async function runTrackCli(): Promise<void> {
+export async function runTrackCli(
+  createOctokit: () => Promise<CrossRepoDispatchOctokitClient> = createOctokitFromEnv,
+): Promise<void> {
   const resultPath = process.env.CROSS_REPO_DISPATCH_RESULT_PATH
   const repo = parseRepository(process.env.GITHUB_REPOSITORY)
-  const octokit = await createOctokitFromEnv()
+  const octokit = await createOctokit()
 
   await runTrack({
     octokit,
     repo,
-    loadOpenGoalIssues: async () => [],
+    loadOpenGoalIssues: async () => loadOpenGoalIssues(octokit, repo),
     loadRegistry: loadRegistryFromDisk,
-    findRunConclusion: async () => undefined,
-    findBotAuthoredPrs: async () => [],
+    findRunConclusion: findRunConclusion(octokit),
+    findBotAuthoredPrs: findBotAuthoredPrs(octokit),
     resultPath,
   })
 }

@@ -9,13 +9,20 @@ import type {
   PrLookupResult,
   TrackerComment,
 } from './cross-repo-dispatch.ts'
+import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 
 import {
   buildMarkerComment,
   computeApprovalFingerprint,
+  CROSS_REPO_GOAL_LABEL,
   extractMarker,
+  findBotAuthoredPrs,
+  findRunByCorrelationId,
+  findRunConclusion,
   gateTarget,
+  loadOpenGoalIssues,
+  loadOtherOpenGoalMarkers,
   MARKER_PREFIX,
   MAX_ITEMS_PER_GOAL,
   parseDecomposition,
@@ -24,9 +31,12 @@ import {
   REQUIRED_APPROVER,
   resolveItemTerminalState,
   runDispatch,
+  runDispatchCli,
   runTrack,
+  runTrackCli,
   selectStateMarker,
   serializeMarker,
+  TARGET_WORKFLOW_ID,
 } from './cross-repo-dispatch.ts'
 
 function makeItem(overrides: Partial<DispatchItem> = {}): DispatchItem {
@@ -381,6 +391,9 @@ function mockOctokit(
     createWorkflowDispatch?: ReturnType<typeof vi.fn>
     removeLabel?: ReturnType<typeof vi.fn>
     update?: ReturnType<typeof vi.fn>
+    listForRepo?: ReturnType<typeof vi.fn>
+    listWorkflowRunsForRepo?: ReturnType<typeof vi.fn>
+    issuesAndPullRequests?: ReturnType<typeof vi.fn>
   } = {},
 ): {octokit: CrossRepoDispatchOctokitClient; comments: MockComment[]} {
   const comments = overrides.comments ?? []
@@ -415,10 +428,22 @@ function mockOctokit(
           vi.fn(async () => ({data: {}}))) as CrossRepoDispatchOctokitClient['rest']['issues']['update'],
         removeLabel: (overrides.removeLabel ??
           vi.fn(async () => ({}))) as CrossRepoDispatchOctokitClient['rest']['issues']['removeLabel'],
+        listForRepo: (overrides.listForRepo ??
+          vi.fn(async () => ({data: []}))) as CrossRepoDispatchOctokitClient['rest']['issues']['listForRepo'],
       },
       actions: {
         createWorkflowDispatch: (overrides.createWorkflowDispatch ??
           vi.fn(async () => ({}))) as CrossRepoDispatchOctokitClient['rest']['actions']['createWorkflowDispatch'],
+        listWorkflowRunsForRepo: (overrides.listWorkflowRunsForRepo ??
+          vi.fn(async () => ({
+            data: {workflow_runs: []},
+          }))) as CrossRepoDispatchOctokitClient['rest']['actions']['listWorkflowRunsForRepo'],
+      },
+      search: {
+        issuesAndPullRequests: (overrides.issuesAndPullRequests ??
+          vi.fn(async () => ({
+            data: {items: []},
+          }))) as CrossRepoDispatchOctokitClient['rest']['search']['issuesAndPullRequests'],
       },
     },
   }
@@ -1158,5 +1183,198 @@ describe('counts-only leak check', () => {
     const serialized = JSON.stringify(result.counts)
     expect(serialized).not.toContain('agent')
     expect(serialized).not.toContain('secret')
+  })
+})
+
+// ─── Production collaborator tests ─────────────────────────────────────────────
+
+describe('findRunByCorrelationId / findRunConclusion', () => {
+  it('matches a run whose display_title contains the correlation id, ignoring a coincidental non-matching run', async () => {
+    const listWorkflowRunsForRepo = vi.fn(async () => ({
+      data: {
+        workflow_runs: [
+          {id: 1, display_title: 'Fro Bot (unrelated-id)', status: 'completed', conclusion: 'success'},
+          {id: 2, display_title: 'Fro Bot (corr-real)', status: 'completed', conclusion: 'success'},
+        ],
+      },
+    }))
+    const {octokit} = mockOctokit({listWorkflowRunsForRepo})
+
+    const found = await findRunByCorrelationId(octokit)(TARGET_A, 'corr-real')
+    expect(found).toBe(true)
+    expect(listWorkflowRunsForRepo).toHaveBeenCalledWith(
+      expect.objectContaining({owner: TARGET_A.owner, repo: TARGET_A.name, workflow_id: TARGET_WORKFLOW_ID}),
+    )
+  })
+
+  it('returns false when no run matches the correlation id', async () => {
+    const listWorkflowRunsForRepo = vi.fn(async () => ({
+      data: {workflow_runs: [{id: 1, display_title: 'Fro Bot (other-id)', status: 'completed', conclusion: 'success'}]},
+    }))
+    const {octokit} = mockOctokit({listWorkflowRunsForRepo})
+    expect(await findRunByCorrelationId(octokit)('corr-missing' as unknown as DispatchTarget, 'corr-missing')).toBe(
+      false,
+    )
+  })
+
+  it('findRunConclusion returns undefined while the matched run is not yet completed', async () => {
+    const listWorkflowRunsForRepo = vi.fn(async () => ({
+      data: {workflow_runs: [{id: 1, display_title: 'Fro Bot (corr-1)', status: 'in_progress', conclusion: null}]},
+    }))
+    const {octokit} = mockOctokit({listWorkflowRunsForRepo})
+    expect(await findRunConclusion(octokit)(TARGET_A, 'corr-1')).toBeUndefined()
+  })
+
+  it('findRunConclusion extracts conclusion once the run has completed', async () => {
+    const listWorkflowRunsForRepo = vi.fn(async () => ({
+      data: {workflow_runs: [{id: 1, display_title: 'Fro Bot (corr-1)', status: 'completed', conclusion: 'failure'}]},
+    }))
+    const {octokit} = mockOctokit({listWorkflowRunsForRepo})
+    expect(await findRunConclusion(octokit)(TARGET_A, 'corr-1')).toBe('failure')
+  })
+})
+
+describe('loadOpenGoalIssues', () => {
+  it('enumerates open cross-repo-goal issues and resolves each marker', async () => {
+    const state = makeState({goal: 'goal-a'})
+    const listForRepo = vi.fn(async () => ({data: [{number: 10}]}))
+    const listComments = vi.fn(async () => ({
+      data: [{id: 1, body: buildMarkerComment(state), user: {login: 'fro-bot'}}],
+    }))
+    const {octokit} = mockOctokit({listForRepo})
+    const patched = {...octokit, rest: {...octokit.rest, issues: {...octokit.rest.issues, listComments}}}
+
+    const result = await loadOpenGoalIssues(patched, REPO)
+    expect(listForRepo).toHaveBeenCalledWith(
+      expect.objectContaining({owner: REPO.owner, repo: REPO.repo, labels: CROSS_REPO_GOAL_LABEL, state: 'open'}),
+    )
+    expect(result).toHaveLength(1)
+    expect(result[0]?.issueNumber).toBe(10)
+    expect(result[0]?.marker.state.goal).toBe('goal-a')
+  })
+
+  it('skips issues without a readable bot marker', async () => {
+    const listForRepo = vi.fn(async () => ({data: [{number: 11}]}))
+    const listComments = vi.fn(async () => ({data: [{id: 1, body: 'no marker here', user: {login: 'fro-bot'}}]}))
+    const {octokit} = mockOctokit({listForRepo})
+    const patched = {...octokit, rest: {...octokit.rest, issues: {...octokit.rest.issues, listComments}}}
+    expect(await loadOpenGoalIssues(patched, REPO)).toHaveLength(0)
+  })
+})
+
+describe('loadOtherOpenGoalMarkers', () => {
+  it('excludes the current issue and returns other open goal markers', async () => {
+    const stateOther = makeState({goal: 'goal-other'})
+    const listForRepo = vi.fn(async () => ({data: [{number: 42}, {number: 99}]}))
+    const listComments = vi.fn(async (params: {issue_number: number}) => ({
+      data:
+        params.issue_number === 99
+          ? [{id: 1, body: buildMarkerComment(stateOther), user: {login: 'fro-bot'}}]
+          : [{id: 2, body: buildMarkerComment(makeState({goal: 'current'})), user: {login: 'fro-bot'}}],
+    }))
+    const {octokit} = mockOctokit({listForRepo})
+    const patched = {octokit: {...octokit, rest: {...octokit.rest, issues: {...octokit.rest.issues, listComments}}}}
+
+    const result = await loadOtherOpenGoalMarkers(patched.octokit, REPO, 42)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.goal).toBe('goal-other')
+  })
+})
+
+describe('findBotAuthoredPrs — anti-spoof', () => {
+  it('includes a bot-authored PR carrying the correlation id', async () => {
+    const issuesAndPullRequests = vi.fn(async () => ({
+      data: {
+        items: [{number: 1, state: 'closed', user: {login: 'fro-bot'}, pull_request: {merged_at: '2026-01-01'}}],
+      },
+    }))
+    const {octokit} = mockOctokit({issuesAndPullRequests})
+    const result = await findBotAuthoredPrs(octokit)(TARGET_A, 'corr-1')
+    expect(issuesAndPullRequests).toHaveBeenCalledWith(
+      expect.objectContaining({q: expect.stringContaining('corr-1') as string}),
+    )
+    expect(result).toEqual([{merged: true, closed: true, authorIsBot: true}])
+  })
+
+  it('excludes a forged PR authored by a non-bot login carrying the same correlation id', async () => {
+    const issuesAndPullRequests = vi.fn(async () => ({
+      data: {
+        items: [
+          {number: 1, state: 'closed', user: {login: 'fro-bot'}, pull_request: {merged_at: '2026-01-01'}},
+          {number: 2, state: 'closed', user: {login: 'some-random-user'}, pull_request: {merged_at: '2026-01-01'}},
+        ],
+      },
+    }))
+    const {octokit} = mockOctokit({issuesAndPullRequests})
+    const result = await findBotAuthoredPrs(octokit)(TARGET_A, 'corr-1')
+    expect(result).toHaveLength(1)
+  })
+})
+
+describe('CLI wiring — real collaborators, not stubs', () => {
+  it('runTrackCli invokes octokit issue enumeration (wired loadOpenGoalIssues)', async () => {
+    const originalEnv = {...process.env}
+    process.env.GITHUB_TOKEN = 'test-token'
+    process.env.GITHUB_REPOSITORY = 'fro-bot/.github'
+    process.env.CROSS_REPO_DISPATCH_RESULT_PATH = ''
+    try {
+      const listForRepo = vi.fn(async () => ({data: []}))
+      const {octokit} = mockOctokit({listForRepo})
+      await runTrackCli(async () => octokit)
+      expect(listForRepo).toHaveBeenCalled()
+    } finally {
+      process.env = originalEnv
+    }
+  })
+
+  it('runDispatchCli wires a real findRunByCorrelationId consulted on an intent-resume path', async () => {
+    const originalEnv = {...process.env}
+    const {writeFile, mkdtemp} = await import('node:fs/promises')
+    const {tmpdir} = await import('node:os')
+    const path = await import('node:path')
+    const dir = await mkdtemp(path.join(tmpdir(), 'cross-repo-dispatch-'))
+    const eventPath = path.join(dir, 'event.json')
+    await writeFile(
+      eventPath,
+      JSON.stringify({label: {name: 'dispatch-approved'}, sender: {login: REQUIRED_APPROVER}, issue: {number: 42}}),
+    )
+
+    process.env.GITHUB_TOKEN = 'test-token'
+    process.env.GITHUB_REPOSITORY = 'fro-bot/.github'
+    process.env.GITHUB_EVENT_PATH = eventPath
+    process.env.CROSS_REPO_DISPATCH_RESULT_PATH = ''
+    try {
+      const item: DispatchItem = {
+        id: 'item-1',
+        target: TARGET_A,
+        promptHash: 'abcd1234abcd1234',
+        status: 'intent',
+        correlationId: 'corr-resume-1',
+        nonce: 'nonce-1',
+      }
+      const state: GoalState = {
+        goal: 'goal-1',
+        items: [item],
+        approvalFingerprint: computeApprovalFingerprint([item]),
+        markerHash: '',
+      }
+      const decomposition = '- [ ] fro-bot/agent: do the thing'
+      const {octokit, comments} = mockOctokit()
+      comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+      seedMarkerComment(comments, state)
+
+      const listWorkflowRunsForRepo = vi.fn(async () => ({data: {workflow_runs: []}}))
+      const patched = {
+        ...octokit,
+        rest: {...octokit.rest, actions: {...octokit.rest.actions, listWorkflowRunsForRepo}},
+      }
+
+      await runDispatchCli(async () => patched)
+      expect(listWorkflowRunsForRepo).toHaveBeenCalledWith(
+        expect.objectContaining({owner: TARGET_A.owner, repo: TARGET_A.name}),
+      )
+    } finally {
+      process.env = originalEnv
+    }
   })
 })

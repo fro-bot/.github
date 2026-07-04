@@ -432,7 +432,7 @@ boolean-safe comparisons; mint steps sit after their gates.
 
 | Risk | Mitigation |
 |------|------------|
-| Cross-repo dispatch token over-broad | Per-target `repositories:` mint, narrowest scope, job-scoped, minted only after the actor gate (R14). |
+| Cross-repo dispatch token over-broad | Mint is owner-scoped (`owner: github.repository_owner`, no `repositories:` narrowing), not per-target: the approved target set is data-driven from the bot marker and unknown at YAML mint time, so a static per-target `repositories:` list isn't expressible at mint time. Effective blast radius is bounded instead by the owner-only registry gate (`ELIGIBLE_OWNERS` — only `fro-bot`/`marcusrbrown`-owned, public, onboarded repos ever receive a dispatch) plus the actor+label gate that must pass before mint. Job-scoped, minted only after the actor gate (R14). |
 | Label spoofing / self-approval | Actor-bound gate in BOTH workflow and script (`sender.login == marcusrbrown`), fail-closed label removal (R4). |
 | Prompt injection via public issue | Human approval + bot-marker-only trust + item-prompt policy + owner-only targets (R8/R15/R6). |
 | Duplicate worker runs on crash | Two-phase intent→confirm persistence + correlation-id reconciliation on resume (R7). |
