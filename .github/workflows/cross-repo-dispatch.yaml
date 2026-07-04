@@ -57,29 +57,60 @@ jobs:
           fi
 
       # Mint AFTER the actor+label gate above — a refused event never mints a
-      # cross-repo token. The target set is data-driven from the bot marker at
-      # runtime, so this mint is scoped at the owner level (the App is only
-      # installed on fro-bot/marcusrbrown-owned repos, matching the registry's
-      # owner-only gate) rather than to a static per-target repo list. Narrowest
-      # permission that permits `createWorkflowDispatch` cross-repo: actions:write.
-      - name: 🔑 Mint dispatch token
-        id: app-token
+      # cross-repo token.
+      #
+      # Two credential ROLES, minted separately:
+      #   1. Control plane: scoped to this repo's owner (fro-bot), issues:write
+      #      only — reads/writes the marker comment, removes labels, closes
+      #      the coordination issue. Never used against target repos.
+      #   2. Per-owner dispatch tokens: fro-bot and marcusrbrown are SEPARATE
+      #      App installations, so one token can't span both — a token minted
+      #      for owner X 403s ("Resource not accessible by integration") when
+      #      createWorkflowDispatch targets owner Y's installation. The
+      #      eligible owner set (ELIGIBLE_OWNERS in cross-repo-dispatch.ts) is
+      #      a fixed two, so two explicit mint steps here is correct and
+      #      simplest — no dynamic loop over a data-driven target set.
+      - name: 🔑 Mint control-plane token
+        id: control-plane-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          permission-actions: write
+          repositories: ${{ github.event.repository.name }}
           permission-issues: write
+
+      - name: 🔑 Mint fro-bot dispatch token
+        id: dispatch-token-fro-bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          owner: fro-bot
+          permission-actions: write
+
+      # marcusrbrown is a separate App installation, so its token is minted
+      # from the mrbro-bot App credentials (the fro-bot App cannot mint
+      # tokens for marcusrbrown-owned repos).
+      - name: 🔑 Mint marcusrbrown dispatch token
+        id: dispatch-token-marcusrbrown
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.MRBRO_BOT_APPLICATION_ID }}
+          private-key: ${{ secrets.MRBRO_BOT_APPLICATION_PRIVATE_KEY }}
+          owner: marcusrbrown
+          permission-actions: write
 
       - name: 🚀 Dispatch approved goal items
         id: dispatch
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.control-plane-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
           CROSS_REPO_DISPATCH_APPROVE_LABEL: dispatch-approved
           CROSS_REPO_DISPATCH_RESULT_PATH: ${{ runner.temp }}/cross-repo-dispatch-result.json
+          CROSS_REPO_DISPATCH_TARGET_TOKENS: >-
+            {"fro-bot":"${{ steps.dispatch-token-fro-bot.outputs.token }}","marcusrbrown":"${{ steps.dispatch-token-marcusrbrown.outputs.token }}"}
         run: node scripts/cross-repo-dispatch.ts dispatch
 
       - name: 📋 Write dispatch summary
@@ -167,25 +198,52 @@ jobs:
             echo "data branch not yet established; skipping metadata overlay."
           fi
 
-      # Track needs read access to target-repo runs/PRs plus write access to
-      # this repo's coordination issues (marker writes, close-on-terminal).
-      - name: 🔑 Mint track token
-        id: app-token
+      # Same two-role split as the dispatch job: a control-plane token
+      # (issues:write, scoped to this repo's owner) for marker/close
+      # operations in fro-bot/.github, plus a per-owner target token (fro-bot,
+      # marcusrbrown — separate App installations) for listWorkflowRunsForRepo
+      # + PR lookups against each target repo.
+      - name: 🔑 Mint control-plane token
+        id: control-plane-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+
+      - name: 🔑 Mint fro-bot track token
+        id: track-token-fro-bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          owner: fro-bot
           permission-actions: read
           permission-pull-requests: read
-          permission-issues: write
+
+      # marcusrbrown is a separate App installation, so its token is minted
+      # from the mrbro-bot App credentials (the fro-bot App cannot mint
+      # tokens for marcusrbrown-owned repos).
+      - name: 🔑 Mint marcusrbrown track token
+        id: track-token-marcusrbrown
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.MRBRO_BOT_APPLICATION_ID }}
+          private-key: ${{ secrets.MRBRO_BOT_APPLICATION_PRIVATE_KEY }}
+          owner: marcusrbrown
+          permission-actions: read
+          permission-pull-requests: read
 
       - name: 📡 Track dispatched goal items
         id: track
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.control-plane-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           CROSS_REPO_DISPATCH_RESULT_PATH: ${{ runner.temp }}/cross-repo-dispatch-result.json
+          CROSS_REPO_DISPATCH_TARGET_TOKENS: >-
+            {"fro-bot":"${{ steps.track-token-fro-bot.outputs.token }}","marcusrbrown":"${{ steps.track-token-marcusrbrown.outputs.token }}"}
         run: node scripts/cross-repo-dispatch.ts track
 
       - name: 📋 Write track summary
