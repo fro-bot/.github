@@ -359,6 +359,49 @@ describe('buildResultMarker / parseResult round-trip', () => {
     expect(outcome.ok).toBe(true)
     expect(outcome.result).toEqual(receipt)
   })
+
+  it('parses a receipt whose summary contains a literal --> without truncating the payload', () => {
+    const receipt = makeReceipt({summary: 'see the arrow --> here; no change'})
+    const outcome = parseResult(buildResultMarker(receipt))
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result).toEqual(receipt)
+  })
+
+  it('tracks string scope correctly when an escaped quote precedes an in-string -->', () => {
+    const receipt = makeReceipt({summary: String.raw`note \"quoted\" then --> an arrow`})
+    const outcome = parseResult(buildResultMarker(receipt))
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result).toEqual(receipt)
+  })
+
+  it('still applies last-marker-wins when the winning payload contains a literal -->', () => {
+    const bareMarker = (receipt: CrossRepoResult) =>
+      `<!-- fro-bot:cross-repo-result ${JSON.stringify({
+        correlation_id: receipt.correlationId,
+        nonce: receipt.nonce,
+        status: receipt.status,
+        summary: receipt.summary,
+      })} -->`
+    const first = makeReceipt({correlationId: 'first-marker', summary: 'first'})
+    const second = makeReceipt({correlationId: 'second-marker', summary: 'second --> arrow'})
+    const body = `Some prose.\n${bareMarker(first)}\n${bareMarker(second)}\nMore prose.`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(true)
+    expect(outcome.result?.correlationId).toBe('second-marker')
+    expect(outcome.result?.summary).toBe('second --> arrow')
+  })
+
+  it('treats a marker with no closing --> at all as absent', () => {
+    const body = `<!-- fro-bot:cross-repo-result ${JSON.stringify({
+      correlation_id: 'abc',
+      nonce: 'n',
+      status: 'success',
+      summary: 'unterminated',
+    })}`
+    const outcome = parseResult(body)
+    expect(outcome.ok).toBe(false)
+    expect(outcome.reason).toBe('absent')
+  })
 })
 
 describe('parseResult — malformed vs absent', () => {

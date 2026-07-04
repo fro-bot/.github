@@ -484,16 +484,69 @@ export function buildResultMarker(receipt: CrossRepoResult): string {
  * no such marker is found; throws nothing — malformed JSON/field validation
  * is the caller's job so "marker found but invalid" and "no marker" stay
  * distinguishable outcomes.
+ *
+ * The `-->` terminator is string-aware: a `-->` that appears inside a
+ * double-quoted JSON string value (e.g. a `summary` containing a literal
+ * arrow) does not close the marker — only an out-of-string `-->` does. This
+ * mirrors `repairJsonStringEscapes`'s string-scope discipline: a string is
+ * entered on `"`, exited on an unescaped `"`, and `\"`/`\\` inside a string
+ * do not toggle scope. If an occurrence's prefix is found but no
+ * out-of-string `-->` follows before the end of `scope`, that occurrence is
+ * treated as an incomplete marker (skipped), matching how the old
+ * non-greedy regex would simply fail to match it.
  */
-function extractResultMarkerJson(scope: string): string | null {
-  const markerRegex = /<!--\s*fro-bot:cross-repo-result\s([\s\S]*?)-->/g
-  let lastMatch: RegExpExecArray | null = null
-  for (;;) {
-    const match = markerRegex.exec(scope)
-    if (match === null) break
-    lastMatch = match
+const MARKER_PREFIX_REGEX = /<!--\s*fro-bot:cross-repo-result\s/g
+
+function findMarkerTerminator(scope: string, payloadStart: number): number | null {
+  let inString = false
+  // Fallback for genuinely malformed JSON (e.g. an unterminated string that
+  // never closes before EOF): if no out-of-string `-->` is ever found, fall
+  // back to the first literal `-->` regardless of string state, mirroring
+  // the old non-greedy-regex behavior so such payloads still reach
+  // JSON.parse and surface as `malformed` rather than vanishing into
+  // `absent`. A marker with no `-->` anywhere remains a true `absent`.
+  let naiveFallback: number | null = null
+
+  for (let i = payloadStart; i < scope.length; i++) {
+    const ch = scope[i]
+    const atArrow = ch === '-' && scope.startsWith('-->', i)
+
+    if (atArrow && naiveFallback === null) naiveFallback = i
+
+    if (inString) {
+      if (ch === '\\') {
+        // Skip the escaped character so `\"` and `\\` don't toggle/confuse scope.
+        i += 1
+        continue
+      }
+      if (ch === '"') inString = false
+      continue
+    }
+
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+
+    if (atArrow) return i
   }
-  return lastMatch?.[1] ?? null
+  return naiveFallback
+}
+
+function extractResultMarkerJson(scope: string): string | null {
+  let lastPayload: string | null = null
+  MARKER_PREFIX_REGEX.lastIndex = 0
+  for (;;) {
+    const match = MARKER_PREFIX_REGEX.exec(scope)
+    if (match === null) break
+
+    const payloadStart = match.index + match[0].length
+    const terminatorIndex = findMarkerTerminator(scope, payloadStart)
+    if (terminatorIndex === null) continue
+
+    lastPayload = scope.slice(payloadStart, terminatorIndex)
+  }
+  return lastPayload
 }
 
 /**
