@@ -1,0 +1,217 @@
+---
+name: Cross-Repo Dispatch
+
+on:
+  issues:
+    types: [labeled, reopened]
+  schedule:
+    - cron: '0 */6 * * *' # Every 6 hours
+  workflow_dispatch:
+
+# Default permissions: read-only. Each job mints its own scoped write token
+# after its own gate passes (least-privilege, mint-time scoping).
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-repo-dispatch
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Dispatch job: actor+label-bound control plane for approved goal
+  # decompositions. Gate is boolean-safe (string equality) and fail-closed —
+  # only the operator (`marcusrbrown`) applying the approve label triggers a mint + dispatch.
+  # The script re-checks sender.login independently (defense in depth).
+  # ---------------------------------------------------------------------------
+  dispatch:
+    name: Dispatch approved goal items
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'dispatch-approved' &&
+      github.event.sender.login == 'marcusrbrown'
+    permissions:
+      contents: read
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # Overlay metadata/repos.yaml from the data branch so the registry gate
+      # (owner-only, has_fro_bot_workflow, public) reads live state.
+      - name: ⤵ Overlay metadata from data branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch --no-tags origin data
+            git checkout origin/data -- metadata/
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
+      # Mint AFTER the actor+label gate above — a refused event never mints a
+      # cross-repo token. The target set is data-driven from the bot marker at
+      # runtime, so this mint is scoped at the owner level (the App is only
+      # installed on fro-bot/marcusrbrown-owned repos, matching the registry's
+      # owner-only gate) rather than to a static per-target repo list. Narrowest
+      # permission that permits `createWorkflowDispatch` cross-repo: actions:write.
+      - name: 🔑 Mint dispatch token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-actions: write
+          permission-issues: write
+
+      - name: 🚀 Dispatch approved goal items
+        id: dispatch
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          CROSS_REPO_DISPATCH_APPROVE_LABEL: dispatch-approved
+          CROSS_REPO_DISPATCH_RESULT_PATH: ${{ runner.temp }}/cross-repo-dispatch-result.json
+        run: node scripts/cross-repo-dispatch.ts dispatch
+
+      - name: 📋 Write dispatch summary
+        if: always()
+        env:
+          CROSS_REPO_DISPATCH_RESULT_PATH: ${{ runner.temp }}/cross-repo-dispatch-result.json
+        run: |
+          set -euo pipefail
+          result="$CROSS_REPO_DISPATCH_RESULT_PATH"
+
+          {
+            echo "## Cross-Repo Dispatch Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$result" ]]; then
+              echo "| Refused | $(jq '.counts.refused // 0' "$result") |"
+              echo "| Dispatched | $(jq '.counts.dispatched // 0' "$result") |"
+              echo "| Deferred | $(jq '.counts.deferred // 0' "$result") |"
+              echo "| Blocked | $(jq '.counts.blocked // 0' "$result") |"
+              echo "| Reconciled | $(jq '.counts.reconciled // 0' "$result") |"
+              echo "| Skipped unsafe prompt | $(jq '.counts.skippedUnsafePrompt // 0' "$result") |"
+              echo "| CAS deferred | $(jq '.counts.casDeferred // 0' "$result") |"
+            else
+              echo "| Status | (dispatch result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Reopen job: an issue reopened while still carrying the approve label
+  # produces no new `labeled` event, so recovery would stall. Removing the
+  # label here (and letting the marker's approval record go stale) forces
+  # the operator's re-approval to fire a fresh `labeled` event under a new
+  # fingerprint.
+  # ---------------------------------------------------------------------------
+  reopen:
+    name: Clear approval on reopen
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'issues' && github.event.action == 'reopened'
+    permissions:
+      issues: write
+    steps:
+      - name: 🧹 Remove approve label if present
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          APPROVE_LABEL: dispatch-approved
+        run: |
+          set -euo pipefail
+          if gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
+            --jq '.labels[].name' | grep -qxF "$APPROVE_LABEL"; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --remove-label "$APPROVE_LABEL"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Track job: periodic snapshot of dispatched goal items to terminal state,
+  # closing coordination issues once every item settles.
+  # ---------------------------------------------------------------------------
+  track:
+    name: Track dispatched goal items
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: ⤵ Overlay metadata from data branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch --no-tags origin data
+            git checkout origin/data -- metadata/
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
+      # Track needs read access to target-repo runs/PRs plus write access to
+      # this repo's coordination issues (marker writes, close-on-terminal).
+      - name: 🔑 Mint track token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-actions: read
+          permission-pull-requests: read
+          permission-issues: write
+
+      - name: 📡 Track dispatched goal items
+        id: track
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CROSS_REPO_DISPATCH_RESULT_PATH: ${{ runner.temp }}/cross-repo-dispatch-result.json
+        run: node scripts/cross-repo-dispatch.ts track
+
+      - name: 📋 Write track summary
+        if: always()
+        env:
+          CROSS_REPO_DISPATCH_RESULT_PATH: ${{ runner.temp }}/cross-repo-dispatch-result.json
+        run: |
+          set -euo pipefail
+          result="$CROSS_REPO_DISPATCH_RESULT_PATH"
+
+          {
+            echo "## Cross-Repo Track Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$result" ]]; then
+              echo "| Goals processed | $(jq '.counts.goalsProcessed // 0' "$result") |"
+              echo "| Items completed | $(jq '.counts.itemsCompleted // 0' "$result") |"
+              echo "| Items failed | $(jq '.counts.itemsFailed // 0' "$result") |"
+              echo "| Items blocked | $(jq '.counts.itemsBlocked // 0' "$result") |"
+              echo "| Items still open | $(jq '.counts.itemsStillOpen // 0' "$result") |"
+              echo "| Goals closed | $(jq '.counts.goalsClosed // 0' "$result") |"
+              echo "| Idempotent no-op | $(jq '.counts.idempotentNoop // 0' "$result") |"
+              echo "| CAS deferred | $(jq '.counts.casDeferred // 0' "$result") |"
+            else
+              echo "| Status | (track result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

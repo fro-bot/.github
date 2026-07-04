@@ -44,3 +44,9 @@ labels:
   - name: learning-proposal
     color: '#0e8a16'
     description: Candidate learning proposed from a multi-round-review PR
+  - name: cross-repo-goal
+    color: '#1d76db'
+    description: Coordination issue describing a goal spanning multiple repos
+  - name: dispatch-approved
+    color: '#0e8a16'
+    description: Operator-applied approval that dispatches the proposed items
