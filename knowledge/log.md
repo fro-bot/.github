@@ -2603,3 +2603,29 @@ Sources: https://github.com/bfra-me/renovate-action (SHA 5ad371e079f747400f6ffdd
 Surveyed bfra-me/renovate-action and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/renovate-action
+
+## [2026-07-05 09:00] ingest | repo:marcusrbrown/vbs
+
+Survey of `marcusrbrown/vbs` (HEAD `5d31481`, last push 2026-07-04, up from `85df074` 2026-06-21). Reads limited per the untrusted-input constraint: repo metadata, root + `.github/workflows` directory listings, `README`/`package.json`/`pnpm-workspace.yaml`/`.github/renovate.json5`/`fro-bot.yaml`, `compare` commit range, and open PR/issue counts via `gh`.
+
+34 commits over ~13 days. Dependency-autopilot dominates, but this delta carries the most non-Renovate structural signal since the late-May CI consolidation:
+
+- **pnpm v10 → v11 major boundary crossed** (10.34.3 → 11.9.0; #640/#642/#644, `[SECURITY]`) — VBS joins the fleet-wide pnpm 10→11 cut already logged across bfra-me/.github, bfra-me/renovate-action, marcusrbrown/containers, marcusrbrown/extend-vscode.
+- **Bare-prompt `workflow_dispatch` fix (PR #662, Marcus-authored)** — a dispatch passing only `prompt` (no `mode`) had its prompt discarded and fell through to autoheal; fix lets a non-empty `inputs.prompt` win first. Surfaced from cross-repo goal dispatch (universal `prompt`, no per-repo `mode`). Only human-authored commit in the delta. Candidate to propagate across sibling unified-workflow repos.
+- **`fast-uri` security override (PR #655, fro-bot)** — first `overrides` block in `pnpm-workspace.yaml` (`fast-uri: ^3.1.3`) remediating two High Dependabot alerts (GHSA-q3j6-qgpj-74h6, GHSA-v39h-62p7-jpjc) in the `ajv` ← `eslint-plugin-json-schema-validator` ← `@bfra.me/eslint-config` chain. Matches the ecosystem fro-bot-drives-override-remediation pattern.
+- **AGENTS.md-drift docs PRs merged (#626 + #645, fro-bot)** — autoheal "AGENTS.md accuracy" fixes landed; #626 was the open docs PR flagged at the prior survey.
+- **Star Trek data PR #618 merged** — no perpetual data PR currently open.
+
+Renovate cadence: agent v0.73.0 → v0.83.0 (SHA-pinned `844e0ea…` in `fro-bot.yaml`), Renovate preset #5.2.3 → #5.2.4, prettier 3.8.4 → 3.9.4 (3.8→3.9 boundary), vite 7.3.5 → 7.3.6, `bfra-me/.github` → v4.16.31. bfra-me tooling pins + vitest 4.1.9 steady.
+
+Activity shape: open PRs 2 → 0 (clean surface), open issues 12 → 15, stars 2 (unchanged), 7 workflows (unchanged), `fro-bot.yaml` present and active — no onboarding follow-up needed. No license file at root (only `license: MIT` in package.json) — carried forward, no contradiction.
+
+Updated repo page `marcusrbrown--vbs.md` (new source `5d31481`, frontmatter `updated`, Overview, Fro Bot Integration + new bare-prompt-dispatch subsection, Developer Tooling + pnpm overrides note, Survey History table + full 2026-07-05 delta section). Updated `index.md` summary line. No new topic/entity/comparison page warranted — pnpm major, agent-version churn, and override-remediation are all covered by existing pages and cross-linked to [[marcusrbrown--tokentoilet]], [[marcusrbrown--mrbro-dev]], [[bfra-me--works]], [[bfra-me--github]]. Wikilinks kept valid.
+
+Sources: https://github.com/marcusrbrown/vbs (SHA 5d3148144fa0edc1cad47439049f159021695e9e)
+
+## [2026-07-05 08:24] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs
