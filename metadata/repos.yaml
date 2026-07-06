@@ -118,12 +118,12 @@ repos:
     name: marcusrbrown
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-22
+    last_survey_at: 2026-07-06
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-24
+    next_survey_eligible_at: 2026-08-07
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
     database_id: 319928661
