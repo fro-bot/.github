@@ -131,12 +131,12 @@ repos:
     name: marcusrbrown.github.io
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-23
-    last_survey_status: success
+    last_survey_at: 2026-07-06
+    last_survey_status: failure
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-07-26
+    next_survey_eligible_at: 2026-08-06
     private: false
     node_id: R_kgDOPOkk2A
     database_id: 1021912280
