@@ -2619,3 +2619,23 @@ Sources: https://github.com/bfra-me/works (SHA b00229cd6d867af898ecda6b812c44391
 Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-07-06 09:13] ingest | repo:marcusrbrown/marcusrbrown
+
+Seventh survey of `marcusrbrown/marcusrbrown` (HEAD `08bd1ad`, last push 2026-07-06, up from `3ed89ff` 2026-06-22). Reads limited per the untrusted-input constraint: repo metadata, root + `.github/workflows` directory listings, `package.json`, `.mise.toml`, `pnpm-workspace.yaml`, `.github/renovate.json5`, `renovate.yaml`, `fro-bot.yaml`, plus open issue/PR listings and the last 30 commits via `gh`.
+
+Headline breaks the three-survey pure-treadmill run with two structural shifts. **(1) pnpm crossed the 10 → 11 major boundary (10.34.4 → 11.9.0)** via a `[SECURITY]`-labeled Renovate chain (#1021/#1024/#1025, 2026-06-27), matching the fleet-wide cut in [[bfra-me--works]], [[bfra-me--renovate-action]], [[marcusrbrown--containers]]. **(2) A root `pnpm-workspace.yaml` appeared** carrying `allowBuilds`/`onlyBuiltDependencies` (`esbuild`, `simple-git-hooks`, `unrs-resolver`), `shamefullyHoist: true`, `savePrefix: ''`, and a GHSA-annotated security-override ledger — `vite 7.3.6` (five advisories), `postcss >=8.5.10`, `picomatch >=4.0.4 || >=2.3.2 <3`, `fast-uri >=3.1.2`, with the pre-existing `jiti <2.8.0` pin relocated in. This is the same `pnpm-workspace.yaml`-as-override-ledger pattern pioneered by [[marcusrbrown--mrbro-dev]] (2026-06-02), now spreading across the profile-repo cluster. A direct `fix(security)` commit #1038 (vite 7.3.6) accompanies it — a live example of the autoheal dependency-ownership carve-out (Renovate owns routine bumps; confirmed high-severity advisories permit manual/agent version changes), though committed as a labeled `fix` rather than an autoheal PR so authorship isn't graph-confirmable.
+
+Other deltas: `fro-bot/agent` v0.75.0 → **v0.83.1** (`d1786f3`, ~16 bumps #1017–#1050, still SHA-pinned, ecosystem co-leader); **Prettier 3.8.4 → 3.9.4** (minor boundary #1032/#1041/#1043); renovate-config `#5.2.3 → #5.2.4`; `bfra-me/.github` v4.16.27 → v4.16.34; Node 24.17.0 → 24.18.0; tsx 4.22.4 → 4.22.5; `actions/cache` v5.1.0. **First `fro-bot.yaml` body change since the 2026-06-02 onboarding**: #1045 added a bare-`workflow_dispatch`-prompt fallback (a dispatch carrying `inputs.prompt` now resolves regardless of `mode`), and `marcusrbrown/mrbro.dev` joined the cross-project intelligence focus-repo list — the prompt-hardening loop with [[marcusrbrown--mrbro-dev]] now runs bidirectionally. Crons (04:30 / 16:30 UTC), fork-head refusal, `IS_SUNDAY_UTC` gate, `persist-credentials: false` otherwise unchanged.
+
+Operational: maintenance issue #936 **reopened** (both #936 and #926 now open — the "exactly one open maintenance issue" contract is satisfied again), reversing the 2026-06-22 closed state. The three-survey history (churning → closed → reopened) confirms this surface is unstable, exactly the schedule-concurrency TOCTOU tracker #925 flagged. New autoheal-surfaced issue **#1039** (`llms.txt drift: several files missing from project map`, fro-bot-authored 2026-07-02) — a concrete actionable finding. Generated-content PR rotated #1007 → #1048 (`build/update-readme`, `mrbro-bot[bot]`). Fro Bot workflow present and active — no onboarding follow-up needed.
+
+Updated repo page `marcusrbrown--marcusrbrown.md` (new source `08bd1ad`, frontmatter `updated`, Overview/Developer-Tooling/Fro-Bot-Integration/Version-Comparison/Survey-History) and made an additive currency pass on [[marcusrbrown--mrbro-dev]] (override-ledger now a cluster pattern; frontmatter `updated`). Updated `index.md` summary line. No new topic/entity/comparison page warranted — survey surfaced a fleet-wide pnpm major and a spreading override-ledger convention, both covered by existing pages. Cross-refs to [[marcusrbrown--mrbro-dev]], [[marcusrbrown--ha-config]], [[marcusrbrown--github]], [[fro-bot--agent]], [[bfra-me--works]], [[bfra-me--renovate-action]], [[marcusrbrown--containers]], [[github-actions-ci]] kept valid.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown (SHA 08bd1ad6665563867e17d174a098ce9cf1a39ddc)
+
+## [2026-07-06 09:16] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown

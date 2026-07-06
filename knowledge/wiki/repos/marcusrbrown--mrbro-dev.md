@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/mrbro.dev"
 created: 2026-04-18
-updated: 2026-06-23
+updated: 2026-07-06
 sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 51f5cab5c77768b761d9f0a688ac7436cc5a06f4
@@ -249,6 +249,8 @@ Current overrides (`pnpm-workspace.yaml`):
 | `yauzl@<3.2.1: >=3.2.1` | yauzl advisory |
 
 Vite upgraded to v7.3.2 for security fix (#121). The migration to a CI dependency-audit gate (`pnpm audit`, #177) is now the forcing function that keeps this list current — overrides are added in response to a failing audit rather than ad-hoc.
+
+**Cross-repo update (2026-07-06):** this `pnpm-workspace.yaml`-as-override-ledger pattern is no longer unique to this repo. [[marcusrbrown--marcusrbrown]] adopted the same structure in its 2026-07-06 survey — a fresh `pnpm-workspace.yaml` with `allowBuilds`/`onlyBuiltDependencies`, `shamefullyHoist: true`, and a GHSA-annotated override block (`vite 7.3.6`, `postcss`, `picomatch`, `fast-uri`, plus the relocated `jiti <2.8.0` pin). The profile repo does not (yet) carry the `pnpm audit` CI gate that drives this repo's list, but the ledger convention has now spread across the profile-repo cluster.
 
 ## Notable Patterns
 
