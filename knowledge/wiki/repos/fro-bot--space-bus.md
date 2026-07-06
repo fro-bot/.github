@@ -2,7 +2,7 @@
 type: repo
 title: "fro-bot/space-bus"
 created: 2026-07-03
-updated: 2026-07-03
+updated: 2026-07-06
 sources:
   - url: https://github.com/fro-bot/space-bus
     sha: ad8eefe00c467ba342353d5bbd3d8cc6fbb61fc5
@@ -12,6 +12,7 @@ related:
   - fro-bot--agent
   - fro-bot--dashboard
   - marcusrbrown--infra
+  - marcusrbrown--mothership
   - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--systematic
   - marcusrbrown--dotfiles
@@ -143,8 +144,15 @@ The MVP was built in three verified phases:
 
 This is expected for a brand-new (created 2026-07-03), dogfooded, workspace-local tool — but it means the repo currently has no automated review, triage, or CodeQL/Scorecard coverage. A follow-up **draft PR proposing a Fro Bot workflow** (self-hosted `fro-bot.yaml` consuming [[fro-bot--agent]], plus `common-settings.yaml` inheritance) should be proposed separately. Note the meta-irony worth flagging on that PR: space-bus is itself an *agent-coordination surface* for the fleet, yet is not currently wired into the fleet's own agent automation.
 
+## First Consumer: mothership (observed 2026-07-06)
+
+A **downstream consumer** surfaced during the 2026-07-06 survey of [[marcusrbrown--mothership]]: that repo pins `@fro.bot/space-bus` **0.7.0** as a production dependency and consumes its `/contract` + `/core` library surface for schemas and reads. Mothership is a Tauri v2 desktop "multimodal agentic IDE" — a **renderer for the bus** that turns a directory-routed `opencode serve` workspace into a dockview panel layout and exposes that layout as `ide_*` MCP tools. Where space-bus is the _tasking_ plane (a control agent delegating via `bus_*` tools) and [[fro-bot--dashboard]] is the read-only _web observation_ plane, Mothership is the interactive _desktop mission-control cockpit_ over the same server line.
+
+**Contradiction to reconcile next survey (package status):** at the 2026-07-03 survey this repo's package was `@fro.bot/space-bus` **private/unpublished** (`"private": true`, `version: 0.0.0`). Mothership's `package.json` pins `@fro.bot/space-bus` **0.7.0**, implying the package has since been published to npm and matured seven minor versions. This wasn't re-verified against space-bus's own manifest in the 2026-07-06 survey (mothership was the survey target, and reads were scoped to the target repo) — confirm the current published version and the shift from private → published on the next space-bus survey. No overwrite of the 2026-07-03 finding; both states recorded with dates.
+
 ## Relationship to the Fro Bot Ecosystem
 
+- **[[marcusrbrown--mothership]]** — the first observed downstream consumer of `@fro.bot/space-bus` (pins 0.7.0). A Tauri v2 desktop IDE that _renders_ the bus: it consumes the contract/core surface and layers an `ide_*` MCP tool surface for driving its own UI. Complements the space-bus tasking plane and the dashboard observation plane as a third operator surface.
 - **[[fro-bot--agent]]** — space-bus rides the same OpenCode server line, and its diff-aggregation behavior is gated on `@fro.bot/harness` patched builds carrying upstream PR #33444. The `agent` repo is a first-class bus target.
 - **[[fro-bot--dashboard]]** / **[[marcusrbrown--infra]]** — the other three manifest targets (dashboard, control-plane, infra). space-bus is the *tasking* plane; dashboard is the read-only *observation* plane — complementary operator surfaces.
 - **[[marcusrbrown--opencode-copilot-delegate]]** — a sibling delegation pattern: that plugin delegates to Copilot CLI subprocesses; space-bus delegates to sibling-repo OpenCode agents over the server API. Both are "one agent tasks another," different transports.
@@ -161,3 +169,4 @@ This is expected for a brand-new (created 2026-07-03), dogfooded, workspace-loca
 | Date       | HEAD      | Notes                                                                          |
 | ---------- | --------- | ------------------------------------------------------------------------------ |
 | 2026-07-03 | `ad8eefe` | Initial survey. New repo (created 2026-07-03), public, MIT, private-unpublished Bun/TS package. Four-tool workspace agent bus over one directory-routed `opencode serve`; MCP facade for Claude Desktop; MVP verified (Phases 0–2); plugin conversion drafted. **No Fro Bot workflow / no CI / no Probot Settings.** |
+| 2026-07-06 | (not re-surveyed) | Cross-reference update only, from the [[marcusrbrown--mothership]] survey. First downstream consumer observed: mothership pins `@fro.bot/space-bus` **0.7.0**, implying the package went private/unpublished (`0.0.0`) → published (`0.7.0`). Package-status shift and current published version to be re-verified against this repo's own manifest next space-bus survey (see "First Consumer" section). |

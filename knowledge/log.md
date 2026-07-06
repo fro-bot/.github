@@ -2639,3 +2639,29 @@ Sources: https://github.com/marcusrbrown/marcusrbrown (SHA 08bd1ad6665563867e17d
 Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-07-06 19:10] ingest | marcusrbrown/mothership
+
+Initial survey of `marcusrbrown/mothership` (SHA `48bd14a`). Created repo page `marcusrbrown--mothership.md`. Updated repo page `fro-bot--space-bus.md` (first-consumer cross-reference + package-status contradiction note). Updated `index.md` to catalog the new page. Reads scoped to directory listings, README, manifests (`package.json`, `src-tauri/Cargo.toml`), and workflow files per the untrusted-input constraint.
+
+Key findings:
+
+- New repo (created 2026-07-05), public, MIT (LICENSE file present), private/unpublished (`"private": true`, `version: 0.1.0`), 1 star, 1 open issue. Early **tracer** stage — shell runs, but read-only/diff code view, Storybook panels, and MCP Apps skill panels not yet built.
+- **Multimodal agentic IDE:** Tauri v2 desktop app (React 19 + TypeScript ~5.8.3 webview, Rust core in `src-tauri/`) that renders a workspace of OpenCode agents as a dockview (v7) panel layout. Architecturally a **renderer for the bus** — `opencode serve` owns all agent state, [[fro-bot--space-bus]] is the control plane, the app holds UI state only.
+- **Structural dogfooding via `ide_*` MCP tools:** the app exposes its own layout (`ide_open_panel`/`ide_split`/`ide_focus`/`ide_move_panel`/`ide_set_layout`/`ide_close_panel` + read-only `ide_list_panels`/`ide_get_layout`) so any agent can drive the UI. Layout-parity is an AGENTS.md invariant. Sidecar (`sidecar/ide-server/`) binds a random loopback port with a per-launch bearer token in a `0600` rendezvous file; `scripts/ide-mcp-bridge.ts` proxies over stdio for persistent wiring. Read tools never return paths/credentials; no terminal reach through `ide_*`.
+- **Invariants (AGENTS.md = review contract):** renderer-for-the-bus (no server-owned state in app), layout parity, no embedded LLM, mechanical detection (no LLM/network), localhost-only, sandboxed skill-panel iframes, design-for-deletion panels, tokens-only styling.
+- **Toolchain:** Bun (`bun.lock`) + Biome ^1.9.4 + zod ^4.4.3 + Vite ^7 — Bun/Biome shape aligns with [[marcusrbrown--systematic]] and [[fro-bot--space-bus]], diverges from `@bfra.me/*` ESLint+Prettier ecosystem. Rust deps: tauri 2, `portable-pty` 0.9, serde, uuid. Pins `@fro.bot/space-bus` **0.7.0** and `@modelcontextprotocol/sdk` 1.29.0.
+- **CI (`ci.yaml`):** Design Check (`impeccable@3.2.0 detect` hard gate, tokens-only) + verify matrix (typecheck/lint/test via Bun) + Check Workflows (actionlint). All actions SHA-pinned, least-privilege, strict bash.
+- **Fro Bot workflow present and active** (`fro-bot/agent@v0.83.1`) — mature repo-specific config despite the repo being one day old. Unified single-run oversight+autoheal at 06:15 UTC (staggered off siblings), 6 categories, one-perpetual-report-issue pattern. Notable repo-specific adaptations: Rust treated as **review-only** (runner lacks Tauri system libs / webkit2gtk, cargo forbidden), pinned `impeccable@3.2.0` design gate, release-preparedness epic (R1–R18) tracked report-only, "fleet" barred from public positioning copy, bare-prompt-dispatch-wins-first routing (same fix as [[marcusrbrown--vbs]] #662 / [[marcusrbrown--marcusrbrown]] #1045, present from the start here). Default-ref checkout closes the `issue_comment` secret-exfiltration vector.
+- **Gaps:** no Renovate config, no Probot `settings.yml`, no CodeQL/Scorecard observed — the Fro Bot prompt assumes Renovate ownership of bumps, so onboarding is expected but not yet landed. Unlike [[fro-bot--space-bus]], the Fro Bot workflow itself IS present, so no follow-up-workflow-draft recommendation is needed; a Renovate/Probot onboarding PR is the open item.
+- **Contradiction recorded on space-bus page:** space-bus was private/unpublished (`0.0.0`) at its 2026-07-03 survey; mothership pins it at 0.7.0, implying a private→published shift + 7 minor versions. Not re-verified against space-bus's own manifest (out of scope for this target-scoped survey) — flagged for next space-bus survey. No overwrite; both states dated.
+
+Related pages touched: `fro-bot--space-bus.md` (first consumer, contradiction note, `related`/`updated`/survey-history additions). No new topic/entity/comparison pages warranted — Tauri and dockview are single-repo so far; will promote to entity/topic pages if a second repo references them.
+
+Sources: https://github.com/marcusrbrown/mothership (SHA 48bd14a2b8735d35c7737716a512b9b365adcc27)
+
+## [2026-07-06 19:14] ingest | repo:marcusrbrown/mothership
+
+Surveyed marcusrbrown/mothership and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mothership
