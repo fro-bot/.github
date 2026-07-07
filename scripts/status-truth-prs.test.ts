@@ -36,6 +36,7 @@ import {
   fetchExistingCorrectionPrs,
   fetchTerminalFingerprints,
   GRADUATED_CLAIM_KINDS,
+  isPrExecutionArmed,
   planStatusTruthPrActions,
   PR_BRANCH_PREFIX,
   PR_TITLE_PREFIX,
@@ -225,12 +226,67 @@ describe('happy path: graduated claim kind', () => {
     }
   })
 
-  it('GRADUATED_CLAIM_KINDS export is a readonly set (intentionally empty in Phase 1)', () => {
+  it('GRADUATED_CLAIM_KINDS export contains exactly plan-consistency (graduated on #3656 + #3614-#3616 evidence)', () => {
     expect(GRADUATED_CLAIM_KINDS).toBeDefined()
     expect(typeof GRADUATED_CLAIM_KINDS).toBe('object')
-    // Phase 1: no claim kinds are graduated yet; set is empty by design.
-    // To graduate a kind, add it via a reviewed repo change after Phase 1 signal.
-    expect(GRADUATED_CLAIM_KINDS.size).toBe(0)
+    expect(GRADUATED_CLAIM_KINDS.size).toBe(1)
+    expect(GRADUATED_CLAIM_KINDS.has('plan-consistency')).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isPrExecutionArmed: three-key arming gate
+// ---------------------------------------------------------------------------
+
+describe('isPrExecutionArmed', () => {
+  it('is armed only when repo variable, dispatch input, and graduated set are all true/non-empty', () => {
+    expect(
+      isPrExecutionArmed({
+        prsEnabledVar: 'true',
+        dispatchInputVar: 'true',
+        graduatedClaimKinds: GRADUATED_CLAIM_KINDS,
+      }),
+    ).toBe(true)
+  })
+
+  it('stays false when the repo variable is missing', () => {
+    expect(
+      isPrExecutionArmed({
+        prsEnabledVar: undefined,
+        dispatchInputVar: 'true',
+        graduatedClaimKinds: new Set(['plan-consistency']),
+      }),
+    ).toBe(false)
+  })
+
+  it('stays false when the dispatch input is missing', () => {
+    expect(
+      isPrExecutionArmed({
+        prsEnabledVar: 'true',
+        dispatchInputVar: undefined,
+        graduatedClaimKinds: new Set(['plan-consistency']),
+      }),
+    ).toBe(false)
+  })
+
+  it('stays false when the graduated set is empty, even with both other keys true', () => {
+    expect(
+      isPrExecutionArmed({
+        prsEnabledVar: 'true',
+        dispatchInputVar: 'true',
+        graduatedClaimKinds: new Set(),
+      }),
+    ).toBe(false)
+  })
+
+  it('stays false when all three keys are absent/false/empty', () => {
+    expect(
+      isPrExecutionArmed({
+        prsEnabledVar: undefined,
+        dispatchInputVar: undefined,
+        graduatedClaimKinds: new Set(),
+      }),
+    ).toBe(false)
   })
 })
 

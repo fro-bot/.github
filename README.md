@@ -319,6 +319,8 @@ Applying `status-truth:rejected` or `status-truth:false-positive` to a plan-cons
 
 **Correction PRs (currently disarmed):**
 
+`plan-consistency` is the first graduated claim kind, but graduation alone doesn't open PRs — the repository variable and manual dispatch input below still both have to be set.
+
 The Status Truth workflow can, once armed, open a pull request that applies a proposal's correction directly instead of waiting on a human edit. No PR opens today. Three independent, reviewed keys must all be true at once before one can:
 
 1. The repository variable `STATUS_TRUTH_PRS_ENABLED` is set to `true`.

@@ -152,7 +152,7 @@ The work therefore needs to graduate the kind and complete the same-run report-r
 **Verification:**
 - Workflow lint and the parsed workflow test pass; the PR job is still reachable only through the existing arming `if:` gate.
 
-- [ ] **Unit 3: Graduate `plan-consistency` and update operator docs**
+- [x] **Unit 3: Graduate `plan-consistency` and update operator docs**
 
 **Goal:** Add `plan-consistency` to the reviewed graduated set and update tests/docs with the evidence trail.
 

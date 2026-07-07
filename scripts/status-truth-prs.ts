@@ -74,13 +74,15 @@ const OPAQUE_DIGEST_NAMESPACE = 'status-truth-pr'
  * Claim kinds that have graduated to PR-eligible status.
  *
  * A claim kind graduates when it has demonstrated sufficient accuracy signal
- * (accepted/rejected outcomes from proposal issues). This set is intentionally
- * empty in Phase 1 — no claim kinds are graduated until Phase 1 produces signal.
+ * (accepted/rejected outcomes from proposal issues).
  *
- * To graduate a claim kind: add it to this set in a reviewed repo change after
- * Phase 1 accuracy data supports it.
+ * `plan-consistency` graduated first: explicit `status-truth:accepted` on
+ * #3656, with #3614-#3616 as supporting resolved-positive outcomes.
+ *
+ * To graduate another claim kind: add it to this set in a reviewed repo
+ * change after equivalent accepted evidence exists.
  */
-export const GRADUATED_CLAIM_KINDS: ReadonlySet<string> = new Set<string>()
+export const GRADUATED_CLAIM_KINDS: ReadonlySet<string> = new Set<string>(['plan-consistency'])
 
 // ---------------------------------------------------------------------------
 // Path authorization
