@@ -379,10 +379,27 @@ jobs:
           permission-pull-requests: write
           permission-issues: write
 
+      # Mint a separate, strictly read-only app token for fetch/list calls
+      # (existing-PR discovery, terminal-fingerprint issue scan). Keeps the
+      # write token's blast radius limited to the write calls that actually
+      # need it — the fetch path never needs write scope.
+      - name: 🔑 Mint fetch token (read-only)
+        id: fetch-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          # Scope to this repo only — smallest blast radius.
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
+          permission-pull-requests: read
+          permission-issues: read
+
       - name: 🛠 Execute status-truth correction PRs
         id: prs
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          STATUS_TRUTH_FETCH_TOKEN: ${{ steps.fetch-token.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           STATUS_TRUTH_REPORT_PATH: ${{ runner.temp }}/status-truth-report.json
           STATUS_TRUTH_PRS_RESULT_PATH: ${{ runner.temp }}/status-truth-prs-result.json
@@ -416,12 +433,17 @@ jobs:
               echo "| Version rejected | $(jq '.plannedCounts.versionRejected // 0' "$result") |"
               echo "| Opened | $(jq '.executedCounts.opened // 0' "$result") |"
               echo "| Closed | $(jq '.executedCounts.closed // 0' "$result") |"
+              echo "| Rediscovered | $(jq '.executedCounts.rediscovered // 0' "$result") |"
               echo "| Downgraded (execution) | $(jq '.executedCounts.downgraded // 0' "$result") |"
               echo "| Safety refused | $(jq '.executedCounts.safetyRefused // 0' "$result") |"
               echo "| Failed | $(jq '.executedCounts.failed // 0' "$result") |"
               echo "| Branch delete failed | $(jq '.executedCounts.branchDeleteFailed // 0' "$result") |"
               echo "| Would open (dry-run) | $(jq '.executedCounts.wouldOpen // 0' "$result") |"
               echo "| Would close (dry-run) | $(jq '.executedCounts.wouldClose // 0' "$result") |"
+              echo "| Would rediscover (dry-run) | $(jq '.executedCounts.wouldRediscover // 0' "$result") |"
+              echo "| Terminal fingerprints skipped | $(jq '.terminalFingerprintsSkipped // 0' "$result") |"
+              echo "| Terminal fingerprint duplicates | $(jq '.terminalFingerprintDuplicates // 0' "$result") |"
+              echo "| Error | $(jq -r '.error // "none"' "$result") |"
             else
               echo "| Status | (PR execution result unavailable) |"
             fi

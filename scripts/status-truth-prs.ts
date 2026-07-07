@@ -219,6 +219,12 @@ export interface OpenPrAction {
   readonly path: string
   /** Claim kind — selects the corrector/re-verifier the shell must run. */
   readonly kind: string
+  /**
+   * Source fingerprint, threaded through so execution-shell gate calls carry
+   * the same `fingerprint` context the planner used (public-output gate
+   * symmetry). Never rendered verbatim into any public surface.
+   */
+  readonly fingerprint: string
 }
 
 /**
@@ -656,6 +662,7 @@ export function planStatusTruthPrActions(input: PlanStatusTruthPrActionsInput): 
       opaqueDigest,
       path: finding.path,
       kind: finding.kind,
+      fingerprint,
     })
     prActionsPlanned++
     openPrsPlanned++
@@ -815,6 +822,7 @@ export interface StatusTruthPrFetchClient {
           readonly number: number
           readonly labels: readonly (string | {readonly name?: string | null})[]
           readonly body?: string | null
+          readonly user?: {readonly login?: string | null} | null
         }[]
       }>
     }
@@ -830,6 +838,13 @@ export interface ExecuteStatusTruthPrActionsInput {
   /** When true: read-only calls permitted, zero mutating calls, would-act counts. */
   readonly dryRun: boolean
   readonly publicOutputTokens: PublicOutputTokens
+  /**
+   * Privacy-safe diagnostic sink for action-level failures. Defaults to a
+   * no-op when omitted (e.g. in existing tests that don't assert on it).
+   * Never receives raw error message text or bodies — only action type,
+   * a closed-vocabulary error-class, and a numeric API status when present.
+   */
+  readonly writeStderr?: (text: string) => void
 }
 
 /** Counts-only result of the PR execution shell. */
@@ -840,6 +855,8 @@ export interface ExecuteStatusTruthPrActionsCounts {
   readonly safetyRefused: number
   readonly failed: number
   readonly branchDeleteFailed: number
+  /** Live mode: rediscover-pr actions observed (no mutation — count only, replaces silent drop). */
+  readonly rediscovered: number
   /** Dry-run: would-open count (no mutation performed). */
   readonly wouldOpen: number
   /** Dry-run: would-close count (no mutation performed). */
@@ -866,6 +883,31 @@ function isApiStatus(error: unknown, status: number): boolean {
   )
 }
 
+/** Extract a numeric API status code from an error, if present. Never extracts message text. */
+function extractApiStatus(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('status' in error)) return undefined
+  const status = (error as {status: unknown}).status
+  return typeof status === 'number' ? status : undefined
+}
+
+/**
+ * Emit a privacy-safe diagnostic line for an action-level execution failure:
+ * action type + closed-vocabulary error-class + numeric API status (when
+ * available). Never includes error message text, response bodies, or any
+ * other raw error content.
+ */
+function emitActionFailureDiagnostic(params: {
+  writeStderr: (text: string) => void
+  actionType: 'open-pr' | 'close-pr'
+  error: unknown
+}): void {
+  const status = extractApiStatus(params.error)
+  const statusSuffix = status === undefined ? '' : ` status=${status}`
+  params.writeStderr(
+    `status-truth-prs: action failed: action=${params.actionType} error-class=action-failure${statusSuffix}\n`,
+  )
+}
+
 /**
  * Execute planned status-truth correction PR actions with independent
  * per-action safety validation. The shell never trusts planner output:
@@ -884,7 +926,7 @@ function isApiStatus(error: unknown, status: number): boolean {
 export async function executeStatusTruthPrActions(
   input: ExecuteStatusTruthPrActionsInput,
 ): Promise<ExecuteStatusTruthPrActionsResult> {
-  const {octokit, owner, repo, actions, dryRun, publicOutputTokens} = input
+  const {octokit, owner, repo, actions, dryRun, publicOutputTokens, writeStderr = () => undefined} = input
 
   if (dryRun) {
     let wouldOpen = 0
@@ -904,6 +946,7 @@ export async function executeStatusTruthPrActions(
         safetyRefused: 0,
         failed: 0,
         branchDeleteFailed: 0,
+        rediscovered: 0,
         wouldOpen,
         wouldClose,
         wouldRediscover,
@@ -917,9 +960,15 @@ export async function executeStatusTruthPrActions(
   let safetyRefused = 0
   let failed = 0
   let branchDeleteFailed = 0
+  let rediscovered = 0
 
   for (const action of actions) {
-    if (action.type === 'open-pr') {
+    if (action.type === 'rediscover-pr') {
+      // Rediscovery performs no mutation — the existing PR already represents
+      // the correction. Live mode surfaces this as an explicit count instead
+      // of silently dropping the action.
+      rediscovered++
+    } else if (action.type === 'open-pr') {
       try {
         // 1. Branch-pattern validation for the current fingerprint (R11c).
         if (!branchMatchesCorrectionPattern(action.opaqueBranchName, action.opaqueDigest)) {
@@ -934,9 +983,20 @@ export async function executeStatusTruthPrActions(
           continue
         }
 
-        // 2. Live re-read of the target file from the base branch.
-        const liveResponse = await octokit.rest.repos.getContent({owner, repo, path: action.path})
-        const liveData = liveResponse.data
+        // 2. Live re-read of the target file from the base branch. A 404 means
+        // the file no longer exists on the live base branch — this is a
+        // legitimate downgrade (the claim is stale), not an execution failure.
+        let liveData: {content?: string; encoding?: string; sha: string}
+        try {
+          const liveResponse = await octokit.rest.repos.getContent({owner, repo, path: action.path})
+          liveData = liveResponse.data
+        } catch (getContentError: unknown) {
+          if (isApiStatus(getContentError, 404)) {
+            downgraded++
+            continue
+          }
+          throw getContentError
+        }
         const liveContent = decodeGetContentResponse(liveData)
         if (liveContent === null) {
           downgraded++
@@ -961,7 +1021,7 @@ export async function executeStatusTruthPrActions(
           surface: 'pr-title',
           content: action.opaqueTitle,
           tokens: publicOutputTokens,
-          fingerprint: undefined,
+          fingerprint: action.fingerprint,
         })
         if (!titleGate.allowed) {
           safetyRefused++
@@ -972,7 +1032,7 @@ export async function executeStatusTruthPrActions(
           surface: 'pr-body',
           content: bodyContent,
           tokens: publicOutputTokens,
-          fingerprint: undefined,
+          fingerprint: action.fingerprint,
         })
         if (!bodyGate.allowed) {
           safetyRefused++
@@ -1002,13 +1062,25 @@ export async function executeStatusTruthPrActions(
             safetyRefused++
             continue
           }
-          const existingTipContentResponse = await octokit.rest.repos.getContent({
-            owner,
-            repo,
-            path: action.path,
-            ref: action.opaqueBranchName,
-          })
-          const existingTipContent = decodeGetContentResponse(existingTipContentResponse.data)
+          let existingTipContent: string | null
+          try {
+            const existingTipContentResponse = await octokit.rest.repos.getContent({
+              owner,
+              repo,
+              path: action.path,
+              ref: action.opaqueBranchName,
+            })
+            existingTipContent = decodeGetContentResponse(existingTipContentResponse.data)
+          } catch (existingTipError: unknown) {
+            if (isApiStatus(existingTipError, 404)) {
+              // The colliding branch exists but no longer carries this file —
+              // ambiguous state, not a real API failure. Refuse safely rather
+              // than guessing or force-overwriting.
+              safetyRefused++
+              continue
+            }
+            throw existingTipError
+          }
           if (existingTipContent === null || existingTipContent !== correctedContent) {
             safetyRefused++
             continue
@@ -1054,8 +1126,9 @@ export async function executeStatusTruthPrActions(
           base: CORRECTION_BASE_BRANCH,
         })
         opened++
-      } catch {
+      } catch (error: unknown) {
         failed++
+        emitActionFailureDiagnostic({writeStderr, actionType: 'open-pr', error})
       }
     } else if (action.type === 'close-pr') {
       try {
@@ -1106,8 +1179,9 @@ export async function executeStatusTruthPrActions(
         } catch {
           branchDeleteFailed++
         }
-      } catch {
+      } catch (error: unknown) {
         failed++
+        emitActionFailureDiagnostic({writeStderr, actionType: 'close-pr', error})
       }
     }
   }
@@ -1121,6 +1195,7 @@ export async function executeStatusTruthPrActions(
       safetyRefused,
       failed,
       branchDeleteFailed,
+      rediscovered,
       wouldOpen: 0,
       wouldClose: 0,
       wouldRediscover: 0,
@@ -1170,6 +1245,17 @@ export interface FetchTerminalFingerprintsResult {
   readonly duplicateCount: number
 }
 
+/** Maximum pages fetched by pagination loops (10 pages @ 100/page = 1000 items). Fail closed if exceeded. */
+const MAX_FETCH_PAGES = 10
+
+/** Thrown when a pagination loop hits {@link MAX_FETCH_PAGES} without exhausting results. */
+class PaginationCapExceededError extends Error {
+  constructor() {
+    super('pagination cap exceeded')
+    this.name = 'PaginationCapExceededError'
+  }
+}
+
 /**
  * Fetch terminal fingerprints from status-truth proposal issues carrying a
  * terminal outcome label (`status-truth:rejected` or `status-truth:false-positive`).
@@ -1199,6 +1285,7 @@ export async function fetchTerminalFingerprints(params: {
 
   let page = 1
   for (;;) {
+    if (page > MAX_FETCH_PAGES) throw new PaginationCapExceededError()
     const response = await client.rest.issues.listForRepo({
       owner,
       repo,
@@ -1208,6 +1295,12 @@ export async function fetchTerminalFingerprints(params: {
       page,
     })
     for (const issue of response.data) {
+      // Narrow suppression to bot-authored proposal issues only. A
+      // human-authored issue carrying copied labels/markers must never be
+      // accepted as a terminal-outcome source — that would let anyone
+      // suppress a claim by opening a look-alike issue.
+      if (!BOT_LOGINS.has(issue.user?.login ?? '')) continue
+
       const labelNames = issue.labels.map(l => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean)
       const hasTerminalLabel = labelNames.some(l => TERMINAL_OUTCOME_LABELS.has(l))
       if (!hasTerminalLabel) continue
@@ -1260,6 +1353,7 @@ export async function fetchExistingCorrectionPrs(params: {
 
   let page = 1
   for (;;) {
+    if (page > MAX_FETCH_PAGES) throw new PaginationCapExceededError()
     const response = await client.rest.pulls.list({
       owner,
       repo,
@@ -1315,12 +1409,22 @@ export function isPrExecutionArmed(params: {
   return params.prsEnabledVar === 'true' && params.dispatchInputVar === 'true' && params.graduatedClaimKinds.size > 0
 }
 
+/** Closed vocabulary of early-failure reasons surfaced on {@link PrsResult}. Never raw error text. */
+export type PrsResultError =
+  'missing-report' | 'report-failure' | 'token-load-failure' | 'fetch-failure' | 'write-client-failure' | 'unexpected'
+
 /** Counts-only result written to stdout and STATUS_TRUTH_PRS_RESULT_PATH. */
 export interface PrsResult {
   readonly armed: boolean
   readonly dryRun: boolean
   readonly plannedCounts: PlanStatusTruthPrActionsCounts
   readonly executedCounts: ExecuteStatusTruthPrActionsCounts
+  /** Closed-vocabulary failure reason, present only on a non-success early-exit path. */
+  readonly error?: PrsResultError
+  /** Malformed/invalid/duplicate terminal fingerprints skipped this run (counts-only). */
+  readonly terminalFingerprintsSkipped?: number
+  /** Distinct terminal fingerprints observed on more than one terminal issue this run (counts-only). */
+  readonly terminalFingerprintDuplicates?: number
 }
 
 type OctokitConstructor = new (params: {
@@ -1343,13 +1447,24 @@ async function loadOctokitConstructor(): Promise<OctokitConstructor> {
   return Octokit as unknown as OctokitConstructor
 }
 
-async function createOctokitFromEnv(): Promise<StatusTruthPrOctokitClient> {
-  const token = process.env.GITHUB_TOKEN
+/**
+ * Build an Octokit client authenticated with the given token.
+ *
+ * Fetch calls use `STATUS_TRUTH_FETCH_TOKEN` (a dedicated read-only app token
+ * minted for fetch/list calls). Write calls use `GITHUB_TOKEN` directly (the
+ * scoped write token). These channels intentionally do not fall back to each
+ * other.
+ */
+async function createOctokitFromToken(token: string | undefined): Promise<StatusTruthPrOctokitClient> {
   if (token === undefined || token === '') {
-    throw new Error('status-truth-prs: GITHUB_TOKEN is required in the environment')
+    throw new Error('status-truth-prs: required token is missing from the environment')
   }
   const LoadedOctokit = await loadOctokitConstructor()
   return new LoadedOctokit({auth: token, request: {timeout: 10_000}, log: NOOP_LOG})
+}
+
+async function createOctokitFromEnv(): Promise<StatusTruthPrOctokitClient> {
+  return createOctokitFromToken(process.env.GITHUB_TOKEN)
 }
 
 /** Report-read result: mirrors the `validateStatusTruthArtifact` discriminated union. */
@@ -1394,6 +1509,7 @@ const EMPTY_EXECUTED_COUNTS: ExecuteStatusTruthPrActionsCounts = {
   safetyRefused: 0,
   failed: 0,
   branchDeleteFailed: 0,
+  rediscovered: 0,
   wouldOpen: 0,
   wouldClose: 0,
   wouldRediscover: 0,
@@ -1508,13 +1624,14 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
   }
 
   if (reportPath === undefined || reportPath === '') {
-    deps.writeStderr('status-truth-prs: STATUS_TRUTH_REPORT_PATH is required\n')
+    deps.writeStderr('status-truth-prs: STATUS_TRUTH_REPORT_PATH is required: error-class=missing-report\n')
     deps.setExitCode(1)
     const result: PrsResult = {
       armed: true,
       dryRun,
       plannedCounts: EMPTY_PLANNED_COUNTS,
       executedCounts: EMPTY_EXECUTED_COUNTS,
+      error: 'missing-report',
     }
     await writeResultAndStdout({result, resultPath, deps})
     return result
@@ -1529,6 +1646,7 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
       dryRun,
       plannedCounts: EMPTY_PLANNED_COUNTS,
       executedCounts: EMPTY_EXECUTED_COUNTS,
+      error: 'report-failure',
     }
     await writeResultAndStdout({result, resultPath, deps})
     return result
@@ -1546,6 +1664,7 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
       dryRun,
       plannedCounts: EMPTY_PLANNED_COUNTS,
       executedCounts: EMPTY_EXECUTED_COUNTS,
+      error: 'token-load-failure',
     }
     await writeResultAndStdout({result, resultPath, deps})
     return result
@@ -1555,6 +1674,8 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
 
   let existingPrs: ExistingStatusTruthPr[] = []
   let terminalFingerprints: ReadonlySet<string> = new Set<string>()
+  let terminalFingerprintsSkipped = 0
+  let terminalFingerprintDuplicates = 0
 
   try {
     const fetchClient = await deps.createFetchClient()
@@ -1564,6 +1685,8 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
     ])
     existingPrs = prs
     terminalFingerprints = terminals.fingerprints
+    terminalFingerprintsSkipped = terminals.skippedInvalid
+    terminalFingerprintDuplicates = terminals.duplicateCount
   } catch {
     if (!dryRun) {
       deps.writeStderr('status-truth-prs: existing state fetch failed: error-class=fetch-failure\n')
@@ -1573,6 +1696,7 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
         dryRun,
         plannedCounts: EMPTY_PLANNED_COUNTS,
         executedCounts: EMPTY_EXECUTED_COUNTS,
+        error: 'fetch-failure',
       }
       await writeResultAndStdout({result, resultPath, deps})
       return result
@@ -1603,13 +1727,16 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
     try {
       writeClient = await deps.createWriteClient()
     } catch {
-      deps.writeStderr('status-truth-prs: write client creation failed: error-class=token-load-failure\n')
+      deps.writeStderr('status-truth-prs: write client creation failed: error-class=write-client-failure\n')
       deps.setExitCode(1)
       const result: PrsResult = {
         armed: true,
         dryRun,
         plannedCounts: planResult.counts,
         executedCounts: EMPTY_EXECUTED_COUNTS,
+        error: 'write-client-failure',
+        terminalFingerprintsSkipped,
+        terminalFingerprintDuplicates,
       }
       await writeResultAndStdout({result, resultPath, deps})
       return result
@@ -1623,6 +1750,7 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
     actions: planResult.actions,
     dryRun,
     publicOutputTokens,
+    writeStderr: deps.writeStderr,
   })
 
   const result: PrsResult = {
@@ -1630,6 +1758,8 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
     dryRun,
     plannedCounts: planResult.counts,
     executedCounts: executeResult.counts,
+    terminalFingerprintsSkipped,
+    terminalFingerprintDuplicates,
   }
   await writeResultAndStdout({result, resultPath, deps})
   return result
@@ -1644,7 +1774,8 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
  * - STATUS_TRUTH_DRY_RUN: set to 'true' for dry-run mode (optional)
  * - STATUS_TRUTH_PRS_ENABLED: repository variable arming key (required to be 'true' to arm)
  * - STATUS_TRUTH_PRS_DISPATCH_INPUT: manual dispatch input arming key (required to be 'true' to arm)
- * - GITHUB_TOKEN: write-scoped app token for branch/PR mutations and read-only listing
+ * - STATUS_TRUTH_FETCH_TOKEN: read-scoped app token for existing PR/proposal listing
+ * - GITHUB_TOKEN: write-scoped app token for branch/PR mutations
  * - GITHUB_REPOSITORY: `owner/repo` (defaults to fro-bot/.github)
  *
  * Behavior:
@@ -1655,8 +1786,8 @@ export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
  * Thin environment wrapper around {@link runPrsCore}; all real I/O boundaries live there as
  * injected dependencies.
  */
-async function runPrs(): Promise<void> {
-  await runPrsCore({
+export function buildEnvBackedRunPrsCoreDeps(): RunPrsCoreDeps {
+  return {
     env: process.env,
     graduatedClaimKinds: GRADUATED_CLAIM_KINDS,
     readReport: async () => {
@@ -1692,7 +1823,8 @@ async function runPrs(): Promise<void> {
       ])
       return makePublicOutputTokens({privateTokens, redactedCanonicalIds})
     },
-    createFetchClient: async () => (await createOctokitFromEnv()) as unknown as StatusTruthPrFetchClient,
+    createFetchClient: async () =>
+      (await createOctokitFromToken(process.env.STATUS_TRUTH_FETCH_TOKEN)) as unknown as StatusTruthPrFetchClient,
     createWriteClient: async () => createOctokitFromEnv(),
     writeStdout: text => process.stdout.write(text),
     writeStderr: text => process.stderr.write(text),
@@ -1705,9 +1837,48 @@ async function runPrs(): Promise<void> {
     setExitCode: code => {
       process.exitCode = code
     },
-  })
+  }
+}
+
+/**
+ * Top-level catch-all wrapper around {@link runPrsCore}.
+ *
+ * `runPrsCore` already handles every anticipated failure path (missing
+ * report, invalid report, token load failure, fetch failure, write-client
+ * failure) with its own counts-only JSON result and `error` code. This
+ * wrapper exists for genuinely unexpected exceptions — e.g. a bug in the
+ * planner/executor, an unhandled rejection deep in a dependency — so the
+ * process never exits with a raw stack trace or uncaught error reaching
+ * stdout/stderr. Exported for testability; production use supplies real
+ * env-backed deps via {@link buildEnvBackedRunPrsCoreDeps}.
+ */
+export async function runPrs(deps: RunPrsCoreDeps): Promise<PrsResult> {
+  try {
+    return await runPrsCore(deps)
+  } catch {
+    deps.setExitCode(1)
+    const result: PrsResult = {
+      armed: false,
+      dryRun: deps.env.STATUS_TRUTH_DRY_RUN === 'true',
+      plannedCounts: EMPTY_PLANNED_COUNTS,
+      executedCounts: EMPTY_EXECUTED_COUNTS,
+      error: 'unexpected',
+    }
+    const resultJson = `${JSON.stringify(result)}\n`
+    deps.writeStdout(resultJson)
+    deps.writeStderr('status-truth-prs: unexpected failure: error-class=unexpected\n')
+    const resultPath = deps.env.STATUS_TRUTH_PRS_RESULT_PATH
+    if (resultPath !== undefined && resultPath !== '') {
+      try {
+        await deps.writeResultFile(resultJson)
+      } catch {
+        deps.writeStderr('status-truth-prs: could not write result: error-class=write-failure\n')
+      }
+    }
+    return result
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  await runPrs()
+  await runPrs(buildEnvBackedRunPrsCoreDeps())
 }
