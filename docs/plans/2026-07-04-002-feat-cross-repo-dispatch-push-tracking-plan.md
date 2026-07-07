@@ -98,10 +98,11 @@ See origin: docs/brainstorms/2026-07-04-cross-repo-dispatch-tracking-push-model-
 
 ### Deferred to Separate Tasks
 
-- Confused-deputy hardening (HARD follow-up, not optional) — replacing `FRO_BOT_PAT` authorship with a
-  per-dispatch, coordination-issue-scoped receipt token so a compromised org-wide PAT can no longer
-  author receipts. Filed as a tracked fro-bot/.github issue + smart note BEFORE this ships. v1 accepts
-  the residual risk explicitly (shared-trust-boundary: all workers are `fro-bot` agents).
+- Confused-deputy residual — worker receipts use the `FRO_BOT_PAT` available to the target repo. GitHub
+  does not provide issue-scoped receipt tokens, and sending a separate token through the prompt would
+  only move the leak. Further hardening needs a real target-side policy change or receipt broker, not
+  coordinator-only code. v1 accepts the residual explicitly: dispatched workers are trusted Fro Bot
+  agents.
 - Worker-side receipt channel (drift mitigation) — a bundled skill or runtime receipt template in the
   fro-bot/agent repo so the receipt is generated from structured data rather than prompt prose. This
   is the real fix if live drift stays high after v1; tracked as a follow-up (its own brainstorm/plan,
@@ -536,7 +537,7 @@ production composition, and document the push-model architecture.
   resolves on the next track pass.
 - This test must fail if any unit regresses the contract (the standing anti-recurrence test).
 - Update the README: push model, receipt contract + region format, three-gate trust, SLA,
-  needs-attention, and the deferred token-scoping note.
+  needs-attention, and the shared worker-trust residual.
 
 **Execution note:** Start from the realistic-receipt golden-path test (contract-first), mirroring the
 decomposition golden-path test that caught wall #3.
@@ -588,7 +589,7 @@ fails on any contract regression; README reflects the shipped design.
 |------|------------|
 | Worker drifts from the receipt format (wall-#3 class) — the highest-likelihood failure, evidenced on live #3633 | Prompt-only formatting is best-effort, not a correctness guarantee: delimited region + literal example + self-validate REDUCE drift; a drifted marker is `unparseable-receipt` (visible, never silent success); and the diagnostic run-lookup makes the residual `needs-attention` actionable ("ran but didn't report") so drift is triaged, not silent. A worker-side receipt channel is the tracked next step if drift stays high. |
 | Cross-item receipt forgery reading the public marker | Hash-bound nonce (R6): the public marker stores only `hash(nonce)`; the raw nonce is prompt-only; track verifies `hash(receipt.nonce)`. Preimage resistance means reading the marker yields nothing forgeable. |
-| Confused-deputy: ANY holder of `FRO_BOT_PAT` (every org workflow/agent that uses it, or a leaked PAT) can author receipts | NOT closed in v1. This is shared-trust-boundary security, not item-level authorization: the hash gate stops one worker forging ANOTHER item's receipt, but a compromised PAT can forge receipts for items whose nonce it holds. Accepted for v1 only because all workers are trusted `fro-bot` agents. Hard follow-up (tracked issue + smart note): mint a per-dispatch, coordination-issue-scoped receipt token instead of reusing the org-wide PAT. |
+| Confused-deputy: ANY holder of a target repo's `FRO_BOT_PAT` can author receipts | NOT closed in v1. This is shared worker-trust security, not item-level authorization: the hash gate stops one worker forging ANOTHER item's receipt from marker state alone, but a compromised worker/PAT can forge receipts for items whose nonce it has. GitHub does not provide issue-scoped receipt tokens, and prompt-delivered tokens are theater. Further hardening requires target-side policy or a receipt broker. |
 | Worker cannot resolve/write the coordination issue | Prompt carries structured `owner`/`repo`/`number` + canonical URL and a self-check echoing the resolved destination; `FRO_BOT_PAT` verified to carry cross-repo issue-write (gateway-rollout-tracker precedent); Unit 6 asserts the authored identity passes `FROBOT_COMMENT_AUTHORS`. |
 | Premature `failed` locks an item | First-terminal-wins is deliberate anti-spoof; operator manual-override via marker edit documented. |
 | Unit 5 sequencing pulls run-lookup out of a live resolver | Unit 5 explicitly depends on Unit 4's receipt-first rewire; run-lookup is DEMOTED (diagnostic-only), not deleted, preserving crash recovery; full green suite gate + golden-path test prove receipt-only closure. |
@@ -600,9 +601,7 @@ fails on any contract regression; README reflects the shipped design.
 ## Documentation / Operational Notes
 
 - README/architecture doc updated (Unit 6): push model, receipt + region format, three-gate trust,
-  24h SLA, `needs-attention` semantics, operator override, deferred token-scoping.
-- File the confused-deputy token-scoping hardening as a tracked fro-bot/.github issue with a smart
-  note before shipping.
+  24h SLA, `needs-attention` semantics, operator override, and the shared worker-trust residual.
 - Rehearsal issue #3633 (checklist intact, stale marker cleared, labels present) is the live canary
   to re-exercise once this lands — it will exercise the receipt path for the first time in production.
 - Legacy-marker migration: any in-flight marker that stored a RAW `nonce` (the prior schema) is

@@ -351,7 +351,7 @@ If you need to re-approve after reopening a closed goal issue, reopening automat
 
 Each dispatch carries only the universal `prompt` input — no `correlation_id` or other custom input, since target repos are autonomous and only guarantee `prompt`. The correlation id and a per-item nonce ride inside the prompt itself; the worker reports completion by posting a receipt comment on the coordination issue, which a periodic tracker verifies (author, correlation id, and `hash(nonce)`) before resolving the item.
 
-The nonce binds a receipt to its item: the coordination issue stores only `hash(nonce)`, and the raw nonce reaches the worker only through the prompt. One caveat worth stating plainly — a repo running Fro Bot with `OPENCODE_PROMPT_ARTIFACT` enabled publishes the rendered prompt (raw nonce included) as a downloadable Actions artifact. Where that's set on a target, item-level nonce isolation falls back to trusting the dispatched worker itself, which is the same trust boundary the loop already assumes: every worker is a Fro Bot agent.
+The nonce binds a receipt to its item: the coordination issue stores only `hash(nonce)`, and the raw nonce reaches the worker only through the prompt. One caveat worth stating plainly — a target repo running Fro Bot with `OPENCODE_PROMPT_ARTIFACT` enabled publishes the rendered prompt (raw nonce included) as a downloadable Actions artifact. Where that's set on a target, item-level nonce isolation falls back to trusting that target's worker and its `FRO_BOT_PAT`.
 
 **Why push, not poll.** Tracking used to correlate a dispatched item to its worker run by matching a `correlation_id` against the run name — until target repos turned out to only guarantee a `prompt` input, and GitHub's dispatch API gives you a `204` with no run id back anyway. So the model flipped: the worker already knows how it went, and it already holds a credential that can write back to the coordination issue. The worker posts, a scheduled tracker reads. Tracking never polls PR state or the Actions API for completion; a `pr` URL in a receipt is operator-facing metadata, nothing more.
 
@@ -371,7 +371,7 @@ The nonce binds a receipt to its item: the coordination issue stores only `hash(
 
 **When an item gets stuck wrong.** First-authentic-receipt-wins is a deliberate anti-spoof choice, but it means a bad early receipt (or your own mistake) can lock an item somewhere you don't want it. There's no undo command for that yet — the fix is editing the coordination issue's state marker comment directly to correct the item's status.
 
-**What's still open.** Every worker authenticates as the same shared `FRO_BOT_PAT`, so this is a shared-trust-boundary design, not per-item authorization — a compromised PAT can still forge a receipt for any item whose nonce it can obtain. Scoping receipt tokens per dispatch, per coordination issue, is planned hardening, not yet shipped.
+**What's still open.** Every worker authenticates with the `FRO_BOT_PAT` available to that target repo, so this is a shared worker-trust design, not per-item authorization. A compromised target worker or PAT can still forge a receipt for any item whose nonce it can obtain. GitHub does not provide an issue-scoped receipt token, and pushing a separate token through the dispatch prompt would only move the leak. Further hardening requires a real target-side policy change or a receipt broker, not control-plane theater.
 
 ## Development
 
