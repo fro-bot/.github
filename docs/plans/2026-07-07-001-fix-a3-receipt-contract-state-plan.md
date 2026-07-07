@@ -120,7 +120,7 @@ The coordinator must keep receipts as the completion oracle for accountable targ
 
 **Verification:** Target registry decisions are deterministic, metadata authority is documented, and no `metadata/repos.yaml` values are changed on `main`.
 
-- [ ] **Unit 2: Snapshot receipt contract per item**
+- [x] **Unit 2: Snapshot receipt contract per item**
 
 **Goal:** Persist the target’s receipt contract mode onto every item at dispatch time.
 

@@ -46,6 +46,17 @@ export interface DispatchItem {
    * completion; run-lookup is diagnostic, not authoritative).
    */
   noReceiptDiagnostic?: 'ran-no-report' | 'never-ran'
+  /**
+   * Snapshot of the target's operator-declared receipt contract capability at
+   * the moment this item was dispatched — set from `classifyReceiptCapability`
+   * just before the confirmed-dispatch marker write. NEVER re-derived from
+   * current metadata after dispatch:
+   * later `metadata/repos.yaml` drift must not retroactively change whether
+   * an already-seeded item expected a receipt. Absent on legacy markers
+   * (pre-Unit-2 or never confirmed) — those track under legacy/best-effort
+   * semantics identically to an explicit `legacy-best-effort` value.
+   */
+  receiptContract?: ReceiptCapability
 }
 
 export interface GoalState {
@@ -235,6 +246,13 @@ function isDispatchItem(value: unknown): value is DispatchItem {
     record.noReceiptDiagnostic !== undefined &&
     record.noReceiptDiagnostic !== 'ran-no-report' &&
     record.noReceiptDiagnostic !== 'never-ran'
+  ) {
+    return false
+  }
+  if (
+    record.receiptContract !== undefined &&
+    record.receiptContract !== 'receipt-accountable' &&
+    record.receiptContract !== 'legacy-best-effort'
   ) {
     return false
   }
@@ -1623,12 +1641,18 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
       continue
     }
 
-    // Flip to 'dispatched' + epoch via CAS.
+    // Flip to 'dispatched' + epoch via CAS. Snapshot the target's current
+    // receipt-contract capability onto the item HERE, at confirmed-dispatch
+    // time — never re-derived later from current metadata.
+    const receiptContract = classifyReceiptCapability(
+      registryByKey.get(`${currentItem.target.owner}/${currentItem.target.name}`),
+    )
     const dispatchedState = flipItemStatus(
       {hash: intentState.markerHash, state: intentState},
       currentItem.id,
       'dispatched',
       Date.now(),
+      {receiptContract},
     )
     const confirmCas = await casWriteMarker({
       octokit: input.octokit,
@@ -1656,7 +1680,7 @@ function flipItemStatus(
   itemId: string,
   status: ItemStatus,
   epoch: number | undefined,
-  extra: {correlationId?: string; nonceHash?: string} = {},
+  extra: {correlationId?: string; nonceHash?: string; receiptContract?: ReceiptCapability} = {},
 ): GoalState {
   const items = marker.state.items.map(item => {
     if (item.id !== itemId) return item
@@ -1666,6 +1690,7 @@ function flipItemStatus(
       ...(epoch === undefined ? {} : {epoch}),
       ...(extra.correlationId === undefined ? {} : {correlationId: extra.correlationId}),
       ...(extra.nonceHash === undefined ? {} : {nonceHash: extra.nonceHash}),
+      ...(extra.receiptContract === undefined ? {} : {receiptContract: extra.receiptContract}),
     }
   })
   const nextState: GoalState = {...marker.state, items, markerHash: ''}
