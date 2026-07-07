@@ -2122,7 +2122,7 @@ describe('runTrack — run-lookup is diagnostic-only, never authoritative (Unit 
     expect(result.counts.goalsClosed).toBe(0)
   })
 
-  it('diagnostic: a no-receipt needs-attention item with a concluded run is annotated "ran-no-report"', async () => {
+  it('diagnostic: a no-receipt needs-attention item with a completed correlated run is annotated "run-observed-no-receipt"', async () => {
     const item: DispatchItem = {
       id: 'item-1',
       target: TARGET_A,
@@ -2148,10 +2148,10 @@ describe('runTrack — run-lookup is diagnostic-only, never authoritative (Unit 
     const updatedItem = marker?.state.items.find(candidate => candidate.id === 'item-1')
     expect(updatedItem?.status).toBe('needs-attention')
     expect(updatedItem?.needsAttentionReason).toBe('no-receipt')
-    expect(updatedItem?.noReceiptDiagnostic).toBe('ran-no-report')
+    expect(updatedItem?.noReceiptDiagnostic).toBe('run-observed-no-receipt')
   })
 
-  it('diagnostic: a no-receipt needs-attention item with no run at all is annotated "never-ran"', async () => {
+  it('diagnostic: a no-receipt needs-attention item with no run found gets the conservative default, never claims the worker never ran', async () => {
     const item: DispatchItem = {
       id: 'item-1',
       target: TARGET_A,
@@ -2177,7 +2177,7 @@ describe('runTrack — run-lookup is diagnostic-only, never authoritative (Unit 
     const updatedItem = marker?.state.items.find(candidate => candidate.id === 'item-1')
     expect(updatedItem?.status).toBe('needs-attention')
     expect(updatedItem?.needsAttentionReason).toBe('no-receipt')
-    expect(updatedItem?.noReceiptDiagnostic).toBe('never-ran')
+    expect(updatedItem?.noReceiptDiagnostic).toBe('dispatch-accepted-no-receipt')
   })
 
   it('run-failure for a no-receipt needs-attention item does not resolve it to failed', async () => {
@@ -3683,7 +3683,7 @@ describe('golden path — real production composition (runDispatchCli then runTr
     }
   })
 
-  it('SLA + diagnostic: a no-receipt item past 24h surfaces needs-attention, annotated ran-no-report vs never-ran (production runTrack composition)', async () => {
+  it('SLA + diagnostic: a no-receipt item past 24h surfaces needs-attention with conservative diagnostics', async () => {
     const target = GOLDEN_TARGETS[0] as DispatchTarget
     const itemRan: DispatchItem = {
       id: 'item-ran',
@@ -3728,9 +3728,45 @@ describe('golden path — real production composition (runDispatchCli then runTr
     const neverRan = marker?.state.items.find(candidate => candidate.id === 'item-never')
     expect(ran?.status).toBe('needs-attention')
     expect(ran?.needsAttentionReason).toBe('no-receipt')
-    expect(ran?.noReceiptDiagnostic).toBe('ran-no-report')
+    expect(ran?.noReceiptDiagnostic).toBe('run-observed-no-receipt')
     expect(neverRan?.status).toBe('needs-attention')
     expect(neverRan?.needsAttentionReason).toBe('no-receipt')
-    expect(neverRan?.noReceiptDiagnostic).toBe('never-ran')
+    expect(neverRan?.noReceiptDiagnostic).toBe('dispatch-accepted-no-receipt')
+  })
+
+  it('a late valid receipt after needs-attention/no-receipt resolves the item and clears the no-receipt diagnostic', async () => {
+    const target = GOLDEN_TARGETS[0] as DispatchTarget
+    const rawNonce = 'raw-nonce-late-clear'
+    const item: DispatchItem = {
+      id: 'item-late',
+      target,
+      promptHash: 'h1',
+      status: 'needs-attention',
+      needsAttentionReason: 'no-receipt',
+      noReceiptDiagnostic: 'dispatch-accepted-no-receipt',
+      correlationId: 'c-late-clear',
+      epoch: 0,
+      nonceHash: hashNonce(rawNonce),
+    }
+    const goalIssue = makeOpenGoal({goal: 'g-late-clear', items: [item], markerHash: ''})
+    const {octokit, comments} = mockOctokitForGoal(goalIssue, {
+      comments: [makeReceiptComment(makeReceipt({correlationId: 'c-late-clear', nonce: rawNonce, status: 'success'}))],
+    })
+
+    const result = await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [gateEntryFor(target)],
+      findRunConclusion: async () => undefined,
+      now: () => 0,
+    })
+
+    expect(result.counts.itemsCompleted).toBe(1)
+    const marker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const resolved = marker?.state.items.find(candidate => candidate.id === 'item-late')
+    expect(resolved?.status).toBe('completed')
+    expect(resolved?.needsAttentionReason).toBeUndefined()
+    expect(resolved?.noReceiptDiagnostic).toBeUndefined()
   })
 })

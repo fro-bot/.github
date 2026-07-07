@@ -98,7 +98,8 @@ export interface RepoEntry {
    * path (see the `repos.yaml` sole-writer rule above) — it is not a prompt-delivered value or
    * a target self-report, and it does not prove the target will actually comply at runtime.
    * Absent means legacy/best-effort: dispatchable, but a missing receipt is never read as
-   * `never-ran` or `completed`. See `metadata/README.md` for the full authority boundary.
+   * evidence the worker did not run or as `completed`. See `metadata/README.md` for the full
+   * authority boundary.
    */
   cross_repo_receipts?: string
 }

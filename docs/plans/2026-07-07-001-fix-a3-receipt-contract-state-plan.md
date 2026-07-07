@@ -147,7 +147,7 @@ The coordinator must keep receipts as the completion oracle for accountable targ
 
 **Verification:** Marker schema remains backward compatible and deterministic.
 
-- [ ] **Unit 3: No-receipt diagnostic semantics**
+- [x] **Unit 3: No-receipt diagnostic semantics**
 
 **Goal:** Make missing-receipt state honest about what the coordinator can prove.
 

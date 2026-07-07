@@ -37,15 +37,20 @@ export interface DispatchItem {
    */
   needsAttentionReason?: 'no-receipt' | 'unparseable-receipt'
   /**
-   * Diagnostic-only annotation (Unit 5), set ONLY when
-   * `needsAttentionReason === 'no-receipt'`: whether the demoted run-lookup
-   * collaborator found a concluded run for this item ('ran-no-report') or no
-   * run at all ('never-ran'). NEVER influences terminal/non-terminal state —
-   * receipts (R7), the SLA (R9), and the registry gate are the only state
-   * drivers. Purely forensic signal for the operator (R8: no PR polling for
-   * completion; run-lookup is diagnostic, not authoritative).
+   * Diagnostic-only annotation, set ONLY when `needsAttentionReason ===
+   * 'no-receipt'`: what the coordinator can actually prove about a missing
+   * receipt. `dispatch-accepted-no-receipt` is the conservative default —
+   * dispatch was accepted but no accepted coordination receipt has arrived;
+   * it never claims the worker never ran. `run-observed-no-receipt` upgrades
+   * that default only when the (non-authoritative) Actions run-lookup finds
+   * a completed correlated run with still no accepted receipt. NEVER
+   * influences terminal/non-terminal state — receipts (R7), the SLA (R9),
+   * and the registry gate are the only state drivers. Purely forensic
+   * signal for the operator (R8: no PR polling for completion; run-lookup
+   * is diagnostic, not authoritative, and a missing/failed lookup is never
+   * read as proof the worker never ran).
    */
-  noReceiptDiagnostic?: 'ran-no-report' | 'never-ran'
+  noReceiptDiagnostic?: 'dispatch-accepted-no-receipt' | 'run-observed-no-receipt'
   /**
    * Snapshot of the target's operator-declared receipt contract capability at
    * the moment this item was dispatched — set from `classifyReceiptCapability`
@@ -124,8 +129,8 @@ export type GateResult = 'ok' | 'blocked-not-onboarded' | 'blocked-ineligible'
  * - `receipt-accountable` — the operator has declared this target supports the coordination
  *   receipt protocol (`cross_repo_receipts: 'coordination-issue-v1'`).
  * - `legacy-best-effort` — no capability declared (or no registry entry). Dispatchable under
- *   today's best-effort semantics; a missing receipt here must never be read as `never-ran` or
- *   `completed`.
+ *   today's best-effort semantics; a missing receipt here must never be read as evidence the
+ *   worker did not run or as `completed`.
  */
 export type ReceiptCapability = 'receipt-accountable' | 'legacy-best-effort'
 
@@ -244,8 +249,8 @@ function isDispatchItem(value: unknown): value is DispatchItem {
   }
   if (
     record.noReceiptDiagnostic !== undefined &&
-    record.noReceiptDiagnostic !== 'ran-no-report' &&
-    record.noReceiptDiagnostic !== 'never-ran'
+    record.noReceiptDiagnostic !== 'dispatch-accepted-no-receipt' &&
+    record.noReceiptDiagnostic !== 'run-observed-no-receipt'
   ) {
     return false
   }
@@ -1812,7 +1817,7 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       const resolution = receiptResolutions.get(item.id)
       if (resolution?.terminal !== undefined) {
         const nextStatus: ItemStatus = resolution.terminal === 'failed' ? 'failed' : 'completed'
-        return {...item, status: nextStatus, needsAttentionReason: undefined}
+        return {...item, status: nextStatus, needsAttentionReason: undefined, noReceiptDiagnostic: undefined}
       }
       if (resolution?.attentionReason !== undefined) {
         return {...item, status: 'needs-attention' as ItemStatus, needsAttentionReason: resolution.attentionReason}
@@ -1857,11 +1862,13 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       return item
     })
 
-    // Diagnostic-only annotation (Unit 5, R8/R9/R12): run-lookup is consulted
-    // ONLY for an item that just became `needs-attention`/`no-receipt`, and
-    // ONLY to distinguish "ran but didn't report" from "never ran" for the
-    // operator. This NEVER changes terminal/non-terminal state — the item
-    // stays `needs-attention` either way.
+    // Diagnostic-only annotation (R1/R3/R4): run-lookup is consulted ONLY for
+    // an item that just became `needs-attention`/`no-receipt`, and only to
+    // upgrade the conservative default when a completed correlated run is
+    // observed. This NEVER changes terminal/non-terminal state — the item
+    // stays `needs-attention` either way — and a missing/failed lookup is
+    // never read as proof the worker never ran; it keeps the conservative
+    // default instead.
     const preItemsWithDiagnostic = await Promise.all(
       preItemsWithSla.map(async item => {
         if (item.status !== 'needs-attention' || item.needsAttentionReason !== 'no-receipt') return item
@@ -1869,7 +1876,7 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
 
         const runConclusion = await input.findRunConclusion(item.target, item.correlationId)
         const noReceiptDiagnostic: NonNullable<DispatchItem['noReceiptDiagnostic']> =
-          runConclusion === undefined ? 'never-ran' : 'ran-no-report'
+          runConclusion === undefined ? 'dispatch-accepted-no-receipt' : 'run-observed-no-receipt'
         return {...item, noReceiptDiagnostic}
       }),
     )
