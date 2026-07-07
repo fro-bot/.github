@@ -1907,6 +1907,44 @@ describe('runDispatch — blocked target dispatches the rest', () => {
   })
 })
 
+describe('runDispatch — malformed cross_repo_receipts fails closed before dispatch', () => {
+  it('never calls createWorkflowDispatch when a registry entry has an unrecognized cross_repo_receipts value', async () => {
+    const target = TARGET_A
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do work'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    await expect(
+      runDispatch({
+        octokit,
+        event: makeLabeledEvent(),
+        repo: REPO,
+        approveLabel: 'dispatch-approved',
+        loadRegistry: async () => [{...gateEntryFor(target), cross_repo_receipts: 'bogus'}],
+        loadOtherOpenGoalMarkers: async () => [],
+        findRunByCorrelationId: async () => false,
+        createWorkflowDispatch: async params => {
+          await createWorkflowDispatch(params)
+        },
+        nonceSource: () => 'nonce-1',
+      }),
+    ).rejects.toThrow(/cross_repo_receipts/)
+
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+})
+
 describe('runDispatch — resume reconciliation by correlation-id', () => {
   it('reconciles an intent item by correlation-id lookup without re-dispatching', async () => {
     const item: DispatchItem = {

@@ -1470,10 +1470,15 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
 
   // Apply the registry gate up front — items whose target is ineligible move
   // to 'blocked' before dispatch planning, distinct from a not-onboarded gate.
+  // Also classify the receipt capability here, before any dispatch side effect:
+  // an unrecognized `cross_repo_receipts` value must fail closed at this point,
+  // not later at confirmed-dispatch time after `createWorkflowDispatch` already ran.
   let state: GoalState = {...marker.state, markerHash: marker.hash}
   const gatedItems = state.items.map(item => {
     if (item.status !== 'pending') return item
-    const gate = gateTarget(registryByKey.get(`${item.target.owner}/${item.target.name}`))
+    const registryEntry = registryByKey.get(`${item.target.owner}/${item.target.name}`)
+    classifyReceiptCapability(registryEntry)
+    const gate = gateTarget(registryEntry)
     if (gate !== 'ok') return {...item, status: 'blocked' as ItemStatus}
     // An eligible target owner missing a minted dispatch token is an ops
     // misconfiguration (App-installation mint didn't cover this owner) —
