@@ -174,7 +174,7 @@ The coordinator must keep receipts as the completion oracle for accountable targ
 
 **Verification:** State transitions are conservative and do not mark local-only worker success as completion.
 
-- [ ] **Unit 4: Production-fixture regression for #3652**
+- [x] **Unit 4: Production-fixture regression for #3652**
 
 **Goal:** Encode the first real A3 failure mode so it does not regress into false success.
 

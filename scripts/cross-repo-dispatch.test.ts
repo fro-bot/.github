@@ -2248,7 +2248,7 @@ describe('runTrack — run-lookup is diagnostic-only, never authoritative (Unit 
   })
 })
 
-// ─── Unit 4: receipt-driven terminal-state resolution + 24h SLA ─────────────
+// ─── Receipt-driven terminal-state resolution + 24h SLA ─────────────────────
 
 function makeReceiptComment(receipt: CrossRepoResult, login = 'fro-bot'): {id: number; body: string; login: string} {
   return {id: 0, body: buildResultMarker(receipt), login}
@@ -2444,7 +2444,7 @@ describe('resolveReceipts — three-gate trust + earliest-wins (pure core)', () 
   })
 })
 
-describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
+describe('runTrack — receipt-driven resolution integration', () => {
   it('happy path: authentic success/noop/failed receipts resolve to completed/completed/failed', async () => {
     const RAW = 'raw-nonce-happy'
     const items: DispatchItem[] = [
@@ -3768,5 +3768,119 @@ describe('golden path — real production composition (runDispatchCli then runTr
     expect(resolved?.status).toBe('completed')
     expect(resolved?.needsAttentionReason).toBeUndefined()
     expect(resolved?.noReceiptDiagnostic).toBeUndefined()
+  })
+})
+
+describe('runTrack — production fixture regression (#3652: five targets, two without an accepted receipt)', () => {
+  it('three accepted receipts settle their items; a local-only comment and a fully silent target both stay non-terminal needs-attention/no-receipt, and the goal never closes', async () => {
+    const RAW = 'raw-nonce-3652'
+    const acceptedTargets: DispatchTarget[] = [
+      {owner: 'marcusrbrown', name: 'gpt'},
+      {owner: 'fro-bot', name: 'agent'},
+      {owner: 'fro-bot', name: 'dashboard'},
+    ]
+    const localOnlyTarget: DispatchTarget = {owner: 'marcusrbrown', name: 'containers'}
+    const silentTarget: DispatchTarget = {owner: 'marcusrbrown', name: 'opencode-copilot-delegate'}
+
+    const items: DispatchItem[] = [
+      ...acceptedTargets.map((target, index) => ({
+        id: `item-${target.name}`,
+        target,
+        promptHash: `h-${index}`,
+        status: 'dispatched' as const,
+        correlationId: `corr-${target.name}`,
+        epoch: 0,
+        nonceHash: hashNonce(`${RAW}-${target.name}`),
+      })),
+      {
+        id: 'item-containers',
+        target: localOnlyTarget,
+        promptHash: 'h-containers',
+        status: 'dispatched',
+        correlationId: 'corr-containers',
+        epoch: 0,
+        nonceHash: hashNonce(`${RAW}-containers`),
+      },
+      {
+        id: 'item-opencode-copilot-delegate',
+        target: silentTarget,
+        promptHash: 'h-silent',
+        status: 'dispatched',
+        correlationId: 'corr-silent',
+        epoch: 0,
+        nonceHash: hashNonce(`${RAW}-silent`),
+      },
+    ]
+
+    const goalIssue = makeOpenGoal({goal: 'g-3652', items, markerHash: ''})
+
+    // The three accountable targets posted accepted coordination receipts.
+    // The `containers` worker posted only a local-only completion comment —
+    // production shape, not a coordination receipt marker — and refused the
+    // receipt as prompt-injection-shaped; it must not complete the item.
+    // `opencode-copilot-delegate` posted nothing at all.
+    const {octokit, comments} = mockOctokitForGoal(goalIssue, {
+      comments: [
+        ...acceptedTargets.map(target =>
+          makeReceiptComment(
+            makeReceipt({correlationId: `corr-${target.name}`, nonce: `${RAW}-${target.name}`, status: 'success'}),
+          ),
+        ),
+        {
+          id: 100,
+          login: 'marcusrbrown',
+          body: 'Triaged locally and filed a fix; not going to post an automated receipt comment for this.',
+        },
+      ],
+    })
+
+    // Diagnostic-only run lookup: the `containers` worker's run is observed
+    // as completed (it really did run local triage), but that never
+    // substitutes for an accepted receipt. The fully silent target has no
+    // observed run at all.
+    const findRunConclusion = vi.fn(async (target: DispatchTarget, correlationId: string) => {
+      if (target.name === 'containers' && correlationId === 'corr-containers') return 'success' as const
+      return undefined
+    })
+
+    const result = await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [
+        ...acceptedTargets.map(target => gateEntryFor(target)),
+        gateEntryFor(localOnlyTarget),
+        gateEntryFor(silentTarget),
+      ],
+      findRunConclusion,
+      now: () => RECEIPT_SLA_MS + 1,
+    })
+
+    // Three accepted receipts settle their items; the goal must NOT close —
+    // two targets remain non-terminal.
+    expect(result.counts.itemsCompleted).toBe(3)
+    expect(result.counts.itemsFailed).toBe(0)
+    expect(result.counts.goalsClosed).toBe(0)
+
+    const marker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    for (const target of acceptedTargets) {
+      const settled = marker?.state.items.find(candidate => candidate.id === `item-${target.name}`)
+      expect(settled?.status).toBe('completed')
+    }
+
+    // Local-only completion comment does not complete the item: it stays
+    // needs-attention/no-receipt, with the run-observed diagnostic since a
+    // completed correlated run really was found.
+    const localOnly = marker?.state.items.find(candidate => candidate.id === 'item-containers')
+    expect(localOnly?.status).toBe('needs-attention')
+    expect(localOnly?.needsAttentionReason).toBe('no-receipt')
+    expect(localOnly?.noReceiptDiagnostic).toBe('run-observed-no-receipt')
+
+    // Fully silent target: same non-terminal state, conservative diagnostic
+    // — never claims the worker never ran.
+    const silent = marker?.state.items.find(candidate => candidate.id === 'item-opencode-copilot-delegate')
+    expect(silent?.status).toBe('needs-attention')
+    expect(silent?.needsAttentionReason).toBe('no-receipt')
+    expect(silent?.noReceiptDiagnostic).toBe('dispatch-accepted-no-receipt')
   })
 })
