@@ -2665,3 +2665,28 @@ Sources: https://github.com/marcusrbrown/mothership (SHA 48bd14a2b8735d35c773771
 Surveyed marcusrbrown/mothership and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mothership
+
+## [2026-07-07 08:48] ingest | marcusrbrown/mrbro.dev
+
+Seventh survey of `marcusrbrown/mrbro.dev` (`main` HEAD `c6f106b`, last main commit 2026-07-04T20:30Z, up from `7a49abc` which held from 2026-05-28 through the four prior no-delta re-surveys). Reads scoped per the untrusted-input constraint to: repo metadata, root + `.github/workflows` directory listings, `README.md`, `package.json`, `pnpm-workspace.yaml`, `.github/renovate.json5`, `fro-bot.yaml`, and open issue/PR listings via `gh`.
+
+First real delta since 2026-06-02. Two structural shifts, both in the Fro Bot workflow:
+
+- **`fro-bot.yaml` #182 fix (2026-07-04):** the `PROMPT` selection expression was reordered so a non-empty `workflow_dispatch.inputs.prompt` wins first for **any** dispatch regardless of `mode`. Previously a prompt-only dispatch (no mode) silently fell through to the autoheal prompt because `mode` defaults to `autoheal` — the custom text was discarded. This is the same bare-dispatch-prompt fix already logged for [[marcusrbrown--marcusrbrown]] #1045 and [[marcusrbrown--vbs]] #662; the fleet is converging on this routing fix.
+- **Autoheal prompt expanded 5 → 8 categories:** added Quality Gates Verification (#6), inbound Cross-Project Intelligence (#7, surveys tokentoilet/vbs/yield-farmer/renovate-config/.github/fro-bot·agent), and Sunday-only Upstream Modernization Watch (#8, gated on a new `IS_SUNDAY_UTC` preflight step, `date -u +%u == 7`). The report template gained matching sections. Agent pin unchanged at `fro-bot/agent@v0.43.0` (`1563f298`) — this repo now trails the fleet's v0.83.1 leaders by a wide margin.
+
+Dependency deltas: `vite` 7.3.2 → **7.3.5** (security PR #181 merged; the `mrbro-bot`-drives-upstream-security-upgrades half of the two-bot split lands cleanly), `react-router-dom` ^7.7.1 → **^7.15.0**, `@eslint-react/eslint-plugin` 2.13.0. TypeScript still 5.9.3, pnpm 10.33.4, Vitest 4.1.4, Node >=22.6.0. Renovate preset still `#5.2.0`, still no `settings.yml`, 7 workflows.
+
+**Contradiction recorded (not overwritten):** the prior "overrides migrated fully out of `package.json`" claim is now only partially true. `pnpm-workspace.yaml` remains the primary GHSA-annotated ledger (unchanged ~20 entries), but a **second, smaller `pnpm.overrides` block reappeared in `package.json`** (`js-yaml ^4.2.0`, `qs ^6.15.2`, `tmp ^0.2.7`, `uuid ^11.1.1`) that diverges in value from the workspace ledger (`uuid ^11.1.1` vs `>=14.0.0`; `tmp ^0.2.7` vs `>=0.2.6`). Two override surfaces for the same advisories = a drift footgun where a fix on one surface can be masked by the other. Both states dated; flagged for consolidation.
+
+Operational: open issues 4 (unchanged — #162 autoheal, #13 maintenance, #1 Dependency Dashboard, #48 triage), open PRs 6 → 5 (#181 merged; remaining set #180/#178/#175/#172/#168 all Renovate-class, `fro-bot`'s override PR #178 still open). Fro Bot workflow present and active — no onboarding follow-up needed.
+
+Updated repo page `marcusrbrown--mrbro-dev.md` (new source `c6f106b`, frontmatter `updated`, Overview counts, Vite/React-Router tech-stack rows, two new Fro Bot Integration subsections for the #182 fix and 8-category expansion, Security Posture contradiction note, Connections PR-queue update, survey-history row) and refreshed the `index.md` summary line. No new topic/entity/comparison page warranted — the deltas are workflow-prompt evolution and dependency bumps already covered by [[github-actions-ci]] and sibling repo pages.
+
+Sources: https://github.com/marcusrbrown/mrbro.dev (SHA c6f106bb57be6deac97fd9600448ef404d9cec4b)
+
+## [2026-07-07 08:50] ingest | repo:marcusrbrown/mrbro.dev
+
+Surveyed marcusrbrown/mrbro.dev and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mrbro.dev
