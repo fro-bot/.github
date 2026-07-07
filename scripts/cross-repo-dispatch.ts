@@ -104,12 +104,34 @@ export interface ParseResultOutcome {
 
 export type GateResult = 'ok' | 'blocked-not-onboarded' | 'blocked-ineligible'
 
+/**
+ * Operator-declared receipt contract classification for a target. Sourced only from the
+ * data-branch `metadata/repos.yaml` field `cross_repo_receipts` (see `metadata/README.md`).
+ * This is an administrative routing gate, not proof of runtime compliance — a target's own
+ * workflow still owns whether it actually posts a coordination receipt.
+ *
+ * - `receipt-accountable` — the operator has declared this target supports the coordination
+ *   receipt protocol (`cross_repo_receipts: 'coordination-issue-v1'`).
+ * - `legacy-best-effort` — no capability declared (or no registry entry). Dispatchable under
+ *   today's best-effort semantics; a missing receipt here must never be read as `never-ran` or
+ *   `completed`.
+ */
+export type ReceiptCapability = 'receipt-accountable' | 'legacy-best-effort'
+
+export type AccountableGateResult = GateResult | 'blocked-receipt-contract-missing'
+
 /** Minimal shape of a registry entry needed for the gate — mirrors `RepoEntry`. */
 export interface GateEntry {
   owner: string
   name: string
   has_fro_bot_workflow: boolean
   private?: boolean
+  /**
+   * Optional operator-declared receipt contract capability. Only the data-branch
+   * `metadata/repos.yaml` sole-writer path may set this — it is not a prompt-delivered or
+   * target self-reported value. See `metadata/README.md` for the field's authority boundary.
+   */
+  cross_repo_receipts?: string
 }
 
 export interface DispatchPlanInput {
@@ -863,6 +885,51 @@ export function gateTarget(entry: GateEntry | undefined): GateResult {
   if (!entry.has_fro_bot_workflow) return 'blocked-not-onboarded'
   return 'ok'
 }
+
+/** The only value the coordinator recognizes for an opted-in receipt contract. */
+const RECEIPT_CAPABILITY_VALUE = 'coordination-issue-v1'
+
+/**
+ * Classify a registry entry's operator-declared receipt contract. A missing entry or a
+ * missing field is `legacy-best-effort`, not a stronger claim. An unrecognized non-empty
+ * value fails closed with a parse/validation error rather than silently downgrading —
+ * mirrors `assertReposFile`'s fail-closed posture (see `scripts/schemas.ts`).
+ */
+export function classifyReceiptCapability(entry: GateEntry | undefined): ReceiptCapability {
+  if (entry === undefined) return 'legacy-best-effort'
+  if (entry.cross_repo_receipts === undefined) return 'legacy-best-effort'
+  if (entry.cross_repo_receipts === RECEIPT_CAPABILITY_VALUE) return 'receipt-accountable'
+  throw new Error(
+    `cross_repo_receipts: unrecognized value "${entry.cross_repo_receipts}" (expected "${RECEIPT_CAPABILITY_VALUE}")`,
+  )
+}
+
+/**
+ * Registry gate for a future accountable dispatch mode. Legacy/best-effort dispatch
+ * (`gateTarget`) is unaffected — this stricter gate additionally requires the operator-
+ * declared receipt capability and is not yet wired into `runDispatch`. Existing gate reasons
+ * (`blocked-ineligible`, `blocked-not-onboarded`) take priority over the receipt-contract
+ * check so callers see the most fundamental blocking reason first.
+ */
+export function gateTargetForAccountableDispatch(entry: GateEntry | undefined): AccountableGateResult {
+  const baseGate = gateTarget(entry)
+  if (baseGate !== 'ok') return baseGate
+  if (classifyReceiptCapability(entry) !== 'receipt-accountable') return 'blocked-receipt-contract-missing'
+  return 'ok'
+}
+
+/**
+ * Initial data-branch backfill candidates: the #3652 targets that produced accepted
+ * coordination receipts. `marcusrbrown/containers` and `marcusrbrown/opencode-copilot-delegate`
+ * are deliberately excluded — they completed locally without an accepted receipt (see
+ * `docs/plans/2026-07-07-001-fix-a3-receipt-contract-state-plan.md`). This constant documents
+ * the candidate set for the operator; it is not applied to `metadata/repos.yaml` by this code.
+ */
+export const RECEIPT_BACKFILL_CANDIDATES: ReadonlySet<string> = new Set([
+  'marcusrbrown/gpt',
+  'fro-bot/agent',
+  'fro-bot/dashboard',
+])
 
 // ─── Planner: dispatch plan ──────────────────────────────────────────────────
 
@@ -2062,6 +2129,7 @@ async function loadRegistryFromDisk(): Promise<GateEntry[]> {
       name: entry.name,
       has_fro_bot_workflow: entry.has_fro_bot_workflow,
       private: entry.private,
+      cross_repo_receipts: entry.cross_repo_receipts,
     }))
   } catch {
     return []

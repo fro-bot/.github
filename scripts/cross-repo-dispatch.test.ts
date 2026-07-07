@@ -16,6 +16,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   buildMarkerComment,
   buildResultMarker,
+  classifyReceiptCapability,
   computeApprovalFingerprint,
   createTargetClientResolver,
   CROSS_REPO_GOAL_LABEL,
@@ -24,6 +25,7 @@ import {
   findRunByCorrelationId,
   findRunConclusion,
   gateTarget,
+  gateTargetForAccountableDispatch,
   hashNonce,
   loadOpenGoalIssues,
   loadOtherOpenGoalMarkers,
@@ -34,6 +36,7 @@ import {
   parseTargetTokens,
   planDispatch,
   planSnapshot,
+  RECEIPT_BACKFILL_CANDIDATES,
   RECEIPT_SLA_MS,
   repairJsonStringEscapes,
   REQUIRED_APPROVER,
@@ -672,6 +675,68 @@ describe('gateTarget', () => {
 
   it('blocks a missing registry entry as ineligible', () => {
     expect(gateTarget(undefined)).toBe('blocked-ineligible')
+  })
+})
+
+describe('classifyReceiptCapability', () => {
+  const base: GateEntry = {owner: 'fro-bot', name: 'agent', has_fro_bot_workflow: true, private: false}
+
+  it('classifies a target with the receipt capability as receipt-accountable', () => {
+    expect(classifyReceiptCapability({...base, cross_repo_receipts: 'coordination-issue-v1'})).toBe(
+      'receipt-accountable',
+    )
+  })
+
+  it('classifies a target without the field as best-effort/legacy, not verified receipt-capable', () => {
+    expect(classifyReceiptCapability(base)).toBe('legacy-best-effort')
+  })
+
+  it('classifies a missing registry entry as legacy/best-effort', () => {
+    expect(classifyReceiptCapability(undefined)).toBe('legacy-best-effort')
+  })
+
+  it('fails closed on an unknown capability value', () => {
+    expect(() => classifyReceiptCapability({...base, cross_repo_receipts: 'bogus-value'} as GateEntry)).toThrow(
+      /cross_repo_receipts/,
+    )
+  })
+})
+
+describe('gateTargetForAccountableDispatch', () => {
+  const base: GateEntry = {owner: 'fro-bot', name: 'agent', has_fro_bot_workflow: true, private: false}
+
+  it('allows an eligible target that has opted into the receipt contract', () => {
+    expect(gateTargetForAccountableDispatch({...base, cross_repo_receipts: 'coordination-issue-v1'})).toBe('ok')
+  })
+
+  it('rejects an eligible target without the receipt capability with a stable reason', () => {
+    expect(gateTargetForAccountableDispatch(base)).toBe('blocked-receipt-contract-missing')
+  })
+
+  it('rejects an eligible target with no registry entry as ineligible before checking receipts', () => {
+    expect(gateTargetForAccountableDispatch(undefined)).toBe('blocked-ineligible')
+  })
+
+  it('preserves existing gate reasons (not-onboarded) ahead of the receipt-contract check', () => {
+    expect(gateTargetForAccountableDispatch({...base, has_fro_bot_workflow: false})).toBe('blocked-not-onboarded')
+  })
+
+  it('does not block legacy/best-effort dispatch mode for a target missing the capability', () => {
+    // Legacy gate (used by today's best-effort dispatch) must remain unaffected by the new field.
+    expect(gateTarget(base)).toBe('ok')
+  })
+})
+
+describe('receipt backfill candidates (#3652)', () => {
+  it('lists exactly the accepted-receipt targets from #3652', () => {
+    expect([...RECEIPT_BACKFILL_CANDIDATES].sort()).toStrictEqual(
+      ['fro-bot/agent', 'fro-bot/dashboard', 'marcusrbrown/gpt'].sort(),
+    )
+  })
+
+  it('does not include local-only/no-receipt #3652 targets', () => {
+    expect(RECEIPT_BACKFILL_CANDIDATES.has('marcusrbrown/containers')).toBe(false)
+    expect(RECEIPT_BACKFILL_CANDIDATES.has('marcusrbrown/opencode-copilot-delegate')).toBe(false)
   })
 })
 
