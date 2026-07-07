@@ -1,7 +1,7 @@
 ---
 title: Fix A3 receipt contract state handling
 type: fix
-status: active
+status: complete
 date: 2026-07-07
 source: https://github.com/fro-bot/.github/issues/3653
 ---
