@@ -48,8 +48,8 @@ posted over a public channel. Gate acceptance on **three** checks:
 3. **Hash-bound nonce** — `hash(receipt.nonce)` equals the item's stored `nonceHash`.
 
 Only the **hash** of the nonce ever appears in the public marker; the raw nonce is delivered to the
-worker prompt-only (a dispatch input, never public). Reading the public marker therefore yields
-nothing forgeable — a worker for item B cannot forge item A's receipt. Resolution is
+worker through the prompt, not as its own dispatch input. Reading the public marker therefore yields
+nothing forgeable — a worker for item B cannot forge item A's receipt from marker state alone. Resolution is
 **earliest-authentic-receipt-wins**: the raw nonce becomes public the instant the real worker posts
 its receipt, so a later replay of that now-public nonce must not be able to flip an already-resolved
 item.
@@ -95,5 +95,7 @@ Nonce spec that made the gate sound: minted from `randomBytes(32).toString('base
   companion parse-tolerance invariant for the same receipts
 - `docs/solutions/best-practices/per-owner-installation-tokens-2026-07-06.md` — the credential
   topology the dispatch half depends on
-- Known residual: shared-PAT receipt authorship is a confused-deputy boundary (tracked in
-  fro-bot/.github#3637), closed only by a per-dispatch, issue-scoped receipt token
+- Known residual: worker receipt authorship is a shared-trust boundary. GitHub does not provide an
+  issue-scoped receipt token, and passing a separate token through the prompt would only move the
+  secret. Further hardening requires target-side policy or a receipt broker, not coordinator-only
+  code.
