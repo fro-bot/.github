@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/mrbro.dev"
 created: 2026-04-18
-updated: 2026-07-07
+updated: 2026-07-06
 sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 51f5cab5c77768b761d9f0a688ac7436cc5a06f4
@@ -22,9 +22,6 @@ sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 7a49abc3d2d945880cc1db1f4edbddcd71ad0142
     accessed: 2026-06-23
-  - url: https://github.com/marcusrbrown/mrbro.dev
-    sha: c6f106bb57be6deac97fd9600448ef404d9cec4b
-    accessed: 2026-07-07
 tags: [portfolio, react, typescript, vite, github-pages, blog, pnpm]
 aliases: [mrbro-dev, mrbro.dev]
 related:
@@ -41,12 +38,12 @@ Marcus R. Brown's developer portfolio website. React 19, TypeScript (strict), Vi
 - **Purpose:** Personal portfolio and blog
 - **Default branch:** `main`
 - **Created:** 2026-03-06
-- **Last push:** 2026-07-06 (default-branch HEAD `c6f106b` landed 2026-07-04)
+- **Last push:** 2026-04-20
 - **Homepage:** https://mrbro.dev
 - **Topics:** `blog`, `developer`, `github-pages`, `portfolio`, `react`, `typescript`, `vite`
 - **License:** MIT (badge present, no LICENSE file detected via API)
-- **Open issues:** 4 as of 2026-07-07 (unchanged since 2026-06-02) — the canonical rolling pair holds: "Daily Autohealing Report" #162 and "Daily Maintenance Report" #13, plus #1 Dependency Dashboard and #48 triage. (Was 8 on 2026-05-21; the four pin-version PRs that were inflating the count have mostly merged.)
-- **Open PRs:** 5 as of 2026-07-07 — down one from 2026-06-23. #181 `vite` 7.3.2 → 7.3.5 `[SECURITY]` merged (Vite is now `7.3.5` on `main`). Remaining unchanged Renovate-class set: #180 `prettier` 3.8.3, #178 pnpm override for `tmp` path-traversal advisory (`fro-bot`), #175 `eslint-plugin-react-refresh` 0.5.2, #172 `@bfra.me/prettier-config` 0.16.8, #168 `@bfra.me/eslint-config` v0.51.0.
+- **Open issues:** 4 as of 2026-06-23 (unchanged through 2026-06-02/06-13) — the canonical rolling pair holds: "Daily Autohealing Report" #162 and "Daily Maintenance Report" #13, plus #1 Dependency Dashboard and #48 triage. (Was 8 on 2026-05-21; the four pin-version PRs that were inflating the count have mostly merged.)
+- **Open PRs:** 6 as of 2026-06-23 — set grew by one since 2026-06-02. New: #181 `vite` 7.3.2 → 7.3.5 `[SECURITY]` (`mrbro-bot`, labels `automerge`+`security`, opened 2026-06-15). Remaining unchanged: #180 `prettier` 3.8.3, #178 pnpm override for `tmp` path-traversal advisory (`fro-bot`), #175 `eslint-plugin-react-refresh` 0.5.2, #172 `@bfra.me/prettier-config` 0.16.8, #168 `@bfra.me/eslint-config` v0.51.0. All Renovate-class.
 
 ## Tech Stack
 
@@ -54,8 +51,8 @@ Marcus R. Brown's developer portfolio website. React 19, TypeScript (strict), Vi
 | --- | --- | --- |
 | UI Framework | React | 19.x |
 | Language | TypeScript | 5.6+ (strict, `verbatimModuleSyntax`, `erasableSyntaxOnly`) |
-| Bundler | Vite | 7.3.5 (SWC via `@vitejs/plugin-react-swc` 4.3.0; bumped 7.3.2 → 7.3.5 via merged security PR #181, 2026-07) |
-| Routing | React Router | v7 (`react-router-dom` ^7.15.0; was ^7.7.1 through 2026-06-23) |
+| Bundler | Vite | 7.x (SWC via `@vitejs/plugin-react-swc`) |
+| Routing | React Router | v7 (`react-router-dom` ^7.7.1) |
 | Syntax Highlighting | Shiki | 4.x (externalized in build) |
 | Schema Validation | Ajv + ajv-formats | 8.x |
 | Unit Testing | Vitest | 4.x (happy-dom) |
@@ -177,25 +174,6 @@ Five surgical prompt inserts were ported in from a 2026-05-23 session that diagn
 
 This is the cross-repo intelligence pattern in action: a bug fixed in one managed repo propagates as a review heuristic into siblings. The fix itself lives in `marcusrbrown/marcusrbrown` PRs #923 (bug) and #924 (source workflow).
 
-#### Dispatch-prompt precedence fix (#182, 2026-07-04)
-
-The `PROMPT` selection expression in `fro-bot.yaml` was reordered so a non-empty `workflow_dispatch.inputs.prompt` wins first for **any** dispatch, regardless of `mode`. Previously the custom prompt was only consumed when `mode == 'review'`; since `mode` defaults to `autoheal`, a dispatch that supplied only a prompt (no mode) silently fell through to the autoheal prompt and the custom text was discarded. The new head of the chain is `(github.event_name == 'workflow_dispatch' && inputs.prompt) || …`, with the mode-based maintenance/autoheal fallbacks preserved for prompt-less dispatches. This is the same fixed-a-silent-drop class of bug the ported review heuristics already guard against — here the discard was in the workflow's own prompt-routing logic.
-
-#### Autoheal prompt expanded 5 → 8 categories (SHA `c6f106b`, observed 2026-07-07)
-
-The consolidated `AUTOHEAL_PROMPT` has grown well past the five-category sweep recorded through 2026-05-21. As of `c6f106b` it runs eight categories with explicit execution-model, dedup, scope-cap, dependency-ownership, and trusted-authors preambles:
-
-1. Errored PRs (trusted-author-gated branch repair; skips workflow/prompt/lockfile-touching branches)
-2. Security (advisory remediation; no bulk unrelated bumps)
-3. Code Quality & Repo Hygiene (bundle budgets, coverage thresholds, stale TODO scan, convention drift, AGENTS.md accuracy)
-4. Developer Experience (lint/type/format fixes via PR, never direct-to-main)
-5. Production Site Review (`npx agent-browser` over `/`, `/about`, `/projects`, `/blog` with retry-once-before-filing)
-6. **Quality Gates Verification** (new) — `pnpm lint`, `tsc --noEmit`, `pnpm test`, `pnpm build`, `analyze-build` on the default branch
-7. **Cross-Project Intelligence (inbound only)** (new) — surveys `tokentoilet`, `vbs`, `yield-farmer`, `renovate-config`, `.github`, and `fro-bot/agent` for patterns worth adopting *into* mrbro.dev; observation-only, never modifies other repos
-8. **Upstream Modernization Watch (Sundays UTC only)** (new) — gated on a new `IS_SUNDAY_UTC` preflight step (`date -u +%u == 7`); reviews release notes for `fro-bot/agent`, `actions/checkout`, React, Vite, React Router. Documents findings in the perpetual issue; must not bump versions.
-
-The report template correspondingly gained Quality Gates, Cross-Project Intelligence, and a Sunday-only Upstream Modernization Watch table. Agent pin unchanged at `fro-bot/agent@v0.43.0` (`1563f298`).
-
 ### fro-bot.yaml (prior two-file form — historical, 2026-04-18 → 2026-04-26)
 
 - Triggers: PR events (opened, synchronize, reopened, ready_for_review, review_requested), issue events (opened, edited), comment events (`@fro-bot` mention including discussion comments), daily schedule (15:30 UTC), manual dispatch
@@ -270,9 +248,7 @@ Current overrides (`pnpm-workspace.yaml`):
 | `ws: ^8.20.1` | GHSA-58qx-3vcg-4xpx (moderate; via `@lhci/cli` → lighthouse → puppeteer-core → ws) |
 | `yauzl@<3.2.1: >=3.2.1` | yauzl advisory |
 
-Vite upgraded to v7.3.2 for security fix (#121), then to **v7.3.5** via merged security PR #181 (2026-07). The migration to a CI dependency-audit gate (`pnpm audit`, #177) is now the forcing function that keeps this list current — overrides are added in response to a failing audit rather than ad-hoc.
-
-**Contradiction noted (2026-07-07, SHA `c6f106b`):** the earlier claim that overrides migrated *out of* `package.json` entirely is now only partially true. `pnpm-workspace.yaml` remains the primary GHSA-annotated ledger (unchanged), but a **second, smaller `pnpm.overrides` block has reappeared in `package.json`** carrying four entries — `js-yaml: ^4.2.0`, `qs: ^6.15.2`, `tmp: ^0.2.7`, `uuid: ^11.1.1`. These overlap the workspace ledger by name but diverge in value: `package.json` pins `uuid ^11.1.1` while `pnpm-workspace.yaml` pins `uuid >=14.0.0`, and `package.json` pins `tmp ^0.2.7` vs the workspace's best-effort `tmp@<=0.2.3: >=0.2.6`. pnpm merges both surfaces, and the more specific `package.json` root override typically wins — so the effective `uuid`/`tmp` floors are the `package.json` values, not the workspace ones. This is a drift footgun: two override surfaces for the same advisories mean a fix applied to one can be silently masked by the other. Worth consolidating back to a single ledger.
+Vite upgraded to v7.3.2 for security fix (#121). The migration to a CI dependency-audit gate (`pnpm audit`, #177) is now the forcing function that keeps this list current — overrides are added in response to a failing audit rather than ad-hoc.
 
 **Cross-repo update (2026-07-06):** this `pnpm-workspace.yaml`-as-override-ledger pattern is no longer unique to this repo. [[marcusrbrown--marcusrbrown]] adopted the same structure in its 2026-07-06 survey — a fresh `pnpm-workspace.yaml` with `allowBuilds`/`onlyBuiltDependencies`, `shamefullyHoist: true`, and a GHSA-annotated override block (`vite 7.3.6`, `postcss`, `picomatch`, `fast-uri`, plus the relocated `jiti <2.8.0` pin). The profile repo does not (yet) carry the `pnpm audit` CI gate that drives this repo's list, but the ledger convention has now spread across the profile-repo cluster.
 
@@ -296,7 +272,7 @@ Vite upgraded to v7.3.2 for security fix (#121), then to **v7.3.5** via merged s
 - Authentication via `APPLICATION_ID`/`APPLICATION_PRIVATE_KEY` secrets (GitHub App) in CI, `FRO_BOT_PAT` + `opencode-config` for agent workflow
 - **No Probot settings.yml** — diverges from sibling repos that extend `fro-bot/.github:common-settings.yaml`
 - Sibling portfolio site: [[marcusrbrown--marcusrbrown-github-io]] (both React+Vite GitHub Pages, different scope and domain) — both now run the single-file three-mode Fro Bot workflow
-- **`mrbro-bot[bot]` opening Renovate pin PRs (2026-06-13):** the dependency-pin PRs (#180, #175, #172, #168) are authored by `app/mrbro-bot`, while the security-override PR (#178) is authored by `fro-bot`. This is the same `mrbro-bot[bot]` actor first noted on merges in [[marcusrbrown--ha-config]] — a distinct GitHub App from `fro-bot[bot]` now visibly driving Renovate-class automation in this repo. The two bots split labor here: `mrbro-bot` for routine version pins, `fro-bot` for security-advisory remediation. **Update (2026-06-23):** the split now extends to security-labeled dependency bumps — PR #181 (`vite` 7.3.2 → 7.3.5 `[SECURITY]`, `automerge`+`security` labels) is authored by `mrbro-bot`, while `fro-bot` still owns the bespoke pnpm-override remediation (#178 `tmp`). So `mrbro-bot` handles upstream-published security *upgrades* via Renovate, and `fro-bot` handles override *workarounds* for advisories without a clean upstream fix. **Update (2026-07-07):** PR #181 merged — Vite is now `7.3.5` on `main`, confirming the `mrbro-bot`-drives-upstream-security-upgrades half of the split lands cleanly. `fro-bot`'s override PR #178 (`tmp`) remains open, consistent with the workaround-half being slower to resolve.
+- **`mrbro-bot[bot]` opening Renovate pin PRs (2026-06-13):** the dependency-pin PRs (#180, #175, #172, #168) are authored by `app/mrbro-bot`, while the security-override PR (#178) is authored by `fro-bot`. This is the same `mrbro-bot[bot]` actor first noted on merges in [[marcusrbrown--ha-config]] — a distinct GitHub App from `fro-bot[bot]` now visibly driving Renovate-class automation in this repo. The two bots split labor here: `mrbro-bot` for routine version pins, `fro-bot` for security-advisory remediation. **Update (2026-06-23):** the split now extends to security-labeled dependency bumps — PR #181 (`vite` 7.3.2 → 7.3.5 `[SECURITY]`, `automerge`+`security` labels) is authored by `mrbro-bot`, while `fro-bot` still owns the bespoke pnpm-override remediation (#178 `tmp`). So `mrbro-bot` handles upstream-published security *upgrades* via Renovate, and `fro-bot` handles override *workarounds* for advisories without a clean upstream fix.
 
 ## Survey History
 
@@ -308,4 +284,3 @@ Vite upgraded to v7.3.2 for security fix (#121), then to **v7.3.5** via merged s
 | 2026-06-02 | `7a49abc` | **pnpm `overrides` migrated `package.json` → `pnpm-workspace.yaml`** and expanded to ~20 entries with inline GHSA annotations, driven by a new `pnpm audit` CI gate (#177). New advisories pinned: `qs`, `ws`, `tmp`, `rollup`, `js-yaml`, `flatted`, `ajv`, `mdast-util-to-hast`, `minimatch`, `yauzl` — mostly transitive via `@lhci/cli`. **Fro Bot prompt hardening (#176):** ported 5 inserts from [[marcusrbrown--marcusrbrown]] (skipped-needs trap, `continue-on-error` red-flag, 7-day workflow-health monitor). Agent unchanged at v0.43.0. Open issues 8 → 4 (pin PRs merged). Open PRs 5 (Renovate). TypeScript still 5.9.3, pnpm 10.33.4, Vitest 4.1.4. No structural code/layout change. |
 | 2026-06-13 | `7a49abc` | **No-delta re-survey — HEAD unchanged since 2026-06-02 (`pushed_at` 2026-05-28T02:28Z).** Every tracked fact re-verified against the same tree: agent v0.43.0, TypeScript 5.9.3, Vite 7.3.2, Vitest 4.1.4, pnpm 10.33.4 (`engines.pnpm ^10.28.2`), Node >=22.6.0, React Router 7.7.1, 7 workflows, no `settings.yml`. Open issues 4 (#162 autoheal, #13 maintenance, #1 Dependency Dashboard, #48 triage), open PRs 5 (unchanged set: #180/#178/#175/#172/#168). **Corrections against same SHA:** Playwright recorded as 1.54.x is actually 1.59.1; pnpm table said 10.33.0, true value 10.33.4. **New observable:** Renovate pin PRs (#180/#175/#172/#168) authored by `app/mrbro-bot`, security-override PR (#178) by `fro-bot` — the `mrbro-bot[bot]` actor (cf. [[marcusrbrown--ha-config]]) is now visibly active here, splitting automation labor with `fro-bot`. |
 | 2026-06-23 | `7a49abc` | **No-delta re-survey — `main` HEAD still `7a49abc` (last main commit 2026-05-28T02:19Z).** `pushed_at` advanced to 2026-06-19 but that reflects PR-branch activity (renovate/*, fix/security-*, copilot/*), not the default branch. 7 workflows confirmed present including `fro-bot.yaml`. Open issues unchanged at 4. **Only delta is PR-queue movement:** open PRs 5 → 6 with new #181 `vite` 7.3.2 → 7.3.5 `[SECURITY]` (authored by `app/mrbro-bot`, labels `automerge`+`security`, opened 2026-06-15) — supersedes the standing 7.3.2 pin and continues the `mrbro-bot`-drives-version-bumps / `fro-bot`-drives-override-remediation split. No tree-level config, dependency, or workflow changes. |
-| 2026-07-07 | `c6f106b` | **Real delta — `main` HEAD advanced `7a49abc` → `c6f106b` (last main commit 2026-07-04T20:30Z).** **Workflow:** `fro-bot.yaml` #182 fix — bare `workflow_dispatch` prompt now wins first regardless of `mode` (previously discarded unless `mode==review`). Autoheal prompt expanded **5 → 8 categories**: added Quality Gates Verification (#6), Cross-Project Intelligence inbound (#7, surveys tokentoilet/vbs/yield-farmer/renovate-config/.github/fro-bot·agent), and Sunday-only Upstream Modernization Watch (#8, gated on new `IS_SUNDAY_UTC` preflight step). Agent unchanged v0.43.0. **Deps:** `vite` 7.3.2 → **7.3.5** (PR #181 merged), `react-router-dom` ^7.7.1 → **^7.15.0**, `@eslint-react/eslint-plugin` 2.13.0. TypeScript still 5.9.3, pnpm 10.33.4, Vitest 4.1.4, Node >=22.6.0. **Security surface contradiction:** a second `pnpm.overrides` block reappeared in `package.json` (js-yaml/qs/tmp/uuid) alongside the primary `pnpm-workspace.yaml` ledger — values diverge (`uuid ^11.1.1` vs `>=14.0.0`; `tmp ^0.2.7` vs `>=0.2.6`), a drift footgun. 7 workflows, no `settings.yml`, Renovate preset still `#5.2.0`. Open issues 4 (unchanged), open PRs 6 → 5 (#181 merged). |
