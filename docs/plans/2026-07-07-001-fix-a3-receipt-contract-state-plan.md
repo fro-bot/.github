@@ -198,7 +198,7 @@ The coordinator must keep receipts as the completion oracle for accountable targ
 
 **Verification:** Removing receipt-gate enforcement or treating Actions success as completion fails the test.
 
-- [ ] **Unit 5: Documentation and operator contract**
+- [x] **Unit 5: Documentation and operator contract**
 
 **Goal:** Update public docs and issue guidance to describe receipt opt-in, missing-receipt diagnostics, and the #3652 finding.
 
