@@ -259,7 +259,8 @@ function isRepoEntry(value: unknown): value is RepoEntry {
     (value.node_id === undefined ||
       (typeof value.node_id === 'string' && value.node_id.length > 0 && NODE_ID_PATTERN.test(value.node_id))) &&
     (value.database_id === undefined ||
-      (typeof value.database_id === 'number' && Number.isInteger(value.database_id) && value.database_id > 0))
+      (typeof value.database_id === 'number' && Number.isInteger(value.database_id) && value.database_id > 0)) &&
+    (value.cross_repo_receipts === undefined || typeof value.cross_repo_receipts === 'string')
   )
 }
 
@@ -308,6 +309,8 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
       `${path}.database_id`,
       'expected positive integer (stable numeric GitHub repository.id) or omitted',
     )
+  if (value.cross_repo_receipts !== undefined && typeof value.cross_repo_receipts !== 'string')
+    throw new SchemaValidationError(`${path}.cross_repo_receipts`, 'expected string or omitted')
 }
 
 function isOnboardingStatus(value: unknown): value is OnboardingStatus {

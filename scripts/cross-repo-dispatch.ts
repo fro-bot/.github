@@ -96,7 +96,7 @@ export type ResultStatus = 'success' | 'noop' | 'failed'
  * Completion receipt posted by a worker to the coordination issue. `nonce`
  * is the RAW per-item nonce as posted by the worker — the parser never
  * hashes it or compares it against a stored `nonceHash` (that gate lives in
- * track's resolver, Unit 4).
+ * track's resolver).
  */
 export interface CrossRepoResult {
   correlationId: string
@@ -134,8 +134,6 @@ export type GateResult = 'ok' | 'blocked-not-onboarded' | 'blocked-ineligible'
  */
 export type ReceiptCapability = 'receipt-accountable' | 'legacy-best-effort'
 
-export type AccountableGateResult = GateResult | 'blocked-receipt-contract-missing'
-
 /** Minimal shape of a registry entry needed for the gate — mirrors `RepoEntry`. */
 export interface GateEntry {
   owner: string
@@ -166,8 +164,8 @@ export interface DispatchPlanResult {
 }
 
 /**
- * Registry-gate signal only (Unit 5): the run/PR terminal-resolution
- * precedence table is gone — receipts (R7) and the SLA (R9) are applied
+ * Registry-gate signal only: the run/PR terminal-resolution
+ * precedence table is gone — receipts and the SLA are applied
  * directly by `runTrack` before `planSnapshot` runs. The gate is the only
  * remaining out-of-band signal `planSnapshot` still resolves, because it can
  * flip an item to `blocked` independent of any receipt.
@@ -719,7 +717,7 @@ export function repairJsonStringEscapes(raw: string): string {
  * required `correlation_id` + `nonce` + `status` (status one of the closed
  * vocabulary) — anything else is `malformed`, distinct from `absent` (no
  * receipt marker found at all). Returns the RAW nonce as posted; this
- * function never hashes it or sees a stored `nonceHash` (Unit 4's job).
+ * function never hashes it or sees a stored `nonceHash`.
  */
 export function parseResult(body: string): ParseResultOutcome {
   const region = extractResultRegion(body)
@@ -927,33 +925,6 @@ export function classifyReceiptCapability(entry: GateEntry | undefined): Receipt
   )
 }
 
-/**
- * Registry gate for a future accountable dispatch mode. Legacy/best-effort dispatch
- * (`gateTarget`) is unaffected — this stricter gate additionally requires the operator-
- * declared receipt capability and is not yet wired into `runDispatch`. Existing gate reasons
- * (`blocked-ineligible`, `blocked-not-onboarded`) take priority over the receipt-contract
- * check so callers see the most fundamental blocking reason first.
- */
-export function gateTargetForAccountableDispatch(entry: GateEntry | undefined): AccountableGateResult {
-  const baseGate = gateTarget(entry)
-  if (baseGate !== 'ok') return baseGate
-  if (classifyReceiptCapability(entry) !== 'receipt-accountable') return 'blocked-receipt-contract-missing'
-  return 'ok'
-}
-
-/**
- * Initial data-branch backfill candidates: the #3652 targets that produced accepted
- * coordination receipts. `marcusrbrown/containers` and `marcusrbrown/opencode-copilot-delegate`
- * are deliberately excluded — they completed locally without an accepted receipt (see
- * `docs/plans/2026-07-07-001-fix-a3-receipt-contract-state-plan.md`). This constant documents
- * the candidate set for the operator; it is not applied to `metadata/repos.yaml` by this code.
- */
-export const RECEIPT_BACKFILL_CANDIDATES: ReadonlySet<string> = new Set([
-  'marcusrbrown/gpt',
-  'fro-bot/agent',
-  'fro-bot/dashboard',
-])
-
 // ─── Planner: dispatch plan ──────────────────────────────────────────────────
 
 /**
@@ -1005,7 +976,7 @@ export function planDispatch(input: DispatchPlanInput): DispatchPlanResult {
 /**
  * Apply the registry-gate signal per dispatched item (the only remaining
  * out-of-band terminal driver — receipts and the SLA are applied by the
- * caller before this runs; Unit 5 removed the run/PR terminal-resolution
+ * caller before this runs; run/PR terminal-resolution
  * precedence table entirely), compute allTerminal (→ close), and idempotency
  * (identical markerHash → no write).
  */
@@ -1548,7 +1519,10 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
 
     const latestMarkerForReconcile = await readLatestMarker(input.octokit, input.repo, issueNumber)
     if (latestMarkerForReconcile === null) continue
-    const flipped = flipItemStatus(latestMarkerForReconcile, item.id, 'dispatched', item.epoch ?? Date.now())
+    const receiptContract = classifyReceiptCapability(registryByKey.get(`${item.target.owner}/${item.target.name}`))
+    const flipped = flipItemStatus(latestMarkerForReconcile, item.id, 'dispatched', item.epoch ?? Date.now(), {
+      receiptContract,
+    })
     const cas = await casWriteMarker({
       octokit: input.octokit,
       owner: input.repo.owner,
@@ -1716,12 +1690,11 @@ export interface RunTrackInput {
   loadOpenGoalIssues: () => Promise<OpenGoalIssue[]>
   loadRegistry: () => Promise<GateEntry[]>
   /**
-   * Demoted to a NON-AUTHORITATIVE diagnostic (Unit 5, R8/R9/R12): consulted
+   * Demoted to a NON-AUTHORITATIVE diagnostic: consulted
    * ONLY to annotate an already-`needs-attention`/`no-receipt` item with
-   * "ran but didn't report" vs "never ran". Its return value never changes
+   * run-observed vs not-observed context. Its return value never changes
    * any item's terminal/non-terminal state — receipts are the sole
-   * completion oracle (R7) and the SLA is the sole `needs-attention` driver
-   * (R9).
+   * completion oracle and the SLA is the sole `needs-attention` driver.
    */
   findRunConclusion: (target: DispatchTarget, correlationId: string) => Promise<'success' | 'failure' | undefined>
   resultPath?: string
@@ -1765,12 +1738,11 @@ function emptyTrackCounts(): RunTrackCounts {
 
 /**
  * Tracking shell: resolves each dispatched (or `needs-attention`) item's
- * terminal state SOLELY from AUTHENTIC completion receipts (R6/R7) plus the
- * 24h SLA (R9) and the registry gate — the receipt is the sole completion
- * oracle (R8: no PR polling, no run polling for completion). Run-lookup is
- * demoted to a NON-AUTHORITATIVE diagnostic (Unit 5): for an item that ends
+ * terminal state SOLELY from AUTHENTIC completion receipts plus the
+ * 24h SLA and the registry gate — the receipt is the sole completion
+ * oracle. Run-lookup is demoted to a NON-AUTHORITATIVE diagnostic: for an item that ends
  * up `needs-attention`/`no-receipt`, it annotates whether the worker's run
- * concluded ("ran but didn't report") or never ran ("never ran") — this
+ * was observed as concluded or not observed — this
  * NEVER changes terminal/non-terminal state, only the diagnostic detail
  * surfaced to the operator. Closes the coordination issue when every item is
  * terminal (`completed`/`failed`/`blocked`) — `needs-attention` and
@@ -1820,7 +1792,12 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
         return {...item, status: nextStatus, needsAttentionReason: undefined, noReceiptDiagnostic: undefined}
       }
       if (resolution?.attentionReason !== undefined) {
-        return {...item, status: 'needs-attention' as ItemStatus, needsAttentionReason: resolution.attentionReason}
+        return {
+          ...item,
+          status: 'needs-attention' as ItemStatus,
+          needsAttentionReason: resolution.attentionReason,
+          ...(resolution.attentionReason === 'unparseable-receipt' ? {noReceiptDiagnostic: undefined} : {}),
+        }
       }
       return item
     })
