@@ -26,7 +26,10 @@ import type {
 import type {PublicOutputTokens} from './status-truth-public-output.ts'
 import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
+import {readFileSync} from 'node:fs'
+import {resolve} from 'node:path'
 import {describe, expect, it, vi} from 'vitest'
+import {parse} from 'yaml'
 import {
   executeStatusTruthPrActions,
   extractTerminalFingerprint,
@@ -2027,5 +2030,71 @@ describe('fetchTerminalFingerprints: duplicateCount observability', () => {
 
     expect(terminals.duplicateCount).toBe(1)
     expect(JSON.stringify(terminals.duplicateCount)).not.toContain(dupFp)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Workflow contract: PR job App-token permission scope
+// ---------------------------------------------------------------------------
+
+/** Narrow the parsed YAML to the shape we index into, without any broad cast. */
+function assertStatusTruthWorkflow(value: unknown): asserts value is {
+  jobs: Record<
+    string,
+    {
+      if?: string
+      permissions?: Record<string, string>
+      steps: {name?: string; uses?: string; with?: Record<string, string>}[]
+    }
+  >
+} {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('jobs' in value) ||
+    typeof (value as Record<string, unknown>).jobs !== 'object'
+  ) {
+    throw new TypeError('status-truth.yaml does not have expected shape: missing jobs object')
+  }
+}
+
+describe('workflow contract: PR job app-token permissions', () => {
+  const workflowPath = resolve(import.meta.dirname, '../.github/workflows/status-truth.yaml')
+  const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
+  assertStatusTruthWorkflow(parsed)
+  const prsJob = parsed.jobs.prs
+
+  it('has a prs job with a Mint write token step using create-github-app-token', () => {
+    expect(prsJob).toBeDefined()
+    const appTokenStep = prsJob?.steps.find(s => s.uses?.includes('actions/create-github-app-token'))
+    expect(appTokenStep).toBeDefined()
+  })
+
+  it('mints the PR job app-token with issues: write (required for stale/terminal closure comments)', () => {
+    const appTokenStep = prsJob?.steps.find(s => s.uses?.includes('actions/create-github-app-token'))
+    expect(appTokenStep?.with?.['permission-issues']).toBe('write')
+  })
+
+  it('mints the PR job app-token with pull-requests: write and contents: write', () => {
+    const appTokenStep = prsJob?.steps.find(s => s.uses?.includes('actions/create-github-app-token'))
+    expect(appTokenStep?.with?.['permission-pull-requests']).toBe('write')
+    expect(appTokenStep?.with?.['permission-contents']).toBe('write')
+  })
+
+  it('keeps the PR job app-token scoped to this repository only', () => {
+    const appTokenStep = prsJob?.steps.find(s => s.uses?.includes('actions/create-github-app-token'))
+    const expectedRepositoryScope = '$' + '{{ github.event.repository.name }}'
+    expect(appTokenStep?.with?.repositories).toBe(expectedRepositoryScope)
+  })
+
+  it('keeps the PR job-level permissions read-only (contents: read)', () => {
+    expect(prsJob?.permissions).toEqual({contents: 'read'})
+  })
+
+  it('keeps the PR job if: gated on the repo variable, workflow_dispatch, and open_prs input', () => {
+    expect(prsJob?.if).toContain('vars.STATUS_TRUTH_PRS_ENABLED')
+    expect(prsJob?.if).toContain("== 'true'")
+    expect(prsJob?.if).toContain("github.event_name == 'workflow_dispatch'")
+    expect(prsJob?.if).toContain("github.event.inputs.open_prs == 'true'")
   })
 })

@@ -124,7 +124,7 @@ The work therefore needs to graduate the kind and complete the same-run report-r
 - The current armed stub behavior is gone; the CLI path exercises real planning/execution while preserving the disarmed no-op and counts-only output contract.
 - Tests prove partial-success recovery: an existing matching correction PR from a prior partially successful run prevents duplicate PR creation and still allows stale/terminal closure planning.
 
-- [ ] **Unit 2: Correct PR job token permissions**
+- [x] **Unit 2: Correct PR job token permissions**
 
 **Goal:** Give the PR execution job exactly the write permissions its executor already needs for stale/terminal PR closure comments.
 
