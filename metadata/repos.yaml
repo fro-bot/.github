@@ -235,12 +235,12 @@ repos:
     name: agent
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-06-24
+    last_survey_at: 2026-07-07
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: owned
-    next_survey_eligible_at: 2026-07-10
+    next_survey_eligible_at: 2026-07-24
     private: false
     node_id: R_kgDOQyTMEw
     database_id: 1126485011
