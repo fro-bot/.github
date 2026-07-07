@@ -772,6 +772,53 @@ export interface StatusTruthPrOctokitClient {
   }
 }
 
+/** Shape of a single pull request returned by `pulls.list`. */
+export interface PrListItem {
+  readonly number: number
+  readonly state: string
+  readonly head: {readonly ref: string}
+  readonly base: {readonly ref: string}
+  readonly user: {readonly login?: string | null} | null
+}
+
+/**
+ * List-capable Octokit client used to fetch existing open correction PRs and
+ * terminal-labeled proposal issues before planning. Separate from
+ * {@link StatusTruthPrOctokitClient} (the write shell) so each seam only
+ * declares the surfaces it actually calls; production Octokit instances
+ * satisfy both structurally.
+ */
+export interface StatusTruthPrFetchClient {
+  readonly rest: {
+    readonly pulls: {
+      readonly list: (params: {
+        owner: string
+        repo: string
+        state: 'open' | 'closed' | 'all'
+        base?: string
+        per_page: number
+        page: number
+      }) => Promise<{data: readonly PrListItem[]}>
+    }
+    readonly issues: {
+      readonly listForRepo: (params: {
+        owner: string
+        repo: string
+        labels: string
+        state: 'open' | 'closed' | 'all'
+        per_page: number
+        page: number
+      }) => Promise<{
+        data: readonly {
+          readonly number: number
+          readonly labels: readonly (string | {readonly name?: string | null})[]
+          readonly body?: string | null
+        }[]
+      }>
+    }
+  }
+}
+
 /** Input to the PR execution shell. */
 export interface ExecuteStatusTruthPrActionsInput {
   readonly octokit: StatusTruthPrOctokitClient
@@ -795,6 +842,8 @@ export interface ExecuteStatusTruthPrActionsCounts {
   readonly wouldOpen: number
   /** Dry-run: would-close count (no mutation performed). */
   readonly wouldClose: number
+  /** Dry-run: would-rediscover count (no mutation performed). */
+  readonly wouldRediscover: number
 }
 
 /** Result of the PR execution shell. */
@@ -838,9 +887,11 @@ export async function executeStatusTruthPrActions(
   if (dryRun) {
     let wouldOpen = 0
     let wouldClose = 0
+    let wouldRediscover = 0
     for (const action of actions) {
       if (action.type === 'open-pr') wouldOpen++
       else if (action.type === 'close-pr') wouldClose++
+      else if (action.type === 'rediscover-pr') wouldRediscover++
     }
     return {
       dryRun: true,
@@ -853,6 +904,7 @@ export async function executeStatusTruthPrActions(
         branchDeleteFailed: 0,
         wouldOpen,
         wouldClose,
+        wouldRediscover,
       },
     }
   }
@@ -1010,29 +1062,37 @@ export async function executeStatusTruthPrActions(
           continue
         }
 
-        const comment =
-          action.reason === 'terminal-label'
-            ? 'Closing: linked proposal received a terminal outcome label.'
-            : 'Drift cleared. Closing this correction PR.'
-        const commentGate = applyPublicOutputGate({
-          surface: 'proposal-comment',
-          content: comment,
-          tokens: publicOutputTokens,
-          fingerprint: undefined,
-        })
-        if (!commentGate.allowed) {
-          safetyRefused++
-          continue
-        }
-
-        await octokit.rest.issues.createComment({
-          owner,
-          repo,
-          issue_number: action.prNumber,
-          body: commentGate.sanitizedContent,
-        })
+        // Closure happens first: if the best-effort comment below fails or
+        // is gated, the PR must still be closed rather than left open
+        // waiting on a non-essential courtesy comment.
         await octokit.rest.pulls.update({owner, repo, pull_number: action.prNumber, state: 'closed'})
         closed++
+
+        // Best-effort, non-fatal courtesy comment. Gate failure or API
+        // failure here must never undo the closure or count as a failed
+        // action — the PR is already closed.
+        try {
+          const comment =
+            action.reason === 'terminal-label'
+              ? 'Closing: linked proposal received a terminal outcome label.'
+              : 'Drift cleared. Closing this correction PR.'
+          const commentGate = applyPublicOutputGate({
+            surface: 'proposal-comment',
+            content: comment,
+            tokens: publicOutputTokens,
+            fingerprint: undefined,
+          })
+          if (commentGate.allowed) {
+            await octokit.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: action.prNumber,
+              body: commentGate.sanitizedContent,
+            })
+          }
+        } catch {
+          // Non-fatal: the PR is already closed.
+        }
 
         if (!branchMatchesCorrectionPattern(action.branch, action.opaqueDigest)) {
           // Unreachable given the guard above, but re-validated per R11c
@@ -1052,8 +1112,177 @@ export async function executeStatusTruthPrActions(
 
   return {
     dryRun: false,
-    counts: {opened, closed, downgraded, safetyRefused, failed, branchDeleteFailed, wouldOpen: 0, wouldClose: 0},
+    counts: {
+      opened,
+      closed,
+      downgraded,
+      safetyRefused,
+      failed,
+      branchDeleteFailed,
+      wouldOpen: 0,
+      wouldClose: 0,
+      wouldRediscover: 0,
+    },
   }
+}
+
+// ---------------------------------------------------------------------------
+// Same-run state fetch: existing correction PRs + terminal fingerprints
+// ---------------------------------------------------------------------------
+
+/** Bot login identifiers recognized as owning correction PRs/comments. */
+const BOT_LOGINS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
+
+/** Strict marker pattern for extracting a terminal fingerprint from an issue body. Lowercase hex only. */
+const TERMINAL_FINGERPRINT_MARKER_PATTERN = /<!-- status-truth:fingerprint=([a-f0-9]+) -->/u
+
+/** Terminal outcome labels whose presence contributes a fingerprint to the suppression set. */
+const TERMINAL_OUTCOME_LABELS: ReadonlySet<string> = new Set(['status-truth:rejected', 'status-truth:false-positive'])
+
+/**
+ * Strictly extract a terminal fingerprint from an issue body's hidden marker.
+ *
+ * Returns null for missing body, missing marker, or a marker whose captured
+ * value is empty or contains non-hex characters (the regex itself only
+ * captures `[a-f0-9]+`, so any match is already lowercase hex; malformed
+ * uppercase/mixed markers simply fail to match and return null).
+ *
+ * Exported for testability. Fail-closed: any ambiguity returns null rather
+ * than guessing or fuzzy-matching a nearby value.
+ */
+export function extractTerminalFingerprint(body: string | null | undefined): string | null {
+  if (body === null || body === undefined || body === '') return null
+  const match = TERMINAL_FINGERPRINT_MARKER_PATTERN.exec(body)
+  if (match === null) return null
+  const value = match[1]
+  if (value === undefined || value === '') return null
+  return value
+}
+
+/** Result of fetching terminal fingerprints: the valid set plus a skipped/invalid count. */
+export interface FetchTerminalFingerprintsResult {
+  readonly fingerprints: ReadonlySet<string>
+  /** Malformed, missing, non-hex, or duplicate terminal fingerprints — excluded and counted. */
+  readonly skippedInvalid: number
+  /** Count of distinct fingerprints observed on more than one terminal issue (never the raw values). */
+  readonly duplicateCount: number
+}
+
+/**
+ * Fetch terminal fingerprints from status-truth proposal issues carrying a
+ * terminal outcome label (`status-truth:rejected` or `status-truth:false-positive`).
+ *
+ * Fail-closed per issue: a fingerprint that is malformed, missing, non-hex, or a
+ * duplicate of another terminal fingerprint is excluded from the returned set and
+ * counted as skipped/invalid. A duplicate is excluded from BOTH occurrences —
+ * ambiguity between two terminal issues claiming the same fingerprint must never
+ * be resolved by picking one arbitrarily, and must never suppress by fuzzy
+ * matching a prefix or substring.
+ *
+ * Accepted/resolved and other non-terminal labels never contribute to this set;
+ * only issues carrying a recognized terminal label are considered at all.
+ *
+ * Exported for testability.
+ */
+export async function fetchTerminalFingerprints(params: {
+  client: StatusTruthPrFetchClient
+  owner: string
+  repo: string
+}): Promise<FetchTerminalFingerprintsResult> {
+  const {client, owner, repo} = params
+  const perPage = 100
+  const seenOnce = new Set<string>()
+  const duplicates = new Set<string>()
+  let skippedInvalid = 0
+
+  let page = 1
+  for (;;) {
+    const response = await client.rest.issues.listForRepo({
+      owner,
+      repo,
+      labels: 'status-truth',
+      state: 'all',
+      per_page: perPage,
+      page,
+    })
+    for (const issue of response.data) {
+      const labelNames = issue.labels.map(l => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean)
+      const hasTerminalLabel = labelNames.some(l => TERMINAL_OUTCOME_LABELS.has(l))
+      if (!hasTerminalLabel) continue
+
+      const fingerprint = extractTerminalFingerprint(issue.body)
+      if (fingerprint === null) {
+        skippedInvalid++
+        continue
+      }
+
+      if (seenOnce.has(fingerprint)) {
+        duplicates.add(fingerprint)
+      } else {
+        seenOnce.add(fingerprint)
+      }
+    }
+    if (response.data.length < perPage) break
+    page++
+  }
+
+  const fingerprints = new Set<string>()
+  for (const fp of seenOnce) {
+    if (duplicates.has(fp)) {
+      skippedInvalid++
+      continue
+    }
+    fingerprints.add(fp)
+  }
+
+  return {fingerprints, skippedInvalid, duplicateCount: duplicates.size}
+}
+
+/**
+ * Fetch existing open correction PRs (any head branch/base/owner) so the planner
+ * can independently gate rediscovery on bot ownership, base branch, and the
+ * opaque branch-name prefix. This fetch is intentionally unfiltered by those
+ * criteria — the shell trusts the planner's own re-checks, mirroring the R11c
+ * "every write primitive re-validates" posture applied one layer up.
+ *
+ * Exported for testability.
+ */
+export async function fetchExistingCorrectionPrs(params: {
+  client: StatusTruthPrFetchClient
+  owner: string
+  repo: string
+}): Promise<ExistingStatusTruthPr[]> {
+  const {client, owner, repo} = params
+  const perPage = 100
+  const prs: ExistingStatusTruthPr[] = []
+
+  let page = 1
+  for (;;) {
+    const response = await client.rest.pulls.list({
+      owner,
+      repo,
+      state: 'open',
+      base: BASE_BRANCH,
+      per_page: perPage,
+      page,
+    })
+    for (const pr of response.data) {
+      const headBranch = pr.head.ref
+      const opaqueDigest = headBranch.startsWith(PR_BRANCH_PREFIX) ? headBranch.slice(PR_BRANCH_PREFIX.length) : ''
+      prs.push({
+        number: pr.number,
+        state: pr.state === 'closed' ? 'closed' : 'open',
+        headBranch,
+        baseBranch: pr.base.ref,
+        opaqueDigest,
+        botOwned: BOT_LOGINS.has(pr.user?.login ?? ''),
+      })
+    }
+    if (response.data.length < perPage) break
+    page++
+  }
+
+  return prs
 }
 
 // ---------------------------------------------------------------------------
@@ -1121,89 +1350,360 @@ async function createOctokitFromEnv(): Promise<StatusTruthPrOctokitClient> {
   return new LoadedOctokit({auth: token, request: {timeout: 10_000}, log: NOOP_LOG})
 }
 
+/** Report-read result: mirrors the `validateStatusTruthArtifact` discriminated union. */
+export type ReadReportResult = {valid: true; report: StatusTruthJsonReport} | {valid: false; reason: string}
+
 /**
- * CLI entry point for the status-truth PR execution step.
+ * Explicit dependency seam for {@link runPrsCore}.
  *
- * Environment variables:
- * - STATUS_TRUTH_REPORT_PATH: path to the JSON report artifact from the detect step (required)
- * - STATUS_TRUTH_PRS_RESULT_PATH: path to write the counts-only result JSON (optional)
- * - STATUS_TRUTH_DRY_RUN: set to 'true' for dry-run mode (optional)
- * - STATUS_TRUTH_PRS_ENABLED: repository variable arming key (required to be 'true' to arm)
- * - STATUS_TRUTH_PRS_DISPATCH_INPUT: manual dispatch input arming key (required to be 'true' to arm)
- * - GITHUB_TOKEN: write-scoped app token for branch/PR mutations (required unless dry-run/disarmed)
- *
- * Behavior:
- * - Re-checks arming at startup; disarmed → counts-only exit (defense in depth).
- * - stdout/stderr carry counts only; no raw claim text, source paths, fingerprints, or tokens.
- *
- * Strip-only safe: no parameter properties, enums, or namespaces.
+ * Every I/O boundary — environment flags, report loading, Octokit/client
+ * creation, public-output token loading, existing-PR fetch, terminal-
+ * fingerprint fetch, stdout/result writing, and process-exit signaling — is
+ * injected here so `runPrsCore` is fully testable without touching the real
+ * filesystem, network, or process globals. `runPrs()` is a thin wrapper that
+ * supplies the real environment-backed implementations.
  */
-async function runPrs(): Promise<void> {
-  const reportPath = process.env.STATUS_TRUTH_REPORT_PATH
-  const resultPath = process.env.STATUS_TRUTH_PRS_RESULT_PATH
-  const dryRun = process.env.STATUS_TRUTH_DRY_RUN === 'true'
+export interface RunPrsCoreDeps {
+  readonly env: Readonly<Record<string, string | undefined>>
+  readonly graduatedClaimKinds: ReadonlySet<string>
+  readonly readReport: () => Promise<ReadReportResult>
+  readonly loadPublicOutputTokens: () => Promise<PublicOutputTokens>
+  readonly createFetchClient: () => Promise<StatusTruthPrFetchClient>
+  readonly createWriteClient: () => Promise<StatusTruthPrOctokitClient>
+  readonly writeStdout: (text: string) => void
+  readonly writeStderr: (text: string) => void
+  readonly writeResultFile: (json: string) => Promise<void>
+  readonly setExitCode: (code: number) => void
+}
+
+const EMPTY_PLANNED_COUNTS: PlanStatusTruthPrActionsCounts = {
+  prActionsPlanned: 0,
+  downgradedToProposalOnly: 0,
+  pathForbidden: 0,
+  privacyGateBlocked: 0,
+  overflow: 0,
+  versionRejected: 0,
+}
+
+const EMPTY_EXECUTED_COUNTS: ExecuteStatusTruthPrActionsCounts = {
+  opened: 0,
+  closed: 0,
+  downgraded: 0,
+  safetyRefused: 0,
+  failed: 0,
+  branchDeleteFailed: 0,
+  wouldOpen: 0,
+  wouldClose: 0,
+  wouldRediscover: 0,
+}
+
+/**
+ * Stub write client used only for dry-run. Dry-run performs zero mutating
+ * calls (executeStatusTruthPrActions returns before touching `octokit` in
+ * its dry-run branch), so this stub's methods must never actually be
+ * invoked; each throws defensively if that invariant is ever violated.
+ */
+const NOOP_WRITE_CLIENT: StatusTruthPrOctokitClient = {
+  rest: {
+    repos: {
+      getContent: () => {
+        throw new Error('dry-run write client must not be called')
+      },
+      createOrUpdateFileContents: () => {
+        throw new Error('dry-run write client must not be called')
+      },
+    },
+    git: {
+      getRef: () => {
+        throw new Error('dry-run write client must not be called')
+      },
+      createRef: () => {
+        throw new Error('dry-run write client must not be called')
+      },
+      deleteRef: () => {
+        throw new Error('dry-run write client must not be called')
+      },
+    },
+    pulls: {
+      create: () => {
+        throw new Error('dry-run write client must not be called')
+      },
+      update: () => {
+        throw new Error('dry-run write client must not be called')
+      },
+    },
+    issues: {
+      createComment: () => {
+        throw new Error('dry-run write client must not be called')
+      },
+    },
+  },
+}
+
+/**
+ * Split a `owner/repo` GITHUB_REPOSITORY value into its parts.
+ * Falls back to the fro-bot/.github default when absent or malformed.
+ */
+function splitGithubRepository(githubRepository: string | undefined): {owner: string; repo: string} {
+  const value = githubRepository ?? 'fro-bot/.github'
+  const slashIndex = value.indexOf('/')
+  if (slashIndex === -1) return {owner: value, repo: '.github'}
+  return {owner: value.slice(0, slashIndex), repo: value.slice(slashIndex + 1)}
+}
+
+async function writeResultAndStdout(params: {
+  result: PrsResult
+  resultPath: string | undefined
+  deps: Pick<RunPrsCoreDeps, 'writeStdout' | 'writeResultFile' | 'writeStderr'>
+}): Promise<void> {
+  const {result, resultPath, deps} = params
+  const resultJson = `${JSON.stringify(result)}\n`
+  deps.writeStdout(resultJson)
+  if (resultPath !== undefined && resultPath !== '') {
+    try {
+      await deps.writeResultFile(resultJson)
+    } catch {
+      deps.writeStderr('status-truth-prs: could not write result: error-class=write-failure\n')
+    }
+  }
+}
+
+/**
+ * Testable core of the PR execution CLI step.
+ *
+ * Same-run pipeline (armed path only — disarmed exits immediately below):
+ * 1. Re-check three-key arming; disarmed → counts-only exit, no report required.
+ * 2. Read and validate `STATUS_TRUTH_REPORT_PATH`'s artifact; malformed/missing → exit 1.
+ * 3. Load public-output tokens (fail-closed on load failure) → exit 1 on failure.
+ * 4. Fetch existing bot-owned open correction PRs and terminal proposal
+ *    fingerprints; a live-mode fetch failure exits 1 before any planning
+ *    or writes (dry-run degrades to empty state on fetch failure, matching
+ *    the existing proposals CLI's dry-run posture).
+ * 5. Plan (`planStatusTruthPrActions`) and execute (`executeStatusTruthPrActions`).
+ * 6. Write counts-only stdout/result JSON; never source paths, fingerprints,
+ *    branch names, PR/proposal numbers, titles, bodies, or tokens.
+ */
+export async function runPrsCore(deps: RunPrsCoreDeps): Promise<PrsResult> {
+  const reportPath = deps.env.STATUS_TRUTH_REPORT_PATH
+  const resultPath = deps.env.STATUS_TRUTH_PRS_RESULT_PATH
+  const dryRun = deps.env.STATUS_TRUTH_DRY_RUN === 'true'
 
   const armed = isPrExecutionArmed({
-    prsEnabledVar: process.env[PRS_ENABLED_VAR],
-    dispatchInputVar: process.env[PRS_DISPATCH_INPUT_VAR],
-    graduatedClaimKinds: GRADUATED_CLAIM_KINDS,
+    prsEnabledVar: deps.env[PRS_ENABLED_VAR],
+    dispatchInputVar: deps.env[PRS_DISPATCH_INPUT_VAR],
+    graduatedClaimKinds: deps.graduatedClaimKinds,
   })
-
-  const emptyPlannedCounts: PlanStatusTruthPrActionsCounts = {
-    prActionsPlanned: 0,
-    downgradedToProposalOnly: 0,
-    pathForbidden: 0,
-    privacyGateBlocked: 0,
-    overflow: 0,
-    versionRejected: 0,
-  }
-  const emptyExecutedCounts: ExecuteStatusTruthPrActionsCounts = {
-    opened: 0,
-    closed: 0,
-    downgraded: 0,
-    safetyRefused: 0,
-    failed: 0,
-    branchDeleteFailed: 0,
-    wouldOpen: 0,
-    wouldClose: 0,
-  }
 
   if (!armed) {
     const result: PrsResult = {
       armed: false,
       dryRun,
-      plannedCounts: emptyPlannedCounts,
-      executedCounts: emptyExecutedCounts,
+      plannedCounts: EMPTY_PLANNED_COUNTS,
+      executedCounts: EMPTY_EXECUTED_COUNTS,
     }
-    const resultJson = `${JSON.stringify(result)}\n`
-    process.stdout.write(resultJson)
-    if (resultPath !== undefined && resultPath !== '') {
-      const {writeFile} = await import('node:fs/promises')
-      try {
-        await writeFile(resultPath, resultJson, {flag: 'w'})
-      } catch {
-        process.stderr.write('status-truth-prs: could not write result: error-class=write-failure\n')
-      }
-    }
-    return
+    await writeResultAndStdout({result, resultPath, deps})
+    return result
   }
 
   if (reportPath === undefined || reportPath === '') {
-    process.stderr.write('status-truth-prs: STATUS_TRUTH_REPORT_PATH is required\n')
-    process.exitCode = 1
-    return
+    deps.writeStderr('status-truth-prs: STATUS_TRUTH_REPORT_PATH is required\n')
+    deps.setExitCode(1)
+    const result: PrsResult = {
+      armed: true,
+      dryRun,
+      plannedCounts: EMPTY_PLANNED_COUNTS,
+      executedCounts: EMPTY_EXECUTED_COUNTS,
+    }
+    await writeResultAndStdout({result, resultPath, deps})
+    return result
   }
 
-  // Armed path is exercised only against a graduated, reviewed kind set;
-  // this slice ships GRADUATED_CLAIM_KINDS empty (R2), so the full
-  // report-read/plan/execute pipeline is deliberately out of scope for the
-  // CLI entry point beyond wiring — Unit 4 completes workflow integration.
-  // The write-scoped client is minted here (never in detect/open) so mint-time
-  // scoping is exercised even while GRADUATED_CLAIM_KINDS stays empty.
-  if (!dryRun) {
-    await createOctokitFromEnv()
+  const readResult = await deps.readReport()
+  if (!readResult.valid) {
+    deps.writeStderr('status-truth-prs: could not read or validate report artifact: error-class=report-failure\n')
+    deps.setExitCode(1)
+    const result: PrsResult = {
+      armed: true,
+      dryRun,
+      plannedCounts: EMPTY_PLANNED_COUNTS,
+      executedCounts: EMPTY_EXECUTED_COUNTS,
+    }
+    await writeResultAndStdout({result, resultPath, deps})
+    return result
   }
-  process.stdout.write(`${JSON.stringify({armed: true, dryRun})}\n`)
+  const {report} = readResult
+
+  let publicOutputTokens: PublicOutputTokens
+  try {
+    publicOutputTokens = await deps.loadPublicOutputTokens()
+  } catch {
+    deps.writeStderr('status-truth-prs: privacy token load failed: error-class=token-load-failure\n')
+    deps.setExitCode(1)
+    const result: PrsResult = {
+      armed: true,
+      dryRun,
+      plannedCounts: EMPTY_PLANNED_COUNTS,
+      executedCounts: EMPTY_EXECUTED_COUNTS,
+    }
+    await writeResultAndStdout({result, resultPath, deps})
+    return result
+  }
+
+  const {owner, repo} = splitGithubRepository(deps.env.GITHUB_REPOSITORY)
+
+  let existingPrs: ExistingStatusTruthPr[] = []
+  let terminalFingerprints: ReadonlySet<string> = new Set<string>()
+
+  try {
+    const fetchClient = await deps.createFetchClient()
+    const [prs, terminals] = await Promise.all([
+      fetchExistingCorrectionPrs({client: fetchClient, owner, repo}),
+      fetchTerminalFingerprints({client: fetchClient, owner, repo}),
+    ])
+    existingPrs = prs
+    terminalFingerprints = terminals.fingerprints
+  } catch {
+    if (!dryRun) {
+      deps.writeStderr('status-truth-prs: existing state fetch failed: error-class=fetch-failure\n')
+      deps.setExitCode(1)
+      const result: PrsResult = {
+        armed: true,
+        dryRun,
+        plannedCounts: EMPTY_PLANNED_COUNTS,
+        executedCounts: EMPTY_EXECUTED_COUNTS,
+      }
+      await writeResultAndStdout({result, resultPath, deps})
+      return result
+    }
+    // Dry-run: non-fatal — proceed with empty state (would-act counts may
+    // over-estimate opens, but zero mutating calls occur either way).
+  }
+
+  const planResult = planStatusTruthPrActions({
+    report,
+    graduatedClaimKinds: deps.graduatedClaimKinds,
+    existingPrs,
+    publicOutputTokens,
+    maxPrsPerRun: 1,
+    enabled: true,
+    terminalFingerprints,
+  })
+
+  // Dry-run performs zero mutating calls (see executeStatusTruthPrActions'
+  // dry-run branch, which returns before touching `octokit` at all), so a
+  // real write client/token is neither required nor created here — only
+  // live mode needs one, and only live mode's failure to create one is
+  // fatal.
+  let writeClient: StatusTruthPrOctokitClient
+  if (dryRun) {
+    writeClient = NOOP_WRITE_CLIENT
+  } else {
+    try {
+      writeClient = await deps.createWriteClient()
+    } catch {
+      deps.writeStderr('status-truth-prs: write client creation failed: error-class=token-load-failure\n')
+      deps.setExitCode(1)
+      const result: PrsResult = {
+        armed: true,
+        dryRun,
+        plannedCounts: planResult.counts,
+        executedCounts: EMPTY_EXECUTED_COUNTS,
+      }
+      await writeResultAndStdout({result, resultPath, deps})
+      return result
+    }
+  }
+
+  const executeResult = await executeStatusTruthPrActions({
+    octokit: writeClient,
+    owner,
+    repo,
+    actions: planResult.actions,
+    dryRun,
+    publicOutputTokens,
+  })
+
+  const result: PrsResult = {
+    armed: true,
+    dryRun,
+    plannedCounts: planResult.counts,
+    executedCounts: executeResult.counts,
+  }
+  await writeResultAndStdout({result, resultPath, deps})
+  return result
+}
+
+/**
+ * CLI entry point for the status-truth PR execution step.
+ *
+ * Environment variables:
+ * - STATUS_TRUTH_REPORT_PATH: path to the JSON report artifact from the detect step (required when armed)
+ * - STATUS_TRUTH_PRS_RESULT_PATH: path to write the counts-only result JSON (optional)
+ * - STATUS_TRUTH_DRY_RUN: set to 'true' for dry-run mode (optional)
+ * - STATUS_TRUTH_PRS_ENABLED: repository variable arming key (required to be 'true' to arm)
+ * - STATUS_TRUTH_PRS_DISPATCH_INPUT: manual dispatch input arming key (required to be 'true' to arm)
+ * - GITHUB_TOKEN: write-scoped app token for branch/PR mutations and read-only listing
+ * - GITHUB_REPOSITORY: `owner/repo` (defaults to fro-bot/.github)
+ *
+ * Behavior:
+ * - Re-checks arming at startup; disarmed → counts-only exit (defense in depth), no report required.
+ * - stdout/stderr carry counts only; no raw claim text, source paths, fingerprints, branch names,
+ *   PR/proposal numbers, titles, bodies, or tokens.
+ *
+ * Thin environment wrapper around {@link runPrsCore}; all real I/O boundaries live there as
+ * injected dependencies.
+ */
+async function runPrs(): Promise<void> {
+  await runPrsCore({
+    env: process.env,
+    graduatedClaimKinds: GRADUATED_CLAIM_KINDS,
+    readReport: async () => {
+      const reportPath = process.env.STATUS_TRUTH_REPORT_PATH
+      if (reportPath === undefined || reportPath === '') {
+        return {valid: false, reason: 'missing report path'}
+      }
+      const {readFile} = await import('node:fs/promises')
+      let rawJson: string
+      try {
+        rawJson = await readFile(reportPath, 'utf8')
+      } catch {
+        return {valid: false, reason: 'read-failure'}
+      }
+      let rawParsed: unknown
+      try {
+        rawParsed = JSON.parse(rawJson)
+      } catch {
+        return {valid: false, reason: 'parse-failure'}
+      }
+      const {validateStatusTruthArtifact} = await import('./status-truth-detect.ts')
+      const validation = validateStatusTruthArtifact(rawParsed)
+      if (!validation.valid) return {valid: false, reason: validation.reason}
+      return {valid: true, report: validation.report}
+    },
+    loadPublicOutputTokens: async () => {
+      const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
+      const {loadRedactedCanonicalIdsFromDisk} = await import('./status-truth-proposals.ts')
+      const {makePublicOutputTokens} = await import('./status-truth-public-output.ts')
+      const [privateTokens, redactedCanonicalIds] = await Promise.all([
+        loadPrivateTokensFromDisk(),
+        loadRedactedCanonicalIdsFromDisk(),
+      ])
+      return makePublicOutputTokens({privateTokens, redactedCanonicalIds})
+    },
+    createFetchClient: async () => (await createOctokitFromEnv()) as unknown as StatusTruthPrFetchClient,
+    createWriteClient: async () => createOctokitFromEnv(),
+    writeStdout: text => process.stdout.write(text),
+    writeStderr: text => process.stderr.write(text),
+    writeResultFile: async json => {
+      const resultPath = process.env.STATUS_TRUTH_PRS_RESULT_PATH
+      if (resultPath === undefined || resultPath === '') return
+      const {writeFile} = await import('node:fs/promises')
+      await writeFile(resultPath, json, {flag: 'w'})
+    },
+    setExitCode: code => {
+      process.exitCode = code
+    },
+  })
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
