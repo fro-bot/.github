@@ -16,6 +16,7 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   buildMarkerComment,
   buildResultMarker,
+  classifyReceiptCapability,
   computeApprovalFingerprint,
   createTargetClientResolver,
   CROSS_REPO_GOAL_LABEL,
@@ -675,6 +676,30 @@ describe('gateTarget', () => {
   })
 })
 
+describe('classifyReceiptCapability', () => {
+  const base: GateEntry = {owner: 'fro-bot', name: 'agent', has_fro_bot_workflow: true, private: false}
+
+  it('classifies a target with the receipt capability as receipt-accountable', () => {
+    expect(classifyReceiptCapability({...base, cross_repo_receipts: 'coordination-issue-v1'})).toBe(
+      'receipt-accountable',
+    )
+  })
+
+  it('classifies a target without the field as best-effort/legacy, not verified receipt-capable', () => {
+    expect(classifyReceiptCapability(base)).toBe('legacy-best-effort')
+  })
+
+  it('classifies a missing registry entry as legacy/best-effort', () => {
+    expect(classifyReceiptCapability(undefined)).toBe('legacy-best-effort')
+  })
+
+  it('fails closed on an unknown capability value', () => {
+    expect(() => classifyReceiptCapability({...base, cross_repo_receipts: 'bogus-value'} as GateEntry)).toThrow(
+      /cross_repo_receipts/,
+    )
+  })
+})
+
 describe('planDispatch', () => {
   it('skips already-dispatched and terminal items', () => {
     const state = makeState({
@@ -963,7 +988,7 @@ describe('runDispatch — happy sequential dispatch', () => {
   })
 })
 
-describe('runDispatch — nonce mint + receipt-carrying prompt (Unit 2)', () => {
+describe('runDispatch — nonce mint + receipt-carrying prompt', () => {
   it('stores a full-SHA-256 nonceHash and builds a prompt with correlation id, raw nonce, issue ref, and a literal receipt example', async () => {
     const target = {owner: 'fro-bot', name: 'agent'}
     const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
@@ -1307,6 +1332,193 @@ describe('runDispatch — nonce mint + receipt-carrying prompt (Unit 2)', () => 
     expect(countsJson).not.toContain('telemetry-check-nonce')
     // No field on RunDispatchCounts carries nonce material at all — it's counts-only.
     expect(Object.keys(result.counts).every(key => !key.toLowerCase().includes('nonce'))).toBe(true)
+  })
+})
+
+describe('runDispatch — snapshots receiptContract per item at dispatch', () => {
+  it('stores receiptContract "receipt-accountable" when the target registry entry declares cross_repo_receipts', async () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [{...gateEntryFor(target), cross_repo_receipts: 'coordination-issue-v1'}],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async () => undefined,
+      nonceSource: () => 'nonce-1',
+    })
+
+    const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const storedItem = finalMarker?.state.items.find(i => i.id === 'item-1')
+    expect(storedItem?.receiptContract).toBe('receipt-accountable')
+  })
+
+  it('stores receiptContract "legacy-best-effort" when the target registry entry lacks cross_repo_receipts', async () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(target)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async () => undefined,
+      nonceSource: () => 'nonce-1',
+    })
+
+    const finalMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const storedItem = finalMarker?.state.items.find(i => i.id === 'item-1')
+    expect(storedItem?.receiptContract).toBe('legacy-best-effort')
+  })
+
+  it('a legacy marker without receiptContract still parses and tracks under legacy semantics', async () => {
+    // Production-shaped legacy marker (#3652-era): no `receiptContract` field
+    // at all on the item. Must still parse via isDispatchItem and track.
+    const item: DispatchItem = {
+      id: 'item-1',
+      target: TARGET_A,
+      promptHash: 'h',
+      status: 'dispatched',
+      correlationId: 'c1',
+      epoch: 0,
+    }
+    const goalIssue = makeOpenGoal({goal: 'g', items: [item], markerHash: ''})
+    const {octokit, comments} = mockOctokitForGoal(goalIssue)
+
+    const result = await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [{...gateEntryFor(TARGET_A), cross_repo_receipts: 'coordination-issue-v1'}],
+      findRunConclusion: async () => undefined,
+      now: () => RECEIPT_SLA_MS + 1,
+    })
+
+    // Legacy marker (no receiptContract) tracks as needs-attention/no-receipt
+    // like any other best-effort item — it does not error, and it is not
+    // retroactively treated as receipt-accountable just because current
+    // metadata now declares the capability.
+    expect(result.counts.itemsNeedsAttention).toBe(1)
+    const markerComment = comments.find(c => c.body.includes('cross-repo-dispatch'))
+    const marker = markerComment === undefined ? null : extractMarker(markerComment.body)
+    const updatedItem = marker?.state.items.find(candidate => candidate.id === 'item-1')
+    expect(updatedItem?.needsAttentionReason).toBe('no-receipt')
+  })
+
+  it("metadata changes after dispatch do not change an already-seeded item's receiptContract", async () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    // Dispatch-time metadata has NO receipt capability -> item snapshots legacy-best-effort.
+    await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(target)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async () => undefined,
+      nonceSource: () => 'nonce-1',
+    })
+
+    const seededMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const seededItem = seededMarker?.state.items.find(i => i.id === 'item-1')
+    expect(seededItem?.receiptContract).toBe('legacy-best-effort')
+
+    // Metadata drift AFTER dispatch: target now declares the capability. A
+    // later track pass must not reread current metadata to change the
+    // already-seeded item's snapshotted contract.
+    const goalIssue: OpenGoalIssue = {
+      issueNumber: 42,
+      marker: {hash: seededMarker?.hash ?? '', state: seededMarker?.state ?? state},
+    }
+    await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [{...gateEntryFor(target), cross_repo_receipts: 'coordination-issue-v1'}],
+      findRunConclusion: async () => undefined,
+      now: () => 0,
+    })
+
+    const afterMarker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const afterItem = afterMarker?.state.items.find(i => i.id === 'item-1')
+    expect(afterItem?.receiptContract).toBe('legacy-best-effort')
+  })
+
+  it('#3652-shaped marker (dispatched, no receiptContract) is not retroactively made receipt-accountable by later metadata population', async () => {
+    // Same shape as the legacy-marker test above but explicitly named for
+    // the #3652 regression: past-SLA, no receipt, and current metadata NOW
+    // declares receipt capability for this target. The snapshot (absent)
+    // must win — the item is diagnosed as legacy/best-effort no-receipt,
+    // never as a receipt-contract violation or a stronger claim.
+    const item: DispatchItem = {
+      id: 'item-1',
+      target: TARGET_A,
+      promptHash: 'h',
+      status: 'dispatched',
+      correlationId: 'c1',
+      epoch: 0,
+    }
+    const goalIssue = makeOpenGoal({goal: 'g', items: [item], markerHash: ''})
+    const {octokit, comments} = mockOctokitForGoal(goalIssue)
+
+    await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [{...gateEntryFor(TARGET_A), cross_repo_receipts: 'coordination-issue-v1'}],
+      findRunConclusion: async () => undefined,
+      now: () => RECEIPT_SLA_MS + 1,
+    })
+
+    const markerComment = comments.find(c => c.body.includes('cross-repo-dispatch'))
+    const marker = markerComment === undefined ? null : extractMarker(markerComment.body)
+    const updatedItem = marker?.state.items.find(candidate => candidate.id === 'item-1')
+    expect(updatedItem?.status).toBe('needs-attention')
+    expect(updatedItem?.needsAttentionReason).toBe('no-receipt')
+    expect(updatedItem?.receiptContract).toBeUndefined()
   })
 })
 
@@ -1695,6 +1907,44 @@ describe('runDispatch — blocked target dispatches the rest', () => {
   })
 })
 
+describe('runDispatch — malformed cross_repo_receipts fails closed before dispatch', () => {
+  it('never calls createWorkflowDispatch when a registry entry has an unrecognized cross_repo_receipts value', async () => {
+    const target = TARGET_A
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do work'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const state: GoalState = {goal: 'goal-1', items: [item], markerHash: ''}
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    await expect(
+      runDispatch({
+        octokit,
+        event: makeLabeledEvent(),
+        repo: REPO,
+        approveLabel: 'dispatch-approved',
+        loadRegistry: async () => [{...gateEntryFor(target), cross_repo_receipts: 'bogus'}],
+        loadOtherOpenGoalMarkers: async () => [],
+        findRunByCorrelationId: async () => false,
+        createWorkflowDispatch: async params => {
+          await createWorkflowDispatch(params)
+        },
+        nonceSource: () => 'nonce-1',
+      }),
+    ).rejects.toThrow(/cross_repo_receipts/)
+
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+})
+
 describe('runDispatch — resume reconciliation by correlation-id', () => {
   it('reconciles an intent item by correlation-id lookup without re-dispatching', async () => {
     const item: DispatchItem = {
@@ -1737,6 +1987,49 @@ describe('runDispatch — resume reconciliation by correlation-id', () => {
     expect(findRunByCorrelationId).toHaveBeenCalledWith(TARGET_A, 'corr-existing-1')
     expect(createWorkflowDispatch).not.toHaveBeenCalled()
     expect(result.counts.reconciled).toBe(1)
+  })
+
+  it('snapshots receiptContract from the registry when reconciling an intent item to dispatched', async () => {
+    const item: DispatchItem = {
+      id: 'item-1',
+      target: TARGET_A,
+      promptHash: 'abcd1234abcd1234',
+      status: 'intent',
+      correlationId: 'corr-existing-2',
+      nonceHash: 'nonce-hash-2',
+    }
+    const state: GoalState = {
+      goal: 'goal-1',
+      items: [item],
+      approvalFingerprint: computeApprovalFingerprint([item]),
+      markerHash: '',
+    }
+    const decomposition = '- [ ] fro-bot/agent: do the thing'
+
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, state)
+
+    const result = await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [{...gateEntryFor(TARGET_A), cross_repo_receipts: 'coordination-issue-v1'}],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => true,
+      createWorkflowDispatch: async () => {},
+      nonceSource: () => 'nonce-2',
+    })
+
+    expect(result.counts.reconciled).toBe(1)
+
+    const latestMarker = selectStateMarker(
+      comments.map(comment => ({author: {login: comment.login}, body: comment.body})),
+    )
+    const reconciledItem = latestMarker?.state.items.find(candidate => candidate.id === 'item-1')
+    expect(reconciledItem?.status).toBe('dispatched')
+    expect(reconciledItem?.receiptContract).toBe('receipt-accountable')
   })
 })
 
@@ -1814,7 +2107,7 @@ function mockOctokitForGoal(goalIssue: OpenGoalIssue, overrides: Parameters<type
   })
 }
 
-describe('runTrack — run-lookup is diagnostic-only, never authoritative (Unit 5)', () => {
+describe('runTrack — run-lookup is diagnostic-only, never authoritative', () => {
   it('a dispatched item with no receipt and pre-SLA is untouched — run-lookup is not consulted at all', async () => {
     const item: DispatchItem = {
       id: 'item-1',
@@ -1870,7 +2163,7 @@ describe('runTrack — run-lookup is diagnostic-only, never authoritative (Unit 
     expect(result.counts.goalsClosed).toBe(0)
   })
 
-  it('diagnostic: a no-receipt needs-attention item with a concluded run is annotated "ran-no-report"', async () => {
+  it('diagnostic: a no-receipt needs-attention item with a completed correlated run is annotated "run-observed-no-receipt"', async () => {
     const item: DispatchItem = {
       id: 'item-1',
       target: TARGET_A,
@@ -1896,10 +2189,10 @@ describe('runTrack — run-lookup is diagnostic-only, never authoritative (Unit 
     const updatedItem = marker?.state.items.find(candidate => candidate.id === 'item-1')
     expect(updatedItem?.status).toBe('needs-attention')
     expect(updatedItem?.needsAttentionReason).toBe('no-receipt')
-    expect(updatedItem?.noReceiptDiagnostic).toBe('ran-no-report')
+    expect(updatedItem?.noReceiptDiagnostic).toBe('run-observed-no-receipt')
   })
 
-  it('diagnostic: a no-receipt needs-attention item with no run at all is annotated "never-ran"', async () => {
+  it('diagnostic: a no-receipt needs-attention item with no run found gets the conservative default, never claims the worker never ran', async () => {
     const item: DispatchItem = {
       id: 'item-1',
       target: TARGET_A,
@@ -1925,7 +2218,7 @@ describe('runTrack — run-lookup is diagnostic-only, never authoritative (Unit 
     const updatedItem = marker?.state.items.find(candidate => candidate.id === 'item-1')
     expect(updatedItem?.status).toBe('needs-attention')
     expect(updatedItem?.needsAttentionReason).toBe('no-receipt')
-    expect(updatedItem?.noReceiptDiagnostic).toBe('never-ran')
+    expect(updatedItem?.noReceiptDiagnostic).toBe('dispatch-accepted-no-receipt')
   })
 
   it('run-failure for a no-receipt needs-attention item does not resolve it to failed', async () => {
@@ -1996,7 +2289,7 @@ describe('runTrack — run-lookup is diagnostic-only, never authoritative (Unit 
   })
 })
 
-// ─── Unit 4: receipt-driven terminal-state resolution + 24h SLA ─────────────
+// ─── Receipt-driven terminal-state resolution + 24h SLA ─────────────────────
 
 function makeReceiptComment(receipt: CrossRepoResult, login = 'fro-bot'): {id: number; body: string; login: string} {
   return {id: 0, body: buildResultMarker(receipt), login}
@@ -2192,7 +2485,7 @@ describe('resolveReceipts — three-gate trust + earliest-wins (pure core)', () 
   })
 })
 
-describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
+describe('runTrack — receipt-driven resolution integration', () => {
   it('happy path: authentic success/noop/failed receipts resolve to completed/completed/failed', async () => {
     const RAW = 'raw-nonce-happy'
     const items: DispatchItem[] = [
@@ -2328,6 +2621,42 @@ describe('runTrack — receipt-driven resolution (Unit 4 integration)', () => {
     expect(result.counts.goalsClosed).toBe(0)
     const updatedItems = result.counts.itemsNeedsAttention
     expect(updatedItems).toBeGreaterThan(0)
+  })
+
+  it('clears a stale noReceiptDiagnostic when a later pass resolves to unparseable-receipt', async () => {
+    // Seed an item already needs-attention/no-receipt carrying a diagnostic from a prior pass.
+    const item = makeDispatchedItem({
+      status: 'needs-attention',
+      needsAttentionReason: 'no-receipt',
+      noReceiptDiagnostic: 'dispatch-accepted-no-receipt',
+    })
+    const goalIssue = makeOpenGoal({goal: 'g', items: [item], markerHash: ''})
+    const {octokit} = mockOctokitForGoal(goalIssue, {
+      comments: [
+        {id: 0, login: 'fro-bot', body: '<!-- fro-bot:cross-repo-result {"correlation_id":"corr-1","nonce":"x"} -->'},
+      ],
+    })
+    await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [gateEntryFor(TARGET_A)],
+      findRunConclusion: async () => undefined,
+      now: () => item.epoch ?? 0,
+    })
+
+    const latestMarker = selectStateMarker(
+      (
+        await octokit.rest.issues.listComments({
+          owner: REPO.owner,
+          repo: REPO.repo,
+          issue_number: goalIssue.issueNumber,
+        })
+      ).data.map(comment => ({author: {login: comment.user?.login ?? ''}, body: comment.body ?? ''})),
+    )
+    const updatedItem = latestMarker?.state.items.find(candidate => candidate.id === 'item-1')
+    expect(updatedItem?.needsAttentionReason).toBe('unparseable-receipt')
+    expect(updatedItem?.noReceiptDiagnostic).toBeUndefined()
   })
 
   it('edge case (early-receipt): authentic receipt for a not-yet-confirmed item is retained, resolves once confirmed next pass', async () => {
@@ -2919,7 +3248,7 @@ describe('owner-aware dispatch/track routing — fro-bot and marcusrbrown are se
       status: 'dispatched',
       correlationId: 'corr-track-owner-1',
       // Past SLA with no receipt so the diagnostic run-lookup actually fires
-      // (Unit 5: it is never consulted for a non-needs-attention item).
+      // It is never consulted for a non-needs-attention item.
       epoch: 0,
     }
     const goalIssue: OpenGoalIssue = {
@@ -3181,7 +3510,7 @@ describe('golden path — real production composition (runDispatchCli then runTr
       expect(dispatchedItems).toHaveLength(2)
 
       // ─── Phase 2: runTrackCli against the seeded+dispatched marker ───────
-      // Unit 5: the receipt is the SOLE completion oracle — run-lookup no
+      // The receipt is the SOLE completion oracle — run-lookup no
       // longer resolves terminal state. Simulate each worker posting an
       // authentic receipt (extracting the correlation id + raw nonce that
       // were embedded in its dispatch prompt, exactly as a real worker would
@@ -3431,7 +3760,7 @@ describe('golden path — real production composition (runDispatchCli then runTr
     }
   })
 
-  it('SLA + diagnostic: a no-receipt item past 24h surfaces needs-attention, annotated ran-no-report vs never-ran (production runTrack composition)', async () => {
+  it('SLA + diagnostic: a no-receipt item past 24h surfaces needs-attention with conservative diagnostics', async () => {
     const target = GOLDEN_TARGETS[0] as DispatchTarget
     const itemRan: DispatchItem = {
       id: 'item-ran',
@@ -3476,9 +3805,159 @@ describe('golden path — real production composition (runDispatchCli then runTr
     const neverRan = marker?.state.items.find(candidate => candidate.id === 'item-never')
     expect(ran?.status).toBe('needs-attention')
     expect(ran?.needsAttentionReason).toBe('no-receipt')
-    expect(ran?.noReceiptDiagnostic).toBe('ran-no-report')
+    expect(ran?.noReceiptDiagnostic).toBe('run-observed-no-receipt')
     expect(neverRan?.status).toBe('needs-attention')
     expect(neverRan?.needsAttentionReason).toBe('no-receipt')
-    expect(neverRan?.noReceiptDiagnostic).toBe('never-ran')
+    expect(neverRan?.noReceiptDiagnostic).toBe('dispatch-accepted-no-receipt')
+  })
+
+  it('a late valid receipt after needs-attention/no-receipt resolves the item and clears the no-receipt diagnostic', async () => {
+    const target = GOLDEN_TARGETS[0] as DispatchTarget
+    const rawNonce = 'raw-nonce-late-clear'
+    const item: DispatchItem = {
+      id: 'item-late',
+      target,
+      promptHash: 'h1',
+      status: 'needs-attention',
+      needsAttentionReason: 'no-receipt',
+      noReceiptDiagnostic: 'dispatch-accepted-no-receipt',
+      correlationId: 'c-late-clear',
+      epoch: 0,
+      nonceHash: hashNonce(rawNonce),
+    }
+    const goalIssue = makeOpenGoal({goal: 'g-late-clear', items: [item], markerHash: ''})
+    const {octokit, comments} = mockOctokitForGoal(goalIssue, {
+      comments: [makeReceiptComment(makeReceipt({correlationId: 'c-late-clear', nonce: rawNonce, status: 'success'}))],
+    })
+
+    const result = await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [gateEntryFor(target)],
+      findRunConclusion: async () => undefined,
+      now: () => 0,
+    })
+
+    expect(result.counts.itemsCompleted).toBe(1)
+    const marker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    const resolved = marker?.state.items.find(candidate => candidate.id === 'item-late')
+    expect(resolved?.status).toBe('completed')
+    expect(resolved?.needsAttentionReason).toBeUndefined()
+    expect(resolved?.noReceiptDiagnostic).toBeUndefined()
+  })
+})
+
+describe('runTrack — production fixture regression (#3652: five targets, two without an accepted receipt)', () => {
+  it('three accepted receipts settle their items; a local-only comment and a fully silent target both stay non-terminal needs-attention/no-receipt, and the goal never closes', async () => {
+    const RAW = 'raw-nonce-3652'
+    const acceptedTargets: DispatchTarget[] = [
+      {owner: 'marcusrbrown', name: 'gpt'},
+      {owner: 'fro-bot', name: 'agent'},
+      {owner: 'fro-bot', name: 'dashboard'},
+    ]
+    const localOnlyTarget: DispatchTarget = {owner: 'marcusrbrown', name: 'containers'}
+    const silentTarget: DispatchTarget = {owner: 'marcusrbrown', name: 'opencode-copilot-delegate'}
+
+    const items: DispatchItem[] = [
+      ...acceptedTargets.map((target, index) => ({
+        id: `item-${target.name}`,
+        target,
+        promptHash: `h-${index}`,
+        status: 'dispatched' as const,
+        correlationId: `corr-${target.name}`,
+        epoch: 0,
+        nonceHash: hashNonce(`${RAW}-${target.name}`),
+      })),
+      {
+        id: 'item-containers',
+        target: localOnlyTarget,
+        promptHash: 'h-containers',
+        status: 'dispatched',
+        correlationId: 'corr-containers',
+        epoch: 0,
+        nonceHash: hashNonce(`${RAW}-containers`),
+      },
+      {
+        id: 'item-opencode-copilot-delegate',
+        target: silentTarget,
+        promptHash: 'h-silent',
+        status: 'dispatched',
+        correlationId: 'corr-silent',
+        epoch: 0,
+        nonceHash: hashNonce(`${RAW}-silent`),
+      },
+    ]
+
+    const goalIssue = makeOpenGoal({goal: 'g-3652', items, markerHash: ''})
+
+    // The three accountable targets posted accepted coordination receipts.
+    // The `containers` worker posted only a local-only completion comment —
+    // production shape, not a coordination receipt marker — and refused the
+    // receipt as prompt-injection-shaped; it must not complete the item.
+    // `opencode-copilot-delegate` posted nothing at all.
+    const {octokit, comments} = mockOctokitForGoal(goalIssue, {
+      comments: [
+        ...acceptedTargets.map(target =>
+          makeReceiptComment(
+            makeReceipt({correlationId: `corr-${target.name}`, nonce: `${RAW}-${target.name}`, status: 'success'}),
+          ),
+        ),
+        {
+          id: 100,
+          login: 'marcusrbrown',
+          body: 'Triaged locally and filed a fix; not going to post an automated receipt comment for this.',
+        },
+      ],
+    })
+
+    // Diagnostic-only run lookup: the `containers` worker's run is observed
+    // as completed (it really did run local triage), but that never
+    // substitutes for an accepted receipt. The fully silent target has no
+    // observed run at all.
+    const findRunConclusion = vi.fn(async (target: DispatchTarget, correlationId: string) => {
+      if (target.name === 'containers' && correlationId === 'corr-containers') return 'success' as const
+      return undefined
+    })
+
+    const result = await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [
+        ...acceptedTargets.map(target => gateEntryFor(target)),
+        gateEntryFor(localOnlyTarget),
+        gateEntryFor(silentTarget),
+      ],
+      findRunConclusion,
+      now: () => RECEIPT_SLA_MS + 1,
+    })
+
+    // Three accepted receipts settle their items; the goal must NOT close —
+    // two targets remain non-terminal.
+    expect(result.counts.itemsCompleted).toBe(3)
+    expect(result.counts.itemsFailed).toBe(0)
+    expect(result.counts.goalsClosed).toBe(0)
+
+    const marker = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+    for (const target of acceptedTargets) {
+      const settled = marker?.state.items.find(candidate => candidate.id === `item-${target.name}`)
+      expect(settled?.status).toBe('completed')
+    }
+
+    // Local-only completion comment does not complete the item: it stays
+    // needs-attention/no-receipt, with the run-observed diagnostic since a
+    // completed correlated run really was found.
+    const localOnly = marker?.state.items.find(candidate => candidate.id === 'item-containers')
+    expect(localOnly?.status).toBe('needs-attention')
+    expect(localOnly?.needsAttentionReason).toBe('no-receipt')
+    expect(localOnly?.noReceiptDiagnostic).toBe('run-observed-no-receipt')
+
+    // Fully silent target: same non-terminal state, conservative diagnostic
+    // — never claims the worker never ran.
+    const silent = marker?.state.items.find(candidate => candidate.id === 'item-opencode-copilot-delegate')
+    expect(silent?.status).toBe('needs-attention')
+    expect(silent?.needsAttentionReason).toBe('no-receipt')
+    expect(silent?.noReceiptDiagnostic).toBe('dispatch-accepted-no-receipt')
   })
 })

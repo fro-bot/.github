@@ -88,6 +88,29 @@ Nonce spec that made the gate sound: minted from `randomBytes(32).toString('base
 256-bit), stored as a full (untruncated) SHA-256 hex digest. A truncated hash or a
 `Date.now()+Math.random()` token would undermine the whole gate.
 
+## Update (2026-07-07): receipt accountability is metadata-declared, not prompt-declared
+
+#3652, A3's first real cross-repo goal, proved the receipt contract above was only a prompt
+payload: three targets posted accepted receipts, one completed local triage and refused the
+receipt as prompt-injection-shaped, one completed with no visible receipt. A dispatched prompt
+cannot make a target accountable — target repos can carry local response policies (e.g. "post
+exactly one comment") that a prompt has no authority over.
+
+The fix: whether a missing receipt is a broken contract is now an operator-declared capability in
+`metadata/repos.yaml` (`cross_repo_receipts`), authoritative only because that file is a
+`data`-branch, sole-writer contract — never a target self-report, never inferred from prompt
+wording. The coordinator snapshots this onto each item at dispatch (`receiptContract`); it does not
+reread metadata later, so drift after dispatch can't retroactively change what an in-flight item
+expected. Targets without the capability are `legacy-best-effort`: still dispatchable, and accepted
+nonce-verified receipts from them still resolve items, but a missing receipt is diagnostic only, not
+a broken contract.
+
+Local-only completion comments and Actions run results remain diagnostic evidence
+(`dispatch-accepted-no-receipt` vs. `run-observed-no-receipt`) — useful for an operator deciding
+whether to nudge a stuck item, but neither ever completes one. Only an accepted, nonce-verified
+receipt resolves state. Prompt wording and target-workflow rewrites do not enforce compliance; they
+cannot, because the coordinator has no authority over a target's local policy.
+
 ## Related
 
 - Source PR (merge commit): `e406ff157a5dbfecdd298942ab83a165ad42ea2f`
@@ -95,6 +118,8 @@ Nonce spec that made the gate sound: minted from `randomBytes(32).toString('base
   companion parse-tolerance invariant for the same receipts
 - `docs/solutions/best-practices/per-owner-installation-tokens-2026-07-06.md` — the credential
   topology the dispatch half depends on
+- `docs/plans/2026-07-07-001-fix-a3-receipt-contract-state-plan.md` — the metadata-declared
+  receipt-accountability fix and the #3652 production finding
 - Known residual: worker receipt authorship is a shared-trust boundary. GitHub does not provide an
   issue-scoped receipt token, and passing a separate token through the prompt would only move the
   secret. Further hardening requires target-side policy or a receipt broker, not coordinator-only

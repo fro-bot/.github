@@ -90,6 +90,18 @@ export interface RepoEntry {
    * protected by the primary `node_id` guard.
    */
   database_id?: number
+  /**
+   * Optional operator-declared cross-repo receipt contract capability. When set to
+   * `'coordination-issue-v1'`, this target is receipt-accountable for A3 cross-repo dispatch:
+   * the coordinator treats a missing accepted receipt as non-terminal rather than best-effort.
+   * This is an administrative routing gate written only through the `data`-branch sole-writer
+   * path (see the `repos.yaml` sole-writer rule above) — it is not a prompt-delivered value or
+   * a target self-report, and it does not prove the target will actually comply at runtime.
+   * Absent means legacy/best-effort: dispatchable, but a missing receipt is never read as
+   * evidence the worker did not run or as `completed`. See `metadata/README.md` for the full
+   * authority boundary.
+   */
+  cross_repo_receipts?: string
 }
 
 export type OnboardingStatus = 'pending' | 'onboarded' | 'failed' | 'lost-access' | 'pending-review'
@@ -247,7 +259,8 @@ function isRepoEntry(value: unknown): value is RepoEntry {
     (value.node_id === undefined ||
       (typeof value.node_id === 'string' && value.node_id.length > 0 && NODE_ID_PATTERN.test(value.node_id))) &&
     (value.database_id === undefined ||
-      (typeof value.database_id === 'number' && Number.isInteger(value.database_id) && value.database_id > 0))
+      (typeof value.database_id === 'number' && Number.isInteger(value.database_id) && value.database_id > 0)) &&
+    (value.cross_repo_receipts === undefined || typeof value.cross_repo_receipts === 'string')
   )
 }
 
@@ -296,6 +309,8 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
       `${path}.database_id`,
       'expected positive integer (stable numeric GitHub repository.id) or omitted',
     )
+  if (value.cross_repo_receipts !== undefined && typeof value.cross_repo_receipts !== 'string')
+    throw new SchemaValidationError(`${path}.cross_repo_receipts`, 'expected string or omitted')
 }
 
 function isOnboardingStatus(value: unknown): value is OnboardingStatus {
