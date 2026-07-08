@@ -1,7 +1,7 @@
 ---
 title: 'feat: Graduate plan-consistency Status Truth correction PRs'
 type: feat
-status: active
+status: complete
 date: 2026-07-07
 origin: docs/brainstorms/2026-07-03-bounded-correction-pr-execution-requirements.md
 ---
