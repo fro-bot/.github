@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/systematic"
 created: 2026-04-24
-updated: 2026-07-01
+updated: 2026-07-08
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
@@ -108,6 +108,7 @@ Starting in the v2.14–v2.17 arc, `systematic.json` user config is fully Zod-ty
 - Unrecognized keys and invalid values produce per-issue diagnostics surfaced in the top-level error message (#390, #398)
 - Bundled skill/agent names are validated against `bundled-names.ts` for typo detection
 - v2.32.0 adds a removed-names list: the JSON Schema generator folds removed names into the `disabled_skills`/`disabled_agents` enums (ships empty today, future-proofed); a content-integrity gate enforces that removed names never overlap current bundled names, preventing misclassification as a name moves active→removed (#534)
+- **New top-level config property `skills_as_commands`** (observed 2026-07-08 via the published schema at `fro.bot/systematic/schemas/v2/`, at registry version v2.33.2). The generated schema's property set grew from seven to eight; this is a downstream signal — surfaced through the [[fro-bot--systematic]] deploy target's hosted schema, not from a direct source read this interval. Source-side details (the config key's semantics and the PR that added it) are unconfirmed and should be resolved at the next direct survey of this repo. See [[fro-bot--systematic]] for the schema snapshot.
 
 ### CLI
 

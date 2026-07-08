@@ -2689,23 +2689,25 @@ Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
 
-## [2026-07-08 07:45] ingest | marcusrbrown/opencode-copilot-delegate
+## [2026-07-08 07:48] ingest | fro-bot/systematic
 
-Re-surveyed `marcusrbrown/opencode-copilot-delegate` (SHA `2719a5b`, up from `bea97ea`). Fifth consecutive churn-only window: still v0.12.0 on npm, `src/` tree byte-for-byte the documented v0.12.0 layout (4 tools, `runtime/`/`discovery/`/`lib/`/`tui/`), no new workflows. Updated repo page `marcusrbrown--opencode-copilot-delegate.md` additively — new Status block, frontmatter source + `updated`, tech-stack pins (Biome, peer/dev pin, mise), Fro Bot agent version, Renovate preset + reusable workflow, Open PRs refresh, Survey History row. Updated `index.md` catalog line with survey date + delta. No topic/entity edits justified: the window surfaced no new architectural pattern; [[opencode-plugins]] already documents the v0.12.0 patterns and #279 is an unmerged fix, so nothing durable to record there yet.
+Re-survey of `fro-bot/systematic` (HEAD `c712560`, gh-pages, 2026-07-07). Previous survey `e75ddeb` @ 2026-06-25. Updated `fro-bot--systematic.md` additively (frontmatter dates/sources, Overview, OCX Registry, Hosted JSON Schemas, Branches, Open Issues, Renovate, relationship table, Deploy Cadence, Survey History). Cross-noted the source page `marcusrbrown--systematic.md` (new config field surfaced downstream) and refreshed both `index.md` catalog entries. No new topic/entity/comparison pages warranted.
 
-Key deltas:
+Key findings (`e75ddeb` → `c712560`):
 
-- **Dependency churn only:** Biome 2.5.0 → **2.5.2** (#270); Fro Bot agent **v0.76.0 → v0.83.1** (SHA `d1786f3`, 7-minor jump in two weeks); `@opencode-ai/plugin` dev pin 1.17.8 → **1.17.13**; `opencode-ai` mise 1.17.8 → **1.17.13**; `@github/copilot` CLI 1.0.63 → **1.0.68**; `solid-js` 1.9.13 → **1.9.14**; Renovate preset `#5.2.3` → **`#5.2.4`**; `bfra-me/.github` Renovate reusable v4.16.28 → **v4.16.34**. `@types/node` held at 24.13.2, `@opentui/*` held at 0.2.6, zod still `^4.3.0`.
-- **First source-touching PR in several windows:** #279 (`fix(runtime): skip stale pid registration`) — guards against a race where a fast-completing Copilot subprocess reaches terminal state before the async `getPidIdentity` append writes its PID back into the orphan PID file. Touches `src/runtime/task-registry.ts` + regression test + patch changeset. Unmerged, so main's tree is still the v0.12.0 layout; recorded on the repo page, not promoted to the topic page until it lands.
-- **Open PR set shifted:** #169 (Biome schema sync) and #134 (autoheal LTS caret pinning) closed; four new PRs opened (#279, #278 `@types/node` v26 dup of #241, #277 checkout v7, #276 cache v6). #130/#135/#241 carried over. Open issues unchanged (#38/#26/#25).
-- **Fro Bot workflow present** (`fro-bot.yaml`, agent v0.83.1) — no follow-up-workflow-draft needed.
+- **Prediction confirmed: Renovate config wiped by the docs build.** The 2026-06-25 survey flagged that `.github/renovate.json5` (merged via PR #2) "will be overwritten or orphaned by the next docs build." It was. The first deploy after the merge (`29f137d`, 2026-06-26) replaced the `gh-pages` tree wholesale; the root no longer contains a `.github/` dir. HEAD is docs build output again. Durable lesson: the deploy branch is overwritten wholesale, so persistent config committed there is transient. Issue #3 ("Action Required: Fix Renovate Configuration") remains **open but now stale/moot** — no config exists for Renovate to resolve; recommend manual close.
+- **Registry advanced v2.32.0 → v2.33.2** (`index.json`), still matching the latest source release (v2.33.2, published 2026-07-07 10:41; deployed 10:43). 104 components unchanged: 51 agents, 48 skills, 2 bundles, 2 profiles, 1 plugin. Namespace/name/author stable.
+- **New top-level JSON Schema property `skills_as_commands`** on both `schemas/latest/` and `schemas/v2/` (property set grew 7 → 8, additive/backward-compatible). This **contradicts** the 2026-06-25 "byte-stable" record — the v2 schema mutates in place rather than versioning up. All other schema surface stable (draft-07, `$id` pinned at v2, no top-level `title`, same `description`; latest ≡ v2). Cross-noted on [[marcusrbrown--systematic]] as a downstream signal; source-side semantics of the new key are unconfirmed pending a direct source survey.
+- **Deploy cadence re-intensified** around the v2.33.x release train: 3 deploys on 2026-07-07 (v2.33.0/.1/.2, each ~2 min after publish), plus deploys 2026-06-26 and 2026-07-04.
+- `.well-known/ocx.json` unchanged (`{"version":1,"registry":"/systematic/index.json"}`). gh-pages content tree otherwise unchanged.
+- **Still no Fro Bot workflow** — only GitHub's built-in `pages-build-deployment` + `Dependency Graph` dynamic. Expected for a build-output-only repo; no follow-up workflow-draft PR warranted (source repo already has full Fro Bot integration).
 
-Constraints honored: reads limited to directory listings, README/manifests/workflow files and pinned constants; treated as untrusted input; additive updates only, no overwrites; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice.
+Constraints honored: reads limited to directory listings, README/manifest/registry/schema/workflow surfaces; target treated as untrusted input; additive updates only, no overwrites, contradictions noted with dates; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice.
 
-Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 2719a5bbe0a5224b1a8e1785997f92279dd06ab6)
+Sources: https://github.com/fro-bot/systematic (SHA c712560)
 
-## [2026-07-08 07:47] ingest | repo:marcusrbrown/opencode-copilot-delegate
+## [2026-07-08 07:49] ingest | repo:fro-bot/systematic
 
-Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+Surveyed fro-bot/systematic and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+Sources: https://github.com/fro-bot/systematic
