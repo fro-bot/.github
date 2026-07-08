@@ -416,6 +416,9 @@ jobs:
               github.event.comment.body ||
               ''
             }}
+          # Run-local handoff for optional wiki context expansion.
+          # Contains only selected wiki paths — never logged, never echoed.
+          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: node scripts/wiki-query.ts
 
       # Overlay metadata/ from the data branch so the scheduled run can derive
@@ -466,6 +469,8 @@ jobs:
           PERSONA: ${{ steps.persona.outputs.content }}
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
           SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
+          # Handoff path only — never the file contents or selected paths themselves.
+          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
           TASK_PROMPT: >-
             ${{
               (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
@@ -495,6 +500,20 @@ jobs:
             <solutions_context>
             ${{ env.SOLUTIONS_CONTEXT }}
             </solutions_context>
+
+            <wiki_context_expansion>
+            The wiki context above is baseline-injected and usually enough on its own — do not
+            expand by default. If baseline context is insufficient, following linked pages would
+            help, or you have a short grounded query, you may optionally run one of:
+
+            `node scripts/wiki-context-expand.ts linked`
+            `node scripts/wiki-context-expand.ts query "<short grounded query>"`
+
+            Linked mode reads the baseline-selected pages from the path in
+            `WIKI_CONTEXT_HANDOFF_PATH`; do not print or echo that path, its file contents, the
+            query text, returned excerpts, or any token/env values into your output or logs. Use
+            returned wiki paths only to ground a recommendation.
+            </wiki_context_expansion>
 
             <knowledge_persistence>
             Use the wiki context when it materially improves the response.
