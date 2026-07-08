@@ -206,8 +206,8 @@ jobs:
       # (issues:write, scoped to this repo's owner) for marker/close
       # operations in fro-bot/.github, plus a per-owner target token (fro-bot,
       # marcusrbrown — separate App installations) for listWorkflowRunsForRepo.
-      # Receipts are the sole completion oracle (R7/R8); run-lookup is a
-      # diagnostic-only annotator (Unit 5), so the target token needs only
+      # Receipts are the sole completion oracle; run-lookup is a
+      # diagnostic-only annotator, so the target token needs only
       # `actions: read` — no `pull-requests: read` (PR search is removed).
       - name: 🔑 Mint control-plane token
         id: control-plane-token

@@ -62,7 +62,7 @@ jobs:
           ref: main
           fetch-depth: 1
 
-      # Minimal node + pnpm setup via mise — NO cache restore (R1: no poisonable cache).
+      # Minimal node + pnpm setup via mise — no cache restore.
       # Uses the same mise-action pin as .github/actions/setup but skips the
       # actions/cache step entirely so a PR workflow cannot poison the store.
       - name: 📦 Install mise (node + pnpm)
@@ -80,7 +80,7 @@ jobs:
       - name: 📦 Install dependencies (no cache)
         run: pnpm install --prefer-offline --ignore-scripts --loglevel warn
 
-      # Run the scan. FRO_BOT_POLL_PAT is scoped to THIS STEP ONLY (R6).
+      # Run the scan. FRO_BOT_POLL_PAT is scoped to this step only.
       # The script reads GITHUB_EVENT_PATH (set automatically by Actions to the
       # workflow_run payload), resolves PR identity via the API, fetches the diff
       # as data, and exits 0 (pass) or non-zero (fail/error).
@@ -94,7 +94,7 @@ jobs:
           FRO_BOT_POLL_PAT: ${{ secrets.FRO_BOT_POLL_PAT }}
         run: node scripts/check-private-leak.ts
 
-      # Post the commit status to the PR head SHA (R4, R5).
+      # Post the commit status to the PR head SHA.
       # Runs unconditionally (if: always()) so the status is posted whether the
       # scan passed, failed, or errored. If this POST fails, the step exits
       # non-zero and the job fails — the PR is never left unsignaled (fail-closed).
