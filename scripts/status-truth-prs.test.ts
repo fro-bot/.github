@@ -19,20 +19,34 @@ import type {
   ExecuteStatusTruthPrActionsInput,
   ExistingStatusTruthPr,
   PlanStatusTruthPrActionsInput,
+  RunPrsCoreDeps,
   StatusTruthPrAction,
+  StatusTruthPrFetchClient,
   StatusTruthPrOctokitClient,
 } from './status-truth-prs.ts'
 import type {PublicOutputTokens} from './status-truth-public-output.ts'
 import {Buffer} from 'node:buffer'
 import {createHash} from 'node:crypto'
+import {readFileSync} from 'node:fs'
+import {resolve} from 'node:path'
+import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
+import {parse} from 'yaml'
 import {
+  buildEnvBackedRunPrsCoreDeps,
   executeStatusTruthPrActions,
+  extractTerminalFingerprint,
+  fetchExistingCorrectionPrs,
+  fetchTerminalFingerprints,
   GRADUATED_CLAIM_KINDS,
+  isPrExecutionArmed,
   planStatusTruthPrActions,
   PR_BRANCH_PREFIX,
   PR_TITLE_PREFIX,
+  runPrs,
+  runPrsCore,
 } from './status-truth-prs.ts'
+import * as publicOutputModule from './status-truth-public-output.ts'
 
 // Mirrors the production digest derivation so tests stay in sync without
 // importing the private helper.
@@ -217,12 +231,67 @@ describe('happy path: graduated claim kind', () => {
     }
   })
 
-  it('GRADUATED_CLAIM_KINDS export is a readonly set (intentionally empty in Phase 1)', () => {
+  it('GRADUATED_CLAIM_KINDS export contains exactly plan-consistency (graduated on #3656 + #3614-#3616 evidence)', () => {
     expect(GRADUATED_CLAIM_KINDS).toBeDefined()
     expect(typeof GRADUATED_CLAIM_KINDS).toBe('object')
-    // Phase 1: no claim kinds are graduated yet; set is empty by design.
-    // To graduate a kind, add it via a reviewed repo change after Phase 1 signal.
-    expect(GRADUATED_CLAIM_KINDS.size).toBe(0)
+    expect(GRADUATED_CLAIM_KINDS.size).toBe(1)
+    expect(GRADUATED_CLAIM_KINDS.has('plan-consistency')).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isPrExecutionArmed: three-key arming gate
+// ---------------------------------------------------------------------------
+
+describe('isPrExecutionArmed', () => {
+  it('is armed only when repo variable, dispatch input, and graduated set are all true/non-empty', () => {
+    expect(
+      isPrExecutionArmed({
+        prsEnabledVar: 'true',
+        dispatchInputVar: 'true',
+        graduatedClaimKinds: GRADUATED_CLAIM_KINDS,
+      }),
+    ).toBe(true)
+  })
+
+  it('stays false when the repo variable is missing', () => {
+    expect(
+      isPrExecutionArmed({
+        prsEnabledVar: undefined,
+        dispatchInputVar: 'true',
+        graduatedClaimKinds: new Set(['plan-consistency']),
+      }),
+    ).toBe(false)
+  })
+
+  it('stays false when the dispatch input is missing', () => {
+    expect(
+      isPrExecutionArmed({
+        prsEnabledVar: 'true',
+        dispatchInputVar: undefined,
+        graduatedClaimKinds: new Set(['plan-consistency']),
+      }),
+    ).toBe(false)
+  })
+
+  it('stays false when the graduated set is empty, even with both other keys true', () => {
+    expect(
+      isPrExecutionArmed({
+        prsEnabledVar: 'true',
+        dispatchInputVar: 'true',
+        graduatedClaimKinds: new Set(),
+      }),
+    ).toBe(false)
+  })
+
+  it('stays false when all three keys are absent/false/empty', () => {
+    expect(
+      isPrExecutionArmed({
+        prsEnabledVar: undefined,
+        dispatchInputVar: undefined,
+        graduatedClaimKinds: new Set(),
+      }),
+    ).toBe(false)
   })
 })
 
@@ -870,6 +939,7 @@ function makeOpenPrAction(overrides: Partial<Extract<StatusTruthPrAction, {type:
     opaqueDigest: digest,
     path: 'docs/plans/example-plan.md',
     kind: 'plan-consistency',
+    fingerprint: 'abc123def456abcd',
     ...overrides,
   }
 }
@@ -1123,6 +1193,42 @@ describe('execution shell: createRef 422 collision policy', () => {
   })
 })
 
+describe('execution shell: close-pr ordering (closure before comment)', () => {
+  it('closes the PR and attempts branch delete even when posting the comment fails', async () => {
+    const action = makeClosePrAction()
+    const octokit = makeMockOctokit({
+      issues: {
+        createComment: vi.fn(async () => {
+          throw new Error('comment API failure')
+        }),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(octokit.rest.pulls.update).toHaveBeenCalled()
+    expect(octokit.rest.git.deleteRef).toHaveBeenCalled()
+    expect(result.counts.closed).toBe(1)
+    expect(result.counts.failed).toBe(0)
+  })
+
+  it('closes the PR even when the comment fails the public-output gate', async () => {
+    const action = makeClosePrAction()
+    const octokit = makeMockOctokit()
+    // Unloaded tokens force applyPublicOutputGate to block unconditionally
+    // (fail-closed), guaranteeing the comment gate fails for this test.
+    const unloadedTokens: PublicOutputTokens = {loaded: false, error: 'test: forced gate failure'}
+
+    const result = await executeStatusTruthPrActions(
+      makeExecuteInput({actions: [action], octokit, publicOutputTokens: unloadedTokens}),
+    )
+
+    expect(octokit.rest.pulls.update).toHaveBeenCalled()
+    expect(octokit.rest.issues.createComment).not.toHaveBeenCalled()
+    expect(result.counts.closed).toBe(1)
+  })
+})
+
 describe('execution shell: deleteRef 422 non-fatal', () => {
   it('counts the failure and continues when deleteRef 422s (already gone)', async () => {
     const action = makeClosePrAction()
@@ -1150,7 +1256,7 @@ describe('execution shell: pulls.create isolated failure', () => {
     const octokit = makeMockOctokit({
       pulls: {
         create: vi.fn(async () => {
-          throw new Error('API failure')
+          throw new Error('API failure: token=super-secret-value')
         }),
         update: vi.fn(async () => ({data: {number: 101}})),
       },
@@ -1163,21 +1269,187 @@ describe('execution shell: pulls.create isolated failure', () => {
   })
 })
 
-describe('execution shell: privacy gate on rendered surfaces', () => {
-  it('aborts the open-pr action when the rendered PR body fails the public-output gate', async () => {
+describe('execution shell: action-failure diagnostics', () => {
+  it('emits a privacy-safe open-pr diagnostic with action type, error-class, and numeric status, never raw message text', async () => {
     const action = makeOpenPrAction()
+    const octokit = makeMockOctokit({
+      pulls: {
+        create: vi.fn(async () => {
+          throw Object.assign(new Error('super-secret-message-should-not-leak'), {status: 500})
+        }),
+        update: vi.fn(async () => ({data: {number: 101}})),
+      },
+    })
+    const writeStderr = vi.fn<(text: string) => void>()
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit, writeStderr}))
+
+    expect(result.counts.failed).toBe(1)
+    expect(writeStderr).toHaveBeenCalled()
+    const diagnostic = vi
+      .mocked(writeStderr)
+      .mock.calls.map(c => c[0])
+      .join('\n')
+    expect(diagnostic).toContain('action=open-pr')
+    expect(diagnostic).toContain('error-class=action-failure')
+    expect(diagnostic).toContain('status=500')
+    expect(diagnostic).not.toContain('super-secret-message-should-not-leak')
+  })
+
+  it('emits a privacy-safe close-pr diagnostic without a status when the error carries none, never raw message text', async () => {
+    const action = makeClosePrAction()
+    const octokit = makeMockOctokit({
+      pulls: {
+        create: vi.fn(async () => ({data: {number: 101}})),
+        update: vi.fn(async () => {
+          throw new Error('super-secret-message-should-not-leak')
+        }),
+      },
+    })
+    const writeStderr = vi.fn<(text: string) => void>()
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit, writeStderr}))
+
+    expect(result.counts.failed).toBe(1)
+    const diagnostic = vi
+      .mocked(writeStderr)
+      .mock.calls.map(c => c[0])
+      .join('\n')
+    expect(diagnostic).toContain('action=close-pr')
+    expect(diagnostic).toContain('error-class=action-failure')
+    expect(diagnostic).not.toContain('status=')
+    expect(diagnostic).not.toContain('super-secret-message-should-not-leak')
+  })
+})
+
+describe('execution shell: downgrade classification for live-content 404', () => {
+  it('classifies a 404 on live base-branch getContent as downgraded, not failed', async () => {
+    const action = makeOpenPrAction()
+    const octokit = makeMockOctokit({
+      repos: {
+        getContent: vi.fn(async () => {
+          throw Object.assign(new Error('Not Found'), {status: 404})
+        }),
+        createOrUpdateFileContents: vi.fn(async () => ({data: {commit: {sha: 'commit-sha-1'}}})),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.downgraded).toBe(1)
+    expect(result.counts.failed).toBe(0)
+    expect(octokit.rest.git.createRef).not.toHaveBeenCalled()
+  })
+
+  it('re-throws (counts as failed) a non-404 API error on live-content getContent', async () => {
+    const action = makeOpenPrAction()
+    const octokit = makeMockOctokit({
+      repos: {
+        getContent: vi.fn(async () => {
+          throw Object.assign(new Error('Internal Server Error'), {status: 500})
+        }),
+        createOrUpdateFileContents: vi.fn(async () => ({data: {commit: {sha: 'commit-sha-1'}}})),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.failed).toBe(1)
+    expect(result.counts.downgraded).toBe(0)
+  })
+
+  it('classifies a branch-collision getContent 404 as safetyRefused, not failed', async () => {
+    const action = makeOpenPrAction()
+    const octokit = makeMockOctokit({
+      git: {
+        getRef: vi.fn(async () => ({data: {object: {sha: 'base-sha-1'}}})),
+        createRef: vi.fn(async () => {
+          throw Object.assign(new Error('Reference already exists'), {status: 422})
+        }),
+        deleteRef: vi.fn(async () => undefined),
+      },
+      repos: {
+        getContent: vi.fn(async (params: {ref?: string}) => {
+          if (params.ref === action.opaqueBranchName) {
+            throw Object.assign(new Error('Not Found'), {status: 404})
+          }
+          return {
+            data: {
+              content: Buffer.from(STALE_PLAN_CONTENT, 'utf8').toString('base64'),
+              encoding: 'base64',
+              sha: 'blob-sha-1',
+            },
+          }
+        }),
+        createOrUpdateFileContents: vi.fn(async () => ({data: {commit: {sha: 'commit-sha-1'}}})),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.safetyRefused).toBe(1)
+    expect(result.counts.failed).toBe(0)
+    expect(octokit.rest.pulls.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('execution shell: corrector-returning-null and decodeGetContentResponse-null downgrades', () => {
+  it('downgrades when the corrector returns null for the live content', async () => {
+    const action = makeOpenPrAction({kind: 'plan-consistency', path: 'docs/plans/no-status-line.md'})
+    const noStatusLineContent = '# A plan with no status line at all\n'
+    const octokit = makeMockOctokit({
+      repos: {
+        getContent: vi.fn(async () => ({
+          data: {
+            content: Buffer.from(noStatusLineContent, 'utf8').toString('base64'),
+            encoding: 'base64',
+            sha: 'blob-sha-x',
+          },
+        })),
+        createOrUpdateFileContents: vi.fn(async () => ({data: {commit: {sha: 'commit-sha-1'}}})),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.downgraded).toBe(1)
+    expect(result.counts.opened).toBe(0)
+    expect(octokit.rest.git.createRef).not.toHaveBeenCalled()
+  })
+
+  it('downgrades when decodeGetContentResponse returns null (missing content field)', async () => {
+    const action = makeOpenPrAction()
+    const octokit = makeMockOctokit({
+      repos: {
+        getContent: vi.fn(async () => ({
+          data: {sha: 'blob-sha-y'},
+        })),
+        createOrUpdateFileContents: vi.fn(async () => ({data: {commit: {sha: 'commit-sha-1'}}})),
+      },
+    })
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
+
+    expect(result.counts.downgraded).toBe(1)
+    expect(result.counts.opened).toBe(0)
+    expect(octokit.rest.git.createRef).not.toHaveBeenCalled()
+  })
+})
+
+describe('execution shell: privacy gate on rendered surfaces', () => {
+  it('threads the action fingerprint into the title/body gate calls (public-output gate symmetry)', async () => {
+    const action = makeOpenPrAction({fingerprint: 'abc123def456abcd'})
     const octokit = makeMockOctokit()
+    const gateSpy = vi.spyOn(publicOutputModule, 'applyPublicOutputGate')
 
-    const result = await executeStatusTruthPrActions(
-      makeExecuteInput({actions: [action], octokit, publicOutputTokens: makeBlockingTokens()}),
-    )
+    await executeStatusTruthPrActions(makeExecuteInput({actions: [action], octokit}))
 
-    // opaqueTitle/body here do not literally contain 'private-repo-name', so this
-    // exercises the gate pass-through path; the safety net still requires zero
-    // writes on any gate failure. Assert the gate ran (no crash) and, when the
-    // fixed body/title strings do not trip the blocking tokens, the action still
-    // succeeds — proving the gate call site exists in the write path.
-    expect(result.counts.opened + result.counts.safetyRefused).toBeGreaterThanOrEqual(0)
+    const titleCall = gateSpy.mock.calls.find(([params]) => params.surface === 'pr-title')
+    const bodyCall = gateSpy.mock.calls.find(([params]) => params.surface === 'pr-body')
+    expect(titleCall?.[0].fingerprint).toBe('abc123def456abcd')
+    expect(bodyCall?.[0].fingerprint).toBe('abc123def456abcd')
+
+    gateSpy.mockRestore()
   })
 })
 
@@ -1319,5 +1591,1118 @@ describe('additional invariants', () => {
 
     expect(result.counts.pathForbidden).toBe(0)
     expect(result.counts.prActionsPlanned).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// runPrsCore() seam — same-run report-read, state-fetch, plan, execute
+// ---------------------------------------------------------------------------
+
+function makeTerminalFingerprintIssue(fingerprint: string, label: string, login = 'fro-bot[bot]') {
+  return {
+    number: 501,
+    labels: [{name: 'status-truth'}, {name: label}],
+    body: `<!-- status-truth:fingerprint=${fingerprint} -->\n\nbody text`,
+    user: {login},
+  }
+}
+
+function makeFetchClientStub(
+  overrides: {
+    prs?: readonly {
+      number: number
+      state: string
+      head: {ref: string}
+      base: {ref: string}
+      user: {login?: string | null} | null
+    }[]
+    issues?: readonly {
+      number: number
+      labels: readonly {name?: string | null}[]
+      body?: string | null
+      user?: {login?: string | null} | null
+    }[]
+    alwaysFullPrPages?: boolean
+    alwaysFullIssuePages?: boolean
+  } = {},
+): StatusTruthPrFetchClient {
+  const prs = overrides.prs ?? []
+  const issues = overrides.issues ?? []
+  return {
+    rest: {
+      pulls: {
+        list: vi.fn(async ({page}: {page: number}) => ({data: overrides.alwaysFullPrPages || page === 1 ? prs : []})),
+      },
+      issues: {
+        listForRepo: vi.fn(async ({page}: {page: number}) => ({
+          data: overrides.alwaysFullIssuePages || page === 1 ? issues : [],
+        })),
+      },
+    },
+  } as unknown as StatusTruthPrFetchClient
+}
+
+function makeRunPrsCoreDeps(overrides: Partial<RunPrsCoreDeps> = {}): RunPrsCoreDeps {
+  return {
+    env: {},
+    graduatedClaimKinds: new Set(['plan-consistency']),
+    readReport: vi.fn(async () => {
+      throw new Error('readReport not stubbed')
+    }),
+    loadPublicOutputTokens: vi.fn(async () => makeLoadedTokens()),
+    createFetchClient: vi.fn(async () => makeFetchClientStub()),
+    createWriteClient: vi.fn(async () => makeMockOctokit()),
+    writeStdout: vi.fn(),
+    writeStderr: vi.fn(),
+    writeResultFile: vi.fn(async () => undefined),
+    setExitCode: vi.fn(),
+    ...overrides,
+  }
+}
+
+describe('runPrsCore: disarmed mode', () => {
+  it('exits counts-only and does not require a report path or report read', async () => {
+    const readReport = vi.fn(async () => {
+      throw new Error('must not be called when disarmed')
+    })
+    const deps = makeRunPrsCoreDeps({
+      env: {},
+      readReport,
+    })
+
+    const result = await runPrsCore(deps)
+
+    expect(result.armed).toBe(false)
+    expect(readReport).not.toHaveBeenCalled()
+    expect(deps.setExitCode).not.toHaveBeenCalled()
+    expect(deps.writeStdout).toHaveBeenCalledTimes(1)
+    const stdoutArg = vi.mocked(deps.writeStdout).mock.calls[0]?.[0] as string
+    expect(stdoutArg).toContain('"armed":false')
+  })
+})
+
+describe('runPrsCore: armed dry-run', () => {
+  it('plans and reports would-open counts for a graduated plan-consistency drift with zero mutating calls', async () => {
+    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'plan-consistency'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const writeClient = makeMockOctokit()
+    const fetchClient = makeFetchClientStub()
+
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_DRY_RUN: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => fetchClient),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    const result = await runPrsCore(deps)
+
+    expect(result.armed).toBe(true)
+    expect(result.dryRun).toBe(true)
+    expect(result.plannedCounts.prActionsPlanned).toBe(1)
+    expect(result.executedCounts.wouldOpen).toBe(1)
+    expect(result.executedCounts.opened).toBe(0)
+
+    // Zero mutating calls in dry-run.
+    expect(writeClient.rest.git.createRef).not.toHaveBeenCalled()
+    expect(writeClient.rest.repos.createOrUpdateFileContents).not.toHaveBeenCalled()
+    expect(writeClient.rest.pulls.create).not.toHaveBeenCalled()
+    expect(writeClient.rest.pulls.update).not.toHaveBeenCalled()
+    expect(writeClient.rest.git.deleteRef).not.toHaveBeenCalled()
+  })
+})
+
+describe('runPrsCore: armed live mode', () => {
+  it('executes the open-pr action for one eligible plan-consistency finding and reports opened=1 when the mocked write client succeeds', async () => {
+    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'plan-consistency'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const writeClient = makeMockOctokit()
+    const fetchClient = makeFetchClientStub()
+
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => fetchClient),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    const result = await runPrsCore(deps)
+
+    expect(result.armed).toBe(true)
+    expect(result.dryRun).toBe(false)
+    expect(result.plannedCounts.prActionsPlanned).toBe(1)
+    expect(result.executedCounts.opened).toBe(1)
+    expect(result.executedCounts.failed).toBe(0)
+    expect(result.executedCounts.safetyRefused).toBe(0)
+
+    // Confirms the executor path actually ran mutating calls (not just planned).
+    expect(writeClient.rest.git.createRef).toHaveBeenCalledTimes(1)
+    expect(writeClient.rest.repos.createOrUpdateFileContents).toHaveBeenCalledTimes(1)
+    expect(writeClient.rest.pulls.create).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('runPrsCore: terminal fingerprint extraction', () => {
+  it('contributes a terminal fingerprint from a strictly-marked rejected/false-positive issue; accepted/resolved do not', async () => {
+    const rejectedFp = 'aaaa1111bbbb2222'
+    const falsePositiveFp = 'cccc3333dddd4444'
+    const acceptedFp = 'eeee5555ffff6666'
+    const resolvedFp = '1111222233334444'
+
+    const issues = [
+      makeTerminalFingerprintIssue(rejectedFp, 'status-truth:rejected'),
+      makeTerminalFingerprintIssue(falsePositiveFp, 'status-truth:false-positive'),
+      makeTerminalFingerprintIssue(acceptedFp, 'status-truth:accepted'),
+      makeTerminalFingerprintIssue(resolvedFp, 'status-truth:resolved'),
+    ]
+
+    const fetchClient = makeFetchClientStub({issues})
+    const terminals = await fetchTerminalFingerprints({
+      client: fetchClient,
+      owner: 'fro-bot',
+      repo: '.github',
+    })
+
+    expect(terminals.fingerprints.has(rejectedFp)).toBe(true)
+    expect(terminals.fingerprints.has(falsePositiveFp)).toBe(true)
+    expect(terminals.fingerprints.has(acceptedFp)).toBe(false)
+    expect(terminals.fingerprints.has(resolvedFp)).toBe(false)
+  })
+
+  it('excludes malformed, missing, non-hex, or duplicate terminal fingerprints and never suppresses via fuzzy matching', () => {
+    // Malformed: uppercase hex is not valid per the strict marker pattern.
+    expect(extractTerminalFingerprint('<!-- status-truth:fingerprint=ABCDEF -->')).toBeNull()
+    // Missing marker entirely.
+    expect(extractTerminalFingerprint('no marker here')).toBeNull()
+    // Non-hex characters.
+    expect(extractTerminalFingerprint('<!-- status-truth:fingerprint=zzzznothex -->')).toBeNull()
+    // Empty value.
+    expect(extractTerminalFingerprint('<!-- status-truth:fingerprint= -->')).toBeNull()
+    // Valid.
+    expect(extractTerminalFingerprint('<!-- status-truth:fingerprint=abc123 -->')).toBe('abc123')
+  })
+
+  it('counts duplicate terminal fingerprints across issues as skipped/invalid and does not suppress from either', async () => {
+    const dupFp = 'abc123def456abcd'
+    const issues = [
+      makeTerminalFingerprintIssue(dupFp, 'status-truth:rejected'),
+      makeTerminalFingerprintIssue(dupFp, 'status-truth:false-positive'),
+    ]
+    const fetchClient = makeFetchClientStub({issues})
+    const terminals = await fetchTerminalFingerprints({
+      client: fetchClient,
+      owner: 'fro-bot',
+      repo: '.github',
+    })
+
+    // Duplicate fingerprint across two terminal issues is excluded (fail-closed on
+    // ambiguity) — never trusted for suppression from either source.
+    expect(terminals.fingerprints.has(dupFp)).toBe(false)
+    expect(terminals.skippedInvalid).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('fetchExistingCorrectionPrs: unfiltered candidate fetch', () => {
+  it('returns every open-against-main PR as a candidate with botOwned/branch/digest metadata, deferring rediscovery gating to the planner', async () => {
+    // This fetch is intentionally unfiltered by bot-ownership or branch-prefix
+    // criteria (see the function's doc comment) — it returns raw candidate
+    // records so the planner can independently gate rediscovery. Do not read
+    // this test as "the fetcher filters"; it asserts the fetcher preserves
+    // exactly the metadata the planner needs to do its own gating.
+    const fingerprint = 'abc123def456abcd'
+    const opaqueDigest = testDeriveOpaqueDigest(fingerprint)
+    const matchingPr = {
+      number: 42,
+      state: 'open',
+      head: {ref: `${PR_BRANCH_PREFIX}${opaqueDigest}`},
+      base: {ref: 'main'},
+      user: {login: 'fro-bot[bot]'},
+    }
+    const nonBotPr = {
+      number: 43,
+      state: 'open',
+      head: {ref: `${PR_BRANCH_PREFIX}otherdigest12345`},
+      base: {ref: 'main'},
+      user: {login: 'random-user'},
+    }
+    const nonPrefixPr = {
+      number: 45,
+      state: 'open',
+      head: {ref: 'some-other-branch'},
+      base: {ref: 'main'},
+      user: {login: 'fro-bot[bot]'},
+    }
+
+    const fetchClient = makeFetchClientStub({prs: [matchingPr, nonBotPr, nonPrefixPr]})
+    const existingPrs = await fetchExistingCorrectionPrs({
+      client: fetchClient,
+      owner: 'fro-bot',
+      repo: '.github',
+    })
+
+    // All three are returned as candidates — the fetcher does not filter.
+    expect(existingPrs).toHaveLength(3)
+
+    const found = existingPrs.find(pr => pr.number === 42)
+    expect(found?.botOwned).toBe(true)
+    expect(found?.headBranch).toBe(`${PR_BRANCH_PREFIX}${opaqueDigest}`)
+    expect(found?.baseBranch).toBe('main')
+    expect(found?.opaqueDigest).toBe(opaqueDigest)
+
+    const nonBot = existingPrs.find(pr => pr.number === 43)
+    expect(nonBot?.botOwned).toBe(false)
+
+    const nonPrefix = existingPrs.find(pr => pr.number === 45)
+    expect(nonPrefix?.opaqueDigest).toBe('')
+  })
+})
+
+describe('runPrsCore: planner gates rediscovery on bot ownership, base branch, and prefix', () => {
+  it('does not rediscover a same-digest, same-branch-prefix PR that is not bot-owned; plans a fresh open instead', async () => {
+    const fingerprint = 'abc123def456abcd'
+    const opaqueDigest = testDeriveOpaqueDigest(fingerprint)
+    const finding = makeDriftedFinding({fingerprint, kind: 'plan-consistency'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    // Candidate PR matches digest and branch prefix and base, but is NOT
+    // bot-owned — the planner must refuse to treat it as a rediscovery.
+    const nonBotCandidate = {
+      number: 43,
+      state: 'open',
+      head: {ref: `${PR_BRANCH_PREFIX}${opaqueDigest}`},
+      base: {ref: 'main'},
+      user: {login: 'random-user'},
+    }
+    const fetchClient = makeFetchClientStub({prs: [nonBotCandidate]})
+    const writeClient = makeMockOctokit()
+
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_DRY_RUN: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => fetchClient),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    const result = await runPrsCore(deps)
+
+    // A fresh open-pr action is planned (not a rediscover), because the
+    // candidate fails the bot-ownership gate.
+    expect(result.plannedCounts.prActionsPlanned).toBe(1)
+    expect(result.executedCounts.wouldOpen).toBe(1)
+  })
+})
+
+describe('runPrsCore: partial-success recovery', () => {
+  it('rediscovers an existing matching correction PR from a prior partial run and still allows stale/terminal closure planning', async () => {
+    const fingerprint = 'abc123def456abcd'
+    const opaqueDigest = testDeriveOpaqueDigest(fingerprint)
+    const finding = makeDriftedFinding({fingerprint, kind: 'plan-consistency'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+
+    const existingPr = {
+      number: 77,
+      state: 'open',
+      head: {ref: `${PR_BRANCH_PREFIX}${opaqueDigest}`},
+      base: {ref: 'main'},
+      user: {login: 'fro-bot[bot]'},
+    }
+    const fetchClient = makeFetchClientStub({prs: [existingPr]})
+    const writeClient = makeMockOctokit()
+
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_DRY_RUN: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => fetchClient),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    const result = await runPrsCore(deps)
+
+    // No duplicate open-pr planned; rediscovery instead.
+    expect(result.plannedCounts.prActionsPlanned).toBe(1)
+    expect(result.executedCounts.wouldOpen).toBe(0)
+  })
+})
+
+describe('runPrsCore: error paths exit non-zero before mutation', () => {
+  it('exits non-zero when the report path is missing', async () => {
+    const writeClient = makeMockOctokit()
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+      },
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    await runPrsCore(deps)
+
+    expect(deps.setExitCode).toHaveBeenCalledWith(1)
+    expect(writeClient.rest.pulls.create).not.toHaveBeenCalled()
+  })
+
+  it('exits non-zero when the report is malformed', async () => {
+    const writeClient = makeMockOctokit()
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+      },
+      readReport: vi.fn(async () => ({valid: false as const, reason: 'artifact validation failed'})),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    await runPrsCore(deps)
+
+    expect(deps.setExitCode).toHaveBeenCalledWith(1)
+    expect(writeClient.rest.pulls.create).not.toHaveBeenCalled()
+  })
+
+  it('exits non-zero when the existing-state fetch fails in live (non-dry-run) mode', async () => {
+    const report = makeReport()
+    const writeClient = makeMockOctokit()
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => {
+        throw new Error('state fetch failed')
+      }),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    await runPrsCore(deps)
+
+    expect(deps.setExitCode).toHaveBeenCalledWith(1)
+    expect(writeClient.rest.pulls.create).not.toHaveBeenCalled()
+  })
+
+  it('exits non-zero when the public-output token load fails', async () => {
+    const report = makeReport()
+    const writeClient = makeMockOctokit()
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      loadPublicOutputTokens: vi.fn(async () => {
+        throw new Error('token load failed')
+      }),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    await runPrsCore(deps)
+
+    expect(deps.setExitCode).toHaveBeenCalledWith(1)
+    expect(writeClient.rest.pulls.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('runPrsCore: output privacy', () => {
+  it('stdout and error messages contain only counts and reason keys, never paths/fingerprints/branch/PR identifiers/tokens', async () => {
+    const fingerprint = 'abc123def456abcd'
+    const finding = makeDriftedFinding({fingerprint, kind: 'plan-consistency', path: 'docs/plans/example.md'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const fetchClient = makeFetchClientStub()
+    const writeClient = makeMockOctokit()
+
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_DRY_RUN: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/secret/path/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => fetchClient),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    await runPrsCore(deps)
+
+    const stdoutCalls = vi.mocked(deps.writeStdout).mock.calls.map(c => c[0])
+    const stderrCalls = vi.mocked(deps.writeStderr).mock.calls.map(c => c[0])
+    const allOutput = [...stdoutCalls, ...stderrCalls].join('\n')
+
+    expect(allOutput).not.toContain('/secret/path/report.json')
+    expect(allOutput).not.toContain('docs/plans/example.md')
+    expect(allOutput).not.toContain(fingerprint)
+    expect(allOutput).not.toContain(PR_BRANCH_PREFIX)
+    expect(allOutput).not.toContain('example.md')
+  })
+})
+
+describe('runPrsCore: dry-run does not require a write client', () => {
+  it('still returns counts/would-act with no crash when createWriteClient throws in dry-run', async () => {
+    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'plan-consistency'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const fetchClient = makeFetchClientStub()
+    const createWriteClient = vi.fn(async (): Promise<StatusTruthPrOctokitClient> => {
+      throw new Error('write client creation must not be attempted in dry-run')
+    })
+
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_DRY_RUN: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => fetchClient),
+      createWriteClient,
+    })
+
+    const result = await runPrsCore(deps)
+
+    expect(deps.setExitCode).not.toHaveBeenCalledWith(1)
+    expect(result.armed).toBe(true)
+    expect(result.dryRun).toBe(true)
+    expect(result.executedCounts.wouldOpen).toBe(1)
+    expect(result.executedCounts.opened).toBe(0)
+  })
+})
+
+describe('runPrsCore: error paths still write counts-only JSON to stdout/result', () => {
+  it('writes a parseable JSON result with no sensitive strings when the report path is missing', async () => {
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+      },
+    })
+
+    await runPrsCore(deps)
+
+    expect(deps.setExitCode).toHaveBeenCalledWith(1)
+    expect(deps.writeStdout).toHaveBeenCalledTimes(1)
+    const stdoutArg = vi.mocked(deps.writeStdout).mock.calls[0]?.[0] as string
+    expect(() => {
+      JSON.parse(stdoutArg)
+    }).not.toThrow()
+    const parsed = JSON.parse(stdoutArg) as Record<string, unknown>
+    expect(parsed.armed).toBe(true)
+    expect(stdoutArg).not.toContain('STATUS_TRUTH_REPORT_PATH')
+  })
+
+  it('writes a parseable JSON result with no sensitive strings when the token load fails', async () => {
+    const report = makeReport()
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/secret/path/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      loadPublicOutputTokens: vi.fn(async () => {
+        throw new Error('token load failed')
+      }),
+    })
+
+    await runPrsCore(deps)
+
+    expect(deps.setExitCode).toHaveBeenCalledWith(1)
+    expect(deps.writeStdout).toHaveBeenCalledTimes(1)
+    const stdoutArg = vi.mocked(deps.writeStdout).mock.calls[0]?.[0] as string
+    expect(() => {
+      JSON.parse(stdoutArg)
+    }).not.toThrow()
+    const parsed = JSON.parse(stdoutArg) as Record<string, unknown>
+    expect(parsed.armed).toBe(true)
+    expect(stdoutArg).not.toContain('/secret/path/report.json')
+  })
+})
+
+describe('executeStatusTruthPrActions: dry-run wouldRediscover count', () => {
+  it('counts rediscover-pr actions separately from wouldOpen/wouldClose', async () => {
+    const digest = testDeriveOpaqueDigest('abc123def456abcd')
+    const rediscoverAction: Extract<StatusTruthPrAction, {type: 'rediscover-pr'}> = {
+      type: 'rediscover-pr',
+      existingPrNumber: 77,
+      opaqueDigest: digest,
+    }
+    const octokit = makeMockOctokit()
+
+    const result = await executeStatusTruthPrActions(
+      makeExecuteInput({actions: [rediscoverAction], octokit, dryRun: true}),
+    )
+
+    expect(result.counts.wouldRediscover).toBe(1)
+    expect(result.counts.wouldOpen).toBe(0)
+  })
+})
+
+describe('runPrsCore: dry-run wouldRediscover for existing matching correction PR', () => {
+  it('reports wouldRediscover=1 and wouldOpen=0', async () => {
+    const fingerprint = 'abc123def456abcd'
+    const opaqueDigest = testDeriveOpaqueDigest(fingerprint)
+    const finding = makeDriftedFinding({fingerprint, kind: 'plan-consistency'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const existingPr = {
+      number: 77,
+      state: 'open',
+      head: {ref: `${PR_BRANCH_PREFIX}${opaqueDigest}`},
+      base: {ref: 'main'},
+      user: {login: 'fro-bot[bot]'},
+    }
+    const fetchClient = makeFetchClientStub({prs: [existingPr]})
+    const writeClient = makeMockOctokit()
+
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_DRY_RUN: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => fetchClient),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    const result = await runPrsCore(deps)
+
+    expect(result.executedCounts.wouldRediscover).toBe(1)
+    expect(result.executedCounts.wouldOpen).toBe(0)
+  })
+})
+
+describe('fetchTerminalFingerprints: includes open issues', () => {
+  it('contributes a terminal fingerprint from an open issue carrying a terminal label', async () => {
+    const openTerminalFp = 'ffff9999eeee8888'
+    const issues = [makeTerminalFingerprintIssue(openTerminalFp, 'status-truth:rejected')]
+    const fetchClient = {
+      rest: {
+        pulls: {list: vi.fn(async () => ({data: []}))},
+        issues: {
+          listForRepo: vi.fn(async (params: {state: string; page: number}) => ({
+            data: params.state === 'all' && params.page === 1 ? issues : [],
+          })),
+        },
+      },
+    }
+
+    const terminals = await fetchTerminalFingerprints({
+      client: fetchClient,
+      owner: 'fro-bot',
+      repo: '.github',
+    })
+
+    expect(terminals.fingerprints.has(openTerminalFp)).toBe(true)
+    expect(fetchClient.rest.issues.listForRepo).toHaveBeenCalledWith(expect.objectContaining({state: 'all'}))
+  })
+})
+
+describe('fetchTerminalFingerprints: duplicateCount observability', () => {
+  it('reports a numeric duplicateCount without leaking raw fingerprints', async () => {
+    const dupFp = 'abc123def456abcd'
+    const issues = [
+      makeTerminalFingerprintIssue(dupFp, 'status-truth:rejected'),
+      makeTerminalFingerprintIssue(dupFp, 'status-truth:false-positive'),
+    ]
+    const fetchClient = makeFetchClientStub({issues})
+
+    const terminals = await fetchTerminalFingerprints({
+      client: fetchClient,
+      owner: 'fro-bot',
+      repo: '.github',
+    })
+
+    expect(terminals.duplicateCount).toBe(1)
+    expect(JSON.stringify(terminals.duplicateCount)).not.toContain(dupFp)
+  })
+})
+
+describe('executeStatusTruthPrActions: live-mode rediscovered count', () => {
+  it('counts rediscover-pr actions as rediscovered in live mode instead of silently dropping them', async () => {
+    const digest = testDeriveOpaqueDigest('abc123def456abcd')
+    const rediscoverAction: Extract<StatusTruthPrAction, {type: 'rediscover-pr'}> = {
+      type: 'rediscover-pr',
+      existingPrNumber: 77,
+      opaqueDigest: digest,
+    }
+    const octokit = makeMockOctokit()
+
+    const result = await executeStatusTruthPrActions(makeExecuteInput({actions: [rediscoverAction], octokit}))
+
+    expect(result.counts.rediscovered).toBe(1)
+    expect(result.counts.opened).toBe(0)
+    expect(result.counts.failed).toBe(0)
+  })
+})
+
+describe('fetchTerminalFingerprints: pagination cap', () => {
+  it('fails closed (throws) when the terminal-fingerprint fetch would exceed the page cap', async () => {
+    const fetchClient = makeFetchClientStub({
+      alwaysFullIssuePages: true,
+      issues: Array.from({length: 100}, (_v, i) => ({
+        number: i,
+        labels: [{name: 'status-truth'}],
+        body: null,
+        user: {login: 'fro-bot[bot]'},
+      })),
+    })
+
+    await expect(fetchTerminalFingerprints({client: fetchClient, owner: 'fro-bot', repo: '.github'})).rejects.toThrow()
+  })
+})
+
+describe('fetchExistingCorrectionPrs: pagination cap', () => {
+  it('fails closed (throws) when the existing-PR fetch would exceed the page cap', async () => {
+    const fetchClient = makeFetchClientStub({
+      alwaysFullPrPages: true,
+      prs: Array.from({length: 100}, (_v, i) => ({
+        number: i,
+        state: 'open',
+        head: {ref: `${PR_BRANCH_PREFIX}deadbeefdeadbeef`},
+        base: {ref: 'main'},
+        user: {login: 'fro-bot[bot]'},
+      })),
+    })
+
+    await expect(fetchExistingCorrectionPrs({client: fetchClient, owner: 'fro-bot', repo: '.github'})).rejects.toThrow()
+  })
+})
+
+describe('runPrsCore: pagination cap exceeded in live mode is treated as a fetch failure', () => {
+  it('exits non-zero with error-class=fetch-failure when a fetch hits the pagination cap in live mode', async () => {
+    const report = makeReport()
+    const cappedFetchClient = makeFetchClientStub({
+      alwaysFullIssuePages: true,
+      issues: Array.from({length: 100}, (_v, i) => ({
+        number: i,
+        labels: [{name: 'status-truth'}, {name: 'status-truth:rejected'}],
+        body: null,
+        user: {login: 'fro-bot[bot]'},
+      })),
+    })
+    const writeClient = makeMockOctokit()
+
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => cappedFetchClient),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+
+    const result = await runPrsCore(deps)
+
+    expect(deps.setExitCode).toHaveBeenCalledWith(1)
+    expect(result.error).toBe('fetch-failure')
+    expect(writeClient.rest.pulls.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('runPrsCore: PrsResult error field on early-failure paths', () => {
+  it('sets error=missing-report when the report path is absent', async () => {
+    const deps = makeRunPrsCoreDeps({
+      env: {STATUS_TRUTH_PRS_ENABLED: 'true', STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true'},
+    })
+    const result = await runPrsCore(deps)
+    expect(result.error).toBe('missing-report')
+  })
+
+  it('sets error=report-failure when the report is invalid', async () => {
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+      },
+      readReport: vi.fn(async () => ({valid: false as const, reason: 'artifact validation failed'})),
+    })
+    const result = await runPrsCore(deps)
+    expect(result.error).toBe('report-failure')
+  })
+
+  it('sets error=token-load-failure when public-output token loading fails', async () => {
+    const report = makeReport()
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      loadPublicOutputTokens: vi.fn(async () => {
+        throw new Error('token load failed')
+      }),
+    })
+    const result = await runPrsCore(deps)
+    expect(result.error).toBe('token-load-failure')
+  })
+
+  it('sets error=fetch-failure when existing-state fetch fails in live mode', async () => {
+    const report = makeReport()
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => {
+        throw new Error('fetch failed')
+      }),
+    })
+    const result = await runPrsCore(deps)
+    expect(result.error).toBe('fetch-failure')
+  })
+
+  it('sets error=write-client-failure when write-client creation fails in live mode', async () => {
+    const report = makeReport()
+    const fetchClient = makeFetchClientStub()
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => fetchClient),
+      createWriteClient: vi.fn(async () => {
+        throw new Error('write client creation failed')
+      }),
+    })
+    const result = await runPrsCore(deps)
+    expect(result.error).toBe('write-client-failure')
+  })
+
+  it('omits error on a successful armed run', async () => {
+    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'plan-consistency'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const fetchClient = makeFetchClientStub()
+    const writeClient = makeMockOctokit()
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_DRY_RUN: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => fetchClient),
+      createWriteClient: vi.fn(async () => writeClient),
+    })
+    const result = await runPrsCore(deps)
+    expect(result.error).toBeUndefined()
+  })
+})
+
+describe('runPrs: top-level catch-all for unexpected exceptions', () => {
+  it('emits error=unexpected, exit code 1, and a parseable counts-only result when runPrsCore throws unexpectedly', async () => {
+    // readReport throws directly (rather than returning a ReadReportResult),
+    // which is outside runPrsCore's anticipated failure branches and
+    // propagates up to the top-level catch-all in runPrs().
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+      },
+      readReport: vi.fn(() => {
+        throw new TypeError('exotic unexpected failure')
+      }),
+    })
+
+    const result = await runPrs(deps)
+
+    expect(deps.setExitCode).toHaveBeenCalledWith(1)
+    expect(result.error).toBe('unexpected')
+    expect(deps.writeStdout).toHaveBeenCalled()
+    const stdoutArg = vi.mocked(deps.writeStdout).mock.calls.at(-1)?.[0] as string
+    expect(() => {
+      JSON.parse(stdoutArg)
+    }).not.toThrow()
+    expect(stdoutArg).not.toContain('exotic unexpected failure')
+  })
+
+  it('delegates to runPrsCore and returns its result on the normal (non-throwing) path', async () => {
+    const deps = makeRunPrsCoreDeps({env: {}})
+    const result = await runPrs(deps)
+    expect(result.armed).toBe(false)
+  })
+})
+
+describe('runPrsCore: dry-run fetch failure degrades to empty state (would-act counts, no exit code)', () => {
+  it('does not set a non-zero exit code and still reports would-act counts when the fetch fails in dry-run', async () => {
+    const finding = makeDriftedFinding({fingerprint: 'abc123def456abcd', kind: 'plan-consistency'})
+    const report = makeReport({
+      findings: [finding],
+      counts: {total: 1, current: 0, drifted: 1, unresolved: 0, unsafe: 0, proposal_eligible: 1},
+    })
+    const deps = makeRunPrsCoreDeps({
+      env: {
+        STATUS_TRUTH_PRS_ENABLED: 'true',
+        STATUS_TRUTH_PRS_DISPATCH_INPUT: 'true',
+        STATUS_TRUTH_DRY_RUN: 'true',
+        STATUS_TRUTH_REPORT_PATH: '/tmp/report.json',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+      },
+      readReport: vi.fn(async () => ({valid: true as const, report})),
+      createFetchClient: vi.fn(async () => {
+        throw new Error('fetch failed')
+      }),
+    })
+
+    const result = await runPrsCore(deps)
+
+    expect(deps.setExitCode).not.toHaveBeenCalled()
+    expect(result.dryRun).toBe(true)
+    expect(result.error).toBeUndefined()
+    // With empty existingPrs/terminalFingerprints, the graduated finding still
+    // plans a fresh open-pr action, reported as would-open in dry-run.
+    expect(result.executedCounts.wouldOpen).toBe(1)
+  })
+})
+
+describe('runPrsCore: writeResultFile path', () => {
+  it('omits the writeResultFile call when the result path env var is unset', async () => {
+    const writeResultFile = vi.fn(async () => undefined)
+    const deps = makeRunPrsCoreDeps({env: {}, writeResultFile})
+
+    await runPrsCore(deps)
+
+    expect(writeResultFile).not.toHaveBeenCalled()
+  })
+
+  it('invokes writeResultFile exactly once with parseable JSON when a result path is configured', async () => {
+    const writeResultFile = vi.fn<(json: string) => Promise<void>>(async () => undefined)
+    const deps = makeRunPrsCoreDeps({
+      env: {STATUS_TRUTH_PRS_RESULT_PATH: '/tmp/status-truth-prs-result.json'},
+      writeResultFile,
+    })
+
+    await runPrsCore(deps)
+
+    expect(writeResultFile).toHaveBeenCalledTimes(1)
+    const jsonArg = vi.mocked(writeResultFile).mock.calls[0]?.[0] as string
+    expect(() => {
+      JSON.parse(jsonArg)
+    }).not.toThrow()
+  })
+})
+
+describe('fetchTerminalFingerprints: bot-authorship narrowing', () => {
+  it('ignores a human-authored issue carrying a terminal label and marker (no impersonation of bot suppression)', async () => {
+    const humanFp = 'deadbeefdeadbeef'
+    const issues = [makeTerminalFingerprintIssue(humanFp, 'status-truth:rejected', 'random-human')]
+    const fetchClient = makeFetchClientStub({issues})
+
+    const terminals = await fetchTerminalFingerprints({client: fetchClient, owner: 'fro-bot', repo: '.github'})
+
+    expect(terminals.fingerprints.has(humanFp)).toBe(false)
+  })
+
+  it('accepts a bot-authored issue (fro-bot[bot]) carrying a terminal label and marker', async () => {
+    const botFp = 'beefdeadbeefdead'
+    const issues = [makeTerminalFingerprintIssue(botFp, 'status-truth:rejected', 'fro-bot[bot]')]
+    const fetchClient = makeFetchClientStub({issues})
+
+    const terminals = await fetchTerminalFingerprints({client: fetchClient, owner: 'fro-bot', repo: '.github'})
+
+    expect(terminals.fingerprints.has(botFp)).toBe(true)
+  })
+
+  it('accepts a bot-authored issue (bare fro-bot login) carrying a terminal label and marker', async () => {
+    const botFp = 'cafefeedcafefeed'
+    const issues = [makeTerminalFingerprintIssue(botFp, 'status-truth:false-positive', 'fro-bot')]
+    const fetchClient = makeFetchClientStub({issues})
+
+    const terminals = await fetchTerminalFingerprints({client: fetchClient, owner: 'fro-bot', repo: '.github'})
+
+    expect(terminals.fingerprints.has(botFp)).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Workflow contract: PR job App-token permission scope
+// ---------------------------------------------------------------------------
+
+/** Narrow the parsed YAML to the shape we index into, without any broad cast. */
+function assertStatusTruthWorkflow(value: unknown): asserts value is {
+  jobs: Record<
+    string,
+    {
+      if?: string
+      permissions?: Record<string, string>
+      steps: {name?: string; uses?: string; with?: Record<string, string>; env?: Record<string, string>}[]
+    }
+  >
+} {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('jobs' in value) ||
+    typeof (value as Record<string, unknown>).jobs !== 'object'
+  ) {
+    throw new TypeError('status-truth.yaml does not have expected shape: missing jobs object')
+  }
+}
+
+describe('workflow contract: PR job app-token permissions', () => {
+  const workflowPath = resolve(import.meta.dirname, '../.github/workflows/status-truth.yaml')
+  const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
+  assertStatusTruthWorkflow(parsed)
+  const prsJob = parsed.jobs.prs
+
+  it('has a prs job with a Mint write token step using create-github-app-token', () => {
+    expect(prsJob).toBeDefined()
+    const appTokenStep = prsJob?.steps.find(s => s.uses?.includes('actions/create-github-app-token'))
+    expect(appTokenStep).toBeDefined()
+  })
+
+  it('mints the PR job app-token with issues: write (required for stale/terminal closure comments)', () => {
+    const appTokenStep = prsJob?.steps.find(s => s.uses?.includes('actions/create-github-app-token'))
+    expect(appTokenStep?.with?.['permission-issues']).toBe('write')
+  })
+
+  it('mints the PR job app-token with pull-requests: write and contents: write', () => {
+    const appTokenStep = prsJob?.steps.find(s => s.uses?.includes('actions/create-github-app-token'))
+    expect(appTokenStep?.with?.['permission-pull-requests']).toBe('write')
+    expect(appTokenStep?.with?.['permission-contents']).toBe('write')
+  })
+
+  it('keeps the PR job app-token scoped to this repository only', () => {
+    const appTokenStep = prsJob?.steps.find(s => s.uses?.includes('actions/create-github-app-token'))
+    const expectedRepositoryScope = '$' + '{{ github.event.repository.name }}'
+    expect(appTokenStep?.with?.repositories).toBe(expectedRepositoryScope)
+  })
+
+  it('keeps the PR job-level permissions read-only (contents: read)', () => {
+    expect(prsJob?.permissions).toEqual({contents: 'read'})
+  })
+
+  it('keeps the PR job if: gated on the repo variable, workflow_dispatch, and open_prs input', () => {
+    expect(prsJob?.if).toContain('vars.STATUS_TRUTH_PRS_ENABLED')
+    expect(prsJob?.if).toContain("== 'true'")
+    expect(prsJob?.if).toContain("github.event_name == 'workflow_dispatch'")
+    expect(prsJob?.if).toContain("github.event.inputs.open_prs == 'true'")
+  })
+})
+
+describe('workflow contract: separate read-only fetch token', () => {
+  const workflowPath = resolve(import.meta.dirname, '../.github/workflows/status-truth.yaml')
+  const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
+  assertStatusTruthWorkflow(parsed)
+  const prsJob = parsed.jobs.prs
+
+  it('mints a second, read-only app-token step distinct from the write-token step', () => {
+    const appTokenSteps = prsJob?.steps.filter(s => s.uses?.includes('actions/create-github-app-token')) ?? []
+    expect(appTokenSteps.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('scopes the fetch token to read-only permissions (contents, pull-requests, issues)', () => {
+    const fetchTokenStep = prsJob?.steps.find(
+      s => s.uses?.includes('actions/create-github-app-token') && s.name?.toLowerCase().includes('fetch'),
+    )
+    expect(fetchTokenStep).toBeDefined()
+    expect(fetchTokenStep?.with?.['permission-contents']).toBe('read')
+    expect(fetchTokenStep?.with?.['permission-pull-requests']).toBe('read')
+    expect(fetchTokenStep?.with?.['permission-issues']).toBe('read')
+  })
+
+  it('scopes the fetch token to this repository only, matching the write token', () => {
+    const fetchTokenStep = prsJob?.steps.find(
+      s => s.uses?.includes('actions/create-github-app-token') && s.name?.toLowerCase().includes('fetch'),
+    )
+    const expectedRepositoryScope = '$' + '{{ github.event.repository.name }}'
+    expect(fetchTokenStep?.with?.repositories).toBe(expectedRepositoryScope)
+  })
+
+  it('passes the fetch token to the execute step via STATUS_TRUTH_FETCH_TOKEN, distinct from GITHUB_TOKEN', () => {
+    const executeStep = prsJob?.steps.find(s => s.name?.includes('Execute status-truth correction PRs'))
+    expect(executeStep?.env?.STATUS_TRUTH_FETCH_TOKEN).toBeDefined()
+    expect(executeStep?.env?.GITHUB_TOKEN).toBeDefined()
+    expect(executeStep?.env?.STATUS_TRUTH_FETCH_TOKEN).not.toBe(executeStep?.env?.GITHUB_TOKEN)
+  })
+})
+
+describe('env-backed PR runner deps', () => {
+  it('requires STATUS_TRUTH_FETCH_TOKEN for fetch clients and does not fall back to GITHUB_TOKEN', async () => {
+    const originalFetchToken = process.env.STATUS_TRUTH_FETCH_TOKEN
+    const originalGithubToken = process.env.GITHUB_TOKEN
+    try {
+      delete process.env.STATUS_TRUTH_FETCH_TOKEN
+      process.env.GITHUB_TOKEN = 'write-token-only'
+
+      const deps = buildEnvBackedRunPrsCoreDeps()
+
+      await expect(deps.createFetchClient()).rejects.toThrow('required token is missing')
+    } finally {
+      if (originalFetchToken === undefined) delete process.env.STATUS_TRUTH_FETCH_TOKEN
+      else process.env.STATUS_TRUTH_FETCH_TOKEN = originalFetchToken
+      if (originalGithubToken === undefined) delete process.env.GITHUB_TOKEN
+      else process.env.GITHUB_TOKEN = originalGithubToken
+    }
   })
 })
