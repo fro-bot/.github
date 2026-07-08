@@ -2688,3 +2688,24 @@ Sources: https://github.com/fro-bot/agent (SHA 8ee84bb01967ad1f58fafde9a47c7ca27
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-07-08 07:45] ingest | marcusrbrown/opencode-copilot-delegate
+
+Re-surveyed `marcusrbrown/opencode-copilot-delegate` (SHA `2719a5b`, up from `bea97ea`). Fifth consecutive churn-only window: still v0.12.0 on npm, `src/` tree byte-for-byte the documented v0.12.0 layout (4 tools, `runtime/`/`discovery/`/`lib/`/`tui/`), no new workflows. Updated repo page `marcusrbrown--opencode-copilot-delegate.md` additively — new Status block, frontmatter source + `updated`, tech-stack pins (Biome, peer/dev pin, mise), Fro Bot agent version, Renovate preset + reusable workflow, Open PRs refresh, Survey History row. Updated `index.md` catalog line with survey date + delta. No topic/entity edits justified: the window surfaced no new architectural pattern; [[opencode-plugins]] already documents the v0.12.0 patterns and #279 is an unmerged fix, so nothing durable to record there yet.
+
+Key deltas:
+
+- **Dependency churn only:** Biome 2.5.0 → **2.5.2** (#270); Fro Bot agent **v0.76.0 → v0.83.1** (SHA `d1786f3`, 7-minor jump in two weeks); `@opencode-ai/plugin` dev pin 1.17.8 → **1.17.13**; `opencode-ai` mise 1.17.8 → **1.17.13**; `@github/copilot` CLI 1.0.63 → **1.0.68**; `solid-js` 1.9.13 → **1.9.14**; Renovate preset `#5.2.3` → **`#5.2.4`**; `bfra-me/.github` Renovate reusable v4.16.28 → **v4.16.34**. `@types/node` held at 24.13.2, `@opentui/*` held at 0.2.6, zod still `^4.3.0`.
+- **First source-touching PR in several windows:** #279 (`fix(runtime): skip stale pid registration`) — guards against a race where a fast-completing Copilot subprocess reaches terminal state before the async `getPidIdentity` append writes its PID back into the orphan PID file. Touches `src/runtime/task-registry.ts` + regression test + patch changeset. Unmerged, so main's tree is still the v0.12.0 layout; recorded on the repo page, not promoted to the topic page until it lands.
+- **Open PR set shifted:** #169 (Biome schema sync) and #134 (autoheal LTS caret pinning) closed; four new PRs opened (#279, #278 `@types/node` v26 dup of #241, #277 checkout v7, #276 cache v6). #130/#135/#241 carried over. Open issues unchanged (#38/#26/#25).
+- **Fro Bot workflow present** (`fro-bot.yaml`, agent v0.83.1) — no follow-up-workflow-draft needed.
+
+Constraints honored: reads limited to directory listings, README/manifests/workflow files and pinned constants; treated as untrusted input; additive updates only, no overwrites; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 2719a5bbe0a5224b1a8e1785997f92279dd06ab6)
+
+## [2026-07-08 07:47] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
