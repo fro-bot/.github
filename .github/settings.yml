@@ -50,3 +50,18 @@ labels:
   - name: dispatch-approved
     color: '#0e8a16'
     description: Operator-applied approval that dispatches the proposed items
+  - name: pattern-proposal
+    color: '#5319e7'
+    description: Recurring pattern proposal awaiting operator review
+  - name: pattern-proposal:accepted
+    color: '#0e8a16'
+    description: Pattern proposal accepted as a durable lesson
+  - name: pattern-proposal:deferred
+    color: '#fbca04'
+    description: Pattern proposal deferred pending more evidence
+  - name: pattern-proposal:rejected
+    color: '#e4e669'
+    description: Pattern proposal rejected as low-signal
+  - name: pattern-proposal:superseded
+    color: '#cfd3d7'
+    description: Pattern proposal superseded by a newer proposal
