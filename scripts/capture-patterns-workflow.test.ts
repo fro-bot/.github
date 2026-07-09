@@ -67,9 +67,16 @@ describe('capture-patterns.yaml workflow contract', () => {
     expect(detectJob?.permissions).toEqual({contents: 'read', issues: 'read'})
   })
 
-  it('open job carries only read-only permissions on the job token; writes come from a minted app token', () => {
+  it('open job carries only read-only contents permission on the job token; no issues:read grant is needed since it only reads via the minted app token, and writes come from that same minted token', () => {
     expect(openJob).toBeDefined()
-    expect(openJob?.permissions).toEqual({contents: 'read', issues: 'read'})
+    expect(openJob?.permissions).toEqual({contents: 'read'})
+  })
+
+  it('the open job itself is skipped entirely on dry-run — the job-level `if` requires an explicit live dispatch', () => {
+    const openJobRaw = (parsed.jobs.open as unknown as {if?: string}).if
+    expect(openJobRaw).toBeDefined()
+    expect(String(openJobRaw)).toContain("github.event_name == 'workflow_dispatch'")
+    expect(String(openJobRaw)).toContain("github.event.inputs.dry_run == 'false'")
   })
 
   it('the write-scoped app token is minted only for an explicit live (dry_run=false) manual dispatch', () => {
@@ -165,6 +172,22 @@ describe('capture-patterns.yaml workflow contract', () => {
     for (const pattern of forbiddenPatterns) {
       expect(pattern.test(raw)).toBe(false)
     }
+  })
+
+  it('the detect and open node|tee pipelines run under pipefail so a node failure fails the step', () => {
+    const detectStep = detectJob?.steps.find(step => step.id === 'detect')
+    const openStep = openJob?.steps.find(step => step.id === 'open')
+    expect(String(detectStep?.run ?? '')).toContain('| tee')
+    expect(String((detectStep as WorkflowStep & {shell?: string})?.shell ?? '')).toContain('pipefail')
+    expect(String(openStep?.run ?? '')).toContain('| tee')
+    expect(String((openStep as WorkflowStep & {shell?: string})?.shell ?? '')).toContain('pipefail')
+  })
+
+  it('the digest artifact retains for 1 day, not the default longer window', () => {
+    const uploadStep = detectJob?.steps.find(
+      step => typeof step.name === 'string' && step.name.includes('Upload digest artifact'),
+    ) as (WorkflowStep & {with?: {'retention-days'?: number}}) | undefined
+    expect(uploadStep?.with?.['retention-days']).toBe(1)
   })
 
   it('never echoes digest/body file contents or the write token into logs', () => {

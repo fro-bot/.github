@@ -8,6 +8,8 @@
 
 import {parse} from 'yaml'
 
+import {isRecord} from './capture-learnings-privacy.ts'
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -83,17 +85,39 @@ const SOURCE_IDS_MARKER_PATTERN = /<!-- pattern-proposal:source-ids=([^\n]+?) --
 const SUPERSEDES_MARKER_PATTERN = /<!-- pattern-proposal:supersedes=([a-f0-9]{64}) -->/u
 
 /**
+ * Characters forbidden in a source ID: comma (the marker's join delimiter), newline
+ * (would break the single-line marker), and any other ASCII control character. A
+ * source ID containing one of these could corrupt the marker or be used to smuggle a
+ * spoofed ID list past `parsePatternProposalSourceIds`.
+ */
+// eslint-disable-next-line no-control-regex -- intentional: rejects raw control chars (incl. \n, \r) in source IDs
+const SOURCE_ID_FORBIDDEN_PATTERN = /[,\u0000-\u001F\u007F]/u
+
+/** True when a source ID is safe to embed in the comma-joined marker. */
+export function isValidPatternProposalSourceId(id: string): boolean {
+  return id.length > 0 && !SOURCE_ID_FORBIDDEN_PATTERN.test(id)
+}
+
+/**
  * Build hidden markers for a pattern-proposal issue body.
  *
  * `sourceIds` is sorted before rendering so the marker (and the fingerprint it
  * accompanies) never depends on input ordering. `supersedes`, when present, is an
  * optional fourth marker pointing at the fingerprint this proposal replaces.
+ *
+ * Fail-fast: throws if any source ID contains a comma, newline, or other control
+ * character that would corrupt the marker or its round-trip parse.
  */
 export function buildPatternProposalMarkers(params: {
   fingerprint: string
   sourceIds: string[]
   supersedes?: string
 }): string {
+  for (const id of params.sourceIds) {
+    if (!isValidPatternProposalSourceId(id)) {
+      throw new Error(`capture-patterns-synthesis: invalid source ID contains a forbidden delimiter character`)
+    }
+  }
   const sortedIds = [...params.sourceIds].sort((a, b) => a.localeCompare(b))
   const lines = [
     `<!-- pattern-proposal:fingerprint=${params.fingerprint} -->`,
@@ -243,10 +267,6 @@ export interface PatternSourceArtifact {
 export interface SourceCollectionResult {
   sources: PatternSourceArtifact[]
   invalidCount: number
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**

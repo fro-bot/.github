@@ -69,8 +69,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CAPTURE_PATTERNS_DIGEST_PATH: ${{ runner.temp }}/capture-patterns-digest.json
+        # pipefail: a failure in `node ...` must fail this step even though `tee`
+        # (the last command in the pipe) exits 0.
         run: node scripts/capture-patterns-cluster.ts | tee "$RUNNER_TEMP/detect-result.json"
-        shell: bash
+        shell: bash -Eeuo pipefail {0}
 
       - name: 📤 Upload digest artifact
         if: always()
@@ -81,7 +83,7 @@ jobs:
           # source IDs, SHA-pinned links, public-safe titles, evidence counts,
           # score bucket, suggested next action, run count). No private tokens.
           path: ${{ runner.temp }}/capture-patterns-digest.json
-          retention-days: 7
+          retention-days: 1
 
       - name: 📋 Write detect summary
         if: always()
@@ -124,10 +126,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: detect
-    if: always()
+    # Skip the entire job on dry-run (the default): drafting/opening proposals only
+    # ever happens on an explicit live (dry_run=false) manual dispatch. `always()`
+    # keeps the job eligible even if the detect job's non-critical steps report a
+    # failure state, without gating on detect's own conclusion.
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
     permissions:
       contents: read
-      issues: read
 
     steps:
       - name: ⤵ Checkout Branch
@@ -270,8 +275,10 @@ jobs:
           CAPTURE_PATTERNS_DIGEST_PATH: ${{ runner.temp }}/capture-patterns-digest.json
           CAPTURE_PATTERNS_BODIES_PATH: ${{ runner.temp }}/capture-patterns-bodies.json
           CAPTURE_PATTERNS_RESULT_PATH: ${{ runner.temp }}/capture-patterns-result.json
+        # pipefail: a failure in `node ...` must fail this step even though `tee`
+        # (the last command in the pipe) exits 0.
         run: node scripts/capture-patterns-open.ts | tee "$RUNNER_TEMP/open-output.json"
-        shell: bash
+        shell: bash -Eeuo pipefail {0}
 
       - if: always()
         name: 📋 Write open summary

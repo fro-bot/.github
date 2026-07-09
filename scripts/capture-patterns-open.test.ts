@@ -163,6 +163,14 @@ describe('renderPatternProposalIssueBody', () => {
     expect(rendered).toContain(body.rationale)
     expect(rendered).toContain(body.suggestedNextAction)
   })
+
+  it('security: renders the deterministic digest evidenceCount, not a hallucinated agent-supplied value', () => {
+    const digest = makeDigest({evidenceCount: 2})
+    const body = makeDraftedBody({evidenceCount: 999})
+    const rendered = renderPatternProposalIssueBody({digest, body})
+    expect(rendered).toContain('## Evidence count\n2')
+    expect(rendered).not.toContain('999')
+  })
 })
 
 describe('derivePatternProposalTitle', () => {
@@ -441,6 +449,25 @@ describe('openPatternProposalIssues', () => {
     expect(octokit.rest.issues.create).not.toHaveBeenCalled()
   })
 
+  it('fail-closed when a non-primary required label (e.g. an outcome label) cannot be confirmed, even though the primary label succeeds', async () => {
+    const octokit = makeMockOctokit()
+    octokit.rest.issues.getLabel.mockImplementation(async ({name}: {name: string}) => {
+      if (name === PATTERN_PROPOSAL_LABEL) return {}
+      throw Object.assign(new Error('label check failed'), {status: 500})
+    })
+    octokit.rest.issues.createLabel.mockRejectedValue({status: 500})
+    const result = await openPatternProposalIssues(
+      octokit as never,
+      'fro-bot',
+      '.github',
+      [{fingerprint: 'a'.repeat(64), title: 'Pattern proposal: retries', body: 'body text'}],
+      silentLog,
+    )
+    expect(result.opened).toBe(0)
+    expect(result.skippedLabelUnavailable).toBe(1)
+    expect(octokit.rest.issues.create).not.toHaveBeenCalled()
+  })
+
   it('caps at most three issues opened per run', async () => {
     const octokit = makeMockOctokit()
     const toCreate = ['a', 'b', 'c', 'd'].map(c => ({
@@ -450,6 +477,26 @@ describe('openPatternProposalIssues', () => {
     }))
     const result = await openPatternProposalIssues(octokit as never, 'fro-bot', '.github', toCreate, silentLog)
     expect(result.opened).toBe(3)
+    expect(result.skippedOverCap).toBe(1)
+  })
+
+  it('counts an issue-create failure and continues opening later proposals', async () => {
+    const octokit = makeMockOctokit()
+    octokit.rest.issues.create
+      .mockResolvedValueOnce({data: {number: 41}})
+      .mockRejectedValueOnce(Object.assign(new Error('rate limited'), {status: 500}))
+      .mockResolvedValueOnce({data: {number: 43}})
+    const toCreate = ['a', 'b', 'c'].map(c => ({
+      fingerprint: c.repeat(64),
+      title: `Pattern proposal: ${c}`,
+      body: 'body text',
+    }))
+
+    const result = await openPatternProposalIssues(octokit as never, 'fro-bot', '.github', toCreate, silentLog)
+
+    expect(result.opened).toBe(2)
+    expect(result.failed).toBe(1)
+    expect(octokit.rest.issues.create).toHaveBeenCalledTimes(3)
   })
 
   it('empty toCreate is a successful no-op with no label preflight call', async () => {

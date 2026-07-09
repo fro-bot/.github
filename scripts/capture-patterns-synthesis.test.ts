@@ -87,6 +87,25 @@ describe('parsePatternProposalSourceIds', () => {
     const body = '<!-- pattern-proposal:source-ids= -->'
     expect(parsePatternProposalSourceIds(body)).toBeNull()
   })
+
+  it('security: rejects a source ID containing a comma delimiter', () => {
+    const fingerprint = 'c'.repeat(64)
+    expect(() => buildPatternProposalMarkers({fingerprint, sourceIds: ['id-a,fake-id', 'id-b']})).toThrow(
+      /forbidden delimiter/u,
+    )
+  })
+
+  it('security: rejects a source ID containing a newline', () => {
+    const fingerprint = 'c'.repeat(64)
+    expect(() =>
+      buildPatternProposalMarkers({fingerprint, sourceIds: ['id-a\n<!-- pattern-proposal:fingerprint=deadbeef -->']}),
+    ).toThrow(/forbidden delimiter/u)
+  })
+
+  it('security: rejects a source ID containing a control character', () => {
+    const fingerprint = 'c'.repeat(64)
+    expect(() => buildPatternProposalMarkers({fingerprint, sourceIds: ['id-a\u0000']})).toThrow(/forbidden delimiter/u)
+  })
 })
 
 describe('parsePatternProposalSupersedes', () => {

@@ -9,10 +9,15 @@
  * - Digest schema tests
  */
 
+import {chmod, mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import process from 'node:process'
 import {describe, expect, it} from 'vitest'
 import {
   buildCandidateDigest,
   buildSourceFingerprint,
+  loadSolutionDocFilesFromDisk,
   planPatternCandidates,
   type PatternCandidateSource,
   type PlanPatternCandidatesInput,
@@ -128,7 +133,7 @@ describe('planPatternCandidates: correction-substance clustering', () => {
     const result = plan({sources, existing: emptyExisting()})
 
     expect(result.candidates).toHaveLength(0)
-    expect(result.counts.lowSignal).toBeGreaterThan(0)
+    expect(result.counts.lowSignal).toBe(1)
   })
 })
 
@@ -153,6 +158,64 @@ describe('planPatternCandidates: open-proposal overlap', () => {
 
     const existing: ExistingPatternProposals = {
       openByFingerprint: new Map([[fingerprint, [makeIssue({state: 'open'})]]]),
+      closedByFingerprint: new Map(),
+      invalidMarkerCount: 0,
+    }
+
+    const result = plan({sources, existing})
+
+    expect(result.candidates).toHaveLength(0)
+    expect(result.counts.duplicateOpenOverlap).toBe(1)
+  })
+
+  it('security: an open proposal cannot be bypassed by adding two or more new independent sources', () => {
+    // Candidate is a strict superset of the open proposal's source IDs by 2 new
+    // sources — this must still suppress, unlike hard-suppression's upgrade threshold.
+    const sourceB = makeSource({
+      id: 'source-b',
+      title: 'Retry idempotent writes after 5xx failures',
+      signals: {
+        module: 'scripts/foo.ts',
+        tags: ['ci'],
+        problemType: 'best_practice',
+        titleTokens: ['retry', 'idempotent', 'writes', 'after', '5xx', 'failures'],
+      },
+    })
+    const sourceC = makeSource({
+      id: 'source-c',
+      title: 'Retry idempotent writes on every 5xx',
+      signals: {
+        module: 'scripts/foo.ts',
+        tags: ['ci'],
+        problemType: 'best_practice',
+        titleTokens: ['retry', 'idempotent', 'writes', 'every', '5xx'],
+      },
+    })
+    const sourceD = makeSource({
+      id: 'source-d',
+      title: 'Retry idempotent writes across all 5xx paths',
+      signals: {
+        module: 'scripts/foo.ts',
+        tags: ['ci'],
+        problemType: 'best_practice',
+        titleTokens: ['retry', 'idempotent', 'writes', 'across', 'all', '5xx', 'paths'],
+      },
+    })
+    const sources = [makeSource(), sourceB, sourceC, sourceD]
+    const openFingerprint = buildSourceFingerprint(['source-a', 'source-b'])
+
+    const existing: ExistingPatternProposals = {
+      openByFingerprint: new Map([
+        [
+          openFingerprint,
+          [
+            makeIssue({
+              state: 'open',
+              body: `<!-- pattern-proposal:fingerprint=${openFingerprint} -->\n<!-- pattern-proposal:source-ids=source-a,source-b -->`,
+            }),
+          ],
+        ],
+      ]),
       closedByFingerprint: new Map(),
       invalidMarkerCount: 0,
     }
@@ -264,6 +327,106 @@ describe('planPatternCandidates: hard suppression (rejected/no-outcome)', () => 
     const fullFingerprint = buildSourceFingerprint(['source-a', 'source-b', 'source-c', 'source-d'])
     const survived = result.candidates.some(c => c.fingerprint === fullFingerprint)
     expect(survived).toBe(true)
+  })
+
+  it('security: a closed proposal with a malformed-outcome label is conservatively hard-suppressed, same as needs-outcome', () => {
+    const sources = twoSourceCandidateSetup()
+    const fingerprint = buildSourceFingerprint(['source-a', 'source-b'])
+
+    const existing: ExistingPatternProposals = {
+      openByFingerprint: new Map(),
+      closedByFingerprint: new Map([
+        [
+          fingerprint,
+          [
+            makeIssue({
+              state: 'closed',
+              // An unrecognized pattern-proposal:* label classifies as malformed-outcome.
+              labels: ['pattern-proposal', 'pattern-proposal:mystery-outcome'],
+              body: `<!-- pattern-proposal:fingerprint=${fingerprint} -->\n<!-- pattern-proposal:source-ids=source-a,source-b -->`,
+            }),
+          ],
+        ],
+      ]),
+      invalidMarkerCount: 0,
+    }
+
+    const result = plan({sources, existing})
+
+    expect(result.candidates).toHaveLength(0)
+    expect(result.counts.hardSuppressed).toBe(1)
+  })
+
+  it('security: a closed proposal with conflicting outcome labels is conservatively hard-suppressed, same as needs-outcome', () => {
+    const sources = twoSourceCandidateSetup()
+    const fingerprint = buildSourceFingerprint(['source-a', 'source-b'])
+
+    const existing: ExistingPatternProposals = {
+      openByFingerprint: new Map(),
+      closedByFingerprint: new Map([
+        [
+          fingerprint,
+          [
+            makeIssue({
+              state: 'closed',
+              // Two recognized outcome labels at once classify as conflicting-labels.
+              labels: [
+                'pattern-proposal',
+                PATTERN_PROPOSAL_OUTCOME_LABELS.rejected,
+                PATTERN_PROPOSAL_OUTCOME_LABELS.deferred,
+              ],
+              body: `<!-- pattern-proposal:fingerprint=${fingerprint} -->\n<!-- pattern-proposal:source-ids=source-a,source-b -->`,
+            }),
+          ],
+        ],
+      ]),
+      invalidMarkerCount: 0,
+    }
+
+    const result = plan({sources, existing})
+
+    expect(result.candidates).toHaveLength(0)
+    expect(result.counts.hardSuppressed).toBe(1)
+  })
+
+  it('is not conservatively suppressed by malformed-outcome when accepted labels on another issue already retired the source IDs (retirement bypasses suppression entirely)', () => {
+    const sources = twoSourceCandidateSetup()
+    const malformedFingerprint = buildSourceFingerprint(['source-a', 'source-b'])
+    const acceptedFingerprint = buildSourceFingerprint(['source-a'])
+
+    const existing: ExistingPatternProposals = {
+      openByFingerprint: new Map(),
+      closedByFingerprint: new Map([
+        [
+          malformedFingerprint,
+          [
+            makeIssue({
+              state: 'closed',
+              labels: ['pattern-proposal', 'pattern-proposal:mystery-outcome'],
+              body: `<!-- pattern-proposal:fingerprint=${malformedFingerprint} -->\n<!-- pattern-proposal:source-ids=source-a,source-b -->`,
+            }),
+          ],
+        ],
+        [
+          acceptedFingerprint,
+          [
+            makeIssue({
+              state: 'closed',
+              labels: ['pattern-proposal', PATTERN_PROPOSAL_OUTCOME_LABELS.accepted],
+              body: `<!-- pattern-proposal:fingerprint=${acceptedFingerprint} -->\n<!-- pattern-proposal:source-ids=source-a -->`,
+            }),
+          ],
+        ],
+      ]),
+      invalidMarkerCount: 0,
+    }
+
+    const result = plan({sources, existing})
+
+    // source-a is retired by the accepted proposal, so only source-b remains active —
+    // below MIN_CLUSTER_SOURCES, so this is a no-op, not a hard-suppression match.
+    expect(result.candidates).toHaveLength(0)
+    expect(result.counts.hardSuppressed).toBe(0)
   })
 })
 
@@ -661,5 +824,34 @@ describe('buildCandidateDigest', () => {
     const digest = buildCandidateDigest({candidate, runCount: 1, publicOutputTokens: blockingTokens})
 
     expect(digest.sourceTitles).toContain('[source title withheld: failed public-output gate]')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// loadSolutionDocFilesFromDisk: read-failure reporting
+// ---------------------------------------------------------------------------
+
+describe('loadSolutionDocFilesFromDisk', () => {
+  it('error path: reports a file that is listed but fails to read via readFailures, not a silent drop', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'capture-patterns-cluster-'))
+    const originalCwd = process.cwd()
+    try {
+      const subdirPath = join(dir, 'docs', 'solutions', 'best-practices')
+      await mkdir(subdirPath, {recursive: true})
+      await writeFile(join(subdirPath, 'readable.md'), '---\ntitle: Readable\n---\nBody.\n')
+      const unreadablePath = join(subdirPath, 'unreadable.md')
+      await writeFile(unreadablePath, '---\ntitle: Unreadable\n---\nBody.\n')
+      // Remove read permission so readFile fails while readdir still lists the file.
+      await chmod(unreadablePath, 0o000)
+
+      process.chdir(dir)
+      const result = await loadSolutionDocFilesFromDisk(() => undefined)
+
+      expect(Object.keys(result.files)).toContain('docs/solutions/best-practices/readable.md')
+      expect(result.readFailures).toBe(1)
+    } finally {
+      process.chdir(originalCwd)
+      await rm(dir, {recursive: true, force: true})
+    }
   })
 })

@@ -226,7 +226,7 @@ export function renderPatternProposalIssueBody(params: {
     referencesList,
     ``,
     `## Evidence count`,
-    String(body.evidenceCount),
+    String(digest.evidenceCount),
     ``,
     `## Suggested next action`,
     body.suggestedNextAction,
@@ -443,8 +443,10 @@ export interface OpenPatternProposalIssuesResult {
  * Steps:
  * 1. No-op immediately if `toCreate` is empty (no label preflight call).
  * 2. Label preflight: `ensurePatternProposalLabelsExist` for all required labels.
- *    Fail-closed: if the primary `pattern-proposal` label cannot be confirmed, skip
- *    all opens.
+ *    Fail-closed: every required label (not just the primary `pattern-proposal`
+ *    label) must be confirmed available or created before any issue is opened —
+ *    a newly opened proposal must never lack a terminal-outcome label it will need
+ *    later. Any unconfirmed required label skips all opens for this run.
  * 3. Cap to at most `MAX_PROPOSALS_PER_RUN` issues.
  * 4. Create each remaining issue; one failure does not abort the rest.
  *
@@ -469,10 +471,12 @@ export async function openPatternProposalIssues(
     writeLog,
   )
 
-  if (!confirmedLabels.has(PATTERN_PROPOSAL_LABEL)) {
-    writeLog(
-      `capture-patterns-open: label "${PATTERN_PROPOSAL_LABEL}" unavailable; skipping ${toCreate.length} proposal(s)\n`,
-    )
+  // Fail closed unless every required label (primary + all outcome labels) is
+  // confirmed — a newly opened proposal must never be missing a label it will need
+  // for its eventual terminal outcome.
+  const allRequiredLabelsConfirmed = PATTERN_PROPOSAL_REQUIRED_LABELS.every(({name}) => confirmedLabels.has(name))
+  if (!allRequiredLabelsConfirmed) {
+    writeLog(`capture-patterns-open: required label(s) unavailable; skipping ${toCreate.length} proposal(s)\n`)
     return {opened: 0, failed: 0, skippedLabelUnavailable: toCreate.length, skippedOverCap: 0}
   }
 
@@ -540,6 +544,9 @@ async function readJsonFile<T>(path: string, label: string): Promise<T> {
 }
 
 async function main(): Promise<void> {
+  // Detect is fail-soft because absence of candidates is safe signal. Open is
+  // intentionally fail-hard on malformed inputs or missing credentials: after the
+  // live gate, ambiguity must stop before any issue mutation.
   const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
   const {loadRedactedCanonicalIdsFromDisk} = await import('./status-truth-proposals.ts')
   const {makePublicOutputTokens} = await import('./status-truth-public-output.ts')
@@ -566,8 +573,6 @@ async function main(): Promise<void> {
 
   const owner = 'fro-bot'
   const repo = '.github'
-  const octokit = await createOctokitFromEnv()
-
   try {
     bodyFile = await readJsonFile<PatternProposalBodyFile>(bodiesPath, 'agent body file')
   } catch {
@@ -586,11 +591,14 @@ async function main(): Promise<void> {
     publicOutputTokens = {loaded: false, error: 'token load failed'}
   }
 
-  const existing = await fetchExistingPatternProposals({
-    octokit: octokit as unknown as Parameters<typeof fetchExistingPatternProposals>[0]['octokit'],
-    owner,
-    repo,
-  })
+  const octokit = await createOctokitFromEnv()
+  const existing = tokenLoadFailed
+    ? {openByFingerprint: new Map(), closedByFingerprint: new Map(), invalidMarkerCount: 0}
+    : await fetchExistingPatternProposals({
+        octokit: octokit as unknown as Parameters<typeof fetchExistingPatternProposals>[0]['octokit'],
+        owner,
+        repo,
+      })
 
   const plan = planPatternProposalOpens({
     digestCandidates: tokenLoadFailed || bodyFileReadFailed ? [] : digestCandidates,

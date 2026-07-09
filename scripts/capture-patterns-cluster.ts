@@ -298,16 +298,35 @@ function rankCandidates(candidates: PatternCandidate[]): PatternCandidate[] {
 interface ClosedSuppressionRecord {
   fingerprint: string
   sourceIds: Set<string>
-  outcome: 'rejected' | 'needs-outcome' | 'superseded' | 'deferred'
+  outcome: 'rejected' | 'needs-outcome' | 'superseded' | 'deferred' | 'malformed-outcome' | 'conflicting-labels'
   issueNumber: number
 }
+
+/**
+ * Outcomes treated as conservatively suppressed (same bucket as `needs-outcome`):
+ * an ambiguous or malformed closed outcome must never be read as "safe to re-propose"
+ * without new independent evidence.
+ */
+const CONSERVATIVE_SUPPRESSION_OUTCOMES = new Set([
+  'rejected',
+  'needs-outcome',
+  'malformed-outcome',
+  'conflicting-labels',
+])
 
 function resolveClosedSuppressionRecords(existing: ExistingPatternProposals): ClosedSuppressionRecord[] {
   const records: ClosedSuppressionRecord[] = []
   for (const [fingerprint, issues] of existing.closedByFingerprint) {
     for (const issue of issues) {
       const outcome = classifyPatternProposalOutcome(issue)
-      if (outcome !== 'rejected' && outcome !== 'needs-outcome' && outcome !== 'superseded' && outcome !== 'deferred') {
+      if (
+        outcome !== 'rejected' &&
+        outcome !== 'needs-outcome' &&
+        outcome !== 'superseded' &&
+        outcome !== 'deferred' &&
+        outcome !== 'malformed-outcome' &&
+        outcome !== 'conflicting-labels'
+      ) {
         continue
       }
       const sourceIds = parsePatternProposalSourceIds(issue.body ?? '') ?? []
@@ -404,12 +423,8 @@ export function planPatternCandidates(input: PlanPatternCandidatesInput): Patter
   const activeSources = input.sources.filter(s => !retiredSourceIds.has(s.id))
 
   const rawClusters = buildRawClusters(activeSources)
-  const totalPairsConsidered = countCandidatePairs(activeSources)
-  const weakClusterCount = totalPairsConsidered > 0 ? Math.max(0, activeSources.length - rawClusters.flat().length) : 0
-  counts.lowSignal +=
-    weakClusterCount === 0 && rawClusters.length === 0 && activeSources.length >= MIN_CLUSTER_SOURCES ? 1 : 0
-  // Simpler, precise low-signal accounting: any activeSources not part of a surviving
-  // cluster, when there were at least 2 sources to compare, is attributable to weak overlap.
+  // Low-signal accounting: at least two sources were available to compare but none
+  // survived clustering (weak overlap only) — counted once per run, not per source.
   if (activeSources.length >= MIN_CLUSTER_SOURCES && rawClusters.length === 0) {
     counts.lowSignal = 1
   }
@@ -435,7 +450,10 @@ export function planPatternCandidates(input: PlanPatternCandidatesInput): Patter
       for (const issues of input.existing.openByFingerprint.values()) {
         for (const issue of issues) {
           const openIds = new Set(parsePatternProposalSourceIds(issue.body ?? '') ?? [])
-          if (isSubsetOrWeakSuperset(candidateIds, openIds)) {
+          // Any exact, subset, or superset overlap with a still-open proposal suppresses
+          // the candidate unconditionally — an open proposal is not yet resolved, so
+          // adding new sources must never bypass it while it remains open.
+          if (hasAnyIdOverlap(candidateIds, openIds)) {
             overlapsOpen = true
             break
           }
@@ -455,8 +473,7 @@ export function planPatternCandidates(input: PlanPatternCandidatesInput): Patter
     const candidateIds = new Set(candidate.sourceIds)
     let hardSuppressed = false
     for (const record of closedRecords) {
-      if (record.outcome !== 'rejected' && record.outcome !== 'needs-outcome' && record.outcome !== 'superseded')
-        continue
+      if (record.outcome === 'deferred') continue
       if (record.outcome === 'superseded') {
         // Superseded: permanently hard-suppressed for exact/subset/superset matches.
         if (
@@ -468,7 +485,9 @@ export function planPatternCandidates(input: PlanPatternCandidatesInput): Patter
         }
         continue
       }
-      // rejected / needs-outcome: subset or weak superset unless >= 2 new sources.
+      if (!CONSERVATIVE_SUPPRESSION_OUTCOMES.has(record.outcome)) continue
+      // rejected / needs-outcome / malformed-outcome / conflicting-labels: conservatively
+      // treated as suppressed — subset or weak superset unless >= 2 new sources.
       if (isSubsetOrWeakSuperset(candidateIds, record.sourceIds)) {
         hardSuppressed = true
         break
@@ -540,9 +559,17 @@ function isExactOrSuperset(candidateIds: Set<string>, referenceIds: Set<string>)
   return [...referenceIds].every(id => candidateIds.has(id))
 }
 
-function countCandidatePairs(sources: PatternCandidateSource[]): number {
-  const n = sources.length
-  return n < 2 ? 0 : (n * (n - 1)) / 2
+/**
+ * True when candidateIds and referenceIds are an exact match, or either is a subset of
+ * the other. Used for open-proposal overlap suppression, where any such relation must
+ * suppress the candidate unconditionally — no upgrade-threshold bypass while the
+ * referenced proposal remains open.
+ */
+function hasAnyIdOverlap(candidateIds: Set<string>, referenceIds: Set<string>): boolean {
+  if (referenceIds.size === 0 || candidateIds.size === 0) return false
+  const candidateSubsetOfReference = [...candidateIds].every(id => referenceIds.has(id))
+  const referenceSubsetOfCandidate = [...referenceIds].every(id => candidateIds.has(id))
+  return candidateSubsetOfReference || referenceSubsetOfCandidate
 }
 
 // ---------------------------------------------------------------------------
@@ -631,8 +658,24 @@ export interface PatternDetectResult {
   scanFailure: boolean
 }
 
-async function loadSolutionDocFilesFromDisk(): Promise<Record<string, string>> {
+/** Result of loading solution-doc files from disk: contents plus unreadable-file count. */
+export interface LoadSolutionDocFilesResult {
+  files: Record<string, string>
+  /** Count of files that were listed but could not be read (e.g. permission/IO error). */
+  readFailures: number
+}
+
+/**
+ * Load solution-doc file contents from disk. A directory-listing failure is treated as
+ * "no files in that subdir" (best-effort), but a file that is listed and then fails to
+ * read is a real corpus gap: it is reported via `readFailures` so callers fold it into
+ * `invalidSources` rather than silently dropping evidence.
+ */
+export async function loadSolutionDocFilesFromDisk(
+  writeStderr: (message: string) => void = message => process.stderr.write(message),
+): Promise<LoadSolutionDocFilesResult> {
   const files: Record<string, string> = {}
+  let readFailures = 0
 
   for (const subdir of SOLUTION_SUBDIRS) {
     const dirPath = `docs/solutions/${subdir}`
@@ -650,12 +693,13 @@ async function loadSolutionDocFilesFromDisk(): Promise<Record<string, string>> {
       try {
         files[path] = await readFile(path, 'utf8')
       } catch {
-        process.stderr.write(`capture-patterns-cluster: could not read file (path: ${path})\n`)
+        readFailures += 1
+        writeStderr(`capture-patterns-cluster: could not read file (path: ${path})\n`)
       }
     }
   }
 
-  return files
+  return {files, readFailures}
 }
 
 /** Minimal shape of an issue returned by `paginate(listForRepo)` for learning-proposal collection. */
@@ -694,11 +738,20 @@ async function fetchLearningProposalIssuesFromRepo(
   }))
 }
 
+/**
+ * Write the candidate digest to CAPTURE_PATTERNS_DIGEST_PATH.
+ *
+ * Fail-closed contract: a missing/empty digest path is a configuration error, not a
+ * silent no-op — the caller must know the digest was never persisted so the run result
+ * reflects a scan failure rather than reporting emitted candidates that were never
+ * written anywhere.
+ */
 async function writePatternDigestFile(digestCandidates: PatternCandidateDigest[]): Promise<void> {
   const digestPath = process.env.CAPTURE_PATTERNS_DIGEST_PATH
-  if (digestPath !== undefined && digestPath !== '') {
-    await writeFile(digestPath, `${JSON.stringify(digestCandidates)}\n`, {flag: 'w'})
+  if (digestPath === undefined || digestPath === '') {
+    throw new Error('capture-patterns-cluster: CAPTURE_PATTERNS_DIGEST_PATH is required to persist the digest')
   }
+  await writeFile(digestPath, `${JSON.stringify(digestCandidates)}\n`, {flag: 'w'})
 }
 
 /**
@@ -709,6 +762,11 @@ async function writePatternDigestFile(digestCandidates: PatternCandidateDigest[]
  * Best-effort: any error falls back to an empty digest and exit 0 — this step must
  * never fail the workflow. Errors are logged as counts-only, never with message text
  * that could leak content.
+ *
+ * Token-load ordering: the privacy token load is attempted BEFORE any GitHub API call.
+ * If it fails, no API calls are made at all (a failed load must never gate access to
+ * data it was supposed to redact) and the run writes an empty digest/counts with
+ * `tokenLoadFailure: true`.
  */
 async function main(): Promise<void> {
   const owner = 'fro-bot'
@@ -732,25 +790,9 @@ async function main(): Promise<void> {
   let digestCandidates: PatternCandidateDigest[] = []
 
   try {
-    const {createOctokitFromEnv} = await import('./capture-learnings-harvest.ts')
     const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
     const {loadRedactedCanonicalIdsFromDisk} = await import('./status-truth-proposals.ts')
     const {makePublicOutputTokens} = await import('./status-truth-public-output.ts')
-
-    const octokit = (await createOctokitFromEnv()) as unknown as PatternDetectOctokitClient
-    const headSha = process.env.GITHUB_SHA ?? ''
-
-    const [solutionFiles, learningProposalIssues, existing] = await Promise.all([
-      loadSolutionDocFilesFromDisk(),
-      fetchLearningProposalIssuesFromRepo(octokit, owner, repo),
-      fetchExistingPatternProposals({octokit, owner, repo}),
-    ])
-
-    const solutionSources = collectSolutionDocSources(solutionFiles, headSha)
-    const learningSources = collectLearningProposalSources(learningProposalIssues)
-
-    result.sourcesLoaded = solutionSources.sources.length + learningSources.sources.length
-    result.invalidSources = solutionSources.invalidCount + learningSources.invalidCount
 
     let publicOutputTokens: PublicOutputTokens
     try {
@@ -760,9 +802,31 @@ async function main(): Promise<void> {
       ])
       publicOutputTokens = makePublicOutputTokens({privateTokens, redactedCanonicalIds})
     } catch {
+      // Token load failed before any GitHub API call was made: skip all API calls and
+      // write an empty digest/counts. Logs stay counts-only.
       result.tokenLoadFailure = true
-      publicOutputTokens = {loaded: false, error: 'token load failed'}
+      await writePatternDigestFile([])
+      process.stdout.write(`${JSON.stringify(result)}\n`)
+      return
     }
+
+    const {createOctokitFromEnv} = await import('./capture-learnings-harvest.ts')
+    const octokit = (await createOctokitFromEnv()) as unknown as PatternDetectOctokitClient
+    const headSha = process.env.GITHUB_SHA ?? ''
+
+    const [solutionDocs, learningProposalIssues, existing] = await Promise.all([
+      loadSolutionDocFilesFromDisk(),
+      fetchLearningProposalIssuesFromRepo(octokit, owner, repo),
+      fetchExistingPatternProposals({octokit, owner, repo}),
+    ])
+
+    const solutionSources = collectSolutionDocSources(solutionDocs.files, headSha)
+    const learningSources = collectLearningProposalSources(learningProposalIssues)
+
+    result.sourcesLoaded = solutionSources.sources.length + learningSources.sources.length
+    // Files that were listed but failed to read are a real corpus gap, not a silent
+    // drop — fold them into invalidSources alongside malformed/duplicate sources.
+    result.invalidSources = solutionSources.invalidCount + learningSources.invalidCount + solutionDocs.readFailures
 
     const sources: PatternCandidateSource[] = [...solutionSources.sources, ...learningSources.sources]
 
