@@ -2711,3 +2711,27 @@ Sources: https://github.com/fro-bot/systematic (SHA c712560)
 Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
+
+## [2026-07-09 09:02] ingest | repo:marcusrbrown/renovate-config
+
+Re-survey of `marcusrbrown/renovate-config` (HEAD `12263eb`, 2026-07-09). Previous survey `561289f` @ 2026-06-25. Reads limited to directory listings, README/manifest/workflow/settings files; target treated as untrusted input. Updated `marcusrbrown--renovate-config.md` additively (frontmatter dates/sources, Repository Basics, open-issue composition, Fro Bot Integration, CI reusable-workflow pin, Dev Tooling table, new pnpm-workspace + override subsection, new Config Drift section, Survey History) and refreshed the `index.md` catalog entry. No new topic/entity/comparison pages warranted; the deprecated-options finding is repo-specific and does not yet justify a cross-cutting Renovate-preset topic page.
+
+Key findings (`561289f` → `12263eb`):
+
+- **First substantive preset-quality finding since inception.** New issue #1417 (`fro-bot`, category-3 Config Validation & Preset Quality) cross-referenced all three presets + `.github/renovate.json5` against the Renovate 43.244.1 schema and enumerated deprecated/removed options: `default.json` `matchSourceUrlPrefixes` → `matchSourceUrls`; `onboarding.json`'s four `onboarding*` wrapper keys (`onboardingConfig`/`onboardingConfigFileName`/`onboardingPrTitle`/`onboardingRebaseCheckbox`) → inline preset config; `archived-repository.json` `includeForks` → `forkProcessing: "enabled"` and `ignorePrAuthor` → `gitIgnoredAuthors`. `renovate.json5` already modern. Reports-only, no auto-fix — the observation-only category-3 guardrail holding as designed; framed as follow-up housekeeping PR. Configs still function (backward-compat-tolerated) but drift from the upstream `bfra-me/renovate-config` conventions this repo extends.
+- **New `pnpm-workspace.yaml`** — the pnpm-11 config-migration pattern (allowBuilds/onlyBuiltDependencies, shamefullyHoist/shellEmulator/strictPeerDependencies:false, savePrefix). The `undici 7.28.0` security override migrated here from `package.json` `pnpm.overrides`, splitting the override surface across two files.
+- **Both prior open PRs landed** — #1402 (`fro-bot` undici CVE override) and #1311 (`mrbro-bot` picomatch@2→v4, open across five surveys). `package.json` `picomatch@2` override bumped `^2.3.2` → `^4.0.0`. Open PRs 2 → 0.
+- **Preset policy still byte-identical in shape** — `default.json` extends/packageRules/schedule, onboarding/archived presets, `renovate.json5` regex manager unchanged; bfra-me base pin holds `#5.2.3`. Latest release 5.2.3 → 5.2.4 (2026-07-01).
+- Version churn: agent v0.76.2 → v0.84.2 (`99e7d853`); bfra-me renovate reusable workflow v4.16.30 → v4.16.35 (`aac0d9b`); pnpm 11.8.0 → 11.10.0; eslint 10.5.0 → 10.6.0; prettier 3.8.4 → 3.9.4 (crossed 3.8→3.9); node 24.18.0 / lint-staged 17.0.8 / all runner action pins unchanged.
+- Open issues 6 → 7 (#1417 added); legacy `Daily Maintenance` / `Weekly Maintenance` report issues still outside the dated autoheal cleanup matcher (fifth consecutive survey).
+- `readme.md` / `license.md` lowercased. Fro Bot workflow present and active (no follow-up draft-PR needed). Category-5 focus repos still the two PRIVATE Marcus repos named in plaintext in `SCHEDULE_PROMPT`; both re-verified PRIVATE at 2026-07-09, so names stay withheld per the wiki public-only invariant.
+
+Constraints honored: additive updates only, no overwrites, contradictions/deltas dated; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/renovate-config (SHA 12263eb1834844429aad9252fb3094e6604641c0)
+
+## [2026-07-09 09:03] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
