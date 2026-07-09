@@ -261,7 +261,7 @@ flowchart TD
 **Verification:**
 - The opener is safe to run after an agent drafting step and cannot post unvalidated proposal prose.
 
-- [ ] **Unit 4: Workflow integration and operator docs**
+- [x] **Unit 4: Workflow integration and operator docs**
 
 **Goal:** Wire the synthesis loop into CI as a scheduled/manual proposal-only workflow and document the operator contract.
 

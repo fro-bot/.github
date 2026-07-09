@@ -11,13 +11,22 @@
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */
 
+import type {Dirent} from 'node:fs'
 import {createHash} from 'node:crypto'
+import {readdir, readFile, writeFile} from 'node:fs/promises'
+import process from 'node:process'
 
 import {
   classifyPatternProposalOutcome,
+  collectLearningProposalSources,
+  collectSolutionDocSources,
+  fetchExistingPatternProposals,
   parsePatternProposalSourceIds,
+  SOLUTION_SUBDIRS,
   type ExistingPatternProposalIssue,
   type ExistingPatternProposals,
+  type LearningProposalIssueInput,
+  type PatternProposalOctokitClient,
   type PatternSourceSignals,
 } from './capture-patterns-synthesis.ts'
 import {applyPublicOutputGate, type PublicOutputTokens} from './status-truth-public-output.ts'
@@ -600,4 +609,201 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): PatternC
   }
 
   return digest
+}
+
+// ---------------------------------------------------------------------------
+// Entry point (detect/digest step: collect sources, plan candidates, write digest)
+// ---------------------------------------------------------------------------
+
+/** Counts-only run summary written to stdout and CAPTURE_PATTERNS_RESULT_PATH. */
+export interface PatternDetectResult {
+  sourcesLoaded: number
+  invalidSources: number
+  candidatesScanned: number
+  lowSignalSkipped: number
+  duplicateOpenOverlap: number
+  hardSuppressed: number
+  softSuppressed: number
+  unsafe: number
+  capped: number
+  candidatesEmitted: number
+  tokenLoadFailure: boolean
+  scanFailure: boolean
+}
+
+async function loadSolutionDocFilesFromDisk(): Promise<Record<string, string>> {
+  const files: Record<string, string> = {}
+
+  for (const subdir of SOLUTION_SUBDIRS) {
+    const dirPath = `docs/solutions/${subdir}`
+    let entries: Dirent[]
+
+    try {
+      entries = await readdir(dirPath, {withFileTypes: true})
+    } catch {
+      continue
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue
+      const path = `${dirPath}/${entry.name}`
+      try {
+        files[path] = await readFile(path, 'utf8')
+      } catch {
+        process.stderr.write(`capture-patterns-cluster: could not read file (path: ${path})\n`)
+      }
+    }
+  }
+
+  return files
+}
+
+/** Minimal shape of an issue returned by `paginate(listForRepo)` for learning-proposal collection. */
+interface RawLearningProposalIssue {
+  readonly number: number
+  readonly body?: string | null
+  readonly title?: string | null
+  readonly created_at?: string
+  readonly labels?: readonly (string | {readonly name?: string | null})[]
+}
+
+/** Octokit surface needed for detect: paginated issue listing plus pattern-proposal reads. */
+interface PatternDetectOctokitClient extends PatternProposalOctokitClient {
+  readonly paginate: (fn: unknown, params: Record<string, unknown>) => Promise<RawLearningProposalIssue[]>
+}
+
+async function fetchLearningProposalIssuesFromRepo(
+  octokit: PatternDetectOctokitClient,
+  owner: string,
+  repo: string,
+): Promise<LearningProposalIssueInput[]> {
+  const raw = await octokit.paginate(octokit.rest.issues.listForRepo, {
+    owner,
+    repo,
+    state: 'all',
+    labels: 'learning-proposal',
+    per_page: 100,
+  })
+
+  return raw.map(issue => ({
+    number: issue.number,
+    body: issue.body,
+    title: issue.title ?? '',
+    createdAt: issue.created_at ?? '',
+    labels: (issue.labels ?? []).map(l => (typeof l === 'string' ? l : (l.name ?? ''))).filter(Boolean),
+  }))
+}
+
+async function writePatternDigestFile(digestCandidates: PatternCandidateDigest[]): Promise<void> {
+  const digestPath = process.env.CAPTURE_PATTERNS_DIGEST_PATH
+  if (digestPath !== undefined && digestPath !== '') {
+    await writeFile(digestPath, `${JSON.stringify(digestCandidates)}\n`, {flag: 'w'})
+  }
+}
+
+/**
+ * CLI entry point for the detect/digest step: collects the allowed source corpus
+ * (solution docs + learning-proposal issues), plans deterministic cluster candidates,
+ * and writes a versioned candidate digest to CAPTURE_PATTERNS_DIGEST_PATH.
+ *
+ * Best-effort: any error falls back to an empty digest and exit 0 — this step must
+ * never fail the workflow. Errors are logged as counts-only, never with message text
+ * that could leak content.
+ */
+async function main(): Promise<void> {
+  const owner = 'fro-bot'
+  const repo = '.github'
+
+  const result: PatternDetectResult = {
+    sourcesLoaded: 0,
+    invalidSources: 0,
+    candidatesScanned: 0,
+    lowSignalSkipped: 0,
+    duplicateOpenOverlap: 0,
+    hardSuppressed: 0,
+    softSuppressed: 0,
+    unsafe: 0,
+    capped: 0,
+    candidatesEmitted: 0,
+    tokenLoadFailure: false,
+    scanFailure: false,
+  }
+
+  let digestCandidates: PatternCandidateDigest[] = []
+
+  try {
+    const {createOctokitFromEnv} = await import('./capture-learnings-harvest.ts')
+    const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
+    const {loadRedactedCanonicalIdsFromDisk} = await import('./status-truth-proposals.ts')
+    const {makePublicOutputTokens} = await import('./status-truth-public-output.ts')
+
+    const octokit = (await createOctokitFromEnv()) as unknown as PatternDetectOctokitClient
+    const headSha = process.env.GITHUB_SHA ?? ''
+
+    const [solutionFiles, learningProposalIssues, existing] = await Promise.all([
+      loadSolutionDocFilesFromDisk(),
+      fetchLearningProposalIssuesFromRepo(octokit, owner, repo),
+      fetchExistingPatternProposals({octokit, owner, repo}),
+    ])
+
+    const solutionSources = collectSolutionDocSources(solutionFiles, headSha)
+    const learningSources = collectLearningProposalSources(learningProposalIssues)
+
+    result.sourcesLoaded = solutionSources.sources.length + learningSources.sources.length
+    result.invalidSources = solutionSources.invalidCount + learningSources.invalidCount
+
+    let publicOutputTokens: PublicOutputTokens
+    try {
+      const [privateTokens, redactedCanonicalIds] = await Promise.all([
+        loadPrivateTokensFromDisk(),
+        loadRedactedCanonicalIdsFromDisk(),
+      ])
+      publicOutputTokens = makePublicOutputTokens({privateTokens, redactedCanonicalIds})
+    } catch {
+      result.tokenLoadFailure = true
+      publicOutputTokens = {loaded: false, error: 'token load failed'}
+    }
+
+    const sources: PatternCandidateSource[] = [...solutionSources.sources, ...learningSources.sources]
+
+    const plan = planPatternCandidates({sources, existing, publicOutputTokens})
+
+    result.candidatesScanned =
+      plan.counts.proposed +
+      plan.counts.capped +
+      plan.counts.lowSignal +
+      plan.counts.duplicateOpenOverlap +
+      plan.counts.hardSuppressed +
+      plan.counts.softSuppressed +
+      plan.counts.unsafe
+    result.lowSignalSkipped = plan.counts.lowSignal
+    result.duplicateOpenOverlap = plan.counts.duplicateOpenOverlap
+    result.hardSuppressed = plan.counts.hardSuppressed
+    result.softSuppressed = plan.counts.softSuppressed
+    result.unsafe = plan.counts.unsafe
+    result.capped = plan.counts.capped
+    result.candidatesEmitted = plan.candidates.length
+
+    digestCandidates = plan.candidates.map(candidate =>
+      buildCandidateDigest({candidate, runCount: 1, publicOutputTokens}),
+    )
+
+    await writePatternDigestFile(digestCandidates)
+  } catch (error: unknown) {
+    const errorName = error instanceof Error ? error.name : 'unknown'
+    process.stderr.write(`capture-patterns-cluster: unexpected error (${errorName}), falling back to empty digest\n`)
+    result.scanFailure = true
+    digestCandidates = []
+    try {
+      await writePatternDigestFile(digestCandidates)
+    } catch {
+      // ignore
+    }
+  }
+
+  process.stdout.write(`${JSON.stringify(result)}\n`)
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  await main()
 }
