@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/renovate-config — Shareable Renovate Configuration Presets"
 created: 2026-04-28
-updated: 2026-07-09
+updated: 2026-06-25
 sources:
   - url: https://github.com/marcusrbrown/renovate-config
     sha: bf13a82fca143cd0cdcc9c5f12ef56c2b5196c20
@@ -19,9 +19,6 @@ sources:
   - url: https://github.com/marcusrbrown/renovate-config
     sha: 561289f610aa17406424b945395de9d71c1dc69f
     accessed: 2026-06-25
-  - url: https://github.com/marcusrbrown/renovate-config
-    sha: 12263eb1834844429aad9252fb3094e6604641c0
-    accessed: 2026-07-09
 tags: [renovate, renovate-config, renovate-preset, semantic-release, dependency-management]
 aliases: [renovate-config]
 related:
@@ -58,15 +55,15 @@ Shareable [Renovate](https://docs.renovatebot.com/) configuration presets for Ma
 | Language | JavaScript (config-only; no application code) |
 | Created | 2022-05-03 |
 | Default branch | `main` |
-| Latest release | `5.2.4` (2026-07-01) — was `5.2.3` (2026-06-13) through 2026-06-25 |
-| Node.js | 24.18.0 (`.node-version`) — unchanged since 2026-06-25; was 24.16.0 at 2026-06-14, 24.15.0 prior |
-| Package manager | pnpm 11.10.0 (was 11.8.0 at 2026-06-25, 11.5.3 at 2026-06-14, 11.1.3 at 2026-05-23, 10.33.2 at 2026-04-28) |
+| Latest release | `5.2.3` (2026-06-13) — unchanged since 2026-06-14; was three patch releases (5.2.1/5.2.2/5.2.3) ahead of `5.2.0` at 2026-06-04 |
+| Node.js | 24.18.0 (`.node-version`) — was 24.16.0 at 2026-06-14, 24.15.0 prior |
+| Package manager | pnpm 11.8.0 (was 11.5.3 at 2026-06-14, 11.5.0 at 2026-06-04, 11.1.3 at 2026-05-23, 10.33.2 at 2026-04-28) |
 | Topics | renovate, renovate-config, renovate-preset, renovatebot, renovate-by-githubaction, semantic-release |
-| Open issues | 7 — was 6 across 2026-06-04 → 2026-06-25; +1 from **new** deprecated-options config-validation issue #1417 (see note below); was 46 at 2026-04-28 |
-| Open PRs | 0 — **both prior PRs resolved**: #1311 (picomatch@2 v4) and #1402 (`undici` override) landed; was 2 at 2026-06-25 |
-| Stars / Watchers / Forks | 1 / 2 / 0 (unchanged; first star landed 2026-06-25) |
+| Open issues | 6 — composition unchanged from 2026-06-04 (see note below); was 6 at 2026-05-23, 46 at 2026-04-28 |
+| Open PRs | 2 — #1311 (picomatch@2 v4 by mrbro-bot, open across five surveys) + **new** #1402 (`undici` → 7.28.0 remediating CVE-2026-9697 / CVE-2026-9678, authored by `fro-bot`) |
+| Stars / Watchers / Forks | 1 / 2 / 0 (first star landed since 2026-06-14) |
 
-**Open-issue composition (2026-07-09):** the count moved 6 → 7. Six carry-overs are unchanged — `Daily Autohealing Report` (#1314), `Daily Maintenance Report` (#1111), three legacy `Weekly Maintenance Report — YYYY-MM-DD` issues (#1096/#1079/#1068), and the Renovate `Dependency Dashboard` (#556). The +1 is **new issue #1417 `Renovate config uses deprecated/removed options`** (authored by `fro-bot`) — the category-3 Config Validation & Preset Quality path firing as designed: it cross-referenced the three presets against the Renovate 43.244.1 schema and filed a single tracking issue enumerating deprecated keys (see [Config drift finding](#config-drift-deprecated-options-2026-07-09) below). Everything the autoheal cleanup matcher fails to sweep from prior surveys still lingers: the dated `Daily Autohealing Report — YYYY-MM-DD` matcher does not touch the differently-titled legacy `Daily Maintenance` / `Weekly Maintenance` report issues. Candidate for manual cleanup or a broadened cleanup matcher (durable across five consecutive surveys).
+**Open-issue composition (stable through 2026-06-25):** the count holds at 6, with the same mix observed at 2026-06-04 — no churn in the open-issue set. Currently open: `Daily Autohealing Report` (#1314), `Daily Maintenance Report` (#1111), three legacy `Weekly Maintenance Report — YYYY-MM-DD` issues (#1096/#1079/#1068), and the Renovate `Dependency Dashboard` (#556). The active perpetual issue is now #1314 (was a different number at prior survey), implying the prior perpetual issue was closed/recreated rather than reused — and the older `Daily Maintenance Report` / `Weekly Maintenance Report` issues from the pre-consolidation era were never swept up. The autoheal "single perpetual issue" cleanup logic only closes issues matching the dated `Daily Autohealing Report — YYYY-MM-DD` pattern, so these differently-titled legacy reports fall outside its broom. Candidate for manual cleanup or a broadened cleanup matcher.
 
 ## Preset Architecture
 
@@ -148,7 +145,7 @@ Two sequential jobs:
 
 ### `renovate.yaml`
 
-Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.35` (SHA `aac0d9b`; was `@v4.16.30` at 2026-06-25, `@v4.16.25` at 2026-06-14, `@v4.16.9` at 2026-05-23). Triggers on issue edits, PR edits, push to non-main branches, manual dispatch, and `workflow_run` after main CI succeeds. Includes `path-filters` scoped to Renovate config files and presets.
+Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.30` (SHA `a2676c9`; was `@v4.16.25` at 2026-06-14, `@v4.16.23` at 2026-06-04, `@v4.16.9` at 2026-05-23). Triggers on issue edits, PR edits, push to non-main branches, manual dispatch, and `workflow_run` after main CI succeeds. Includes `path-filters` scoped to Renovate config files and presets.
 
 ### `codeql-analysis.yaml` — CodeQL security scanning
 
@@ -158,7 +155,7 @@ Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.35
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present and active** — `fro-bot.yaml` with `fro-bot/agent@v0.84.2` (SHA `99e7d853bac9c505418920b38a18718420392147`). The agent pin advanced v0.76.2 → v0.84.2 between 2026-06-25 and 2026-07-09 — another fast Renovate-authored cadence, continuing the rapid [[fro-bot--agent]] release tracking (crosses the agent's credential-broker consumer + operator-web-surface wiring arcs documented on [[fro-bot--agent]]; those are runtime-internal to the agent — this repo's workflow invocation surface is unaffected). Runner action pins **all unchanged this window**: `actions/checkout` v6.0.3 (`df4cb1c`), `actions/setup-node` v6.4.0 (`48b55a0`), `pnpm/action-setup` v6.0.9 (`0ebf471`).
+**Fro Bot workflow present and active** — `fro-bot.yaml` with `fro-bot/agent@v0.76.2` (SHA `69aedbc436756126233bae196275ac413f4ab48c`). The agent pin advanced v0.63.0 → v0.76.2 between 2026-06-14 and 2026-06-25 — another fast Renovate-authored cadence, continuing the rapid [[fro-bot--agent]] release tracking. This crosses the agent's pnpm→Bun migration and gateway operator-web-surface shift documented on [[fro-bot--agent]] (those are runtime-internal to the agent; this repo's workflow invocation surface is unaffected). Runner action pins: `actions/checkout` v6.0.3 (`df4cb1c`) and `actions/setup-node` v6.4.0 (`48b55a0`) **unchanged**; `pnpm/action-setup` bumped v6.0.8 → **v6.0.9** (`0ebf471`).
 
 Trigger surface:
 - Issue comments, PR review comments, discussion comments (mentioning `@fro-bot`)
@@ -195,9 +192,9 @@ Single-issue management: the perpetual `Daily Autohealing Report` issue receives
 
 | Tool | Version / Config |
 | --- | --- |
-| ESLint | 10.6.0 (was 10.5.0), extends `@bfra.me/eslint-config` 0.51.1 |
-| Prettier | 3.9.4 (was 3.8.4 — crossed 3.8 → 3.9), extends `@bfra.me/prettier-config/120-proof` (0.16.9) |
-| lint-staged | 17.0.8 (unchanged) (`*.{js,json,jsx,md,toml,ts,tsx,yml,yaml}`) |
+| ESLint | 10.5.0 (was 10.4.1), extends `@bfra.me/eslint-config` 0.51.1 |
+| Prettier | 3.8.4, extends `@bfra.me/prettier-config/120-proof` (0.16.9) |
+| lint-staged | 17.0.8 (was 17.0.7) (`*.{js,json,jsx,md,toml,ts,tsx,yml,yaml}`) |
 | simple-git-hooks | 2.13.1 (pre-commit runs lint-staged) |
 | semantic-release | 25.0.5 |
 | eslint-config-prettier | 10.1.8 |
@@ -207,32 +204,7 @@ Single-issue management: the perpetual `Daily Autohealing Report` issue receives
 
 ESLint config (`eslint.config.js`) is a single re-export of `@bfra.me/eslint-config` — no local overrides.
 
-**New `pnpm-workspace.yaml` (2026-07-09):** the repo gained a `pnpm-workspace.yaml` since the prior survey — the same pnpm-10→11 config-migration pattern seen ecosystem-wide (cf. [[marcusrbrown--marcusrbrown]], [[bfra-me--works]]). It carries:
-
-- `allowBuilds: { simple-git-hooks: true, unrs-resolver: true }` and `onlyBuiltDependencies: [simple-git-hooks]` — the pnpm 11 build-approval surface
-- `overrides: { undici: 7.28.0 }` — **this is where #1402 landed** (see below), not in `package.json` `pnpm.overrides`. The security override migrated into the workspace file rather than the manifest block, splitting the override surface across two files
-- `savePrefix: ''`, `shamefullyHoist: true`, `shellEmulator: true`, `strictPeerDependencies: false`
-
-**pnpm overrides for supply-chain hardening:** the `package.json` `pnpm.overrides` block now holds `fast-uri >=3.1.2`, `flatted >=3.4.2`, `handlebars >=4.7.9`, `lodash-es >=4.18.0`, `picomatch@2 ^4.0.0` (**bumped from `^2.3.2`** — the long-standing picomatch@2→v4 pin that PR #1311 tracked has now landed, closing that five-survey-open PR), `picomatch@4 ^4.0.4`. Plus the migrated `undici 7.28.0` override now living in `pnpm-workspace.yaml`. Mirrors the transitive-dep-pin approach used in [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--marcusrbrown-github-io]] — a config-only repo carrying transitive-dep pins because npm advisory floors propagate via the lockfile. **Resolved since 2026-06-25:** the two PRs open at the prior survey both landed — #1402 (`fro-bot`-authored `undici >=7.28.0`, CVE-2026-9697 / CVE-2026-9678 remediation, now a `7.28.0` pin in the workspace file) and #1311 (`mrbro-bot`'s picomatch@2→v4, open across five surveys). Open-PR count is back to 0.
-
-## Config Drift: Deprecated Options {#config-drift-deprecated-options-2026-07-09}
-
-The 2026-07-09 survey surfaced the first substantive **preset-quality** finding since inception: the daily autoheal's category-3 (Config Validation & Preset Quality) opened **issue #1417 `Renovate config uses deprecated/removed options`** (authored by `fro-bot`). It cross-referenced all three presets plus `.github/renovate.json5` against the Renovate 43.244.1 JSON schema's deprecated `not` block and enumerated the drift. The configs still function in production (backward-compat-tolerated), but they diverge from the upstream `bfra-me/renovate-config` conventions this repo extends — upstream has already migrated to the replacement keys.
-
-Deprecated keys found (per #1417):
-
-| File | Deprecated option | Suggested replacement |
-| --- | --- | --- |
-| `default.json` | `matchSourceUrlPrefixes` (packageRules[1]) | `matchSourceUrls` (with `https://github.com/**`-style globs; upstream already uses this form) |
-| `onboarding.json` | `onboardingConfig` | inline in preset (no `onboardingConfig*` wrapper) |
-| `onboarding.json` | `onboardingConfigFileName` | `configFileNames` (array) |
-| `onboarding.json` | `onboardingPrTitle` | `prTitleTemplate` / `commitMessage` |
-| `onboarding.json` | `onboardingRebaseCheckbox` | `dependencyDashboardRebaseAll` / default behavior |
-| `archived-repository.json` | `includeForks` | `forkProcessing: "enabled"` |
-| `archived-repository.json` | `ignorePrAuthor` | `gitIgnoredAuthors` |
-| `.github/renovate.json5` | _(none — already modern)_ | already uses `customManagers` / `managerFilePatterns` / `customType: 'regex'` |
-
-This is the category-3 policy working exactly as written: it reports (opens a tracking issue) but does **not** auto-fix config logic — the prompt reserves auto-fixes for formatting/lint only (category 4), and #1417 explicitly frames the migration as a follow-up housekeeping PR, not an autoheal mutation. It is the cleanest live example so far of the observation-only preset-validation guardrail holding the line. Note the whole onboarding-config wrapper (all four keys) is deprecated — the modern pattern folds onboarding config inline into the primary preset, which would be a larger rewrite than the one-line `matchSourceUrlPrefixes → matchSourceUrls` swap.
+**pnpm overrides for supply-chain hardening:** `fast-uri >=3.1.2`, `flatted >=3.4.2`, `handlebars >=4.7.9`, `lodash-es >=4.18.0`, `picomatch@2 ^2.3.2`, `picomatch@4 ^4.0.4` (merged set, unchanged 2026-06-25). Mirrors the same override approach used in [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--marcusrbrown-github-io]] — a config-only repo carrying transitive-dep pins because npm advisory floors propagate via the lockfile. **In-flight (2026-06-25):** open PR #1402 (authored by `fro-bot`) adds an `undici >=7.28.0` override to remediate CVE-2026-9697 / CVE-2026-9678 — the category-2 security-override autoheal path working as designed; not yet merged, so not yet in the override set above.
 
 ## Probot Settings
 
@@ -292,4 +264,3 @@ This preset is the dependency-update policy backbone of the entire `marcusrbrown
 | 2026-06-04 | `499f0ca` | Dependency-churn survey — no preset policy change. Latest release still 5.2.0; `default.json` + bfra-me pin `#5.2.1` unchanged. agent v0.44.3 → **v0.52.1** (8 bumps in ~12 days); runner actions checkout v6.0.3 / setup-node v6.4.0 / pnpm-action-setup v6.0.8; bfra-me renovate reusable workflow v4.16.9 → v4.16.23; pnpm 11.1.3 → 11.5.0; eslint 10.4.0 → 10.4.1; eslint-plugin-prettier 5.5.5 → 5.5.6; lint-staged 17.0.5 → 17.0.7. Cross-Project Intelligence focus-list now leads with two **private** Marcus repos (names withheld per public-only invariant). Open-issue count holds at 6 but legacy `Daily Maintenance` / `Weekly Maintenance` report issues linger outside the autoheal cleanup matcher. |
 | 2026-06-14 | `42ee3cd` | Dependency-churn survey — no preset policy change. Preset `extends` list, packageRules, schedule, and onboarding/archived presets all byte-identical in shape; only the bfra-me base pin moved `#5.2.1` → **`#5.2.3`** (default.json, Renovate-bumped via custom regex manager). Latest release 5.2.0 → **5.2.3** (three patch releases). agent v0.52.1 → **v0.63.0** (`817d4ada`, latest bump #1385); runner action pins **unchanged**; bfra-me renovate reusable workflow v4.16.23 → **v4.16.25** (`11b3f16`); node 24.15.0 → 24.16.0; pnpm 11.5.0 → 11.5.3; prettier 3.8.3 → 3.8.4; semantic-release 25.0.3 → 25.0.5. Daily autoheal six-category prompt unchanged; category-5 focus repos still the two **private** Marcus repos (names withheld; visibility re-verified `PRIVATE`). Open-issue set stable at 6 (no churn); same legacy report issues still outside the autoheal cleanup matcher. Sole open PR still #1311 (picomatch@2 v4). |
 | 2026-06-25 | `561289f` | Dependency-churn survey — no preset policy change. `default.json` extends/packageRules/schedule, onboarding/archived presets, and `renovate.json5` custom regex manager all byte-identical in shape; bfra-me base pin holds at **`#5.2.3`**. Latest release unchanged at **5.2.3**. agent v0.63.0 → **v0.76.2** (`69aedbc`) — crosses the agent's pnpm→Bun + gateway operator-web-surface internal shifts (runtime-internal to [[fro-bot--agent]]; this repo's invocation surface unaffected). `pnpm/action-setup` v6.0.8 → **v6.0.9** (`0ebf471`); `actions/checkout` v6.0.3 / `actions/setup-node` v6.4.0 **unchanged**; bfra-me renovate reusable workflow v4.16.25 → **v4.16.30** (`a2676c9`); node 24.16.0 → **24.18.0**; pnpm 11.5.3 → **11.8.0**; eslint 10.4.1 → **10.5.0**; lint-staged 17.0.7 → **17.0.8**. Daily autoheal six-category prompt unchanged. **New finding:** category-5 focus repos are now **named in plaintext** in the workflow `SCHEDULE_PROMPT` (`marcusrbrown/yield-farmer`, `marcusrbrown/poly`); both re-verified **`PRIVATE`** at 2026-06-25, so the names stay withheld from the wiki per the public-only invariant despite the source leak. First **star** landed (0 → 1). Open PRs 1 → 2: #1311 (picomatch@2 v4) still open + **new** #1402 (`fro-bot`-authored `undici` → 7.28.0, CVE-2026-9697 / CVE-2026-9678 remediation) — a live example of the category-2 security-override autoheal path. Open-issue set stable at 6; same legacy report issues still outside the autoheal cleanup matcher. |
-| 2026-07-09 | `12263eb` | Dependency-churn survey + **first preset-quality finding**. Preset _policy_ still byte-identical in shape (`default.json` extends/packageRules/schedule, onboarding/archived presets, `renovate.json5` regex manager); bfra-me base pin holds **`#5.2.3`**. Latest release **5.2.3 → 5.2.4** (2026-07-01). agent v0.76.2 → **v0.84.2** (`99e7d853`); all runner action pins **unchanged** (checkout v6.0.3, setup-node v6.4.0, pnpm/action-setup v6.0.9); bfra-me renovate reusable workflow v4.16.30 → **v4.16.35** (`aac0d9b`); node 24.18.0 unchanged; pnpm 11.8.0 → **11.10.0**; eslint 10.5.0 → **10.6.0**; prettier 3.8.4 → **3.9.4** (crossed 3.8→3.9); lint-staged 17.0.8 unchanged. **New `pnpm-workspace.yaml`** (allowBuilds/onlyBuiltDependencies + `overrides: undici 7.28.0` + shamefullyHoist/shellEmulator/strictPeerDependencies:false) — the pnpm-11 config-migration pattern; the `undici` security override migrated here from `package.json`. `package.json` override `picomatch@2 ^2.3.2 → ^4.0.0`. **Both prior PRs landed** — #1402 (undici) and #1311 (picomatch@2→v4, five surveys open); open PRs 2 → 0. **New issue #1417** (`fro-bot`, category-3 Config Validation) enumerates deprecated Renovate schema options in all three presets (`matchSourceUrlPrefixes`, the four `onboarding*` wrapper keys, `includeForks`/`ignorePrAuthor`) — reports only, no auto-fix, framed as follow-up housekeeping; open issues 6 → 7. Daily autoheal six-category prompt unchanged; category-5 focus repos still the two **private** Marcus repos (names withheld per public-only invariant). `readme.md`/`license.md` lowercased. |

@@ -2712,26 +2712,29 @@ Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
 
-## [2026-07-09 09:02] ingest | repo:marcusrbrown/renovate-config
+## [2026-07-09 09:00] ingest | fro-bot/dashboard
 
-Re-survey of `marcusrbrown/renovate-config` (HEAD `12263eb`, 2026-07-09). Previous survey `561289f` @ 2026-06-25. Reads limited to directory listings, README/manifest/workflow/settings files; target treated as untrusted input. Updated `marcusrbrown--renovate-config.md` additively (frontmatter dates/sources, Repository Basics, open-issue composition, Fro Bot Integration, CI reusable-workflow pin, Dev Tooling table, new pnpm-workspace + override subsection, new Config Drift section, Survey History) and refreshed the `index.md` catalog entry. No new topic/entity/comparison pages warranted; the deprecated-options finding is repo-specific and does not yet justify a cross-cutting Renovate-preset topic page.
+Third survey of `fro-bot/dashboard` (HEAD `cb5190d`, main, pushed 2026-07-09). Previous surveys `5c631a5` @ 2026-06-26 and `2504939` @ 2026-06-15. Updated `fro-bot--dashboard.md` additively (frontmatter dates/sources/tags, Overview, Overview table, Architecture `src/` + SPA + new Operator Control Surface and Fixture Harness subsections, Node strip-only discipline, CI Pipeline header, `fro-bot.yaml` section, Dependencies, Fro Bot Workflow Status + open issues, Survey History). Cross-noted [[fro-bot--agent]] (downstream operator-contract consumer at v0.78.0 / contract 1.6.0). Refreshed both `index.md` catalog entries. No new topic/entity/comparison pages warranted.
 
-Key findings (`561289f` → `12263eb`):
+Key findings (`5c631a5` → `cb5190d`):
 
-- **First substantive preset-quality finding since inception.** New issue #1417 (`fro-bot`, category-3 Config Validation & Preset Quality) cross-referenced all three presets + `.github/renovate.json5` against the Renovate 43.244.1 schema and enumerated deprecated/removed options: `default.json` `matchSourceUrlPrefixes` → `matchSourceUrls`; `onboarding.json`'s four `onboarding*` wrapper keys (`onboardingConfig`/`onboardingConfigFileName`/`onboardingPrTitle`/`onboardingRebaseCheckbox`) → inline preset config; `archived-repository.json` `includeForks` → `forkProcessing: "enabled"` and `ignorePrAuthor` → `gitIgnoredAuthors`. `renovate.json5` already modern. Reports-only, no auto-fix — the observation-only category-3 guardrail holding as designed; framed as follow-up housekeeping PR. Configs still function (backward-compat-tolerated) but drift from the upstream `bfra-me/renovate-config` conventions this repo extends.
-- **New `pnpm-workspace.yaml`** — the pnpm-11 config-migration pattern (allowBuilds/onlyBuiltDependencies, shamefullyHoist/shellEmulator/strictPeerDependencies:false, savePrefix). The `undici 7.28.0` security override migrated here from `package.json` `pnpm.overrides`, splitting the override surface across two files.
-- **Both prior open PRs landed** — #1402 (`fro-bot` undici CVE override) and #1311 (`mrbro-bot` picomatch@2→v4, open across five surveys). `package.json` `picomatch@2` override bumped `^2.3.2` → `^4.0.0`. Open PRs 2 → 0.
-- **Preset policy still byte-identical in shape** — `default.json` extends/packageRules/schedule, onboarding/archived presets, `renovate.json5` regex manager unchanged; bfra-me base pin holds `#5.2.3`. Latest release 5.2.3 → 5.2.4 (2026-07-01).
-- Version churn: agent v0.76.2 → v0.84.2 (`99e7d853`); bfra-me renovate reusable workflow v4.16.30 → v4.16.35 (`aac0d9b`); pnpm 11.8.0 → 11.10.0; eslint 10.5.0 → 10.6.0; prettier 3.8.4 → 3.9.4 (crossed 3.8→3.9); node 24.18.0 / lint-staged 17.0.8 / all runner action pins unchanged.
-- Open issues 6 → 7 (#1417 added); legacy `Daily Maintenance` / `Weekly Maintenance` report issues still outside the dated autoheal cleanup matcher (fifth consecutive survey).
-- `readme.md` / `license.md` lowercased. Fro Bot workflow present and active (no follow-up draft-PR needed). Category-5 focus repos still the two PRIVATE Marcus repos named in plaintext in `SCHEDULE_PROMPT`; both re-verified PRIVATE at 2026-07-09, so names stay withheld per the wiki public-only invariant.
+- **Operator control surface matured.** The 2026-06-26 nascent `operator-contract/` dir is now a fully vendored, versioned barrel — `OPERATOR_CONTRACT_VERSION = '1.6.0'`, vendored from [[fro-bot--agent]] `packages/gateway` operator-contract + web/sse at **tag v0.78.0**, with a `README.md` documenting provenance, import rewrites, and deliberate omissions (`toOperatorDecisionState`/`toOperatorRunStatus`/`DecisionInput`). SSE-streamed agent-run views (`operator-sse-reader` + `sse-frames`), approvals (`approval`/`approval-frame`), and **operator-initiated run cancellation** (open issue #179, contract 1.6.0). The dashboard is now a *view-plane over GitHub data* but a *control-plane proxy* toward the gateway run lifecycle — still no GitHub write path.
+- **Client-state layer + views.** New `web/src/operator/` (`runtime`/`state`/`copy`/`validate-dynamic-id`/`fixture-*`, each with colocated tests + a `no-server-imports` guard), `views/Operator.tsx`, `shell/AppShell.tsx`.
+- **Fixture harness (new).** Deterministic offline operator backend gated behind `DASHBOARD_FIXTURE_HARNESS_ENABLED` (+ `DASHBOARD_DEV_AUTOLOGIN`); `pnpm dev:fixture` / `build:web:fixture` (`VITE_FIXTURE_MODE`, `web/dist-fixture`). Held to the same redaction bar as live (`operator-fixture-sanitization.test.ts`).
+- **API.** New `GET /api/monitoring` (minimized client snapshot); `/api/healthz` now carries `contractVersion`.
+- **Test layout.** Server tests extracted from `src/` colocation into a top-level `test/` dir (26 files: aggregator/auth/session/installations/metadata/server/static-assets/release-scripts + full operator surface).
+- **New scaffolding.** `.codex/hooks.json`, `.github/hooks/impeccable.json`, `docs/{brainstorms,ideation,plans,solutions}`, `.impeccable/critique/`.
+- **Pins/deps.** Agent action pin **v0.77.0 → v0.84.2** (`99e7d85`), still ecosystem version leader; clonedeps + vendored contract frozen at agent@v0.78.0 (intentional skew from the action pin). pnpm 11.8.0 → 11.10.0; vite 8.0.16 → 8.1.3; tailwind 4.3.1 → 4.3.2; eslint 10.5.0 → 10.6.0; workbox exact-pinned 7.4.1; `@types/node` 24.13.2. Runtime deps unchanged.
+- **Workflows.** Count steady at 3 (`main.yaml` 6 jobs, `release.yaml` 4-job CalVer chain, `fro-bot.yaml`). `fro-bot.yaml` **concurrency reworked** to PR-head-SHA keying (prevents dropping a push that lands while a prior run for the same PR is in-flight). Releases 30 → 58 (latest `2026.07.12`, 2026-07-08).
+- **Drift noted (contradiction).** Contract `README.md` header still reads `Contract: 1.5.0` while `version.ts` pins `1.6.0` — recorded on the page as a stale-header follow-up rather than silently reconciled.
+- **Fro Bot workflow present and self-hosted** — no follow-up-workflow-draft needed. Daily report issue live (#180). Open issues: #180, #179 (run cancellation), #112 (dedicated infra-only dispatch App — carried), #108 (deferred PWA push), #8 (Renovate dep dashboard).
 
-Constraints honored: additive updates only, no overwrites, contradictions/deltas dated; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary.
+Constraints honored: reads limited to directory listings, README, manifests, workflow files, and pinned constants (contract `version.ts`/`README.md`, `.slim/clonedeps.json`); target treated as untrusted input; additive updates only, no overwrites, contradiction noted with dates; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice.
 
-Sources: https://github.com/marcusrbrown/renovate-config (SHA 12263eb1834844429aad9252fb3094e6604641c0)
+Sources: https://github.com/fro-bot/dashboard (SHA cb5190d259e68b26b7102d86b2e2ec53a731b3fb)
 
-## [2026-07-09 09:03] ingest | repo:marcusrbrown/renovate-config
+## [2026-07-09 09:04] ingest | repo:fro-bot/dashboard
 
-Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/renovate-config
+Sources: https://github.com/fro-bot/dashboard
