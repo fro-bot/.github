@@ -210,6 +210,7 @@ Fro Bot control plane:
 | --- | --- | --- |
 | **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Issues, PR events, schedule, dispatch, workflow_call |
 | **Capture Learnings** | Capture and commit knowledge-wiki learnings to the `data` branch | Schedule, dispatch |
+| **Capture Patterns** | Detect recurring correction patterns across accepted learnings and solution docs, then draft human-reviewed pattern proposals | Manual dispatch |
 | **Poll Invitations** | Accept allowlisted collaboration invitations | Every 15 minutes, dispatch |
 | **Reconcile Repos** | Reconcile collaborator access against `metadata/repos.yaml`; dispatch surveys for stale repos; auto-stars collab/contrib repos | Daily 05:17 UTC, dispatch |
 | **Survey Repo** | Ingest a repository into the knowledge wiki; dispatched by Reconcile Repos or manually via `gh workflow run survey-repo.yaml -f node_id=<node_id>` | Dispatch (by Reconcile Repos) |
@@ -340,6 +341,27 @@ Any single key missing produces zero PR actions; eligible findings fall back to 
 - Before any push, the corrected content is re-verified against the live base-branch file, not just the report snapshot — stale drift never gets force-corrected.
 - If a fingerprint's drift clears on a complete scan while its correction PR is still open, the bot closes its own PR with a brief comment and deletes the branch. If the linked proposal later gets a terminal label (`status-truth:rejected` or `status-truth:false-positive`), the same closure happens regardless of drift state. Merged PRs are never touched.
 - The bot never merges, approves, enables automerge, force-pushes, or retargets a correction PR — closing its own stale PRs and deleting its own branches are the only PR-state mutations it can make. A human always merges.
+
+### Recurring Pattern Proposals
+
+The **Capture Patterns** workflow looks for repeated correction behavior across the accepted learning corpus — `docs/solutions/` entries and `learning-proposal` issues in this repo — and drafts human-reviewed proposals for patterns worth codifying as durable lessons. It never authors or edits `docs/solutions/` directly; every pattern proposal is a decision log entry a human reviews and, if accepted, turns into a doc themselves.
+
+The loop is proposal-only and manual-first: `workflow_dispatch` defaults to dry-run, and there is no scheduled trigger in this initial slice. A dry run plans and drafts candidates but never opens issues or mints an issue-writing token; only an explicit live dispatch (`dry_run: false`) does both.
+
+**Reviewing a proposal:**
+
+Apply exactly one outcome label to record your decision:
+
+| Label | Meaning |
+| --- | --- |
+| `pattern-proposal:accepted` | Pattern is real and durable; source material is retired from future clustering immediately |
+| `pattern-proposal:deferred` | Not yet — needs more independent evidence before reconsideration |
+| `pattern-proposal:rejected` | Pattern is not real, or too weak to codify |
+| `pattern-proposal:superseded` | A newer proposal replaces this one; permanently suppressed |
+
+A closed proposal without one of these labels is `needs-outcome` — a derived state, not an operator label, that conservatively suppresses re-proposal of the same sources until new independent evidence appears.
+
+**Caps and evidence:** at most three new proposals open per run, ranked by independent source count, accepted-doc presence, and recency. Deterministic scripts own source loading, deduplication, suppression, privacy gating, and issue mutations; the agent only judges evidence and drafts bounded proposal bodies from a curated, privacy-gated digest — it never edits repo files, reads raw solution text, or receives private tokens.
 
 ### Cross-Repo Goal Dispatch
 
