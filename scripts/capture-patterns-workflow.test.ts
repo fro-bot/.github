@@ -190,6 +190,11 @@ describe('capture-patterns.yaml workflow contract', () => {
     expect(uploadStep?.with?.['retention-days']).toBe(1)
   })
 
+  it('the detect summary reports candidate quality suppression separately from low-signal skips', () => {
+    expect(raw).toContain('Quality-suppressed')
+    expect(raw).toContain('.qualitySuppressed // 0')
+  })
+
   it('never echoes digest/body file contents or the write token into logs', () => {
     const suspiciousPatterns = [
       /echo.*CAPTURE_PATTERNS_DIGEST_PATH/u,

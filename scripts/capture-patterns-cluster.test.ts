@@ -138,6 +138,122 @@ describe('planPatternCandidates: correction-substance clustering', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Candidate quality suppression — overbroad clusters and hash-title-only evidence
+// ---------------------------------------------------------------------------
+
+describe('planPatternCandidates: candidate quality suppression', () => {
+  it('edge case: a large cluster with no single shared problem_type is suppressed as overbroad/generic', () => {
+    // 9 sources exceed OVERBROAD_CLUSTER_SIZE_THRESHOLD and share only a module token,
+    // a tag, and one title token per pair (30 points, clears the cluster threshold) —
+    // but each carries a distinct problem_type, so there is no single decision-ready topic.
+    const sources: PatternCandidateSource[] = Array.from({length: 9}, (_, i) =>
+      makeSource({
+        id: `broad-source-${i}`,
+        title: `Best practice guidance number ${i} for workflow hygiene`,
+        signals: {
+          module: 'docs/solutions/best-practices',
+          tags: ['best-practice'],
+          problemType: `best_practice_${i}`,
+          titleTokens: ['best', 'practice', 'guidance', 'workflow', 'hygiene'],
+        },
+      }),
+    )
+
+    const result = plan({sources, existing: emptyExisting()})
+
+    expect(result.candidates).toHaveLength(0)
+    expect(result.counts.qualitySuppressed).toBe(1)
+  })
+
+  it('happy path: a large cluster sharing one specific problem_type is NOT suppressed as overbroad', () => {
+    // Same shape and size as the overbroad case, but every source shares one specific
+    // problem_type — this is a legitimate high-evidence repeated pattern, not generic noise.
+    const sources: PatternCandidateSource[] = Array.from({length: 9}, (_, i) =>
+      makeSource({
+        id: `focused-source-${i}`,
+        title: `Retry idempotent writes on 5xx failures variant ${i}`,
+        signals: {
+          module: 'scripts/retry.ts',
+          tags: ['ci'],
+          problemType: 'best_practice_retry_5xx',
+          titleTokens: ['retry', 'idempotent', 'writes', '5xx', 'failures'],
+        },
+      }),
+    )
+
+    const result = plan({sources, existing: emptyExisting()})
+
+    expect(result.candidates).toHaveLength(1)
+    expect(result.counts.qualitySuppressed).toBe(0)
+  })
+
+  it('edge case: a cluster made mostly of hash-title learning proposals is suppressed as weak signal', () => {
+    // Both sources are learning-proposal issues whose title is still the neutral
+    // `Learning proposal: (<shortSha>)` placeholder — no human-readable correction
+    // substance until codified into a solution doc or retitled.
+    const sources: PatternCandidateSource[] = [
+      makeSource({
+        id: '7012832fabcdef',
+        kind: 'learning-proposal',
+        title: 'Learning proposal: (7012832f)',
+        signals: {
+          module: '',
+          tags: ['pattern-proposal'],
+          problemType: '',
+          titleTokens: ['retry', 'idempotent', 'writes'],
+        },
+      }),
+      makeSource({
+        id: '9a1bc2d3ef456',
+        kind: 'learning-proposal',
+        title: 'Learning proposal: (9a1bc2d3)',
+        signals: {
+          module: '',
+          tags: ['pattern-proposal'],
+          problemType: '',
+          titleTokens: ['retry', 'idempotent', 'writes'],
+        },
+      }),
+    ]
+
+    const result = plan({sources, existing: emptyExisting()})
+
+    expect(result.candidates).toHaveLength(0)
+    expect(result.counts.qualitySuppressed).toBe(1)
+  })
+
+  it('happy path: a cluster with a minority of hash-title learning proposals is NOT suppressed', () => {
+    const sourceB = makeSource({
+      id: 'source-b',
+      title: 'Retry idempotent writes after 5xx failures',
+      signals: {
+        module: 'scripts/foo.ts',
+        tags: ['ci'],
+        problemType: 'best_practice',
+        titleTokens: ['retry', 'idempotent', 'writes', 'after', '5xx', 'failures'],
+      },
+    })
+    const learningSource = makeSource({
+      id: '7012832fabcdef',
+      kind: 'learning-proposal',
+      title: 'Learning proposal: (7012832f)',
+      signals: {
+        module: 'scripts/foo.ts',
+        tags: ['ci'],
+        problemType: 'best_practice',
+        titleTokens: ['retry', 'idempotent', 'writes'],
+      },
+    })
+    const sources = [makeSource(), sourceB, learningSource]
+
+    const result = plan({sources, existing: emptyExisting()})
+
+    expect(result.candidates).toHaveLength(1)
+    expect(result.counts.qualitySuppressed).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Suppression / filter behavior
 // ---------------------------------------------------------------------------
 

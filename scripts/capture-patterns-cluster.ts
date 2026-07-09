@@ -5,8 +5,9 @@
  * artifacts and existing pattern-proposal state, then decides which candidates may be
  * sent to the agent for proposal drafting. No I/O — all data is injected.
  *
- * Filter order (fixed): weak cluster -> open-proposal overlap -> hard suppression ->
- * soft suppression (without upgrade threshold) -> unsafe evidence placeholder -> rank -> cap.
+ * Filter order (fixed): weak cluster -> quality suppression (overbroad / hash-title-only) ->
+ * open-proposal overlap -> hard suppression -> soft suppression (without upgrade threshold) ->
+ * unsafe evidence placeholder -> rank -> cap.
  *
  * Strip-only safe: no parameter properties, enums, or namespaces.
  */
@@ -56,6 +57,22 @@ const HARD_SUPPRESSION_UPGRADE_THRESHOLD = 2
 /** Number of new independent public-safe sources required to lift soft (deferred) suppression. */
 const SOFT_SUPPRESSION_UPGRADE_THRESHOLD = 1
 
+/**
+ * Cluster size (in unique sources) above which a candidate is decision-ready only if
+ * every member shares one specific non-empty `problem_type`. A cluster this large that
+ * lacks a single shared problem type is a broad cross-cutting grouping (e.g. generic
+ * best-practice/workflow docs sharing only module/tag tokens), not a reusable pattern.
+ */
+const OVERBROAD_CLUSTER_SIZE_THRESHOLD = 8
+
+/**
+ * Matches the neutral hash-title format `deriveLearningTitle` assigns to opened
+ * learning proposals (`Learning proposal: (<shortSha>)`). A title in this shape carries
+ * no human-readable correction substance until the proposal is codified into a solution
+ * doc or given a stronger semantic title.
+ */
+const HASH_ONLY_LEARNING_TITLE_PATTERN = /^learning proposal:\s*\([0-9a-f]{6,40}\)$/u
+
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
@@ -95,6 +112,8 @@ export interface PatternPlannerCounts {
   invalidSource: number
   noOp: number
   failed: number
+  /** Overbroad or weak-signal clusters suppressed before ranking (never suppression state). */
+  qualitySuppressed: number
 }
 
 /** Result of `planPatternCandidates`. */
@@ -234,6 +253,34 @@ function buildRawClusters(sources: PatternCandidateSource[]): PatternCandidateSo
 // ---------------------------------------------------------------------------
 // Score bucket + evidence strength ranking
 // ---------------------------------------------------------------------------
+
+/**
+ * Reject candidates whose evidence is broad/generic or whose sources carry no
+ * human-readable correction substance yet, even though clustering merged them.
+ *
+ * Two deterministic rules, either of which disqualifies a candidate:
+ * 1. Overbroad: cluster size exceeds `OVERBROAD_CLUSTER_SIZE_THRESHOLD` and the sources
+ *    do not all share one specific non-empty `problem_type` — a large cluster held
+ *    together only by scattered module/tag/title-token overlap is a generic grouping,
+ *    not a decision-ready recurring pattern.
+ * 2. Hash-title learning proposals: more than half the cluster's sources are
+ *    learning-proposal issues whose title is still the neutral `Learning proposal:
+ *    (<shortSha>)` placeholder — these carry no human-readable signal until codified
+ *    into a solution doc or retitled.
+ */
+function isLowQualityCandidate(sources: PatternCandidateSource[]): boolean {
+  if (sources.length > OVERBROAD_CLUSTER_SIZE_THRESHOLD) {
+    const problemTypes = new Set(sources.map(s => s.signals.problemType).filter(t => t !== ''))
+    if (problemTypes.size !== 1) return true
+  }
+
+  const hashTitleCount = sources.filter(
+    s => s.kind === 'learning-proposal' && HASH_ONLY_LEARNING_TITLE_PATTERN.test(s.title.trim().toLowerCase()),
+  ).length
+  if (hashTitleCount > sources.length / 2) return true
+
+  return false
+}
 
 function scoreBucketFor(sources: PatternCandidateSource[]): PatternCandidateScoreBucket {
   const uniqueSourceCount = new Set(sources.map(s => s.id)).size
@@ -396,8 +443,9 @@ export interface PlanPatternCandidatesInput {
  * Build deterministic cluster candidates from source artifacts and decide which
  * candidates may proceed to the agent drafting step.
  *
- * Filter order (fixed): weak cluster -> open-proposal overlap -> hard suppression ->
- * soft suppression (without upgrade threshold) -> unsafe evidence placeholder -> rank -> cap.
+ * Filter order (fixed): weak cluster -> quality suppression (overbroad / hash-title-only) ->
+ * open-proposal overlap -> hard suppression -> soft suppression (without upgrade threshold) ->
+ * unsafe evidence placeholder -> rank -> cap.
  *
  * Pure function: no I/O, no side effects.
  */
@@ -416,6 +464,7 @@ export function planPatternCandidates(input: PlanPatternCandidatesInput): Patter
     invalidSource: 0,
     noOp: 0,
     failed: 0,
+    qualitySuppressed: 0,
   }
 
   // Accepted proposals immediately retire their source IDs from active clustering.
@@ -439,10 +488,19 @@ export function planPatternCandidates(input: PlanPatternCandidatesInput): Patter
     }
   })
 
+  const afterQualityFilter: PatternCandidate[] = []
+  for (const candidate of builtCandidates) {
+    if (isLowQualityCandidate(candidate.sources)) {
+      counts.qualitySuppressed += 1
+      continue
+    }
+    afterQualityFilter.push(candidate)
+  }
+
   const closedRecords = resolveClosedSuppressionRecords(input.existing)
 
   const afterOpenOverlap: PatternCandidate[] = []
-  for (const candidate of builtCandidates) {
+  for (const candidate of afterQualityFilter) {
     const openMatches = input.existing.openByFingerprint.get(candidate.fingerprint)
     const candidateIds = new Set(candidate.sourceIds)
     let overlapsOpen = openMatches !== undefined && openMatches.length > 0
@@ -546,7 +604,8 @@ export function planPatternCandidates(input: PlanPatternCandidatesInput): Patter
     counts.hardSuppressed === 0 &&
     counts.softSuppressed === 0 &&
     counts.unsafe === 0 &&
-    counts.lowSignal === 0
+    counts.lowSignal === 0 &&
+    counts.qualitySuppressed === 0
   ) {
     counts.noOp = 1
   }
@@ -656,6 +715,7 @@ export interface PatternDetectResult {
   candidatesEmitted: number
   tokenLoadFailure: boolean
   scanFailure: boolean
+  qualitySuppressed: number
 }
 
 /** Result of loading solution-doc files from disk: contents plus unreadable-file count. */
@@ -785,6 +845,7 @@ async function main(): Promise<void> {
     candidatesEmitted: 0,
     tokenLoadFailure: false,
     scanFailure: false,
+    qualitySuppressed: 0,
   }
 
   let digestCandidates: PatternCandidateDigest[] = []
@@ -839,13 +900,15 @@ async function main(): Promise<void> {
       plan.counts.duplicateOpenOverlap +
       plan.counts.hardSuppressed +
       plan.counts.softSuppressed +
-      plan.counts.unsafe
+      plan.counts.unsafe +
+      plan.counts.qualitySuppressed
     result.lowSignalSkipped = plan.counts.lowSignal
     result.duplicateOpenOverlap = plan.counts.duplicateOpenOverlap
     result.hardSuppressed = plan.counts.hardSuppressed
     result.softSuppressed = plan.counts.softSuppressed
     result.unsafe = plan.counts.unsafe
     result.capped = plan.counts.capped
+    result.qualitySuppressed = plan.counts.qualitySuppressed
     result.candidatesEmitted = plan.candidates.length
 
     digestCandidates = plan.candidates.map(candidate =>

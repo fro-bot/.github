@@ -102,6 +102,7 @@ jobs:
               echo "| Invalid sources | $(jq '.invalidSources // 0' "$result") |"
               echo "| Candidates scanned | $(jq '.candidatesScanned // 0' "$result") |"
               echo "| Low-signal skipped | $(jq '.lowSignalSkipped // 0' "$result") |"
+              echo "| Quality-suppressed | $(jq '.qualitySuppressed // 0' "$result") |"
               echo "| Duplicate/open-overlap | $(jq '.duplicateOpenOverlap // 0' "$result") |"
               echo "| Hard-suppressed | $(jq '.hardSuppressed // 0' "$result") |"
               echo "| Soft-suppressed | $(jq '.softSuppressed // 0' "$result") |"
