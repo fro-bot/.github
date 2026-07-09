@@ -581,10 +581,7 @@ export function buildCandidateDigest(input: BuildCandidateDigestInput): PatternC
       tokens,
       fingerprint: input.candidate.fingerprint,
     })
-    if (!gate.allowed) {
-      throw new Error('Pattern candidate source title failed public-output gate')
-    }
-    return gate.sanitizedContent
+    return gate.allowed ? gate.sanitizedContent : '[source title withheld: failed public-output gate]'
   })
 
   const digest: PatternCandidateDigest = {

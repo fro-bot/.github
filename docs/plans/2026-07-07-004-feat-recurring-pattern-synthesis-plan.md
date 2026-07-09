@@ -213,7 +213,7 @@ flowchart TD
 **Verification:**
 - Planner outputs a counts-only digest distinguishing proposed, capped, low-signal, duplicate/open-overlap, hard-suppressed, soft-suppressed, unsafe, invalid-source, no-op, and failed states.
 
-- [ ] **Unit 3: Agent proposal digest and deterministic issue opener**
+- [x] **Unit 3: Agent proposal digest and deterministic issue opener**
 
 **Goal:** Let the agent draft bounded pattern proposal bodies, then deterministically validate and open proposal issues.
 

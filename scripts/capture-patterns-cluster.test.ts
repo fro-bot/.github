@@ -440,6 +440,35 @@ describe('planPatternCandidates: accepted retirement', () => {
     expect(result.counts.duplicateOpenOverlap).toBe(0)
     expect(result.counts.noOp).toBe(1)
   })
+
+  it('handles all sources retired as a no-op rather than duplicate or low-signal output', () => {
+    const sourceB = makeSource({id: 'source-b'})
+    const sources = [makeSource(), sourceB]
+    const acceptedFingerprint = buildSourceFingerprint(['source-a', 'source-b'])
+    const existing: ExistingPatternProposals = {
+      openByFingerprint: new Map(),
+      closedByFingerprint: new Map([
+        [
+          acceptedFingerprint,
+          [
+            makeIssue({
+              state: 'closed',
+              labels: ['pattern-proposal', PATTERN_PROPOSAL_OUTCOME_LABELS.accepted],
+              body: `<!-- pattern-proposal:fingerprint=${acceptedFingerprint} -->\n<!-- pattern-proposal:source-ids=source-a,source-b -->`,
+            }),
+          ],
+        ],
+      ]),
+      invalidMarkerCount: 0,
+    }
+
+    const result = plan({sources, existing})
+
+    expect(result.candidates).toHaveLength(0)
+    expect(result.counts.noOp).toBe(1)
+    expect(result.counts.duplicateOpenOverlap).toBe(0)
+    expect(result.counts.lowSignal).toBe(0)
+  })
 })
 
 describe('planPatternCandidates: unsafe candidate handling', () => {
@@ -614,7 +643,7 @@ describe('buildCandidateDigest', () => {
     expect(digest.sourceTitles.length).toBe(candidate.sourceIds.length)
   })
 
-  it('throws instead of masking a source title that fails the public-output gate', () => {
+  it('withholds a source title that fails the public-output gate without throwing', () => {
     const blockingTokens = makePublicOutputTokens({
       privateTokens: new Set<string>(['private-token']),
       redactedCanonicalIds: new Set<string>(),
@@ -629,8 +658,8 @@ describe('buildCandidateDigest', () => {
       scoreBucket: 'moderate' as const,
     }
 
-    expect(() => buildCandidateDigest({candidate, runCount: 1, publicOutputTokens: blockingTokens})).toThrow(
-      'Pattern candidate source title failed public-output gate',
-    )
+    const digest = buildCandidateDigest({candidate, runCount: 1, publicOutputTokens: blockingTokens})
+
+    expect(digest.sourceTitles).toContain('[source title withheld: failed public-output gate]')
   })
 })
