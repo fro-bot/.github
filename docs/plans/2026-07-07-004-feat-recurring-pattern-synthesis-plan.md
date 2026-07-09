@@ -163,7 +163,7 @@ flowchart TD
 **Verification:**
 - The pure model can load and classify sources/proposals without opening issues or invoking the agent.
 
-- [ ] **Unit 2: Candidate clustering, scoring, and suppression planner**
+- [x] **Unit 2: Candidate clustering, scoring, and suppression planner**
 
 **Goal:** Build deterministic cluster candidates and decide which candidates may be sent to the agent for proposal drafting.
 

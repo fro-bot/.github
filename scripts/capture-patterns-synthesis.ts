@@ -203,6 +203,23 @@ export function classifyPatternProposalOutcome(issue: ExistingPatternProposalIss
 // Source artifact model
 // ---------------------------------------------------------------------------
 
+/**
+ * Structured correction-behavior signals used by the cluster/scoring planner.
+ * to distinguish repeated correction substance from superficial keyword overlap.
+ * Derived from frontmatter (solution docs) or title tokens (learning proposals) —
+ * never from raw body prose.
+ */
+export interface PatternSourceSignals {
+  /** `module` frontmatter field (solution docs) or empty string. */
+  module: string
+  /** `tags` frontmatter field (solution docs) or empty array. */
+  tags: string[]
+  /** `problem_type` frontmatter field (solution docs) or empty string. */
+  problemType: string
+  /** Lowercase, tokenized, stopword-filtered tokens derived from the source title. */
+  titleTokens: string[]
+}
+
 /** A single source artifact eligible for pattern clustering. */
 export interface PatternSourceArtifact {
   /** Stable public ID: filename stem for solution docs, merge SHA for learning proposals. */
@@ -210,6 +227,16 @@ export interface PatternSourceArtifact {
   kind: 'solution-doc' | 'learning-proposal'
   /** Public-safe, dereferenceable link — separate from identity. */
   link: string
+  /** Public-safe title used for display and digest source-title gating. */
+  title: string
+  /**
+   * ISO 8601 date string used for recency ranking (`date` frontmatter field for
+   * solution docs; issue creation date for learning proposals). Empty string when
+   * unavailable — sorts as least-recent.
+   */
+  date: string
+  /** Structured correction-behavior signals for clustering. */
+  signals: PatternSourceSignals
 }
 
 /** Result of collecting source artifacts from one corpus segment. */
@@ -220,6 +247,56 @@ export interface SourceCollectionResult {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Generic English stopwords plus repo-generic tokens filtered from title tokenization.
+ * Kept small and deterministic — this is display/clustering support, not NLP.
+ */
+const TITLE_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'but',
+  'by',
+  'do',
+  'does',
+  'fix',
+  'for',
+  'from',
+  'has',
+  'have',
+  'in',
+  'into',
+  'is',
+  'it',
+  'not',
+  'of',
+  'on',
+  'or',
+  'that',
+  'the',
+  'this',
+  'to',
+  'was',
+  'were',
+  'will',
+  'with',
+])
+
+/**
+ * Tokenize a title into lowercase, stopword-filtered word tokens.
+ * Pure function: no I/O.
+ */
+export function tokenizeTitle(title: string): string[] {
+  return title
+    .toLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .filter(token => token.length >= 3 && !TITLE_STOPWORDS.has(token))
 }
 
 function splitFrontmatter(content: string): {frontmatter: Record<string, unknown>; body: string} {
@@ -288,15 +365,32 @@ export function collectSolutionDocSources(files: Record<string, string>, headSha
     const path = paths[0]
     if (path === undefined) continue
 
-    // Frontmatter is parsed to validate the doc is readable; only the stem determines identity.
+    // Frontmatter is parsed to validate the doc is readable and to extract clustering
+    // signals; only the stem determines identity.
+    let frontmatter: Record<string, unknown>
     try {
-      splitFrontmatter(files[path] ?? '')
+      frontmatter = splitFrontmatter(files[path] ?? '').frontmatter
     } catch {
       invalidCount += 1
       continue
     }
 
-    sources.push({id: stem, kind: 'solution-doc', link: buildSolutionDocLink(path, headSha)})
+    const title = typeof frontmatter.title === 'string' ? frontmatter.title : stem
+    const moduleField = typeof frontmatter.module === 'string' ? frontmatter.module : ''
+    const tags = Array.isArray(frontmatter.tags)
+      ? frontmatter.tags.filter((t): t is string => typeof t === 'string')
+      : []
+    const problemType = typeof frontmatter.problem_type === 'string' ? frontmatter.problem_type : ''
+    const date = typeof frontmatter.date === 'string' ? frontmatter.date : ''
+
+    sources.push({
+      id: stem,
+      kind: 'solution-doc',
+      link: buildSolutionDocLink(path, headSha),
+      title,
+      date,
+      signals: {module: moduleField, tags, problemType, titleTokens: tokenizeTitle(title)},
+    })
   }
 
   return {sources, invalidCount}
@@ -306,6 +400,12 @@ export function collectSolutionDocSources(files: Record<string, string>, headSha
 export interface LearningProposalIssueInput {
   readonly number: number
   readonly body: string | null | undefined
+  /** Public-safe issue title, used as display title and clustering signal source. */
+  readonly title: string
+  /** ISO 8601 issue creation date, used for recency ranking. */
+  readonly createdAt: string
+  /** Issue label names, used as tag-equivalent clustering signals. */
+  readonly labels: readonly string[]
 }
 
 const CAPTURED_LEARNING_MERGE_SHA_PATTERN = /<!-- captured-learning:merge_sha=([a-f0-9]{7,40}) -->/u
@@ -331,7 +431,14 @@ export function collectLearningProposalSources(issues: readonly LearningProposal
       invalidCount += 1
       continue
     }
-    sources.push({id: sha, kind: 'learning-proposal', link: buildLearningProposalLink(issue.number)})
+    sources.push({
+      id: sha,
+      kind: 'learning-proposal',
+      link: buildLearningProposalLink(issue.number),
+      title: issue.title,
+      date: issue.createdAt,
+      signals: {module: '', tags: [...issue.labels], problemType: '', titleTokens: tokenizeTitle(issue.title)},
+    })
   }
 
   return {sources, invalidCount}

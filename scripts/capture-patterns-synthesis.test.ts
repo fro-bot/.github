@@ -314,7 +314,13 @@ describe('collectLearningProposalSources', () => {
   it('happy path: parses a learning-proposal issue with a captured merge-SHA marker', () => {
     const sha = 'abc123def456abc123def456abc123def456abc1'
     const issues: LearningProposalIssueInput[] = [
-      {number: 42, body: `Some proposal body\n<!-- captured-learning:merge_sha=${sha} -->`},
+      {
+        number: 42,
+        body: `Some proposal body\n<!-- captured-learning:merge_sha=${sha} -->`,
+        title: 'Example proposal title',
+        createdAt: '2026-06-01T00:00:00Z',
+        labels: ['learning-proposal'],
+      },
     ]
     const result = collectLearningProposalSources(issues)
     expect(result.invalidCount).toBe(0)
@@ -325,21 +331,33 @@ describe('collectLearningProposalSources', () => {
   })
 
   it('edge case: missing merge-SHA marker excludes the issue and increments invalid-source counts', () => {
-    const issues: LearningProposalIssueInput[] = [{number: 43, body: 'No marker here'}]
+    const issues: LearningProposalIssueInput[] = [
+      {number: 43, body: 'No marker here', title: 't', createdAt: '2026-06-01T00:00:00Z', labels: []},
+    ]
     const result = collectLearningProposalSources(issues)
     expect(result.sources).toHaveLength(0)
     expect(result.invalidCount).toBe(1)
   })
 
   it('edge case: malformed merge-SHA marker excludes the issue and increments invalid-source counts', () => {
-    const issues: LearningProposalIssueInput[] = [{number: 44, body: '<!-- captured-learning:merge_sha= -->'}]
+    const issues: LearningProposalIssueInput[] = [
+      {
+        number: 44,
+        body: '<!-- captured-learning:merge_sha= -->',
+        title: 't',
+        createdAt: '2026-06-01T00:00:00Z',
+        labels: [],
+      },
+    ]
     const result = collectLearningProposalSources(issues)
     expect(result.sources).toHaveLength(0)
     expect(result.invalidCount).toBe(1)
   })
 
   it('edge case: null body excludes the issue and increments invalid-source counts', () => {
-    const issues: LearningProposalIssueInput[] = [{number: 45, body: null}]
+    const issues: LearningProposalIssueInput[] = [
+      {number: 45, body: null, title: 't', createdAt: '2026-06-01T00:00:00Z', labels: []},
+    ]
     const result = collectLearningProposalSources(issues)
     expect(result.sources).toHaveLength(0)
     expect(result.invalidCount).toBe(1)
@@ -348,7 +366,13 @@ describe('collectLearningProposalSources', () => {
   it('privacy: source links use a stable issues URL without titles or body excerpts', () => {
     const sha = 'def456abc123def456abc123def456abc123def4'
     const issues: LearningProposalIssueInput[] = [
-      {number: 46, body: `Sensitive title context\n<!-- captured-learning:merge_sha=${sha} -->`},
+      {
+        number: 46,
+        body: `Sensitive title context\n<!-- captured-learning:merge_sha=${sha} -->`,
+        title: 'Sensitive title context',
+        createdAt: '2026-06-01T00:00:00Z',
+        labels: [],
+      },
     ]
     const result = collectLearningProposalSources(issues)
     expect(result.sources[0]?.link).toBe('https://github.com/fro-bot/.github/issues/46')
