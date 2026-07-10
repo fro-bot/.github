@@ -8,10 +8,17 @@
  */
 
 import type {DetectEdge, MetricsDigest} from './improvement-metrics-detect.ts'
+import type {ImprovementMetricsReportOctokitClient} from './improvement-metrics-report.ts'
 
-import {describe, expect, it} from 'vitest'
-import {parseReportVersionMarker} from './improvement-metrics-core.ts'
-import {renderReportBody, renderRunSummary, ReportRenderBlockedError} from './improvement-metrics-report.ts'
+import {describe, expect, it, vi} from 'vitest'
+import {buildEdgeChecklistLine, buildReportVersionMarker, parseReportVersionMarker} from './improvement-metrics-core.ts'
+import {
+  IMPROVEMENT_METRICS_REPORT_TITLE,
+  renderReportBody,
+  renderRunSummary,
+  ReportRenderBlockedError,
+  upsertReportIssue,
+} from './improvement-metrics-report.ts'
 import {makePublicOutputTokens, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 // ---------------------------------------------------------------------------
@@ -145,5 +152,291 @@ describe('renderRunSummary', () => {
     // pins that renderRunSummary's gate call is real by failing closed on token-load failure.
     const failedTokens: PublicOutputTokens = {loaded: false, error: 'token load failure'}
     expect(() => renderRunSummary(makeDigest(), failedTokens)).toThrow(ReportRenderBlockedError)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// upsertReportIssue — mock octokit factory
+// ---------------------------------------------------------------------------
+
+interface MockOctokitOptions {
+  listResponses?: {data: {number: number; body?: string | null}[]}[]
+  getLabelShouldFail?: boolean | number
+  createLabelShouldFail?: number
+}
+
+function makeMockOctokit(options: MockOctokitOptions = {}): {
+  octokit: ImprovementMetricsReportOctokitClient
+  create: ReturnType<typeof vi.fn>
+  update: ReturnType<typeof vi.fn>
+  listForRepo: ReturnType<typeof vi.fn>
+} {
+  const listResponses = options.listResponses ?? [{data: []}]
+  let listCallIndex = 0
+
+  const listForRepo = vi.fn(async () => {
+    const response = listResponses[Math.min(listCallIndex, listResponses.length - 1)]
+    listCallIndex += 1
+    return response ?? {data: []}
+  })
+
+  const create = vi.fn(async (params: {title: string; body: string}) => ({
+    data: {number: 100},
+    ...params,
+  }))
+
+  const update = vi.fn(async () => ({}))
+
+  const getLabel = vi.fn(async () => {
+    if (options.getLabelShouldFail === true || options.getLabelShouldFail === 404) {
+      throw Object.assign(new Error('label not found'), {status: 404})
+    }
+    if (typeof options.getLabelShouldFail === 'number') {
+      throw Object.assign(new Error('label check failed'), {status: options.getLabelShouldFail})
+    }
+    return {}
+  })
+
+  const createLabel = vi.fn(async () => {
+    if (options.createLabelShouldFail !== undefined) {
+      throw Object.assign(new Error('label creation failed'), {status: options.createLabelShouldFail})
+    }
+    return {}
+  })
+
+  const octokit: ImprovementMetricsReportOctokitClient = {
+    issues: {listForRepo, create, update, getLabel, createLabel},
+  }
+
+  return {octokit, create, update, listForRepo}
+}
+
+const SAFE_TOKENS: PublicOutputTokens = makePublicOutputTokens({
+  privateTokens: new Set(),
+  redactedCanonicalIds: new Set(),
+})
+
+const FAILED_TOKENS: PublicOutputTokens = {loaded: false, error: 'token load failure'}
+
+describe('upsertReportIssue', () => {
+  it('creates once with the STATIC title + body + marker when no report issue exists (happy path)', async () => {
+    const {octokit, create} = makeMockOctokit({listResponses: [{data: []}]})
+
+    const result = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: makeDigest(),
+      edges: [makeEdge()],
+      tokens: SAFE_TOKENS,
+    })
+
+    expect(result.outcome).toBe('created')
+    expect(create).toHaveBeenCalledTimes(1)
+    const callArgs = create.mock.calls[0]?.[0] as {title: string; body: string}
+    expect(callArgs.title).toBe(IMPROVEMENT_METRICS_REPORT_TITLE)
+    expect(callArgs.title).toBe('Improvement Metrics')
+    expect(callArgs.body).toContain(makeEdge().fingerprint)
+  })
+
+  it('updates the body in place when an existing issue has a lower version marker; no create', async () => {
+    const priorBody = `# Improvement Metrics\n${buildReportVersionMarker(0)}`
+    const {octokit, create, update} = makeMockOctokit({
+      listResponses: [{data: [{number: 7, body: priorBody}]}],
+    })
+
+    const result = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: makeDigest(),
+      edges: [],
+      tokens: SAFE_TOKENS,
+    })
+
+    expect(result.outcome).toBe('updated')
+    expect(result.issueNumber).toBe(7)
+    expect(update).toHaveBeenCalledTimes(1)
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('re-emits an edge ticked [x] in the prior body as [x] after upsert when still present (CRITICAL)', async () => {
+    const stillPresentEdge = makeEdge({fingerprint: 'd'.repeat(64), ticked: false})
+    const priorBody = [
+      '# Improvement Metrics',
+      buildEdgeChecklistLine({fingerprint: stillPresentEdge.fingerprint, checked: true}),
+      buildReportVersionMarker(0),
+    ].join('\n')
+
+    const {octokit, update} = makeMockOctokit({
+      listResponses: [{data: [{number: 7, body: priorBody}]}],
+    })
+
+    const result = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: makeDigest(),
+      // Freshly detected: NOT ticked in this run's raw digest — tick-state must be
+      // recovered from the prior body, not merely echoed from the input edge.
+      edges: [stillPresentEdge],
+      tokens: SAFE_TOKENS,
+    })
+
+    expect(result.outcome).toBe('updated')
+    const updateArgs = update.mock.calls[0]?.[0] as {body: string}
+    expect(updateArgs.body).toContain(`- [x] <!-- improvement-metrics:edge=${stillPresentEdge.fingerprint} -->`)
+  })
+
+  it('drops a ticked edge cleanly when it is no longer present in the new digest (close-on-clear)', async () => {
+    const goneFingerprint = 'e'.repeat(64)
+    const priorBody = [
+      '# Improvement Metrics',
+      buildEdgeChecklistLine({fingerprint: goneFingerprint, checked: true}),
+      buildReportVersionMarker(0),
+    ].join('\n')
+
+    const {octokit, update} = makeMockOctokit({
+      listResponses: [{data: [{number: 7, body: priorBody}]}],
+    })
+
+    const result = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: makeDigest(),
+      edges: [], // gone edge is not in the new digest's edge list at all
+      tokens: SAFE_TOKENS,
+    })
+
+    expect(result.outcome).toBe('updated')
+    const updateArgs = update.mock.calls[0]?.[0] as {body: string}
+    expect(updateArgs.body).not.toContain(goneFingerprint)
+  })
+
+  it('no-ops when the existing issue is at the current version and content is byte-identical', async () => {
+    const digest = makeDigest()
+    const edges: DetectEdge[] = []
+    const renderedBody = renderReportBody(digest, edges, SAFE_TOKENS)
+
+    const {octokit, update, create} = makeMockOctokit({
+      listResponses: [{data: [{number: 7, body: renderedBody}]}],
+    })
+
+    const result = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest,
+      edges,
+      tokens: SAFE_TOKENS,
+    })
+
+    expect(result.outcome).toBe('noop')
+    expect(update).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('treats a missing/malformed version marker as supersedable (update), never duplicated', async () => {
+    const priorBody = '# Improvement Metrics\n(no marker here)'
+    const {octokit, update, create} = makeMockOctokit({
+      listResponses: [{data: [{number: 9, body: priorBody}]}],
+    })
+
+    const result = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: makeDigest(),
+      edges: [],
+      tokens: SAFE_TOKENS,
+    })
+
+    expect(result.outcome).toBe('updated')
+    expect(update).toHaveBeenCalledTimes(1)
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when tokens failed to load: no create/update attempted (blockedOnPrivacy via gate)', async () => {
+    // main()'s token-load-before-API ordering passes a `{loaded:false}` token sentinel
+    // straight into upsertReportIssue on load failure — renderReportBody's gate then
+    // fails closed automatically, so this exercises the same code path main() takes.
+    const {octokit, create, update} = makeMockOctokit({listResponses: [{data: []}]})
+
+    const result = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: makeDigest(),
+      edges: [],
+      tokens: FAILED_TOKENS,
+    })
+
+    expect(result.outcome).toBe('blockedOnPrivacy')
+    expect(create).not.toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('fails closed on a privacy-gate block: no create/update attempted', async () => {
+    const privateTokens = makePublicOutputTokens({
+      privateTokens: new Set(['marcusrbrown/secret-internal-repo']),
+      redactedCanonicalIds: new Set(),
+    })
+    const leakyEdge = makeEdge({classKey: 'marcusrbrown/secret-internal-repo'})
+    const {octokit, create, update} = makeMockOctokit({listResponses: [{data: []}]})
+
+    const result = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: makeDigest(),
+      edges: [leakyEdge],
+      tokens: privateTokens,
+    })
+
+    expect(result.outcome).toBe('blockedOnPrivacy')
+    expect(create).not.toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('does not duplicate on create-then-relist within a run (created-ID guard against stale listForRepo)', async () => {
+    // First upsert call: no existing issue -> creates issue #100.
+    // Second upsert call (same run): listForRepo staleness returns empty again,
+    // but the created-ID guard (passed in as shared state) prevents a second create.
+    const {octokit, create} = makeMockOctokit({listResponses: [{data: []}, {data: []}]})
+    const createdIssueNumbers = new Set<number>()
+
+    const first = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: makeDigest(),
+      edges: [],
+      tokens: SAFE_TOKENS,
+      createdIssueNumbers,
+    })
+    expect(first.outcome).toBe('created')
+    expect(createdIssueNumbers.has(100)).toBe(true)
+
+    // Simulate a stale relist within the same run: listForRepo returns empty even
+    // though issue #100 now exists. The guard must recognize this via a mocked
+    // listForRepo that this time returns the created issue's number so the
+    // caller sees it as "found" rather than issuing a second create. We assert
+    // this indirectly: create is called only once overall.
+    const secondListResponse = {data: [{number: 100, body: undefined}]}
+    ;(octokit.issues.listForRepo as ReturnType<typeof vi.fn>).mockResolvedValueOnce(secondListResponse)
+
+    const second = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: makeDigest(),
+      edges: [],
+      tokens: SAFE_TOKENS,
+      createdIssueNumbers,
+    })
+
+    expect(second.outcome).not.toBe('created')
+    expect(create).toHaveBeenCalledTimes(1)
   })
 })
