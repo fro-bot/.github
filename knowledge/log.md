@@ -2738,3 +2738,24 @@ Sources: https://github.com/fro-bot/dashboard (SHA cb5190d259e68b26b7102d86b2e2e
 Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
+
+## [2026-07-10 08:45] ingest | repo:fro-bot/fro-bot.github.io
+
+No-delta re-survey of `fro-bot/fro-bot.github.io` (HEAD `3e44653`, unchanged). Additive update to `fro-bot--fro-bot-github-io.md`.
+
+Delta from prior survey (2026-06-26): **none.** The repo remains a static domain holder frozen at inception.
+
+- **HEAD unchanged** — still the single `Create CNAME` commit from 2026-02-09 (151 days frozen). `git/trees/main?recursive=1` returns one blob (`CNAME` → `208ca8c`, 8 bytes = `fro.bot`), `truncated: false`. No README, no `.github`, no workflows (`.github/workflows` → 404).
+- **Pages config byte-for-byte identical** to 2026-06-26: `status: built`, `build_type: legacy`, source `main:/`, `custom_404: false`, `https_enforced: false`, `protected_domain_state: unverified`, cert `approved` for `fro.bot`/`www.fro.bot` expiring **2026-09-07** (59 days out — no renewal pressure).
+- **Issue #1** (CodeQL/Scorecard parity) still the only open issue.
+- **No Fro Bot workflow** — all four follow-up recommendations (HTTPS enforcement, Probot Settings, Fro Bot workflow, README) carried forward. A follow-up draft PR to add a minimal Fro Bot workflow remains warranted and should be proposed separately.
+
+Reads limited to repo metadata, root tree listing, Pages config, open-issue list, and a `.github/workflows` existence check per untrusted-input constraint. Modified only `knowledge/wiki/repos/fro-bot--fro-bot-github-io.md`, `knowledge/index.md`, `knowledge/log.md`. No GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+
+## [2026-07-10 08:46] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
