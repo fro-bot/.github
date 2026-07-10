@@ -64,6 +64,46 @@ spine and no auth." The shipped Phase-1 dashboard *does* use operator auth (a de
 OAuth App + signed cookie) because it holds a GitHub App read key and must be operator-only.
 "No spine" still holds; "no auth" does not.
 
+## Reconciliation (2026-07-10) — spine shipped, autonomy tier essentially complete
+
+A full grounding pass on 2026-07-10 found the map stale in one consistent direction: every
+capability is further along than the 2026-06-21 rebaseline claimed. Verified deltas:
+
+- **S1 (web/HTTP control surface):** shipped in source in `fro-bot/agent` — the authenticated
+  inbound operator surface exists (launch work / query state / SSE stream) distinct from
+  outbound `POST /v1/announce`; the umbrella issue `fro-bot/agent#907` is CLOSED; operator
+  contract advanced to v1.6.0. Live end-to-end deploy-verification remains the one open item
+  (tracked in `fro-bot/.github#3512`).
+- **S2 (operator web auth):** LIVE in production at `dashboard.fro.bot` — browser GitHub
+  OAuth (PKCE) + signed session + CSRF + origin binding, not shared-secret HMAC. The earlier
+  logout-session-invalidation bug (`fro-bot/dashboard#156`) is fixed.
+- **R1 (dashboard PWA):** Phase 1 read-only deployed and live; the interactive surface
+  (launch, approval decision, SSE run stream) is substantially built and flag-gated; the
+  earlier mock operator-client was retired in favor of the frozen canonical contract.
+  Remaining: a Cancel UI and pinning to contract v1.6.0.
+- **R2 (push notifications):** was "not started"; now in-progress — the push transport
+  (VAPID, subscription store, dispatcher, service worker) is shipped end-to-end; only the
+  in-notification action-response capability (approve/reject from the notification itself)
+  remains unbuilt.
+- **R3 (web-viewable/editable wiki):** confirmed still not started — the only capability
+  matching its original status.
+- **A2 (self-maintenance):** the bounded-PR correction machinery has GRADUATED —
+  `plan-consistency` is now an active graduated claim kind (no longer "shipped disarmed,
+  pending signal").
+- **A3 (cross-repo planning & dispatch):** shipped and proven in production across
+  multi-repo goals (owner-aware two-App dispatch, prompt-only, hash-bound worker receipts,
+  watchdog tracking).
+- **New autonomy loops not in the original map:** two control-plane self-maintenance loops
+  shipped since — a recurring-pattern synthesis loop (Capture Patterns) and a
+  self-improvement metric loop (Improvement Metrics: discovery + human-confirmed
+  recidivism, rendered to a perpetual report issue). Both manual-dispatch, dry-run-default,
+  report-only.
+
+Strategic read: the Tier-2 control-plane autonomy arc (A1/A2/A3 + the two new loops) is
+essentially complete, and the genuinely-open north-star threads now live in the other repos
+(R2 inline actions, R3 web wiki) and the Tier-3 frontier, plus the one open spine
+deploy-verification.
+
 ## Current state (verified 2026-06-15)
 
 Grounded against live source, not aspiration:
@@ -117,23 +157,27 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   gateway today is outbound-only (`POST /v1/announce`); S1 adds authenticated inbound
   command endpoint(s), a state retrieval/stream path, and an internal command/work-unit
   model. _Owner: agent. Depends on: new gateway surface (not just the existing announce
-  path) + the S2 auth model. Effort/risk: H._
+  path) + the S2 auth model. Effort/risk: H._ Status: shipped in source, `fro-bot/agent#907`
+  closed, contract v1.6.0, deploy-verification open.
 - **S2 — Operator identity & web auth.** A real user-auth model (vs the current
   shared-secret HMAC) so a human can authenticate to the control surface from a browser.
-  _Owner: agent + infra. Depends on: S1. Effort/risk: M._
+  _Owner: agent + infra. Depends on: S1. Effort/risk: M._ Status: live in production
+  (OAuth/PKCE/session/CSRF/origin binding), logout bug fixed.
 
 ### Tier 1 — Operator reach (depends on the spine)
 
 - **R1 — Authenticated dashboard PWA.** Manage installations, track issues across repos,
   launch "missions," see agent state — Hermes/OpenClaw-style. _Owner: dashboard (new) +
-  infra (hosting). Depends on: S1, S2. Effort/risk: H._
+  infra (hosting). Depends on: S1, S2. Effort/risk: H._ Status: Phase 1 deployed live;
+  interactive surface substantially built, flag-gated.
 - **R2 — Push notifications with action handling.** Surface critical events and let the
   operator respond/approve from the notification. _Owner: dashboard + agent. Depends on:
-  S1, S2, R1. Effort/risk: M._
+  S1, S2, R1. Effort/risk: M._ Status: in-progress — transport shipped, inline actions
+  remain.
 - **R3 — Web-viewable/editable wiki.** The Obsidian-based Karpathy wiki rendered on the
   web, with operator edits that flow back through the `data`-branch authority model.
   _Owner: control plane + dashboard. Depends on: R1 (for the editable path; read-only
-  view is independent). Effort/risk: M._
+  view is independent). Effort/risk: M._ Status: not started.
 
 ### Tier 2 — Autonomy depth (mostly control-plane-native)
 
@@ -149,13 +193,23 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   predicted._
 - **A2 — Self-maintenance & good-GitHub-citizen depth.** Extend autoheal into broader
   self-improvement of repo + control-plane operation. **First two surfaces shipped
-  2026-07-03:** status-truth maintenance loop and wiki authority repair. Bounded-PR
-  correction machinery shipped disarmed; graduation pending accepted-outcome signal.
-  _Owner: control plane. Depends on: nothing new (autoheal is the seed). Effort/risk: M._
-- **A3 — Cross-repo planning & agent dispatch.** Plan work spanning related repos and
-  dispatch agents in those repos to coordinate. _Owner: control plane + Systematic +
-  agent. Depends on: A1/A2 maturity; partial on S1 for cross-agent coordination.
-  Effort/risk: H._
+  2026-07-03:** status-truth maintenance loop and wiki authority repair. The bounded-PR
+  correction machinery has graduated, with `plan-consistency` as the first active graduated
+  claim kind. _Owner: control plane. Depends on: nothing new (autoheal is the seed).
+  Effort/risk: M._
+- **A3 — Cross-repo planning & agent dispatch. SHIPPED, proven in production.** Plan work
+  spanning related repos and dispatch agents in those repos to coordinate — owner-aware
+  two-App dispatch, prompt-only with correlation embedded in the prompt, hash-bound worker
+  completion receipts, watchdog tracking. _Owner: control plane + Systematic + agent.
+  Depends on: A1/A2 maturity; partial on S1 for cross-agent coordination. Effort/risk: H._
+- **C4 — Recurring-pattern synthesis. SHIPPED.** A control-plane loop that clusters
+  repeated signals across proposal/solution history and opens `pattern-proposal` issues for
+  human triage. Manual-dispatch, dry-run-default, report-only. _Owner: control plane._
+- **O8 — Self-improvement metric loop. SHIPPED, proven live.** Measures whether the
+  self-improvement loops actually reduce repeated work: pairs discovery (newly codified
+  classes, keyed on immutable git add-date) with human-confirmed recidivism, plus a
+  pending-confirmation backlog, rendered to one perpetual report issue. Manual-dispatch,
+  dry-run-default, report-only. _Owner: control plane._
 
 ### Tier 3 — The frontier (needs Tiers 1+2)
 
