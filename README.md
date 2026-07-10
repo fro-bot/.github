@@ -219,6 +219,7 @@ Fro Bot control plane:
 | **Dispatch Renovate** | Dispatch Renovate runs across repos tracked in `metadata/renovate.yaml` | Every 4 hours at `:30`, dispatch |
 | **Gateway Rollout Tracker** | Track and report on gateway rollout status across managed repos | Schedule, dispatch |
 | **Status Truth** | Detect drift in typed public coordination claims and manage proposal issues with counts-only summaries | Sunday 21:00 UTC, dispatch |
+| **Improvement Metrics** | Measure whether recurring fixes actually decline: discovery, confirmed recidivism, and a pending-confirmation backlog on one perpetual report issue | Manual dispatch |
 | **Reset Survey Status** | Manually clear stale survey state for one or more tracked repos on `data` | Manual dispatch |
 | **Wiki Lint** | Lint the authoritative wiki snapshot restored from `origin/data` | Sunday 20:00 UTC, dispatch |
 
@@ -362,6 +363,33 @@ Apply exactly one outcome label to record your decision:
 A closed proposal without one of these labels is `needs-outcome` — a derived state, not an operator label, that conservatively suppresses re-proposal of the same sources until new independent evidence appears.
 
 **Caps and evidence:** at most three new proposals open per run, ranked by independent source count, accepted-doc presence, and recency. Deterministic scripts own source loading, deduplication, suppression, privacy gating, and issue mutations; the agent only judges evidence and drafts bounded proposal bodies from a curated, privacy-gated digest — it never edits repo files, reads raw solution text, or receives private tokens.
+
+### Improvement Metrics
+
+None of the loops above answer the one question that actually matters: does the same class of fix keep coming back? The **Improvement Metrics** workflow measures that directly, as one paired reading rewritten to a single perpetual report issue each run.
+
+**What it measures:**
+
+- **Discovery** — distinct classes of fix newly codified into `docs/solutions/` in the current window. A class only counts once, on first codification; repeated proposals for something already documented never re-count.
+- **Confirmed recidivism** — codified classes that recurred, where a human confirmed the recurrence. Fro Bot never confirms its own findings.
+- **Backlog** — candidate recurrences it has detected but you haven't confirmed yet, with the oldest one's age. A growing, aging backlog is the loop calling out its own neglect, not a clean read.
+
+**Confirming a recurrence:**
+
+Each candidate `(event → class)` link is its own checklist line on the report issue. Tick the box to confirm it recurred. The tick persists across every future rewrite — the report is upserted in place by a hidden version marker, and any edge still present in a later run keeps whatever tick state you gave it. Nothing you confirm gets silently reset by the next run.
+
+**Running it:**
+
+`workflow_dispatch` only, no schedule. `dry_run` defaults to `true` — a dry run computes and logs counts but touches nothing. Set `dry_run` to `false` to actually create or update the report issue.
+
+**Report states**, one per run, never a blend:
+
+| State | Meaning |
+| --- | --- |
+| `insufficient-signal` | Too little codified history or discovery this window to say anything — no trend claimed |
+| `healthy` | Discovery holding or rising, confirmed recidivism low relative to discovery |
+| `ambiguous` | Discovery fell from the prior window, or the backlog has gone stale — not a claim of improvement or regression |
+| `failing` | Confirmed recidivism has caught up to or passed discovery — the same classes are recurring as fast as new ones get codified |
 
 ### Cross-Repo Goal Dispatch
 
