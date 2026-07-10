@@ -7,6 +7,7 @@ import {
   buildLiveStateSummary,
   buildReportVersionMarker,
   classifySourceType,
+  formatClassKeyForDisplay,
   IMPROVEMENT_METRICS_REPORT_LABEL,
   IMPROVEMENT_METRICS_REPORT_LABEL_DESCRIPTOR,
   parseEdgeChecklistLine,
@@ -55,6 +56,14 @@ describe('buildClassKey', () => {
   it('fails fast on control characters or newlines in a field value', () => {
     expect(() => buildClassKey({module: 'foo\nbar', component: 'x', problem_type: 'y'})).toThrow()
     expect(() => buildClassKey({module: 'foo', component: 'x\u0000y', problem_type: 'z'})).toThrow()
+  })
+})
+
+describe('formatClassKeyForDisplay', () => {
+  it('replaces the internal separator with a readable delimiter', () => {
+    const key = buildClassKey({module: 'foo', component: 'bar', problem_type: 'baz'})
+    expect(formatClassKeyForDisplay(key)).toBe('foo › bar › baz')
+    expect(formatClassKeyForDisplay(key)).not.toContain('\u0001')
   })
 })
 

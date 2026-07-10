@@ -77,7 +77,9 @@ describe('renderReportBody', () => {
     expect(body).toContain('oldest pending candidate: 5.5d')
     expect(body).toContain(edge.fingerprint)
     expect(body).toContain(edge.eventUrl)
-    expect(body).toContain(edge.classKey)
+    // Class key is rendered for display with a readable separator, not the raw control char.
+    expect(body).toContain('best_practice › scripts/foo.ts › unknown')
+    expect(body).not.toContain(edge.classKey)
   })
 
   it('round-trips the version marker', () => {

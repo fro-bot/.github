@@ -74,6 +74,16 @@ export function buildClassKey(frontmatter: ClassKeyFrontmatter): string {
   return segments.join(CLASS_KEY_SEPARATOR)
 }
 
+/**
+ * Render a class key for human display, replacing the internal control-character
+ * separator with a readable delimiter. Display-only: never feed the result back
+ * into fingerprinting or parsing — the canonical key from `buildClassKey` is the
+ * identity, this is cosmetic.
+ */
+export function formatClassKeyForDisplay(classKey: string): string {
+  return classKey.split(CLASS_KEY_SEPARATOR).join(' › ')
+}
+
 // ---------------------------------------------------------------------------
 // Source-type classification (closed vocabulary)
 // ---------------------------------------------------------------------------
