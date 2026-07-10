@@ -29,8 +29,8 @@ import {
   buildReportVersionMarker,
   IMPROVEMENT_METRICS_REPORT_LABEL,
   IMPROVEMENT_METRICS_REPORT_LABEL_DESCRIPTOR,
-  parseEdgeChecklistLine,
   parseReportVersionMarker,
+  recoverPriorTickState,
 } from './improvement-metrics-core.ts'
 import {applyPublicOutputGate, type PublicOutputTokens} from './status-truth-public-output.ts'
 
@@ -105,7 +105,9 @@ export function renderReportBody(
   lines.push(`Confirmed recidivism (ticked edges): ${digest.confirmedRecidivism}`)
   lines.push(
     `Pending backlog: ${digest.backlogCount}${
-      digest.oldestPendingAgeDays === null ? '' : ` (oldest pending candidate: ${digest.oldestPendingAgeDays}d)`
+      digest.oldestPendingAgeDays === null
+        ? ''
+        : ` (oldest pending candidate: ${digest.oldestPendingAgeDays.toFixed(1)}d)`
     }`,
   )
   lines.push('')
@@ -171,27 +173,6 @@ export function renderRunSummary(digest: MetricsDigest, tokens: PublicOutputToke
   }
 
   return gate.sanitizedContent
-}
-
-// ---------------------------------------------------------------------------
-// Tick-state recovery (mirrors improvement-metrics-detect.ts's recoverPriorTickState)
-// ---------------------------------------------------------------------------
-
-/**
- * Recover ticked edge fingerprints from a prior report issue body by scanning
- * every line for a checklist entry (Unit 1's `parseEdgeChecklistLine`).
- *
- * Duplicated locally (rather than imported from `improvement-metrics-detect.ts`)
- * to keep this module's upsert shell self-contained and independently testable
- * without pulling in the detect module's git/fs I/O surface.
- */
-export function recoverPriorTickState(body: string): Set<string> {
-  const ticked = new Set<string>()
-  for (const line of body.split('\n')) {
-    const entry = parseEdgeChecklistLine(line.trim())
-    if (entry !== null && entry.checked) ticked.add(entry.fingerprint)
-  }
-  return ticked
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +384,7 @@ interface ReportResult {
   digestReadFailure: boolean
 }
 
-async function readDigestFile(path: string): Promise<DigestFile> {
+export async function readDigestFile(path: string): Promise<DigestFile> {
   const {readFile} = await import('node:fs/promises')
   const raw = await readFile(path, 'utf8')
   return JSON.parse(raw) as DigestFile

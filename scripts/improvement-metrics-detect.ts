@@ -28,10 +28,15 @@ import {
   buildClassKey,
   buildEdgeFingerprint,
   IMPROVEMENT_METRICS_REPORT_LABEL,
-  parseEdgeChecklistLine,
+  recoverPriorTickState,
   type ClassKeyFrontmatter,
   type ReportState,
 } from './improvement-metrics-core.ts'
+
+// Re-exported for callers (and tests) that import tick-state recovery from
+// the detect module; the implementation now lives in improvement-metrics-core.ts
+// so detect and report cannot drift.
+export {recoverPriorTickState} from './improvement-metrics-core.ts'
 
 // ---------------------------------------------------------------------------
 // Tunable constants
@@ -569,19 +574,6 @@ function buildSolutionDocRecords(files: Record<string, string>, addDates: Map<st
     })
   }
   return records
-}
-
-/**
- * Recover ticked edge fingerprints from the prior report issue body by scanning
- * every line for a checklist entry (Unit 1's `parseEdgeChecklistLine`).
- */
-export function recoverPriorTickState(body: string): Set<string> {
-  const ticked = new Set<string>()
-  for (const line of body.split('\n')) {
-    const entry = parseEdgeChecklistLine(line.trim())
-    if (entry !== null && entry.checked) ticked.add(entry.fingerprint)
-  }
-  return ticked
 }
 
 async function fetchPriorTickState(

@@ -38,7 +38,7 @@ function makeDigest(overrides: Partial<MetricsDigest> = {}): MetricsDigest {
     priorDiscovery: 2,
     confirmedRecidivism: 1,
     backlogCount: 2,
-    oldestPendingAgeDays: 5,
+    oldestPendingAgeDays: 5.4791,
     state: 'healthy',
     ...overrides,
   }
@@ -72,7 +72,9 @@ describe('renderReportBody', () => {
     expect(body).toContain('Prior-window discovery: 2')
     expect(body).toContain('Confirmed recidivism (ticked edges): 1')
     expect(body).toContain('Pending backlog: 2')
-    expect(body).toContain('oldest pending candidate: 5d')
+    // Rendered rounded to one decimal place; the raw float is preserved on the digest
+    // itself for the state-ladder comparison (not rounded there).
+    expect(body).toContain('oldest pending candidate: 5.5d')
     expect(body).toContain(edge.fingerprint)
     expect(body).toContain(edge.eventUrl)
     expect(body).toContain(edge.classKey)

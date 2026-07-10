@@ -157,13 +157,22 @@ describe('improvement-metrics.yaml workflow contract', () => {
     expect(agentStep).toBeUndefined()
   })
 
-  it('the detect and report node|tee pipelines run under pipefail so a node failure fails the step', () => {
-    const detectStep = detectJob?.steps.find(step => step.id === 'detect')
+  it('the report node|tee pipeline runs under pipefail so a node failure fails the step', () => {
     const reportStep = reportJob?.steps.find(step => step.id === 'report')
-    expect(String(detectStep?.run ?? '')).toContain('| tee')
-    expect(String((detectStep as WorkflowStep & {shell?: string})?.shell ?? '')).toContain('pipefail')
     expect(String(reportStep?.run ?? '')).toContain('| tee')
     expect(String((reportStep as WorkflowStep & {shell?: string})?.shell ?? '')).toContain('pipefail')
+  })
+
+  it('the detect step runs under pipefail without a shell', () => {
+    const detectStep = detectJob?.steps.find(step => step.id === 'detect')
+    expect(String((detectStep as WorkflowStep & {shell?: string})?.shell ?? '')).toContain('pipefail')
+  })
+
+  it('the detect step does NOT tee stdout over its own IMPROVEMENT_METRICS_DIGEST_PATH — stdout is a different, flatter shape than the file the script writes, and tee would clobber the file after the write (regression guard for the detect/report wiring defect)', () => {
+    const detectStep = detectJob?.steps.find(step => step.id === 'detect')
+    const run = String(detectStep?.run ?? '')
+    expect(run).not.toContain('tee')
+    expect(run.trim()).toBe('node scripts/improvement-metrics-detect.ts')
   })
 
   it('the digest artifact retains for 1 day, not the default longer window', () => {

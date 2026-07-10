@@ -65,14 +65,17 @@ jobs:
       # Compute the event -> codified-class edge digest and write it to
       # IMPROVEMENT_METRICS_DIGEST_PATH. Writing the file directly avoids the
       # shell-injection vector of echoing structured data via GITHUB_OUTPUT.
+      # Do NOT tee stdout into this same path: the script's own stdout is a
+      # different flat DetectResult shape (no `digest`/`edges` wrapper) than
+      # the file it writes via writeImprovementMetricsDigestFile, and tee
+      # would clobber the file with stdout after the script's write.
       - name: 🔍 Detect improvement-metric edges
         id: detect
         env:
           GITHUB_TOKEN: ${{ github.token }}
           IMPROVEMENT_METRICS_DIGEST_PATH: ${{ runner.temp }}/improvement-metrics-digest.json
-        # pipefail: a failure in `node ...` must fail this step even though `tee`
-        # (the last command in the pipe) exits 0.
-        run: node scripts/improvement-metrics-detect.ts | tee "$RUNNER_TEMP/improvement-metrics-digest.json"
+        # pipefail retained even without a pipe, for consistency with the report step.
+        run: node scripts/improvement-metrics-detect.ts
         shell: bash -Eeuo pipefail {0}
 
       - name: 📤 Upload digest artifact

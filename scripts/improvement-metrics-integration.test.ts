@@ -20,10 +20,20 @@
 import type {ProposalEvent, SolutionDocRecord} from './improvement-metrics-detect.ts'
 import type {ImprovementMetricsReportOctokitClient} from './improvement-metrics-report.ts'
 
-import {describe, expect, it, vi} from 'vitest'
+import {randomUUID} from 'node:crypto'
+import {rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import process from 'node:process'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 import {buildClassKey, buildEdgeFingerprint} from './improvement-metrics-core.ts'
-import {computeMetrics, recoverPriorTickState} from './improvement-metrics-detect.ts'
-import {renderReportBody, ReportRenderBlockedError, upsertReportIssue} from './improvement-metrics-report.ts'
+import {computeMetrics, recoverPriorTickState, writeImprovementMetricsDigestFile} from './improvement-metrics-detect.ts'
+import {
+  readDigestFile,
+  renderReportBody,
+  ReportRenderBlockedError,
+  upsertReportIssue,
+} from './improvement-metrics-report.ts'
 import {makePublicOutputTokens, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 const NOW = new Date('2026-07-10T00:00:00.000Z')
@@ -264,5 +274,63 @@ describe('improvement-metrics golden path (detect -> render -> upsert)', () => {
     expect(result.outcome).toBe('blockedOnPrivacy')
     expect(create).not.toHaveBeenCalled()
     expect(update).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Detect-write -> report-read file serialization contract
+// ---------------------------------------------------------------------------
+
+describe('detect-file-write -> report-file-read serialization contract', () => {
+  const priorDigestPathEnv = process.env.IMPROVEMENT_METRICS_DIGEST_PATH
+  let digestPath: string
+
+  afterEach(async () => {
+    if (priorDigestPathEnv === undefined) {
+      delete process.env.IMPROVEMENT_METRICS_DIGEST_PATH
+    } else {
+      process.env.IMPROVEMENT_METRICS_DIGEST_PATH = priorDigestPathEnv
+    }
+    await rm(digestPath, {force: true})
+  })
+
+  it('the {digest, edges} shape written by writeImprovementMetricsDigestFile survives a real file round-trip into upsertReportIssue', async () => {
+    digestPath = join(tmpdir(), `improvement-metrics-digest-${randomUUID()}.json`)
+    process.env.IMPROVEMENT_METRICS_DIGEST_PATH = digestPath
+
+    const {digest, edges} = computeMetrics({
+      solutionDocs: SOLUTION_DOCS,
+      proposalEvents: PROPOSAL_EVENTS,
+      priorTickState: new Set(),
+      now: NOW,
+    })
+
+    // Real detect-side writer: writes {digest, edges} to IMPROVEMENT_METRICS_DIGEST_PATH.
+    await writeImprovementMetricsDigestFile(digest, edges)
+
+    // Real report-side reader: reads the same path and casts to {digest, edges}.
+    const digestFile = await readDigestFile(digestPath)
+
+    // This is the exact assertion that fails against the `tee`-clobber defect: if the
+    // workflow's tee had overwritten the file with the detect script's flat stdout
+    // DetectResult (no `digest`/`edges` wrapper), `digestFile.digest` and
+    // `digestFile.edges` would be `undefined` here, and upsertReportIssue would throw
+    // (or silently render `undefined` state) instead of returning `created`/`updated`.
+    expect(digestFile.digest).toEqual(digest)
+    expect(digestFile.edges).toEqual(edges)
+
+    const {octokit, create} = makeMockOctokit(null)
+
+    const result = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: digestFile.digest,
+      edges: digestFile.edges,
+      tokens: NO_PRIVATE_TOKENS,
+    })
+
+    expect(result.outcome).toBe('created')
+    expect(create).toHaveBeenCalledTimes(1)
   })
 })

@@ -198,6 +198,22 @@ export function parseEdgeChecklistLine(line: string): EdgeChecklistEntry | null 
   return {fingerprint, checked: false}
 }
 
+/**
+ * Recover ticked edge fingerprints from a prior report issue body by scanning
+ * every line for a checklist entry (`parseEdgeChecklistLine`).
+ *
+ * Shared by the detect and report modules so the tick-recovery logic cannot
+ * drift between the two I/O shells.
+ */
+export function recoverPriorTickState(body: string): Set<string> {
+  const ticked = new Set<string>()
+  for (const line of body.split('\n')) {
+    const entry = parseEdgeChecklistLine(line.trim())
+    if (entry !== null && entry.checked) ticked.add(entry.fingerprint)
+  }
+  return ticked
+}
+
 // ---------------------------------------------------------------------------
 // Live-state summary encoding (mirrors status-truth-proposals.ts)
 // ---------------------------------------------------------------------------
