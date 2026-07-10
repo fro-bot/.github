@@ -27,6 +27,7 @@ import {isRecord} from './capture-learnings-privacy.ts'
 import {
   buildEdgeChecklistLine,
   buildReportVersionMarker,
+  formatClassKeyForDisplay,
   IMPROVEMENT_METRICS_REPORT_LABEL,
   IMPROVEMENT_METRICS_REPORT_LABEL_DESCRIPTOR,
   parseReportVersionMarker,
@@ -69,7 +70,7 @@ function renderCandidateChecklist(edges: readonly DetectEdge[]): string[] {
   const sorted = [...edges].sort((a, b) => a.fingerprint.localeCompare(b.fingerprint))
   return sorted.map(edge => {
     const checklistLine = buildEdgeChecklistLine({fingerprint: edge.fingerprint, checked: edge.ticked})
-    return `${checklistLine}\n  - class: \`${edge.classKey}\` — ${edge.eventUrl}`
+    return `${checklistLine}\n  - class: \`${formatClassKeyForDisplay(edge.classKey)}\` — ${edge.eventUrl}`
   })
 }
 
