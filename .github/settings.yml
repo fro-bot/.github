@@ -65,3 +65,6 @@ labels:
   - name: pattern-proposal:superseded
     color: '#cfd3d7'
     description: Pattern proposal superseded by a newer proposal
+  - name: improvement-metrics-report
+    color: '#0e8a16'
+    description: Improvement-metric loop report tracking event -> codified-class edges
