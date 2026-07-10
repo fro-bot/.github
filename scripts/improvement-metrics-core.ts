@@ -104,8 +104,12 @@ export function classifySourceType(labels: readonly string[]): SourceType {
 /** Control separator joining the two immutable edge-fingerprint inputs. */
 const EDGE_FINGERPRINT_SEPARATOR = '\u0001'
 
-// eslint-disable-next-line no-control-regex -- intentional: rejects raw control chars (incl. \n, \r) in edge inputs
-const EDGE_FINGERPRINT_FORBIDDEN_PATTERN = /[\u0000-\u001F\u007F]/u
+// Rejects raw control chars (incl. \n, \r) in edge inputs, but permits \u0001 (0x01) since a
+// well-formed classKey from buildClassKey legitimately embeds it as the segment separator
+// (CLASS_KEY_SEPARATOR) — buildEdgeFingerprint(buildClassKey(...), eventId) is the intended
+// composition and must not fail-fast on that separator.
+// eslint-disable-next-line no-control-regex -- intentional control-char denylist
+const EDGE_FINGERPRINT_FORBIDDEN_PATTERN = /[\0\u0002-\u001F\u007F]/u
 
 /**
  * Build a stable, lowercase hex sha256 fingerprint for an (event -> class) edge.
