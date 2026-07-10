@@ -1,6 +1,7 @@
 ---
 title: A code path exercised only by pre-built fixtures is an untested seam — test the seam, not the endpoints
 date: 2026-07-06
+last_updated: 2026-07-10
 category: best-practices
 module: scripts/cross-repo-dispatch.ts
 problem_type: best_practice
@@ -10,6 +11,7 @@ applies_when:
   - a function has unit tests but its real callers feed it differently than the fixtures do
   - bugs keep recurring at the same integration boundary despite green unit suites
   - you are writing a parser for input that legitimately mixes free-text and structured content
+  - the boundary is mediated by a file or shell pipeline between steps, not a function call
 tags:
   - integration-test
   - golden-path
@@ -81,6 +83,34 @@ Two secondary notes worth carrying forward:
    returning `malformed` on a bad line while the other silently continues is a latent divergence —
    reconcile it or document why the scopes differ.
 
+### Recurrence: file-mediated step boundary (improvement-metrics loop, 2026-07-10)
+
+A fourth instance of the same lesson, four days later, in a different module — this time the seam was
+a **file between two workflow steps**, not a function call. The detect step wrote a structured
+`{digest, edges}` object to `IMPROVEMENT_METRICS_DIGEST_PATH`, and a *flatter* `DetectResult` (no
+`digest`/`edges` wrapper) to stdout. The workflow ran `node scripts/improvement-metrics-detect.ts |
+tee "$SAME_PATH"`, so `tee` overwrote the file with the stdout shape after the script's own write.
+The report step read `{digest: undefined, edges: undefined}` and the live path was dead on arrival on
+the first real dispatch. Every unit test passed, because every test crossed the detect → report
+boundary **in-memory**, passing pre-built `{digest, edges}` objects straight into the consumer — none
+ran the detect subprocess against a real file, and none parsed the workflow's `run:` string.
+
+The fix needed **two** complementary regression guards, and they are not interchangeable:
+
+1. A **real-file round-trip** integration test: write the digest with the real writer to a temp path,
+   read it back with the real reader, then drive the consumer end-to-end and assert it produces a
+   result rather than throwing on `undefined`. This fails against the tee-clobber code.
+2. A **workflow-contract** test: parse the workflow YAML and assert the detect step's `run` is exactly
+   `node scripts/improvement-metrics-detect.ts` with no `tee` over its own digest path. This fails the
+   moment someone re-adds the redirect, even if the script's file-write shape is unchanged.
+
+The generalization: the prevention rule extends from *function-mediated composition* to **any step
+boundary that production walks differently than the fixtures do** — a file, a shell pipeline, a
+subprocess. When one side writes a structured artifact to a sink *and* writes a different shape to
+stdout, a shell redirect can collapse them onto the same path; you need one test for the on-disk
+shape and one for the pipeline that produced it. Either alone leaves a single line of YAML one revert
+away from re-introducing the bug.
+
 ## Related
 
 - Source PRs (merge commits): `faa6e2569e110d7cf272bbc9e2d60679d4ba7230` (two-phase parser +
@@ -88,3 +118,10 @@ Two secondary notes worth carrying forward:
   live rehearsal first exposed)
 - `docs/solutions/best-practices/worker-authored-hash-bound-receipts-2026-07-06.md` — the same loop's
   completion half, verified with the same golden-path discipline
+- Fourth recurrence (file-mediated step boundary): PR #3672, `fix(improvement-metrics): stop tee from
+  clobbering the detect digest file` — regression guards in
+  `scripts/improvement-metrics-integration.test.ts` (real-file round-trip) and
+  `scripts/improvement-metrics-workflow.test.ts` (detect step does not tee over its own digest path)
+- `docs/solutions/best-practices/edge-keyed-confirmation-markers-2026-07-10.md` and
+  `docs/solutions/best-practices/immutable-history-keys-for-trend-recompute-2026-07-10.md` — sibling
+  learnings from the same PR
