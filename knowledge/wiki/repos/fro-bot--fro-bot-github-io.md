@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/fro-bot.github.io
 created: 2026-05-07
-updated: 2026-07-10
+updated: 2026-06-26
 sources:
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
@@ -19,9 +19,6 @@ sources:
   - url: https://github.com/fro-bot/fro-bot.github.io
     sha: 3e44653c4d185b239b44b3af12255d18c86463ab
     accessed: 2026-06-26
-  - url: https://github.com/fro-bot/fro-bot.github.io
-    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
-    accessed: 2026-07-10
 tags: [github-pages, custom-domain, fro-bot-org, infrastructure]
 related:
   - marcusrbrown--systematic
@@ -141,4 +138,3 @@ Given this repo has no application code and a single static file, most of these 
 | 2026-06-05 | `3e44653` | No-op re-survey. HEAD still unchanged (116 days since last push on 2026-02-09). Repo structure, Pages config, TLS cert (expires 2026-07-09, **now 34 days out — approaching renewal**), missing-integrations table, and issue #1 all unchanged. HTTPS still not enforced. No Fro Bot workflow. All follow-up recommendations persist. TLS cert expiry is the only new time-sensitive observation. |
 | 2026-06-15 | `3e44653` | Re-survey. HEAD unchanged (126 days since last push on 2026-02-09); still the single `Create CNAME` commit. **TLS cert renewed:** expiry moved 2026-07-09 → **2026-09-07** (GitHub auto-renewed before the flagged window — no action needed). Pages config (`legacy` build, source `main:/`, `custom_404: false`, `https_enforced: false`), `protected_domain_state: unverified`, missing-integrations table, and issue #1 (CodeQL/Scorecard parity) all unchanged. HTTPS still not enforced. No Fro Bot workflow — all four follow-up recommendations carried forward. |
 | 2026-06-26 | `3e44653` | No-delta re-survey. HEAD still frozen (140 days since last push on 2026-02-09); single `Create CNAME` commit, lone `CNAME` blob (`fro.bot`) is the entire tree. Pages config byte-for-byte identical to 2026-06-15 (`legacy`, source `main:/`, `custom_404: false`, `https_enforced: false`, `protected_domain_state: unverified`, cert `approved` for `fro.bot`/`www.fro.bot` expiring **2026-09-07**). Issue #1 (CodeQL/Scorecard parity) still the only open issue. No Fro Bot workflow, no Probot Settings, no README/license. Recorded repo `description` ("Custom domain pages for @fro-bot") for the first time. All four follow-up recommendations carried forward unchanged. |
-| 2026-07-10 | `3e44653` | No-delta re-survey. HEAD still frozen (151 days since last push on 2026-02-09); `git/trees/main` returns the lone `CNAME` blob (`208ca8c`, 8 bytes = `fro.bot`) with `truncated: false`. Pages config byte-for-byte identical to 2026-06-26 (`status: built`, `legacy`, source `main:/`, `custom_404: false`, `https_enforced: false`, `protected_domain_state: unverified`, cert `approved` for `fro.bot`/`www.fro.bot` expiring **2026-09-07** — 59 days out, no renewal window pressure yet). Issue #1 (CodeQL/Scorecard parity) still the only open issue. `.github/workflows` still 404 — no Fro Bot workflow, no Probot Settings, no README/license. All four follow-up recommendations carried forward unchanged. |

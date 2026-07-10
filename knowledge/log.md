@@ -2739,23 +2739,26 @@ Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
 
-## [2026-07-10 08:45] ingest | repo:fro-bot/fro-bot.github.io
+## [2026-07-10 08:53] ingest | repo:marcusrbrown/.dotfiles
 
-No-delta re-survey of `fro-bot/fro-bot.github.io` (HEAD `3e44653`, unchanged). Additive update to `fro-bot--fro-bot-github-io.md`.
+Surveyed marcusrbrown/.dotfiles at SHA `e8ebc5cc3736d0c6f9d21a574687457dfd4edbb6` (last push 2026-07-10, public, license `null`, 20 stars, 6 open issues). Additive update to [[marcusrbrown--dotfiles]] plus related [[dotfiles]] topic and [[mise]] entity. This window's theme: **deferring to upstream plugin defaults and pruning divergent config surfaces** while adding bespoke local tooling where no upstream exists.
 
-Delta from prior survey (2026-06-26): **none.** The repo remains a static domain holder frozen at inception.
+- **Config-surface deletions (material simplification).** `.config/opencode/magic-context.jsonc` and `.config/opencode/aft.jsonc` are both **gone** (404) — the two most heavily-tuned config files documented through 2026-06-27. `@cortexkit/opencode-magic-context@0.31.5` and `@cortexkit/aft-opencode@0.46.0` now run on plugin defaults. `tui.json` reduced to `{ "theme": "catppuccin" }` — its separate plugin array dropped; the TUI now inherits the single `opencode.json` plugin set.
+- **`opencode.json` deltas.** Top-level default `"model": "opencode-go/kimi-k2.6"` **removed** (routing deferred to OMO-slim presets). `tavily` MCP **removed** — MCP set 4 → 3 (context7, grep_app, websearch/Exa; Exa key+tools moved into URL query). `opencode-copilot-delegate@0.12.0` plugin **dropped** from both opencode.json and tui.json. Auth `@cortexkit/opencode-anthropic-auth` 1.10.3 → 1.13.0; systematic 2.32.1 → 2.33.2.
+- **Contradiction/stale-ref noted.** OMO-slim `librarian` presets still list `tavily` in their `mcps` array although `tavily` is no longer a registered MCP server — flagged on the page as config drift.
+- **OMO-slim model migration.** Anthropic Sonnet refs moved `claude-sonnet-4-6` → `claude-sonnet-5` (fixer + council alpha); `designer` moved `gemini-3.1-pro-preview` → `github-copilot/gemini-3.5-flash`; `mixed` orchestrator gained `variant: xhigh`, fixer gained `variant: low`.
+- **`systematic.jsonc` expanded** with `categories` (design/docs/document-review/research/review) and `agents` (repo-research-analyst, spec-flow-analyzer, systematic-implementer) model routing — filling the config gap left by the magic-context/aft deletions.
+- **New local tooling.** `ollama-distill` pipeline (`.config/opencode/scripts/ollama-distill.ts` + `mise run distill`) reads the OpenCode session SQLite DB and distills transcripts via local Ollama to `~/.local/state/ollama-distill/reports/`. Six new repo-scoped skills under `.config/opencode/skills/` (clonedeps, codemap, content-research-writer, copilot-cloud-agent, file-organizer, simplify) + a `research` subagent (`.config/opencode/agents/research.md`). `copilot-cloud-agent` skill is the likely replacement for the dropped copilot-delegate plugin.
+- **Toolchain/infra bumps.** mise: rust 1.97.0, go 1.26.5, pnpm 11.10.0, npm 11.18.0, deno 2.9.2, prettier 3.9.4, biome 2.5.2, opencode-ai 1.17.12, claude-code 2.1.128, agent-browser 0.31.1, copilot 1.0.68, puppeteer 25.3.0, tsx 4.23.0; `@fro.bot/harness` 1.17.9 → 1.17.14-harness.e98fbc0f. Fro Bot agent v0.79.1 → v0.84.3; devcontainer base 2.1.7 → 2.1.9; `MISE_VERSION` 2026.6.14 → 2026.7.5.
+- **License.** Third consecutive survey with `licenseInfo: null` and no LICENSE/UNLICENSE file — treat as unspecified (was The Unlicense through 2026-06-06).
+- **Fro Bot workflow present** (`fro-bot.yaml`, `fro-bot/agent@v0.84.3`) — no follow-up draft PR needed.
 
-- **HEAD unchanged** — still the single `Create CNAME` commit from 2026-02-09 (151 days frozen). `git/trees/main?recursive=1` returns one blob (`CNAME` → `208ca8c`, 8 bytes = `fro.bot`), `truncated: false`. No README, no `.github`, no workflows (`.github/workflows` → 404).
-- **Pages config byte-for-byte identical** to 2026-06-26: `status: built`, `build_type: legacy`, source `main:/`, `custom_404: false`, `https_enforced: false`, `protected_domain_state: unverified`, cert `approved` for `fro.bot`/`www.fro.bot` expiring **2026-09-07** (59 days out — no renewal pressure).
-- **Issue #1** (CodeQL/Scorecard parity) still the only open issue.
-- **No Fro Bot workflow** — all four follow-up recommendations (HTTPS enforcement, Probot Settings, Fro Bot workflow, README) carried forward. A follow-up draft PR to add a minimal Fro Bot workflow remains warranted and should be proposed separately.
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifests/workflow files and pinned config; additive updates only (no overwrites), contradictions dated and preserved; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary).
 
-Reads limited to repo metadata, root tree listing, Pages config, open-issue list, and a `.github/workflows` existence check per untrusted-input constraint. Modified only `knowledge/wiki/repos/fro-bot--fro-bot-github-io.md`, `knowledge/index.md`, `knowledge/log.md`. No GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary.
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA e8ebc5cc3736d0c6f9d21a574687457dfd4edbb6)
 
-Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+## [2026-07-10 08:54] ingest | repo:marcusrbrown/.dotfiles
 
-## [2026-07-10 08:46] ingest | repo:fro-bot/fro-bot.github.io
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
-
-Sources: https://github.com/fro-bot/fro-bot.github.io
+Sources: https://github.com/marcusrbrown/.dotfiles

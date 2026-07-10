@@ -2,7 +2,7 @@
 type: entity
 title: mise
 created: 2026-04-18
-updated: 2026-05-24
+updated: 2026-07-10
 tags: [mise, tool-management, runtime-versions, asdf, dev-tools]
 aliases: [rtx]
 related:
@@ -18,23 +18,33 @@ Site: https://mise.jdx.dev/
 
 ## Usage Across Repos
 
-### [[marcusrbrown--dotfiles]] — current state (SHA `0bb24f0`, 2026-05-24)
+### [[marcusrbrown--dotfiles]] — current state (SHA `e8ebc5c`, 2026-07-10)
 
-**Language runtimes:** Node 24.16.0, Python 3.14.5, Rust 1.95.0, Go 1.26.3, Bun 1.3.14, Deno 2.8.0, Zig 0.15.2 (ZLS 0.16.0), pnpm 11.2.1 (major bump from 10.x), npm 11.15.0.
+**Language runtimes:** Node 24.18.0, Python 3.14.6, Rust 1.97.0, Go 1.26.5, Bun 1.3.14, Deno 2.9.2, Zig 0.15.2 (ZLS 0.16.0), pnpm 11.10.0, npm 11.18.0.
 
-**CLI tools (npm):** TypeScript 6.0.3, Prettier 3.8.3 (with `@bfra.me/prettier-config` 0.16.9), ast-grep 0.42.3, Playwright 1.60.0, Puppeteer 25.0.4, agent-browser 0.27.0, skills 1.5.7, ocx 2.0.11, tsx 4.22.3, rimraf 6.1.3, vibe-tools 0.63.3, `@github/copilot` 1.0.51 (new), `@biomejs/biome` 2.4.15.
+**CLI tools (npm):** TypeScript 6.0.3, Prettier 3.9.4 (with `@bfra.me/prettier-config` 0.16.9), ast-grep 0.43.0, Playwright 1.61.1, Puppeteer 25.3.0, agent-browser 0.31.1, skills 1.5.15, ocx 2.0.11, tsx 4.23.0, rimraf 6.1.3, vibe-tools 0.63.3, `@github/copilot` 1.0.68, `@biomejs/biome` 2.5.2, `@fro.bot/harness` 1.17.14-harness.e98fbc0f.
 
-**Manually pinned (Renovate disabled):** `opencode-ai` 1.15.5, `@anthropic-ai/claude-code` 2.1.112.
+**Manually pinned (Renovate disabled):** `opencode-ai` 1.17.12, `@anthropic-ai/claude-code` 2.1.128.
 
-**Aqua tools:** shfmt (`aqua:mvdan/sh`) 3.13.1, gitleaks (`aqua:gitleaks/gitleaks`) 8.30.1 (new — secret scanner).
+**Aqua tools:** shfmt (`aqua:mvdan/sh`) 3.13.1, gitleaks (`aqua:gitleaks/gitleaks`) 8.30.1.
 
-**Language servers (npm):** pyright 1.1.409, typescript-language-server 5.2.0.
+**Language servers (npm):** pyright 1.1.411, typescript-language-server 5.3.0.
 
-**Other:** cargo-binstall 1.19.1, `pipx:poetry` 2.4.1, `@marcusrbrown/infra` latest.
-
-**Notable removals:** `@cortexkit/opencode-magic-context`, `@cortexkit/aft-opencode`, `remark-language-server`, and `lolcrab` no longer appear in `[tools]`. The Cortexkit OpenCode plugins moved to `.config/opencode/opencode.json` under the `plugin` array, with their own Renovate custom manager picking up the pinned-version strings.
+**Other:** cargo-binstall 1.20.1, `pipx:poetry` 2.4.1, `@marcusrbrown/infra` latest.
 
 **Env:** `UV_SYSTEM_CERTS=true`, `NPM_TOKEN` templated from env, redacted env file at `~/.config/mise/.env.local`.
+
+**Tasks:** Beyond `format`/`install`/`opencode:doctor`, a new `distill` task runs the local Ollama session-distillation pipeline (`bun run ~/.config/opencode/scripts/ollama-distill.ts`). Full tool history lives in [[marcusrbrown--dotfiles]].
+
+### Historical Snapshot — [[marcusrbrown--dotfiles]] (SHA `0bb24f0`, 2026-05-24)
+
+Superseded by the entry above.
+
+**Language runtimes:** Node 24.16.0, Python 3.14.5, Rust 1.95.0, Go 1.26.3, Bun 1.3.14, Deno 2.8.0, Zig 0.15.2 (ZLS 0.16.0), pnpm 11.2.1, npm 11.15.0.
+
+**CLI tools (npm):** TypeScript 6.0.3, Prettier 3.8.3, ast-grep 0.42.3, Playwright 1.60.0, Puppeteer 25.0.4, agent-browser 0.27.0, skills 1.5.7, ocx 2.0.11, tsx 4.22.3, rimraf 6.1.3, vibe-tools 0.63.3, `@github/copilot` 1.0.51, `@biomejs/biome` 2.4.15.
+
+**Manually pinned:** `opencode-ai` 1.15.5, `@anthropic-ai/claude-code` 2.1.112. **Aqua:** shfmt 3.13.1, gitleaks 8.30.1. **Other:** cargo-binstall 1.19.1, `pipx:poetry` 2.4.1.
 
 ### Historical Snapshot — [[marcusrbrown--dotfiles]] (SHA `ae026c1`, 2026-04-22)
 
