@@ -256,6 +256,16 @@ A small wiki context excerpt is injected into every agent run by default. When t
 
 When a completed scan reports a purely mechanical finding, **Wiki Lint**'s `wiki-repair` job self-heals it in the same run: `index-drift` and `orphan-page` regenerate the wiki index, and `missing-frontmatter`/`invalid-frontmatter` get a per-page frontmatter repair limited to two derivable fields — `type` (from the page's directory) and `title` (copied verbatim from an existing H1). Every other finding, including any other frontmatter field, requires judgment and stays on the issue-only lifecycle (open/update/reopen/close via `wiki-lint-issue-sync`). Repairs commit to the `data` branch through the existing atomic-commit envelope and ride the normal `data → main` promotion path (auto-merge when the promoted diff is knowledge/metadata-only); they never touch `main` directly. Repair commit messages are a fixed, counts-free template — never page slugs, titles, or repo names. Issue closure for a repaired finding still runs through the next **Wiki Lint** scan's close-on-clear behavior, not the repair job itself.
 
+### Web-Rendered Wiki
+
+The wiki above is also published as a browsable site at **[fro-bot.github.io/.github](https://fro-bot.github.io/.github/)**, built with [Quartz](https://quartz.jzhao.xyz/) (config in [`quartz-site/`](quartz-site/)) and deployed via the **Publish Wiki** workflow. It rebuilds whenever wiki content lands on `main` — which happens through the weekly `data → main` promotion — or on manual dispatch.
+
+Be clear-eyed about what this is: the wiki only ever contains knowledge from public repos (private repos are blocked upstream, at survey, ingest, and the `data → main` promotion gate), so nothing here is newly exposed. But publishing it to a public, search-indexed site is still a deliberate choice — it aggregates and indexes content that was previously scattered across individual repo pages.
+
+Spot an error on a page? Every page has an "Edit this page on GitHub" link pointing at the `data` branch — the wiki's authoritative source. There's no web-based editing; fixes land as commits to `data` and promote to `main` on the usual schedule.
+
+If the site ever needs to come down fast, see [`docs/wiki-site-runbook.md`](docs/wiki-site-runbook.md) for the emergency-unpublish procedure.
+
 To manually re-survey a repo, pass its GitHub GraphQL `node_id` as the dispatch input:
 
 ```bash
