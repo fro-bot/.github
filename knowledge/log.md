@@ -2763,25 +2763,28 @@ Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
 
-## [2026-07-11 07:24] ingest | repo:marcusrbrown/.github
+## [2026-07-11 07:25] ingest | marcusrbrown/sparkle
 
-Re-surveyed marcusrbrown/.github at HEAD `2017dea` (pushed 2026-07-09). Pure dependency drift since the 2026-06-28 survey (`d516b2f`) — 9 commits, PRs #388–#396, four files touched, each a one-line version bump. No structural change, no new files, still 15 blobs, still no Fro Bot workflow.
+Re-surveyed `marcusrbrown/sparkle` (SHA `2ef1cf1632e5ce4173007487f163908adddf55a5`) — the eighth survey of this repo. Additive update to the existing repo page, index entry, and this log. No pages created.
 
-- **bfra-me/.github reusable workflows** v4.16.31 → **v4.16.35** (SHA `7c7e50a5` → `aac0d9b6`) in both `renovate.yaml` and `update-repo-settings.yaml`, via #388/#392/#395/#396.
-- **Prettier crossed a minor line** 3.8.4 → **3.9.4** via #389 (3.8.5), #390 (3.9.0), #391 (3.9.1), #393 (3.9.3), #394 (3.9.4). Propagated to `main.yaml` `PRETTIER_VERSION` env and `renovate.json5` post-upgrade task.
-- **Renovate preset unchanged** — still `github>marcusrbrown/renovate-config#4.5.9`. The v4 holdout continues: preset source is now at v5.2.4, leaving this repo ~5 major-line versions behind [[marcusrbrown--renovate-config]].
-- **`common-settings.yaml`, `settings.yml`, `.prettierrc.yaml`** all byte-stable. Governance template (squash-only, self-extending, `marcusrbrown`:admin/`fro-bot`:push, 48 labels) unchanged.
-- **Fro Bot workflow still absent.** `fro-bot` retains `push` access via the settings template but has no active `fro-bot.yaml`. Recommendation stands: a follow-up draft PR should add the single-file three-mode agent workflow (canonical shape per [[marcusrbrown--marcusrbrown-github-io]] / [[marcusrbrown--renovate-config]]). Per delivery constraints this run cannot open that PR; noted on the repo page for separate follow-up.
-- **Repo stats:** 4 stars, `subscribers_count` 2 (true watchers; API `watchers_count`=4 mirrors stars), 2 open issues (#37 settings-action migration, #214 Dependency Dashboard), 0 open PRs.
+Key deltas since the 2026-06-27 survey (SHA `81cbd99`):
 
-Touched pages: `wiki/repos/marcusrbrown--github.md` (source entry + `updated` + survey-history row + version refs), `index.md` (summary line refreshed). No topic/entity/comparison page changes justified — findings were repo-local dependency drift already covered by [[marcusrbrown--renovate-config]] and [[probot-settings]].
+- **pnpm major cutover `10.34.4` → `11.10.0`.** The security-flagged pnpm v11 bump (PR #1773, open at the last survey) has landed — confirmed by root `packageManager: pnpm@11.10.0`. `engines.pnpm` floor raised `>=9.15.4` → `>=11.8.0`. First pnpm major boundary crossed in this repo's survey series.
+- **Turborepo `2.9.18` → `2.10.4`** (first 2.10 minor). prettier `3.8.4` → `3.9.4`; tsx `4.22.4` → `4.23.0`. New devDeps observed: `@axe-core/cli` 4.12.1, `@lhci/cli` 0.15.1, `markdownlint` 0.39.0. `.node-version` holds `24.18.0`; `@types/node` 24.13.2, `tsdown` 0.16.8, full `@bfra.me/*` toolchain + TypeScript 5.9.3 unchanged.
+- **Fro Bot agent v0.79.1 → v0.85.0** (SHA `e7453bd`); `actions/checkout` still `df4cb1c` v6.0.3. Workflow count steady at 7 (`fro-bot.yaml` present — no follow-up draft PR needed). `apps/` (fro-jive, moo-dang) + `packages/` (config, error-testing, storybook, test-utils, theme, types, ui, utils) layout unchanged.
+- **Open PRs steady at 3 but reshaped.** #1773/#1771/#1745 all cleared; queue is now #1816 + #1787 (two fro-bot `chore(lint): apply auto-fixes from autohealing run` PRs — a new autoheal PR archetype for this repo) + #1812 (Renovate typedoc v0.28.20).
+- **Open non-PR issues 5 → 7** with two fresh autoheal-authored issues: **#1800 "llms.txt drift: pnpm version reference is stale"** and **#1799 "Stale TODOs"** on top of the four steady-state issues (#1666, #1665, #1664, #876, #212).
+- **Prior open question resolved.** #1800 shows the AUTOHEAL_PROMPT category-3 llms.txt-accuracy check *is* firing: `llms.txt` still text-pins `pnpm@10.33.4` (now a full major behind actual `11.10.0`), and the autoheal loop correctly opened an *issue* (not a PR) flagging it, matching the prompt contract. The earlier multi-survey drift persistence was the check not yet having run against this gap, not a broken check.
+- **#1666 "Daily Maintenance Report" stays OPEN** (second consecutive survey open) — the reopen-if-closed lifecycle behavior remains stable.
 
-Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifests, workflow and pinned-config files; additive updates only (no overwrites), contradictions dated and preserved; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary).
+Touched pages: `knowledge/wiki/repos/marcusrbrown--sparkle.md`, `knowledge/index.md`, `knowledge/log.md`.
 
-Sources: https://github.com/marcusrbrown/.github (SHA 2017dea1f7bc124211243798571ce4b3ff495040)
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files (no source-code reads); additive updates only (no overwrites), prior surveys preserved and dated; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary).
 
-## [2026-07-11 07:25] ingest | repo:marcusrbrown/.github
+Sources: https://github.com/marcusrbrown/sparkle (SHA 2ef1cf1632e5ce4173007487f163908adddf55a5)
 
-Surveyed marcusrbrown/.github and updated the control-plane wiki.
+## [2026-07-11 07:26] ingest | repo:marcusrbrown/sparkle
 
-Sources: https://github.com/marcusrbrown/.github
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
