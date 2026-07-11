@@ -119,6 +119,9 @@ describe('publish-wiki.yaml workflow contract', () => {
     expect(checkoutStep).toBeDefined()
     expect(String(checkoutStep?.with?.ref ?? '')).toContain('github.sha')
     expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
+    // Brand assets (icon.png) are Git LFS tracked; without lfs the build gets
+    // pointer files and the Favicon (sharp) emitter fails. Guard against drift.
+    expect(checkoutStep?.with?.lfs).toBe(true)
   })
 
   it('build step uses the local Quartz binary, never a bare npx quartz', () => {
