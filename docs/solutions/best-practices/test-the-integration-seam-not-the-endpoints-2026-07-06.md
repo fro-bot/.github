@@ -111,6 +111,10 @@ stdout, a shell redirect can collapse them onto the same path; you need one test
 shape and one for the pipeline that produced it. Either alone leaves a single line of YAML one revert
 away from re-introducing the bug.
 
+## Sibling class: the seam was exercised, but in the wrong topology
+
+A near-miss variant worth distinguishing: in the wiki publish pipeline's gate-module extraction, the seam *was* verified — the script was run from a foreign working directory to prove its dependency resolved — but the verification ran on a dev machine whose repo-root `node_modules` masked the CI job's empty tree. The seam test existed; the *environment topology* didn't match. That class (false-positive verification) is documented separately in [Verify in the CI topology, not just locally](verify-in-the-ci-topology-not-just-locally-2026-07-11.md); this doc's class is the seam that was never walked at all. The prevention overlaps: a seam test only counts when it reproduces the production shape of the boundary — including which files, trees, and metadata exist on each side.
+
 ## Related
 
 - Source PRs (merge commits): `faa6e2569e110d7cf272bbc9e2d60679d4ba7230` (two-phase parser +
