@@ -84,7 +84,10 @@ const SOLUTION_DOCS: readonly SolutionDocRecord[] = [RETRY_DOC, AUTH_DOC, CACHE_
 const RETRY_EVENT: ProposalEvent = {
   id: '201',
   title: 'Retry storm on 5xx errors during deploy',
-  labels: ['learning-proposal'],
+  // Tag match against RETRY_DOC.tags ('retries') is the strong-match signal here, deliberately
+  // independent of frontmatter.module — the mutation-proof test below rewrites RETRY_DOC.module
+  // to inject a private token, and the strong match must survive that mutation on its own merits.
+  labels: ['learning-proposal', 'retries'],
   createdAt: daysAgo(5),
   url: 'https://github.com/fro-bot/.github/issues/201',
 }

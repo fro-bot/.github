@@ -13,7 +13,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
 import {describe, expect, it} from 'vitest'
-import {buildEdgeFingerprint} from './improvement-metrics-core.ts'
+import {buildClassKey, buildEdgeFingerprint} from './improvement-metrics-core.ts'
 import {
   computeMetrics,
   fetchProposalEventsFromRepo,
@@ -22,7 +22,9 @@ import {
   scoreCandidateLink,
   writeImprovementMetricsDigestFile,
   type ComputeMetricsInput,
+  type ComputeMetricsResult,
   type ImprovementMetricsOctokitClient,
+  type PriorTickState,
   type ProposalEvent,
   type SolutionDocRecord,
 } from './improvement-metrics-detect.ts'
@@ -88,6 +90,44 @@ describe('scoreCandidateLink', () => {
     const result = scoreCandidateLink(event, doc)
     expect(result.score).toBe(0)
     expect(result.strongMatch).toBe(false)
+  })
+
+  it('a single generic shared title token is never a strong match on its own (generic-token noise defect)', () => {
+    // Two independent title-token hits ("drift", "detection") but zero module correlation:
+    // this is the exact shape of the #3667 x self-audit noise edge from the ground-truth walkthrough.
+    const event = makeEvent({
+      title: 'Pattern proposal: When building automated inspection or drift-detection systems',
+      labels: ['pattern-proposal'],
+    })
+    const doc = makeDoc({
+      title: 'Synthetic self-audit claim kinds for in-file drift detection',
+      tags: ['status-truth', 'synthetic-claims', 'drift-detection', 'frontmatter'],
+      frontmatter: {module: 'status-truth-detect'},
+    })
+    const result = scoreCandidateLink(event, doc)
+    // score clears the numeric threshold (2 title tokens x 10 = 20) but must not be a strong match:
+    // both shared tokens ("drift", "detection") are generic domain vocabulary with zero independent
+    // module-token correlation.
+    expect(result.score).toBeGreaterThanOrEqual(20)
+    expect(result.strongMatch).toBe(false)
+  })
+
+  it('one generic title token combined with an independent module-token match IS a strong match', () => {
+    // This is the true edge's exact anatomy: #3656 (status truth drift proposal) x the self-audit
+    // class. Only "drift" is shared in title, but "status"/"truth" independently correlate against
+    // the class's module tokens (status-truth-detect) -- cross-signal correlation, not generic noise.
+    const event = makeEvent({
+      title: 'Status truth: plan-consistency drift in docs/plans/2026-07-07-001-fix-a3-receipt-contract-state-plan.md',
+      labels: [],
+    })
+    const doc = makeDoc({
+      title: 'Synthetic self-audit claim kinds for in-file drift detection',
+      tags: ['status-truth', 'synthetic-claims', 'drift-detection', 'frontmatter'],
+      frontmatter: {module: 'status-truth-detect'},
+    })
+    const result = scoreCandidateLink(event, doc)
+    expect(result.score).toBeGreaterThanOrEqual(20)
+    expect(result.strongMatch).toBe(true)
   })
 })
 
@@ -325,6 +365,242 @@ describe('computeMetrics', () => {
     if (digest.confirmedRecidivism >= digest.discovery) {
       expect(digest.state).toBe('failing')
     }
+  })
+
+  it('temporal rule: an event at or before the class doc gitAddDate is founding evidence, not recurrence', () => {
+    const docs = [
+      makeDoc({
+        frontmatter: {module: 'a', component: undefined, problem_type: 'a'},
+        title: 'Retry idempotent writes after 5xx failures',
+        gitAddDate: daysAgo(10),
+      }),
+      makeDoc({
+        frontmatter: {module: 'b', component: undefined, problem_type: 'b'},
+        title: 'Completely unrelated cache invalidation topic',
+        tags: [],
+        gitAddDate: daysAgo(20),
+      }),
+      makeDoc({
+        frontmatter: {module: 'c', component: undefined, problem_type: 'c'},
+        title: 'Something else entirely off topic here',
+        tags: [],
+        gitAddDate: daysAgo(30),
+      }),
+    ]
+    // Event created strictly BEFORE the class doc's gitAddDate -- founding evidence, must not surface.
+    const foundingEvent = makeEvent({
+      id: 'founding',
+      title: 'Retry idempotent writes after 5xx failures',
+      createdAt: daysAgo(12),
+    })
+    const input: ComputeMetricsInput = {
+      solutionDocs: docs,
+      proposalEvents: [foundingEvent],
+      priorTickState: new Set(),
+      now: NOW,
+    }
+    const {edges} = computeMetrics(input)
+    expect(edges.filter(e => e.eventId === 'founding')).toHaveLength(0)
+  })
+
+  it('temporal rule: an event strictly after the class doc gitAddDate is eligible recurrence', () => {
+    const docs = [
+      makeDoc({
+        frontmatter: {module: 'a', component: undefined, problem_type: 'a'},
+        title: 'Retry idempotent writes after 5xx failures',
+        gitAddDate: daysAgo(10),
+      }),
+      makeDoc({
+        frontmatter: {module: 'b', component: undefined, problem_type: 'b'},
+        title: 'Completely unrelated cache invalidation topic',
+        tags: [],
+        gitAddDate: daysAgo(20),
+      }),
+      makeDoc({
+        frontmatter: {module: 'c', component: undefined, problem_type: 'c'},
+        title: 'Something else entirely off topic here',
+        tags: [],
+        gitAddDate: daysAgo(30),
+      }),
+    ]
+    const recurrenceEvent = makeEvent({
+      id: 'recurrence',
+      title: 'Retry idempotent writes after 5xx failures',
+      createdAt: daysAgo(3),
+    })
+    const input: ComputeMetricsInput = {
+      solutionDocs: docs,
+      proposalEvents: [recurrenceEvent],
+      priorTickState: new Set(),
+      now: NOW,
+    }
+    const {edges} = computeMetrics(input)
+    expect(edges.filter(e => e.eventId === 'recurrence')).toHaveLength(1)
+  })
+
+  it('temporal rule: an event created at exactly the class doc gitAddDate is founding evidence (not strictly after)', () => {
+    const sameInstant = daysAgo(10)
+    const docs = [
+      makeDoc({
+        frontmatter: {module: 'a', component: undefined, problem_type: 'a'},
+        title: 'Retry idempotent writes after 5xx failures',
+        gitAddDate: sameInstant,
+      }),
+      makeDoc({
+        frontmatter: {module: 'b', component: undefined, problem_type: 'b'},
+        title: 'Completely unrelated cache invalidation topic',
+        tags: [],
+        gitAddDate: daysAgo(20),
+      }),
+      makeDoc({
+        frontmatter: {module: 'c', component: undefined, problem_type: 'c'},
+        title: 'Something else entirely off topic here',
+        tags: [],
+        gitAddDate: daysAgo(30),
+      }),
+    ]
+    const coincidentEvent = makeEvent({
+      id: 'coincident',
+      title: 'Retry idempotent writes after 5xx failures',
+      createdAt: sameInstant,
+    })
+    const input: ComputeMetricsInput = {
+      solutionDocs: docs,
+      proposalEvents: [coincidentEvent],
+      priorTickState: new Set(),
+      now: NOW,
+    }
+    const {edges} = computeMetrics(input)
+    expect(edges.filter(e => e.eventId === 'coincident')).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// walkthrough ground truth (2026-07-11)
+// ---------------------------------------------------------------------------
+//
+// Live report #3674's first operator walkthrough adjudicated all 14 surfaced
+// edges: exactly ONE is a genuine recurrence (#3656 x status-truth-detect); 13
+// are noise (founding evidence or generic-token overlap). Fixture built from
+// real fetched data: `gh issue view N --repo fro-bot/.github --json
+// title,labels,createdAt` for events; `git log --diff-filter=A --format=%aI`
+// for class doc git-add dates. All values are public/immutable.
+
+describe('walkthrough ground truth (2026-07-11)', () => {
+  const GROUND_TRUTH_NOW = new Date('2026-07-11T00:00:00.000Z')
+
+  // Events (real, fetched via `gh issue view`)
+  const event3614 = makeEvent({
+    id: '3614',
+    title: 'Status truth: plan-consistency drift in docs/plans/2026-06-22-003-feat-enrich-capture-digest-plan.md',
+    labels: [],
+    createdAt: '2026-07-03T00:25:55Z',
+  })
+  const event3615 = makeEvent({
+    id: '3615',
+    title:
+      'Status truth: plan-consistency drift in docs/plans/2026-06-22-004-feat-c2-failed-then-fixed-capture-plan.md',
+    labels: [],
+    createdAt: '2026-07-03T00:25:55Z',
+  })
+  const event3616 = makeEvent({
+    id: '3616',
+    title: 'Status truth: plan-consistency drift in docs/plans/2026-06-23-001-fix-merged-candidate-evidence-plan.md',
+    labels: [],
+    createdAt: '2026-07-03T00:25:55Z',
+  })
+  const event3656 = makeEvent({
+    id: '3656',
+    title: 'Status truth: plan-consistency drift in docs/plans/2026-07-07-001-fix-a3-receipt-contract-state-plan.md',
+    labels: [],
+    createdAt: '2026-07-07T10:32:59Z',
+  })
+  const event3667 = makeEvent({
+    id: '3667',
+    title: 'Pattern proposal: When building automated inspection or drift-detection ove\u2026',
+    labels: ['pattern-proposal', 'pattern-proposal:accepted'],
+    createdAt: '2026-07-09T08:19:31Z',
+  })
+
+  // Classes (real frontmatter + real git add-dates)
+  const selfAuditDoc: SolutionDocRecord = {
+    frontmatter: {module: 'status-truth-detect', component: 'tooling', problem_type: 'architecture_pattern'},
+    title: 'Synthetic self-audit claim kinds for in-file drift detection',
+    tags: ['status-truth', 'synthetic-claims', 'drift-detection', 'frontmatter'],
+    gitAddDate: '2026-07-02T21:20:45-07:00',
+  }
+  const closedVocabDoc: SolutionDocRecord = {
+    frontmatter: {module: 'status-truth', component: 'tooling', problem_type: 'best_practice'},
+    title: 'Closed-vocabulary identifiers for automated inspection and drift detection',
+    tags: ['closed-vocabulary', 'status-truth', 'identifier-constraint', 'drift-detection', 'enumeration'],
+    gitAddDate: '2026-07-09T10:06:26-07:00',
+  }
+  const wikiIngestDoc: SolutionDocRecord = {
+    frontmatter: {module: 'scripts/wiki-ingest.ts', component: 'workflow', problem_type: 'runtime_error'},
+    title: 'Silent Failures in Autonomous Multi-Step Pipelines (Wiki Commit Drift + Misclassified Status)',
+    tags: [
+      'workflow',
+      'github-actions',
+      'wiki-ingest',
+      'porcelain',
+      'silent-failure',
+      'status-classification',
+      'additive-pipeline',
+      'autonomous',
+      'reconcile',
+    ],
+    gitAddDate: '2026-04-19T06:53:01-07:00',
+  }
+
+  const TRUE_EDGE_CLASS_KEY = buildClassKey(selfAuditDoc.frontmatter)
+  const TRUE_EDGE_FINGERPRINT = buildEdgeFingerprint(TRUE_EDGE_CLASS_KEY, '3656')
+
+  function runFixture(priorTickState: PriorTickState = new Set()): ComputeMetricsResult {
+    return computeMetrics({
+      solutionDocs: [selfAuditDoc, closedVocabDoc, wikiIngestDoc],
+      proposalEvents: [event3614, event3615, event3616, event3656, event3667],
+      priorTickState,
+      now: GROUND_TRUTH_NOW,
+    })
+  }
+
+  it('surfaces exactly the one true edge (#3656 x status-truth-detect self-audit class)', () => {
+    const {edges} = runFixture()
+    expect(edges).toHaveLength(1)
+    expect(edges[0]?.eventId).toBe('3656')
+    expect(edges[0]?.classKey).toBe(TRUE_EDGE_CLASS_KEY)
+    expect(edges[0]?.fingerprint).toBe(TRUE_EDGE_FINGERPRINT)
+  })
+
+  it('rejects the 13 false pairs, including all founding-evidence and generic-token-noise edges', () => {
+    const {edges} = runFixture()
+    const falsePairs: [string, string][] = [
+      ['3614', buildClassKey(selfAuditDoc.frontmatter)],
+      ['3615', buildClassKey(selfAuditDoc.frontmatter)],
+      ['3616', buildClassKey(selfAuditDoc.frontmatter)],
+      ['3667', buildClassKey(selfAuditDoc.frontmatter)],
+      ['3667', buildClassKey(closedVocabDoc.frontmatter)],
+      ['3614', buildClassKey(closedVocabDoc.frontmatter)],
+      ['3615', buildClassKey(closedVocabDoc.frontmatter)],
+      ['3616', buildClassKey(closedVocabDoc.frontmatter)],
+      ['3656', buildClassKey(closedVocabDoc.frontmatter)],
+      ['3614', buildClassKey(wikiIngestDoc.frontmatter)],
+      ['3615', buildClassKey(wikiIngestDoc.frontmatter)],
+      ['3616', buildClassKey(wikiIngestDoc.frontmatter)],
+      ['3656', buildClassKey(wikiIngestDoc.frontmatter)],
+    ]
+    expect(falsePairs).toHaveLength(13)
+    for (const [eventId, classKey] of falsePairs) {
+      const found = edges.some(e => e.eventId === eventId && e.classKey === classKey)
+      expect(found, `expected no edge for event ${eventId} x class ${classKey}`).toBe(false)
+    }
+  })
+
+  it('confirmedRecidivism honors a prior tick on the true edge fingerprint', () => {
+    const {digest, edges} = runFixture(new Set([TRUE_EDGE_FINGERPRINT]))
+    const trueEdge = edges.find(e => e.fingerprint === TRUE_EDGE_FINGERPRINT)
+    expect(trueEdge?.ticked).toBe(true)
+    expect(digest.confirmedRecidivism).toBeGreaterThanOrEqual(1)
   })
 })
 

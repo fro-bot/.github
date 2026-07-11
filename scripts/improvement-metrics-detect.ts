@@ -201,9 +201,20 @@ export interface CandidateScoreResult {
  * - Each event label matching a class tag (case-insensitive exact match): 15 points.
  * - Each event title token matching a class module token: 20 points.
  *
- * "Strong-field token match" = at least one shared title-token match OR at least
- * one label/tag exact match — i.e. at least one high-signal (title or tag) hit,
- * not merely accumulated module-token overlap alone.
+ * "Strong-field token match" requires cross-signal correlation, not merely
+ * generic-vocabulary overlap in a single field:
+ * - a label/tag exact match, OR
+ * - at least 3 distinct shared title tokens (enough specific vocabulary overlap
+ *   to be self-evidently the same topic, not just 1-2 generic words), OR
+ * - at least 1 shared title token AND at least 1 shared module token (the
+ *   title hit is corroborated by an independent module-identity signal).
+ *
+ * One or two shared title tokens alone are never strong — generic domain
+ * vocabulary ("status", "drift", "detection") clears the numeric score
+ * threshold far too easily without indicating a real relationship (this is how
+ * four unrelated "plan-consistency drift" proposals matched a wiki-ingest
+ * silent-failures doc on nothing but "status"/"drift"). Module-token overlap
+ * alone is likewise never strong (unchanged from before).
  *
  * Pure function: no I/O.
  */
@@ -215,13 +226,14 @@ export function scoreCandidateLink(event: ProposalEvent, classDoc: SolutionDocRe
   const eventLabels = new Set(event.labels.map(l => l.toLowerCase()))
 
   let score = 0
-  let titleTokenMatch = false
+  let titleTokenMatches = 0
   let tagMatch = false
+  let moduleTokenMatch = false
 
   for (const token of eventTitleTokens) {
     if (classTitleTokens.has(token)) {
       score += 10
-      titleTokenMatch = true
+      titleTokenMatches += 1
     }
   }
 
@@ -235,10 +247,13 @@ export function scoreCandidateLink(event: ProposalEvent, classDoc: SolutionDocRe
   for (const token of eventTitleTokens) {
     if (classModuleTokens.has(token)) {
       score += 20
+      moduleTokenMatch = true
     }
   }
 
-  return {score, strongMatch: titleTokenMatch || tagMatch}
+  const strongMatch = tagMatch || titleTokenMatches >= 3 || (titleTokenMatches >= 1 && moduleTokenMatch)
+
+  return {score, strongMatch}
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +306,13 @@ export function computeMetrics(input: ComputeMetricsInput): ComputeMetricsResult
     for (const event of input.proposalEvents) {
       if (!inWindow(event.createdAt, windowStart, now)) continue
       for (const classDoc of input.solutionDocs) {
+        // Temporal founding-evidence rule: a recurrence means the class recurred AFTER it
+        // was codified. An event at or before the class doc's git add-date is founding
+        // evidence (often the very proposal the doc was authored from) — never a candidate.
+        const eventMs = new Date(event.createdAt).getTime()
+        const classAddMs = new Date(classDoc.gitAddDate).getTime()
+        if (Number.isNaN(eventMs) || Number.isNaN(classAddMs) || eventMs <= classAddMs) continue
+
         const {score, strongMatch} = scoreCandidateLink(event, classDoc)
         if (score < scoreThreshold || !strongMatch) continue
 
