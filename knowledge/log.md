@@ -2762,3 +2762,26 @@ Sources: https://github.com/marcusrbrown/.dotfiles (SHA e8ebc5cc3736d0c6f9d21a57
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-07-11 07:24] ingest | repo:marcusrbrown/.github
+
+Re-surveyed marcusrbrown/.github at HEAD `2017dea` (pushed 2026-07-09). Pure dependency drift since the 2026-06-28 survey (`d516b2f`) — 9 commits, PRs #388–#396, four files touched, each a one-line version bump. No structural change, no new files, still 15 blobs, still no Fro Bot workflow.
+
+- **bfra-me/.github reusable workflows** v4.16.31 → **v4.16.35** (SHA `7c7e50a5` → `aac0d9b6`) in both `renovate.yaml` and `update-repo-settings.yaml`, via #388/#392/#395/#396.
+- **Prettier crossed a minor line** 3.8.4 → **3.9.4** via #389 (3.8.5), #390 (3.9.0), #391 (3.9.1), #393 (3.9.3), #394 (3.9.4). Propagated to `main.yaml` `PRETTIER_VERSION` env and `renovate.json5` post-upgrade task.
+- **Renovate preset unchanged** — still `github>marcusrbrown/renovate-config#4.5.9`. The v4 holdout continues: preset source is now at v5.2.4, leaving this repo ~5 major-line versions behind [[marcusrbrown--renovate-config]].
+- **`common-settings.yaml`, `settings.yml`, `.prettierrc.yaml`** all byte-stable. Governance template (squash-only, self-extending, `marcusrbrown`:admin/`fro-bot`:push, 48 labels) unchanged.
+- **Fro Bot workflow still absent.** `fro-bot` retains `push` access via the settings template but has no active `fro-bot.yaml`. Recommendation stands: a follow-up draft PR should add the single-file three-mode agent workflow (canonical shape per [[marcusrbrown--marcusrbrown-github-io]] / [[marcusrbrown--renovate-config]]). Per delivery constraints this run cannot open that PR; noted on the repo page for separate follow-up.
+- **Repo stats:** 4 stars, `subscribers_count` 2 (true watchers; API `watchers_count`=4 mirrors stars), 2 open issues (#37 settings-action migration, #214 Dependency Dashboard), 0 open PRs.
+
+Touched pages: `wiki/repos/marcusrbrown--github.md` (source entry + `updated` + survey-history row + version refs), `index.md` (summary line refreshed). No topic/entity/comparison page changes justified — findings were repo-local dependency drift already covered by [[marcusrbrown--renovate-config]] and [[probot-settings]].
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifests, workflow and pinned-config files; additive updates only (no overwrites), contradictions dated and preserved; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/.github (SHA 2017dea1f7bc124211243798571ce4b3ff495040)
+
+## [2026-07-11 07:25] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
