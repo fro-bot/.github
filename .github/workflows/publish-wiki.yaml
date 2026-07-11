@@ -61,9 +61,10 @@ jobs:
         run: |
           cp quartz-site/quartz.config.ts quartz-build/quartz.config.ts
           cp quartz-site/quartz.layout.ts quartz-build/quartz.layout.ts
-          cp quartz-site/components/Sources.tsx quartz-build/quartz/components/Sources.tsx
-          cp quartz-site/components/GitHubSource.tsx quartz-build/quartz/components/GitHubSource.tsx
-          cp quartz-site/components/index.ts quartz-build/quartz/components/index.ts
+          # Overlay the whole components dir (not an enumerated list) so a new
+          # component file or a component's local import (e.g. url-safety.ts)
+          # is always copied and can't drift out of this manifest.
+          cp quartz-site/components/. quartz-build/quartz/components/ -r
           cp quartz-site/styles/custom.scss quartz-build/quartz/styles/custom.scss
           cp quartz-site/static/. quartz-build/quartz/static/ -r
         shell: bash -Eeuo pipefail {0}
