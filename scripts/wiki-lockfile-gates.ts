@@ -1,5 +1,6 @@
 import {readFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
+import {createRequire} from 'node:module'
 import {join} from 'node:path'
 import process from 'node:process'
 
@@ -35,6 +36,10 @@ export interface GateResult {
   errors: string[]
 }
 
+export interface CoverageGateResult extends GateResult {
+  enabledRemoteCount: number
+}
+
 // ---------------------------------------------------------------------------
 // checkLockfileCoverage — Gate A (pre-install): config<->lock coverage
 // ---------------------------------------------------------------------------
@@ -52,7 +57,7 @@ export interface GateResult {
  * - Disabled plugins (`enabled === false`) are skipped entirely.
  * - Lock entries whose source isn't in the enabled-remote-source set are orphans.
  */
-export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): GateResult {
+export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): CoverageGateResult {
   const lockPlugins = lock.plugins ?? {}
   const errors: string[] = []
   const enabledRemoteSources = new Set<string>()
@@ -90,7 +95,7 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Gat
     }
   }
 
-  return {ok: errors.length === 0, errors}
+  return {ok: errors.length === 0, errors, enabledRemoteCount: enabledRemoteSources.size}
 }
 
 // ---------------------------------------------------------------------------
@@ -136,23 +141,27 @@ export function checkLockfileIntegrity(lock: LockFile, readHead: (name: string) 
  * `main()` calls this with `process.cwd()` and maps the result to
  * `process.stdout`/`process.stderr`/`process.exit`.
  */
-export async function runCli(
-  argv: string[],
-  _env: Record<string, string | undefined>,
-  cwd: string,
-): Promise<{exitCode: number; stdout: string; stderr: string}> {
+export async function runCli(argv: string[], cwd: string): Promise<{exitCode: number; stdout: string; stderr: string}> {
   const mode = argv[0]
 
   if (mode === 'coverage') {
+    // Resolve `yaml` from the WORKING DIRECTORY (e.g. quartz-build/), not
+    // from this script's own location. In the publish-wiki build job,
+    // repo-root node_modules does not exist (that job never runs `pnpm
+    // bootstrap` — it only runs `npm ci` inside quartz-build/), so a bare
+    // `import('yaml')` resolved from scripts/ would walk up to repo root
+    // and fail every time. `createRequire` rooted at `cwd` resolves `yaml`
+    // the same way the old inline script did when it ran with
+    // cwd=quartz-build (Quartz's own dependency).
     let YAML: typeof import('yaml')
     try {
-      YAML = await import('yaml')
+      const requireFromCwd = createRequire(join(cwd, 'quartz.config.yaml'))
+      YAML = requireFromCwd('yaml') as typeof import('yaml')
     } catch {
       return {
         exitCode: 2,
         stdout: '',
-        stderr:
-          "wiki-lockfile-gates: the 'yaml' package is required for coverage mode (available in quartz-build/node_modules in CI)\n",
+        stderr: `wiki-lockfile-gates: could not resolve the 'yaml' package from "${cwd}" (expected in quartz-build/node_modules in CI)\n`,
       }
     }
     const configRaw = await readFile(join(cwd, 'quartz.config.yaml'), 'utf8')
@@ -168,7 +177,7 @@ export async function runCli(
     const lockCount = Object.keys(lock.plugins ?? {}).length
     return {
       exitCode: 0,
-      stdout: `Lockfile coverage gate passed: ${lockCount} lock entr${lockCount === 1 ? 'y' : 'ies'} verified.\n`,
+      stdout: `Lockfile coverage gate passed: ${result.enabledRemoteCount} enabled remote plugin(s) match ${lockCount} lock entr${lockCount === 1 ? 'y' : 'ies'}.\n`,
       stderr: '',
     }
   }
@@ -207,7 +216,7 @@ export async function runCli(
 }
 
 async function main(): Promise<void> {
-  const result = await runCli(process.argv.slice(2), process.env as Record<string, string | undefined>, process.cwd())
+  const result = await runCli(process.argv.slice(2), process.cwd())
   if (result.stdout) process.stdout.write(result.stdout)
   if (result.stderr) process.stderr.write(result.stderr)
   if (result.exitCode !== 0) process.exit(result.exitCode)

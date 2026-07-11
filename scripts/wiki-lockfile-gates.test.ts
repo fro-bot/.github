@@ -1,6 +1,7 @@
-import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
+import {mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises'
+import {createRequire} from 'node:module'
 import {tmpdir} from 'node:os'
-import {join} from 'node:path'
+import {dirname, join} from 'node:path'
 import {afterEach, beforeEach, describe, expect, it} from 'vitest'
 import {
   checkLockfileCoverage,
@@ -9,6 +10,8 @@ import {
   type LockFile,
   type QuartzConfig,
 } from './wiki-lockfile-gates.ts'
+
+const require = createRequire(import.meta.url)
 
 // ---------------------------------------------------------------------------
 // checkLockfileCoverage — Gate A
@@ -223,6 +226,20 @@ describe('checkLockfileIntegrity', () => {
 // runCli — CLI integration against tmpdir fixtures
 // ---------------------------------------------------------------------------
 
+// These `runCli` tests exercise coverage mode against a real fixture cwd, so
+// they need `yaml` resolvable from that cwd — mirroring the CI topology by
+// symlinking THIS repo's own installed `yaml` package into the fixture's
+// node_modules, rather than relying on a bare `import('yaml')` resolving
+// upward from the script's own directory (the exact P0 this gate exists to
+// avoid re-introducing).
+async function symlinkRepoYamlInto(dir: string): Promise<void> {
+  const repoYamlPkgJson = require.resolve('yaml/package.json')
+  const repoYamlDir = dirname(repoYamlPkgJson)
+  const nodeModules = join(dir, 'node_modules')
+  await mkdir(nodeModules, {recursive: true})
+  await symlink(repoYamlDir, join(nodeModules, 'yaml'), 'dir')
+}
+
 describe('runCli', () => {
   let dir: string
 
@@ -246,13 +263,14 @@ describe('runCli', () => {
       JSON.stringify({plugins: {'plugin-a': {source: 'github:quartz-community/plugin-a', commit: 'abc123'}}}),
       'utf8',
     )
+    await symlinkRepoYamlInto(dir)
 
     // #when running the coverage CLI mode
-    const result = await runCli(['coverage'], {}, dir)
+    const result = await runCli(['coverage'], dir)
 
-    // #then it exits 0 with a summary
+    // #then it exits 0 with a summary naming both the enabled-source and lock-entry counts
     expect(result.exitCode).toBe(0)
-    expect(result.stdout).toContain('passed')
+    expect(result.stdout).toBe('Lockfile coverage gate passed: 1 enabled remote plugin(s) match 1 lock entry.\n')
   })
 
   it('coverage mode exits 1 with the error on stderr when the lock is tampered', async () => {
@@ -263,9 +281,10 @@ describe('runCli', () => {
       'utf8',
     )
     await writeFile(join(dir, 'quartz.lock.json'), JSON.stringify({plugins: {}}), 'utf8')
+    await symlinkRepoYamlInto(dir)
 
     // #when running the coverage CLI mode
-    const result = await runCli(['coverage'], {}, dir)
+    const result = await runCli(['coverage'], dir)
 
     // #then it exits 1 and reports the error on stderr
     expect(result.exitCode).toBe(1)
@@ -284,7 +303,7 @@ describe('runCli', () => {
     await writeFile(join(headDir, 'HEAD'), 'sha-a\n', 'utf8')
 
     // #when running the integrity CLI mode
-    const result = await runCli(['integrity'], {}, dir)
+    const result = await runCli(['integrity'], dir)
 
     // #then it exits 0 with a summary
     expect(result.exitCode).toBe(0)
@@ -300,10 +319,95 @@ describe('runCli', () => {
     )
 
     // #when running the integrity CLI mode
-    const result = await runCli(['integrity'], {}, dir)
+    const result = await runCli(['integrity'], dir)
 
     // #then it exits 1 and reports the missing plugin on stderr
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('plugin-a')
+  })
+
+  it('exits 2 with a clear message for an unknown mode', async () => {
+    // #when running the CLI with a mode that isn't "coverage" or "integrity"
+    const result = await runCli(['bogus-mode'], dir)
+
+    // #then it exits 2 naming the unknown mode
+    expect(result.exitCode).toBe(2)
+    expect(result.stderr).toContain('unknown mode "bogus-mode"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// runCli coverage mode — yaml resolution topology (the P0 this gate exists to catch)
+// ---------------------------------------------------------------------------
+//
+// The publish-wiki build job's coverage step runs with cwd=quartz-build/ and
+// NEVER runs `pnpm bootstrap` at the repo root — only `npm ci` inside
+// quartz-build/. So repo-root node_modules does not exist in that job, and a
+// bare `import('yaml')` resolved from this script's own directory (scripts/)
+// would walk up to repo root and fail every time. These tests prove
+// `runCli` resolves `yaml` from the WORKING DIRECTORY instead, by building a
+// CI-shaped fixture tree that lives outside the repo (a fake
+// quartz-build/node_modules/yaml, and — separately — no yaml at all).
+describe('runCli coverage mode — yaml resolution topology', () => {
+  let ciDir: string
+
+  beforeEach(async () => {
+    ciDir = await mkdtemp(join(tmpdir(), 'wiki-lockfile-gates-ci-topology-'))
+  })
+
+  afterEach(async () => {
+    await rm(ciDir, {recursive: true, force: true})
+  })
+
+  it('resolves yaml from cwd/node_modules (not the script location) and exits 0', async () => {
+    // #given a CI-shaped quartz-build/ dir with its OWN node_modules/yaml (Quartz's dependency,
+    // not a repo-root one) plus a config with no plugins and a matching empty lock
+    const quartzBuild = join(ciDir, 'quartz-build')
+    await mkdir(quartzBuild, {recursive: true})
+    await writeFile(join(quartzBuild, 'quartz.config.yaml'), 'plugins: []\n', 'utf8')
+    await writeFile(join(quartzBuild, 'quartz.lock.json'), JSON.stringify({plugins: {}}), 'utf8')
+
+    const fakeYamlDir = join(quartzBuild, 'node_modules', 'yaml')
+    await mkdir(fakeYamlDir, {recursive: true})
+    await writeFile(
+      join(fakeYamlDir, 'package.json'),
+      JSON.stringify({name: 'yaml', version: '0.0.0', main: 'index.js'}),
+      'utf8',
+    )
+    // The fake only needs to prove RESOLUTION (found in quartz-build/node_modules,
+    // not repo-root), not parsing fidelity — so it returns a hardcoded empty-plugins
+    // config regardless of input, matching the empty-lock fixture above.
+    await writeFile(
+      join(fakeYamlDir, 'index.js'),
+      'exports.parse = function parse() { return {plugins: []} }\n',
+      'utf8',
+    )
+
+    // #when running the coverage CLI mode with cwd=quartz-build (the CI topology)
+    const result = await runCli(['coverage'], quartzBuild)
+
+    // #then it resolves the fake yaml from quartz-build/node_modules and passes
+    expect(result.stderr).toBe('')
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('passed')
+  })
+
+  it('exits 2 with a clear resolution error when yaml is unreachable from cwd', async () => {
+    // #given a CI-shaped quartz-build/ dir with NO node_modules/yaml at all, outside
+    // the repo tree (so the createRequire-from-cwd walk-up never reaches this repo's
+    // node_modules — proving the negative path is real, not an artifact of running
+    // the test process from inside the repo)
+    const quartzBuild = join(ciDir, 'quartz-build')
+    await mkdir(quartzBuild, {recursive: true})
+    await writeFile(join(quartzBuild, 'quartz.config.yaml'), 'plugins: []\n', 'utf8')
+    await writeFile(join(quartzBuild, 'quartz.lock.json'), JSON.stringify({plugins: {}}), 'utf8')
+
+    // #when running the coverage CLI mode
+    const result = await runCli(['coverage'], quartzBuild)
+
+    // #then it exits 2 with a message naming the resolution root, not a hard crash
+    expect(result.exitCode).toBe(2)
+    expect(result.stderr).toContain('yaml')
+    expect(result.stderr).toContain(quartzBuild)
   })
 })
