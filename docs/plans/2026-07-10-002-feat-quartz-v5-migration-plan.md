@@ -1,7 +1,7 @@
 ---
 title: "feat: migrate wiki site from Quartz v4.5.2 to v5"
 type: feat
-status: active
+status: complete
 date: 2026-07-10
 ---
 
@@ -169,7 +169,7 @@ static/{icon.png,og}    ─────────►  static/{icon.png,og}  (u
 
 **Verification:** all four prerequisites answered concretely enough that Units 1-4 have no load-bearing unknowns; if any answer contradicts the plan, the plan is updated before proceeding.
 
-- [ ] **Unit 1: Custom components as a v5 local plugin**
+- [x] **Unit 1: Custom components as a v5 local plugin**
 
 **Goal:** Repackage the two custom components (`Sources`, `GitHubSource`) and their `url-safety` guard as a v5 local plugin in the overlay, referenced by a relative `source:` path, symlinked at install.
 
@@ -199,7 +199,7 @@ static/{icon.png,og}    ─────────►  static/{icon.png,og}  (u
 
 **Verification:** the local plugin installs (symlinks) and its components render in the Unit 5 build; the url-safety test passes unchanged.
 
-- [ ] **Unit 2: YAML config + layout migration**
+- [x] **Unit 2: YAML config + layout migration**
 
 **Goal:** Replace `quartz.config.ts` + `quartz.layout.ts` with a single `quartz.config.yaml`: configuration, theme (colors verbatim), the community-plugin set pruned to parity, our local plugin, and the layout block placing our components.
 
@@ -225,7 +225,7 @@ static/{icon.png,og}    ─────────►  static/{icon.png,og}  (u
 
 **Verification:** the Unit 5 build renders all pages with wikilinks/backlinks/search/graph; `og:url` bakes `https://fro.bot/.github/...`; `log.md` absent.
 
-- [ ] **Unit 3: Brand styling under v5**
+- [x] **Unit 3: Brand styling under v5**
 
 **Goal:** Ensure the brand theme applies under v5: config colors (Unit 2) plus `custom.scss` brand rules, with the base layout stylesheet present (no base-stripping regression).
 
@@ -249,7 +249,7 @@ static/{icon.png,og}    ─────────►  static/{icon.png,og}  (u
 
 **Verification:** built `index.css` contains base layout (`grid-template`, sidebar, `#quartz-body`) AND brand theme (`--frobot-*`, `sources-section`); not base-stripped.
 
-- [ ] **Unit 4: Publish workflow — v5 pin, plugin install, committed lockfile**
+- [x] **Unit 4: Publish workflow — v5 pin, plugin install, committed lockfile**
 
 **Goal:** Update `publish-wiki.yaml` to pin Quartz v5 by SHA, run the `prebuild` plugin-install in the credential-less build job against a committed `quartz.lock.json` with a fail-closed lockfile-integrity gate and a minimized build env, keep the split/hardened pipeline, and update the workflow-shape test.
 
@@ -285,7 +285,7 @@ static/{icon.png,og}    ─────────►  static/{icon.png,og}  (u
 
 **Verification:** `pnpm test scripts/publish-wiki-workflow.test.ts` green; actionlint clean; deploy unreachable if build fails; plugin install confined to the build job.
 
-- [ ] **Unit 5: Full-parity verification + docs**
+- [x] **Unit 5: Full-parity verification + docs**
 
 **Goal:** Prove capability parity via an explicit v4-baseline-vs-v5 diff on a workflow-faithful local build, then a live dispatch after merge; update docs and memory to the v5 model.
 
