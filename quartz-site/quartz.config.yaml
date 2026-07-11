@@ -92,7 +92,7 @@ plugins:
   - source: github:quartz-community/roam
     enabled: false
   - source: github:quartz-community/fonts
-    enabled: true
+    enabled: false
   - source: github:quartz-community/remove-draft
     enabled: true
   - source: github:quartz-community/explicit-publish

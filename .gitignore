@@ -18,6 +18,9 @@ Thumbs.db
 # Build output
 dist
 *.tsbuildinfo
+# The wiki-site local plugin ships committed plain-JS dist/ by design —
+# Quartz v5 symlinks local plugins without building them.
+!quartz-site/local-plugin/dist/
 
 # Test output
 coverage

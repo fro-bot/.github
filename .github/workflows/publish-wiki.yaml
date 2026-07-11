@@ -110,9 +110,9 @@ jobs:
           # shellcheck disable=SC2016 # single-quoted node -e script; no shell expansion intended
           node -e '
             const fs = require("fs");
-            const yaml = require("js-yaml");
+            const yaml = require("yaml");
 
-            const config = yaml.load(fs.readFileSync("quartz.config.yaml", "utf8"));
+            const config = yaml.parse(fs.readFileSync("quartz.config.yaml", "utf8"));
             const lock = JSON.parse(fs.readFileSync("quartz.lock.json", "utf8"));
             const lockPlugins = lock.plugins ?? {};
 
