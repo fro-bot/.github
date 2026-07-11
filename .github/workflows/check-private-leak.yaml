@@ -27,11 +27,10 @@ on:
     workflows: [Private Leak Sentinel]
     types: [completed]
 
-# Minimum permissions: read the repo (checkout + gh api), write commit statuses,
+# Minimum permissions: read the repo (checkout + gh api) and
 # read PR metadata for the API fallback identity resolution.
 permissions:
   contents: read
-  statuses: write
   pull-requests: read
 
 # Cancel superseded runs for the same PR head SHA. cancel-in-progress: false so a
@@ -48,22 +47,27 @@ jobs:
   check-private-leak:
     name: Check Private Leak
     runs-on: ubuntu-latest
+    permissions:
+      # We need write access to post the commit status to the PR head SHA.
+      contents: read
+      statuses: write
+      pull-requests: read
     timeout-minutes: 10
     steps:
       # Checkout the DEFAULT branch (main) only — for the script + metadata/repos.yaml.
       # NEVER checkout the PR head; the diff is fetched as data via the GitHub API.
       - name: ⤵ Checkout main
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: main
           fetch-depth: 1
 
-      # Minimal node + pnpm setup via mise — NO cache restore (R1: no poisonable cache).
+      # Minimal node + pnpm setup via mise — no cache restore.
       # Uses the same mise-action pin as .github/actions/setup but skips the
       # actions/cache step entirely so a PR workflow cannot poison the store.
       - name: 📦 Install mise (node + pnpm)
         env:
-          MISE_VERSION: 2026.6.0 # renovate: datasource=github-releases packageName=jdx/mise
+          MISE_VERSION: 2026.7.0 # renovate: datasource=github-releases packageName=jdx/mise
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
         with:
           version: ${{ env.MISE_VERSION }}
@@ -76,7 +80,7 @@ jobs:
       - name: 📦 Install dependencies (no cache)
         run: pnpm install --prefer-offline --ignore-scripts --loglevel warn
 
-      # Run the scan. FRO_BOT_POLL_PAT is scoped to THIS STEP ONLY (R6).
+      # Run the scan. FRO_BOT_POLL_PAT is scoped to this step only.
       # The script reads GITHUB_EVENT_PATH (set automatically by Actions to the
       # workflow_run payload), resolves PR identity via the API, fetches the diff
       # as data, and exits 0 (pass) or non-zero (fail/error).
@@ -90,7 +94,7 @@ jobs:
           FRO_BOT_POLL_PAT: ${{ secrets.FRO_BOT_POLL_PAT }}
         run: node scripts/check-private-leak.ts
 
-      # Post the commit status to the PR head SHA (R4, R5).
+      # Post the commit status to the PR head SHA.
       # Runs unconditionally (if: always()) so the status is posted whether the
       # scan passed, failed, or errored. If this POST fails, the step exits
       # non-zero and the job fails — the PR is never left unsignaled (fail-closed).

@@ -1,7 +1,7 @@
 ---
 title: GitHub Issues API same-run eventual consistency requires an in-memory created-ID set
 date: 2026-05-20
-last_updated: 2026-05-20
+last_updated: 2026-07-04
 verified: 2026-05-20
 category: best-practices
 module: scripts/reconcile-repos.ts
@@ -92,6 +92,15 @@ A regression test must reproduce the race shape: mock `issues.listForRepo` to re
 - **GitHub's write→read consistency window is asymmetric and load-dependent.** Writes are reflected in the SAME call's response within ~1s, but visible to a subsequent list call only after several seconds — sometimes longer under platform load.
 - **"Just sleep a few seconds" is not a fix.** It inflates run wall-clock, is unreliable (the consistency window varies), and does not compose if stages stack.
 - **The pattern recurs across the GitHub API.** Same shape applies to PRs, labels, comments, deployments, and check runs. The dedup-via-Set pattern is the universal answer when the stages live in the same process.
+
+## Verified: two call sites now use this pattern
+
+As of 2026-07-04, this pattern guards two independent call sites in `scripts/reconcile-repos.ts`, not just the rollup path:
+
+- **Per-owner rollups** — `currentRunRollupOwners` (built ~line 1665, passed into `selfHealRollups` at line 1668) is checked against `existingRollupOwners` inside `selfHealRollups` (function starts ~line 3106; the same-run check is at lines 3158-3166, separate from the `listForRepo`-derived set built at lines 3130-3153).
+- **Visibility-transition alerts** — `runIssueQueue` (function starts ~line 2680) declares its own same-run `attemptedTransitionNodeIds` Set at line 2708 and checks it at lines 2727-2739, independently of the `listForRepo`-based duplicate check earlier in the same loop.
+
+Both sites follow the identical shape: a `listForRepo`-derived set for cross-run/pre-existing dedup, unioned or checked alongside an in-memory same-run Set that is authoritative for anything created earlier in the current process. Different resource within the same run (rollup issues vs. visibility-transition alerts), same eventual-consistency fix.
 
 ## When to Apply
 

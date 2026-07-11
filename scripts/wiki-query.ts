@@ -1,12 +1,9 @@
-import {Buffer} from 'node:buffer'
-import {readdir, readFile, writeFile} from 'node:fs/promises'
-import {basename} from 'node:path'
+import {readdir, readFile, rename, unlink, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 
-import {parse} from 'yaml'
+import {byteLength, collectWikiPages, truncateToBytes, WIKI_ROOT} from './wiki-utils.ts'
 
 const MAX_CONTEXT_BYTES = 5 * 1024
-const WIKI_ROOT = 'knowledge/wiki'
 
 export interface WikiQueryEvent {
   eventName: string
@@ -86,38 +83,21 @@ export function assembleWikiContext(params: AssembleWikiContextParams): Assemble
 }
 
 function collectPages(files: Record<string, string>): PageSummary[] {
-  return Object.entries(files)
-    .filter(([path]) => path.startsWith(`${WIKI_ROOT}/`) && path.endsWith('.md'))
-    .map(([path, content]) => {
-      const {frontmatter, body} = splitFrontmatter(content)
-      return {
-        path,
-        slug: basename(path, '.md'),
-        title: typeof frontmatter.title === 'string' ? frontmatter.title : basename(path, '.md'),
-        type: isPageType(frontmatter.type) ? frontmatter.type : inferTypeFromPath(path),
-        body,
-        tags: Array.isArray(frontmatter.tags) ? frontmatter.tags.filter(tag => typeof tag === 'string') : [],
-        score: 0,
-      }
-    })
-}
+  return collectWikiPages(files).map(page => {
+    if (page.frontmatterError !== undefined) {
+      throw new Error(`Invalid wiki frontmatter in ${page.path}`)
+    }
 
-function splitFrontmatter(content: string): {frontmatter: Record<string, unknown>; body: string} {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
-  if (match === null) {
-    return {frontmatter: {}, body: content.trim()}
-  }
-
-  const frontmatterText = match[1]
-  if (frontmatterText === undefined) {
-    return {frontmatter: {}, body: content.trim()}
-  }
-
-  const parsed: unknown = parse(frontmatterText)
-  return {
-    frontmatter: isRecord(parsed) ? parsed : {},
-    body: content.slice(match[0].length).trim(),
-  }
+    return {
+      path: page.path,
+      slug: page.slug,
+      title: page.title,
+      type: page.type,
+      body: page.body,
+      tags: [...page.tags],
+      score: 0,
+    }
+  })
 }
 
 function scorePage(page: PageSummary, eventName: string, tokens: Set<string>, repoSlug: string | null): number {
@@ -128,7 +108,7 @@ function scorePage(page: PageSummary, eventName: string, tokens: Set<string>, re
   }
 
   for (const token of tokens) {
-    if (page.slug.includes(token)) relevanceScore += 25
+    if (page.slug.toLowerCase().includes(token)) relevanceScore += 25
     if (page.title.toLowerCase().includes(token)) relevanceScore += 15
     if (page.tags.some(tag => tag.toLowerCase().includes(token))) relevanceScore += 10
     if (page.body.toLowerCase().includes(token)) relevanceScore += 4
@@ -174,47 +154,12 @@ function collectTokens(event: WikiQueryEvent): Set<string> {
   return new Set(tokens)
 }
 
-function inferTypeFromPath(path: string): PageSummary['type'] {
-  if (path.includes('/repos/')) return 'repo'
-  if (path.includes('/topics/')) return 'topic'
-  if (path.includes('/entities/')) return 'entity'
-  return 'comparison'
-}
-
-function isPageType(value: unknown): value is PageSummary['type'] {
-  return value === 'repo' || value === 'topic' || value === 'entity' || value === 'comparison'
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 function slugify(value: string): string {
   const lower = value.toLowerCase()
   // eslint-disable-next-line unicorn/prefer-string-replace-all
   const dashed = lower.replace(/[^a-z0-9]+/g, '-')
   // eslint-disable-next-line unicorn/prefer-string-replace-all
   return dashed.replace(/^-+|-+$/g, '')
-}
-
-function byteLength(value: string): number {
-  return Buffer.byteLength(value, 'utf8')
-}
-
-function truncateToBytes(value: string, maxBytes: number): string {
-  if (byteLength(value) <= maxBytes) {
-    return value
-  }
-
-  const ellipsis = '…'
-  const contentBudget = maxBytes - byteLength(ellipsis)
-  if (contentBudget <= 0) {
-    return ''
-  }
-
-  const truncated = Buffer.from(value).subarray(0, contentBudget).toString('utf8')
-
-  return truncated === '' ? '' : `${truncated}${ellipsis}`
 }
 
 async function loadWikiFilesFromDisk(): Promise<Record<string, string>> {
@@ -224,13 +169,24 @@ async function loadWikiFilesFromDisk(): Promise<Record<string, string>> {
 
   for (const directory of ['repos', 'topics', 'entities', 'comparisons']) {
     const directoryPath = `${WIKI_ROOT}/${directory}`
-    for (const entry of await readdir(directoryPath, {withFileTypes: true})) {
+    let entries
+    try {
+      entries = await readdir(directoryPath, {withFileTypes: true})
+    } catch {
+      continue
+    }
+
+    for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith('.md')) {
         continue
       }
 
       const path = `${directoryPath}/${entry.name}`
-      files[path] = await readFile(path, 'utf8')
+      try {
+        files[path] = await readFile(path, 'utf8')
+      } catch {
+        continue
+      }
     }
   }
 
@@ -254,20 +210,64 @@ async function writeGithubOutput(result: AssembleWikiContextResult): Promise<voi
   await writeFile(outputPath, `${lines.join('\n')}\n`, {flag: 'a'})
 }
 
+/**
+ * Write the baseline query's selected wiki paths to a runner-temp handoff file.
+ * Contains only `selectedPaths` and coarse metadata — no excerpt bodies,
+ * queries, task text, or workflow context.
+ *
+ * Writes atomically (temp file + rename) with owner-only permissions where the
+ * platform supports it. Fails soft: any error is swallowed so baseline wiki
+ * context output is never broken by a handoff write failure.
+ */
+export async function writeSelectedPathsHandoff(handoffPath: string, selectedPaths: string[]): Promise<void> {
+  const payload = {selectedPaths}
+  const tempPath = `${handoffPath}.tmp-${Math.random().toString(16).slice(2)}`
+
+  try {
+    await writeFile(tempPath, `${JSON.stringify(payload)}\n`, {mode: 0o600})
+    await rename(tempPath, handoffPath)
+  } catch {
+    try {
+      await unlink(tempPath)
+    } catch {
+      // ignore — tempPath may not have been created
+    }
+    process.stderr.write('wiki-query:warn:handoff-write-failed\n')
+  }
+}
+
+const EMPTY_CONTEXT_RESULT: AssembleWikiContextResult = {excerpt: '', selectedPaths: [], byteLength: 0}
+
 async function main(): Promise<void> {
-  const files = await loadWikiFilesFromDisk()
-  const result = assembleWikiContext({
-    files,
-    event: {
-      eventName: process.env.WIKI_QUERY_EVENT_NAME ?? process.env.GITHUB_EVENT_NAME ?? '',
-      owner: process.env.WIKI_QUERY_OWNER,
-      repo: process.env.WIKI_QUERY_REPO,
-      title: process.env.WIKI_QUERY_TITLE,
-      body: process.env.WIKI_QUERY_BODY,
-    },
-  })
+  let result: AssembleWikiContextResult
+  try {
+    const files = await loadWikiFilesFromDisk()
+    result = assembleWikiContext({
+      files,
+      event: {
+        eventName: process.env.WIKI_QUERY_EVENT_NAME ?? process.env.GITHUB_EVENT_NAME ?? '',
+        owner: process.env.WIKI_QUERY_OWNER,
+        repo: process.env.WIKI_QUERY_REPO,
+        title: process.env.WIKI_QUERY_TITLE,
+        body: process.env.WIKI_QUERY_BODY,
+      },
+    })
+  } catch {
+    // Fail-soft shell behavior: a corpus-level failure (e.g. malformed wiki frontmatter)
+    // must never break the baseline prompt-injection workflow. Emit a closed-vocabulary
+    // stderr warning, fall back to an explicit empty context, and continue writing
+    // outputs so downstream steps still see a valid, empty result.
+    process.stderr.write('wiki-query:warn:baseline-query-failed\n')
+    result = EMPTY_CONTEXT_RESULT
+  }
 
   await writeGithubOutput(result)
+
+  const handoffPath = process.env.WIKI_CONTEXT_HANDOFF_PATH
+  if (handoffPath !== undefined && handoffPath !== '') {
+    await writeSelectedPathsHandoff(handoffPath, result.selectedPaths)
+  }
+
   process.stdout.write(`${JSON.stringify(result)}\n`)
 }
 

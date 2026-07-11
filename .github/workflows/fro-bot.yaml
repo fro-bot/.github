@@ -1,6 +1,13 @@
 ---
 name: Fro Bot
 
+# Optional correlation-id suffix lets a cross-repo-dispatch caller identify
+# this exact run by a unique token instead of coincidental epoch/actor
+# matching (see scripts/cross-repo-dispatch.ts). Empty by default — a purely
+# cosmetic, backward-compatible run-name change.
+run-name: >-
+  Fro Bot${{ github.event.inputs.correlation_id && format(' ({0})', github.event.inputs.correlation_id) || '' }}
+
 on:
   issue_comment:
     types: [created]
@@ -18,6 +25,10 @@ on:
     inputs:
       prompt:
         description: 'Custom prompt for the Fro Bot agent (leave empty to run the default daily oversight + autohealing pass)'
+        required: false
+        default: ''
+      correlation_id:
+        description: Optional opaque correlation id echoed into run-name (used by cross-repo-dispatch to identify this run)
         required: false
         default: ''
   workflow_call:
@@ -97,6 +108,65 @@ env:
     - Include every heading exactly once and in the order above.
     - Write "None" under headings with no findings.
     - Keep findings actionable: file path, impact, and concrete remediation.
+
+  GOAL_DECOMPOSITION_PROMPT: |
+    This issue carries the `cross-repo-goal` label: it describes a goal spanning
+    multiple owner repos (`fro-bot/*`, `marcusrbrown/*`). Propose a per-repo
+    work-item decomposition as a single comment on this issue. Do NOT dispatch,
+    trigger, or execute anything — this run has no dispatch capability and this
+    output is a proposal only, subject to the operator's edit and approval.
+
+    Read the goal description and the managed-repo registry
+    (`metadata/repos.yaml`) to identify eligible owner-repo targets.
+
+    Post exactly one checklist item per proposed work item, in this literal
+    format (each line independently parseable):
+    - [ ] <owner>/<name>: <prompt>
+
+    Wrap the checklist in a delimited region so the parser can find it
+    precisely even when you also write prose around it:
+
+    <!-- fro-bot:cross-repo-items:start -->
+    - [ ] <owner>/<name>: <prompt>
+    <!-- fro-bot:cross-repo-items:end -->
+
+    Rules:
+    - <owner>/<name> must be an owner-repo target (`fro-bot/*` or
+      `marcusrbrown/*`) present in `metadata/repos.yaml`.
+    - <prompt> is the exact task to hand to that repo's worker run — concise,
+      concrete, self-contained.
+    - Free text outside the delimited region is fine — an intro, an
+      explanation of why each target was chosen, a footer — as long as it
+      doesn't itself look like a checklist item.
+    - If the goal cannot be decomposed into owner-repo targets, say so plainly
+      instead of inventing items.
+
+    Downstream, once an item is approved and dispatched, the target repo's
+    worker run receives a prompt carrying this item's work plus a receipt
+    contract. That contract is generated automatically — you do not need to
+    restate it in <prompt> — but it is documented here so the shape of the
+    full loop is clear:
+
+    A dispatched worker must, after doing the item's work, post a completion
+    receipt as a comment on THIS coordination issue, wrapped in its own
+    delimited region:
+
+    <!-- fro-bot:cross-repo-result:start -->
+    <!-- fro-bot:cross-repo-result {"correlation_id":"...","nonce":"...","status":"success","summary":"...","pr":"https://github.com/owner/repo/pull/123"} -->
+    <!-- fro-bot:cross-repo-result:end -->
+
+    Receipt rules the worker follows:
+    - `status` is exactly one of `success`, `noop`, or `failed` — nothing else.
+    - A receipt is MANDATORY even when the outcome is a no-op; a missing
+      receipt reads as a failure to report, not as success.
+    - Before finishing, the worker echoes the coordination issue it resolved
+      (owner/repo/number) and re-reads its own posted comment to confirm the
+      marker round-trips; if the marker is missing, it edits the comment to
+      add it before declaring the item done.
+    - `summary` must be plain text: no markdown formatting, backticks, or
+      backslash escapes, and the marker as a whole must be valid JSON — an
+      escaped character like `\#` breaks the parser and turns a successful
+      run into an unparseable receipt.
 
   SCHEDULE_PROMPT: |
     Run the daily Fro Bot pass for fro-bot/.github — the autonomous control
@@ -295,7 +365,7 @@ jobs:
       )
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           token: ${{ secrets.FRO_BOT_PAT }}
@@ -346,11 +416,15 @@ jobs:
               github.event.comment.body ||
               ''
             }}
+          # Run-local handoff for optional wiki context expansion.
+          # Contains only selected wiki paths — never logged, never echoed.
+          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: node scripts/wiki-query.ts
 
       # Overlay metadata/ from the data branch so the scheduled run can derive
       # digest counts from live metadata/repos.yaml. Mirrors the precedented guard
       # in reconcile-repos.yaml: tolerate a missing data branch (skip, don't fail).
+      # Runs BEFORE solutions-query so the privacy scan reads the freshest repos.yaml.
       - name: ⤵ Overlay metadata from data branch
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
@@ -365,19 +439,45 @@ jobs:
             echo "data branch not yet established; skipping metadata overlay."
           fi
 
+      - name: Query solutions context
+        id: solutions-query
+        env:
+          SOLUTIONS_QUERY_EVENT_NAME: ${{ github.event_name }}
+          SOLUTIONS_QUERY_OWNER: ${{ github.repository_owner }}
+          SOLUTIONS_QUERY_REPO: ${{ github.event.repository.name }}
+          SOLUTIONS_QUERY_TITLE: >-
+            ${{
+              github.event.pull_request.title ||
+              github.event.issue.title ||
+              github.event.discussion.title ||
+              ''
+            }}
+          SOLUTIONS_QUERY_BODY: >-
+            ${{
+              github.event.pull_request.body ||
+              github.event.issue.body ||
+              github.event.comment.body ||
+              ''
+            }}
+        run: node scripts/solutions-query.ts
+
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@9b89fb3acadec6f26fdfe49412b9c5cbd5a039d1 # v0.71.0
+        uses: fro-bot/agent@dfd5a6a2a6896a5f1bbe0cfb72ba8c7af766f222 # v0.84.0
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
+          SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
+          # Handoff path only — never the file contents or selected paths themselves.
+          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
           TASK_PROMPT: >-
             ${{
               (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
               || inputs.prompt
               || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && env.SCHEDULE_PROMPT)
               || (github.event_name == 'pull_request' && env.PR_REVIEW_PROMPT)
+              || (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'cross-repo-goal') && env.GOAL_DECOMPOSITION_PROMPT)
               || ''
             }}
         with:
@@ -397,8 +497,29 @@ jobs:
             ${{ env.WIKI_CONTEXT }}
             </wiki_context>
 
+            <solutions_context>
+            ${{ env.SOLUTIONS_CONTEXT }}
+            </solutions_context>
+
+            <wiki_context_expansion>
+            The wiki context above is baseline-injected and usually enough on its own — do not
+            expand by default. If baseline context is insufficient, following linked pages would
+            help, or you have a short grounded query, you may optionally run one of:
+
+            `node scripts/wiki-context-expand.ts linked`
+            `node scripts/wiki-context-expand.ts query "<short grounded query>"`
+
+            Linked mode reads the baseline-selected pages from the path in
+            `WIKI_CONTEXT_HANDOFF_PATH`; do not print or echo that path, its file contents, the
+            query text, returned excerpts, or any token/env values into your output or logs. Use
+            returned wiki paths only to ground a recommendation.
+            </wiki_context_expansion>
+
             <knowledge_persistence>
             Use the wiki context when it materially improves the response.
+            Consult the solutions context for prior learnings relevant to this work;
+            when one applies, follow it and cite its `Path:` in your reasoning. Treat
+            entries marked as candidate suggestions as hints to verify, not settled facts.
             If this interaction surfaces durable knowledge worth keeping, update only
             `knowledge/wiki/**`, `knowledge/index.md`, and `knowledge/log.md` following
             `knowledge/schema.md`. Keep changes additive, preserve contradictions with

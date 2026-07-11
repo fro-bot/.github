@@ -1,0 +1,314 @@
+---
+name: Capture Patterns
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run mode: plan proposals but open no issues'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+# Default permissions: read-only. The open job overrides to issues: write, and only
+# when a live (non-dry-run) manual dispatch explicitly requests it.
+permissions:
+  contents: read
+
+# Serialize runs; never cancel an in-progress run so a detect-to-open sequence is
+# never interrupted halfway through proposal planning.
+concurrency:
+  group: capture-patterns
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Detect job: read-only source collection, clustering, and digest planning.
+  # No write credentials; no issue mutations.
+  # ---------------------------------------------------------------------------
+  detect:
+    name: Detect recurring correction patterns
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # Overlay metadata/ from the data branch so the privacy gate reads the
+      # authoritative private-repo list from metadata/repos.yaml. Best-effort;
+      # `loadPrivateTokensFromDisk()` is the fail-closed chokepoint downstream.
+      - name: ⤵ Overlay metadata from data branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch --no-tags origin data
+            git checkout origin/data -- metadata/
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
+      # Collect the allowed source corpus (accepted docs/solutions/ docs and
+      # learning-proposal issues), build deterministic cluster candidates, apply
+      # suppression/ranking/cap, and write a versioned candidate digest to
+      # CAPTURE_PATTERNS_DIGEST_PATH. Writing the file directly avoids the
+      # shell-injection vector of echoing structured data via GITHUB_OUTPUT.
+      - name: 🔍 Detect candidate patterns
+        id: detect
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CAPTURE_PATTERNS_DIGEST_PATH: ${{ runner.temp }}/capture-patterns-digest.json
+        # pipefail: a failure in `node ...` must fail this step even though `tee`
+        # (the last command in the pipe) exits 0.
+        run: node scripts/capture-patterns-cluster.ts | tee "$RUNNER_TEMP/detect-result.json"
+        shell: bash -Eeuo pipefail {0}
+
+      - name: 📤 Upload digest artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: capture-patterns-digest
+          # Digest fields are allow-listed by buildCandidateDigest (fingerprint,
+          # source IDs, SHA-pinned links, public-safe titles, evidence counts,
+          # score bucket, suggested next action, run count). No private tokens.
+          path: ${{ runner.temp }}/capture-patterns-digest.json
+          retention-days: 1
+
+      - name: 📋 Write detect summary
+        if: always()
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/detect-result.json"
+
+          {
+            echo "## Capture Patterns Detect Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$result" ]]; then
+              echo "| Sources loaded | $(jq '.sourcesLoaded // 0' "$result") |"
+              echo "| Invalid sources | $(jq '.invalidSources // 0' "$result") |"
+              echo "| Candidates scanned | $(jq '.candidatesScanned // 0' "$result") |"
+              echo "| Low-signal skipped | $(jq '.lowSignalSkipped // 0' "$result") |"
+              echo "| Quality-suppressed | $(jq '.qualitySuppressed // 0' "$result") |"
+              echo "| Duplicate/open-overlap | $(jq '.duplicateOpenOverlap // 0' "$result") |"
+              echo "| Hard-suppressed | $(jq '.hardSuppressed // 0' "$result") |"
+              echo "| Soft-suppressed | $(jq '.softSuppressed // 0' "$result") |"
+              echo "| Unsafe | $(jq '.unsafe // 0' "$result") |"
+              echo "| Token-load failure | $(jq -r 'if .tokenLoadFailure then "true" else "false" end' "$result") |"
+              echo "| Capped | $(jq '.capped // 0' "$result") |"
+              echo "| Candidates emitted | $(jq '.candidatesEmitted // 0' "$result") |"
+              echo "| Scan failure | $(jq -r 'if .scanFailure then "true" else "false" end' "$result") |"
+            else
+              echo "| Status | (detect result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Open job: agent drafts bounded proposal bodies from the digest, then a
+  # deterministic step validates and opens at most three pattern-proposal
+  # issues. Dry-run (the default) plans without opening issues or minting a
+  # write token — v1 never performs live scheduled writes.
+  # ---------------------------------------------------------------------------
+  open:
+    name: Draft and open pattern proposals
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: detect
+    # Skip the entire job on dry-run (the default): drafting/opening proposals only
+    # ever happens on an explicit live (dry_run=false) manual dispatch. `always()`
+    # keeps the job eligible even if the detect job's non-critical steps report a
+    # failure state, without gating on detect's own conclusion.
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # Overlay metadata/ from the data branch before the privacy-gated open step,
+      # so `loadPrivateTokensFromDisk()` reads the authoritative private-repo list.
+      - name: ⤵ Overlay metadata from data branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch --no-tags origin data
+            git checkout origin/data -- metadata/
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
+      - name: 📥 Download digest artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: capture-patterns-digest
+          path: ${{ runner.temp }}
+
+      # The agent's ONLY job: read the versioned candidate digest (fingerprint,
+      # source IDs, SHA-pinned links, public-safe titles, evidence counts — no
+      # private tokens, hidden markers, raw issue bodies, or raw solution text),
+      # and write drafted or agent-skipped proposal bodies to a temp JSON file
+      # keyed by fingerprint. It never calls GitHub, edits repo files, or opens
+      # issues — the deterministic open step below does that under a separately
+      # minted write token, only when armed for a live run.
+      - name: 🤖 Draft pattern proposal bodies
+        id: agent
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
+        uses: fro-bot/agent@dfd5a6a2a6896a5f1bbe0cfb72ba8c7af766f222 # v0.84.0
+        env:
+          CAPTURE_PATTERNS_DIGEST_PATH: ${{ runner.temp }}/capture-patterns-digest.json
+          TASK_PROMPT: |
+            You are authoring recurring-pattern proposal bodies. Each candidate in the
+            digest represents two or more solution docs and/or learning-proposal issues
+            that share repeated correction substance — the same kind of mistake, caught
+            and fixed the same way, more than once.
+
+            Your ONLY job in this step:
+            1. Read the candidate digest from $CAPTURE_PATTERNS_DIGEST_PATH (or
+               equivalently $RUNNER_TEMP/capture-patterns-digest.json). It is a JSON
+               array of candidates. Each candidate has:
+               - fingerprint: opaque identity string (the ONLY identifier for this candidate)
+               - sourceIds: opaque source identifiers (do not treat as prose)
+               - sourceLinks: public-safe, dereferenceable links to each source
+               - sourceTitles: public-safe titles (already privacy-gated)
+               - evidenceCount: number of independent sources in the cluster
+               - scoreBucket: 'strong' | 'moderate' | 'weak'
+               - suggestedNextAction: hint field, informational only
+               - runCount: how many runs this candidate has been seen across
+
+            2. For each candidate you judge worth proposing, decide one of two outcomes:
+
+               "drafted" — write a decision-ready proposal body with:
+               - patternStatement: the reusable correction pattern, grounded in the
+                 source titles and evidence, not invented specifics
+               - rationale: why this is a repeated pattern worth codifying, not a
+                 one-off (2-4 sentences)
+               - sourceReferences: array of public-safe strings (use the provided
+                 sourceTitles/sourceLinks — do not fabricate references)
+               - evidenceCount: copy from the digest candidate
+               - suggestedNextAction: a concrete next step for a human reviewer (e.g.
+                 "codify as a docs/solutions/ best-practice entry")
+
+               "agent-skipped" — when the candidate does not represent a real repeated
+               correction pattern (only superficial keyword overlap, insufficient
+               evidence, or sources describing genuinely different behaviors), skip it
+               with a closed reason: "insufficient-evidence" or "different-behaviors".
+
+            3. Write ALL candidate outcomes as a JSON object to
+               $RUNNER_TEMP/capture-patterns-bodies.json:
+               {
+                 "schemaVersion": 1,
+                 "bodies": {
+                   "<fingerprint>": { "outcome": "drafted", ... } | { "outcome": "agent-skipped", "reason": "..." }
+                 }
+               }
+               You may omit a fingerprint entirely if you are unable to judge it — the
+               open step treats a missing body as a distinct, safe no-op for that candidate.
+
+            4. DO NOTHING ELSE. No code edits. No doc edits. No other issues. No API
+               calls beyond reading the digest file. No branch operations.
+
+            Hard boundaries:
+            - Never claim measurable improvement or invent evidence beyond what the
+              digest provides.
+            - Never look up source content, repo internals, or anything beyond the
+              digest fields given to you.
+            - Never create issues yourself — the open step does that, only when armed
+              for a live run.
+            - Never write to any path other than $RUNNER_TEMP/capture-patterns-bodies.json.
+            - Output only the bodies file. No summary issue. No comments.
+        with:
+          # The action requires a github-token input. The workflow's auto-provisioned
+          # GITHUB_TOKEN is scoped to `contents: read`/`issues: read` by this job's
+          # permissions block — it carries no `issues: write`. Issue creation stays
+          # exclusively in the deterministic open step below, under a separately
+          # minted, repo-scoped App token, minted only for an explicit live dispatch.
+          github-token: ${{ github.token }}
+          auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
+          model: ${{ vars.FRO_BOT_MODEL }}
+          omo-providers: ${{ secrets.OMO_PROVIDERS }}
+          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          prompt: ${{ env.TASK_PROMPT }}
+
+      # Mint a scoped app token only for an explicit live (non-dry-run) manual
+      # dispatch. Dry-run runs (the default) never mint this token and never
+      # mutate issues — no live scheduled writes exist in v1.
+      - name: 🔑 Mint write token
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          # Scope to this repo only — smallest blast radius.
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+          permission-contents: read
+
+      # Deterministic open step: reads the digest and the agent-authored bodies,
+      # validates every body through the shared public-output gate, confirms
+      # required labels, injects hidden fingerprint/source-id markers, and opens
+      # at most three pattern-proposal issues. Dry-run mode (default) skips this
+      # step entirely; the detect summary is the dry-run signal.
+      - name: 📬 Open pattern proposal issues
+        id: open
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          CAPTURE_PATTERNS_DIGEST_PATH: ${{ runner.temp }}/capture-patterns-digest.json
+          CAPTURE_PATTERNS_BODIES_PATH: ${{ runner.temp }}/capture-patterns-bodies.json
+          CAPTURE_PATTERNS_RESULT_PATH: ${{ runner.temp }}/capture-patterns-result.json
+        # pipefail: a failure in `node ...` must fail this step even though `tee`
+        # (the last command in the pipe) exits 0.
+        run: node scripts/capture-patterns-open.ts | tee "$RUNNER_TEMP/open-output.json"
+        shell: bash -Eeuo pipefail {0}
+
+      - if: always()
+        name: 📋 Write open summary
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/capture-patterns-result.json"
+
+          {
+            echo "## Capture Patterns Open Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$result" ]]; then
+              echo "| Candidates examined | $(jq '.candidatesExamined // 0' "$result") |"
+              echo "| Drafted | $(jq '.drafted // 0' "$result") |"
+              echo "| Agent-skipped | $(jq '.agentSkipped // 0' "$result") |"
+              echo "| Missing body | $(jq '.missingBody // 0' "$result") |"
+              echo "| Invalid body | $(jq '.invalidBody // 0' "$result") |"
+              echo "| Blocked on privacy | $(jq '.blockedOnPrivacy // 0' "$result") |"
+              echo "| Skipped duplicate (same run) | $(jq '.skippedDuplicateSameRun // 0' "$result") |"
+              echo "| Skipped duplicate (existing) | $(jq '.skippedDuplicateExisting // 0' "$result") |"
+              echo "| Proposals opened | $(jq '.proposalsOpened // 0' "$result") |"
+              echo "| Failed | $(jq '.failed // 0' "$result") |"
+              echo "| Skipped: label unavailable | $(jq '.skippedLabelUnavailable // 0' "$result") |"
+              echo "| Skipped: over cap | $(jq '.skippedOverCap // 0' "$result") |"
+              echo "| Token-load failure | $(jq -r 'if .tokenLoadFailed then "true" else "false" end' "$result") |"
+              echo "| Bodies file missing/unreadable | $(jq -r 'if .bodyFileReadFailed then "true" else "false" end' "$result") |"
+            else
+              echo "| Status | (open result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

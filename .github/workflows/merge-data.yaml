@@ -23,7 +23,7 @@ jobs:
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
 
       - name: ⤵ Checkout Branch
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0 # full history needed for three-dot diff in promotion privacy check
 
@@ -33,7 +33,7 @@ jobs:
       # Two checkouts: scripts live on main, the wiki/metadata being promoted live on data.
       # The privacy check below runs from the data subtree to gate the actual merge content.
       - name: ⤵ Fetch data branch for privacy check
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: data
           path: data-branch-check

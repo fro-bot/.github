@@ -1,0 +1,238 @@
+---
+name: Capture Learnings
+
+on:
+  schedule:
+    - cron: '30 22 * * 0' # Every Sunday at 22:30 UTC (30 min after Merge Data at 22:00)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize runs; never cancel an in-progress run (a partial run could leave
+# the agent step mid-flight with no open step to follow).
+concurrency:
+  group: capture-learnings
+  cancel-in-progress: false
+
+jobs:
+  capture-learnings:
+    name: Capture learning proposals from multi-round-review PRs
+    runs-on: ubuntu-latest
+    # Agent step is the long pole; 30 minutes provides headroom without
+    # permitting a truly-stuck run.
+    timeout-minutes: 30
+    steps:
+      - id: get-workflow-app-token
+        name: Get Workflow Access Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          # Scope to this repo only — harvest and issue-create are same-repo.
+          # Smaller blast radius than owner-scoped token.
+          repositories: ${{ github.event.repository.name }}
+
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # Overlay metadata/ from the data branch so the privacy gate reads the
+      # authoritative private-repo list from metadata/repos.yaml.
+      # Hard-fail if the data branch exists but the overlay fails — the privacy
+      # gate cannot operate without metadata/repos.yaml (fail-closed by design).
+      # Tolerate a missing data branch (first run, fresh clone) like reconcile does.
+      - name: ⤵ Overlay metadata from data branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch --no-tags origin data
+            git checkout origin/data -- metadata/
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
+      # Harvest merged PRs where Fro Bot's substantive reviews meet the predicate
+      # (substantiveReviewCount >= 2 AND correctionSignalCount >= 1), dedup against
+      # existing learning-proposal issues and docs/solutions/, cap to
+      # MAX_LEARNINGS_PER_RUN, and write an opaque digest (merge_sha + signals —
+      # no owner/repo/number prose) directly to CAPTURE_LEARNINGS_DIGEST_PATH.
+      # Writing the file directly avoids the shell-injection vector that existed
+      # when the digest was echoed via GITHUB_OUTPUT multiline syntax.
+      - name: 🌾 Harvest candidates
+        id: harvest
+        env:
+          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
+        run: node scripts/capture-learnings-harvest.ts | tee "$RUNNER_TEMP/harvest-result.json"
+        shell: bash
+
+      # The agent's ONLY job: read the digest (merge_sha + signals, no private
+      # identifiers), author a concise learning-proposal body for each candidate
+      # worth proposing, and write the bodies as a JSON object keyed by merge_sha
+      # to $RUNNER_TEMP/capture-learnings-bodies.json. Nothing else — no code edits,
+      # no doc edits, no other issues, no API exploration.
+      #
+      # The privacy gate and issue-create run deterministically in the open
+      # step below. The agent cannot bypass the privacy gate.
+      #
+      # The agent action requires a github-token input, so one is supplied. It is
+      # the workflow's auto-provisioned GITHUB_TOKEN, scoped to `contents: read` by
+      # this job's permissions block — it carries no `issues: write`. Issue creation
+      # is prevented by that scope, not by omitting the token. The agent only reads
+      # the digest file and writes the bodies file; issue creation stays exclusively
+      # in the deterministic open step under the App token.
+      - name: 🤖 Author proposal bodies
+        id: agent
+        uses: fro-bot/agent@dfd5a6a2a6896a5f1bbe0cfb72ba8c7af766f222 # v0.84.0
+        env:
+          CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
+          TASK_PROMPT: |
+            You are authoring learning-proposal bodies. Each body distills a reusable
+            learning from a pull request — either one that went through multiple substantive
+            review rounds, or one whose CI checks transitioned failed → passed before merge.
+
+            Your ONLY job in this step:
+            1. Read the harvest digest from $CAPTURE_LEARNINGS_DIGEST_PATH (or equivalently
+               $RUNNER_TEMP/capture-learnings-digest.json). The digest is a JSON object:
+               { "candidates": [...], "telemetry": {...} }
+               Each candidate has a `trigger` field that determines its shape:
+
+               trigger: "review-heavy" candidates have:
+               - mergeSha: opaque merge commit SHA (the ONLY identifier you receive)
+               - reviewRounds: number of substantive Fro Bot review rounds (approved,
+                 changes-requested, or dismissed — a dismissed approval marks a re-review
+                 forced by a new push)
+               - reviewExcerpts: string[] — the actual review prose from the rounds (review
+                 bodies and line-level review comments), ranked with the correction feedback
+                 first. This is your PRIMARY signal: it is what the reviewer actually said
+                 about what was wrong and how it was fixed. It has been privacy-scanned; use
+                 it as given. May be empty for some candidates.
+               - signals: { titleTokens: string[], labels: string[] } — secondary context only
+               - ciFix: object (optional) — present when this PR ALSO failed then fixed CI
+                 before merge. When present it carries { failingCheckName, diffExcerpt,
+                 logExcerpt? } with the same meaning as the ci-fail-then-pass fields below. It
+                 has been privacy-scanned independently; use it as given.
+
+               trigger: "ci-fail-then-pass" candidates have:
+               - mergeSha: opaque merge commit SHA (the ONLY identifier you receive)
+               - failingCheckName: name of the CI check that transitioned failed → passed
+               - diffExcerpt: string — the fixing diff between the last-failing and
+                 first-passing commit. This is your PRIMARY signal: it shows exactly what
+                 change turned the check green. It has been privacy-scanned; use it as given.
+                 May be empty if evidence was blocked by the privacy scan.
+               - logExcerpt: string (optional) — excerpt from the failing job log, ranked
+                 toward error lines. May be '[failure log purged or unavailable]' when the
+                 log could not be fetched. Secondary signal — the diff is primary.
+               - signals: { titleTokens: string[], labels: string[] } — tertiary context only
+
+            2. For each candidate you judge worth proposing, write a concise learning-proposal
+               body (2–4 paragraphs) that:
+
+               For trigger: "review-heavy" —
+               - Distills the reusable learning from reviewExcerpts — what the review rounds
+                 actually said was wrong and how it was corrected. Ground the learning in that
+                 prose, not in the title tokens. When reviewExcerpts is empty, fall back to
+                 signals but keep the body modest and clearly general rather than inventing
+                 specifics.
+               - When `ciFix` is ALSO present (the PR drew review AND failed then fixed CI),
+                 distill from BOTH: what the reviewers flagged AND what the failing check caught
+                 and how the fixing diff corrected it. These dual-signal PRs are the richest
+                 source — weave the review feedback and the failure→fix into one learning, not
+                 two stapled together.
+
+               For trigger: "ci-fail-then-pass" —
+               - Distills the learning as "this failure → this fix": what the failing check
+                 caught (from failingCheckName + logExcerpt) and how diffExcerpt corrected it.
+                 Ground the learning in diffExcerpt — that is the concrete evidence of what
+                 changed. Do NOT invent specifics from the title tokens. When diffExcerpt is
+                 empty (evidence blocked), keep the body modest and clearly general.
+
+               For all triggers —
+               - References the source PR by merge SHA ONLY (never look up or include
+                 owner/repo/PR number/title/author — you do not have that information and
+                 must not attempt to retrieve it)
+               - Proposes what the learning would be
+               - Is suitable for a human to review and author into docs/solutions/
+
+            3. Write the bodies as a JSON object to $RUNNER_TEMP/capture-learnings-bodies.json:
+               { "<mergeSha>": "<body text>", ... }
+               Include only candidates you judge worth proposing. Omit candidates
+               you judge low-value (empty object {} is valid if none merit a proposal).
+            4. DO NOTHING ELSE. No code edits. No doc edits. No other issues.
+               No API calls beyond reading the digest file. No branch operations.
+
+            Hard boundaries:
+            - Never look up PR details, owner, repo name, PR number, or author.
+            - Never create issues yourself — the open step does that.
+            - Never write to any path other than $RUNNER_TEMP/capture-learnings-bodies.json.
+            - Output only the bodies file. No summary issue. No comments.
+        with:
+          # The action requires a github-token input. Pass the workflow's auto-provisioned
+          # GITHUB_TOKEN, which is scoped to `contents: read` by this job's permissions — it
+          # cannot create issues. Issue creation remains exclusively in the deterministic
+          # open step (via the App token), so the agent still cannot bypass the privacy
+          # gate or open issues directly.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
+          model: ${{ vars.FRO_BOT_MODEL }}
+          omo-providers: ${{ secrets.OMO_PROVIDERS }}
+          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          prompt: ${{ env.TASK_PROMPT }}
+
+      # Deterministic open step: reads the harvest digest and the
+      # agent-authored bodies, runs the privacy gate (fail-closed against
+      # metadata/repos.yaml), applies same-run dedup, and opens the issues.
+      # The privacy gate runs here — not at agent discretion.
+      - name: 📬 Open learning-proposal issues
+        id: open
+        env:
+          GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
+          CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
+          CAPTURE_LEARNINGS_BODIES_PATH: ${{ runner.temp }}/capture-learnings-bodies.json
+          CAPTURE_LEARNINGS_RESULT_PATH: ${{ runner.temp }}/capture-learnings-result.json
+        run: node scripts/capture-learnings-open.ts | tee "$RUNNER_TEMP/open-output.json"
+        shell: bash
+
+      - if: always()
+        name: 📋 Write step summary
+        run: |
+          set -euo pipefail
+          harvest="$RUNNER_TEMP/harvest-result.json"
+          result="$RUNNER_TEMP/capture-learnings-result.json"
+
+          {
+            echo "## Capture Learnings Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$harvest" ]]; then
+              echo "| Closed PRs fetched | $(jq '.telemetry.closedPrsFetched // 0' "$harvest") |"
+              echo "| Merged PRs in lookback | $(jq '.telemetry.mergedPrsInLookback // 0' "$harvest") |"
+              echo "| Excluded automation | $(jq '.telemetry.excludedAutomation // 0' "$harvest") |"
+              echo "| Multi-round candidates | $(jq '.telemetry.multiRoundCandidates // 0' "$harvest") |"
+              echo "| CI fail-then-pass examined | $(jq '.telemetry.ciFixPrsExamined // 0' "$harvest") |"
+              echo "| CI fail-then-pass candidates | $(jq '.telemetry.ciFixCandidates // 0' "$harvest") |"
+              echo "| After seen dedup | $(jq '.telemetry.afterSeenDedup // 0' "$harvest") |"
+              echo "| After solutions dedup | $(jq '.telemetry.afterSolutionsDedup // 0' "$harvest") |"
+              echo "| Candidates emitted | $(jq '.telemetry.emitted // 0' "$harvest") |"
+              echo "| Dual-trigger candidates | $(jq '.telemetry.dualTriggerCandidates // 0' "$harvest") |"
+              echo "| Enrichment blocked by privacy | $(jq '.telemetry.enrichmentBlocked // 0' "$harvest") |"
+              echo "| Enrichment blocked by secret | $(jq '.telemetry.enrichmentBlockedBySecret // 0' "$harvest") |"
+            else
+              echo "| Closed PRs fetched | (harvest result unavailable) |"
+            fi
+
+            if [[ -s "$result" ]]; then
+              echo "| Learnings opened | $(jq '.learningsOpened // 0' "$result") |"
+              echo "| Blocked on privacy | $(jq '.blockedOnPrivacy // 0' "$result") |"
+              echo "| Skipped duplicate | $(jq '.skippedDuplicate // 0' "$result") |"
+              echo "| Failed | $(jq '.failed // 0' "$result") |"
+            else
+              echo "| Learnings opened | (open result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+        shell: bash

@@ -1,7 +1,7 @@
 ---
 title: Privacy Gate Design for Data→Main Promotion Leak Prevention
 date: 2026-06-04
-last_updated: 2026-06-04
+last_updated: 2026-07-04
 verified: 2026-06-04
 category: best-practices
 module: github-workflows
@@ -29,6 +29,11 @@ tags:
 ---
 
 # Privacy Gate Design for Data→Main Promotion Leak Prevention
+
+This doc covers the promotion chokepoint specifically — the `data → main` gate below. It is
+no longer the earliest gate a wiki write passes through: `scripts/wiki-repair.ts` now runs
+`detectPrivateWikiLeaks` as a pre-commit gate (`gateWikiRepairs`) against current-tip authority
+metadata before repaired pages ever reach the `data` branch. See "Related" for that gate's doc.
 
 ## Context
 
@@ -194,3 +199,18 @@ return {ok: false, matchedFiles: redactedFiles}
   fallback path must reuse the exact fail-closed predicates of the main gate.
 - Issues: #3407 (wire the gate), #3408 (operator-actionable blocked output), #3429 (resolver PAT
   hygiene), #3430 (redact node_ids in failure output), #3424 (accepted commit-history exposure).
+
+## See also — privacy-gate correctness patterns
+
+- [Structured-first attribution for public-allowlist privacy gates](wiki-page-structured-attribution-2026-06-04.md) —
+  three-state frontmatter read (absent / present-but-malformed / present-with-URLs) and the
+  substring/prefix/truthy leak vectors that structured attribution closes.
+- [Survey workflow-side privacy gate](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md) —
+  defense-in-depth at the dispatch boundary: the workflow is its own privacy boundary, not a
+  downstream consumer of someone else's gate.
+- [Pure-core privacy gates with a shared module and mutation-proof tests](pure-core-privacy-gates-shared-module-2026-06-22.md) —
+  gate in the pure core before sensitive data enters shared state; one shared module so
+  chokepoints cannot diverge; mutation-proof tests that fail when the gate is removed.
+- [Verify the whole public perimeter](../security-issues/verify-whole-public-perimeter-2026-06-22.md) —
+  enumerate every public surface before claiming a privacy invariant holds; a gate that covers
+  only the surfaces you thought of is not a gate.

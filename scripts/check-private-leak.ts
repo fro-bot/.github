@@ -7,7 +7,7 @@ import process from 'node:process'
 import {parse as parseYaml} from 'yaml'
 import {isRecord, makeGhNodeIdResolver} from './private-repo-resolution.ts'
 import {assertReposFile} from './schemas.ts'
-import {computeRepoSlug} from './wiki-slug.ts'
+import {buildPrivateNameTokens} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -571,13 +571,18 @@ function fetchPrivateNodeIds(
 const COMPARE_API_FILE_CAP = 300
 
 /**
- * Check the compare JSON response for truncation signals.
+ * Check the compare JSON response for file-list truncation.
  * Exported for unit testing.
  *
- * GitHub's compare API caps `files` at 300 per response. Two truncation signals:
- * 1. `files.length >= 300` — the cap was hit; additional files may be missing.
- * 2. Any file entry missing its `patch` field — the API omits `patch` for very large
- *    individual files; we cannot scan a file whose patch was dropped.
+ * GitHub's compare API caps `files` at 300 entries per response. When the cap is
+ * hit, additional changed files are silently omitted from the JSON — we cannot
+ * guarantee a complete scan, so we throw (fail closed).
+ *
+ * A missing per-file `patch` field is NOT a truncation signal. The JSON
+ * representation omits `patch` for individually large files, but the raw unified
+ * diff media response (fetched separately by `fetchDiffForSha`) always includes
+ * the full patch content. The raw diff is the actual scan source; the JSON check
+ * exists only to guard against file-list truncation.
  *
  * Throws with a redacted message if truncation is detected so the caller (main()'s
  * try/catch) exits non-zero — fail closed.
@@ -592,23 +597,14 @@ export function assertCompareNotTruncated(compareJson: unknown): void {
     throw new TypeError('check-private-leak: compare API response missing files array — fail closed')
   }
 
-  // Signal 1: file count at or above the API cap.
+  // File count at or above the API cap: additional files may be missing from the list.
+  // This is the only truncation signal we guard against here. A missing per-file `patch`
+  // field is not fatal — the raw diff fetch (Step 2 in fetchDiffForSha) always includes
+  // the full patch content and is the actual scan source.
   if (files.length >= COMPARE_API_FILE_CAP) {
     throw new Error(
       `check-private-leak: diff too large to scan completely (${files.length} files >= ${COMPARE_API_FILE_CAP}-file cap) — fail closed`,
     )
-  }
-
-  // Signal 2: any file missing its patch field (individually too large for the API to include).
-  // The filename is intentionally NOT echoed — a path under knowledge/wiki/repos/ could embed a
-  // private slug. Fail closed with a count-only message.
-  for (const file of files) {
-    if (!isRecord(file)) continue
-    if (!('patch' in file)) {
-      throw new Error(
-        'check-private-leak: a file patch was omitted by the compare API (file too large to diff) — fail closed',
-      )
-    }
   }
 }
 
@@ -620,30 +616,34 @@ export function assertCompareNotTruncated(compareJson: unknown): void {
  * force-push TOCTOU: the diff is for exactly the SHA the commit status is posted to,
  * regardless of any subsequent force-push to the PR branch.
  *
- * Truncation guard (fail-closed): before fetching the raw diff, queries the compare
- * endpoint as JSON (no diff media type) to check for truncation. GitHub caps the
- * `files` array at 300 entries and omits `patch` for individually-too-large files.
- * Either signal means we cannot guarantee a complete scan → throws so main()'s
- * try/catch exits non-zero (fail closed). The raw diff fetch is skipped on truncation.
+ * Two-step fetch:
+ * 1. JSON truncation check — queries the compare endpoint without a diff media type to
+ *    inspect `files.length`. If the file list is at or above the 300-entry cap, the
+ *    response is truncated and we cannot guarantee a complete scan → throws (fail closed).
+ *    A missing per-file `patch` in the JSON is NOT a truncation signal and does not throw.
+ * 2. Raw diff fetch — requests the same endpoint with `Accept: application/vnd.github.v3.diff`.
+ *    This always returns the full unified diff, including patches for large files that the
+ *    JSON representation omits. The raw diff is the actual scan source.
  *
  * Accepts an explicit env so FRO_BOT_POLL_PAT never reaches the gh subprocess
  * (mirrors the --promotion gitEnv isolation pattern). The PAT-stripped env is used
  * for BOTH the JSON truncation check and the raw diff fetch.
  */
 function fetchDiffForSha(headSha: string, env: NodeJS.ProcessEnv): string {
-  // Step 1: fetch the compare JSON to detect truncation before scanning.
-  // No diff media type — returns { total_commits, files: [...] } with per-file patch fields.
+  // Step 1: fetch the compare JSON to check for file-list truncation.
+  // No diff media type — returns { total_commits, files: [...] }.
+  // Throws if files.length >= 300 (file list truncated) — fail closed.
+  // A missing per-file `patch` in the JSON is not fatal; the raw diff (Step 2) is the scan source.
   const compareJsonRaw = execFileSync(
     'gh',
     ['api', `repos/{owner}/{repo}/compare/${EXPECTED_BASE_BRANCH}...${headSha}`],
     {encoding: 'utf8', env},
   )
   const compareJson: unknown = JSON.parse(compareJsonRaw)
-  // Throws if truncated — fail closed. main()'s try/catch maps this to process.exit(1).
   assertCompareNotTruncated(compareJson)
 
-  // Step 2: fetch the raw unified diff for the actual scan content.
-  // Only reached when the JSON check confirms the diff is complete.
+  // Step 2: fetch the raw unified diff — the actual scan source.
+  // The raw diff always includes full patch content, even for files whose JSON `patch` was omitted.
   return execFileSync(
     'gh',
     [
@@ -682,21 +682,7 @@ function postOverrideComment(prNumber: number, author: string): void {
  * Duplicate forms are collapsed via a Set round-trip.
  */
 function buildTokensForName(nameWithOwner: string): string[] {
-  const slashIndex = nameWithOwner.indexOf('/')
-  if (slashIndex < 1) return []
-  const owner = nameWithOwner.slice(0, slashIndex)
-  const name = nameWithOwner.slice(slashIndex + 1)
-  if (owner === '' || name === '') return []
-  // Raw double-dash form — original chars, no sanitization. Always added first.
-  const rawDoubleDash = `${owner}--${name}`
-  const tokens: string[] = [nameWithOwner, rawDoubleDash]
-  try {
-    tokens.push(computeRepoSlug(owner, name))
-  } catch {
-    // computeRepoSlug throws on empty segments — skip slug form
-  }
-  // Dedup: identical forms (e.g. simple names where raw == slug) don't double up.
-  return [...new Set(tokens)]
+  return buildPrivateNameTokens(nameWithOwner)
 }
 
 /**

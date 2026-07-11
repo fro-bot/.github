@@ -1,0 +1,103 @@
+
+:root {
+  /* Fro Bot Brand Tokens */
+  --frobot-void: #0d0216;
+  --frobot-purple: #1a0b2e;
+  --frobot-cyan: #00bcd4;
+  --frobot-cyan-aaa: #006064;
+  --frobot-magenta: #e91e63;
+  --frobot-amber: #ffc107;
+  --frobot-white: #ffffff;
+  
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+}
+
+[saved-theme="dark"] {
+  --shadow-glow: 0 0 20px rgba(0, 188, 212, 0.25);
+  --shadow-glow-magenta: 0 0 20px rgba(233, 30, 99, 0.25);
+}
+
+[saved-theme="light"] {
+  --shadow-glow: 0 0 20px rgba(0, 96, 100, 0.15);
+  --shadow-glow-magenta: 0 0 20px rgba(136, 14, 79, 0.15);
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Typography Overrides */
+h1, h2, h3, h4, h5, h6, .article-title {
+  letter-spacing: -0.02em;
+}
+
+code {
+  font-size: 0.9em;
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  background: var(--highlight);
+}
+
+pre {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--lightgray);
+  padding: 1rem;
+}
+
+[saved-theme="dark"] pre {
+  border-left: 3px solid var(--frobot-cyan);
+}
+[saved-theme="light"] pre {
+  border-left: 3px solid var(--frobot-cyan-aaa);
+}
+
+/* Tags/Badges */
+.tag-link {
+  font-family: var(--codeFont);
+  padding: 0.2em 0.5em;
+  border-radius: var(--radius-sm);
+  border: 1px solid currentColor;
+}
+[saved-theme="dark"] .tag-link {
+  color: var(--frobot-cyan);
+  background: rgba(0, 188, 212, 0.1);
+}
+[saved-theme="light"] .tag-link {
+  color: var(--frobot-cyan-aaa);
+  background: rgba(0, 96, 100, 0.1);
+}
+
+/* Links & Interactive (Glow sparingly) */
+a {
+  transition: text-shadow 150ms ease, color 150ms ease;
+}
+a:hover {
+  text-shadow: var(--shadow-glow);
+}
+
+/* GitHubSource & Sources section from Unit 2 */
+.github-source-section {
+  border-left: 3px solid var(--frobot-magenta);
+  padding-left: 1rem;
+  margin: 1.5rem 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--highlight);
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+.github-source-section a:hover {
+  text-shadow: var(--shadow-glow-magenta);
+}
+
+/* UI Cards (Search, Explorer, Popover) */
+.search > div, .popover > .popover-inner, .explorer-folder {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--lightgray);
+}

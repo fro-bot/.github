@@ -49,12 +49,14 @@ repos:
     has_renovate: boolean
     discovery_channel: collab | owned | contrib
     next_survey_eligible_at: ISO date | null
+    cross_repo_receipts: coordination-issue-v1
 ```
 
 Field notes:
 
 - `node_id` — GitHub GraphQL node ID for the repository. Used as the manual dispatch identifier: `gh workflow run survey-repo.yaml -f node_id=<node_id>`. Also used as the privacy-safe identifier in `pending-review` issue bodies for private repos.
 - `private` — whether the repository is private. Entries with `private: true` are stored redacted: `owner` and `name` are replaced with `<node_id>` and canonical identifiers never reach `main`. The `node_id` is used as the subject identifier in issue bodies and workflow dispatch. Redacted entries appear on `main` as part of normal promotion — this is by design, not a privacy leak. They must not be deleted from `main` as hygiene (see [Sole-writer rule and privacy boundary](#sole-writer-rule-and-privacy-boundary) below).
+- `cross_repo_receipts` — optional. Operator-declared A3 cross-repo receipt contract capability for this target. The only recognized value is `coordination-issue-v1`. **Authority boundary:** this field is authoritative only because `repos.yaml` is a `data`-branch, sole-writer contract (see below) — it is not a target self-report and a dispatched prompt is never the source of truth for it. Setting it does not prove the target will actually comply at runtime; it is an administrative routing gate the coordinator reads at dispatch time via `scripts/cross-repo-dispatch.ts`'s `classifyReceiptCapability`, and the classified value is snapshotted onto the dispatched item as `receiptContract`. **This does not currently change tracker behavior for any target:** an accepted, nonce-verified receipt resolves an item to terminal state regardless of `cross_repo_receipts`, and a missing receipt for any target (declared or legacy) remains non-terminal `needs-attention` with a diagnostic — never `completed`, never silently dropped. The field records how an operator should interpret a missing receipt for that target, not a distinct enforcement path. Absent (the default for every existing entry) means `legacy-best-effort`. An unrecognized non-empty value fails closed with a validation error rather than silently downgrading. Write this field only through the `data`-branch path described in [Editing metadata files](#editing-metadata-files); do not add or change it in a `main`-targeting feature branch. Initial backfill candidates, once an operator chooses to write them, are the [#3652](https://github.com/fro-bot/.github/issues/3652) targets that posted accepted coordination receipts: `marcusrbrown/gpt`, `fro-bot/agent`, and `fro-bot/dashboard`. `marcusrbrown/containers` and `marcusrbrown/opencode-copilot-delegate` remain unset — they completed #3652 without an accepted coordination receipt.
 
 Sole-writer rule: `repos.yaml` is written exclusively on the `data` branch — by the invitation handler, daily reconcile, and survey workflows running under the fro-bot identity. `main` never edits this file directly. The sole path from `data` to `main` is the weekly `data → main` promotion PR; manual hygiene edits to `repos.yaml` on a `main`-targeting feature branch are prohibited because they create a both-sides mutation that conflicts the promotion. If a private repo entry is deleted or access is lost, leave its redacted entry in `repos.yaml` as-is — the promotion privacy gate tolerates dead orphans (it grandfathers pages already present on `main` and blocks only newly-promoted unattributable pages).
 
@@ -224,6 +226,18 @@ The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data �
 - All programmatic metadata writes must go through `scripts/commit-metadata.ts` and target the `data` branch.
 - Manual edits to `metadata/*.yaml` also target `data` and are promoted via the `Merge Data Branch` workflow — see above.
 - Metadata files are initialized in-repo first; automation updates existing files only.
+
+## Learning-proposal capture
+
+A weekly scheduled run (`capture-learnings.yaml`, Sunday 22:30 UTC) examines this repo's merged PRs for those that required multiple rounds of substantive Fro Bot reviews — the richest mistake→correction signal — and opens a GitHub issue proposing a candidate learning for each.
+
+Each proposal is labeled `learning-proposal` and carries an immutable body marker (`<!-- captured-learning:merge_sha=<sha> -->`). The marker is the reset-resilient decision log: the run rebuilds its seen-set each week by querying all `learning-proposal` issues (state: all, including closed), so a data-branch reset cannot wipe the log.
+
+**Privacy:** the harvest digest identifies candidates by merge commit SHA only — no owner, repo name, PR number, or title reaches the agent or the proposal body. The agent authors proposal bodies referencing the source by merge SHA only. Before any issue is created, the body is scanned against the private-repo token set from `metadata/repos.yaml` (fail-closed: a missing or unreadable overlay aborts the open step with no issues posted).
+
+**Human review:** proposals are human-reviewed. There is no auto-merge or auto-promotion path. A human authors the final learning into `docs/solutions/` via `ce:compound` when a proposal is accepted.
+
+**Cadence and cost:** weekly, capped at `MAX_LEARNINGS_PER_RUN` candidates, with a bounded lookback window. The step summary reports counts only (PRs examined, candidates after dedup, learnings opened, blocked on privacy).
 
 ## Metrics note
 

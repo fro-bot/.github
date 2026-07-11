@@ -134,15 +134,20 @@ export function deriveTrackedIssueRefs(items: ProjectItem[]): string[] {
 }
 
 function filterSupportedProjectItems(items: ProjectItem[]): ProjectItem[] {
-  return items.filter(item => {
+  let skipped = 0
+  const supported = items.filter(item => {
     if (item.content_repo === '' || item.content_number === 0) {
-      process.stderr.write(
-        `rollout-tracker-snapshot: warning — skipping unsupported Project item (id=${item.id}, repo="${item.content_repo}", number=${item.content_number})\n`,
-      )
+      skipped++
       return false
     }
     return true
   })
+  if (skipped > 0) {
+    process.stderr.write(
+      `rollout-tracker-snapshot: warning — skipping ${skipped} unsupported Project item(s) (missing repo or number)\n`,
+    )
+  }
+  return supported
 }
 
 /**
@@ -354,6 +359,7 @@ async function main(): Promise<void> {
       const {execSync} = await import('node:child_process')
       rawItems = execSync(`gh project item-list ${projectNumber} --owner ${projectOwner} --format json --limit 100`, {
         encoding: 'utf8',
+        timeout: 60_000,
       })
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
@@ -399,7 +405,7 @@ async function main(): Promise<void> {
         const raw = execFileSync(
           'gh',
           ['issue', 'view', numStr, '--repo', repo, '--json', 'number,state,title,closedAt,labels'],
-          {encoding: 'utf8'},
+          {encoding: 'utf8', timeout: 30_000},
         )
         const parsed = JSON.parse(raw) as {
           number: number
@@ -416,11 +422,9 @@ async function main(): Promise<void> {
           closed_at: parsed.closedAt,
           labels: parsed.labels.map(l => l.name),
         })
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error)
-        process.stderr.write(`rollout-tracker-snapshot: FATAL — failed to fetch ${ref}: ${detail}\n`)
+      } catch {
         process.stderr.write(
-          'rollout-tracker-snapshot: refusing to treat tracked issue access failure as no-drift; exiting 1\n',
+          'rollout-tracker-snapshot: FATAL — failed to fetch a tracked issue; refusing to treat access failure as no-drift; exiting 1\n',
         )
         process.exit(1)
       }

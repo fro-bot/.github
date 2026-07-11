@@ -1,0 +1,195 @@
+---
+name: Improvement Metrics
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run mode: compute the digest but do not write the report issue'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+# Default permissions: read-only. The report job overrides to issues: write, and only
+# when a live (non-dry-run) manual dispatch explicitly requests it.
+permissions:
+  contents: read
+
+# Serialize runs; never cancel an in-progress run so a detect-to-report sequence is
+# never interrupted halfway through.
+concurrency:
+  group: improvement-metrics
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Detect job: read-only event/class collection and digest computation.
+  # No write credentials; no issue mutations. Requires full git history to
+  # compute solution-doc add-dates, unlike other workflows in this repo.
+  # ---------------------------------------------------------------------------
+  detect:
+    name: Detect improvement-metric edges
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history required: the detect script computes solution-doc
+          # add-dates from git log, not just the tip commit.
+          fetch-depth: 0
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      # Overlay metadata/ from the data branch so the privacy gate reads the
+      # authoritative private-repo list from metadata/repos.yaml. Best-effort;
+      # `loadPrivateTokensFromDisk()` is the fail-closed chokepoint downstream.
+      - name: ⤵ Overlay metadata from data branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch --no-tags origin data
+            git checkout origin/data -- metadata/
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
+      # Compute the event -> codified-class edge digest and write it to
+      # IMPROVEMENT_METRICS_DIGEST_PATH. Writing the file directly avoids the
+      # shell-injection vector of echoing structured data via GITHUB_OUTPUT.
+      # Do NOT tee stdout into this same path: the script's own stdout is a
+      # different flat DetectResult shape (no `digest`/`edges` wrapper) than
+      # the file it writes via writeImprovementMetricsDigestFile, and tee
+      # would clobber the file with stdout after the script's write.
+      - name: 🔍 Detect improvement-metric edges
+        id: detect
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          IMPROVEMENT_METRICS_DIGEST_PATH: ${{ runner.temp }}/improvement-metrics-digest.json
+        # pipefail retained even without a pipe, for consistency with the report step.
+        run: node scripts/improvement-metrics-detect.ts
+        shell: bash -Eeuo pipefail {0}
+
+      - name: 📤 Upload digest artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: improvement-metrics-digest
+          # Digest fields are counts-only + fingerprint edges (public-safe).
+          # No private tokens.
+          path: ${{ runner.temp }}/improvement-metrics-digest.json
+          retention-days: 1
+
+      - name: 📋 Write detect summary
+        if: always()
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/improvement-metrics-digest.json"
+
+          {
+            echo "## Improvement Metrics Detect Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$result" ]]; then
+              echo "| Token-load failure | $(jq -r 'if .digest.tokenLoadFailure then "true" else "false" end' "$result") |"
+              echo "| Git-history unavailable | $(jq -r 'if .digest.gitHistoryUnavailable then "true" else "false" end' "$result") |"
+              echo "| Edges emitted | $(jq '.edges | length' "$result") |"
+              echo "| Report state | $(jq -r '.digest.state // "unknown"' "$result") |"
+            else
+              echo "| Status | (detect result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Report job: deterministic upsert of the perpetual improvement-metrics
+  # report issue. No agent step — the report body is fully deterministic.
+  # Dry-run (the default) skips this job entirely; the detect summary is the
+  # dry-run signal.
+  # ---------------------------------------------------------------------------
+  report:
+    name: Upsert improvement-metrics report issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: detect
+    # Skip the entire job on dry-run (the default): the report issue is only
+    # ever upserted on an explicit live (dry_run=false) manual dispatch.
+    # `always()` keeps the job eligible even if the detect job's non-critical
+    # steps report a failure state, without gating on detect's own conclusion.
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 📥 Download digest artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: improvement-metrics-digest
+          path: ${{ runner.temp }}
+
+      # Mint a scoped app token only for an explicit live (non-dry-run) manual
+      # dispatch. Dry-run runs (the default) never mint this token and never
+      # mutate issues.
+      - name: 🔑 Mint write token
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APPLICATION_ID }}
+          private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+          # Scope to this repo only — smallest blast radius.
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+          permission-contents: read
+
+      # Deterministic report step: reads the digest, upserts the perpetual
+      # improvement-metrics report issue (static title, hidden version marker,
+      # per-edge checklist). No agent step — the report is fully deterministic.
+      - name: 📬 Upsert improvement-metrics report issue
+        id: report
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          IMPROVEMENT_METRICS_DIGEST_PATH: ${{ runner.temp }}/improvement-metrics-digest.json
+          IMPROVEMENT_METRICS_RESULT_PATH: ${{ runner.temp }}/improvement-metrics-result.json
+        # pipefail: a failure in `node ...` must fail this step even though `tee`
+        # (the last command in the pipe) exits 0.
+        run: node scripts/improvement-metrics-report.ts | tee "$RUNNER_TEMP/improvement-metrics-result.json"
+        shell: bash -Eeuo pipefail {0}
+
+      - if: always()
+        name: 📋 Write report summary
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/improvement-metrics-result.json"
+
+          {
+            echo "## Improvement Metrics Report Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+
+            if [[ -s "$result" ]]; then
+              echo "| Outcome | $(jq -r '.outcome // "none"' "$result") |"
+              echo "| Token-load failure | $(jq -r 'if .tokenLoadFailure then "true" else "false" end' "$result") |"
+              echo "| Digest-read failure | $(jq -r 'if .digestReadFailure then "true" else "false" end' "$result") |"
+            else
+              echo "| Status | (report result unavailable) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

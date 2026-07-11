@@ -230,3 +230,4 @@ await emitPagesChanged(pagesChanged)
 - `docs/solutions/best-practices/diagnostic-patches-observability-discipline-2026-05-20.md` — stderr discipline; this applies the same discipline with the opposite operational goal (fail-soft, not fail-loud).
 - `docs/solutions/best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md` — public-surface leak prevention; this adds the "don't render a placeholder public value" rule.
 - `docs/solutions/workflow-issues/github-actions-step-output-interpolation-2026-04-21.md` — pass step outputs through `env:`, never interpolate into `run:`.
+- `docs/solutions/best-practices/requirements-doc-survives-verification-2026-06-24.md` — reconcile against the deployed verifier's code, not the design doc; the "live source over prose" discipline generalized to requirements documents.

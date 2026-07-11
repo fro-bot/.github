@@ -13,7 +13,7 @@ runs:
   steps:
     - name: Install mise
       env:
-        MISE_VERSION: 2026.6.0 # renovate: datasource=github-releases packageName=jdx/mise
+        MISE_VERSION: 2026.7.0 # renovate: datasource=github-releases packageName=jdx/mise
       uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
       with:
         version: ${{ env.MISE_VERSION }}
@@ -39,7 +39,7 @@ runs:
       shell: 'bash -Eeuo pipefail {0}'
 
     - name: Restore pnpm store cache
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         key: ${{ steps.configure-cache.outputs.key }}
         path: ${{ steps.configure-cache.outputs.path }}

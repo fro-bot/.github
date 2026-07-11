@@ -3,9 +3,8 @@ import {appendFile, readdir, readFile, writeFile} from 'node:fs/promises'
 import {join} from 'node:path'
 import process from 'node:process'
 
-import {parse} from 'yaml'
+import {collectWikilinks, collectPageTargets as collectWikiPageTargets, splitFrontmatter} from './wiki-utils.ts'
 
-const WIKILINK_PATTERN = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gu
 const PAGE_PATH_PATTERN = /^knowledge\/wiki\/[^/]+\/.+\.md$/u
 const REQUIRED_FRONTMATTER_FIELDS = ['type', 'title', 'created', 'updated'] as const
 const STALE_DAYS = 90
@@ -508,57 +507,17 @@ function collectIndexedSlugs(indexContent: string): Set<string> {
 }
 
 function collectPageTargets(pages: readonly ParsedPage[]): Set<string> {
-  const targets = new Set<string>()
-
-  for (const page of pages) {
-    targets.add(page.slug)
-
-    const aliases = page.frontmatter.aliases
-    if (Array.isArray(aliases)) {
-      for (const alias of aliases) {
-        if (typeof alias === 'string' && alias.trim() !== '') {
-          targets.add(alias)
-        }
-      }
-    }
-  }
-
-  return targets
+  return collectWikiPageTargets(
+    pages.map(page => ({
+      slug: page.slug,
+      aliases: Array.isArray(page.frontmatter.aliases)
+        ? page.frontmatter.aliases.filter((alias): alias is string => typeof alias === 'string' && alias.trim() !== '')
+        : [],
+    })),
+  )
 }
 
-function collectWikilinks(content: string): string[] {
-  const matches = content.matchAll(WIKILINK_PATTERN)
-  return Array.from(matches, match => match[1]).filter((value): value is string => value !== undefined && value !== '')
-}
-
-function splitFrontmatter(content: string): {frontmatter: Record<string, unknown>; body: string; error?: string} {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
-  if (match === null) {
-    return {frontmatter: {}, body: content.trim()}
-  }
-
-  const frontmatterText = match[1]
-  if (frontmatterText === undefined) {
-    return {frontmatter: {}, body: content.trim()}
-  }
-
-  let parsed: unknown
-  try {
-    parsed = parse(frontmatterText)
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown YAML parse error'
-    return {
-      frontmatter: {},
-      body: content.slice(match[0].length).trim(),
-      error: `Invalid YAML frontmatter: ${message}`,
-    }
-  }
-
-  return {
-    frontmatter: isRecord(parsed) ? parsed : {},
-    body: content.slice(match[0].length).trim(),
-  }
-}
+export {splitFrontmatter} from './wiki-utils.ts'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

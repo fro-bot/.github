@@ -2686,36 +2686,35 @@ describe('assertCompareNotTruncated — truncation detection (FIX 1, P1)', () =>
     expect(() => assertCompareNotTruncated(compareJson)).toThrow(/fail closed/i)
   })
 
-  // Scenario: a file is missing its patch field (individually too large) → fail closed
-  it('throws when any file entry is missing its patch field', () => {
-    // #given: two files, the second has no patch (API omits it for very large files)
+  // Scenario: a file is missing its patch field (JSON omits it for large files) → NOT a truncation signal
+  it('does not throw when a file entry is missing its patch field (JSON omission is not truncation)', () => {
+    // #given: two files, the second has no patch — GitHub omits `patch` in JSON for large files,
+    // but the raw diff media response always includes the full content and is the actual scan source.
     const compareJson = {
       total_commits: 1,
       files: [
         {filename: 'small-file.ts', status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'},
-        {filename: 'huge-file.ts', status: 'modified'}, // patch intentionally absent
+        {filename: 'huge-file.ts', status: 'modified'}, // patch absent in JSON — raw diff has it
       ],
     }
 
-    // #when / #then: throws because a file has no patch — and the filename is NOT echoed
-    // (a path could embed a private slug; the message stays redacted).
-    expect(() => assertCompareNotTruncated(compareJson)).toThrow(/file patch was omitted.*fail closed/i)
-    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow(/huge-file\.ts/)
+    // #when / #then: does NOT throw — missing JSON patch is not a truncation signal.
+    // fetchDiffForSha will fetch the raw diff which includes the full patch content.
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow()
   })
 
-  // Scenario: first file missing patch → fail closed (order doesn't matter)
-  it('throws when the first file entry is missing its patch field', () => {
+  // Scenario: first file missing patch → still not a truncation signal
+  it('does not throw when the first file entry is missing its patch field', () => {
     const compareJson = {
       total_commits: 1,
       files: [
-        {filename: 'huge-first.ts', status: 'added'}, // no patch
+        {filename: 'huge-first.ts', status: 'added'}, // no patch in JSON
         {filename: 'normal.ts', status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'},
       ],
     }
 
-    // Throws on the missing-patch signal without echoing the filename.
-    expect(() => assertCompareNotTruncated(compareJson)).toThrow(/file patch was omitted.*fail closed/i)
-    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow(/huge-first\.ts/)
+    // Missing JSON patch is not fatal — raw diff fetch covers it.
+    expect(() => assertCompareNotTruncated(compareJson)).not.toThrow()
   })
 
   // Scenario: well-formed response under the cap → does NOT throw
@@ -2826,19 +2825,21 @@ describe('main() — FIX 1 (P1): truncation in compare JSON → fail closed', ()
     }
   })
 
-  it('fails closed (process.exit(1)) when compare JSON has a file with no patch field', async () => {
-    // #given: workflow_run payload; compare JSON has a file with no patch (too large)
+  it('proceeds and scans raw diff when compare JSON has a file with no patch field', async () => {
+    // #given: workflow_run payload; compare JSON has a file with no patch (JSON omits it for large files).
+    // The raw diff media response always includes the full content — it is the actual scan source.
+    // A missing JSON patch is NOT a truncation signal and must not cause a false failure.
     const eventJson = makeWorkflowRunEvent({headSha: 'sha-no-patch'})
     const prApiResolver = makePrApiResolver({
       prByNumber: makePrApiResponse({number: 42, headSha: 'sha-no-patch'}),
     })
 
-    // Compare JSON with one normal file and one file missing its patch
+    // Compare JSON: one file has no patch (JSON omission for large file), file count is under cap.
     const compareJsonWithMissingPatch = JSON.stringify({
       total_commits: 1,
       files: [
         {filename: 'normal.ts', status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new'},
-        {filename: 'huge-binary.bin', status: 'modified'}, // no patch — too large
+        {filename: 'huge-binary.bin', status: 'modified'}, // patch absent in JSON — raw diff has it
       ],
     })
 
@@ -2847,8 +2848,53 @@ describe('main() — FIX 1 (P1): truncation in compare JSON → fail closed', ()
       .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
       .mockReturnValueOnce(makeYamlBase64(['R_no_patch'])) // fetchPrivateNodeIds
       .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
+      .mockReturnValueOnce(compareJsonWithMissingPatch) // fetchDiffForSha: compare JSON (missing patch — not fatal)
+      .mockReturnValueOnce(makeDiff('docs/public.md', ['some public content'])) // fetchDiffForSha: raw diff (scanned)
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      // #when: main() runs with a compare response that has a file missing its JSON patch
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+      // #then: no exit called — missing JSON patch is not fatal; raw diff was fetched and scanned
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  it('proceeds and detects private token in raw diff even when compare JSON patch is absent', async () => {
+    // #given: compare JSON has a file with no patch; raw diff contains a private token in added lines.
+    // This proves the raw diff is scanned (not the JSON patch) and the gate still catches leaks.
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-no-patch-leak'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-no-patch-leak'}),
+    })
+
+    const compareJsonWithMissingPatch = JSON.stringify({
+      total_commits: 1,
+      files: [
+        {filename: 'docs/leak.md', status: 'modified'}, // patch absent in JSON
+      ],
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github') // gh repo view (fullName)
+      .mockReturnValueOnce(makeYamlBase64(['R_no_patch_leak'])) // fetchPrivateNodeIds
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'acme/private-repo'}}})) // resolver
       .mockReturnValueOnce(compareJsonWithMissingPatch) // fetchDiffForSha: compare JSON (missing patch)
-    // Note: the raw diff fetch is NOT reached — truncation throws before it
+      .mockReturnValueOnce(makeDiff('docs/leak.md', ['See acme/private-repo for details.'])) // raw diff has the leak
 
     const stderrOutput: string[] = []
     vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
@@ -2863,13 +2909,14 @@ describe('main() — FIX 1 (P1): truncation in compare JSON → fail closed', ()
     process.env.GITHUB_EVENT_PATH = '/fake/event.json'
     process.env.FRO_BOT_POLL_PAT = 'test-pat'
     try {
-      // #when: main() runs with a compare response that has a file missing its patch
+      // #when: main() runs — raw diff is scanned and the private token is detected
       await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
-      // #then: fail closed — process.exit(1) was called
+      // #then: fail closed because the raw diff contains a private token
       expect(exitSpy).toHaveBeenCalledWith(1)
-      // #then: stderr mentions the truncation
+      // #then: the matched file path appears in stderr (not the private name)
       const stderrText = stderrOutput.join('')
-      expect(stderrText).toMatch(/patch omitted|fail closed/i)
+      expect(stderrText).toContain('docs/leak.md')
+      expect(stderrText).not.toContain('acme/private-repo')
     } finally {
       exitSpy.mockRestore()
       vi.restoreAllMocks()

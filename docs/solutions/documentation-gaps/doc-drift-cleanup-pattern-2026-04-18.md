@@ -6,8 +6,8 @@ component: documentation
 resolution_type: process_improvement
 severity: medium
 date: 2026-04-18
-last_updated: 2026-04-18
-module: README.md, SECURITY.md, .github/copilot-instructions.md, metadata/README.md
+last_updated: 2026-07-04
+module: README.md, SECURITY.md, .github/copilot-instructions.md, metadata/README.md, docs/solutions/, .agents/skills/generating-project-docs
 tags:
   [documentation, drift, readme, security-policy, copilot-instructions, agent-skills, inventory, pr-sequencing]
 verified: 2026-04-18
@@ -15,9 +15,9 @@ verified: 2026-04-18
 
 ## Context
 
-The root-level community-health and AI-guidance docs (`README.md`, `SECURITY.md`, `.github/copilot-instructions.md`,
-and subdirectory READMEs) describe a live control plane whose surface keeps changing — workflows, scripts, metadata
-schemas, wiki pages, and persona assets land regularly. Without a disciplined refresh process, the docs drift: counts
+The canonical docs — `README.md`, `SECURITY.md`, `.github/copilot-instructions.md`, `metadata/README.md`, `docs/solutions/`, and the
+repo-scoped skill `.agents/skills/generating-project-docs` — describe a live control plane whose surface keeps
+changing — workflows, scripts, metadata schemas, wiki pages, and persona assets land regularly. Without a disciplined refresh process, the docs drift: counts
 go stale, runtime claims contradict the live repo, tree diagrams list files that were deleted, and AI-assistant
 guidance keeps pointing at obsolete files.
 
@@ -128,7 +128,7 @@ Four PRs captured the pattern end-to-end:
 | PR                                                   | Scope                                                                              | Pattern Element  |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------- |
 | [#3129](https://github.com/fro-bot/.github/pull/3129) | Add `.agents/skills/generating-project-docs/SKILL.md`; exclude skill content from ESLint / markdownlint | Encode conventions first |
-| [#3130](https://github.com/fro-bot/.github/pull/3130) | `README.md` inventory refresh — Node 24 / pnpm 10.33.0, accurate tree, all 16 workflows, point AI guidance at `.github/copilot-instructions.md` | Slice 1: primary doc |
+| [#3130](https://github.com/fro-bot/.github/pull/3130) | `README.md` inventory refresh — Node 24 / pnpm 10.33.0, accurate tree, all current workflows (16 at the time — re-derive from `ls .github/workflows/`), point AI guidance at `.github/copilot-instructions.md` | Slice 1: primary doc |
 | [#3131](https://github.com/fro-bot/.github/pull/3131) | Delete `.cursorrules`; remove references in `.gitattributes`, `.github/copilot-instructions.md`, `.markdownlint-cli2.yaml`, `llms.txt` | Slice 2: removal |
 | [#3132](https://github.com/fro-bot/.github/pull/3132) | `SECURITY.md` refresh (main-branch model, drop npm contact form, add Automated Security Scanning); expand `.github/copilot-instructions.md` architecture + add Tests and Autonomous Commits subsections | Slice 3: adjacent polish |
 
@@ -142,13 +142,16 @@ PR alongside this compound doc.
 
 ### Inventory commands used
 
+Re-run these against the live repo for current counts — do not carry numbers forward from a previous refresh.
+The counts below are a point-in-time example from the 2026-04-18 session, not a target to match:
+
 ```bash
-ls .github/workflows/                      # 16 workflow files
-ls scripts/*.ts | grep -v test             # 12 production scripts
-ls scripts/*.test.ts                       # 11 test files
-pnpm test                                  # 186 tests
-ls metadata/*.yaml                         # 4 metadata files
-find knowledge/wiki -name '*.md' | wc -l   # 24 wiki pages
+ls .github/workflows/                      # workflow files (16 at time of writing)
+ls scripts/*.ts | grep -v test             # production scripts (12 at time of writing)
+ls scripts/*.test.ts                       # test files (11 at time of writing)
+pnpm test                                  # test count (186 at time of writing)
+ls metadata/*.yaml                         # metadata files (4 at time of writing)
+find knowledge/wiki -name '*.md' | wc -l   # wiki pages (24 at time of writing)
 git log --oneline -15                      # recent-change context
 ```
 
@@ -167,3 +170,4 @@ git log --oneline -15                      # recent-change context
 
 - `.agents/skills/generating-project-docs/SKILL.md` — the skill this pattern operationalizes
 - `docs/solutions/runtime-errors/octokit-invitation-method-names-2026-04-17.md` — sibling discipline doc
+- `docs/solutions/workflow-issues/safe-superseded-workflow-removal-2026-06-24.md` — the workflow-file analog: retiring a superseded workflow requires the same "no remaining callers, shared dependencies preserved" confirmation before deletion.

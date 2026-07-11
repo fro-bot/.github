@@ -6,7 +6,7 @@ module: commit-metadata
 problem_type: integration_issue
 component: tooling
 severity: medium
-last_updated: 2026-05-09
+last_updated: 2026-07-04
 verified: 2026-05-09
 symptoms:
   - Scheduled Reconcile Repos succeeded but wrote metadata/repos.yaml with double-quoted redacted owner values.
@@ -102,6 +102,23 @@ expect(serialized).toContain("owner: '[REDACTED]'")
 expect(serialized).not.toContain('owner: "[REDACTED]"')
 ```
 
+The quoting fix is one piece of a broader redacted-metadata serialization contract enforced by the
+shared metadata writer. `normalizeRepoEntryForStorage` (`scripts/repos-metadata.ts` ~82-137) is the
+single place that decides an entry's redacted shape: for a private entry it forces
+`owner: '[REDACTED]'` and writes `name` to the `node_id` value, short-circuiting to the same object
+by reference when the entry is already in that canonical form. `addRepoEntry` (~236-297) routes every
+new-entry write through it, so no caller can introduce a redacted entry with the wrong quoting or
+field layout.
+
+That canonical form has to survive reconcile, not just first-write. `scripts/reconcile-repos.ts`
+keeps `node_id` sticky across probe outcomes it can't trust — `transient`/`malformed` probe results
+and `still-accessible` disagreements with the access-list snapshot all return `...entry` unchanged
+rather than writing a fresh value, and lost-access transitions preserve the prior `node_id` when no
+fresh source is available. `database_id` is written onto redacted entries via
+`normalizeRepoEntryForStorage`'s `storageInputWithProbe` only when the probe returns a positive
+integer, and stays untouched otherwise (`reconcile-repos.ts` field-refresh block, ~966-1003) — it is
+a format-independent denylist anchor that must never regress once populated.
+
 ## Why This Works
 
 `[REDACTED]` requires quoting in YAML because of the brackets. Setting `singleQuote: true` makes
@@ -109,6 +126,10 @@ generated metadata match Prettier's enforced YAML style, including redaction sen
 
 The unchanged-parsed-metadata regression protects the delayed-failure path: a data file can be
 semantically correct but still promotion-blocking because its serialized form is not lintable.
+
+Routing every redacted-entry write through `normalizeRepoEntryForStorage` means the quoting fix and
+the sticky `node_id`/`database_id` contract are enforced at the same choke point — a caller cannot
+bypass one without bypassing the other.
 
 ## Prevention
 
