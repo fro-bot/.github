@@ -85,8 +85,12 @@ capability is further along than the 2026-06-21 rebaseline claimed. Verified del
   (VAPID, subscription store, dispatcher, service worker) is shipped end-to-end; only the
   in-notification action-response capability (approve/reject from the notification itself)
   remains unbuilt.
-- **R3 (web-viewable/editable wiki):** confirmed still not started — the only capability
-  matching its original status.
+- **R3 (web-viewable/editable wiki):** the read-only half SHIPPED after this note's
+  grounding pass — the wiki is live as a Quartz digital garden at `fro.bot/.github`
+  (wikilinks, backlinks, search, graph, brand theme; hardened split build/deploy
+  pipeline with emergency takedown), later re-architected onto Quartz v5 with a
+  fail-closed plugin-lockfile gate. The editable path (operator edits flowing back
+  through the `data`-branch authority model) remains the open half.
 - **A2 (self-maintenance):** the bounded-PR correction machinery has GRADUATED —
   `plan-consistency` is now an active graduated claim kind (no longer "shipped disarmed,
   pending signal").
@@ -100,8 +104,8 @@ capability is further along than the 2026-06-21 rebaseline claimed. Verified del
   report-only.
 
 Strategic read: the Tier-2 control-plane autonomy arc (A1/A2/A3 + the two new loops) is
-essentially complete, and the genuinely-open north-star threads now live in the other repos
-(R2 inline actions, R3 web wiki) and the Tier-3 frontier, plus the one open spine
+essentially complete, and the genuinely-open north-star threads are R2 inline actions
+(other repos), R3's editable path, and the Tier-3 frontier, plus the one open spine
 deploy-verification.
 
 ## Current state (verified 2026-06-15)
@@ -177,7 +181,9 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
 - **R3 — Web-viewable/editable wiki.** The Obsidian-based Karpathy wiki rendered on the
   web, with operator edits that flow back through the `data`-branch authority model.
   _Owner: control plane + dashboard. Depends on: R1 (for the editable path; read-only
-  view is independent). Effort/risk: M._ Status: not started.
+  view is independent). Effort/risk: M._ Status: read-only view SHIPPED — live at
+  `fro.bot/.github` (Quartz v5, pinned-SHA fetch-at-build, fail-closed plugin-lockfile
+  gate, emergency unpublish). Editable path not started.
 
 ### Tier 2 — Autonomy depth (mostly control-plane-native)
 
