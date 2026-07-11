@@ -1,0 +1,124 @@
+---
+name: Publish Wiki
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'knowledge/wiki/**'
+      - knowledge/index.md
+      - knowledge/schema.md
+      - 'quartz-site/**'
+  workflow_dispatch:
+
+# Least-privilege default: no token capabilities at the workflow level.
+# Each job grants only what it needs.
+permissions: {}
+
+# Serialize publishes; never cancel an in-progress deploy mid-flight. Shared
+# with unpublish-wiki.yaml's group name so a takedown can supersede a normal
+# publish (see unpublish-wiki.yaml's cancel-in-progress: true).
+concurrency:
+  group: publish-wiki
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build job: read-only checkout + pinned-SHA Quartz build. No pages/id-token
+  # credentials — this job cannot deploy anything, only produce an artifact.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build wiki site
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      # Quartz is not a dependency in package.json — it's built from a
+      # pinned upstream commit SHA into a scratch directory, then overlaid
+      # with this repo's theme/config. This avoids trusting a floating
+      # `npx quartz` invocation that could resolve to an unpinned version.
+      - name: 📥 Clone Quartz at pinned SHA
+        run: |
+          git clone --no-checkout https://github.com/jackyzha0/quartz quartz-build
+          cd quartz-build
+          git fetch --depth 1 origin 4923affa7722dfc751f1074348e6dad214fe0c08
+          git checkout 4923affa7722dfc751f1074348e6dad214fe0c08
+        shell: bash -Eeuo pipefail {0}
+
+      # Overlay this repo's theme/config onto the pinned Quartz checkout.
+      # Quartz's own build config/components are replaced with ours; no
+      # upstream file outside these paths is touched.
+      - name: 🎨 Overlay quartz-site theme
+        run: |
+          cp quartz-site/quartz.config.ts quartz-build/quartz.config.ts
+          cp quartz-site/quartz.layout.ts quartz-build/quartz.layout.ts
+          cp quartz-site/components/Sources.tsx quartz-build/quartz/components/Sources.tsx
+          cp quartz-site/components/GitHubSource.tsx quartz-build/quartz/components/GitHubSource.tsx
+          cp quartz-site/components/index.ts quartz-build/quartz/components/index.ts
+          cp quartz-site/styles/custom.scss quartz-build/quartz/styles/custom.scss
+          cp quartz-site/static/. quartz-build/quartz/static/ -r
+        shell: bash -Eeuo pipefail {0}
+
+      - name: 📦 Setup Node
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22
+
+      # Build with the local pinned binary (`node ./quartz/bootstrap-cli.mjs`),
+      # never a bare `npx quartz` that could resolve/download an unpinned
+      # package at build time.
+      - name: 🏗 Build site
+        working-directory: quartz-build
+        run: |
+          npm ci
+          node ./quartz/bootstrap-cli.mjs build -d "$GITHUB_WORKSPACE/knowledge" -o "$GITHUB_WORKSPACE/public"
+        shell: bash -Eeuo pipefail {0}
+
+      - name: 📋 Write build summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "## Publish Wiki Build Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Quartz SHA | 4923affa7722dfc751f1074348e6dad214fe0c08 |"
+            echo "| Pages built | $(find public -name '*.html' | wc -l | tr -d ' ') |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📤 Upload Pages artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: public
+
+  # ---------------------------------------------------------------------------
+  # Deploy job: only job with pages/id-token write. No checkout, no shell, no
+  # build — it only publishes the artifact produced by `build`. Gated on
+  # build succeeding (no continue-on-error / always() / failure() escape hatch).
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: 🚀 Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
