@@ -41,6 +41,10 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          # Brand assets (icon.png) are tracked via Git LFS per .gitattributes.
+          # Without this the checkout yields 132-byte LFS pointer files and the
+          # Quartz Favicon (sharp) emitter fails on "unsupported image format".
+          lfs: true
 
       # Quartz is not a dependency in package.json — it's built from a
       # pinned upstream commit SHA into a scratch directory, then overlaid
