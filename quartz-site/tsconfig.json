@@ -1,5 +1,4 @@
 {
-  "extends": "typescript",
   "compilerOptions": {
     "module": "esnext",
     "moduleResolution": "bundler",

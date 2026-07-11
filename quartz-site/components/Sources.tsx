@@ -1,9 +1,11 @@
 import { QuartzComponent, QuartzComponentConstructor, QuartzComponentProps } from "./types"
+import { isSafeHttpUrl } from "./url-safety"
 
 export default (() => {
   const Sources: QuartzComponent = ({ fileData }: QuartzComponentProps) => {
     const sources = fileData.frontmatter?.sources as Array<{ url: string; sha?: string; accessed?: string }> | undefined
-    if (!sources || sources.length === 0) {
+    const safeSources = sources?.filter((src) => isSafeHttpUrl(src.url))
+    if (!safeSources || safeSources.length === 0) {
       return null
     }
 
@@ -11,7 +13,7 @@ export default (() => {
       <div class="sources-section">
         <h3>Sources</h3>
         <ul>
-          {sources.map((src, i) => (
+          {safeSources.map((src, i) => (
             <li key={i}>
               <a href={src.url} target="_blank" rel="noopener noreferrer">
                 {src.url}
