@@ -14,7 +14,7 @@ const config: QuartzConfig = {
     enablePopovers: true,
     analytics: null,
     locale: "en-US",
-    baseUrl: "fro-bot.github.io/.github",
+    baseUrl: "fro.bot/.github",
     ignorePatterns: ["log.md"],
     defaultDateType: "modified",
     theme: {
