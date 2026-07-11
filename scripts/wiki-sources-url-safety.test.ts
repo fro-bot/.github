@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest'
-import {isSafeHttpUrl} from '../quartz-site/components/url-safety.ts'
+import {isSafeHttpUrl} from '../quartz-site/local-plugin/dist/url-safety.js'
 
 describe('isSafeHttpUrl', () => {
   it('allows http/https URLs', () => {

@@ -54,8 +54,8 @@ jobs:
         run: |
           git clone --no-checkout https://github.com/jackyzha0/quartz quartz-build
           cd quartz-build
-          git fetch --depth 1 origin 4923affa7722dfc751f1074348e6dad214fe0c08
-          git checkout 4923affa7722dfc751f1074348e6dad214fe0c08
+          git fetch --depth 1 origin 9cf87ff1c248a8ca551093214b0fec3b31415009
+          git checkout 9cf87ff1c248a8ca551093214b0fec3b31415009
         shell: bash -Eeuo pipefail {0}
 
       # Overlay this repo's theme/config onto the pinned Quartz checkout.
@@ -63,14 +63,15 @@ jobs:
       # upstream file outside these paths is touched.
       - name: 🎨 Overlay quartz-site theme
         run: |
-          cp quartz-site/quartz.config.ts quartz-build/quartz.config.ts
-          cp quartz-site/quartz.layout.ts quartz-build/quartz.layout.ts
-          # Overlay the whole components dir (not an enumerated list) so a new
-          # component file or a component's local import (e.g. url-safety.ts)
-          # is always copied and can't drift out of this manifest.
-          cp quartz-site/components/. quartz-build/quartz/components/ -r
+          cp quartz-site/quartz.config.yaml quartz-build/quartz.config.yaml
+          # The local component plugin — the config references it as
+          # `./local-plugin` relative to the Quartz build root.
+          cp -r quartz-site/local-plugin quartz-build/local-plugin
           cp quartz-site/styles/custom.scss quartz-build/quartz/styles/custom.scss
-          cp quartz-site/static/. quartz-build/quartz/static/ -r
+          cp -r quartz-site/static/. quartz-build/quartz/static/
+          # The committed, pinned plugin lockfile — the three-way gate below
+          # proves the build actually honors it.
+          cp quartz-site/quartz.lock.json quartz-build/quartz.lock.json
         shell: bash -Eeuo pipefail {0}
 
       - name: 📦 Setup Node
@@ -78,14 +79,140 @@ jobs:
         with:
           node-version: 22
 
+      # Quartz's own dependencies must be installed before the lockfile
+      # gates and plugin install below — the CLI and the gate scripts
+      # resolve js-yaml/yargs from quartz-build/node_modules.
+      - name: 📦 Install Quartz dependencies
+        working-directory: quartz-build
+        run: npm ci
+        shell: bash -Eeuo pipefail {0}
+
+      # The local component plugin ships no build step and is only
+      # symlinked (not built) by Quartz's loader, so it needs its own
+      # `preact` in node_modules pinned to the same version Quartz itself
+      # depends on (spike-proven: quartz-build/package.json is the source
+      # of truth for the version).
+      - name: 📦 Install local plugin runtime deps
+        working-directory: quartz-build
+        run: |
+          PREACT_VERSION=$(node -p "require('./package.json').dependencies.preact")
+          cd local-plugin
+          npm install --no-save "preact@${PREACT_VERSION}"
+        shell: bash -Eeuo pipefail {0}
+
+      # Gate A (pre-install): assert exact config<->lock coverage BEFORE any
+      # network install runs. The prebuild hook does not read the lockfile
+      # at all, so this is the only place that can prove the lock closure
+      # is correct before plugin code is fetched.
+      - name: 🔒 Verify lockfile coverage (pre-install)
+        working-directory: quartz-build
+        run: |
+          # shellcheck disable=SC2016 # single-quoted node -e script; no shell expansion intended
+          node -e '
+            const fs = require("fs");
+            const yaml = require("yaml");
+
+            const config = yaml.parse(fs.readFileSync("quartz.config.yaml", "utf8"));
+            const lock = JSON.parse(fs.readFileSync("quartz.lock.json", "utf8"));
+            const lockPlugins = lock.plugins ?? {};
+
+            const errors = [];
+            const enabledRemoteSources = new Set();
+
+            for (const plugin of config.plugins ?? []) {
+              if (plugin.enabled === false) continue;
+              const source = plugin.source;
+
+              if (typeof source === "string") {
+                if (!source.startsWith("github:")) continue; // not a remote plugin
+                enabledRemoteSources.add(source);
+                const entry = Object.values(lockPlugins).find(p => p.source === source);
+                if (!entry) errors.push(`missing lock entry for enabled remote plugin: ${source}`);
+                continue;
+              }
+
+              if (source && typeof source === "object") {
+                if (source.repo && source.repo.startsWith("./")) continue; // local path source, exempt
+                if (Object.prototype.hasOwnProperty.call(source, "subdir")) {
+                  errors.push(`enabled remote plugin uses rejected object-source subdir: ${JSON.stringify(source)}`);
+                  continue;
+                }
+                if (source.repo) {
+                  const normalized = `github:${source.repo}`;
+                  enabledRemoteSources.add(normalized);
+                  const entry = Object.values(lockPlugins).find(p => p.source === normalized);
+                  if (!entry) errors.push(`missing lock entry for enabled remote plugin: ${normalized}`);
+                }
+              }
+            }
+
+            for (const [name, entry] of Object.entries(lockPlugins)) {
+              if (!enabledRemoteSources.has(entry.source)) {
+                errors.push(`lock entry "${name}" (${entry.source}) is not an enabled plugin in quartz.config.yaml`);
+              }
+            }
+
+            if (errors.length > 0) {
+              console.error("Lockfile coverage gate failed:");
+              for (const e of errors) console.error(`  - ${e}`);
+              process.exit(1);
+            }
+            console.log(`Lockfile coverage gate passed: ${enabledRemoteSources.size} enabled remote plugin(s) match ${Object.keys(lockPlugins).length} lock entries.`);
+          '
+        shell: bash -Eeuo pipefail {0}
+
+      # Install strictly from the lockfile — never --from-config/--latest,
+      # which would resolve enabled-but-unlocked or drifted plugin refs
+      # from branch tip at build time.
+      - name: 📥 Install plugins from lockfile
+        working-directory: quartz-build
+        run: node ./quartz/bootstrap-cli.mjs plugin install
+        shell: bash -Eeuo pipefail {0}
+
+      # Gate B (post-install): the installer can log a failure yet still
+      # exit success, and parsing the lockfile after install proves
+      # nothing (lock installs don't rewrite it). The only proof is
+      # comparing each plugin's actual checked-out .git/HEAD against the
+      # lockfile commit — a `ref:` line (branch checkout) is drift, not a
+      # pinned commit, and fails just as hard as a mismatched SHA.
+      - name: 🔒 Verify lockfile integrity (post-install)
+        working-directory: quartz-build
+        run: |
+          # shellcheck disable=SC2016 # single-quoted node -e script; no shell expansion intended
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+
+            const lock = JSON.parse(fs.readFileSync("quartz.lock.json", "utf8"));
+            const errors = [];
+
+            for (const [name, entry] of Object.entries(lock.plugins ?? {})) {
+              const headPath = path.join(".quartz", "plugins", name, ".git", "HEAD");
+              if (!fs.existsSync(headPath)) {
+                errors.push(`missing plugin directory/.git/HEAD for "${name}" at ${headPath}`);
+                continue;
+              }
+              const head = fs.readFileSync(headPath, "utf8").trim();
+              if (head !== entry.commit) {
+                errors.push(`"${name}" .git/HEAD ("${head}") does not match lockfile commit ("${entry.commit}")`);
+              }
+            }
+
+            if (errors.length > 0) {
+              console.error("Lockfile integrity gate failed:");
+              for (const e of errors) console.error(`  - ${e}`);
+              process.exit(1);
+            }
+            console.log(`Lockfile integrity gate passed: ${Object.keys(lock.plugins ?? {}).length} plugin(s) verified against .git/HEAD.`);
+          '
+        shell: bash -Eeuo pipefail {0}
+
       # Build with the local pinned binary (`node ./quartz/bootstrap-cli.mjs`),
       # never a bare `npx quartz` that could resolve/download an unpinned
       # package at build time.
       - name: 🏗 Build site
         working-directory: quartz-build
-        run: |
-          npm ci
-          node ./quartz/bootstrap-cli.mjs build -d "$GITHUB_WORKSPACE/knowledge" -o "$GITHUB_WORKSPACE/public"
+        run: node ./quartz/bootstrap-cli.mjs build -d "$GITHUB_WORKSPACE/knowledge" -o "$GITHUB_WORKSPACE/public"
         shell: bash -Eeuo pipefail {0}
 
       - name: 📋 Write build summary
@@ -97,7 +224,7 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
-            echo "| Quartz SHA | 4923affa7722dfc751f1074348e6dad214fe0c08 |"
+            echo "| Quartz SHA | 9cf87ff1c248a8ca551093214b0fec3b31415009 |"
             echo "| Pages built | $(find public -name '*.html' | wc -l | tr -d ' ') |"
           } >> "$GITHUB_STEP_SUMMARY"
 

@@ -1,0 +1,34 @@
+{
+  "name": "@fro-bot/wiki-components",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./components": {
+      "import": "./dist/components/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "quartz": {
+    "name": "WikiComponents",
+    "displayName": "Wiki Components",
+    "category": "component",
+    "version": "1.0.0",
+    "quartzVersion": ">=5.0.0",
+    "defaultEnabled": true,
+    "components": {
+      "Sources": {
+        "displayName": "Sources",
+        "defaultPosition": "afterBody",
+        "defaultPriority": 100
+      },
+      "GitHubSource": {
+        "displayName": "GitHub Source",
+        "defaultPosition": "afterBody",
+        "defaultPriority": 110
+      }
+    }
+  }
+}

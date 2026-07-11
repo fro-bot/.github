@@ -125,14 +125,74 @@ describe('publish-wiki.yaml workflow contract', () => {
   })
 
   it('build step uses the local Quartz binary, never a bare npx quartz', () => {
-    const buildStep = buildJob?.steps.find(step => typeof step.run === 'string' && step.run.includes('bootstrap-cli'))
+    const buildStep = buildJob?.steps.find(
+      step => typeof step.run === 'string' && step.run.includes('bootstrap-cli.mjs build'),
+    )
     expect(buildStep).toBeDefined()
     expect(String(buildStep?.run ?? '')).toContain('node ./quartz/bootstrap-cli.mjs build')
     expect(String(buildStep?.run ?? '')).not.toContain('npx quartz')
   })
 
-  it('the workflow file references the pinned Quartz SHA', () => {
-    expect(publishRaw).toContain('4923affa7722dfc751f1074348e6dad214fe0c08')
+  it('the workflow file references the pinned Quartz v5 SHA', () => {
+    expect(publishRaw).toContain('9cf87ff1c248a8ca551093214b0fec3b31415009')
+    expect(publishRaw).not.toContain('4923affa7722dfc751f1074348e6dad214fe0c08')
+  })
+
+  it('overlay step copies quartz.config.yaml, not the v4 .ts config/layout files', () => {
+    const overlayStep = buildJob?.steps.find(step => typeof step.run === 'string' && step.run.includes('quartz.config'))
+    expect(overlayStep).toBeDefined()
+    expect(String(overlayStep?.run ?? '')).toContain('quartz.config.yaml')
+    expect(String(overlayStep?.run ?? '')).not.toContain('quartz.config.ts')
+    expect(String(overlayStep?.run ?? '')).not.toContain('quartz.layout.ts')
+  })
+
+  it('overlay step copies the local-plugin dir and the committed lockfile', () => {
+    const overlayStep = buildJob?.steps.find(
+      step => typeof step.run === 'string' && step.run.includes('quartz.config.yaml'),
+    )
+    expect(String(overlayStep?.run ?? '')).toContain('local-plugin')
+    expect(String(overlayStep?.run ?? '')).toContain('quartz.lock.json')
+  })
+
+  it('installs plugins via `plugin install` in build job, never --from-config or --latest', () => {
+    const installStep = buildJob?.steps.find(
+      step => typeof step.run === 'string' && step.run.includes('plugin install'),
+    )
+    expect(installStep).toBeDefined()
+    expect(String(installStep?.run ?? '')).not.toContain('--from-config')
+    expect(String(installStep?.run ?? '')).not.toContain('--latest')
+
+    const deployInstallStep = deployJob?.steps.find(
+      step => typeof step.run === 'string' && step.run.includes('plugin install'),
+    )
+    expect(deployInstallStep).toBeUndefined()
+  })
+
+  it('has a pre-install lockfile coverage gate before the plugin install step', () => {
+    const stepNames = (buildJob?.steps ?? []).map(step => step.name ?? '')
+    const coverageIndex = stepNames.findIndex(name => /lockfile coverage/iu.test(name))
+    const installIndex = (buildJob?.steps ?? []).findIndex(
+      step => typeof step.run === 'string' && step.run.includes('plugin install'),
+    )
+    expect(coverageIndex).toBeGreaterThanOrEqual(0)
+    expect(installIndex).toBeGreaterThanOrEqual(0)
+    expect(coverageIndex).toBeLessThan(installIndex)
+  })
+
+  it('has a post-install lockfile integrity (.git/HEAD) gate before the build step', () => {
+    const stepNames = (buildJob?.steps ?? []).map(step => step.name ?? '')
+    const integrityIndex = stepNames.findIndex(name => /lockfile integrity/iu.test(name))
+    const installIndex = (buildJob?.steps ?? []).findIndex(
+      step => typeof step.run === 'string' && step.run.includes('plugin install'),
+    )
+    const buildIndex = (buildJob?.steps ?? []).findIndex(
+      step => typeof step.run === 'string' && step.run.includes('bootstrap-cli.mjs build'),
+    )
+    expect(integrityIndex).toBeGreaterThanOrEqual(0)
+    expect(installIndex).toBeGreaterThanOrEqual(0)
+    expect(buildIndex).toBeGreaterThanOrEqual(0)
+    expect(installIndex).toBeLessThan(integrityIndex)
+    expect(integrityIndex).toBeLessThan(buildIndex)
   })
 })
 
