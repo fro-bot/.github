@@ -86,7 +86,7 @@ jobs:
       # in the deterministic open step under the App token.
       - name: 🤖 Author proposal bodies
         id: agent
-        uses: fro-bot/agent@dfd5a6a2a6896a5f1bbe0cfb72ba8c7af766f222 # v0.84.0
+        uses: fro-bot/agent@fc1439327e826efc6904545cdf3d7ab812e9c286 # v0.85.1
         env:
           CAPTURE_LEARNINGS_DIGEST_PATH: ${{ runner.temp }}/capture-learnings-digest.json
           TASK_PROMPT: |
