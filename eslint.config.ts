@@ -13,6 +13,7 @@ export default defineConfig({
     'docs/plans/',
     'docs/solutions/',
     'knowledge/',
+    'quartz-site/**',
   ],
   packageJson: true,
   typescript: {
