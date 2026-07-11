@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/systematic"
 created: 2026-04-24
-updated: 2026-06-19
+updated: 2026-07-08
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
@@ -19,6 +19,9 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 11b12bfae2433577db84821b5788a99f339243c9
     accessed: 2026-06-19
+  - url: https://github.com/marcusrbrown/systematic
+    sha: c2c43fd828b324c31f93a1c22455caab2aa708e0
+    accessed: 2026-07-01
 tags: [opencode, plugin, ai, workflow, typescript, bun, biome, semantic-release, npm, zod, json-schema]
 related:
   - marcusrbrown--opencode-copilot-delegate
@@ -37,12 +40,12 @@ OpenCode plugin providing structured engineering workflows for AI-powered develo
 | Attribute       | Value                                                |
 | --------------- | ---------------------------------------------------- |
 | Created         | 2026-01-24                                           |
-| Last push       | 2026-06-19                                           |
-| Latest release  | v2.32.0 (2026-06-15)                                 |
+| Last push       | 2026-07-01                                           |
+| Latest release  | v2.32.1 (2026-06-26)                                 |
 | Language        | TypeScript (strict, ESM)                             |
 | Runtime         | Bun                                                  |
 | License         | MIT                                                  |
-| Stars           | 22                                                   |
+| Stars           | 23                                                   |
 | Open issues     | 3 (Weekly Maintenance #157, Daily Autohealing #153, Dependency Dashboard #15) |
 | Homepage        | https://fro.bot/systematic                           |
 | npm             | `@fro.bot/systematic`                                |
@@ -105,6 +108,7 @@ Starting in the v2.14–v2.17 arc, `systematic.json` user config is fully Zod-ty
 - Unrecognized keys and invalid values produce per-issue diagnostics surfaced in the top-level error message (#390, #398)
 - Bundled skill/agent names are validated against `bundled-names.ts` for typo detection
 - v2.32.0 adds a removed-names list: the JSON Schema generator folds removed names into the `disabled_skills`/`disabled_agents` enums (ships empty today, future-proofed); a content-integrity gate enforces that removed names never overlap current bundled names, preventing misclassification as a name moves active→removed (#534)
+- **New top-level config property `skills_as_commands`** (observed 2026-07-08 via the published schema at `fro.bot/systematic/schemas/v2/`, at registry version v2.33.2). The generated schema's property set grew from seven to eight; this is a downstream signal — surfaced through the [[fro-bot--systematic]] deploy target's hosted schema, not from a direct source read this interval. Source-side details (the config key's semantics and the PR that added it) are unconfirmed and should be resolved at the next direct survey of this repo. See [[fro-bot--systematic]] for the schema snapshot.
 
 ### CLI
 
@@ -162,7 +166,7 @@ Required status checks: Build, Docs Build, Fro Bot, Typecheck, Lint, Test, Regis
 
 **Fully active.** Consolidated into a single workflow file as of #446 (v2.23+ era):
 
-- `fro-bot.yaml` — `fro-bot/agent@v0.71.0` (SHA `9b89fb3acadec6f26fdfe49412b9c5cbd5a039d1`; was v0.59.0 at last survey — 12 minor bumps via Renovate over the interval). Three operating modes selected by an inline `PROMPT` ternary keyed on `event_name × mode × cron`:
+- `fro-bot.yaml` — `fro-bot/agent@v0.79.4` (SHA `b3384d37fb3c66e4249c0fb35037c6d244f34314`; was v0.71.0 at last survey — 8 minor bumps via Renovate over the 2026-06-19 → 2026-07-01 interval, all `mrbro-bot[bot]`-authored churn). Three operating modes selected by an inline `PROMPT` ternary keyed on `event_name × mode × cron`:
   1. **PR review** — `PR_REVIEW_PROMPT` env, TypeScript/Bun/Biome-specific (type safety, ESM conventions, zero-class convention, breaking change detection, security implications for prompt injection)
   2. **Weekly maintenance** — `MAINTENANCE_PROMPT` env, Mon 09:00 UTC, rolling issue with 28-day window
   3. **Daily autoheal** — `AUTOHEAL_PROMPT` env, daily 03:30 UTC, 4-category sweep: errored PRs (CI fix and push), security (Dependabot/Renovate alerts), health & maintenance (major version updates, Action SHA pinning), developer experience (typecheck, lint fixes)
@@ -191,20 +195,22 @@ Extends `marcusrbrown/renovate-config` + `sanity-io/renovate-config:semantic-com
 - `@opencode-ai/*` packages use `build` commit type
 - Post-upgrade: `bun install && bun run fix`
 
-## Notable Dependencies (as of v2.32.0 / SHA `11b12bf`)
+## Notable Dependencies (as of v2.32.1 / SHA `c2c43fd`)
 
 | Package | Version | Role |
 |---------|---------|------|
-| `@opencode-ai/plugin` | 1.17.7 | Plugin API host (peer `^1.1.30`) |
-| `@opencode-ai/sdk` | 1.17.7 | SDK tooling |
+| `@opencode-ai/plugin` | 1.17.11 | Plugin API host (peer `^1.1.30`) |
+| `@opencode-ai/sdk` | 1.17.11 | SDK tooling |
 | `zod` | 4.4.3 | Config schema validation |
-| `js-yaml` | ^4.1.1 | Runtime YAML parsing (now a direct `dependency`, externalized in `bun build`) |
+| `js-yaml` | ^4.1.1 | Runtime YAML parsing (direct `dependency`, externalized in `bun build`) |
 | `jsonc-parser` | ^3.3.0 | JSONC config parsing (runtime dependency) |
 | `ajv` / `ajv-formats` | 8.20.0 / 3.0.1 | JSON Schema validation (schema tooling, dev) |
-| `@biomejs/biome` | 2.4.16 | Lint + format (`biome.json` `$schema` synced to 2.4.16, #533) |
+| `@biomejs/biome` | 2.5.1 | Lint + format (`biome.json` `$schema` synced to 2.5.1, #571) |
 | `typescript` | 6.0.3 | Type checking |
 | `bun` (`@types/bun`) | latest | Runtime |
 | `@types/node` | 24.13.2 | Node compatibility types |
+| `@types/js-yaml` | 4.0.9 | YAML types |
+| `markdownlint-cli` | 0.48.0 | Markdown lint (dev) |
 | `semantic-release` | 25.0.5 | Release automation |
 
 ## Probot Settings
@@ -249,6 +255,7 @@ Extends `fro-bot/.github:common-settings.yaml` — same pattern as [[marcusrbrow
 | v2.30.0–v2.30.1 | 2026-06-07 | `npx skills add marcusrbrown/systematic` as portable harness-agnostic install path; every non-deprecated skill reference page gets a copyable `npx skills add` command; MDX footguns documented (JSX `<name>` placeholder trap, copy-button on fenced blocks only); docs generator covered by 9 unit tests |
 | v2.31.0 | 2026-06-07 | `ce:compound-refresh` gains `argument-hint` frontmatter (#505); `argument-hint` enforcement column in `writing-systematic-skills`; guard fails any skill referencing `$ARGUMENTS` outside fenced code blocks without `argument-hint`; release dispatch confirmation timeout now `::warning::` + exit 0 (#504); `fro-bot/agent` v0.55.6 (3 security hardening fixes: IPv6 egress bypass, DNS resolution timeout, compose topology guard) |
 | v2.32.0 | 2026-06-15 | Removed-names lifecycle for `disabled_skills`/`disabled_agents` (#534): schema-enum acceptance + validation acceptance + load-time silent drop with per-load `[systematic]` warning; content-integrity gate enforces removed-names ∩ bundled-names = ∅; `biome.json` `$schema` synced to 2.4.16 (#533, fixes CLI deserialize/lint failure); OpenCode dep arc v1.16.2→v1.17.7; `orchestrating-subagents` corrected for OpenCode 1.17.6 + now recommends background subagents (#530); `fro-bot/agent` v0.59.1→v0.71.0; semantic-release v25.0.5 |
+| v2.32.1 | 2026-06-26 | Pure maintenance release — no source/skill/agent changes. Pre-fixes two Biome 2.5.0 error-level rules ahead of the `@biomejs/biome` bump (#538): `noSvgWithoutTitle` on `docs/public/favicon.svg` (added `<title>` + `role="img"`/`aria-labelledby`) and `noImportantStyles` on `docs/src/styles/custom.css` (replaced three `!important` decls with higher-specificity `.install-header .install-title` selector, no visual change). Also folds OpenCode v1.17.4→v1.17.9 (#536, #541, #542, #544, #552, #557), `fro-bot/agent` v0.64.2→v0.78.0 (14 Renovate bumps #535–#561), Playwright v1.61.0 (#547) |
 
 ## Open Issues / PRs
 
@@ -258,7 +265,7 @@ Extends `fro-bot/.github:common-settings.yaml` — same pattern as [[marcusrbrow
 | #153 | Daily Autohealing Report | Issue (rolling) |
 | #15  | Dependency Dashboard | Issue (Renovate) |
 
-0 open PRs at survey time — main is fully drained. (Latest HEAD: `11b12bf` — `chore(deps): update fro-bot/agent to v0.71.0` (#550), 2026-06-19. Recent merges co-authored by `mrbro-bot[bot]`.)
+0 open PRs at survey time — main is fully drained. Open-issue set unchanged across the last two surveys (the three rolling automation issues only). (Latest HEAD: `c2c43fd` — `chore(lint): update biome.json schema to 2.5.1 to match CLI` (#571), 2026-07-01. Recent merges co-authored by `mrbro-bot[bot]`.)
 
 ## Survey History
 
@@ -269,3 +276,4 @@ Extends `fro-bot/.github:common-settings.yaml` — same pattern as [[marcusrbrow
 | 2026-05-28 | `9b75707`  | ~80 commits, v2.7.3→v2.24.0, skills 46→47, agents 50→51, agent v0.42.7→v0.45.0, `fro-bot.yaml` + `fro-bot-autoheal.yaml` consolidated (#446), `plugin-singleton.ts` removed, Zod config schema arc (v2.14–v2.17), `release-notes-narrative` skill + semantic-release-driven dispatch, launch-surface cleanup, docs modernization, deprecation surface, overlay hardening, project-local override fix |
 | 2026-06-09 | `4d2c123`  | ~86 commits since last survey, v2.24.0→v2.31.0, skills 47→49 (+`orchestrating-subagents` v2.28.0), agent v0.45.0→v0.59.0; explicit `mode: subagent` on all 51 agents (#488); explicit `temperature:` on all 51 agents (#495); content-integrity gates for both; `ce:brainstorm` Phase 2.5 + `ce:plan` Anti-Expansion; `ce:review` Stage 5b validation; homepage redesign with live stats; `npx skills` portable install path (v2.30.0); `argument-hint` enforcement (v2.31.0); release dispatch timeout now non-fatal; OpenCode dep at v1.16.2 |
 | 2026-06-19 | `11b12bf`  | 32 commits since last survey (mostly Renovate churn), v2.31.0→v2.32.0, agent v0.59.0→v0.71.0 (12 minor bumps), OpenCode v1.16.2→v1.17.7, semantic-release v25.0.3→v25.0.5. Feature: removed-names lifecycle for disable lists + content-integrity gate (#534, v2.32.0). Fix: `orchestrating-subagents` corrected for OpenCode 1.17.6, recommends background subagents (#530); `biome.json` `$schema` synced to 2.4.16 (#533). 8 workflows + 51 agents unchanged; bundled skill dir count 48 (methodology note added — no removals). New runtime deps surfaced in manifest: `js-yaml`, `jsonc-parser` |
+| 2026-07-01 | `c2c43fd`  | **Pure-maintenance interval** — 23 commits since last survey, all Renovate/dep churn (22 `mrbro-bot[bot]`-authored bumps + 1 lint sync). v2.32.0→v2.32.1 (2026-06-26, no source/skill/agent changes; Biome 2.5.0 pre-fix for `noSvgWithoutTitle` + `noImportantStyles` in docs). agent v0.71.0→**v0.79.4** (8 minors), OpenCode v1.17.7→v1.17.11, Biome 2.4.16→**2.5.1** (`biome.json` `$schema` synced, #571), `bfra-me/.github` reusable workflows→v4.16.32 (#567), Playwright→v1.61.1. Structure unchanged: 8 workflows, 51 agents (3/1/7/7/28/5), 48 bundled skill dirs, MIT, `node >=18` compat floor holds. Confirmed pre-existing top-level `.slim/` (`clonedeps.json`) and `.opencode/` (`themes/`, `tui.json`, `package-lock.json`) dev-config dirs — present at prior SHA, not new. Stars 22→23, open issues unchanged (3 rolling) |

@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/cortexkit_anthropic-auth
 created: 2026-05-28
-updated: 2026-06-19
+updated: 2026-06-30
 sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
     sha: 517d38596432429a8fc5f78612edc80a1c3f3dc6
@@ -13,6 +13,9 @@ sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
     sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
     accessed: 2026-06-19
+  - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+    sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
+    accessed: 2026-06-30
 tags: [opencode, pi, anthropic, oauth, claude, bun, typescript, monorepo, biome, fork, relay, cloudflare-worker, mitmproxy, fro-bot]
 related: [marcusrbrown--opencode-copilot-delegate, marcusrbrown--systematic, marcusrbrown--dotfiles]
 ---
@@ -35,6 +38,8 @@ This is a Bun workspace monorepo with three packages: a shared core, an OpenCode
 - Pi package `@cortexkit/pi-anthropic-auth` is `private: true` in this fork at upstream version `1.2.5` — explicitly excluded from publish jobs.
 - Recommended install pin: `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3`.
 - Fro Bot workflow active since the `1.2.5-mb.3` release cycle — see [Fro Bot Status](#fro-bot-status).
+
+**No-delta re-survey (2026-06-30):** HEAD is still `99fdbe9` (committed 2026-05-31T04:03Z); `pushedAt`/`updatedAt` both hold at 2026-05-31T04:03Z. Third consecutive parked re-survey, now 30 days with zero drift. Re-verified live: 4 workflows unchanged (`ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`); root manifest still `@cortexkit/anthropic-auth` (`private: true`, `workspaces: packages/*`); published packages hold at `1.2.5-mb.3` (`@marcusrbrown/anthropic-auth-core`, `@marcusrbrown/opencode-anthropic-auth`); Pi package `@cortexkit/pi-anthropic-auth` still `private: true` at upstream `1.2.5`; Biome `2.4.15`, `@opencode-ai/plugin` `1.15.5`, Pi peers `@earendil-works/pi-{ai,coding-agent,tui}` `0.75.3`; Fro Bot agent pin still **`v0.45.0`** (SHA `8aac0fc`). Repo still public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1 star / 0 forks, 520 KB. The fork remains parked at the last release. The `v0.45.0` agent pin is now a notable ecosystem laggard — fleet leaders sit at v0.77.0+ — but the workflow has had no PR or maintenance churn to carry a bump. Nothing below contradicted.
 
 **No-delta re-survey (2026-06-19):** HEAD is still `99fdbe9` (`chore(release): bump fork packages to 1.2.5-mb.3`, committed 2026-05-31T04:03Z) — no upstream sync or fork release since the 2026-06-09 survey. Workflow set unchanged (`ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`); published versions hold at `1.2.5-mb.3`; Pi package still `private`; repo still public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1 star / 0 forks, 520 KB. The fork is parked at the last release with no drift. Every prior fact below re-verified, nothing contradicted.
 

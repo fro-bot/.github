@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/.github"
 created: 2025-06-18
-updated: 2026-06-17
+updated: 2026-06-28
 sources:
   - url: https://github.com/marcusrbrown/.github
     sha: be01029971bc8b50fbd2b660fadc7341da26e03c
@@ -37,6 +37,9 @@ sources:
   - url: https://github.com/marcusrbrown/.github
     sha: 1c97ca8dcd9bf7df5f377d348953dd4d9d485aee
     accessed: 2026-06-17
+  - url: https://github.com/marcusrbrown/.github
+    sha: d516b2f6ea9f8efe2fe5222d32d24d3a876032a0
+    accessed: 2026-06-28
 tags: [github, repository-settings, probot, community-health, prettier, renovate]
 aliases: [marcusrbrown-dotgithub]
 related:
@@ -174,7 +177,7 @@ Delegates fully to `bfra-me/.github` reusable workflow. Inputs: `log-level` (def
 
 ### Shared Workflows
 
-Both `renovate.yaml` and `update-repo-settings.yaml` use reusable workflows from `bfra-me/.github` at SHA `dd6ab96816fe70f28628856e72ef2543b16b0946` (v4.16.26, as of 2026-06-17). Authentication via `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App credentials).
+Both `renovate.yaml` and `update-repo-settings.yaml` use reusable workflows from `bfra-me/.github` at SHA `7c7e50a51f430b42aae2165e5d555847aa738ba9` (v4.16.31, as of 2026-06-28). Authentication via `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App credentials).
 
 ## Developer Tooling
 
@@ -192,9 +195,9 @@ As a `.github` repo, these files serve as **defaults** for all `marcusrbrown` re
 
 ## Fro Bot Integration
 
-**No Fro Bot agent workflow detected** (still absent as of 2026-06-17). The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration for automated PR review and triage.
+**No Fro Bot agent workflow detected** (still absent as of 2026-06-28). The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration for automated PR review and triage.
 
-`fro-bot` is listed as a collaborator with `push` permission in both `common-settings.yaml` (template) and `.github/settings.yml` (this repo). This confirms Fro Bot has write access but no active workflow to trigger its review capabilities. All recent PRs (#363–#378) have been Renovate dependency bumps authored by `mrbro-bot[bot]` and auto-merged — Fro Bot is not in the merge loop.
+`fro-bot` is listed as a collaborator with `push` permission in both `common-settings.yaml` (template) and `.github/settings.yml` (this repo). This confirms Fro Bot has write access but no active workflow to trigger its review capabilities. All recent PRs (#376–#387) have been Renovate dependency bumps authored by `mrbro-bot[bot]` and auto-merged — Fro Bot is not in the merge loop.
 
 **Recommendation (still open):** A follow-up draft PR should add the Fro Bot agent workflow for automated PR review and triage on this repository. The single-file three-mode template established in [[marcusrbrown--marcusrbrown-github-io]] and [[marcusrbrown--renovate-config]] is the current canonical shape.
 
@@ -213,6 +216,7 @@ As a `.github` repo, these files serve as **defaults** for all `marcusrbrown` re
 | 2026-05-25 | `0b780fd` | Dependency-only churn since 2026-04-27. `bfra-me/.github` reusable workflows: v4.16.9 → v4.16.20 (11 patch bumps via PRs #363–#375, now pinned at SHA `dc366698`). `marcusrbrown/renovate-config` preset: v4.5.8 → v4.5.9 (PR #366, 2026-04-30). All other files identical: `common-settings.yaml` unchanged, workflows structurally identical, no new files. Still no Fro Bot workflow; Renovate cadence still `15 */4 * * *`. Renovate preset remains on v4.x (holdout from v5 wave). |
 | 2026-06-06 | `a00e888` | Dependency-only churn since 2026-05-25. `bfra-me/.github` reusable workflows advanced v4.16.20 → v4.16.23 via PRs #376 (2026-05-28), #377 (2026-06-01), #378 (2026-06-04), now pinned at SHA `e972072a`. All other files identical: `common-settings.yaml` unchanged, workflows structurally unchanged, `renovate.json5` preset still `marcusrbrown/renovate-config#4.5.9`. Still no Fro Bot workflow. 2 open issues (#37, #214), 0 open PRs. Renovate preset remains on v4.x. |
 | 2026-06-17 | `1c97ca8` | Dependency-only churn since 2026-06-06. `bfra-me/.github` reusable workflows advanced v4.16.23 → v4.16.26 via PRs #379 (2026-06-08), #380 (2026-06-11), #382 (2026-06-15), now pinned at SHA `dd6ab968`. Prettier bumped 3.8.3 → 3.8.4 (PR #381, 2026-06-12) — propagated to `main.yaml` `PRETTIER_VERSION` env and `renovate.json5` post-upgrade task. `common-settings.yaml`, `settings.yml`, and `.prettierrc.yaml` all unchanged; same 16-entry file tree, no new paths. `renovate.json5` preset still `marcusrbrown/renovate-config#4.5.9` (v4.x holdout). Still no Fro Bot workflow. 2 open issues (#37, #214), 0 open PRs, 3 stars, 2 watchers. |
+| 2026-06-28 | `d516b2f` | Dependency-only churn since 2026-06-17. `bfra-me/.github` reusable workflows advanced v4.16.26 → v4.16.31 via PRs #383 (2026-06-18), #384 (2026-06-22), #385 (2026-06-25), #386 (2026-06-25), #387 (2026-06-25), now pinned at SHA `7c7e50a5` in both `renovate.yaml` and `update-repo-settings.yaml`. Three of the five v4.16.x bumps landed on a single day (2026-06-25), accounting for the `pushed_at` jump to 2026-06-25T20:55Z. `common-settings.yaml` (still `b120b52`, last edited 2025-10-12), `settings.yml`, `.prettierrc.yaml`, `main.yaml` (Prettier still 3.8.4) all unchanged; same 16-blob file tree, no new paths. `renovate.json5` preset still `marcusrbrown/renovate-config#4.5.9` (v4.x holdout, ~10 weeks behind [[marcusrbrown--renovate-config]] at v5.2.3). Still no Fro Bot workflow. 2 open issues (#37, #214 Dependency Dashboard), 0 open PRs, **4 stars** (3→4), 2 watchers. |
 
 ## Notable Patterns
 

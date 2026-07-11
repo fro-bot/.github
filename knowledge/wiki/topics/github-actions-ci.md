@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-06-21
+updated: 2026-07-05
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - fro-bot--agent
@@ -26,7 +26,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 
 ## Repos Using GitHub Actions
 
-- [[fro-bot--agent]] — Path-filtered Setup → Lint, Build (dist/ drift detection), Test, Test Action (live self-referencing PR review), Dependency Review, Release (semantic-release via `next` → `release` PR flow), CodeQL, Scorecard
+- [[fro-bot--agent]] — Path-filtered Setup → Lint, Build (dist/ drift detection + CI SBOM as of v0.75.0), Test, Test Action (live self-referencing PR review), Dependency Review, Release (semantic-release via `next` → `release` PR flow), CodeQL, Scorecard; plus fenced `harness-release.yaml` (read-only build job / OIDC trusted-publish). **Bun-based workspace CI as of the 2026-06-24 survey** (migrated off pnpm; `packageManager: bun@1.3.14`, `bun.lock`), joining [[marcusrbrown--systematic]] / [[marcusrbrown--infra]] in the Bun-CI cohort
 - [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
 - [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
@@ -87,22 +87,33 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 - A thin orchestrator workflow dispatches all of them via `workflow_call` for manual "deploy everything" scenarios
 - Benefit: one app's deploy failure doesn't block the others; each workflow is independently triggerable
 - Validated at scale: as of 2026-05-27, infra has 3 per-app deploy workflows (`deploy-keeweb.yaml`, `deploy-cliproxy.yaml`, `deploy-gateway.yaml`) gated by a thin `deploy.yaml` orchestrator. The Discord gateway (`apps/gateway`, added #264) is the third app onboarded to this pattern
+- **Cross-repo build→deploy dispatch (observed 2026-06-26):** [[fro-bot--dashboard]]'s `release.yaml` extends this beyond a single repo — after publishing a CalVer GHCR image it best-effort `gh workflow run`s [[marcusrbrown--infra]]'s `deploy-dashboard.yaml` (passing `version` + `digest`) using a short-lived token from a dedicated infra-scoped GitHub App. The deploy job is `continue-on-error` for its whole scope, so a dispatch/secret gap warns without reddening a published release, and it only reaches infra's operator-approval gate (never bypasses it).
+
+### CalVer GHCR Release with Digest-Promote + Smoke-Test
+
+[[fro-bot--dashboard]]'s `release.yaml` (2026-06-26) is the ecosystem's reference for image-only releases decoupled from `package.json` version:
+
+- **Guard job** runs a script over the changed-file range + a base-vs-head `package.json` diff to decide whether to release at all.
+- **Candidate-then-promote:** build + push a throwaway `ci-<run>-<attempt>` tag, smoke-test it **by digest**, then `docker buildx imagetools create` to promote the *same digest* to `<calver>`/`latest`/`sha-<short>`, verifying each promoted tag resolves back to the smoke-tested digest (no rebuild between test and release).
+- **Layered smoke test:** host-port `/api/healthz` poll (catches `127.0.0.1`-bind regressions), sibling-container reachability by service name (catches a 127.0.0.1-only bind that 502s behind a reverse proxy), SPA `/manifest.webmanifest` served, and a CSP `script-src 'self'` header assertion.
+- **Identity split:** GHCR push uses `GITHUB_TOKEN` (App installation tokens cannot push GHCR); a `fro-bot[bot]` App token is reserved for the identity-sensitive tag push + GitHub Release; failure cleanup deletes the tag + partial release.
 
 ### Fro Bot Agent
 
 | Repo                          | Fro Bot Workflow         | Schedule                          |
 | ----------------------------- | ------------------------ | --------------------------------- |
 | [[fro-bot--agent]]            | Present (`fro-bot.yaml`, self-hosted) | Daily 15:30 UTC DMR, Weekly Sun 20:00 UTC wiki update |
+| [[fro-bot--dashboard]]        | Present (single-file three-mode `fro-bot.yaml`, self-hosted at agent **v0.77.0** as of 2026-06-26 — ecosystem version leader) | Daily `0 0 * * *` (midnight UTC) oversight + autohealing; modes review/triage/schedule + dispatch; checkout pins to default ref (never PR-head) to protect `FRO_BOT_PAT` |
 | [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`, agent v0.55.0) | Daily 14:30 UTC autohealing       |
 | [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]]       | Present (`fro-bot.yaml`, agent v0.44.3) | Daily 03:30 UTC autohealing (8 categories incl. CLIProxy + Gateway + cross-project + upstream modernization watch on Sundays) |
 | [[marcusrbrown--marcusrbrown-github-io]] | Present (`fro-bot.yaml`) | Daily 15:30 UTC maintenance (no autoheal) |
-| [[marcusrbrown--marcusrbrown]] | Present (single-file three-mode `fro-bot.yaml` at v0.61.0 SHA-pinned, onboarded 2026-06-02 via #924; 17 agent bumps in 10 days as of 2026-06-12) | Autoheal `30 4 * * *` (7 categories incl. Sunday-only Upstream Modernization Watch), Maintenance `30 16 * * *`; both rolling single-issue reports. Adds a comment-trigger fork-head refusal preflight step. Known friction: daily close/reopen churn on the perpetual maintenance issue between autoheal and maintenance runs |
+| [[marcusrbrown--marcusrbrown]] | Present (single-file three-mode `fro-bot.yaml` at v0.75.0 SHA-pinned `a12463f`, onboarded 2026-06-02 via #924; ~31 agent bumps in 20 days as of 2026-06-22) | Autoheal `30 4 * * *` (7 categories incl. Sunday-only Upstream Modernization Watch), Maintenance `30 16 * * *`; both rolling single-issue reports. Adds a comment-trigger fork-head refusal preflight step. Friction update (2026-06-22): the prior daily close/reopen churn on the perpetual maintenance issue #936 has settled — #936 is now closed, leaving the autoheal report #926 as the only open perpetual issue (zero open maintenance issue) |
 | [[marcusrbrown--renovate-config]] | Present (single-file `fro-bot.yaml` at v0.44.3; the separate `fro-bot-autoheal.yaml` was consolidated since 2026-04-28) | Daily 15:30 UTC, 6 categories incl. config validation, cross-project intelligence inbound, and Sundays-only Upstream Modernization Watch with at-most-one-draft-PR-per-scan policy |
 | [[marcusrbrown--vbs]]         | Present (single-file unified single-job `fro-bot.yaml` at v0.55.4; autoheal job folded in via #594 on 2026-05-30) | Autoheal `30 3 * * *`, Maintenance `30 15 * * *`; modes `review`/`maintenance`/`autoheal` via dispatch; fork-PR + bot-author guard at job `if` level |
 | [[marcusrbrown--sparkle]]     | Present (`fro-bot.yaml`, agent **v0.65.0** as of 2026-06-16; landed 2026-06-05) | Autoheal `0 5 * * *`, Maintenance `0 17 * * *`; modes `review`/`maintenance`/`autoheal` via dispatch; comment-trigger fork-head refusal preflight |
 | [[marcusrbrown--ha-config]]   | **Not present**          | N/A                               |
-| [[bfra-me--works]]            | Present (`fro-bot.yaml`, single-file three-mode at v0.44.2) | Maintenance `0 16 * * *`, Autoheal `30 3 * * *`; both rolling-update single-issue reports (`Daily Maintenance Report` / `Daily Autohealing Report`) |
+| [[bfra-me--works]]            | Present (`fro-bot.yaml`, single-file three-mode at **v0.83.0** as of 2026-07-05 — fleet pin leader; stale Renovate PR #3691 holds the pending v0 → v1 (`v1.18.0`) cutover, untouched since 2026-06-14) | Maintenance `0 16 * * *`, Autoheal `30 3 * * *`; both rolling-update single-issue reports (`Daily Maintenance Report` / `Daily Autohealing Report`). Autoheal still re-emitting **duplicate** security/docs PRs (#3704/#3713, #3620/#3724 all still open) plus new #3762/#3803 — dedup guard not catching its own stale cross-run PRs; backlog 7 → 11 open PRs |
 | [[bfra-me--renovate-action]]  | Present (single-file three-mode `fro-bot.yaml` at **v0.73.0** as of 2026-06-21 — ecosystem version leader/canary) | Autoheal `30 3 * * *`, Maintenance `30 15 * * *`; dispatch defaults to autoheal; two perpetual issues (`Daily Maintenance Report` / `Daily Autohealing Report`); explicit Renovate-owns-dependency-bumps boundary in autoheal prompt |
 
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).

@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/containers"
 created: 2026-04-18
-updated: 2026-06-17
+updated: 2026-06-28
 sources:
   - url: https://github.com/marcusrbrown/containers
     sha: e582f856844ac1dd52fc8739f1a9aa8398248e6e
@@ -22,6 +22,9 @@ sources:
   - url: https://github.com/marcusrbrown/containers
     sha: 569a6c8c526a694e28be541a4ad11ca0b406d685
     accessed: 2026-06-17
+  - url: https://github.com/marcusrbrown/containers
+    sha: 289d80097d358d919d86a94e21c08e992620fdb7
+    accessed: 2026-06-28
 tags: [docker, containers, dockerfiles, multi-arch, python, github-actions, ci-cd, security-scanning, ai, ollama, sqlite]
 aliases: [containers]
 related:
@@ -202,12 +205,12 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 - `docker/metadata-action` — `v5.10.0`
 - `dorny/paths-filter` — `v3.0.2` (SHA `de90cc6f...`)
 - `aquasecurity/trivy-action` — `0.35.0`
-- `fro-bot/agent` — `v0.65.0` (SHA `b7efdd6d...`) _(jumped v0.40.0 → v0.41.0 → v0.43.0 → v0.44.0 → v0.55.0 → v0.65.0)_
+- `fro-bot/agent` — `v0.79.1` (SHA `720b7216...`) _(jumped v0.40.0 → v0.41.0 → v0.43.0 → v0.44.0 → v0.55.0 → v0.65.0 → v0.79.1)_
 - `dorny/paths-filter` — `v4.0.1` (SHA `fbd0ab8f...`) _(bumped from v3.0.2, PR #607)_
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.65.0` (SHA `b7efdd6d...`) with:
+**Fro Bot workflow present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.79.1` (SHA `720b7216...`) with:
 
 - **PR Review:** Container-specific review prompt focusing on Dockerfile best practices, multi-arch correctness, Python quality, Actions security, and breaking changes. Structured verdict format (PASS/CONDITIONAL/REJECT). Black/isort/Prettier style nits explicitly excluded.
 - **Daily Schedule (14:30 UTC):** Autohealing routine — fixes errored PRs, addresses security alerts, updates major dependency versions, ensures linting consistency. Manages a single perpetual "Daily Autohealing Report" issue instead of creating new daily issues.
@@ -227,7 +230,7 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 - **Renovate:** Extends `marcusrbrown/renovate-config#4.5.0`. Ignores `templates/`, constrains Python to 3.13.x, disables lockfile maintenance and patch updates (except TypeScript and Python). Post-upgrade runs `pnpm install && pnpm format`. Rebase when behind base branch.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml`.
 - **DevContainer:** Docker-in-Docker setup with mise tool management.
-- **mise:** Polyglot tool version manager. Pinned: Node.js 24.16.0, pnpm 10.34.1, Poetry latest, pre-commit latest, Python 3.13. Venv auto-created at `.venv`.
+- **mise:** Polyglot tool version manager. Pinned: Node.js 24.18.0, pnpm 11.9.0, Poetry latest, pre-commit latest, Python 3.13. Venv auto-created at `.venv`. _(pnpm crossed the v10 → v11 major boundary via security PRs #670/#671, 2026-06-27.)_
 - **Tests:** `tests/test_dockerfile_policy.py` — Dockerfile policy validation. Known issue: policy tests intentionally fail against current state (tracking issue). Foundational pytest coverage for AI, template engine, CLI, and predictive-maintenance modules landed via PR #583 (merged 2026-06-14); `pyproject.toml` now enforces a `--cov-fail-under=35` gate with branch coverage scoped to `scripts.ai_core`, `scripts.template_engine`, `scripts.containers_cli`, and `scripts.predictive_maintenance`.
 
 ## Notable Patterns
@@ -250,7 +253,23 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 | 2026-04-22 | `1b782ff8` | Incremental re-survey. Multiple base image digest rotations via Renovate (#587–#590). Cache cleanup workflow fix: gracefully handle missing cache keys (#585). Node Alpine base image now `sha256:d1b3b4da...`, Bookworm-slim `sha256:03eae3e...`. No structural changes to repo, workflows, or Python automation layer. |
 | 2026-05-25 | `6f8a1014` | Incremental re-survey. **Renovate preset crossed v4 → v5 boundary** (`marcusrbrown/renovate-config#5.2.0`, #608, 2026-05-20) — aligns with [[marcusrbrown--renovate-config]] v5 ecosystem migration. **Fro Bot agent advanced four releases:** v0.41.0 → v0.42.1 → v0.43.0 → v0.44.0 (#591, #603, #609). **`docker/dockerfile` syntax directive bumped to v1.24** (#604, 2026-05-13). **urllib3 CVE patch:** explicit `urllib3 >=2.7.0` added to `pyproject.toml` (#602, 2026-05-13). **`openai` dependency tracked aggressively:** bumped through 2.33.0 → 2.34.0 → 2.35.1 → 2.36.0 across May (#592, #594, #595, #597). **Renovate postUpgradeTasks now includes `poetry lock`** (#596, 2026-05-14) — keeps the Poetry lockfile in sync after dependency bumps, previously a manual step. Express template/runtime versions pinned and redundant `argparse` dep removed (#582, 2026-04-29). Continuous Node.js base image digest rotation cadence (#599–#618). Open Renovate PRs in flight: `dorny/paths-filter` v4 (#607) and a non-major bundle (#614). No structural changes to repo layout, workflows, Python automation, or AI subsystem. |
 | 2026-06-07 | `8aeadf73` | Incremental re-survey. **AI config scaffold merged** (PR #584, 2026-06-06): long-pending Copilot SWE-agent PR lands first-class `containers ai config --init/--validate` CLI subcommand, `ai_config.example.yaml`, and three doc files (`AI_CONFIGURATION.md`, `AI_CLI_GUIDE.md`, `AI_VERIFICATION_REPORT.md`). **Security fix** (PR #620, 2026-06-06): qs 6.15.2, express 4.22.2, idna 3.17 patched in Express and Python template deps. **Fro Bot agent jumped v0.44.0 → v0.55.0** (#630). **dorny/paths-filter bumped v3 → v4** (#607). **pnpm 10.34.1** (#622). **Node.js 24.16.0** (mise.toml). **openai >=2.41.0** (#628). Continuous Node.js/Debian base image digest rotation cadence. Open issues: 6 (Dep Dashboard #415, Daily Autohealing #533, Tech Debt test coverage #555, Copilot pytest PR #583, two Renovate dev-dependency pin PRs #611/#612). |
+| 2026-06-28 | `289d8009` | Incremental re-survey. **pnpm crossed v10 → v11 major boundary** (security PRs #670/#671, 2026-06-27) — `mise.toml` now pins pnpm `11.9.0`. **Fro Bot agent jumped v0.65.0 → v0.79.1** (SHA `720b7216...`) across the daily Renovate cadence (#653 v0.72.0 → #669 v0.78.0 → v0.79.1). **`openai` bumped to >=2.44.0,<2.45.0**; **Node.js to 24.18.0**. Continuous Node.js/Debian base image digest rotation. PR #647 (non-major bundle) merged. Open PRs: 4 — #673 (fro-bot, actions/cache v5→v6 in setup action), #655 (fro-bot, GitHub Actions major bumps), #646 (fro-bot, FastAPI template python-multipart/pydantic-settings security), #611 (mrbro-bot pin deps). Open issues: 2 (#533 Daily Autohealing, #415 Dependency Dashboard). No structural changes. |
 | 2026-06-17 | `569a6c8c` | Incremental re-survey. **Pytest coverage merged** (PR #583, 2026-06-14): the long-pending Copilot SWE-agent test PR finally lands; `pyproject.toml` gains a `--cov-fail-under=35` gate and branch-coverage config over `ai_core`, `template_engine`, `containers_cli`, `predictive_maintenance`. **Security fix** (PR #643, 2026-06-14): express → 4.22.2 in `node/release` (Dependabot #35). **Fro Bot agent jumped v0.55.0 → v0.65.0** across the daily Renovate cadence (#632 v0.56.1 → #644 v0.65.0). **Open Fro-Bot-authored security PR #646:** python-multipart 0.0.22 → 0.0.32 in the FastAPI template, closing six Dependabot alerts (#29/#30/#36/#37/#38/#39). Toolchain unchanged (Node 24.16.0, pnpm 10.34.1, Python 3.13, openai >=2.41.0). Renovate preset still `#5.2.0`. Open issues down to 2 (Daily Autohealing #533, Dependency Dashboard #415); tech-debt issue #555 now closed by the merged coverage work. Open PRs: 3 (#647 mrbro-bot non-major bundle, #646 fro-bot python-multipart, #611 mrbro-bot pin deps). |
+
+## Delta — 2026-06-28 Survey
+
+Key state confirmed at HEAD `289d8009` (last push 2026-06-27):
+
+- **Fro Bot workflow:** `fro-bot/agent@v0.79.1` (SHA `720b7216...`), same 14:30 UTC daily schedule, same structured PR review prompt (Verdict / Blocking / Non-blocking / Missing tests / Risk assessment), same four autohealing categories (errored PRs, security, health & maintenance, DX), same single perpetual "Daily Autohealing Report" issue (#533). `OPENCODE_PROMPT_ARTIFACT: 'true'`; setup via local composite `./.github/actions/setup`; auth via `FRO_BOT_PAT` + `OPENCODE_AUTH_JSON` + `FRO_BOT_MODEL` var + `OMO_PROVIDERS`/`OPENCODE_CONFIG`. Agent advanced v0.65.0 → v0.79.1 across the daily Renovate cadence (#653–#669).
+- **pnpm major jump v10 → v11:** `mise.toml` now pins pnpm `11.9.0` (was 10.34.1), landed via two security PRs — #670 (`pnpm` → v11 [SECURITY]) and #671 (`pnpm` → v11.8.0 [SECURITY]) merged 2026-06-27, then rolled to 11.9.0 in the #672 non-major bundle. First major-version bump of the package manager in the survey history.
+- **Toolchain (`mise.toml`):** Node.js 24.18.0 (up from 24.16.0), pnpm 11.9.0, Poetry latest, pre-commit latest, Python 3.13, `.venv` auto-created.
+- **Python deps (`pyproject.toml`):** `openai >=2.44.0,<2.45.0` (up from 2.41.0), `anthropic >=0.30.0,<1.0.0`, `urllib3 >=2.7.0`, `pyyaml >=6.0.2,<7.0.0`, `requests >=2.33.0,<3.0.0`, `jinja2 >=3.0.0,<4.0.0`, `jsonschema >=4.0.0,<5.0.0`. Dev deps unchanged. Coverage gate (`--cov-fail-under=35`, branch coverage over `ai_core`/`template_engine`/`containers_cli`/`predictive_maintenance`) intact from PR #583.
+- **Poetry entry points:** stable at 10 — no additions.
+- **Renovate config (`.github/renovate.json5`):** unchanged — extends `marcusrbrown/renovate-config#5.2.0`, `templates/` ignored, Python constrained `>=3.13,<3.14`, patch updates disabled except TypeScript/Python.
+- **Workflows (11 total):** same set — `build-publish`, `cache-cleanup`, `container-scan`, `dockerfile_generation`, `fro-bot`, `metrics_collector`, `release`, `renovate`, `test`, `update-repo-settings`, plus the workflows-level `AGENTS.md`. Repo root, `scripts/`, and template structure unchanged.
+- **Open PRs:** 4 — #673 (fro-bot: `actions/cache` v5 → v6 in the setup composite action), #655 (fro-bot: GitHub Actions latest major versions), #646 (fro-bot: `python-multipart` 0.0.22 → 0.0.32 + `pydantic-settings` 2.13.1 → 2.14.2 in the FastAPI template, still open from the prior survey), #611 (mrbro-bot pin dependencies). **Open issues:** 2 — #533 Daily Autohealing Report, #415 Dependency Dashboard.
+
+No contradictions with prior surveys. The only notable platform change is the pnpm v10 → v11 major boundary (security-driven); everything else is Renovate-driven dependency hygiene (agent v0.65.0 → v0.79.1, openai/Node bumps, base image digest rotation) plus the still-open template security PR #646 and two new Actions-upgrade PRs (#655, #673) authored by Fro Bot's autoheal health-and-maintenance category.
 
 ## Delta — 2026-06-17 Survey
 

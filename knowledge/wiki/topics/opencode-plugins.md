@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-06-19
+updated: 2026-07-03
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -34,7 +34,10 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 11b12bfae2433577db84821b5788a99f339243c9
     accessed: 2026-06-19
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow]
+  - url: https://github.com/fro-bot/space-bus
+    sha: ad8eefe00c467ba342353d5bbd3d8cc6fbb61fc5
+    accessed: 2026-07-03
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus]
 ---
 
 # OpenCode Plugin Development
@@ -143,6 +146,22 @@ Rather than registering one tool per skill, systematic registers a single `syste
 ## Process Tree Management
 
 [[marcusrbrown--opencode-copilot-delegate]] uses `fkill` 10.0.3 for cross-platform process tree cleanup. Key pattern: `fkill(pid, { force: false, forceAfterTimeout: 2000, waitForExit: 5000 })` with `.catch()` guards on all kill calls in abort handlers. On macOS, `tree: true` is Windows-only, so the plugin targets the entire process group via `fkill(-pid)` with subprocesses spawned `detached: true`.
+
+## Standalone `.opencode/tools/` Custom Tools (no Plugin factory)
+
+Not every OpenCode tool surface is a published `Plugin`. [[fro-bot--space-bus]] (2026-07-03) demonstrates the lighter **project-local custom-tool** path: files in `.opencode/tools/` where the **filename is the tool name**, each exporting `tool({ description, args, async execute(args, ctx) })` from `@opencode-ai/plugin`. `tool.schema` is Zod; `ctx` provides `{ agent, sessionID, messageID, directory, worktree }`; tools run in OpenCode's Bun runtime with unrestricted `fetch` to localhost.
+
+- **No `.opencode/package.json` needed** — `.opencode/tools/` resolves `@opencode-ai/plugin` from repo-root `node_modules` directly.
+- **Adapters stay dumb.** space-bus keeps all logic in `src/core.ts` and makes each tool file a ~10–20 line adapter (parse args → call core → format). This makes a later conversion to a distributable `Plugin` a packaging move, not a rewrite — the same "logic in a testable core, thin edge adapters" discipline seen across Marcus's plugin repos.
+
+### OpenCode Server API as a multi-project control plane
+
+space-bus also documents using **one `opencode serve` instance to multiplex many project directories** via per-request routing rather than a plugin at all — a distinct pattern worth recording for anyone building agent-coordination surfaces:
+
+- **Directory resolution order:** session's stored directory → `?directory=` query param → `x-opencode-directory` header → server cwd. An `InstanceStore` lazily loads an isolated instance (config, plugins, `AGENTS.md`) per directory, so each project's own agent config applies.
+- **Session store is global across directory headers:** `GET /session/{id}` resolves regardless of the directory header sent — attribute a session to its project via the session's own `directory` field, not the probe header. `GET /session` (list) and `/session/status` are directory-scoped.
+- **Diff retrieval is version-sensitive:** upstream opencode #30127 (v1.16.0) zeroes session-level diff summaries (`GET /session/{id}/diff` → `[]`); aggregate per-turn diffs from `GET /session/{id}/message` (last turn wins per file, à la upstream PR #33444) as a fallback. `@fro.bot/harness` builds ≥ `1.17.13+harness.ee55e157` carry #33444 so `GET /session/{id}`'s `summary.diffs` is populated directly.
+- **A stdio MCP facade** (`@modelcontextprotocol/sdk`) can re-expose the same tools to Claude Desktop from the same core — the config path must be absolute (Claude Desktop launches with no cwd).
 
 ## Marcus's Plugin Repos
 
@@ -300,6 +319,7 @@ Contrast with [[marcusrbrown--systematic]] which ships general-purpose skills (`
 - [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows (~48 bundled skill dirs, 51 agents) at v2.32.0
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
+- [[fro-bot--space-bus]] — Workspace agent bus: `.opencode/tools/` custom tools + one directory-routed `opencode serve` + MCP facade; delegation over the OpenCode server API
 - [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi; Fro Bot active at v0.45.0 (as of 2026-06-09)
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)

@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/extend-vscode"
 created: 2026-04-18
-updated: 2026-06-18
+updated: 2026-06-29
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -37,6 +37,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 5724bd8b1d7567a81c282bac2779184b419385a2
     accessed: 2026-06-18
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 347447ca73e25364c3917e2169c9b80efc075e98
+    accessed: 2026-06-29
 tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
 aliases: [extend-vscode]
 related:
@@ -369,3 +372,29 @@ Confirmed dependency snapshot at HEAD (`5724bd8b`):
 Repo metadata: 1 star, 1 watcher, not archived, not forked, public. Open issues: 5 (#142 Uplift `vscode-bash`, #162 Dependency Dashboard, #317–#319 Advanced Testing Infrastructure Phases 3–5). Open PRs: 1 (#466, `typescript` v6 — still the sole outstanding major, now ~7 weeks pending). The pin-exact devDependency policy holds: every entry in `package.json` is an exact version. The `prepare` script runs `generate:meta` (vscode-ext-gen), confirming generated metadata is regenerated on install.
 
 **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~8+ weeks open across surveys). Six workflows present, unchanged: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`. Probot settings still extend `fro-bot/.github:common-settings.yaml`.
+
+### 2026-06-29 (SHA `347447ca` from `5724bd8b`)
+
+Four dependency bumps merged between 2026-06-22 and 2026-06-25. One security patch included. No structural, architectural, or workflow changes — the toolkit continues its steady-state dependency drift.
+
+| PR | Date | Change |
+| --- | --- | --- |
+| #507 | 2026-06-25 | `typescript-eslint` v8.61.0 → v8.62.0 |
+| #506 | 2026-06-24 | All non-major dependencies (grouped) |
+| #505 | 2026-06-22 | `tmp` → v0.2.7 [SECURITY] |
+| #504 | 2026-06-18 | `playwright` monorepo → v1.61.0 |
+
+The `tmp` security patch (#505) is the **third consecutive survey** to surface a CVE-triggered bump out of routine cadence — `tmp` first patched at #494 (v0.2.6, 2026-05-27), `form-data` at #502 (2026-06-15), and now `tmp` again at #505 (v0.2.7). The repeat on `tmp` suggests an incomplete first patch or a freshly disclosed CVE in the same transitive dependency; either way Renovate's vulnerability path keeps closing them inside a day. The daemon stays ahead of the rot.
+
+Confirmed dependency snapshot at HEAD (`347447ca`):
+
+- Runtime: pnpm 10.34.0, Node 24.18.0 (`.node-version`, bumped from 24.16.0), VS Code engine `^1.102.0`
+- Core: `typescript` 5.9.3, `tsup` 8.5.1 (pinned), `vitest` 4.1.0, `@vitest/coverage-v8` 4.1.0, `@vitest/eslint-plugin` 1.6.1, `@vitest/ui` 4.1.0
+- Lint: `eslint` 10.5.0, `typescript-eslint` 8.62.0, `@bfra.me/eslint-config` 0.51.0, `eslint-plugin-node-dependencies` 2.2.0, `eslint-plugin-no-only-tests` 3.4.0, `eslint-plugin-prettier` 5.5.0, `eslint-config-prettier` 10.1.1, `prettier` 3.8.0
+- VS Code tooling: `@types/vscode` 1.120.0, `@types/node` 24.13.2, `@vscode/vsce` 3.9.0, `@vscode/test-electron` 2.5.2, `@vscode/test-web` 0.0.67, `@vscode/test-cli` 0.0.10, `vscode-ext-gen` 1.6.0
+- Publishing: `semantic-release` 25.0.1, `semantic-release-vsce` 6.1.0, `ovsx` 0.10.5, `@semantic-release/changelog` 6.0.3, `@semantic-release/git` 10.0.1
+- Testing/build: `@playwright/test` 1.61.0, `jsdom` 29.1.0, `type-fest` 5.7.0, `esbuild-plugin-polyfill-node` 0.3.0 (explicit web polyfill), `tsx` 4.22.0, `jiti` 2.7.0
+
+Repo metadata: **2 stars** (up from 1), 1 watcher, not archived, not forked, public. Open issues: 5 (#142 Uplift `vscode-bash`, #162 Dependency Dashboard, #317–#319 Advanced Testing Infrastructure Phases 3–5 — issue set unchanged across ~10 weeks of surveys). Open PRs: 2 — #466 (`typescript` v6, still the sole outstanding major, now ~9 weeks pending) and **new #508** (`pnpm` → v11, labeled `security` + `automerge`, marked `[SECURITY]`). #508 is a major runtime bump (pnpm 10 → 11) on the automerge track; worth watching whether it lands clean given the pinned `packageManager: pnpm@10.34.0` field must move in lockstep.
+
+The pin-exact devDependency policy holds: every entry in `package.json` is an exact version. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~10 weeks open across surveys). Six workflows present, unchanged.
