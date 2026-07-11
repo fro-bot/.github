@@ -2407,7 +2407,7 @@ Deltas (additive):
 
 - **Fro Bot agent v0.63.0 → v0.76.2** (`69aedbc`). Crosses the agent's pnpm→Bun migration and gateway operator-web-surface shifts recorded on `fro-bot--agent` — those are runtime-internal to the agent; this repo's workflow invocation surface is unaffected.
 - **Action/tooling bumps:** `pnpm/action-setup` v6.0.8 → v6.0.9 (`0ebf471`); `actions/checkout` v6.0.3 / `actions/setup-node` v6.4.0 unchanged; bfra-me renovate reusable workflow v4.16.25 → v4.16.30 (`a2676c9`); node 24.16.0 → 24.18.0; pnpm 11.5.3 → 11.8.0; eslint 10.4.1 → 10.5.0; lint-staged 17.0.7 → 17.0.8.
-- **Public-only-invariant note:** the daily autoheal category-5 ("Cross-Project Intelligence") focus repos are now spelled out in plaintext in the workflow `SCHEDULE_PROMPT` (`marcusrbrown/yield-farmer`, `marcusrbrown/poly`). Both re-verified `PRIVATE` at survey time, so their names stay withheld from the wiki — the source leaking the slugs does not relax the invariant. The wiki records that two private repos are surveyed, not which.
+- **Public-only-invariant note:** the daily autoheal category-5 ("Cross-Project Intelligence") focus repos are now spelled out in plaintext in the workflow `SCHEDULE_PROMPT` (`[REDACTED]`, `[REDACTED]`). Both re-verified `PRIVATE` at survey time, so their names stay withheld from the wiki — the source leaking the slugs does not relax the invariant. The wiki records that two private repos are surveyed, not which.
 - **First star** (0 → 1). **Open PRs 1 → 2:** #1311 (picomatch@2 v4, mrbro-bot) still open + new #1402 (`fro-bot`-authored `undici` → 7.28.0, CVE-2026-9697 / CVE-2026-9678 remediation) — a live example of the category-2 security-override autoheal path; not yet merged. Open-issue set stable at 6, with the same legacy `Daily Maintenance` / `Weekly Maintenance` report issues (#1111/#1096/#1079/#1068) still lingering outside the autoheal cleanup matcher.
 
 Fro Bot workflow present and active (`fro-bot.yaml`, six-category daily autoheal, 15:30 UTC schedule) — no onboarding follow-up draft needed. Updated repo page `marcusrbrown--renovate-config.md` (frontmatter source/updated, Repository Basics, Fro Bot Integration agent + action pins + category-5 note, renovate.yaml pin, Dev Tooling table, pnpm-overrides in-flight note, survey-history row) and the `index.md` entry. No new topic/entity/comparison pages warranted — deltas are version churn plus a source-disclosure nuance already covered by the public-only invariant. Working-dir delivery mode: no GitHub issue notice opened — this log entry is the canonical per-survey summary.
@@ -2788,3 +2788,9 @@ Sources: https://github.com/marcusrbrown/sparkle (SHA 2ef1cf1632e5ce4173007487f1
 Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-07-11 17:46] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@dc5efafd2b634958d18f9677996c156f74f738a9
