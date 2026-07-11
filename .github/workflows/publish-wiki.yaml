@@ -106,59 +106,7 @@ jobs:
       # is correct before plugin code is fetched.
       - name: 🔒 Verify lockfile coverage (pre-install)
         working-directory: quartz-build
-        run: |
-          # shellcheck disable=SC2016 # single-quoted node -e script; no shell expansion intended
-          node -e '
-            const fs = require("fs");
-            const yaml = require("yaml");
-
-            const config = yaml.parse(fs.readFileSync("quartz.config.yaml", "utf8"));
-            const lock = JSON.parse(fs.readFileSync("quartz.lock.json", "utf8"));
-            const lockPlugins = lock.plugins ?? {};
-
-            const errors = [];
-            const enabledRemoteSources = new Set();
-
-            for (const plugin of config.plugins ?? []) {
-              if (plugin.enabled === false) continue;
-              const source = plugin.source;
-
-              if (typeof source === "string") {
-                if (!source.startsWith("github:")) continue; // not a remote plugin
-                enabledRemoteSources.add(source);
-                const entry = Object.values(lockPlugins).find(p => p.source === source);
-                if (!entry) errors.push(`missing lock entry for enabled remote plugin: ${source}`);
-                continue;
-              }
-
-              if (source && typeof source === "object") {
-                if (source.repo && source.repo.startsWith("./")) continue; // local path source, exempt
-                if (Object.prototype.hasOwnProperty.call(source, "subdir")) {
-                  errors.push(`enabled remote plugin uses rejected object-source subdir: ${JSON.stringify(source)}`);
-                  continue;
-                }
-                if (source.repo) {
-                  const normalized = `github:${source.repo}`;
-                  enabledRemoteSources.add(normalized);
-                  const entry = Object.values(lockPlugins).find(p => p.source === normalized);
-                  if (!entry) errors.push(`missing lock entry for enabled remote plugin: ${normalized}`);
-                }
-              }
-            }
-
-            for (const [name, entry] of Object.entries(lockPlugins)) {
-              if (!enabledRemoteSources.has(entry.source)) {
-                errors.push(`lock entry "${name}" (${entry.source}) is not an enabled plugin in quartz.config.yaml`);
-              }
-            }
-
-            if (errors.length > 0) {
-              console.error("Lockfile coverage gate failed:");
-              for (const e of errors) console.error(`  - ${e}`);
-              process.exit(1);
-            }
-            console.log(`Lockfile coverage gate passed: ${enabledRemoteSources.size} enabled remote plugin(s) match ${Object.keys(lockPlugins).length} lock entries.`);
-          '
+        run: node "$GITHUB_WORKSPACE/scripts/wiki-lockfile-gates.ts" coverage
         shell: bash -Eeuo pipefail {0}
 
       # Install strictly from the lockfile — never --from-config/--latest,
@@ -177,34 +125,7 @@ jobs:
       # pinned commit, and fails just as hard as a mismatched SHA.
       - name: 🔒 Verify lockfile integrity (post-install)
         working-directory: quartz-build
-        run: |
-          # shellcheck disable=SC2016 # single-quoted node -e script; no shell expansion intended
-          node -e '
-            const fs = require("fs");
-            const path = require("path");
-
-            const lock = JSON.parse(fs.readFileSync("quartz.lock.json", "utf8"));
-            const errors = [];
-
-            for (const [name, entry] of Object.entries(lock.plugins ?? {})) {
-              const headPath = path.join(".quartz", "plugins", name, ".git", "HEAD");
-              if (!fs.existsSync(headPath)) {
-                errors.push(`missing plugin directory/.git/HEAD for "${name}" at ${headPath}`);
-                continue;
-              }
-              const head = fs.readFileSync(headPath, "utf8").trim();
-              if (head !== entry.commit) {
-                errors.push(`"${name}" .git/HEAD ("${head}") does not match lockfile commit ("${entry.commit}")`);
-              }
-            }
-
-            if (errors.length > 0) {
-              console.error("Lockfile integrity gate failed:");
-              for (const e of errors) console.error(`  - ${e}`);
-              process.exit(1);
-            }
-            console.log(`Lockfile integrity gate passed: ${Object.keys(lock.plugins ?? {}).length} plugin(s) verified against .git/HEAD.`);
-          '
+        run: node "$GITHUB_WORKSPACE/scripts/wiki-lockfile-gates.ts" integrity
         shell: bash -Eeuo pipefail {0}
 
       # Build with the local pinned binary (`node ./quartz/bootstrap-cli.mjs`),
