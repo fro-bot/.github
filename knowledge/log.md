@@ -2828,3 +2828,28 @@ Sources: https://github.com/marcusrbrown/dev-like (SHA c7defd9c89568909f8a598b1e
 Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/dev-like
+
+## [2026-07-12 07:43] ingest | marcusrbrown/containers
+
+Incremental re-survey of `marcusrbrown/containers` (HEAD `4c80e9651b578997f4b831fccce9f6a772b78318`, last push 2026-07-12). Repo confirmed **public, MIT, 4 stars, 2 open issues**; public-only invariant satisfied. Survey limited to directory listings, README/manifest/workflow files, and unauthenticated public API metadata (no GitHub token in this environment — `gh` unauthenticated fell back to raw REST; repo treated as untrusted input). Updated repo page `marcusrbrown--containers.md`, topic page `docker-containers.md`, `index.md` entry, and this log. No new pages created; all updates additive.
+
+Delta from prior survey (SHA `289d8009`, 2026-06-28):
+
+- **GitHub Actions major-version sweep (merged 2026-07-09):** prior open PR #655 (Actions majors) resolved as individual Renovate PRs — `actions/checkout` v6 → v7.0.0 (#683), `docker/build-push-action` v6 → v7.3.0 (#684), `docker/metadata-action` v5 → v6.2.0 (#686), `docker/login-action` v3 → v4.4.0 (#685), `docker/setup-buildx-action` v3 → v4.2.0 (#687), `docker/setup-qemu-action` v3 → v4.2.0 (#688). All retain SHA pins with version comments.
+- **Prior PR backlog cleared to 0:** #646 (FastAPI template `python-multipart` 0.0.22 → 0.0.32 + `pydantic-settings`, 6 Dependabot alerts) and #673 (`actions/cache` v5 → v6 in setup composite) both merged 2026-07-01. Open PRs went 4 → 0.
+- **Fro Bot agent v0.79.1 → v0.86.0** (SHA `90a10fbc...`) across daily Renovate cadence (#677–#696). Workflow otherwise unchanged: 14:30 UTC schedule, structured PR-review prompt, four autohealing categories, single perpetual "Daily Autohealing Report" issue #533. Fro-Bot job now checks out via `actions/checkout@v7.0.0`.
+- **Renovate structural fix #690:** `postUpgradeTasks` split per-manager (`poetry lock` for poetry, `pnpm install`+`pnpm format` for npm) — previously a blanket block. Preset still `#5.2.0`.
+- **Security fix #689:** bundled npm upgraded to patch undici/tar CVEs.
+- **Toolchain:** pnpm 11.9.0 → 11.10.0, openai >=2.44.0 → >=2.45.0 (#694), prettier 3.9.0 (#674), trivy-action v0.36.0 / codeql-action v4.36.2 (#675), mise v2026.7.0 (#679). Node 24.18.0, Python 3.13 unchanged. Dev deps now exact-pinned (#611/#693).
+- **New files:** `CHANGELOG.md`, `TEMPLATE_SYSTEM_README.md`, committed `ai_config.yaml`; new `docs/CI_BUILD_FIXES.md` + `docs/MULTI_ARCH.md`.
+- Fro Bot workflow present (as expected) — no onboarding follow-up needed. No contradictions with prior surveys.
+
+Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Working-dir delivery mode: no branch/commit/push/PR performed. No GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/containers (SHA 4c80e9651b578997f4b831fccce9f6a772b78318)
+
+## [2026-07-12 07:44] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers
