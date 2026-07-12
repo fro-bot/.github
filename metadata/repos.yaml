@@ -66,11 +66,11 @@ repos:
     name: esphome.life
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-29
+    last_survey_at: 2026-07-12
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
-    next_survey_eligible_at: 2026-07-31
+    next_survey_eligible_at: 2026-08-12
     discovery_channel: collab
     private: false
     node_id: R_kgDOIZmGgg
