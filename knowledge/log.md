@@ -2829,27 +2829,31 @@ Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/dev-like
 
-## [2026-07-12 07:43] ingest | marcusrbrown/containers
+## [2026-07-12 07:42] ingest | marcusrbrown/esphome.life
 
-Incremental re-survey of `marcusrbrown/containers` (HEAD `4c80e9651b578997f4b831fccce9f6a772b78318`, last push 2026-07-12). Repo confirmed **public, MIT, 4 stars, 2 open issues**; public-only invariant satisfied. Survey limited to directory listings, README/manifest/workflow files, and unauthenticated public API metadata (no GitHub token in this environment — `gh` unauthenticated fell back to raw REST; repo treated as untrusted input). Updated repo page `marcusrbrown--containers.md`, topic page `docker-containers.md`, `index.md` entry, and this log. No new pages created; all updates additive.
+Re-survey of `marcusrbrown/esphome.life` (HEAD `1c430cf5e81c615333c61e4b7be0664350ff733f`, commit "chore(deps): update bfra-me/.github to v4.16.35 (#380)"). Eighth survey overall; prior was 2026-06-29 (`9e1618f`). Public repo, MIT-less, created 2022-11-09, `pushed_at` 2026-07-09.
 
-Delta from prior survey (SHA `289d8009`, 2026-06-28):
+Delta since last survey — **dependency-only, no structural or device-config change**:
 
-- **GitHub Actions major-version sweep (merged 2026-07-09):** prior open PR #655 (Actions majors) resolved as individual Renovate PRs — `actions/checkout` v6 → v7.0.0 (#683), `docker/build-push-action` v6 → v7.3.0 (#684), `docker/metadata-action` v5 → v6.2.0 (#686), `docker/login-action` v3 → v4.4.0 (#685), `docker/setup-buildx-action` v3 → v4.2.0 (#687), `docker/setup-qemu-action` v3 → v4.2.0 (#688). All retain SHA pins with version comments.
-- **Prior PR backlog cleared to 0:** #646 (FastAPI template `python-multipart` 0.0.22 → 0.0.32 + `pydantic-settings`, 6 Dependabot alerts) and #673 (`actions/cache` v5 → v6 in setup composite) both merged 2026-07-01. Open PRs went 4 → 0.
-- **Fro Bot agent v0.79.1 → v0.86.0** (SHA `90a10fbc...`) across daily Renovate cadence (#677–#696). Workflow otherwise unchanged: 14:30 UTC schedule, structured PR-review prompt, four autohealing categories, single perpetual "Daily Autohealing Report" issue #533. Fro-Bot job now checks out via `actions/checkout@v7.0.0`.
-- **Renovate structural fix #690:** `postUpgradeTasks` split per-manager (`poetry lock` for poetry, `pnpm install`+`pnpm format` for npm) — previously a blanket block. Preset still `#5.2.0`.
-- **Security fix #689:** bundled npm upgraded to patch undici/tar CVEs.
-- **Toolchain:** pnpm 11.9.0 → 11.10.0, openai >=2.44.0 → >=2.45.0 (#694), prettier 3.9.0 (#674), trivy-action v0.36.0 / codeql-action v4.36.2 (#675), mise v2026.7.0 (#679). Node 24.18.0, Python 3.13 unchanged. Dev deps now exact-pinned (#611/#693).
-- **New files:** `CHANGELOG.md`, `TEMPLATE_SYSTEM_README.md`, committed `ai_config.yaml`; new `docs/CI_BUILD_FIXES.md` + `docs/MULTI_ARCH.md`.
-- Fro Bot workflow present (as expected) — no onboarding follow-up needed. No contradictions with prior surveys.
+- `bfra-me/.github` reusable workflows v4.16.32 → **v4.16.35** (SHA `aac0d9b`; #376/#379/#380 plus intermediate v4.16.33/v4.16.34).
+- Renovate preset [[marcusrbrown--renovate-config]] `#5.2.3` → **`#5.2.4`** (#375, 2026-07-01).
+- Prettier crossed the **3.8 → 3.9 minor boundary**, now **3.9.4** in the `postUpgradeTasks` command (#372/#373/#374/#377/#378).
+- Unchanged: `esphome/build-action@v7.3.0`, ESPHome `2025.12.7`, all CI action SHAs (`checkout@v5.0.1`, `upload-artifact@v5.0.0`, `create-github-app-token@v2.2.2`, `download-artifact@v6.0.0`, `github-pages-deploy-action@v4.8.0`), devcontainer image `ptr727/esphome-nonroot:2025.12.7`, both Olimex ESP32-PoE-ISO Bluetooth Proxy configs, static Jekyll/ESP Web Tools site, branch protection, open issues (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). 25 most-recent commits are all `mrbro-bot[bot]` `chore(deps)` (#356–#380).
 
-Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Working-dir delivery mode: no branch/commit/push/PR performed. No GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary.
+Durable findings recorded:
 
-Sources: https://github.com/marcusrbrown/containers (SHA 4c80e9651b578997f4b831fccce9f6a772b78318)
+- **`update-repo-settings.yaml` footgun reconfirmed (fifth consecutive survey).** It still calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.35` — the Renovate reusable workflow, not a settings-sync one. Renovate keeps bumping the pin alongside the real Renovate workflow, so automation actively maintains the wrong-path call. The daily 12:23 UTC cron runs Renovate twice instead of syncing settings. Still no patch; remains a follow-up-issue candidate.
+- **Corrected a long-standing Probot-settings misattribution (contradiction, noted both versions with dates).** `settings.yml` uses the bare short-form `_extends: .github:common-settings.yaml`, which resolves to the **owner's** `.github` — `marcusrbrown/.github` (see [[marcusrbrown--github]]), not `fro-bot/.github`. Surveys 2026-04-21 → 2026-06-29 recorded this as `fro-bot/.github:common-settings.yaml`; the file has always written the un-prefixed `.github`, so the earlier attribution was an over-read. Updated the repo page (Probot Settings + Fro Bot Integration sections), the [[probot-settings]] topic page (new esphome.life example + caution that the `marcusrbrown/*` fleet is not uniform), and flagged the correction in the survey-history row and index.
+- **Still no `fro-bot.yaml` agent workflow (eighth survey).** Ecosystem membership stands on shared `common-settings.yaml` inheritance and `mrbro-bot[bot]` automation, not a `fro-bot/.github` extend. Onboarding follow-up-draft-PR recommendation carried forward.
 
-## [2026-07-12 07:44] ingest | repo:marcusrbrown/containers
+Touched pages: `knowledge/wiki/repos/marcusrbrown--esphome-life.md` (updated), `knowledge/wiki/topics/probot-settings.md` (updated), `knowledge/index.md` (enriched the prior stub entry), `knowledge/log.md` (this entry).
 
-Surveyed marcusrbrown/containers and updated the control-plane wiki.
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README-equivalents, manifest/config files (`.github/settings.yml`, `.github/renovate.json5`, `.devcontainer.json`), and workflow files (`ci.yaml`, `renovate.yaml`, `update-repo-settings.yaml`), plus repo/commit/issue metadata via the unauthenticated public GitHub API (no `gh` auth token available in this environment). Additive-only; no prior content overwritten — the one factual correction is recorded as a dated contradiction with both versions preserved. Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. No GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary. Working-dir delivery mode: no branch/commit/push/PR performed.
 
-Sources: https://github.com/marcusrbrown/containers
+Sources: https://github.com/marcusrbrown/esphome.life (SHA 1c430cf5e81c615333c61e4b7be0664350ff733f)
+
+## [2026-07-12 07:45] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life

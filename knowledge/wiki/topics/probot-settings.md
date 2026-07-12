@@ -2,11 +2,12 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-06-10
+updated: 2026-07-12
 tags: [probot, github, repository-settings, automation, governance]
 related:
   - marcusrbrown--github
   - marcusrbrown--ha-config
+  - marcusrbrown--esphome-life
   - bfra-me--github
   - bfra-me--ha-addon-repository
   - bfra-me--works
@@ -39,6 +40,10 @@ This pulls defaults from the named file. The extending file only needs to declar
 ### marcusrbrown/ha-config
 
 [[marcusrbrown--ha-config]] extends `fro-bot/.github:common-settings.yaml` (the Fro Bot org template) rather than Marcus's personal template. This means ha-config inherits Fro Bot org governance (1 required reviewer, code owner reviews, etc.) rather than Marcus's personal settings (no required reviews).
+
+### marcusrbrown/esphome.life
+
+[[marcusrbrown--esphome-life]] uses the bare short-form `_extends: .github:common-settings.yaml`, which resolves to the **owner's** `.github` — i.e. `marcusrbrown/.github` (per the `_extends` rule above), _not_ the Fro Bot org template. Surveys before 2026-07-12 misattributed this to `fro-bot/.github`; the file has always written the un-prefixed `.github`. This is a caution that the `marcusrbrown/*` fleet is **not** uniform: some repos extend `fro-bot/.github` explicitly (ha-config), others inherit `marcusrbrown/.github` via the short-form. Verify the literal prefix in `settings.yml` before assuming which org template a repo inherits.
 
 ### fro-bot/.github (Org Template)
 
