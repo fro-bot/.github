@@ -2794,3 +2794,37 @@ Sources: https://github.com/marcusrbrown/sparkle
 Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@dc5efafd2b634958d18f9677996c156f74f738a9
+
+## [2026-07-12 00:13] ingest | marcusrbrown/dev-like
+
+Initial survey of `marcusrbrown/dev-like` (HEAD `c7defd9c89568909f8a598b1e3d37b204414e257`, commit "content: harden every + theo seed profiles with verified provenance"). Brand-new public repo (created 2026-07-11). Created the repo page, added an index entry, and appended this log entry. No topic/entity/comparison pages created (relationships captured via wikilinks from the repo page).
+
+What it is:
+
+- **OSINT-for-dev-culture tool.** Profiles a company or developer's engineering culture from **public sources only** (shipped agent configs, linter/CI files, blogs, talks) and distills it into an installable, spec-compliant `develop-like-<slug>` Agent Skill (agentskills.io). Provenance link on **every** claim — "no source, no claim." Tagline: _"Steal the workflow, not the code."_
+- **One repo, four artifacts** (`AGENTS.md`): an Agent Skill (`skills/dev-like/SKILL.md`, the `/dev-like` router), a Claude Code plugin + marketplace (`.claude-plugin/{plugin,marketplace}.json`), an npm package (`dev-like` v0.1.1, thin CLI `bin/cli.mjs`), and a data registry (`registry/`, "the moat"). Three install surfaces: `npx skills add`, `/plugin install`, `npx dev-like`.
+- **Zero runtime dependencies** (a stated feature); sole devDep `@changesets/cli`. Node `>=20` engines floor; CI on Bun; release on Node 24. MIT.
+
+Registry & ethics model:
+
+- Entries validate against `registry/schema/entry.schema.json` (JSON Schema draft 2020-12). Consent tiers `self-published` > `stated` > `observed` > `social`; a schema `allOf`/`if`/`then` rule enforces a **`stated`-or-better floor for `kind: person`**. `registry/OPTOUT.md` = 48h no-questions removal, hard stop for the collection workflow (currently empty).
+- Seed registry = **2 profiles** (both `updated: 2026-07-11`): `every` (org, `self-published`, 11 sources, primarily EveryInc's **compound-engineering-plugin** — the same `ce:*` lineage Fro Bot's [[marcusrbrown--systematic]] descends from) and `theo` (person/Theo Browne, `stated`, 9 sources from create-t3-app/t3.gg/t3-oss).
+
+CI/CD:
+
+- `ci.yaml` — push/PR, `contents: read`, single `validate` job (checkout@v6 → setup-bun@v2 → `bun install --frozen-lockfile` → `bun run validate` → `bun run test`). `scripts/validate.mjs` enforces frontmatter + registry schema + index-sync; `tests/validate.test.mjs` under `node --test`.
+- `release.yaml` — Changesets + **npm OIDC trusted publishing** (no `NPM_TOKEN`), version PRs via **`mrbro-bot` GitHub App**, Node 24 + `npm@11.18.0`, SHA-pinned actions. Same OIDC-trusted-publish release archetype as other Marcus published-package repos.
+
+Fro Bot workflow status: **absent.** Only `ci.yaml` + `release.yaml` present — no `fro-bot.yaml`, no Renovate, no Probot Settings, no CodeQL/Scorecard. Noted on the repo page as an onboarding follow-up-draft-PR candidate per task constraints.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--dev-like.md` (created), `knowledge/index.md`, `knowledge/log.md`.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README, manifest files (`package.json`, `.claude-plugin/*.json`, `registry/*.json`, schema, `.changeset/config.json`), and workflow files, plus the agent-facing `AGENTS.md`/`DESIGN.md` README-equivalents and `SKILL.md`/`OPTOUT.md` (no application source-code reads beyond the CLI header). Additive-only; no prior pages overwritten. Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. No GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary. Working-dir delivery mode: no branch/commit/push/PR performed.
+
+Sources: https://github.com/marcusrbrown/dev-like (SHA c7defd9c89568909f8a598b1e3d37b204414e257)
+
+## [2026-07-12 00:14] ingest | repo:marcusrbrown/dev-like
+
+Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/dev-like
