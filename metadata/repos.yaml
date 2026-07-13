@@ -79,11 +79,11 @@ repos:
     name: extend-vscode
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-29
+    last_survey_at: 2026-07-13
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
-    next_survey_eligible_at: 2026-07-31
+    next_survey_eligible_at: 2026-08-15
     discovery_channel: collab
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMTMzNjg1OTU=
