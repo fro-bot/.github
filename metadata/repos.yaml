@@ -138,8 +138,8 @@ repos:
     discovery_channel: collab
     next_survey_eligible_at: 2026-08-06
     private: false
-    node_id: R_kgDOPOkk2A
-    database_id: 1021912280
+    node_id: R_kgDORgYjdA
+    database_id: 1174807412
   - owner: marcusrbrown
     name: mrbro.dev
     added: 2026-04-18
@@ -413,3 +413,15 @@ repos:
     private: false
     node_id: R_kgDOTVrJ0w
     database_id: 1297795539
+  - owner: marcusrbrown
+    name: marcusrbrown.com
+    added: 2026-07-13
+    onboarding_status: pending
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: false
+    discovery_channel: collab
+    next_survey_eligible_at: null
+    private: false
+    node_id: R_kgDOPOkk2A
