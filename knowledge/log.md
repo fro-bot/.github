@@ -2857,3 +2857,30 @@ Sources: https://github.com/marcusrbrown/esphome.life (SHA 1c430cf5e81c615333c61
 Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/esphome.life
+
+## [2026-07-13 08:36] ingest | marcusrbrown/marcusrbrown.com
+
+First survey of `marcusrbrown/marcusrbrown.com` (HEAD `3895522`, `chore(deps): update fro-bot/agent to v0.87.1 (#474)`). Created canonical repo page `marcusrbrown--marcusrbrown-com.md`.
+
+Key finding — **repo rename resolved:** `marcusrbrown/marcusrbrown.com` is the renamed successor to the repo the wiki tracked as [[marcusrbrown--marcusrbrown-github-io]]. Confirmed by matching repo id `1021912280` (created 2025-07-18), carried-forward issue set (#411/#409/#260/#6), and stale self-references still naming the old project (`package.json` `repository.url` → `marcusrbrown.github.io.git`, README build badge, `BRANCH_PROTECTION.md` header still says "mrbro.dev project"). **Name-collision recorded as a dated contradiction:** a *different* repo now occupies `marcusrbrown/marcusrbrown.github.io` (id `1174807412`, created 2026-03-06, homepage **mrbro.dev**) — the Pages holder for [[marcusrbrown--mrbro-dev]], unrelated to this brand site. The old slug's survey history (2026-04-25 → 2026-06-23) is this repo's history under its former name; the old page is now marked superseded with both versions preserved (no content deleted).
+
+Durable findings recorded:
+
+- **Fro Bot present and active** — single-file three-mode `fro-bot.yaml` at `fro-bot/agent@32dca3d # v0.87.1` (crons `30 3` autoheal / `30 15` maintenance UTC). Continues the aggressive release-tracking posture (v0.61.0 at final github.io-slug survey → v0.87.1), at/near the ecosystem version front.
+- **pnpm crossed the 10 → 11 major boundary** to **11.11.0** (`engines.pnpm ^11.8.0`) — matches the fleet-wide cutover in [[marcusrbrown--marcusrbrown]], [[marcusrbrown--sparkle]], [[marcusrbrown--containers]]. README's "pnpm 10.13.1+" line is now stale.
+- Renovate preset advanced `#5.2.1` → `github>marcusrbrown/renovate-config#5.2.4` (see [[marcusrbrown--renovate-config]]).
+- **Split-brain override management persists:** `pnpm-workspace.yaml` holds ~15 GHSA-style overrides + `allowBuilds` allowlist + `shamefullyHoist`, while `package.json` still carries legacy `pnpm.overrides` (fast-uri/flatted). Open PRs #471 ("honor pnpm overrides") and #462 ("remove ignored pnpm overrides") are actively reconciling this.
+- **Gaps hold (both slugs):** no Probot `settings.yml`, no CodeQL/Scorecard, `lhci.config.js` present without a dedicated Lighthouse workflow.
+- New a11y autoheal finding: issue #465 ("Homepage lacks footer landmark").
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-com.md` (created), `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (superseded note + alias/related reconciliation, additive), `knowledge/index.md` (new canonical entry + superseded note on old entry), `knowledge/log.md` (this entry).
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README, manifest/config files (`package.json`, `pnpm-workspace.yaml`, `.github/renovate.json5`, `.github/BRANCH_PROTECTION.md`), and workflow files (`ci.yaml`, `deploy.yaml`, `fro-bot.yaml`, `.github/actions/setup/action.yaml`), plus repo/commit/issue metadata via the unauthenticated public GitHub API (no `gh` auth token available in this environment). Additive-only; the rename/name-collision is recorded as a dated contradiction with both versions preserved — no prior content overwritten. Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. No GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary. Working-dir delivery mode: no branch/commit/push/PR performed.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com (SHA 389552270f1093250ad104a1160f53bba91693f1)
+
+## [2026-07-13 08:37] ingest | repo:marcusrbrown/marcusrbrown.com
+
+Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com

@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-06-23
+updated: 2026-07-13
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -26,13 +26,16 @@ sources:
     sha: b633e40df799fe239a3e55cce2cd5efd60d72b48
     accessed: 2026-06-23
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page]
-aliases: [marcusrbrown-github-io, marcusrbrown.com]
+aliases: [marcusrbrown-github-io]
 related:
+  - marcusrbrown--marcusrbrown-com
   - marcusrbrown--mrbro-dev
   - marcusrbrown--gpt
 ---
 
 # marcusrbrown/marcusrbrown.github.io
+
+> **Superseded by [[marcusrbrown--marcusrbrown-com]] (2026-07-13).** The brand site this page documents was **renamed** `marcusrbrown/marcusrbrown.github.io` → `marcusrbrown/marcusrbrown.com` (same repo id `1021912280`, created 2025-07-18; issue set #411/#409/#260/#6 carried forward). All survey history below (2026-04-25 → 2026-06-23) is the marcusrbrown.com brand site under its former name. **Name-collision warning:** a *different* repo (id `1174807412`, created 2026-03-06, homepage **mrbro.dev**) now occupies the `marcusrbrown/marcusrbrown.github.io` name as the Pages holder for [[marcusrbrown--mrbro-dev]] — it is unrelated to this brand site. The `marcusrbrown.com` alias below is therefore retired here; see the canonical page for current state.
 
 Personal brand site for Marcus R. Brown. Single-page React 19 portfolio deployed to [[github-pages]] at [marcusrbrown.com](https://marcusrbrown.com). Simpler than [[marcusrbrown--mrbro-dev]] (the full developer portfolio at mrbro.dev) — no routing, no theme system, no blog. Four anchor-linked sections: About, Experience, Skills, Contact.
 
