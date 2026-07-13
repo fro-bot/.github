@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/extend-vscode"
 created: 2026-04-18
-updated: 2026-06-29
+updated: 2026-07-13
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -40,6 +40,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 347447ca73e25364c3917e2169c9b80efc075e98
     accessed: 2026-06-29
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: c322c419b6c3f50fd1515c022871e47ad4e4c35d
+    accessed: 2026-07-13
 tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
 aliases: [extend-vscode]
 related:
@@ -398,3 +401,33 @@ Confirmed dependency snapshot at HEAD (`347447ca`):
 Repo metadata: **2 stars** (up from 1), 1 watcher, not archived, not forked, public. Open issues: 5 (#142 Uplift `vscode-bash`, #162 Dependency Dashboard, #317–#319 Advanced Testing Infrastructure Phases 3–5 — issue set unchanged across ~10 weeks of surveys). Open PRs: 2 — #466 (`typescript` v6, still the sole outstanding major, now ~9 weeks pending) and **new #508** (`pnpm` → v11, labeled `security` + `automerge`, marked `[SECURITY]`). #508 is a major runtime bump (pnpm 10 → 11) on the automerge track; worth watching whether it lands clean given the pinned `packageManager: pnpm@10.34.0` field must move in lockstep.
 
 The pin-exact devDependency policy holds: every entry in `package.json` is an exact version. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~10 weeks open across surveys). Six workflows present, unchanged.
+
+### 2026-07-13 (SHA `c322c419` from `347447ca`)
+
+Six dev dependency bumps merged between 2026-06-29 and 2026-07-09 (#509–#514). No security patch this cycle — the three-survey CVE streak (`tmp` #494/#505, `form-data` #502) breaks here. No structural, architectural, or workflow changes.
+
+| PR | Date | Change |
+| --- | --- | --- |
+| #514 | 2026-07-09 | `typescript-eslint` v8.62.0 → v8.63.0 |
+| #513 | 2026-07-08 | `type-fest` v5.7.0 → v5.8.0 |
+| #512 | 2026-07-06 | `tsx` v4.22.0 → v4.23.0 |
+| #511 | 2026-07-01 | `@types/vscode` → v1.125.0 |
+| #510 | 2026-06-30 | `prettier` v3.8.0 → v3.9.0 |
+| #509 | 2026-06-29 | `eslint` v10.5.0 → v10.6.0 |
+
+**The `typescript` v6 major (#466) is finally resolved — by abandonment, not merge.** After ~9 weeks as the sole outstanding major, Renovate **autoclosed #466 unmerged on 2026-07-11** (`merged_at: null`, `closed_at: 2026-07-11T16:32:45Z`, title suffix `- autoclosed`). `typescript` stays pinned at **5.9.3**. Autoclose means Renovate detected the update was superseded, un-schedulable, or blocked (a v6 release line that no longer satisfies the config's constraints), and swept it. The v6 uplift is not done — it's deferred; expect a fresh PR when the ecosystem (`@bfra.me/tsconfig`, `typescript-eslint`, `@types/*`) catches up to a TS 6 baseline. The ghost got swept out of the queue, but the debt didn't leave the building.
+
+**`pnpm` v11 (#508) still open** — the `[SECURITY]` + `automerge`-labeled major from the prior survey has not landed. `packageManager` remains `pnpm@10.34.0`, so the lockstep bump the last survey flagged still hasn't cleared automerge. Worth continued watching: a security-flagged major stuck on the automerge track for 2+ weeks usually means a failing gate (lockfile/`packageManager` field mismatch) rather than a policy hold.
+
+Confirmed dependency snapshot at HEAD (`c322c419`):
+
+- Runtime: pnpm 10.34.0, Node **24.18.0** (`.node-version`, bumped from 24.16.0), VS Code engine `^1.102.0`
+- Core: `typescript` 5.9.3 (v6 deferred), `tsup` 8.5.1 (pinned), `vitest` 4.1.0, `@vitest/coverage-v8` 4.1.0, `@vitest/eslint-plugin` 1.6.1, `@vitest/ui` 4.1.0
+- Lint: `eslint` 10.6.0, `typescript-eslint` 8.63.0, `@bfra.me/eslint-config` 0.51.0, `@bfra.me/tsconfig` 0.13.0, `eslint-plugin-node-dependencies` 2.2.0, `eslint-plugin-no-only-tests` 3.4.0, `eslint-plugin-prettier` 5.5.0, `eslint-config-prettier` 10.1.1, `prettier` 3.9.0
+- VS Code tooling: `@types/vscode` 1.125.0, `@types/node` 24.13.2, `@vscode/vsce` 3.9.0, `@vscode/test-electron` 2.5.2, `@vscode/test-web` 0.0.67, `@vscode/test-cli` 0.0.10, `vscode-ext-gen` 1.6.0
+- Publishing: `semantic-release` 25.0.1, `semantic-release-vsce` 6.1.0, `ovsx` 0.10.5, `@semantic-release/changelog` 6.0.3, `@semantic-release/git` 10.0.1
+- Testing/build: `@playwright/test` 1.61.0, `jsdom` 29.1.0, `type-fest` 5.8.0, `esbuild-plugin-polyfill-node` 0.3.0 (explicit web polyfill), `tsx` 4.23.0, `jiti` 2.7.0
+
+Repo metadata: 2 stars, 1 watcher, not archived, not forked, public. `pushed_at` 2026-07-11 (the #466 autoclose branch cleanup; `main` HEAD commit is #514 at 2026-07-09). Open issues: 5 (#142 Uplift `vscode-bash`, #162 Dependency Dashboard, #317–#319 Advanced Testing Infrastructure Phases 3–5 — issue set unchanged across ~12 weeks of surveys). Open PRs: 1 — #508 (`pnpm` v11 [SECURITY], automerge). Note: with #466 closed, the repo now carries **zero pending majors** in the manifest; the only open change is the security automerge.
+
+The pin-exact devDependency policy holds: every entry in `package.json` is an exact version. Nine conditional exports confirmed in `package.json` (`.`, `./commands`, `./configuration`, `./webview`, `./treeView`, `./tasks`, `./statusBar`, `./telemetry`, `./utils`). Root now shows `release.config.mjs` (semantic-release config) and a top-level `types/` directory alongside the tracked `src/`, `test/`, `scripts/`. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~12 weeks open across surveys). Six workflows present, unchanged: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`. Probot settings unchanged.

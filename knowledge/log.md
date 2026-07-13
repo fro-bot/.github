@@ -2858,29 +2858,31 @@ Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/esphome.life
 
-## [2026-07-13 08:36] ingest | marcusrbrown/marcusrbrown.com
+## [2026-07-13 01:05] ingest | marcusrbrown/extend-vscode
 
-First survey of `marcusrbrown/marcusrbrown.com` (HEAD `3895522`, `chore(deps): update fro-bot/agent to v0.87.1 (#474)`). Created canonical repo page `marcusrbrown--marcusrbrown-com.md`.
+Re-survey of `marcusrbrown/extend-vscode` (main HEAD `c322c419b6c3f50fd1515c022871e47ad4e4c35d`, commit "chore(dev): update dependency typescript-eslint to v8.63.0 (#514)"). Thirteenth survey overall; prior was 2026-06-29 (`347447ca`). Public repo, MIT, created 2020-11-16, `pushed_at` 2026-07-11.
 
-Key finding — **repo rename resolved:** `marcusrbrown/marcusrbrown.com` is the renamed successor to the repo the wiki tracked as [[marcusrbrown--marcusrbrown-github-io]]. Confirmed by matching repo id `1021912280` (created 2025-07-18), carried-forward issue set (#411/#409/#260/#6), and stale self-references still naming the old project (`package.json` `repository.url` → `marcusrbrown.github.io.git`, README build badge, `BRANCH_PROTECTION.md` header still says "mrbro.dev project"). **Name-collision recorded as a dated contradiction:** a *different* repo now occupies `marcusrbrown/marcusrbrown.github.io` (id `1174807412`, created 2026-03-06, homepage **mrbro.dev**) — the Pages holder for [[marcusrbrown--mrbro-dev]], unrelated to this brand site. The old slug's survey history (2026-04-25 → 2026-06-23) is this repo's history under its former name; the old page is now marked superseded with both versions preserved (no content deleted).
+Delta since last survey — **dependency-only, no structural, architectural, or workflow change**:
+
+- Six dev bumps merged #509–#514 (`eslint` 10.6.0, `prettier` 3.9.0, `@types/vscode` 1.125.0, `tsx` 4.23.0, `type-fest` 5.8.0, `typescript-eslint` 8.63.0).
+- **No `[SECURITY]` patch this cycle — the three-survey CVE streak (`tmp` #494/#505, `form-data` #502) breaks.**
+- Node `.node-version` 24.16.0 → **24.18.0**.
 
 Durable findings recorded:
 
-- **Fro Bot present and active** — single-file three-mode `fro-bot.yaml` at `fro-bot/agent@32dca3d # v0.87.1` (crons `30 3` autoheal / `30 15` maintenance UTC). Continues the aggressive release-tracking posture (v0.61.0 at final github.io-slug survey → v0.87.1), at/near the ecosystem version front.
-- **pnpm crossed the 10 → 11 major boundary** to **11.11.0** (`engines.pnpm ^11.8.0`) — matches the fleet-wide cutover in [[marcusrbrown--marcusrbrown]], [[marcusrbrown--sparkle]], [[marcusrbrown--containers]]. README's "pnpm 10.13.1+" line is now stale.
-- Renovate preset advanced `#5.2.1` → `github>marcusrbrown/renovate-config#5.2.4` (see [[marcusrbrown--renovate-config]]).
-- **Split-brain override management persists:** `pnpm-workspace.yaml` holds ~15 GHSA-style overrides + `allowBuilds` allowlist + `shamefullyHoist`, while `package.json` still carries legacy `pnpm.overrides` (fast-uri/flatted). Open PRs #471 ("honor pnpm overrides") and #462 ("remove ignored pnpm overrides") are actively reconciling this.
-- **Gaps hold (both slugs):** no Probot `settings.yml`, no CodeQL/Scorecard, `lhci.config.js` present without a dedicated Lighthouse workflow.
-- New a11y autoheal finding: issue #465 ("Homepage lacks footer landmark").
+- **`typescript` v6 (#466) resolved by abandonment, not merge.** The ~9-week sole-outstanding major was **autoclosed unmerged on 2026-07-11** (`merged_at: null`, `- autoclosed` title suffix). `typescript` stays pinned at 5.9.3; the v6 uplift is deferred until the `@bfra.me/tsconfig` / `typescript-eslint` / `@types/*` ecosystem reaches a TS 6 baseline. With #466 gone, the manifest now carries **zero pending majors**.
+- **`pnpm` v11 [SECURITY] automerge PR #508 still open** (2+ weeks). `packageManager` remains `pnpm@10.34.0`; a security-flagged major stuck on automerge this long usually indicates a failing gate (lockfile / `packageManager` lockstep mismatch) rather than a policy hold. Flagged for continued watch.
+- **Still no `fro-bot.yaml` agent workflow (thirteenth survey, ~12 weeks).** Six workflows unchanged (`main`, `publish`, `rollback`, `renovate`, `cache-cleanup`, `update-repo-settings`). Ecosystem membership stands on the shared `common-settings.yaml` Probot extend and `mrbro-bot[bot]` Renovate automation. Onboarding follow-up-draft-PR recommendation carried forward.
+- Confirmed pin-exact devDependency policy still holds; nine conditional exports intact; root adds `release.config.mjs` and top-level `types/` to the observed tree. Repo metadata: 2 stars, 1 watcher, public, not archived/forked. Open issues unchanged: #142, #162, #317–#319.
 
-Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-com.md` (created), `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (superseded note + alias/related reconciliation, additive), `knowledge/index.md` (new canonical entry + superseded note on old entry), `knowledge/log.md` (this entry).
+Touched pages: `knowledge/wiki/repos/marcusrbrown--extend-vscode.md` (updated — new 2026-07-13 delta section, frontmatter source + `updated` bump), `knowledge/index.md` (entry refreshed), `knowledge/log.md` (this entry). No topic/entity/comparison page warranted an update — the delta is pure dependency drift with no new cross-cutting pattern.
 
-Constraints honored: target treated as untrusted input; reads limited to directory listings, README, manifest/config files (`package.json`, `pnpm-workspace.yaml`, `.github/renovate.json5`, `.github/BRANCH_PROTECTION.md`), and workflow files (`ci.yaml`, `deploy.yaml`, `fro-bot.yaml`, `.github/actions/setup/action.yaml`), plus repo/commit/issue metadata via the unauthenticated public GitHub API (no `gh` auth token available in this environment). Additive-only; the rename/name-collision is recorded as a dated contradiction with both versions preserved — no prior content overwritten. Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. No GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary. Working-dir delivery mode: no branch/commit/push/PR performed.
+Constraints honored: target treated as untrusted input; reads limited to directory listing, `package.json` manifest, `.node-version`, and workflow directory listing, plus repo/commit/issue/PR metadata via the unauthenticated public GitHub API (no `gh` auth token available in this environment). Additive-only; no prior content overwritten. Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. No GitHub issue opened/commented as a run notice — this log entry is the canonical per-survey summary. Working-dir delivery mode: no branch/commit/push/PR performed.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.com (SHA 389552270f1093250ad104a1160f53bba91693f1)
+Sources: https://github.com/marcusrbrown/extend-vscode (SHA c322c419b6c3f50fd1515c022871e47ad4e4c35d)
 
-## [2026-07-13 08:37] ingest | repo:marcusrbrown/marcusrbrown.com
+## [2026-07-13 08:38] ingest | repo:marcusrbrown/extend-vscode
 
-Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
+Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.com
+Sources: https://github.com/marcusrbrown/extend-vscode
