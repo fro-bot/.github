@@ -2801,25 +2801,31 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@c5d711c54fde44085d4e626021cebf9d6bfa1037
 
-## [2026-07-14 07:26] ingest | marcusrbrown/cortexkit_anthropic-auth
+## [2026-07-14 07:28] ingest | marcusrbrown/gpt
 
-Re-surveyed `marcusrbrown/cortexkit_anthropic-auth` (HEAD `99fdbe906c5875893d363c904f6e6bc066d997b1`, default branch `marcusrbrown/main`, public, MIT, fork of `cortexkit/anthropic-auth`, 1 star / 0 forks, 520 KB). **Fourth consecutive no-delta re-survey** — the fork is parked at the `1.2.5-mb.3` release, ~50 days frozen (`pushed_at`/`updated_at` both 2026-05-31T04:03Z since the 2026-06-09 survey). Additive update to the existing repo page + index entry; no pages created.
+Re-surveyed `marcusrbrown/gpt` (HEAD `a6f661f`, last push 2026-07-14, up from `174e517` on 2026-06-30) — the seventh survey in the series. Reads limited to repo metadata, root tree listing, `.github/workflows` + `.github/actions` listings, `package.json`, `.tool-versions`, `pnpm-workspace.yaml`, `fro-bot.yaml`, and `renovate.json5` per the untrusted-input constraint (no source-code reads). Additive update only — prior six survey rows preserved and dated. GitHub access was unauthenticated (no token present in this environment); all facts sourced from the public REST API and raw file endpoints.
 
-Everything re-verified live against the tree at `99fdbe9` (104 blobs, layout identical):
+Key deltas since the 2026-06-30 survey:
 
-- **Zero drift.** 4 workflows unchanged (`ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`); root manifest `@cortexkit/anthropic-auth` (`private: true`); published packages hold `1.2.5-mb.3` (`@marcusrbrown/anthropic-auth-core`, `@marcusrbrown/opencode-anthropic-auth`); Pi `@cortexkit/pi-anthropic-auth` still `private: true` at `1.2.5`; Biome `2.4.15`, TypeScript `6.0.3`, Bun `1.3.14`; Fro Bot agent pin still **`v0.45.0`** (SHA `8aac0fc`). Sole open item is still issue #11 "Daily Autohealing Report".
-- **Agent-pin laggard, explained.** `v0.45.0` is the fleet's oldest agent pin (leaders at v0.84–v0.85). The pin doesn't advance because the frozen tree generates no PRs to review and no autoheal/maintenance fixes — nothing carries a bump. Expect a large single-step jump on the first active PR if the fork resumes.
-- **Fork-relevance divergence signal (new this window).** [[marcusrbrown--dotfiles]] (2026-07-10 survey) now pins **upstream** `@cortexkit/opencode-anthropic-auth@1.13.0`, not this fork's `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3`. Upstream advanced ~11 minors (1.2.x → 1.13.0) while the fork stood still — suggesting the fork's original namespace-pinning / core-scope-gap drivers have been superseded and upstream is consumed directly again. Recorded as a signal, not a decommission: no archive flag, no README deprecation, and the `.agents/skills/anthropic-auth-upstream-release/` skill still ships. Added an Open Question for operator confirmation. Cross-referenced bidirectionally in the dotfiles cross-ref line.
-- **Fro Bot workflow present** (`fro-bot.yaml`, `fro-bot/agent@v0.45.0`) — no follow-up draft PR needed.
+- **pnpm major cutover `10.34.4` → `11.9.0`.** The pnpm v11 `[SECURITY]` bump (PR #2620, open at the last survey) has **landed** — confirmed by root `packageManager: pnpm@11.9.0`. First pnpm major boundary crossed in this repo's survey series, mirroring [[marcusrbrown--sparkle]] (11.10.0) and [[marcusrbrown--marcusrbrown]] (11.9.0).
+- **`pnpm-workspace.yaml` config split.** `overrides` (`fast-uri`, `langsmith`, `path-to-regexp` pins), `allowBuilds`, and pnpm settings migrated out of `package.json`'s `pnpm.*` into `pnpm-workspace.yaml` — the pnpm-11-idiomatic location. Same override-relocation pattern seen in [[marcusrbrown--marcusrbrown]].
+- **New client-side document-processing runtime deps** (not pure hygiene): `pdfjs-dist` 5.7.284, `mammoth` 1.12.0 (DOCX), `jszip` 3.10.1, `file-saver` 2.0.5 — browser-side PDF/DOCX ingestion + zip/file export, preserving the local-first invariant. Plus `next-themes` 0.4.6, `react-swipeable` 7.0.2, `@react-aria/ssr` 3.10.1, `@tailwindcss/typography` 0.5.20.
+- **Fro Bot agent v0.79.4 → v0.85.1** (SHA `fc1439327e826efc6904545cdf3d7ab812e9c286`, PR #2670); `actions/checkout` still `df4cb1c` v6.0.3. Workflow structure unchanged — same three-mode single-file `fro-bot.yaml`, dual crons (03:30 autoheal / 15:30 maintenance), `setup-pnpm` composite bootstrap. `fro-bot.yaml` present — no follow-up draft PR needed.
+- **Renovate preset `marcusrbrown/renovate-config` 5.2.3 → 5.2.4** (`bfra-me/renovate-config:automerge.json5` steady at 5.2.3).
+- **Dependency bumps:** `vite` 8.1.0 → 8.1.3, `react-router-dom` 7.18.0 → 7.18.1, `tailwindcss`/`@tailwindcss/vite` 4.3.1 → 4.3.2, `prettier` 3.8.5 → 3.9.4, `@typescript/native-preview` → 7.0.0-dev.20260703.1. LangChain 1.5.x line, HeroUI 2.8.10, Zod 4.4.3, MCP SDK 1.29.0, Monaco 4.7.0, Node 24.18.0 unchanged — so no [[langchain]] topic-page delta warranted this cycle.
+- **New root files observed:** `RFCS.md`, `redocly.yaml`, split `playwright-visual.config.ts` / `playwright-performance.config.ts` (visual/perf Playwright configs now separated from the base config).
+- **Ollama a11y-contrast autoheal cluster regenerated, still unresolved.** The prior batch (#2628/#2612/#2557) cycled out; a fresh set of four `fro-bot` PRs (#2673/#2672/#2665/#2664) now targets the same Ollama status-chip/settings contrast. Four open PRs on one a11y theme across two surveys = a recurring autoheal target that keeps regenerating without landing a durable fix.
+- **Security pins #2587 (undici) / #2586 (hono) still open** across two surveys. Plus `fro-bot` #2599 (test spy-cast cleanup) and five `mrbro-bot` dependency PRs (#2671/#2667/#2662/#2440/#2320).
+- **Open issues 23 → 36** — a notable jump; not inspected in detail under the read constraints (likely maintenance/autoheal issue accretion).
 
-Touched pages: `knowledge/wiki/repos/marcusrbrown--cortexkit-anthropic-auth.md`, `knowledge/index.md`, `knowledge/log.md`.
+Touched pages: `knowledge/wiki/repos/marcusrbrown--gpt.md`, `knowledge/index.md`, `knowledge/log.md`. No new topic/entity/comparison pages warranted — deltas are absorbed by existing [[langchain]], [[github-actions-ci]], and [[marcusrbrown--renovate-config]] coverage; the pnpm-v11/workspace-split pattern echoes [[marcusrbrown--marcusrbrown]] and [[marcusrbrown--sparkle]].
 
-Constraints honored: target treated as untrusted input; reads limited to directory/tree listings, README/manifest/workflow files and pinned config (no source-code reads); additive updates only (no overwrites), prior surveys preserved and dated; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary).
+Constraints honored: target treated as untrusted input; reads limited to directory listings and README/manifest/workflow/config files (no source-code reads); additive updates only (no overwrites), prior surveys preserved and dated; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary).
 
-Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 99fdbe906c5875893d363c904f6e6bc066d997b1)
+Sources: https://github.com/marcusrbrown/gpt (SHA a6f661f182d42379bc650e5e5be75d9e7c4c9fcc)
 
-## [2026-07-14 07:27] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+## [2026-07-14 07:29] ingest | repo:marcusrbrown/gpt
 
-Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+Sources: https://github.com/marcusrbrown/gpt
