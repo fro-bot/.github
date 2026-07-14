@@ -2800,3 +2800,26 @@ Sources: https://github.com/fro-bot/.github@dc5efafd2b634958d18f9677996c156f74f7
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@c5d711c54fde44085d4e626021cebf9d6bfa1037
+
+## [2026-07-14 07:26] ingest | marcusrbrown/cortexkit_anthropic-auth
+
+Re-surveyed `marcusrbrown/cortexkit_anthropic-auth` (HEAD `99fdbe906c5875893d363c904f6e6bc066d997b1`, default branch `marcusrbrown/main`, public, MIT, fork of `cortexkit/anthropic-auth`, 1 star / 0 forks, 520 KB). **Fourth consecutive no-delta re-survey** — the fork is parked at the `1.2.5-mb.3` release, ~50 days frozen (`pushed_at`/`updated_at` both 2026-05-31T04:03Z since the 2026-06-09 survey). Additive update to the existing repo page + index entry; no pages created.
+
+Everything re-verified live against the tree at `99fdbe9` (104 blobs, layout identical):
+
+- **Zero drift.** 4 workflows unchanged (`ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`); root manifest `@cortexkit/anthropic-auth` (`private: true`); published packages hold `1.2.5-mb.3` (`@marcusrbrown/anthropic-auth-core`, `@marcusrbrown/opencode-anthropic-auth`); Pi `@cortexkit/pi-anthropic-auth` still `private: true` at `1.2.5`; Biome `2.4.15`, TypeScript `6.0.3`, Bun `1.3.14`; Fro Bot agent pin still **`v0.45.0`** (SHA `8aac0fc`). Sole open item is still issue #11 "Daily Autohealing Report".
+- **Agent-pin laggard, explained.** `v0.45.0` is the fleet's oldest agent pin (leaders at v0.84–v0.85). The pin doesn't advance because the frozen tree generates no PRs to review and no autoheal/maintenance fixes — nothing carries a bump. Expect a large single-step jump on the first active PR if the fork resumes.
+- **Fork-relevance divergence signal (new this window).** [[marcusrbrown--dotfiles]] (2026-07-10 survey) now pins **upstream** `@cortexkit/opencode-anthropic-auth@1.13.0`, not this fork's `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3`. Upstream advanced ~11 minors (1.2.x → 1.13.0) while the fork stood still — suggesting the fork's original namespace-pinning / core-scope-gap drivers have been superseded and upstream is consumed directly again. Recorded as a signal, not a decommission: no archive flag, no README deprecation, and the `.agents/skills/anthropic-auth-upstream-release/` skill still ships. Added an Open Question for operator confirmation. Cross-referenced bidirectionally in the dotfiles cross-ref line.
+- **Fro Bot workflow present** (`fro-bot.yaml`, `fro-bot/agent@v0.45.0`) — no follow-up draft PR needed.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--cortexkit-anthropic-auth.md`, `knowledge/index.md`, `knowledge/log.md`.
+
+Constraints honored: target treated as untrusted input; reads limited to directory/tree listings, README/manifest/workflow files and pinned config (no source-code reads); additive updates only (no overwrites), prior surveys preserved and dated; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 99fdbe906c5875893d363c904f6e6bc066d997b1)
+
+## [2026-07-14 07:27] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth

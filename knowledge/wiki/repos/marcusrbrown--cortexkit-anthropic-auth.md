@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/cortexkit_anthropic-auth
 created: 2026-05-28
-updated: 2026-06-30
+updated: 2026-07-14
 sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
     sha: 517d38596432429a8fc5f78612edc80a1c3f3dc6
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
     sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
     accessed: 2026-06-30
+  - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+    sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
+    accessed: 2026-07-14
 tags: [opencode, pi, anthropic, oauth, claude, bun, typescript, monorepo, biome, fork, relay, cloudflare-worker, mitmproxy, fro-bot]
 related: [marcusrbrown--opencode-copilot-delegate, marcusrbrown--systematic, marcusrbrown--dotfiles]
 ---
@@ -38,6 +41,10 @@ This is a Bun workspace monorepo with three packages: a shared core, an OpenCode
 - Pi package `@cortexkit/pi-anthropic-auth` is `private: true` in this fork at upstream version `1.2.5` — explicitly excluded from publish jobs.
 - Recommended install pin: `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3`.
 - Fro Bot workflow active since the `1.2.5-mb.3` release cycle — see [Fro Bot Status](#fro-bot-status).
+
+**No-delta re-survey (2026-07-14, SHA `99fdbe9`):** Fourth consecutive parked re-survey. HEAD unchanged at `99fdbe9` (`chore(release): bump fork packages to 1.2.5-mb.3`, committed 2026-05-31T04:03Z); `pushed_at`/`updated_at` both frozen at 2026-05-31T04:03Z — now **~50 days with zero drift**. Every fact re-verified live against the tree at `99fdbe9`: 104 blobs, layout identical; 4 workflows unchanged (`ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`); root manifest `@cortexkit/anthropic-auth` (`private: true`); published packages hold `1.2.5-mb.3` (`@marcusrbrown/anthropic-auth-core`, `@marcusrbrown/opencode-anthropic-auth`); Pi `@cortexkit/pi-anthropic-auth` still `private: true` at `1.2.5`; Biome `2.4.15`, TypeScript `6.0.3`, Bun `1.3.14` (`mise.toml`), opencode engine pin `bun: 1.3.14`; Fro Bot agent pin still **`v0.45.0`** (SHA `8aac0fc`). Repo still public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1 star / 0 forks, 520 KB. Sole open item is still issue #11 "Daily Autohealing Report" (by `marcusrbrown`). The `v0.45.0` pin is now a **~9-month-equivalent laggard** against fleet leaders sitting at v0.84–v0.85 — but with no PR or maintenance churn to carry a bump, and the workflow's schedule (Monday 09:00 maintenance / daily 03:30 autoheal) finding nothing to fix on a frozen tree, the pin has no forcing function. Nothing below contradicted.
+
+**Fork-relevance divergence signal (2026-07-14, cross-repo):** The active consumer surface has drifted away from this fork. As of the 2026-07-10 [[marcusrbrown--dotfiles]] survey, Marcus's OpenCode auth plugin is `@cortexkit/opencode-anthropic-auth@1.13.0` — the **upstream** CortexKit scope at v1.13.0, not this fork's `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3`. Upstream has advanced roughly eleven minor releases (1.2.x → 1.13.0) while the fork sat frozen at `1.2.5-mb.3`. Read together, the two data points suggest the fork's original drivers (namespace pinning, closing the core-scope gap — see [Why the Fork Exists](#why-the-fork-exists)) have been superseded: upstream is being consumed directly again. This is a signal, not a confirmed decommission — no archive flag, no README deprecation notice, and the `.agents/skills/anthropic-auth-upstream-release/` skill still ships. Worth a direct question to the operator on the next active window (see [Open Questions](#open-questions--gaps)).
 
 **No-delta re-survey (2026-06-30):** HEAD is still `99fdbe9` (committed 2026-05-31T04:03Z); `pushedAt`/`updatedAt` both hold at 2026-05-31T04:03Z. Third consecutive parked re-survey, now 30 days with zero drift. Re-verified live: 4 workflows unchanged (`ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`); root manifest still `@cortexkit/anthropic-auth` (`private: true`, `workspaces: packages/*`); published packages hold at `1.2.5-mb.3` (`@marcusrbrown/anthropic-auth-core`, `@marcusrbrown/opencode-anthropic-auth`); Pi package `@cortexkit/pi-anthropic-auth` still `private: true` at upstream `1.2.5`; Biome `2.4.15`, `@opencode-ai/plugin` `1.15.5`, Pi peers `@earendil-works/pi-{ai,coding-agent,tui}` `0.75.3`; Fro Bot agent pin still **`v0.45.0`** (SHA `8aac0fc`). Repo still public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1 star / 0 forks, 520 KB. The fork remains parked at the last release. The `v0.45.0` agent pin is now a notable ecosystem laggard — fleet leaders sit at v0.77.0+ — but the workflow has had no PR or maintenance churn to carry a bump. Nothing below contradicted.
 
@@ -211,7 +218,7 @@ No Renovate config detected at the root — the repo uses Dependabot, not the [[
 
 ## Fro Bot Status
 
-**Active.** `fro-bot.yaml` landed between the 2026-05-28 survey and the 2026-06-09 re-survey (last push `2026-05-31T04:03:34Z`). Agent version: `v0.45.0` (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`).
+**Active but pinned to a stale agent.** `fro-bot.yaml` landed between the 2026-05-28 survey and the 2026-06-09 re-survey (last push `2026-05-31T04:03:34Z`). Agent version: `v0.45.0` (SHA `8aac0fc36437a6c871321fa3389033c8262504b7`) — re-confirmed unchanged through the 2026-07-14 survey. This is the oldest agent pin in the surveyed fleet by a wide margin (leaders sit at v0.84–v0.85 as of mid-July). The pin doesn't advance because the tree is frozen: no PRs to review, and the scheduled maintenance/autoheal passes find nothing to fix, so nothing generates the churn that would carry an agent bump. If the fork ever resumes (upstream sync + fork release), expect a large single-step agent jump on the first active PR.
 
 ### Workflow profile
 
@@ -272,7 +279,7 @@ _Prior gap note (2026-05-28): No Fro Bot workflow was present at that time. The 
 - [[opencode-plugins]] — Plugin architecture, Bun build target, peer-dep handling, plugin singleton patterns. This repo is an additional data point for the singleton + cross-process lock category.
 - [[marcusrbrown--opencode-copilot-delegate]] — Another OpenCode plugin in Marcus's stack; same Biome 2.4.15 + Bun 1.3.14 toolchain, comparable peer-dep and build-target discipline.
 - [[marcusrbrown--systematic]] — Sibling OpenCode plugin (skills/agents framework).
-- [[marcusrbrown--dotfiles]] — Consumes OpenCode plugins via OpenCode config; pinned at `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3` as of the 2026-06-06 dotfiles survey.
+- [[marcusrbrown--dotfiles]] — Consumes OpenCode plugins via OpenCode config. Pinned at `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3` (this fork) as of the 2026-06-06 dotfiles survey, **but switched to upstream `@cortexkit/opencode-anthropic-auth@1.13.0` by the 2026-07-10 survey** — see the fork-relevance divergence signal above.
 - [[github-actions-ci]] — General CI patterns; this repo contributes the tag-commit integrity check pattern and the "no manifest mutation in CI" release rule.
 
 ## Open Questions / Gaps
@@ -280,3 +287,4 @@ _Prior gap note (2026-05-28): No Fro Bot workflow was present at that time. The 
 - Is the upstream `cortexkit/anthropic-auth` still actively maintained? The fork's CHANGELOG carried forward upstream entries through `1.2.5` as of 2026-05-31, and the commit history shows a deliberate `chore(sync): merge upstream v1.2.5` on 2026-05-28. The `.agents/skills/anthropic-auth-upstream-release/` skill codifies the sync/release procedure — suggesting an explicit, maintained upstream-tracking practice, though no automated tracking workflow is present.
 - The `docs/brainstorms/` and `docs/plans/` directories exist but were not read (per the survey constraint to limit reads to listings, README, manifests, workflows). Future ingest could enumerate plan filenames to map roadmap scope.
 - `e2e-tests` package internals (test count, framework) were not read.
+- **Is this fork still the intended consumer target, or is it being retired in favor of upstream?** (raised 2026-07-14) [[marcusrbrown--dotfiles]] now pins `@cortexkit/opencode-anthropic-auth@1.13.0` (upstream scope) while this fork remains frozen at `1.2.5-mb.3`. The fork's namespace-pinning rationale may no longer apply. No archive/deprecation signal on the repo yet — recommend confirming intent with the operator before treating the fork as abandoned, since the upstream-release skill still ships and could resume the fork at any time.
