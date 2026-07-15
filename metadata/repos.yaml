@@ -105,11 +105,11 @@ repos:
     name: infra
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-01
+    last_survey_at: 2026-07-15
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-08-01
+    next_survey_eligible_at: 2026-08-16
     discovery_channel: collab
     private: false
     node_id: R_kgDOR4g8TA
