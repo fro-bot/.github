@@ -2829,3 +2829,28 @@ Sources: https://github.com/marcusrbrown/gpt (SHA a6f661f182d42379bc650e5e5be75d
 Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-07-15 02:00] ingest | marcusrbrown/infra
+
+Incremental re-survey of `marcusrbrown/infra` (HEAD `e0e3252`, last push 2026-07-15, up from `390cb5f` 2026-07-01). `gh` was unauthenticated in this run; survey performed via unauthenticated `curl` to the public GitHub API/raw endpoints (repo is public). Reads limited to repo metadata, directory listings (`apps/`, `packages/`, `.github/workflows/`, `.slim/`, `patches/`, `docs/`), README, per-app `docker-compose.yaml` + `upstream.json`, `fro-bot.yaml`, `renovate.json5`, root `package.json`/`opencode.jsonc`/`.slim/clonedeps.json`/`.npmrc` per the untrusted-input constraint. Fro Bot workflow **present** (`fro-bot/agent@v0.90.0`) — no follow-up draft needed.
+
+Structural delta: no new apps (still 7) or workflows (still 17). New durable findings ingested:
+
+- **Root `opencode.jsonc` — consumer-side MCP gating.** Two local MCP servers (`infra` enabled; `discord`/`saseq/discord-mcp:1.0.0` disabled) plus a **two-layer tool gate**: primary `MCP_ALLOWLIST` (never registers 11 sensitive infra commands as tools) + secondary `permission: deny` backstop for the same tool ids, both asserted by `packages/cli/src/conventions.test.ts`. Documented gotchas captured: tool-id form is `<server>_<tool>` (not the `mcp_Infra_*` plugin alias); opencode resolves the **last** matching permission rule (wildcard baseline first, denies after); JVM MCP image needs `timeout: 60000` vs opencode's 30s default; no secrets in the file (env inherited / shell-wrapper `-e` forwarding for Docker).
+- **`.slim/clonedeps.json` vendoring** — pins `anomalyco/opencode@v1.15.13` for local inspection of MCP registration/permission enforcement; the stated reason (both `tools:false` and `permission:deny` empirically failed alone) is the provenance for the two-layer gating design.
+- **`patches/`** — Bun `patchedDependencies` patch for `@changesets/get-github-info@0.6.0`.
+- Root workspace package renamed `@marcusrbrown/infra-workspace` (private); published CLI stays `@marcusrbrown/infra`. New root `AGENTS.md`, `.npmrc`, `docs/ideation/`.
+
+Version bumps: Fro Bot agent v0.79.4 → v0.90.0 (SHA `42db56d`); gateway upstream pin v0.79.1 → v0.88.0; CLI v0.13.13 → v0.13.20; CLIProxyAPI v7.2.48 → v7.2.77 (#852); Caddy 2.11.3-alpine → 2.11.4-alpine (shared digest); dashboard `2026.06.57` → `2026.07.21`; Umami steady 3.2.0; Renovate preset `#5.2.3` → `#5.2.6`; ESLint 10.4.0 → 10.7.0, Prettier 3.9.5, lint-staged 16 → 17.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--infra.md` (frontmatter source/`updated`/tags, Overview, Repository Structure `.slim`/`patches`/`docs/ideation` rows, new "MCP Permission Backstop" + "Vendored Upstream Sources" sections, Developer Tooling versions + patched-deps row, compose image versions across all four stacks, agent/gateway pins, new Notable Pattern, 2026-07-15 survey-history row); `knowledge/wiki/topics/opencode-plugins.md` (new "Consumer-Side MCP Gating" section + frontmatter source/tags/`updated`, related-pages entry); `knowledge/index.md` (infra + opencode-plugins catalog lines). No new topic/entity/comparison page created — the consumer-side MCP-gating pattern folds cleanly into existing [[opencode-plugins]] coverage; promote to its own page only if a second repo adopts the two-layer gate.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings and README/manifest/workflow/config files (no source-code reads); additive updates only (prior surveys preserved and dated); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/infra (SHA e0e325205da0549708c07bb84409cde50f4f3634)
+
+## [2026-07-15 07:32] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra

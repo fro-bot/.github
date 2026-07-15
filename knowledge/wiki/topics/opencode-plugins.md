@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-07-03
+updated: 2026-07-15
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -37,7 +37,10 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: ad8eefe00c467ba342353d5bbd3d8cc6fbb61fc5
     accessed: 2026-07-03
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus]
+  - url: https://github.com/marcusrbrown/infra
+    sha: e0e325205da0549708c07bb84409cde50f4f3634
+    accessed: 2026-07-15
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, mcp-permission-gating, discord-mcp, clonedeps]
 ---
 
 # OpenCode Plugin Development
@@ -314,8 +317,20 @@ This is the first instance in the Marcus ecosystem of a repo-local skill scoped 
 
 Contrast with [[marcusrbrown--systematic]] which ships general-purpose skills (`ce:plan`, `ce:work`, etc.) distributed for consumption by other OpenCode users — the cortexkit-auth pattern is internal/operational, not distributable.
 
+## Consumer-Side MCP Gating (`opencode.jsonc` permission backstop)
+
+Beyond authoring plugins, OpenCode is also a *consumer* of MCP servers, and gating which MCP tools an agent may call is its own pattern. [[marcusrbrown--infra]] (survey 2026-07-15) is the canonical example: a root `opencode.jsonc` wires a local `infra` MCP server (`bun run packages/cli/src/cli.ts mcp`) plus an optional Dockerized `discord` server (`saseq/discord-mcp:1.0.0`, disabled by default), and layers two independent gates over sensitive tools.
+
+- **Primary gate — allowlist at registration.** The CLI's `MCP_ALLOWLIST` (`packages/cli/src/commands/mcp.ts`) never registers mutating/sensitive commands as MCP tools, so the server simply doesn't expose them. This is stronger than relying on the client's permission check.
+- **Secondary gate — `permission: deny` backstop.** The `opencode.jsonc` `permission` block denies the same tool ids centrally (`infra_cliproxy_keys_add`, `infra_vpn_deploy`, `infra_broker_logs`, …) so a future accidental allowlist re-expansion is still blocked before execution. Both layers are asserted by a `conventions.test.ts`.
+- **Tool-id form matters.** Denies must use opencode's `<server>_<tool>` sanitized/underscore-joined form (`infra_cliproxy_keys_add`) — **not** the `mcp_Infra_*` alias an Anthropic-auth plugin may surface to the agent. Getting the id form wrong silently no-ops the deny.
+- **Last-match-wins for wildcards.** opencode resolves the **last** matching permission rule. To make a `discord_*: ask` baseline plus explicit `deny`s on destructive tools work, list the wildcard baseline *first* and the specific denies after it.
+- **Provenance for the design:** infra vendors the exact upstream (`.slim/clonedeps.json` pinning `anomalyco/opencode@v1.15.13`) because empirically neither `tools:false` nor `permission:deny` alone suppressed the tools — the two-layer design came from reading the upstream registration/permission code, not the docs.
+- **MCP subprocess secrets:** no secret values live in `opencode.jsonc`; the `infra` server inherits env (Bun auto-loads repo-root `.env` locally / CI inherits parent env), and the Dockerized `discord` server is fed only `DISCORD_TOKEN`/`DISCORD_GUILD_ID` via a shell wrapper (`set -a; . ./.env`) forwarded with `-e`, because opencode's `{env:VAR}` interpolation doesn't carry repo-root `.env` and `--env-file` chokes on the multi-line VPN PEM. A JVM MCP image also needs `timeout: 60000` to beat opencode's 30s default connect timeout during its ~30s cold start.
+
 ## Related Pages
 
+- [[marcusrbrown--infra]] — Consumer-side MCP gating: `opencode.jsonc` two-layer permission backstop over an `infra` CLI MCP server + optional Dockerized Discord MCP
 - [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows (~48 bundled skill dirs, 51 agents) at v2.32.0
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
