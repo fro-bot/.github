@@ -37,10 +37,10 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: ad8eefe00c467ba342353d5bbd3d8cc6fbb61fc5
     accessed: 2026-07-03
-  - url: https://github.com/marcusrbrown/infra
-    sha: e0e325205da0549708c07bb84409cde50f4f3634
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 4eecc77c6482895698645748beff0f336142bc64
     accessed: 2026-07-15
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, mcp-permission-gating, discord-mcp, clonedeps]
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus]
 ---
 
 # OpenCode Plugin Development
@@ -145,6 +145,7 @@ Rather than registering one tool per skill, systematic registers a single `syste
 | Factory deduplication | Singleton guard preventing duplicate plugin registration across multiple opencode.json sources | [[marcusrbrown--systematic]] |
 | Content integrity gate | CI-enforced validation that all skill/agent sub-files are properly imported and shipped | [[marcusrbrown--systematic]] |
 | Removed-name disable-list tolerance | Disable lists (`disabled_skills`/`disabled_agents`) accept names that were once bundled but later removed; load-time silently drops them with a warning instead of failing validation. A content-integrity gate enforces removed ∩ bundled = ∅. Prevents a later upstream cleanup from bricking configs that had disabled the removed item (systematic v2.32.0, #534) | [[marcusrbrown--systematic]] |
+| Discovered skills as slash commands | Beyond bundled assets, discover the user's/project's own skills from the six roots OpenCode itself scans (global `~/.claude`/`~/.agents`, project `.claude`/`.agents` walked to worktree root, `.opencode` dirs) and register each as a `/slash` command, applying upstream last-write-wins precedence so the command that wins matches what OpenCode's skill tool would resolve. Model-invocable skills get a shim loading via the native skill tool with `$ARGUMENTS` passthrough; command-only skills inline the `SKILL.md` body. Gated by `skills_as_commands` toggle (default true), suppressible per-command via `disabled_commands`. Idempotency comes from rebuilding command config from disk each launch (OpenCode config-hook mutations are in-memory per load, never persisted) rather than from ownership markers (systematic v2.33.0–v2.33.2, #592–#594) | [[marcusrbrown--systematic]] |
 
 ## Process Tree Management
 
@@ -170,7 +171,7 @@ space-bus also documents using **one `opencode serve` instance to multiplex many
 
 | Repo | npm Package | Purpose | Stack | Status |
 |------|-------------|---------|-------|--------|
-| [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (~48 bundled skill dirs, 51 agents) | Bun, Biome, Zod-typed config, semantic-release | Active, v2.32.0 |
+| [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (~48 bundled skill dirs, 51 agents) | Bun, Biome, Zod-typed config, semantic-release | Active, v2.33.3 |
 | [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses; opt-in `/copilot-status` TUI half | Bun, Biome, Changesets | Active, v0.12.0 (4 tools: delegate/output/cancel/resume) |
 | [[marcusrbrown--cortexkit-anthropic-auth]] | `@marcusrbrown/opencode-anthropic-auth` + `@marcusrbrown/anthropic-auth-core` | Claude Pro/Max OAuth, fallback accounts, quota routing, prompt-cache controls, optional Cloudflare Worker relay; OpenCode + Pi share the same core | Bun, Biome, Lefthook, monorepo workspaces | Active fork, `1.2.2-mb.2` (fork of `cortexkit/anthropic-auth`); Pi package private in fork |
 
@@ -303,7 +304,7 @@ As of the 2026-05-22 [[fro-bot--systematic]] survey, the same docs site is now t
 - `https://fro.bot/systematic/schemas/v2/systematic-config.schema.json` — pinned `$id`, intended for `"$schema"` references in `systematic.json` / `systematic.jsonc` for IDE autocomplete (VSCode, Zed, IntelliJ).
 - `https://fro.bot/systematic/schemas/latest/systematic-config.schema.json` — moving pointer for "current".
 
-Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. Treat both URLs as public API; renaming or restructuring them silently breaks autocomplete for every consumer that pinned them. The same docs deploy now drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
+Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`, and (since systematic v2.33.0) `skills_as_commands`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. Treat both URLs as public API; renaming or restructuring them silently breaks autocomplete for every consumer that pinned them. The same docs deploy now drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
 
 ## Bundled Skill for Upstream Sync (cortexkit_anthropic-auth pattern)
 
@@ -317,21 +318,9 @@ This is the first instance in the Marcus ecosystem of a repo-local skill scoped 
 
 Contrast with [[marcusrbrown--systematic]] which ships general-purpose skills (`ce:plan`, `ce:work`, etc.) distributed for consumption by other OpenCode users — the cortexkit-auth pattern is internal/operational, not distributable.
 
-## Consumer-Side MCP Gating (`opencode.jsonc` permission backstop)
-
-Beyond authoring plugins, OpenCode is also a *consumer* of MCP servers, and gating which MCP tools an agent may call is its own pattern. [[marcusrbrown--infra]] (survey 2026-07-15) is the canonical example: a root `opencode.jsonc` wires a local `infra` MCP server (`bun run packages/cli/src/cli.ts mcp`) plus an optional Dockerized `discord` server (`saseq/discord-mcp:1.0.0`, disabled by default), and layers two independent gates over sensitive tools.
-
-- **Primary gate — allowlist at registration.** The CLI's `MCP_ALLOWLIST` (`packages/cli/src/commands/mcp.ts`) never registers mutating/sensitive commands as MCP tools, so the server simply doesn't expose them. This is stronger than relying on the client's permission check.
-- **Secondary gate — `permission: deny` backstop.** The `opencode.jsonc` `permission` block denies the same tool ids centrally (`infra_cliproxy_keys_add`, `infra_vpn_deploy`, `infra_broker_logs`, …) so a future accidental allowlist re-expansion is still blocked before execution. Both layers are asserted by a `conventions.test.ts`.
-- **Tool-id form matters.** Denies must use opencode's `<server>_<tool>` sanitized/underscore-joined form (`infra_cliproxy_keys_add`) — **not** the `mcp_Infra_*` alias an Anthropic-auth plugin may surface to the agent. Getting the id form wrong silently no-ops the deny.
-- **Last-match-wins for wildcards.** opencode resolves the **last** matching permission rule. To make a `discord_*: ask` baseline plus explicit `deny`s on destructive tools work, list the wildcard baseline *first* and the specific denies after it.
-- **Provenance for the design:** infra vendors the exact upstream (`.slim/clonedeps.json` pinning `anomalyco/opencode@v1.15.13`) because empirically neither `tools:false` nor `permission:deny` alone suppressed the tools — the two-layer design came from reading the upstream registration/permission code, not the docs.
-- **MCP subprocess secrets:** no secret values live in `opencode.jsonc`; the `infra` server inherits env (Bun auto-loads repo-root `.env` locally / CI inherits parent env), and the Dockerized `discord` server is fed only `DISCORD_TOKEN`/`DISCORD_GUILD_ID` via a shell wrapper (`set -a; . ./.env`) forwarded with `-e`, because opencode's `{env:VAR}` interpolation doesn't carry repo-root `.env` and `--env-file` chokes on the multi-line VPN PEM. A JVM MCP image also needs `timeout: 60000` to beat opencode's 30s default connect timeout during its ~30s cold start.
-
 ## Related Pages
 
-- [[marcusrbrown--infra]] — Consumer-side MCP gating: `opencode.jsonc` two-layer permission backstop over an `infra` CLI MCP server + optional Dockerized Discord MCP
-- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows (~48 bundled skill dirs, 51 agents) at v2.32.0
+- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows (~48 bundled skill dirs, 51 agents) at v2.33.3; discovered-skills-as-slash-commands added v2.33.0
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[fro-bot--space-bus]] — Workspace agent bus: `.opencode/tools/` custom tools + one directory-routed `opencode serve` + MCP facade; delegation over the OpenCode server API
