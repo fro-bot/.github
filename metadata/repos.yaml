@@ -287,12 +287,12 @@ repos:
     name: ha-addon-repository
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-02
+    last_survey_at: 2026-07-16
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: contrib
-    next_survey_eligible_at: 2026-07-24
+    next_survey_eligible_at: 2026-08-07
     private: false
     node_id: R_kgDOIKWaJA
     database_id: 547723812
