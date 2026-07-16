@@ -2850,20 +2850,26 @@ Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
 
-## [2026-07-16 07:36] ingest | bfra-me/ha-addon-repository
+## [2026-07-16 07:34] ingest | bfra-me/.github
 
-Recurring survey of `bfra-me/ha-addon-repository` at HEAD `0a163c3f` (unchanged since 2026-05-16, last merge #551). Sixth survey; the parked-car deadlock is now the dominant and only-moving fact.
+Re-survey of `bfra-me/.github` at HEAD `1c12695` (v4.16.37, last push 2026-07-16). Fifth survey of the org control center. **No structural change** this window — the 2026-07-02 consolidation held cleanly: still one `fro-bot.yaml`, still two `review`/`autoheal` modes (`default: autoheal`), still the single `30 15 * * *` unified oversight+autoheal pass, still 16 workflows and 3 custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). The consolidation is now steady-state, not a transient shape.
 
-Findings: `main` HEAD frozen **60 days** — no content drift. Four workflows unchanged, `fro-bot.yaml` still pinned to `fro-bot/agent@3ec8d72f` (v0.43.1, daily 15:30 UTC), `renovate.json5`/`settings.yml` and the `example/` add-on (v1.2.2) all identical. The same 5 Renovate PRs remain open and review-blocked; Renovate retargeted the moving ones further upward since 2026-07-02: #556 → `bfra-me/.github` **v4.16.37** (was v4.16.33), #557 → `fro-bot/agent` **v0.92.1** (a **~49-minor jump** from the pinned v0.43.1, up from v0.81.0), #559 → `docker/login-action` **v4.4.0** (was v4.3.0). #558 (HA Add-ons v3.24) and #560 (`actions/checkout` v6.0.3) unchanged. #556 has now been review-blocked **60 days**. Only two real open issues: perpetual `Daily Autohealing Report` (#554, `fro-bot`, updated 2026-07-15) and `Dependency Dashboard` (#4); `open_issues_count` of 7 is mostly the parked PR queue. The review-required deadlock (1 approving review + `enforce_admins: true`, no reviewer) is unbroken — CI green, governance frozen.
+Headline finding: a new top-level **`.ai/` planning corpus** — `.ai/notes/implementation-plan-prompts.md` indexing seed prompts for a `/create-implementation-plan` flow, plus `.ai/plan/` with 10 aspirational spec docs (release-testing infra for `release.ts`, enhanced renovate-changesets action, Astro Starlight docs platform, multi-org template federation system, intelligent workflow generation, workflow validation, cross-platform bridge, monorepo build optimization, org-health monitoring, production-readiness validation). These are declared direction, not shipped capability; template-federation and org-health monitoring would materially expand the repo's remit into active cross-org governance. Flagged to watch for graduation into real workflows.
 
-Touched pages: `knowledge/wiki/repos/bfra-me--ha-addon-repository.md` (frontmatter source + updated date, last-push line, open-issue observation, new 2026-07-16 survey-history row, refreshed agent-lag and deadlock Drift Watch entries), `knowledge/wiki/topics/home-assistant.md` (Alpine 3.23/3.24 lag note re-dated to 2026-07-16, updated date), `knowledge/index.md` (repo blurb refreshed to 60-day freeze + v0.92.1 target), `knowledge/log.md`. No entity/comparison pages warranted. Fro Bot workflow present and active (agent pinned v0.43.1) — no follow-up draft PR needed on that count.
+Other additive scaffolding: `.husky/pre-commit` (`pnpm exec lint-staged`), root `CHANGELOG.md` and `CONTRIBUTING.md`, `.git-blame-ignore-revs`, `.cursorindexingignore`. `pnpm-workspace.yaml` migrated `onlyBuiltDependencies` → pnpm 11 `allowBuilds:` block (same allowlist: esbuild, unrs-resolver). **Doc drift noted** (contradiction to watch): new `CONTRIBUTING.md` cites pnpm "10.8.1 or later" while the repo enforces 11.x via `packageManager: pnpm@11.11.0` — a category-3 documentation-drift candidate.
 
-Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files plus PR/issue metadata; additive updates only (all prior survey rows preserved and dated, contradictions noted as drift rather than overwritten); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary). `gh` CLI was unauthenticated in this dispatch (no token present), so public data was read via unauthenticated `api.github.com`/`raw.githubusercontent.com` — repo confirmed public, no private surface touched.
+Version churn: `fro-bot/agent` v0.81.0 → **v0.92.1** (~11 bumps, ~50 in two months; no longer outright fleet leader — clusters with systematic v0.90.0, dashboard v0.84.2+, sparkle v0.85.0); pnpm 11.9.0 → 11.11.0 (#2436 queues 11.12.0); eslint 10.6.0→10.7.0, prettier 3.9.1→3.9.5, vite 8.1.0→8.1.4, @types/node 24.13.2→24.13.3, vitest 4.1.9→4.1.10, tsx→4.23.1, bfra-me/renovate-action 9.142.0→9.144.0, actions/setup-node v6.4.0→v6.5.0. Node 24.18.0 and TS 6.0.3 strict unchanged. Open 2/2: issues #2344 (Daily Fro Bot Report) and #7 (Dependency Dashboard); PRs #2444 (Changesets release) and #2436 (pnpm bump), both `bfra-me[bot]`.
 
-Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+Fro Bot workflow present and fully active (`fro-bot/agent@v0.92.1`); no follow-up draft needed.
 
-## [2026-07-16 07:37] ingest | repo:bfra-me/ha-addon-repository
+Touched pages: `knowledge/wiki/repos/bfra-me--github.md` (frontmatter sources/updated, identity, layout, workspace `allowBuilds`, agent pin, consolidation-durable note, new `.ai/` roadmap subsection, husky pre-commit, operational-notes churn + doc-drift, cross-repo pin, survey history row), `knowledge/index.md`, `knowledge/log.md`. No topic/entity/comparison page changes warranted — findings were repo-local (scaffolding + churn), no new cross-cutting pattern surfaced.
 
-Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files, CHANGELOG, and issue/PR listings; additive updates only (prior surveys preserved and dated, no overwrites); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context, so public data was read via unauthenticated GitHub REST / raw endpoints — no private surface touched (repo confirmed public, `is_template: true`). No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
 
-Sources: https://github.com/bfra-me/ha-addon-repository
+Sources: https://github.com/bfra-me/.github (SHA 1c1269568de61df2d8a3ddf19fb01637c166ef00)
+
+## [2026-07-16 07:37] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github
