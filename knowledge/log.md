@@ -2849,3 +2849,21 @@ Sources: https://github.com/marcusrbrown/systematic (SHA 4eecc77c648289569864574
 Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-07-16 07:36] ingest | bfra-me/ha-addon-repository
+
+Recurring survey of `bfra-me/ha-addon-repository` at HEAD `0a163c3f` (unchanged since 2026-05-16, last merge #551). Sixth survey; the parked-car deadlock is now the dominant and only-moving fact.
+
+Findings: `main` HEAD frozen **60 days** — no content drift. Four workflows unchanged, `fro-bot.yaml` still pinned to `fro-bot/agent@3ec8d72f` (v0.43.1, daily 15:30 UTC), `renovate.json5`/`settings.yml` and the `example/` add-on (v1.2.2) all identical. The same 5 Renovate PRs remain open and review-blocked; Renovate retargeted the moving ones further upward since 2026-07-02: #556 → `bfra-me/.github` **v4.16.37** (was v4.16.33), #557 → `fro-bot/agent` **v0.92.1** (a **~49-minor jump** from the pinned v0.43.1, up from v0.81.0), #559 → `docker/login-action` **v4.4.0** (was v4.3.0). #558 (HA Add-ons v3.24) and #560 (`actions/checkout` v6.0.3) unchanged. #556 has now been review-blocked **60 days**. Only two real open issues: perpetual `Daily Autohealing Report` (#554, `fro-bot`, updated 2026-07-15) and `Dependency Dashboard` (#4); `open_issues_count` of 7 is mostly the parked PR queue. The review-required deadlock (1 approving review + `enforce_admins: true`, no reviewer) is unbroken — CI green, governance frozen.
+
+Touched pages: `knowledge/wiki/repos/bfra-me--ha-addon-repository.md` (frontmatter source + updated date, last-push line, open-issue observation, new 2026-07-16 survey-history row, refreshed agent-lag and deadlock Drift Watch entries), `knowledge/wiki/topics/home-assistant.md` (Alpine 3.23/3.24 lag note re-dated to 2026-07-16, updated date), `knowledge/index.md` (repo blurb refreshed to 60-day freeze + v0.92.1 target), `knowledge/log.md`. No entity/comparison pages warranted. Fro Bot workflow present and active (agent pinned v0.43.1) — no follow-up draft PR needed on that count.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files plus PR/issue metadata; additive updates only (all prior survey rows preserved and dated, contradictions noted as drift rather than overwritten); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary). `gh` CLI was unauthenticated in this dispatch (no token present), so public data was read via unauthenticated `api.github.com`/`raw.githubusercontent.com` — repo confirmed public, no private surface touched.
+
+Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+
+## [2026-07-16 07:37] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository
