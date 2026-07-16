@@ -406,7 +406,7 @@ repos:
     onboarding_status: onboarded
     last_survey_at: 2026-07-12
     last_survey_status: success
-    has_fro_bot_workflow: false
+    has_fro_bot_workflow: true
     has_renovate: false
     discovery_channel: collab
     next_survey_eligible_at: 2026-08-14
