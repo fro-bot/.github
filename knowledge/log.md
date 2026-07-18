@@ -2874,29 +2874,28 @@ Surveyed bfra-me/.github and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/.github
 
-## [2026-07-18 00:31] ingest | marcusrbrown/ha-config
+## [2026-07-18 00:34] ingest | repo:fro-bot/space-bus
 
-Eighth survey of `marcusrbrown/ha-config` (SHA `019cbe9` → `c51e25b`, pushed 2026-07-16). Pure Renovate churn, zero structural drift.
+Re-surveyed `fro-bot/space-bus` (HEAD `8e20e01`, public, MIT) — the first full re-survey since the 2026-07-03 initial and the 2026-07-06 cross-reference-only touch. Headline: **the repo matured from MVP dogfood to a shipped, published OpenCode plugin**, and this survey **resolves the package-status contradiction** flagged from the [[marcusrbrown--mothership]] survey.
 
-Delta since 2026-07-03 (commits #834→#847, all `mrbro-bot[bot]`):
+Key findings:
 
-- `bfra-me/.github` reusable workflows v4.16.33 → **v4.16.37** (SHA `058b81211bf35133c2988de1619be09a2158fbd6`; #834/#836/#840/#844)
-- Renovate preset `marcusrbrown/renovate-config#5.2.4` → **#5.2.7** (#842 v5.2.6, #846 v5.2.7)
-- Prettier 3.9.4 → **3.9.5** (#839), propagated to both `ci.yaml` env and post-upgrade `npx prettier@3.9.5`
-- esphome submodule digest advanced ~eight times (latest `a0755b3`, #847)
+- **Package published.** `@fro.bot/space-bus` is on npm with **20 versions** (`0.0.0` → **`0.13.1`**) via changesets + **npm OIDC trusted publishing** (no `NPM_TOKEN`). This confirms the 2026-07-06 inference (mothership pinned `0.7.0`) and shows the pin was a mid-journey snapshot; the private/`0.0.0` → published shift is now verified against space-bus's own manifest. Both prior states remain recorded and dated — no overwrite.
+- **Plugin conversion landed.** The "packaging move, not rewrite" bet held: logic still lives in `src/core.ts`; the `.opencode/tools/` + `workspace.json` MVP scaffold is gone, replaced by the published-plugin `src/index.ts` (default-exported factory) + `src/tools/*.ts` (`makeBus*`) and `spacebus.json`.
+- **Four → six tools** — `bus_wait` (async-delegation foundation, `0.9.0`) and `bus_registry` (multi-roster, `0.13.0`) added; every task tool gained an optional `roster` param + `roster:` result header. The "exactly four tools" MVP hard constraint is **superseded** (recorded additively).
+- **Managed server lifecycle + CLI + launchd.** New `server.managed` mode (first-caller-spawns, `0600` discovery file, generated per-spawn password), a `space-bus` CLI (`serve/status/stop`, `--foreground` active supervision), and macOS **launchd v1** `space-bus service` for reboot-persistence. Died-path/orphan-reap hardening across `0.8.0`–`0.8.1`.
+- **CI-enforced browser-safe library surface** — 7 subpath exports split into a browser-safe lane (`/core`,`/contract`,`/format`,`/attach`) and a Node-only lane (`/config`,`/managed-server`,`/registry`), with **dist-level** browser-safety tests (added `0.10.1` after Mothership's Vite bundling broke on a Node prelude). Documented the reserved-subpath `./server` loader-resolution trap (`0.10.0`).
+- **Full automation present** — `fro-bot.yaml` (consolidated three-mode, `fro-bot/agent@v0.88.0`), `ci.yaml`, `codeql-analysis.yaml`, `scorecard.yaml`, `release.yaml`, `renovate.yaml`, and `.github/settings.yml` (Probot Settings, branch protection). **Resolves the 2026-07-03 "no Fro Bot workflow / no CI / no Probot Settings" thread** — no follow-up draft PR needed.
+- Toolchain shifts: **zod v3 → v4**, Biome lint, `@opencode-ai/sdk` dropped, `@opencode-ai/plugin` now a `>=1.17.13 <2` **peer** (dev-pinned `1.17.18`). Stars 0→1, topics set (`opencode`/`plugin`/`mcp`/`agent-orchestration`/`bun`/`typescript`), 8 open issues.
 
-Static / confirmed unchanged: `.HA_VERSION` 2025.6.3 (~13-month freeze), `esphome==2025.12.7`, `yamllint==1.38.0`, mise pre-commit 4.6.0, 11 packages, 10 custom components, esphome submodule → `marcusrbrown/esphome.life`. Open items unchanged: #427 Dependency Dashboard, parked PRs #766 (asyncio-mqtt v0.16.2) and #777 (esphome v2026).
+Touched pages: `knowledge/wiki/repos/fro-bot--space-bus.md` (frontmatter sources/updated/tags, new overview + historical-status block, six-tool table, rewritten layout, new managed-server + library-surface sections, security posture, dependencies, resolved workflow section, resolved mothership contradiction, ecosystem/open-threads refresh, survey-history row); `knowledge/wiki/topics/opencode-plugins.md` (new source SHA, published-plugin update, new browser-safe-subpath + reserved-subpath-loader subsection, plugin-repos table row, cross-ref); `knowledge/index.md` (space-bus entry fleshed out from placeholder, opencode-plugins note); `knowledge/log.md`. No entity/comparison pages warranted.
 
-**Still no Fro Bot workflow (eighth consecutive survey).** The three workflows remain `ci.yaml`, `renovate.yaml`, `update-repo-settings.yaml`; repo references `fro-bot/.github:common-settings.yaml` via Probot Settings only. Gap persistence (~13 months) reads as intentional: ha-config is a Renovate-only autopilot repo with no PR-review/triage need since all merges are bot-authored. `mrbro-bot[bot]` authorship now durable across five windows. A follow-up draft PR to add the Fro Bot agent workflow remains the standing recommendation, to be proposed separately.
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/AGENTS/manifest/workflow/settings/CHANGELOG files + npm registry metadata; additive updates only (2026-07-03 MVP record preserved and dated, contradictions reconciled not overwritten); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context, so public data was read via unauthenticated GitHub REST / raw / npm-registry endpoints — repo confirmed public, no private surface touched. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
 
-Touched pages: `knowledge/wiki/repos/marcusrbrown--ha-config.md` (frontmatter sources/updated, last-push, shared-workflow pin, Renovate/Prettier tooling, Fro Bot survey count, mrbro-bot authorship note, survey-history row), `knowledge/index.md` (catalog line), `knowledge/log.md`. No topic/entity/comparison page changes warranted — findings were repo-local dependency churn; no new cross-cutting pattern surfaced for [[home-assistant]], [[esphome]], or [[github-actions-ci]].
+Sources: https://github.com/fro-bot/space-bus (SHA 8e20e01775918a01855eb5aba64d04bf966f4d51); https://www.npmjs.com/package/@fro.bot/space-bus (v0.13.1)
 
-Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files, and issue/PR listings; additive updates only (prior surveys preserved and dated, no overwrites); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context, so public data was read via unauthenticated GitHub REST / raw endpoints — repo confirmed public (`private: false`), no private surface touched. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+## [2026-07-18 00:35] ingest | repo:fro-bot/space-bus
 
-Sources: https://github.com/marcusrbrown/ha-config (SHA c51e25b17ca99a3f5d39c8fd77c0b9e32430664b)
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
 
-## [2026-07-18 00:34] ingest | repo:marcusrbrown/ha-config
-
-Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/ha-config
+Sources: https://github.com/fro-bot/space-bus
