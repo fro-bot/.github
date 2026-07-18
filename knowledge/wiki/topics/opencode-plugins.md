@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-07-03
+updated: 2026-07-18
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -37,7 +37,13 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: ad8eefe00c467ba342353d5bbd3d8cc6fbb61fc5
     accessed: 2026-07-03
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus]
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 4eecc77c6482895698645748beff0f336142bc64
+    accessed: 2026-07-15
+  - url: https://github.com/fro-bot/space-bus
+    sha: 8e20e01775918a01855eb5aba64d04bf966f4d51
+    accessed: 2026-07-18
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution]
 ---
 
 # OpenCode Plugin Development
@@ -142,6 +148,7 @@ Rather than registering one tool per skill, systematic registers a single `syste
 | Factory deduplication | Singleton guard preventing duplicate plugin registration across multiple opencode.json sources | [[marcusrbrown--systematic]] |
 | Content integrity gate | CI-enforced validation that all skill/agent sub-files are properly imported and shipped | [[marcusrbrown--systematic]] |
 | Removed-name disable-list tolerance | Disable lists (`disabled_skills`/`disabled_agents`) accept names that were once bundled but later removed; load-time silently drops them with a warning instead of failing validation. A content-integrity gate enforces removed ∩ bundled = ∅. Prevents a later upstream cleanup from bricking configs that had disabled the removed item (systematic v2.32.0, #534) | [[marcusrbrown--systematic]] |
+| Discovered skills as slash commands | Beyond bundled assets, discover the user's/project's own skills from the six roots OpenCode itself scans (global `~/.claude`/`~/.agents`, project `.claude`/`.agents` walked to worktree root, `.opencode` dirs) and register each as a `/slash` command, applying upstream last-write-wins precedence so the command that wins matches what OpenCode's skill tool would resolve. Model-invocable skills get a shim loading via the native skill tool with `$ARGUMENTS` passthrough; command-only skills inline the `SKILL.md` body. Gated by `skills_as_commands` toggle (default true), suppressible per-command via `disabled_commands`. Idempotency comes from rebuilding command config from disk each launch (OpenCode config-hook mutations are in-memory per load, never persisted) rather than from ownership markers (systematic v2.33.0–v2.33.2, #592–#594) | [[marcusrbrown--systematic]] |
 
 ## Process Tree Management
 
@@ -149,10 +156,19 @@ Rather than registering one tool per skill, systematic registers a single `syste
 
 ## Standalone `.opencode/tools/` Custom Tools (no Plugin factory)
 
-Not every OpenCode tool surface is a published `Plugin`. [[fro-bot--space-bus]] (2026-07-03) demonstrates the lighter **project-local custom-tool** path: files in `.opencode/tools/` where the **filename is the tool name**, each exporting `tool({ description, args, async execute(args, ctx) })` from `@opencode-ai/plugin`. `tool.schema` is Zod; `ctx` provides `{ agent, sessionID, messageID, directory, worktree }`; tools run in OpenCode's Bun runtime with unrestricted `fetch` to localhost.
+Not every OpenCode tool surface starts as a published `Plugin`. [[fro-bot--space-bus]] at its 2026-07-03 MVP demonstrated the lighter **project-local custom-tool** path: files in `.opencode/tools/` where the **filename is the tool name**, each exporting `tool({ description, args, async execute(args, ctx) })` from `@opencode-ai/plugin`. `tool.schema` is Zod; `ctx` provides `{ agent, sessionID, messageID, directory, worktree }`; tools run in OpenCode's Bun runtime with unrestricted `fetch` to localhost.
 
 - **No `.opencode/package.json` needed** — `.opencode/tools/` resolves `@opencode-ai/plugin` from repo-root `node_modules` directly.
-- **Adapters stay dumb.** space-bus keeps all logic in `src/core.ts` and makes each tool file a ~10–20 line adapter (parse args → call core → format). This makes a later conversion to a distributable `Plugin` a packaging move, not a rewrite — the same "logic in a testable core, thin edge adapters" discipline seen across Marcus's plugin repos.
+- **Adapters stay dumb.** space-bus keeps all logic in `src/core.ts` and makes each tool file a thin adapter (parse args → call core → format). This made the later conversion to a distributable `Plugin` a packaging move, not a rewrite.
+
+> **Update (2026-07-18):** the packaging-move bet paid off — space-bus has **shipped as a published `Plugin`** (`@fro.bot/space-bus` on npm, default-exported factory via `src/index.ts` returning the six-tool map). The `.opencode/tools/` layout was the dogfood scaffold; the published shape is `src/index.ts` + `src/tools/*.ts` (`makeBus*` factories). The "logic in core, thin edge adapters" discipline survived the conversion intact.
+
+### Browser-safe subpath exports + reserved-subpath loader trap (space-bus, 2026-07-18)
+
+Two durable published-plugin patterns from space-bus's library-surface work:
+
+- **CI-enforced browser-safe subpaths.** A plugin can publish subpath exports for renderers that want structured state, split into a **browser-safe lane** (`/core`, `/contract`, `/format`, `/attach` — no `node:*`, injected seams for fs/env/crypto) and a **Node-only lane** (`/config`, `/managed-server`, `/registry`). A `browser-safety.test.ts` bundles the browser lane for a browser target and asserts no `node:` imports and no path into the Node lane. **Test the *published dist*, not just `src`** — space-bus `0.10.1` fixed a `createRequire`/`node:module` prelude that broke Vite bundling (Mothership) even though the src-level test passed; the fix added a dist-level browser-safety assertion.
+- **Reserved-subpath loader resolution.** OpenCode's plugin loader resolves `exports["./server"]` **before** `main`. space-bus published its managed-server lifecycle at `/server` and broke plugin loading with `Plugin export is not a function` for `0.6.0`–`0.9.0` on npm — `/server` was resolving to the lifecycle module instead of the plugin factory. Fix (`0.10.0`): remap `./server` to the plugin entry and move the lifecycle API to `/managed-server`. Lesson: don't publish a non-factory export at a subpath the loader may probe.
 
 ### OpenCode Server API as a multi-project control plane
 
@@ -167,11 +183,12 @@ space-bus also documents using **one `opencode serve` instance to multiplex many
 
 | Repo | npm Package | Purpose | Stack | Status |
 |------|-------------|---------|-------|--------|
-| [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (~48 bundled skill dirs, 51 agents) | Bun, Biome, Zod-typed config, semantic-release | Active, v2.32.0 |
+| [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (~48 bundled skill dirs, 51 agents) | Bun, Biome, Zod-typed config, semantic-release | Active, v2.33.3 |
 | [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses; opt-in `/copilot-status` TUI half | Bun, Biome, Changesets | Active, v0.12.0 (4 tools: delegate/output/cancel/resume) |
 | [[marcusrbrown--cortexkit-anthropic-auth]] | `@marcusrbrown/opencode-anthropic-auth` + `@marcusrbrown/anthropic-auth-core` | Claude Pro/Max OAuth, fallback accounts, quota routing, prompt-cache controls, optional Cloudflare Worker relay; OpenCode + Pi share the same core | Bun, Biome, Lefthook, monorepo workspaces | Active fork, `1.2.2-mb.2` (fork of `cortexkit/anthropic-auth`); Pi package private in fork |
+| [[fro-bot--space-bus]] | `@fro.bot/space-bus` | Workspace agent bus — a control agent tasks per-project agents over one directory-routed `opencode serve`; MCP facade + browser-safe library subpaths | Bun, Biome, zod v4, Changesets + npm OIDC | Active, **v0.13.1** (6 tools: bus_roster/task/status/result/wait/registry) |
 
-All three plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's OpenCode plugin repos. All use `mise.toml` to pin Bun and tool versions.
+These plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's/Fro Bot's OpenCode plugin repos. space-bus and copilot-delegate both publish via **Changesets** (space-bus via **npm OIDC trusted publishing**, no `NPM_TOKEN`); systematic uses semantic-release.
 
 ## Cross-Process OAuth Refresh Locking
 
@@ -300,7 +317,7 @@ As of the 2026-05-22 [[fro-bot--systematic]] survey, the same docs site is now t
 - `https://fro.bot/systematic/schemas/v2/systematic-config.schema.json` — pinned `$id`, intended for `"$schema"` references in `systematic.json` / `systematic.jsonc` for IDE autocomplete (VSCode, Zed, IntelliJ).
 - `https://fro.bot/systematic/schemas/latest/systematic-config.schema.json` — moving pointer for "current".
 
-Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. Treat both URLs as public API; renaming or restructuring them silently breaks autocomplete for every consumer that pinned them. The same docs deploy now drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
+Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`, and (since systematic v2.33.0) `skills_as_commands`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. Treat both URLs as public API; renaming or restructuring them silently breaks autocomplete for every consumer that pinned them. The same docs deploy now drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
 
 ## Bundled Skill for Upstream Sync (cortexkit_anthropic-auth pattern)
 
@@ -316,10 +333,10 @@ Contrast with [[marcusrbrown--systematic]] which ships general-purpose skills (`
 
 ## Related Pages
 
-- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows (~48 bundled skill dirs, 51 agents) at v2.32.0
+- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows (~48 bundled skill dirs, 51 agents) at v2.33.3; discovered-skills-as-slash-commands added v2.33.0
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
-- [[fro-bot--space-bus]] — Workspace agent bus: `.opencode/tools/` custom tools + one directory-routed `opencode serve` + MCP facade; delegation over the OpenCode server API
+- [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.13.1): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths
 - [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi; Fro Bot active at v0.45.0 (as of 2026-06-09)
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)

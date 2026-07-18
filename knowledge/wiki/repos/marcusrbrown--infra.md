@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/infra"
 created: 2026-04-18
-updated: 2026-07-01
+updated: 2026-07-15
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: e0e325205da0549708c07bb84409cde50f4f3634
+    accessed: 2026-07-15
   - url: https://github.com/marcusrbrown/infra
     sha: 390cb5fafe9d4d1fceecd4976c3e2abc29c8aa11
     accessed: 2026-07-01
@@ -31,7 +34,7 @@ sources:
   - url: https://github.com/marcusrbrown/infra
     sha: 20de04713bf01294217dee4d3b64d5d7cfb2426e
     accessed: 2026-04-18
-tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, gateway, umami, dashboard, vpn, wireguard, aws-lightsail, mcp, cli, typescript, conventions, discord, analytics, codeql, broker, oidc, credential-broker]
+tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, gateway, umami, dashboard, vpn, wireguard, aws-lightsail, mcp, cli, typescript, conventions, discord, analytics, codeql, broker, oidc, credential-broker, opencode, discord-mcp, slim-clonedeps]
 aliases: [infra]
 related:
   - marcusrbrown--ha-config
@@ -49,10 +52,11 @@ Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeW
 - **Purpose:** Deploy automation, operational CLI, and infrastructure tooling
 - **Default branch:** `main`
 - **Created:** 2026-04-03
-- **Last push:** 2026-07-01 (`390cb5f`)
+- **Last push:** 2026-07-15 (`e0e3252`)
 - **Runtime:** Bun v1.0+
-- **Published package:** `@marcusrbrown/infra` v0.13.13 on npm (latest release 2026-06-28)
-- **Open issues:** active Renovate Dependency Dashboard + autohealing reports; exact count fluctuates
+- **Workspace package:** root is `@marcusrbrown/infra-workspace` (private); the published CLI is `@marcusrbrown/infra` (in `packages/cli/`)
+- **Published package:** `@marcusrbrown/infra` v0.13.20 on npm (latest release 2026-07-13)
+- **Open issues:** active Renovate Dependency Dashboard + autohealing reports; exact count fluctuates (~10 as of 2026-07-15)
 - **Topics:** `bun`, `deploy`, `github-actions`, `infra`, `keeweb`
 - **License:** MIT
 
@@ -80,6 +84,9 @@ Bun workspace monorepo with `apps/*` and `packages/*` workspaces.
 | `.agents/skills/`     | Agent skill context packets (goke)                                     |
 | `.opencode/commands/` | OpenCode slash commands                                                |
 | `.changeset/`         | Changesets config for versioning                                       |
+| `.slim/`              | `clonedeps.json` vendoring manifest (pins upstream source clones for local inspection) |
+| `patches/`            | Bun `patchedDependencies` patches (currently `@changesets/get-github-info@0.6.0`) |
+| `docs/ideation/`      | Early ideation notes (added by 2026-07-15; e.g., CLI/KeeWeb testing ideation) |
 
 ### Apps
 
@@ -208,6 +215,19 @@ Published as `@marcusrbrown/infra` on npm. Built with [goke](https://github.com/
 
 The MCP bridge (`infra mcp`) lets coding agents (Fro Bot, Copilot) call commands programmatically via the [Model Context Protocol](https://modelcontextprotocol.io).
 
+### MCP Permission Backstop (`opencode.jsonc`)
+
+Observed post-2026-07-01: a root `opencode.jsonc` wires two local MCP servers and a defense-in-depth permission block for agents driving this repo:
+
+- **`infra` MCP server** — `bun run packages/cli/src/cli.ts mcp`, enabled by default. Secrets are inherited from the subprocess env (Bun auto-loads repo-root `.env` locally; CI/harness inherits parent env) — **no secret values live in the config file**.
+- **`discord` MCP server** — `saseq/discord-mcp:1.0.0` (a Spring Boot/JVM image) run via `docker run`, **disabled by default**. Notable operational details baked into the config as comments: the JVM cold start (~30s) forces `timeout: 60000` to beat opencode's default 30s connect timeout; secrets are sourced by a shell wrapper (`set -a; . ./.env`) that forwards only `DISCORD_TOKEN`/`DISCORD_GUILD_ID` via `-e` because opencode's `{env:VAR}` interpolation doesn't carry repo-root `.env` and Docker's `--env-file` chokes on the multi-line VPN PEM.
+- **Two-layer tool gating.** The primary gate is the CLI's `MCP_ALLOWLIST` in `packages/cli/src/commands/mcp.ts` — sensitive commands are simply never registered as MCP tools. The `permission` block in `opencode.jsonc` is a **secondary backstop**: even if the allowlist were mistakenly re-expanded, opencode's native permission check `deny`s the 6 infra mutating/sensitive tools (`cliproxy keys add/remove`, `cliproxy config get/set`, `gateway backup`) plus VPN (`vpn deploy/logs/client add|list|remove`) and broker (`broker deploy/logs`) tool ids. Tool ids use opencode's `<server>_<tool>` form (`infra_cliproxy_keys_add`, etc.) — **not** the `mcp_Infra_*` alias the Anthropic-auth plugin surfaces. Both layers are asserted by `packages/cli/src/conventions.test.ts`.
+- **Discord tool policy** — baseline `discord_*: ask` (every Discord tool prompts, nothing auto-runs), with explicit `deny` on ~19 irreversible actions (member ban/kick/timeout/move, channel/category/message/role/webhook/emoji/invite/event deletions). opencode resolves the **last** matching rule, so the wildcard baseline is listed first and the explicit denies win.
+
+## Vendored Upstream Sources (`.slim/clonedeps.json`)
+
+The `.slim/clonedeps.json` manifest pins upstream repositories cloned for local inspection (not runtime deps). As of the manifest's `2026-06-02` timestamp it vendors **opencode** (`anomalyco/opencode` @ `v1.15.13`) into `.slim/clonedeps/repos/anomalyco__opencode`, with a stated reason: inspecting opencode's MCP tool registration + permission enforcement to correctly gate sensitive infra MCP tools — because empirically both `tools:false` and `permission:deny` had failed to fully suppress them. This is the source-of-truth for the `opencode.jsonc` two-layer gating design above.
+
 ## CI/CD Pipeline
 
 ### Workflows
@@ -270,9 +290,10 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 | CLI framework | `goke` ^6.8.0 + Zod ^4.3.6 | Space-separated subcommands |
 | Prompts | `@clack/prompts` ^1.2.0 | Scoped to `cliproxy setup` wizard |
 | Changesets | `@changesets/cli` 2.31.0 + `@svitejs/changesets-changelog-github-compact` | Versioning for `@marcusrbrown/infra` CLI package |
-| Renovate | Extends `marcusrbrown/renovate-config#5.2.3` + `group:allNonMajor` | v4→v5 crossed 2026-05-17 (#242); preset `#5.2.0` → `#5.2.3` by 2026-06-19. Post-upgrade: `bun install --ignore-scripts` + `bun run fix`. Docker source URLs for CLIProxyAPI and Caddy. `bfra-me/.github` digest updates disabled |
+| Renovate | Extends `marcusrbrown/renovate-config#5.2.6` + `group:allNonMajor` | v4→v5 crossed 2026-05-17 (#242); preset `#5.2.3` → `#5.2.6` by 2026-07-15. Post-upgrade: `bun install --ignore-scripts` + `bun run fix`. Docker source URLs for CLIProxyAPI and Caddy. `bfra-me/.github` digest updates disabled |
 | Probot Settings | Extends `fro-bot/.github:common-settings.yaml` | Repository configuration sync |
-| TypeScript runtime | TypeScript 6.0.3, ESLint 10.4.0 | Both crossed major boundaries in this survey window |
+| TypeScript runtime | TypeScript 6.0.3, ESLint 10.7.0 | ESLint 10.4.0 → 10.7.0 by 2026-07-15; Prettier 3.9.5, `@bfra.me/prettier-config` 0.16.9, lint-staged 17.0.8 |
+| Patched deps | `patches/@changesets%2Fget-github-info@0.6.0.patch` via Bun `patchedDependencies` | Local patch applied to changesets GitHub-info resolver |
 
 ### Key Dependencies
 
@@ -288,7 +309,7 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.79.4` (SHA `b3384d37fb3c66e4249c0fb35037c6d244f34314`; bumped from v0.71.0 over 2026-06-19 → 2026-07-01). The workflow includes:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.90.0` (SHA `42db56dc027a5c9aee99c0ada97a406554108894`; bumped from v0.79.4 over 2026-07-01 → 2026-07-15). The workflow includes:
 
 - **PR review** with structured verdict format (PASS / CONDITIONAL / REJECT) and sections for blocking issues, non-blocking concerns, missing tests, and risk assessment
 - **Daily autohealing schedule** (03:30 UTC) with 8 operational categories: errored PRs, security, code quality, developer experience, deploy pipeline health, live site review (via `agent-browser`), cross-project intelligence, and **upstream modernization watch** (Sunday-only)
@@ -392,6 +413,7 @@ This approach avoids relying solely on human review or agent-driven linting for 
 - **OIDC credential broker (off-runner keys):** The broker exchanges a GitHub Actions OIDC token for a short-lived, revocable cliproxy key so the durable provider key never touches a CI runner. Revocation is sweeper-only (TTL + reconcile) — no run-end revoke endpoint — with a startup reconcile gate that blocks `/v1/mint` until stale `ghact-` keys are cleared. This is the ecosystem moving from static per-repo cliproxy keys toward per-run minted credentials, with the consuming half landing in [[fro-bot--agent]].
 - **Digest-pinned upstream image consumption:** The dashboard app consumes the upstream-built `ghcr.io/fro-bot/dashboard` image by tag + digest and verifies the running container's `RepoDigests` against the pin before serving — a no-build deploy that keeps the build surface in [[fro-bot--dashboard]].
 - **Multi-cloud:** Most apps run on DigitalOcean droplets, but the VPN egress box runs on **AWS Lightsail** (`eu-west-1`) — the first AWS-backed deployable, provisioned via the AWS SDK with credentials kept operator-local (deploy/status remain SSH-only).
+- **Two-layer MCP tool gating with vendored-source provenance:** Sensitive infra commands are gated twice — an `MCP_ALLOWLIST` that never registers them as tools (primary), and an `opencode.jsonc` `permission: deny` backstop (secondary). Both layers are asserted by `conventions.test.ts`. The design is grounded in a **vendored upstream clone** (`.slim/clonedeps.json` pinning `anomalyco/opencode@v1.15.13`) because empirically neither `tools:false` nor `permission:deny` alone fully suppressed the tools — reading the upstream registration/permission code was the way to get the gating right. Vendoring the exact upstream you must reason about, rather than trusting docs, is the pattern.
 
 ## Infrastructure Components
 
@@ -399,12 +421,12 @@ This approach avoids relying solely on human review or agent-driven linting for 
 
 | Component | Image | Version |
 | --- | --- | --- |
-| Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned |
-| CLIProxyAPI | `eceasy/cli-proxy-api:v7.2.48` | Digest-pinned |
+| Caddy reverse proxy | `caddy:2.11.4-alpine` | Digest-pinned (up from 2.11.3-alpine) |
+| CLIProxyAPI | `eceasy/cli-proxy-api:v7.2.77` | Digest-pinned (up from v7.2.48) |
 
 Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest rotations with changelog context sourced from upstream repositories (`router-for-me/CLIProxyAPI`, `caddyserver/caddy`).
 
-**Version note:** CLIProxyAPI crossed v6→v7 major boundary between 2026-05-27 and 2026-06-09. As of 2026-07-01 the deployment is **v7.2.48** (up from v7.2.20 at the prior survey). Caddy steady at `2.11.3-alpine` (digest `86deaf5e…`, shared across cliproxy/umami/dashboard/broker).
+**Version note:** CLIProxyAPI crossed v6→v7 major boundary between 2026-05-27 and 2026-06-09. As of 2026-07-15 the deployment is **v7.2.77** (up from v7.2.48 at the prior survey; #852). Caddy bumped to `2.11.4-alpine` (digest `5f5c8640…`, shared across cliproxy/umami/dashboard/broker).
 
 **Healthcheck change:** As of #469 (2026-06-09), the deploy healthcheck was moved from the CLIProxyAPI endpoint to the Caddy endpoint for Debian-image compatibility. The docker-compose healthcheck itself (`wget --spider http://localhost:8317/healthz`) is unchanged.
 
@@ -412,8 +434,8 @@ Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest 
 
 | Component | Image | Version |
 | --- | --- | --- |
-| Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned (shared digest with cliproxy) |
-| Umami analytics | `umamisoftware/umami:3.2.0` | Digest-pinned (up from 3.1.0 at prior survey) |
+| Caddy reverse proxy | `caddy:2.11.4-alpine` | Digest-pinned (shared digest with cliproxy) |
+| Umami analytics | `umamisoftware/umami:3.2.0` | Digest-pinned (steady since prior survey) |
 | Postgres | `postgres:15-alpine` | Digest-pinned |
 
 Digest-pinned images managed by Renovate. Postgres port 5432 is never published to the host — DB is only accessible on the internal compose network.
@@ -422,8 +444,8 @@ Digest-pinned images managed by Renovate. Postgres port 5432 is never published 
 
 | Component | Image | Version |
 | --- | --- | --- |
-| Caddy reverse proxy | `caddy:2.11.3-alpine` | Digest-pinned (shared digest with cliproxy/umami/broker) |
-| Dashboard | `ghcr.io/fro-bot/dashboard:2026.06.57` | Tag + digest-pinned (upstream released image; up from `2026.06.16`) |
+| Caddy reverse proxy | `caddy:2.11.4-alpine` | Digest-pinned (shared digest with cliproxy/umami/broker) |
+| Dashboard | `ghcr.io/fro-bot/dashboard:2026.07.21` | Tag + digest-pinned (upstream released image; up from `2026.06.57`) |
 
 The dashboard image is built upstream in [[fro-bot--dashboard]] and consumed here by digest — no on-droplet build. Deploy verifies the running container's `RepoDigests` matches the compose-pinned digest before fronting it with Caddy.
 
@@ -431,11 +453,11 @@ The dashboard image is built upstream in [[fro-bot--dashboard]] and consumed her
 
 | Component | Source | Notes |
 | --- | --- | --- |
-| Gateway daemon | `fro-bot/agent@v0.79.1` (pinned in `apps/gateway/upstream.json`) | Cloned + reset on the droplet each deploy |
+| Gateway daemon | `fro-bot/agent@v0.88.0` (pinned in `apps/gateway/upstream.json`) | Cloned + reset on the droplet each deploy |
 | Workspace executor | Same source | Runs inside the same Compose stack |
 | mitmproxy | Per upstream compose | Starts first; certificate in `mitmproxy-certs` named volume |
 
-**Upstream pin note:** Gateway daemon bumped to v0.79.1 (from v0.69.0 at the prior survey).
+**Upstream pin note:** Gateway daemon bumped to v0.88.0 (from v0.79.1 at the prior survey).
 
 Compose stack lives at `/opt/gateway/` on the droplet. Source materialization is `git clone || git fetch && git reset --hard && git clean -xfd` to the pinned SHA, isolated from `/opt/gateway/.secrets-checksum` so checksum survives `git clean -xfd`.
 
@@ -460,4 +482,5 @@ Compose stack lives at `/opt/broker/` on the droplet. No source bind-mount and n
 | 2026-05-27 | `2f9bafd` | **Major expansion.** New `apps/gateway/` (Fro Bot Discord stack at `gateway.fro.bot`, #264, 2026-05-18); new `packages/shared/` for droplet provisioning helpers (#290). 12 workflows (added `deploy-gateway.yaml`). Fro Bot agent v0.42.2 → v0.44.3 (multiple bumps). Renovate preset bumped major v4→v5 (#242, `marcusrbrown/renovate-config#5.2.0`) with `group:allNonMajor`. TypeScript 6.0.3, ESLint 10.4.0, `@bfra.me/eslint-config` 0.51.1. CLI v0.4.6 → v0.7.0; MCP fidelity refactor for status-only commands (#296). CLIProxy: OpenAI/Codex device-code OAuth login (#303), OpenAI provider opt-in for `cliproxy setup --harness opencode` (#307); CLIProxyAPI v6.10.9, Caddy 2.11.3-alpine. Gateway hardening: ControlMaster multiplexing (#277), pinned droplet host keys (#272), checksum-after-success secret rotation. Discord token-lifecycle runbook (#284). Open issues 5→38, 0 open PRs. |
 | 2026-06-19 | `ac79468` | **Two new apps: dashboard + VPN.** Added `apps/dashboard/` — Fro Bot operator dashboard at `dashboard.fro.bot`, 2-service compose (caddy + digest-pinned `ghcr.io/fro-bot/dashboard:2026.06.16`), `deploy-dashboard.yaml`, `dashboard` GitHub Environment, GitHub App key file-mounted, CLI group (`dashboard status/deploy/logs`). Added `apps/vpn/` — WireGuard egress box on **AWS Lightsail** (`eu-west-1`), first AWS-backed deployable; native `wg-quick`/systemd, no Docker; provisioned via `@aws-sdk/client-lightsail`; `deploy-vpn.yaml`, `vpn` Environment, CLI group (`vpn status/deploy/logs/client add\|list\|remove`). Now **16 workflows** total (added deploy-dashboard, deploy-vpn, `codeql.yaml` — CodeQL JS/TS analysis). `deploy.yaml` orchestrator now fans out to 6 per-app deploy workflows. CLI v0.9.17 → v0.12.2. Fro Bot agent v0.59.0 → v0.71.0 (SHA `9b89fb3`). Gateway upstream pin v0.57.0 → v0.69.0. CLIProxyAPI v7.1.56 → v7.2.20. Root docs `ARCHITECTURE.md` + `STRUCTURE.md` added. ESLint 10.4.0 → 10.5.0, lint-staged 16 → 17, Prettier 3.8.3 → 3.8.4. |
 | 2026-06-09 | `9ce50f4` | **New app: Umami analytics.** Added `apps/umami/` — self-hosted Umami at `metrics.fro.bot`, 3-service Docker Compose (umami 3.1.0 + postgres 15-alpine + caddy 2.11.3-alpine), `deploy-umami.yaml` workflow, `umami` GitHub Environment, new CLI command group (`umami status/deploy/host/logs`). Now 13 workflows total. CLI v0.7.0 → v0.9.17. Fro Bot agent v0.44.3 → v0.59.0 (SHA `feb5365`). Gateway upstream daemon pin v0.44.2 → v0.57.0 (#466, `daily_digest` presence event). CLIProxyAPI v6.x → v7.1.56 (major version; v7.1.54/55 reverted #463 for health check regression, v7.1.56 stable). CLIProxy deploy healthcheck moved to Caddy endpoint for Debian-image compat (#469). Renovate config bumped `marcusrbrown/renovate-config#5.2.1`. Gateway secrets contract expanded (added GitHub App credentials, workspace OpenCode secrets, presence channel secrets). `OMO_PROVIDERS` removed from repo secrets; `WORKSPACE_OPENCODE_TOKEN/AUTH/MODEL/CONFIG` and `GH_APP_ID/PRIVATE_KEY`, `GATEWAY_TRIGGER_ROLE_ID`, `GATEWAY_WEBHOOK_SECRET`, `GATEWAY_PRESENCE_CHANNEL_ID` added. Provisioning management key now written to a 0600 file instead of stdout (#453). |
+| 2026-07-15 | `e0e3252` | **No new apps/workflows — config-hardening + vendoring survey.** Still 7 apps, 17 workflows. New durable structure: root `opencode.jsonc` (two local MCP servers — `infra` enabled, `discord`/`saseq/discord-mcp:1.0.0` disabled — plus a defense-in-depth `permission` deny backstop for 11 sensitive infra tools + ~19 destructive Discord tools; JVM 60s timeout + shell-wrapper secret sourcing documented inline); `.slim/clonedeps.json` vendoring manifest pinning `anomalyco/opencode@v1.15.13` for MCP registration/permission inspection; `patches/` with a Bun `patchedDependencies` patch for `@changesets/get-github-info@0.6.0`; root `AGENTS.md`, `.npmrc`, `docs/ideation/`. Root workspace package renamed `@marcusrbrown/infra-workspace`. Fro Bot agent v0.79.4 → v0.90.0 (SHA `42db56d`). Gateway upstream pin v0.79.1 → v0.88.0. CLI v0.13.13 → v0.13.20. CLIProxyAPI v7.2.48 → v7.2.77 (#852). Caddy 2.11.3-alpine → 2.11.4-alpine (shared digest). Dashboard `2026.06.57` → `2026.07.21`. Umami steady 3.2.0. Renovate preset `#5.2.3` → `#5.2.6`. ESLint 10.4.0 → 10.7.0, Prettier 3.8.4 → 3.9.5, lint-staged 16→17. |
 | 2026-07-01 | `390cb5f` | **New app: OIDC credential broker.** Added `apps/broker/` — OIDC-authenticated credential broker at `broker.fro.bot`, 2-service Docker Compose (Caddy + `oven/bun:1.3.14-alpine` on its own `s-1vcpu-1gb`/`nyc1` droplet). Exchanges a GitHub Actions OIDC token for a short-lived, revocable cliproxy `ghact-` key so the durable provider key never lands on a CI runner; `jose` JWKS RS256 verify + replay denylist + code-owned `BROKER_TRUST_POLICY`; sweeper-only revocation (60s TTL + 5-min reconcile) with a startup reconcile gate; bundle-based deploy (`dist/main.js`, gitignored, mounted read-only). Added `deploy-broker.yaml` + `broker` GitHub Environment (`BROKER_SSH_KEY`/`BROKER_HOST`/`CLIPROXY_MANAGEMENT_KEY` secrets + `BROKER_AUD` variable) + CLI group (`broker status/deploy/logs`). Now **17 workflows** total; `deploy.yaml` orchestrator fans out to **7** per-app deploys. Consuming half tracked in `fro-bot/agent#1060` (trust-policy placeholders must be replaced before deploy). CLI v0.12.2 → v0.13.13. Fro Bot agent v0.71.0 → v0.79.4 (SHA `b3384d3`). Gateway upstream pin v0.69.0 → v0.79.1. CLIProxyAPI v7.2.20 → v7.2.48. Umami 3.1.0 → 3.2.0. Dashboard `2026.06.16` → `2026.06.57`. Renovate preset steady at `#5.2.3`. |

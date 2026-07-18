@@ -2794,3 +2794,108 @@ Sources: https://github.com/marcusrbrown/sparkle
 Persisted durable knowledge from the workflow_dispatch interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@dc5efafd2b634958d18f9677996c156f74f738a9
+
+## [2026-07-14 02:55] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@c5d711c54fde44085d4e626021cebf9d6bfa1037
+
+## [2026-07-14 07:28] ingest | marcusrbrown/gpt
+
+Re-surveyed `marcusrbrown/gpt` (HEAD `a6f661f`, last push 2026-07-14, up from `174e517` on 2026-06-30) — the seventh survey in the series. Reads limited to repo metadata, root tree listing, `.github/workflows` + `.github/actions` listings, `package.json`, `.tool-versions`, `pnpm-workspace.yaml`, `fro-bot.yaml`, and `renovate.json5` per the untrusted-input constraint (no source-code reads). Additive update only — prior six survey rows preserved and dated. GitHub access was unauthenticated (no token present in this environment); all facts sourced from the public REST API and raw file endpoints.
+
+Key deltas since the 2026-06-30 survey:
+
+- **pnpm major cutover `10.34.4` → `11.9.0`.** The pnpm v11 `[SECURITY]` bump (PR #2620, open at the last survey) has **landed** — confirmed by root `packageManager: pnpm@11.9.0`. First pnpm major boundary crossed in this repo's survey series, mirroring [[marcusrbrown--sparkle]] (11.10.0) and [[marcusrbrown--marcusrbrown]] (11.9.0).
+- **`pnpm-workspace.yaml` config split.** `overrides` (`fast-uri`, `langsmith`, `path-to-regexp` pins), `allowBuilds`, and pnpm settings migrated out of `package.json`'s `pnpm.*` into `pnpm-workspace.yaml` — the pnpm-11-idiomatic location. Same override-relocation pattern seen in [[marcusrbrown--marcusrbrown]].
+- **New client-side document-processing runtime deps** (not pure hygiene): `pdfjs-dist` 5.7.284, `mammoth` 1.12.0 (DOCX), `jszip` 3.10.1, `file-saver` 2.0.5 — browser-side PDF/DOCX ingestion + zip/file export, preserving the local-first invariant. Plus `next-themes` 0.4.6, `react-swipeable` 7.0.2, `@react-aria/ssr` 3.10.1, `@tailwindcss/typography` 0.5.20.
+- **Fro Bot agent v0.79.4 → v0.85.1** (SHA `fc1439327e826efc6904545cdf3d7ab812e9c286`, PR #2670); `actions/checkout` still `df4cb1c` v6.0.3. Workflow structure unchanged — same three-mode single-file `fro-bot.yaml`, dual crons (03:30 autoheal / 15:30 maintenance), `setup-pnpm` composite bootstrap. `fro-bot.yaml` present — no follow-up draft PR needed.
+- **Renovate preset `marcusrbrown/renovate-config` 5.2.3 → 5.2.4** (`bfra-me/renovate-config:automerge.json5` steady at 5.2.3).
+- **Dependency bumps:** `vite` 8.1.0 → 8.1.3, `react-router-dom` 7.18.0 → 7.18.1, `tailwindcss`/`@tailwindcss/vite` 4.3.1 → 4.3.2, `prettier` 3.8.5 → 3.9.4, `@typescript/native-preview` → 7.0.0-dev.20260703.1. LangChain 1.5.x line, HeroUI 2.8.10, Zod 4.4.3, MCP SDK 1.29.0, Monaco 4.7.0, Node 24.18.0 unchanged — so no [[langchain]] topic-page delta warranted this cycle.
+- **New root files observed:** `RFCS.md`, `redocly.yaml`, split `playwright-visual.config.ts` / `playwright-performance.config.ts` (visual/perf Playwright configs now separated from the base config).
+- **Ollama a11y-contrast autoheal cluster regenerated, still unresolved.** The prior batch (#2628/#2612/#2557) cycled out; a fresh set of four `fro-bot` PRs (#2673/#2672/#2665/#2664) now targets the same Ollama status-chip/settings contrast. Four open PRs on one a11y theme across two surveys = a recurring autoheal target that keeps regenerating without landing a durable fix.
+- **Security pins #2587 (undici) / #2586 (hono) still open** across two surveys. Plus `fro-bot` #2599 (test spy-cast cleanup) and five `mrbro-bot` dependency PRs (#2671/#2667/#2662/#2440/#2320).
+- **Open issues 23 → 36** — a notable jump; not inspected in detail under the read constraints (likely maintenance/autoheal issue accretion).
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--gpt.md`, `knowledge/index.md`, `knowledge/log.md`. No new topic/entity/comparison pages warranted — deltas are absorbed by existing [[langchain]], [[github-actions-ci]], and [[marcusrbrown--renovate-config]] coverage; the pnpm-v11/workspace-split pattern echoes [[marcusrbrown--marcusrbrown]] and [[marcusrbrown--sparkle]].
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings and README/manifest/workflow/config files (no source-code reads); additive updates only (no overwrites), prior surveys preserved and dated; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/gpt (SHA a6f661f182d42379bc650e5e5be75d9e7c4c9fcc)
+
+## [2026-07-14 07:29] ingest | repo:marcusrbrown/gpt
+
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-07-15 07:28] ingest | marcusrbrown/systematic
+
+Survey of `marcusrbrown/systematic` at HEAD `4eecc77` (v2.33.3, latest release 2026-07-14). First **feature** interval since v2.31.0 — 42 commits since the last survey SHA `c2c43fd`; not pure Renovate churn.
+
+Headline finding: **discovered skills as slash commands** (v2.33.0, #592) — a new `src/lib/discovered-skills.ts` module walks the same six roots OpenCode uses to find skills (global `~/.claude`/`~/.agents`, project `.claude`/`.agents` up to worktree root, `.opencode` dirs) with upstream last-write-wins precedence and registers each discovered skill as a `/slash` command. Gated by the new `skills_as_commands` config toggle (`z.boolean().default(true)`), suppressible per-command via the new `disabled_commands` property. Refined by #593 (`disabled_commands` suppression + single-read + CodeQL `js/file-system-race` TOCTOU fix) and #594 (labelling honesty: drop the `(Systematic - Skill)` prefix that falsely implied Systematic authorship). **This confirms the source-side semantics of `skills_as_commands`**, which was first surfaced only as a downstream signal at the 2026-07-08 [[fro-bot--systematic]] hosted-schema survey — the "unconfirmed pending direct survey" caveat is now resolved.
+
+Other durable deltas: `v3` long-lived branch added to the `pull_request.branches` filter across main/fro-bot/CodeQL workflows (#584; push stays main-scoped so release never runs on `v3`); complexity refactor split the two worst `noExcessiveCognitiveComplexity` offenders into helpers, warnings 6→4 (#582); two `fix(security)` Pillow-minimum bumps (#576 v2.32.2, #620 v2.33.3). Dependency/pin churn: `fro-bot/agent` v0.79.4→v0.90.0, OpenCode v1.17.11→v1.17.18, Biome 2.5.1→2.5.3, semantic-release v25.0.5→v25.0.6, `bfra-me/.github`→v4.16.36. Structure otherwise unchanged: 8 workflows, 51 agents (3/1/7/7/28/5), 48 bundled skill dirs, MIT, `node >=18` floor; stars steady at 23; 0 open PRs; 3 rolling automation issues (#157, #153, #15) unchanged. Fro Bot workflow present and fully active (`fro-bot/agent@v0.90.0`, three-mode).
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--systematic.md` (config schema, source modules, CI, release history v2.32.1→v2.33.3, dependencies, agent pin, open-issues, survey history), `knowledge/wiki/topics/opencode-plugins.md` (new "Discovered skills as slash commands" pattern row, schema key list, version bumps), `knowledge/index.md`, `knowledge/log.md`. No entity/comparison pages warranted.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings and README/manifest/workflow/config files plus release notes and the one confirming `config-schema.ts` schema read to resolve the outstanding `skills_as_commands` caveat; additive updates only (prior surveys preserved and dated, no overwrites); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; no GitHub issue opened/commented as a run notice (this log entry is the canonical per-survey summary). `gh` CLI was unauthenticated in this dispatch context, so public data was read via unauthenticated GitHub REST — no private surface touched (repo confirmed public).
+
+Sources: https://github.com/marcusrbrown/systematic (SHA 4eecc77c6482895698645748beff0f336142bc64)
+
+## [2026-07-15 07:33] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-07-16 07:34] ingest | bfra-me/.github
+
+Re-survey of `bfra-me/.github` at HEAD `1c12695` (v4.16.37, last push 2026-07-16). Fifth survey of the org control center. **No structural change** this window — the 2026-07-02 consolidation held cleanly: still one `fro-bot.yaml`, still two `review`/`autoheal` modes (`default: autoheal`), still the single `30 15 * * *` unified oversight+autoheal pass, still 16 workflows and 3 custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). The consolidation is now steady-state, not a transient shape.
+
+Headline finding: a new top-level **`.ai/` planning corpus** — `.ai/notes/implementation-plan-prompts.md` indexing seed prompts for a `/create-implementation-plan` flow, plus `.ai/plan/` with 10 aspirational spec docs (release-testing infra for `release.ts`, enhanced renovate-changesets action, Astro Starlight docs platform, multi-org template federation system, intelligent workflow generation, workflow validation, cross-platform bridge, monorepo build optimization, org-health monitoring, production-readiness validation). These are declared direction, not shipped capability; template-federation and org-health monitoring would materially expand the repo's remit into active cross-org governance. Flagged to watch for graduation into real workflows.
+
+Other additive scaffolding: `.husky/pre-commit` (`pnpm exec lint-staged`), root `CHANGELOG.md` and `CONTRIBUTING.md`, `.git-blame-ignore-revs`, `.cursorindexingignore`. `pnpm-workspace.yaml` migrated `onlyBuiltDependencies` → pnpm 11 `allowBuilds:` block (same allowlist: esbuild, unrs-resolver). **Doc drift noted** (contradiction to watch): new `CONTRIBUTING.md` cites pnpm "10.8.1 or later" while the repo enforces 11.x via `packageManager: pnpm@11.11.0` — a category-3 documentation-drift candidate.
+
+Version churn: `fro-bot/agent` v0.81.0 → **v0.92.1** (~11 bumps, ~50 in two months; no longer outright fleet leader — clusters with systematic v0.90.0, dashboard v0.84.2+, sparkle v0.85.0); pnpm 11.9.0 → 11.11.0 (#2436 queues 11.12.0); eslint 10.6.0→10.7.0, prettier 3.9.1→3.9.5, vite 8.1.0→8.1.4, @types/node 24.13.2→24.13.3, vitest 4.1.9→4.1.10, tsx→4.23.1, bfra-me/renovate-action 9.142.0→9.144.0, actions/setup-node v6.4.0→v6.5.0. Node 24.18.0 and TS 6.0.3 strict unchanged. Open 2/2: issues #2344 (Daily Fro Bot Report) and #7 (Dependency Dashboard); PRs #2444 (Changesets release) and #2436 (pnpm bump), both `bfra-me[bot]`.
+
+Fro Bot workflow present and fully active (`fro-bot/agent@v0.92.1`); no follow-up draft needed.
+
+Touched pages: `knowledge/wiki/repos/bfra-me--github.md` (frontmatter sources/updated, identity, layout, workspace `allowBuilds`, agent pin, consolidation-durable note, new `.ai/` roadmap subsection, husky pre-commit, operational-notes churn + doc-drift, cross-repo pin, survey history row), `knowledge/index.md`, `knowledge/log.md`. No topic/entity/comparison page changes warranted — findings were repo-local (scaffolding + churn), no new cross-cutting pattern surfaced.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files, CHANGELOG, and issue/PR listings; additive updates only (prior surveys preserved and dated, no overwrites); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context, so public data was read via unauthenticated GitHub REST / raw endpoints — no private surface touched (repo confirmed public, `is_template: true`). No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/bfra-me/.github (SHA 1c1269568de61df2d8a3ddf19fb01637c166ef00)
+
+## [2026-07-16 07:37] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github
+
+## [2026-07-18 00:34] ingest | repo:fro-bot/space-bus
+
+Re-surveyed `fro-bot/space-bus` (HEAD `8e20e01`, public, MIT) — the first full re-survey since the 2026-07-03 initial and the 2026-07-06 cross-reference-only touch. Headline: **the repo matured from MVP dogfood to a shipped, published OpenCode plugin**, and this survey **resolves the package-status contradiction** flagged from the [[marcusrbrown--mothership]] survey.
+
+Key findings:
+
+- **Package published.** `@fro.bot/space-bus` is on npm with **20 versions** (`0.0.0` → **`0.13.1`**) via changesets + **npm OIDC trusted publishing** (no `NPM_TOKEN`). This confirms the 2026-07-06 inference (mothership pinned `0.7.0`) and shows the pin was a mid-journey snapshot; the private/`0.0.0` → published shift is now verified against space-bus's own manifest. Both prior states remain recorded and dated — no overwrite.
+- **Plugin conversion landed.** The "packaging move, not rewrite" bet held: logic still lives in `src/core.ts`; the `.opencode/tools/` + `workspace.json` MVP scaffold is gone, replaced by the published-plugin `src/index.ts` (default-exported factory) + `src/tools/*.ts` (`makeBus*`) and `spacebus.json`.
+- **Four → six tools** — `bus_wait` (async-delegation foundation, `0.9.0`) and `bus_registry` (multi-roster, `0.13.0`) added; every task tool gained an optional `roster` param + `roster:` result header. The "exactly four tools" MVP hard constraint is **superseded** (recorded additively).
+- **Managed server lifecycle + CLI + launchd.** New `server.managed` mode (first-caller-spawns, `0600` discovery file, generated per-spawn password), a `space-bus` CLI (`serve/status/stop`, `--foreground` active supervision), and macOS **launchd v1** `space-bus service` for reboot-persistence. Died-path/orphan-reap hardening across `0.8.0`–`0.8.1`.
+- **CI-enforced browser-safe library surface** — 7 subpath exports split into a browser-safe lane (`/core`,`/contract`,`/format`,`/attach`) and a Node-only lane (`/config`,`/managed-server`,`/registry`), with **dist-level** browser-safety tests (added `0.10.1` after Mothership's Vite bundling broke on a Node prelude). Documented the reserved-subpath `./server` loader-resolution trap (`0.10.0`).
+- **Full automation present** — `fro-bot.yaml` (consolidated three-mode, `fro-bot/agent@v0.88.0`), `ci.yaml`, `codeql-analysis.yaml`, `scorecard.yaml`, `release.yaml`, `renovate.yaml`, and `.github/settings.yml` (Probot Settings, branch protection). **Resolves the 2026-07-03 "no Fro Bot workflow / no CI / no Probot Settings" thread** — no follow-up draft PR needed.
+- Toolchain shifts: **zod v3 → v4**, Biome lint, `@opencode-ai/sdk` dropped, `@opencode-ai/plugin` now a `>=1.17.13 <2` **peer** (dev-pinned `1.17.18`). Stars 0→1, topics set (`opencode`/`plugin`/`mcp`/`agent-orchestration`/`bun`/`typescript`), 8 open issues.
+
+Touched pages: `knowledge/wiki/repos/fro-bot--space-bus.md` (frontmatter sources/updated/tags, new overview + historical-status block, six-tool table, rewritten layout, new managed-server + library-surface sections, security posture, dependencies, resolved workflow section, resolved mothership contradiction, ecosystem/open-threads refresh, survey-history row); `knowledge/wiki/topics/opencode-plugins.md` (new source SHA, published-plugin update, new browser-safe-subpath + reserved-subpath-loader subsection, plugin-repos table row, cross-ref); `knowledge/index.md` (space-bus entry fleshed out from placeholder, opencode-plugins note); `knowledge/log.md`. No entity/comparison pages warranted.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/AGENTS/manifest/workflow/settings/CHANGELOG files + npm registry metadata; additive updates only (2026-07-03 MVP record preserved and dated, contradictions reconciled not overwritten); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context, so public data was read via unauthenticated GitHub REST / raw / npm-registry endpoints — repo confirmed public, no private surface touched. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/fro-bot/space-bus (SHA 8e20e01775918a01855eb5aba64d04bf966f4d51); https://www.npmjs.com/package/@fro.bot/space-bus (v0.13.1)
+
+## [2026-07-18 00:35] ingest | repo:fro-bot/space-bus
+
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/space-bus

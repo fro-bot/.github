@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/containers"
 created: 2026-04-18
-updated: 2026-06-28
+updated: 2026-07-12
 sources:
   - url: https://github.com/marcusrbrown/containers
     sha: e582f856844ac1dd52fc8739f1a9aa8398248e6e
@@ -25,6 +25,9 @@ sources:
   - url: https://github.com/marcusrbrown/containers
     sha: 289d80097d358d919d86a94e21c08e992620fdb7
     accessed: 2026-06-28
+  - url: https://github.com/marcusrbrown/containers
+    sha: 4c80e9651b578997f4b831fccce9f6a772b78318
+    accessed: 2026-07-12
 tags: [docker, containers, dockerfiles, multi-arch, python, github-actions, ci-cd, security-scanning, ai, ollama, sqlite]
 aliases: [containers]
 related:
@@ -41,7 +44,8 @@ A container development ecosystem with curated Dockerfiles, Python automation sc
 - **Default branch:** `main`
 - **Primary language:** Python
 - **Created:** 2016-12-19
-- **Last push:** 2026-06-17 (as of 2026-06-17 survey; HEAD `569a6c8c`)
+- **Last push:** 2026-07-12 (as of 2026-07-12 survey; HEAD `4c80e965`)
+- **License:** MIT (confirmed 2026-07-12; `LICENSE.md`)
 - **Topics:** `automation`, `containers`, `docker`, `docker-compose`, `dockerfiles`, `scripts`
 - **Registries:** GHCR (`ghcr.io`), Docker Hub (`docker.io/marcusrbrown`, legacy alias `igetgames`)
 
@@ -101,7 +105,7 @@ Non-entrypoint scripts (internal use only):
 | `documentation_ai.py` | AI-enhanced documentation generation (613 LOC) |
 | `predictive_maintenance.py` | SQLite-backed usage analytics, template health monitoring, proactive issue detection (987 LOC) |
 
-Runtime dependencies: `openai` (>=2.41.0,<2.42.0), `anthropic` (>=0.30.0,<1.0.0), `jinja2`, `pyyaml`, `jsonschema`, `requests`, `urllib3 >=2.7.0` (security floor).
+Runtime dependencies: `openai` (>=2.45.0,<2.46.0, as of 2026-07-12), `anthropic` (>=0.30.0,<1.0.0), `jinja2`, `pyyaml`, `jsonschema`, `requests`, `urllib3 >=2.7.0` (security floor).
 
 #### AI Subsystem Architecture
 
@@ -195,22 +199,24 @@ Required status checks on `main`: Code Quality & Linting, Container Scan, Detect
 
 ### Action Pinning
 
-All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026-04-21):
+All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026-07-12 — a major-version sweep landed 2026-07-09):
 
-- `actions/checkout` — `v6.0.2` (SHA `de0fac2e...`)
+- `actions/checkout` — `v7.0.0` (SHA `9c091bb2...`) _(major bump v6 → v7, PR #683)_
 - `actions/setup-python` — `v6.2.0` (SHA `a309ff8b...`)
-- `actions/setup-node` — `v6.4.0` _(bumped 2026-04-20)_
-- `docker/build-push-action` — `v6.19.2`
-- `docker/setup-buildx-action` — `v3.12.0`
-- `docker/metadata-action` — `v5.10.0`
-- `dorny/paths-filter` — `v3.0.2` (SHA `de90cc6f...`)
-- `aquasecurity/trivy-action` — `0.35.0`
-- `fro-bot/agent` — `v0.79.1` (SHA `720b7216...`) _(jumped v0.40.0 → v0.41.0 → v0.43.0 → v0.44.0 → v0.55.0 → v0.65.0 → v0.79.1)_
-- `dorny/paths-filter` — `v4.0.1` (SHA `fbd0ab8f...`) _(bumped from v3.0.2, PR #607)_
+- `docker/build-push-action` — `v7.3.0` (SHA `53b7df96...`) _(major bump v6 → v7, PR #684)_
+- `docker/setup-buildx-action` — `v4.2.0` (SHA `bb05f3f5...`) _(major bump v3 → v4, PR #687)_
+- `docker/setup-qemu-action` — `v4.2.0` (SHA `96fe6ef7...`) _(major bump v3 → v4, PR #688)_
+- `docker/metadata-action` — `v6.2.0` (SHA `dc802804...`) _(major bump v5 → v6, PR #686)_
+- `docker/login-action` — `v4.4.0` (SHA `af1e73f9...`) _(major bump v3 → v4, PR #685)_
+- `dorny/paths-filter` — `v4.0.1` (SHA `fbd0ab8f...`)
+- `aquasecurity/trivy-action` — `v0.36.0` _(bumped 0.35.0 → 0.36.0, PR #675)_
+- `github/codeql-action` — `v4.36.2` _(bumped v4.36.0 → v4.36.2, PR #675)_
+- `actions/cache` — `v6` in the setup composite _(bumped v5 → v6, PR #673, merged 2026-07-01)_
+- `fro-bot/agent` — `v0.86.0` (SHA `90a10fbc...`) _(jumped v0.79.1 → v0.80.0 → v0.81.0 → v0.82.0 → v0.83.0 → v0.85.0 → v0.86.0 across #677–#696)_
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.79.1` (SHA `720b7216...`) with:
+**Fro Bot workflow present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.86.0` (SHA `90a10fbc...`) as of 2026-07-12 (was `v0.79.1` on 2026-06-28) with:
 
 - **PR Review:** Container-specific review prompt focusing on Dockerfile best practices, multi-arch correctness, Python quality, Actions security, and breaking changes. Structured verdict format (PASS/CONDITIONAL/REJECT). Black/isort/Prettier style nits explicitly excluded.
 - **Daily Schedule (14:30 UTC):** Autohealing routine — fixes errored PRs, addresses security alerts, updates major dependency versions, ensures linting consistency. Manages a single perpetual "Daily Autohealing Report" issue instead of creating new daily issues.
@@ -230,7 +236,7 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 - **Renovate:** Extends `marcusrbrown/renovate-config#4.5.0`. Ignores `templates/`, constrains Python to 3.13.x, disables lockfile maintenance and patch updates (except TypeScript and Python). Post-upgrade runs `pnpm install && pnpm format`. Rebase when behind base branch.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml`.
 - **DevContainer:** Docker-in-Docker setup with mise tool management.
-- **mise:** Polyglot tool version manager. Pinned: Node.js 24.18.0, pnpm 11.9.0, Poetry latest, pre-commit latest, Python 3.13. Venv auto-created at `.venv`. _(pnpm crossed the v10 → v11 major boundary via security PRs #670/#671, 2026-06-27.)_
+- **mise:** Polyglot tool version manager. Pinned: Node.js 24.18.0, pnpm 11.10.0 _(up from 11.9.0, 2026-07-12)_, Poetry latest, pre-commit latest, Python 3.13. Venv auto-created at `.venv`. _(pnpm crossed the v10 → v11 major boundary via security PRs #670/#671, 2026-06-27.)_
 - **Tests:** `tests/test_dockerfile_policy.py` — Dockerfile policy validation. Known issue: policy tests intentionally fail against current state (tracking issue). Foundational pytest coverage for AI, template engine, CLI, and predictive-maintenance modules landed via PR #583 (merged 2026-06-14); `pyproject.toml` now enforces a `--cov-fail-under=35` gate with branch coverage scoped to `scripts.ai_core`, `scripts.template_engine`, `scripts.containers_cli`, and `scripts.predictive_maintenance`.
 
 ## Notable Patterns
@@ -248,6 +254,7 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 
 | Date | SHA | Notable Changes |
 | --- | --- | --- |
+| 2026-07-12 | `4c80e965` | Incremental re-survey. **GitHub Actions major-version sweep landed 2026-07-09** — `actions/checkout` v6 → v7 (#683), `docker/build-push-action` v6 → v7 (#684), `docker/metadata-action` v5 → v6 (#686), `docker/login-action` v3 → v4 (#685), `docker/setup-buildx-action` v3 → v4 (#687), `docker/setup-qemu-action` v3 → v4 (#688); this is PR #655 (Actions majors) from the prior survey resolving. **Both prior open PRs merged:** #646 (FastAPI template python-multipart 0.0.22 → 0.0.32 + pydantic-settings, 2026-07-01) and #673 (actions/cache v5 → v6, 2026-07-01). **Fro Bot agent jumped v0.79.1 → v0.86.0** across the daily Renovate cadence (#677–#696). **openai >=2.45.0** (#694), **pnpm 11.10.0** (was 11.9.0), **prettier 3.9.0** (#674), **trivy-action v0.36.0 / codeql-action v4.36.2** (#675). **Security fix #689:** bundled npm upgraded to patch undici/tar CVEs. **Renovate fix #690:** `postUpgradeTasks` scoped per-manager (poetry lock only for poetry, pnpm install+format only for npm) — a structural `renovate.json5` refactor. New root docs: `CHANGELOG.md`, `TEMPLATE_SYSTEM_README.md`, committed `ai_config.yaml`. Open PRs: 0. Open issues: 2 (#533 Daily Autohealing, #415 Dependency Dashboard). |
 | 2026-04-18 | `e582f856` | Initial survey. Agent `v0.40.0`, `fro-bot.yaml` PR review + daily autohealing confirmed. |
 | 2026-04-21 | `fa17128f` | Agent bumped to `v0.41.0`. `actions/setup-node` bumped to v6.4.0. `OMO_PROVIDERS`/`OPENCODE_CONFIG` secrets added to Fro Bot job. Node.js base images digest-rotated. `predictive_maintenance.py` (987 LOC, SQLite analytics) and `ai_core.py` Ollama support documented. Redis template (`templates/databases/redis/`) confirmed present. AGENTS.md coverage at root, workflows, and scripts directories. `pytest` updated (CVE-2025-71176). |
 | 2026-04-22 | `1b782ff8` | Incremental re-survey. Multiple base image digest rotations via Renovate (#587–#590). Cache cleanup workflow fix: gracefully handle missing cache keys (#585). Node Alpine base image now `sha256:d1b3b4da...`, Bookworm-slim `sha256:03eae3e...`. No structural changes to repo, workflows, or Python automation layer. |
@@ -255,6 +262,25 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 | 2026-06-07 | `8aeadf73` | Incremental re-survey. **AI config scaffold merged** (PR #584, 2026-06-06): long-pending Copilot SWE-agent PR lands first-class `containers ai config --init/--validate` CLI subcommand, `ai_config.example.yaml`, and three doc files (`AI_CONFIGURATION.md`, `AI_CLI_GUIDE.md`, `AI_VERIFICATION_REPORT.md`). **Security fix** (PR #620, 2026-06-06): qs 6.15.2, express 4.22.2, idna 3.17 patched in Express and Python template deps. **Fro Bot agent jumped v0.44.0 → v0.55.0** (#630). **dorny/paths-filter bumped v3 → v4** (#607). **pnpm 10.34.1** (#622). **Node.js 24.16.0** (mise.toml). **openai >=2.41.0** (#628). Continuous Node.js/Debian base image digest rotation cadence. Open issues: 6 (Dep Dashboard #415, Daily Autohealing #533, Tech Debt test coverage #555, Copilot pytest PR #583, two Renovate dev-dependency pin PRs #611/#612). |
 | 2026-06-28 | `289d8009` | Incremental re-survey. **pnpm crossed v10 → v11 major boundary** (security PRs #670/#671, 2026-06-27) — `mise.toml` now pins pnpm `11.9.0`. **Fro Bot agent jumped v0.65.0 → v0.79.1** (SHA `720b7216...`) across the daily Renovate cadence (#653 v0.72.0 → #669 v0.78.0 → v0.79.1). **`openai` bumped to >=2.44.0,<2.45.0**; **Node.js to 24.18.0**. Continuous Node.js/Debian base image digest rotation. PR #647 (non-major bundle) merged. Open PRs: 4 — #673 (fro-bot, actions/cache v5→v6 in setup action), #655 (fro-bot, GitHub Actions major bumps), #646 (fro-bot, FastAPI template python-multipart/pydantic-settings security), #611 (mrbro-bot pin deps). Open issues: 2 (#533 Daily Autohealing, #415 Dependency Dashboard). No structural changes. |
 | 2026-06-17 | `569a6c8c` | Incremental re-survey. **Pytest coverage merged** (PR #583, 2026-06-14): the long-pending Copilot SWE-agent test PR finally lands; `pyproject.toml` gains a `--cov-fail-under=35` gate and branch-coverage config over `ai_core`, `template_engine`, `containers_cli`, `predictive_maintenance`. **Security fix** (PR #643, 2026-06-14): express → 4.22.2 in `node/release` (Dependabot #35). **Fro Bot agent jumped v0.55.0 → v0.65.0** across the daily Renovate cadence (#632 v0.56.1 → #644 v0.65.0). **Open Fro-Bot-authored security PR #646:** python-multipart 0.0.22 → 0.0.32 in the FastAPI template, closing six Dependabot alerts (#29/#30/#36/#37/#38/#39). Toolchain unchanged (Node 24.16.0, pnpm 10.34.1, Python 3.13, openai >=2.41.0). Renovate preset still `#5.2.0`. Open issues down to 2 (Daily Autohealing #533, Dependency Dashboard #415); tech-debt issue #555 now closed by the merged coverage work. Open PRs: 3 (#647 mrbro-bot non-major bundle, #646 fro-bot python-multipart, #611 mrbro-bot pin deps). |
+
+## Delta — 2026-07-12 Survey
+
+Key state confirmed at HEAD `4c80e965` (last push 2026-07-12). Survey limited to directory listings, README/manifest/workflow files, and public API metadata (repo treated as untrusted input); public repo, MIT, 4 stars, 2 open issues.
+
+- **GitHub Actions major-version sweep (merged 2026-07-09):** The long-pending Actions-majors PR (#655 from the prior survey) landed as a cluster of individual Renovate PRs — `actions/checkout` v6 → **v7.0.0** (`9c091bb2...`, #683), `docker/build-push-action` v6 → **v7.3.0** (`53b7df96...`, #684), `docker/metadata-action` v5 → **v6.2.0** (`dc802804...`, #686), `docker/login-action` v3 → **v4.4.0** (`af1e73f9...`, #685), `docker/setup-buildx-action` v3 → **v4.2.0** (`bb05f3f5...`, #687), `docker/setup-qemu-action` v3 → **v4.2.0** (`96fe6ef7...`, #688). All still SHA-pinned with version comments. This is the first en-masse Docker-action major crossing in the survey history.
+- **Both prior open PRs merged:** #646 (FastAPI template `python-multipart` 0.0.22 → 0.0.32 + `pydantic-settings` 2.13.1 → 2.14.2, resolving six Dependabot alerts) and #673 (`actions/cache` v5 → v6 in the `./.github/actions/setup` composite) both landed 2026-07-01. The template-layer security remediation loop (open across two prior surveys) is now closed.
+- **Fro Bot workflow:** `fro-bot/agent@v0.86.0` (SHA `90a10fbc74137b9def94438ba6866e8832a15a77`), same `30 14 * * *` (14:30 UTC daily) schedule, same `OPENCODE_PROMPT_ARTIFACT: 'true'`, setup via local composite `./.github/actions/setup`, auth via `FRO_BOT_PAT` + `OPENCODE_AUTH_JSON` + `FRO_BOT_MODEL` var + `OMO_PROVIDERS`/`OPENCODE_CONFIG`. Agent advanced v0.79.1 → v0.80.0 → v0.81.0 → v0.82.0 → v0.83.0 → v0.85.0 → v0.86.0 (#677/#678/#680/#682/#695/#696). The Fro-Bot job now checks out via `actions/checkout@v7.0.0`.
+- **Renovate structural fix (#690, 2026-07-09):** `postUpgradeTasks` split by manager — `poetry lock` now runs only for `matchManagers: ['poetry']` and `pnpm install` + `pnpm format` only for `matchManagers: ['npm']`. Previously a single blanket post-upgrade block; this stops running the wrong lock/format step for the wrong ecosystem. Preset still `marcusrbrown/renovate-config#5.2.0`, `templates/` ignored, Python constrained `>=3.13,<3.14`, patch updates disabled except TypeScript/Python.
+- **Security fix (#689, 2026-07-09):** bundled npm upgraded to patch undici/tar CVEs (`fix(security)` direct commit).
+- **Toolchain (`mise.toml`):** Node.js 24.18.0 (unchanged), **pnpm 11.10.0** (up from 11.9.0), Poetry latest, pre-commit latest, Python 3.13, `.venv` auto-created. `jdx/mise` bumped to v2026.7.0 (#679).
+- **Python deps (`pyproject.toml`):** `openai >=2.45.0,<2.46.0` (up from 2.44.0, #694), `anthropic >=0.30.0,<1.0.0`, `urllib3 >=2.7.0`, `pyyaml`, `requests`, `jinja2`, `jsonschema`. Dev deps now pinned to exact/tighter versions: `pytest 9.1.1`, `pytest-cov 7.1.0`, `pytest-mock 3.15.1`, `black ==26.5.1`, `isort 8.0.1`, `pylint 4.0.6`, `yamllint 1.38.0` (pin-dependencies PRs #611/#693). Coverage gate (`--cov-fail-under=35`, branch coverage over `ai_core`/`template_engine`/`containers_cli`/`predictive_maintenance`) intact.
+- **Node dev tooling:** `prettier` 3.9.0 (#674). Express template test pin assertion corrected to 4.22.2 (#676); black/isort formatting drift fixed in tests (#681).
+- **New/changed root files:** `CHANGELOG.md` (new — "All notable changes to this project will be documented here"), `TEMPLATE_SYSTEM_README.md` (new — top-level template-system overview duplicating `docs/templates/` guidance), and `ai_config.yaml` now committed alongside `ai_config.example.yaml`. New `docs/` files observed: `CI_BUILD_FIXES.md`, `MULTI_ARCH.md` (alongside the existing AI docs trio).
+- **Poetry entry points:** stable at 10 — no additions.
+- **Workflows (11 total):** same set — `build-publish`, `cache-cleanup`, `container-scan`, `dockerfile_generation`, `fro-bot`, `metrics_collector`, `release`, `renovate`, `test`, `update-repo-settings`, plus the workflows-level `AGENTS.md`. Repo root, `scripts/`, and template structure otherwise unchanged.
+- **Open PRs:** 0 (down from 4 — the entire prior backlog cleared). **Open issues:** 2 — #533 Daily Autohealing Report, #415 Dependency Dashboard.
+
+No contradictions with prior surveys. The headline is the GitHub Actions major-version sweep (checkout v7 + five Docker actions to v4/v6/v7) and clearing the entire prior PR backlog to zero; everything else is Renovate-driven dependency hygiene (agent v0.79.1 → v0.86.0, openai/pnpm/prettier bumps) plus the per-manager `postUpgradeTasks` refactor (#690) and a new `CHANGELOG.md`/`TEMPLATE_SYSTEM_README.md`.
 
 ## Delta — 2026-06-28 Survey
 

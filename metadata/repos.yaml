@@ -4,11 +4,11 @@ repos:
     name: ha-config
     added: 2026-04-17
     onboarding_status: onboarded
-    last_survey_at: 2026-07-03
+    last_survey_at: 2026-07-18
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
-    next_survey_eligible_at: 2026-08-04
+    next_survey_eligible_at: 2026-08-19
     discovery_channel: collab
     private: false
     node_id: R_kgDOJ_bMaQ
@@ -43,11 +43,11 @@ repos:
     name: containers
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-28
+    last_survey_at: 2026-07-12
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-07-29
+    next_survey_eligible_at: 2026-08-13
     discovery_channel: collab
     private: false
     node_id: MDEwOlJlcG9zaXRvcnk3Njg3NTEzMg==
@@ -66,11 +66,11 @@ repos:
     name: esphome.life
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-29
+    last_survey_at: 2026-07-12
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
-    next_survey_eligible_at: 2026-07-31
+    next_survey_eligible_at: 2026-08-12
     discovery_channel: collab
     private: false
     node_id: R_kgDOIZmGgg
@@ -79,11 +79,11 @@ repos:
     name: extend-vscode
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-29
+    last_survey_at: 2026-07-13
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
-    next_survey_eligible_at: 2026-07-31
+    next_survey_eligible_at: 2026-08-15
     discovery_channel: collab
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMTMzNjg1OTU=
@@ -92,11 +92,11 @@ repos:
     name: gpt
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-06-30
+    last_survey_at: 2026-07-14
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-08-02
+    next_survey_eligible_at: 2026-08-16
     discovery_channel: collab
     private: false
     node_id: R_kgDOK0Z5CA
@@ -105,11 +105,11 @@ repos:
     name: infra
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-01
+    last_survey_at: 2026-07-15
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-08-01
+    next_survey_eligible_at: 2026-08-16
     discovery_channel: collab
     private: false
     node_id: R_kgDOR4g8TA
@@ -138,8 +138,8 @@ repos:
     discovery_channel: collab
     next_survey_eligible_at: 2026-08-06
     private: false
-    node_id: R_kgDOPOkk2A
-    database_id: 1021912280
+    node_id: R_kgDORgYjdA
+    database_id: 1174807412
   - owner: marcusrbrown
     name: mrbro.dev
     added: 2026-04-18
@@ -183,11 +183,11 @@ repos:
     name: systematic
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-01
+    last_survey_at: 2026-07-15
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-08-01
+    next_survey_eligible_at: 2026-08-15
     discovery_channel: collab
     private: false
     node_id: R_kgDORAJegA
@@ -274,12 +274,12 @@ repos:
     name: .github
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-02
+    last_survey_at: 2026-07-16
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: contrib
-    next_survey_eligible_at: 2026-07-23
+    next_survey_eligible_at: 2026-08-06
     private: false
     node_id: R_kgDOHBEXpg
     database_id: 470882214
@@ -287,12 +287,12 @@ repos:
     name: ha-addon-repository
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-02
+    last_survey_at: 2026-07-16
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: contrib
-    next_survey_eligible_at: 2026-07-24
+    next_survey_eligible_at: 2026-08-07
     private: false
     node_id: R_kgDOIKWaJA
     database_id: 547723812
@@ -326,12 +326,12 @@ repos:
     name: cortexkit_anthropic-auth
     added: 2026-05-28
     onboarding_status: onboarded
-    last_survey_at: 2026-06-30
+    last_survey_at: 2026-07-14
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: false
     discovery_channel: collab
-    next_survey_eligible_at: 2026-08-01
+    next_survey_eligible_at: 2026-08-13
     private: false
     node_id: R_kgDOSmhCGA
     database_id: 1248346648
@@ -378,12 +378,12 @@ repos:
     name: space-bus
     added: 2026-07-03
     onboarding_status: onboarded
-    last_survey_at: 2026-07-03
+    last_survey_at: 2026-07-18
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: owned
-    next_survey_eligible_at: 2026-07-19
+    next_survey_eligible_at: 2026-08-04
     private: false
     node_id: R_kgDOTMGFnQ
     database_id: 1287751069
@@ -400,3 +400,29 @@ repos:
     private: false
     node_id: R_kgDOTOX0_A
     database_id: 1290138876
+  - owner: marcusrbrown
+    name: dev-like
+    added: 2026-07-12
+    onboarding_status: onboarded
+    last_survey_at: 2026-07-12
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: false
+    discovery_channel: collab
+    next_survey_eligible_at: 2026-08-14
+    private: false
+    node_id: R_kgDOTVrJ0w
+    database_id: 1297795539
+  - owner: marcusrbrown
+    name: marcusrbrown.com
+    added: 2026-07-13
+    onboarding_status: onboarded
+    last_survey_at: 2026-07-13
+    last_survey_status: success
+    has_fro_bot_workflow: true
+    has_renovate: true
+    discovery_channel: collab
+    next_survey_eligible_at: 2026-08-12
+    private: false
+    node_id: R_kgDOPOkk2A
+    database_id: 1021912280

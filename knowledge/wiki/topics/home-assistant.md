@@ -2,7 +2,7 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2026-07-03
+updated: 2026-07-16
 tags: [home-assistant, iot, smart-home, yaml, automation, addon]
 related:
   - marcusrbrown--ha-config
@@ -37,7 +37,7 @@ The add-on side uses a different tool: `frenck/action-addon-linter` validates th
 
 ### Multi-Arch Add-on Builds
 
-Add-ons publish multi-arch Docker images via `home-assistant/builder` (pinned at `2026.03.2` in [[bfra-me--ha-addon-repository]]). Standard arch matrix: `aarch64`, `amd64`, `armhf`, `armv7`. Base images from `ghcr.io/home-assistant/{arch}-base` split between Alpine 3.23 (64-bit) and 3.22 (32-bit ARM) — upstream lags on 32-bit. The build action supports `--cosign` for Sigstore signing when `id-token: write` is granted. As of 2026-06-20, upstream has moved the 64-bit base to Alpine **3.24** (open but unmerged Renovate PR #558 in [[bfra-me--ha-addon-repository]]), so the live `main` still reflects 3.23/3.22 — the 64-bit/32-bit lag persists across the minor bump.
+Add-ons publish multi-arch Docker images via `home-assistant/builder` (pinned at `2026.03.2` in [[bfra-me--ha-addon-repository]]). Standard arch matrix: `aarch64`, `amd64`, `armhf`, `armv7`. Base images from `ghcr.io/home-assistant/{arch}-base` split between Alpine 3.23 (64-bit) and 3.22 (32-bit ARM) — upstream lags on 32-bit. The build action supports `--cosign` for Sigstore signing when `id-token: write` is granted. As of 2026-07-16, upstream has moved the 64-bit base to Alpine **3.24** but the bump (Renovate PR #558 in [[bfra-me--ha-addon-repository]]) has sat open and unmerged for ~2 months under that repo's review-required deadlock, so live `main` still reflects 3.23/3.22 — the 64-bit/32-bit lag persists across the minor bump.
 
 ### Custom Components
 

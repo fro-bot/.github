@@ -2,7 +2,7 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-05-25
+updated: 2026-07-12
 tags: [docker, containers, multi-arch, oci, security, ci-cd]
 related:
   - marcusrbrown--containers
@@ -62,6 +62,10 @@ Trivy is used for both vulnerability scanning (image scan) and misconfiguration 
 ### Tagging Strategy
 
 `docker/metadata-action` generates tags: branch ref, PR ref, short SHA (prefixed with branch name), `latest` (on default branch only).
+
+### Action Major-Version Cadence
+
+The Docker build toolchain actions are kept current through major boundaries by Renovate while retaining SHA pins. As of 2026-07-12, [[marcusrbrown--containers]] crossed a coordinated major sweep: `docker/build-push-action` v6 → v7, `docker/metadata-action` v5 → v6, `docker/login-action` v3 → v4, `docker/setup-buildx-action` v3 → v4, `docker/setup-qemu-action` v3 → v4 (plus `actions/checkout` v6 → v7). Each bump lands as a separate Renovate PR with an updated `# vN.N.N` comment on the pinned SHA.
 
 ## Related Technologies
 
