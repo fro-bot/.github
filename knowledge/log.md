@@ -2873,3 +2873,30 @@ Sources: https://github.com/bfra-me/.github (SHA 1c1269568de61df2d8a3ddf19fb0163
 Surveyed bfra-me/.github and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/.github
+
+## [2026-07-18 00:31] ingest | marcusrbrown/ha-config
+
+Eighth survey of `marcusrbrown/ha-config` (SHA `019cbe9` → `c51e25b`, pushed 2026-07-16). Pure Renovate churn, zero structural drift.
+
+Delta since 2026-07-03 (commits #834→#847, all `mrbro-bot[bot]`):
+
+- `bfra-me/.github` reusable workflows v4.16.33 → **v4.16.37** (SHA `058b81211bf35133c2988de1619be09a2158fbd6`; #834/#836/#840/#844)
+- Renovate preset `marcusrbrown/renovate-config#5.2.4` → **#5.2.7** (#842 v5.2.6, #846 v5.2.7)
+- Prettier 3.9.4 → **3.9.5** (#839), propagated to both `ci.yaml` env and post-upgrade `npx prettier@3.9.5`
+- esphome submodule digest advanced ~eight times (latest `a0755b3`, #847)
+
+Static / confirmed unchanged: `.HA_VERSION` 2025.6.3 (~13-month freeze), `esphome==2025.12.7`, `yamllint==1.38.0`, mise pre-commit 4.6.0, 11 packages, 10 custom components, esphome submodule → `marcusrbrown/esphome.life`. Open items unchanged: #427 Dependency Dashboard, parked PRs #766 (asyncio-mqtt v0.16.2) and #777 (esphome v2026).
+
+**Still no Fro Bot workflow (eighth consecutive survey).** The three workflows remain `ci.yaml`, `renovate.yaml`, `update-repo-settings.yaml`; repo references `fro-bot/.github:common-settings.yaml` via Probot Settings only. Gap persistence (~13 months) reads as intentional: ha-config is a Renovate-only autopilot repo with no PR-review/triage need since all merges are bot-authored. `mrbro-bot[bot]` authorship now durable across five windows. A follow-up draft PR to add the Fro Bot agent workflow remains the standing recommendation, to be proposed separately.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--ha-config.md` (frontmatter sources/updated, last-push, shared-workflow pin, Renovate/Prettier tooling, Fro Bot survey count, mrbro-bot authorship note, survey-history row), `knowledge/index.md` (catalog line), `knowledge/log.md`. No topic/entity/comparison page changes warranted — findings were repo-local dependency churn; no new cross-cutting pattern surfaced for [[home-assistant]], [[esphome]], or [[github-actions-ci]].
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files, and issue/PR listings; additive updates only (prior surveys preserved and dated, no overwrites); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context, so public data was read via unauthenticated GitHub REST / raw endpoints — repo confirmed public (`private: false`), no private surface touched. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/ha-config (SHA c51e25b17ca99a3f5d39c8fd77c0b9e32430664b)
+
+## [2026-07-18 00:34] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/ha-config
