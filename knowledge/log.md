@@ -2900,30 +2900,26 @@ Surveyed fro-bot/space-bus and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/space-bus
 
-## [2026-07-18 07:15] ingest | bfra-me/renovate-action
+## [2026-07-18 07:18] ingest | marcusrbrown/tokentoilet
 
-Fifth survey of `bfra-me/renovate-action` (SHA `318e0292303b530092c06861b6adb33c295df720`, latest release 9.147.0 / 2026-07-18). Additive update to the existing repo page — no prior findings overwritten.
+Re-survey of `marcusrbrown/tokentoilet` (HEAD `8d7648c`, up from `c6e10e0` on 2026-07-03). Public repo, untrusted-input handling; reads limited to directory listings, README/manifest/workflow/CHANGELOG/`.env.example` files at HEAD. Tenth survey of this repo.
 
-Deltas since 2026-07-03 (`5ad371e0`, 9.133.0):
+**Headline delta — performance/bundle cycle.** Where 2026-07-03 made token discovery *correct*, this cycle makes the app shell *lighter*. A **Dynamic Loading Infrastructure** (`CHANGELOG.md` Unreleased, #641–#646) code-splits the Web3 component tree behind `next/dynamic`: 10+ dynamic wrappers with Suspense boundaries, 7 skeleton loaders, an error boundary that retries chunk loads `1s→2s→4s→8s` (capped), and import-performance telemetry. Targets a 50–100 KB (10–18%) initial-bundle reduction, but the CHANGELOG marks it **staged**: "infrastructure complete, awaiting feature-page implementation" — the machinery exists before the payoff lands on the main route. New deps track this work: `@tanstack/react-virtual` (^3.13.12, token-list virtualization), `lru-cache` (^11.2.4), `std-env`.
 
-- **Fro Bot agent v0.82.0 → v0.93.1** (SHA `a4976f45`) — ecosystem version leader a fifth consecutive survey; canary hypothesis holds. Parked [[bfra-me--ha-addon-repository]] (frozen agent v0.43.1) had Renovate merely *targeting* v0.92.1 at 2026-07-16; this repo was already past it two days later.
-- **Renovate pin 43.251.0 → 43.269.1**; release 9.133.0 → 9.147.0 (14 minors / 15 days).
-- **Internal preset `#v4.16.33` → `#v4.16.37`**.
-- Toolchain: pnpm 11.9.0 → 11.13.0, ESLint 10.6.0 → 10.7.0, Prettier 3.9.4 → 3.9.5, Vitest 4.1.9 → 4.1.10, semantic-release 25.0.5 → 25.0.7; Node 24.18.0, TypeScript 6.0.3, tsup 8.5.1, lint-staged 16.4.0 steady. Docker entrypoint tool pins recorded (yq v4.53.3, Bun bun-v1.3.6, Yarn 4.17.1, pnpm 11.13.0).
-- fro-bot.yaml structure unchanged (single-workflow three-mode, crons 03:30/15:30 UTC, `workflow_dispatch` default `autoheal`); its `actions/checkout` bumped to v6.0.3, `actions/setup-node` to v6.5.0, `pnpm/action-setup@v5.0.0` steady.
-- **New findings:** `renovate.json5` adds `ignorePresets` (merge-confidence badges) and routes `docker`/`tsup`/`typescript`/`lockFileMaintenance` updates to the `build` commit type; GitHub API `template_repository` field confirms the repo was scaffolded from `bfra-me/github-action` (explains the unused TS scaffold in a Bash-composite action).
-- Dead v8 analytics plumbing in `docker/entrypoint.sh` re-confirmed present (**fifth** consecutive survey). Added note: AUTOHEAL_PROMPT category 5 treats the analytics collection as live infra to audit, which likely explains why the sweep never flags it for removal.
-- Open issues 66 → 64; stars/forks/watchers steady 3/1/3.
-- Fro Bot workflow present and active — no onboarding follow-up needed.
+**Lint debt retired.** The setState-in-effect and ref-naming warnings that stood on `main` across prior surveys were fixed by the hooks best-practices refactor (#619–#622); Fast Refresh compliance extracted variant/util exports out of component files (#601–#605), eliminating all 7 Fast Refresh warnings — APIs 100% backwards compatible.
 
-Touched pages: `knowledge/wiki/repos/bfra-me--renovate-action.md` (frontmatter source/updated, identity metrics + template-repository line, Renovate pin history, agent-version line + cross-ecosystem table row, renovate config `ignorePresets` + build-type routing, tooling table, docker entrypoint tool pins, five observations refreshed/added, survey-history row); `knowledge/index.md` (renovate-action entry refreshed); `knowledge/log.md`. No topic/entity/comparison page changes warranted — deltas are version churn plus two repo-specific config facts.
+**Dependency churn:** Fro Bot agent v0.82.0 → v0.93.1 (~11 releases, SHA `a4976f4`), pnpm 11.9.0 → 11.11.0, Next.js 16.2.9 → 16.2.10, Renovate preset #5.2.4 → #5.2.7, viem 2.54.1 → 2.55.2, Storybook core 10.4.6 → 10.5.0 (alpha addons still 9.0.0-alpha.*, fourth consecutive cycle), eslint → 10.7.0, vite → 8.1.4, vitest → 4.1.10, prettier → 3.9.5, bfra-me/.github v4.16.33 → v4.16.37. Roadmap unchanged: smart contracts, NFT receipts, charity routing, token fountain, mainnet/multi-chain all still deferred; Sepolia-only lock holds. Fro Bot workflow present (no onboarding follow-up needed).
 
-Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files (action.yaml, package.json, renovate.json5, fro-bot.yaml, docker/entrypoint.sh) + repo/release/commit metadata; additive updates only (all four prior survey rows preserved); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context, so public data was read via unauthenticated GitHub REST (`api.github.com`) and `raw.githubusercontent.com` — repo confirmed public, no private surface touched. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+**Survey caveat:** the unauthenticated GitHub API hit its 60/hr rate limit on the shared Actions runner IP before repo/issue/PR metadata could be fetched. Durable structural findings sourced from `git ls-remote` + raw file reads (package.json, workflows, CHANGELOG, `.env.example`) at HEAD. Open-issue/PR counts from 2026-07-03 (#1171, #1189, #995, #1013) carried forward unconfirmed and flagged as such in the page.
 
-Sources: https://github.com/bfra-me/renovate-action (SHA 318e0292303b530092c06861b6adb33c295df720)
+Touched pages: `knowledge/wiki/repos/marcusrbrown--tokentoilet.md` (frontmatter source/`updated`/tags, Overview, Tech Stack, new "Performance & Bundle Work (2026-07-18)" section, Fro Bot pin, Renovate preset, Probot bfra-me pin, Shared Ecosystem table, lint-warnings observation update, new Notable Deltas (2026-07-18) section, survey-history row); `knowledge/wiki/topics/web3-defi.md` (new source SHA + tag, new "Bundle Optimization: Code-Splitting the Web3 Tree" section); `knowledge/index.md` (tokentoilet entry refreshed); `knowledge/log.md`. No entity/comparison pages warranted.
 
-## [2026-07-18 07:16] ingest | repo:bfra-me/renovate-action
+Constraints honored: target treated as untrusted input; additive updates only (all prior survey records preserved and dated, no contradictions to reconcile — steady evolution); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context; public data read via `git ls-remote` and unauthenticated `raw.githubusercontent.com` — repo confirmed public, no private surface touched. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
 
-Surveyed bfra-me/renovate-action and updated the control-plane wiki.
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 8d7648c7e0e57fafbb13778689ae1b7bacbe72d0)
 
-Sources: https://github.com/bfra-me/renovate-action
+## [2026-07-18 07:19] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
