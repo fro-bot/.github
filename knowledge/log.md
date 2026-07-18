@@ -2899,3 +2899,31 @@ Sources: https://github.com/fro-bot/space-bus (SHA 8e20e01775918a01855eb5aba64d0
 Surveyed fro-bot/space-bus and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/space-bus
+
+## [2026-07-18 07:15] ingest | bfra-me/renovate-action
+
+Fifth survey of `bfra-me/renovate-action` (SHA `318e0292303b530092c06861b6adb33c295df720`, latest release 9.147.0 / 2026-07-18). Additive update to the existing repo page — no prior findings overwritten.
+
+Deltas since 2026-07-03 (`5ad371e0`, 9.133.0):
+
+- **Fro Bot agent v0.82.0 → v0.93.1** (SHA `a4976f45`) — ecosystem version leader a fifth consecutive survey; canary hypothesis holds. Parked [[bfra-me--ha-addon-repository]] (frozen agent v0.43.1) had Renovate merely *targeting* v0.92.1 at 2026-07-16; this repo was already past it two days later.
+- **Renovate pin 43.251.0 → 43.269.1**; release 9.133.0 → 9.147.0 (14 minors / 15 days).
+- **Internal preset `#v4.16.33` → `#v4.16.37`**.
+- Toolchain: pnpm 11.9.0 → 11.13.0, ESLint 10.6.0 → 10.7.0, Prettier 3.9.4 → 3.9.5, Vitest 4.1.9 → 4.1.10, semantic-release 25.0.5 → 25.0.7; Node 24.18.0, TypeScript 6.0.3, tsup 8.5.1, lint-staged 16.4.0 steady. Docker entrypoint tool pins recorded (yq v4.53.3, Bun bun-v1.3.6, Yarn 4.17.1, pnpm 11.13.0).
+- fro-bot.yaml structure unchanged (single-workflow three-mode, crons 03:30/15:30 UTC, `workflow_dispatch` default `autoheal`); its `actions/checkout` bumped to v6.0.3, `actions/setup-node` to v6.5.0, `pnpm/action-setup@v5.0.0` steady.
+- **New findings:** `renovate.json5` adds `ignorePresets` (merge-confidence badges) and routes `docker`/`tsup`/`typescript`/`lockFileMaintenance` updates to the `build` commit type; GitHub API `template_repository` field confirms the repo was scaffolded from `bfra-me/github-action` (explains the unused TS scaffold in a Bash-composite action).
+- Dead v8 analytics plumbing in `docker/entrypoint.sh` re-confirmed present (**fifth** consecutive survey). Added note: AUTOHEAL_PROMPT category 5 treats the analytics collection as live infra to audit, which likely explains why the sweep never flags it for removal.
+- Open issues 66 → 64; stars/forks/watchers steady 3/1/3.
+- Fro Bot workflow present and active — no onboarding follow-up needed.
+
+Touched pages: `knowledge/wiki/repos/bfra-me--renovate-action.md` (frontmatter source/updated, identity metrics + template-repository line, Renovate pin history, agent-version line + cross-ecosystem table row, renovate config `ignorePresets` + build-type routing, tooling table, docker entrypoint tool pins, five observations refreshed/added, survey-history row); `knowledge/index.md` (renovate-action entry refreshed); `knowledge/log.md`. No topic/entity/comparison page changes warranted — deltas are version churn plus two repo-specific config facts.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files (action.yaml, package.json, renovate.json5, fro-bot.yaml, docker/entrypoint.sh) + repo/release/commit metadata; additive updates only (all four prior survey rows preserved); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context, so public data was read via unauthenticated GitHub REST (`api.github.com`) and `raw.githubusercontent.com` — repo confirmed public, no private surface touched. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/bfra-me/renovate-action (SHA 318e0292303b530092c06861b6adb33c295df720)
+
+## [2026-07-18 07:16] ingest | repo:bfra-me/renovate-action
+
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/renovate-action
