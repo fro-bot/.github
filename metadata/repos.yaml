@@ -378,12 +378,12 @@ repos:
     name: space-bus
     added: 2026-07-03
     onboarding_status: onboarded
-    last_survey_at: 2026-07-03
+    last_survey_at: 2026-07-18
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: owned
-    next_survey_eligible_at: 2026-07-19
+    next_survey_eligible_at: 2026-08-04
     private: false
     node_id: R_kgDOTMGFnQ
     database_id: 1287751069
