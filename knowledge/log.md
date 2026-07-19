@@ -2924,29 +2924,33 @@ Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/tokentoilet
 
-## [2026-07-19 01:30] ingest | marcusrbrown/vbs
+## [2026-07-19 07:38] ingest | bfra-me/works
 
-Incremental re-survey of `marcusrbrown/vbs` (HEAD `9465b61`, 2026-07-19). Updated repo page `marcusrbrown--vbs.md` and refreshed the `index.md` entry. No new topic/entity/comparison pages warranted — the delta is pure Renovate cadence.
+Sixth survey of `bfra-me/works` (HEAD `cf8689a`, 2026-07-19; prior `b00229c`, 2026-07-05). Updated repo page `bfra-me--works.md`, `index.md`, and this log. No new topic/entity/comparison pages warranted — no cross-cutting pattern crossed a second-repo threshold this cycle.
 
-Delta from prior survey (SHA `5d31481`, 2026-07-05):
+**Headline: no structural change.** 13 workflow files (11 + `fro-bot.yaml` + the `fro-bot-dispatch-examples.md` doc), 9 published packages + docs site, root layout, `pnpm-workspace.yaml` config (allowBuilds/overrides), Probot settings, branch protection, and AGENTS.md conventions all confirmed durable. The Fro Bot mode-resolution inline shell is byte-stable. This is a steady-state maintenance window, not a restructure.
 
-- 14 commits over 14 days, **all Renovate-authored** (`mrbro-bot[bot]`). No structural, workflow, or application-code changes. VBS back in pure dependency-autopilot mode after the 2026-07-05 pnpm-major / bare-prompt-fix / security-override window.
-- **`fro-bot/agent` version trail:** v0.83.0 → v0.93.1 (#665 v0.84.0, #669 v0.84.3, #673 v0.85.0, #681 v0.93.0, #682 v0.93.1). Pinned by SHA in `fro-bot.yaml` (`fro-bot/agent@a4976f4…`). VBS sits near the ecosystem version front (matches tokentoilet's v0.93.1).
-- **pnpm:** 11.9.0 → 11.13.1 (#666 11.10.0, #680 11.13.0, #683 11.13.1). Steady patch cadence within pnpm 11.
-- **Renovate preset:** `marcusrbrown/renovate-config#5.2.4` → `#5.2.7` (#679).
-- **prettier** 3.9.4 → 3.9.5; **vitest stack** 4.1.9 → 4.1.10 (#668); **`@types/node`** 24.13.2 → 24.13.3. bfra-me tooling pins (eslint-config 0.51.1, prettier-config 0.16.9, tsconfig 0.13.1), `vite` 7.3.6, `d3` ^7.9.0 all steady.
-- **New observation (not new state):** `pnpm-workspace.yaml` carries a pnpm 11 `allowBuilds:` block (`esbuild`, `simple-git-hooks`, `unrs-resolver`) — the pnpm 11 replacement for `onlyBuiltDependencies`. `fast-uri: ^3.1.3` override from #655 still present.
-- **Activity shape:** open PRs 0 → 3 (all Fro Bot autoheal: #674 docs-drift `src/data/` size, #672 `fix(security)` `ws` DoS GHSA-96hv-2xvq-fx4p, #671 flaky `api-cache` test under coverage). Open issues 15 → 18 — autoheal convention-drift cluster (#676 missing `destroy()`, #675 inline styles, #670 class-based storage adapters) plus #657 duplicate data blocks / #656 coverage gaps. Star count 2, workflows 7, no root LICENSE file — all unchanged/carried forward.
-- **Fro Bot workflow present and active** — no onboarding follow-up needed. Bare-prompt `workflow_dispatch` fallback (#662) confirmed still the top `PROMPT` branch.
+**Toolchain + pin drift (all automerged):**
+- `fro-bot/agent` v0.83.0 → **v0.93.1** (SHA `a4976f4`; 10-minor drift over 14 days) — still fleet pin leader, now tied with `marcusrbrown/tokentoilet` (also v0.93.1).
+- pnpm 11.9.0 → **11.13.1** (`packageManager` in root; HEAD commit `cf8689a` is the pnpm 11.12.0 bump #3940, manifest already at 11.13.1). Node 24.18.0 unchanged.
+- `bfra-me/.github` reusable renovate workflow + `internal.json5` baseline v4.16.33 → **v4.16.37**; `update-repo-settings.yaml` still pinned v4.16.0.
 
-Recorded a caveat on the page: the open convention-drift issues assert application code violates the documented no-class / `destroy()` / no-inline-style conventions. These are Fro-Bot-surfaced claims, not verified by direct code read this survey (scope limited to listings/manifests/workflows per the survey contract). Logged as autoheal signal, not as a correction to the documented convention set.
+**Contradiction resolved (publish drought):** The prior survey flagged Changesets publish PR **#3854** as the "first staged publish, watch whether it merges." It resolves to a **non-event** — #3854 was closed **unmerged** on 2026-07-05, the same day it opened. A fresh publish PR **#3972** (`chore(🦋📦): publish packages`) opened 2026-07-19. All nine published package versions remain byte-identical to the 2026-05-16 baseline (sixth consecutive survey); the npm publish drought is now **~9 weeks** and is confirmed a review-gate artifact, not a tooling failure — the pipeline restages the changeset each cycle but the human merge never lands.
 
-Constraints honored: target treated as untrusted input; reads limited to directory listings, manifests, and workflow files; additive updates only (all prior survey records preserved and dated, no contradictions to reconcile); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context — public data read via unauthenticated GitHub API + `raw.githubusercontent.com`; repo confirmed public (`private: false`), no private surface touched. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+**Backlog: still accreting (11 → 12 open PRs).** Every stale/duplicate autoheal PR flagged 2026-07-05 remains open and unmerged: #3620/#3724 (docs duplicates), #3704/#3713 (esbuild duplicates), #3508 (~7 weeks), #3619, #3762, #3803. No new remediation PRs this window; instead the agent emitted docs-only PR **#3973** (`docs: refresh agent workflow notes`, touches only `AGENTS.md`) — a third live variant of the AGENTS-package-count churn class alongside the two frozen copies. The `AUTOHEAL_PROMPT` dedup guard still isn't reconciling against its own unmerged stale PRs; the review pipeline is the bottleneck across three consecutive surveys.
 
-Sources: https://github.com/marcusrbrown/vbs (SHA 9465b613b849ec8b51817c1b2d2a6abc3007c5bf)
+**Pending v1 (#3691): now dead.** Renovate PR #3691 (`update fro-bot/agent to v1`, v0.62.0 → v1.18.0) is **still untouched since 2026-06-14** (~5 weeks). The live pin has climbed to v0.93.1, leaving #3691 ~31 minors behind the branch it targets and un-refreshed against the current v1.x tag. It should be closed and re-opened against a fresher v1.x rather than merged as-is.
 
-## [2026-07-19 07:42] ingest | repo:marcusrbrown/vbs
+Open issues flat at 38 (fourth survey), open PRs 11 → 12, stars 4. `fro-bot.yaml` present and active — no onboarding follow-up needed.
 
-Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+Touched pages: `knowledge/wiki/repos/bfra-me--works.md` (frontmatter source SHA + `updated`; Identity block push-date/PRs/publish/pnpm; workspace allowBuilds note; Fro Bot pin + #3691 staleness; renovate.yaml + baseline refs; cross-repo bfra-me--github/fro-bot--agent; Open Questions backlog + publish contradiction; new survey-history row); `knowledge/index.md` (works entry refreshed); `knowledge/log.md`.
 
-Sources: https://github.com/marcusrbrown/vbs
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow files, and issue/PR metadata; additive updates only (all prior survey records preserved and dated; publish-PR contradiction noted with both versions rather than overwritten); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Repo re-confirmed **public** (`visibility: public`) before any wiki write — no private surface touched. `gh` authenticated via the runner's git extraheader token. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/bfra-me/works (SHA cf8689aea25a7402c24f9292669f10265d15c739)
+
+## [2026-07-19 07:43] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works
