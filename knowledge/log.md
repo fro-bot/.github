@@ -2923,3 +2923,30 @@ Sources: https://github.com/marcusrbrown/tokentoilet (SHA 8d7648c7e0e57fafbb1377
 Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-07-19 01:30] ingest | marcusrbrown/vbs
+
+Incremental re-survey of `marcusrbrown/vbs` (HEAD `9465b61`, 2026-07-19). Updated repo page `marcusrbrown--vbs.md` and refreshed the `index.md` entry. No new topic/entity/comparison pages warranted — the delta is pure Renovate cadence.
+
+Delta from prior survey (SHA `5d31481`, 2026-07-05):
+
+- 14 commits over 14 days, **all Renovate-authored** (`mrbro-bot[bot]`). No structural, workflow, or application-code changes. VBS back in pure dependency-autopilot mode after the 2026-07-05 pnpm-major / bare-prompt-fix / security-override window.
+- **`fro-bot/agent` version trail:** v0.83.0 → v0.93.1 (#665 v0.84.0, #669 v0.84.3, #673 v0.85.0, #681 v0.93.0, #682 v0.93.1). Pinned by SHA in `fro-bot.yaml` (`fro-bot/agent@a4976f4…`). VBS sits near the ecosystem version front (matches tokentoilet's v0.93.1).
+- **pnpm:** 11.9.0 → 11.13.1 (#666 11.10.0, #680 11.13.0, #683 11.13.1). Steady patch cadence within pnpm 11.
+- **Renovate preset:** `marcusrbrown/renovate-config#5.2.4` → `#5.2.7` (#679).
+- **prettier** 3.9.4 → 3.9.5; **vitest stack** 4.1.9 → 4.1.10 (#668); **`@types/node`** 24.13.2 → 24.13.3. bfra-me tooling pins (eslint-config 0.51.1, prettier-config 0.16.9, tsconfig 0.13.1), `vite` 7.3.6, `d3` ^7.9.0 all steady.
+- **New observation (not new state):** `pnpm-workspace.yaml` carries a pnpm 11 `allowBuilds:` block (`esbuild`, `simple-git-hooks`, `unrs-resolver`) — the pnpm 11 replacement for `onlyBuiltDependencies`. `fast-uri: ^3.1.3` override from #655 still present.
+- **Activity shape:** open PRs 0 → 3 (all Fro Bot autoheal: #674 docs-drift `src/data/` size, #672 `fix(security)` `ws` DoS GHSA-96hv-2xvq-fx4p, #671 flaky `api-cache` test under coverage). Open issues 15 → 18 — autoheal convention-drift cluster (#676 missing `destroy()`, #675 inline styles, #670 class-based storage adapters) plus #657 duplicate data blocks / #656 coverage gaps. Star count 2, workflows 7, no root LICENSE file — all unchanged/carried forward.
+- **Fro Bot workflow present and active** — no onboarding follow-up needed. Bare-prompt `workflow_dispatch` fallback (#662) confirmed still the top `PROMPT` branch.
+
+Recorded a caveat on the page: the open convention-drift issues assert application code violates the documented no-class / `destroy()` / no-inline-style conventions. These are Fro-Bot-surfaced claims, not verified by direct code read this survey (scope limited to listings/manifests/workflows per the survey contract). Logged as autoheal signal, not as a correction to the documented convention set.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, manifests, and workflow files; additive updates only (all prior survey records preserved and dated, no contradictions to reconcile); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context — public data read via unauthenticated GitHub API + `raw.githubusercontent.com`; repo confirmed public (`private: false`), no private surface touched. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/vbs (SHA 9465b613b849ec8b51817c1b2d2a6abc3007c5bf)
+
+## [2026-07-19 07:42] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs
