@@ -2955,27 +2955,24 @@ Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
 
-## [2026-07-20 08:20] ingest | marcusrbrown/marcusrbrown
+## [2026-07-20 08:22] ingest | marcusrbrown/marcusrbrown.github.io
 
-Re-surveyed `marcusrbrown/marcusrbrown` (HEAD `abff970`, was `08bd1ad` on 2026-07-06). Updated repo page `marcusrbrown--marcusrbrown.md` and `index.md`. The dependency graph is pure treadmill; the operational signal is the story this window.
+Survey dispatched against the *name* `marcusrbrown/marcusrbrown.github.io` (wiki slug `marcusrbrown--marcusrbrown-github-io`). **Headline: the name-to-repo binding this page warned about (2026-07-13 header) is now empirically confirmed.** The GitHub name no longer resolves to the brand site it was created to document; it resolves to repo **id `1174807412`** (created 2026-03-06, homepage `mrbro.dev`, description "My portfolio.") — the **mrbro.dev developer portfolio**, whose canonical page is [[marcusrbrown--mrbro-dev]]. The former brand-site content (repo id `1021912280`) was renamed to `marcusrbrown/marcusrbrown.com` and is documented at [[marcusrbrown--marcusrbrown-com]].
 
-Key findings:
+Current occupant snapshot at HEAD `4bdbf32` (`feat(opencode): add Impeccable edit feedback (#208)`, 2026-07-19): React 19, TypeScript **5.9.3** (not the brand site's TS 6), Vite 7.3.6, Vitest 4.1.10, Playwright 1.61.1, React Router v7, prerendered blog + RSS (`feed`/`shiki`/`unified` chain, `blog-refresh.yaml`), visual-regression + accessibility + performance test tiers (`e2e-tests.yaml`, `performance.yaml`, `lhci` mobile/desktop), `.impeccable/` design gate with `DESIGN.md`/`PRODUCT.md`. 8 workflows. Split-brain security overrides across `pnpm-workspace.yaml` (~20 GHSA-annotated) + `package.json` `pnpm.overrides`. pnpm 10.33.4, Node >=22.6.0, MIT (no LICENSE file; API license null).
 
-- **Autoheal graduated from report-noise to concrete remediation.** The mode now opens real fix PRs and precise hygiene issues rather than logging into the perpetual report: PR #1055 (fixed the markdownlint bare-fence *generator* in `scripts/update-sponsors.ts`, not just the output), PR #1061 (template-vs-generated README drift since #928), issue #1056 (single >90-day stale TODO in `utils/badge-detector.ts:72`). Root-cause remediation on a generated-content repo.
-- **Fro Bot audited its own workflow and found a bug — issue #1087.** The fork-refusal preflight (`fro-bot.yaml:577`) uses jq `.head.repo.fork // "unknown"`; jq's `//` treats boolean `false` as "no value", so legitimate same-repo PRs (`fork == false`) resolve to `"unknown"` and get over-refused. The hardening step logged as a real security gap closed (2026-06-02 survey) has a latent false-positive blocking Fro Bot's own comment-triggered reviews. Fails closed on security but breaks the legitimate path — warrants a fix PR.
-- **Perpetual-issue contract now stable.** Both #936 (Maintenance) and #926 (Autohealing) open — contract satisfied, and for the first time in four surveys with no close/reopen oscillation (prior history: churning → closed → reopened → stable).
-- **Pure Renovate treadmill otherwise:** 32 commits since 2026-07-06, all `mrbro-bot[bot]` bumps, zero `fix(security)`, zero `fro-bot.yaml` body changes. `fro-bot/agent` v0.83.1 → v0.93.1 (`a4976f4`, ~18 bumps); pnpm 11.9.0 → 11.13.1 (stays 11.x); Prettier 3.9.4 → 3.9.5; renovate-config `#5.2.4 → #5.2.7`; `bfra-me/.github` v4.16.34 → v4.16.38; tsx → 4.23.1; vitest → 4.1.10; `@types/node` → 24.13.3; Node unchanged 24.18.0. `pnpm-workspace.yaml` GHSA override ledger (`vite 7.3.6`/`postcss`/`picomatch`/`fast-uri`/`jiti`) unchanged.
-- Generated-content PR rotated #1048 → #1088; also open: lockfile-maintenance PR #1070 (mrbro-bot), fix PRs #1055/#1061 (fro-bot). Marked the stale 2026-04 "Dependency drift risk" bullet as superseded/resolved rather than deleting it.
-- **Fro Bot workflow present and active** — no onboarding follow-up needed.
+**Fro Bot workflow present and active** — `fro-bot/agent@a4976f4 # v0.93.1`, single-file three-mode (review/maintenance/autoheal), crons `30 3` autoheal / `30 15` maintenance UTC, adds a `discussion_comment` trigger; review prompt scoped to "mrbro.dev." No onboarding follow-up draft PR warranted. Renovate extends `marcusrbrown/renovate-config#5.2.7` + `group:allNonMajor`. Open issues 4 (#204 preview-image bug, #162 autoheal report, #13 maintenance report, #1 Dependency Dashboard); stars 1.
 
-Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown.md` (frontmatter source SHA + `updated`; Overview last-push; new 2026-07-20 Fro Bot Integration section; new version snapshot; Survey History row; superseded drift bullet + new autoheal-remediation pattern), `knowledge/index.md` (entry refreshed), `knowledge/log.md`.
+**Additive-only, contradiction preserved:** the prior 2026-04-25 → 2026-06-23 survey history (brand site, repo id `1021912280`) is untouched and re-dated as the historical record of what the name pointed to before the rename. Added a Delta Log (2026-07-20) and a survey-history row noting the flip; live mrbro.dev state defers to [[marcusrbrown--mrbro-dev]] to avoid duplicating that page's ongoing survey record.
 
-Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow files, and issue/PR metadata; additive updates only (all prior survey records preserved and dated; stale drift bullet annotated with both states, not overwritten); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Repo re-confirmed **public** (`private: false`) before any wiki write — no private surface touched. `gh` CLI was unauthenticated in this environment; surveyed via the GitHub public REST/raw API (unauthenticated, read-only). No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter source SHA + `updated` + collision tags; new Delta Log 2026-07-20; survey-history row); `knowledge/index.md` (entry rewritten to flag superseded/name-collision status and point to canonical pages); `knowledge/log.md`.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown (SHA abff9705c315aa203fd5449648f4b27813cdd1a6)
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow files, and issue/PR metadata; additive updates only (no prior record overwritten; the name-rebind recorded as a dated contradiction with both bindings preserved); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; wikilinks point to existing pages ([[marcusrbrown--mrbro-dev]], [[marcusrbrown--marcusrbrown-com]]). Repo re-confirmed **public** (`visibility: public`) before any wiki write. `gh` CLI had no token in this runner; the public GitHub REST API was read unauthenticated (non-mutating reads only) to gather facts. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR.
 
-## [2026-07-20 08:24] ingest | repo:marcusrbrown/marcusrbrown
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4bdbf32227cd06c4b2517cb7322fae55136c934f)
 
-Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+## [2026-07-20 08:24] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Sources: https://github.com/marcusrbrown/marcusrbrown
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
