@@ -2954,3 +2954,28 @@ Sources: https://github.com/bfra-me/works (SHA cf8689aea25a7402c24f9292669f10265
 Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-07-20 08:20] ingest | marcusrbrown/marcusrbrown
+
+Re-surveyed `marcusrbrown/marcusrbrown` (HEAD `abff970`, was `08bd1ad` on 2026-07-06). Updated repo page `marcusrbrown--marcusrbrown.md` and `index.md`. The dependency graph is pure treadmill; the operational signal is the story this window.
+
+Key findings:
+
+- **Autoheal graduated from report-noise to concrete remediation.** The mode now opens real fix PRs and precise hygiene issues rather than logging into the perpetual report: PR #1055 (fixed the markdownlint bare-fence *generator* in `scripts/update-sponsors.ts`, not just the output), PR #1061 (template-vs-generated README drift since #928), issue #1056 (single >90-day stale TODO in `utils/badge-detector.ts:72`). Root-cause remediation on a generated-content repo.
+- **Fro Bot audited its own workflow and found a bug — issue #1087.** The fork-refusal preflight (`fro-bot.yaml:577`) uses jq `.head.repo.fork // "unknown"`; jq's `//` treats boolean `false` as "no value", so legitimate same-repo PRs (`fork == false`) resolve to `"unknown"` and get over-refused. The hardening step logged as a real security gap closed (2026-06-02 survey) has a latent false-positive blocking Fro Bot's own comment-triggered reviews. Fails closed on security but breaks the legitimate path — warrants a fix PR.
+- **Perpetual-issue contract now stable.** Both #936 (Maintenance) and #926 (Autohealing) open — contract satisfied, and for the first time in four surveys with no close/reopen oscillation (prior history: churning → closed → reopened → stable).
+- **Pure Renovate treadmill otherwise:** 32 commits since 2026-07-06, all `mrbro-bot[bot]` bumps, zero `fix(security)`, zero `fro-bot.yaml` body changes. `fro-bot/agent` v0.83.1 → v0.93.1 (`a4976f4`, ~18 bumps); pnpm 11.9.0 → 11.13.1 (stays 11.x); Prettier 3.9.4 → 3.9.5; renovate-config `#5.2.4 → #5.2.7`; `bfra-me/.github` v4.16.34 → v4.16.38; tsx → 4.23.1; vitest → 4.1.10; `@types/node` → 24.13.3; Node unchanged 24.18.0. `pnpm-workspace.yaml` GHSA override ledger (`vite 7.3.6`/`postcss`/`picomatch`/`fast-uri`/`jiti`) unchanged.
+- Generated-content PR rotated #1048 → #1088; also open: lockfile-maintenance PR #1070 (mrbro-bot), fix PRs #1055/#1061 (fro-bot). Marked the stale 2026-04 "Dependency drift risk" bullet as superseded/resolved rather than deleting it.
+- **Fro Bot workflow present and active** — no onboarding follow-up needed.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown.md` (frontmatter source SHA + `updated`; Overview last-push; new 2026-07-20 Fro Bot Integration section; new version snapshot; Survey History row; superseded drift bullet + new autoheal-remediation pattern), `knowledge/index.md` (entry refreshed), `knowledge/log.md`.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow files, and issue/PR metadata; additive updates only (all prior survey records preserved and dated; stale drift bullet annotated with both states, not overwritten); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Repo re-confirmed **public** (`private: false`) before any wiki write — no private surface touched. `gh` CLI was unauthenticated in this environment; surveyed via the GitHub public REST/raw API (unauthenticated, read-only). No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown (SHA abff9705c315aa203fd5449648f4b27813cdd1a6)
+
+## [2026-07-20 08:24] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown
