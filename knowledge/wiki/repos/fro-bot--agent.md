@@ -2,8 +2,11 @@
 type: repo
 title: "fro-bot/agent"
 created: 2026-05-07
-updated: 2026-07-07
+updated: 2026-07-21
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 9a4631f81a3d73d06bb18098e468b0cae52906b3
+    accessed: 2026-07-21
   - url: https://github.com/fro-bot/agent
     sha: 8ee84bb01967ad1f58fafde9a47c7ca27a9aa73d
     accessed: 2026-07-07
@@ -28,7 +31,7 @@ sources:
   - url: https://github.com/fro-bot/agent
     sha: ef6b9525583d13f9443b80e6ceffff8af978410a
     accessed: 2026-05-07
-tags: [github-actions, agent, opencode, omo, omo-slim, typescript, persistent-memory, ci-cd, fro-bot, semantic-release, bun-workspace, monorepo, discord, effect, hono, docker-compose, mitmproxy, harness, orw, trusted-publishing, oidc, operator-web-surface, oauth, sse, sbom, credential-broker, shared-runtime, run-cancellation]
+tags: [github-actions, agent, opencode, omo, omo-slim, typescript, persistent-memory, ci-cd, fro-bot, semantic-release, bun-workspace, monorepo, discord, effect, hono, docker-compose, mitmproxy, harness, orw, trusted-publishing, oidc, operator-web-surface, oauth, sse, sbom, credential-broker, shared-runtime, run-cancellation, release-notes-narration, prompt-injection-hardening, review-skip-label]
 related:
   - fro-bot--dashboard
   - marcusrbrown--systematic
@@ -53,22 +56,22 @@ GitHub Action harness for [OpenCode](https://opencode.ai/) + [Oh My OpenAgent (o
 | Attribute              | Value                                                               |
 | ---------------------- | ------------------------------------------------------------------- |
 | Created                | 2026-01-02                                                         |
-| Last push              | 2026-07-07 (survey 2026-07-07, HEAD `8ee84bb`)                     |
-| Latest release         | v0.83.1 (2026-07-05; was v0.76.1 @ 2026-06-24) — 7 minors + patches in ~12 days |
+| Last push              | 2026-07-20 (survey 2026-07-21, HEAD `9a4631f`)                     |
+| Latest release         | v0.94.0 (2026-07-21; was v0.83.1 @ 2026-07-07) — 11 minors + patches in ~2 weeks |
 | Language               | TypeScript (strict, ESM-only)                                      |
 | Node.js                | `node24` action runtime; Docker images pin via `.node-version`    |
 | Package manager        | **Bun 1.3.14** (`packageManager: bun@1.3.14`, `bun.lock`, `bunfig.toml`) — Bun cutover holds; `pnpm-lock.yaml`/`pnpm-workspace.yaml` remain removed |
-| Runtime                | `node24` (GitHub Action `runs.using`)                              |
-| Bundler                | tsdown 0.22.3 (Rolldown-based, dual entry points)                 |
-| Test framework         | Vitest 4.1.9                                                       |
-| Lint                   | ESLint 10.6.0 (`@bfra.me/eslint-config` 0.51.1), Prettier 3.9.4   |
+| Runtime                | `node24` (GitHub Action `runs.using`); `.node-version` 24.18.0     |
+| Bundler                | tsdown 0.22.7 (Rolldown-based, dual entry points)                 |
+| Test framework         | Vitest 4.1.10                                                      |
+| Lint                   | ESLint 10.7.0 (`@bfra.me/eslint-config` 0.51.1), Prettier 3.9.5   |
 | TypeScript             | 6.0.3                                                              |
-| OpenCode default       | **Harness build `1.17.14+harness.e98fbc0f`** — `DEFAULT_OPENCODE_VERSION` is a harness GitHub-Release tag; SDK at 1.17.13; harness `base_version: 1.17.14` (rebased 1.17.9 → 1.17.11 #1045 → 1.17.13 #1086 → 1.17.14; **10 integration refs** now, was 5) |
+| OpenCode default       | **Harness build `1.18.4+harness.1ff4b323`** — `DEFAULT_OPENCODE_VERSION` is a harness GitHub-Release tag; SDK at 1.17.20; harness `base_version: 1.18.4` (rebased 1.17.14 → 1.17.20 → 1.18.4; **12 integration refs** now, was 10) |
 | Release                | semantic-release on `release` branch, `next` → `release` PR model  |
 | Visibility             | Public                                                             |
-| Stars                  | 2                                                                  |
-| Open issues            | 6 (#1134 gateway test SIGTERM/SIGINT listener leak, #1126 harness-integrate mint scoped `contents:write` token inline, #1124 wire broker-minted App token into harness-integrate [in-repo half of #1107], #1069 converge action/gateway run-execution timeout tracking, #579 dep dashboard, #252 DMR). **Down from 9 @ v0.76.1** — the operator-wiring gaps #1001/#1000 and web-command-spine tracker #907 all closed. |
-| Open PRs               | 3 (#1138 `chore(release): pending release v0.84.0` on `next`; #1131 Renovate `@aws-sdk/client-s3` v3.1079.0; #1127 Renovate `vite` v8.1.3) |
+| Stars                  | 3                                                                  |
+| Open issues            | 6 (carried set: #1134 gateway test SIGTERM/SIGINT listener leak, #1126 harness-integrate mint scoped `contents:write` token inline, #1124 wire broker-minted App token into harness-integrate, #1069 action/gateway run-execution timeout tracking, #579 dep dashboard, #252 DMR — count flat at 6 across the window; per-issue set carried forward, GitHub API not queried this run) |
+| Open PRs               | 6 (mostly Renovate dep bumps + the standing pending-release PR on `next`; individual PR numbers drift faster than this survey — not enumerated) |
 | Topics                 | actions, agent, automation, bot, fro-bot, github-actions, github-app |
 
 ## Architecture
@@ -265,7 +268,7 @@ The `/clone` endpoint treats caller input as hostile — a clean reference for h
 | Package             | `@fro.bot/harness` — the **only published** workspace member (`publishConfig.access: public`) |
 | CLI                 | `bin: harness` → `dist/cli.mjs`. Subcommands `info` / `patches` / `doctor` are harness-own; `--version` / `--help` harness-own; **everything else passes through** to the patched binary with inherited stdio/env/exit code |
 | Provenance          | upstream release tag + ordered integration refs (each pinned by upstream commit SHA) + frozen integration commit SHA + build sha; reported by `harness info`/`patches`/`doctor` |
-| Config              | `harness.config.json` (2026-07-07): `release_repo: anomalyco/opencode`, `base_version: 1.17.14`, `integrationRefs: [anomalyco/opencode PRs #19961, #31859, #31638, #33134, #33159, #33444, #31922, #34975, #34977, #33713]` — **10 refs now** (was 5 @ v0.76.1; #33444 carried to restore session summary, #1102/v0.82.0), merge `agent: build`, merge `model: anthropic/claude-sonnet-4-6`, `opencode_bin: opencode` |
+| Config              | `harness.config.json` (2026-07-21): `release_repo: anomalyco/opencode`, `base_version: 1.18.4`, `integrationRefs: [anomalyco/opencode PRs #19961, #31859, #31638, #33134, #33159, #33444, #31922, #34975, #34977, #33713, #36045, #36361]` — **12 refs now** (was 10 @ v0.83.1; +#36045, #36361; carry set churned mid-window — v0.91.0 #1220 retired superseded refs, intermediate 1.17.20 builds briefly ran 15–16 refs before settling to 12), merge `agent: build`, merge **`model: anthropic/claude-sonnet-5`** (was `claude-sonnet-4-6`), `opencode_bin: opencode` |
 | Per-platform dist   | main package + four native packages (`@fro.bot/harness-{linux-x64,linux-arm64,darwin-x64,darwin-arm64}`) + musl Linux assets; Windows out of scope. `postinstall` resolver (`resolve-binary.ts` → `platform.ts`) selects host binary; `OPENCODE_PATH` / bare `opencode` on PATH are fallbacks |
 | Native build        | Bun-based: pinned by `HARNESS_BUN_VERSION` in `packages/harness/src/bun-version.ts` (Renovate-tracked against `oven-sh/bun` releases), kept in lockstep with the `bun-version` input in `harness-release.yaml` (build + publish jobs) and the `BUN_VERSION` ARG in `deploy/gateway.Dockerfile` |
 | Source files        | `cli.ts`, `integrate.ts`, `sources.ts`, `provenance.ts`, `resolve-binary.ts`, `platform.ts`, `verify.ts`, `version.ts`, `base-version.ts`, `postinstall.ts` (each with `*.test.ts`) |
@@ -347,7 +350,7 @@ mitmproxy is configured to fail closed by default; `OBJECT_STORE_HOSTS` is the a
 | `harness-release.yaml`    | **New v0.53.0.** Fenced (manual dispatch / `harness-v*` tag) build+publish of `@fro.bot/harness` + per-platform packages. Read-only build job (no `id-token`); OIDC trusted-publish job only. |
 | `harness-integrate.yaml`  | **New (v0.80.0 broker wave, #1081).** `workflow_call` reusable workflow that runs the LLM merge with a **broker-minted** credential. Single `integrate` job holds `id-token: write` + `contents: read`, hardens egress to `broker.fro.bot:443`, mints via `scripts/harness/mint-broker-credential.ts`, injects the result as `auth-json`. Broker allowlist pins `job_workflow_ref` to this file — minting authority is per-file, so `id-token: write` stays scoped to the one job by policy. |
 | `prepare-release-pr.yaml` | (not examined)                                              |
-| `fro-bot.yaml`            | Self-hosted Fro Bot: PR review, issue triage, mentions, daily DMR (15:30 UTC), weekly wiki update (Sun 20:00 UTC). Now also exposes a `workflow_call` interface (model + `response-mode` + optional `correlation-id`) so other workflows invoke the agent — used by **release-notes narration** (#818) and the harness **integrate merge** (#779) |
+| `fro-bot.yaml`            | Self-hosted Fro Bot: PR review, issue triage, mentions, daily DMR (15:30 UTC), weekly wiki update (Sun 20:00 UTC). Exposes a `workflow_call` interface (model + `response-mode` + optional `correlation-id`) so other workflows invoke the agent — used by the harness **integrate merge** (#779) and by the **release-notes generation phase**. **As of v0.93.0 (#1239) the workflow carries two jobs for the release-notes path:** a `fro-bot` **generation** job (read-only `contents: read` / `pull-requests: read`, uploads a `release-notes-candidate-*` artifact) and an `apply-release-notes` job (`contents: read` on `GITHUB_TOKEN`; the write authority for `gh release edit` is carried by `FRO_BOT_PAT`). See "Release-Notes Narration" below. |
 | `auto-release.yaml`/release pipeline | **Release-notes narration (v0.56.0, #818):** on a published release, calls `fro-bot.yaml` to narrate the release notes (the `<!-- fro-bot-narration-v1 -->` "What's new" block now atop every release); routing + fail-soft guards documented in `docs/solutions/` (#825) |
 | `renovate.yaml`           | Reusable from `bfra-me/.github`, triggered on issue/PR edit, push, CI success, dispatch |
 | `codeql-analysis.yaml`    | Security vulnerability analysis                             |
@@ -371,7 +374,22 @@ Three-branch release flow:
 2. `release` — semantic-release target, force-pushable, no PR reviews required
 3. `v0` — major version tracking branch, force-updated on each release
 
-`semantic-release` with `@semantic-release/git` (commits dist/ + package.json), `@semantic-release/exec` (version output), `@semantic-release/github` (GitHub releases). Conventional commits with custom release rules (`build` → patch, `docs(readme|rfcs)` → patch, `skip` → no release).
+`semantic-release` with `@semantic-release/git` (commits dist/ + package.json), `@semantic-release/exec` (version output), `@semantic-release/npm`, `@semantic-release/github` (GitHub releases). Conventional commits with custom release rules (`build` → patch, `docs(readme|rfcs)` → patch, `build(dev)`/`skip` → no release). The `@semantic-release/exec` `successCmd` now dispatches release-notes narration via `scripts/release/dispatch-release-notes.ts` (was inline in the release pipeline).
+
+## Release-Notes Narration (two-phase, credential-boundary — v0.93.0, #1239)
+
+The "What's new" narration atop every release (originally v0.56.0, #818, single `workflow_call`) was **re-architected into two phases with a hard credential boundary** — a direct prompt-injection-hardening move, since the narrator reads untrusted PR bodies/diffs.
+
+- **Generation phase** (`fro-bot` job, read-only) runs under the workflow `GITHUB_TOKEN` scoped to `contents: read` + `pull-requests: read`. It gathers **bounded evidence** — at most 25 PRs, per-PR body truncation, at most 5 diffs — and writes a narrative candidate to the job's **artifact store** (`release-notes-candidate-{correlation-id}`). Because the token is read-only, this phase *structurally cannot* edit the release, comment, or mutate anything regardless of what hostile PR content instructs. This is the same read-only-token containment pattern the `harness-integrate` broker path uses, applied to the narration path.
+- **Apply phase** (`apply-release-notes` job) downloads the candidate and applies it via `gh release edit`; the write authority is carried by `FRO_BOT_PAT`, not `GITHUB_TOKEN` (whose `contents` stays `read`). Gated on `release-tag != '' && correlation-id != ''`.
+
+**Candidate validator** (`scripts/release/assemble-release-notes.ts` + `release-notes.ts`) is fail-closed: rejects empty/oversized bodies, control characters, missing PR link, and forged idempotency-marker / `<details>` tags. v0.93.1 (#1241) added a `stripCodeSpans()` pre-pass that blanks well-formed fenced/inline code before the marker/`<details>` structural checks, so a narrative *describing* the validator (using a code-quoted `` `<details>` ``) is no longer falsely rejected — while an unbalanced backtick or unterminated fence leaves raw text intact, preserving fail-closed catch of a tag hidden behind broken markup. v0.93.1 (#1243) also loosened the compose prompt from "one paragraph of 3–6 sentences" to 1–3 short paragraphs of 2–4 sentences (blank-line separated, PR link last) to stop dense walls of text. Lessons captured in `docs/solutions/` (#1240, #1244).
+
+## PR Review Opt-Out Label (`review-skip-label`, v0.93.0, #1234)
+
+A new action input `review-skip-label` (default `skip-agent-review`, case-insensitive, empty string disables) lets operators suppress automatic PR-event reviews by labeling a PR. The skip is evaluated **at trigger routing** — before acknowledgement, model execution, or any token spend — and posts nothing. Label matching reads the **trusted webhook payload** with no routing-time API fetch.
+
+Authorized overrides still win: an `@fro-bot` mention on `opened`/`synchronize`/`reopened` (where the validated association is the PR body author's own) or a `review_requested` event naming the bot runs the review regardless of the label. The override authority is deliberately narrowed: on `ready_for_review`/`review_requested` the router substitutes the *webhook sender's* association rather than the PR author's, so a body-planted mention there would carry borrowed authorization — that path relies on the trusted reviewer-request override only (association-authority lesson in `docs/solutions/`, #1238).
 
 ## RFCs
 
@@ -390,7 +408,7 @@ The repo runs its own Fro Bot agent. As of 2026-06-03 `fro-bot.yaml` self-refere
 
 ## Dependency Highlights
 
-| Package               | Version (2026-07-07) | Was @ v0.76.1 | Purpose                              |
+| Package               | Version (2026-07-21) | Was @ v0.83.1 | Purpose                              |
 | --------------------- | -------------------- | ------------- | ------------------------------------ |
 | `@actions/artifact`   | 6.2.1                | 6.2.1         | Artifact upload (root dep now)       |
 | `@actions/cache`      | 6.1.0                | 6.0.1         | GitHub Actions cache operations (#1028) |
@@ -398,20 +416,21 @@ The repo runs its own Fro Bot agent. As of 2026-06-03 `fro-bot.yaml` self-refere
 | `@actions/exec`       | 3.0.0                | 3.0.0         | Subprocess execution                 |
 | `@actions/github`     | 9.1.1                | 9.1.1         | Octokit + GitHub context             |
 | `@actions/tool-cache` | 4.0.0                | 4.0.0         | Tool caching for setup phase         |
-| `@aws-sdk/client-s3`  | 3.1078.0             | 3.1071.0      | S3-compatible object storage (#1122; #1131 pending → 3.1079.0) |
-| `@opencode-ai/sdk`    | 1.17.13              | 1.17.9        | OpenCode execution (base bumped 1.17.9 → 1.17.11 → 1.17.13) |
+| `@aws-sdk/client-s3`  | 3.1085.0             | 3.1078.0      | S3-compatible object storage         |
+| `@opencode-ai/sdk`    | 1.17.20              | 1.17.13       | OpenCode execution (base bumped 1.17.13 → 1.17.20; harness base separately at 1.18.4) |
 | `@octokit/auth-app`   | 8.2.0                | 8.2.0         | GitHub App authentication            |
 | `@octokit/webhooks-types` | 7.6.1            | 7.6.1         | Webhook payload typing (dev)         |
+| `@fro.bot/systematic` | 3.2.2                | 2.33.1        | OpenCode plugin — **v2 → v3 major** (#1250) |
 | `@bfra.me/es`         | 0.1.0                | 0.1.0         | Shared ES utilities                  |
 | `discord.js`          | 14.26.4              | 14.26.4       | Gateway Discord client (gateway pkg) |
 | `effect`              | 3.21.3               | 3.21.3        | Gateway composition layer            |
-| `hono`                | 4.12.27              | 4.12.26       | HTTP layer (gateway + workspace-agent, #1037) |
-| `@hono/node-server`   | 1.19.14              | 1.19.14       | Node adapter for Hono                 |
-| `eslint`              | 10.6.0               | 10.5.0        | Lint (dev)                           |
-| `prettier`            | 3.9.4                | 3.8.4         | Format (dev, #1072/#1097)            |
-| `tsdown`              | 0.22.3               | 0.22.3        | Rolldown-based bundler               |
-| `semantic-release`    | 25.0.5               | 25.0.5        | Automated versioning/publishing       |
-| `vite` (override)     | 8.1.2                | 8.0.16        | Pinned override (#1104/#1105; #1127 pending → 8.1.3) |
+| `hono`                | 4.12.27              | 4.12.27       | HTTP layer (gateway + workspace-agent) |
+| `@hono/node-server`   | 2.0.9                | 1.19.14       | Node adapter for Hono — **v1 → v2 major** (#1249) |
+| `eslint`              | 10.7.0               | 10.6.0        | Lint (dev)                           |
+| `prettier`            | 3.9.5                | 3.9.4         | Format (dev)                         |
+| `tsdown`              | 0.22.7               | 0.22.3        | Rolldown-based bundler               |
+| `semantic-release`    | 25.0.7               | 25.0.5        | Automated versioning/publishing       |
+| `vite` (override)     | 8.1.4                | 8.1.2         | Pinned override                      |
 | `bun` (pkg manager)   | 1.3.14               | 1.3.14        | Workspace package manager (Bun cutover holds) |
 | `simple-git-hooks`    | 2.13.1               | 2.13.1        | Pre-commit (lint-staged), pre-push   |
 
@@ -421,13 +440,13 @@ Extends `github>fro-bot/.github` (the `.github` repo's Renovate config). `dist/*
 
 Five custom regex managers tracking pinned versions in `packages/runtime/src/shared/constants.ts` (the constants moved out of the action's `src/shared/` into the runtime package at v0.45+):
 
-| Constant (2026-07-07)              | Datasource                                   |
+| Constant (2026-07-21)              | Datasource                                   |
 | ---------------------------------- | -------------------------------------------- |
-| `DEFAULT_OPENCODE_VERSION = '1.17.14+harness.e98fbc0f'` | **Harness build** — a fro-bot/agent GitHub Release (non-`v` tag) bundling the patched OpenCode (was `1.17.9+harness.bd89c818` @ v0.76.1); `FALLBACK_VERSION` in `opencode.ts` (Renovate `github-releases` datasource) is the plain stock base when latest-fetch fails |
+| `DEFAULT_OPENCODE_VERSION = '1.18.4+harness.1ff4b323'` | **Harness build** — a fro-bot/agent GitHub Release (non-`v` tag) bundling the patched OpenCode (was `1.17.14+harness.e98fbc0f` @ v0.83.1); `FALLBACK_VERSION` in `opencode.ts` (Renovate `github-releases` datasource) is the plain stock base when latest-fetch fails |
 | `DEFAULT_BUN_VERSION = '1.3.14'`   | GitHub releases `oven-sh/bun` (`extractVersionTemplate: ^bun-v(?<version>.*)$`) |
 | `DEFAULT_OMO_VERSION = '3.17.15'`  | npm `oh-my-openagent`                        |
 | `DEFAULT_OMO_SLIM_VERSION = '1.1.2'` | npm `oh-my-opencode-slim` (stable line only) |
-| `DEFAULT_SYSTEMATIC_VERSION = '2.33.1'` | npm `@fro.bot/systematic` (was 2.32.0 @ v0.76.1; bumped via 2.32.1 #1044 / 2.32.2 #1121 on the action-published pin) |
+| `DEFAULT_SYSTEMATIC_VERSION = '3.2.2'` | npm `@fro.bot/systematic` — **crossed the v2 → v3 major** (was 2.33.1 @ v0.83.1; bumped 2.33.3 #1217/v0.91.0 then v3 #1250/v0.94.0) — see [[marcusrbrown--systematic]] |
 
 Renovate now also tracks the harness native-build Bun pin via two additional custom managers: `HARNESS_BUN_VERSION` in `packages/harness/src/bun-version.ts` and the `bun-version:` inputs (build + publish jobs) in `harness-release.yaml`, both against `oven-sh/bun` and kept in lockstep with the `BUN_VERSION` ARG in `deploy/gateway.Dockerfile`. `base_version` in `harness.config.json` is tracked via a `github-releases` manager (`1.17.14` as of 2026-07-07).
 
@@ -437,7 +456,7 @@ Renovate now also tracks the harness native-build Bun pin via two additional cus
 
 **OpenCode event-contract / pin history:** the 1.14.42+ `/event` SSE `SyncEvent` regression (`message.part.updated`, `message.updated`, `session.next.*` not reaching `bus.subscribeAll()` subscribers) was fixed upstream (#27959) and verified in 1.15.13. That event contract changed the streaming surface: tool lifecycle and text now arrive via `message.part.updated` / `message.part.delta`, so `session.next.tool.*` / `session.next.text.delta` no longer fire — legacy handlers in `streaming.ts` are retained as fallback. This drove the gateway tool-progress migration (#744, v0.52.0).
 
-**As of v0.63.0 the OpenCode version is no longer a simple Renovate-capped pin** — the default is the harness build. As of the 2026-07-07 survey `base_version: 1.17.14` in `harness.config.json` (after rebasing through 1.16.0 #786, 1.17.3 #867, 1.17.6 #893, 1.17.9 #984, 1.17.11 #1045, 1.17.13 #1086, 1.17.14). The action consumes the harness GitHub Release; `FALLBACK_VERSION` is the plain stock base when the latest-fetch fails. See "Harness-as-Default-OpenCode Cutover" above.
+**As of v0.63.0 the OpenCode version is no longer a simple Renovate-capped pin** — the default is the harness build. As of the 2026-07-21 survey `base_version: 1.18.4` in `harness.config.json` (after rebasing through 1.16.0 #786 … 1.17.14, then 1.17.20 #1222/v0.91.0, then **1.18.4** #1254/v0.94.0). The 1.18.4 upstream base brings a 300s OpenAI header timeout, an Azure deployment-endpoint fix, Kimi/Moonshot adaptive thinking, Meta `xhigh` reasoning, and a native `subagent_depth` default; all 12 carries preserved in order, headless CI behavior unchanged. Both action surfaces — the `DEFAULT_OPENCODE_VERSION` constant and the workspace Dockerfile `ARG` — are updated together in the post-publish sync (#1256) so they always track the same patched build. The action consumes the harness GitHub Release; `FALLBACK_VERSION` is the plain stock base when the latest-fetch fails. See "Harness-as-Default-OpenCode Cutover" above.
 
 Post-upgrade tasks: `bun run bootstrap && bun run build && bun run fix` (Bun cutover — the AGENTS/README post-upgrade recipe migrated off `pnpm run …`).
 
@@ -469,7 +488,9 @@ A `FEATURES.md` at repo root documents v1.4 MVP with 73 features across 12 categ
 
 **Docs restructure (v0.80.0, survey 2026-07-07).** The top-level doc surface was reorganized: `RULES.md` **retired** (#1076), replaced by new `ARCHITECTURE.md` + `STRUCTURE.md` (#1075, AGENTS.md slimmed) and `CONTRIBUTING.md` + `SECURITY.md` (#1076). `PRD.md` and `FEATURES.md` were **archived to `docs/product/`** (#1071); the README was refreshed with troubleshooting moved to the wiki (#1077) and the example prompt fenced for a Copy button (#1078). A new `docs/decisions/` directory joins the prior `docs/` tree. Root now carries `AGENTS.md`, `ARCHITECTURE.md`, `STRUCTURE.md`, `CONTRIBUTING.md`, `SECURITY.md`, `RFCS.md`, `README.md` — `RULES.md`/`PRD.md`/`FEATURES.md` are gone from root. A new `generating-project-docs` skill was added under `.agents/skills/` (#1073) to drive this doc generation.
 
-A `PRD.md` contains the full product requirements document. `RFCS.md` indexes the 19 RFC architecture decision records.
+`RFCS.md` indexes the 19 RFC architecture decision records; **as of the 2026-07-21 survey the RFC bodies live in a top-level `RFCs/` directory** (`RFC-001-Foundation-Core-Types.md` … `RFC-019-S3-Storage-Backend.md`, 19 files) rather than only in the index. (PRD.md was archived to `docs/product/` in the v0.80.0 restructure.)
+
+**New 2026-07-21:** a root `CHANGELOG.md` tracks the PRD/requirements changelog (not the release changelog — that lives in GitHub releases). `docs/privacy/operator-push-retention.md` and `docs/decisions/` (`2026-06-19-s2-operator-auth-authority.md`) join the docs tree. A second project-local skill `versioned-tool` was added under `.agents/skills/` alongside `generating-project-docs`.
 
 **New top-level surface (2026-06-24):** the root now carries `.opencode/` (project OpenCode config), `bun.lock` + `bunfig.toml` (Bun), `.ignore`, `tsconfig.base.json`, and `tsdown.config.test.ts` alongside the prior `.agents/`, `.slim/`, `RULES.md`, `AGENTS.md`, `FEATURES.md`, `PRD.md`, `RFCS.md`. `pnpm-lock.yaml` / `pnpm-workspace.yaml` are gone.
 
@@ -479,7 +500,18 @@ This is the **central runtime** consumed by all Fro Bot-managed repositories. Ev
 
 **Resolved (2026-06-24 survey):** the v0.64–v0.76 release wave the consumer pins implied has now been surveyed at source. The dominant content is the **gateway operator web surface** (§ "Operator Web Surface" above, #907) and a **pnpm → Bun migration** (§ Workspace Layout / Workspace Packages); OpenCode rebased to harness `1.17.9`; build-pipeline + SBOM hardening. Consumers [[marcusrbrown--marcusrbrown]] and [[bfra-me--works]] sat at v0.75.0 on 2026-06-22; latest release is now **v0.76.1** (2026-06-23) with v0.76.2 pending (#1007).
 
-**Update (2026-07-07 survey):** the v0.77–v0.83 wave is now surveyed at source. Three arcs dominate: **(1)** the **credential-broker consumer landed** (v0.80.0, #1081) as `harness-integrate.yaml`, closing the #1060 loop the [[marcusrbrown--infra]] survey anticipated; **(2)** the **operator web surface reached wiring parity** — the #1001/#1000 gaps closed (launch/approval routes mounted #1030/#1031, run-index #1038, `contractVersion` health #1096, run cancellation #1111, sanitized failure reasons #1113); **(3)** a **docs/runtime restructure** — `RULES.md` retired for `ARCHITECTURE.md`/`STRUCTURE.md`/`CONTRIBUTING.md`, PRD/FEATURES archived to `docs/product/`, and `packages/runtime/src/` consolidated into `agent/`+`coordination/`+`object-store/`+`session/`+`shared/`. Latest release **v0.83.1** (2026-07-05); v0.84.0 pending (#1138).
+**Update (2026-07-07 survey):** the v0.77–v0.83 wave is now surveyed at source. Three arcs dominate: **(1)** the **credential-broker consumer landed** (v0.80.0, #1081) as `harness-integrate.yaml`, closing the #1060 loop the [[marcusrbrown--infra]] survey anticipated; **(2)** the **operator web surface reached wiring parity** — the #1001/#1000 gaps closed (launch/approval routes mounted #1030/#1031, run-index #1038, `contractVersion` health #1096, run cancellation #1111, sanitized failure reasons #1113); **(3)** a **docs/runtime restructure** — `RULES.md` retired for `ARCHITECTURE.md`/`STRUCTURE.md`/`CONTRIBUTING.md`, PRD/FEATURES archived to `docs/product/`, and `packages/runtime/src/` consolidated into `agent/`+`coordination/`+`object-store/`+`session/`+`shared/`. Latest release **v0.83.1** (2026-07-05).
+
+**Update (2026-07-21 survey, HEAD `9a4631f`):** the v0.84–v0.94 wave (11 minors + patches in ~2 weeks). **No structural change** — 3 packages / 2 apps / 11 workflows / 19 RFCs / four-layer source hierarchy / Bun cutover all durable. The wave is **feature-and-hardening on the release + review pipelines plus a harness rebase**, not a new subsystem:
+
+- **Release-notes narration re-architected into two phases with a hard credential boundary** (v0.93.0, #1239): a read-only **generation** job (`contents: read`/`pull-requests: read`, bounded evidence ≤25 PRs / ≤5 diffs → artifact candidate) and an **apply** job (`FRO_BOT_PAT` carries `gh release edit` authority). The read-only generation phase structurally cannot mutate anything regardless of hostile PR content — the same containment posture as the broker path. v0.93.1 hardened the fail-closed candidate validator (code-span exemption #1241, short-paragraph compose #1243). See "Release-Notes Narration".
+- **`review-skip-label` opt-out input** (v0.93.0, #1234, default `skip-agent-review`) — routing-time PR-review suppression from the trusted webhook payload, with mention / `review_requested` overrides scoped by sender-substituted association authority (#1238). See "PR Review Opt-Out Label".
+- **Harness rebased 1.17.14 → 1.17.20 → 1.18.4** (#1222/v0.91.0, #1254/v0.94.0); merge model `claude-sonnet-4-6` → **`claude-sonnet-5`**; carries churned and settled at **12** (#1220 retired superseded refs; +#36045/#36361). Post-publish sync updates the runtime constant and the Dockerfile `ARG` together (#1256).
+- **Reliability/runtime**: fail-fast on provider quota exhaustion (#1227), centralized agent error formatting (#1226), run-state retention tagging (#1225), PR-release validation concurrency isolation (#1223), removed legacy schedule-session force-expiry scaffolding (#1237).
+- **Deps**: `@fro.bot/systematic` **v2 → v3 major** (#1250, now 3.2.2 — see [[marcusrbrown--systematic]]), `@hono/node-server` **v1 → v2 major** (#1249), `@opencode-ai/sdk` 1.17.20, `@aws-sdk/client-s3` 3.1085.0, eslint 10.7.0, prettier 3.9.5, tsdown 0.22.7, semantic-release 25.0.7, vite override 8.1.4. `@semantic-release/npm` added to `.releaserc.yaml`.
+- **Doc surface**: RFC bodies extracted into a `RFCs/` directory (19 files) alongside the `RFCS.md` index; new root `CHANGELOG.md` (PRD/requirements changelog); new `docs/privacy/operator-push-retention.md`; new `.agents/skills/versioned-tool` skill.
+
+Latest release **v0.94.0** (2026-07-21); stars 2 → **3**; open issues flat at 6.
 
 **Note (2026-06-15):** [[fro-bot--dashboard]] (new) is a downstream consumer of a *different* surface than the action — it reads the Fro Bot **Agent App's installations** (not the action) to build a read-only cross-repo monitoring view, and it deliberately mirrors `packages/gateway` + `packages/runtime` primitives (`Result<T,E>`, `Logger` + `redactSensitiveFields`, `readSecret`/`readMultilineSecret`, the read-only `installAuth` permissions pattern, and the app-factory/serve split) as the staging ground for a future shared `@fro.bot/runtime` package. Its `fro-bot.yaml` pins agent **v0.64.0** — a minor ahead of this page's last-surveyed v0.63.0.
 
@@ -521,6 +553,7 @@ Root `package.json` (`@fro-bot/agent-workspace`) holds external action/dev deps;
 
 | Date       | SHA        | Key changes                                          |
 | ---------- | ---------- | ---------------------------------------------------- |
+| 2026-07-21 | `9a4631f`  | Re-survey at v0.94.0 (v0.83.1 → v0.94.0, 11 minors + patches in ~2 weeks): **no structural change** — 3 pkgs / 2 apps / 11 workflows / 19 RFCs / Bun cutover all durable. Feature+hardening wave on the release/review pipelines plus a harness rebase. **(1) Release-notes narration → two-phase credential boundary** (v0.93.0, #1239): read-only generation job (bounded evidence ≤25 PRs/≤5 diffs → artifact candidate) + apply job carrying write authority via `FRO_BOT_PAT`; fail-closed validator hardened (code-span exemption #1241, short-paragraph compose #1243). **(2) `review-skip-label` opt-out input** (#1234, default `skip-agent-review`, routing-time, mention/`review_requested` overrides via sender-substituted association #1238). **(3) Harness rebased 1.17.14 → 1.17.20 → 1.18.4** (#1222/#1254); merge model → `claude-sonnet-5`; 12 carries (churned, #1220 retired superseded, +#36045/#36361); runtime constant + Dockerfile ARG synced post-publish (#1256). Reliability: quota fail-fast (#1227), centralized error format (#1226), run-state retention tag (#1225), PR-release concurrency isolation (#1223), legacy schedule-session scaffolding removed (#1237). Deps: **systematic v2→v3** (#1250, 3.2.2), **@hono/node-server v1→v2** (#1249), @opencode-ai/sdk 1.17.20, aws-sdk 3.1085.0, eslint 10.7.0, prettier 3.9.5, tsdown 0.22.7, semantic-release 25.0.7 (+`@semantic-release/npm`), vite override 8.1.4. Doc surface: `RFCs/` dir extracted, root `CHANGELOG.md`, `docs/privacy/`, `.agents/skills/versioned-tool`. Stars 2→3; open issues flat at 6. |
 | 2026-07-07 | `8ee84bb`  | Re-survey at v0.83.1 (v0.76.1 → v0.83.1, 7 minors + patches in ~12 days): three arcs. **(1) Credential-broker consumer landed** — new `harness-integrate.yaml` `workflow_call` (v0.80.0, #1081, closes #1060) mints an OIDC credential against `broker.fro.bot` in a single `id-token: write` job and injects it as `auth-json`; durable secret scrubbed from env (#1080), integrate egress hardened (#1108), `github-token` masked/scrubbed from agent child env (#1119, closes #1107). **(2) Operator web surface reached wiring parity** — #1001/#1000 closed: launch route mounted (`POST /operator/runs`, #1030), approval routes + image-level registration smoke (#1031), run-index (`GET /operator/runs`, #1038), `contractVersion` on health (#1096), operator-initiated run cancellation (#1111), sanitized failure reasons (#1113), lost-event vs hang timeout detection (#1116). **(3) Docs + runtime restructure** — `RULES.md` retired for `ARCHITECTURE.md`/`STRUCTURE.md`/`CONTRIBUTING.md` (#1075/#1076), PRD/FEATURES archived to `docs/product/` (#1071), `generating-project-docs` skill (#1073); `packages/runtime/src/` consolidated into `agent/`+`coordination/`+`object-store/`+`session/`+`shared/` (object-store code now concretely in runtime). OpenCode rebased harness 1.17.9 → 1.17.11 (#1045) → 1.17.13 (#1086) → 1.17.14; **10 integration refs** (was 5). Deps: systematic 2.32.0 → 2.33.1, `@opencode-ai/sdk` 1.17.13, `@aws-sdk/client-s3` 3.1078.0, hono 4.12.27, `@actions/cache` 6.1.0, eslint 10.6.0, prettier 3.9.4, vite override 8.1.2. Open issues 9 → **6** (wiring gaps + #907 closed); 3 open PRs (pending release #1138 + two Renovate). |
 | 2026-06-24 | `20e9f34`  | Re-survey at v0.76.1 (v0.63.0 → v0.76.1, 13 minors + patches in 9 days): two structural shifts. **(1) pnpm → Bun migration** — `packageManager: bun@1.3.14`, `bun.lock` + `bunfig.toml`, `bun run --filter` scripts, `bunx` git hooks, `trustedDependencies`; `pnpm-lock.yaml`/`pnpm-workspace.yaml` removed; `overrides` moved back to root `package.json`; harness native build now Bun-based (`HARNESS_BUN_VERSION`). **(2) Gateway operator web surface** ("web-command spine", #907) — new `web/`, `operator-contract/`, `redaction/` dirs; operator GitHub OAuth + sessions (#936/#944/#939), authenticated SSE run status+output streaming (#961/#962/#974), web launch surface (#968), web tool-approval flow (#986), frozen+pinned operator API contract (#952/#996), `metadata/repos.yaml` redaction gate on operator surfaces (#955). OpenCode rebased harness `1.17.6` → `1.17.9` (#984, 5 carried refs, SQLite reliability); carries squashed into one fingerprint commit (#982); SBOM + deterministic-notice build hardening (#978), dist license/unicode pipeline decoupled from bundler (#991/#988, v0.76.1). Deps: systematic 2.31.0 → 2.32.0, hono 4.12.26, tsdown 0.22.3, `@aws-sdk/client-s3` 3.1071.0, `@opencode-ai/sdk` 1.17.9, eslint 10.5.0. Open issues 6 → 9 (new web-surface wiring gaps #1001/#1000, Bun deploy hardening #1003); 1 open PR (pending release #1007). |
 | 2026-06-14 | `a23ae97`  | Re-survey at v0.63.0 (v0.53.1 → v0.63.0, 10 minors): **Harness-as-default-OpenCode cutover** (v0.63.0, #888/#884/#874/#889) — `@fro.bot/harness` now publishes its own **GitHub Releases** under non-`v` tags (`1.17.3+harness.94c10df9`), and both the action and the workspace executor run the harness build by default; `DEFAULT_OPENCODE_VERSION` is now a harness build id (stock OpenCode = `FALLBACK_VERSION`); musl Linux assets added (#887). OpenCode base rebased 1.15.13 → **1.16.0** (#786) → **1.17.3** (#867) → SDK **1.17.6**; integration refs grew to 3 (#19961/#31859/#31638). Harness integrate merge now runs through the Fro Bot workflow (#779), skipped when no patches carried (#788); post-bridge hardening (#873, closes #775). **Release-notes narration** (v0.56.0, #818) — published releases narrated by the agent via `fro-bot.yaml` `workflow_call`. Gateway: serial per-channel mention queue (#850), `/fro-bot force-release-lock` (#854), live status/typing (#843), `daily_digest` presence (#826), fail-soft io helpers (#858). Cold-boot hardened further (v0.54.0, #767/#761). Deps: pnpm 10.33.4 → **11.5.3**, systematic 2.24.0 → 2.31.0, OMO Slim 1.1.1 → 1.1.2, effect 3.21.3, tsdown 0.22.2, semantic-release 25.0.5, `@aws-sdk/client-s3` 3.1066.0, vite 8.0.16. 0 open PRs; 6 open issues. |

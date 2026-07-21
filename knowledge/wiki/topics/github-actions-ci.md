@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-07-05
+updated: 2026-07-21
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - fro-bot--agent
@@ -102,7 +102,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 
 | Repo                          | Fro Bot Workflow         | Schedule                          |
 | ----------------------------- | ------------------------ | --------------------------------- |
-| [[fro-bot--agent]]            | Present (`fro-bot.yaml`, self-hosted) | Daily 15:30 UTC DMR, Weekly Sun 20:00 UTC wiki update |
+| [[fro-bot--agent]]            | Present (`fro-bot.yaml`, self-hosted; agent v0.94.0 as of 2026-07-21). As of v0.93.0 the workflow carries a two-job release-notes path (read-only generation + `FRO_BOT_PAT` apply) and a `review-skip-label` opt-out for automatic PR reviews. | Daily 15:30 UTC DMR, Weekly Sun 20:00 UTC wiki update |
 | [[fro-bot--dashboard]]        | Present (single-file three-mode `fro-bot.yaml`, self-hosted at agent **v0.77.0** as of 2026-06-26 — ecosystem version leader) | Daily `0 0 * * *` (midnight UTC) oversight + autohealing; modes review/triage/schedule + dispatch; checkout pins to default ref (never PR-head) to protect `FRO_BOT_PAT` |
 | [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`, agent v0.55.0) | Daily 14:30 UTC autohealing       |
 | [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
@@ -119,6 +119,15 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 The containers repo's Fro Bot workflow includes domain-specific PR review prompts (Dockerfile best practices, multi-arch correctness) and a structured autohealing schedule (errored PRs, security alerts, dependency bumps, linting consistency).
 
 The systematic repo's Fro Bot workflow includes TypeScript/Bun/Biome-specific PR review prompts (type safety, ESM conventions, zero-class convention, plugin API breaking changes, system prompt injection security). Its autoheal covers 4 categories: errored PRs, security, health & maintenance, developer experience.
+
+### Two-Phase Read-Only Generation + Credential-Boundary Apply
+
+[[fro-bot--agent]] v0.93.0 (#1239) established a reusable CI pattern for **LLM steps that consume untrusted input** (PR bodies, diffs) yet must ultimately mutate a protected resource: split the work across two jobs with a hard credential boundary.
+
+- **Generation job** runs on the workflow `GITHUB_TOKEN` scoped to the minimum read set (`contents: read`, `pull-requests: read`), gathers **bounded** evidence (agent caps: ≤25 PRs, per-PR body truncation, ≤5 diffs), and writes its output to the **job artifact store** — not the target resource. Because the token is read-only, this phase *structurally cannot* edit, comment, or mutate regardless of what injected instructions the untrusted content carries.
+- **Apply job** downloads the artifact candidate and performs the mutation; the write authority is carried by a **distinct credential** (`FRO_BOT_PAT`), never the read-only `GITHUB_TOKEN`. A **fail-closed validator** runs on the candidate before apply (rejects forged idempotency markers / `<details>` tags, control chars, oversized/empty bodies, missing links), with a `stripCodeSpans()` pre-pass so a candidate legitimately *describing* a marker (in code quotes) is not falsely rejected while broken markup still trips the guard.
+
+This is the release-notes-narration path, but the shape generalizes to any "read untrusted → decide → write privileged" CI flow. It is the CI-job-level analogue of the `harness-integrate` broker containment (untrusted merge runs under a read-only / minted credential; write authority is granted only to a separate, policy-pinned job).
 
 ### Convention Enforcement via Tests
 

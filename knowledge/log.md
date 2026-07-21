@@ -2977,30 +2977,30 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-07-21 07:49] ingest | repo:marcusrbrown/mothership
+## [2026-07-21 00:00] ingest | repo:fro-bot/agent
 
-Re-survey of `marcusrbrown/mothership` at HEAD `e7e305f` (was `48bd14a` at the 2026-07-06 initial survey). Additive update of the existing repo page; no prior record overwritten.
+Re-surveyed `fro-bot/agent` at HEAD `9a4631f` (latest release **v0.94.0**, 2026-07-21; prior survey v0.83.1 @ `8ee84bb`, 2026-07-07). The v0.84→v0.94 wave (11 minors + patches in ~2 weeks) is **feature-and-hardening on the release/review pipelines plus a harness rebase — no structural change.** Layout durable: 3 packages (`runtime`, `gateway`, `harness`) + 2 apps (`action`, `workspace-agent`), 11 workflows, 19 RFCs, four-layer source hierarchy, Bun 1.3.14 cutover.
 
-**Headline: in ~2 weeks the repo went from a 2-workflow tracer to a full v0.1 release-engineering platform.** Nearly every 2026-07-06 "Open Thread" resolved.
+Durable findings ingested:
 
-Key changes since 2026-07-06:
+- **Release-notes narration re-architected into two phases with a hard credential boundary** (v0.93.0, #1239): a read-only **generation** job (`contents: read`/`pull-requests: read`, bounded evidence ≤25 PRs / ≤5 diffs → `release-notes-candidate-*` artifact) and an **apply** job (`gh release edit` authority carried by `FRO_BOT_PAT`, not `GITHUB_TOKEN`). Read-only generation structurally cannot mutate regardless of hostile PR content — prompt-injection containment. Fail-closed candidate validator hardened in v0.93.1 (`stripCodeSpans()` code-span exemption #1241, short-paragraph compose #1243).
+- **`review-skip-label` action input** (v0.93.0, #1234; default `skip-agent-review`, case-insensitive, empty disables) — routing-time PR-review opt-out from the trusted webhook payload, with `@fro-bot`-mention / `review_requested` overrides scoped by sender-substituted association authority (#1238).
+- **Harness rebased 1.17.14 → 1.17.20 → 1.18.4** (#1222/v0.91.0, #1254/v0.94.0); merge model `claude-sonnet-4-6` → **`claude-sonnet-5`**; 12 integration refs after mid-window churn (#1220 retired superseded refs; +#36045/#36361). Runtime `DEFAULT_OPENCODE_VERSION` constant + workspace Dockerfile `ARG` synced post-publish (#1256).
+- **Reliability/runtime**: quota-exhaustion fail-fast (#1227), centralized agent error formatting (#1226), run-state retention tagging (#1225), PR-release validation concurrency isolation (#1223), legacy schedule-session force-expiry scaffolding removed (#1237).
+- **Deps**: `@fro.bot/systematic` **v2 → v3 major** (3.2.2, #1250 / #1217); `@hono/node-server` **v1 → v2 major** (2.0.9, #1249); `@opencode-ai/sdk` 1.17.20; `@aws-sdk/client-s3` 3.1085.0; eslint 10.7.0; prettier 3.9.5; tsdown 0.22.7; semantic-release 25.0.7 (+`@semantic-release/npm` plugin); vite override 8.1.4.
+- **Doc surface**: RFC bodies extracted into a top-level `RFCs/` directory (19 files) alongside the `RFCS.md` index; new root `CHANGELOG.md` (PRD/requirements changelog); new `docs/privacy/operator-push-retention.md`; new `.agents/skills/versioned-tool` skill.
+- Stars 2 → **3**; open issues flat at **6**; open PRs ~6 (Renovate + standing pending-release).
 
-- **Workflows 2 → 8.** Added `release.yaml` (signed/notarized macOS pipeline — the only workflow touching Apple signing / updater keys; secrets isolated to a `sign-and-notarize` job behind a protected `release` environment; pre-secrets Checks-API required-check preflight over six contexts; resolves `refs/tags/<tag>` SHA explicitly rather than trusting the dispatch ref; multiple bogus-`main`-tag guards; serial `group: release` concurrency), `version.yml` (Changesets "Version Packages" PR), `renovate.yaml` (calls `bfra-me/.github` shared workflow `@v4.16.37`), `codeql.yaml` (`javascript-typescript` + `actions`; Rust deferred pending a macOS lane), `scorecard.yaml`, `dependency-review.yaml`. `ci.yaml` gained a **Release Config Smoke** gate (no-secrets release-policy + Tauri-config + entitlements-separation checks).
-- **Release-preparedness epic (R1–R18) largely landed:** new root docs `ARCHITECTURE.md` (renderer-for-the-bus thesis + per-invariant enforcement + mermaid topology), `STRUCTURE.md`, `CHANGELOG.md`; `.changeset/`; `CODEOWNERS` (`@marcusrbrown` owns release-critical paths); `.github/rulesets/v0-1-release-tags.json` (protects `v*.*.*` tags); `docs/release/` runbooks (signing-key-custody, v0-1 checklist/runbook/rollback/post-release-smoke); release/version scripts (`release-policy`, `verify-/apply-release-settings`, `sync-version`, `validate-updater-manifest`, each with `.test.ts`).
-- **Renovate onboarded** — `renovate.json5` extends `marcusrbrown/renovate-config#5.2.4`, carries the same `skipArtifactsUpdate` + `postUpgradeTasks: bun install` bun.lock workaround space-bus uses, disables the phantom `--yes impeccable` dep the shared preset mis-parses.
-- **Dependency shifts:** `@fro.bot/space-bus` 0.7.0 → **0.14.0** (+ now consumes `/attach` `resolveManagedServer`); `tauri-plugin-opener` → `@tauri-apps/plugin-opener`; Fro Bot agent `v0.83.1` → **`v0.93.1`**.
-- Open issues 1 → 6; watchers 0 → 1. Still **no Probot Settings** (script-driven repo settings instead of `common-settings.yaml` inheritance); **Rust CodeQL deferred** (Tauri system libs unavailable on `ubuntu-latest`) — same constraint the daily autoheal prompt already encodes. Fro Bot workflow was already present at 2026-07-06, so no onboarding follow-up draft PR is warranted.
+Fro Bot workflow: **present and self-hosted** (`fro-bot.yaml`, `uses: ./`); no follow-up draft PR needed.
 
-Cross-reference: added a dated additive note to [[fro-bot--space-bus]] (First Consumer section + ecosystem bullet + index entry) recording mothership's 0.7.0 → 0.14.0 pin advance and new `/attach` usage; left that page's own published-`latest` version to be re-verified on its next survey.
+Touched pages: `knowledge/wiki/repos/fro-bot--agent.md` (frontmatter source SHA + `updated` + 3 new tags; Overview version/date/deps/issues/stars; new "Release-Notes Narration" and "PR Review Opt-Out Label" sections; harness config + Renovate constants + Dependency Highlights refreshed; 2026-07-21 Ecosystem-Role update note; Documentation Artifacts + Survey History rows); `knowledge/wiki/topics/github-actions-ci.md` (new "Two-Phase Read-Only Generation + Credential-Boundary Apply" pattern; agent-row + frontmatter `updated`); `knowledge/index.md` (repo + topic entries refreshed); `knowledge/log.md`.
 
-Touched pages: `knowledge/wiki/repos/marcusrbrown--mothership.md` (frontmatter: new 2026-07-21 source SHA, `updated`, release-engineering tags; refreshed Overview/tech-stack/structure; rewritten CI/CD section incl. release-pipeline subsection; agent version bump; Resolved/Still-open threads split; new survey-history row); `knowledge/wiki/repos/fro-bot--space-bus.md` (additive consumer-pin note); `knowledge/index.md` (mothership + space-bus entries); `knowledge/log.md`.
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/RFC/changelog files + the public releases page; additive updates only (prior records preserved, deps deltas noted against v0.83.1); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; wikilinks point to existing pages ([[marcusrbrown--systematic]], [[marcusrbrown--infra]], [[fro-bot--dashboard]]). Repo re-confirmed **public** before any write. `gh` CLI had no token in this runner; facts gathered via unauthenticated git (`ls-remote`, blobless clone into an allow-listed temp dir) + one public releases-page fetch — non-mutating reads only. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR.
 
-Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/doc files; additive updates only (both 2026-07-06 and 2026-07-21 states preserved side by side); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; wikilinks point to existing pages. Repo re-confirmed **public** (`visibility: public`, `private: false`) before any wiki write. `gh` CLI had no token in this working-dir runner; the public GitHub REST API was read unauthenticated (non-mutating reads only). No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR.
+Sources: https://github.com/fro-bot/agent (SHA 9a4631f81a3d73d06bb18098e468b0cae52906b3)
 
-Sources: https://github.com/marcusrbrown/mothership (SHA e7e305f1efa18017a50789e447b2d440803be296)
+## [2026-07-21 07:53] ingest | repo:fro-bot/agent
 
-## [2026-07-21 07:50] ingest | repo:marcusrbrown/mothership
+Surveyed fro-bot/agent and updated the control-plane wiki.
 
-Surveyed marcusrbrown/mothership and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/mothership
+Sources: https://github.com/fro-bot/agent
