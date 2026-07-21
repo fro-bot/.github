@@ -391,12 +391,12 @@ repos:
     name: mothership
     added: 2026-07-06
     onboarding_status: onboarded
-    last_survey_at: 2026-07-06
+    last_survey_at: 2026-07-21
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-08-07
+    next_survey_eligible_at: 2026-08-22
     private: false
     node_id: R_kgDOTOX0_A
     database_id: 1290138876
