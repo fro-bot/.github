@@ -2899,3 +2899,108 @@ Sources: https://github.com/fro-bot/space-bus (SHA 8e20e01775918a01855eb5aba64d0
 Surveyed fro-bot/space-bus and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/space-bus
+
+## [2026-07-18 07:18] ingest | marcusrbrown/tokentoilet
+
+Re-survey of `marcusrbrown/tokentoilet` (HEAD `8d7648c`, up from `c6e10e0` on 2026-07-03). Public repo, untrusted-input handling; reads limited to directory listings, README/manifest/workflow/CHANGELOG/`.env.example` files at HEAD. Tenth survey of this repo.
+
+**Headline delta — performance/bundle cycle.** Where 2026-07-03 made token discovery *correct*, this cycle makes the app shell *lighter*. A **Dynamic Loading Infrastructure** (`CHANGELOG.md` Unreleased, #641–#646) code-splits the Web3 component tree behind `next/dynamic`: 10+ dynamic wrappers with Suspense boundaries, 7 skeleton loaders, an error boundary that retries chunk loads `1s→2s→4s→8s` (capped), and import-performance telemetry. Targets a 50–100 KB (10–18%) initial-bundle reduction, but the CHANGELOG marks it **staged**: "infrastructure complete, awaiting feature-page implementation" — the machinery exists before the payoff lands on the main route. New deps track this work: `@tanstack/react-virtual` (^3.13.12, token-list virtualization), `lru-cache` (^11.2.4), `std-env`.
+
+**Lint debt retired.** The setState-in-effect and ref-naming warnings that stood on `main` across prior surveys were fixed by the hooks best-practices refactor (#619–#622); Fast Refresh compliance extracted variant/util exports out of component files (#601–#605), eliminating all 7 Fast Refresh warnings — APIs 100% backwards compatible.
+
+**Dependency churn:** Fro Bot agent v0.82.0 → v0.93.1 (~11 releases, SHA `a4976f4`), pnpm 11.9.0 → 11.11.0, Next.js 16.2.9 → 16.2.10, Renovate preset #5.2.4 → #5.2.7, viem 2.54.1 → 2.55.2, Storybook core 10.4.6 → 10.5.0 (alpha addons still 9.0.0-alpha.*, fourth consecutive cycle), eslint → 10.7.0, vite → 8.1.4, vitest → 4.1.10, prettier → 3.9.5, bfra-me/.github v4.16.33 → v4.16.37. Roadmap unchanged: smart contracts, NFT receipts, charity routing, token fountain, mainnet/multi-chain all still deferred; Sepolia-only lock holds. Fro Bot workflow present (no onboarding follow-up needed).
+
+**Survey caveat:** the unauthenticated GitHub API hit its 60/hr rate limit on the shared Actions runner IP before repo/issue/PR metadata could be fetched. Durable structural findings sourced from `git ls-remote` + raw file reads (package.json, workflows, CHANGELOG, `.env.example`) at HEAD. Open-issue/PR counts from 2026-07-03 (#1171, #1189, #995, #1013) carried forward unconfirmed and flagged as such in the page.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--tokentoilet.md` (frontmatter source/`updated`/tags, Overview, Tech Stack, new "Performance & Bundle Work (2026-07-18)" section, Fro Bot pin, Renovate preset, Probot bfra-me pin, Shared Ecosystem table, lint-warnings observation update, new Notable Deltas (2026-07-18) section, survey-history row); `knowledge/wiki/topics/web3-defi.md` (new source SHA + tag, new "Bundle Optimization: Code-Splitting the Web3 Tree" section); `knowledge/index.md` (tokentoilet entry refreshed); `knowledge/log.md`. No entity/comparison pages warranted.
+
+Constraints honored: target treated as untrusted input; additive updates only (all prior survey records preserved and dated, no contradictions to reconcile — steady evolution); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. `gh` CLI was unauthenticated in this dispatch context; public data read via `git ls-remote` and unauthenticated `raw.githubusercontent.com` — repo confirmed public, no private surface touched. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 8d7648c7e0e57fafbb13778689ae1b7bacbe72d0)
+
+## [2026-07-18 07:19] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-07-19 07:38] ingest | bfra-me/works
+
+Sixth survey of `bfra-me/works` (HEAD `cf8689a`, 2026-07-19; prior `b00229c`, 2026-07-05). Updated repo page `bfra-me--works.md`, `index.md`, and this log. No new topic/entity/comparison pages warranted — no cross-cutting pattern crossed a second-repo threshold this cycle.
+
+**Headline: no structural change.** 13 workflow files (11 + `fro-bot.yaml` + the `fro-bot-dispatch-examples.md` doc), 9 published packages + docs site, root layout, `pnpm-workspace.yaml` config (allowBuilds/overrides), Probot settings, branch protection, and AGENTS.md conventions all confirmed durable. The Fro Bot mode-resolution inline shell is byte-stable. This is a steady-state maintenance window, not a restructure.
+
+**Toolchain + pin drift (all automerged):**
+- `fro-bot/agent` v0.83.0 → **v0.93.1** (SHA `a4976f4`; 10-minor drift over 14 days) — still fleet pin leader, now tied with `marcusrbrown/tokentoilet` (also v0.93.1).
+- pnpm 11.9.0 → **11.13.1** (`packageManager` in root; HEAD commit `cf8689a` is the pnpm 11.12.0 bump #3940, manifest already at 11.13.1). Node 24.18.0 unchanged.
+- `bfra-me/.github` reusable renovate workflow + `internal.json5` baseline v4.16.33 → **v4.16.37**; `update-repo-settings.yaml` still pinned v4.16.0.
+
+**Contradiction resolved (publish drought):** The prior survey flagged Changesets publish PR **#3854** as the "first staged publish, watch whether it merges." It resolves to a **non-event** — #3854 was closed **unmerged** on 2026-07-05, the same day it opened. A fresh publish PR **#3972** (`chore(🦋📦): publish packages`) opened 2026-07-19. All nine published package versions remain byte-identical to the 2026-05-16 baseline (sixth consecutive survey); the npm publish drought is now **~9 weeks** and is confirmed a review-gate artifact, not a tooling failure — the pipeline restages the changeset each cycle but the human merge never lands.
+
+**Backlog: still accreting (11 → 12 open PRs).** Every stale/duplicate autoheal PR flagged 2026-07-05 remains open and unmerged: #3620/#3724 (docs duplicates), #3704/#3713 (esbuild duplicates), #3508 (~7 weeks), #3619, #3762, #3803. No new remediation PRs this window; instead the agent emitted docs-only PR **#3973** (`docs: refresh agent workflow notes`, touches only `AGENTS.md`) — a third live variant of the AGENTS-package-count churn class alongside the two frozen copies. The `AUTOHEAL_PROMPT` dedup guard still isn't reconciling against its own unmerged stale PRs; the review pipeline is the bottleneck across three consecutive surveys.
+
+**Pending v1 (#3691): now dead.** Renovate PR #3691 (`update fro-bot/agent to v1`, v0.62.0 → v1.18.0) is **still untouched since 2026-06-14** (~5 weeks). The live pin has climbed to v0.93.1, leaving #3691 ~31 minors behind the branch it targets and un-refreshed against the current v1.x tag. It should be closed and re-opened against a fresher v1.x rather than merged as-is.
+
+Open issues flat at 38 (fourth survey), open PRs 11 → 12, stars 4. `fro-bot.yaml` present and active — no onboarding follow-up needed.
+
+Touched pages: `knowledge/wiki/repos/bfra-me--works.md` (frontmatter source SHA + `updated`; Identity block push-date/PRs/publish/pnpm; workspace allowBuilds note; Fro Bot pin + #3691 staleness; renovate.yaml + baseline refs; cross-repo bfra-me--github/fro-bot--agent; Open Questions backlog + publish contradiction; new survey-history row); `knowledge/index.md` (works entry refreshed); `knowledge/log.md`.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow files, and issue/PR metadata; additive updates only (all prior survey records preserved and dated; publish-PR contradiction noted with both versions rather than overwritten); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Repo re-confirmed **public** (`visibility: public`) before any wiki write — no private surface touched. `gh` authenticated via the runner's git extraheader token. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary.
+
+Sources: https://github.com/bfra-me/works (SHA cf8689aea25a7402c24f9292669f10265d15c739)
+
+## [2026-07-19 07:43] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/works
+
+## [2026-07-20 08:22] ingest | marcusrbrown/marcusrbrown.github.io
+
+Survey dispatched against the *name* `marcusrbrown/marcusrbrown.github.io` (wiki slug `marcusrbrown--marcusrbrown-github-io`). **Headline: the name-to-repo binding this page warned about (2026-07-13 header) is now empirically confirmed.** The GitHub name no longer resolves to the brand site it was created to document; it resolves to repo **id `1174807412`** (created 2026-03-06, homepage `mrbro.dev`, description "My portfolio.") — the **mrbro.dev developer portfolio**, whose canonical page is [[marcusrbrown--mrbro-dev]]. The former brand-site content (repo id `1021912280`) was renamed to `marcusrbrown/marcusrbrown.com` and is documented at [[marcusrbrown--marcusrbrown-com]].
+
+Current occupant snapshot at HEAD `4bdbf32` (`feat(opencode): add Impeccable edit feedback (#208)`, 2026-07-19): React 19, TypeScript **5.9.3** (not the brand site's TS 6), Vite 7.3.6, Vitest 4.1.10, Playwright 1.61.1, React Router v7, prerendered blog + RSS (`feed`/`shiki`/`unified` chain, `blog-refresh.yaml`), visual-regression + accessibility + performance test tiers (`e2e-tests.yaml`, `performance.yaml`, `lhci` mobile/desktop), `.impeccable/` design gate with `DESIGN.md`/`PRODUCT.md`. 8 workflows. Split-brain security overrides across `pnpm-workspace.yaml` (~20 GHSA-annotated) + `package.json` `pnpm.overrides`. pnpm 10.33.4, Node >=22.6.0, MIT (no LICENSE file; API license null).
+
+**Fro Bot workflow present and active** — `fro-bot/agent@a4976f4 # v0.93.1`, single-file three-mode (review/maintenance/autoheal), crons `30 3` autoheal / `30 15` maintenance UTC, adds a `discussion_comment` trigger; review prompt scoped to "mrbro.dev." No onboarding follow-up draft PR warranted. Renovate extends `marcusrbrown/renovate-config#5.2.7` + `group:allNonMajor`. Open issues 4 (#204 preview-image bug, #162 autoheal report, #13 maintenance report, #1 Dependency Dashboard); stars 1.
+
+**Additive-only, contradiction preserved:** the prior 2026-04-25 → 2026-06-23 survey history (brand site, repo id `1021912280`) is untouched and re-dated as the historical record of what the name pointed to before the rename. Added a Delta Log (2026-07-20) and a survey-history row noting the flip; live mrbro.dev state defers to [[marcusrbrown--mrbro-dev]] to avoid duplicating that page's ongoing survey record.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter source SHA + `updated` + collision tags; new Delta Log 2026-07-20; survey-history row); `knowledge/index.md` (entry rewritten to flag superseded/name-collision status and point to canonical pages); `knowledge/log.md`.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow files, and issue/PR metadata; additive updates only (no prior record overwritten; the name-rebind recorded as a dated contradiction with both bindings preserved); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; wikilinks point to existing pages ([[marcusrbrown--mrbro-dev]], [[marcusrbrown--marcusrbrown-com]]). Repo re-confirmed **public** (`visibility: public`) before any wiki write. `gh` CLI had no token in this runner; the public GitHub REST API was read unauthenticated (non-mutating reads only) to gather facts. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 4bdbf32227cd06c4b2517cb7322fae55136c934f)
+
+## [2026-07-20 08:24] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-07-21 00:00] ingest | repo:fro-bot/agent
+
+Re-surveyed `fro-bot/agent` at HEAD `9a4631f` (latest release **v0.94.0**, 2026-07-21; prior survey v0.83.1 @ `8ee84bb`, 2026-07-07). The v0.84→v0.94 wave (11 minors + patches in ~2 weeks) is **feature-and-hardening on the release/review pipelines plus a harness rebase — no structural change.** Layout durable: 3 packages (`runtime`, `gateway`, `harness`) + 2 apps (`action`, `workspace-agent`), 11 workflows, 19 RFCs, four-layer source hierarchy, Bun 1.3.14 cutover.
+
+Durable findings ingested:
+
+- **Release-notes narration re-architected into two phases with a hard credential boundary** (v0.93.0, #1239): a read-only **generation** job (`contents: read`/`pull-requests: read`, bounded evidence ≤25 PRs / ≤5 diffs → `release-notes-candidate-*` artifact) and an **apply** job (`gh release edit` authority carried by `FRO_BOT_PAT`, not `GITHUB_TOKEN`). Read-only generation structurally cannot mutate regardless of hostile PR content — prompt-injection containment. Fail-closed candidate validator hardened in v0.93.1 (`stripCodeSpans()` code-span exemption #1241, short-paragraph compose #1243).
+- **`review-skip-label` action input** (v0.93.0, #1234; default `skip-agent-review`, case-insensitive, empty disables) — routing-time PR-review opt-out from the trusted webhook payload, with `@fro-bot`-mention / `review_requested` overrides scoped by sender-substituted association authority (#1238).
+- **Harness rebased 1.17.14 → 1.17.20 → 1.18.4** (#1222/v0.91.0, #1254/v0.94.0); merge model `claude-sonnet-4-6` → **`claude-sonnet-5`**; 12 integration refs after mid-window churn (#1220 retired superseded refs; +#36045/#36361). Runtime `DEFAULT_OPENCODE_VERSION` constant + workspace Dockerfile `ARG` synced post-publish (#1256).
+- **Reliability/runtime**: quota-exhaustion fail-fast (#1227), centralized agent error formatting (#1226), run-state retention tagging (#1225), PR-release validation concurrency isolation (#1223), legacy schedule-session force-expiry scaffolding removed (#1237).
+- **Deps**: `@fro.bot/systematic` **v2 → v3 major** (3.2.2, #1250 / #1217); `@hono/node-server` **v1 → v2 major** (2.0.9, #1249); `@opencode-ai/sdk` 1.17.20; `@aws-sdk/client-s3` 3.1085.0; eslint 10.7.0; prettier 3.9.5; tsdown 0.22.7; semantic-release 25.0.7 (+`@semantic-release/npm` plugin); vite override 8.1.4.
+- **Doc surface**: RFC bodies extracted into a top-level `RFCs/` directory (19 files) alongside the `RFCS.md` index; new root `CHANGELOG.md` (PRD/requirements changelog); new `docs/privacy/operator-push-retention.md`; new `.agents/skills/versioned-tool` skill.
+- Stars 2 → **3**; open issues flat at **6**; open PRs ~6 (Renovate + standing pending-release).
+
+Fro Bot workflow: **present and self-hosted** (`fro-bot.yaml`, `uses: ./`); no follow-up draft PR needed.
+
+Touched pages: `knowledge/wiki/repos/fro-bot--agent.md` (frontmatter source SHA + `updated` + 3 new tags; Overview version/date/deps/issues/stars; new "Release-Notes Narration" and "PR Review Opt-Out Label" sections; harness config + Renovate constants + Dependency Highlights refreshed; 2026-07-21 Ecosystem-Role update note; Documentation Artifacts + Survey History rows); `knowledge/wiki/topics/github-actions-ci.md` (new "Two-Phase Read-Only Generation + Credential-Boundary Apply" pattern; agent-row + frontmatter `updated`); `knowledge/index.md` (repo + topic entries refreshed); `knowledge/log.md`.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/RFC/changelog files + the public releases page; additive updates only (prior records preserved, deps deltas noted against v0.83.1); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; wikilinks point to existing pages ([[marcusrbrown--systematic]], [[marcusrbrown--infra]], [[fro-bot--dashboard]]). Repo re-confirmed **public** before any write. `gh` CLI had no token in this runner; facts gathered via unauthenticated git (`ls-remote`, blobless clone into an allow-listed temp dir) + one public releases-page fetch — non-mutating reads only. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR.
+
+Sources: https://github.com/fro-bot/agent (SHA 9a4631f81a3d73d06bb18098e468b0cae52906b3)
+
+## [2026-07-21 07:53] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent

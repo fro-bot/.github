@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/renovate-action
 created: 2026-05-20
-updated: 2026-07-03
+updated: 2026-07-18
 sources:
   - url: https://github.com/bfra-me/renovate-action
     sha: bc9c45917d3f7b33962d3ba44b11d58d9f6c2647
@@ -16,6 +16,9 @@ sources:
   - url: https://github.com/bfra-me/renovate-action
     sha: 5ad371e079f747400f6ffdd13d0a20d06319a59f
     accessed: 2026-07-03
+  - url: https://github.com/bfra-me/renovate-action
+    sha: 318e0292303b530092c06861b6adb33c295df720
+    accessed: 2026-07-18
 tags: [renovate, github-action, composite, self-hosted, docker, typescript, semantic-release, bfra-me]
 related:
   - bfra-me--ha-addon-repository
@@ -45,10 +48,11 @@ This is the **execution surface** for the bfra-me dependency-update policy that 
 - **Primary language:** Shell (action logic) + TypeScript (scaffold + tooling)
 - **Topics:** `composite`, `github-action`, `github-actions`, `renovate`, `nodejs`, `typescript`, `action`, `self-hosted`
 - **Created:** 2023-09-22
-- **Last push:** 2026-07-03 (was 2026-06-21, 2026-06-11, 2026-05-20 at prior surveys)
-- **Latest release:** `9.133.0` (2026-07-03; was `9.123.0` on 2026-06-21, `9.113.0` on 2026-06-11, `9.90.0` on 2026-05-20 — 10 minor releases in 12 days, same Renovate self-bump cadence through semantic-release)
-- **Stars / Forks / Watchers:** 3 / 1 / 3 (watchers 1 → 3; stars steady at 3)
-- **Open issues:** 66 (was 61, 62; long-lived autoheal / Renovate dependency dashboard noise, trending up)
+- **Last push:** 2026-07-18 (was 2026-07-03, 2026-06-21, 2026-06-11, 2026-05-20 at prior surveys)
+- **Latest release:** `9.147.0` (2026-07-18; was `9.133.0` on 2026-07-03, `9.123.0` on 2026-06-21, `9.113.0` on 2026-06-11, `9.90.0` on 2026-05-20 — 14 minor releases in 15 days, same Renovate self-bump cadence through semantic-release)
+- **Stars / Forks / Watchers:** 3 / 1 / 3 (steady)
+- **Open issues:** 64 (was 66, 61, 62; long-lived autoheal / Renovate dependency dashboard noise, oscillating in the low-to-mid 60s)
+- **Template repository:** created from `bfra-me/github-action` (bfra-me's TypeScript GitHub Action template) — confirmed via API `template_repository` field 2026-07-18
 
 ## Layout
 
@@ -93,7 +97,7 @@ The TypeScript layer (`src/`, `dist/`) is **not** what consumers execute — `ac
 
 1. **`get-renovate-app`** — `actions/create-github-app-token@v3.2.0` mints a short-lived installation token from the consumer's `renovate-app-id` + `renovate-app-private-key`. Scoped to `github.repository_owner`.
 2. **`configure`** — Bash step (`bash -Eeuo pipefail`) that:
-   - Pins `RENOVATE_VERSION` (Renovate v43) with a `# renovate: datasource=docker depName=renovate packageName=ghcr.io/renovatebot/renovate versioning=semver` comment so Renovate self-bumps it. Pinned at `43.186.2` on 2026-05-20; `43.220.0` on 2026-06-11; `43.233.3` on 2026-06-21; `43.251.0` on 2026-07-03.
+   - Pins `RENOVATE_VERSION` (Renovate v43) with a `# renovate: datasource=docker depName=renovate packageName=ghcr.io/renovatebot/renovate versioning=semver` comment so Renovate self-bumps it. Pinned at `43.186.2` on 2026-05-20; `43.220.0` on 2026-06-11; `43.233.3` on 2026-06-21; `43.251.0` on 2026-07-03; `43.269.1` on 2026-07-18.
    - Builds the `renovate_git_author` identity from the GitHub App slug.
    - Defines `validate_json()` and `merge_global_config()` Bash functions that deep-merge the action's base config (`zzglobal_config` inline JSON) with the user-supplied `global-config` input.
    - **Security boundary:** `allowedCommands`, `platform`, `gitAuthor`, `gitIgnoredAuthors`, `cacheDir`, `repositoryCache` are protected. `allowedCommands` is restored from base after merge; the others emit warnings if the user tries to set them. Falls back to base config on any validation failure.
@@ -108,8 +112,8 @@ The TypeScript layer (`src/`, `dist/`) is **not** what consumers execute — `ac
 `bash -Eeuo pipefail`. Inside the container it:
 - Initializes `/tmp/renovate-analytics`.
 - Defines `record_docker_metric()` and `record_failure()` helpers that emit JSON metric files via inline Node.js (`fs.writeFileSync`).
-- Installs runtime tools (yq, Node, Bun, pnpm, Yarn) that Renovate's package managers may invoke.
-- Runs Renovate as the `ubuntu` user (the cache-prepare `chown` aligns ownership for read/write).
+- Installs runtime tools (yq, Node, Bun, pnpm, Yarn) that Renovate's package managers may invoke. Pinned tool versions at 2026-07-18: yq `v4.53.3`, Node `24.18.0`, Bun `bun-v1.3.6`, pnpm `11.13.0`, Yarn `4.17.1` — each carries its own `# renovate:` comment so the self-Renovate loop keeps them current independently of `RENOVATE_VERSION`.
+- Runs Renovate as the `ubuntu` user via `runuser -u ubuntu renovate` (the cache-prepare `chown -R ubuntu:ubuntu /tmp/renovate` aligns ownership for read/write).
 
 ### Key Inputs
 
@@ -150,7 +154,7 @@ Eight workflows under `.github/workflows/`, all using `.yaml` extension and SHA-
 
 ### `fro-bot.yaml` — Fro Bot agent integration
 
-- **Agent version:** `fro-bot/agent@v0.82.0` (SHA `77d6a464487f7654a1f37d40abf9cd12c1b23762`) as of 2026-07-03; was `v0.73.0` (SHA `df121025`) on 2026-06-21, `v0.60.0` (SHA `f2f3c08f`) on 2026-06-11, and `v0.44.2` (SHA `b97877b2`) at the 2026-05-20 survey — a 9-minor jump in 12 days, still at the ecosystem's bleeding edge.
+- **Agent version:** `fro-bot/agent@v0.93.1` (SHA `a4976f45a51458c349eb232aa1795f6fa25d5500`) as of 2026-07-18; was `v0.82.0` (SHA `77d6a464`) on 2026-07-03, `v0.73.0` (SHA `df121025`) on 2026-06-21, `v0.60.0` (SHA `f2f3c08f`) on 2026-06-11, and `v0.44.2` (SHA `b97877b2`) at the 2026-05-20 survey — an 11-minor jump in 15 days, still at the ecosystem's bleeding edge.
 - **Triggers:** `issue_comment`, `pull_request_review_comment`, `discussion_comment`, `issues` (opened/edited), `pull_request` (opened/synchronize/reopened/ready_for_review/review_requested), `schedule` (`30 3 * * *` autoheal + `30 15 * * *` maintenance — daily 03:30 and 15:30 UTC), `workflow_dispatch` with `mode` choice (review/maintenance/autoheal, default `autoheal`) + `prompt` input, and `workflow_call` with required `prompt` input.
 - **Bot-loop guards:** Identical pattern to the rest of the ecosystem — skip when issue/PR/comment author ends in `[bot]` or equals `fro-bot`. Comment triggers require `OWNER`/`MEMBER`/`COLLABORATOR` association and `@fro-bot` mention.
 - **Mode resolution:** Inline Bash in the `Determine mode and prompt` step maps event type → mode (schedule cron containing `15` → maintenance, otherwise → autoheal; `pull_request` → review; `workflow_dispatch` with no explicit mode input → **autoheal**). Mode controls which inline `env`-block prompt is used. Note the dispatch default changed: the 2026-05-20 survey recorded `workflow_dispatch` as user-selected only; the current workflow falls back to `autoheal` when the mode input is empty.
@@ -192,8 +196,10 @@ Limited triggers: only `workflow_dispatch` plus path-filtered `push`/`pull_reque
 ### Renovate (`.github/renovate.json5`)
 
 Extends:
-- `github>bfra-me/.github:internal.json5#v4.16.33` (was `#v4.16.27` on 2026-06-21, `#v4.16.25` on 2026-06-11, `#v4.16.18` on 2026-05-20) — bfra-me org's internal Renovate preset
+- `github>bfra-me/.github:internal.json5#v4.16.37` (was `#v4.16.33` on 2026-07-03, `#v4.16.27` on 2026-06-21, `#v4.16.25` on 2026-06-11, `#v4.16.18` on 2026-05-20) — bfra-me org's internal Renovate preset
 - `github>sanity-io/renovate-config:semantic-commit-type` — semantic commit type mapping
+
+`ignorePresets` (observed 2026-07-18): `mergeConfidence:age-confidence-badges`, `mergeConfidence:all-badges` — suppresses the merge-confidence badge injection the internal preset would otherwise pull in, keeping PR bodies terse.
 
 Notable rules:
 - Pin `bfra-me/renovate-config` (`rangeStrategy: 'pin'`, `updatePinnedDependencies: false`) **except** for major updates (where pin updates are allowed).
@@ -204,9 +210,10 @@ Notable rules:
   - Scheduled to nights/weekends only.
 - All majors of the Renovate ecosystem grouped as `Renovate`.
 - Custom regex manager updates `https://github.com/renovatebot/renovate/releases/tag/<ver>` links in `README.md`.
-- Astro 0.x packages automerge minor/patch.
+- Astro 0.x packages (`@astrojs/**`) automerge minor/patch via `github>bfra-me/renovate-config:automerge.json5#v4`.
 - `postUpgradeTasks`: `pnpm run bootstrap && pnpm run build && pnpm run fix` (execution-mode: branch).
 - `platformAutomerge: true`, `rebaseWhen: 'behind-base-branch'`.
+- **Semantic-commit-type routing (observed 2026-07-18):** all `docker` datasource updates, `tsup`/`typescript`, and `lockFileMaintenance` are typed `build` (which maps to a patch release under `.releaserc.yaml`). The Renovate-ecosystem rule (`ghcr.io/renovatebot/renovate`, `renovate`, `renovatebot/github-action`, `renovatebot/renovate`) schedules to `after 8pm every weekday`, `before 8am every weekday`, `every weekend` (natural-language schedule strings, equivalent to the prior "nights/weekends only" framing), carries `commitBody: '{{#if hasReleaseNotes}}{{{body}}}{{/if}}'`, and the major group sets `dependencyDashboardApproval: false` so grouped Renovate majors skip dashboard gating.
 
 This is a **different** Renovate base preset family than the `marcusrbrown/renovate-config` line:
 
@@ -239,21 +246,23 @@ YAML anchors define reusable lists:
 
 ### Tooling
 
-| Tool | Version (2026-07-03; prior survey value in parens where changed) |
+| Tool | Version (2026-07-18; prior survey value in parens where changed) |
 | --- | --- |
-| Node.js | 24.18.0 (was 24.17.0) (`engines.node` in package.json) |
-| pnpm | **11.9.0** (was 10.34.3 — **pnpm 10 → 11 major boundary crossed**) |
-| TypeScript | 6.0.3 |
-| ESLint | 10.6.0 (was 10.5.0), extends `@bfra.me/eslint-config@0.51.1` |
-| Prettier | 3.9.4 (was 3.8.4 — 3.8 → 3.9 minor), extends `@bfra.me/prettier-config/120-proof@0.16.9` |
+| Node.js | 24.18.0 (steady) (`engines.node` in package.json) |
+| pnpm | **11.13.0** (was 11.9.0) |
+| TypeScript | 6.0.3 (steady) |
+| ESLint | 10.7.0 (was 10.6.0), extends `@bfra.me/eslint-config@0.51.1` |
+| Prettier | 3.9.5 (was 3.9.4), extends `@bfra.me/prettier-config/120-proof@0.16.9` |
 | tsup | 8.5.1 (bundler, ESM output, license-aware via `esbuild-plugin-license@1.2.3`) |
-| Vitest | 4.1.9 |
+| Vitest | 4.1.10 (was 4.1.9), `@vitest/eslint-plugin@1.6.23` |
 | `@actions/core` | 3.0.1 (only runtime dep) |
-| semantic-release | 25.0.5 with `@semantic-release/changelog`, `@semantic-release/git`, `semantic-release-export-data`, `conventional-changelog-conventionalcommits@9.3.1` |
-| lint-staged | 16.4.0 (was 17.x elsewhere; this repo on 16 line) |
+| semantic-release | 25.0.7 (was 25.0.5) with `@semantic-release/changelog@6.0.3`, `@semantic-release/git@10.0.1`, `semantic-release-export-data@1.2.0`, `conventional-changelog-conventionalcommits@9.3.1` |
+| lint-staged | 16.4.0 (steady; this repo on 16 line) |
 | simple-git-hooks + lint-staged | pre-commit runs `pnpm run fix` on TS/JS/CSS/MD/JSON/YAML |
 | jiti | 2.7.0 (TS config loading) |
-| js-yaml | 4.3.0 (was 4.2.0) |
+| js-yaml | 4.3.0 (steady) |
+| `@types/node` | 24.13.2 |
+| eslint-plugin-node-dependencies | 2.2.0 |
 
 ### Release Pipeline (`.releaserc.yaml`)
 
@@ -270,7 +279,7 @@ YAML anchors define reusable lists:
 | Role | **Runner** (executes Renovate) | **Policy** (preset content) | Template (consumes policy + runner) |
 | Branching | `main` → `release` → tagged + `v9` branch | `main` → tagged + `v4` branch | `main` only |
 | Renovate base preset | `bfra-me/.github:internal.json5#v4.16.18` | `bfra-me/renovate-config#5.2.1` | `bfra-me/renovate-config#5.2.1` |
-| Fro Bot agent | v0.82.0 as of 2026-07-03 (v0.73.0 on 2026-06-21, v0.60.0 on 2026-06-11, v0.44.2 at first survey — newest in ecosystem all four times) | v0.42.2 (v0.52.1 per 2026-06-04 survey) | v0.43.1 |
+| Fro Bot agent | v0.93.1 as of 2026-07-18 (v0.82.0 on 2026-07-03, v0.73.0 on 2026-06-21, v0.60.0 on 2026-06-11, v0.44.2 at first survey — newest in ecosystem all five times) | v0.76.2 (per 2026-06-25 survey) | v0.43.1 (frozen; Renovate targeting v0.92.1 at 2026-07-16) |
 | Fro Bot pattern | Single workflow with mode dispatch (`fro-bot.yaml` only — no separate autoheal file) | Two-workflow split (`fro-bot.yaml` + `fro-bot-autoheal.yaml`) | Single workflow, two cron schedules |
 | Fro Bot single-issue model | `Daily Maintenance Report` + `Daily Autohealing Report` (two perpetual issues) | Same two-issue model | `Daily Autohealing Report` only |
 | dist/ artifact in repo | Yes (tsup bundle, drift-verified in CI) | No (JSON-only repo) | No |
@@ -281,15 +290,16 @@ The **single-workflow-with-mode-dispatch** Fro Bot layout in this repo is notabl
 
 ## Observations
 
-- **Agent version leadership — confirmed across four surveys.** At first survey (2026-05-20) this repo led the ecosystem on `fro-bot/agent@v0.44.2`; then `v0.60.0` (2026-06-11), `v0.73.0` (2026-06-21), and now `v0.82.0` (2026-07-03) — the highest pin observed anywhere in the wiki each time. The canary hypothesis holds across all four checkpoints: this repo absorbs agent updates first, almost certainly because its self-Renovate loop (`renovate.yaml` running the action against itself) merges bumps continuously. The lead is now narrower — [[bfra-me--github]] rides v0.81.0 and [[marcusrbrown--dotfiles]] v0.79.1 — but this repo still crosses the line first.
+- **Agent version leadership — confirmed across five surveys.** At first survey (2026-05-20) this repo led the ecosystem on `fro-bot/agent@v0.44.2`; then `v0.60.0` (2026-06-11), `v0.73.0` (2026-06-21), `v0.82.0` (2026-07-03), and now `v0.93.1` (2026-07-18) — the highest pin observed anywhere in the wiki each time. The canary hypothesis holds across all five checkpoints: this repo absorbs agent updates first, almost certainly because its self-Renovate loop (`renovate.yaml` running the action against itself) merges bumps continuously. For reference the parked [[bfra-me--ha-addon-repository]] (frozen on `main`, agent pin v0.43.1) had Renovate targeting `v0.92.1` at its 2026-07-16 survey — this repo was already past that at v0.93.1 two days later, so the canary lead over the rest of the fleet persists.
 - **`zzglobal_config` naming.** The `zz` prefix on the inline base config env var is intentional — it forces the variable to sort last when the GitHub Actions UI alphabetizes env blocks, keeping the (large) JSON payload out of the way visually. Mildly clever; mildly footgun if someone tries to grep for "global_config" expecting one canonical name.
 - **Protected-fields enforcement is layered:** `validate_json()` only warns on dangerous fields. The actual enforcement happens in `merge_global_config()`, which restores `allowedCommands` from base after the deep merge. The other "dangerous" fields (`platform`, `gitAuthor`, `gitIgnoredAuthors`, `cacheDir`, `repositoryCache`) are set explicitly in the `env:` block of the Renovate step, so any user-supplied value gets overwritten by `RENOVATE_*` env vars regardless of what made it through the merge. The warning is hygiene; the runtime override is the real guard.
 - **Docker execution deprecation.** The action ships a `v9 deprecation notice` and an `execution-mode` input that currently only accepts `container`. The plan signaled by README and `action.yaml`: v10 will remove Docker-backed execution. No replacement implementation is present in this branch yet — consumers should expect a non-trivial migration (likely to direct npm-installed Renovate, matching the upstream `renovatebot/github-action` `BINARY_SOURCE=install` env var already set).
-- **Analytics features removed in v9 per README, but `docker/entrypoint.sh` still contains `record_docker_metric` / `record_failure` / `/tmp/renovate-analytics` plumbing.** This is dead code from the v8-era analytics dashboard — likely a candidate for an autoheal "stale TODO" finding or a follow-up cleanup PR. Flag this as a possible README-vs-code contradiction to verify before relying on either claim. **Re-confirmed 2026-06-11:** the plumbing is still present at SHA `5b2b2faf` (`mkdir -p /tmp/renovate-analytics`, both helper functions). 22 days and ~23 releases later, nobody — including the daily autoheal — has cleaned it up. **Re-confirmed again 2026-06-21** at SHA `5cacb673`: `mkdir -p /tmp/renovate-analytics` (line 6), `record_docker_metric` (line 9), `record_failure` (line 63), and both functions still wired into the yq/node tool-install paths. A third consecutive survey across ~33 releases with the dead code untouched. **Re-confirmed a fourth time 2026-07-03** at SHA `5ad371e0`: identical line positions (`mkdir` line 6, `record_docker_metric` line 9, `record_failure` line 63), still wired through the yq/node install paths, ~10 more releases (9.123.0 → 9.133.0) with zero change. The contradiction is now durable enough to treat as intentional-but-unaddressed rather than transient — a clean autoheal "stale code" candidate that the autoheal sweep itself keeps classifying as report-only.
+- **Analytics features removed in v9 per README, but `docker/entrypoint.sh` still contains `record_docker_metric` / `record_failure` / `/tmp/renovate-analytics` plumbing.** This is dead code from the v8-era analytics dashboard — likely a candidate for an autoheal "stale TODO" finding or a follow-up cleanup PR. Flag this as a possible README-vs-code contradiction to verify before relying on either claim. **Re-confirmed 2026-06-11:** the plumbing is still present at SHA `5b2b2faf` (`mkdir -p /tmp/renovate-analytics`, both helper functions). 22 days and ~23 releases later, nobody — including the daily autoheal — has cleaned it up. **Re-confirmed again 2026-06-21** at SHA `5cacb673`: `mkdir -p /tmp/renovate-analytics` (line 6), `record_docker_metric` (line 9), `record_failure` (line 63), and both functions still wired into the yq/node tool-install paths. A third consecutive survey across ~33 releases with the dead code untouched. **Re-confirmed a fourth time 2026-07-03** at SHA `5ad371e0`: identical line positions (`mkdir` line 6, `record_docker_metric` line 9, `record_failure` line 63), still wired through the yq/node install paths, ~10 more releases (9.123.0 → 9.133.0) with zero change. **Re-confirmed a fifth time 2026-07-18** at SHA `318e0292`: `mkdir -p /tmp/renovate-analytics` (line 6), `record_docker_metric` (line 9), `record_failure` (line 63) all byte-identical, still wired through every tool-install path plus the final `runuser -u ubuntu renovate` run block, ~14 more releases (9.133.0 → 9.147.0) untouched. The contradiction is now durable enough to treat as intentional-but-unaddressed rather than transient — a clean autoheal "stale code" candidate that the autoheal sweep itself keeps classifying as report-only. Note the AUTOHEAL_PROMPT category 5 explicitly asks the agent to "review the analytics collection in action.yaml for any issues (malformed JSON, missing error handling)" — the prompt treats the analytics plumbing as live infrastructure to audit, which likely explains why the sweep never flags it as dead code to remove.
 - **`gitIgnoredAuthors` list** includes `109017866+fro-bot[bot]@users.noreply.github.com` — Fro Bot's commits are explicitly ignored by Renovate so the bot's autoheal commits don't accidentally seed Renovate's "rebased by user" detection logic.
 - **`mount-docker-socket: true` + `docker-user: root`** — Renovate's container needs root to install package managers at runtime and the mounted socket to spawn sibling containers when probing Docker-based managers. Sound for self-hosted use; would be unsafe in a multi-tenant runner.
 - **CI status-check surface is large** (11 required contexts including `Setup`, `Check`, `Test`, `Build`, `Release`, `Deploy to GitHub Pages`, `Renovate / Renovate`, `Fro Bot`, `Analyze`, `CodeQL`, `Review Dependencies`). The `Setup` job emits all five `should-*` outputs and gates everything else, so most PRs skip most jobs while still satisfying the protection contract.
-- **pnpm 10 → 11 major boundary crossed (2026-07-03).** `packageManager` moved from `pnpm@10.34.3` to `pnpm@11.9.0`, matching the same major cut landing across the bfra-me fleet ([[bfra-me--github]] at 11.9.0, [[marcusrbrown--containers]] and [[marcusrbrown--dotfiles]] also on the v11 line). Renovate-driven and merged without incident here — consistent with the canary role. Node also stepped 24.17.0 → 24.18.0 in the same window.
+- **pnpm 10 → 11 major boundary crossed (2026-07-03).** `packageManager` moved from `pnpm@10.34.3` to `pnpm@11.9.0`, matching the same major cut landing across the bfra-me fleet ([[bfra-me--github]] at 11.9.0, [[marcusrbrown--containers]] and [[marcusrbrown--dotfiles]] also on the v11 line). Renovate-driven and merged without incident here — consistent with the canary role. Node also stepped 24.17.0 → 24.18.0 in the same window. By 2026-07-18 pnpm had advanced further along the v11 line to `11.13.0` (matching the `PNPM_VERSION` in `docker/entrypoint.sh`).
+- **Repo is template-derived.** The GitHub API `template_repository` field confirms this repo was scaffolded from `bfra-me/github-action`, bfra-me's TypeScript GitHub Action template. That explains the TS scaffold (`src/`, `dist/`, tsup, Vitest) present in what is functionally a Bash-composite action — the scaffold is template baggage the composite runtime does not execute, consistent with the "TS layer is not what consumers run" note above.
 - **No `marcusrbrown--renovate-config` consumer relationship.** This action does **not** itself extend the Marcus presets. The consumption flow is one-way: Marcus's presets reference `bfra-me/renovate-config`, and Marcus's repos consume **either** preset family; this action is independent infrastructure.
 
 ## Survey History
@@ -300,3 +310,4 @@ The **single-workflow-with-mode-dispatch** Fro Bot layout in this repo is notabl
 | 2026-06-11 | `5b2b2faf` | Re-survey. Fro Bot agent v0.44.2 → **v0.60.0** (ecosystem leader, canary confirmed). Renovate pin 43.186.2 → **43.220.0**. Release 9.90.0 → **9.113.0** (23 minors / 22 days). Internal preset v4.16.18 → v4.16.25. Node 24.16.0, pnpm 10.34.1, ESLint 10.4.1, Vitest 4.1.8. Workflow set unchanged (8). `workflow_dispatch` now defaults mode to `autoheal`. Branch protection contexts unchanged (11). Dead analytics code in `docker/entrypoint.sh` still present. v10 Docker-removal plan unchanged, no replacement implementation yet. Fro Bot workflow present and active — no onboarding follow-up needed. |
 | 2026-06-21 | `5cacb673` | Re-survey. Fro Bot agent v0.60.0 → **v0.73.0** (still ecosystem leader; canary confirmed a third time). Renovate pin 43.220.0 → **43.233.3**. Release 9.113.0 → **9.123.0** (10 minors / 9 days). Internal preset v4.16.25 → v4.16.27. Node 24.16.0 → 24.17.0, pnpm 10.34.1 → 10.34.3, ESLint 10.4.1 → 10.5.0, Prettier 3.8.3 → 3.8.4, Vitest 4.1.8 → 4.1.9, semantic-release 25.0.3 → 25.0.5, js-yaml 4.1.1 → 4.2.0. `@bfra.me/eslint-config@0.51.1`. Stars 2 → 3, open issues 62 → 61. Workflow set unchanged (8). `renovatebot/github-action` still v46.1.4, `create-github-app-token` still v3.2.0, `actions/cache/restore` still v5.0.5. fro-bot.yaml structure unchanged (single-workflow three-mode, crons 03:30 + 15:30 UTC, `workflow_dispatch` default `autoheal`). Dead analytics code in `docker/entrypoint.sh` re-confirmed present (third consecutive survey). v10 Docker-removal plan unchanged, no replacement implementation. Fro Bot workflow present and active — no onboarding follow-up needed. |
 | 2026-07-03 | `5ad371e0` | Re-survey. Fro Bot agent v0.73.0 → **v0.82.0** (ecosystem leader a fourth time; canary confirmed, though lead narrowed vs `bfra-me/.github` v0.81.0). Renovate pin 43.233.3 → **43.251.0**. Release 9.123.0 → **9.133.0** (10 minors / 12 days). Internal preset v4.16.27 → **v4.16.33**. **pnpm 10.34.3 → 11.9.0 (major 10 → 11 boundary crossed)**, Node 24.17.0 → 24.18.0, ESLint 10.5.0 → 10.6.0, Prettier 3.8.4 → 3.9.4, js-yaml 4.2.0 → 4.3.0, lint-staged pinned 16.4.0. Vitest 4.1.9, TypeScript 6.0.3, semantic-release 25.0.5, `@bfra.me/eslint-config@0.51.1` all steady. Watchers 1 → 3, stars steady 3, open issues 61 → **66** (trending up). Workflow set unchanged (8). `renovatebot/github-action` still v46.1.4, `create-github-app-token` still v3.2.0; `actions/cache/restore` v5.0.5 → **v5.1.0**. fro-bot.yaml structure unchanged (single-workflow three-mode, crons 03:30 + 15:30 UTC, `workflow_dispatch` default `autoheal`, `pnpm/action-setup@v5.0.0`, `actions/setup-node@v6.4.0`). Branch protection contexts unchanged (11). Dead analytics code in `docker/entrypoint.sh` re-confirmed present (**fourth** consecutive survey). v10 Docker-removal plan unchanged, no replacement implementation. Fro Bot workflow present and active — no onboarding follow-up needed. |
+| 2026-07-18 | `318e0292` | Re-survey (via unauthenticated `api.github.com` / `raw.githubusercontent.com` — no `gh` token this cycle). Fro Bot agent v0.82.0 → **v0.93.1** (SHA `a4976f45`; ecosystem leader a fifth time, canary confirmed). Renovate pin 43.251.0 → **43.269.1**. Release 9.133.0 → **9.147.0** (14 minors / 15 days). Internal preset v4.16.33 → **v4.16.37**. pnpm 11.9.0 → **11.13.0**, ESLint 10.6.0 → **10.7.0**, Prettier 3.9.4 → **3.9.5**, Vitest 4.1.9 → **4.1.10**, semantic-release 25.0.5 → **25.0.7**, `@types/node@24.13.2`. Node 24.18.0, TypeScript 6.0.3, js-yaml 4.3.0, lint-staged 16.4.0, `@bfra.me/eslint-config@0.51.1`, tsup 8.5.1 all steady. Stars/forks/watchers steady 3/1/3, open issues 66 → **64** (oscillating low-60s). Workflow set unchanged (8). `renovatebot/github-action` still v46.1.4, `create-github-app-token` still v3.2.0, `actions/cache` restore+save v5.1.0. fro-bot.yaml structure unchanged (single-workflow three-mode, crons 03:30 + 15:30 UTC, `workflow_dispatch` default `autoheal`); its `actions/checkout` bumped to **v6.0.3** (`df4cb1c`), `actions/setup-node` to **v6.5.0** (`24997072`), `pnpm/action-setup@v5.0.0` steady. **New finding:** `renovate.json5` adds `ignorePresets` (merge-confidence badges) and routes `docker`/`tsup`/`typescript`/`lockFileMaintenance` updates to the `build` commit type. Docker entrypoint tool pins: yq v4.53.3, Bun bun-v1.3.6, Yarn 4.17.1, pnpm 11.13.0. **API `template_repository` confirms scaffolded from `bfra-me/github-action`.** Dead analytics code in `docker/entrypoint.sh` re-confirmed present (**fifth** consecutive survey; AUTOHEAL_PROMPT still treats it as live infra to audit). v10 Docker-removal plan unchanged, no replacement implementation. Fro Bot workflow present and active — no onboarding follow-up needed. |

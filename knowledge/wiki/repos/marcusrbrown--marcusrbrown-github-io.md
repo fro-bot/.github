@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-07-13
+updated: 2026-07-20
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -25,7 +25,10 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: b633e40df799fe239a3e55cce2cd5efd60d72b48
     accessed: 2026-06-23
-tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page]
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 4bdbf32227cd06c4b2517cb7322fae55136c934f
+    accessed: 2026-07-20
+tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page, name-collision, superseded]
 aliases: [marcusrbrown-github-io]
 related:
   - marcusrbrown--marcusrbrown-com
@@ -263,6 +266,24 @@ The motion has moved off `main` and onto the staging lane — two open Renovate 
 
 The autopilot is still cruising, but the security PR stalling for over a week is the first sign the automerge daemon may be choking on a red gate. If #411's coverage floor is what's holding it, the autoheal that *files* the coverage report still isn't *closing* the loop — the report-without-remediation pattern noted at 2026-06-12 now has a concrete cost: a security fix held hostage to a coverage threshold.
 
+## Delta Log (2026-07-20, SHA `4bdbf32` — name now resolves to the mrbro.dev repo)
+
+A survey dispatched against the *name* `marcusrbrown/marcusrbrown.github.io` no longer lands on the brand site this page originally documented. The GitHub name now resolves to repo **id `1174807412`** — the exact "name-collision" repo the 2026-07-13 header warned about. That repo is the **mrbro.dev developer portfolio**, canonically documented at **[[marcusrbrown--mrbro-dev]]**. The brand-site content (former repo id `1021912280`) lives on at [[marcusrbrown--marcusrbrown-com]] under its renamed name `marcusrbrown/marcusrbrown.com`. This section records the current occupant's snapshot so the collision is empirically confirmed; the durable per-repo knowledge belongs on the [[marcusrbrown--mrbro-dev]] page, not here.
+
+**Confirmed identity of the current name-holder (`4bdbf32`, `feat(opencode): add Impeccable edit feedback (#208)`, 2026-07-19):**
+
+- **Repo id:** `1174807412` (created 2026-03-06) — *not* the brand-site id `1021912280`. Distinct repo, same name.
+- **Homepage:** `http://mrbro.dev/`. **`package.json` `name`:** `mrbro.dev`. **Description:** "My portfolio." **Topics:** `blog, developer, github-pages, portfolio, react, typescript, vite`.
+- **Scope markers that distinguish it from the brand site:** React Router v7 (`react-router-dom ^7.15.0`), a prerendered blog + RSS pipeline (`feed`, `shiki`, `unified`/`remark`/`rehype` chain, `scripts/prerender-blog.ts`, `blog-refresh.yaml`), visual-regression + accessibility + performance test tiers (Playwright projects, `lhci` mobile/desktop, `performance.yaml`, `e2e-tests.yaml`), and an `.impeccable/` design gate with `DESIGN.md` / `PRODUCT.md`. This is the full portfolio, not the four-section anchor-link landing page.
+- **Stack:** React 19, TypeScript **5.9.3** (note: *not* v6 — the brand site was on TS 6), Vite 7.3.6, Vitest 4.1.10, Playwright 1.61.1, `@vitejs/plugin-react-swc`, pnpm `10.33.4` (`engines.pnpm ^10.28.2`), Node `>=22.6.0`. License MIT (declared in `package.json`; API `license` reads null — no LICENSE file).
+- **Split-brain security overrides:** `pnpm-workspace.yaml` carries ~20 GHSA-annotated entries (`brace-expansion`, `fast-uri`, `qs`, `ws`, `tmp`, `rollup`, `minimatch`, `picomatch`, `ajv`, `mdast-util-to-hast`, `yauzl`, etc.) while `package.json` `pnpm.overrides` retains `js-yaml`/`qs`/`tmp`/`uuid` — same override-ledger pattern documented on [[marcusrbrown--mrbro-dev]].
+- **Workflows (8):** `ci.yaml`, `deploy.yaml`, `fro-bot.yaml`, `renovate.yaml`, `blog-refresh.yaml`, `e2e-tests.yaml`, `performance.yaml`, `copilot-setup-steps.yaml`. Deploy is push-to-`main` → lint → test → build (`GITHUB_PAGES=true`) → `actions/deploy-pages`, concurrency group `pages`.
+- **Fro Bot workflow is present and active** — `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`, single-file three-mode (review/maintenance/autoheal) with crons `30 3` autoheal / `30 15` maintenance UTC. Adds a `discussion_comment` trigger beyond the brand site's event set. PR-review prompt is explicitly scoped to "mrbro.dev — a React 19+ / TypeScript / Vite 7+ portfolio." **No onboarding follow-up draft PR is warranted for this name.**
+- **Renovate:** extends `marcusrbrown/renovate-config#5.2.7` + `group:allNonMajor`; post-upgrade `pnpm install` → `build` → `fix` ×2.
+- **Open issues (4):** #204 (bug: restore missing project preview image), #162 (Daily Autohealing Report), #13 (Daily Maintenance Report), #1 (Dependency Dashboard). Stars 1. These belong to the mrbro.dev repo, not the brand-site issue set (#411/#409/#260/#6) tracked in earlier sections above.
+
+**Contradiction note (does not overwrite prior records):** All survey rows above dated 2026-04-25 → 2026-06-23 describe the *brand site* (repo id `1021912280`) under its former name. From 2026-07-20 forward, a survey of this *name* observes the *mrbro.dev repo* (id `1174807412`) instead. The name-to-repo binding flipped; the prior content is preserved as the historical record of what the name pointed to before the rename. For live mrbro.dev state, defer to [[marcusrbrown--mrbro-dev]] (whose own frontmatter already lists this name in `related` and notes the `repository.url` mismatch pointing back here).
+
 ## Survey History
 
 | Date | SHA | Notes |
@@ -274,3 +295,4 @@ The autopilot is still cruising, but the security PR stalling for over a week is
 | 2026-06-01 | `1a428e2` | Dependency-drift re-survey: HEAD advanced 11 commits, all Renovate bumps. Fro Bot agent v0.44.0 → v0.48.1 (pin `80f1fa11…`), pnpm 10.33.4 → 10.34.1 (#423), `bfra-me/.github` v4.16.17 → v4.16.21 (#419). No structural change to stack, workflows, crons, or Fro Bot single-file three-mode design. Open issues steady at 4; 0 open PRs. Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) unchanged. |
 | 2026-06-12 | `b633e40` | Dependency-drift re-survey: 27 commits, all Renovate. Fro Bot agent v0.48.1 → **v0.61.0** (pin `6794bf5…`) — now ecosystem version leader. Renovate preset 5.2.0 → 5.2.1, `bfra-me/.github` → v4.16.25. Security overrides split between `pnpm-workspace.yaml` (~12 entries) and legacy `package.json` `pnpm.overrides` (2 entries). `mrbro-bot[bot]` co-authoring merges. Repo `homepage` field now null. Issues steady at 4; 0 open PRs. Gaps unchanged. |
 | 2026-06-23 | `b633e40` | No-op re-survey: `main` HEAD unchanged for 11 days, agent pin still v0.61.0 (`6794bf5…`). All structure/stack/workflows/crons hold. Motion is two unmerged Renovate PRs based on `main`: **#454** (vite v7.3.5 SECURITY, open ~8 days) and **#453** (all-minor-patch, ~10 days). Security PR stalling >1 week suggests automerge choking on a red quality gate — likely issue #411's <80% coverage floor. `pushed_at` 2026-06-22 (PR-branch pushes, not trunk); stars 0→1; issues steady at 4. Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) unchanged. |
+| 2026-07-20 | `4bdbf32` | **Name-binding flip confirmed empirically.** A survey of the *name* `marcusrbrown/marcusrbrown.github.io` now resolves to repo id `1174807412` (the mrbro.dev developer portfolio, canonical page [[marcusrbrown--mrbro-dev]]) — not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Current occupant: React 19 / TS 5.9.3 / Vite 7.3.6, React Router v7, prerendered blog+RSS, visual/a11y/perf test tiers, `.impeccable` design gate, 8 workflows, Fro Bot present at agent **v0.93.1** (`a4976f4`), Renovate preset #5.2.7, pnpm 10.33.4, MIT. Open issues 4 (#204/#162/#13/#1), stars 1. No onboarding follow-up needed (workflow active). See Delta Log 2026-07-20 for full snapshot. |

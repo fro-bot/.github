@@ -2,7 +2,7 @@
 type: topic
 title: "Web3 & DeFi Development"
 created: 2026-04-18
-updated: 2026-07-04
+updated: 2026-07-18
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -28,7 +28,10 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: c6e10e0515d83d00fcece101f1b6d6b0549f5a95
     accessed: 2026-07-04
-tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721, alchemy, viem]
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 8d7648c7e0e57fafbb13778689ae1b7bacbe72d0
+    accessed: 2026-07-18
+tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721, alchemy, viem, code-splitting]
 ---
 
 # Web3 & DeFi Development
@@ -116,6 +119,17 @@ Analytics telemetry in [[marcusrbrown--tokentoilet]] defaults to opt-in / off (P
 ## Mainnet Readiness: Explicit No-Go (2026-07-03)
 
 A readiness spike (#1178) concluded [[marcusrbrown--tokentoilet]] stays Sepolia-only until token discovery is proven correct. The `SUPPORTED_CHAIN_IDS: [11155111]` lock is now a documented decision backed by a spike, not merely an unfinished feature. Stale multi-chain RPC env vars were removed (#1176) and invalid multi-chain integration tests deleted with E2E gaps tracked separately (#1172). Pattern: gate mainnet on read-path correctness (discovery) before write-path expansion.
+
+## Bundle Optimization: Code-Splitting the Web3 Tree (2026-07-18)
+
+Wallet stacks are heavy — wagmi, AppKit, and their connector transitives are among the largest client dependencies a Web3 app carries. [[marcusrbrown--tokentoilet]] built a Dynamic Loading Infrastructure to keep that weight off the initial payload (`CHANGELOG.md` Unreleased, #641–#646). Patterns worth generalizing:
+
+- **Defer the Web3 tree behind `next/dynamic`.** 10+ dynamic component wrappers put wallet/token UI behind module-level dynamic imports with Suspense boundaries, so the connect-and-dispose chrome loads on demand rather than on first paint.
+- **Shape the wait with skeletons, not spinners.** 7 specialized skeleton loaders give the deferred components sized placeholders, avoiding layout shift when the chunk resolves.
+- **Retry chunk loads with backoff.** A dedicated error boundary retries failed dynamic imports `1s→2s→4s→8s` (capped) instead of hard-failing on a transient chunk-load error — the same exponential-backoff discipline applied to provider calls, now at the module-load layer.
+- **Instrument import performance.** Import timings are captured via telemetry. (Note: keep this within the no-unconsented-telemetry baseline — performance instrumentation is lower-stakes than analytics, but the consent posture still applies.)
+- **Virtualize long lists.** Real token discovery can return long holdings lists; `@tanstack/react-virtual` was added to virtualize rendering so list length doesn't inflate the DOM.
+- **Staged win caveat.** The infrastructure targets a 50–100 KB (10–18%) initial-bundle reduction but is marked "complete, awaiting feature-page implementation" — the machinery exists before the payoff lands. When adopting this pattern, budget for the integration step, not just the infrastructure.
 
 ## Migration Notes: Wagmi v2 → v3 (2026-05-28)
 

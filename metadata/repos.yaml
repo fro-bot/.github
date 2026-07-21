@@ -118,12 +118,12 @@ repos:
     name: marcusrbrown
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-06
+    last_survey_at: 2026-07-20
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-08-07
+    next_survey_eligible_at: 2026-08-19
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
     database_id: 319928661
@@ -131,12 +131,12 @@ repos:
     name: marcusrbrown.github.io
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-06
-    last_survey_status: failure
+    last_survey_at: 2026-07-20
+    last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-08-06
+    next_survey_eligible_at: 2026-08-20
     private: false
     node_id: R_kgDORgYjdA
     database_id: 1174807412
@@ -196,11 +196,11 @@ repos:
     name: tokentoilet
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-04
+    last_survey_at: 2026-07-18
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-08-03
+    next_survey_eligible_at: 2026-08-19
     discovery_channel: collab
     private: false
     node_id: R_kgDOJ3rINw
@@ -209,11 +209,11 @@ repos:
     name: vbs
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-05
+    last_survey_at: 2026-07-19
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-08-04
+    next_survey_eligible_at: 2026-08-19
     discovery_channel: collab
     private: false
     node_id: R_kgDOPOixzg
@@ -235,12 +235,12 @@ repos:
     name: agent
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-07-07
+    last_survey_at: 2026-07-21
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: owned
-    next_survey_eligible_at: 2026-07-24
+    next_survey_eligible_at: 2026-08-04
     private: false
     node_id: R_kgDOQyTMEw
     database_id: 1126485011
@@ -300,12 +300,12 @@ repos:
     name: renovate-action
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-04
+    last_survey_at: 2026-07-18
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: contrib
-    next_survey_eligible_at: 2026-07-28
+    next_survey_eligible_at: 2026-08-10
     private: false
     node_id: R_kgDOKWu8zQ
     database_id: 694926541
@@ -313,12 +313,12 @@ repos:
     name: works
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-07-05
+    last_survey_at: 2026-07-19
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: contrib
-    next_survey_eligible_at: 2026-07-28
+    next_survey_eligible_at: 2026-08-12
     private: false
     node_id: MDEwOlJlcG9zaXRvcnkzMDc1NzM1OTE=
     database_id: 307573591
@@ -391,12 +391,12 @@ repos:
     name: mothership
     added: 2026-07-06
     onboarding_status: onboarded
-    last_survey_at: 2026-07-06
+    last_survey_at: 2026-07-21
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-08-07
+    next_survey_eligible_at: 2026-08-22
     private: false
     node_id: R_kgDOTOX0_A
     database_id: 1290138876
@@ -407,7 +407,7 @@ repos:
     last_survey_at: 2026-07-12
     last_survey_status: success
     has_fro_bot_workflow: true
-    has_renovate: false
+    has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: 2026-08-14
     private: false
@@ -426,3 +426,16 @@ repos:
     private: false
     node_id: R_kgDOPOkk2A
     database_id: 1021912280
+  - owner: '[REDACTED]'
+    name: R_kgDOTctqMw
+    added: 2026-07-18
+    onboarding_status: pending
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: true
+    has_renovate: true
+    discovery_channel: collab
+    next_survey_eligible_at: null
+    private: true
+    node_id: R_kgDOTctqMw
+    database_id: 1305176627
