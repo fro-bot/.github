@@ -3004,3 +3004,28 @@ Sources: https://github.com/fro-bot/agent (SHA 9a4631f81a3d73d06bb18098e468b0cae
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-07-22 07:48] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed the *name* `marcusrbrown/marcusrbrown.github.io`, which — since the 2026-07-13 rename/collision — resolves to repo **id `1174807412`**, the **mrbro.dev developer portfolio** (`package.json name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), *not* the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Durable per-repo knowledge therefore lands on the canonical [[marcusrbrown--mrbro-dev]] page; the github-io page carries only a collision-confirm pointer.
+
+Substantive delta on the mrbro.dev repo: `main` HEAD advanced `4bdbf32` → **`a5a6d8c`** (`feat(theme): add accessible preset picker (#209)`, 2026-07-20) — the first real motion since 2026-05-28 (the `7a49abc` window was all re-surveys of a frozen trunk).
+
+- **Fro Bot agent v0.43.0 → v0.93.1** (`fro-bot/agent@a4976f4`) — this page had recorded v0.43.0 across every prior survey; pin now far ahead, matching the v0.93.1 seen from the github-io side on 2026-07-20.
+- First-party blog with build-time gist publishing (#188/#190; `feed 6.0.0`/`shiki 4.3.1`/`unified 11.0.5` now direct deps; `blog-refresh.yaml` + `blog-refresh` script). A `docs(solutions)` commit (#190) records a blog-snapshot gist-API bug.
+- Self-hosted project preview images (#202; `project-preview-refresh` script); open regression bug #204.
+- Accessible theme preset picker (#209); topic-curated portfolio feed (#195); hardened GitHub-feed reliability (#187); landing page trimmed 6 sections (#206).
+- Fro Bot CI hardening: forbid `ce:*` skills in reviews (#210), fork-detection fix (#197), inaccessible security-alert scan dropped from autoheal (#196), source maps dropped from prod build (#199).
+- Stack: React 19 / React Router 7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1, pnpm 10.33.4 (`engines.pnpm ^10.28.2`), Node >=22.6.0. License MIT (API `license` null — no LICENSE file). 8 workflows; crons `30 3` autoheal / `30 15` maintenance UTC. Split-brain override ledger (`package.json pnpm.overrides` + `pnpm-workspace.yaml`) persists. Open issues 4 (#204/#162/#13/#1), stars 1. Gaps hold: no Probot `settings.yml`, no CodeQL/Scorecard. Fro Bot workflow **present and active** — no onboarding follow-up draft PR warranted.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--mrbro-dev.md` (frontmatter `updated` + new source SHA `a5a6d8c` + `name-collision` tag; new Delta Log 2026-07-22; Survey History row); `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter source SHA; collision-confirm Delta Log 2026-07-22; Survey History row); `knowledge/index.md` (mrbro-dev + github-io entries refreshed); `knowledge/log.md`.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, `package.json`, and workflow files; additive updates only (prior brand-site records and mrbro.dev history preserved; name-collision provenance noted, not overwritten); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; wikilinks point to existing pages ([[marcusrbrown--mrbro-dev]], [[marcusrbrown--marcusrbrown-com]], [[marcusrbrown--marcusrbrown-github-io]]). Repo re-confirmed **public** before any write. `gh` CLI had no token in this runner; facts gathered via unauthenticated public GitHub API — non-mutating reads only. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA a5a6d8c73ef5995fce3749b6eece04eeaede6361)
+
+## [2026-07-22 07:49] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io

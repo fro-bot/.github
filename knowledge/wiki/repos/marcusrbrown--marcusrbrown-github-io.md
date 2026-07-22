@@ -28,6 +28,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 4bdbf32227cd06c4b2517cb7322fae55136c934f
     accessed: 2026-07-20
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: a5a6d8c73ef5995fce3749b6eece04eeaede6361
+    accessed: 2026-07-22
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page, name-collision, superseded]
 aliases: [marcusrbrown-github-io]
 related:
@@ -284,6 +287,14 @@ A survey dispatched against the *name* `marcusrbrown/marcusrbrown.github.io` no 
 
 **Contradiction note (does not overwrite prior records):** All survey rows above dated 2026-04-25 → 2026-06-23 describe the *brand site* (repo id `1021912280`) under its former name. From 2026-07-20 forward, a survey of this *name* observes the *mrbro.dev repo* (id `1174807412`) instead. The name-to-repo binding flipped; the prior content is preserved as the historical record of what the name pointed to before the rename. For live mrbro.dev state, defer to [[marcusrbrown--mrbro-dev]] (whose own frontmatter already lists this name in `related` and notes the `repository.url` mismatch pointing back here).
 
+## Delta Log (2026-07-22, SHA `a5a6d8c` — collision confirmed again; durable state on [[marcusrbrown--mrbro-dev]])
+
+A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** — the mrbro.dev developer portfolio, not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-to-repo binding is unchanged since 2026-07-20; the collision the 2026-07-13 header warned of is holding steady.
+
+Motion this cycle belongs entirely to the current name-holder (mrbro.dev): `main` advanced `4bdbf32` → `a5a6d8c` with a first-party blog (build-time gist publishing, #188/#190), self-hosted project preview images (#202), an accessible theme preset picker (#209), a topic-curated portfolio feed (#195), and Fro Bot CI hardening (forbid `ce:*` skills, #210). The Fro Bot agent pin is steady at **v0.93.1** (`a4976f4`). Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
+
+Per the wiki contract, durable per-repo knowledge for the current occupant lives on **[[marcusrbrown--mrbro-dev]]** (see its Delta Log 2026-07-22). This section only confirms the binding empirically so the collision record stays continuous. No new facts about the *brand site* (id `1021912280`) were observable through this name; for that repo defer to [[marcusrbrown--marcusrbrown-com]].
+
 ## Survey History
 
 | Date | SHA | Notes |
@@ -296,3 +307,4 @@ A survey dispatched against the *name* `marcusrbrown/marcusrbrown.github.io` no 
 | 2026-06-12 | `b633e40` | Dependency-drift re-survey: 27 commits, all Renovate. Fro Bot agent v0.48.1 → **v0.61.0** (pin `6794bf5…`) — now ecosystem version leader. Renovate preset 5.2.0 → 5.2.1, `bfra-me/.github` → v4.16.25. Security overrides split between `pnpm-workspace.yaml` (~12 entries) and legacy `package.json` `pnpm.overrides` (2 entries). `mrbro-bot[bot]` co-authoring merges. Repo `homepage` field now null. Issues steady at 4; 0 open PRs. Gaps unchanged. |
 | 2026-06-23 | `b633e40` | No-op re-survey: `main` HEAD unchanged for 11 days, agent pin still v0.61.0 (`6794bf5…`). All structure/stack/workflows/crons hold. Motion is two unmerged Renovate PRs based on `main`: **#454** (vite v7.3.5 SECURITY, open ~8 days) and **#453** (all-minor-patch, ~10 days). Security PR stalling >1 week suggests automerge choking on a red quality gate — likely issue #411's <80% coverage floor. `pushed_at` 2026-06-22 (PR-branch pushes, not trunk); stars 0→1; issues steady at 4. Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) unchanged. |
 | 2026-07-20 | `4bdbf32` | **Name-binding flip confirmed empirically.** A survey of the *name* `marcusrbrown/marcusrbrown.github.io` now resolves to repo id `1174807412` (the mrbro.dev developer portfolio, canonical page [[marcusrbrown--mrbro-dev]]) — not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Current occupant: React 19 / TS 5.9.3 / Vite 7.3.6, React Router v7, prerendered blog+RSS, visual/a11y/perf test tiers, `.impeccable` design gate, 8 workflows, Fro Bot present at agent **v0.93.1** (`a4976f4`), Renovate preset #5.2.7, pnpm 10.33.4, MIT. Open issues 4 (#204/#162/#13/#1), stars 1. No onboarding follow-up needed (workflow active). See Delta Log 2026-07-20 for full snapshot. |
+| 2026-07-22 | `a5a6d8c` | **Collision holds; durable delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). Its `main` advanced `4bdbf32` → `a5a6d8c` (first-party blog #188/#190, self-hosted preview images #202, accessible theme preset picker #209, topic-curated feed #195, Fro Bot CI hardening #210). Agent pin steady at v0.93.1 (`a4976f4`); 8 workflows; open issues 4 (#204/#162/#13/#1). Fro Bot active — no onboarding PR. Full snapshot recorded on the mrbro.dev page. |
