@@ -3005,27 +3005,24 @@ Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
 
-## [2026-07-22 07:48] ingest | repo:marcusrbrown/marcusrbrown.github.io
+## [2026-07-22 07:49] ingest | fro-bot/systematic
 
-Surveyed the *name* `marcusrbrown/marcusrbrown.github.io`, which — since the 2026-07-13 rename/collision — resolves to repo **id `1174807412`**, the **mrbro.dev developer portfolio** (`package.json name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), *not* the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Durable per-repo knowledge therefore lands on the canonical [[marcusrbrown--mrbro-dev]] page; the github-io page carries only a collision-confirm pointer.
+Re-survey of `fro-bot/systematic` (HEAD `8395976`, gh-pages, source `ab42f8a`). Untrusted-input survey via unauthenticated `api.github.com` + `fro.bot/systematic` (no `gh` token this cycle) — reads limited to directory listings, the OCX registry `index.json`, and the hosted JSON Schemas. Updated repo page `fro-bot--systematic.md`, source page `marcusrbrown--systematic.md` (downstream-confirmation note only), topic page `opencode-plugins.md`, and `index.md`.
 
-Substantive delta on the mrbro.dev repo: `main` HEAD advanced `4bdbf32` → **`a5a6d8c`** (`feat(theme): add accessible preset picker (#209)`, 2026-07-20) — the first real motion since 2026-05-28 (the `7a49abc` window was all re-surveys of a frozen trunk).
+Headline: **the `@fro.bot/systematic` v2 → v3 major crossing propagated cleanly to this deploy target.**
 
-- **Fro Bot agent v0.43.0 → v0.93.1** (`fro-bot/agent@a4976f4`) — this page had recorded v0.43.0 across every prior survey; pin now far ahead, matching the v0.93.1 seen from the github-io side on 2026-07-20.
-- First-party blog with build-time gist publishing (#188/#190; `feed 6.0.0`/`shiki 4.3.1`/`unified 11.0.5` now direct deps; `blog-refresh.yaml` + `blog-refresh` script). A `docs(solutions)` commit (#190) records a blog-snapshot gist-API bug.
-- Self-hosted project preview images (#202; `project-preview-refresh` script); open regression bug #204.
-- Accessible theme preset picker (#209); topic-curated portfolio feed (#195); hardened GitHub-feed reliability (#187); landing page trimmed 6 sections (#206).
-- Fro Bot CI hardening: forbid `ce:*` skills in reviews (#210), fork-detection fix (#197), inaccessible security-alert scan dropped from autoheal (#196), source maps dropped from prod build (#199).
-- Stack: React 19 / React Router 7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1, pnpm 10.33.4 (`engines.pnpm ^10.28.2`), Node >=22.6.0. License MIT (API `license` null — no LICENSE file). 8 workflows; crons `30 3` autoheal / `30 15` maintenance UTC. Split-brain override ledger (`package.json pnpm.overrides` + `pnpm-workspace.yaml`) persists. Open issues 4 (#204/#162/#13/#1), stars 1. Gaps hold: no Probot `settings.yml`, no CodeQL/Scorecard. Fro Bot workflow **present and active** — no onboarding follow-up draft PR warranted.
+- **Registry advanced v2.33.2 → v3.2.5** (matches latest source release v3.2.5, published 2026-07-22 01:01, deployed 01:03 — ~2 min lag). Namespace/name/author stable.
+- **First-ever component contraction: 104 → 73** — agents 51 → 37 (−14), skills 48 → 31 (−17); bundles/profiles/plugin unchanged (2/2/1). Every prior interval was flat or additive; the major pruned the catalog.
+- **Breaking schema-host change: `schemas/v2/systematic-config.schema.json` now returns HTTP 404.** The `v2/` dir was dropped and replaced by `schemas/v3/`; `schemas/latest/` `$id` re-points to the v3 URL (latest ≡ v3). Property set stable at 8 (`skills_as_commands` retained), draft-07, no `title`, same `description`. **Confirms the 2026-07-08 prediction** that a v3 would reshape the pinned-URL contract — majors replace the versioned path wholesale, they do not co-serve; any consumer pinned to `schemas/v2/` is now silently broken (autocomplete/validation loss, no error surfaced).
+- `.well-known/ocx.json` unchanged. gh-pages tree otherwise stable (still no `.github/` — Renovate config remains build-wiped). Issues #1 (CodeQL/Scorecard parity) and #3 (stale Renovate config notice, ~4 weeks) still open; 0 open PRs. Deploy cadence intensified: 14 deploys 2026-07-14 → 2026-07-22 (7 on 2026-07-17).
+- **No Fro Bot workflow** — expected and appropriate; the repo is static build output only, and the source ([[marcusrbrown--systematic]]) carries full Fro Bot integration. No follow-up draft PR recommended.
 
-Touched pages: `knowledge/wiki/repos/marcusrbrown--mrbro-dev.md` (frontmatter `updated` + new source SHA `a5a6d8c` + `name-collision` tag; new Delta Log 2026-07-22; Survey History row); `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter source SHA; collision-confirm Delta Log 2026-07-22; Survey History row); `knowledge/index.md` (mrbro-dev + github-io entries refreshed); `knowledge/log.md`.
+Cross-page updates: added a v3.2.5 downstream-confirmation note + `updated` bump to `marcusrbrown--systematic.md` (flags a direct source-side v3 survey as warranted); recorded the schema-host breaking-path precedent + catalog contraction in `opencode-plugins.md`.
 
-Constraints honored: target treated as untrusted input; reads limited to directory listings, `package.json`, and workflow files; additive updates only (prior brand-site records and mrbro.dev history preserved; name-collision provenance noted, not overwritten); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; wikilinks point to existing pages ([[marcusrbrown--mrbro-dev]], [[marcusrbrown--marcusrbrown-com]], [[marcusrbrown--marcusrbrown-github-io]]). Repo re-confirmed **public** before any write. `gh` CLI had no token in this runner; facts gathered via unauthenticated public GitHub API — non-mutating reads only. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR.
+Sources: https://github.com/fro-bot/systematic (gh-pages HEAD 8395976, source marcusrbrown/systematic@ab42f8a); https://fro.bot/systematic/index.json; https://fro.bot/systematic/schemas/{v3,latest}/systematic-config.schema.json
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA a5a6d8c73ef5995fce3749b6eece04eeaede6361)
+## [2026-07-22 07:50] ingest | repo:fro-bot/systematic
 
-## [2026-07-22 07:49] ingest | repo:marcusrbrown/marcusrbrown.github.io
+Surveyed fro-bot/systematic and updated the control-plane wiki.
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+Sources: https://github.com/fro-bot/systematic

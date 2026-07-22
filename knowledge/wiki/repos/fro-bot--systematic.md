@@ -2,7 +2,7 @@
 type: repo
 title: "fro-bot/systematic"
 created: 2026-05-07
-updated: 2026-07-08
+updated: 2026-07-22
 sources:
   - url: https://github.com/fro-bot/systematic
     sha: 73fa108
@@ -22,6 +22,9 @@ sources:
   - url: https://github.com/fro-bot/systematic
     sha: c712560
     accessed: 2026-07-08
+  - url: https://github.com/fro-bot/systematic
+    sha: 8395976
+    accessed: 2026-07-22
 tags: [documentation, github-pages, astro, starlight, opencode, plugin, ocx, json-schema, renovate]
 related:
   - marcusrbrown--systematic
@@ -37,12 +40,12 @@ Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Star
 | Attribute       | Value                                                |
 | --------------- | ---------------------------------------------------- |
 | Created         | 2026-02-09                                           |
-| Last push       | 2026-07-07                                           |
+| Last push       | 2026-07-22                                           |
 | Default branch  | `gh-pages`                                           |
 | Language        | HTML (static build output)                           |
 | License         | None specified                                       |
 | Stars           | 0                                                    |
-| Open issues     | 2 (#1, #3); 0 open PRs                               |
+| Open issues     | 2 (#1, #3); 0 open PRs (unchanged 2026-07-22)        |
 | Pages URL       | https://fro.bot/systematic/                          |
 | Visibility      | Public                                               |
 | Description     | "Documentation site for @marcusrbrown/systematic" (added since the 2026-05-22 survey; the repo previously carried no description) |
@@ -84,7 +87,25 @@ The `gh-pages` branch contains the built Starlight/Astro static site:
 
 The `.well-known/ocx.json` file points to the OCX component registry at `/systematic/index.json`. This enables the `ocx` CLI to discover and install individual skills and agents from the documentation site URL. The registry uses V2 schema (since `@fro.bot/systematic` v2.6.0).
 
-As of the 2026-07-08 survey, `index.json` advertises **v2.33.2** (up from v2.32.0 at the 2026-06-25 survey), still matching the latest source release (v2.33.2, published 2026-07-07 10:41; deployed 10:43). The 104-component breakdown is **unchanged** — 51 agents, 48 skills, 2 bundles, 2 profiles, 1 plugin. Namespace (`systematic`), name (`Systematic`), and author (`Marcus R. Brown <human@fro.bot>`) are all stable. The figures below still describe the current component split.
+### 2026-07-22 survey — v2 → v3 major crossing
+
+The source plugin ([[marcusrbrown--systematic]]) crossed the **v2 → v3 major boundary**, and it propagated cleanly to this deploy target. As of the 2026-07-22 survey (HEAD `8395976`, source `ab42f8a`):
+
+- **`index.json` advertises v3.2.5** (up from v2.33.2), matching the latest source release (v3.2.5, published 2026-07-22 01:01; deployed 01:03 — ~2 min lag, the same fan-out-per-release rhythm).
+- **Component count dropped 104 → 73** — the first *contraction* since surveys began (every prior interval was flat or additive). The major bump pruned the catalog rather than growing it.
+
+| Type      | 2026-07-08 (v2.33.2) | 2026-07-22 (v3.2.5) | Δ    |
+| --------- | -------------------- | ------------------- | ---- |
+| `agent`   | 51                   | 37                  | −14  |
+| `skill`   | 48                   | 31                  | −17  |
+| `bundle`  | 2                    | 2                   | 0    |
+| `profile` | 2                    | 2                   | 0    |
+| `plugin`  | 1                    | 1                   | 0    |
+| **total** | **104**              | **73**              | **−31** |
+
+Namespace (`systematic`), name (`Systematic`), and author (`Marcus R. Brown <human@fro.bot>`) are all stable. The −31 agent+skill contraction is a source-side curation event in [[marcusrbrown--systematic]]; the deploy target is a faithful mirror and simply reflects it. `.well-known/ocx.json` is unchanged (`{"version":1,"registry":"/systematic/index.json"}`).
+
+As of the 2026-07-08 survey, `index.json` advertised **v2.33.2** (up from v2.32.0 at the 2026-06-25 survey), still matching the latest source release (v2.33.2, published 2026-07-07 10:41; deployed 10:43). The 104-component breakdown is **unchanged** — 51 agents, 48 skills, 2 bundles, 2 profiles, 1 plugin. Namespace (`systematic`), name (`Systematic`), and author (`Marcus R. Brown <human@fro.bot>`) are all stable. The figures below still describe the current component split.
 
 As of the 2026-06-25 survey, `index.json` was **unchanged** from the 2026-06-14 survey — same version, namespace, author, and 104-component breakdown. The figures below still hold.
 
@@ -112,20 +133,34 @@ The `bundle` and `profile` types (V2 registry capabilities) were new in the 2026
 
 ## Hosted JSON Schemas
 
-The `schemas/` tree appeared on `gh-pages` between the 2026-05-07 survey and now. Two URLs are served:
+The `schemas/` tree appeared on `gh-pages` between the 2026-05-07 survey and now. As of the 2026-07-22 survey, two URLs are served — but the **major path bumped v2 → v3**:
 
 - `https://fro.bot/systematic/schemas/latest/systematic-config.schema.json`
-- `https://fro.bot/systematic/schemas/v2/systematic-config.schema.json`
+- `https://fro.bot/systematic/schemas/v3/systematic-config.schema.json`
 
 Both are draft-07 JSON Schemas matching the `systematic.json` config shape consumed by `marcusrbrown/systematic`'s `config-handler.ts`.
 
-As of the 2026-07-08 survey the top-level property set is: `$schema`, `agents`, `bootstrap`, `categories`, `disabled_agents`, `disabled_commands`, `disabled_skills`, `skills_as_commands` — **eight** properties. This is a **new field** since 2026-06-25 (see below); every prior survey recorded seven.
+The top-level property set is stable at **eight**: `$schema`, `agents`, `bootstrap`, `categories`, `disabled_agents`, `disabled_commands`, `disabled_skills`, `skills_as_commands` — unchanged across the v2 → v3 crossing (the major bump reshaped the plugin catalog, not the user-config surface).
+
+### Schema shape changes observed 2026-07-22 — **v2 URL removed (breaking)**
+
+The predicted major-version event fired. The 2026-07-08 record warned: *"if a v3 ever ships, a `latest` whose `$id` is hard-pinned to v2 would mis-advertise its own identity. Worth re-checking at the next major."* v3 shipped, and the schema host reshaped:
+
+- **`schemas/v2/systematic-config.schema.json` now returns HTTP 404.** The `v2/` directory is gone from the `gh-pages` tree entirely; `schemas/` now contains only `latest/` and `v3/`.
+- **`schemas/v3/systematic-config.schema.json` serves** with `$id` hard-pinned at the v3 URL, draft-07, no top-level `title`, `description` = `Systematic user configuration file (systematic.json / systematic.jsonc)`.
+- **`schemas/latest/` is byte-equivalent to v3**: its `$id` now points at the v3 URL (same latest-≡-current pattern seen at v2), same description, same eight-property set.
+
+**This is a breaking change for any consumer pinned to `schemas/v2/`.** The prior survey flagged this exact risk ("treat it like a public API"). The build does not keep old major paths around — when the source majored to v3, the v2 schema path was dropped rather than frozen. Editors and tools that pinned `$schema` to the v2 URL will now fail to resolve it (silent loss of autocomplete/validation, no error surfaced to the user). The precedent is now confirmed: **major versions replace the path wholesale; they do not co-serve.** A consumer wanting stability should pin `latest/` (which floats) or accept that `vN/` paths are dropped at the next major.
+
+### Schema shape changes observed 2026-07-08
+
+As of the 2026-07-08 survey the top-level property set was: `$schema`, `agents`, `bootstrap`, `categories`, `disabled_agents`, `disabled_commands`, `disabled_skills`, `skills_as_commands` — **eight** properties (a **new field** `skills_as_commands` since 2026-06-25; every survey before that recorded seven). At that survey the served paths were `schemas/latest/` and `schemas/v2/`.
 
 The schema's own `$schema` property is documented as informational only — the loader does not fetch or validate against it. Its purpose is to flip on field-level autocomplete in VSCode, Zed, IntelliJ, and any other editor that resolves `$schema` URLs.
 
-Consequence: this deployment target is no longer purely a docs site. It is now also a stable schema host. Renaming, restructuring, or breaking the URL shape of `schemas/v2/systematic-config.schema.json` would silently break IDE autocomplete in every consumer that pinned the v2 URL. Treat it like a public API.
+Consequence: this deployment target is no longer purely a docs site. It is also a schema host — but **not a stable one across majors.** As the 2026-07-22 survey confirmed, breaking the URL shape of `schemas/vN/systematic-config.schema.json` at a major bump silently breaks IDE autocomplete in every consumer that pinned the old `vN` URL. Treat it like a public API that reserves the right to drop old major paths.
 
-### Schema shape changes observed 2026-07-08
+### Schema property change observed 2026-07-08 (`skills_as_commands`)
 
 One additive change since the 2026-06-25 survey, on **both** `latest` and `v2`:
 
@@ -144,11 +179,11 @@ Two changes since the 2026-06-04 survey, both contradicting prior recorded facts
 
 ## Branches
 
-As of 2026-07-08, only one branch remains:
+As of 2026-07-22, only one branch remains (unchanged since 2026-07-08):
 
 | Branch               | Purpose                              |
 | -------------------- | ------------------------------------ |
-| `gh-pages` (default) | Built documentation site (build output only again) |
+| `gh-pages` (default) | Built documentation site (build output only) |
 
 The `renovate/configure` branch documented at the 2026-06-14 survey is gone: PR #2 **merged** on 2026-06-24 and the branch was deleted. See [Renovate](#renovate).
 
@@ -164,6 +199,8 @@ The `renovate/configure` branch documented at the 2026-06-14 survey is gone: PR 
 Issue #2 was a PR (now merged). Issue #3 is Renovate's standard config-error notice: "There is an error with this repository's Renovate configuration that needs to be fixed. As a precaution, Renovate will stop PRs until it is resolved." It was opened minutes after PR #2 merged — the merged config was already failing to resolve (see [Renovate](#renovate)).
 
 **Update 2026-07-08:** issue #3 is still **open**, but the config it complains about no longer exists on `gh-pages` (the docs build wiped `.github/renovate.json5`). The issue is now effectively stale — there is no config for Renovate to resolve, so it will neither self-heal nor re-error. It should be closed manually; it is not tracking a live fault.
+
+**Update 2026-07-22:** unchanged — both #1 and #3 remain **open**. Issue #3 is now ~4 weeks stale with no config on the branch for it to reference; the docs build has overwritten `gh-pages` many times since (14 deploys 2026-07-14 → 2026-07-22) and never restored a `.github/` dir. Still a manual-close candidate, not a live fault.
 
 ## Fro Bot Workflow
 
@@ -215,7 +252,24 @@ The documentation build pipeline flows: `marcusrbrown/systematic` → Astro buil
 
 Based on commit history, deployments track releases of `@fro.bot/systematic`. Recent activity is markedly bursty — multiple deploys per day during active development windows on the source repo, suggesting CI fans out per merge rather than per release tag.
 
-As of the 2026-07-08 survey, the cadence **re-intensified** around the v2.33.x releases. HEAD is a docs deploy again (`c712560`, 2026-07-07 10:43, source `f6727e9c`) — build output, not the Renovate merge. Three deploys landed on 2026-07-07 alone, tracking the v2.33.0 → v2.33.1 → v2.33.2 release sequence (each source release deployed within ~2 minutes of publication). The interval before that was quiet: one deploy 2026-06-26, one 2026-07-04.
+As of the 2026-07-22 survey, the cadence **intensified sharply** across the v3 run-up. HEAD is a docs deploy (`8395976`, 2026-07-22 01:03, source `ab42f8a`) — the v3.2.5 release, deployed ~2 min after publication. Fourteen deploys landed between 2026-07-14 and 2026-07-22, clustering on 2026-07-17 (7 deploys in one day) and 2026-07-19 (3 deploys), tracking the v2 → v3 major and its `3.x` patch train. The fan-out-per-merge rhythm holds: each source release lands here within ~2 minutes.
+
+Deploys observed on the 2026-07-22 survey (new since 2026-07-08):
+
+| Date (UTC)         | gh-pages SHA | Source SHA  | Notes                    |
+| ------------------ | ------------ | ----------- | ------------------------ |
+| 2026-07-22 01:03   | `8395976`    | `ab42f8a`   | v3.2.5 release (01:01)   |
+| 2026-07-21 16:09   | `2848c89`    | `027172b`   |                          |
+| 2026-07-21 04:44   | `1f6721e`    | `c82e0f0`   |                          |
+| 2026-07-19 09:48   | `23abacf`    | `f5b2a7a`   |                          |
+| 2026-07-19 08:21   | `eacff3c`    | `7fa0e0f`   |                          |
+| 2026-07-19 07:01   | `6e1af74`    | `5fff5e8`   |                          |
+| 2026-07-18 21:56   | `235dee5`    | `3601f8e`   |                          |
+| 2026-07-17 23:26   | `3760e3a`    | `ed2fda2`   |                          |
+| 2026-07-17 09:19   | `1000d00`    | (7 deploys 2026-07-17) |             |
+| 2026-07-14 05:23   | `d55715b`    |             |                          |
+
+**Prior interval (2026-07-08 survey):** the cadence **re-intensified** around the v2.33.x releases. HEAD was a docs deploy (`c712560`, 2026-07-07 10:43, source `f6727e9c`) — build output, not the Renovate merge. Three deploys landed on 2026-07-07 alone, tracking the v2.33.0 → v2.33.1 → v2.33.2 release sequence (each source release deployed within ~2 minutes of publication). The interval before that was quiet: one deploy 2026-06-26, one 2026-07-04.
 
 Deploys observed on the 2026-07-08 survey (new since 2026-06-25):
 
@@ -297,3 +351,4 @@ Earlier deploys remain documented from the prior survey:
 | 2026-06-14 | `28400b1`  | Registry advanced v2.24.0 → v2.31.0 (still matches latest source release, published 2026-06-07); components 103 → 104 — skills 47 → 48, all other types unchanged (51/2/2/1); schema config field set unchanged BUT two shape contradictions vs. prior survey: human-readable label moved `title` → `description` on both schemas, and `schemas/latest/` `$id` now hard-points at the v2 URL (latest ≡ v2 on surveyed fields); `.well-known/ocx.json` unchanged; gh-pages tree structure unchanged; deploy cadence re-intensified to multi-per-day around the v2.31.0 release; no Fro Bot workflow (still expected); issue #1 and PR #2 still open |
 | 2026-06-25 | `e75ddeb`  | **Structural shift on the deploy branch.** Renovate PR #2 merged onto `gh-pages` (`.github/renovate.json5`, commit `e75ddeb`) and the `renovate/configure` branch was deleted — first non-build, human-intent commit on the deploy branch; HEAD is no longer docs build output. Merged config extends `github>fro-bot/renovate-config` — **contradicts** the 2026-06-14 record of the unmerged branch extending `github>bfra-me/renovate-config` (preset source swapped bfra-me → fro-bot before merge). Preset fails to resolve: new issue #3 "Action Required: Fix Renovate Configuration" (2026-06-24), Renovate halted. Issue #2 now merged (was PR). Registry **unchanged** at v2.32.0 / 104 components (51/48/2/2/1, still matches latest source release v2.32.0 published 2026-06-15). Schemas **byte-stable** vs. prior (latest ≡ v2, no `title`, description label, same props). `.well-known/ocx.json` unchanged. gh-pages content tree otherwise unchanged. Deploy cadence cooled to 2 deploys (2026-06-14, 2026-06-15) clustered on the v2.32.0 release. Still no Fro Bot workflow (only `pages-build-deployment` + `Dependency Graph` dynamic) — still expected |
 | 2026-07-08 | `c712560`  | **Prediction confirmed: Renovate config wiped by the build.** The docs build resumed on `gh-pages` and the first deploy after PR #2 (`29f137d`, 2026-06-26) overwrote the tree wholesale, dropping `.github/renovate.json5`; the root tree no longer has a `.github/` dir. HEAD is docs build output again (`c712560`, source `f6727e9`). Issue #3 still open but now **stale/moot** — no config remains for Renovate to resolve. **Registry advanced v2.32.0 → v2.33.2** (still matches latest source release v2.33.2, published 2026-07-07); 104 components unchanged (51/48/2/2/1). **New schema property `skills_as_commands`** on both `latest` and `v2` (property set 7 → 8, additive) — **contradicts** the 2026-06-25 "byte-stable" record; all other schema surface stable (draft-07, `$id` pinned at v2, no `title`, same `description`). `.well-known/ocx.json` unchanged. gh-pages content tree otherwise unchanged. Deploy cadence re-intensified: 3 deploys on 2026-07-07 tracking the v2.33.0/.1/.2 release train (each deployed ~2 min after publish), plus deploys 2026-06-26 and 2026-07-04. Still no Fro Bot workflow (only `pages-build-deployment` + `Dependency Graph` dynamic) — still expected |
+| 2026-07-22 | `8395976`  | **v2 → v3 major crossing propagated from source.** Registry advanced **v2.33.2 → v3.2.5** (matches latest source release v3.2.5, published 2026-07-22 01:01, deployed 01:03). **First-ever component contraction: 104 → 73** — agents 51 → 37 (−14), skills 48 → 31 (−17); bundles/profiles/plugin unchanged (2/2/1). **Breaking schema-host change: `schemas/v2/` now returns HTTP 404** — the `v2/` dir was dropped and replaced by `schemas/v3/`; `latest` `$id` now points at the v3 URL (latest ≡ v3). Property set stable at 8 (`skills_as_commands` retained); draft-07, no `title`, same `description`. **Confirms the 2026-07-08 prediction** that a v3 would reshape the pinned-URL contract — majors replace the path wholesale, they do not co-serve; any consumer pinned to `schemas/v2/` is now broken. `.well-known/ocx.json` unchanged. gh-pages tree otherwise stable (still no `.github/`). Issues #1 and #3 still open (#3 ~4 weeks stale). Deploy cadence intensified: 14 deploys 2026-07-14 → 2026-07-22 (7 on 2026-07-17 alone) tracking the v3 major + 3.x train. Still no Fro Bot workflow (only `pages-build-deployment` + `Dependency Graph` dynamic) — still expected |

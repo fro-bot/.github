@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/systematic"
 created: 2026-04-24
-updated: 2026-07-15
+updated: 2026-07-22
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
@@ -44,7 +44,7 @@ OpenCode plugin providing structured engineering workflows for AI-powered develo
 | --------------- | ---------------------------------------------------- |
 | Created         | 2026-01-24                                           |
 | Last push       | 2026-07-15                                           |
-| Latest release  | v2.33.3 (2026-07-14)                                 |
+| Latest release  | **v3.2.5** (2026-07-22) — v2 → v3 major crossed since the 2026-07-15 direct survey (v2.33.3); confirmed downstream via [[fro-bot--systematic]] deploy target (registry `index.json` @ v3.2.5, `schemas/v3/` live, `schemas/v2/` now 404) and [[fro-bot--agent]] (`@fro.bot/systematic` v2 → v3, #1250). Component catalog contracted 104 → 73 (agents 51 → 37, skills 48 → 31). A direct source-side survey is warranted to capture the v3 architecture change. |
 | Language        | TypeScript (strict, ESM)                             |
 | Runtime         | Bun                                                  |
 | License         | MIT                                                  |

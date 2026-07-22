@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-07-18
+updated: 2026-07-22
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -314,10 +314,12 @@ Both plugins document the divergence inline with cross-references to each other'
 
 As of the 2026-05-22 [[fro-bot--systematic]] survey, the same docs site is now the canonical host for the user config JSON Schema:
 
-- `https://fro.bot/systematic/schemas/v2/systematic-config.schema.json` — pinned `$id`, intended for `"$schema"` references in `systematic.json` / `systematic.jsonc` for IDE autocomplete (VSCode, Zed, IntelliJ).
+- `https://fro.bot/systematic/schemas/v<major>/systematic-config.schema.json` — pinned `$id`, intended for `"$schema"` references in `systematic.json` / `systematic.jsonc` for IDE autocomplete (VSCode, Zed, IntelliJ). **This path is major-versioned and NOT stable across majors.**
 - `https://fro.bot/systematic/schemas/latest/systematic-config.schema.json` — moving pointer for "current".
 
-Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`, and (since systematic v2.33.0) `skills_as_commands`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. Treat both URLs as public API; renaming or restructuring them silently breaks autocomplete for every consumer that pinned them. The same docs deploy now drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
+Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`, and (since systematic v2.33.0) `skills_as_commands`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. The same docs deploy drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
+
+**Breaking-path precedent confirmed (2026-07-22 [[fro-bot--systematic]] survey):** when the plugin crossed the **v2 → v3 major**, the schema host **dropped `schemas/v2/` entirely** (it now returns HTTP 404) and replaced it with `schemas/v3/`; `latest/`'s `$id` re-pointed to the v3 URL. Majors replace the versioned path wholesale — they do **not** co-serve old majors. Any consumer that pinned `"$schema"` to a `vN` URL silently loses autocomplete/validation at the next major (no error surfaced). Lesson: pin `latest/` for a floating contract, or expect to re-pin `vN` at each major. The same v2 → v3 crossing contracted the OCX registry catalog from 104 → 73 components (agents 51 → 37, skills 48 → 31) — the first component *contraction* observed, a source-side curation event rather than growth.
 
 ## Bundled Skill for Upstream Sync (cortexkit_anthropic-auth pattern)
 
@@ -333,7 +335,7 @@ Contrast with [[marcusrbrown--systematic]] which ships general-purpose skills (`
 
 ## Related Pages
 
-- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows (~48 bundled skill dirs, 51 agents) at v2.33.3; discovered-skills-as-slash-commands added v2.33.0
+- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows; **crossed v2 → v3 major (v3.2.5, 2026-07-22)** with catalog contraction 104 → 73 components (confirmed downstream via [[fro-bot--systematic]]); discovered-skills-as-slash-commands added v2.33.0
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.13.1): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths
