@@ -3026,3 +3026,26 @@ Sources: https://github.com/fro-bot/systematic (gh-pages HEAD 8395976, source ma
 Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
+
+## [2026-07-23 07:47] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io` (HEAD `a5a6d8c`, unchanged since the 2026-07-22 survey). Untrusted-input posture; no `gh` token in this runner, so facts were gathered via public read-only page fetches (repo landing, `/commits/main`, `/.github/workflows` tree) — reads limited to directory listings, the README, and the workflow inventory.
+
+Headline: **the name-collision holds for the third consecutive cycle and there is no trunk motion to record.**
+
+- The *name* still resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). README titled "mrbro.dev", homepage `mrbro.dev/`, description "My portfolio.", topics `react/blog/github-pages/portfolio/typescript/developer/vite`.
+- `main` HEAD unchanged at `a5a6d8c` (`feat(theme): add accessible preset picker (#209)`, 2026-07-20). No new trunk commits since 2026-07-22, so no durable per-repo delta lands on [[marcusrbrown--mrbro-dev]] this cycle.
+- 8 workflows re-confirmed (`blog-refresh.yaml`, `ci.yaml`, `copilot-setup-steps.yaml`, `deploy.yaml`, `e2e-tests.yaml`, `fro-bot.yaml`, `performance.yaml`, `renovate.yaml`). **Fro Bot workflow present and active — no onboarding follow-up draft PR warranted for this name.** Open issues 4, open PRs 1, stars 1.
+- **New observable (same SHA, fuller root enumeration):** repo root shows `.codex/`, `.opencode/`, `examples/` directories and root-level `DESIGN.md`/`PRODUCT.md` alongside the `.impeccable/` design gate — agent-tooling + design-doc scaffolding present at `a5a6d8c`, not a code/workflow change. Recorded additively on both the github-io collision page and the mrbro.dev page; no contradictions with prior ingests.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter `updated` + 2026-07-23 source; new Delta Log 2026-07-23 collision-confirm section; Survey History row); `knowledge/wiki/repos/marcusrbrown--mrbro-dev.md` (frontmatter `updated` + 2026-07-23 source; no-delta Survey History row noting the fuller root enumeration); `knowledge/index.md` (both repo entries refreshed); `knowledge/log.md`.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README, and workflow files; additive updates only (prior records preserved, no overwrite); modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`; wikilinks point to existing pages ([[marcusrbrown--mrbro-dev]], [[marcusrbrown--marcusrbrown-com]]). Repo re-confirmed **public** before any write. No GitHub issue opened/commented as a run notice; this log entry is the canonical per-survey summary. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA a5a6d8c73ef5995fce3749b6eece04eeaede6361)
+
+## [2026-07-23 07:50] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io

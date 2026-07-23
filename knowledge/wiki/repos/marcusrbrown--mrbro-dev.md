@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/mrbro.dev"
 created: 2026-04-18
-updated: 2026-07-22
+updated: 2026-07-23
 sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 51f5cab5c77768b761d9f0a688ac7436cc5a06f4
@@ -25,6 +25,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: a5a6d8c73ef5995fce3749b6eece04eeaede6361
     accessed: 2026-07-22
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: a5a6d8c73ef5995fce3749b6eece04eeaede6361
+    accessed: 2026-07-23
 tags: [portfolio, react, typescript, vite, github-pages, blog, pnpm, name-collision]
 aliases: [mrbro-dev, mrbro.dev]
 related:
@@ -304,4 +307,5 @@ First substantive delta on this page since the `88f7a4a`/`7a49abc` window (2026-
 | 2026-06-02 | `7a49abc` | **pnpm `overrides` migrated `package.json` → `pnpm-workspace.yaml`** and expanded to ~20 entries with inline GHSA annotations, driven by a new `pnpm audit` CI gate (#177). New advisories pinned: `qs`, `ws`, `tmp`, `rollup`, `js-yaml`, `flatted`, `ajv`, `mdast-util-to-hast`, `minimatch`, `yauzl` — mostly transitive via `@lhci/cli`. **Fro Bot prompt hardening (#176):** ported 5 inserts from [[marcusrbrown--marcusrbrown]] (skipped-needs trap, `continue-on-error` red-flag, 7-day workflow-health monitor). Agent unchanged at v0.43.0. Open issues 8 → 4 (pin PRs merged). Open PRs 5 (Renovate). TypeScript still 5.9.3, pnpm 10.33.4, Vitest 4.1.4. No structural code/layout change. |
 | 2026-06-13 | `7a49abc` | **No-delta re-survey — HEAD unchanged since 2026-06-02 (`pushed_at` 2026-05-28T02:28Z).** Every tracked fact re-verified against the same tree: agent v0.43.0, TypeScript 5.9.3, Vite 7.3.2, Vitest 4.1.4, pnpm 10.33.4 (`engines.pnpm ^10.28.2`), Node >=22.6.0, React Router 7.7.1, 7 workflows, no `settings.yml`. Open issues 4 (#162 autoheal, #13 maintenance, #1 Dependency Dashboard, #48 triage), open PRs 5 (unchanged set: #180/#178/#175/#172/#168). **Corrections against same SHA:** Playwright recorded as 1.54.x is actually 1.59.1; pnpm table said 10.33.0, true value 10.33.4. **New observable:** Renovate pin PRs (#180/#175/#172/#168) authored by `app/mrbro-bot`, security-override PR (#178) by `fro-bot` — the `mrbro-bot[bot]` actor (cf. [[marcusrbrown--ha-config]]) is now visibly active here, splitting automation labor with `fro-bot`. |
 | 2026-06-23 | `7a49abc` | **No-delta re-survey — `main` HEAD still `7a49abc` (last main commit 2026-05-28T02:19Z).** `pushed_at` advanced to 2026-06-19 but that reflects PR-branch activity (renovate/*, fix/security-*, copilot/*), not the default branch. 7 workflows confirmed present including `fro-bot.yaml`. Open issues unchanged at 4. **Only delta is PR-queue movement:** open PRs 5 → 6 with new #181 `vite` 7.3.2 → 7.3.5 `[SECURITY]` (authored by `app/mrbro-bot`, labels `automerge`+`security`, opened 2026-06-15) — supersedes the standing 7.3.2 pin and continues the `mrbro-bot`-drives-version-bumps / `fro-bot`-drives-override-remediation split. No tree-level config, dependency, or workflow changes. |
+| 2026-07-23 | `a5a6d8c` | **No-delta re-survey (via `marcusrbrown.github.io` name binding → id `1174807412`).** `main` HEAD unchanged since 2026-07-22; agent pin steady v0.93.1 (`a4976f4`), 8 workflows, open issues 4 (#204/#162/#13/#1), open PRs 1, stars 1 — all re-verified. **New observable (same SHA, fuller root enumeration):** repo root shows `.codex/`, `.opencode/`, `examples/` dirs and root-level `DESIGN.md`/`PRODUCT.md` alongside the `.impeccable/` design gate — agent-tooling + design-doc scaffolding, no application-code/workflow change. No contradictions. |
 | 2026-07-22 | `a5a6d8c` | **Substantive delta (surveyed via the `marcusrbrown.github.io` name binding → id `1174807412`).** First real motion on `main` since 2026-05-28. Agent v0.43.0 → **v0.93.1** (`a4976f4`). First-party blog with build-time gist publishing (#188/#190, `feed`/`shiki`/`unified` now direct deps, `blog-refresh.yaml`); self-hosted project preview images (#202, bug #204 open); accessible theme preset picker (#209); topic-curated portfolio feed (#195) with hardened GitHub-feed reliability (#187); landing page trimmed 6 sections (#206). Fro Bot CI: forbid `ce:*` skills in reviews (#210), fork-detection fix (#197), source maps dropped from prod build (#199). Stack: React 19 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1, pnpm 10.33.4, Node >=22.6.0. 8 workflows. Open issues 4 (#204/#162/#13/#1), stars 1. Split-brain override ledger persists. Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) hold. Fro Bot active — no onboarding PR needed. |
