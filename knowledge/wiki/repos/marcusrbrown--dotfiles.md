@@ -580,7 +580,7 @@ Extends `fro-bot/.github:common-settings.yaml`. Confirms membership in the Fro B
 - Consumes [[fro-bot--agent]] both as the `fro-bot/agent@v0.84.3` workflow action and as the `@fro.bot/harness@1.17.14-harness.e98fbc0f` CLI build pinned in mise (harness base rebased to `1.17.14`)
 - [[marcusrbrown--opencode-copilot-delegate]] **no longer consumed as a headless OpenCode plugin** (dropped from `opencode.json`/`tui.json` @ 2026-07-10); Copilot delegation now flows through the `copilot-cli` / `copilot-cloud-agent` skills
 - Anthropic auth: steady on upstream `@cortexkit/opencode-anthropic-auth@1.13.0` (was 1.10.3 @ 2026-06-27); Marcus's fork [[marcusrbrown--cortexkit-anthropic-auth]] remains unconsumed here across three surveys
-- Shares the `impeccable` design-lint skill with [[fro-bot--dashboard]] (dotfiles wires it into OMO-slim `designer`/`fixer` agents; dashboard runs it as a CI Design Check)
+- Shares the `impeccable` design-lint skill with [[fro-bot--dashboard]] (dotfiles wires it into OMO-slim `designer`/`fixer` agents; dashboard, as of its 2026-07-23 survey, now vendors the same skill in-repo at `.agents/skills/impeccable/` plus an Impeccable OpenCode plugin at `.opencode/impeccable/`, alongside its CI Design Check)
 - Tracks [[marcusrbrown--renovate-config]] at v5.2.0 (v4→v5 boundary crossed)
 - Both repos extend `fro-bot/.github:common-settings.yaml` for Probot settings
 - Both repos use reusable workflows from `bfra-me/.github`
