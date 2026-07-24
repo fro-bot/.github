@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-07-22
+updated: 2026-07-24
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -43,6 +43,9 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: 8e20e01775918a01855eb5aba64d04bf966f4d51
     accessed: 2026-07-18
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: 61bc146a5e8fe6b92f84248594e9561d0f36819d
+    accessed: 2026-07-24
 tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution]
 ---
 
@@ -184,7 +187,7 @@ space-bus also documents using **one `opencode serve` instance to multiplex many
 | Repo | npm Package | Purpose | Stack | Status |
 |------|-------------|---------|-------|--------|
 | [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (~48 bundled skill dirs, 51 agents) | Bun, Biome, Zod-typed config, semantic-release | Active, v2.33.3 |
-| [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses; opt-in `/copilot-status` TUI half | Bun, Biome, Changesets | Active, v0.12.0 (4 tools: delegate/output/cancel/resume) |
+| [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses; opt-in `/copilot-status` TUI half | Bun, Biome, Changesets | Active, **v0.12.1** (4 tools: delegate/output/cancel/resume) |
 | [[marcusrbrown--cortexkit-anthropic-auth]] | `@marcusrbrown/opencode-anthropic-auth` + `@marcusrbrown/anthropic-auth-core` | Claude Pro/Max OAuth, fallback accounts, quota routing, prompt-cache controls, optional Cloudflare Worker relay; OpenCode + Pi share the same core | Bun, Biome, Lefthook, monorepo workspaces | Active fork, `1.2.2-mb.2` (fork of `cortexkit/anthropic-auth`); Pi package private in fork |
 | [[fro-bot--space-bus]] | `@fro.bot/space-bus` | Workspace agent bus — a control agent tasks per-project agents over one directory-routed `opencode serve`; MCP facade + browser-safe library subpaths | Bun, Biome, zod v4, Changesets + npm OIDC | Active, **v0.13.1** (6 tools: bus_roster/task/status/result/wait/registry) |
 

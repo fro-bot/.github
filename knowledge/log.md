@@ -6,6 +6,19 @@ Chronological record of all wiki operations.
 
 _Entries are appended by ingest, query, lint, and manual-edit operations. This file is append-only._
 
+## [2026-07-24 04:30] ingest | marcusrbrown/opencode-copilot-delegate
+
+Re-surveyed `marcusrbrown/opencode-copilot-delegate` (SHA `61bc146`, up from `bea97ea`). Survey ran unauthenticated against the public GitHub API (no `GH_TOKEN` available in this dispatch) — reads limited to repo metadata, root/src/tests/workflow tree listings, README/CHANGELOG, and manifest files (`package.json`, `mise.toml`, `biome.json`, `renovate.json5`) per the untrusted-input constraint.
+
+First release since v0.12.0 held across four prior surveys: **v0.12.0 → v0.12.1**, a single patch changeset (`488e8da`) that skips delayed orphan-PID registration once a Copilot task has reached a terminal state — closing a stale-entry race the reaper had to clean up. Source-tree layout unchanged (4 tools, `runtime/`/`discovery/`/`lib/`/`tui/`); TUI components refactored to `confirm-card.tsx`/`modal-list.tsx`/`row.tsx`; fixtures gained `connect-mismatch.jsonl`/`resume-mismatch.jsonl`. Two major toolchain bumps landed: **TypeScript 6.0.3 → 7.0.2** and **`@opentui/*` 0.2.6 → 0.2.7** (#130 merged, #135 landed then reopened at v0.4.3). Also Biome 2.5.0 → 2.5.4, `@opencode-ai/plugin`/`opencode-ai` → 1.18.4, `@github/copilot` CLI → 1.0.73, `@types/node` → 24.13.3, `@changesets/cli` → 2.31.1, `solid-js` → 1.9.14, Renovate preset `#5.2.3` → `#5.2.9`, Fro Bot agent v0.76.0 → **v0.94.2** (SHA `64029d5`). Six workflows including `fro-bot.yaml` present (no follow-up draft PR needed). Open issues unchanged (#38/#26/#25).
+
+Edits (repo-page-additive):
+- `knowledge/wiki/repos/marcusrbrown--opencode-copilot-delegate.md` — new 2026-07-24 Status block, frontmatter source SHA + `updated`, tech-stack (TS/Biome/dev pins/`@opentui`/changesets/solid-js), mise pins, orphan-reaper terminal-state guard, TUI component set, Fro Bot agent version, Renovate preset, Open PRs refresh (2026-07-24), Known Limitations header → v0.12.1, divergence-table Biome version, new Survey History row.
+- `knowledge/wiki/topics/opencode-plugins.md` — frontmatter source SHA + `updated`; "Marcus's Plugin Repos" table v0.12.0 → v0.12.1. (Loader/reaper/singleton patterns unaffected by a patch release.)
+- `knowledge/index.md` — repo catalog line updated to v0.12.1 with survey delta.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 61bc146a5e8fe6b92f84248594e9561d0f36819d)
+
 ## [2025-06-18 00:00] ingest | marcusrbrown/ha-config
 
 Initial survey of `marcusrbrown/ha-config` (SHA `83784bc`). Created repo page `marcusrbrown--ha-config.md` and topic page `home-assistant.md`. Updated `index.md` to catalog both pages.
@@ -3052,3 +3065,9 @@ Sources: https://github.com/fro-bot/dashboard (SHA 58f9634fe7b9b7a9bf63c241944b1
 Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
+
+## [2026-07-24 07:48] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
