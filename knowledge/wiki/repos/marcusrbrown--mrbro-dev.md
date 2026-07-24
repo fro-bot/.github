@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/mrbro.dev"
 created: 2026-04-18
-updated: 2026-07-22
+updated: 2026-07-24
 sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 51f5cab5c77768b761d9f0a688ac7436cc5a06f4
@@ -25,6 +25,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: a5a6d8c73ef5995fce3749b6eece04eeaede6361
     accessed: 2026-07-22
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: a5a6d8c73ef5995fce3749b6eece04eeaede6361
+    accessed: 2026-07-24
 tags: [portfolio, react, typescript, vite, github-pages, blog, pnpm, name-collision]
 aliases: [mrbro-dev, mrbro.dev]
 related:
@@ -294,6 +297,17 @@ First substantive delta on this page since the `88f7a4a`/`7a49abc` window (2026-
 - **Split-brain override ledger persists:** `package.json` `pnpm.overrides` retains `js-yaml`/`qs`/`tmp`/`uuid`; the bulk GHSA-annotated block lives in `pnpm-workspace.yaml` (per the 2026-06-02 migration).
 - **Open issues steady at 4:** #204 (missing preview-image bug), #162 (Daily Autohealing Report), #13 (Daily Maintenance Report), #1 (Dependency Dashboard). Stars 1. **No Probot `settings.yml`** and **no CodeQL/Scorecard** gaps still hold. No contradictions with prior ingests.
 
+## Delta Log (2026-07-24, SHA `a5a6d8c` — frozen `main`, live autoheal motion in the issue/PR queue)
+
+Re-surveyed via the `marcusrbrown.github.io` name binding (still resolves to id `1174807412`). `main` HEAD is unchanged from the 2026-07-22 survey (`a5a6d8c`, `feat(theme): add accessible preset picker (#209)`), but `pushed_at` advanced to 2026-07-24 and the issue/PR queue moved. Read access limited to public API listings and workflow files (untrusted-input posture; no `gh` auth available in this run, unauthenticated GitHub API used instead).
+
+- **Fro Bot self-healing loop is visibly active and self-diagnosing.** Three new Fro-Bot-authored artifacts appeared since 2026-07-22:
+  - **PR #211** (`test(opencode): stabilize timeout integration fixture`, open, opened 2026-07-23) — an autoheal PR stabilizing a SIGTERM timeout fixture and correcting the tracked visual-baseline count in AGENTS.md.
+  - **Issue #212** (`fix(fro-bot): provide authenticated git push for mention runs`, open, 2026-07-24) — a concrete infrastructure bug the bot filed *against itself*: the mention-triggered run for PR #211 created commit `e40c726` but the **push failed because Git could not read credentials for `https://github.com`**. The workflow passes `secrets.FRO_BOT_*` but the mention path isn't wiring an authenticated remote. This is a durable failure mode worth remembering — mention-mode autoheal can author commits it cannot push. (Note the harness-level analog: this very survey run also had no usable `gh` credential.)
+  - **Issue #213** (`Homepage missing footer landmark`, `bug` label, 2026-07-24) — autoheal's "Production Site Review" caught that the live homepage renders `nav` and `main` but no `footer` accessibility landmark, verified twice via a fresh browser session. Note the body cites `https://marcusrbrown.com` as the page URL even though this repo deploys to `mrbro.dev` — a stale-URL artifact in the autoheal prompt/site-review target, echoing the long-standing cross-repo doc-porting sloppiness.
+- **Open issues 4 → 6** (API `open_issues_count` reads 7 = 6 issues + 1 PR): #213, #212, #204 (missing preview-image bug), #162 (Daily Autohealing Report), #13 (Daily Maintenance Report), #1 (Dependency Dashboard). Stars 1.
+- **Everything structural holds:** agent pin `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); homepage `https://mrbro.dev/`; topics `blog/developer/github-pages/portfolio/react/typescript/vite`; license API-null (MIT declared in `package.json`). Fro Bot active — **no onboarding follow-up draft PR warranted.** Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) still hold. No contradictions with prior ingests.
+
 ## Survey History
 
 | Date | SHA | Delta |
@@ -305,3 +319,4 @@ First substantive delta on this page since the `88f7a4a`/`7a49abc` window (2026-
 | 2026-06-13 | `7a49abc` | **No-delta re-survey — HEAD unchanged since 2026-06-02 (`pushed_at` 2026-05-28T02:28Z).** Every tracked fact re-verified against the same tree: agent v0.43.0, TypeScript 5.9.3, Vite 7.3.2, Vitest 4.1.4, pnpm 10.33.4 (`engines.pnpm ^10.28.2`), Node >=22.6.0, React Router 7.7.1, 7 workflows, no `settings.yml`. Open issues 4 (#162 autoheal, #13 maintenance, #1 Dependency Dashboard, #48 triage), open PRs 5 (unchanged set: #180/#178/#175/#172/#168). **Corrections against same SHA:** Playwright recorded as 1.54.x is actually 1.59.1; pnpm table said 10.33.0, true value 10.33.4. **New observable:** Renovate pin PRs (#180/#175/#172/#168) authored by `app/mrbro-bot`, security-override PR (#178) by `fro-bot` — the `mrbro-bot[bot]` actor (cf. [[marcusrbrown--ha-config]]) is now visibly active here, splitting automation labor with `fro-bot`. |
 | 2026-06-23 | `7a49abc` | **No-delta re-survey — `main` HEAD still `7a49abc` (last main commit 2026-05-28T02:19Z).** `pushed_at` advanced to 2026-06-19 but that reflects PR-branch activity (renovate/*, fix/security-*, copilot/*), not the default branch. 7 workflows confirmed present including `fro-bot.yaml`. Open issues unchanged at 4. **Only delta is PR-queue movement:** open PRs 5 → 6 with new #181 `vite` 7.3.2 → 7.3.5 `[SECURITY]` (authored by `app/mrbro-bot`, labels `automerge`+`security`, opened 2026-06-15) — supersedes the standing 7.3.2 pin and continues the `mrbro-bot`-drives-version-bumps / `fro-bot`-drives-override-remediation split. No tree-level config, dependency, or workflow changes. |
 | 2026-07-22 | `a5a6d8c` | **Substantive delta (surveyed via the `marcusrbrown.github.io` name binding → id `1174807412`).** First real motion on `main` since 2026-05-28. Agent v0.43.0 → **v0.93.1** (`a4976f4`). First-party blog with build-time gist publishing (#188/#190, `feed`/`shiki`/`unified` now direct deps, `blog-refresh.yaml`); self-hosted project preview images (#202, bug #204 open); accessible theme preset picker (#209); topic-curated portfolio feed (#195) with hardened GitHub-feed reliability (#187); landing page trimmed 6 sections (#206). Fro Bot CI: forbid `ce:*` skills in reviews (#210), fork-detection fix (#197), source maps dropped from prod build (#199). Stack: React 19 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1, pnpm 10.33.4, Node >=22.6.0. 8 workflows. Open issues 4 (#204/#162/#13/#1), stars 1. Split-brain override ledger persists. Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) hold. Fro Bot active — no onboarding PR needed. |
+| 2026-07-24 | `a5a6d8c` | **No structural delta — `main` frozen since 2026-07-20; motion is in the autoheal queue.** `pushed_at` 2026-07-24. Three new Fro-Bot-authored artifacts: PR #211 (stabilize SIGTERM timeout fixture), issue #212 (`fix(fro-bot): provide authenticated git push for mention runs` — mention-run created commit `e40c726` but push failed on missing `https://github.com` credentials; a self-filed infra bug), issue #213 (`Homepage missing footer landmark`, `bug` — autoheal Production Site Review found no `footer` a11y landmark; body cites stale `marcusrbrown.com` URL). Open issues 4 → 6 (#213/#212/#204/#162/#13/#1); API count 7 folds in PR #211. Agent v0.93.1 (`a4976f4`), 8 workflows, homepage `mrbro.dev`, stars 1 — all unchanged. Gaps hold. Fro Bot active — no onboarding PR. |

@@ -6,19 +6,6 @@ Chronological record of all wiki operations.
 
 _Entries are appended by ingest, query, lint, and manual-edit operations. This file is append-only._
 
-## [2026-07-24 04:30] ingest | marcusrbrown/opencode-copilot-delegate
-
-Re-surveyed `marcusrbrown/opencode-copilot-delegate` (SHA `61bc146`, up from `bea97ea`). Survey ran unauthenticated against the public GitHub API (no `GH_TOKEN` available in this dispatch) — reads limited to repo metadata, root/src/tests/workflow tree listings, README/CHANGELOG, and manifest files (`package.json`, `mise.toml`, `biome.json`, `renovate.json5`) per the untrusted-input constraint.
-
-First release since v0.12.0 held across four prior surveys: **v0.12.0 → v0.12.1**, a single patch changeset (`488e8da`) that skips delayed orphan-PID registration once a Copilot task has reached a terminal state — closing a stale-entry race the reaper had to clean up. Source-tree layout unchanged (4 tools, `runtime/`/`discovery/`/`lib/`/`tui/`); TUI components refactored to `confirm-card.tsx`/`modal-list.tsx`/`row.tsx`; fixtures gained `connect-mismatch.jsonl`/`resume-mismatch.jsonl`. Two major toolchain bumps landed: **TypeScript 6.0.3 → 7.0.2** and **`@opentui/*` 0.2.6 → 0.2.7** (#130 merged, #135 landed then reopened at v0.4.3). Also Biome 2.5.0 → 2.5.4, `@opencode-ai/plugin`/`opencode-ai` → 1.18.4, `@github/copilot` CLI → 1.0.73, `@types/node` → 24.13.3, `@changesets/cli` → 2.31.1, `solid-js` → 1.9.14, Renovate preset `#5.2.3` → `#5.2.9`, Fro Bot agent v0.76.0 → **v0.94.2** (SHA `64029d5`). Six workflows including `fro-bot.yaml` present (no follow-up draft PR needed). Open issues unchanged (#38/#26/#25).
-
-Edits (repo-page-additive):
-- `knowledge/wiki/repos/marcusrbrown--opencode-copilot-delegate.md` — new 2026-07-24 Status block, frontmatter source SHA + `updated`, tech-stack (TS/Biome/dev pins/`@opentui`/changesets/solid-js), mise pins, orphan-reaper terminal-state guard, TUI component set, Fro Bot agent version, Renovate preset, Open PRs refresh (2026-07-24), Known Limitations header → v0.12.1, divergence-table Biome version, new Survey History row.
-- `knowledge/wiki/topics/opencode-plugins.md` — frontmatter source SHA + `updated`; "Marcus's Plugin Repos" table v0.12.0 → v0.12.1. (Loader/reaper/singleton patterns unaffected by a patch release.)
-- `knowledge/index.md` — repo catalog line updated to v0.12.1 with survey delta.
-
-Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA 61bc146a5e8fe6b92f84248594e9561d0f36819d)
-
 ## [2025-06-18 00:00] ingest | marcusrbrown/ha-config
 
 Initial survey of `marcusrbrown/ha-config` (SHA `83784bc`). Created repo page `marcusrbrown--ha-config.md` and topic page `home-assistant.md`. Updated `index.md` to catalog both pages.
@@ -3066,8 +3053,22 @@ Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
 
-## [2026-07-24 07:48] ingest | repo:marcusrbrown/opencode-copilot-delegate
+## [2026-07-24 07:47] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+Surveyed the *name* `marcusrbrown/marcusrbrown.github.io`. The name still resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The 2026-07-13 name-collision documented on [[marcusrbrown--marcusrbrown-github-io]] holds.
 
-Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+No structural drift: `main` HEAD frozen at `a5a6d8c` (`feat(theme): add accessible preset picker (#209)`, 2026-07-20) — unchanged since the 2026-07-22 survey. Agent pin steady at `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); homepage `https://mrbro.dev/`; topics `blog/developer/github-pages/portfolio/react/typescript/vite`; license API-null (MIT declared in `package.json`). Fro Bot workflow present and active — no onboarding follow-up draft PR warranted.
+
+Motion this cycle is autoheal-queue only (`pushed_at` advanced to 2026-07-24 while `main` stayed frozen). Three new Fro-Bot-authored artifacts: PR #211 (`test(opencode): stabilize timeout integration fixture`), issue #212 (`fix(fro-bot): provide authenticated git push for mention runs` — the mention-run for PR #211 created commit `e40c726` but the push failed on missing `https://github.com` credentials; a durable self-filed infra bug: mention-mode autoheal can author commits it cannot push), and issue #213 (`Homepage missing footer landmark` — autoheal Production Site Review found no `footer` a11y landmark; body cites a stale `marcusrbrown.com` URL). Open issues 4 → 6.
+
+Pages touched: `wiki/repos/marcusrbrown--mrbro-dev.md` (canonical durable delta — Delta Log 2026-07-24 + survey-history row + frontmatter source/date); `wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (collision-continuity Delta Log + survey-history row + frontmatter); `index.md` (refreshed both catalog entries — the mrbro.dev line was stale at agent v0.43.0/2026-06-23). No new topic/entity/comparison pages warranted.
+
+Constraints honored: target treated as untrusted input; reads limited to directory/workflow listings and manifest/issue metadata via the unauthenticated GitHub API + raw fetches (no `gh` token available in this runner — `gh auth status` failed; non-mutating public reads only). Repo re-confirmed **public** (`private: false`) before any write. Additive updates only; prior brand-site records preserved, contradiction between the name's pre/post-rename bindings already noted on the collision page. Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Wikilinks point to existing pages. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA a5a6d8c73ef5995fce3749b6eece04eeaede6361)
+
+## [2026-07-24 07:48] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io

@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-07-20
+updated: 2026-07-24
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -31,6 +31,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: a5a6d8c73ef5995fce3749b6eece04eeaede6361
     accessed: 2026-07-22
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: a5a6d8c73ef5995fce3749b6eece04eeaede6361
+    accessed: 2026-07-24
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page, name-collision, superseded]
 aliases: [marcusrbrown-github-io]
 related:
@@ -295,6 +298,10 @@ Motion this cycle belongs entirely to the current name-holder (mrbro.dev): `main
 
 Per the wiki contract, durable per-repo knowledge for the current occupant lives on **[[marcusrbrown--mrbro-dev]]** (see its Delta Log 2026-07-22). This section only confirms the binding empirically so the collision record stays continuous. No new facts about the *brand site* (id `1021912280`) were observable through this name; for that repo defer to [[marcusrbrown--marcusrbrown-com]].
 
+## Delta Log (2026-07-24, SHA `a5a6d8c` — collision holds; autoheal delta on [[marcusrbrown--mrbro-dev]])
+
+A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** (mrbro.dev developer portfolio), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The binding is unchanged since 2026-07-20. The current name-holder's `main` is frozen at `a5a6d8c` (same as 2026-07-22), so no tree-level drift; the motion this cycle is in the current occupant's autoheal issue/PR queue (self-filed PR #211 fixture-stabilization, issue #212 mention-run git-push-auth failure, issue #213 missing-footer-landmark a11y bug). Per the wiki contract that durable per-repo knowledge is recorded on **[[marcusrbrown--mrbro-dev]]** (Delta Log 2026-07-24). Fro Bot workflow present and active at agent v0.93.1 (`a4976f4`) — **no onboarding follow-up draft PR warranted for this name.** No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+
 ## Survey History
 
 | Date | SHA | Notes |
@@ -308,3 +315,4 @@ Per the wiki contract, durable per-repo knowledge for the current occupant lives
 | 2026-06-23 | `b633e40` | No-op re-survey: `main` HEAD unchanged for 11 days, agent pin still v0.61.0 (`6794bf5…`). All structure/stack/workflows/crons hold. Motion is two unmerged Renovate PRs based on `main`: **#454** (vite v7.3.5 SECURITY, open ~8 days) and **#453** (all-minor-patch, ~10 days). Security PR stalling >1 week suggests automerge choking on a red quality gate — likely issue #411's <80% coverage floor. `pushed_at` 2026-06-22 (PR-branch pushes, not trunk); stars 0→1; issues steady at 4. Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) unchanged. |
 | 2026-07-20 | `4bdbf32` | **Name-binding flip confirmed empirically.** A survey of the *name* `marcusrbrown/marcusrbrown.github.io` now resolves to repo id `1174807412` (the mrbro.dev developer portfolio, canonical page [[marcusrbrown--mrbro-dev]]) — not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Current occupant: React 19 / TS 5.9.3 / Vite 7.3.6, React Router v7, prerendered blog+RSS, visual/a11y/perf test tiers, `.impeccable` design gate, 8 workflows, Fro Bot present at agent **v0.93.1** (`a4976f4`), Renovate preset #5.2.7, pnpm 10.33.4, MIT. Open issues 4 (#204/#162/#13/#1), stars 1. No onboarding follow-up needed (workflow active). See Delta Log 2026-07-20 for full snapshot. |
 | 2026-07-22 | `a5a6d8c` | **Collision holds; durable delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). Its `main` advanced `4bdbf32` → `a5a6d8c` (first-party blog #188/#190, self-hosted preview images #202, accessible theme preset picker #209, topic-curated feed #195, Fro Bot CI hardening #210). Agent pin steady at v0.93.1 (`a4976f4`); 8 workflows; open issues 4 (#204/#162/#13/#1). Fro Bot active — no onboarding PR. Full snapshot recorded on the mrbro.dev page. |
+| 2026-07-24 | `a5a6d8c` | **Collision holds; autoheal-queue delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` frozen at `a5a6d8c` since 2026-07-20; `pushed_at` 2026-07-24. Motion is autoheal-only: PR #211 (fixture stabilization), issue #212 (mention-run git-push-auth failure — self-filed infra bug), issue #213 (missing footer a11y landmark). Open issues 4 → 6. Agent v0.93.1 (`a4976f4`), 8 workflows, unchanged. Fro Bot active — no onboarding PR. Durable detail on the mrbro.dev page. |
