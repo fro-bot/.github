@@ -6,6 +6,20 @@ Chronological record of all wiki operations.
 
 _Entries are appended by ingest, query, lint, and manual-edit operations. This file is append-only._
 
+## [2026-07-25 07:29] ingest | repo:fro-bot/fro-bot.github.io
+
+No-delta re-survey of the org-level `fro.bot` domain holder. `git ls-remote` confirms `main` = `3e44653c4d185b239b44b3af12255d18c86463ab` — the original `Create CNAME` commit, frozen since 2026-02-09 (169 days). This is the sixth survey; HEAD has never moved.
+
+Tree re-confirmed via raw-content probes (no `gh` API token in this runner — `gh` failed on missing `GH_TOKEN`, so reads were limited to `git ls-remote` + unauthenticated `raw.githubusercontent.com` HEAD checks): `CNAME` present (HTTP 200, contents `fro.bot`); README, `.github/workflows/fro-bot.yaml`, and `.github/settings.yml` all 404. Fro Bot workflow, Probot Settings, README, and license remain **absent** — all four standing follow-up recommendations carried forward unchanged. Per the task's no-workflow clause, the absent Fro Bot workflow is already noted on the repo page (Missing Ecosystem Integration table + recommendation #3) so a follow-up draft PR can be proposed separately.
+
+Read-scope limitation this cycle: without an API token, Pages config, TLS cert state, domain-verification (`protected_domain_state`), and issue #1 (CodeQL/Scorecard parity) could not be re-fetched. These are carried forward from the 2026-06-26 survey as unverified-this-cycle rather than re-confirmed; the repo page and this entry state that explicitly rather than restating stale values as fresh facts. The recorded TLS cert expiry (2026-09-07) is now ~44 days out — the next auto-renewal window is approaching; flagged for the following survey.
+
+Pages touched: `wiki/repos/fro-bot--fro-bot-github-io.md` (frontmatter `updated` → 2026-07-25 + new source entry; TLS note annotated with read-scope caveat; survey-history row for 2026-07-25); `index.md` (refreshed catalog entry — freshness count 126 → 169 days). No new topic/entity/comparison pages warranted — a single-file CNAME holder introduces no new durable cross-cutting knowledge.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listing (`git ls-remote`) and raw file HEAD checks for CNAME/README/workflow/settings only. Additive updates — no prior content overwritten; no contradictions surfaced (state identical to prior surveys). Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Wikilinks unchanged and valid. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+
 ## [2025-06-18 00:00] ingest | marcusrbrown/ha-config
 
 Initial survey of `marcusrbrown/ha-config` (SHA `83784bc`). Created repo page `marcusrbrown--ha-config.md` and topic page `home-assistant.md`. Updated `index.md` to catalog both pages.
@@ -3072,3 +3086,9 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA a5a6d8c73ef
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-07-25 07:31] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
