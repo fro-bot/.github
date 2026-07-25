@@ -6,20 +6,6 @@ Chronological record of all wiki operations.
 
 _Entries are appended by ingest, query, lint, and manual-edit operations. This file is append-only._
 
-## [2026-07-25 07:29] ingest | repo:fro-bot/fro-bot.github.io
-
-No-delta re-survey of the org-level `fro.bot` domain holder. `git ls-remote` confirms `main` = `3e44653c4d185b239b44b3af12255d18c86463ab` — the original `Create CNAME` commit, frozen since 2026-02-09 (169 days). This is the sixth survey; HEAD has never moved.
-
-Tree re-confirmed via raw-content probes (no `gh` API token in this runner — `gh` failed on missing `GH_TOKEN`, so reads were limited to `git ls-remote` + unauthenticated `raw.githubusercontent.com` HEAD checks): `CNAME` present (HTTP 200, contents `fro.bot`); README, `.github/workflows/fro-bot.yaml`, and `.github/settings.yml` all 404. Fro Bot workflow, Probot Settings, README, and license remain **absent** — all four standing follow-up recommendations carried forward unchanged. Per the task's no-workflow clause, the absent Fro Bot workflow is already noted on the repo page (Missing Ecosystem Integration table + recommendation #3) so a follow-up draft PR can be proposed separately.
-
-Read-scope limitation this cycle: without an API token, Pages config, TLS cert state, domain-verification (`protected_domain_state`), and issue #1 (CodeQL/Scorecard parity) could not be re-fetched. These are carried forward from the 2026-06-26 survey as unverified-this-cycle rather than re-confirmed; the repo page and this entry state that explicitly rather than restating stale values as fresh facts. The recorded TLS cert expiry (2026-09-07) is now ~44 days out — the next auto-renewal window is approaching; flagged for the following survey.
-
-Pages touched: `wiki/repos/fro-bot--fro-bot-github-io.md` (frontmatter `updated` → 2026-07-25 + new source entry; TLS note annotated with read-scope caveat; survey-history row for 2026-07-25); `index.md` (refreshed catalog entry — freshness count 126 → 169 days). No new topic/entity/comparison pages warranted — a single-file CNAME holder introduces no new durable cross-cutting knowledge.
-
-Constraints honored: target treated as untrusted input; reads limited to directory listing (`git ls-remote`) and raw file HEAD checks for CNAME/README/workflow/settings only. Additive updates — no prior content overwritten; no contradictions surfaced (state identical to prior surveys). Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Wikilinks unchanged and valid. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
-
-Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
-
 ## [2025-06-18 00:00] ingest | marcusrbrown/ha-config
 
 Initial survey of `marcusrbrown/ha-config` (SHA `83784bc`). Created repo page `marcusrbrown--ha-config.md` and topic page `home-assistant.md`. Updated `index.md` to catalog both pages.
@@ -3087,8 +3073,22 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-07-25 07:31] ingest | repo:fro-bot/fro-bot.github.io
+## [2026-07-25 07:32] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+Surveyed the *name* `marcusrbrown/marcusrbrown.github.io`. It still resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev`), canonical [[marcusrbrown--mrbro-dev]], **not** the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The 2026-07-13 name-collision recorded on [[marcusrbrown--marcusrbrown-github-io]] holds.
 
-Sources: https://github.com/fro-bot/fro-bot.github.io
+**Tree-level delta this cycle** (unlike the two prior frozen-`main` re-surveys): `main` advanced `a5a6d8c` → **`0b31ea7`** (`fix(audit): invoke the discovery finalizer entrypoint (#221)`, committed 2026-07-24T21:26Z). The substantive change is the **Impeccable design gate going in-repo as an OpenCode plugin**: new root `opencode.json` registers `"plugin": ["./.opencode/impeccable/plugin.ts"]`, backed by `.opencode/impeccable/{plugin.ts, hook-bridge.ts, plugin.test.ts, hook-bridge.integration.test.ts}` + `.opencode/tsconfig.json`; `check-types` now type-checks the plugin (`tsc --noEmit -p .opencode/tsconfig.json`) and `@opencode-ai/plugin@1.18.2` is a new devDep. This mirrors the in-repo-plugin move [[fro-bot--dashboard]] made — the Impeccable gate is propagating from a pinned CI action into a repo-local plugin across the fleet (new `app-embedded design-gate plugin` pattern recorded on [[opencode-plugins]]). Also new: `.codex/hooks.json`, `examples/` (`button-form-styles-example.tsx`, `use-theme-example.tsx`), a `security:react-router-rsc` boundary-check script (`scripts/check-react-router-rsc-boundary.ts`), and a `pre-push` git hook (`node .github/git-hooks/pre-push.ts`).
+
+Stack re-confirmed at `0b31ea7`: React `^19.0.0` / React Router `^7.15.0` / TypeScript **5.9.3** (still pre-v6) / Vite **7.3.6** / Vitest **4.1.10** / Playwright **1.61.1** / `@vitejs/plugin-react-swc 4.3.1` / ESLint 10.7.0 / Prettier 3.9.5 / pnpm `10.33.4` (`engines.pnpm ^10.28.2`) / Node `>=22.6.0`; MIT (`package.json`). `pnpm-workspace.yaml` ledger ~18 GHSA-annotated overrides + new `auditConfig.ignoreGhsas` (`GHSA-qwww-vcr4-c8h2`, `GHSA-mh99-v99m-4gvg`) + `onlyBuiltDependencies` + `shamefullyHoist: true`; `package.json` `pnpm.overrides` split-brain remnant (`js-yaml`/`qs`/`tmp`/`uuid`) persists. Renovate `github>marcusrbrown/renovate-config#5.2.7` + `group:allNonMajor`. Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`). Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
+
+Pages touched: `wiki/repos/marcusrbrown--mrbro-dev.md` (canonical durable delta — Delta Log 2026-07-25 + survey-history row + frontmatter source/date); `wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (collision-continuity Delta Log + survey-history row + frontmatter); `wiki/topics/opencode-plugins.md` (new "App-Embedded Design-Gate Plugin" section + source/date); `index.md` (refreshed the mrbro.dev, collision-record, and opencode-plugins catalog entries). No new entity/comparison pages warranted.
+
+Constraints honored: target treated as untrusted input; reads limited to directory/workflow listings and manifest files (`package.json`, `renovate.json5`, `pnpm-workspace.yaml`, `README.md`) via unauthenticated raw-file fetch + a shallow `--filter=blob:none` clone — **no `gh` token available in this runner** (`gh auth status` failed), so no authenticated API reads and **issue/PR counts were not re-verifiable this cycle** (carried forward from 2026-07-24, none contradicted by tree facts). Repo re-confirmed **public** via unauthenticated read before any write. Additive updates only; prior brand-site records preserved; the name's pre/post-rename binding contradiction remains noted on the collision page. Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Wikilinks point to existing pages. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 0b31ea70ec0b6ca2ec467085abd1c9d713f89faa)
+
+## [2026-07-25 07:36] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io

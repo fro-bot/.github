@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-07-24
+updated: 2026-07-25
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -34,6 +34,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: a5a6d8c73ef5995fce3749b6eece04eeaede6361
     accessed: 2026-07-24
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 0b31ea70ec0b6ca2ec467085abd1c9d713f89faa
+    accessed: 2026-07-25
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page, name-collision, superseded]
 aliases: [marcusrbrown-github-io]
 related:
@@ -302,6 +305,14 @@ Per the wiki contract, durable per-repo knowledge for the current occupant lives
 
 A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** (mrbro.dev developer portfolio), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The binding is unchanged since 2026-07-20. The current name-holder's `main` is frozen at `a5a6d8c` (same as 2026-07-22), so no tree-level drift; the motion this cycle is in the current occupant's autoheal issue/PR queue (self-filed PR #211 fixture-stabilization, issue #212 mention-run git-push-auth failure, issue #213 missing-footer-landmark a11y bug). Per the wiki contract that durable per-repo knowledge is recorded on **[[marcusrbrown--mrbro-dev]]** (Delta Log 2026-07-24). Fro Bot workflow present and active at agent v0.93.1 (`a4976f4`) — **no onboarding follow-up draft PR warranted for this name.** No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
 
+## Delta Log (2026-07-25, SHA `0b31ea7` — collision holds; `main` moved, durable delta on [[marcusrbrown--mrbro-dev]])
+
+A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio, `package.json` `name: mrbro.dev`, homepage `https://mrbro.dev`), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-to-repo binding is unchanged since 2026-07-20 — the collision the 2026-07-13 header warned of is steady.
+
+Unlike the prior two cycles (frozen `main`), the current name-holder's `main` **advanced** `a5a6d8c` → `0b31ea7` (`fix(audit): invoke the discovery finalizer entrypoint (#221)`, 2026-07-24). The substantive delta — the Impeccable design gate going in-repo as an `.opencode/impeccable/` OpenCode plugin (`opencode.json`, `@opencode-ai/plugin@1.18.2`), new `.codex/hooks.json` + `examples/`, a `security:react-router-rsc` boundary check, and the current `pnpm-workspace.yaml` override ledger — is recorded on **[[marcusrbrown--mrbro-dev]]** (Delta Log 2026-07-25) per the wiki contract that durable per-repo knowledge lives on the canonical page. This section only confirms the binding empirically so the collision record stays continuous.
+
+Fro Bot workflow present and active at agent v0.93.1 (`a4976f4`), 8 workflows — **no onboarding follow-up draft PR warranted for this name.** No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]]. Note: this run had **no `gh` credential** (the same authenticated-access gap the current occupant's own issue #212 tracks), so reads were limited to unauthenticated raw fetch + shallow clone over directory listings, README, `package.json`, `renovate.json5`, `pnpm-workspace.yaml`, and workflow files.
+
 ## Survey History
 
 | Date | SHA | Notes |
@@ -316,3 +327,4 @@ A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to r
 | 2026-07-20 | `4bdbf32` | **Name-binding flip confirmed empirically.** A survey of the *name* `marcusrbrown/marcusrbrown.github.io` now resolves to repo id `1174807412` (the mrbro.dev developer portfolio, canonical page [[marcusrbrown--mrbro-dev]]) — not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Current occupant: React 19 / TS 5.9.3 / Vite 7.3.6, React Router v7, prerendered blog+RSS, visual/a11y/perf test tiers, `.impeccable` design gate, 8 workflows, Fro Bot present at agent **v0.93.1** (`a4976f4`), Renovate preset #5.2.7, pnpm 10.33.4, MIT. Open issues 4 (#204/#162/#13/#1), stars 1. No onboarding follow-up needed (workflow active). See Delta Log 2026-07-20 for full snapshot. |
 | 2026-07-22 | `a5a6d8c` | **Collision holds; durable delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). Its `main` advanced `4bdbf32` → `a5a6d8c` (first-party blog #188/#190, self-hosted preview images #202, accessible theme preset picker #209, topic-curated feed #195, Fro Bot CI hardening #210). Agent pin steady at v0.93.1 (`a4976f4`); 8 workflows; open issues 4 (#204/#162/#13/#1). Fro Bot active — no onboarding PR. Full snapshot recorded on the mrbro.dev page. |
 | 2026-07-24 | `a5a6d8c` | **Collision holds; autoheal-queue delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` frozen at `a5a6d8c` since 2026-07-20; `pushed_at` 2026-07-24. Motion is autoheal-only: PR #211 (fixture stabilization), issue #212 (mention-run git-push-auth failure — self-filed infra bug), issue #213 (missing footer a11y landmark). Open issues 4 → 6. Agent v0.93.1 (`a4976f4`), 8 workflows, unchanged. Fro Bot active — no onboarding PR. Durable detail on the mrbro.dev page. |
+| 2026-07-25 | `0b31ea7` | **Collision holds; tree-level delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` advanced `a5a6d8c` → `0b31ea7` (`fix(audit): invoke the discovery finalizer entrypoint (#221)`): Impeccable design gate vendored in-repo as an `.opencode/impeccable/` OpenCode plugin (`opencode.json`, `@opencode-ai/plugin@1.18.2`), new `.codex/hooks.json` + `examples/`, `security:react-router-rsc` boundary check, `pnpm-workspace.yaml` ledger ~18 GHSA overrides + `auditConfig.ignoreGhsas`. Stack re-confirmed (React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / pnpm 10.33.4 / Node >=22.6.0). Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7 — unchanged. No `gh` auth this run; reads limited to raw fetch + shallow clone. Fro Bot active — no onboarding PR. Full snapshot on the mrbro.dev page. |
