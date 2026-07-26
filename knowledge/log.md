@@ -3092,3 +3092,27 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 0b31ea70ec0
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-07-26 07:50] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed `marcusrbrown/renovate-config` at HEAD **`5726e90`** (`main`, committed 2026-07-25T21:13Z). Repo re-confirmed **public** (`private: false`) before any write. Sixth survey; **no preset policy change** — `default.json` extends/packageRules/schedule, `onboarding.json`/`archived-repository.json`, and the `.github/renovate.json5` custom regex manager are all byte-identical in shape to 2026-06-25. The dependency-update-policy backbone remains stable; churn is version-pin and autoheal-artifact motion.
+
+**Release + upstream pins:** latest release **5.2.3 → 5.2.9** (six patches, all Renovate/pnpm bumps, `mrbro-bot[bot]`-authored). bfra-me base preset pin **`#5.2.3` → `#5.2.6`** in `default.json` (Renovate-bumped via the custom regex manager). Fro Bot agent **v0.76.2 → v0.95.0** (`4ad00541`) — ~19 minors in a month, continuing the fast [[fro-bot--agent]] tracking cadence. Runner actions: `actions/checkout` v6.0.3 → **v6.1.0** (`d23441a`), `actions/setup-node` v6.4.0 → **v6.5.0** (`2499707`), `pnpm/action-setup` **v6.0.9** unchanged (`0ebf471`). bfra-me renovate reusable workflow v4.16.30 → **v4.16.40** (`0ff5a4d`). Toolchain: node **24.18.0** steady; pnpm 11.8.0 → **11.16.0**; eslint 10.5.0 → **10.7.0**; prettier 3.8.4 → **3.9.6** (3.8 → 3.9); lint-staged 17.0.8 → **17.1.1**; semantic-release 25.0.5 → **25.0.8**.
+
+**pnpm override change:** the `picomatch@2` selector moved `^2.3.2` → **`^4.0.0`** — this is PR #1311 (the picomatch@2-v4 update open across five prior surveys) finally landing; the `@2` alias now resolves onto the v4 line, collapsing the two picomatch selectors toward one major. Prior undici PR #1402 (`undici >=7.28.0`, CVE-2026-9697 / CVE-2026-9678) also **merged** — the category-2 security-override autoheal path completed end-to-end.
+
+**Autoheal artifact motion (the live signal this cycle):** open issues **6 → 7** — the stable legacy set persists (#1314 perpetual, #1111, #1096/#1079/#1068, #556 dashboard) plus **new #1417** (`Renovate config uses deprecated/removed options`, `fro-bot`-authored) — a clean example of category-3 (Config Validation & Preset Quality) landing a **tracked issue** rather than an auto-fix PR, exactly as the prompt specifies. Open PRs **2 → 1**: #1311 and #1402 both merged; **new #1478** (`fast-uri` → 3.1.4 remediating CVE-2026-16221, `fro-bot`-authored) — the category-2 security-override path firing again. Legacy `Daily Maintenance` / `Weekly Maintenance` report issues still fall outside the autoheal cleanup matcher (dated `Daily Autohealing Report — YYYY-MM-DD` only) — fifth survey running as a manual-cleanup / broadened-matcher candidate.
+
+**Private-focus-repo handling:** the daily six-category prompt is unchanged. Category-5 (Cross-Project Intelligence Inbound) still leads with two of Marcus's repos, **named in plaintext** in the public `SCHEDULE_PROMPT` (now with per-repo intelligence foci annotated inline). Both slugs return **HTTP 404** to unauthenticated reads at 2026-07-26 — consistent with the `PRIVATE` verification at prior surveys — so their names and contents stay **withheld** from the wiki per the public-only invariant. The source leaking the names does not relax the invariant: the wiki records that two private repos are surveyed, not which ones. Fro Bot workflow present and active — no onboarding follow-up draft PR warranted.
+
+Pages touched: `wiki/repos/marcusrbrown--renovate-config.md` (frontmatter source/date; Repository Basics table; base-pin refs; Fro Bot agent + runner pins; renovate reusable-workflow pin; category-3 + category-5 autoheal notes; pnpm-override + Dev Tooling sections; new survey-history row) and `index.md` (refreshed the renovate-config catalog entry). No related topic/entity/comparison pages warranted this cycle — the deltas are pin/version churn and autoheal artifacts already captured by the existing `github-actions-ci` and category-2/3 narratives; no new cross-cutting pattern emerged.
+
+Constraints honored: target treated as untrusted input; reads limited to directory/tree listings, manifest files (`default.json`, `package.json`, `.node-version`, `.github/renovate.json5`), and workflow files (`fro-bot.yaml`, `renovate.yaml`) plus repo/issue/PR/release metadata via the **unauthenticated** GitHub API + raw fetches — **no `gh` token available in this runner** (`GH_TOKEN`/`GITHUB_TOKEN` unset; `gh` unusable), so all reads were non-mutating public reads. Additive updates only; no accumulated knowledge overwritten; version deltas carried forward with dated before/after. Modified only `knowledge/wiki/**` and `knowledge/index.md` (plus this `knowledge/log.md` entry). Wikilinks point to existing pages; frontmatter complete. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/renovate-config (SHA 5726e90bbcdfe2119d42630db1b9af7b2597a5f4)
+
+## [2026-07-26 07:52] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
