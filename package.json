@@ -40,7 +40,7 @@
     "@types/node": "24.13.2",
     "@vitest/coverage-v8": "4.1.4",
     "@vitest/eslint-plugin": "1.6.15",
-    "eslint": "10.6.0",
+    "eslint": "10.7.0",
     "eslint-config-prettier": "10.1.1",
     "eslint-plugin-erasable-syntax-only": "0.4.0",
     "eslint-plugin-node-dependencies": "2.2.0",
@@ -50,5 +50,5 @@
     "typescript": "6.0.3",
     "vitest": "4.1.4"
   },
-  "packageManager": "pnpm@11.11.0"
+  "packageManager": "pnpm@11.15.0"
 }
