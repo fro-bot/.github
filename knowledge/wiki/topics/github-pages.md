@@ -2,8 +2,8 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-06-25
-tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll, astro, starlight]
+updated: 2026-07-26
+tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll, astro, starlight, git-lfs]
 related:
   - marcusrbrown--mrbro-dev
   - marcusrbrown--marcusrbrown-github-io
@@ -82,3 +82,18 @@ This cross-repo pattern separates the docs deployment surface from the source re
 - Resource budgets: JS <= 512KB, CSS <= 100KB, total <= 2MB
 
 Weekly scheduled performance runs (Monday 06:00 UTC) establish baselines for regression detection.
+
+## Footgun — Git LFS and web-served assets
+
+GitHub Pages does **not** resolve Git LFS pointers. If a binary asset (image, font, etc.) is tracked by LFS and committed as a pointer file, Pages serves the ~130-byte pointer text verbatim instead of the blob — the asset renders broken in production even though it displays correctly in the GitHub UI and local checkouts (which transparently smudge LFS pointers).
+
+[[marcusrbrown--mrbro-dev]] hit this on 2026-07-26 (#228): self-hosted project-preview PNGs added a week earlier (#202) were tracked by a repo-wide `*.png filter=lfs` rule, so the images broke on the live site. The fix is a **`.gitattributes` exemption** that overrides LFS for the web-served path while keeping it for other PNGs:
+
+```gitattributes
+*.png filter=lfs diff=lfs merge=lfs -text
+
+# Web-served preview images must be real blobs — GitHub Pages does not resolve LFS pointers
+public/project-previews/*.png filter= diff= merge= -text
+```
+
+The empty `filter=`/`diff=`/`merge=` values unset the inherited LFS attributes for the narrower glob, forcing those files to commit as real blobs. General rule: any binary that ships in a Pages build output (`dist/`, `public/`) must be a real Git blob, not an LFS pointer.
