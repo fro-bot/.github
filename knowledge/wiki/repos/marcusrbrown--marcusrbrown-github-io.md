@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-07-25
+updated: 2026-07-27
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -40,6 +40,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 26437038c08818b5be0a02c123c7712e10139dc7
     accessed: 2026-07-26
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 3b852d316b70fc02778cba9de1f8861be9604d23
+    accessed: 2026-07-27
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page, name-collision, superseded]
 aliases: [marcusrbrown-github-io]
 related:
@@ -327,6 +330,17 @@ The current name-holder's `main` **advanced** `0b31ea7` → `2643703` (`fix(proj
 
 Also observed this cycle: root-level vendored `.agents/skills/` (`agent-browser`, `impeccable`, `playwright-mcp`) alongside the already-in-repo `.opencode/impeccable/` plugin, and `.impeccable/` now carries `design.json` + a `live/` capture dir. Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); Renovate `#5.2.7`. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.** This run had a `gh` credential gap again (unauthenticated GitHub API + raw fetch only), so issue/PR counts were not re-verified. No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
 
+## Delta Log (2026-07-27, SHA `3b852d3` — collision holds; a11y-contrast fix + `docs/solutions/` compounding on [[marcusrbrown--mrbro-dev]])
+
+A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio, `package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-to-repo binding is unchanged since 2026-07-20 — the collision the 2026-07-13 header warned of is steady.
+
+The current name-holder's `main` **advanced** `2643703` → `3b852d3` (`docs(solutions): capture hero CTA WCAG contrast learning (#232)`, 2026-07-27T02:45Z) across three commits. Two substantive threads, both recorded canonically on **[[marcusrbrown--mrbro-dev]]** (Delta Log 2026-07-27) per the wiki contract that durable per-repo knowledge lives on the canonical page:
+
+1. **Hero CTA WCAG-contrast fix (#231/#232):** `fix(a11y): pin hero CTA background to AA-passing blue` remediates a contrast failure in the theme-transition / preset-derivation path, then captures the learning as a `ui-bugs` solution doc. Continues the accessibility-first posture already tracked on the mrbro.dev page.
+2. **`docs/solutions/` compounding-knowledge tree matured (#229/#232):** the repo now carries a categorized post-incident ledger — `integration-issues/`, `logic-errors/`, `security/`, `ui-bugs/` — with dated per-solution markdown (e.g. the 2026-07-26 LFS-pointers-break-Pages and SPA-404 entries directly documenting fixes #225/#228 seen last cycle). This is the `ce:compound` pattern this very `.github` repo uses for `docs/solutions/`, now embedded in mrbro.dev.
+
+Agent pin steady at `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows unchanged (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`). pnpm 11.1.3 / Node >=24.0.0 (crossed at 2026-07-26) confirmed. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.** This run had a `gh` credential gap again (unauthenticated GitHub API + raw fetch only), so issue/PR counts were not re-verified (`open_issues_count` API reads 6, folding open PRs). No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+
 ## Survey History
 
 | Date | SHA | Notes |
@@ -343,3 +357,4 @@ Also observed this cycle: root-level vendored `.agents/skills/` (`agent-browser`
 | 2026-07-24 | `a5a6d8c` | **Collision holds; autoheal-queue delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` frozen at `a5a6d8c` since 2026-07-20; `pushed_at` 2026-07-24. Motion is autoheal-only: PR #211 (fixture stabilization), issue #212 (mention-run git-push-auth failure — self-filed infra bug), issue #213 (missing footer a11y landmark). Open issues 4 → 6. Agent v0.93.1 (`a4976f4`), 8 workflows, unchanged. Fro Bot active — no onboarding PR. Durable detail on the mrbro.dev page. |
 | 2026-07-26 | `2643703` | **Collision holds; pnpm 11 crossing + LFS-blob delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` advanced `0b31ea7` → `2643703` (`fix(projects): store preview images as real blobs, not LFS pointers (#228)`): **pnpm major 10.33.4 → 11.1.3** (`engines.pnpm >=11.1.3`), **Node engine `>=22.6.0` → `>=24.0.0`**, `package.json` `pnpm.overrides` split-brain remnant now empty (ledger fully consolidated in `pnpm-workspace.yaml`, ~24 entries); `.gitattributes` LFS exemption for `public/project-previews/*.png` (Pages can't resolve LFS pointers) + 2 real-blob preview PNGs + new `project-preview-refresh` script; root `.agents/skills/` (agent-browser/impeccable/playwright-mcp) vendored, `.impeccable/design.json` + `live/`. Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7 — unchanged. No `gh` auth (unauthenticated API + raw fetch); issue/PR counts carried forward. Fro Bot active — no onboarding PR. Full snapshot on the mrbro.dev page. |
 | 2026-07-25 | `0b31ea7` | **Collision holds; tree-level delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` advanced `a5a6d8c` → `0b31ea7` (`fix(audit): invoke the discovery finalizer entrypoint (#221)`): Impeccable design gate vendored in-repo as an `.opencode/impeccable/` OpenCode plugin (`opencode.json`, `@opencode-ai/plugin@1.18.2`), new `.codex/hooks.json` + `examples/`, `security:react-router-rsc` boundary check, `pnpm-workspace.yaml` ledger ~18 GHSA overrides + `auditConfig.ignoreGhsas`. Stack re-confirmed (React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / pnpm 10.33.4 / Node >=22.6.0). Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7 — unchanged. No `gh` auth this run; reads limited to raw fetch + shallow clone. Fro Bot active — no onboarding PR. Full snapshot on the mrbro.dev page. |
+| 2026-07-27 | `3b852d3` | **Collision holds; a11y-contrast + `docs/solutions/` delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` advanced `2643703` → `3b852d3` (`docs(solutions): capture hero CTA WCAG contrast learning (#232)`) across 3 commits: hero CTA pinned to AA-passing blue (#231) fixing a theme-transition/preset-derivation contrast bug, then captured as a `ui-bugs` solution doc; `docs/solutions/` compounding tree matured to 4 categories (`integration-issues`/`logic-errors`/`security`/`ui-bugs`) with dated per-incident markdown — the `ce:compound` pattern this `.github` repo uses, now embedded in mrbro.dev. pnpm 11.1.3 / Node >=24.0.0 confirmed. Agent v0.93.1 (`a4976f4`), 8 workflows — unchanged. No `gh` auth (unauthenticated API + raw fetch); issue/PR counts not re-verified. Fro Bot active — no onboarding PR. Full snapshot on the mrbro.dev page. |

@@ -3115,3 +3115,26 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 26437038c08
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-07-27 04:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed the *name* `marcusrbrown/marcusrbrown.github.io`. The name-to-repo binding is unchanged since 2026-07-20: it resolves to repo **id `1174807412`** — the mrbro.dev developer portfolio (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`), **not** the brand site (id `1021912280`, canonically [[marcusrbrown--marcusrbrown-com]]). The 2026-07-13 name-collision warning holds. Durable per-repo knowledge for the current occupant is recorded on the canonical page [[marcusrbrown--mrbro-dev]]; the collision page carries a continuity delta only.
+
+Delta since 2026-07-26 (`2643703`): `main` advanced to **`3b852d3`** (`docs(solutions): capture hero CTA WCAG contrast learning (#232)`, 2026-07-27T02:45Z) across three commits — a small, low-drift cycle:
+
+1. **Hero CTA WCAG-contrast fix (#231/#232):** `fix(a11y): pin hero CTA background to AA-passing blue` remediates a contrast failure in the theme-transition / preset-derivation path, then captures the learning as a dated `ui-bugs` solution doc. Accessibility-first loop closed end-to-end (find → fix → document).
+2. **`docs/solutions/` compounding-knowledge tree matured:** the repo now carries a categorized post-incident ledger — `integration-issues/`, `logic-errors/`, `security/`, `ui-bugs/` — with dated per-solution markdown documenting recent shipped fixes (#225 SPA-404 route replay, #228 LFS-pointers-break-Pages, #218/#220 audit exceptions/entrypoint). This is the `ce:compound` pattern this `fro-bot/.github` repo uses for its own `docs/solutions/`, now embedded in mrbro.dev.
+
+pnpm 11.1.3 / Node >=24.0.0 (crossed 2026-07-26) re-confirmed; `package.json` `pnpm.overrides` still empty (single-sourced in `pnpm-workspace.yaml`). Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows unchanged (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); Renovate #5.2.7. **Fro Bot workflow present and active — no onboarding follow-up draft PR warranted for this name.**
+
+Pages touched: `wiki/repos/marcusrbrown--mrbro-dev.md` (canonical durable Delta Log 2026-07-27 + survey-history row + frontmatter source/date), `wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (collision-continuity Delta Log + survey-history row + frontmatter), `index.md` (refreshed mrbro.dev and collision-record catalog entries). No new topic/entity/comparison pages warranted (the `docs/solutions/` compounding pattern is recorded inline; the Git-LFS-vs-Pages footgun is already captured in [[github-pages]] from the prior cycle).
+
+Constraints honored: target treated as untrusted input; reads limited to directory/workflow listings and manifest files (`package.json`, workflow files, `docs/solutions/` listings) via the unauthenticated GitHub API + raw-file fetch — **no `gh` token available in this runner** (`gh auth status` failed), so no authenticated reads and **issue/PR counts were not re-verifiable** this cycle (`open_issues_count` API reads 6, folding open PRs; carried forward from 2026-07-24, none contradicted by tree facts). Repo re-confirmed **public** (`visibility: public`) via unauthenticated read before any write. Additive updates only; prior brand-site records preserved; the name's pre/post-rename binding contradiction remains noted on the collision page. Modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Wikilinks point to existing pages. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 3b852d316b70fc02778cba9de1f8861be9604d23)
+
+## [2026-07-27 08:55] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
