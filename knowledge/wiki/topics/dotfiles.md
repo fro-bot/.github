@@ -2,7 +2,7 @@
 type: topic
 title: Dotfiles Management
 created: 2026-04-18
-updated: 2026-07-10
+updated: 2026-07-27
 tags: [dotfiles, shell, configuration, bare-git-repo, xdg]
 related:
   - marcusrbrown--dotfiles
@@ -78,13 +78,13 @@ Devcontainer configurations with custom features enable the same environment in 
 
 Marcus's dotfiles include a rich AI agent configuration layer, treating the development environment itself as an agentic platform:
 
-- **OpenCode** (`.config/opencode/`): Full plugin stack — current state and version history live in [[marcusrbrown--dotfiles]]. As of 2026-07-10: `oh-my-opencode-slim` (multi-agent routing, active `mixed` preset) replaced the older `oh-my-openagent` category router; `@cortexkit/opencode-magic-context` (v0.31.5) and `@cortexkit/aft-opencode` (v0.46.0) now run on **plugin defaults** — the previously heavily-tuned `magic-context.jsonc` and `aft.jsonc` config files were deleted in the 2026-07-10 window, a notable simplification. MCP set trimmed to three remote servers (context7, grep_app, exa; `tavily` removed). The `mixed` preset uses an `anthropic/claude-opus-4-8` (`variant: xhigh`) orchestrator with cheaper models per supporting role (`claude-sonnet-5` fixer, `gemini-3.5-flash` designer). The top-level headless default model was removed — routing is fully delegated to the slim presets.
+- **OpenCode** (`.config/opencode/`): Full plugin stack — current state and version history live in [[marcusrbrown--dotfiles]]. As of 2026-07-27: `oh-my-opencode-slim` crossed a **v1→v2 major** (2.2.8) and the **active preset flipped `mixed` → `openai`** — routing migrated onto a new `openai/gpt-5.6-*` model line (sol/luna/terra) with an `anthropic/claude-sonnet-5` oracle. A new top-level `agents.fast-generic` mechanical agent (`gpt-5.3-codex-spark`) was added for routine git/command work. `@fro.bot/systematic` crossed a **v2→v3 major** (3.3.0) with a retuned v3 `systematic.jsonc`. `@cortexkit/opencode-magic-context` (v0.33.0) and `@cortexkit/aft-opencode` (v0.48.1) still run on **plugin defaults** — the previously heavily-tuned `magic-context.jsonc` / `aft.jsonc` config files remain deleted. MCP set holds at three remote servers (context7, grep_app, exa; `tavily` removed). A companion `@cortexkit/opencode-openai-auth` plugin was added to back the OpenAI-heavy preset. The top-level headless default model stays removed — routing is fully delegated to the slim presets.
 - **Claude Code** (`.claude/`): Repo-scoped agents, commands, and rules
 - **Repo-scoped skills**: `.agents/skills/copilot-cli` (non-interactive GitHub Copilot CLI delegation) remains the sole `.agents/` bundle, but as of 2026-07-10 a second skills tree lives under `.config/opencode/skills/` with six bespoke skills — `clonedeps`, `codemap`, `content-research-writer`, `copilot-cloud-agent`, `file-organizer`, `simplify`. See [[marcusrbrown--dotfiles]].
 - **Local-LLM distillation**: A new `ollama-distill` pipeline (`.config/opencode/scripts/ollama-distill.ts`, `mise run distill`) reads the OpenCode session SQLite DB and produces Markdown summaries via local Ollama — keeping session summarization off hosted models.
 - **AGENTS.md**: Canonical knowledge base for all AI agents operating in the repo
 
-This pattern — dotfiles as AI agent configuration — is distinctive: the home directory becomes the ground truth for agent personas, model routing, and skill availability across all projects. A recurring theme in 2026-07 is **deferring to upstream plugin defaults** (deleting bespoke magic-context/aft config) while keeping bespoke logic where no upstream exists (local distillation, copilot delegation skills).
+This pattern — dotfiles as AI agent configuration — is distinctive: the home directory becomes the ground truth for agent personas, model routing, and skill availability across all projects. A recurring theme in 2026-07 is **deferring to upstream plugin defaults** (deleting bespoke magic-context/aft config) while keeping bespoke logic where no upstream exists (local distillation, copilot delegation skills). Late July 2026 saw two upstream **major-version boundaries land together** (oh-my-opencode-slim v2, systematic v3) alongside a fresh `openai/gpt-5.6-*` model migration — the config tracks provider model churn aggressively while holding the structural conventions steady.
 
 ## Related Technologies
 

@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/mrbro.dev"
 created: 2026-04-18
-updated: 2026-07-27
+updated: 2026-07-26
 sources:
   - url: https://github.com/marcusrbrown/mrbro.dev
     sha: 51f5cab5c77768b761d9f0a688ac7436cc5a06f4
@@ -34,9 +34,6 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 26437038c08818b5be0a02c123c7712e10139dc7
     accessed: 2026-07-26
-  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
-    sha: 3b852d316b70fc02778cba9de1f8861be9604d23
-    accessed: 2026-07-27
 tags: [portfolio, react, typescript, vite, github-pages, blog, pnpm, name-collision]
 aliases: [mrbro-dev, mrbro.dev]
 related:
@@ -341,21 +338,6 @@ Re-surveyed via the `marcusrbrown.github.io` name binding (still resolves to id 
 - **Renovate:** `github>marcusrbrown/renovate-config#5.2.7` + `group:allNonMajor` (unchanged).
 - **8 workflows, agent pin steady:** `blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`; `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`, single-file three-mode with `discussion_comment` trigger and crons `30 3` autoheal / `30 15` maintenance UTC. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted.** Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) still hold. No contradictions with prior ingests.
 
-## Delta Log (2026-07-27, SHA `3b852d3` — hero CTA WCAG-contrast fix; `docs/solutions/` compounding tree matures)
-
-Re-surveyed via the `marcusrbrown.github.io` name binding (still resolves to id `1174807412` — collision holds since 2026-07-20). `main` advanced `2643703` → **`3b852d3`** (`docs(solutions): capture hero CTA WCAG contrast learning (#232)`, committed 2026-07-27T02:45Z) across three commits. This run had **no `gh` credential** (the harness-level gap the repo's own issue #212 documents), so reads were limited to the untrusted-input surface via unauthenticated GitHub API + raw-file fetch: root/`.github/workflows`/`docs/solutions` directory listings, `package.json`, workflow files. Issue/PR *counts* are not independently verifiable this cycle (`open_issues_count` API reads 6, folding open PRs) — carried forward from 2026-07-24 unless a tree fact contradicts them.
-
-- **Hero CTA WCAG-contrast fix (#231, #232).** `fix(a11y): pin hero CTA background to AA-passing blue` (`530e190`) remediates a contrast failure surfaced in the theme-transition and preset-derivation path — a subtle footgun where a derived theme color could drop the CTA below AA. The learning is then captured (`3b852d3`, #232) as a dated `ui-bugs` solution doc (`hero-cta-wcag-contrast-theme-transition-and-preset-derivation-2026-07-27.md`). This is the accessibility-first posture (WCAG 2.1 AA in the Fro Bot review prompt, `vitest-axe`, the #213 footer-landmark autoheal find) closing a loop end-to-end: autoheal/CI finds it, a fix lands, the fix is documented so the next preset author doesn't reopen the same wound.
-- **`docs/solutions/` compounding-knowledge tree matured (#229 and prior).** The repo now carries a categorized post-incident ledger under `docs/solutions/` with four categories and dated per-solution markdown:
-  - `integration-issues/` — `gist-list-api-omits-content-snapshot-empty-2026-07-18.md`, `git-lfs-pointers-break-github-pages-project-preview-images-2026-07-26.md` (documents the #228 LFS/Pages fix), `github-pages-spa-404-route-navigation-2026-07-26.md` (documents the #225 SPA-route replay fix)
-  - `logic-errors/` — `tsx-esm-cli-exports-main-without-invoking-it-2026-07-26.md` (the audit-CLI entrypoint bug behind #220/#221)
-  - `security/` — `brace-expansion-lhci-advisory-exception-2026-07-24.md`, `react-router-rsc-advisory-exception-2026-07-24.md` (the audit-exception guards from #218)
-  - `ui-bugs/` — the hero-CTA contrast entry above
-
-  This is the same `ce:compound` pattern this `fro-bot/.github` repo uses for its own `docs/solutions/` — a durable institutional-memory habit now embedded in mrbro.dev. Each entry ties a shipped fix to a searchable, dated learning; the categories mirror the failure taxonomy (integration, logic, security, UI) rather than chronology.
-- **Stack steady at `3b852d3`:** pnpm **11.1.3** (`engines.pnpm >=11.1.3`, `packageManager: pnpm@11.1.3`), Node **>=24.0.0** — both crossed at 2026-07-26 and confirmed here; `package.json` `pnpm.overrides` remains empty (ledger single-sourced in `pnpm-workspace.yaml`). React 19 / React Router 7 / TypeScript 5.9.3 / Vite 7.3.6 unchanged.
-- **8 workflows, agent pin steady:** `blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`; `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted.** Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) still hold. No contradictions with prior ingests.
-
 ## Survey History
 
 | Date | SHA | Delta |
@@ -370,4 +352,3 @@ Re-surveyed via the `marcusrbrown.github.io` name binding (still resolves to id 
 | 2026-07-26 | `2643703` | **pnpm 10 → 11 major crossing + GitHub Pages LFS-blob fix.** `main` advanced `0b31ea7` → `2643703` (`fix(projects): store preview images as real blobs, not LFS pointers (#228)`). **pnpm 10.33.4 → 11.1.3** (`engines.pnpm >=11.1.3`), **Node engine `>=22.6.0` → `>=24.0.0`**; `package.json` `pnpm.overrides` split-brain remnant now **empty** — ledger fully consolidated in `pnpm-workspace.yaml` (~24 GHSA entries + `auditConfig.ignoreGhsas`). `.gitattributes` LFS **exemption** for `public/project-previews/*.png` (Pages can't resolve LFS pointers) + 2 committed real-blob PNGs + `project-preview-refresh` script. Root `.agents/skills/` (agent-browser/impeccable/playwright-mcp) vendored; `.impeccable/design.json` + `live/`. Stack re-confirmed (React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1). Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7 — unchanged. No `gh` auth (unauthenticated API + raw fetch); issue/PR counts carried forward. Gaps hold. Fro Bot active — no onboarding PR. |
 | 2026-07-24 | `a5a6d8c` | **No structural delta — `main` frozen since 2026-07-20; motion is in the autoheal queue.** `pushed_at` 2026-07-24. Three new Fro-Bot-authored artifacts: PR #211 (stabilize SIGTERM timeout fixture), issue #212 (`fix(fro-bot): provide authenticated git push for mention runs` — mention-run created commit `e40c726` but push failed on missing `https://github.com` credentials; a self-filed infra bug), issue #213 (`Homepage missing footer landmark`, `bug` — autoheal Production Site Review found no `footer` a11y landmark; body cites stale `marcusrbrown.com` URL). Open issues 4 → 6 (#213/#212/#204/#162/#13/#1); API count 7 folds in PR #211. Agent v0.93.1 (`a4976f4`), 8 workflows, homepage `mrbro.dev`, stars 1 — all unchanged. Gaps hold. Fro Bot active — no onboarding PR. |
 | 2026-07-25 | `0b31ea7` | **Tree-level delta — `main` advanced `a5a6d8c` → `0b31ea7` (`fix(audit): invoke the discovery finalizer entrypoint (#221)`).** Impeccable design gate vendored in-repo as an OpenCode plugin: new `opencode.json` registering `./.opencode/impeccable/plugin.ts`, new `.opencode/impeccable/` (`plugin.ts`, `hook-bridge.ts` + tests, `.opencode/tsconfig.json`), `@opencode-ai/plugin@1.18.2` devDep, `check-types` now type-checks the plugin — mirrors [[fro-bot--dashboard]]'s in-repo Impeccable move. New root `.codex/hooks.json` + `examples/`; new `security:react-router-rsc` boundary-check script and `pre-push` git hook. `pnpm-workspace.yaml` ledger ~18 GHSA overrides + new `auditConfig.ignoreGhsas`; `package.json` split-brain remnant persists. Stack re-confirmed (React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / ESLint 10.7.0 / Prettier 3.9.5 / pnpm 10.33.4 / Node >=22.6.0). Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7 — unchanged. **No `gh` auth this run** (reads limited to raw fetch + shallow clone); issue/PR counts carried forward, not re-verified. Gaps hold. Fro Bot active — no onboarding PR. |
-| 2026-07-27 | `3b852d3` | **Hero CTA WCAG-contrast fix + `docs/solutions/` compounding tree.** `main` advanced `2643703` → `3b852d3` (`docs(solutions): capture hero CTA WCAG contrast learning (#232)`) across 3 commits: `fix(a11y): pin hero CTA background to AA-passing blue` (#231) remediating a theme-transition/preset-derivation contrast failure, captured as a dated `ui-bugs` solution doc (#232). The `docs/solutions/` tree now spans 4 categories (`integration-issues`/`logic-errors`/`security`/`ui-bugs`) with dated per-incident markdown documenting recent fixes (#225 SPA-404, #228 LFS/Pages, #218/#220 audit) — the `ce:compound` pattern this `.github` repo uses, now embedded in mrbro.dev. pnpm 11.1.3 / Node >=24.0.0 confirmed; `package.json` `pnpm.overrides` still empty. Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7 — unchanged. No `gh` auth (unauthenticated API + raw fetch); issue/PR counts carried forward. Gaps hold. Fro Bot active — no onboarding PR. |

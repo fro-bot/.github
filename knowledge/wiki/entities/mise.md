@@ -2,7 +2,7 @@
 type: entity
 title: mise
 created: 2026-04-18
-updated: 2026-07-10
+updated: 2026-07-27
 tags: [mise, tool-management, runtime-versions, asdf, dev-tools]
 aliases: [rtx]
 related:
@@ -18,19 +18,23 @@ Site: https://mise.jdx.dev/
 
 ## Usage Across Repos
 
-### [[marcusrbrown--dotfiles]] — current state (SHA `e8ebc5c`, 2026-07-10)
+### [[marcusrbrown--dotfiles]] — current state (SHA `cd03ad8`, 2026-07-27)
 
-**Language runtimes:** Node 24.18.0, Python 3.14.6, Rust 1.97.0, Go 1.26.5, Bun 1.3.14, Deno 2.9.2, Zig 0.15.2 (ZLS 0.16.0), pnpm 11.10.0, npm 11.18.0.
+**Language runtimes:** Node 24.18.0, Python 3.14.6, Rust 1.97.1, Go 1.26.5, Bun 1.3.14, Deno 2.9.4, Zig 0.15.2 (ZLS 0.16.0), pnpm 11.17.0, npm 11.18.0.
 
-**CLI tools (npm):** TypeScript 6.0.3, Prettier 3.9.4 (with `@bfra.me/prettier-config` 0.16.9), ast-grep 0.43.0, Playwright 1.61.1, Puppeteer 25.3.0, agent-browser 0.31.1, skills 1.5.15, ocx 2.0.11, tsx 4.23.0, rimraf 6.1.3, vibe-tools 0.63.3, `@github/copilot` 1.0.68, `@biomejs/biome` 2.5.2, `@fro.bot/harness` 1.17.14-harness.e98fbc0f.
+**CLI tools (npm):** TypeScript 6.0.3, Prettier 3.9.6 (with `@bfra.me/prettier-config` 0.16.9), ast-grep 0.44.1, Playwright 1.61.1, Puppeteer 25.3.0, agent-browser 0.33.0, skills 1.5.20, ocx 2.0.11, tsx 4.23.1, rimraf 6.1.3, vibe-tools 0.63.3, `@github/copilot` 1.0.74, `@biomejs/biome` 2.5.5, `@fro.bot/harness` 1.18.5-harness.3a55d7d2 (realigned in lockstep with stock `opencode-ai@1.18.5`).
 
-**Manually pinned (Renovate disabled):** `opencode-ai` 1.17.12, `@anthropic-ai/claude-code` 2.1.128.
+**Manually pinned (Renovate disabled):** `opencode-ai` 1.18.5, `@anthropic-ai/claude-code` 2.1.163.
 
 **Aqua tools:** shfmt (`aqua:mvdan/sh`) 3.13.1, gitleaks (`aqua:gitleaks/gitleaks`) 8.30.1.
 
 **Language servers (npm):** pyright 1.1.411, typescript-language-server 5.3.0.
 
-**Other:** cargo-binstall 1.20.1, `pipx:poetry` 2.4.1, `@marcusrbrown/infra` latest.
+**Other:** cargo-binstall 1.21.1, `pipx:poetry` 2.4.1, `@marcusrbrown/infra` latest.
+
+### Historical Snapshot — [[marcusrbrown--dotfiles]] (SHA `e8ebc5c`, 2026-07-10)
+
+Superseded by the entry above. Node 24.18.0, Python 3.14.6, Rust 1.97.0, Go 1.26.5, Deno 2.9.2, pnpm 11.10.0, ast-grep 0.43.0, biome 2.5.2, prettier 3.9.4, agent-browser 0.31.1, skills 1.5.15, copilot 1.0.68, `@fro.bot/harness` 1.17.14-harness.e98fbc0f, opencode-ai 1.17.12, claude-code 2.1.128, cargo-binstall 1.20.1, tsx 4.23.0.
 
 **Env:** `UV_SYSTEM_CERTS=true`, `NPM_TOKEN` templated from env, redacted env file at `~/.config/mise/.env.local`.
 
