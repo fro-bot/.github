@@ -3144,3 +3144,27 @@ Sources: https://github.com/marcusrbrown/.dotfiles (SHA cd03ad8b96fd6118bb782844
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-07-28 00:00] ingest | repo:marcusrbrown/.github
+
+Re-surveyed marcusrbrown/.github at HEAD `7ce5ae7` (pushed_at 2026-07-26T21:12Z). Dependency-only churn since the 2026-06-28 survey (`d516b2f`) — no structural or content changes.
+
+Deltas:
+- `bfra-me/.github` reusable workflows v4.16.31 → v4.16.41 (SHA `95a066eb`) in both `renovate.yaml` and `update-repo-settings.yaml` (PRs #392–#406, Renovate).
+- Prettier 3.8.4 → 3.9.6 across a release run (PRs #391/#393/#394/#397/#405) — propagated to `main.yaml` `PRETTIER_VERSION` and `renovate.json5` post-upgrade task.
+- `actions/checkout` v5.0.1 → v5.1.0 (SHA `fbc6f399`, PR #402).
+- Unchanged: `common-settings.yaml`, `.github/settings.yml`, `.prettierrc.yaml`; same 15-blob file tree, no new paths. Renovate preset still `marcusrbrown/renovate-config#4.5.9` (v4.x holdout, well behind [[marcusrbrown--renovate-config]] on v5).
+- Still no Fro Bot agent workflow — recommendation for a follow-up draft PR remains open (noted in repo page's Fro Bot Integration section).
+- 0 open PRs, 2 open issues (#37, #214 Dependency Dashboard), 4 stars, 2 watchers.
+
+Pages touched: `wiki/repos/marcusrbrown--github.md` (frontmatter source/updated; Overview last-push; CI checkout+Prettier versions; shared-workflow SHA/version; renovate post-upgrade version; Fro Bot PR range #388–#406 + still-absent note; survey-history row), `index.md` (refreshed catalog entry versions). No new topic/entity/comparison pages warranted — all deltas are version advances absorbed by existing [[probot-settings]], [[github-actions-ci]], [[marcusrbrown--renovate-config]] coverage.
+
+Constraints honored: additive updates only, prior survey-history rows preserved; wikilinks point to existing pages; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary). Target repo treated as untrusted input; reads limited to directory listings, README/manifest/workflow files via the public unauthenticated GitHub API (no `gh` token present in this environment).
+
+Sources: https://github.com/marcusrbrown/.github (SHA 7ce5ae7a2ed353e3bc1691ba754e5657c9ddcc79)
+
+## [2026-07-28 07:52] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
