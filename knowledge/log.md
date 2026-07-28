@@ -3145,26 +3145,28 @@ Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
 
-## [2026-07-28 00:00] ingest | repo:marcusrbrown/.github
+## [2026-07-28 07:51] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Re-surveyed marcusrbrown/.github at HEAD `7ce5ae7` (pushed_at 2026-07-26T21:12Z). Dependency-only churn since the 2026-06-28 survey (`d516b2f`) — no structural or content changes.
+Survey dispatched against the *name* `marcusrbrown/marcusrbrown.github.io` (HEAD `345bc21fda340ee7efa54aff9883d62f1dd0973b`, `fix(blog): authenticate gist reads with a dedicated PAT (#238)`, committed 2026-07-28T07:08Z). **Name-collision holds:** the name still resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio.", topics `blog/developer/github-pages/portfolio/react/typescript/vite`), **not** the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Binding unchanged since 2026-07-20. Per the wiki contract, durable per-repo knowledge lands on the canonical **[[marcusrbrown--mrbro-dev]]** page; the [[marcusrbrown--marcusrbrown-github-io]] page carries only a collision-confirm pointer.
 
-Deltas:
-- `bfra-me/.github` reusable workflows v4.16.31 → v4.16.41 (SHA `95a066eb`) in both `renovate.yaml` and `update-repo-settings.yaml` (PRs #392–#406, Renovate).
-- Prettier 3.8.4 → 3.9.6 across a release run (PRs #391/#393/#394/#397/#405) — propagated to `main.yaml` `PRETTIER_VERSION` and `renovate.json5` post-upgrade task.
-- `actions/checkout` v5.0.1 → v5.1.0 (SHA `fbc6f399`, PR #402).
-- Unchanged: `common-settings.yaml`, `.github/settings.yml`, `.prettierrc.yaml`; same 15-blob file tree, no new paths. Renovate preset still `marcusrbrown/renovate-config#4.5.9` (v4.x holdout, well behind [[marcusrbrown--renovate-config]] on v5).
-- Still no Fro Bot agent workflow — recommendation for a follow-up draft PR remains open (noted in repo page's Fro Bot Integration section).
-- 0 open PRs, 2 open issues (#37, #214 Dependency Dashboard), 4 stars, 2 watchers.
+**No `gh` credential in this runner** (`gh auth status` failed) — same harness-level gap the repo's own issue #212 tracks. Reads honored the untrusted-input constraint: unauthenticated GitHub API + raw-file fetch over repo metadata, HEAD commit + recent-commit list, recursive tree listing, `package.json`, `.github/renovate.json5`, `.github/workflows/fro-bot.yaml`, and the public issues/PR listing (readable unauthenticated).
 
-Pages touched: `wiki/repos/marcusrbrown--github.md` (frontmatter source/updated; Overview last-push; CI checkout+Prettier versions; shared-workflow SHA/version; renovate post-upgrade version; Fro Bot PR range #388–#406 + still-absent note; survey-history row), `index.md` (refreshed catalog entry versions). No new topic/entity/comparison pages warranted — all deltas are version advances absorbed by existing [[probot-settings]], [[github-actions-ci]], [[marcusrbrown--renovate-config]] coverage.
+Material delta this cycle — **Fro Bot workflow architecture**, not the app tree:
 
-Constraints honored: additive updates only, prior survey-history rows preserved; wikilinks point to existing pages; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary). Target repo treated as untrusted input; reads limited to directory listings, README/manifest/workflow files via the public unauthenticated GitHub API (no `gh` token present in this environment).
+- **Two crons → one daily oversight+autoheal pass (#234).** `fro-bot.yaml` drops the `30 15` maintenance cron; a **single `30 3 * * *`** cron now runs a "Daily oversight + autohealing pass" (staggered off space-bus 00:00 / mothership 06:15). `workflow_dispatch` `mode` choices are now `review`/`autoheal`/`live-audit` — `maintenance` mode retired, **`live-audit`** mode added, backed by dedicated `live-audit-preflight`/`discovery`/`reporter` jobs + a `live-audit-slot` input. This matches the fleet-wide 2→1 consolidation ([[marcusrbrown--vbs]] #594, [[bfra-me--github]] 2026-07-02, [[marcusrbrown--mothership]], [[fro-bot--dashboard]]).
+- **Scheduled autoheal git push authenticated (#236)** — an "Enable authenticated git push for autoheal fixes" step for schedule/dispatch runs; targets the #212 push-auth failure mode for the *scheduled* path (#212 stays open for *mention* runs).
+- **Live-audit tolerates delayed scheduled delivery (#237); blog gist reads use a dedicated PAT (#238, HEAD)** with hook-skip follow-on PR #239. Impeccable design skill → v4.0.2 (#233); hero-CTA WCAG AA contrast fix (#231/#232).
+- **Report-issue set collapsed** from the split `#162`/`#13` pair to a single **`#235 "Daily Fro Bot Report — 2026-07-28 (UTC)"`**, mirroring the workflow consolidation. Open issues readable this run: #235, #213 (footer landmark), #212 (mention-run push auth), #1 (Dependency Dashboard); open PR #239.
+- **Stack steady:** React 19 / React Router 7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / `@opencode-ai/plugin` 1.18.2 / pnpm 11.1.3 (Node >=24); `pnpm.overrides` empty (ledger single-source in `pnpm-workspace.yaml`). Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows; Renovate `#5.2.7`. **Fro Bot workflow present and active — no onboarding follow-up draft PR warranted.** Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) still hold. No contradictions with prior ingests.
 
-Sources: https://github.com/marcusrbrown/.github (SHA 7ce5ae7a2ed353e3bc1691ba754e5657c9ddcc79)
+Pages touched: `wiki/repos/marcusrbrown--mrbro-dev.md` (frontmatter source `345bc21` + `updated`; new Delta Log 2026-07-28; Survey History row), `wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter source + `updated`; collision-confirm Delta Log 2026-07-28; Survey History row), `wiki/topics/github-actions-ci.md` (Fro Bot Agent table: new mrbro.dev row + stale github-io row annotated; new "Fro Bot Scheduled-Run Consolidation" pattern subsection; `related` + `updated`), `index.md` (refreshed mrbro-dev + github-io catalog entries + github-actions-ci topic line). No new topic/entity/comparison pages warranted — the cron-consolidation pattern is absorbed by the existing [[github-actions-ci]] topic.
 
-## [2026-07-28 07:52] ingest | repo:marcusrbrown/.github
+Constraints honored: additive updates only; prior snapshots preserved; wikilinks point to existing pages; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
 
-Surveyed marcusrbrown/.github and updated the control-plane wiki.
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 345bc21fda340ee7efa54aff9883d62f1dd0973b)
 
-Sources: https://github.com/marcusrbrown/.github
+## [2026-07-28 07:57] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io

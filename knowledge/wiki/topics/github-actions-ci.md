@@ -2,16 +2,20 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-07-21
+updated: 2026-07-28
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - fro-bot--agent
+  - fro-bot--dashboard
   - marcusrbrown--containers
   - marcusrbrown--ha-config
   - marcusrbrown--github
   - marcusrbrown--systematic
   - marcusrbrown--infra
+  - marcusrbrown--mrbro-dev
   - marcusrbrown--marcusrbrown-github-io
+  - marcusrbrown--marcusrbrown
+  - marcusrbrown--mothership
   - marcusrbrown--renovate-config
   - marcusrbrown--sparkle
   - marcusrbrown--vbs
@@ -107,7 +111,8 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`, agent v0.55.0) | Daily 14:30 UTC autohealing       |
 | [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]]       | Present (`fro-bot.yaml`, agent v0.44.3) | Daily 03:30 UTC autohealing (8 categories incl. CLIProxy + Gateway + cross-project + upstream modernization watch on Sundays) |
-| [[marcusrbrown--marcusrbrown-github-io]] | Present (`fro-bot.yaml`) | Daily 15:30 UTC maintenance (no autoheal) |
+| [[marcusrbrown--mrbro-dev]] | Present (single-file `fro-bot.yaml` at agent **v0.93.1** SHA-pinned `a4976f4`; surveyed via the `marcusrbrown.github.io` name binding → repo id `1174807412`). **Consolidated 2→1 cron on 2026-07-28 (#234).** | Single daily `30 3 * * *` oversight + autoheal pass (was `30 3` autoheal / `30 15` maintenance until #234). Dispatch modes now `review`/`autoheal`/`live-audit` (`maintenance` dropped); dedicated `live-audit-preflight`/`discovery`/`reporter` jobs + `live-audit-slot` input; `discussion_comment` trigger; scheduled autoheal wires an authenticated git remote (#236). Rolling report collapsed to a single `Daily Fro Bot Report` issue (#235) |
+| [[marcusrbrown--marcusrbrown-github-io]] | ⚠️ **Stale row — the *brand site* this described (repo id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]) no longer holds this name.** Since the 2026-07-13 rename/collision the name `marcusrbrown/marcusrbrown.github.io` resolves to repo id `1174807412` (mrbro.dev — see the row above). | (Historical) Daily 15:30 UTC maintenance (no autoheal) — describes the pre-rename brand site only |
 | [[marcusrbrown--marcusrbrown]] | Present (single-file three-mode `fro-bot.yaml` at v0.75.0 SHA-pinned `a12463f`, onboarded 2026-06-02 via #924; ~31 agent bumps in 20 days as of 2026-06-22) | Autoheal `30 4 * * *` (7 categories incl. Sunday-only Upstream Modernization Watch), Maintenance `30 16 * * *`; both rolling single-issue reports. Adds a comment-trigger fork-head refusal preflight step. Friction update (2026-06-22): the prior daily close/reopen churn on the perpetual maintenance issue #936 has settled — #936 is now closed, leaving the autoheal report #926 as the only open perpetual issue (zero open maintenance issue) |
 | [[marcusrbrown--renovate-config]] | Present (single-file `fro-bot.yaml` at v0.44.3; the separate `fro-bot-autoheal.yaml` was consolidated since 2026-04-28) | Daily 15:30 UTC, 6 categories incl. config validation, cross-project intelligence inbound, and Sundays-only Upstream Modernization Watch with at-most-one-draft-PR-per-scan policy |
 | [[marcusrbrown--vbs]]         | Present (single-file unified single-job `fro-bot.yaml` at v0.55.4; autoheal job folded in via #594 on 2026-05-30) | Autoheal `30 3 * * *`, Maintenance `30 15 * * *`; modes `review`/`maintenance`/`autoheal` via dispatch; fork-PR + bot-author guard at job `if` level |
@@ -128,6 +133,20 @@ The systematic repo's Fro Bot workflow includes TypeScript/Bun/Biome-specific PR
 - **Apply job** downloads the artifact candidate and performs the mutation; the write authority is carried by a **distinct credential** (`FRO_BOT_PAT`), never the read-only `GITHUB_TOKEN`. A **fail-closed validator** runs on the candidate before apply (rejects forged idempotency markers / `<details>` tags, control chars, oversized/empty bodies, missing links), with a `stripCodeSpans()` pre-pass so a candidate legitimately *describing* a marker (in code quotes) is not falsely rejected while broken markup still trips the guard.
 
 This is the release-notes-narration path, but the shape generalizes to any "read untrusted → decide → write privileged" CI flow. It is the CI-job-level analogue of the `harness-integrate` broker containment (untrusted merge runs under a read-only / minted credential; write authority is granted only to a separate, policy-pinned job).
+
+### Fro Bot Scheduled-Run Consolidation (two crons → one daily pass)
+
+A recurring fleet motion: repos that ran **two separate scheduled Fro Bot passes** — an `autoheal` cron (typically `30 3` UTC) and a `maintenance` cron (typically `30 15` UTC), each emitting its own rolling report issue — collapse into a **single daily oversight+autoheal pass** with one report issue. The `maintenance` dispatch mode is retired; repository oversight becomes a report-only category inside the unified autoheal run.
+
+Confirmed instances (chronological):
+
+- [[marcusrbrown--vbs]] (#594, 2026-05-30) — autoheal job folded into a single unified job.
+- [[bfra-me--github]] (2026-07-02) — 3 → 2 modes, one unified 15:30 pass, reports consolidated to a single issue (#2344).
+- [[marcusrbrown--mothership]] (initial survey 2026-07-06) — onboarded already unified (single-run oversight+autoheal at 06:15 UTC).
+- [[fro-bot--dashboard]] — single `0 0` midnight pass.
+- [[marcusrbrown--mrbro-dev]] (**#234, 2026-07-28**) — the two-cron model (`30 3` autoheal / `30 15` maintenance) collapsed to a single `30 3` daily oversight+autoheal pass; `maintenance` dispatch mode dropped, a **`live-audit`** mode added (dedicated `live-audit-preflight`/`discovery`/`reporter` jobs + `live-audit-slot` input); the split `Daily Autohealing Report`/`Daily Maintenance Report` issue pair collapsed to a single `Daily Fro Bot Report` (#235).
+
+The consolidation reduces scheduled-run surface area and eliminates the split-report bookkeeping (two perpetual issues → one). Repos still running the two-cron split (e.g. [[bfra-me--works]], [[bfra-me--renovate-action]], [[marcusrbrown--marcusrbrown]], [[marcusrbrown--sparkle]]) are candidates for the same collapse.
 
 ### Convention Enforcement via Tests
 
