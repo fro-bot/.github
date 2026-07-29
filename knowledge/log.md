@@ -3170,3 +3170,30 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 345bc21fda3
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-07-29 08:07] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed the *name* `marcusrbrown/marcusrbrown.github.io`. **Name-collision holds** — it resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio; `package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), not the original brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Binding unchanged since 2026-07-20. Per the wiki contract, durable per-repo knowledge for the current occupant is recorded on the canonical [[marcusrbrown--mrbro-dev]] page; the github-io page only confirms the binding empirically.
+
+`main` advanced `345bc21` → **`1b6f5eb`** (`chore(blog): refresh snapshot and preview images (#246)`, 2026-07-29T04:06Z). Content-delivery + footer delta:
+
+- **Blog refresh moves to PR-not-direct-push (#240)** — the safer resolution of the #238/#239 automation-push friction; #245/#246 are the merged snapshot output.
+- **`/projects` served from a build-time snapshot (#243)** — prerender posture extended from the blog to projects.
+- **Custom social-preview images honored when set (#242)** — continues #202 → #228 (LFS-blob fix) → #242.
+- **Footer redesigned as a structured site-close (#244)** (`Footer.tsx`/`App.tsx`/`globals.css`) — plausibly closes the long-open a11y issue #213 (missing footer landmark). #213 and #204 are no longer in the open-issue listing.
+- **Open issues down to 3:** #247 (perpetual Daily Fro Bot Report, re-dated from #235), #212 (mention-run git-push-auth, still open), #1 (Dependency Dashboard). Stars 1.
+- **Stack steady:** React 19 / RR 7.15 / TS 5.9.3 / Vite 7.3.6 / pnpm 11.1.3 (Node >=24); `pnpm.overrides` empty (ledger single-source in `pnpm-workspace.yaml`). Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows; Renovate `#5.2.7`. **Fro Bot workflow present and active — no onboarding follow-up draft PR warranted for this name.** Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) still hold. No contradictions with prior ingests.
+
+This run had **no `gh` credential** (the same harness-level gap the current occupant's issue #212 tracks for mention runs); reads were limited to the untrusted-input surface via unauthenticated GitHub API + raw fetch: directory listings, `README`, `package.json`, `renovate.json5`, workflow files, and the public issues listing.
+
+Pages touched: `wiki/repos/marcusrbrown--mrbro-dev.md` (frontmatter source `1b6f5eb` + `updated`; new Delta Log 2026-07-29; Survey History row), `wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter source + `updated`; collision-confirm Delta Log 2026-07-29; Survey History row), `index.md` (refreshed mrbro-dev + github-io catalog entries). No new topic/entity/comparison pages warranted — no cross-cutting pattern shift this cycle (blog-delivery/footer changes are repo-local).
+
+Constraints honored: additive updates only; prior snapshots preserved; wikilinks point to existing pages; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 1b6f5eb4dd810e30132da738b15a219c9b4c8146)
+
+## [2026-07-29 08:08] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io

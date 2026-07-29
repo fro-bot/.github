@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -43,6 +43,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 345bc21fda340ee7efa54aff9883d62f1dd0973b
     accessed: 2026-07-28
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 1b6f5eb4dd810e30132da738b15a219c9b4c8146
+    accessed: 2026-07-29
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page, name-collision, superseded]
 aliases: [marcusrbrown-github-io]
 related:
@@ -338,6 +341,18 @@ The current name-holder's `main` **advanced** `2643703` → `345bc21` (`fix(blog
 
 Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.** This run had a `gh` credential gap again (unauthenticated GitHub API + raw fetch only). No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
 
+## Delta Log (2026-07-29, SHA `1b6f5eb` — collision holds; content-delivery + footer delta on [[marcusrbrown--mrbro-dev]])
+
+A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio, `package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-to-repo binding is unchanged since 2026-07-20 — the collision the 2026-07-13 header warned of is steady.
+
+The current name-holder's `main` **advanced** `345bc21` → `1b6f5eb` (`chore(blog): refresh snapshot and preview images (#246)`, 2026-07-29T04:06Z). The substantive delta is content-delivery plumbing and a footer redesign — recorded canonically on **[[marcusrbrown--mrbro-dev]]** (Delta Log 2026-07-29) per the wiki contract that durable per-repo knowledge lives on the canonical page:
+
+- **Blog refresh moves to PR-not-direct-push (#240)** — the safer resolution of the #238/#239 automation-push friction; #245/#246 are the merged snapshot output.
+- **`/projects` served from a build-time snapshot (#243)** and **custom social-preview images honored when set (#242)**.
+- **Footer redesigned as a structured site-close (#244)** — plausibly closes the long-open a11y issue #213 (missing footer landmark), which is no longer in the open-issue listing (along with #204).
+
+Open issues down to 3 (#247 perpetual Daily Fro Bot Report, #212 mention-run push-auth still open, #1 Dependency Dashboard). Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.** This run had a `gh` credential gap again (unauthenticated GitHub API + raw fetch only). No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+
 ## Survey History
 
 | Date | SHA | Notes |
@@ -355,3 +370,4 @@ Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93
 | 2026-07-26 | `2643703` | **Collision holds; pnpm 11 crossing + LFS-blob delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` advanced `0b31ea7` → `2643703` (`fix(projects): store preview images as real blobs, not LFS pointers (#228)`): **pnpm major 10.33.4 → 11.1.3** (`engines.pnpm >=11.1.3`), **Node engine `>=22.6.0` → `>=24.0.0`**, `package.json` `pnpm.overrides` split-brain remnant now empty (ledger fully consolidated in `pnpm-workspace.yaml`, ~24 entries); `.gitattributes` LFS exemption for `public/project-previews/*.png` (Pages can't resolve LFS pointers) + 2 real-blob preview PNGs + new `project-preview-refresh` script; root `.agents/skills/` (agent-browser/impeccable/playwright-mcp) vendored, `.impeccable/design.json` + `live/`. Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7 — unchanged. No `gh` auth (unauthenticated API + raw fetch); issue/PR counts carried forward. Fro Bot active — no onboarding PR. Full snapshot on the mrbro.dev page. |
 | 2026-07-25 | `0b31ea7` | **Collision holds; tree-level delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` advanced `a5a6d8c` → `0b31ea7` (`fix(audit): invoke the discovery finalizer entrypoint (#221)`): Impeccable design gate vendored in-repo as an `.opencode/impeccable/` OpenCode plugin (`opencode.json`, `@opencode-ai/plugin@1.18.2`), new `.codex/hooks.json` + `examples/`, `security:react-router-rsc` boundary check, `pnpm-workspace.yaml` ledger ~18 GHSA overrides + `auditConfig.ignoreGhsas`. Stack re-confirmed (React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / pnpm 10.33.4 / Node >=22.6.0). Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7 — unchanged. No `gh` auth this run; reads limited to raw fetch + shallow clone. Fro Bot active — no onboarding PR. Full snapshot on the mrbro.dev page. |
 | 2026-07-28 | `345bc21` | **Collision holds; Fro Bot cron-consolidation delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` advanced `2643703` → `345bc21` (`fix(blog): authenticate gist reads with a dedicated PAT (#238)`): `fro-bot.yaml` collapsed its two crons (`30 3` autoheal / `30 15` maintenance) into a **single daily `30 3` oversight+autoheal pass (#234)** — `maintenance` dispatch mode dropped, `live-audit` mode + preflight/discovery/reporter jobs added; scheduled autoheal now authenticates its git push (#236); blog gist reads use a dedicated PAT (#238, PR #239 follow-on). Report-issue pair collapsed to single `#235 Daily Fro Bot Report`. Stack steady (React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / pnpm 11.1.3 / Node >=24). Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7 — unchanged. No `gh` auth (unauthenticated API + raw fetch). Fro Bot active — no onboarding PR. Full snapshot on the mrbro.dev page. |
+| 2026-07-29 | `1b6f5eb` | **Collision holds; content-delivery + footer delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` advanced `345bc21` → `1b6f5eb` (`chore(blog): refresh snapshot and preview images (#246)`): blog refresh now delivers **via PR, not direct push to `main` (#240)** (#245/#246 merged output); `/projects` served from a **build-time snapshot (#243)**; **custom social-preview images honored when set (#242)**; **footer redesigned as a structured site-close (#244)** — plausibly closes a11y issue #213. Open issues down to 3 (#247/#212/#1); #213 and #204 no longer listed. Agent v0.93.1 (`a4976f4`), 8 workflows, Renovate #5.2.7, pnpm 11.1.3 / Node >=24 — unchanged. No `gh` auth (unauthenticated API + raw fetch). Fro Bot active — no onboarding PR. Full snapshot on the mrbro.dev page. |
