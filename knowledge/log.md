@@ -3171,29 +3171,29 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-07-29 08:07] ingest | repo:marcusrbrown/marcusrbrown.github.io
+## [2026-07-28 18:15] ingest | marcusrbrown/sparkle
 
-Surveyed the *name* `marcusrbrown/marcusrbrown.github.io`. **Name-collision holds** — it resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio; `package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), not the original brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Binding unchanged since 2026-07-20. Per the wiki contract, durable per-repo knowledge for the current occupant is recorded on the canonical [[marcusrbrown--mrbro-dev]] page; the github-io page only confirms the binding empirically.
+Re-surveyed `marcusrbrown/sparkle` (SHA `9c215ee477fb785ba148b826f7bf0ef8c7111617`) — the ninth survey of this repo. Additive update to the existing repo page, index entry, the `github-actions-ci` topic page, and this log. No pages created. Survey conducted via unauthenticated public GitHub API/raw endpoints (the `gh` CLI had no usable token this run); reads limited to repo metadata, HEAD commit, README/`llms.txt`, `package.json`, `.node-version`, `.github/renovate.json5`, `.github/settings.yml`, the workflows directory listing, `fro-bot.yaml`, and the open PR/issue lists.
 
-`main` advanced `345bc21` → **`1b6f5eb`** (`chore(blog): refresh snapshot and preview images (#246)`, 2026-07-29T04:06Z). Content-delivery + footer delta:
+Key deltas since the 2026-07-11 survey (SHA `2ef1cf1`):
 
-- **Blog refresh moves to PR-not-direct-push (#240)** — the safer resolution of the #238/#239 automation-push friction; #245/#246 are the merged snapshot output.
-- **`/projects` served from a build-time snapshot (#243)** — prerender posture extended from the blog to projects.
-- **Custom social-preview images honored when set (#242)** — continues #202 → #228 (LFS-blob fix) → #242.
-- **Footer redesigned as a structured site-close (#244)** (`Footer.tsx`/`App.tsx`/`globals.css`) — plausibly closes the long-open a11y issue #213 (missing footer landmark). #213 and #204 are no longer in the open-issue listing.
-- **Open issues down to 3:** #247 (perpetual Daily Fro Bot Report, re-dated from #235), #212 (mention-run git-push-auth, still open), #1 (Dependency Dashboard). Stars 1.
-- **Stack steady:** React 19 / RR 7.15 / TS 5.9.3 / Vite 7.3.6 / pnpm 11.1.3 (Node >=24); `pnpm.overrides` empty (ledger single-source in `pnpm-workspace.yaml`). Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows; Renovate `#5.2.7`. **Fro Bot workflow present and active — no onboarding follow-up draft PR warranted for this name.** Gaps (no Probot `settings.yml`, no CodeQL/Scorecard) still hold. No contradictions with prior ingests.
+- **Steady post-v11 patch cadence.** pnpm `11.10.0` → `11.17.0`; turbo `2.10.4` → `2.10.7` (the HEAD commit is itself Renovate turbo bump #1876). prettier `3.9.4` → `3.9.6`; tsx `4.23.0` → `4.23.1`; `@types/node` `24.13.2` → `24.13.3`; eslint `9.39.4` → `9.39.5`; `@changesets/cli` `2.31.0` → `2.31.1`. `.node-version` holds `24.18.0`; `engines` floors (`node >=22.13.1`, `pnpm >=11.8.0`), full `@bfra.me/*` toolchain, `tsdown` 0.16.8, TypeScript 5.9.3 all unchanged. No structural/architecture changes; `apps/` + `packages/` layout stable; workflow count steady at 7.
+- **Fro Bot agent v0.85.0 → v0.95.0** (SHA `4ad0054`); `actions/checkout` bumped `df4cb1c` v6.0.3 → `d23441a` v6.1.0. `fro-bot.yaml` present — no onboarding follow-up draft PR warranted.
+- **Renovate preset `#5.2.0` → `#5.2.9`.** Same ecosystem preset line, patch-level advance.
+- **Stars 1 → 2, watchers 1 → 2.**
+- **Open PRs steady at 3 but reshaped again — new security-override archetype.** The 2026-07-11 lint-fix PRs (#1787, #1816) and Renovate typedoc (#1812) all cleared. Queue now: #1866 (brace-expansion `GHSA-mh99-v99m-4gvg`, high-sev DoS) and #1862 (postcss `GHSA-6g55-p6wh-862q`, high-sev arbitrary file read) — both fro-bot autoheal category-2 security fixes that remediate *transitive* Dependabot alerts by adding `pnpm.overrides` entries in `pnpm-workspace.yaml` and regenerating the lockfile; plus #1875 (fro-bot cross-package dep-declaration fix declaring `@sparkle/test-utils` as a `workspace:*` devDep in `apps/moo-dang`). Renovate absent from the open queue this cycle.
+- **Recurring moo-dang test-utils coupling gap.** #1875 re-fixes the same symptom as #1681 (2026-06-05) at a different layer: #1681 patched the Turbo task-graph reachability of `@sparkle/test-utils` sub-path exports; #1875 patches the missing `package.json` declaration. Flagged in the repo page as a candidate for an import-vs-manifest lint.
+- **Open non-PR issues steady at 7** — identical set to 2026-07-11 (#1800, #1799, #1666, #1665, #1664, #876, #212). No new autoheal issues; fresh work landed as PRs this cycle.
+- **Contradiction / unresolved drift noted (not overwritten).** The prior survey recorded #1800 as *resolving* the llms.txt-drift open question by proving the category-3 check fires. This survey adds the follow-on finding: two surveys later #1800 is **still OPEN** and `llms.txt` line 40 still text-pins `pnpm@10.33.4` (now a full major-plus behind actual `11.17.0`). The check flags-but-does-not-heal — it opens an issue per prompt contract rather than a fix PR, so remediation stalls pending human action. Both observations are retained and dated in the repo page; the newer one refines rather than replaces the earlier.
 
-This run had **no `gh` credential** (the same harness-level gap the current occupant's issue #212 tracks for mention runs); reads were limited to the untrusted-input surface via unauthenticated GitHub API + raw fetch: directory listings, `README`, `package.json`, `renovate.json5`, workflow files, and the public issues listing.
+Touched pages: `knowledge/wiki/repos/marcusrbrown--sparkle.md` (frontmatter source `9c215ee` + `updated`; overview counts; new 2026-07-28 toolchain-drift block; Fro Bot agent/checkout versions; Renovate preset; Shared Ecosystem table; three new Notable Patterns entries — security-override archetype, moo-dang recurrence, llms.txt flagged-but-unhealed; #1800 perpetual-issue note; new 2026-07-28 Open PRs/Issues section; Survey History row), `knowledge/wiki/topics/github-actions-ci.md` (sparkle Renovate preset line `#5.2.9`; Fro Bot Agent table row → agent v0.95.0 + security-override note), `knowledge/index.md` (refreshed sparkle catalog line). No new topic/entity/comparison pages warranted — deltas absorbed by existing [[github-actions-ci]] coverage; the `pnpm.overrides` security-remediation pattern echoes [[marcusrbrown--marcusrbrown]] and [[marcusrbrown--mrbro-dev]] override-ledger notes already on record.
 
-Pages touched: `wiki/repos/marcusrbrown--mrbro-dev.md` (frontmatter source `1b6f5eb` + `updated`; new Delta Log 2026-07-29; Survey History row), `wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter source + `updated`; collision-confirm Delta Log 2026-07-29; Survey History row), `index.md` (refreshed mrbro-dev + github-io catalog entries). No new topic/entity/comparison pages warranted — no cross-cutting pattern shift this cycle (blog-delivery/footer changes are repo-local).
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files (no source-code reads); additive updates only (prior snapshots preserved and dated; contradiction on #1800 noted rather than overwritten); wikilinks point to existing pages; frontmatter complete. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
 
-Constraints honored: additive updates only; prior snapshots preserved; wikilinks point to existing pages; modified only `knowledge/wiki/**`, `knowledge/index.md`, `knowledge/log.md`. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
+Sources: https://github.com/marcusrbrown/sparkle (SHA 9c215ee477fb785ba148b826f7bf0ef8c7111617)
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 1b6f5eb4dd810e30132da738b15a219c9b4c8146)
+## [2026-07-29 08:08] ingest | repo:marcusrbrown/sparkle
 
-## [2026-07-29 08:08] ingest | repo:marcusrbrown/marcusrbrown.github.io
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+Sources: https://github.com/marcusrbrown/sparkle
