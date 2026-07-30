@@ -3198,30 +3198,27 @@ Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
 
-## [2026-07-30 07:45] ingest | marcusrbrown/containers
+## [2026-07-30 07:49] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Re-surveyed `marcusrbrown/containers` (SHA `84d3d65f1a09ab9d12d691598b8e349cd2ff7b29`) — the ninth survey of this repo. Additive update to the existing repo page, its index entry, the [[docker-containers]] topic page, and this log. No pages created. Survey conducted via unauthenticated public GitHub API/raw endpoints (no usable `gh` token this run); reads limited to repo metadata, HEAD commit, root git tree, README/`pyproject.toml`/`package.json`/`mise.toml`/`renovate.json5`/`fro-bot.yaml`, the `.github/workflows`, `docs/`, `scripts/`, and `node/` directory listings, the two active `node/*` Dockerfiles' header lines, and the open issue/PR list.
+Surveyed the *name* `marcusrbrown/marcusrbrown.github.io` — still resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio: `package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), **not** the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-collision the 2026-07-13 header warned of is holding steady — unchanged binding since 2026-07-20. Durable per-repo knowledge for the current occupant is recorded on the canonical [[marcusrbrown--mrbro-dev]] page per the wiki contract; the collision page carries only the empirical binding confirmation.
 
-Key deltas since the 2026-07-12 survey (SHA `4c80e965`):
+`main` advanced `345bc21` → **`aa23250`** (`docs: document mobile nav hit-target overlap (#251)`, 2026-07-30T05:03:56Z) across a ten-PR burst (#240–#251). Unlike the recent automation-spine cycles (pnpm-11 crossing, in-repo design-gate, Fro Bot cron consolidation), this delta is **front-of-house UI/UX polish plus a build-time-snapshot delivery shift**:
 
-- **No structural change.** Repository layout, container variants (`node/alpine`, `node/release`), `templates/` + `docs/templates/` system, AI subsystem (`ai_core.py` Ollama/OpenAI/Anthropic abstraction), Dockerfile patterns, CI pipeline (11 workflows), branch protection, and the 10 Poetry entry points are all unchanged. `docs/` set steady (AI trio + `CI_BUILD_FIXES.md` + `MULTI_ARCH.md`); `scripts/` steady at 15 files.
-- **Fro Bot agent v0.86.0 → v0.95.0** (SHA `4ad00541cd9e4f1853f9dcd1fb2ac316d559d54f`). `fro-bot.yaml` present — no onboarding follow-up draft PR warranted. Same 14:30 UTC daily schedule, PR review + four-category autohealing prompts, single perpetual "Daily Autohealing Report" issue (#533), checkout via `actions/checkout@v7.0.0`.
-- **pnpm 11.10.0 → 11.17.0** (`mise.toml`); Node.js 24.18.0 steady, Python 3.13.
-- **openai `>=2.45.0` → `>=2.50.0,<2.51.0`** (`pyproject.toml`; #721 is the HEAD commit). Other runtime/dev deps and the `--cov-fail-under=35` coverage gate unchanged.
-- **Dockerfile syntax directive `docker/dockerfile:1.23` → `1.25`** (`sha256:0adf442e...`) + `node:24-alpine` base digest rotated to `sha256:a0b9bf06...`. `NODE_VERSION` build arg still `22.17.0` (image-embedded Node version, durable note).
-- **Renovate preset still `marcusrbrown/renovate-config#5.2.0`**, `templates/` ignored, Python constrained `>=3.13,<3.14`, per-manager `postUpgradeTasks` split (poetry → `poetry lock`; npm → `pnpm install` + `pnpm format`) intact.
-- **Open PRs: 0** (backlog stays clear for a second consecutive survey). **Open issues: 2** — #533 Daily Autohealing Report (fro-bot), #415 Dependency Dashboard (mrbro-bot). 4 stars.
+- **Mobile nav hit-target loop (#249/#250/#251):** header/nav polish (#249) → overlapping tap-target fix (#250) → learning captured (#251). Design-gate-adjacent touch-ergonomics catch-fix-document cadence, mirroring the #231/#232 hero-CTA contrast loop.
+- **Footer redesigned as a structured "site-close" (#244)** — a deliberate compositional bookend, and the likely remediation of the long-open **#213** ("Homepage missing footer landmark"), which is no longer in the open-issue listing (causal link not directly confirmed).
+- **`/projects` served from a build-time snapshot (#243)** rather than a live GitHub-API read — pulling dynamic content into the build step, consistent with the blog's build-time gist-publishing model. The portfolio is steadily migrating API reads to prerendered artifacts.
+- **Custom social-preview images honored (#242):** project cards now use a repo's configured GitHub social preview when present, with the self-hosted generated PNGs (#202/#228) as fallback.
+- **Blog index refined as "curated evidence" (#248)** + routine snapshot/preview refreshes (#241/#245/#246); and **blog-refresh now delivers via PR, not direct push to `main` (#240)** — the automation is being domesticated into the normal review path (natural follow-on to the #238 dedicated-PAT and #239 hook-skip work).
+- **Steady:** React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6, pnpm 11.1.3 / Node >=24 (`pnpm.overrides` empty, ledger consolidated in `pnpm-workspace.yaml`), agent `fro-bot/agent@a4976f4 # v0.93.1`, 8 workflows, single `30 3` daily oversight+autoheal cron (#234 consolidation holds), Renovate #5.2.7. Open issues 3 (#252 Daily Fro Bot Report / #212 mention-run push-auth / #1 Dependency Dashboard). Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
 
-No contradictions with prior surveys — pure Renovate-driven dependency-hygiene interval; the repo has settled into steady-state maintenance since the 2026-07-09 GitHub Actions major-version sweep. The [[docker-containers]] topic page's syntax-directive precedent note was refreshed additively (`1.24` → `1.25`, prior versions retained).
+Touched pages: `knowledge/wiki/repos/marcusrbrown--mrbro-dev.md` (frontmatter source `aa23250` + `updated`; new 2026-07-30 Delta Log; Survey History row), `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter source `aa23250` + `updated`; new 2026-07-30 collision-confirmation Delta Log; Survey History row), `knowledge/index.md` (refreshed both catalog lines). No new topic/entity/comparison pages warranted — the delta is presentation-layer UI polish and a build-time-snapshot delivery shift already framed by existing [[github-pages]] and [[github-actions-ci]] coverage.
 
-Touched pages: `knowledge/wiki/repos/marcusrbrown--containers.md` (frontmatter source `84d3d65f` + `updated`; last-push/license lines; new 2026-07-30 delta section + survey-history row; agent/pnpm/openai/syntax-directive inline current-state refs), `knowledge/wiki/topics/docker-containers.md` (frontmatter `updated`; syntax-directive progression note), `knowledge/index.md` (refreshed containers catalog line). No new topic/entity/comparison pages warranted.
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files and the public issue/PR listing (no source-code reads); additive updates only (prior snapshots preserved and dated); wikilinks point to existing pages; frontmatter complete. This run had **no `gh` credential** (same harness gap the repo's own issue #212 tracks) — reads via unauthenticated GitHub API + raw fetch. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
 
-Constraints honored: target treated as untrusted input; reads limited to directory listings + README/manifest/workflow/config files + Dockerfile headers (no source-code reads); additive updates only (prior deltas preserved and dated); wikilinks point to existing pages; frontmatter complete. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA aa2325035b72037237ceb67966d0292157e8f19e)
 
-Sources: https://github.com/marcusrbrown/containers (SHA 84d3d65f1a09ab9d12d691598b8e349cd2ff7b29)
+## [2026-07-30 07:50] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-## [2026-07-30 07:49] ingest | repo:marcusrbrown/containers
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
-Surveyed marcusrbrown/containers and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/containers
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
