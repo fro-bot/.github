@@ -3197,3 +3197,31 @@ Sources: https://github.com/marcusrbrown/sparkle (SHA 9c215ee477fb785ba148b826f7
 Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-07-30 07:45] ingest | marcusrbrown/containers
+
+Re-surveyed `marcusrbrown/containers` (SHA `84d3d65f1a09ab9d12d691598b8e349cd2ff7b29`) — the ninth survey of this repo. Additive update to the existing repo page, its index entry, the [[docker-containers]] topic page, and this log. No pages created. Survey conducted via unauthenticated public GitHub API/raw endpoints (no usable `gh` token this run); reads limited to repo metadata, HEAD commit, root git tree, README/`pyproject.toml`/`package.json`/`mise.toml`/`renovate.json5`/`fro-bot.yaml`, the `.github/workflows`, `docs/`, `scripts/`, and `node/` directory listings, the two active `node/*` Dockerfiles' header lines, and the open issue/PR list.
+
+Key deltas since the 2026-07-12 survey (SHA `4c80e965`):
+
+- **No structural change.** Repository layout, container variants (`node/alpine`, `node/release`), `templates/` + `docs/templates/` system, AI subsystem (`ai_core.py` Ollama/OpenAI/Anthropic abstraction), Dockerfile patterns, CI pipeline (11 workflows), branch protection, and the 10 Poetry entry points are all unchanged. `docs/` set steady (AI trio + `CI_BUILD_FIXES.md` + `MULTI_ARCH.md`); `scripts/` steady at 15 files.
+- **Fro Bot agent v0.86.0 → v0.95.0** (SHA `4ad00541cd9e4f1853f9dcd1fb2ac316d559d54f`). `fro-bot.yaml` present — no onboarding follow-up draft PR warranted. Same 14:30 UTC daily schedule, PR review + four-category autohealing prompts, single perpetual "Daily Autohealing Report" issue (#533), checkout via `actions/checkout@v7.0.0`.
+- **pnpm 11.10.0 → 11.17.0** (`mise.toml`); Node.js 24.18.0 steady, Python 3.13.
+- **openai `>=2.45.0` → `>=2.50.0,<2.51.0`** (`pyproject.toml`; #721 is the HEAD commit). Other runtime/dev deps and the `--cov-fail-under=35` coverage gate unchanged.
+- **Dockerfile syntax directive `docker/dockerfile:1.23` → `1.25`** (`sha256:0adf442e...`) + `node:24-alpine` base digest rotated to `sha256:a0b9bf06...`. `NODE_VERSION` build arg still `22.17.0` (image-embedded Node version, durable note).
+- **Renovate preset still `marcusrbrown/renovate-config#5.2.0`**, `templates/` ignored, Python constrained `>=3.13,<3.14`, per-manager `postUpgradeTasks` split (poetry → `poetry lock`; npm → `pnpm install` + `pnpm format`) intact.
+- **Open PRs: 0** (backlog stays clear for a second consecutive survey). **Open issues: 2** — #533 Daily Autohealing Report (fro-bot), #415 Dependency Dashboard (mrbro-bot). 4 stars.
+
+No contradictions with prior surveys — pure Renovate-driven dependency-hygiene interval; the repo has settled into steady-state maintenance since the 2026-07-09 GitHub Actions major-version sweep. The [[docker-containers]] topic page's syntax-directive precedent note was refreshed additively (`1.24` → `1.25`, prior versions retained).
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--containers.md` (frontmatter source `84d3d65f` + `updated`; last-push/license lines; new 2026-07-30 delta section + survey-history row; agent/pnpm/openai/syntax-directive inline current-state refs), `knowledge/wiki/topics/docker-containers.md` (frontmatter `updated`; syntax-directive progression note), `knowledge/index.md` (refreshed containers catalog line). No new topic/entity/comparison pages warranted.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings + README/manifest/workflow/config files + Dockerfile headers (no source-code reads); additive updates only (prior deltas preserved and dated); wikilinks point to existing pages; frontmatter complete. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/containers (SHA 84d3d65f1a09ab9d12d691598b8e349cd2ff7b29)
+
+## [2026-07-30 07:49] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/containers
