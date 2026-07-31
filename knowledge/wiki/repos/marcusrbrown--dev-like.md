@@ -2,12 +2,15 @@
 type: repo
 title: "marcusrbrown/dev-like"
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-31
 sources:
   - url: https://github.com/marcusrbrown/dev-like
     sha: c7defd9c89568909f8a598b1e3d37b204414e257
     accessed: 2026-07-12
-tags: [agent-skills, claude-code, plugin, marketplace, npm, cli, registry, osint, engineering-culture, changesets, bun, mit, provenance, no-fro-bot-workflow]
+  - url: https://github.com/marcusrbrown/dev-like
+    sha: a2a30b693f46bb55baf47b2a9788df36e90d1b35
+    accessed: 2026-07-31
+tags: [agent-skills, claude-code, plugin, marketplace, npm, cli, registry, osint, engineering-culture, changesets, bun, mit, provenance, fro-bot-workflow, autoheal, astro-starlight, evals]
 aliases: [dev-like]
 related:
   - opencode-plugins
@@ -21,26 +24,28 @@ related:
 
 **dev-like** profiles a tech company or developer's engineering culture from **public sources only** and distills it into an installable, spec-compliant [Agent Skill](https://agentskills.io): `develop-like-every`, `develop-like-theo`, `develop-like-<your-heroes>`. Its tagline: _"Steal the workflow, not the code. `/dev-like Every` and your agent develops like the shops you admire — with receipts."_ Every claim in a generated skill links to the public source it came from: **no source, no claim.**
 
-This is OSINT for developer culture, packaged to the open Agent Skills standard. As of the initial survey it is a brand-new repo (created 2026-07-11), still self-described as "brainstorm/scaffold."
+This is OSINT for developer culture, packaged to the open Agent Skills standard. At the initial survey (2026-07-12) it was a brand-new repo (created 2026-07-11), self-described as "brainstorm/scaffold." **By the second survey (2026-07-31, HEAD `a2a30b6`) it has shipped**: npm package at **v0.4.1**, a live **Astro/Starlight docs site** at `mrbro.dev/dev-like/`, the registry grown from 2 → **5 profiles**, a **paired A/B eval harness** (`evals/`), and — resolving the biggest prior open thread — a **full Fro Bot workflow** with Renovate and Probot Settings. The "scaffold" label is retired.
 
 ## Overview
 
+Values reflect the **2026-07-31 survey** (HEAD `a2a30b6`); the parenthetical shows the 2026-07-12 initial-survey value where it changed.
+
 | Attribute        | Value                                                                                     |
 | ---------------- | ----------------------------------------------------------------------------------------- |
-| Created          | 2026-07-11 (initial survey 2026-07-12, HEAD `c7defd9`)                                     |
-| Last push        | 2026-07-11                                                                                 |
+| Created          | 2026-07-11                                                                                 |
+| Last push        | 2026-07-31 (was 2026-07-11)                                                                |
 | Description      | Profile a shop's engineering culture from public sources and install `develop-like-<target>` agent skills. `/dev-like Every` |
-| Language         | JavaScript (GitHub primary language; substance is `.mjs` Node + Markdown + JSON data)     |
+| Language         | JavaScript (GitHub primary language; substance is `.mjs` Node + Markdown + JSON data, now + Astro/TS docs site) |
 | Runtime          | Node `>=20` (CLI) + Bun (CI / lockfile `bun.lock`)                                         |
-| Package manager  | Bun (`bun install --frozen-lockfile`)                                                      |
-| Package          | `dev-like` v0.1.1 (npm; `bin: dev-like` → `bin/cli.mjs`); plugin manifest v0.1.0           |
+| Package manager  | Bun (`bun install --frozen-lockfile`); Bun **workspaces** `["docs", "."]`                 |
+| Package          | `dev-like` **v0.4.1** (was v0.1.1) (npm; `bin: dev-like` → `bin/cli.mjs`); plugin manifest **v0.4.1** (was v0.1.0) |
 | License          | MIT (`LICENSE` at root)                                                                    |
 | Visibility       | Public                                                                                     |
-| Stars / Forks    | 1 / 0                                                                                      |
-| Open issues      | 1                                                                                          |
-| Topics           | `agent-skills`, `ai-agents`, `claude-code`, `codex`, `cursor`, `engineering-culture`      |
-| Homepage         | (none; `#readme`)                                                                          |
-| Runtime deps     | **Zero** ("zero runtime dependencies is a feature"); sole devDep `@changesets/cli ^2.29.7` |
+| Stars / Forks    | 2 / 1 (was 1 / 0)                                                                          |
+| Open issues      | 2 (was 1)                                                                                  |
+| Topics           | + `portfolio` added → `agent-skills`, `ai-agents`, `claude-code`, `codex`, `cursor`, `engineering-culture`, `portfolio` |
+| Homepage         | **`https://mrbro.dev/dev-like/`** (was none) — Astro/Starlight docs site                   |
+| Runtime deps     | **Zero** ("zero runtime dependencies is a feature"); sole root devDep `@changesets/cli 2.31.1` (was `^2.29.7`) + a `docs/` workspace with its own build deps |
 
 ## What it is: one repo, four artifacts
 
@@ -75,23 +80,31 @@ The registry is the durable data layer. Each entry validates against `registry/s
 
 **Consent tiers (descending trust):** `self-published` > `stated` > `observed` > `social`. A schema `allOf` rule enforces the ethics floor: **`kind: person` entries may only be `self-published` or `stated`** — you cannot build a person's profile purely from social posts. Orgs may use the full taxonomy.
 
-Seed registry (2 entries, both `updated: 2026-07-11`):
+**Registry (2026-07-31): grown 2 → 5 profiles**, each now shipping a fully-generated `develop-like-<slug>` skill in-repo (`registry/<slug>/skill/develop-like-<slug>/` with `SKILL.md` + `personas/<slug>-developer.md` + `references/{sources,stack,workflow}.md`):
 
-| Slug    | Name         | Kind   | Consent tier     | Aliases                                       |
-| ------- | ------------ | ------ | ---------------- | --------------------------------------------- |
-| `every` | Every        | org    | `self-published` | `every.to`, `everyinc`, `every inc`           |
-| `theo`  | Theo Browne  | person | `stated`         | `theo.gg`, `t3.gg`, `t3`, `theo browne`, `t3dotgg` |
+| Slug        | Name         | Kind   | Consent tier     | Updated     | Sources | Aliases                                       |
+| ----------- | ------------ | ------ | ---------------- | ----------- | ------- | --------------------------------------------- |
+| `37signals` | 37signals    | org    | `self-published` | 2026-07-16  | 10      | `basecamp`, `37signals llc`, `thirtysevensignals` |
+| `every`     | Every        | org    | `self-published` | 2026-07-11  | 11      | `every.to`, `everyinc`, `every inc`           |
+| `linear`    | Linear       | org    | `self-published` | 2026-07-16  | 6       | `linear.app`, `linear method`                 |
+| `oxide`     | Oxide        | org    | `self-published` | 2026-07-11  | 17      | `oxide computer`, `oxide computer company`, `oxidecomputer`, `oxide.computer` |
+| `theo`      | Theo Browne  | person | `stated`         | 2026-07-11  | 9       | `theo.gg`, `t3.gg`, `t3`, `theo browne`, `t3dotgg` |
 
-The `every` entry is sourced primarily from **EveryInc's compound-engineering-plugin** (the same `ce:*` / compound-engineering lineage that powers Fro Bot's own [[marcusrbrown--systematic]] workflows) plus Dan Shipper / Kieran Klaassen essays and podcasts — 11 provenance-linked sources. The `theo` entry draws from create-t3-app docs, t3.gg blog posts, and the t3-oss/pingdotgg GitHub orgs — 9 sources.
+The consent-tier ethics floor holds across growth: **all four orgs are `self-published`** (documented engineering practices) and the sole `person` entry (`theo`) remains `stated` — no profile relies on the `observed`/`social` lower tiers, and the `person`→`stated`-or-better schema rule is honored. The `every` entry is sourced primarily from **EveryInc's compound-engineering-plugin** (the same `ce:*` / compound-engineering lineage that powers Fro Bot's own [[marcusrbrown--systematic]] workflows) plus Dan Shipper / Kieran Klaassen essays and podcasts. `oxide` is the most heavily-sourced profile (17 provenance links — RFDs, Oxide-and-Friends podcast, public repos), consistent with Oxide's unusually public engineering culture.
 
 `registry/OPTOUT.md` codifies a removal path: open an `optout: <slug or name>` issue or email the maintainer; removal within **48 hours**, no questions asked. Listed targets are a hard stop for the collection workflow (currently empty).
 
 ## CI/CD & release engineering
 
-Two workflows, **no Fro Bot workflow** (see Open Threads):
+By 2026-07-31 the two-workflow setup has grown to **seven workflows**, including a **Fro Bot workflow** (the prior "no Fro Bot workflow" thread is resolved — see [[github-actions-ci]]):
 
-- **`ci.yaml`** — on push to `main` + PR. `permissions: contents: read`. Single `validate` job: `actions/checkout@v6` → `oven-sh/setup-bun@v2` → `bun install --frozen-lockfile` → `bun run validate` → `bun run test`. `scripts/validate.mjs` enforces frontmatter + registry schema + index-sync invariants; `tests/validate.test.mjs` runs under `node --test`.
-- **`release.yaml`** — Changesets-driven npm publish via **OIDC trusted publishing** (no `NPM_TOKEN` / `NODE_AUTH_TOKEN` secrets). Version PRs are created via the **`mrbro-bot` GitHub App** (`APPLICATION_ID` / `APPLICATION_PRIVATE_KEY`, `create-github-app-token@v3.2.0`, SHA-pinned). Node 24, `npm@11.18.0` upgrade for OIDC, `id-token: write` + `registry-url` auth, `changesets/action@v1.9.0`, `persist-credentials: false`. The workflow header documents the exact npm-side trusted-publisher setup gotchas (exact workflow-filename + `repository.url` match, `npm >= 11.5.1`, public repo + public package for provenance).
+- **`ci.yaml`** — on push to `main` + PR. `permissions: contents: read`. Single `validate` job: checkout → `oven-sh/setup-bun@v2` → `bun install --frozen-lockfile` → `bun run validate` → `bun run test`. `scripts/validate.mjs` enforces frontmatter + registry schema + index-sync invariants; `tests/validate.test.mjs` runs under `node --test`. `validate` now also runs `sync-release-version.mjs --check`, and `test` runs both `node --test tests/*.test.mjs` **and** `bun test tests/*.test.ts`.
+- **`release.yaml`** — Changesets-driven npm publish via **OIDC trusted publishing** (no `NPM_TOKEN` / `NODE_AUTH_TOKEN` secrets). Version PRs are created via the **`mrbro-bot` GitHub App** (`APPLICATION_ID` / `APPLICATION_PRIVATE_KEY`, `create-github-app-token@v3.2.0`, SHA-pinned). Node 24, `npm@11.18.0` upgrade for OIDC, `id-token: write` + `registry-url` auth, `changesets/action@v1.9.0`, `persist-credentials: false`. The workflow header documents the exact npm-side trusted-publisher setup gotchas (exact workflow-filename + `repository.url` match, `npm >= 11.5.1`, public repo + public package for provenance). A `.github/scripts/alias-release.ts` + `bun run alias-release` step now handles release aliasing.
+- **`fro-bot.yaml`** (NEW) — **two-mode** Fro Bot (autoheal + pr-review), agent pinned `fro-bot/agent@c29ac29 # v0.96.0`. Triggers: `issue_comment`, `pull_request_review_comment`, `issues`, `pull_request`, daily `schedule` (`30 14 * * *`), and `workflow_dispatch` (`mode` choice `autoheal`|`pr-review` + optional `prompt`). `permissions: contents: read`; concurrency keyed by issue/PR/run id, `cancel-in-progress: false`. Checkout uses `secrets.FRO_BOT_PAT`, `persist-credentials: false`, `fetch-depth: 0`; Bun install `--ignore-scripts`. Two large inline prompts (`AUTOHEAL_PROMPT`, `PR_REVIEW_PROMPT`) encode **repo-specific hard boundaries** — zero runtime deps, no registry/consent/OPTOUT/profile-prose edits (registry changes are human-gated), no release.yaml/OIDC/publish edits, no direct commit/merge to `main`, mandatory changesets for `registry|skills|bin|scripts` touches, and required verification gates (`bun run validate`, `bun run test`, `bun run --cwd docs test`, `bun run --cwd docs build`, `npm pack --dry-run`). Failures roll up to a single **"Fro Bot Autoheal"** issue (reopen-not-spam). See Notable patterns.
+- **`site.yaml`** (NEW) — builds/deploys the Astro/Starlight docs site to GitHub Pages on `docs/**` / `registry/**` changes; runs `bun run validate` + `bun run --cwd docs test` + `bun run --cwd docs build`; `concurrency: pages`.
+- **`link-check.yaml`** (NEW) — link validity gate (`scripts/check-links.mjs`).
+- **`renovate.yaml`** (NEW) — self-hosted Renovate; config `.github/renovate.json5` extends `local>marcusrbrown/renovate-config` (see [[marcusrbrown--renovate-config]]) + sanity-io semantic-commit-type, ignores `evals/**` (intentionally-pinned eval fixtures), and LTS-only Node in Actions.
+- **`update-repo-settings.yaml`** (NEW) — applies Probot Settings (`.github/settings.yml`), which `_extends: .github:common-settings.yaml` (this repo's org defaults) and enforces branch protection on `main`: `required_status_checks` strict on `validate` + **`Fro Bot`**, `enforce_admins`, `required_linear_history`.
 
 Changesets config (`.changeset/config.json`): `access: public`, `baseBranch: main`, `commit: false`. This is the same **OIDC-trusted-publish + `mrbro-bot`-App-version-PR** release archetype seen across Marcus's published-package repos (cf. [[marcusrbrown--marcusrbrown]], [[marcusrbrown--extend-vscode]]).
 
@@ -105,6 +118,21 @@ Changesets config (`.changeset/config.json`): `access: public`, `baseBranch: mai
 - **Distribution reality:** skills are distributed from _git repos_ (skills.sh indexes installs); npm is for the CLI, not the skill content. dev-like ships both from one repo.
 - **Positioning gap:** docs→skill generators and OSINT dev-profilers (GitRoll) and culture-as-plugin (Every's ~23k-star compound-engineering-plugin) all exist separately; nobody combines multi-source culture profiling → installable skill. That synthesis is the product.
 
+## Docs site (`docs/`, landed 2026-07-31)
+
+The planned Astro docs site from `DESIGN.md` has shipped as a Bun **workspace** (`docs/`) built on **Astro + Starlight**, deployed to `mrbro.dev/dev-like/` via `site.yaml`:
+
+- Content in `docs/src/content/docs/` — `index.mdx` landing, `ethics.mdx`, and a `harness-support.md` matrix distinguishing **Verified** (install + invocation run end-to-end) from **Staged** (files land but live invocation unconfirmed): Claude Code (plugin marketplace + `npx skills add`) and GitHub Copilot CLI are Verified; Codex is Staged. Full transcripts live in `docs/demo/cross-harness-verification-2026-07-11.md`.
+- Build-time **registry → docs pages** generation (`docs/scripts/generate-registry-pages.ts`) plus dynamic **OG-image** endpoints (`docs/src/pages/og/[...slug].png.ts`, `docs/src/lib/og-image.ts`), analytics (`docs/src/lib/analytics.ts`), and internal-link checking (`docs/scripts/check-internal-links.ts`). Custom components: `BeforeAfter`, `CopyCommand`, `Head`, `Header`.
+- A `docs/tests/` suite (Bun) covers landing, link-check, registry-page generation, OG/analytics, and the site workflow.
+- `docs/demo/` holds dated dry-run transcripts (`every`, `oxide`, `37signals`) and artifact-first / imperative-template evals — the receipts backing the profiles.
+
+## Paired eval harness (`evals/`, landed 2026-07-31)
+
+`evals/paired/` is an honest, self-critical **A/B eval** of whether an installed `develop-like-*` skill changes agent behavior. `run.mjs` drives a paired run over `evals/paired/fixture/` (a small `orders.js` bug-fix task): **ARM** has `develop-like-every` installed via `bin/cli.mjs`, **CONTROL** is the identical fixture with no skill. Results in `results/{arm,control}.jsonl` + `report.md`.
+
+The `report.md` verdict is a documented **honest null result** at n=1: the skill *loaded* (ARM invoked it; CONTROL did not) and shifted tool-use/turn counts (6 vs 2 tool calls, 13 vs 7 turns) but did **not** move the signals that matter — plan-before-mutation, test-file-touched, ran-tests were flat across both arms. The report foregrounds its own determinism caveat (single run, not statistically powered) rather than overclaiming. This is a notable culture tell: the repo evaluates its own product skeptically and publishes the negative result. Renovate deliberately ignores `evals/**` so its intentionally-pinned fixtures aren't bumped.
+
 ## Notable patterns
 
 - **OSINT-to-skill pipeline:** the novel synthesis — public engineering "exhaust" (shipped agent configs, linter/CI files, blogs, talks) → cited culture profile → installable per-harness skill. Provenance links are simultaneously the ethics story, the marketing hook ("with receipts"), and the anti-hallucination guardrail.
@@ -112,25 +140,37 @@ Changesets config (`.changeset/config.json`): `access: public`, `baseBranch: mai
 - **Design-for-deletion registry:** `AGENTS.md` mandates that nothing outside `registry/<slug>/` and `registry/index.json` may reference a registry slug — each profile is removable in isolation (mirrors the design-for-deletion discipline seen in [[marcusrbrown--mothership]]).
 - **Zero-runtime-dependency stance:** the CLI touches nothing beyond `raw.githubusercontent.com`, no telemetry, no postinstall. Adding a dependency requires explicit justification.
 - **Thin-CLI / smart-skill split:** `bin/cli.mjs` does deterministic resolve + install of _cached_ profiles only; live profiling is explicitly deferred to the LLM-backed `/dev-like` skill ("Uncached targets: run `/dev-like <target>` in your agent instead").
+- **Prompt-encoded invariant boundaries (2026-07-31):** unlike the fleet-standard three-mode `fro-bot.yaml`, dev-like runs a **two-mode** (autoheal + pr-review) workflow whose inline prompts hard-code the repo's own invariants as agent guardrails — zero-runtime-deps, human-gated registry/consent/OPTOUT/profile edits, no release-pipeline edits, mandatory changesets, and explicit verification gates before any PR. The repo teaches its autonomous maintainer the same rules `AGENTS.md` teaches humans, so provenance/consent ethics survive automation.
+- **Skeptical self-evaluation (2026-07-31):** the `evals/paired/` harness publishes an honest **null result** on its own flagship skill rather than a marketing number, with a foregrounded n=1 determinism caveat — evidence discipline applied inward, mirroring the "no source, no claim" ethic applied outward.
 
 ## Relationship to the Fro Bot ecosystem
 
 - **[[marcusrbrown--systematic]] / [[fro-bot--systematic]]** — dev-like's flagship `every` profile is distilled from EveryInc's compound-engineering-plugin, i.e. the same `ce:*` compound-engineering lineage that Fro Bot's own systematic skills descend from. dev-like is, in effect, a tool for packaging that culture (and others) into installable skills — a meta-layer over the same standard Fro Bot rides.
 - **[[opencode-plugins]]** — dev-like targets the cross-harness Agent Skills standard (`.agents/skills/`) that opencode and 50+ harnesses consume; the `SKILL.md` + progressive-disclosure + references pattern is the same one used throughout the Fro Bot skill fleet.
-- **[[github-actions-ci]]** — its OIDC-trusted-publish + Changesets + `mrbro-bot`-App-version-PR release pipeline is the fleet-standard published-package archetype.
+- **[[github-actions-ci]]** — its OIDC-trusted-publish + Changesets + `mrbro-bot`-App-version-PR release pipeline is the fleet-standard published-package archetype. As of 2026-07-31 it also runs a Fro Bot workflow (two-mode, agent v0.96.0) and inherits org Probot Settings via `.github:common-settings.yaml`.
+- **[[probot-settings]]** — `.github/settings.yml` `_extends: .github:common-settings.yaml` (this very repo, fro-bot/.github) and gates `main` on the `validate` + `Fro Bot` status checks with linear history — the same inheritance/governance pattern documented across the fleet.
 - **Marcus-authored, `mrbro-bot`-operated:** version PRs are authored by the `mrbro-bot` GitHub App, consistent with the `mrbro-bot`-drives-releases pattern across Marcus's repos.
 
 ## Open threads / to re-confirm next survey
 
-- **No Fro Bot workflow.** Only `ci.yaml` + `release.yaml` are present — there is no `.github/workflows/fro-bot.yaml`. A follow-up draft PR proposing Fro Bot onboarding (three-mode `fro-bot.yaml`, agent pin, review/triage/maintenance) could be proposed separately, matching the onboarding gap noted for [[marcusrbrown--mothership]] and others.
-- **No Renovate config / no Probot Settings / no CodeQL/Scorecard** observed — candidates for the same onboarding sweep.
-- **Registry growth:** only 2 seed entries (`every`, `theo`). Track new profiles and whether community PRs land via the opt-in contribution flow.
-- **`brainstorm/scaffold` → shipped:** DESIGN.md self-labels the status as scaffold. Track whether the planned docs `site/` (Astro, Impeccable-styled) lands, and whether `HANDOFF.md` (session state, delete-when-stale) and `LAUNCH.md` (dependency-ordered roadmap) progress.
-- **First npm publish:** package.json is at v0.1.1 but confirm whether `dev-like` has actually published to npm (OIDC trusted-publisher setup must be completed on npmjs.com before the first run).
-- **`node >=20` vs Bun CI:** the package engines floor is Node 20 while CI runs on Bun and release runs on Node 24 — watch for divergence.
+**Resolved since 2026-07-12:**
+
+- ~~No Fro Bot workflow~~ — **RESOLVED.** `fro-bot.yaml` landed (two-mode autoheal + pr-review, agent v0.96.0). No draft onboarding PR needed.
+- ~~No Renovate / no Probot Settings~~ — **RESOLVED.** `renovate.yaml` + `.github/renovate.json5` (extends [[marcusrbrown--renovate-config]]) and `update-repo-settings.yaml` + `.github/settings.yml` (extends `.github:common-settings.yaml`) both present.
+- ~~First npm publish uncertain~~ — **RESOLVED.** Package is at **v0.4.1**, well past the v0.1.1 seed; OIDC trusted publishing is operational.
+- ~~`brainstorm/scaffold` → shipped~~ — **RESOLVED.** Docs site landed (Astro/Starlight at `mrbro.dev/dev-like/`); the eval harness landed. Scaffold label retired.
+
+**Still open / new:**
+
+- **No CodeQL/Scorecard** observed among the seven workflows — the one remaining security-hardening gap from the original onboarding sweep. Candidate for a follow-up.
+- **Registry growth cadence:** 2 → 5 profiles in ~3 weeks (`37signals`, `linear`, `oxide` added). All new entries are `mrbro`/self-authored orgs; **no community PR has yet landed** via the opt-in contribution flow — track whether external contributions arrive and whether any `person` entry beyond `theo` is added (watch the consent-tier floor holds).
+- **Eval maturity:** `evals/paired/report.md` is an honest n=1 null result. Track whether a richer fixture or multi-run harness surfaces a measurable skill effect (or whether the null result persists).
+- **`node >=20` vs Bun CI / Node 24 release:** engines floor still Node 20 while CI runs Bun and release runs Node 24 — watch for divergence.
+- **Docs workspace deps:** the zero-runtime-dep stance covers the published package (`files:` excludes `docs/`), but the `docs/` Bun workspace now carries its own Astro/build dependency tree — confirm it stays out of the shipped npm tarball (`npm pack --dry-run` is in the Fro Bot verification gate).
 
 ## Survey History
 
 | Date       | HEAD      | Notes                                                                                       |
 | ---------- | --------- | ------------------------------------------------------------------------------------------- |
 | 2026-07-12 | `c7defd9` | Initial survey. Brand-new repo (created 2026-07-11). Four-in-one artifact (skill + Claude plugin/marketplace + npm CLI + registry). 2 seed profiles (`every`, `theo`). OIDC-trusted-publish + Changesets + `mrbro-bot` release. Zero runtime deps. **No Fro Bot workflow** — onboarding follow-up candidate. |
+| 2026-07-31 | `a2a30b6` | Second survey. **Scaffold → shipped.** npm **v0.1.1 → v0.4.1**; live Astro/Starlight docs site at `mrbro.dev/dev-like/` (`site.yaml`, workspace `docs/`); registry **2 → 5** profiles (+`37signals`/`linear`/`oxide`, all org `self-published`, each shipping a generated skill in-repo); new `evals/paired/` A/B harness (honest n=1 null result). **All four prior onboarding threads resolved:** Fro Bot workflow (two-mode autoheal+pr-review, agent **v0.96.0**, invariant-encoding prompts, rolling "Fro Bot Autoheal" issue), Renovate (`renovate.json5` extends [[marcusrbrown--renovate-config]]), Probot Settings (`settings.yml` extends `.github:common-settings.yaml`, gates `main` on `validate`+`Fro Bot`). Zero runtime deps holds. Stars 1→2, forks 0→1, +`portfolio` topic. Remaining gap: no CodeQL/Scorecard. |
