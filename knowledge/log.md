@@ -3222,3 +3222,25 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA aa2325035b7
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-07-31 08:13] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Re-surveyed the *name* `marcusrbrown/marcusrbrown.github.io`. It again resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (`name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name→repo binding is unchanged since 2026-07-20; the 2026-07-13 collision warning holds.
+
+**No-op re-survey.** The current name-holder's `main` is **frozen at `aa23250`** (`docs: document mobile nav hit-target overlap (#251)`, 2026-07-30T05:03:56Z) — identical HEAD to the 2026-07-30 survey. No tree-level drift and no durable per-repo delta this cycle. `pushed_at` advanced to 2026-07-31T06:35Z, but that motion is branch-only:
+
+- **Open PRs (2), both based on `main`:** #254 (`docs: correct automation script count`, branch `docs/refresh-agent-script-count`) and #253 (`chore(blog): refresh snapshot and preview images`, branch `chore/blog-refresh`).
+- **Report issue rolled to #255** (`Daily Fro Bot Report — 2026-07-31 (UTC)`). Open issues 3 (#255 / #212 mention-run push-auth infra bug / #1 Dependency Dashboard); API `open_issues_count` 5 folds in the 2 PRs.
+- **Steady:** agent `fro-bot/agent@a4976f4 # v0.93.1`, 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`), single `30 3` daily oversight+autoheal cron (#234 consolidation holds). Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter source `aa23250` @ 2026-07-31 + `updated`; new 2026-07-31 no-op collision-confirmation Delta Log; Survey History row), `knowledge/index.md` (refreshed the catalog line). No update to [[marcusrbrown--mrbro-dev]] — no `main` advance, so no durable delta for the canonical page. No new topic/entity/comparison pages warranted.
+
+Constraints honored: target treated as untrusted input; reads limited to directory listings, README/manifest/workflow/config files and the public issue/PR listing (no source-code reads); additive updates only (prior snapshots preserved and dated); wikilinks point to existing pages; frontmatter complete. This run had **no `gh` credential** (same harness gap the repo's own issue #212 tracks) — reads via unauthenticated GitHub API + raw fetch. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented as a run notice (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA aa2325035b72037237ceb67966d0292157e8f19e)
+
+## [2026-07-31 08:15] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
