@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/esphome.life"
 created: 2026-04-18
-updated: 2026-07-12
+updated: 2026-08-01
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -25,6 +25,9 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: 1c430cf5e81c615333c61e4b7be0664350ff733f
     accessed: 2026-07-12
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 08ca7a9e68a3d071068407e4504bff97f8ab3e43
+    accessed: 2026-08-01
 tags: [esphome, iot, esp32, bluetooth-proxy, home-assistant, firmware, github-pages]
 aliases: [esphome-life, esphome.life]
 related:
@@ -41,7 +44,7 @@ ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forke
 - **Purpose:** ESPHome device firmware definitions, CI-built and deployed to GitHub Pages
 - **Default branch:** `main`
 - **Created:** 2022-11-09
-- **Last push:** 2026-07-09
+- **Last push:** 2026-07-31
 - **Visibility:** Public
 - **License:** None specified
 - **Description:** "Projects and configuration for my ESPHome devices"
@@ -108,13 +111,13 @@ The CI workflow has four jobs:
 
 Publish uses a GitHub App token (`APPLICATION_ID` / `APPLICATION_PRIVATE_KEY` secrets) and commits as `mrbro-bot[bot]`.
 
-All actions are SHA-pinned with version comments. As of 2026-06-07: `actions/checkout@v5.0.1` (SHA `93cb6ef`), `esphome/build-action@v7.3.0` (SHA `4ef4722`, bumped from v7.2.0 on 2026-05-26), `actions/upload-artifact@v5.0.0` (SHA `330a01c`), `actions/create-github-app-token@v2.2.2` (SHA `fee1f7d`), `actions/download-artifact@v6.0.0` (SHA `018cc2c`).
+All actions are SHA-pinned with version comments. As of 2026-08-01: `actions/checkout@v5.1.0` (SHA `fbc6f39`, bumped from v5.0.1 on 2026-07-20 via #387), `esphome/build-action@v7.4.0` (SHA `82ec6bd`, bumped from v7.3.0 by 2026-07-16 via #385's non-major bundle), `actions/upload-artifact@v5.0.0` (SHA `330a01c`), `actions/create-github-app-token@v2.2.2` (SHA `fee1f7d`), `actions/download-artifact@v6.0.0` (SHA `018cc2c`). ESPHome pin still `2025.12.7`.
 
 ### Reusable Workflow Pins
 
-Both `renovate.yaml` and `update-repo-settings.yaml` delegate to `bfra-me/.github` reusable workflows at v4.16.35 (SHA `aac0d9b`, bumped from v4.16.32 by 2026-07-09 via #376/#379/#380 with intermediate v4.16.33/v4.16.34). Earlier chain: v4.16.20 (2026-05-25) → v4.16.23 (2026-06-07) → v4.16.27 (2026-06-18) → v4.16.32 (2026-06-29).
+Both `renovate.yaml` and `update-repo-settings.yaml` delegate to `bfra-me/.github` reusable workflows at v4.16.44 (SHA `dd02bc5`, bumped from v4.16.35 across nine weekly releases by 2026-07-31 via #382/#384/#386/#390/#391/#393/#394/#395 with intermediate v4.16.36–.43). Earlier chain: v4.16.20 (2026-05-25) → v4.16.23 (2026-06-07) → v4.16.27 (2026-06-18) → v4.16.32 (2026-06-29) → v4.16.35 (2026-07-09).
 
-**Footgun (first noted 2026-05-26; reconfirmed 2026-06-07, 2026-06-18, 2026-06-29, and 2026-07-12):** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.35` — the same path used by the Renovate workflow, rather than a settings-specific reusable workflow. Renovate has continued to bump this version alongside the Renovate workflow across every weekly release, meaning the footgun is actively maintained by automation. The daily settings-sync cron is running Renovate twice, not syncing settings. Five consecutive surveys have flagged this without a patch landing; it remains a candidate for a follow-up issue.
+**Footgun (first noted 2026-05-26; reconfirmed 2026-06-07, 2026-06-18, 2026-06-29, 2026-07-12, and 2026-08-01):** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.44` — the same path used by the Renovate workflow, rather than a settings-specific reusable workflow. Renovate has continued to bump this version alongside the Renovate workflow across every weekly release, meaning the footgun is actively maintained by automation. The daily settings-sync cron is running Renovate twice, not syncing settings. Six consecutive surveys have flagged this without a patch landing; it remains a candidate for a follow-up issue.
 
 ### Branch Protection
 
@@ -126,7 +129,7 @@ CI workflow uses concurrency group `${{ github.workflow }}-${{ github.event.numb
 
 ## Developer Tooling
 
-- **Renovate:** Extends [[marcusrbrown--renovate-config]] at `#5.2.4` (bumped from `#5.2.3` on 2026-07-01, PR #375). Custom package rule tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types. Post-upgrade runs `npx prettier@3.9.4` (crossed the 3.8 → 3.9 minor boundary between 2026-06-29 and 2026-07-03 via #372/#373/#374/#377/#378, from 3.8.4).
+- **Renovate:** Config now lives in `.github/renovate.json5` (JSON5 with comments; prior surveys observed a `renovate.json`). Extends [[marcusrbrown--renovate-config]] at `#5.2.9` (bumped from `#5.2.4` across #383/#388/#389 by 2026-07-21, with #5.2.6 intermediate). Custom package rule tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with `versioning: loose`, `separateMajorMinor: false`, `separateMinorPatch: false`, `pinDigests: false`, and semantic commit types (`feat` for major/minor, `build` for patch). Post-upgrade runs `npx prettier@3.9.6` (advanced 3.9.4 → 3.9.6 via #381/#392).
 - **Devcontainer:** Uses `docker.io/ptr727/esphome-nonroot:2025.12.7` with ESPHome dashboard, verbose logging, `America/Phoenix` timezone. Forwards port 6052 (ESPHome native API). VS Code extensions include ESPHome, PlatformIO, Python, YAML, EditorConfig, Markdown lint, serial monitor, and spell checker. File associations map `*.yaml`/`*.yml` to ESPHome language mode (with exceptions for workflow/settings files).
 - **Probot Settings:** `.github/settings.yml` uses `_extends: .github:common-settings.yaml`. Overrides description and branch protection.
   - **Contradiction (noted 2026-07-12):** The bare `.github` short-form resolves to the **owner's** org/user `.github` repo — i.e. `marcusrbrown/.github:common-settings.yaml` (see [[marcusrbrown--github]]), not `fro-bot/.github`. Prior surveys (2026-04-21 → 2026-06-29) recorded this as extending `fro-bot/.github:common-settings.yaml`; the file itself has always written the un-prefixed `.github`, so the earlier attribution to `fro-bot/.github` was an over-read. The [[probot-settings]] inheritance chain for this repo runs through `marcusrbrown/.github`. This repo is still part of the Fro Bot-managed ecosystem by other signals (see Fro Bot Integration), but its settings-template ancestor is Marcus's personal `.github`, not the `fro-bot` org one.
@@ -144,7 +147,7 @@ The site content (`static/index.md`) is minimal — the upstream template placeh
 
 **No Fro Bot agent workflow detected.** The repository does not contain a `fro-bot.yaml` workflow. Ecosystem membership is signaled by the shared `common-settings.yaml` inheritance and the `mrbro-bot[bot]` GitHub App automation, not by a `fro-bot/.github` settings extend (see the Probot Settings contradiction above — the settings ancestor resolves to `marcusrbrown/.github`).
 
-A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage. This recommendation has been carried forward across eight surveys (2026-04-18, 2026-04-21, 2026-04-23, 2026-05-26, 2026-06-07, 2026-06-18, 2026-06-29, 2026-07-12).
+A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage. This recommendation has been carried forward across nine surveys (2026-04-18, 2026-04-21, 2026-04-23, 2026-05-26, 2026-06-07, 2026-06-18, 2026-06-29, 2026-07-12, 2026-08-01).
 
 ## Notable Patterns
 
@@ -153,7 +156,7 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 - **Template heritage:** The repo was generated from `esphome/esphome-project-template`. Template artifacts remain in `docs/readme.md` and `static/index.md` without customization.
 - **Ethernet-only devices:** All devices use ESP32-PoE-ISO with LAN8720 Ethernet — no Wi-Fi. This is notable for a Bluetooth Proxy setup where wired backhaul provides more reliable connectivity.
 - **Git submodule consumer:** This repo is referenced as a submodule from [[marcusrbrown--ha-config]] at the `esphome/` path, linking ESPHome device firmware to the Home Assistant configuration.
-- **Renovate-only commit log:** Every commit since the prior content change (2026-03-12) has been a Renovate dependency bump. No human-authored changes to device configs, workflows, or static site in nearly four months. The repo is on autopilot: `mrbro-bot[bot]` authors all commits. The last human-authored commit was `2d315c2` (2026-05-14, Renovate preset v4 → 5.2.0). As of 2026-07-12 the 25 most recent commits are all `mrbro-bot[bot]` `chore(deps)` bumps (#356–#380).
+- **Renovate-only commit log:** Every commit since the prior content change (2026-03-12) has been a Renovate dependency bump. No human-authored changes to device configs, workflows, or static site in ~4.6 months. The repo is on autopilot: `mrbro-bot[bot]` authors all commits. The last human-authored commit was `2d315c2` (2026-05-14, Renovate preset v4 → 5.2.0). As of 2026-08-01 the 30 most recent commits are all `mrbro-bot[bot]` `chore(deps)` bumps (#366–#395); HEAD is `08ca7a9` (bfra-me/.github → v4.16.44, #395).
 - **Open issues:** 3 open — the Dependency Dashboard (Renovate, issue #26), the `Uplift esphome-life` meta-issue (#8, longstanding), and a community note about BPPLUG devices (#298, spam-adjacent — not a real bug report).
 
 ## Survey History
@@ -168,3 +171,4 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 | 2026-06-18 | `ce8df72` | Dependency-only delta. `bfra-me/.github` v4.16.23 → v4.16.27 (four weekly bumps: #361/#362/#365/#366, SHA `3f97c92`); Renovate preset `#5.2.1` → `#5.2.3` (#364); Prettier 3.8.3 → 3.8.4 (#363). `esphome/build-action` (v7.3.0), ESPHome version (2025.12.7), CI action pins, and Olimex device configs all unchanged. `update-repo-settings.yaml` footgun reconfirmed (now `renovate.yaml@v4.16.27`) — three surveys flagged, no patch. No Fro Bot workflow; open issues unchanged (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). |
 | 2026-06-29 | `9e1618f` | Dependency-only delta. `bfra-me/.github` v4.16.27 → v4.16.32 (SHA `bbf77bc`; #367/#370/#371 plus non-major bundles #368/#369). Renovate preset (`#5.2.3`), Prettier (3.8.4), `esphome/build-action` (v7.3.0), ESPHome version (2025.12.7), all CI action SHAs, and Olimex device configs unchanged. `update-repo-settings.yaml` footgun reconfirmed (now `renovate.yaml@v4.16.32`) — fourth survey flagged, no patch. No Fro Bot workflow; open issues unchanged (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). |
 | 2026-07-12 | `1c430cf` | Dependency-only delta. `bfra-me/.github` v4.16.32 → v4.16.35 (SHA `aac0d9b`; #376/#379/#380 + intermediate v4.16.33/.34). Renovate preset `#5.2.3` → `#5.2.4` (#375). Prettier crossed 3.8 → 3.9 minor boundary, now 3.9.4 (#372/#373/#374/#377/#378). `esphome/build-action` (v7.3.0), ESPHome version (2025.12.7), all CI action SHAs, devcontainer image (`ptr727/esphome-nonroot:2025.12.7`), and Olimex device configs unchanged. `update-repo-settings.yaml` footgun reconfirmed (now `renovate.yaml@v4.16.35`) — fifth survey flagged, no patch. **Corrected long-standing Probot-settings misattribution:** `settings.yml` uses bare `_extends: .github:...`, which resolves to `marcusrbrown/.github`, not `fro-bot/.github` as prior surveys claimed. No Fro Bot workflow (eighth survey); open issues unchanged (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). |
+| 2026-08-01 | `08ca7a9` | Dependency-only delta (19 Renovate bumps, #381–#395). **Two CI action bumps that had been static for months finally moved:** `esphome/build-action` v7.3.0 → **v7.4.0** (SHA `82ec6bd`, #385 bundle) and `actions/checkout` v5.0.1 → **v5.1.0** (SHA `fbc6f39`, #387). `bfra-me/.github` v4.16.35 → v4.16.44 (SHA `dd02bc5`; nine weekly releases). Renovate preset `#5.2.4` → `#5.2.9`. Prettier 3.9.4 → 3.9.6 (#381/#392). **Renovate config file is now `.github/renovate.json5`** (JSON5) — prior surveys observed `renovate.json`; the ESPHome-tracking package rule and `versioning: loose`/`separateMajorMinor: false` flags carry over unchanged. ESPHome pin (`2025.12.7`), devcontainer image, and Olimex device configs unchanged — the pin has now held across nine surveys (~4.6 months) despite upstream 2026.x releases. `update-repo-settings.yaml` footgun reconfirmed (now `renovate.yaml@v4.16.44`) — sixth survey flagged, no patch. No Fro Bot workflow (ninth survey); open issues unchanged (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). |

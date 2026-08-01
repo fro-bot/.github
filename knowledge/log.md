@@ -3244,3 +3244,30 @@ Sources: https://github.com/marcusrbrown/dev-like (SHA a2a30b693f46bb55baf47b2a9
 Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/dev-like
+
+---
+
+## [2026-08-01 07:42] ingest | repo:marcusrbrown/esphome.life
+
+Ninth survey of [[marcusrbrown--esphome-life]] (prior 2026-07-12). HEAD advanced `1c430cf` → **`08ca7a9`** (`chore(deps): update bfra-me/.github to v4.16.44 (#395)`, 2026-07-31T21:32:09Z). Another dependency-only interval — the repo remains a Renovate-only autopilot with `mrbro-bot[bot]` authoring all 19 commits since the last survey (#381–#395). The device layer (two Olimex ESP32-PoE-ISO Bluetooth Proxies, Ethernet-only, ESP-IDF, shared `packages/olimex-bluetooth-proxy.yaml`, only `1349f4` in the CI matrix) did not change.
+
+- **Two long-static CI actions finally moved.** After holding across multiple surveys, `esphome/build-action` bumped **v7.3.0 → v7.4.0** (SHA `82ec6bd`, via #385's non-major bundle by 2026-07-16) and `actions/checkout` bumped **v5.0.1 → v5.1.0** (SHA `fbc6f39`, #387, 2026-07-20). The other CI action pins (`upload-artifact` v5.0.0, `create-github-app-token` v2.2.2, `download-artifact` v6.0.0) are unchanged.
+- **ESPHome runtime pin still frozen at 2025.12.7.** The build-action bumped but the ESPHome `version:` it builds did not — nine surveys now (~4.6 months) with a frozen runtime despite upstream 2026.x releases. This *sharpens* the entity-page read: Renovate is demonstrably reaching this repo (it moved the action), so the still runtime is the `versioning: loose` + `separateMajorMinor: false` package rule on the `depName=esphome/esphome`-annotated pin suppressing the bump, not Renovate being idle. Updated [[esphome]] accordingly.
+- **Renovate config file migrated `renovate.json` → `.github/renovate.json5`** (JSON5 with comments). The ESPHome-tracking package rule and its loose-versioning flags carry over unchanged; preset advanced `#5.2.4` → **`#5.2.9`** (#383/#388/#389), Prettier post-upgrade task `3.9.4` → **`3.9.6`** (#381/#392).
+- **`bfra-me/.github` reusable workflows → v4.16.44** (SHA `dd02bc5`; nine weekly releases #382/#384/#386/#390/#391/#393/#394/#395 + intermediates).
+- **`update-repo-settings.yaml` footgun reconfirmed a sixth time.** It still delegates to `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.44` — the Renovate workflow path, not a settings-sync workflow. The daily 12:23 UTC cron runs Renovate twice rather than syncing Probot Settings. Renovate keeps bumping the wrong path in lockstep; still a candidate for a follow-up issue.
+- **No Fro Bot agent workflow** (ninth survey). Ecosystem membership is signaled by `common-settings.yaml` inheritance (which resolves to `marcusrbrown/.github` via the bare `_extends: .github:...` short-form — the correction landed 2026-07-12 holds) and `mrbro-bot[bot]` automation, not a `fro-bot/.github` extend. A follow-up draft PR to add the agent workflow remains warranted; recorded on the repo page for separate proposal.
+- **Open issues unchanged:** #8 (`Uplift esphome-life`, longstanding), #26 (Renovate Dependency Dashboard), #298 (community BPPLUG note, spam-adjacent). Three total.
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--esphome-life.md` (frontmatter: added `08ca7a9` source + `updated` 2026-08-01; refreshed Overview last-push, CI action pins, reusable-workflow pins + footgun count, Renovate/Prettier tooling, Renovate-only commit-log note, Fro Bot follow-up count; new 2026-08-01 Survey History row), `knowledge/wiki/entities/esphome.md` (added `08ca7a9` source + `updated`; build-action v7.4.0; sharpened the frozen-pin analysis with the action-moved-but-runtime-didn't evidence), `knowledge/index.md` (fleshed out the previously bare esphome-life catalog line). No new topic/entity/comparison pages warranted — deltas are dependency drift plus a config-file-format migration, already covered by [[esphome]], [[home-assistant]], and [[github-actions-ci]]. [[home-assistant]] left unchanged (no material HA-side delta this interval).
+
+Constraints honored: target treated as untrusted input; reads limited to directory/tree listings, README/manifest/workflow/config files (no arbitrary source reads). Additive updates only — prior survey rows preserved and dated, contradictions noted rather than overwritten (none new this run). Wikilinks validated against existing pages (0 broken); frontmatter complete. This run had **no `gh` credential** in-env (gh CLI unauthenticated) — reads via the unauthenticated public GitHub API + `raw.githubusercontent.com`. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/esphome.life (SHA 08ca7a9e68a3d071068407e4504bff97f8ab3e43)
+
+
+## [2026-08-01 07:43] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
