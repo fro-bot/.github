@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/infra"
 created: 2026-04-18
-updated: 2026-07-15
+updated: 2026-08-01
 sources:
   - url: https://github.com/marcusrbrown/infra
     sha: e0e325205da0549708c07bb84409cde50f4f3634
@@ -135,6 +135,8 @@ Key operational properties:
 - Secret materialization via SSH stdin (`/opt/umami/.env`) — never argv
 - DNS preflight before deploy (validates `UMAMI_DOMAIN` resolves before touching droplet)
 - `umami` environment in GitHub Actions with required reviewer gate
+
+**First observed consumer + pending retention-boundary dependency (noted 2026-08-01 via the [[marcusrbrown--mrbro-dev]] survey):** the mrbro.dev portfolio added a privacy-preserving analytics subsystem (#256/#257) that points at this `metrics.fro.bot` instance as its collector. That work is **activation-gated on an infra-side retention control**: mrbro.dev's `docs/analytics.md` runbook states this Umami instance currently "retains data indefinitely," and its Go/No-Go matrix forbids production activation until a **version-controlled `marcusrbrown/infra` evidence artifact** — pinned to the exact deployed infra commit and Umami version — proves pageview/custom-interaction records are retained ≤13 months and that monthly session parent records are deleted after their last retained child expires. This implies a future infra deliverable (a retention policy in the `apps/umami` compose/config layer plus version-controlled evidence) that is not yet observed in the infra tree as of the last infra survey (2026-07-15, `e0e3252`, Umami steady `3.2.0`). Recorded here so the cross-repo dependency is discoverable from the processor side; a direct infra re-survey should confirm whether the retention control has landed.
 
 #### Fro Bot Dashboard (`apps/dashboard`)
 
