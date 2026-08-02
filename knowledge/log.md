@@ -3271,29 +3271,27 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-02 07:43] ingest | repo:marcusrbrown/extend-vscode
+## [2026-08-02 00:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Surveyed marcusrbrown/extend-vscode (HEAD `9ecc7a55` from prior `c322c419`, last push 2026-07-28). Steady-state Renovate maintenance — no structural, architectural, or workflow change. The toolkit holds its shape; only the dependency chrome shifts.
+No-op re-survey. A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), **not** the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-to-repo binding is unchanged since 2026-07-20 — the collision the 2026-07-13 page header warned of is steady.
 
-Deltas since 2026-07-13 survey:
+`main` HEAD is **still `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42Z) — the exact SHA of the 2026-08-01 survey. One day, no trunk commits: **no tree-level drift**. Stack (React `^19` / RR `^7.15` / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / pnpm 11.1.3 / Node >=24), workflow inventory (8: `blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`), single-file three-mode Fro Bot design, single `30 3` daily oversight+autoheal cron (#234 consolidation holds), Renovate `#5.2.7`, and agent pin `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1` all hold. Because the tree is frozen, **no durable delta lands on the canonical [[marcusrbrown--mrbro-dev]] page this cycle** — the collision-record page carries the empirical confirmation only.
 
-- **Seven bumps merged (#515–#521)**, no security patch this cycle: `eslint` 10.6.0 → 10.8.0 (#515/#520), `typescript-eslint` 8.63.0 → 8.65.0 (#517/#519), `@playwright/test` 1.61.0 → 1.62.0 (#521), plus two GitHub Actions SHA bumps — `actions/setup-node` v6.5.0 (#516), `actions/checkout` v6.1.0 (#518). SHA-pin-with-version-comment discipline holds (Renovate-managed). Cross-links [[github-actions-ci]].
-- **New tracked artifact: `CHANGELOG.md`** committed at repo root and added to the `package.json` `files` array (`["CHANGELOG.md","LICENSE.md","README.md","out/"]`), so it ships in the published package. Semantic-release-generated header, but only the `[0.1.0]` (2025-08-17) initial-release entry present — no post-1.0 release has cut; version still pinned `0.1.0`. Packaging-surface change, not a release event.
-- **`typescript` v6 (#466)** — remains resolved by Renovate autoclose (2026-07-11, unmerged); repo now carries **zero pending majors**. `typescript` stays 5.9.3.
-- **`pnpm` v11 [SECURITY] PR #508 still open** — ~5 weeks stuck on the automerge track across three surveys. `packageManager` remains `pnpm@10.34.0`. Standing hypothesis: a failing gate (lockfile / `packageManager`-field lockstep mismatch or v11 engine constraint), not a policy hold. Renovate won't autoclose a security PR the way it swept #466 — flag for a human glance past the 6-week mark.
+The only motion is in the current occupant's issue/PR queue:
 
-Steady: pnpm 10.34.0 / Node 24.18.0 / VS Code engine `^1.102.0` / `typescript` 5.9.3 / `tsup` 8.5.1 (pinned) / `vitest` 4.1.0 / `prettier` 3.9.0 / `@types/vscode` 1.125.0; Renovate extends `marcusrbrown/renovate-config#5.2.0` + `sanity-io/renovate-config`; six workflows unchanged (`main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`); Probot settings extend `.github:common-settings.yaml`. Pin-exact devDependency policy holds. Nine conditional exports intact. Repo metadata: 2 stars, 2 watchers, public, not archived/forked. Open issues: 5 (#142, #162, #317–#319 — unchanged ~15 weeks). Open PRs: 1 (#508).
+- **Open issues 4:** #260 (Daily Fro Bot Report — 2026-08-02, the rolling report issue, renumbered up from #259 by daily-report churn) / #258 (`ci: make performance budget failures visible and actionable`) / #212 (mention-run git-push-auth failure) / #1 (Dependency Dashboard).
+- **Open PRs 2:** #254 (`docs: correct automation script count`) and #253 (`chore(blog): refresh snapshot and preview images`) — both unmerged. GitHub `open_issues_count` reads 6 because it folds the 2 PRs into the 4 issues.
 
-**Fro Bot workflow: still absent** (~15 weeks across surveys). No `fro-bot.yaml`; repo is Probot-managed only via `.github/settings.yml` `_extends: .github:common-settings.yaml`. A follow-up draft PR to add the agent workflow should be proposed separately — recorded on the repo page's Fro Bot Integration section and carried in the 2026-08-02 delta.
+Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
 
-Touched pages: `knowledge/wiki/repos/marcusrbrown--extend-vscode.md` (added `9ecc7a55` source + `updated` 2026-08-02; new Delta Log 2026-08-02 section with full bump table, CHANGELOG packaging note, pnpm-v11-stall note, dependency snapshot, Fro-Bot-absence carry-forward), `knowledge/wiki/topics/vscode-extensions.md` (`updated` 2026-08-02 — patterns re-confirmed, no new pattern warranted), `knowledge/index.md` (refreshed extend-vscode catalog line). No new topic/entity/comparison pages — the survey surfaced no durable new pattern; the CHANGELOG-in-`files` detail is repo-specific packaging, not a cross-cutting topic.
+Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (added `9e54dbc` source for 2026-08-02 + bumped `updated`; new Delta Log 2026-08-02 + Survey History row — collision-record only, no-op tree, defers durable detail to the canonical page), `knowledge/index.md` (appended 2026-08-02 no-op line to the collision-record catalog entry). No changes to `knowledge/wiki/repos/marcusrbrown--mrbro-dev.md` or other topic/entity pages — the frozen tree produced no new durable per-repo facts, so an additive canonical-page edit would be noise.
 
-Constraints honored: target treated as untrusted input; reads limited to directory/tree listings, `package.json`, `.node-version`, `CHANGELOG.md` head, workflow listing, `.github` listing, `.github/settings.yml` (extends line), and the public issues/PRs/commits listings — no arbitrary source-code reads. Additive updates only — prior survey records preserved and dated; no contradictions found (all deltas are forward progress). Wikilinks validated against existing pages (0 broken); frontmatter complete. This run had **no `gh` credential** in-env — reads via the unauthenticated public GitHub API + `raw.githubusercontent.com`. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented (this log entry is the canonical per-survey summary).
+Constraints honored: target treated as untrusted input; reads limited to the unauthenticated public GitHub API (repo metadata, `commits/main`, `contents/.github/workflows`, open-issues listing) + `raw.githubusercontent.com` (`fro-bot.yaml`) — no arbitrary source-code reads. Additive updates only; prior records preserved and dated; no contradictions found (tree is unchanged). Wikilinks validated against existing pages (0 broken); frontmatter complete. This run had **no `gh` credential** in-env. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented (this log entry is the canonical per-survey summary).
 
-Sources: https://github.com/marcusrbrown/extend-vscode (SHA 9ecc7a554408716c714ab384240d623bf6cb6888)
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
 
-## [2026-08-02 07:45] ingest | repo:marcusrbrown/extend-vscode
+## [2026-08-02 07:46] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Surveyed marcusrbrown/extend-vscode and updated the control-plane wiki.
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/extend-vscode
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
