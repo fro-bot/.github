@@ -2,11 +2,14 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.com"
 created: 2026-07-13
-updated: 2026-07-13
+updated: 2026-08-03
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.com
     sha: 389552270f1093250ad104a1160f53bba91693f1
     accessed: 2026-07-13
+  - url: https://github.com/marcusrbrown/marcusrbrown.com
+    sha: 3b863c9e16f169d26ed139b013afb5d1bd3a3f8c
+    accessed: 2026-08-03
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page]
 aliases: [marcusrbrown.com, marcusrbrown-com]
 related:
@@ -36,15 +39,15 @@ This repository is the **renamed successor** to the repo the wiki previously tra
 - **Purpose:** Personal brand site / landing page
 - **Default branch:** `main`
 - **Created:** 2025-07-18 (as `marcusrbrown.github.io`, since renamed)
-- **HEAD (2026-07-13):** `389552270f1093250ad104a1160f53bba91693f1` — `chore(deps): update fro-bot/agent to v0.87.1 (#474)`
-- **Last push:** 2026-07-13
+- **HEAD (2026-08-03):** `3b863c9e16f169d26ed139b013afb5d1bd3a3f8c` — `chore(deps): update marcusrbrown/renovate-config preset to v5.2.10 (#508)` (prior survey HEAD: `3895522`, 2026-07-13)
+- **Last push:** 2026-08-03
 - **Homepage:** https://marcusrbrown.com (GitHub `homepage` field reads `http://marcusrbrown.com/`; `package.json` `homepage` is `https://marcusrbrown.com`)
 - **License:** MIT (declared in `package.json` and README badge; GitHub `license` API reads null — no detectable `LICENSE` file, consistent with prior surveys)
 - **Visibility:** Public
 - **Primary language:** JavaScript (GitHub linguist)
 - **Stars:** 1 | **Watchers:** 1 | **Forks:** 0
-- **Open issues (2026-07-13):** 4 tracked — #411, #409, #260, #6 (API `open_issues_count` reads 8, folding in 4 open PRs)
-- **Open PRs (2026-07-13):** 4 — #473 (docs: refresh stack versions), #471 (fix: honor pnpm overrides), #462 (chore: remove ignored pnpm overrides), plus the merged #474 agent bump on HEAD
+- **Open issues (2026-08-03):** 5 tracked — #465 (footer landmark a11y), #411, #409, #260, #6 (API `open_issues_count` reads 10, folding in 5 open PRs)
+- **Open PRs (2026-08-03):** 5 — #484 (docs: fix coverage command example), #478 (chore: refresh workflow docs + pnpm config), #473 (docs: refresh stack versions), #471 (fix: honor pnpm overrides), #462 (chore: remove ignored pnpm overrides). The pnpm-override reconciliation trio (#471/#462, now joined by #478) is still open and unmerged three weeks on — a stuck queue, not motion.
 
 ## Tech Stack
 
@@ -52,7 +55,7 @@ This repository is the **renamed successor** to the repo the wiki previously tra
 | --- | --- | --- |
 | UI Framework | React | 19.x |
 | Language | TypeScript | 6.0+ (strict) |
-| Bundler | Vite | 7.x (SWC via `@vitejs/plugin-react-swc` v4) |
+| Bundler | Vite | **8.x** (8.1.3; SWC via `@vitejs/plugin-react-swc` v4) |
 | Unit Testing | Vitest | 4.x (happy-dom 20.x) |
 | Coverage | `@vitest/coverage-v8` | 4.x |
 | E2E Testing | Playwright | 1.58.x |
@@ -60,11 +63,13 @@ This repository is the **renamed successor** to the repo the wiki previously tra
 | Linting | ESLint 10 flat config (`eslint.config.ts`) | `@bfra.me/eslint-config` ^0.51.0 |
 | Formatting | Prettier | `@bfra.me/prettier-config/120-proof` |
 | Type Config | TypeScript | `@bfra.me/tsconfig` ^0.13.0 |
-| Package Manager | pnpm | **11.11.0** (`packageManager` field; `engines.pnpm ^11.8.0`) |
-| Node.js | >= 22.0.0 | |
+| Package Manager | pnpm | **11.18.0** (`packageManager` field; `engines.pnpm ^11.8.0`) |
+| Node.js | >= 22.0.0 (`@types/node` ^24) | |
 | Git Hooks | simple-git-hooks + lint-staged | |
 
 The stack is unchanged in shape from the last `github.io`-slug survey (2026-06-23); the notable drift is **pnpm crossing the 10 → 11 major boundary** to 11.11.0 with a matching `engines.pnpm ^11.8.0` — the same fleet-wide cutover recorded across [[marcusrbrown--marcusrbrown]], [[marcusrbrown--sparkle]], and [[marcusrbrown--containers]]. README's "pnpm 10.13.1+" line is stale relative to the enforced 11.x.
+
+**2026-08-03 stack drift:** the big move this cycle is **Vite crossing the 7 → 8 major boundary** to `8.1.3` — a real API-surface jump the SWC React plugin (still v4) rides without a version bump. `@types/node` climbed 22 → **^24** (Node engine still pinned `>= 22.0.0`, so the type floor now runs ahead of the runtime floor — a mild footgun if code leans on Node 24-only typings). pnpm advanced within-major `11.11.0 → 11.18.0`. Everything else (React 19, TS 6, Vitest 4, Playwright 1.58, ESLint 10, the `@bfra.me/*` config trio) holds shape.
 
 ## Repository Structure
 
@@ -111,7 +116,7 @@ Composite action: pnpm install via `pnpm/action-setup@0ebf4713 # v6.0.9`, Node v
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present and active** — `fro-bot/agent@32dca3d787c9d591b2f7ce09ee06175ff5b4067e # v0.87.1` (2026-07-13). This continues the aggressive release-tracking posture recorded under the old slug (v0.61.0 at 2026-06-23); the agent has climbed ~26 minor versions in ~three weeks and this repo remains at or near the ecosystem version front alongside [[marcusrbrown--sparkle]] (v0.85.0) and [[fro-bot--dashboard]] (v0.84.2).
+**Fro Bot workflow is present and active** — `fro-bot/agent@c29ac295b8da06768b140c32e5bd0ae3aff45dc6 # v0.96.0` (2026-08-03), up from `v0.87.1` at 2026-07-13. The aggressive release-tracking posture holds: ~9 more minor versions in three weeks, keeping this repo at the ecosystem version front — ahead of [[marcusrbrown--mrbro-dev]] (v0.93.1 at 2026-08-01). The single-file three-mode `fro-bot.yaml`, `30 3`/`30 15` UTC crons, and `default: autoheal` dispatch are all unchanged.
 
 - **Single-file three-mode design:** review / maintenance / autoheal run from one `fro-bot.yaml` (29 KB) dispatched by event + `inputs.mode` (default `autoheal`), not split into a separate `fro-bot-autoheal.yaml`. This architecture was adopted 2026-05-14 (PR #407 under the old name) and holds.
 - **Triggers:** PR events, issue/comment `@fro-bot` mentions, two daily crons (`AUTOHEAL_CRON '30 3 * * *'`, `MAINTENANCE_CRON '30 15 * * *'` UTC), manual dispatch with `mode` + optional `prompt`.
@@ -120,8 +125,8 @@ Composite action: pnpm install via `pnpm/action-setup@0ebf4713 # v6.0.9`, Node v
 
 ## Developer Tooling
 
-- **Renovate:** extends `github>marcusrbrown/renovate-config#5.2.4` (see [[marcusrbrown--renovate-config]]) + `:preserveSemverRanges` + `group:allNonMajor`. Post-upgrade tasks: `pnpm install`, `pnpm run build`, `pnpm run fix` (×2), `executionMode: branch`. Runs via `bfra-me/.github` reusable workflow.
-- **Security-override ledger:** `pnpm-workspace.yaml` carries ~15 GHSA-style version overrides (`@isaacs/brace-expansion`, `ajv`, `basic-ftp`, `brace-expansion`, `js-yaml`, `lodash-es`, `mdast-util-to-hast`, `minimatch`, `picomatch`, `qs`, `rollup`, `tmp`, `vite >=7.3.5`, `ws`) plus an `allowBuilds` allowlist (`@swc/core`, `esbuild`, `simple-git-hooks`, `unrs-resolver`) and `shamefullyHoist: true`. `package.json` still retains a legacy `pnpm.overrides` pair (`fast-uri >=3.1.2`, `flatted >=3.4.2`) — the split-brain override management noted under the old slug persists, and open PRs **#471** ("honor pnpm overrides") and **#462** ("remove ignored pnpm overrides") are actively churning on exactly this reconciliation.
+- **Renovate:** extends `github>marcusrbrown/renovate-config#5.2.10` (was `#5.2.4` on 2026-07-13; see [[marcusrbrown--renovate-config]]) + `:preserveSemverRanges` + `group:allNonMajor`. Post-upgrade tasks: `pnpm install`, `pnpm run build`, `pnpm run fix` (×2), `executionMode: branch`. Runs via `bfra-me/.github` reusable workflow.
+- **Security-override ledger:** `pnpm-workspace.yaml` carries ~17 GHSA-style version overrides (`@isaacs/brace-expansion`, `ajv`, `basic-ftp`, `brace-expansion`, `fast-uri 3.1.4`, `js-yaml`, `lodash-es`, `mdast-util-to-hast`, `minimatch`, `postcss 8.5.25`, `picomatch`, `qs`, `rollup`, `tmp`, `vite >=7.3.5`, `ws`) plus an `allowBuilds` allowlist (`@swc/core`, `esbuild`, `simple-git-hooks`, `unrs-resolver`) and `shamefullyHoist: true`. New this cycle: `fast-uri` and `postcss` pinned in the workspace ledger. **Split-brain persists and is now sharper:** `package.json` still retains a legacy `pnpm.overrides` pair (`fast-uri >=3.1.2`, `flatted >=3.4.2`), and `fast-uri` is now *double-declared* — a floor range in `package.json` and a hard pin (`3.1.4`) in `pnpm-workspace.yaml`. That's exactly the ambiguity open PRs **#471** ("honor pnpm overrides"), **#462** ("remove ignored pnpm overrides"), and **#478** ("refresh pnpm config") are meant to resolve; all three remain open and unmerged, so the two ledgers keep drifting.
 - **Git hooks:** simple-git-hooks + lint-staged running `eslint --fix` on staged `js,jsx,ts,tsx,json,css,md,yaml`.
 - **AGENTS.md / TESTING.md:** root-level code map and dedicated testing docs.
 - **Copilot instructions:** `.github/copilot-instructions.md`.
@@ -145,4 +150,5 @@ Composite action: pnpm install via `pnpm/action-setup@0ebf4713 # v6.0.9`, Node v
 
 | Date | SHA | Notes |
 | --- | --- | --- |
+| 2026-08-03 | `3b863c9` | Re-survey. Fro Bot agent **v0.87.1 → v0.96.0** (`c29ac29`); single-file three-mode design + `30 3`/`30 15` crons hold. **Vite 7 → 8 major** (`8.1.3`); `@types/node` 22 → **^24** (now ahead of the Node `>=22` engine floor); pnpm within-major `11.11.0 → 11.18.0`. Renovate preset `#5.2.4 → #5.2.10`. Override ledger grew to ~17 entries (added `fast-uri 3.1.4`, `postcss 8.5.25`); `fast-uri` now double-declared across `package.json` + `pnpm-workspace.yaml` — split-brain sharper, PRs #471/#462/#478 all still open/unmerged. Open issues 5 (#465/#411/#409/#260/#6), open PRs 5 (#484/#478/#473/#471/#462). Stale self-references (`repository.url`, README badge, `BRANCH_PROTECTION.md`) unchanged. Gaps unchanged: no Probot `settings.yml`, no CodeQL/Scorecard, `lhci.config.js` still workflow-less. Fro Bot present — no onboarding/draft PR needed. |
 | 2026-07-13 | `3895522` | **First survey under the `marcusrbrown.com` slug.** Confirmed rename from `marcusrbrown.github.io` (repo id `1021912280`, created 2025-07-18; issue set #411/#409/#260/#6 carried forward; stale `repository.url` + README badge). A *different* repo now holds the `marcusrbrown.github.io` name (id `1174807412`, homepage mrbro.dev). Fro Bot agent v0.61.0 → **v0.87.1** (`32dca3d`), single-file three-mode design and `30 3`/`30 15` crons hold. **pnpm 10 → 11 major** (11.11.0, `engines ^11.8.0`). Renovate preset `#5.2.1` → `#5.2.4`. `pnpm-workspace.yaml` override ledger grew to ~15 entries + `allowBuilds`; legacy `package.json` overrides (fast-uri/flatted) persist — PRs #471/#462 churning the reconciliation. New a11y issue #465. Gaps unchanged: no Probot `settings.yml`, no CodeQL/Scorecard. Prior history (2026-04-25 → 2026-06-23) recorded on [[marcusrbrown--marcusrbrown-github-io]] under the former name. |

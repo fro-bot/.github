@@ -58,7 +58,7 @@ Shareable [Renovate](https://docs.renovatebot.com/) configuration presets for Ma
 | Language | JavaScript (config-only; no application code) |
 | Created | 2022-05-03 |
 | Default branch | `main` |
-| Latest release | `5.2.9` (2026-07-21) — six patch releases past `5.2.3` (5.2.4–5.2.9); was `5.2.3` at 2026-06-14/06-25 |
+| Latest release | `5.2.9` (2026-07-21) — six patch releases past `5.2.3` (5.2.4–5.2.9); was `5.2.3` at 2026-06-14/06-25. **Indirect signal (2026-08-03):** the [[marcusrbrown--marcusrbrown-com]] survey observed a downstream pin at `#5.2.10`, so at least one patch has shipped past this directly-surveyed figure — confirm on next direct survey of this repo. |
 | Node.js | 24.18.0 (`.node-version`) — unchanged since 2026-06-25; was 24.16.0 at 2026-06-14, 24.15.0 prior |
 | Package manager | pnpm 11.16.0 (was 11.8.0 at 2026-06-25, 11.5.3 at 2026-06-14, 11.5.0 at 2026-06-04, 11.1.3 at 2026-05-23, 10.33.2 at 2026-04-28) |
 | Topics | renovate, renovate-config, renovate-preset, renovatebot, renovate-by-githubaction, semantic-release |
