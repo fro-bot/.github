@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/marcusrbrown.github.io"
 created: 2026-04-25
-updated: 2026-08-02
+updated: 2026-08-03
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: ec4b7854bee556aadd301950392268f70817d800
@@ -52,6 +52,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf
     accessed: 2026-08-02
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf
+    accessed: 2026-08-03
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page, name-collision, superseded]
 aliases: [marcusrbrown-github-io]
 related:
@@ -376,6 +379,19 @@ The only motion is in the current occupant's issue/PR queue:
 
 Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); single `30 3` daily oversight+autoheal cron (#234 consolidation holds); Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.** This run had a `gh` credential gap again (unauthenticated GitHub API + raw fetch only). No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
 
+## Delta Log (2026-08-03, SHA `9e54dbc` — collision holds; no-op re-survey, queue-only motion)
+
+A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio, `package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-to-repo binding is unchanged since 2026-07-20 — the collision the 2026-07-13 header warned of is steady.
+
+`main` HEAD is **still `9e54dbc`** — the same SHA as the 2026-08-01 and 2026-08-02 surveys. The default-branch ref hasn't advanced (two days, no trunk commits), so there is no tree-level drift: stack, 8-workflow inventory, single-file three-mode Fro Bot design, and the single `30 3` daily oversight+autoheal cron all hold. No structural drift, no contradictions with prior ingests. Because the tree is frozen, no durable delta lands on the canonical [[marcusrbrown--mrbro-dev]] page this cycle.
+
+The only motion is in the current occupant's issue/PR queue:
+
+- **Open issues 5:** #262 (Daily Fro Bot Report — 2026-08-03, the rolling report issue, renumbered up from #260) / #261 (`ci(fro-bot): narrow scheduled-run token permissions` — a new least-privilege hardening item on the scheduled Fro Bot run) / #258 (`ci: make performance budget failures visible and actionable`) / #212 (mention-run git-push-auth failure) / #1 (Dependency Dashboard). The report-issue number climbing #260 → #262 is daily-report churn, not new work; #261 is the one genuinely new item this cycle.
+- **Open PRs 2:** #254 (`docs: correct automation script count`) and #253 (`chore(blog): refresh snapshot and preview images`) — both still unmerged, carried over unchanged from 2026-08-02. GitHub `open_issues_count` reads 7 because it folds the 2 PRs into the 5 issues.
+
+Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); single `30 3` daily oversight+autoheal cron (#234 consolidation holds); Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.** This run had a `gh` credential gap again (unauthenticated GitHub API + raw fetch only). No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+
 ## Survey History
 
 | Date | SHA | Notes |
@@ -396,3 +412,4 @@ Agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93
 | 2026-07-30 | `aa23250` | **Collision holds; front-of-house UI delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` advanced `345bc21` → `aa23250` (`docs: document mobile nav hit-target overlap (#251)`): UI/UX polish burst (#240–#251) — mobile nav hit-target fix loop (#249/#250/#251), footer redesigned as structured "site-close" (#244, likely closes long-open #213 footer-landmark a11y bug), `/projects` served from a build-time snapshot instead of live API (#243), custom social-preview images honored w/ self-hosted PNG fallback (#242), blog index "curated evidence" (#248), **blog-refresh now delivers via PR not direct push to `main` (#240)**. Agent v0.93.1 (`a4976f4`), 8 workflows, single `30 3` cron, Renovate #5.2.7, pnpm 11.1.3 / Node >=24 — unchanged. Open issues 3 (#252/#212/#1). No `gh` auth (unauthenticated API + raw fetch). Fro Bot active — no onboarding PR. Full snapshot on the mrbro.dev page. |
 | 2026-08-01 | `9e54dbc` | **Collision holds; privacy-preserving Umami analytics delta on [[marcusrbrown--mrbro-dev]].** Name still resolves to id `1174807412` (mrbro.dev). `main` advanced `aa23250` → `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`): **fail-closed self-hosted Umami analytics subsystem** (#256/#257) — production-only tracker injection gated on the `UMAMI_WEBSITE_ID` repo variable (step-scoped in `deploy.yaml` → `VITE_UMAMI_WEBSITE_ID`), **disabled-by-default** (variable unset, no tracker in prod build), human activation gate blocked on version-controlled [[marcusrbrown--infra]] retention evidence, typed/bounded event catalog, DNT suppression, query/hash exclusion, `/privacy` disclosure page, CSP-safe static bootstrap scripts (`public/scripts/*.js`) replacing removed `src/utils/theme-preloader.ts`. Processor is self-hosted `metrics.fro.bot`, not a third-party vendor — Marcus's no-unconsented-telemetry baseline applied. Agent v0.93.1 (`a4976f4`), 8 workflows, single `30 3` cron, Renovate #5.2.7, pnpm 11.1.3 / Node >=24 — unchanged. Open issues 4 (#259/#258/#212/#1). No `gh` auth (unauthenticated API + raw fetch). Fro Bot active — no onboarding PR. Full snapshot on the mrbro.dev page. |
 | 2026-08-02 | `9e54dbc` | **Collision holds; no-op re-survey (tree frozen), queue-only motion.** Name still resolves to id `1174807412` (mrbro.dev). `main` HEAD **unchanged** at `9e54dbc` since 2026-08-01 — no trunk commits, no tree drift, so no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page this cycle. Motion is issue/PR-queue only: open issues 4 (#260 Daily Fro Bot Report renumbered up from #259 / #258 perf-budget CI visibility / #212 mention-run git-push-auth / #1 Dependency Dashboard); open PRs 2 (#254 `docs: correct automation script count`, #253 `chore(blog): refresh snapshot and preview images`); API `open_issues_count` 6 folds the 2 PRs. Agent v0.93.1 (`a4976f4`), 8 workflows, single `30 3` cron, Renovate #5.2.7, pnpm 11.1.3 / Node >=24 — all steady. No `gh` auth (unauthenticated API + raw fetch). Fro Bot active — no onboarding PR. |
+| 2026-08-03 | `9e54dbc` | **Collision holds; no-op re-survey (tree frozen), queue-only motion.** Name still resolves to id `1174807412` (mrbro.dev). `main` HEAD **still `9e54dbc`** — unchanged since 2026-08-01 (two days, no trunk commits), no tree drift, no durable delta on [[marcusrbrown--mrbro-dev]] this cycle. Queue-only motion: open issues 5 (#262 Daily Fro Bot Report renumbered up from #260 / **#261 new** `ci(fro-bot): narrow scheduled-run token permissions` — least-privilege hardening on the scheduled run / #258 perf-budget CI visibility / #212 mention-run git-push-auth / #1 Dependency Dashboard); open PRs 2 (#254, #253) carried over unchanged; API `open_issues_count` 7 folds the 2 PRs. Agent v0.93.1 (`a4976f4`), 8 workflows, single `30 3` cron, Renovate #5.2.7, pnpm 11.1.3 / Node >=24 — all steady. No `gh` auth (unauthenticated API + raw fetch). Fro Bot active — no onboarding PR. |

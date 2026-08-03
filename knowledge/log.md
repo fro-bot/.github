@@ -3295,3 +3295,28 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-03 08:46] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`. The name still resolves to repo **id `1174807412`** — the mrbro.dev developer portfolio (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio.", topics `blog/developer/github-pages/portfolio/react/typescript/vite`) — **not** the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-to-repo binding is unchanged since 2026-07-20; the collision the 2026-07-13 header warned of is steady.
+
+`main` HEAD is **still `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42Z) — the same SHA as the 2026-08-01 and 2026-08-02 surveys. Two days, no trunk commits: **no tree-level drift**. Stack (React `^19` / RR `^7.15` / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1 / pnpm 11.1.3 / Node >=24), 8-workflow inventory (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`), single-file three-mode Fro Bot design, single `30 3` daily oversight+autoheal cron (#234 consolidation holds), Renovate `#5.2.7`, and agent pin `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1` all hold. Because the tree is frozen, **no durable delta lands on the canonical [[marcusrbrown--mrbro-dev]] page this cycle** — the collision-record page carries the empirical confirmation only.
+
+The only motion is in the current occupant's issue/PR queue:
+
+- **Open issues 5:** #262 (Daily Fro Bot Report — 2026-08-03, rolling report issue, renumbered up from #260 by daily-report churn) / **#261 new** (`ci(fro-bot): narrow scheduled-run token permissions` — least-privilege hardening on the scheduled Fro Bot run) / #258 (`ci: make performance budget failures visible and actionable`) / #212 (mention-run git-push-auth failure) / #1 (Dependency Dashboard).
+- **Open PRs 2:** #254 (`docs: correct automation script count`) and #253 (`chore(blog): refresh snapshot and preview images`) — both unmerged, carried over unchanged from 2026-08-02. GitHub `open_issues_count` reads 7 because it folds the 2 PRs into the 5 issues.
+
+Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
+
+Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (added `9e54dbc` source for 2026-08-03 + bumped `updated`; new Delta Log 2026-08-03 + Survey History row — collision-record only, no-op tree, defers durable detail to the canonical page), `knowledge/index.md` (updated the collision-record catalog entry to the 2026-08-03 no-op line). No changes to `knowledge/wiki/repos/marcusrbrown--mrbro-dev.md` or other topic/entity pages — the frozen tree produced no new durable per-repo facts, so an additive canonical-page edit would be noise.
+
+Constraints honored: target treated as untrusted input; reads limited to the unauthenticated public GitHub API (repo metadata, `commits/main`, `contents/.github/workflows`, open-issues listing) + `raw.githubusercontent.com` (`fro-bot.yaml`) — no arbitrary source-code reads. Additive updates only; prior records preserved and dated; no contradictions found (tree is unchanged). Wikilinks validated against existing pages (0 broken); frontmatter complete. This run had **no `gh` credential** in-env. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-03 08:47] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
