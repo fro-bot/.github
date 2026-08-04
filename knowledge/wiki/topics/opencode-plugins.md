@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-07-25
+updated: 2026-08-04
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -46,6 +46,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 0b31ea70ec0b6ca2ec467085abd1c9d713f89faa
     accessed: 2026-07-25
+  - url: https://github.com/fro-bot/space-bus
+    sha: fd8a746dd04bbf41b0d34dd0da55814686048ee9
+    accessed: 2026-08-04
 tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution]
 ---
 
@@ -172,6 +175,7 @@ Two durable published-plugin patterns from space-bus's library-surface work:
 
 - **CI-enforced browser-safe subpaths.** A plugin can publish subpath exports for renderers that want structured state, split into a **browser-safe lane** (`/core`, `/contract`, `/format`, `/attach` — no `node:*`, injected seams for fs/env/crypto) and a **Node-only lane** (`/config`, `/managed-server`, `/registry`). A `browser-safety.test.ts` bundles the browser lane for a browser target and asserts no `node:` imports and no path into the Node lane. **Test the *published dist*, not just `src`** — space-bus `0.10.1` fixed a `createRequire`/`node:module` prelude that broke Vite bundling (Mothership) even though the src-level test passed; the fix added a dist-level browser-safety assertion.
 - **Reserved-subpath loader resolution.** OpenCode's plugin loader resolves `exports["./server"]` **before** `main`. space-bus published its managed-server lifecycle at `/server` and broke plugin loading with `Plugin export is not a function` for `0.6.0`–`0.9.0` on npm — `/server` was resolving to the lifecycle module instead of the plugin factory. Fix (`0.10.0`): remap `./server` to the plugin entry and move the lifecycle API to `/managed-server`. Lesson: don't publish a non-factory export at a subpath the loader may probe.
+- **Consolidate the session API into the browser-safe lane (2026-08-04, space-bus `0.14.0`/`0.15.0`).** When multiple consumers (a plugin's own tools, an MCP facade, a renderer like [[marcusrbrown--mothership]]) all need to read/answer OpenCode sessions, put the primitives in the browser-safe `/core` lane so nobody maintains a parallel OpenCode HTTP client. space-bus added `messages()` (bounded full-message read, hard-capped, ownership resolved from the roster not a caller directory), `questions()`/`answerQuestion()` (complete nested pending-question read + ownership-and-cardinality-checked answer, refusing cross-session `requestId` and mismatched answer counts with **no mutation**), an opt-in **fail-closed** `dispatch({ onPendingQuestion: "blocked" })` (returns typed `{mode:"blocked",requestId}` or a stable error instead of guessing under ambiguous `/question` state), and **message correlation**: `createDispatchMessageId()` mints an OpenCode-compatible ascending id with **no Node builtins** (Web Crypto only), and a typed `DispatchFailure` distinguishes `phase:"not_sent"` (verified pre-mutation) from `phase:"indeterminate"` (a mutation may already have landed) so callers can reconcile safely after an error. Two durable design rules here: validation errors return **one stable generic message that never echoes the rejected input** (no reflected-injection surface), and unknown fields are **omitted, never sent as `undefined`/`null`** — both keeping the discriminated-union `Result<T>` contract clean across the boundary.
 
 ### OpenCode Server API as a multi-project control plane
 
@@ -189,7 +193,7 @@ space-bus also documents using **one `opencode serve` instance to multiplex many
 | [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (~48 bundled skill dirs, 51 agents) | Bun, Biome, Zod-typed config, semantic-release | Active, v2.33.3 |
 | [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses; opt-in `/copilot-status` TUI half | Bun, Biome, Changesets | Active, v0.12.0 (4 tools: delegate/output/cancel/resume) |
 | [[marcusrbrown--cortexkit-anthropic-auth]] | `@marcusrbrown/opencode-anthropic-auth` + `@marcusrbrown/anthropic-auth-core` | Claude Pro/Max OAuth, fallback accounts, quota routing, prompt-cache controls, optional Cloudflare Worker relay; OpenCode + Pi share the same core | Bun, Biome, Lefthook, monorepo workspaces | Active fork, `1.2.2-mb.2` (fork of `cortexkit/anthropic-auth`); Pi package private in fork |
-| [[fro-bot--space-bus]] | `@fro.bot/space-bus` | Workspace agent bus — a control agent tasks per-project agents over one directory-routed `opencode serve`; MCP facade + browser-safe library subpaths | Bun, Biome, zod v4, Changesets + npm OIDC | Active, **v0.13.1** (6 tools: bus_roster/task/status/result/wait/registry) |
+| [[fro-bot--space-bus]] | `@fro.bot/space-bus` | Workspace agent bus — a control agent tasks per-project agents over one directory-routed `opencode serve`; MCP facade + browser-safe library subpaths (now with session-interaction + message-correlation `/core` primitives) | Bun, Biome, zod v4, Changesets + npm OIDC | Active, **v0.15.0** (6 tools: bus_roster/task/status/result/wait/registry) |
 
 These plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's/Fro Bot's OpenCode plugin repos. space-bus and copilot-delegate both publish via **Changesets** (space-bus via **npm OIDC trusted publishing**, no `NPM_TOKEN`); systematic uses semantic-release.
 
@@ -350,7 +354,7 @@ Distinguishing traits vs the distributable plugins above: **no npm publish**, **
 - [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows; **crossed v2 → v3 major (v3.2.5, 2026-07-22)** with catalog contraction 104 → 73 components (confirmed downstream via [[fro-bot--systematic]]); discovered-skills-as-slash-commands added v2.33.0
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
-- [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.13.1): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths
+- [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.15.0): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths (now exposing `messages`/`questions`/`answerQuestion` + dispatch message correlation)
 - [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi; Fro Bot active at v0.45.0 (as of 2026-06-09)
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
