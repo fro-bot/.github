@@ -3322,3 +3322,31 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.com (SHA 3b863c9e16f169d26
 Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.com
+
+## [2026-08-05 00:00] ingest | marcusrbrown/Presentations
+
+Initial survey of `marcusrbrown/Presentations` (HEAD `34321a4`, created 2017-02-21). Created repo page `marcusrbrown--presentations.md`. Updated topic page `github-pages.md` (added repo to consumers list + new "Slide decks via the `gh-pages` CLI" pre-Actions deploy pattern). Updated `index.md` to catalog the new page.
+
+Key findings:
+
+- **A slide-deck archive, one self-contained talk per top-level directory**, published to [[github-pages]] at `marcusrbrown.github.io/Presentations/`. Public, no license declared, 1 star / 3 open issues. Small language footprint (JS 11.7 KB / HTML 4.2 KB / CSS 0.4 KB) — the decks vendor their own deps; there is no root workspace.
+- **Two decks bracket nine years of tooling:**
+  - `Blockchain-Meetup-Feb-2017` — Create React App + **Spectacle 10.2.3** slides (React 18.3.1, `react-scripts` 5.0.1), **Yarn** (`yarn.lock`), `gh-pages` 6.3.0 CLI deploy (`predeploy`→`build`, `deploy`→`gh-pages -d build`). `homepage` field drives relative asset paths. Modernized from its 2017 React-16-era origins to React 18 / react-scripts 5.
+  - `Cheap-LLMs-Meetup-Aug-2026` — "$200 Intelligence on a $10 Budget" talk for the "Cracked Claude Cowork and Codex Club" (Aug 4 & 5, 2026). **Slidev** (`@slidev/cli` ^52.1.0 + `@slidev/theme-seriph` ^0.25.0), Markdown-driven (`slides.md`), **Bun** (`bun.lock`). Added #49 on 2026-08-04. Its README references a sibling `../OUTLINE.md` that was **deliberately removed from source control** (#50) — not surveyed.
+- **Shared `.github/` governance, no per-deck migration:**
+  - `ci.yaml` builds + tests **only the 2017 deck** (hard-coded `working-directory`, Node 20.20.2 pinned via `renovate:`-annotated env, SHA-pinned checkout/setup-node v4.4.0). The Slidev deck has no CI. Noted footgun: `NODE_VERSION` env is declared under each step's `env:` but consumed by the same step's `with:` — fragile placement.
+  - `renovate.yaml` + `update-repo-settings.yaml` delegate to reusable `bfra-me/.github` workflows pinned at SHA `dd02bc5f` (v4.16.44), GitHub App auth (`APPLICATION_ID`/`APPLICATION_PRIVATE_KEY`), settings-sync daily cron `19 14 * * *`.
+  - `settings.yml` extends `.github:common-settings.yaml` (personal template, [[marcusrbrown--github]]); branch protection on `main` requires `Build` + `Test` (non-strict), enforce-admins, linear history, no PR reviews.
+  - `renovate.json5` extends `marcusrbrown/renovate-config#5.2.10` (**v5 line**, unlike [[marcusrbrown--github]]'s v4 holdout); one custom rule auto-approves **`spectacle` major** bumps in the dependency dashboard (low-stakes: spectacle only lives in the frozen 2017 deck).
+- **Contradiction flagged (declared-vs-live drift):** `settings.yml` declares `archived: true` and there is a `chore: archive repository (#48)` commit, but the live GitHub API reports `archived: false` at survey time, and the repo has post-#48 activity (#49 added a deck, #50–#56 followed). Either the settings sync can't flip the archive bit, or archiving was reverted in practice while the `archived: true` line lingers. Recorded on the repo page per the additive/contradiction rule; not resolved by this survey.
+- **No Fro Bot workflow** — automation is Renovate + settings-sync only; `mrbro-bot[bot]` authors merges. Recommendation left open but conditioned on resolving the archive question first: wiring an agent into a repo that may be archived is wasted chrome.
+
+Constraints honored: target treated as untrusted input; reads limited to unauthenticated public GitHub API (repo metadata, `commits/main`, `git/trees` + `contents/` directory listings) and raw fetches of README/manifest/workflow files only (`README.md`s, `package.json`s, `ci.yaml`, `renovate.yaml`, `update-repo-settings.yaml`, `settings.yml`, `renovate.json5`) — no arbitrary source-code reads; the VCS-removed `OUTLINE.md` was not reconstructed. No `gh`/GitHub App credential was available in this run, so the public REST API was used read-only. Additive updates only; wikilinks validated against existing pages (0 broken); frontmatter complete. Working-dir delivery mode: files written to the working tree only — no branch/commit/push/PR; no GitHub issue opened or commented (this log entry is the canonical per-survey summary).
+
+Sources: https://github.com/marcusrbrown/Presentations (SHA 34321a4c4a38c99c4bd8b683f267ddba05cd6fe4)
+
+## [2026-08-04 18:57] ingest | repo:marcusrbrown/Presentations
+
+Surveyed marcusrbrown/Presentations and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/Presentations

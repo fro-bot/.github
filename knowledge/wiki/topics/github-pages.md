@@ -2,12 +2,13 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-08-01
-tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll, astro, starlight, git-lfs, csp, analytics]
+updated: 2026-08-05
+tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll, astro, starlight, git-lfs, csp, analytics, spectacle, slidev, gh-pages-cli]
 related:
   - marcusrbrown--mrbro-dev
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--esphome-life
+  - marcusrbrown--presentations
   - fro-bot--systematic
 ---
 
@@ -20,6 +21,7 @@ Static site hosting via GitHub. Deployment patterns observed across the Fro Bot 
 - [[marcusrbrown--mrbro-dev]] — React 19 + Vite 7 portfolio, custom domain at mrbro.dev
 - [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 brand site, custom domain at marcusrbrown.com
 - [[marcusrbrown--esphome-life]] — Jekyll (slate theme) + ESP Web Tools firmware installer, deployed to `gh-pages` branch
+- [[marcusrbrown--presentations]] — slide-deck archive at `marcusrbrown.github.io/Presentations/`; per-talk subtrees (Spectacle/CRA 2017, Slidev/Bun 2026), `gh-pages`-CLI deploy
 - [[fro-bot--systematic]] — Starlight/Astro docs site for `@fro.bot/systematic`, deployed to `gh-pages` branch at fro.bot/systematic/
 
 ## Deployment Patterns Observed
@@ -70,6 +72,12 @@ The pattern used in [[marcusrbrown--systematic]] → [[fro-bot--systematic]]:
 6. `.well-known/ocx.json` serves the OCX component registry, enabling `ocx` CLI to install skills/agents from the docs URL
 
 This cross-repo pattern separates the docs deployment surface from the source repo, keeping the source repo's Pages available for other uses and giving the docs site its own URL under the `fro-bot` org.
+
+### Slide decks via the `gh-pages` CLI (pre-Actions pattern)
+
+The pattern used in [[marcusrbrown--presentations]]'s 2017 deck predates the `actions/deploy-pages` era: a Create React App build with `spectacle` slides deploys through the **`gh-pages` npm package** rather than a Pages workflow — `predeploy` runs `npm run build`, `deploy` runs `gh-pages -d build`, which force-pushes the built `build/` directory to the `gh-pages` branch. The CRA `homepage` field (`https://marcusrbrown.github.io/Presentations`) drives the relative asset paths. It's a manual, local-invocation deploy: no CI job publishes it; the author runs `npm run deploy`. Contrast with the Vite + `actions/deploy-pages` flow above, which is CI-triggered and artifact-based. The archive's newer 2026 Slidev deck (`slidev build` → static `dist/`) has no wired deploy at all in-repo — it's a presentable static SPA on demand, not a published page.
+
+The general lesson: a multi-talk presentation archive tends to accumulate *heterogeneous* deploy mechanisms over time (gh-pages-CLI, none, or a future Actions flow), because each deck freezes with the tooling of its year rather than migrating to a shared publish pipeline.
 
 **Footgun — config files on a build-output branch.** On 2026-06-24, [[fro-bot--systematic]] merged a `.github/renovate.json5` directly onto `gh-pages` (its default, build-output branch). Because every other commit on that branch is a `fro-bot[bot]` "Deploy docs from ..." overwrite, hand-authored config living there is fragile: the next docs build can clobber or orphan it unless the source-repo build pipeline explicitly preserves the path. Onboarding a build-output-only repo into Renovate also adds operational surface (and, in this case, a config-error issue that halted Renovate) without a dependency target to update — there is no `package.json` on a pure static-output branch. When a deploy-target repo is one branch of build artifacts, repo automation that assumes a normal source branch tends to mis-fire.
 
