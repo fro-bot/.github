@@ -442,9 +442,9 @@ repos:
   - owner: marcusrbrown
     name: Presentations
     added: 2026-08-04
-    onboarding_status: pending
+    onboarding_status: onboarded
     last_survey_at: 2026-08-04
-    last_survey_status: failure
+    last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: collab
