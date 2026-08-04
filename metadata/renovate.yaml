@@ -2,4 +2,5 @@ repositories:
   with-renovate:
     - .github
     - agent
+    - dashboard
     - space-bus

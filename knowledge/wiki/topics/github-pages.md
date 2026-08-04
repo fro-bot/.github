@@ -2,8 +2,8 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-06-25
-tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll, astro, starlight]
+updated: 2026-08-01
+tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll, astro, starlight, git-lfs, csp, analytics]
 related:
   - marcusrbrown--mrbro-dev
   - marcusrbrown--marcusrbrown-github-io
@@ -82,3 +82,29 @@ This cross-repo pattern separates the docs deployment surface from the source re
 - Resource budgets: JS <= 512KB, CSS <= 100KB, total <= 2MB
 
 Weekly scheduled performance runs (Monday 06:00 UTC) establish baselines for regression detection.
+
+## Footgun — Git LFS and web-served assets
+
+GitHub Pages does **not** resolve Git LFS pointers. If a binary asset (image, font, etc.) is tracked by LFS and committed as a pointer file, Pages serves the ~130-byte pointer text verbatim instead of the blob — the asset renders broken in production even though it displays correctly in the GitHub UI and local checkouts (which transparently smudge LFS pointers).
+
+[[marcusrbrown--mrbro-dev]] hit this on 2026-07-26 (#228): self-hosted project-preview PNGs added a week earlier (#202) were tracked by a repo-wide `*.png filter=lfs` rule, so the images broke on the live site. The fix is a **`.gitattributes` exemption** that overrides LFS for the web-served path while keeping it for other PNGs:
+
+```gitattributes
+*.png filter=lfs diff=lfs merge=lfs -text
+
+# Web-served preview images must be real blobs — GitHub Pages does not resolve LFS pointers
+public/project-previews/*.png filter= diff= merge= -text
+```
+
+The empty `filter=`/`diff=`/`merge=` values unset the inherited LFS attributes for the narrower glob, forcing those files to commit as real blobs. General rule: any binary that ships in a Pages build output (`dist/`, `public/`) must be a real Git blob, not an LFS pointer.
+
+## Build-time-gated, self-hosted analytics on a Pages SPA
+
+[[marcusrbrown--mrbro-dev]] added a privacy-preserving web-analytics subsystem on 2026-08-01 (#256/#257) that is a reusable template for adding telemetry to a static Pages site without violating a no-unconsented-telemetry baseline:
+
+- **Self-hosted processor, not a SaaS vendor.** The tracker points at a self-hosted Umami instance (`metrics.fro.bot`, an [[marcusrbrown--infra]] app), so no third-party analytics script loads and no data leaves the operator's own infrastructure.
+- **Build-time injection gated on a repo variable.** Because a Pages SPA has no server, activation is a *build-time* decision: a GitHub repo variable (`UMAMI_WEBSITE_ID`) is mapped to a Vite env var (`VITE_UMAMI_WEBSITE_ID`) **only on the build step** of `deploy.yaml` (step-scoped, so it can't leak into unrelated steps). Vite injects exactly one tracker tag only when the variable is set; unconfigured builds and dev builds ship no tag. Leaving the variable unset is the **fail-closed default** — the deployed artifact contains no tracker until a human sets it.
+- **Human activation gate + operator runbook.** `docs/analytics.md` carries a Go/No-Go matrix that blocks activation until version-controlled infrastructure evidence proves the retention boundary. The gate lives in docs + process, not in code, because the code already fails closed.
+- **CSP-safe static bootstraps.** To keep a strict Content-Security-Policy (no inline `<script>`), executable SPA bootstraps (theme preload, SPA redirect/restore for the 404-rewrite trick) were moved from inline `index.html` into tested `public/scripts/*.js` files served as real static assets. This is a general Pages-SPA pattern: inline bootstrap logic that a redirect/theme flash needs must become external scripts to satisfy CSP, and they can be unit-tested in isolation.
+
+General rule for Pages SPAs: telemetry activation is a build-time env decision (fail closed when unset), the processor should be self-hosted to honor a no-unconsented-telemetry baseline, and any bootstrap that would otherwise be an inline `<script>` should be an external, testable `public/scripts/*.js` asset for CSP compatibility.

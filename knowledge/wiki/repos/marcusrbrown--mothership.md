@@ -237,7 +237,7 @@ Hard boundaries mirror the fleet: no force-push, no direct main pushes (only exi
 
 ## Design System
 
-Systematic / Fro Bot lineage — **afrofuturism × cyberpunk, dark-default, cyan/magenta/orange with strict intent**. `PRODUCT.md` + `DESIGN.md` are the Impeccable design context; tokens live in `design/tokens.css` (seed) and `src/styles/tokens.css` (runtime). The Impeccable skill is installed at `.agents/skills/impeccable/` and CI runs `impeccable detect` as a hard gate. Intentional brand exceptions get scoped entries in `.impeccable/config.json`, never rule-wide disables. This is the same design-gate pattern seen in [[fro-bot--dashboard]] (Design Check `impeccable`).
+Systematic / Fro Bot lineage — **afrofuturism × cyberpunk, dark-default, cyan/magenta/orange with strict intent**. `PRODUCT.md` + `DESIGN.md` are the Impeccable design context; tokens live in `design/tokens.css` (seed) and `src/styles/tokens.css` (runtime). The Impeccable skill is installed at `.agents/skills/impeccable/` and CI runs `impeccable detect` as a hard gate. Intentional brand exceptions get scoped entries in `.impeccable/config.json`, never rule-wide disables. This is the same design-gate pattern seen in [[fro-bot--dashboard]] — and as of that repo's 2026-07-23 survey the convergence is now near-total: dashboard vendors the Impeccable **skill** at `.agents/skills/impeccable/`, an Impeccable **OpenCode plugin** at `.opencode/impeccable/`, and a brand-token `assets/tokens.css` + `styleguide.md`, mirroring Mothership's skill-install + `tokens.css` seed pattern (dashboard also keeps `impeccable detect` as a hard CI gate, pinned `impeccable@3.2.1`).
 
 ## Relationship to the Fro Bot Ecosystem
 

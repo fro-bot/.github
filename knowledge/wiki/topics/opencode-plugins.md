@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-07-18
+updated: 2026-07-25
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -43,6 +43,9 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: 8e20e01775918a01855eb5aba64d04bf966f4d51
     accessed: 2026-07-18
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 0b31ea70ec0b6ca2ec467085abd1c9d713f89faa
+    accessed: 2026-07-25
 tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution]
 ---
 
@@ -314,10 +317,12 @@ Both plugins document the divergence inline with cross-references to each other'
 
 As of the 2026-05-22 [[fro-bot--systematic]] survey, the same docs site is now the canonical host for the user config JSON Schema:
 
-- `https://fro.bot/systematic/schemas/v2/systematic-config.schema.json` — pinned `$id`, intended for `"$schema"` references in `systematic.json` / `systematic.jsonc` for IDE autocomplete (VSCode, Zed, IntelliJ).
+- `https://fro.bot/systematic/schemas/v<major>/systematic-config.schema.json` — pinned `$id`, intended for `"$schema"` references in `systematic.json` / `systematic.jsonc` for IDE autocomplete (VSCode, Zed, IntelliJ). **This path is major-versioned and NOT stable across majors.**
 - `https://fro.bot/systematic/schemas/latest/systematic-config.schema.json` — moving pointer for "current".
 
-Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`, and (since systematic v2.33.0) `skills_as_commands`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. Treat both URLs as public API; renaming or restructuring them silently breaks autocomplete for every consumer that pinned them. The same docs deploy now drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
+Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`, and (since systematic v2.33.0) `skills_as_commands`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. The same docs deploy drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
+
+**Breaking-path precedent confirmed (2026-07-22 [[fro-bot--systematic]] survey):** when the plugin crossed the **v2 → v3 major**, the schema host **dropped `schemas/v2/` entirely** (it now returns HTTP 404) and replaced it with `schemas/v3/`; `latest/`'s `$id` re-pointed to the v3 URL. Majors replace the versioned path wholesale — they do **not** co-serve old majors. Any consumer that pinned `"$schema"` to a `vN` URL silently loses autocomplete/validation at the next major (no error surfaced). Lesson: pin `latest/` for a floating contract, or expect to re-pin `vN` at each major. The same v2 → v3 crossing contracted the OCX registry catalog from 104 → 73 components (agents 51 → 37, skills 48 → 31) — the first component *contraction* observed, a source-side curation event rather than growth.
 
 ## Bundled Skill for Upstream Sync (cortexkit_anthropic-auth pattern)
 
@@ -331,9 +336,18 @@ This is the first instance in the Marcus ecosystem of a repo-local skill scoped 
 
 Contrast with [[marcusrbrown--systematic]] which ships general-purpose skills (`ce:plan`, `ce:work`, etc.) distributed for consumption by other OpenCode users — the cortexkit-auth pattern is internal/operational, not distributable.
 
+## App-Embedded Design-Gate Plugin (in-repo `.opencode/impeccable/`)
+
+Not every OpenCode plugin is published or general-purpose. A recurring **app-embedded** pattern: an application repo vendors an OpenCode plugin *in-tree* to run a design/quality gate against the agents that work on that same repo, rather than consuming the gate as a pinned CI action.
+
+- **[[fro-bot--dashboard]]** (2026-07-23) first vendored the Impeccable design gate as `.opencode/impeccable/plugin.ts` alongside `.agents/skills/impeccable/`, wiring `.opencode/tsconfig.json` into `check-types` and adding `@opencode-ai/plugin` as a devDep.
+- **[[marcusrbrown--mrbro-dev]]** (2026-07-25, surveyed via the `marcusrbrown.github.io` name binding) took the same move: root `opencode.json` registers `"plugin": ["./.opencode/impeccable/plugin.ts"]`, backed by `.opencode/impeccable/{plugin.ts, hook-bridge.ts}` (+ `plugin.test.ts`, `hook-bridge.integration.test.ts`) and `.opencode/tsconfig.json` in the `check-types` script; `@opencode-ai/plugin@1.18.2` devDep. The `hook-bridge.ts` naming suggests the plugin bridges OpenCode hook events into the Impeccable gate's evaluation surface.
+
+Distinguishing traits vs the distributable plugins above: **no npm publish**, **relative-path plugin registration** (`./.opencode/...` not a package name), and **the plugin is a repo-local build artifact type-checked by the app's own `tsc` pass**. This is the Impeccable gate propagating from a pinned CI action into a repo-local plugin across the fleet — worth tracking whether it lands a shared/published shape or stays vendored per-repo.
+
 ## Related Pages
 
-- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows (~48 bundled skill dirs, 51 agents) at v2.33.3; discovered-skills-as-slash-commands added v2.33.0
+- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows; **crossed v2 → v3 major (v3.2.5, 2026-07-22)** with catalog contraction 104 → 73 components (confirmed downstream via [[fro-bot--systematic]]); discovered-skills-as-slash-commands added v2.33.0
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.13.1): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths

@@ -2,10 +2,11 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-07-12
+updated: 2026-07-31
 tags: [probot, github, repository-settings, automation, governance]
 related:
   - marcusrbrown--github
+  - marcusrbrown--dev-like
   - marcusrbrown--ha-config
   - marcusrbrown--esphome-life
   - bfra-me--github
@@ -44,6 +45,10 @@ This pulls defaults from the named file. The extending file only needs to declar
 ### marcusrbrown/esphome.life
 
 [[marcusrbrown--esphome-life]] uses the bare short-form `_extends: .github:common-settings.yaml`, which resolves to the **owner's** `.github` — i.e. `marcusrbrown/.github` (per the `_extends` rule above), _not_ the Fro Bot org template. Surveys before 2026-07-12 misattributed this to `fro-bot/.github`; the file has always written the un-prefixed `.github`. This is a caution that the `marcusrbrown/*` fleet is **not** uniform: some repos extend `fro-bot/.github` explicitly (ha-config), others inherit `marcusrbrown/.github` via the short-form. Verify the literal prefix in `settings.yml` before assuming which org template a repo inherits.
+
+### marcusrbrown/dev-like
+
+[[marcusrbrown--dev-like]] (survey 2026-07-31) uses the bare short-form `_extends: .github:common-settings.yaml`, resolving to the **owner's** `.github` (`marcusrbrown/.github`) per the `_extends` rule — same inheritance shape as esphome.life above. Its overrides declare `repository.{name, description, homepage, topics}` and a `main` branch-protection block with `required_status_checks` strict on `validate` + **`Fro Bot`**, `enforce_admins: true`, `required_pull_request_reviews: null`, `required_linear_history: true` — the checks-over-reviewers posture. Note the `Fro Bot` status check is required for merge, wiring the repo's own agent into the gate (the agent's `pr-review` mode produces it). Applied via an `update-repo-settings.yaml` workflow, landed alongside the repo's other onboarding (Renovate, Fro Bot) after its 2026-07-12 initial survey had none.
 
 ### fro-bot/.github (Org Template)
 

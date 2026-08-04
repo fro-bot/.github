@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/extend-vscode"
 created: 2026-04-18
-updated: 2026-07-13
+updated: 2026-08-02
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -43,6 +43,9 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: c322c419b6c3f50fd1515c022871e47ad4e4c35d
     accessed: 2026-07-13
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 9ecc7a554408716c714ab384240d623bf6cb6888
+    accessed: 2026-08-02
 tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
 aliases: [extend-vscode]
 related:
@@ -431,3 +434,36 @@ Confirmed dependency snapshot at HEAD (`c322c419`):
 Repo metadata: 2 stars, 1 watcher, not archived, not forked, public. `pushed_at` 2026-07-11 (the #466 autoclose branch cleanup; `main` HEAD commit is #514 at 2026-07-09). Open issues: 5 (#142 Uplift `vscode-bash`, #162 Dependency Dashboard, #317–#319 Advanced Testing Infrastructure Phases 3–5 — issue set unchanged across ~12 weeks of surveys). Open PRs: 1 — #508 (`pnpm` v11 [SECURITY], automerge). Note: with #466 closed, the repo now carries **zero pending majors** in the manifest; the only open change is the security automerge.
 
 The pin-exact devDependency policy holds: every entry in `package.json` is an exact version. Nine conditional exports confirmed in `package.json` (`.`, `./commands`, `./configuration`, `./webview`, `./treeView`, `./tasks`, `./statusBar`, `./telemetry`, `./utils`). Root now shows `release.config.mjs` (semantic-release config) and a top-level `types/` directory alongside the tracked `src/`, `test/`, `scripts/`. **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~12 weeks open across surveys). Six workflows present, unchanged: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`. Probot settings unchanged.
+
+### 2026-08-02 (SHA `9ecc7a55` from `c322c419`)
+
+Seven bumps merged between 2026-07-09 and 2026-07-28 (#515–#521). No security patch this cycle. No structural, architectural, or workflow changes — the toolkit holds its steady-state dependency drift.
+
+| PR | Date | Change |
+| --- | --- | --- |
+| #521 | 2026-07-27 | `@playwright/test` v1.61.0 → v1.62.0 |
+| #520 | 2026-07-23 | `eslint` v10.7.0 → v10.8.0 |
+| #519 | 2026-07-20 | `typescript-eslint` v8.64.0 → v8.65.0 |
+| #518 | 2026-07-16 | `actions/checkout` action → v6.1.0 |
+| #517 | 2026-07-14 | `typescript-eslint` v8.63.0 → v8.64.0 |
+| #516 | 2026-07-14 | `actions/setup-node` action → v6.5.0 |
+| #515 | 2026-07-09 | `eslint` v10.6.0 → v10.7.0 |
+
+**New tracked artifact: `CHANGELOG.md` is now committed at repo root** and listed in the `package.json` `files` array (`["CHANGELOG.md", "LICENSE.md", "README.md", "out/"]`), so it ships in the published package. The changelog is semantic-release-generated (Conventional Commits header) but currently carries only the `[0.1.0]` (2025-08-17) initial-release entry — no post-1.0 release has cut, consistent with the version pinned at `0.1.0` across every survey. This is a packaging-surface change, not a release event: the daemon wired the changelog into distribution ahead of the first automated release. `release.config.mjs` (noted 2026-07-13) remains the semantic-release config.
+
+**`pnpm` v11 (#508) still open** — the `[SECURITY]` + `automerge`-labeled major has now sat unmerged for ~5 weeks across three surveys (first flagged 2026-06-29). `packageManager` remains `pnpm@10.34.0`. A security-flagged automerge major stalled this long is almost certainly a failing gate, not a policy hold — the standing hypothesis (lockfile / `packageManager`-field lockstep mismatch, or a v11 engine constraint the CI runner doesn't satisfy) holds. Worth a human glance if it crosses the 6-week mark; Renovate won't autoclose a security PR the way it swept the TS v6 major (#466).
+
+Confirmed dependency snapshot at HEAD (`9ecc7a55`):
+
+- Runtime: pnpm 10.34.0, Node **24.18.0** (`.node-version`), VS Code engine `^1.102.0`
+- Core: `typescript` 5.9.3 (v6 still deferred post-#466 autoclose), `tsup` 8.5.1 (pinned), `vitest` 4.1.0, `@vitest/coverage-v8` 4.1.0, `@vitest/eslint-plugin` 1.6.1, `@vitest/ui` 4.1.0
+- Lint: `eslint` **10.8.0**, `typescript-eslint` **8.65.0**, `@bfra.me/eslint-config` 0.51.0, `@bfra.me/tsconfig` 0.13.0, `eslint-plugin-node-dependencies` 2.2.0, `eslint-plugin-no-only-tests` 3.4.0, `eslint-plugin-prettier` 5.5.0, `eslint-config-prettier` 10.1.1, `prettier` 3.9.0
+- VS Code tooling: `@types/vscode` 1.125.0, `@types/node` 24.13.2, `@vscode/vsce` 3.9.0, `@vscode/test-electron` 2.5.2, `@vscode/test-web` 0.0.67, `@vscode/test-cli` 0.0.10, `vscode-ext-gen` 1.6.0
+- Publishing: `semantic-release` 25.0.1, `semantic-release-vsce` 6.1.0, `ovsx` 0.10.5, `@semantic-release/changelog` 6.0.3, `@semantic-release/git` 10.0.1
+- Testing/build: `@playwright/test` **1.62.0**, `jsdom` 29.1.0, `type-fest` 5.8.0, `esbuild-plugin-polyfill-node` 0.3.0 (explicit web polyfill), `tsx` 4.23.0, `jiti` 2.7.0
+
+Two of the seven bumps this cycle (#516, #518) are GitHub Actions SHA updates (`actions/setup-node` v6.5.0, `actions/checkout` v6.1.0) — the SHA-pin-with-version-comment discipline holds, managed by Renovate. See [[github-actions-ci]].
+
+Repo metadata: 2 stars, 2 watchers, not archived, not forked, public. `pushed_at` 2026-07-28. Open issues: 5 (#142 Uplift `vscode-bash`, #162 Dependency Dashboard, #317–#319 Advanced Testing Infrastructure Phases 3–5 — issue set unchanged across ~15 weeks of surveys). Open PRs: 1 — #508 (`pnpm` v11 [SECURITY], automerge). Zero pending majors in the manifest.
+
+**Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~15 weeks open across surveys). The repo remains part of the Fro Bot-managed ecosystem via Probot (`.github/settings.yml` `_extends: .github:common-settings.yaml`), but has no `fro-bot.yaml` for automated PR review/triage. A follow-up draft PR to add the agent workflow should be proposed separately. Six workflows present, unchanged: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`. `.github/` also carries `copilot-instructions.md`, `renovate.json5`, and `settings.yml`.

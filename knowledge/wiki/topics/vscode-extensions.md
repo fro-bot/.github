@@ -2,7 +2,7 @@
 type: topic
 title: VS Code Extension Development
 created: 2026-04-18
-updated: 2026-06-29
+updated: 2026-08-02
 tags: [vscode, vscode-extension, typescript, extension-development]
 related:
   - marcusrbrown--extend-vscode

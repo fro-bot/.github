@@ -2,7 +2,7 @@
 type: entity
 title: ESPHome
 created: 2026-04-23
-updated: 2026-06-29
+updated: 2026-08-01
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -19,6 +19,9 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: 9e1618fb6fd30e0fb00e1548188bbd7a5a5aeda4
     accessed: 2026-06-29
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 08ca7a9e68a3d071068407e4504bff97f8ab3e43
+    accessed: 2026-08-01
 tags: [esphome, iot, esp32, firmware, home-assistant, bluetooth-proxy]
 aliases: [esphome, esphome-life]
 related:
@@ -44,13 +47,13 @@ ESPHome is an open-source framework for configuring and building custom firmware
 
 - **Package-based device configs** — Thin per-device YAML files pull shared configuration from `packages/` via `github://` imports
 - **Ethernet-only devices** — All devices use wired Ethernet (LAN8720, ESP-IDF framework), no Wi-Fi — notable for Bluetooth Proxy reliability
-- **CI build matrix** — Firmware builds triggered on push/PR via `esphome/build-action@v7.3.0` with ESPHome 2025.12.7 (as of 2026-06-07; bumped from v7.2.0 on 2026-05-26)
+- **CI build matrix** — Firmware builds triggered on push/PR via `esphome/build-action@v7.4.0` with ESPHome 2025.12.7 (as of 2026-08-01; the action bumped v7.3.0 → v7.4.0 by 2026-07-16, while the ESPHome runtime pin stayed frozen)
 - **GitHub Pages distribution** — Jekyll site with ESP Web Tools install button, `manifest.json` generated from CI build artifacts
 - **Devcontainer** — VS Code devcontainer using `ptr727/esphome-nonroot:2025.12.7` Docker image with ESPHome dashboard
 
 ## Version Pinning
 
-ESPHome version is pinned across CI and devcontainer (currently 2025.12.7, unchanged across seven surveys spanning 2026-04 → 2026-06-29). The Renovate configuration tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types — but no major/minor bumps have arrived since at least early March 2026, which is a remarkably quiet stretch for an actively-developed framework. Renovate keeps the surrounding dependency stack (`bfra-me/.github`, preset, Prettier) current weekly, yet the ESPHome pin never moves — strong evidence the loose versioning + `separateMajorMinor: false` config is suppressing the 2026.x bumps rather than Renovate simply not running. The upstream ESPHome project has continued releasing (2026.x series).
+ESPHome version is pinned across CI and devcontainer (currently 2025.12.7, unchanged across nine surveys spanning 2026-04 → 2026-08-01, ~4.6 months). The Renovate configuration tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with loose versioning and semantic commit types — but no major/minor bumps have arrived since at least early March 2026, which is a remarkably quiet stretch for an actively-developed framework. Renovate keeps the surrounding dependency stack (`bfra-me/.github`, preset, Prettier) current weekly, yet the ESPHome pin never moves — strong evidence the loose versioning + `separateMajorMinor: false` config is suppressing the 2026.x bumps rather than Renovate simply not running. Reinforcing this read: on 2026-08-01 the *tooling* around ESPHome finally advanced — `esphome/build-action` bumped v7.3.0 → v7.4.0 — while the ESPHome runtime version it builds stayed frozen. Renovate is clearly reaching this repo; the `depName=esphome/esphome versioning=loose` datasource comment on the pinned `version:` is what holds the runtime still. The upstream ESPHome project has continued releasing (2026.x series).
 
 ## External Links
 

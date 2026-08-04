@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/.dotfiles"
 created: 2026-04-18
-updated: 2026-07-10
+updated: 2026-07-27
 sources:
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: 2f2d1e6ac04999c5e61ee054fc585d9542cd3a74
@@ -28,7 +28,10 @@ sources:
   - url: https://github.com/marcusrbrown/.dotfiles
     sha: e8ebc5cc3736d0c6f9d21a574687457dfd4edbb6
     accessed: 2026-07-10
-tags: [dotfiles, configuration, zsh, bash, mise, sheldon, starship, devcontainer, bare-git-repo, opencode, magic-context, copilot-cli, systematic, gitleaks, kimi-k2, harness, opencode-doctor, sqlite-maintenance, deepseek, ollama-distill]
+  - url: https://github.com/marcusrbrown/.dotfiles
+    sha: cd03ad8b96fd6118bb782844ce27e6c703740857
+    accessed: 2026-07-27
+tags: [dotfiles, configuration, zsh, bash, mise, sheldon, starship, devcontainer, bare-git-repo, opencode, magic-context, copilot-cli, systematic, gitleaks, kimi-k2, harness, opencode-doctor, sqlite-maintenance, deepseek, ollama-distill, oh-my-opencode-slim, openai-auth]
 aliases: [dotfiles]
 related:
   - marcusrbrown--ha-config
@@ -45,12 +48,12 @@ Marcus R. Brown's [[dotfiles]] repository. Uses a **bare git repository** patter
 - **Purpose:** Synchronize shell configuration and dev environment across machines
 - **Default branch:** `main`
 - **Created:** 2011-06-09
-- **Last push:** 2026-07-10
-- **License:** _Still undetectable (2026-07-10, SHA `e8ebc5c`):_ the GitHub License API continues to return `null` (`licenseInfo: null`) and no `LICENSE`/`UNLICENSE` file appears in the tree. This is now the **third consecutive survey** with no machine-detectable license (first flagged SHA `4df0c2d`, 2026-06-16). Prior surveys through SHA `70c211bc` (2026-06-06) recorded **The Unlicense (public domain)**. Treat license status as **unspecified**.
+- **Last push:** 2026-07-27
+- **License:** _Still undetectable (2026-07-27, SHA `cd03ad8`):_ the GitHub License API continues to return `null` (`license: null`) and no `LICENSE`/`UNLICENSE` file appears in the tree. This is now the **fourth consecutive survey** with no machine-detectable license (first flagged SHA `4df0c2d`, 2026-06-16). Prior surveys through SHA `70c211bc` (2026-06-06) recorded **The Unlicense (public domain)**. Treat license status as **unspecified**.
 - **Topics:** `dotfiles`, `configuration`, `settings`, `preferences`, `zsh`, `sheldon`, `mise`, `starship`
 - **Languages:** TypeScript (primary by size), Shell, Vim Script, Ruby, JavaScript
-- **Open issues:** 6 (unchanged @ 2026-06-27)
-- **Stars:** 20 (unchanged @ 2026-06-27)
+- **Open issues:** 5 (@ 2026-07-27; was 6 @ 2026-07-10)
+- **Stars:** 20 (unchanged @ 2026-07-27)
 
 ## Repository Architecture
 
@@ -99,42 +102,44 @@ Supports both Bash and Zsh. XDG-compliant — all configs live under `~/.config/
 
 ### Tool Stack (via [[mise]])
 
-Managed tool versions in `.config/mise/config.toml` (as of SHA `e8ebc5c`, 2026-07-10):
+Managed tool versions in `.config/mise/config.toml` (as of SHA `cd03ad8`, 2026-07-27):
 
 | Tool                          | Version       | Notes                                                     |
 | ----------------------------- | ------------- | --------------------------------------------------------- |
 | node                          | 24.18.0       | Primary JS runtime                                        |
 | python                        | 3.14.6        |                                                           |
-| rust                          | 1.97.0        | Bumped from 1.96.0                                        |
-| go                            | 1.26.5        | Bumped from 1.26.4                                        |
+| rust                          | 1.97.1        | Bumped from 1.97.0                                        |
+| go                            | 1.26.5        |                                                           |
 | bun                           | 1.3.14        | Used for npm package installs (`settings.npm.bun = true`) |
-| deno                          | 2.9.2         | Bumped from 2.9.0                                         |
+| deno                          | 2.9.4         | Bumped from 2.9.2                                         |
 | zig                           | 0.15.2        | With ZLS 0.16.0                                           |
-| pnpm                          | 11.10.0       | Bumped from 11.9.0                                        |
-| npm                           | 11.18.0       | Bumped from 11.17.0                                       |
-| prettier                      | 3.9.4 (npm)   | With `@bfra.me/prettier-config` 0.16.9; bumped from 3.8.4 |
-| opencode-ai                   | 1.17.12 (npm) | Renovate updates disabled (manual); bumped from 1.17.4    |
-| @fro.bot/harness              | 1.17.14-harness.e98fbc0f (npm) | Patched-OpenCode CLI from [[fro-bot--agent]]; bumped from `1.17.9-harness.bd89c818`. Tracks the agent's current harness base `1.17.14` |
-| ast-grep                      | 0.43.0        | AST-aware search/replace                                  |
+| pnpm                          | 11.17.0       | Bumped from 11.10.0                                       |
+| npm                           | 11.18.0       |                                                           |
+| prettier                      | 3.9.6 (npm)   | With `@bfra.me/prettier-config` 0.16.9; bumped from 3.9.4 |
+| opencode-ai                   | 1.18.5 (npm)  | Renovate updates disabled (manual); bumped from 1.17.12   |
+| @fro.bot/harness              | 1.18.5-harness.3a55d7d2 (npm) | Patched-OpenCode CLI from [[fro-bot--agent]]; bumped from `1.17.14-harness.e98fbc0f`. Now tracks harness base `1.18.5` — realigned with stock `opencode-ai@1.18.5` |
+| ast-grep                      | 0.44.1        | AST-aware search/replace; bumped from 0.43.0              |
 | typescript                    | 6.0.3 (npm)   |                                                           |
 | playwright                    | 1.61.1 (npm)  |                                                           |
-| puppeteer                     | 25.3.0 (npm)  | Browser automation; bumped from 25.2.0                    |
-| agent-browser                 | 0.31.1 (npm)  | Browser automation CLI for agents; bumped from 0.29.1     |
-| skills                        | 1.5.15 (npm)  | Agent skills package; bumped from 1.5.13                  |
+| puppeteer                     | 25.3.0 (npm)  | Browser automation                                        |
+| agent-browser                 | 0.33.0 (npm)  | Browser automation CLI for agents; bumped from 0.31.1     |
+| skills                        | 1.5.20 (npm)  | Agent skills package; bumped from 1.5.15                  |
 | ocx                           | 2.0.11 (npm)  | OpenCode extension runner                                 |
-| @github/copilot               | 1.0.68 (npm)  | GitHub Copilot CLI; bumped from 1.0.64                    |
+| @github/copilot               | 1.0.74 (npm)  | GitHub Copilot CLI; bumped from 1.0.68                    |
 | @marcusrbrown/infra           | latest (npm)  | Personal infra CLI                                        |
-| @biomejs/biome                | 2.5.2 (npm)   | Bumped from 2.5.1                                         |
+| @biomejs/biome                | 2.5.5 (npm)   | Bumped from 2.5.2                                         |
 | vibe-tools                    | 0.63.3 (npm)  | Vibe coding tools                                         |
-| @anthropic-ai/claude-code     | 2.1.128 (npm) | Renovate updates disabled; bumped from 2.1.112            |
+| @anthropic-ai/claude-code     | 2.1.163 (npm) | Renovate updates disabled; bumped from 2.1.128            |
 | shfmt (aqua:mvdan/sh)         | 3.13.1        | Shell formatter                                           |
 | gitleaks (aqua:gitleaks)      | 8.30.1        | Secret scanner                                            |
-| cargo-binstall                | 1.20.1        | Cargo binary installer                                    |
-| tsx                           | 4.23.0 (npm)  | TypeScript execution; bumped from 4.22.4                  |
+| cargo-binstall                | 1.21.1        | Cargo binary installer; bumped from 1.20.1                |
+| tsx                           | 4.23.1 (npm)  | TypeScript execution; bumped from 4.23.0                  |
 | rimraf                        | 6.1.3 (npm)   | Deep deletion utility                                     |
-| pyright                       | 1.1.411 (npm) | Python type checker; bumped from 1.1.410                  |
+| pyright                       | 1.1.411 (npm) | Python type checker                                       |
 | typescript-language-server    | 5.3.0 (npm)   | TypeScript language server                                |
 | pipx:poetry                   | 2.4.1         | Python packaging                                          |
+
+**Harness/OpenCode realignment (SHA `cd03ad8`, surveyed 2026-07-27):** `@fro.bot/harness` advanced `1.17.14-harness.e98fbc0f` → `1.18.5-harness.3a55d7d2` and stock `opencode-ai` jumped `1.17.12` → `1.18.5`. The two are back in lockstep on the same base version (`1.18.5`) — the one-minor drift noted at 2026-07-10 (harness base `1.17.14` vs stock `1.17.12`) is closed. `@anthropic-ai/claude-code` continues its manual climb to `2.1.163`.
 
 **Harness bump (SHA `e8ebc5c`, surveyed 2026-07-10):** `@fro.bot/harness` advanced `1.17.9-harness.bd89c818` → `1.17.14-harness.e98fbc0f`, continuing to track the [[fro-bot--agent]] harness base rebase (now `1.17.14`). The mise pin still mirrors the patched-OpenCode CLI the agent runtime runs, though stock `opencode-ai` (1.17.12) now sits one minor behind the harness base line.
 
@@ -281,17 +286,24 @@ The repo includes configuration for multiple AI coding agents:
 - **OpenCode** (`.config/opencode/`): Has its own `AGENTS.md`, plus `agents/`, `commands/`, `scripts/`, `skills/`, `profiles/`, `ocx.jsonc`
 - **AGENTS.md** at repo root: Comprehensive project knowledge base for AI agents; refreshed at `90742fb` via `/init-deep`
 
-#### OpenCode Plugin Ecosystem (as of SHA `e8ebc5c`, 2026-07-10)
+#### OpenCode Plugin Ecosystem (as of SHA `cd03ad8`, 2026-07-27)
 
 OpenCode plugins are pinned by version directly in `.config/opencode/opencode.json` (managed by a Renovate custom manager that matches `"name@x.y.z"` patterns inside `opencode.json` / `tui.json`):
 
 | Plugin | Version | Purpose |
 | --- | --- | --- |
-| `@cortexkit/opencode-anthropic-auth` | 1.13.0 | Anthropic auth provider — upstream cortexkit package; bumped from 1.10.3 |
-| `oh-my-opencode-slim` | 1.1.2 | Slimmed multi-agent routing layer |
-| `@cortexkit/opencode-magic-context` | 0.31.5 | Adaptive context management; bumped from 0.26.0 |
-| `@cortexkit/aft-opencode` | 0.46.0 | AFT (Adaptive Fine-Tuning) OpenCode plugin; bumped from 0.39.4 |
-| `@fro.bot/systematic` | 2.33.2 | Systematic skills + agents; bumped from 2.32.1 (see [[marcusrbrown--systematic]]) |
+| `@cortexkit/opencode-anthropic-auth` | 1.18.0 | Anthropic auth provider — upstream cortexkit package; bumped from 1.13.0 |
+| `@cortexkit/opencode-openai-auth` | 0.4.3 | **New** — OpenAI auth provider (upstream cortexkit); pairs the Anthropic auth plugin |
+| `oh-my-opencode-slim` | 2.2.8 | Slimmed multi-agent routing layer; **major bump 1.1.2 → 2.2.8** |
+| `@cortexkit/opencode-magic-context` | 0.33.0 | Adaptive context management; bumped from 0.31.5 |
+| `@cortexkit/aft-opencode` | 0.48.1 | AFT (Adaptive Fine-Tuning) OpenCode plugin; bumped from 0.46.0 |
+| `@fro.bot/systematic` | 3.3.0 | Systematic skills + agents; **major bump 2.33.2 → 3.3.0** (see [[marcusrbrown--systematic]]) |
+
+**New OpenAI auth plugin added (SHA `cd03ad8`, 2026-07-27):** `@cortexkit/opencode-openai-auth@0.4.3` joined the `plugin` array alongside the existing Anthropic auth plugin. Both auth providers now come from the upstream cortexkit line — consistent with the OMO-slim active preset flip to `openai` (below), which routes most agents through `openai/gpt-5.6-*` models that need first-class OpenAI auth. Marcus's own fork `@marcusrbrown/opencode-anthropic-auth` remains unreferenced (fourth consecutive survey).
+
+**Two major plugin bumps (SHA `cd03ad8`, 2026-07-27):** `oh-my-opencode-slim` crossed the **v1 → v2** boundary (1.1.2 → 2.2.8) and `@fro.bot/systematic` crossed the **v2 → v3** boundary (2.33.2 → 3.3.0). The `systematic.jsonc` schema tracks the v3 line (`schemas/v3/systematic-config.schema.json`). The final commit in this window (`cd03ad8`, PR #2191) was the systematic 3.2.8 → 3.3.0 bump alone; the v2→v3 crossing and the slim v2 landed earlier in the survey window.
+
+**MCP set holds at three remote servers (SHA `cd03ad8`, 2026-07-27):** `context7`, `grep_app`, `websearch` (Exa). `tavily` remains removed. Config still adds `"snapshot": false` to the top level (new since 2026-07-10) alongside `compaction.auto/prune: false`, `experimental.openTelemetry: false`, `lsp: true`. The top-level default `"model"` key is still absent — routing stays delegated to OMO-slim presets.
 
 **`opencode-copilot-delegate` dropped from headless `opencode.json` (SHA `e8ebc5c`, 2026-07-10):** The `plugin` array no longer lists `opencode-copilot-delegate@0.12.0`. It was present in both `opencode.json` and `tui.json` at SHA `debcb8e`; it is absent from `opencode.json` here. Copilot-CLI delegation now flows through the repo-scoped `copilot-cli` skill and the new `copilot-cloud-agent` skill rather than a loaded plugin. See [[marcusrbrown--opencode-copilot-delegate]] — the sibling repo still exists, but this repo no longer wires it as a headless plugin.
 
@@ -310,7 +322,8 @@ OpenCode plugins are pinned by version directly in `.config/opencode/opencode.js
 **Config files in `.config/opencode/` (SHA `e8ebc5c`, 2026-07-10):**
 - `aft.jsonc` — **removed.** The dedicated AFT config file (documented through 2026-06-27 with `restrict_to_project_root: false`, `search_index`/`semantic_search: false`, `bridge.hang_threshold`) is gone (404). `@cortexkit/aft-opencode@0.46.0` now runs on plugin defaults.
 - `magic-context.jsonc` — **removed.** The extensive per-model historian/dreamer/cache-TTL/threshold config (documented in detail below through 2026-06-27) is gone (404). `@cortexkit/opencode-magic-context@0.31.5` now runs on plugin defaults. This is a material simplification: two of the most heavily tuned config surfaces in the repo were deleted in one window, deferring behavior to upstream plugin defaults.
-- `systematic.jsonc` — Systematic skills configuration file. **Expanded (SHA `e8ebc5c`):** now carries a `categories` block (design → `github-copilot/gemini-3.5-flash`, docs → `opencode-go/kimi-k2.7-code`, document-review → `github-copilot/gpt-5.4-mini`, research → `opencode-go/minimax-m3`, review → `opencode-go/deepseek-v4-flash`) and an `agents` block (repo-research-analyst → `opencode-go/minimax-m3`, spec-flow-analyzer → `github-copilot/gemini-3.5-flash`, systematic-implementer → `anthropic/claude-sonnet-5` temp 0.1). Systematic model routing is now declared here, filling the config gap left by the magic-context/aft deletions.
+- `systematic.jsonc` — Systematic skills configuration file. **Retuned to the v3 schema (SHA `cd03ad8`, 2026-07-27):** `$schema` now points at `schemas/v3/systematic-config.schema.json`, tracking the `@fro.bot/systematic@3.3.0` major. The `categories` block slimmed to four (design → `github-copilot/gemini-3.5-flash`, document-review → `github-copilot/gpt-5.4-mini` variant low, research → `github-copilot/gpt-5.4-mini` variant low, review → `openai/gpt-5.5` variant low) — the `docs` category and the `opencode-go/*` routing recorded at 2026-07-10 are gone. `agents`: repo-research-analyst → `github-copilot/gpt-5.4-mini`, spec-flow-analyzer → `github-copilot/gemini-3.5-flash`, **systematic-implementer → `openai/gpt-5.6-luna` (variant xhigh, temp 0.1)** — migrated off `anthropic/claude-sonnet-5`. Routing consolidated onto Copilot + the new `gpt-5.6` OpenAI line.
+  - _Prior (SHA `e8ebc5c`, 2026-07-10):_ five categories (design → gemini-3.5-flash, docs → `opencode-go/kimi-k2.7-code`, document-review → gpt-5.4-mini, research → `opencode-go/minimax-m3`, review → `opencode-go/deepseek-v4-flash`); agents repo-research-analyst → `opencode-go/minimax-m3`, spec-flow-analyzer → gemini-3.5-flash, systematic-implementer → `anthropic/claude-sonnet-5` temp 0.1.
 
 **`tui.json` reduced to theme-only (SHA `e8ebc5c`, 2026-07-10):** `tui.json` no longer carries a `plugin` array. It is now `{ "theme": "catppuccin" }` and nothing else. The separate TUI plugin stack documented through 2026-06-27 (slim/magic-context/aft/copilot-delegate) is gone — the TUI now inherits the single `opencode.json` plugin set instead of maintaining a divergent list.
 
@@ -355,13 +368,38 @@ The `opencode-magic-context` plugin (0.22.4) provides adaptive context compactio
 
 **Earlier delta (SHA `ae026c1`):** Historian migrated from `github-copilot/gpt-5.4` to `openai/gpt-5.5-fast`. Dreamer reverted to direct Anthropic model. Sidekick disabled outright. Plugin version 0.13.0 → 0.21.8.
 
-#### oh-my-opencode-slim Routing (SHA `e8ebc5c`, 2026-07-10)
+#### oh-my-opencode-slim Routing (SHA `cd03ad8`, 2026-07-27)
 
-Config at `.config/opencode/oh-my-opencode-slim.jsonc` (plugin 1.1.2). Active preset: **`mixed`**. Still 4 named presets (`openai`, `opencode-go`, `copilot`, `mixed`). The `designer`/`fixer` skill triple `["agent-browser", "impeccable", "systematic:*"]` is unchanged across all presets.
+Config at `.config/opencode/oh-my-opencode-slim.jsonc` (plugin **2.2.8**, major bump from 1.1.2). **Active preset flipped `mixed` → `openai`** — the first non-`mixed` default since the slim config landed. Preset roster reshuffled: the `copilot` preset was **dropped**, a new **`mixed-fable`** preset was added (`anthropic/claude-fable-5` orchestrator), leaving five presets: `openai` (active), `opencode-go`, `mixed`, `mixed-fable`. The `designer`/`fixer` skill triple `["agent-browser", "impeccable", "systematic:*"]` is unchanged across presets.
+
+**New `gpt-5.6-*` model line (SHA `cd03ad8`, 2026-07-27):** OpenAI routing migrated onto the **`gpt-5.6`** family — `openai/gpt-5.6-sol` (orchestrator/oracle/council), `openai/gpt-5.6-luna` (librarian/explorer/fixer), `openai/gpt-5.6-terra` (council gamma). This supersedes the `gpt-5.5` / `gpt-5.4-mini` assignments recorded through 2026-07-10. The active `openai` preset now runs an `openai/gpt-5.6-sol` orchestrator (`variant: medium`) with an `anthropic/claude-sonnet-5` oracle (`variant: max`) — a cross-provider default that keeps the strongest reasoning model on the oracle seat.
+
+**v2 config-shape additions (SHA `cd03ad8`, 2026-07-27):**
+- **`agents.fast-generic`** — a new top-level custom agent on `openai/gpt-5.3-codex-spark` (`variant: low`) for routine mechanical command work (git status/diff/log recon, normal commits, no-edit validation like lint/typecheck/tests). Its prompt hard-bans destructive git history ops (amend, rebase, `reset --hard`, `clean`, force-push, branch deletion) unless explicitly requested — a guardrailed delegation target.
+- **`council` block** now lives inside the slim config with a schema-driven `presets.default` (alpha `anthropic/claude-opus-4-8` variant high, beta `github-copilot/gemini-3.5-flash` variant high, gamma `openai/gpt-5.6-terra` variant xhigh).
+- **`backgroundJobs.continueOnIdle: false`** — background subagents do not auto-continue on idle.
+
+**Active `openai` preset agent assignments (SHA `cd03ad8`, 2026-07-27):**
+
+| Agent | Model | Notes |
+| --- | --- | --- |
+| orchestrator | `openai/gpt-5.6-sol` | `variant: medium`; all skills + MCPs except context7/grep_app/websearch |
+| oracle | `anthropic/claude-sonnet-5` | `variant: max`; skills `ce:brainstorm` + `simplify` only |
+| council | `openai/gpt-5.6-sol` | Council routing |
+| librarian | `openai/gpt-5.6-luna` | `variant: low`; web search MCPs (websearch, context7, grep_app) |
+| explorer | `openai/gpt-5.6-luna` | `variant: low`; no skills/MCPs |
+| designer | `github-copilot/gemini-3.5-flash` | `agent-browser` + `impeccable` + systematic skills |
+| fixer | `openai/gpt-5.6-luna` | `variant: xhigh`; `agent-browser` + `impeccable` + systematic skills |
+
+**`opencode-go` preset (SHA `cd03ad8`):** unchanged shape — `opencode-go/kimi-k2.6` orchestrator, `deepseek-v4-pro` oracle/council, `minimax-m3` librarian/explorer, `kimi-k2.6` designer, `deepseek-v4-flash` fixer.
+
+#### Historical oh-my-opencode-slim Routing (SHA `e8ebc5c`, 2026-07-10) — superseded
+
+Config was plugin 1.1.2, active preset **`mixed`** (4 presets: `openai`, `opencode-go`, `copilot`, `mixed`). The `designer`/`fixer` skill triple `["agent-browser", "impeccable", "systematic:*"]` was unchanged across all presets. Superseded by the v2 config above.
 
 **Model migration to the `claude-*-5` / `gemini-3.5-flash` line (SHA `e8ebc5c`, 2026-07-10):** Anthropic Sonnet references moved off `claude-sonnet-4-6` onto **`claude-sonnet-5`** (fixer + council alpha), and `designer` moved off `github-copilot/gemini-3.1-pro-preview` onto **`github-copilot/gemini-3.5-flash`** across presets. The `mixed` orchestrator gained an explicit **`variant: xhigh`** (was unmarked). Fixer also gained `variant: low`.
 
-**Active `mixed` preset agent assignments:**
+**Active `mixed` preset agent assignments (2026-07-10 — superseded by the `openai` preset above):**
 
 | Agent | Model | Notes |
 | --- | --- | --- |
@@ -373,7 +411,7 @@ Config at `.config/opencode/oh-my-opencode-slim.jsonc` (plugin 1.1.2). Active pr
 | designer | `github-copilot/gemini-3.5-flash` | `agent-browser` + `impeccable` + systematic skills; migrated off gemini-3.1-pro-preview |
 | fixer | `anthropic/claude-sonnet-5` | `variant: low` (new); migrated off claude-sonnet-4-6 |
 
-**Council default preset members:**
+**Council default preset members (2026-07-10 — superseded by the schema-driven council block above):**
 - alpha: `anthropic/claude-sonnet-5` (was `claude-sonnet-4-6`)
 - beta: `github-copilot/gemini-3.1-pro-preview`
 - gamma: `openai/gpt-5.4-mini`
@@ -525,7 +563,7 @@ Required status checks on `main`: Devcontainer CI, Fro Bot, Install mise, Renova
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.84.3` (SHA `0779a294996c60abb08f017e6df608e87ef2f272`) — single-file three-mode pattern shared with [[marcusrbrown--marcusrbrown-github-io]] et al. Bumped v0.79.1 → v0.84.3 across this survey window (see [[fro-bot--agent]]); the workflow reads its model from the `FRO_BOT_MODEL` repo variable. `actions/checkout` pinned at v6.0.3 (`df4cb1c`). The repo continues to ride interim agent releases and leads the ecosystem on agent version.
+**Fro Bot workflow present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.95.0` (SHA `4ad00541cd9e4f1853f9dcd1fb2ac316d559d54f`) — single-file three-mode pattern shared with [[marcusrbrown--marcusrbrown-github-io]] et al. Bumped v0.84.3 → v0.95.0 across this survey window (see [[fro-bot--agent]]); the workflow reads its model from the `FRO_BOT_MODEL` repo variable. `actions/checkout` bumped to v7.0.1 (`3d3c42e`, was v6.0.3). The repo continues to ride interim agent releases and leads the ecosystem on agent version.
 
 Triggers: PR events (opened, synchronize, reopened, ready_for_review, review_requested), `issues` (opened, edited), `issue_comment`, `pull_request_review_comment`, daily schedule (15:30 UTC), `workflow_dispatch` with a required `prompt` input.
 
@@ -576,11 +614,11 @@ Extends `fro-bot/.github:common-settings.yaml`. Confirms membership in the Fro B
 ## Cross-References
 
 - Shares [[mise]] tooling and Renovate config patterns with [[marcusrbrown--ha-config]]
-- Consumes [[marcusrbrown--systematic]] as `@fro.bot/systematic@2.33.2` via OpenCode plugin slot (was 2.32.1)
-- Consumes [[fro-bot--agent]] both as the `fro-bot/agent@v0.84.3` workflow action and as the `@fro.bot/harness@1.17.14-harness.e98fbc0f` CLI build pinned in mise (harness base rebased to `1.17.14`)
+- Consumes [[marcusrbrown--systematic]] as `@fro.bot/systematic@3.3.0` via OpenCode plugin slot (major bump from 2.33.2; v3 schema in `systematic.jsonc`)
+- Consumes [[fro-bot--agent]] both as the `fro-bot/agent@v0.95.0` workflow action and as the `@fro.bot/harness@1.18.5-harness.3a55d7d2` CLI build pinned in mise (harness base realigned to `1.18.5`, in lockstep with stock `opencode-ai@1.18.5`)
 - [[marcusrbrown--opencode-copilot-delegate]] **no longer consumed as a headless OpenCode plugin** (dropped from `opencode.json`/`tui.json` @ 2026-07-10); Copilot delegation now flows through the `copilot-cli` / `copilot-cloud-agent` skills
-- Anthropic auth: steady on upstream `@cortexkit/opencode-anthropic-auth@1.13.0` (was 1.10.3 @ 2026-06-27); Marcus's fork [[marcusrbrown--cortexkit-anthropic-auth]] remains unconsumed here across three surveys
-- Shares the `impeccable` design-lint skill with [[fro-bot--dashboard]] (dotfiles wires it into OMO-slim `designer`/`fixer` agents; dashboard runs it as a CI Design Check)
+- Anthropic auth: on upstream `@cortexkit/opencode-anthropic-auth@1.18.0` (was 1.13.0 @ 2026-07-10); Marcus's fork [[marcusrbrown--cortexkit-anthropic-auth]] remains unconsumed here across four surveys. A companion `@cortexkit/opencode-openai-auth@0.4.3` plugin was **added** @ 2026-07-27 to back the OpenAI-heavy `openai` preset flip
+- Shares the `impeccable` design-lint skill with [[fro-bot--dashboard]] (dotfiles wires it into OMO-slim `designer`/`fixer` agents; dashboard, as of its 2026-07-23 survey, now vendors the same skill in-repo at `.agents/skills/impeccable/` plus an Impeccable OpenCode plugin at `.opencode/impeccable/`, alongside its CI Design Check)
 - Tracks [[marcusrbrown--renovate-config]] at v5.2.0 (v4→v5 boundary crossed)
 - Both repos extend `fro-bot/.github:common-settings.yaml` for Probot settings
 - Both repos use reusable workflows from `bfra-me/.github`
@@ -597,4 +635,5 @@ Extends `fro-bot/.github:common-settings.yaml`. Confirms membership in the Fro B
 | 2026-06-06 | `70c211bc` | Agent v0.44.3 → v0.55.1 (18 version jumps in 71 commits), auth plugin switched to `@marcusrbrown/opencode-anthropic-auth@1.2.5-mb.3` (own fork), default model `opencode-go/kimi-k2.6` declared, `oh-my-opencode-slim` 4-preset config with active `mixed` preset (Opus 4-8 orchestrator), Discord MCP added (disabled), `aft.jsonc` + `systematic.jsonc` config files added, general/explore agents disabled, `ce` skill removed from slim presets, Renovate semver + cross-series prerelease support, magic-context 0.21.8 → 0.22.4 (temporal_awareness, system_prompt_injection) |
 | 2026-06-16 | `4df0c2d` | Agent v0.55.1 → v0.65.0; `@fro.bot/harness@1.17.6-harness.13169873` added to mise (harness-as-default cutover mirror); **auth plugin reverted** to upstream `@cortexkit/opencode-anthropic-auth@1.9.2` (fork dropped — contradiction noted); **license now undetectable** (API 404, no LICENSE file — was The Unlicense); Discord MCP + inline custom `openai/gpt-5.5[-fast]` provider models removed from `opencode.json`; magic-context 0.22.4 → 0.24.1 (claude-fable-5 cache TTL), aft 0.35.4 → 0.39.2 (`bridge.hang_threshold`), systematic 2.28.0 → 2.32.0, slim 1.1.1 → 1.1.2 (mixed preset librarian → `github-copilot/gpt-5.4-mini`); `.agents/skills/` pruned to `copilot-cli` only; tool bumps (pnpm 11.6.0, npm 11.17.0, python 3.14.6, biome 2.5.0, opencode-ai 1.17.4) |
 | 2026-06-27 | `debcb8e` | Agent v0.65.0 → v0.79.1 (14 minors, web-operator wave); `@fro.bot/harness` 1.17.6 → 1.17.9-harness.bd89c818 (aligns with agent base rebase); **license still undetectable** (2nd consecutive survey, `licenseInfo: null`); **opencode-doctor gains SQLite DB prune+VACUUM + `--set-incremental-vacuum`** (fixes ~13 GB session-DB bloat); magic-context 0.24.1 → 0.26.0 with **historian → `opencode-go/deepseek-v4-flash`** (gpt-5.5 demoted to fallback); AFT `search_index`/`semantic_search` disabled + `embedding.provider: off`; OMO-slim `designer`/`fixer` standardized on `agent-browser`+`impeccable`+systematic skills; auth 1.9.2 → 1.10.3, aft 0.39.2 → 0.39.4, systematic 2.32.0 → 2.32.1; new bash OpenCode env toggles (`OPENCODE_DISABLE_FFF=1`, `OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true`); `mise-action@v4.2.0`/`MISE_VERSION 2026.6.14`; tool bumps (node 24.18, pnpm 11.9, deno 2.9, biome 2.5.1, agent-browser 0.29.1, copilot 1.0.64); stars 18 → 20, open issues 4 → 6 |
+| 2026-07-27 | `cd03ad8` | Agent v0.84.3 → v0.95.0; `actions/checkout` v6.0.3 → v7.0.1; `@fro.bot/harness` 1.17.14 → **1.18.5-harness.3a55d7d2** and stock `opencode-ai` 1.17.12 → 1.18.5 (**realigned in lockstep on base 1.18.5**); **license still undetectable** (4th consecutive survey); **`oh-my-opencode-slim` v1→v2 major** (1.1.2 → 2.2.8) — **active preset flipped `mixed` → `openai`**, `copilot` preset dropped, new `mixed-fable` preset added; new **`openai/gpt-5.6-*` model line** (sol/luna/terra) + `gpt-5.3-codex-spark`; new top-level `agents.fast-generic` mechanical agent; council block moved into slim config; `backgroundJobs.continueOnIdle: false`; **`@fro.bot/systematic` v2→v3 major** (2.33.2 → 3.3.0), `systematic.jsonc` retuned to v3 schema (4 categories, systematic-implementer → `openai/gpt-5.6-luna`); **new `@cortexkit/opencode-openai-auth@0.4.3` plugin**; auth 1.13.0 → 1.18.0, magic-context 0.31.5 → 0.33.0, aft 0.46.0 → 0.48.1; `opencode.json` gained `"snapshot": false`; tool bumps (rust 1.97.1, deno 2.9.4, pnpm 11.17.0, ast-grep 0.44.1, biome 2.5.5, prettier 3.9.6, cargo-binstall 1.21.1, agent-browser 0.33.0, skills 1.5.20, copilot 1.0.74, claude-code 2.1.163, tsx 4.23.1); stars 20 (unchanged), open issues 6 → 5 |
 | 2026-07-10 | `e8ebc5c` | Agent v0.79.1 → v0.84.3; `@fro.bot/harness` 1.17.9 → 1.17.14-harness.e98fbc0f; **license still undetectable** (3rd consecutive survey); **`magic-context.jsonc` and `aft.jsonc` config files deleted** — both plugins now run on defaults; `tui.json` reduced to theme-only (plugin array dropped); `opencode.json` **default `"model": opencode-go/kimi-k2.6` removed** (routing deferred to OMO-slim presets); **`tavily` MCP removed** (4→3 servers; websearch Exa moved key/tools to URL query — OMO librarian tavily ref now stale); **`opencode-copilot-delegate` plugin dropped** from opencode.json/tui.json; auth 1.10.3 → 1.13.0, magic-context 0.26.0 → 0.31.5, aft 0.39.4 → 0.46.0, systematic 2.32.1 → 2.33.2; OMO-slim models migrated to `claude-sonnet-5` / `gemini-3.5-flash`, mixed orchestrator `variant: xhigh`; `systematic.jsonc` gained categories + agents model routing; **new `ollama-distill` local-LLM session-distillation pipeline** (`distill` mise task); 6 new repo-scoped OpenCode skills (clonedeps, codemap, content-research-writer, copilot-cloud-agent, file-organizer, simplify) + `research` subagent; devcontainer base 2.1.7 → 2.1.9; `MISE_VERSION 2026.7.5`; tool bumps (rust 1.97, go 1.26.5, pnpm 11.10, npm 11.18, deno 2.9.2, prettier 3.9.4, biome 2.5.2, opencode-ai 1.17.12, claude-code 2.1.128, agent-browser 0.31.1, copilot 1.0.68, puppeteer 25.3.0, tsx 4.23.0); stars 20, issues 6 (unchanged) |
