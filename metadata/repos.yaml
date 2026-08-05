@@ -446,8 +446,9 @@ repos:
     last_survey_at: 2026-08-04
     last_survey_status: success
     has_fro_bot_workflow: false
-    has_renovate: false
+    has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: 2026-09-05
     private: false
     node_id: MDEwOlJlcG9zaXRvcnk4MjcxMzM5Ng==
+    database_id: 82713396
