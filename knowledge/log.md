@@ -3348,3 +3348,19 @@ Sources: https://github.com/fro-bot/space-bus (SHA fd8a746dd04bbf41b0d34dd0da558
 Surveyed fro-bot/space-bus and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/space-bus
+
+## [2026-08-05 08:00] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+Fifth consecutive no-delta re-survey of the fork (SHA `99fdbe9`, unchanged since 2026-05-31 — ~66 days zero drift). Fetched via anonymous GitHub API (`GH_TOKEN` unset in this working-dir dispatch; target repo is public, reads limited to repo metadata, directory listings, manifests, and workflow files per survey constraint). Re-verified every prior fact live: 4 workflows (`ci.yml`, `copilot-setup-steps.yml`, `fro-bot.yaml`, `release.yaml`) unchanged; root `@cortexkit/anthropic-auth` (`private`, `workspaces: packages/*`); published `@marcusrbrown/{anthropic-auth-core,opencode-anthropic-auth}@1.2.5-mb.3`; Pi `@cortexkit/pi-anthropic-auth` still `private` at `1.2.5`; Biome 2.4.15, TypeScript 6.0.3, Lefthook 2.1.6, `@opencode-ai/plugin` 1.15.5, Bun 1.3.14 (`mise.toml` + opencode engine pin); Fro Bot agent pin still `v0.45.0` (`8aac0fc`) — oldest fleet pin, leaders now at v0.95–v0.96. Public, MIT, fork of `cortexkit/anthropic-auth`, default branch `marcusrbrown/main`, 1★ / 0 forks / 520 KB; sole open item still issue #11 "Daily Autohealing Report".
+
+Durable delta is upstream-side: directly checked the parent `cortexkit/anthropic-auth` — **actively maintained, latest release `v1.18.0` (2026-07-24), `pushed_at 2026-07-29`, 29★ / 11 forks / 13 open issues**. This hardens the 2026-07-14 fork-relevance divergence signal from cross-repo inference to a verified upstream fact: upstream advanced ~16 minors past the fork's frozen `1.2.5-mb.3`, and the [[marcusrbrown--dotfiles]] consumer tracks upstream (`1.18.0`). Fork reads as superseded, not decommissioned (no archive flag; upstream-sync skill still ships). Flipped the "is upstream maintained?" open question to answered and reframed the retirement question with an operator-confirmation recommendation.
+
+Touched pages: `wiki/repos/marcusrbrown--cortexkit-anthropic-auth.md` (frontmatter `updated`/sources, new 2026-08-05 no-delta + upstream-confirmed divergence blocks, Fro Bot fleet-leader refresh, Open Questions rewrite, dotfiles cross-ref), `index.md` (repo entry refresh). No topic/entity/comparison pages warranted a change this cycle (no new architecture, only a frozen-vs-live confirmation). No target-repo issue opened or commented — per task, the log entry is the canonical per-survey summary.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth (SHA 99fdbe906c5875893d363c904f6e6bc066d997b1); https://github.com/cortexkit/anthropic-auth (release v1.18.0)
+
+## [2026-08-05 07:54] ingest | repo:marcusrbrown/cortexkit_anthropic-auth
+
+Surveyed marcusrbrown/cortexkit_anthropic-auth and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/cortexkit_anthropic-auth
