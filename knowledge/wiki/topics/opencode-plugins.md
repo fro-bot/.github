@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-08-04
+updated: 2026-08-06
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -49,6 +49,9 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: fd8a746dd04bbf41b0d34dd0da55814686048ee9
     accessed: 2026-08-04
+  - url: https://github.com/fro-bot/systematic
+    sha: 1938bb1
+    accessed: 2026-08-06
 tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution]
 ---
 
@@ -324,9 +327,11 @@ As of the 2026-05-22 [[fro-bot--systematic]] survey, the same docs site is now t
 - `https://fro.bot/systematic/schemas/v<major>/systematic-config.schema.json` — pinned `$id`, intended for `"$schema"` references in `systematic.json` / `systematic.jsonc` for IDE autocomplete (VSCode, Zed, IntelliJ). **This path is major-versioned and NOT stable across majors.**
 - `https://fro.bot/systematic/schemas/latest/systematic-config.schema.json` — moving pointer for "current".
 
-Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`, and (since systematic v2.33.0) `skills_as_commands`. The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. The same docs deploy drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
+Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_skills`, `disabled_agents`, `disabled_commands`, `bootstrap`, `skills_as_commands` (since systematic v2.33.0), and — since the v3 minor train (observed 2026-08-06) — `pi_subagents` and `workflow_guard` (ten properties total). The schema's own `$schema` property is documented as informational only — the systematic loader does not fetch or validate against it; it exists purely to switch on editor support. The same docs deploy drives the OCX registry, the rendered guide pages, and this schema — three different consumer contracts living on one `gh-pages` branch.
 
 **Breaking-path precedent confirmed (2026-07-22 [[fro-bot--systematic]] survey):** when the plugin crossed the **v2 → v3 major**, the schema host **dropped `schemas/v2/` entirely** (it now returns HTTP 404) and replaced it with `schemas/v3/`; `latest/`'s `$id` re-pointed to the v3 URL. Majors replace the versioned path wholesale — they do **not** co-serve old majors. Any consumer that pinned `"$schema"` to a `vN` URL silently loses autocomplete/validation at the next major (no error surfaced). Lesson: pin `latest/` for a floating contract, or expect to re-pin `vN` at each major. The same v2 → v3 crossing contracted the OCX registry catalog from 104 → 73 components (agents 51 → 37, skills 48 → 31) — the first component *contraction* observed, a source-side curation event rather than growth.
+
+**Two-axis versioning confirmed (2026-08-06 [[fro-bot--systematic]] survey):** the config-schema URL and the OCX catalog move on *independent* clocks. Across the v3 minor train (v3.2.5 → v3.6.0), the **OCX catalog stayed frozen at 73 components** while the **config schema mutated additively in place under `schemas/v3/`** — the property set grew 8 → 10 (`pi_subagents`, `workflow_guard` added, both optional/backward-compatible). This is the third consecutive interval the schema grew within a major (`skills_as_commands` at v2.33.0, then v3 rebasing, now these two). The durable rule: **`vN/` paths mutate additively within a major and are replaced wholesale at the next major; the OCX catalog only changes at majors (or explicit source-side curation), not on every minor.** A consumer that only cares about the catalog can ignore minor releases; a consumer that resolves `$schema` for editor support benefits from every minor but must accept in-place field growth.
 
 ## Bundled Skill for Upstream Sync (cortexkit_anthropic-auth pattern)
 
