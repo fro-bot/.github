@@ -3367,3 +3367,30 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-06 08:00] ingest | bfra-me/.github
+
+Re-survey of `bfra-me/.github` (HEAD `d9feab2`, dated 2026-07-31; last push 2026-08-04). Sixth survey of the `@bfra-me` org control center. Updated repo page `bfra-me--github.md`, topic page `github-actions-ci.md`, and `index.md`. No new pages warranted.
+
+Delta from prior survey (SHA `1c12695`, 2026-07-16) — **82 commits, all Renovate dependency bumps + Changesets `publish release` merges + `chore: update internal action SHA pins` maintenance. No structural change:**
+
+- **No structural change (4th steady-state window):** 16 workflows, single unified `fro-bot.yaml`, two `review`/`autoheal` modes (`default: autoheal`), single `30 15` daily oversight+autoheal pass, `target-repo` narrowing input, 3 custom actions, and the security-focused `PR_REVIEW_PROMPT` all byte-stable. The 2026-07-02 consolidation remains steady-state.
+- **Version churn:** `@bfra.me/.github` v4.16.37 → **v4.16.44**; pnpm 11.11.0 → **11.17.0** (six 11.x bumps); Node 24.18.0 → **24.18.1** (first Node bump since 2026-07-02); Fro Bot agent v0.92.1 → **v0.96.0** (~10 bumps, ~57 in ~2.5 months — back at the fleet-lead pin, tied with dotfiles/marcusrbrown-com/dev-like); eslint 10.7.0 → 10.8.0; prettier 3.9.5 → 3.9.6; vite 8.1.4 → 8.1.5; @changesets/cli → 2.31.1; minimatch → 10.2.6.
+- **Two upstream MAJOR crossings landed as ordinary automerge churn (no structural impact):** `bfra-me/renovate-action` v9 → **v10.1.0** (#2520) — the org's own [[bfra-me--renovate-action]] execution surface; `actions/checkout` v6 → **v7** (#2521). Data point: the SHA-pin-plus-Renovate model absorbs even major action bumps without workflow-structure change.
+- **Overrides stable:** only `flatted` 3.4.2 → 3.4.3; `esbuild`/`undici`/`vite` security overrides and the `allowBuilds` allowlist (`esbuild`, `unrs-resolver`) unchanged.
+- **`.ai/plan/` unchanged** — 0 of 10 aspirational plan docs (template federation, Astro Starlight docs, org-health monitoring, etc.) have graduated into real workflows; declared direction held static.
+- **`llms.txt` / `.gitattributes` / `.markdownlint-cli2.yaml`** first enumerated in the layout this survey but confirmed **pre-existing** (verified HTTP 200 at prior SHA `1c12695`) — not new additions. `llms.txt` is an llmstxt.org-style AI-consumption manifest; no open drift-autoheal counterpart here (unlike sparkle #1800 / marcusrbrown #1039). New markdown/AST devDeps (`remark`*, `unified`, `mdast-util-to-string`, `glob`) consistent with manifest generation tooling.
+- **Doc drift persists and widened (category-3, unhealed 2 windows):** `CONTRIBUTING.md` still cites "pnpm 10.8.1 or later" / "Changesets 2.29.5" while the repo enforces pnpm 11.17.0 (`packageManager`) and ships @changesets/cli 2.31.1. Gap widened (11.11 → 11.17) with no correcting commit; Fro Bot autoheal has not opened a fix.
+- **Issues/PRs:** Open **2/7** (was 2/2). Durable issues unchanged: #2344 (unified Daily Fro Bot Report) + #7 (Dependency Dashboard) — the three-into-one report consolidation holds across four windows. Open PRs are all `bfra-me[bot]` Renovate **major-version** bumps the automerge policy holds back for human review: #2528 (lint-staged v17), #2526/#2527 (typescript v7, dup), #2525 (fossas/fossa-action v2), #2524 (actions/setup-node v7), #2523 (actions/labeler v7), #2522 (actions/dependency-review-action v5).
+
+**Constraint note:** `gh` CLI unauthenticated in this run; reads limited to the unauthenticated public GitHub API + raw fetch over directory listings, `package.json`, `pnpm-workspace.yaml`, `.node-version`, `fro-bot.yaml`, `llms.txt`, `CONTRIBUTING.md`, the commit compare range, and the public issues/PR listing. Target repo confirmed public (`private: false`) before any read.
+
+Touched pages: `knowledge/wiki/repos/bfra-me--github.md` (frontmatter `updated`/`sources`; Identity; Fro Bot pin + durability note; layout; Workspace overrides; new llms.txt subsection; doc-drift + commit-traffic + structural-summary Operational Notes; Cross-Repo Relationships; Survey History row), `knowledge/wiki/topics/github-actions-ci.md` (corrected stale bfra-me bullet 17→16 workflows / removed org-autoheal ref + 2026-08-06 major-as-automerge note; `updated`), `knowledge/index.md` (repo entry rewrite).
+
+Sources: https://github.com/bfra-me/.github (SHA d9feab2e628a21b1f38048fd2bf0563dbc814c5e)
+
+## [2026-08-06 07:58] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github
