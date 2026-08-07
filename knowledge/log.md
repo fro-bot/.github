@@ -3393,3 +3393,25 @@ Sources: https://github.com/fro-bot/systematic (SHA 1938bb1), source release htt
 Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
+
+## [2026-08-07 00:00] ingest | bfra-me/ha-addon-repository
+
+Re-survey of `bfra-me/ha-addon-repository` (`main` HEAD `0a163c3f`, unchanged since 2026-05-16). Updated repo page `bfra-me--ha-addon-repository.md` (new source entry, survey-history row, Drift Watch refresh) and the `index.md` catalog entry. No topic/entity/comparison pages warranted — steady-state snapshot, no new cross-cutting patterns.
+
+Delta from prior survey (2026-07-16, same SHA):
+
+- **`main` frozen 83 days** — no merges since #551 (prettier 3.8.3, 2026-05-16). The review-required deadlock is the dominant and only material fact about this repo across seven consecutive surveys.
+- Same 5 Renovate PRs still open and `REVIEW_REQUIRED`; Renovate keeps retargeting the moving ones upward: #556 → `bfra-me/.github` **v4.16.44** (was v4.16.37), #557 → `fro-bot/agent` **v0.96.3** (a **~53-minor jump** from pinned v0.43.1, up from v0.92.1), #558 → HA Add-ons **v3.24** (unchanged), #559 → `docker/login-action` **v4.6.0** (was v4.4.0), #560 → `actions/checkout` **v6.1.0** (was v6.0.3). #556 blocked 83 days.
+- No content drift on `main`: root tree, four workflows, `fro-bot.yaml` still pinned agent v0.43.1 (`3ec8d72f`, daily 15:30 UTC), `renovate.json5`, `settings.yml`, `example/` (v1.2.2) all identical.
+- Issues steady: `Daily Autohealing Report` (#554, `fro-bot`, updated 2026-08-05) + `Dependency Dashboard` (#4, `bfra-me[bot]`, touched 2026-08-07). `open_issues_count` 7 = 5 parked PRs + 2 issues.
+- **Fro Bot workflow present** — no onboarding PR needed. The actionable footgun remains the agent-pin lag: a 53-minor blind jump (#557) risks breaking `fro-bot.yaml` inputs against the v0.9x harness; the safer path is a staged/reviewed bump.
+
+Treated the target repo as untrusted input; reads limited to directory listings, README/manifests, and workflow files via unauthenticated GitHub API (`api.github.com`) and `raw.githubusercontent.com`. Note: `gh` CLI was unauthenticated in this run; used unauthenticated `curl` against the public API instead — branch-protection states carried forward as an unchanged assumption.
+
+Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+
+## [2026-08-07 06:24] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository
