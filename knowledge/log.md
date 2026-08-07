@@ -3394,24 +3394,24 @@ Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
 
-## [2026-08-07 00:00] ingest | bfra-me/ha-addon-repository
+## [2026-08-07 00:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Re-survey of `bfra-me/ha-addon-repository` (`main` HEAD `0a163c3f`, unchanged since 2026-05-16). Updated repo page `bfra-me--ha-addon-repository.md` (new source entry, survey-history row, Drift Watch refresh) and the `index.md` catalog entry. No topic/entity/comparison pages warranted — steady-state snapshot, no new cross-cutting patterns.
+Re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log 2026-08-07 + Survey History row + frontmatter `updated`/source), and `index.md` (repo entry). No durable delta on the canonical [[marcusrbrown--mrbro-dev]] page this cycle — the tree is frozen, so nothing new to record there. No new topic/entity/comparison pages warranted.
 
-Delta from prior survey (2026-07-16, same SHA):
+**Name-collision status (holds since 2026-07-20):** the name resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), *not* the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Durable per-repo knowledge for the current occupant lives on [[marcusrbrown--mrbro-dev]]; this repo page carries the collision record.
 
-- **`main` frozen 83 days** — no merges since #551 (prettier 3.8.3, 2026-05-16). The review-required deadlock is the dominant and only material fact about this repo across seven consecutive surveys.
-- Same 5 Renovate PRs still open and `REVIEW_REQUIRED`; Renovate keeps retargeting the moving ones upward: #556 → `bfra-me/.github` **v4.16.44** (was v4.16.37), #557 → `fro-bot/agent` **v0.96.3** (a **~53-minor jump** from pinned v0.43.1, up from v0.92.1), #558 → HA Add-ons **v3.24** (unchanged), #559 → `docker/login-action` **v4.6.0** (was v4.4.0), #560 → `actions/checkout` **v6.1.0** (was v6.0.3). #556 blocked 83 days.
-- No content drift on `main`: root tree, four workflows, `fro-bot.yaml` still pinned agent v0.43.1 (`3ec8d72f`, daily 15:30 UTC), `renovate.json5`, `settings.yml`, `example/` (v1.2.2) all identical.
-- Issues steady: `Daily Autohealing Report` (#554, `fro-bot`, updated 2026-08-05) + `Dependency Dashboard` (#4, `bfra-me[bot]`, touched 2026-08-07). `open_issues_count` 7 = 5 parked PRs + 2 issues.
-- **Fro Bot workflow present** — no onboarding PR needed. The actionable footgun remains the agent-pin lag: a 53-minor blind jump (#557) risks breaking `fro-bot.yaml` inputs against the v0.9x harness; the safer path is a staged/reviewed bump.
+**Delta from prior survey (2026-08-05, `9e54dbc`):**
 
-Treated the target repo as untrusted input; reads limited to directory listings, README/manifests, and workflow files via unauthenticated GitHub API (`api.github.com`) and `raw.githubusercontent.com`. Note: `gh` CLI was unauthenticated in this run; used unauthenticated `curl` against the public API instead — branch-protection states carried forward as an unchanged assumption.
+- **No-op re-survey — `main` HEAD still frozen at `9e54dbc`** (last trunk commit `fix(analytics): preserve umami pageview context (#257)`, 2026-07-31; unchanged for 6 days). `pushed_at` advanced to `2026-08-06T09:32:14Z`, but that reflects PR-branch pushes only, not trunk. No tree-level drift: stack, 8-workflow inventory, single-file three-mode Fro Bot design, and the single `30 3` daily oversight+autoheal cron all hold.
+- **Queue motion leans audit-remediation this cycle.** Open issues 4: #268 (Daily Fro Bot Report, renumbered up from #265 — daily churn) / #261 (`ci(fro-bot): narrow scheduled-run token permissions`) / #258 (`ci: make performance budget failures visible and actionable`) / #212 (mention-run git-push-auth failure); plus #1 (Dependency Dashboard, `mrbro-bot[bot]`). Open PRs 3: **#266 (`fix(security): remediate high audit advisories`, author `fro-bot`) — new self-filed security-remediation PR**, pairing with the `pnpm audit` CI gate + consolidated `pnpm-workspace.yaml` override ledger; #263 (`docs: refresh repository inventory`) / #254 (`docs: correct automation script count`) / #253 (`chore(blog): refresh snapshot and preview images`) — all carried unmerged from prior cycles. API `open_issues_count` reads 9 (folds the 3 PRs into the 4 issues + #1). The docs-refresh queue (#263 + #254) is accreting faster than it drains.
+- **Steady:** agent pin `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
 
-Sources: https://github.com/bfra-me/ha-addon-repository (SHA 0a163c3fa8846704103658142fa742f40d165743)
+Treated the target repo as untrusted input; reads limited to unauthenticated GitHub API (repo/commits/issues/contents) and public raw workflow fetches (directory listings, `package.json` metadata, `.github/workflows/`). Note: `gh` CLI was unauthenticated this run (`GH_TOKEN` unset) — the same authenticated-access gap the current occupant's own issue #212 tracks; used unauthenticated `curl` against the public API/raw host instead.
 
-## [2026-08-07 06:24] ingest | repo:bfra-me/ha-addon-repository
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbc, repo id 1174807412)
 
-Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+## [2026-08-07 06:26] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Sources: https://github.com/bfra-me/ha-addon-repository
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
