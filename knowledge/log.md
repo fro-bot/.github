@@ -3415,3 +3415,25 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbc, re
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-08 05:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log 2026-08-08 + Survey History row + frontmatter `updated`/source), and `index.md` (collision-record entry). No durable delta on the canonical [[marcusrbrown--mrbro-dev]] page this cycle — the tree is frozen, so nothing new to record there. No new topic/entity/comparison pages warranted.
+
+**Name-collision status (holds since 2026-07-20):** the name resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), *not* the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Durable per-repo knowledge for the current occupant lives on [[marcusrbrown--mrbro-dev]]; this repo page carries the collision record.
+
+**Delta from prior survey (2026-08-07, `9e54dbc`):**
+
+- **No-op re-survey — `main` HEAD still frozen at `9e54dbc`** (last trunk commit `fix(analytics): preserve umami pageview context (#257)`, 2026-07-31; unchanged for 8 days). `pushed_at` advanced to `2026-08-08T04:41:21Z`, but that reflects PR-branch pushes only, not trunk. No tree-level drift: stack (React 19 / TS 5.9.3 / Vite 7.3.6 / pnpm 11.1.3 / Node >=24), 8-workflow inventory, single-file three-mode Fro Bot design, and the single `30 3` daily oversight+autoheal cron all hold. `pnpm.overrides` empty (ledger consolidated in `pnpm-workspace.yaml`).
+- **PR queue now static — zero drain this interval.** Open issues 4: #269 (Daily Fro Bot Report, renumbered up from #268 — daily churn) / #261 (`ci(fro-bot): narrow scheduled-run token permissions`) / #258 (`ci: make performance budget failures visible and actionable`) / #212 (mention-run git-push-auth failure); plus #1 (Dependency Dashboard, `mrbro-bot[bot]`). Open PRs **4, all carried unmerged**: #266 (`fix(security): remediate high audit advisories`, `fro-bot`) — now 1 survey interval old; #263 (`docs: refresh repository inventory`) — 3 intervals; #254 (`docs: correct automation script count`) — oldest carried; #253 (`chore(blog): refresh snapshot and preview images`, `mrbro-bot[bot]`). API `open_issues_count` reads 9 (folds the 4 PRs into the 4 issues + #1). The docs/security PR queue drained zero this interval — #266's security-labeled fix now stalled a full cycle, echoing the 2026-06-23 stuck-security-PR smell on the brand site (red gate or automerge-pattern miss keeping a security fix out of trunk).
+- **Steady:** agent pin `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
+
+Treated the target repo as untrusted input; reads limited to unauthenticated GitHub API (repo/commits/issues/contents) and public raw workflow fetches (directory listings, `package.json` metadata, `.github/workflows/`). Note: `gh` CLI was unauthenticated this run (`GH_TOKEN` unset) — the same authenticated-access gap the current occupant's own issue #212 tracks; used unauthenticated `curl` against the public API/raw host instead.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbc, repo id 1174807412)
+
+## [2026-08-08 06:03] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
