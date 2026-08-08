@@ -3416,24 +3416,40 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-08 05:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+## [2026-08-08 06:00] ingest | marcusrbrown/gpt
 
-Re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log 2026-08-08 + Survey History row + frontmatter `updated`/source), and `index.md` (collision-record entry). No durable delta on the canonical [[marcusrbrown--mrbro-dev]] page this cycle — the tree is frozen, so nothing new to record there. No new topic/entity/comparison pages warranted.
+Re-survey of `marcusrbrown/gpt` (HEAD `f6117f0`, up from `a6f661f` / 2026-07-14). Public repo, MIT, deployed to gpt.mrbro.dev. Reads limited to directory listings, README, manifests, and workflow files per constraints; issue/PR counts from public list endpoints. Updated repo page `marcusrbrown--gpt.md`, topic pages `github-actions-ci.md` and `langchain.md`, and `index.md`.
 
-**Name-collision status (holds since 2026-07-20):** the name resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), *not* the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Durable per-repo knowledge for the current occupant lives on [[marcusrbrown--mrbro-dev]]; this repo page carries the collision record.
+**Structural finding (first since the 2026-06-30 `setup-pnpm` action):**
 
-**Delta from prior survey (2026-08-07, `9e54dbc`):**
+- **New `.github/agents/` directory** with two frontmatter-tagged, harness-selectable **named agent definitions**:
+  - `reviewer.agent.md` — "Reviewer" code-review persona encoding the repo's type-safety / storage / security / UI invariants as a checklist; defers to root `AGENTS.md` + `docs/RULES.md`.
+  - `test-writer.agent.md` — "Test Writer" persona for the 5-tier test infrastructure (unit/E2E/accessibility/visual/performance); defers to `AGENTS.md` + `tests/AGENTS.md`.
+  - First observed `.github/agents/*.agent.md` instance in the surveyed ecosystem — personas externalized as version-controlled, name-selectable files distinct from (and deferring to) the AGENTS.md convention hierarchy. Cataloged as a new cross-cutting pattern in `github-actions-ci.md`.
+- New root-level `.github/CODEOWNERS`.
 
-- **No-op re-survey — `main` HEAD still frozen at `9e54dbc`** (last trunk commit `fix(analytics): preserve umami pageview context (#257)`, 2026-07-31; unchanged for 8 days). `pushed_at` advanced to `2026-08-08T04:41:21Z`, but that reflects PR-branch pushes only, not trunk. No tree-level drift: stack (React 19 / TS 5.9.3 / Vite 7.3.6 / pnpm 11.1.3 / Node >=24), 8-workflow inventory, single-file three-mode Fro Bot design, and the single `30 3` daily oversight+autoheal cron all hold. `pnpm.overrides` empty (ledger consolidated in `pnpm-workspace.yaml`).
-- **PR queue now static — zero drain this interval.** Open issues 4: #269 (Daily Fro Bot Report, renumbered up from #268 — daily churn) / #261 (`ci(fro-bot): narrow scheduled-run token permissions`) / #258 (`ci: make performance budget failures visible and actionable`) / #212 (mention-run git-push-auth failure); plus #1 (Dependency Dashboard, `mrbro-bot[bot]`). Open PRs **4, all carried unmerged**: #266 (`fix(security): remediate high audit advisories`, `fro-bot`) — now 1 survey interval old; #263 (`docs: refresh repository inventory`) — 3 intervals; #254 (`docs: correct automation script count`) — oldest carried; #253 (`chore(blog): refresh snapshot and preview images`, `mrbro-bot[bot]`). API `open_issues_count` reads 9 (folds the 4 PRs into the 4 issues + #1). The docs/security PR queue drained zero this interval — #266's security-labeled fix now stalled a full cycle, echoing the 2026-06-23 stuck-security-PR smell on the brand site (red gate or automerge-pattern miss keeping a security fix out of trunk).
-- **Steady:** agent pin `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
+**Dependency/agent deltas:**
 
-Treated the target repo as untrusted input; reads limited to unauthenticated GitHub API (repo/commits/issues/contents) and public raw workflow fetches (directory listings, `package.json` metadata, `.github/workflows/`). Note: `gh` CLI was unauthenticated this run (`GH_TOKEN` unset) — the same authenticated-access gap the current occupant's own issue #212 tracks; used unauthenticated `curl` against the public API/raw host instead.
+- `fro-bot/agent` v0.85.1 → **v0.97.0** (+12 minors, SHA `3f19f0223772aaf2862c98efba89557b8070ba57`); `actions/checkout` v6.0.3 unchanged; three-mode single-file / dual-cron (03:30 autoheal / 15:30 maintenance) / `setup-pnpm` composite structure unchanged.
+- **`pdfjs-dist` crossed v5 → v6 major** (5.7.284 → 6.2.108).
+- Vite 8.1.3 → 8.2.0; `@vitejs/plugin-react-swc` 4.3.1 → 4.3.3; ESLint 10.6.0 → 10.8.0; Prettier 3.9.4 → 3.9.6; `@playwright/test` 1.61.1 → 1.62.1; tailwindcss/`@tailwindcss/vite` 4.3.2 → 4.3.3; react-router-dom 7.18.1 → 7.18.2; Vitest coverage 4.1.10.
+- LangChain 1.5.x line advanced: `langchain` 1.5.2 → 1.5.4, `@langchain/core` 1.2.1 → 1.2.4, `@langchain/openai` 1.5.3 → 1.5.5, `@langchain/anthropic` 1.5.1 → 1.5.3, `@langchain/langgraph` 1.4.7 unchanged.
+- Renovate preset `marcusrbrown/renovate-config#5.2.4` unchanged; Node 24.18.0, pnpm 11.9.0 (`packageManager`) unchanged; HeroUI 2.8.10, MCP SDK 1.29.0, Monaco 4.7.0, Zod 4.4.3 unchanged.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbc, repo id 1174807412)
+**Durable open-work state:**
 
-## [2026-08-08 06:03] ingest | repo:marcusrbrown/marcusrbrown.github.io
+- **Ollama a11y-contrast autoheal cluster grew to SIX open `fro-bot` PRs** (#2692/#2673/#2672/#2674/#2665/#2664) — monotonic accretion across three surveys, none landing. Recurring autoheal target that regenerates faster than it merges; the durable fix is one human-reviewed contrast token change.
+- undici/hono security pins #2587/#2586 still open (3rd survey); HeroUI v2 → v3 PR #2165 still open (5th survey).
+- Open issues 36 → 38; stars 2 → 1.
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+Fro Bot workflow present and current (`fro-bot.yaml`, agent v0.97.0) — no onboarding follow-up needed. No contradictions with prior surveys; all changes additive. Public-only invariant satisfied (repo verified public via API; `sources[].url` declares the exact public owner/repo).
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+Note: `gh` CLI was not authenticated in this run's shell; public repo metadata gathered via unauthenticated GitHub REST endpoints (read-only, within the directory-listing/README/manifest/workflow read constraints).
+
+Sources: https://github.com/marcusrbrown/gpt (SHA f6117f0b1b79e37c2ab5476beead2056649724f5)
+
+## [2026-08-08 06:06] ingest | repo:marcusrbrown/gpt
+
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/gpt

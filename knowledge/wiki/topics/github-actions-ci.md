@@ -2,11 +2,12 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-08-06
+updated: 2026-08-08
 tags: [github-actions, ci-cd, automation, security, renovate]
 related:
   - fro-bot--agent
   - marcusrbrown--dev-like
+  - marcusrbrown--gpt
   - fro-bot--dashboard
   - marcusrbrown--containers
   - marcusrbrown--ha-config
@@ -156,6 +157,12 @@ The consolidation reduces scheduled-run surface area and eliminates the split-re
 [[marcusrbrown--dev-like]] runs a **two-mode** `fro-bot.yaml` (autoheal + pr-review, no maintenance mode) whose inline `AUTOHEAL_PROMPT`/`PR_REVIEW_PROMPT` env blocks hard-code the repository's own product invariants as agent guardrails: zero runtime dependencies, **human-gated** registry/consent-tier/OPTOUT/profile-prose edits (the ethics floor is not delegated to the bot), no release.yaml/OIDC/publish edits, no direct commit/merge to `main`, mandatory `bunx changeset` for any `registry|skills|bin|scripts` touch, and required verification gates before opening a PR (`bun run validate`, `bun run test`, `bun run --cwd docs test`, `bun run --cwd docs build`, `npm pack --dry-run`). Failures roll up to a single reopen-not-spam `Fro Bot Autoheal` issue.
 
 This is the CI-prompt analogue of [[marcusrbrown--infra]]'s convention-enforcement-via-tests: the same `AGENTS.md` invariants that humans read are re-stated to the autonomous maintainer so provenance/consent ethics and release safety survive automation. Contrast the domain review prompts in [[marcusrbrown--containers]] (Dockerfile/multi-arch) and [[marcusrbrown--systematic]] (TS/Bun/Biome) — dev-like's twist is boundaries that protect a *data/ethics* invariant, not just code style.
+
+### Repo-Scoped Named Agent Definitions (`.github/agents/*.agent.md`, 2026-08-08)
+
+[[marcusrbrown--gpt]] introduced (HEAD `f6117f0`) a `.github/agents/` directory holding **named, frontmatter-tagged agent definition files** — `reviewer.agent.md` and `test-writer.agent.md`. Each is a Markdown file whose YAML frontmatter declares a `name` and `description`, followed by a role-scoped system prompt: the Reviewer encodes the repo's type-safety/storage/security/UI invariants as a review checklist; the Test Writer encodes the 5-tier test infrastructure (unit/E2E/accessibility/visual/performance) as an authoring guide.
+
+This is a step beyond the [[marcusrbrown--infra]] convention-enforcement and [[marcusrbrown--dev-like]] inline-prompt patterns: instead of embedding agent guidance in `AGENTS.md` docs or inline workflow `env` blocks, the personas become **first-class, version-controlled, harness-selectable files** the agent can load by name. Crucially they *defer to* `AGENTS.md`/`docs/RULES.md`/`tests/AGENTS.md` for canonical conventions rather than duplicating them — the agent files are role routers, the AGENTS.md hierarchy remains the source of truth. First observed instance in the surveyed ecosystem; watch for propagation to other repos as the harness formalizes named-agent selection.
 
 ### Convention Enforcement via Tests
 
