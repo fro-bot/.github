@@ -3453,3 +3453,22 @@ Sources: https://github.com/marcusrbrown/gpt (SHA f6117f0b1b79e37c2ab5476beead20
 Surveyed marcusrbrown/gpt and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-08-09 02:30] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io` (SHA `9e54dbc`). The name still resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio**, canonical page [[marcusrbrown--mrbro-dev]] — not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-collision binding is unchanged since 2026-07-20. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log + Survey History row + source entry) and refreshed the `index.md` entry. No topic/entity/comparison pages warranted — no new cross-cutting pattern surfaced. Index already catalogs the touched page.
+
+Findings:
+
+- **`main` HEAD frozen at `9e54dbc` for 8 days** (last trunk commit `fix(analytics): preserve umami pageview context (#257)`, 2026-07-31). No tree-level drift: root tree, 8-workflow inventory (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`), single-file three-mode Fro Bot design, and single `30 3` daily oversight+autoheal cron all hold. `pushed_at` 2026-08-08 reflects PR-branch pushes only. Because the tree is frozen, **no durable delta lands on the canonical [[marcusrbrown--mrbro-dev]] page** this cycle.
+- **Queue-only motion** — two new self-filed `fro-bot` CI-hardening issues this cycle: #271 (`ci: reduce performance workflow permissions`, extends the least-privilege thread #261 opened) and #270 (`ci: pass Vitest coverage flag through pnpm script`, pairs with perf-visibility #258). Open issues 6 (#272 report / #271 / #270 / #261 / #258 / #212) + #1 Dependency Dashboard. Open PRs 4 (#266 security remediation / #263 repo-inventory docs / #254 script-count docs / #253 blog snapshot) — all carried, fully static since 2026-08-07; the docs/security PR backlog is not draining. API `open_issues_count` 11 folds the 4 PRs.
+- Agent pin steady `fro-bot/agent@a4976f4 # v0.93.1`; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot workflow present and active — no onboarding follow-up draft PR warranted for this name.
+- `gh` credential gap again — reads limited to unauthenticated GitHub API + raw fetch (the same authenticated-access gap the current occupant's own issue #212 tracks). No new facts about the brand site (id `1021912280`) observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-09 06:03] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
