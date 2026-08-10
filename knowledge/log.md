@@ -3497,29 +3497,22 @@ Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
 
-## [2026-08-10 06:45] ingest | repo:fro-bot/fro-bot.github.io
+## [2026-08-10 00:00] ingest | marcusrbrown/marcusrbrown.github.io
 
-No-delta re-survey of `fro-bot/fro-bot.github.io` (HEAD `3e44653`, frozen since 2026-02-09 — 185 days). Updated `knowledge/wiki/repos/fro-bot--fro-bot-github-io.md` (new source entry, survey-history row, TLS renewal-window note) and the `index.md` catalog entry.
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io` (repo id `1174807412`, HEAD `9e54dbc`). Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log + Survey History row, refreshed frontmatter `updated`/source). Updated `index.md` repo entry. No topic/entity/comparison pages touched — no cross-cutting delta. No changes to the canonical [[marcusrbrown--mrbro-dev]] page (tree frozen, no durable delta).
 
-**Findings (tree re-confirmed, no structural change):**
+Key findings:
 
-- `git ls-remote` confirms `main` = `3e44653c4d185b239b44b3af12255d18c86463ab` — still the lone `Create CNAME` commit.
-- Raw-content probes: `CNAME` present (HTTP 200) and byte-equal to `fro.bot`; no README (404), no `.github/workflows/fro-bot.yaml` (404), no `.github/settings.yml` (404), no `index.html` (404).
-- Repo remains a single-file, legacy-build (`main:/`) org-level Pages custom-domain holder for `fro.bot`.
+- **Name-collision holds (unchanged since 2026-07-20):** the name resolves to repo id `1174807412` — the **mrbro.dev developer portfolio** (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), *not* the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Durable per-repo knowledge for the current occupant lives on [[marcusrbrown--mrbro-dev]].
+- **`main` HEAD frozen at `9e54dbc`** since 2026-07-31 (9 days) — same SHA as the 2026-08-01/-02/-05/-07 surveys. No trunk commits, no tree-level drift. `pushed_at` advanced to 2026-08-09 (PR-branch pushes only); `updated_at` still frozen at 2026-07-31. Stack, 8-workflow inventory, single-file three-mode Fro Bot design, single `30 3` daily oversight+autoheal cron all hold.
+- **Queue-only motion, sharpening the least-privilege/CI-ergonomics trajectory.** Two new self-filed CI-hardening issues this cycle: **#271 (`ci: reduce performance workflow permissions`)** — sibling to #261's scheduled-run token narrowing; **#270 (`ci: pass Vitest coverage flag through pnpm script`)** — CI-plumbing fix. Open issues 4 (#273 report / #271 / #270 / #261 / #258 / #212) + #1 Dependency Dashboard (`mrbro-bot[bot]`); open PRs 3 (#266 security-remediation carried, #263 repo-inventory docs carried 3 intervals, #254 script-count docs carried, #253 blog snapshot carried). API `open_issues_count` 11 folds the PRs.
+- Agent pin steady `fro-bot/agent@a4976f4 # v0.93.1`; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
+- `gh` credential gap again (unauthenticated GitHub REST + raw fetch only) — the same authenticated-access gap the occupant's own issue #212 tracks. No new facts about the *brand site* (id `1021912280`) observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
 
-**Carried forward (unverified — no token this cycle):**
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
 
-- No GitHub API token available (`GH_TOKEN`/`GITHUB_TOKEN` both unset — same access gap as recent gpt / dashboard / marcusrbrown.github.io surveys). Pages config, TLS cert state, issue #1 (CodeQL/Scorecard parity), and `protected_domain_state: unverified` could not be re-fetched; carried forward from 2026-06-26.
-- **TLS cert watch:** recorded expiry `2026-09-07` is now ~28 days out — inside the ~90-day auto-renewal window. Expect a future far-future expiry to appear on the next token-bearing survey; if it still reads `2026-09-07` past early September, escalate.
+## [2026-08-10 06:50] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-**No Fro Bot workflow** — the repo still lacks `.github/workflows/fro-bot.yaml`, Probot Settings, and README/license. All four standing follow-up recommendations (HTTPS enforcement, Probot Settings extending `fro-bot/.github:common-settings.yaml`, minimal Fro Bot workflow, README) carried forward. A follow-up draft PR to add a minimal Fro Bot workflow remains the recommended out-of-band action; this survey makes no repo-side changes per the working-dir delivery contract.
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
-Public-only invariant satisfied: repo is public; `sources[].url` declares the exact public owner/repo `fro-bot/fro-bot.github.io`. All wiki edits additive; no contradictions with prior surveys.
-
-Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
-
-## [2026-08-10 06:47] ingest | repo:fro-bot/fro-bot.github.io
-
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
-
-Sources: https://github.com/fro-bot/fro-bot.github.io
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
