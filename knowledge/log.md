@@ -3496,3 +3496,30 @@ Sources: https://github.com/fro-bot/dashboard (SHA a7bbb791da3b1b5d48dbff6a9a78f
 Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
+
+## [2026-08-10 06:45] ingest | repo:fro-bot/fro-bot.github.io
+
+No-delta re-survey of `fro-bot/fro-bot.github.io` (HEAD `3e44653`, frozen since 2026-02-09 — 185 days). Updated `knowledge/wiki/repos/fro-bot--fro-bot-github-io.md` (new source entry, survey-history row, TLS renewal-window note) and the `index.md` catalog entry.
+
+**Findings (tree re-confirmed, no structural change):**
+
+- `git ls-remote` confirms `main` = `3e44653c4d185b239b44b3af12255d18c86463ab` — still the lone `Create CNAME` commit.
+- Raw-content probes: `CNAME` present (HTTP 200) and byte-equal to `fro.bot`; no README (404), no `.github/workflows/fro-bot.yaml` (404), no `.github/settings.yml` (404), no `index.html` (404).
+- Repo remains a single-file, legacy-build (`main:/`) org-level Pages custom-domain holder for `fro.bot`.
+
+**Carried forward (unverified — no token this cycle):**
+
+- No GitHub API token available (`GH_TOKEN`/`GITHUB_TOKEN` both unset — same access gap as recent gpt / dashboard / marcusrbrown.github.io surveys). Pages config, TLS cert state, issue #1 (CodeQL/Scorecard parity), and `protected_domain_state: unverified` could not be re-fetched; carried forward from 2026-06-26.
+- **TLS cert watch:** recorded expiry `2026-09-07` is now ~28 days out — inside the ~90-day auto-renewal window. Expect a future far-future expiry to appear on the next token-bearing survey; if it still reads `2026-09-07` past early September, escalate.
+
+**No Fro Bot workflow** — the repo still lacks `.github/workflows/fro-bot.yaml`, Probot Settings, and README/license. All four standing follow-up recommendations (HTTPS enforcement, Probot Settings extending `fro-bot/.github:common-settings.yaml`, minimal Fro Bot workflow, README) carried forward. A follow-up draft PR to add a minimal Fro Bot workflow remains the recommended out-of-band action; this survey makes no repo-side changes per the working-dir delivery contract.
+
+Public-only invariant satisfied: repo is public; `sources[].url` declares the exact public owner/repo `fro-bot/fro-bot.github.io`. All wiki edits additive; no contradictions with prior surveys.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+
+## [2026-08-10 06:47] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
