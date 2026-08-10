@@ -3497,22 +3497,30 @@ Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
 
-## [2026-08-10 00:00] ingest | marcusrbrown/marcusrbrown.github.io
+## [2026-08-10 06:45] ingest | repo:bfra-me/renovate-action
 
-No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io` (repo id `1174807412`, HEAD `9e54dbc`). Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log + Survey History row, refreshed frontmatter `updated`/source). Updated `index.md` repo entry. No topic/entity/comparison pages touched — no cross-cutting delta. No changes to the canonical [[marcusrbrown--mrbro-dev]] page (tree frozen, no durable delta).
+Sixth survey of `bfra-me/renovate-action` (HEAD `a4b5a955`, `chore(deps): update fro-bot/agent to v0.98.2 (#3624)`). Unauthenticated GitHub REST + raw endpoints (no `GH_TOKEN` this run — same access gap as recent surveys); reads limited to directory listings, README/manifest/workflow/config files per the untrusted-input constraint. Updated `wiki/repos/bfra-me--renovate-action.md`, `wiki/topics/github-actions-ci.md`, `index.md`, and this log. All changes additive; one standing prediction corrected (see below).
 
-Key findings:
+**Headline — v9 → v10 boundary crossed, prediction corrected.** The `v10` major landed at `10.0.0` (2026-07-31) and the repo is now published `@v10` (latest release `10.11.0`, ~23 releases in 22 days). But v10 is **not** the Docker-execution removal five prior surveys forecast — `10.0.0`'s sole `⚠ BREAKING CHANGE` is the vendored Renovate engine bump **v43 → v44** (#3580; `RENOVATE_VERSION` now `44.17.0`). Docker execution, the `v9 deprecation notice` step, and the `::warning::Docker-based action execution is deprecated and is planned for removal in v10` copy all persist verbatim on a now-v10 repo, making the deprecation copy stale/self-contradictory. The npm-installed path is quietly staged (`RENOVATE_BINARY_SOURCE: install` set on the Renovate step) but the Docker wrapper is not retired. Re-flagged as an autoheal "stale deprecation copy" candidate. Cross-referenced in [[github-actions-ci]]: the action's own major version tracks the Renovate engine major, which is why downstream `@v10` consumers ([[bfra-me--github]]) absorbed it as ordinary SHA-pin churn.
 
-- **Name-collision holds (unchanged since 2026-07-20):** the name resolves to repo id `1174807412` — the **mrbro.dev developer portfolio** (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), *not* the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Durable per-repo knowledge for the current occupant lives on [[marcusrbrown--mrbro-dev]].
-- **`main` HEAD frozen at `9e54dbc`** since 2026-07-31 (9 days) — same SHA as the 2026-08-01/-02/-05/-07 surveys. No trunk commits, no tree-level drift. `pushed_at` advanced to 2026-08-09 (PR-branch pushes only); `updated_at` still frozen at 2026-07-31. Stack, 8-workflow inventory, single-file three-mode Fro Bot design, single `30 3` daily oversight+autoheal cron all hold.
-- **Queue-only motion, sharpening the least-privilege/CI-ergonomics trajectory.** Two new self-filed CI-hardening issues this cycle: **#271 (`ci: reduce performance workflow permissions`)** — sibling to #261's scheduled-run token narrowing; **#270 (`ci: pass Vitest coverage flag through pnpm script`)** — CI-plumbing fix. Open issues 4 (#273 report / #271 / #270 / #261 / #258 / #212) + #1 Dependency Dashboard (`mrbro-bot[bot]`); open PRs 3 (#266 security-remediation carried, #263 repo-inventory docs carried 3 intervals, #254 script-count docs carried, #253 blog snapshot carried). API `open_issues_count` 11 folds the PRs.
-- Agent pin steady `fro-bot/agent@a4976f4 # v0.93.1`; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
-- `gh` credential gap again (unauthenticated GitHub REST + raw fetch only) — the same authenticated-access gap the occupant's own issue #212 tracks. No new facts about the *brand site* (id `1021912280`) observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+**Other durable deltas:**
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+- **Fro Bot agent v0.93.1 → v0.98.2** (SHA `994357c3`) — ecosystem version leader / canary a sixth consecutive time, though the lead has narrowed to ~1 patch over [[fro-bot--dashboard]] / [[marcusrbrown--gpt]] (both v0.97.0).
+- **`allowedCommands` allowlist expanded to multi-ecosystem** — grew from the JS/prettier/eslint/biome set to add Python (`poetry`/`pip`/`uv`/`pipenv`/`pdm`/`black`/`ruff`/`isort`), Rust (`cargo`), Go (`go mod`/`gofmt`), and Ruby (`bundle`/`rubocop`) anchored regexes — widening the `postUpgradeTasks` execution surface across every ecosystem while keeping the anchored-regex guardrail.
+- New Renovate-step env vars: `RENOVATE_BINARY_SOURCE: install`, `RENOVATE_BRANCH_PREFIX_OLD`, `RENOVATE_USE_BASE_BRANCH_CONFIG`, `RENOVATE_PRESET_CACHE_PERSISTENCE`, `RENOVATE_DEPENDENCY_DASHBOARD_FOOTER`.
+- New `fro-bot.yaml` guard `Validate review mode inputs`: a `mode=review` dispatch hard-fails without a `prompt` (review mode has no default prompt); the `prompt` doc-string names the verbatim path as the release-notes-narrative automation hook — cataloged under the two-phase pattern in [[github-actions-ci]].
+- `renovatebot/github-action` v46.1.4 → v46.2.0; `actions/checkout` v6.0.3 → v6.1.0; `actions/cache` v5.1.0; `create-github-app-token` v3.2.0 steady.
+- Internal preset `internal.json5#v4.16.37 → #v4.16.45`; `renovate.json5` `build`-commit-type routing added `bun`/`pnpm`.
+- Tooling: pnpm 11.13.0 → 11.20.0, Node 24.18.0 → 24.19.0, ESLint 10.7.0 → 10.8.0, Prettier 3.9.5 → 3.9.6, semantic-release 25.0.7 → 25.0.9, js-yaml 4.3.0 → 4.3.1, `@types/node` 24.13.2 → 24.13.3, `@vitest/eslint-plugin` 1.6.23 → 1.6.26; container tool pins Bun `1.3.6` → `1.3.14`, Yarn 4.17.1 → 4.18.0, yq v4.53.3 steady.
 
-## [2026-08-10 06:50] ingest | repo:marcusrbrown/marcusrbrown.github.io
+**Steady / carried:** 8 workflows, single-workflow three-mode Fro Bot (crons 03:30/15:30 UTC, dispatch default autoheal), two perpetual report issues, branch protection (11 required contexts), self-test-in-CI, dist/ drift verification, template-derived from `bfra-me/github-action` all unchanged. Stars/forks/watchers steady 3/1/3; open issues 64 → 65. **Dead v8-era analytics plumbing in `docker/entrypoint.sh` (`record_docker_metric`/`record_failure`/`/tmp/renovate-analytics`) re-confirmed present a sixth consecutive time** (~82 days, ~23 releases + a major boundary untouched) — now firmly intentional-but-unaddressed, not transient drift.
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+Fro Bot workflow present and current (agent v0.98.2) — **no onboarding follow-up draft PR warranted.** Public-only invariant satisfied (repo verified public via API; `sources[].url` declares the exact public owner/repo `bfra-me/renovate-action`).
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+Sources: https://github.com/bfra-me/renovate-action (SHA a4b5a95579396b1e97a9a84d18e0ed5f37cf3ae5)
+
+## [2026-08-10 06:52] ingest | repo:bfra-me/renovate-action
+
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/renovate-action
