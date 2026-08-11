@@ -3544,3 +3544,19 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-11 12:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+**Redundant same-day re-dispatch — no wiki mutation.** A second `workflow_dispatch` for this name landed the same day as the `[2026-08-11 06:09]` ingest above. Re-verified live state via unauthenticated GitHub REST + raw endpoints (no `GH_TOKEN` this run); reads limited to directory listings, README/manifest/workflow/config files per the untrusted-input constraint.
+
+**Nothing changed since the earlier same-day entry.** Name still resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). `main` HEAD **still `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31); `updated_at` still `2026-07-31T21:42:16Z`, `pushed_at` `2026-08-10T08:18:24Z` (PR-branch pushes only), `open_issues_count` 11, stars 1 — byte-identical to the values captured at 06:09. Agent pin steady `fro-bot/agent@a4976f4 # v0.93.1`; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24; 8 workflows; single `30 3` cron.
+
+Per the additive-only contract, the `wiki/repos/marcusrbrown--marcusrbrown-github-io.md` Delta Log (2026-08-11) and Survey History row written at 06:09 already record this frozen state accurately — there is no contradiction to note and no new fact to add, so **the wiki page and `index.md` were intentionally left unmodified**. This entry exists only to keep the log continuous and mark the duplicate dispatch. Fro Bot workflow present and active — no onboarding follow-up draft PR warranted. Public-only invariant satisfied (repo verified public via API; existing `sources[].url` declares exact public owner/repo `marcusrbrown/marcusrbrown.github.io`).
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-11 06:12] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
