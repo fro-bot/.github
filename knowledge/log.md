@@ -3561,24 +3561,24 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-12 00:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+## [2026-08-12 00:00] ingest | bfra-me/works
 
-No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`. Unauthenticated GitHub REST + raw endpoints (no `GH_TOKEN` this run — the same access gap the current occupant's own issue #212 tracks); reads limited to directory listings, README/manifest/workflow/config files per the untrusted-input constraint.
+Seventh survey of `bfra-me/works` (HEAD `beea0a1`, 2026-08-10, up from `cf8689a` 2026-07-19). Updated repo page `bfra-me--works.md` (frontmatter + new source, Identity, toolchain, Fro Bot Integration, Renovate baseline, Cross-Repo Relationships, Open Questions, Survey History) and the `bfra-me--works` catalog entry in `index.md`. No new topic/entity/comparison pages warranted. Surveyed via unauthenticated GitHub public API + raw file reads (no `gh` token present in this dispatch); reads limited to repo metadata, directory listings, README/manifest/workflow files per constraints.
 
-**Collision holds.** Name still resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio.", topics `blog/developer/github-pages/portfolio/react/typescript/vite`), verified public, **not** the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The 2026-07-13 name-collision recorded on [[marcusrbrown--marcusrbrown-github-io]] is unchanged since 2026-07-20.
+Delta from prior survey (`cf8689a`, 2026-07-19):
 
-**Tree frozen 11 days.** `main` HEAD **still `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31); `updated_at` still `2026-07-31T21:42:16Z`, `pushed_at` `2026-08-11T07:58:42Z` (PR-branch pushes only), stars 1. No trunk commits, no tree drift — so no durable delta lands on the canonical [[marcusrbrown--mrbro-dev]] page this cycle. Agent pin steady `fro-bot/agent@a4976f4 # v0.93.1`; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24; 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); single `30 3` daily oversight+autoheal cron.
+- **No structural change.** 13 workflow files, 9 published packages + docs site, layout, workspace config (same override surface + `allowBuilds` set: esbuild/msw/sharp/unrs-resolver), Probot settings (12 required checks), branch protection (`enforce_admins: true`, linear history), and AGENTS.md conventions all confirmed durable. HEAD is a pure `@anthropic-ai/sdk` v0.116.0 deps bump (#4193) atop a run of Renovate churn.
+- **Fro Bot agent pin** v0.93.1 → **v0.98.2** (via v0.98.1 #4180 → v0.98.2 #4183); open bump PR **#4196** (→ v0.98.3) already queued. Same three modes / two crons (`0 16`, `30 3`) / prompt bodies — no workflow-body change.
+- **Toolchain:** pnpm 11.13.1 → **11.20.0**; Node 24.18.0 → **24.19.0**; `bfra-me/.github` reusable renovate + `internal.json5` v4.16.37 → **v4.16.45** (`update-repo-settings` still v4.16.0). ESLint 10.8.1, Prettier 3.8.5, Vitest 4.1.10, tsup 8.5.1, `@changesets/cli` 2.31.1.
+- **Publish drought ~12 weeks (longest observed).** All nine published package versions byte-identical to the 2026-05-16 baseline (seventh consecutive survey). Publish-PR lineage keeps re-staging without landing: #3854 (closed unmerged) → #3972 → **#4195** (`chore(🦋📦): publish packages`, 2026-08-10).
+- **Pending v1 PR #3691** still untouched since 2026-06-14 (`mergeable_state: dirty`, ~8 weeks, ~54 minors behind the live v0.98.2 pin) — third consecutive dead-proposal flag. Should be closed and re-opened against a fresher v1.x. Cross-noted: [[bfra-me--renovate-action]] crossed its own v10 major (2026-08-10) while this v0→v1 crossing stays parked — unrelated tag trains, same review-gate hesitancy on majors.
+- **Fro Bot PR backlog flat at 12** but composition rotated. Persisting: esbuild dupes #3704/#3713 (still un-deduped, ~8 weeks), #3762 (undici), #3803 (lockfile metadata), #3619 (vitest templates). New: #4184 (fast-uri override), #4084 (brace-expansion override), #4162 (agent-guide docs — supersedes retired #3973). Dropped off: #3508, #3620/#3724. The `AUTOHEAL_PROMPT` dedup guard still isn't reconciling its own unmerged copies — review pipeline is the bottleneck (fourth consecutive survey).
+- Open issues flat at 38; stars 4. Fro Bot workflow present and active — no follow-up onboarding PR needed.
 
-The full unauthenticated-API pass surfaced the **complete** open queue this cycle: open issues 7 (#275 Daily Fro Bot Report renumbered from #274 / #271 `ci: reduce performance workflow permissions` / #270 `ci: pass Vitest coverage flag through pnpm script` / #261 `ci(fro-bot): narrow scheduled-run token permissions` / #258 `ci: make performance budget failures visible and actionable` — all carried / #212 `fix(fro-bot): provide authenticated git push for mention runs` / #162 Daily Autohealing Report) + #1 Dependency Dashboard (`mrbro-bot[bot]`); open PRs 4, all carried (#266 `fix(security): remediate high audit advisories` / #263 `docs: refresh repository inventory` / #254 `docs: correct automation script count` / #253 `chore(blog): refresh snapshot and preview images`); API `open_issues_count` 12.
+Sources: https://github.com/bfra-me/works (SHA beea0a1880489603ced3418dd321ee2de125ffa1)
 
-**Contradiction corrected (additively):** the 2026-08-11 entry stated #212 "dropped off the open list." The full-API read this cycle shows #212 is still open — its apparent absence on 2026-08-11 was a partial-pagination read artifact under unauthenticated access, not a state change. The prior claim is preserved; the correction is recorded in the repo page's 2026-08-12 Delta Log and Survey History row.
+## [2026-08-12 06:50] ingest | repo:bfra-me/works
 
-Updated `wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (new Delta Log 2026-08-12 + Survey History row + frontmatter `updated`/source) and `index.md` (collision-record entry tail). No topic/entity/comparison page warranted this cycle (frozen tree, no durable delta). Fro Bot workflow present and active — no onboarding follow-up draft PR warranted. Public-only invariant satisfied.
+Surveyed bfra-me/works and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
-
-## [2026-08-12 06:48] ingest | repo:marcusrbrown/marcusrbrown.github.io
-
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+Sources: https://github.com/bfra-me/works
