@@ -3601,3 +3601,21 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-13 14:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+Second same-day pass (dispatch re-run) of the *name* `marcusrbrown/marcusrbrown.github.io`. Byte-identical to the 06:50 survey — no drift.
+
+- **Name-collision holds:** name resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio, homepage `https://mrbro.dev/`, description "My portfolio."), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Binding unchanged since 2026-07-20.
+- **Tree frozen:** `main` HEAD still `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31) — 13 days without a trunk commit. `pushed_at` `2026-08-12T08:05:47Z` (PR-branch pushes only), `updated_at` `2026-07-31T21:42:16Z`. No tree-level drift, so no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page.
+- **Queue identical to earlier pass:** open issues 5 + #1 (#276 Daily Fro Bot Report / #271 perf-workflow perms / #270 Vitest coverage flag / #261 scheduled-run token perms / #258 perf-budget CI visibility / #212 mention-run git-push-auth back in listing; #1 Dependency Dashboard by `mrbro-bot[bot]`); open PRs 4, all carried and none merged since 2026-08-07 (#266 audit remediation / #263 repo inventory / #254 script count / #253 blog snapshot). `open_issues_count` 11, stars 1.
+- Agent pin steady `fro-bot/agent@a4976f4 # v0.93.1`; 8 workflows; single `30 3` daily oversight+autoheal cron; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot active — no onboarding follow-up PR.
+- Folded into the existing 2026-08-13 delta log (page) as a confirming same-day pass rather than a duplicate section; added a survey-history row and refreshed the source chain. `gh` credential gap again (unauthenticated GitHub API + raw fetch), same access limitation issue #212 tracks. Modified `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md`, `knowledge/index.md`, and this log.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-13 06:54] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
