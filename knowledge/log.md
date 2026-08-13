@@ -3582,3 +3582,22 @@ Sources: https://github.com/bfra-me/works (SHA beea0a1880489603ced3418dd321ee2de
 Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-08-13 00:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io` (SHA `9e54dbc`, unchanged since 2026-07-31). The name resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (canonical [[marcusrbrown--mrbro-dev]]), *not* the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-collision documented since 2026-07-13/-20 is holding. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (frontmatter `updated` + new source, Delta Log 2026-08-13, Survey History row) and the `marcusrbrown--marcusrbrown-github-io` catalog entry in `index.md`. No new topic/entity/comparison pages warranted. No durable delta lands on [[marcusrbrown--mrbro-dev]] this cycle because the tree is frozen. Surveyed via unauthenticated GitHub public API + raw file reads (no `gh` token present in this dispatch — the same authenticated-access gap the current occupant's own issue #212 tracks); reads limited to repo metadata, directory listings, README/manifest/workflow files per constraints.
+
+Delta from prior survey (2026-08-11, `9e54dbc`):
+
+- **`main` frozen at `9e54dbc` for 13 days** (last trunk commit `fix(analytics): preserve umami pageview context (#257)`, 2026-07-31; `updated_at` still 2026-07-31). `pushed_at` advanced to 2026-08-12 = PR-branch pushes only. No tree-level drift.
+- **Structure steady:** agent pin `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); single `30 3` daily oversight+autoheal cron; Renovate `github>marcusrbrown/renovate-config#5.2.7` + `group:allNonMajor`; pnpm 11.1.3 / Node >=24; React 19 / RR7.15 / TS 5.9.3 / Vite 7.3.6 / Vitest 4.1.10 / Playwright 1.61.1; `pnpm.overrides` empty (ledger consolidated in `pnpm-workspace.yaml`).
+- **Queue stable vs 2026-08-11**, same CI least-privilege + coverage-visibility cluster, all self-filed by `fro-bot`: open issues 5 (#276 Daily Fro Bot Report renumbered up from #274 / #271 `ci: reduce performance workflow permissions` / #270 `ci: pass Vitest coverage flag through pnpm script` / #261 `ci(fro-bot): narrow scheduled-run token permissions` / #258 perf-budget CI visibility) + #1 Dependency Dashboard (`mrbro-bot[bot]`). **#212 (mention-run git-push-auth) is back in the open listing** — the 2026-08-11 drop-off was a listing/pagination artifact, not a close. Open PRs 4, all carried and none merged since 2026-08-07 (#266 `fix(security): remediate high audit advisories` / #263 `docs: refresh repository inventory` / #254 `docs: correct automation script count` / #253 `chore(blog): refresh snapshot and preview images`); API `open_issues_count` 11. The report-without-remediation / propose-without-merge pattern (noted since 2026-06-12) is now firmly durable — the merge loop stays stalled.
+- **Fro Bot workflow present and active** — no onboarding follow-up draft PR warranted for this name.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-13 06:50] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
