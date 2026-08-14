@@ -3619,3 +3619,21 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-14 12:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`. Tree frozen 14 days; only queue motion is the daily-report renumber.
+
+- **Name-collision holds:** name resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio, homepage `https://mrbro.dev/`, description "My portfolio.", topics `blog/developer/github-pages/portfolio/react/typescript/vite`), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Binding unchanged since 2026-07-20.
+- **Tree frozen:** `main` HEAD still `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z) — 14 days without a trunk commit. `pushed_at` `2026-08-13T08:07:55Z` (PR-branch pushes only), `updated_at` `2026-07-31T21:42:16Z`. No tree-level drift, so no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page.
+- **Queue byte-identical to 2026-08-13 aside from daily-report renumber #276 → #277:** open issues 5 + #1 (#277 Daily Fro Bot Report — 2026-08-14 / #271 perf-workflow perms / #270 Vitest coverage flag / #261 scheduled-run token perms / #258 perf-budget CI visibility / #212 mention-run git-push-auth; #1 Dependency Dashboard by `mrbro-bot[bot]`); open PRs 4, all carried and none merged since 2026-08-07 (#266 audit remediation / #263 repo inventory / #254 script count / #253 blog snapshot). `open_issues_count` 11, stars 1. Propose-without-merge / report-without-remediation pattern (since 2026-06-12) remains durable — #266 security-remediation PR unmerged through 14 days of frozen trunk.
+- Agent pin steady `fro-bot/agent@a4976f4 # v0.93.1`; 8 workflows (`blog-refresh`/`ci`/`copilot-setup-steps`/`deploy`/`e2e-tests`/`fro-bot`/`performance`/`renovate`); single `30 3` daily oversight+autoheal cron; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24. Fro Bot active — no onboarding follow-up PR.
+- Modified `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (new delta-log section + survey-history row + refreshed source chain/frontmatter), `knowledge/index.md`, and this log. `gh` credential gap again (unauthenticated GitHub API + raw fetch), same access limitation issue #212 tracks.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-14 06:47] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
