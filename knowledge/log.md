@@ -3637,3 +3637,20 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-14 14:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+Second same-day pass (dispatch re-run). Re-observed **byte-identical state** vs the earlier 2026-08-14 survey — no trunk drift, no queue drift.
+
+- **Collision holds:** name resolves to repo **id `1174807412`** (mrbro.dev portfolio, homepage `https://mrbro.dev/`, description "My portfolio."), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Binding unchanged since 2026-07-20.
+- **Tree still frozen:** `main` HEAD `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z); `pushed_at` `2026-08-13T08:07:55Z` (PR-branch pushes only), `updated_at` `2026-07-31T21:42:16Z`, `open_issues_count` 11, stars 1. No tree-level drift → no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page.
+- **Queue identical:** open issues 5 + #1 (#277/#271/#270/#261/#258/#212 + #1); open PRs 4 all carried, none merged since 2026-08-07 (#266/#263/#254/#253). Agent v0.93.1 (`a4976f4`), 8 workflows, single `30 3` cron, Renovate `#5.2.7`, pnpm 11.1.3 / Node >=24 — all steady. Fro Bot active — no onboarding PR.
+- Folded into the 2026-08-14 delta log (page) as a confirming same-day pass rather than a duplicate section; added a survey-history row and one `accessed: 2026-08-14` source entry. `gh` credential gap again (unauthenticated GitHub API only), same access limitation issue #212 tracks. Modified `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` and this log.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-14 06:51] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
