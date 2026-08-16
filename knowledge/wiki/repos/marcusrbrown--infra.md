@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/infra"
 created: 2026-04-18
-updated: 2026-08-01
+updated: 2026-08-16
 sources:
+  - url: https://github.com/marcusrbrown/infra
+    sha: d276d935c6ca0f3507079103ba5cd7ffb0f84cde
+    accessed: 2026-08-16
   - url: https://github.com/marcusrbrown/infra
     sha: e0e325205da0549708c07bb84409cde50f4f3634
     accessed: 2026-07-15
@@ -34,7 +37,7 @@ sources:
   - url: https://github.com/marcusrbrown/infra
     sha: 20de04713bf01294217dee4d3b64d5d7cfb2426e
     accessed: 2026-04-18
-tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, gateway, umami, dashboard, vpn, wireguard, aws-lightsail, mcp, cli, typescript, conventions, discord, analytics, codeql, broker, oidc, credential-broker, opencode, discord-mcp, slim-clonedeps]
+tags: [bun, deploy, github-actions, infra, keeweb, cliproxy, gateway, umami, dashboard, vpn, wireguard, aws-lightsail, aws-s3, aws-iam, mcp, cli, typescript, conventions, discord, analytics, codeql, broker, oidc, credential-broker, s3-storage-provisioner, auth-monitor, opencode, discord-mcp, slim-clonedeps]
 aliases: [infra]
 related:
   - marcusrbrown--ha-config
@@ -45,18 +48,19 @@ related:
 
 # marcusrbrown/infra
 
-Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), the [[fro-bot--agent]] Discord gateway deployment, self-hosted Umami analytics, the [[fro-bot--dashboard]] operator dashboard deploy, a WireGuard VPN egress box on AWS Lightsail, an OIDC-authenticated credential broker (short-lived off-runner cliproxy keys for the harness pipeline), and an operational CLI with MCP bridge.
+Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), the [[fro-bot--agent]] Discord gateway deployment, self-hosted Umami analytics, the [[fro-bot--dashboard]] operator dashboard deploy, a WireGuard VPN egress box on AWS Lightsail, an OIDC-authenticated credential broker (short-lived off-runner cliproxy keys for the harness pipeline), an AWS S3 durable-storage provisioner for `fro-bot/agent` session state (OIDC → STS, per-repo least-privilege IAM roles), and an operational CLI with MCP bridge.
 
 ## Overview
 
 - **Purpose:** Deploy automation, operational CLI, and infrastructure tooling
 - **Default branch:** `main`
 - **Created:** 2026-04-03
-- **Last push:** 2026-07-15 (`e0e3252`)
+- **Last push:** 2026-08-16 (`d276d93`)
 - **Runtime:** Bun v1.0+
 - **Workspace package:** root is `@marcusrbrown/infra-workspace` (private); the published CLI is `@marcusrbrown/infra` (in `packages/cli/`)
-- **Published package:** `@marcusrbrown/infra` v0.13.20 on npm (latest release 2026-07-13)
-- **Open issues:** active Renovate Dependency Dashboard + autohealing reports; exact count fluctuates (~10 as of 2026-07-15)
+- **Published package:** `@marcusrbrown/infra` v0.15.4 on npm (latest release; up from v0.13.20 at the prior survey)
+- **Open issues:** active Renovate Dependency Dashboard + autohealing reports; exact count fluctuates (~28 as of 2026-08-16)
+- **Stars:** 3
 - **Topics:** `bun`, `deploy`, `github-actions`, `infra`, `keeweb`
 - **License:** MIT
 
@@ -75,6 +79,7 @@ Bun workspace monorepo with `apps/*` and `packages/*` workspaces.
 | `apps/dashboard/`     | Fro Bot operator dashboard deploy (2-service compose, digest-pinned upstream image) at `dashboard.fro.bot` |
 | `apps/vpn/`           | WireGuard VPN egress box on AWS Lightsail (`eu-west-1`); native `wg-quick`/systemd, no Docker |
 | `apps/broker/`        | OIDC-authenticated credential broker (`broker.fro.bot`); mints short-lived cliproxy keys for CI runs |
+| `apps/agent/`         | AWS S3 durable-storage provisioner for `fro-bot/agent` session state (OIDC → STS, per-repo IAM roles); operator-run, no deployed service (added 2026-08-16) |
 | `packages/cli/`       | `@marcusrbrown/infra` CLI — health checks, deploy triggers, MCP bridge |
 | `packages/shared/`    | Shared TypeScript helpers for DigitalOcean droplet provisioning (private) |
 | `docs/brainstorms/`   | Requirements and brainstorm documents                                  |
@@ -177,6 +182,17 @@ OIDC-authenticated credential broker at `broker.fro.bot`, added post-2026-06-19 
 - **Security property delivered:** short-lived + revocable + off-runner. cliproxy has no per-key capability surface, so a minted key is **fungible with the durable key for its TTL** — in-run abuse during the TTL window is a documented non-goal (Pattern B / egress containment deferred). Never scale the broker horizontally: the single-flight lock is valid only because there is exactly one instance.
 - **Cross-repo dependency:** `BROKER_TRUST_POLICY` in `apps/broker/src/policy.ts` ships with **placeholder** `repository_id`/`repository_owner_id`/`workflow_ref` values that must be replaced with real `fro-bot/agent` numeric IDs before deploy (tracked in `fro-bot/agent#1060`). The consuming-side integration (OIDC token request, broker call, `auth.json` injection) lands in [[fro-bot--agent]].
 
+#### Agent S3 Storage Provisioner (`apps/agent`)
+
+AWS S3 durable-storage provisioner for `fro-bot/agent` session state, added 2026-08-16 (HEAD `d276d93`). Private package `@marcusrbrown/infra-agent` — an **operator-run AWS provisioner, not a deployed service**: it has a `provision` script (`bun run provision:agent`) but **no `deploy` script and no `deploy-agent.yaml` workflow**. Its job is to stand up the durable-storage substrate so `fro-bot/agent` runs can persist OpenCode session state to S3 via native GitHub OIDC → AWS STS, with **no static AWS credential ever written to a consumer repository**. This is the *storage* half of the harness pipeline, complementing the [[fro-bot--agent]] credential half served by `apps/broker`. It is the **second AWS-backed component** (after the VPN Lightsail box) but the first to touch S3 + IAM.
+
+- **What it provisions:** a dedicated S3 bucket (separate from the gateway bucket), the account-level `token.actions.githubusercontent.com` OIDC provider (append-only — adds the `sts.amazonaws.com` audience without recreating or changing existing thumbprints/audiences), and **one least-privilege IAM role + inline policy per consumer repository**. Each repo gets a prefix-scoped policy: the session prefix carries an **explicit delete deny**, and the coordination lock is a **separate exact object ARN** (`.../coordination/OWNER/REPO/locks/repo.json`).
+- **Fail-closed key layout:** `src/key-layout.ts` version-pins the S3 session + coordination-lock paths against a `KEY_LAYOUT_VERSION` (currently `fro-bot/agent@v0.96.0`). Unknown or unverified action refs are **refused rather than widening IAM access** — the provisioner will not admit a layout it cannot verify.
+- **Dedicated provisioning credentials:** accepts `AGENT_AWS_ACCESS_KEY_ID`/`AGENT_AWS_SECRET_ACCESS_KEY` (+ optional `AGENT_AWS_SESSION_TOKEN`) and **deliberately ignores ambient `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`** — the same operator-local-only credential discipline as the VPN box. These values must never be copied into a GitHub Environment or committed.
+- **Convergence + readback + handoff manifest:** `server/provision.ts` discovers-or-creates each resource, applies the managed S3 controls, then readback-verifies. Managed drift is **reported and halts by default**; `--force` proceeds only after review, but **foreign/shared-resource drift is a hard stop even with `--force`**. On success it emits a single compact JSON **handoff manifest** (bucket, region, expected owner, `s3_prefix`, `session_prefix`, `lock_key`, `role_name`/`role_arn`, `policy_name`, `key_layout_version`, `oidc_provider_arn`) — identifiers and resource names only, **never credential bytes**.
+- **CLI wiring (`agent` command group):** `agent storage --repo OWNER/REPO --manifest handoff.json` verifies live repository identity, the provisioned IAM role + S3 bucket, the repo OIDC subject, and the effective workflow/environment contract, then writes only the **five non-secret `FRO_BOT_S3_*` repository variables** (`FRO_BOT_S3_ROLE_TO_ASSUME`, `FRO_BOT_S3_BUCKET`, `FRO_BOT_S3_REGION`, `FRO_BOT_S3_PREFIX`, `FRO_BOT_S3_EXPECTED_BUCKET_OWNER`). A failed workflow check emits a **pasteable diff and never edits the consumer workflow**. A teardown command removes those variables and invokes the repository-scoped resource teardown.
+- **Environment gating (documented invariant):** content-triggered jobs must not reach the storage job — **only the protected `fro-bot-storage` environment on scheduled or main-branch dispatched runs may receive `id-token: write`**.
+
 ### CLI (`packages/cli`)
 
 Published as `@marcusrbrown/infra` on npm. Built with [goke](https://github.com/remorses/goke) (CLI framework) + Zod Standard Schemas. Key commands:
@@ -213,6 +229,9 @@ Published as `@marcusrbrown/infra` on npm. Built with [goke](https://github.com/
 | `infra broker status`  | GET `/healthz` on `broker.fro.bot` — HTTP reachability (MCP-exposed, read-only) |
 | `infra broker deploy`  | Trigger Deploy Broker workflow (remote, default) or `--local` (runs `apps/broker/src/deploy.ts`) |
 | `infra broker logs [--tail N] [--service broker]` | Stream broker service logs over SSH; may contain run identities (CLI-only) |
+| `infra agent setup`     | Model-credential onboarding for a consumer repo (absorbs the former `cliproxy setup`; same `--repo`/`--harness`/`--key`/`--providers`/`--model`/`--force`/`--dry-run`/`--verify-smoke`/`--ack-key-reuse` options). Does **not** create AWS resources or modify the consumer workflow |
+| `infra agent storage --repo OWNER/REPO --manifest FILE` | Verify provisioned IAM role/S3 bucket/OIDC subject/workflow contract, then write the 5 non-secret `FRO_BOT_S3_*` repo variables (AWS readback needs `AGENT_AWS_*`; ambient `AWS_*` ignored) |
+| `infra agent storage` teardown | Remove the 5 `FRO_BOT_S3_*` variables + tear down repository-scoped AWS resources |
 | `infra mcp`             | Start stdio MCP server exposing all CLI commands as tools (read-only allowlist) |
 
 The MCP bridge (`infra mcp`) lets coding agents (Fro Bot, Copilot) call commands programmatically via the [Model Context Protocol](https://modelcontextprotocol.io).
@@ -246,6 +265,7 @@ The `.slim/clonedeps.json` manifest pins upstream repositories cloned for local 
 | Deploy VPN | `deploy-vpn.yaml` | Push to `main`, dispatch, `workflow_call` | Deploy WireGuard VPN box (path-filtered, `vpn` environment) |
 | Deploy Broker | `deploy-broker.yaml` | Dispatch, `workflow_call` | Deploy OIDC credential broker (path-filtered, `broker` environment) |
 | Release | `release.yaml` | Push to `main`, dispatch | Version and publish `@marcusrbrown/infra` via Changesets |
+| CLIProxy Auth Monitor | `cliproxy-auth-monitor.yaml` | Schedule (`7,22,37,52 * * * *` — every 15 min), dispatch | Probe CLIProxy's Anthropic auth health; on failure opens/updates a tracking issue + posts a Discord webhook. Dispatch supports `live` / `synthetic-dead` / `synthetic-healthy` validation modes (owner-only synthetics). Added 2026-08-16 |
 | Renovate | `renovate.yaml` | Schedule, issue/PR edits, post-deploy | Automated dependency updates |
 | Renovate Changesets | `renovate-changesets.yaml` | `pull_request_target` (Renovate PRs) | Auto-create changeset files for dependency updates |
 | Fro Bot | `fro-bot.yaml` | PRs, @mentions, daily schedule, dispatch | AI code review and autohealing |
@@ -291,10 +311,10 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 | Git hooks | `simple-git-hooks` 2.13.1 + `lint-staged` 16.4.0 | `eslint --fix` on staged files |
 | CLI framework | `goke` ^6.8.0 + Zod ^4.3.6 | Space-separated subcommands |
 | Prompts | `@clack/prompts` ^1.2.0 | Scoped to `cliproxy setup` wizard |
-| Changesets | `@changesets/cli` 2.31.0 + `@svitejs/changesets-changelog-github-compact` | Versioning for `@marcusrbrown/infra` CLI package |
-| Renovate | Extends `marcusrbrown/renovate-config#5.2.6` + `group:allNonMajor` | v4→v5 crossed 2026-05-17 (#242); preset `#5.2.3` → `#5.2.6` by 2026-07-15. Post-upgrade: `bun install --ignore-scripts` + `bun run fix`. Docker source URLs for CLIProxyAPI and Caddy. `bfra-me/.github` digest updates disabled |
+| Changesets | `@changesets/cli` 3.0.0 + `@svitejs/changesets-changelog-github-compact` | Versioning for `@marcusrbrown/infra` CLI package; **crossed v2 → v3 major** 2026-08-16 (#1106) |
+| Renovate | Extends `marcusrbrown/renovate-config#5.2.12` + `group:allNonMajor` | v4→v5 crossed 2026-05-17 (#242); preset `#5.2.6` → `#5.2.12` by 2026-08-16. Post-upgrade: `bun install --ignore-scripts` + `bun run fix`. Docker source URLs for CLIProxyAPI and Caddy. `bfra-me/.github` digest updates disabled |
 | Probot Settings | Extends `fro-bot/.github:common-settings.yaml` | Repository configuration sync |
-| TypeScript runtime | TypeScript 6.0.3, ESLint 10.7.0 | ESLint 10.4.0 → 10.7.0 by 2026-07-15; Prettier 3.9.5, `@bfra.me/prettier-config` 0.16.9, lint-staged 17.0.8 |
+| TypeScript runtime | TypeScript 6.0.3, ESLint 10.8.1 | ESLint 10.7.0 → 10.8.1 by 2026-08-16; Prettier 3.9.5 → 3.9.6, `@bfra.me/prettier-config` 0.16.9, lint-staged 17.0.8 → 17.3.0 |
 | Patched deps | `patches/@changesets%2Fget-github-info@0.6.0.patch` via Bun `patchedDependencies` | Local patch applied to changesets GitHub-info resolver |
 
 ### Key Dependencies
@@ -311,10 +331,10 @@ Required status checks on `main`: CI, Fro Bot, Lint, Type Check, `Renovate / Ren
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.90.0` (SHA `42db56dc027a5c9aee99c0ada97a406554108894`; bumped from v0.79.4 over 2026-07-01 → 2026-07-15). The workflow includes:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.99.0` (SHA `2167bb87be9ef2000f81af0c65a1736f8de7d19b`; bumped from v0.90.0 over 2026-07-15 → 2026-08-16). The workflow includes:
 
 - **PR review** with structured verdict format (PASS / CONDITIONAL / REJECT) and sections for blocking issues, non-blocking concerns, missing tests, and risk assessment
-- **Daily autohealing schedule** (03:30 UTC) with 8 operational categories: errored PRs, security, code quality, developer experience, deploy pipeline health, live site review (via `agent-browser`), cross-project intelligence, and **upstream modernization watch** (Sunday-only)
+- **Daily autohealing schedule** (single `30 3` UTC cron) now with **10 operational categories** (up from 8): (1) errored PRs, (2) security, (3) code quality, (4) **workflow integrity**, (5) **quality gates verification**, (6) developer experience, (7) deploy pipeline health, (8) live site review (via `agent-browser`), (9) cross-project intelligence, (10) **upstream modernization watch** (Sunday-only). The prompt hard-codes a serial execution model (one mutation → clean tree → continue), a dedup pass, a scope cap (non-minimal/irreversible fixes get an issue, not an auto-heal), a Renovate-owns-versions boundary (dependency edits only for confirmed critical/high advisories), and a trusted-authors allowlist (`renovate[bot]`, `dependabot[bot]`, `mrbro-bot[bot]`, `fro-bot`, owner/write-collaborators)
 - **@mentions** in comments by OWNER/MEMBER/COLLABORATOR
 - **Custom dispatch prompts** via `workflow_dispatch`
 - Concurrency per PR/issue/discussion, non-cancelling
@@ -354,7 +374,9 @@ The autohealing schedule monitors:
 
 **`broker` environment (added post-2026-06-19):** Secrets: `BROKER_SSH_KEY`, `BROKER_HOST` (both required), `CLIPROXY_MANAGEMENT_KEY` (broker uses it to mint/revoke `ghact-` keys in cliproxy). Variable: `BROKER_AUD` — the broker-minted OIDC audience, set as a GitHub Environment **variable** (not a secret; it is a cross-context replay defense), flows at both provision time and deploy time. Environment gated with a required reviewer + main-only branch policy (pre-create before merge — auto-create is ungated). `DIGITALOCEAN_ACCESS_TOKEN` is repo-level.
 
-**Repository secrets:** `APPLICATION_ID`, `APPLICATION_PRIVATE_KEY`, `DIGITALOCEAN_ACCESS_TOKEN`, `FRO_BOT_PAT`, `NPM_TOKEN`, `OPENCODE_AUTH_JSON`, `OPENCODE_CONFIG`
+**`fro-bot-storage` environment (added 2026-08-16, `apps/agent`):** A protected GitHub Environment that gates `id-token: write` for the S3 storage job. Only scheduled or main-branch dispatched runs may reach it — content-triggered jobs are structurally excluded. The AWS provisioning credentials themselves (`AGENT_AWS_ACCESS_KEY_ID`/`AGENT_AWS_SECRET_ACCESS_KEY`/optional `AGENT_AWS_SESSION_TOKEN`) are **operator-local only** — never placed in this or any GitHub Environment. Consumer repos receive only the five non-secret `FRO_BOT_S3_*` variables.
+
+**Repository secrets:** `APPLICATION_ID`, `APPLICATION_PRIVATE_KEY`, `DIGITALOCEAN_ACCESS_TOKEN`, `FRO_BOT_PAT`, `NPM_TOKEN`, `OPENCODE_AUTH_JSON`, `OPENCODE_CONFIG`, `CLIPROXY_API_KEY`, `CLIPROXY_AUTH_MONITOR_DISCORD_WEBHOOK` (the last two consumed by `cliproxy-auth-monitor.yaml`)
 
 **Repository variables:** `FRO_BOT_MODEL`
 
@@ -411,8 +433,10 @@ This approach avoids relying solely on human review or agent-driven linting for 
 - **Scoped deploy user:** `deploy-kw` on the target server has write access to the site directory only, with sudo for a single activation script. Minimal privilege surface.
 - **Compound learning:** `docs/solutions/` contains solved-problem documentation with YAML frontmatter, following the compound knowledge pattern.
 - **Agent skills:** `.agents/skills/goke/SKILL.md` provides domain context for the goke CLI framework.
-- **Split deploy pipeline:** Each of the seven apps deploys independently via dedicated path-gated workflows (keeweb, cliproxy, gateway, umami, dashboard, vpn, broker), preventing cascading failures. A thin `deploy.yaml` orchestrator exists for manual dispatch of all simultaneously.
+- **Split deploy pipeline:** Seven of the eight apps deploy independently via dedicated path-gated workflows (keeweb, cliproxy, gateway, umami, dashboard, vpn, broker), preventing cascading failures. A thin `deploy.yaml` orchestrator exists for manual dispatch of all simultaneously. The eighth app, `apps/agent`, is **not in the deploy fan-out** — it is an operator-run *provisioner* (`provision:agent`), not a deployed service, so it has no `deploy-agent.yaml`.
 - **OIDC credential broker (off-runner keys):** The broker exchanges a GitHub Actions OIDC token for a short-lived, revocable cliproxy key so the durable provider key never touches a CI runner. Revocation is sweeper-only (TTL + reconcile) — no run-end revoke endpoint — with a startup reconcile gate that blocks `/v1/mint` until stale `ghact-` keys are cleared. This is the ecosystem moving from static per-repo cliproxy keys toward per-run minted credentials, with the consuming half landing in [[fro-bot--agent]].
+- **OIDC → STS durable-storage provisioner (no static AWS creds in repos):** `apps/agent` provisions per-repo S3 session storage for `fro-bot/agent` using native GitHub OIDC → AWS STS. Each consumer repo gets its own least-privilege IAM role + prefix-scoped inline policy (session prefix has an explicit delete-deny; the coordination lock is a separate exact object ARN), and the CLI writes only five non-secret `FRO_BOT_S3_*` repo *variables* — **never a static AWS credential**. The account-level OIDC provider is touched append-only (adds the `sts.amazonaws.com` audience without disturbing existing thumbprints/audiences). A **version-pinned key layout fails closed** on unknown action refs rather than widening IAM access. This is the *storage* counterpart to the broker's *credential* half — both push per-run, capability-scoped access instead of durable secrets on runners. Distinct from the VPN box in that provisioning credentials (`AGENT_AWS_*`) explicitly shadow-and-ignore ambient `AWS_*`.
+- **Out-of-band health monitor with synthetic self-test:** `cliproxy-auth-monitor.yaml` probes CLIProxy's upstream Anthropic auth every 15 minutes on its own cadence (independent of the daily Fro Bot autoheal), escalating failures to a tracking issue + a Discord webhook. Dispatch exposes owner-only `synthetic-dead`/`synthetic-healthy` validation modes so the alerting path itself can be exercised without waiting for a real outage — the monitor can prove it still fires.
 - **Digest-pinned upstream image consumption:** The dashboard app consumes the upstream-built `ghcr.io/fro-bot/dashboard` image by tag + digest and verifies the running container's `RepoDigests` against the pin before serving — a no-build deploy that keeps the build surface in [[fro-bot--dashboard]].
 - **Multi-cloud:** Most apps run on DigitalOcean droplets, but the VPN egress box runs on **AWS Lightsail** (`eu-west-1`) — the first AWS-backed deployable, provisioned via the AWS SDK with credentials kept operator-local (deploy/status remain SSH-only).
 - **Two-layer MCP tool gating with vendored-source provenance:** Sensitive infra commands are gated twice — an `MCP_ALLOWLIST` that never registers them as tools (primary), and an `opencode.jsonc` `permission: deny` backstop (secondary). Both layers are asserted by `conventions.test.ts`. The design is grounded in a **vendored upstream clone** (`.slim/clonedeps.json` pinning `anomalyco/opencode@v1.15.13`) because empirically neither `tools:false` nor `permission:deny` alone fully suppressed the tools — reading the upstream registration/permission code was the way to get the gating right. Vendoring the exact upstream you must reason about, rather than trusting docs, is the pattern.
@@ -423,12 +447,12 @@ This approach avoids relying solely on human review or agent-driven linting for 
 
 | Component | Image | Version |
 | --- | --- | --- |
-| Caddy reverse proxy | `caddy:2.11.4-alpine` | Digest-pinned (up from 2.11.3-alpine) |
-| CLIProxyAPI | `eceasy/cli-proxy-api:v7.2.77` | Digest-pinned (up from v7.2.48) |
+| Caddy reverse proxy | `caddy:2.11.4-alpine` | Digest-pinned (`5f5c8640…`, shared across cliproxy/umami/dashboard) |
+| CLIProxyAPI | `eceasy/cli-proxy-api:v7.2.133` | Digest-pinned (up from v7.2.77) |
 
 Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest rotations with changelog context sourced from upstream repositories (`router-for-me/CLIProxyAPI`, `caddyserver/caddy`).
 
-**Version note:** CLIProxyAPI crossed v6→v7 major boundary between 2026-05-27 and 2026-06-09. As of 2026-07-15 the deployment is **v7.2.77** (up from v7.2.48 at the prior survey; #852). Caddy bumped to `2.11.4-alpine` (digest `5f5c8640…`, shared across cliproxy/umami/dashboard/broker).
+**Version note:** CLIProxyAPI crossed v6→v7 major boundary between 2026-05-27 and 2026-06-09. As of 2026-08-16 the deployment is **v7.2.133** (up from v7.2.77 at the prior survey). Caddy steady at `2.11.4-alpine` (digest `5f5c8640…`, shared across cliproxy/umami/dashboard/broker).
 
 **Healthcheck change:** As of #469 (2026-06-09), the deploy healthcheck was moved from the CLIProxyAPI endpoint to the Caddy endpoint for Debian-image compatibility. The docker-compose healthcheck itself (`wget --spider http://localhost:8317/healthz`) is unchanged.
 
@@ -437,7 +461,7 @@ Both images are digest-pinned in `docker-compose.yaml`. Renovate manages digest 
 | Component | Image | Version |
 | --- | --- | --- |
 | Caddy reverse proxy | `caddy:2.11.4-alpine` | Digest-pinned (shared digest with cliproxy) |
-| Umami analytics | `umamisoftware/umami:3.2.0` | Digest-pinned (steady since prior survey) |
+| Umami analytics | `umamisoftware/umami:3.3.0` | Digest-pinned (up from 3.2.0) |
 | Postgres | `postgres:15-alpine` | Digest-pinned |
 
 Digest-pinned images managed by Renovate. Postgres port 5432 is never published to the host — DB is only accessible on the internal compose network.
@@ -447,7 +471,7 @@ Digest-pinned images managed by Renovate. Postgres port 5432 is never published 
 | Component | Image | Version |
 | --- | --- | --- |
 | Caddy reverse proxy | `caddy:2.11.4-alpine` | Digest-pinned (shared digest with cliproxy/umami/broker) |
-| Dashboard | `ghcr.io/fro-bot/dashboard:2026.07.21` | Tag + digest-pinned (upstream released image; up from `2026.06.57`) |
+| Dashboard | `ghcr.io/fro-bot/dashboard:2026.08.17` | Tag + digest-pinned (upstream released image; up from `2026.07.21`) |
 
 The dashboard image is built upstream in [[fro-bot--dashboard]] and consumed here by digest — no on-droplet build. Deploy verifies the running container's `RepoDigests` matches the compose-pinned digest before fronting it with Caddy.
 
@@ -455,11 +479,11 @@ The dashboard image is built upstream in [[fro-bot--dashboard]] and consumed her
 
 | Component | Source | Notes |
 | --- | --- | --- |
-| Gateway daemon | `fro-bot/agent@v0.88.0` (pinned in `apps/gateway/upstream.json`) | Cloned + reset on the droplet each deploy |
+| Gateway daemon | `fro-bot/agent@v0.93.1` (pinned in `apps/gateway/upstream.json`) | Cloned + reset on the droplet each deploy |
 | Workspace executor | Same source | Runs inside the same Compose stack |
 | mitmproxy | Per upstream compose | Starts first; certificate in `mitmproxy-certs` named volume |
 
-**Upstream pin note:** Gateway daemon bumped to v0.88.0 (from v0.79.1 at the prior survey).
+**Upstream pin note:** Gateway daemon bumped to v0.93.1 (from v0.88.0 at the prior survey). Note the gateway `upstream.json` pin (v0.93.1) lags the `fro-bot.yaml` action pin (v0.99.0) — the deployed daemon and the CI review action are versioned independently.
 
 Compose stack lives at `/opt/gateway/` on the droplet. Source materialization is `git clone || git fetch && git reset --hard && git clean -xfd` to the pinned SHA, isolated from `/opt/gateway/.secrets-checksum` so checksum survives `git clean -xfd`.
 
@@ -484,5 +508,6 @@ Compose stack lives at `/opt/broker/` on the droplet. No source bind-mount and n
 | 2026-05-27 | `2f9bafd` | **Major expansion.** New `apps/gateway/` (Fro Bot Discord stack at `gateway.fro.bot`, #264, 2026-05-18); new `packages/shared/` for droplet provisioning helpers (#290). 12 workflows (added `deploy-gateway.yaml`). Fro Bot agent v0.42.2 → v0.44.3 (multiple bumps). Renovate preset bumped major v4→v5 (#242, `marcusrbrown/renovate-config#5.2.0`) with `group:allNonMajor`. TypeScript 6.0.3, ESLint 10.4.0, `@bfra.me/eslint-config` 0.51.1. CLI v0.4.6 → v0.7.0; MCP fidelity refactor for status-only commands (#296). CLIProxy: OpenAI/Codex device-code OAuth login (#303), OpenAI provider opt-in for `cliproxy setup --harness opencode` (#307); CLIProxyAPI v6.10.9, Caddy 2.11.3-alpine. Gateway hardening: ControlMaster multiplexing (#277), pinned droplet host keys (#272), checksum-after-success secret rotation. Discord token-lifecycle runbook (#284). Open issues 5→38, 0 open PRs. |
 | 2026-06-19 | `ac79468` | **Two new apps: dashboard + VPN.** Added `apps/dashboard/` — Fro Bot operator dashboard at `dashboard.fro.bot`, 2-service compose (caddy + digest-pinned `ghcr.io/fro-bot/dashboard:2026.06.16`), `deploy-dashboard.yaml`, `dashboard` GitHub Environment, GitHub App key file-mounted, CLI group (`dashboard status/deploy/logs`). Added `apps/vpn/` — WireGuard egress box on **AWS Lightsail** (`eu-west-1`), first AWS-backed deployable; native `wg-quick`/systemd, no Docker; provisioned via `@aws-sdk/client-lightsail`; `deploy-vpn.yaml`, `vpn` Environment, CLI group (`vpn status/deploy/logs/client add\|list\|remove`). Now **16 workflows** total (added deploy-dashboard, deploy-vpn, `codeql.yaml` — CodeQL JS/TS analysis). `deploy.yaml` orchestrator now fans out to 6 per-app deploy workflows. CLI v0.9.17 → v0.12.2. Fro Bot agent v0.59.0 → v0.71.0 (SHA `9b89fb3`). Gateway upstream pin v0.57.0 → v0.69.0. CLIProxyAPI v7.1.56 → v7.2.20. Root docs `ARCHITECTURE.md` + `STRUCTURE.md` added. ESLint 10.4.0 → 10.5.0, lint-staged 16 → 17, Prettier 3.8.3 → 3.8.4. |
 | 2026-06-09 | `9ce50f4` | **New app: Umami analytics.** Added `apps/umami/` — self-hosted Umami at `metrics.fro.bot`, 3-service Docker Compose (umami 3.1.0 + postgres 15-alpine + caddy 2.11.3-alpine), `deploy-umami.yaml` workflow, `umami` GitHub Environment, new CLI command group (`umami status/deploy/host/logs`). Now 13 workflows total. CLI v0.7.0 → v0.9.17. Fro Bot agent v0.44.3 → v0.59.0 (SHA `feb5365`). Gateway upstream daemon pin v0.44.2 → v0.57.0 (#466, `daily_digest` presence event). CLIProxyAPI v6.x → v7.1.56 (major version; v7.1.54/55 reverted #463 for health check regression, v7.1.56 stable). CLIProxy deploy healthcheck moved to Caddy endpoint for Debian-image compat (#469). Renovate config bumped `marcusrbrown/renovate-config#5.2.1`. Gateway secrets contract expanded (added GitHub App credentials, workspace OpenCode secrets, presence channel secrets). `OMO_PROVIDERS` removed from repo secrets; `WORKSPACE_OPENCODE_TOKEN/AUTH/MODEL/CONFIG` and `GH_APP_ID/PRIVATE_KEY`, `GATEWAY_TRIGGER_ROLE_ID`, `GATEWAY_WEBHOOK_SECRET`, `GATEWAY_PRESENCE_CHANNEL_ID` added. Provisioning management key now written to a 0600 file instead of stdout (#453). |
+| 2026-08-16 | `d276d93` | **New app: AWS S3 durable-storage provisioner + new auth-monitor workflow.** Added `apps/agent/` — private `@marcusrbrown/infra-agent`, an operator-run AWS provisioner (no deploy workflow) that stands up per-repo S3 session storage for `fro-bot/agent` via GitHub OIDC → AWS STS: dedicated bucket, append-only account OIDC provider, one least-privilege IAM role + prefix-scoped inline policy per consumer repo (session-prefix delete-deny, separate lock ARN), `key-layout.ts` fail-closed layout pinning (`fro-bot/agent@v0.96.0`), readback + JSON handoff manifest; new `agent` CLI group (`agent setup` absorbs the old `cliproxy setup`, kept as compat wrapper; `agent storage`/teardown writes only the 5 non-secret `FRO_BOT_S3_*` repo variables); new protected `fro-bot-storage` GitHub Environment gating `id-token: write`. Second AWS-backed component (first to touch S3/IAM). Added `cliproxy-auth-monitor.yaml` — 15-min Anthropic-auth health probe → tracking issue + Discord webhook, with owner-only `synthetic-dead`/`synthetic-healthy` self-test modes. **8 apps, 18 workflows.** Fro Bot agent v0.90.0 → **v0.99.0** (SHA `2167bb8`); autoheal categories 8 → **10** (added WORKFLOW INTEGRITY, QUALITY GATES VERIFICATION). CLI v0.13.20 → **v0.15.4**. CLIProxyAPI v7.2.77 → **v7.2.133**. Umami 3.2.0 → **3.3.0**. Dashboard `2026.07.21` → **`2026.08.17`**. Gateway upstream pin v0.88.0 → **v0.93.1**. Renovate preset `#5.2.6` → **`#5.2.12`**. `@changesets/cli` **v2 → v3** (#1106). ESLint 10.7.0 → 10.8.1, Prettier 3.9.5 → 3.9.6, lint-staged 17.0.8 → 17.3.0. New root `SECURITY.md` (private vuln reporting), `.ignore`. Stars 3, open issues ~28. |
 | 2026-07-15 | `e0e3252` | **No new apps/workflows — config-hardening + vendoring survey.** Still 7 apps, 17 workflows. New durable structure: root `opencode.jsonc` (two local MCP servers — `infra` enabled, `discord`/`saseq/discord-mcp:1.0.0` disabled — plus a defense-in-depth `permission` deny backstop for 11 sensitive infra tools + ~19 destructive Discord tools; JVM 60s timeout + shell-wrapper secret sourcing documented inline); `.slim/clonedeps.json` vendoring manifest pinning `anomalyco/opencode@v1.15.13` for MCP registration/permission inspection; `patches/` with a Bun `patchedDependencies` patch for `@changesets/get-github-info@0.6.0`; root `AGENTS.md`, `.npmrc`, `docs/ideation/`. Root workspace package renamed `@marcusrbrown/infra-workspace`. Fro Bot agent v0.79.4 → v0.90.0 (SHA `42db56d`). Gateway upstream pin v0.79.1 → v0.88.0. CLI v0.13.13 → v0.13.20. CLIProxyAPI v7.2.48 → v7.2.77 (#852). Caddy 2.11.3-alpine → 2.11.4-alpine (shared digest). Dashboard `2026.06.57` → `2026.07.21`. Umami steady 3.2.0. Renovate preset `#5.2.3` → `#5.2.6`. ESLint 10.4.0 → 10.7.0, Prettier 3.8.4 → 3.9.5, lint-staged 16→17. |
 | 2026-07-01 | `390cb5f` | **New app: OIDC credential broker.** Added `apps/broker/` — OIDC-authenticated credential broker at `broker.fro.bot`, 2-service Docker Compose (Caddy + `oven/bun:1.3.14-alpine` on its own `s-1vcpu-1gb`/`nyc1` droplet). Exchanges a GitHub Actions OIDC token for a short-lived, revocable cliproxy `ghact-` key so the durable provider key never lands on a CI runner; `jose` JWKS RS256 verify + replay denylist + code-owned `BROKER_TRUST_POLICY`; sweeper-only revocation (60s TTL + 5-min reconcile) with a startup reconcile gate; bundle-based deploy (`dist/main.js`, gitignored, mounted read-only). Added `deploy-broker.yaml` + `broker` GitHub Environment (`BROKER_SSH_KEY`/`BROKER_HOST`/`CLIPROXY_MANAGEMENT_KEY` secrets + `BROKER_AUD` variable) + CLI group (`broker status/deploy/logs`). Now **17 workflows** total; `deploy.yaml` orchestrator fans out to **7** per-app deploys. Consuming half tracked in `fro-bot/agent#1060` (trust-policy placeholders must be replaced before deploy). CLI v0.12.2 → v0.13.13. Fro Bot agent v0.71.0 → v0.79.4 (SHA `b3384d3`). Gateway upstream pin v0.69.0 → v0.79.1. CLIProxyAPI v7.2.20 → v7.2.48. Umami 3.1.0 → 3.2.0. Dashboard `2026.06.16` → `2026.06.57`. Renovate preset steady at `#5.2.3`. |

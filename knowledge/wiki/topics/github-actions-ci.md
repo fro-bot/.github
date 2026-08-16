@@ -2,8 +2,8 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-08-10
-tags: [github-actions, ci-cd, automation, security, renovate]
+updated: 2026-08-16
+tags: [github-actions, ci-cd, automation, security, renovate, oidc, aws-sts]
 related:
   - fro-bot--agent
   - marcusrbrown--dev-like
@@ -37,7 +37,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 - [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
-- [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing
+- [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **18 workflows** as of 2026-08-16 (added `cliproxy-auth-monitor.yaml`, a 15-min out-of-band Anthropic-auth health probe with synthetic self-test); OIDC→AWS-STS per-run storage credentials via the new `apps/agent` provisioner (no static AWS secret on runners)
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
 - [[marcusrbrown--dev-like]] — 7 workflows (as of 2026-07-31): `ci.yaml` (Bun `validate` + Node/Bun dual-runner tests), `release.yaml` (Changesets + npm OIDC trusted-publish + `mrbro-bot`-App version PRs + `alias-release`), `fro-bot.yaml` (**two-mode** autoheal + pr-review, agent v0.96.0), `site.yaml` (Astro/Starlight → Pages), `link-check.yaml`, `renovate.yaml` (extends [[marcusrbrown--renovate-config]]), `update-repo-settings.yaml` (Probot Settings extends `.github:common-settings.yaml`, gates `main` on `validate`+`Fro Bot`). No CodeQL/Scorecard yet.
@@ -141,6 +141,24 @@ The systematic repo's Fro Bot workflow includes TypeScript/Bun/Biome-specific PR
 This is the release-notes-narration path, but the shape generalizes to any "read untrusted → decide → write privileged" CI flow. It is the CI-job-level analogue of the `harness-integrate` broker containment (untrusted merge runs under a read-only / minted credential; write authority is granted only to a separate, policy-pinned job).
 
 **Consumer-side hook (2026-08-10):** [[bfra-me--renovate-action]]'s `fro-bot.yaml` documents the verbatim-`prompt` dispatch path (`workflow_dispatch`/`workflow_call` prompt used as-is when non-empty) as "the path used by the release-notes-narrative automation" — i.e. the apply-phase caller drives the agent by injecting a fully-formed prompt rather than selecting a mode. That repo also added an input-validation guard (`mode=review` without a `prompt` hard-fails) so the review persona never runs promptless; a small hardening that pairs with the two-phase pattern's fail-closed discipline.
+
+### OIDC → Cloud-STS Per-Run Credentials (no static cloud secrets on runners, 2026-08-16)
+
+[[marcusrbrown--infra]] now runs **both halves** of an "eliminate durable secrets on CI runners" pattern, one per cloud primitive:
+
+- **Credential half (`apps/broker`, since 2026-07-01):** a GitHub Actions run mints its own OIDC token, exchanges it at `broker.fro.bot` for a short-lived, revocable cliproxy `ghact-` key, and never sees the durable provider key. Sweeper-only revocation (TTL + reconcile).
+- **Storage half (`apps/agent`, since 2026-08-16):** native GitHub OIDC → **AWS STS** `AssumeRoleWithWebIdentity` — no broker, no minted bearer, no static AWS key. A provisioner stands up one **least-privilege IAM role + prefix-scoped inline policy per consumer repo** (session prefix carries an explicit delete-deny; the coordination lock is a separate exact object ARN). The consumer repo receives only five **non-secret** `FRO_BOT_S3_*` *variables* (`ROLE_TO_ASSUME`/`BUCKET`/`REGION`/`PREFIX`/`EXPECTED_BUCKET_OWNER`) — the `role_arn` a job assumes via OIDC, not a credential.
+
+Two invariants recur across both halves and are worth generalizing:
+
+1. **Provisioning credentials shadow-and-ignore ambient cloud creds.** `apps/agent` accepts dedicated `AGENT_AWS_*` and *deliberately ignores* ambient `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` — the same operator-local discipline the VPN Lightsail box uses. The privileged provisioning identity is never the CI identity.
+2. **`id-token: write` is gated behind a protected environment on trusted triggers only.** The storage job runs under a protected `fro-bot-storage` environment reachable only on scheduled or main-branch-dispatched runs — content-triggered jobs (PRs from untrusted forks/comments) are structurally excluded from ever requesting an OIDC token. This is the same "untrusted content cannot reach the privileged job" containment as the two-phase read-only/apply split above, applied to OIDC issuance rather than a PAT.
+
+A third detail generalizes as **fail-closed capability pinning**: the provisioner version-pins the S3 key layout to a verified `fro-bot/agent` action ref and refuses unknown layouts rather than widening IAM. The account-level OIDC provider is touched append-only (adds an audience without disturbing existing thumbprints). Together these move the fleet from "durable cloud secret sitting in a GitHub Environment" to "per-run, capability-scoped, policy-pinned cloud access."
+
+### Out-of-Band Health Monitor with Synthetic Self-Test (2026-08-16)
+
+[[marcusrbrown--infra]]'s `cliproxy-auth-monitor.yaml` probes CLIProxy's upstream Anthropic auth on its **own 15-minute cadence**, independent of the daily Fro Bot autoheal, and escalates failures to a tracking issue (`issues: write`, `contents: read` only) plus a Discord webhook. The notable twist is a **dispatch-only synthetic validation input** (`synthetic-dead`/`synthetic-healthy`, owner-only) that lets an operator exercise the *alerting path itself* without waiting for a real outage — the monitor can prove it still fires and still opens/updates the issue. Health checks that can only be validated by a real failure tend to rot silently; a synthetic self-test mode is cheap insurance that the escalation plumbing still works.
 
 ### Fro Bot Scheduled-Run Consolidation (two crons → one daily pass)
 

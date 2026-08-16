@@ -3655,19 +3655,27 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-16 08:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+## [2026-08-16 05:00] ingest | marcusrbrown/infra
 
-No-op re-survey (tree frozen ~15 days). Collision holds; only daily-report churn.
+Survey of `marcusrbrown/infra` (HEAD `d276d93`, 2026-08-16, `chore(dev): update dependency @changesets/cli to v3 (#1106)`; up from `e0e3252`, 2026-07-15). Updated repo page `marcusrbrown--infra.md`, topic page `github-actions-ci.md`, and `index.md`. No new topic/entity/comparison pages warranted — the two structural changes extend the existing OIDC-credential-boundary and CI-monitoring patterns already cataloged in `github-actions-ci.md`.
 
-- **Collision holds:** name `marcusrbrown/marcusrbrown.github.io` resolves to repo **id `1174807412`** (mrbro.dev portfolio, `package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Binding unchanged since 2026-07-20; durable per-repo knowledge lives on [[marcusrbrown--mrbro-dev]].
-- **Tree still frozen:** `main` HEAD `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z); `pushed_at` `2026-08-15T07:18:47Z` (PR-branch pushes only), `updated_at` `2026-07-31T21:42:16Z`, `open_issues_count` 11, stars 1. No tree-level drift → no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page.
-- **Queue motion is daily-report churn only:** rolling report renumbered #277 → #279 (`Daily Fro Bot Report — 2026-08-16`). Rest byte-identical to 2026-08-14: open issues 5 + #1 (#279/#271/#270/#261/#258/#212 + #1); open PRs 4 all carried, none merged since 2026-08-07 (#266/#263/#254/#253). Agent v0.93.1 (`a4976f4`), 8 workflows, single `30 3` cron, Renovate `#5.2.7`, pnpm 11.1.3 / Node >=24 — all steady. Fro Bot active — no onboarding PR.
-- Verified agent pin + package.json fields via raw fetch at SHA `9e54dbc`. `gh` credential gap again (unauthenticated GitHub API + raw fetch only), same access limitation issue #212 tracks. Modified `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md`, `knowledge/index.md`, and this log.
+Delta from prior survey (`e0e3252`, 2026-07-15):
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+- **New app `apps/agent/`** (private `@marcusrbrown/infra-agent`) — an operator-run AWS S3 durable-storage **provisioner** for `fro-bot/agent` OpenCode session state. Uses native GitHub OIDC → AWS STS (no static AWS credential written to any consumer repo): creates a dedicated bucket, appends the `sts.amazonaws.com` audience to the account-level `token.actions.githubusercontent.com` OIDC provider (append-only — no thumbprint/audience churn), and provisions **one least-privilege IAM role + prefix-scoped inline policy per consumer repo** (session prefix has an explicit delete-deny; the coordination lock is a separate exact object ARN). `src/key-layout.ts` version-pins the S3 layout (`KEY_LAYOUT_VERSION = fro-bot/agent@v0.96.0`) and **fails closed** on unknown action refs rather than widening IAM. `server/provision.ts` does convergence + readback + a compact JSON **handoff manifest** (identifiers only, never credential bytes); managed drift halts by default (`--force` to proceed; foreign/shared-resource drift is a hard stop even with `--force`). Deps `@aws-sdk/client-iam` + `@aws-sdk/client-s3` (3.1109.0) + zod. **This is the storage half to `apps/broker`'s credential half** — both push per-run, capability-scoped access instead of durable runner secrets. Second AWS-backed component (after the VPN Lightsail box); first to touch S3/IAM. Has a `provision:agent` script but **no `deploy` script / no `deploy-agent.yaml`** — it is a provisioner, not a deployed service. **8 apps** total.
+- **New CLI `agent` command group** — `agent setup` absorbs the model-credential onboarding formerly exposed as `cliproxy setup` (legacy `cliproxy setup` kept as a compatibility wrapper over the shared implementation); `agent storage --repo OWNER/REPO --manifest FILE` verifies live repo identity + provisioned IAM role/bucket/OIDC subject/workflow contract, then writes only the **five non-secret `FRO_BOT_S3_*` repository variables** (a failed workflow check emits a pasteable diff and never edits the consumer workflow); a teardown removes those variables + the repo-scoped AWS resources. Provisioning credentials are dedicated `AGENT_AWS_*`; ambient `AWS_*` values are deliberately ignored.
+- **New protected `fro-bot-storage` GitHub Environment** gating `id-token: write` — only scheduled or main-branch dispatched runs may request an OIDC token; content-triggered jobs are structurally excluded.
+- **New workflow `cliproxy-auth-monitor.yaml`** — probes CLIProxy's upstream Anthropic auth every 15 minutes (`7,22,37,52 * * * *`, `issues: write` + `contents: read` only), escalating failures to a tracking issue + a `CLIPROXY_AUTH_MONITOR_DISCORD_WEBHOOK`. Dispatch exposes owner-only `synthetic-dead`/`synthetic-healthy` validation modes so the alerting path can be self-tested without a real outage. **18 workflows** total.
+- **Fro Bot agent v0.90.0 → v0.99.0** (SHA `2167bb8`). Daily autoheal categories **8 → 10** (added WORKFLOW INTEGRITY, QUALITY GATES VERIFICATION); single `30 3` UTC cron; prompt hard-codes serial execution, dedup, scope cap, Renovate-owns-versions boundary, and a trusted-authors allowlist (`renovate[bot]`/`dependabot[bot]`/`mrbro-bot[bot]`/`fro-bot`/owner+write-collaborators).
+- **Version bumps:** CLI v0.13.20 → v0.15.4; CLIProxyAPI v7.2.77 → v7.2.133; Umami 3.2.0 → 3.3.0; dashboard `2026.07.21` → `2026.08.17`; gateway upstream pin v0.88.0 → v0.93.1 (note: the deployed gateway daemon pin lags the CI action pin — versioned independently). Renovate preset `#5.2.6` → `#5.2.12`. `@changesets/cli` **v2 → v3** (#1106). ESLint 10.7.0 → 10.8.1, Prettier 3.9.5 → 3.9.6, lint-staged 17.0.8 → 17.3.0. Caddy steady `2.11.4-alpine`.
+- **New root files:** `SECURITY.md` (GitHub private vulnerability reporting), `.ignore` (oh-my-opencode-slim clonedeps allowlist). MIT, stars 3, open issues ~28.
+- **No contradictions** with the prior survey — all prior findings (broker, VPN, dashboard, umami, gateway, two-layer MCP gating, vendored `.slim/clonedeps.json`) confirmed and extended. The pending mrbro.dev retention-boundary dependency on `apps/umami` (≤13-month version-controlled retention evidence) is **still not observed** in the infra tree as of this survey; carried forward.
 
-## [2026-08-16 05:49] ingest | repo:marcusrbrown/marcusrbrown.github.io
+Access note: `gh` CLI is unauthenticated in this environment and refuses to run without `GH_TOKEN`; surveyed via the unauthenticated public GitHub REST API (60 req/hr core limit). Delivery mode `working-dir` — file changes only, no GitHub mutation. Modified `knowledge/wiki/repos/marcusrbrown--infra.md`, `knowledge/wiki/topics/github-actions-ci.md`, `knowledge/index.md`, and this log.
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+Sources: https://github.com/marcusrbrown/infra (SHA d276d935c6ca0f3507079103ba5cd7ffb0f84cde)
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+## [2026-08-16 05:54] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra
