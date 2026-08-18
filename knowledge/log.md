@@ -3701,3 +3701,25 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-18 05:30] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io` (SHA `9e54dbc`, unchanged since 2026-07-31). Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log 2026-08-18, source entry, survey-history row, `updated` date) and `index.md`. No topic/entity/comparison pages warranted — no structural or durable change.
+
+Key findings:
+
+- **Name-collision holds (unchanged since 2026-07-20):** the name resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (canonical [[marcusrbrown--mrbro-dev]]), homepage `https://mrbro.dev/`, description "My portfolio.", topics `blog/developer/github-pages/portfolio/react/typescript/vite` — **not** the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]).
+- **`main` HEAD still frozen at `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z) — **18 days** with no trunk advance; `updated_at` still 2026-07-31T21:42:16Z. `pushed_at` 2026-08-17T07:40:40Z reflects PR-branch pushes only (the #253 blog-snapshot refresh re-pushed). No tree-level drift; because the tree is frozen, no durable delta lands on the canonical [[marcusrbrown--mrbro-dev]] page this cycle.
+- **Queue frozen:** byte-identical to 2026-08-17 — one day on, the daily-report has not yet renumbered off #280. Open issues 5 (#280 `Daily Fro Bot Report — 2026-08-17`/#271/#270/#261/#258/#212) + #1 Dependency Dashboard (`mrbro-bot[bot]`, `updated_at` 2026-08-18, routine); open PRs 4, all carried and none merged since 2026-08-07 (#266 `fix(security): remediate high audit advisories`, #263 `docs: refresh repository inventory`, #254 `docs: correct automation script count`, #253 `chore(blog): refresh snapshot and preview images`). API `open_issues_count` 11. The report-without-remediation / propose-without-merge pattern (durable since 2026-06-12) persists: a security-remediation PR (#266) unmerged across an 18-day frozen trunk.
+- **Steady (re-verified against `fro-bot.yaml` at HEAD):** agent pin `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; single `30 3 * * *` daily oversight+autoheal cron; category-10 Sunday-cadence detection + `Refuse fork PR heads from comment triggers` + `Validate review mode inputs` guards present. 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); Renovate preset `#5.2.7`; pnpm 11.1.3 / Node >=24; stars 1. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
+- No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+
+Access note: `gh` CLI unauthenticated in this environment (refuses without `GH_TOKEN`); surveyed via the unauthenticated public GitHub REST API + raw.githubusercontent.com — the same authenticated-access gap the current occupant's own issue #212 tracks. Delivery mode `working-dir` — file changes only, no GitHub mutation. Modified `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md`, `knowledge/index.md`, and this log.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-18 05:49] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
