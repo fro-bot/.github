@@ -3723,3 +3723,23 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-18 06:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+Same-day dispatch re-run (`dispatch-32104250182`) against the *name* `marcusrbrown/marcusrbrown.github.io`. **Byte-identical to the earlier 2026-08-18 pass** — no drift, no contradictions. Additive confirming entry only.
+
+- **Name still resolves to repo id `1174807412`** (the mrbro.dev developer portfolio; homepage `https://mrbro.dev/`, description "My portfolio.", topics `blog/developer/github-pages/portfolio/react/typescript/vite`), **not** the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-collision the 2026-07-13 header warned of is steady since 2026-07-20.
+- **`main` HEAD unchanged at `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z) — frozen 18 days. `pushed_at` `2026-08-17T07:40:40Z` (PR-branch pushes only), `updated_at` still 2026-07-31. No tree-level drift; stack, 8-workflow inventory, single-file three-mode Fro Bot, single `30 3` cron all hold.
+- **Queue frozen:** open issues 5 (#280 Daily Fro Bot Report / #271 / #270 / #261 / #258 / #212) + #1 Dependency Dashboard; open PRs 4 (#266 `fix(security): remediate high audit advisories` / #263 / #254 / #253), all carried, none merged since 2026-08-07. API `open_issues_count` 11, stars 1.
+- **Fro Bot workflow present and active** (`fro-bot/agent@a4976f4 # v0.93.1`) — **no onboarding follow-up draft PR warranted for this name.** Durable per-repo knowledge for the current occupant lives on [[marcusrbrown--mrbro-dev]]; the tree is frozen so no delta lands there this cycle.
+- No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+
+Access note: `gh` CLI unauthenticated (refuses without `GH_TOKEN`); surveyed via the unauthenticated public GitHub REST API + raw.githubusercontent.com — the same authenticated-access gap the current occupant's own issue #212 tracks. Delivery mode `working-dir` — file changes only, no GitHub mutation. Modified `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md`, `knowledge/index.md`, and this log; folded into the existing 2026-08-18 delta log as a same-day confirming pass.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-18 05:52] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
