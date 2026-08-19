@@ -3744,24 +3744,28 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-19 02:15] ingest | marcusrbrown/tokentoilet
+## [2026-08-19 05:54] ingest | repo:marcusrbrown/vbs
 
-Surveyed `marcusrbrown/tokentoilet` at HEAD `7436859` (2026-08-19, `chore(deps): update bfra-me/.github to v4.18.0 (#1403)`), up from `8d7648c` (2026-07-18). Treated as untrusted input; reads limited to directory listings, README, manifests, workflow files, CHANGELOG, `.env.example`, and issue/PR metadata via the unauthenticated public GitHub REST API + raw.githubusercontent.com (`gh` CLI refuses without `GH_TOKEN` on this runner).
+Surveyed marcusrbrown/vbs (public, HEAD `c368b1ca725eb3faa1073bc54d8df15a6dd71804`, `chore(deps): update bfra-me/.github to v4.18.0 (#731)`, 2026-08-19T02:02:22Z) and ingested durable findings into the control-plane wiki. Prior survey `9465b613` (2026-07-19).
 
-- **Hygiene-gate cycle, no new feature code.** Two long-documented conventions became CI-enforced test gates: new root `process-env.test.ts` fails the suite if any file under `app`/`components`/`hooks`/`lib` references `process.env` outside `env.ts` (retires the "process.env in 4 source files" footgun tracked across prior surveys), and open PR #1298 adds a regression test enforcing the `useWallet` hook abstraction (no direct AppKit access from components). `env.ts` moved to repo root (from `config/`); `readme.md` lowercased.
-- **Bundle win still staged.** `CHANGELOG.md` Unreleased is byte-identical to 2026-07-18 — Dynamic Loading Infrastructure remains "awaiting feature page implementation." A full cycle un-integrated; the "dead chrome" caveat is materializing.
-- **Security-remediation cluster refilled the PR queue (0 → 8).** Six fro-bot `fix(security)` `pnpm.overrides` PRs: axios #1303, fast-uri #1309, sharp #1310, js-yaml #1326, brace-expansion #1327, nanoid #1370 (#1370/#1303 gone `dirty` on lockfile drift). Plus hook-abstraction #1298 and `mrbro-bot[bot]` lockfile #1400.
-- **Dependency churn:** Fro Bot agent v0.93.1 → v0.100.0 (SHA `7b9a281`, crossed v1.00 pin), bfra-me/.github v4.16.37 → v4.18.0, Renovate preset #5.2.7 → #5.2.12, pnpm 11.11.0 → 11.22.0, Next.js 16.2.10 → 16.3.1, React 19.2.7 → 19.2.8, viem 2.55.2 → 2.55.16, Storybook core 10.5.0 → 10.5.8 (alpha addons unchanged — 5th cycle), ESLint 10.7.0 → 10.8.1, Vite 8.1.4 → 8.2.1.
-- **Open issues 4 → 7:** new #1241 (daily coverage regression), #1284 / #1347 (AGENTS.md accuracy/drift), joining carried #995/#1013/#1171/#1189.
-- **Cosmetic:** repo description set to "Chump and dump"; a transient `isArchived: true` org-list flag did not hold (direct read confirms `archived: false`).
-- **Fro Bot workflow present** (`fro-bot/agent@v0.100.0`) — no onboarding draft PR needed.
+**Verdict: no structural change — pure dependency autopilot.** 41 commits over 31 days, **every one Renovate-authored** (`mrbro-bot[bot]`) — the longest single-author autopilot run recorded on this page. Only 10 files changed across all 41 commits: `renovate.json5`, `package.json`, the lockfile, and all 7 workflow files (each a single dep-pin line edit). 7 workflows unchanged; `fro-bot.yaml` present and active.
 
-Delivery mode `working-dir` — file changes only, no GitHub mutation. Modified `knowledge/wiki/repos/marcusrbrown--tokentoilet.md`, `knowledge/index.md`, and this log.
+**Two workflow-*prompt* deltas** (shipped inline in `fro-bot.yaml`, so they ride the agent SHA-pin bumps rather than standalone PRs):
+- **`Validate review mode inputs` guard (new):** hard-fails a `workflow_dispatch` with `mode == 'review'` and empty `prompt`. Same fail-closed guard first cataloged on [[bfra-me--renovate-action]] — **propagation confirmed**; the guard is spreading across the fleet's unified single-job shape, not staying canary-local. Enforcement counterpart to the 2026-07-04 bare-prompt-dispatch fix (#662).
+- **Autoheal sweep 5 → 8 categories:** added (5) Quality Gates Verification, (7) Cross-Project Intelligence & Self-Improvement, (8) Upstream Modernization Watch (**Sundays UTC only**, gated by `IS_SUNDAY_UTC`). Boundaries hardened (cat 7 no-cross-repo-write; cat 8 no-version-bump/no-workflow-edit). Mirrors the [[marcusrbrown--infra]] autoheal-category expansion. Maintenance/autoheal reports now split into two rolling issues (#429 / #563).
 
-Sources: https://github.com/marcusrbrown/tokentoilet (SHA 74368593b059e21ede67df7d0e2524cedb3b75e4)
+**Version cadence:** `fro-bot/agent` v0.93.1 → **v0.100.0** (14 bumps, crosses the v0.99 → v0.100 boundary via #727, SHA `7b9a281`; ecosystem version front). pnpm 11.13.1 → **11.22.0**; Renovate preset #5.2.7 → **#5.2.12**; `bfra-me/.github` → **v4.18.0**; prettier 3.9.5 → 3.9.6; `actions/checkout` → v6.1.0. bfra-me tooling pins + vite 7.3.6 / d3 ^7.9.0 / typescript 5.9.3 / vitest 4.1.10 all steady.
 
-## [2026-08-19 05:54] ingest | repo:marcusrbrown/tokentoilet
+**Activity shape:** open PRs 3 → 9 (8 Fro-Bot autoheal/security incl. 5 High-severity remediations #717 js-yaml / #701 PostCSS / #697 fast-uri / #688 brace-expansion / #672 ws, + `fix(data-quality)` #693, carried #674/#671, + perpetual data PR #705 — none landing). Open issues 18 → 19; convention-drift set grew with new #694 (`any` in `composition.ts`) joining #670/#675/#676 — **still Fro-Bot-surfaced claims, not confirmed by direct code read** (scope limited to listings/manifests/workflows per contract); recorded as autoheal signal. Stars 2 (unchanged), no root LICENSE (8th consecutive survey; `license: MIT` in package.json only).
 
-Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+Touched pages: `knowledge/wiki/repos/marcusrbrown--vbs.md` (new 2026-08-19 delta + survey-history row + Fro Bot Integration/Autoheal/Developer-Tooling updates), `knowledge/wiki/topics/github-actions-ci.md` (VBS row refreshed + guard-propagation note), `knowledge/index.md` (vbs entry). Additive only; no prior content overwritten. Fro Bot workflow present — no onboarding follow-up needed.
 
-Sources: https://github.com/marcusrbrown/tokentoilet
+Access note: `gh` CLI unauthenticated (no `GH_TOKEN` in env); surveyed via unauthenticated public GitHub REST API + raw.githubusercontent.com. Delivery mode `working-dir` — file changes only, no GitHub mutation.
+
+Sources: https://github.com/marcusrbrown/vbs (SHA c368b1ca725eb3faa1073bc54d8df15a6dd71804)
+
+## [2026-08-19 05:55] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs
