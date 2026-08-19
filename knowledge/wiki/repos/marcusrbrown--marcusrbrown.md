@@ -2,8 +2,11 @@
 type: repo
 title: "marcusrbrown/marcusrbrown"
 created: 2026-04-18
-updated: 2026-07-20
+updated: 2026-08-19
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: df85b7dfaea37c0f1e74ba2c21f04b61b89fceed
+    accessed: 2026-08-19
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: abff9705c315aa203fd5449648f4b27813cdd1a6
     accessed: 2026-07-20
@@ -115,7 +118,7 @@ A/B test variants live in `templates/variants/` (e.g., `SPONSORME-benefits.tpl.m
 | Renovate | `renovate.yaml` | issue/PR edit, push, dispatch, Main completion | Dependency updates |
 | Update Repo Settings | `update-repo-settings.yaml` | push to `main`, daily cron, dispatch | Probot settings sync |
 | Cleanup Cache | `cleanup-cache.yaml` | PR close, weekly, dispatch | Prune stale GHA cache entries |
-| **Fro Bot** | `fro-bot.yaml` | PR events, issues (opened/edited), `@fro-bot` mentions, cron 04:30 + 16:30 UTC, dispatch | Three-mode agent: PR review / autoheal / maintenance (added 2026-06-02; `fro-bot/agent@v0.75.0` SHA-pinned `a12463f` as of 2026-06-22) |
+| **Fro Bot** | `fro-bot.yaml` | PR events, issues (opened/edited), `@fro-bot` mentions, cron 04:30 + 16:30 UTC, dispatch | Three-mode agent: PR review / autoheal / maintenance (added 2026-06-02; `fro-bot/agent@v0.100.0` SHA-pinned `7b9a281` as of 2026-08-19; `Fro Bot` is a required `main` status check since #1138 2026-08-09) |
 
 ### Profile Update Pipeline (update-profile.yaml)
 
@@ -137,7 +140,7 @@ Commits are authored by `mrbro-bot[bot]` (app ID 137683033).
 
 ### Branch Protection
 
-Required status checks on `main`: CI, Renovate, Prepare, Finalize. Linear history enforced, admin enforcement enabled, no required PR reviews.
+Required status checks on `main`: **CI, Fro Bot, Renovate / Renovate, Prepare, Finalize** (the `Fro Bot` context was added 2026-08-09 via #1138 — the agent's PR-review verdict is now a hard merge gate, not advisory). Linear history enforced, admin enforcement enabled (`enforce_admins: true`, so Marcus is gated too), no required PR reviews.
 
 ### Shared Workflows
 
@@ -171,6 +174,20 @@ Required status checks on `main`: CI, Renovate, Prepare, Finalize. Linear histor
 | `jiti`                  | 2.6.1    | TypeScript config loader            |
 
 ## Fro Bot Integration
+
+### 2026-08-19 update: Fro Bot becomes a merge gate; agent crosses v1.00-adjacent v0.100.0; autoheal prompt gains a Quality Gates category; fork preflight bug still open
+
+Survey at HEAD `df85b7d` (`chore(deps): update bfra-me/.github to v4.18.0`, 2026-08-19). 61 commits since the 2026-07-20 window, still overwhelmingly the `mrbro-bot[bot]` Renovate treadmill, but three of them are governance/tooling changes that matter.
+
+**Fro Bot is now a required status check on `main` (#1138, Marcus, 2026-08-09).** `.github/settings.yml` branch protection `required_status_checks.contexts` went from `[CI, Renovate / Renovate, Prepare, Finalize]` to **`[CI, Fro Bot, Renovate / Renovate, Prepare, Finalize]`**. The agent's PR-review verdict is no longer advisory — a red or missing `Fro Bot` check now *blocks the merge button*. This is the same move [[marcusrbrown--dev-like]] made (agent wired into its own merge gate via `.github:common-settings.yaml`), but here it lands as a direct edit to this repo's Probot settings rather than through the shared template. `enforce_admins: true` still holds, so even Marcus is gated. The daemon graduated from reviewer to gatekeeper — the review it writes now has teeth.
+
+**tsconfig slimmed toward `@bfra.me/tsconfig` defaults (#1137 + #1139, Marcus).** Two back-to-back chores removed `baseUrl` (#1137) and `moduleResolution` (#1139) from `tsconfig.json`, deferring both to the extended `@bfra.me/tsconfig` base — the local config now carries only the `@/*` path alias, `resolveJsonModule`, `allowImportingTsExtensions`, `noPropertyAccessFromIndexSignature: false`, and `noEmit`. `.agents/skills/**/*` is now in the `include` set (the `sync-sponsors-bio` skill is type-checked). Same "keep local config minimal, lean on `@bfra.me/*`" discipline documented across the cluster.
+
+**Autoheal prompt reorganized: a Quality Gates Verification category (5) was inserted.** The `AUTOHEAL_PROMPT` now runs **1 ERRORED PRs → 2 SECURITY → 3 CODE QUALITY & REPO HYGIENE → 4 DEVELOPER EXPERIENCE → 5 QUALITY GATES VERIFICATION → 6 CROSS-PROJECT INTELLIGENCE (INBOUND ONLY) → 7 UPSTREAM MODERNIZATION WATCH (SUNDAYS ONLY)**. Category 5 explicitly re-runs the project's gates on the default branch (`pnpm lint` 0-error, `pnpm test` all-pass, `pnpm sponsors:update` + `pnpm badges:update` template-generation smoke tests, and `actionlint` if on PATH), routing minimal fixes into the category-4 PR and complex ones into an issue. Cross-Project Intelligence and Upstream Modernization renumbered from 6/7 to 6/7 unchanged in position but now sit *after* an explicit gate-verification pass — the sweep now proves the tree is green before it reports. `git log -S` origin-attributes all three (`head.repo.fork` job-guard, `Validate review mode inputs`, `QUALITY GATES VERIFICATION`) to onboarding commit #924, so the *strings* have existed since 2026-06-02; the prior-survey wiki text under-recorded the autoheal category set. Corrected here: the 2026-06-02 onboarding already shipped the Quality Gates and review-mode-validation machinery.
+
+**Fork-detection bug #1087 is still open — and the prior survey conflated two guards.** Reconciliation: there are two fork checks. (1) The **job-level `if:`** (line 540) uses `!github.event.pull_request.head.repo.fork` — correct, never buggy. (2) The **comment-trigger preflight step** (line 577) still uses `gh api … --jq '.head.repo.fork // "unknown"'`, and jq's `//` treats boolean `false` as absent, so a legitimate *same-repo* PR resolves to `"unknown"` and `[ "$is_fork" != "false" ]` refuses it. The 2026-07-20 page attributed #1087 to "line 577" but also implied the job `if:` was the buggy surface; the bug is *only* in the preflight step, and it remains verbatim at HEAD. Still warrants the `// empty` (or explicit `== null`) fix. The daemon audits its own chrome but hasn't yet patched the crack it found.
+
+**Everything else is pure treadmill.** Agent pin rolled **v0.93.1 → v0.100.0** (`7b9a281`, ~20 bumps #1105–#1152, crossing the cosmetic v0.100 boundary — still 0.x, no v1 semantics), still SHA-pinned, still tracking [[fro-bot--agent]]. pnpm 11.13.1 → **11.22.0**, Node 24.18.0 → **24.19.0**, Prettier 3.9.5 → **3.9.6**, tsx 4.23.1 → **4.23.12**, `bfra-me/.github` v4.16.38 → **v4.18.0** (the `update-repo-settings`/`renovate` reusable-workflow source), renovate-config `#5.2.7` → **#5.2.12**. The `pnpm-workspace.yaml` GHSA override ledger is byte-identical (`vite 7.3.6`, `postcss >=8.5.10`, `picomatch`, `fast-uri >=3.1.2`, `jiti <2.8.0`) — the vite override from 2026-07-06 is still holding, no new `[SECURITY]`/`fix(security)` commits this window. Autoheal continues shipping real work: #1061 (template-vs-generated README sync, re-landed) and #1117 (`chore(lint): apply auto-fixes from autohealing run`) are both in-window. New `templates/sponsor-testimonials.tpl.md` joins the template set; `.ai/plan/` directory added alongside `.ai/docs/`.
 
 ### 2026-07-20 update: autoheal matures from report-noise into concrete fix PRs; agent self-catches a workflow bug; pure treadmill otherwise, agent at v0.93.1
 
@@ -285,6 +302,28 @@ The repo references `fro-bot/.github:common-settings.yaml` in its Probot setting
 - **Autoheal as an active remediation surface (2026-07-20):** By the 2026-07-20 survey, the autoheal mode had shifted from writing perpetual-report entries to opening concrete fix PRs (#1055, #1061) and precise hygiene issues (#1056), and even auditing its own workflow (#1087 fork-detection bug). The autoheal loop is now a genuine maintenance actor on this repo, not just a reporter — a pattern worth watching for adoption across the sibling repos in [[fro-bot--agent]]'s focus list.
 
 ## Version Comparison (vs. Ecosystem)
+
+### 2026-08-19 snapshot
+
+| Dependency | This Repo | Delta vs 2026-07-20 |
+| --- | --- | --- |
+| `fro-bot/agent` | v0.100.0 (`7b9a281`, SHA-pinned) | v0.93.1 → v0.100.0 — ~20 bumps (#1105–#1152), crosses cosmetic v0.100 (still 0.x) |
+| `pnpm` | 11.22.0 | 11.13.1 → 11.22.0 (stays 11.x) |
+| `marcusrbrown/renovate-config` | `#5.2.12` | 5.2.7 → 5.2.12 |
+| `bfra-me/.github` | v4.18.0 | v4.16.38 → v4.18.0 (#1156) |
+| `Node.js` | 24.19.0 | 24.18.0 → 24.19.0 (`.mise.toml`) |
+| `Prettier` | 3.9.6 | 3.9.5 → 3.9.6 |
+| `tsx` | 4.23.12 | 4.23.1 → 4.23.12 |
+| `@types/node` | 24.13.3 | unchanged |
+| `vitest` / `@vitest/ui` | 4.1.10 | unchanged |
+| `@bfra.me/eslint-config` | 0.51.1 | unchanged |
+| `@bfra.me/prettier-config` | 0.16.9 | unchanged |
+| `@bfra.me/tsconfig` | 0.13.1 | unchanged |
+| `@bfra.me/badge-config` | 0.2.0 | unchanged |
+| `jiti` | 2.7.0 (`<2.8.0`) | unchanged (pin in `pnpm-workspace.yaml`) |
+| `markdownlint-cli2` | 0.20.0 | unchanged |
+
+`pnpm-workspace.yaml` security override ledger byte-identical (`vite 7.3.6`, `postcss >=8.5.10`, `picomatch`, `fast-uri >=3.1.2`). Renovate fully healthy; merge stream still dominated by `fro-bot/agent` releases. No `[SECURITY]`/`fix(security)` commits this window. **Structural (non-deps) changes: #1138 (Fro Bot → required status check on `main`), #1137/#1139 (tsconfig `baseUrl`/`moduleResolution` removed).**
 
 ### 2026-07-20 snapshot
 
@@ -464,3 +503,4 @@ Backlog is back to baseline. The profile update pipeline (every 6 hours) and Ren
 | 2026-06-22 | `3ed89ff` | **Treadmill continues, maintenance issue now closed** — `fro-bot/agent` v0.61.0 → v0.75.0 (14 Renovate bumps #982–#1008, SHA `a12463f`); renovate-config 5.2.1 → 5.2.3; `bfra-me/.github` → v4.16.27; pnpm → 10.34.4; Node → 24.17.0; vitest → 4.1.9; Prettier → 3.8.4; `@types/node` → 24.13.2. `fro-bot.yaml` body unchanged (no trigger/prompt/hardening drift). Operational shift: the #936 close/reopen oscillation resolved into a **closed** state — #936 closed 2026-06-22, no longer in open set; only #926 (autoheal) remains open, so there is now *zero* open maintenance issue (inverse of prior churn, contract still unsatisfied). Generated-content PR rotated #960 → #1007. Open items: 3 (#926, #925, #284) |
 | 2026-07-06 | `08bd1ad` | **Structural: pnpm 10→11 major + security overrides migrate to `pnpm-workspace.yaml`** — `fro-bot/agent` v0.75.0 → v0.83.1 (~16 bumps #1017–#1050, SHA `d1786f3`); **pnpm 10.34.4 → 11.9.0** (`[SECURITY]` #1021/#1024/#1025); **Prettier 3.8.4 → 3.9.4** (minor); renovate-config 5.2.3 → 5.2.4; `bfra-me/.github` v4.16.27 → v4.16.34; Node → 24.18.0; tsx → 4.22.5; `actions/cache` → v5.1.0. **New `pnpm-workspace.yaml`** with `allowBuilds`/`onlyBuiltDependencies` + GHSA-annotated override ledger (`vite 7.3.6`, `postcss`, `picomatch`, `fast-uri`; `jiti` pin relocated) — matches [[marcusrbrown--mrbro-dev]] override-ledger pattern. Direct `fix(security)` commit #1038 (vite 7.3.6). **First `fro-bot.yaml` body change since onboarding**: #1045 bare-dispatch-prompt fallback + `mrbro.dev` added to focus-repo list. **#936 reopened** (both #936/#926 open — contract satisfied again, but three-survey history = churn/closed/reopened = unstable). New autoheal issue #1039 (llms.txt drift). Generated PR #1007 → #1048 |
 | 2026-07-20 | `abff970` | **Autoheal matures: report-noise → concrete fix PRs; agent self-catches a workflow bug** — `fro-bot/agent` v0.83.1 → v0.93.1 (~18 bumps #1050–#1085, SHA `a4976f4`); pnpm 11.9.0 → 11.13.1 (stays 11.x); Prettier 3.9.4 → 3.9.5; renovate-config 5.2.4 → 5.2.7; `bfra-me/.github` v4.16.34 → v4.16.38; tsx → 4.23.1; vitest → 4.1.10; `@types/node` → 24.13.3; Node unchanged (24.18.0). `fro-bot.yaml` body structurally unchanged (no trigger/prompt/hardening drift). **Operational shift: autoheal now ships remediation** — PR #1055 (fix markdownlint fence in `update-sponsors.ts` generator), PR #1061 (template-vs-generated README drift), issue #1056 (stale TODO in `badge-detector.ts`). **Self-audit bug: issue #1087** — fork-refusal preflight (line 577) uses jq `.head.repo.fork // "unknown"`, which mis-resolves same-repo `false` to `"unknown"` and over-refuses legitimate comment-triggered reviews; warrants a fix PR. Perpetual issues #936 + #926 both open — contract satisfied and **stable** (no oscillation, first stable window in 4 surveys). Pure Renovate treadmill (32 commits, all mrbro-bot); no direct `fix(security)`. Generated PR #1048 → #1088 |
+| 2026-08-19 | `df85b7d` | **Fro Bot becomes a merge gate; agent crosses v0.100.0; autoheal category set corrected** — `fro-bot/agent` v0.93.1 → v0.100.0 (~20 bumps #1105–#1152, SHA `7b9a281`, still 0.x); pnpm 11.13.1 → 11.22.0; Node 24.18.0 → 24.19.0; Prettier 3.9.5 → 3.9.6; tsx → 4.23.12; renovate-config 5.2.7 → 5.2.12; `bfra-me/.github` v4.16.38 → v4.18.0 (#1156). **Structural: #1138 added `Fro Bot` to `main` required status checks** (`.github/settings.yml` contexts `[CI, Fro Bot, Renovate / Renovate, Prepare, Finalize]`, `enforce_admins: true`) — review verdict now blocks merge. **#1137/#1139** removed tsconfig `baseUrl`/`moduleResolution` (defers to `@bfra.me/tsconfig`); `.agents/skills/**/*` now type-checked. **Reconciliation:** autoheal `AUTOHEAL_PROMPT` runs 7 categories with **QUALITY GATES VERIFICATION at #5** (present since onboarding #924 per `git log -S`; prior page under-recorded it). **#1087 still open** — the *preflight step* (line 577) still uses jq `// "unknown"`; the job-level `if:` (line 540) was never buggy (prior page conflated the two). New `templates/sponsor-testimonials.tpl.md`, `.ai/plan/` dir. Override ledger byte-identical; no `fix(security)`. Autoheal shipped #1061/#1117 in-window |
