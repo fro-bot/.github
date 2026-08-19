@@ -3744,28 +3744,24 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-19 04:00] ingest | marcusrbrown/ha-config
+## [2026-08-19 02:15] ingest | marcusrbrown/tokentoilet
 
-Ninth survey of `marcusrbrown/ha-config` (HEAD `ba89187`, 2026-08-19; prior `c51e25b`, 2026-07-18). Updated repo page `marcusrbrown--ha-config.md` and topic page `home-assistant.md`; updated `index.md` catalog entry. No new topic/entity/comparison pages warranted — existing `[[home-assistant]]`, `[[esphome]]`, and `[[github-actions-ci]]` pages remain accurate.
+Surveyed `marcusrbrown/tokentoilet` at HEAD `7436859` (2026-08-19, `chore(deps): update bfra-me/.github to v4.18.0 (#1403)`), up from `8d7648c` (2026-07-18). Treated as untrusted input; reads limited to directory listings, README, manifests, workflow files, CHANGELOG, `.env.example`, and issue/PR metadata via the unauthenticated public GitHub REST API + raw.githubusercontent.com (`gh` CLI refuses without `GH_TOKEN` on this runner).
 
-Delta from prior survey:
+- **Hygiene-gate cycle, no new feature code.** Two long-documented conventions became CI-enforced test gates: new root `process-env.test.ts` fails the suite if any file under `app`/`components`/`hooks`/`lib` references `process.env` outside `env.ts` (retires the "process.env in 4 source files" footgun tracked across prior surveys), and open PR #1298 adds a regression test enforcing the `useWallet` hook abstraction (no direct AppKit access from components). `env.ts` moved to repo root (from `config/`); `readme.md` lowercased.
+- **Bundle win still staged.** `CHANGELOG.md` Unreleased is byte-identical to 2026-07-18 — Dynamic Loading Infrastructure remains "awaiting feature page implementation." A full cycle un-integrated; the "dead chrome" caveat is materializing.
+- **Security-remediation cluster refilled the PR queue (0 → 8).** Six fro-bot `fix(security)` `pnpm.overrides` PRs: axios #1303, fast-uri #1309, sharp #1310, js-yaml #1326, brace-expansion #1327, nanoid #1370 (#1370/#1303 gone `dirty` on lockfile drift). Plus hook-abstraction #1298 and `mrbro-bot[bot]` lockfile #1400.
+- **Dependency churn:** Fro Bot agent v0.93.1 → v0.100.0 (SHA `7b9a281`, crossed v1.00 pin), bfra-me/.github v4.16.37 → v4.18.0, Renovate preset #5.2.7 → #5.2.12, pnpm 11.11.0 → 11.22.0, Next.js 16.2.10 → 16.3.1, React 19.2.7 → 19.2.8, viem 2.55.2 → 2.55.16, Storybook core 10.5.0 → 10.5.8 (alpha addons unchanged — 5th cycle), ESLint 10.7.0 → 10.8.1, Vite 8.1.4 → 8.2.1.
+- **Open issues 4 → 7:** new #1241 (daily coverage regression), #1284 / #1347 (AGENTS.md accuracy/drift), joining carried #995/#1013/#1171/#1189.
+- **Cosmetic:** repo description set to "Chump and dump"; a transient `isArchived: true` org-list flag did not hold (direct read confirms `archived: false`).
+- **Fro Bot workflow present** (`fro-bot/agent@v0.100.0`) — no onboarding draft PR needed.
 
-- **Backlog thaw:** long-parked **#766 asyncio-mqtt v0.16.2 finally MERGED** (2026-08-15) — first movement on either parked Renovate PR in ~7 survey windows. Only #777 (esphome v2026) remains parked. This is a version-gate freeze around `.HA_VERSION` + esphome, not a blanket merge refusal.
-- **bfra-me/.github reusable workflows crossed a minor boundary v4.16.37 → v4.18.0** (SHA `647b362`; chain #858 v4.16.44 → #870 v4.16.47 → #872 v4.17.0 → #874 v4.17.1 → #876 v4.18.0), applied to both `renovate.yaml` and `update-repo-settings.yaml`.
-- Renovate preset `marcusrbrown/renovate-config#5.2.7 → #5.2.12` (#852/#860/#862).
-- Prettier 3.9.5 → 3.9.6 (#855), propagated to `ci.yaml` env + post-upgrade `npx prettier@3.9.6`.
-- `actions/checkout` → v6.1.0 (#851); mise pre-commit 4.6.0 → 4.6.2 (#857 v4.6.1, #867 v4.6.2).
-- New renovate `'pre-commit'` block (`enabled: true`, `addLabels: [pre-commit]`); `.pre-commit-config.yaml` `pre-commit-hooks` rev v6.0.0.
-- Static: `.HA_VERSION` 2025.6.3 (~14 months stale), `esphome==2025.12.7`, `yamllint==1.38.0`, 11 packages, 10 custom components, esphome submodule → `marcusrbrown/esphome.life`, three-workflow set (`ci.yaml`/`renovate.yaml`/`update-repo-settings.yaml`).
-- **Still no Fro Bot workflow (ninth consecutive survey)** — follow-up draft PR recommendation carried forward. `mrbro-bot[bot]` (ID 137683033) authors every merge (#849→#877), durable across six windows.
-- Open issues 1 (#427 Dependency Dashboard), open PRs 1 (#777), stars 4.
+Delivery mode `working-dir` — file changes only, no GitHub mutation. Modified `knowledge/wiki/repos/marcusrbrown--tokentoilet.md`, `knowledge/index.md`, and this log.
 
-Access note: `gh` CLI unauthenticated in this shell (refuses without `GH_TOKEN`); repo confirmed **public** and surveyed via the unauthenticated public GitHub REST API + raw.githubusercontent.com, limited to directory listings, README/manifest/workflow files per task constraints. Delivery mode `working-dir` — file changes only, no GitHub mutation. Modified `knowledge/wiki/repos/marcusrbrown--ha-config.md`, `knowledge/wiki/topics/home-assistant.md`, `knowledge/index.md`, and this log.
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 74368593b059e21ede67df7d0e2524cedb3b75e4)
 
-Sources: https://github.com/marcusrbrown/ha-config (SHA ba891877d05cc3afca6ac6fe46ecd2ac679fa5c7)
+## [2026-08-19 05:54] ingest | repo:marcusrbrown/tokentoilet
 
-## [2026-08-19 05:52] ingest | repo:marcusrbrown/ha-config
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
-Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/ha-config
+Sources: https://github.com/marcusrbrown/tokentoilet
