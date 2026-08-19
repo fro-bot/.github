@@ -3743,3 +3743,29 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-19 04:00] ingest | marcusrbrown/ha-config
+
+Ninth survey of `marcusrbrown/ha-config` (HEAD `ba89187`, 2026-08-19; prior `c51e25b`, 2026-07-18). Updated repo page `marcusrbrown--ha-config.md` and topic page `home-assistant.md`; updated `index.md` catalog entry. No new topic/entity/comparison pages warranted — existing `[[home-assistant]]`, `[[esphome]]`, and `[[github-actions-ci]]` pages remain accurate.
+
+Delta from prior survey:
+
+- **Backlog thaw:** long-parked **#766 asyncio-mqtt v0.16.2 finally MERGED** (2026-08-15) — first movement on either parked Renovate PR in ~7 survey windows. Only #777 (esphome v2026) remains parked. This is a version-gate freeze around `.HA_VERSION` + esphome, not a blanket merge refusal.
+- **bfra-me/.github reusable workflows crossed a minor boundary v4.16.37 → v4.18.0** (SHA `647b362`; chain #858 v4.16.44 → #870 v4.16.47 → #872 v4.17.0 → #874 v4.17.1 → #876 v4.18.0), applied to both `renovate.yaml` and `update-repo-settings.yaml`.
+- Renovate preset `marcusrbrown/renovate-config#5.2.7 → #5.2.12` (#852/#860/#862).
+- Prettier 3.9.5 → 3.9.6 (#855), propagated to `ci.yaml` env + post-upgrade `npx prettier@3.9.6`.
+- `actions/checkout` → v6.1.0 (#851); mise pre-commit 4.6.0 → 4.6.2 (#857 v4.6.1, #867 v4.6.2).
+- New renovate `'pre-commit'` block (`enabled: true`, `addLabels: [pre-commit]`); `.pre-commit-config.yaml` `pre-commit-hooks` rev v6.0.0.
+- Static: `.HA_VERSION` 2025.6.3 (~14 months stale), `esphome==2025.12.7`, `yamllint==1.38.0`, 11 packages, 10 custom components, esphome submodule → `marcusrbrown/esphome.life`, three-workflow set (`ci.yaml`/`renovate.yaml`/`update-repo-settings.yaml`).
+- **Still no Fro Bot workflow (ninth consecutive survey)** — follow-up draft PR recommendation carried forward. `mrbro-bot[bot]` (ID 137683033) authors every merge (#849→#877), durable across six windows.
+- Open issues 1 (#427 Dependency Dashboard), open PRs 1 (#777), stars 4.
+
+Access note: `gh` CLI unauthenticated in this shell (refuses without `GH_TOKEN`); repo confirmed **public** and surveyed via the unauthenticated public GitHub REST API + raw.githubusercontent.com, limited to directory listings, README/manifest/workflow files per task constraints. Delivery mode `working-dir` — file changes only, no GitHub mutation. Modified `knowledge/wiki/repos/marcusrbrown--ha-config.md`, `knowledge/wiki/topics/home-assistant.md`, `knowledge/index.md`, and this log.
+
+Sources: https://github.com/marcusrbrown/ha-config (SHA ba891877d05cc3afca6ac6fe46ecd2ac679fa5c7)
+
+## [2026-08-19 05:52] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/ha-config
