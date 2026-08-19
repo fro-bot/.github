@@ -3744,50 +3744,42 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-19 04:00] ingest | marcusrbrown/ha-config
+## [2026-08-19 02:15] ingest | marcusrbrown/tokentoilet
 
-Ninth survey of `marcusrbrown/ha-config` (HEAD `ba89187`, 2026-08-19; prior `c51e25b`, 2026-07-18). Updated repo page `marcusrbrown--ha-config.md` and topic page `home-assistant.md`; updated `index.md` catalog entry. No new topic/entity/comparison pages warranted — existing `[[home-assistant]]`, `[[esphome]]`, and `[[github-actions-ci]]` pages remain accurate.
+Surveyed `marcusrbrown/tokentoilet` at HEAD `7436859` (2026-08-19, `chore(deps): update bfra-me/.github to v4.18.0 (#1403)`), up from `8d7648c` (2026-07-18). Treated as untrusted input; reads limited to directory listings, README, manifests, workflow files, CHANGELOG, `.env.example`, and issue/PR metadata via the unauthenticated public GitHub REST API + raw.githubusercontent.com (`gh` CLI refuses without `GH_TOKEN` on this runner).
 
-Delta from prior survey:
+- **Hygiene-gate cycle, no new feature code.** Two long-documented conventions became CI-enforced test gates: new root `process-env.test.ts` fails the suite if any file under `app`/`components`/`hooks`/`lib` references `process.env` outside `env.ts` (retires the "process.env in 4 source files" footgun tracked across prior surveys), and open PR #1298 adds a regression test enforcing the `useWallet` hook abstraction (no direct AppKit access from components). `env.ts` moved to repo root (from `config/`); `readme.md` lowercased.
+- **Bundle win still staged.** `CHANGELOG.md` Unreleased is byte-identical to 2026-07-18 — Dynamic Loading Infrastructure remains "awaiting feature page implementation." A full cycle un-integrated; the "dead chrome" caveat is materializing.
+- **Security-remediation cluster refilled the PR queue (0 → 8).** Six fro-bot `fix(security)` `pnpm.overrides` PRs: axios #1303, fast-uri #1309, sharp #1310, js-yaml #1326, brace-expansion #1327, nanoid #1370 (#1370/#1303 gone `dirty` on lockfile drift). Plus hook-abstraction #1298 and `mrbro-bot[bot]` lockfile #1400.
+- **Dependency churn:** Fro Bot agent v0.93.1 → v0.100.0 (SHA `7b9a281`, crossed v1.00 pin), bfra-me/.github v4.16.37 → v4.18.0, Renovate preset #5.2.7 → #5.2.12, pnpm 11.11.0 → 11.22.0, Next.js 16.2.10 → 16.3.1, React 19.2.7 → 19.2.8, viem 2.55.2 → 2.55.16, Storybook core 10.5.0 → 10.5.8 (alpha addons unchanged — 5th cycle), ESLint 10.7.0 → 10.8.1, Vite 8.1.4 → 8.2.1.
+- **Open issues 4 → 7:** new #1241 (daily coverage regression), #1284 / #1347 (AGENTS.md accuracy/drift), joining carried #995/#1013/#1171/#1189.
+- **Cosmetic:** repo description set to "Chump and dump"; a transient `isArchived: true` org-list flag did not hold (direct read confirms `archived: false`).
+- **Fro Bot workflow present** (`fro-bot/agent@v0.100.0`) — no onboarding draft PR needed.
 
-- **Backlog thaw:** long-parked **#766 asyncio-mqtt v0.16.2 finally MERGED** (2026-08-15) — first movement on either parked Renovate PR in ~7 survey windows. Only #777 (esphome v2026) remains parked. This is a version-gate freeze around `.HA_VERSION` + esphome, not a blanket merge refusal.
-- **bfra-me/.github reusable workflows crossed a minor boundary v4.16.37 → v4.18.0** (SHA `647b362`; chain #858 v4.16.44 → #870 v4.16.47 → #872 v4.17.0 → #874 v4.17.1 → #876 v4.18.0), applied to both `renovate.yaml` and `update-repo-settings.yaml`.
-- Renovate preset `marcusrbrown/renovate-config#5.2.7 → #5.2.12` (#852/#860/#862).
-- Prettier 3.9.5 → 3.9.6 (#855), propagated to `ci.yaml` env + post-upgrade `npx prettier@3.9.6`.
-- `actions/checkout` → v6.1.0 (#851); mise pre-commit 4.6.0 → 4.6.2 (#857 v4.6.1, #867 v4.6.2).
-- New renovate `'pre-commit'` block (`enabled: true`, `addLabels: [pre-commit]`); `.pre-commit-config.yaml` `pre-commit-hooks` rev v6.0.0.
-- Static: `.HA_VERSION` 2025.6.3 (~14 months stale), `esphome==2025.12.7`, `yamllint==1.38.0`, 11 packages, 10 custom components, esphome submodule → `marcusrbrown/esphome.life`, three-workflow set (`ci.yaml`/`renovate.yaml`/`update-repo-settings.yaml`).
-- **Still no Fro Bot workflow (ninth consecutive survey)** — follow-up draft PR recommendation carried forward. `mrbro-bot[bot]` (ID 137683033) authors every merge (#849→#877), durable across six windows.
-- Open issues 1 (#427 Dependency Dashboard), open PRs 1 (#777), stars 4.
+Delivery mode `working-dir` — file changes only, no GitHub mutation. Modified `knowledge/wiki/repos/marcusrbrown--tokentoilet.md`, `knowledge/index.md`, and this log.
 
-Access note: `gh` CLI unauthenticated in this shell (refuses without `GH_TOKEN`); repo confirmed **public** and surveyed via the unauthenticated public GitHub REST API + raw.githubusercontent.com, limited to directory listings, README/manifest/workflow files per task constraints. Delivery mode `working-dir` — file changes only, no GitHub mutation. Modified `knowledge/wiki/repos/marcusrbrown--ha-config.md`, `knowledge/wiki/topics/home-assistant.md`, `knowledge/index.md`, and this log.
+Sources: https://github.com/marcusrbrown/tokentoilet (SHA 74368593b059e21ede67df7d0e2524cedb3b75e4)
 
-Sources: https://github.com/marcusrbrown/ha-config (SHA ba891877d05cc3afca6ac6fe46ecd2ac679fa5c7)
+## [2026-08-19 05:54] ingest | repo:marcusrbrown/tokentoilet
 
-## [2026-08-19 05:52] ingest | repo:marcusrbrown/ha-config
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
-Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+Sources: https://github.com/marcusrbrown/tokentoilet
 
-Sources: https://github.com/marcusrbrown/ha-config
+## [2026-08-19 00:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-19 06:00] ingest | fro-bot/space-bus
+Surveyed the *name* `marcusrbrown/marcusrbrown.github.io`, which continues to resolve to repo **id `1174807412`** — the mrbro.dev developer portfolio (canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-collision the 2026-07-13 header warned of holds steady (unchanged since 2026-07-20). Treated as untrusted input; reads limited to repo metadata, HEAD commit, open issue/PR listing, and `.github/workflows/fro-bot.yaml` via the unauthenticated public GitHub REST API + raw.githubusercontent.com (`gh` CLI refused without `GH_TOKEN` on this runner — the same authenticated-access gap the occupant's own issue #212 tracks).
 
-No-op re-survey of `fro-bot/space-bus` (HEAD `fd8a746`, unchanged since the 2026-08-04 survey). Updated repo page `fro-bot--space-bus.md` (new no-op banner, Overview row, survey-history row, published-`latest` re-confirmation, new dated source) and the `index.md` catalog entry. No new topic/entity/comparison pages warranted — a frozen re-survey surfaces no new cross-cutting patterns.
+- **No-op re-survey, tree frozen 19 days.** `main` HEAD still `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31); `updated_at` still 2026-07-31, `pushed_at` 2026-08-18 (PR-branch pushes only). No tree-level drift — stack, 8-workflow inventory, single-file three-mode Fro Bot design, and single `30 3` cron all hold. Because the trunk is frozen, no durable delta lands on the canonical [[marcusrbrown--mrbro-dev]] page.
+- **Only motion is daily-report churn:** rolling report issue renumbered #280 → #281 (`Daily Fro Bot Report — 2026-08-19 (UTC)`). Open issues 5 (#281 / #271 / #270 / #261 / #258 / #212) + #1 Dependency Dashboard (`mrbro-bot[bot]`); open PRs 4, all carried, none merged since 2026-08-07 (#266 `fix(security): remediate high audit advisories` / #263 `docs: refresh repository inventory` / #254 `docs: correct automation script count` / #253 `chore(blog): refresh snapshot and preview images`). API `open_issues_count` 11. The report-without-remediation / propose-without-merge pattern is now firmly durable (~seven-to-eight intervals; #266 security PR held hostage 19 days).
+- **Fro Bot workflow present and active** — `fro-bot/agent@a4976f4 # v0.93.1`, single `30 3` cron, category-10 upstream-watch + `Validate review mode inputs` guard re-confirmed at HEAD. **No onboarding follow-up draft PR warranted for this name.**
 
-Delta from prior survey (HEAD `fd8a746`, 2026-08-04):
+Delivery mode `working-dir` — file changes only, no GitHub mutation. Modified `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (new source SHA/date, `updated` → 2026-08-19, Delta Log + Survey History row), `knowledge/index.md`, and this log.
 
-- `main` HEAD **still frozen at `fd8a746`** (last merged commit #128 "chore(deps): update bfra-me/.github to v4.16.44", dated 2026-08-03) — 16 days, no tree change.
-- `pushed_at` reports 2026-08-16 but is **open-PR-branch activity only** (deps PRs #118 GitHub Actions / #115 `@opencode-ai/plugin` v1.18.18); `updated_at` 2026-08-19 is daily-report issue churn.
-- npm `latest` still **`0.15.0`** (22 versions, `latest_time` 2026-07-19 — no publish in a month).
-- `package.json` deps byte-identical: `@modelcontextprotocol/sdk` 1.29.0, zod `^4.4.3`, peer `@opencode-ai/plugin >=1.17.13 <2`, dev-pin `1.18.2`, `@changesets/cli` 2.31.1, Biome 2.5.2, TS 5.9.3.
-- 7 workflows unchanged; `fro-bot.yaml` re-read at HEAD — agent still `fro-bot/agent@v0.93.1` (SHA `a4976f4`), single `0 0 * * *` cron, `bfra-me/.github` reusable pin unchanged.
-- Open issues 9 / stars 1 (flat). Queue is the same carried set (daily-report renumbered to #147); backlog PRs #135 (npm v11.19.0) / #130 (`@modelcontextprotocol/sdk` v1.30.0) / #118 / #115 / #72 (Biome v2.5.8, failing since ~2026-07-11) + deferred-hardening issues #81 / #63 / #6 all still open and unmerged.
-- **Fro Bot workflow present** (agent v0.93.1) — no onboarding PR needed. Survey ran unauthenticated against the public GitHub/npm APIs (no `GH_TOKEN`/`GITHUB_TOKEN`/`FRO_BOT_PAT` in this environment); reads limited to repo metadata, root listing, `package.json`, workflow list, `fro-bot.yaml`, issues/PRs, and the npm registry, per the survey constraints.
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
 
-Sources: https://github.com/fro-bot/space-bus (SHA fd8a746dd04bbf41b0d34dd0da55814686048ee9)
+## [2026-08-19 05:58] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-19 05:56] ingest | repo:fro-bot/space-bus
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
-Surveyed fro-bot/space-bus and updated the control-plane wiki.
-
-Sources: https://github.com/fro-bot/space-bus
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
