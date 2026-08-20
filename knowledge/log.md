@@ -3788,3 +3788,19 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-20 06:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Second same-day pass (dispatch re-run, `dispatch-32337067773`). Re-dispatch against the *name* `marcusrbrown/marcusrbrown.github.io` re-observed **byte-identical state** to the earlier 2026-08-20 survey — the name still resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio, canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The 2026-07-13 name-collision holds; binding unchanged since 2026-07-20.
+
+Independently re-verified via unauthenticated GitHub API: `main` still `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z — 20 days frozen), `pushed_at` 2026-08-19T07:26:41Z (PR-branch pushes only), `updated_at` 2026-07-31T21:42:16Z, `open_issues_count` 11, stars 1, homepage `https://mrbro.dev/`, topics `blog/developer/github-pages/portfolio/react/typescript/vite`, license API-null (MIT in `package.json`). Queue unchanged: open issues 5 (#282 / #271 / #270 / #261 / #258 / #212) + #1, open PRs 4 (#266 / #263 / #254 / #253), all carried, none merged since 2026-08-07. No trunk drift, no queue drift, no contradictions — no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page.
+
+Fro Bot workflow present and active (agent v0.93.1, `a4976f4`) — no onboarding follow-up draft PR warranted for this name. Access note: `gh` CLI unauthenticated again this run (refuses without `GH_TOKEN`); surveyed via unauthenticated GitHub API + raw fetch, limited to directory listings, README/manifests, and workflow files per the untrusted-input constraint. Delivery mode `working-dir` — file changes only, no GitHub mutation. Recorded only to keep the source/access chain continuous; folded into the 2026-08-20 delta log as a same-day confirming pass. Touched pages: [[marcusrbrown--marcusrbrown-github-io]] (same-day-pass note + survey-history row + frontmatter source), `knowledge/index.md`, `knowledge/log.md`.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-20 05:55] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
