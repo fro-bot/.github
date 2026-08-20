@@ -3770,3 +3770,21 @@ Sources: https://github.com/marcusrbrown/marcusrbrown (SHA df85b7dfaea37c0f1e74b
 Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-08-20 00:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey. The name `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** — the mrbro.dev developer portfolio (canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The 2026-07-13 name-collision holds; binding unchanged since 2026-07-20.
+
+`main` HEAD **still frozen at `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z) — 20 days without a trunk commit. `updated_at` still 2026-07-31; `pushed_at` 2026-08-19 reflects PR-branch pushes only. No tree-level drift: stack, 8-workflow inventory, single-file three-mode Fro Bot design, and single `30 3` daily oversight+autoheal cron all hold. `fro-bot.yaml` + `package.json` re-read at HEAD — agent v0.93.1 (`a4976f4`), Renovate #5.2.7, pnpm 11.1.3 / Node >=24, `pnpm.overrides` empty (ledger consolidated in `pnpm-workspace.yaml`). Because the tree is frozen, no durable delta lands on the canonical [[marcusrbrown--mrbro-dev]] page.
+
+Only queue motion since 2026-08-18 is the daily-report renumber #280 → **#282** (`Daily Fro Bot Report — 2026-08-20 (UTC)`). Substantive backlog byte-identical: open issues 5 (#282 / #271 `ci: reduce performance workflow permissions` / #270 `ci: pass Vitest coverage flag through pnpm script` / #261 `ci(fro-bot): narrow scheduled-run token permissions` / #258 perf-budget CI visibility / #212 mention-run git-push-auth) + #1 Dependency Dashboard (`mrbro-bot[bot]`); open PRs 4, all carried, **none merged since 2026-08-07** (#266 `fix(security): remediate high audit advisories` / #263 `docs: refresh repository inventory` / #254 `docs: correct automation script count` / #253 `chore(blog): refresh snapshot and preview images`); API `open_issues_count` 11, stars 1. The propose-without-merge pattern is now chronic — a security-remediation PR (#266) unmerged against a 20-day-frozen trunk.
+
+Fro Bot workflow present and active — no onboarding follow-up draft PR warranted for this name. Access note: `gh` CLI unauthenticated this run (refuses without `GH_TOKEN`); surveyed via unauthenticated GitHub API + raw.githubusercontent fetch, limited to directory listings, README/manifests, and workflow files per the untrusted-input constraint. Delivery mode `working-dir` — file changes only, no GitHub mutation. Touched pages: [[marcusrbrown--marcusrbrown-github-io]] (delta log + survey-history row + frontmatter), `knowledge/index.md`, `knowledge/log.md`.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-20 05:51] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
