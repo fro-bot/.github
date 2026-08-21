@@ -3804,3 +3804,21 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-21 05:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Survey (dispatch `dispatch-32452172330`) against the *name* `marcusrbrown/marcusrbrown.github.io`. The name still resolves to repo **id `1174807412`** (the mrbro.dev developer portfolio, canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The 2026-07-13 name-collision holds; binding unchanged since 2026-07-20.
+
+**No structural drift — `main` frozen 21 days.** `main` HEAD still `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z), `updated_at` still 2026-07-31T21:42:16Z; `pushed_at` advanced to 2026-08-21T04:13:53Z (PR-branch pushes only). Stack/workflows/single-file three-mode Fro Bot design/single `30 3` cron all hold. `fro-bot.yaml` + `package.json` re-read at HEAD: agent v0.93.1 (`a4976f4`), pnpm 11.1.3 / Node >=24, `pnpm.overrides` empty; 8 workflows; Renovate #5.2.7. Because the tree is frozen, **no durable delta lands on the canonical [[marcusrbrown--mrbro-dev]] page** this cycle.
+
+**Queue delta — first non-renumber signal in a week: a duplicate PR.** Daily-report renumbered #282 → #284 (`Daily Fro Bot Report — 2026-08-21 (UTC)`). New **PR #283 (`docs: correct automation script count`, author `fro-bot`, branch `docs/refresh-agent-script-count-2026-08-21`) is a byte-for-byte title duplicate of the already-open #254** (same title, open since 2026-07-31, branch `docs/refresh-agent-script-count`) — the autoheal daemon re-drafted the same docs fix into a fresh PR rather than updating the stale one, escalating the durable propose-without-merge pattern (since 2026-06-12) to **duplicate-propose-without-merge**. Open issues 5 (#284 / #271 / #270 / #261 / #258 / #212 — all carried) + #1 Dependency Dashboard (`mrbro-bot[bot]`); **open PRs 5, up from 4** (#283 dup / #266 `fix(security): remediate high audit advisories` / #263 `docs: refresh repository inventory` / #254 `docs: correct automation script count` / #253 `chore(blog): refresh snapshot and preview images`); API `open_issues_count` 11 → 12 (tick = new PR #283). None merged since 2026-08-07.
+
+Fro Bot workflow present and active — no onboarding follow-up draft PR warranted for this name. Access note: `gh` CLI unauthenticated again this run (refuses without `GH_TOKEN`); surveyed via unauthenticated GitHub API + raw fetch, limited to directory listings, README/manifests, and workflow files per the untrusted-input constraint. Delivery mode `working-dir` — file changes only, no GitHub mutation. Touched pages: [[marcusrbrown--marcusrbrown-github-io]] (delta-log block + survey-history row + frontmatter source), `knowledge/index.md`, `knowledge/log.md`.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-21 05:56] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
