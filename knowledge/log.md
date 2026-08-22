@@ -3832,20 +3832,26 @@ Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
 
-## [2026-08-22 06:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+## [2026-08-22 05:00] ingest | marcusrbrown/mothership
 
-No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io` (SHA `9e54dbc`, unchanged since 2026-07-31). The name resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (`package.json` `name: mrbro.dev`, homepage `https://mrbro.dev/`, description "My portfolio."), canonical [[marcusrbrown--mrbro-dev]], **not** the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The 2026-07-13 name-collision holds unchanged since 2026-07-20.
+Re-survey of `marcusrbrown/mothership` (HEAD `739f230`, prior `e7e305f` 2026-07-21). **No structural change in ~1 month** — steady-state confirmation. Updated repo page `marcusrbrown--mothership.md` additively, refreshed the index entry, appended this log.
 
-`main` HEAD **frozen 22 days** at `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z); `pushed_at` advanced to 2026-08-21T07:31:13Z (PR-branch pushes only), `updated_at` still 2026-07-31T21:42:16Z — no tree drift. Stack, 8-workflow inventory, single-file three-mode `fro-bot.yaml` (agent v0.93.1 `a4976f4`, single `30 3` cron), Renovate #5.2.7, pnpm 11.1.3 / Node >=24, `pnpm.overrides` empty — all steady. Because the tree is frozen, no durable delta lands on [[marcusrbrown--mrbro-dev]] this cycle.
+Key findings:
 
-Queue motion since 2026-08-20: daily-report renumber #282 → **#285** (`Daily Fro Bot Report — 2026-08-22 (UTC)`) plus a **new duplicate docs PR #283 (`docs: correct automation script count`, author `fro-bot`) — a title-exact duplicate of the still-open #254**. Open issues 5 (#285 / #271 / #270 / #261 / #258 / #212 — all carried) + #1 (Dependency Dashboard, `mrbro-bot[bot]`); open PRs now **5** (#283 new dup / #266 `fix(security): remediate high audit advisories` / #263 `docs: refresh repository inventory` / #254 `docs: correct automation script count` / #253 `chore(blog): refresh snapshot and preview images` — #266/#263/#254/#253 all carried, none merged since 2026-08-07); API `open_issues_count` 12 folds the 5 PRs. The report-without-remediation / propose-without-merge pattern (flagged since 2026-06-12) crosses into a new failure mode: the daemon has re-drafted an already-open PR (#283 ≡ #254) rather than landing the original — shadowing its own backlog against a 22-day-frozen trunk with a security PR (#266) still unmerged.
+- **Sole substantive commit in the interval:** Fro Bot agent pin `v0.95.0 → v0.100.0` (#58, `mrbro-bot[bot]`, 2026-08-19, SHA `7b9a281`) — ecosystem version leader, matching [[marcusrbrown--marcusrbrown]]. The `fro-bot.yaml` structural shape (triggers, concurrency key, guards, prompt routing, six autoheal categories, Rust-review-only tooling constraint, `@3.2.0` design-gate pin) is byte-identical.
+- **Durable (steady-state):** 8-workflow surface, signed/notarized macOS `release.yaml` pipeline (protected `release` env, Checks-API preflight, resolved-tag-SHA discipline), `ide_*` MCP sidecar (token rendezvous), dockview panel model, Changesets + `version.yml`, script-driven release settings (`apply-/verify-release-settings.ts` + rulesets + CODEOWNERS), all eight AGENTS.md invariants.
+- **Manifest pins byte-identical:** TS 5.8.3, Vite 7.3.6, `@biomejs/biome` 1.9.4, `@fro.bot/space-bus` 0.14.0, `@modelcontextprotocol/sdk` 1.29.0, zod ^4.4.3, dockview ^7.0.2, React 19.1, `@changesets/cli` 2.31.1, `@tauri-apps/cli` 2.11.4. Only types-only drift: `@types/react` 19.2.17, `@types/react-dom` 19.2.3, `@vitejs/plugin-react` 4.7.0.
+- **Confirmed exact pins:** `github/codeql-action@v4.37.0`, `ossf/scorecard-action@v2.4.3` (`permissions: read-all`), Renovate reusable `bfra-me/.github@v4.16.37`, config `marcusrbrown/renovate-config#5.2.4`, Bun `1.3.14`. `.impeccable/config.json` holds a single exception: `bounce-easing` for the `cubic-bezier(0.34, 1.56, 0.64, 1)` `--ease-spring` brand token.
+- **Standing threads (escalating):** Renovate live ~1 month but the TS 6 / Biome 2 sweep is untouched and `@fro.bot/space-bus` is held at 0.14.0 despite 0.15.0 being live ([[fro-bot--space-bus]] 2026-08-04) — automation present, majors not driven. No `v*.*.*` tag shipped yet (still `0.1.0` across `package.json`/`Cargo.toml`/`tauri.conf.json`); release apparatus untested against a real published tag. Still no Probot Settings (script-driven posture); Rust CodeQL deferred pending a macOS build lane. Open issues 6→7.
 
-Fro Bot workflow present and active — no onboarding follow-up draft PR warranted for this name. Access note: `gh` CLI unauthenticated this run (refuses without `GH_TOKEN`) — the same authenticated-access gap the current occupant's own issue #212 tracks; surveyed via unauthenticated GitHub API + raw.githubusercontent fetch, limited to repo metadata, directory listings, README/manifests, and workflow files per the untrusted-input constraint. Delivery mode `working-dir` — file changes only, no GitHub mutation. Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (frontmatter `updated`/source, new Delta Log 2026-08-22, Survey History row), `knowledge/index.md` (repo catalog entry), `knowledge/log.md`.
+**Fro Bot workflow present and active** (`fro-bot/agent@v0.100.0`) — no onboarding draft PR warranted.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+Access note: `gh` CLI unauthenticated this run (no `GH_TOKEN`); surveyed via unauthenticated GitHub REST API + raw `raw.githubusercontent.com` fetches, limited to directory listings, README, manifest files, and workflow files per the untrusted-input constraint; no repo code executed. Delivery mode `working-dir` — file changes only, no GitHub mutation. Touched pages: `knowledge/wiki/repos/marcusrbrown--mothership.md`, `knowledge/index.md`, `knowledge/log.md`.
 
-## [2026-08-22 05:49] ingest | repo:marcusrbrown/marcusrbrown.github.io
+Sources: https://github.com/marcusrbrown/mothership (SHA 739f23065e786f59a91c5fd9164edb1a5e0bb847)
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+## [2026-08-22 05:50] ingest | repo:marcusrbrown/mothership
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+Surveyed marcusrbrown/mothership and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/mothership
