@@ -172,7 +172,7 @@ jobs:
       - name: 🤖 Draft pattern proposal bodies
         id: agent
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
-        uses: fro-bot/agent@25cb559971ceb5fb7c127b8d6ac70b7c1d804669 # v0.96.1
+        uses: fro-bot/agent@190c04d8cfdb6cf84ccdfb616cfd840efdbbe22e # v0.104.0
         env:
           CAPTURE_PATTERNS_DIGEST_PATH: ${{ runner.temp }}/capture-patterns-digest.json
           TASK_PROMPT: |
