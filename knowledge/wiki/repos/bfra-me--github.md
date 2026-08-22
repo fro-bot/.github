@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/.github
 created: 2026-05-20
-updated: 2026-07-16
+updated: 2026-08-06
 sources:
   - url: https://github.com/bfra-me/.github
     sha: a81be4c5d5c93824fdcc426418c9433d5e5bd9be
@@ -19,9 +19,13 @@ sources:
   - url: https://github.com/bfra-me/.github
     sha: 1c1269568de61df2d8a3ddf19fb01637c166ef00
     accessed: 2026-07-16
+  - url: https://github.com/bfra-me/.github
+    sha: d9feab2e628a21b1f38048fd2bf0563dbc814c5e
+    accessed: 2026-08-06
 tags: [bfra-me, dotgithub, monorepo, pnpm, typescript, github-actions, probot, renovate, template]
 related:
   - bfra-me--ha-addon-repository
+  - bfra-me--renovate-action
   - marcusrbrown--github
   - marcusrbrown--renovate-config
   - fro-bot--agent
@@ -35,7 +39,7 @@ Org control center for the `bfra-me` GitHub organization. This is the
 canonical home of the org's reusable workflows, custom GitHub Actions,
 workflow templates, shared Probot settings, and Fro Bot org-wide autoheal
 runtime (a **single unified `fro-bot.yaml`** since 2026-07-02, still the
-shape at 2026-07-16, rather than a per-repo + org-sweep pair). Marketed
+shape at 2026-08-06, rather than a per-repo + org-sweep pair). Marketed
 as a template
 (`is_template: true`) but in practice it runs as a full TypeScript pnpm
 monorepo.
@@ -53,23 +57,29 @@ license/secret/container scanning).
 - **License:** MIT
 - **Default branch:** `main`
 - **Created:** 2022-03-17
-- **Last push:** 2026-07-16 (was 2026-07-02)
-- **Package version:** `@bfra.me/.github` v4.16.37 (private root; was
-  v4.16.33 on 2026-07-02)
-- **Node:** 24.18.0 (`.node-version`; unchanged since 2026-07-02; was
-  24.17.0 on 2026-06-20, 24.16.0 on 2026-06-10, 24.15.0 on 2026-05-20)
-- **Package manager:** pnpm **11.11.0** (2026-07-16; was 11.9.0 on
-  2026-07-02 — the 10→11 major boundary is now settled, this is routine
-  minor churn within the 11.x line; open PR #2436 queues 11.12.0)
-- **TypeScript:** 6.0.3, strict (unchanged across all five surveys)
-- **Open issues / PRs:** 2 / 2 (2026-07-16). Open PRs: #2444 Changesets
-  release PR (`chore(🦋📦): publish release`, authored by `bfra-me[bot]`)
-  and #2436 (Renovate pnpm 11.12.0 bump, `bfra-me[bot]`). Open issues:
-  #2344 (unified **Daily Fro Bot Report** — see Fro Bot Integration) and
-  #7 (Dependency Dashboard). Was 2/1 on 2026-07-02. The standing report
-  surface (#2344) and the Dependency Dashboard (#7) remain the only two
-  durable open issues — the three-into-one report consolidation from
-  2026-07-02 holds.
+- **Last push:** 2026-08-04 (HEAD commit dated 2026-07-31; was 2026-07-16)
+- **Package version:** `@bfra.me/.github` v4.16.44 (private root; was
+  v4.16.37 on 2026-07-16)
+- **Node:** 24.18.1 (`.node-version`; **first bump since 2026-07-02** —
+  was 24.18.0 across the prior two surveys, 24.17.0 on 2026-06-20,
+  24.16.0 on 2026-06-10, 24.15.0 on 2026-05-20)
+- **Package manager:** pnpm **11.17.0** (2026-08-06; was 11.11.0 on
+  2026-07-16 — routine minor churn within the 11.x line, six sequential
+  Renovate bumps 11.12.0 → 11.17.0 across the window; the 10→11 boundary
+  remains settled)
+- **TypeScript:** 6.0.3, strict (unchanged across all six surveys; note
+  a **v7** major bump is now in the open-PR queue — #2526/#2527)
+- **Open issues / PRs:** 2 / 7 (2026-08-06). Open issues: #2344 (unified
+  **Daily Fro Bot Report** — see Fro Bot Integration) and #7 (Dependency
+  Dashboard) — the same two durable surfaces. Open PRs are **all
+  `bfra-me[bot]` Renovate major-version bumps** the automerge policy
+  holds back for human review: #2528 (lint-staged v17), #2526/#2527
+  (typescript v7, dup), #2525 (fossas/fossa-action v2), #2524
+  (actions/setup-node v7), #2523 (actions/labeler v7), #2522
+  (actions/dependency-review-action v5). Was 2/2 on 2026-07-16. The
+  standing report surface (#2344) and the Dependency Dashboard (#7)
+  remain the only two durable open issues — the three-into-one report
+  consolidation from 2026-07-02 holds across four windows.
 
 ## Layout
 
@@ -106,6 +116,9 @@ license/secret/container scanning).
 ├── CONTRIBUTING.md                      # Contributor guide (added by 2026-07-16)
 ├── .git-blame-ignore-revs               # Blame-ignore for bulk reformats (added by 2026-07-16)
 ├── .cursorindexingignore                # Cursor indexing excludes (added by 2026-07-16)
+├── .gitattributes                       # Git attributes (present ≥2026-07-16)
+├── .markdownlint-cli2.yaml              # Markdown lint config (present ≥2026-07-16)
+├── llms.txt                             # AI-consumption manifest (present ≥2026-07-16, first enumerated 2026-08-06)
 ├── eslint.config.ts
 ├── internal.json5                       # Renovate internal config extended by .github/renovate.json5
 ├── mise.toml                            # Adds ./node_modules/.bin to PATH
@@ -123,11 +136,12 @@ license/secret/container scanning).
 - `shamefullyHoist: true`, `autoInstallPeers: true`, `savePrefix: ''`,
   `shellEmulator: true`, `strictPeerDependencies: false` (latter two
   confirmed 2026-06-10)
-- Overrides (HEAD 2026-07-02): `esbuild@>=0.17.0 <0.28.1` forced to
-  `>=0.28.1` (security, PR #2292 — now on `main`); `flatted@3.4.2`
-  pinned; `undici@<6.27.0` forced to `>=6.27.0` (floor raised from
-  `<6.23.0`→`>=6.23.0` seen on prior surveys); `vite@>=8.0.0 <=8.0.4`
-  forced to `>=8.0.5`
+- Overrides (HEAD 2026-08-06): `esbuild@>=0.17.0 <0.28.1` forced to
+  `>=0.28.1` (security, PR #2292 — on `main` since 2026-06-25);
+  `flatted` pinned to `3.4.3` (bumped from `3.4.2` via #2491);
+  `undici@<6.27.0` forced to `>=6.27.0`; `vite@>=8.0.0 <=8.0.4` forced to
+  `>=8.0.5`. Override _set_ is otherwise stable across the window — no
+  new security overrides added, one pin refresh only.
 - Built-dependency allowlist: `esbuild`, `unrs-resolver`. As of
   2026-07-16 this is expressed via a pnpm **`allowBuilds:`** block in
   `pnpm-workspace.yaml` (`esbuild: true`, `unrs-resolver: true`) — the
@@ -186,20 +200,19 @@ Notable surface area:
 ## Fro Bot Integration
 
 This repo **is** a Fro Bot workflow host, and it also _runs_ the org-wide
-autoheal sweep. As of HEAD (2026-07-16) it pins:
+autoheal sweep. As of HEAD (2026-08-06) it pins:
 
-- `fro-bot/agent@019ee4a68a14b6658e84b848bac68c27ce3e010b # v0.92.1`
-  (was v0.81.0 on 2026-07-02, v0.71.0 on 2026-06-20, v0.59.1 on
-  2026-06-10, v0.44.2 on 2026-05-20). Renovate landed **~11 more
-  sequential agent bumps** between 2026-07-02 (v0.81.0) and 2026-07-16
-  (v0.92.1) — CHANGELOG records the v0.86.0→v0.92.0 stretch; HEAD source
-  is already on v0.92.1 ahead of the next changeset. Cumulative:
-  **~50 agent bumps in ~two months**. Still among the freshest ecosystem
-  pins but no longer the outright leader — [[marcusrbrown--systematic]]
-  (v0.90.0), [[fro-bot--dashboard]] (v0.84.2+), and
-  [[marcusrbrown--sparkle]] (v0.85.0) trade the fleet-lead position
-  survey to survey; the version numbers now cluster tightly across the
-  fleet as automerge keeps everyone within a day of each release.
+- `fro-bot/agent@c29ac295b8da06768b140c32e5bd0ae3aff45dc6 # v0.96.0`
+  (was v0.92.1 on 2026-07-16, v0.81.0 on 2026-07-02, v0.71.0 on
+  2026-06-20, v0.59.1 on 2026-06-10, v0.44.2 on 2026-05-20). Renovate
+  landed **~7 more sequential agent bumps** across the window
+  (v0.93.0 → v0.93.1 → v0.94.0 → v0.94.1 → v0.94.2 → v0.94.3 → v0.94.4
+  → v0.95.0 → v0.95.1 → v0.96.0). Cumulative: **~57 agent bumps in
+  ~2.5 months**. Back at the front of the fleet — v0.96.0 ties the
+  ecosystem lead held survey-to-survey by [[marcusrbrown--dotfiles]]
+  (v0.95.0/v0.96.0), [[marcusrbrown--marcusrbrown-com]] (v0.96.0), and
+  [[marcusrbrown--dev-like]] (v0.96.0); the pins cluster within a day of
+  each release as automerge fans the bumps across the fleet.
 
 ### Fro Bot workflow consolidation (2026-07-02)
 
@@ -231,6 +244,16 @@ changed is only the agent pin (v0.81.0 → v0.92.1). The 2026-07-02
 consolidation was not a transient state; it is now the steady-state shape
 of the control plane.
 
+**Re-confirmed durable (2026-08-06):** third consecutive survey with no
+structural regression — one `fro-bot.yaml`, two `review`/`autoheal`
+modes (`default: autoheal`), single `30 15 * * *` unified pass,
+`target-repo` narrowing input, and the security-focused `PR_REVIEW_PROMPT`
+all byte-stable. The only workflow-file delta is the agent pin
+(v0.92.1 → v0.96.0). The `fro-bot.yaml` never-merge/never-approve
+guardrails, the category taxonomy (1–6 this-repo, 7–8 org-wide), and the
+dedup-before-create rule are all intact. The consolidation is now
+four-window steady state.
+
 ### AI planning corpus (`.ai/`, new 2026-07-16)
 
 A new top-level `.ai/` directory carries an **AI-consumed roadmap** — not
@@ -253,7 +276,25 @@ declared direction for the org control plane, not current capability.
 Several (template federation, org-health monitoring) would substantially
 expand this repo's remit beyond settings/workflow distribution into
 active cross-org governance. Worth watching whether any graduate from
-`.ai/plan/` into real workflows in future surveys.
+`.ai/plan/` into real workflows in future surveys. **2026-08-06:** none
+have graduated yet — `.ai/plan/` is unchanged, still 10 aspirational
+docs, still no corresponding shipped workflow. The declared direction
+held static across the window.
+
+### AI-consumption manifest (`llms.txt`)
+
+The repo ships a top-level **`llms.txt`** — an [llmstxt.org](https://llmstxt.org)-style
+manifest pointing AI agents at the canonical entry points (README,
+`docs/workflows/*`, workflow templates, `package.json`/`tsconfig.json`/
+`eslint.config.ts`, `common-settings.yaml`, `.github/copilot-instructions.md`,
+`.github/settings.yml`). It self-describes as "Central configuration hub
+and template repository for the @bfra-me GitHub organization." First
+enumerated here on 2026-08-06 but **present since at least 2026-07-16**
+(verified 200 at prior SHA `1c12695`) — it is a durable feature the
+earlier layout snapshot simply omitted, not a new addition. The
+`llms.txt`-drift autoheal check that flags stale manifests in sibling
+repos ([[marcusrbrown--sparkle]] #1800, [[marcusrbrown--marcusrbrown]]
+#1039) has no open counterpart here, so the manifest is presumed current.
 
 ### Live Fro Bot security autoheal (PR #2292, MERGED 2026-06-25)
 
@@ -407,10 +448,16 @@ action can detect it as a published package.
   but they consume `bfra-me/.github` reusable workflows.
 - **[[bfra-me--ha-addon-repository]]** — sibling org template; pulls
   reusable workflows and Probot settings from here.
-- **[[fro-bot--agent]]** — this repo pins `fro-bot/agent@v0.92.1`
-  (2026-07-16; was v0.81.0 on 2026-07-02, v0.71.0 on 2026-06-20, v0.59.1
-  on 2026-06-10, v0.44.2 on 2026-05-20), among the freshest ecosystem
-  pins. Renovate automerge keeps it within a day of each agent release.
+- **[[fro-bot--agent]]** — this repo pins `fro-bot/agent@v0.96.0`
+  (2026-08-06; was v0.92.1 on 2026-07-16, v0.81.0 on 2026-07-02,
+  v0.71.0 on 2026-06-20, v0.59.1 on 2026-06-10, v0.44.2 on 2026-05-20),
+  back at the front of the ecosystem pin race. Renovate automerge keeps
+  it within a day of each agent release.
+- **[[bfra-me--renovate-action]]** — the org's Renovate execution
+  surface, consumed here via `renovate.yaml`; crossed its own **v9 → v10
+  major** during this window (#2520, now v10.1.0). This repo tracks it as
+  a routine action pin, so the major landed as ordinary automerge churn
+  rather than a structural event.
 - **[[marcusrbrown--renovate-config]]** — Marcus's preset is the
   Renovate baseline for `marcusrbrown/*` repos; `bfra-me/.github` ships
   its own `metadata/renovate.yaml` for `bfra-me/*` repos.
@@ -453,17 +500,48 @@ action can detect it as a published package.
   vitest 4.1.10, @vitest/coverage-v8 4.1.10, vite 8.1.4, @types/node
   24.13.3, tsx 4.23.1, @bfra.me/eslint-config 0.51.1,
   @bfra.me/prettier-config 0.16.9, @bfra.me/tsconfig 0.13.1.
-- **Doc drift (contradiction to watch):** the new `CONTRIBUTING.md`
-  states a pnpm prerequisite of "Version 10.8.1 or later", but the repo
-  is on pnpm 11.11.0 and enforces the 11.x line via `packageManager`.
-  The prose is stale relative to the actual floor — a category-3
-  documentation-drift candidate for a future autoheal pass.
+- **Doc drift (persists, widened — 2026-08-06):** `CONTRIBUTING.md`
+  still states a pnpm prerequisite of "Version 10.8.1 or later" and
+  lists "pnpm 10.8.1 (workspaces)" / "Changesets 2.29.5", but the repo
+  now enforces pnpm **11.17.0** (`packageManager`) and ships
+  `@changesets/cli` **2.31.1**. The gap _widened_ (11.11.0 → 11.17.0)
+  across this window without any correcting commit — a category-3
+  documentation-drift candidate unhealed across **two** consecutive
+  surveys. Fro Bot's autoheal has not opened a fix; likely below the
+  drift detector's threshold or not in a scanned surface. Worth
+  watching whether the manifest-aware autoheal (which patches
+  `llms.txt` drift in siblings) ever extends to `CONTRIBUTING.md` prose.
+- Commit traffic between 2026-07-16 and 2026-08-06 is **pure churn, no
+  structural change** — 82 commits, all Renovate dependency bumps,
+  Changesets `publish release` merges, and `chore: update internal
+  action SHA pins` maintenance. fro-bot/agent v0.92.1 → v0.96.0
+  (~10 bumps), pnpm 11.11.0 → 11.17.0 (six bumps), Node 24.18.0 →
+  24.18.1, eslint 10.7.0 → 10.8.0, prettier 3.9.5 → 3.9.6, vite 8.1.4 →
+  8.1.5, @changesets/cli 2.31.0 → 2.31.1, flatted 3.4.2 → 3.4.3,
+  minimatch → 10.2.6, `bfra-me/renovate-action` v9.144.0 → **v10.1.0**
+  (**v9 → v10 major**, #2520), `actions/checkout` v6 → **v7** (#2521),
+  github/codeql-action v4.37.1 → v4.37.4, ossf/scorecard-action v2.4.4,
+  self-consumed `bfra-me/.github` reusable-workflow pin v4.16.37 →
+  v4.16.44 (#2477/#2499). Dev toolchain at HEAD: eslint 10.8.0, prettier
+  3.9.6, vitest 4.1.10, @vitest/coverage-v8 4.1.10, vite 8.1.5,
+  @types/node 24.13.3, tsx 4.23.1, husky 9.1.7, lint-staged 16.4.0,
+  @bfra.me/eslint-config 0.51.1, @bfra.me/prettier-config 0.16.9,
+  @bfra.me/tsconfig 0.13.1. New devDeps for AI/manifest tooling surface:
+  `remark`/`remark-parse`/`remark-stringify`/`unified`/`mdast-util-to-string`
+  + `glob` 13.0.6 (markdown/AST processing, consistent with `llms.txt`
+  generation).
 - Structural changes 2026-06-20→2026-07-02: **17 → 16 workflows**,
   **3 modes → 2**, **3 report issues → 1**, pnpm **10.x → 11.x**,
   husky/lint-staged added. Structural changes 2026-07-02→2026-07-16:
   **none** — 16 workflows, 2 modes, 3 custom actions, one unified daily
   pass, all confirmed unchanged. Only additive scaffolding (`.ai/`,
-  hooks, root docs) and version churn.
+  hooks, root docs) and version churn. Structural changes
+  2026-07-16→2026-08-06: **none** — 16 workflows, 2 modes, 3 custom
+  actions, single `30 15` unified pass, all durable. Two upstream
+  **major** dependency crossings landed (`bfra-me/renovate-action`
+  v9 → v10, `actions/checkout` v6 → v7) but neither altered this repo's
+  own structure; `llms.txt`/`.gitattributes`/`.markdownlint-cli2.yaml`
+  first enumerated but confirmed pre-existing.
 
 ## Open Questions / Follow-Ups
 
@@ -485,3 +563,4 @@ action can detect it as a published package.
 | 2026-06-20 | `af0e41e`  | Re-survey. v4.16.27, pnpm 10.34.3, Node 24.17.0, agent v0.71.0 (12 more bumps in 10 days, ~29 in a month). Structure unchanged (17 workflows, 3 actions). Issue #2213 still open (now 4 weeks). New: Fro Bot PR #2292 esbuild security autoheal (HIGH alert #52), still open. |
 | 2026-07-02 | `d51473c`  | Re-survey. v4.16.33, pnpm **11.9.0** (major 10→11), Node 24.18.0, agent v0.81.0 (~10 more bumps, ~39 in six weeks). **First structural change since initial survey:** `fro-bot-autoheal-org.yaml` merged into `fro-bot.yaml` (17→16 workflows); `maintenance` mode + `0 5` cron retired (3→2 modes, single `30 15` unified pass); three report issues (#2185/#1960/#1959) closed and consolidated into #2344. Issue #2213 **RESOLVED** (closed 2026-06-25). PR #2292 esbuild remediation **MERGED** (override now on `main`). Added husky/lint-staged + manypkg + build-cache tooling. Custom actions unchanged (3). |
 | 2026-07-16 | `1c12695`  | Re-survey. v4.16.37, pnpm 11.11.0 (routine 11.x churn; #2436 queues 11.12.0), Node 24.18.0, agent **v0.92.1** (~11 more bumps, ~50 in two months). **No structural change** — 16 workflows, 2 modes, 3 custom actions, single `30 15` unified pass all confirmed durable; the 2026-07-02 consolidation is now steady-state. Additive scaffolding: new `.ai/` planning corpus (10 aspirational plan docs + notes), `.husky/pre-commit`, root `CHANGELOG.md`/`CONTRIBUTING.md`, `.git-blame-ignore-revs`, `.cursorindexingignore`. `onlyBuiltDependencies` array migrated to pnpm 11 `allowBuilds:` block (same allowlist). Doc drift: `CONTRIBUTING.md` cites pnpm "10.8.1+" while repo enforces 11.x. Open 2/2 (report #2344, dashboard #7; PRs #2444 release, #2436 pnpm bump). |
+| 2026-08-06 | `d9feab2`  | Re-survey (82 commits ahead, all Renovate/release/SHA-pin churn). v4.16.44, pnpm **11.17.0** (six 11.x bumps), Node **24.18.1** (first bump since 2026-07-02), agent **v0.96.0** (~10 more bumps, ~57 in ~2.5 months, back at fleet lead). **No structural change** — 16 workflows, 2 modes, 3 custom actions, single `30 15` unified pass, security `PR_REVIEW_PROMPT` all durable (4th steady-state window). Two upstream **majors** landed as ordinary automerge: `bfra-me/renovate-action` v9 → **v10.1.0** (#2520), `actions/checkout` v6 → **v7** (#2521). Overrides stable (only `flatted` 3.4.2 → 3.4.3). `.ai/plan/` unchanged (0 of 10 graduated). `llms.txt`/`.gitattributes`/`.markdownlint-cli2.yaml` first enumerated but pre-existing. Doc drift persists + widened (`CONTRIBUTING.md` still "pnpm 10.8.1" vs enforced 11.17.0). Open **2/7** (report #2344, dashboard #7; 7 held-back major-bump PRs #2522–#2528 incl. typescript v7, lint-staged v17, actions v5–v7). |

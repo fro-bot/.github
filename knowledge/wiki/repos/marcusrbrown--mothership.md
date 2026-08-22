@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/mothership"
 created: 2026-07-06
-updated: 2026-07-21
+updated: 2026-08-22
 sources:
   - url: https://github.com/marcusrbrown/mothership
     sha: 48bd14a2b8735d35c7737716a512b9b365adcc27
@@ -10,6 +10,9 @@ sources:
   - url: https://github.com/marcusrbrown/mothership
     sha: e7e305f1efa18017a50789e447b2d440803be296
     accessed: 2026-07-21
+  - url: https://github.com/marcusrbrown/mothership
+    sha: 739f23065e786f59a91c5fd9164edb1a5e0bb847
+    accessed: 2026-08-22
 tags: [tauri, rust, react, typescript, opencode, space-bus, mcp, agentic-ide, dockview, bun, biome, localhost-only, dogfood, impeccable, mvp, fro-bot, changesets, code-signing, renovate, codeql, scorecard, release-engineering]
 aliases: [mothership]
 related:
@@ -30,18 +33,18 @@ related:
 
 | Attribute        | Value                                                                          |
 | ---------------- | ------------------------------------------------------------------------------ |
-| Created          | 2026-07-05 (latest survey 2026-07-21, HEAD `e7e305f`; initial survey 2026-07-06, HEAD `48bd14a`) |
-| Last push        | 2026-07-21                                                                     |
+| Created          | 2026-07-05 (latest survey 2026-08-22, HEAD `739f230`; prior 2026-07-21, HEAD `e7e305f`; initial 2026-07-06, HEAD `48bd14a`) |
+| Last push        | 2026-08-22 (`updated_at` 2026-08-19 — the last tree-touching commit)            |
 | Description      | Multimodal agentic IDE — Tauri v2 workspace mission control for OpenCode agents on space-bus |
 | Language         | JavaScript (GitHub primary language; substance is TypeScript + Rust)           |
 | Runtime          | Bun (package manager + runtime; also runs the `ide_*` sidecar) + Rust/Tauri v2 |
-| Package manager  | Bun (`bun.lock`, `bun install`)                                               |
+| Package manager  | Bun (`bun.lock`, `bun install`; Bun pinned `1.3.14` in CI + fro-bot; no `packageManager`/`engines` field, Node unpinned) |
 | Package          | `mothership` — **private, unpublished** (`"private": true`, `version: 0.1.0`)  |
 | License          | MIT (`LICENSE` file present at root)                                           |
 | Visibility       | Public                                                                         |
 | Stars            | 1                                                                              |
 | Watchers / Forks | 1 / 0                                                                          |
-| Open issues      | 6 (was 1 at 2026-07-06)                                                        |
+| Open issues      | 7 (was 6 at 2026-07-21, 1 at 2026-07-06; count includes PRs)                    |
 | Topics           | (none set)                                                                     |
 | Status           | Tracer-plus — shell runs (opens a `spacebus.json` workspace, streams live session state, dispatches to a control agent, exposes `ide_*` MCP tools) **and now carries a full v0.1 release-engineering apparatus** (signed/notarized macOS pipeline, Changesets versioning, tag rulesets, CODEOWNERS, release runbooks). Read-only/diff code view, Storybook panels, and MCP Apps skill panels still planned but not yet built |
 
@@ -101,6 +104,8 @@ The `AGENTS.md` Invariants section is the canonical contract; the Fro Bot review
 | Design gate       | Impeccable `@3.2.0` (`impeccable detect`) — hard CI gate; skill installed at `.agents/skills/impeccable/` |
 
 Note the pins still predate the ecosystem's TypeScript 6 / Biome 2 sweep: `typescript` `5.8.3`, Vite `7.3.6`, `@biomejs/biome` `1.9.4`. As of 2026-07-21 **Renovate is now onboarded** (`renovate.json5` extends `marcusrbrown/renovate-config#5.2.4` + `renovate.yaml` calling `bfra-me/.github`'s shared workflow), so these will move on Renovate's cadence — the config even carries the same `skipArtifactsUpdate` + `postUpgradeTasks: bun install` bun.lock workaround [[fro-bot--space-bus]] uses, and disables the phantom `--yes impeccable` dep that the shared preset mis-parses from the `npx --yes impeccable@3.2.0` design-gate invocation.
+
+**2026-08-22 update:** these pins are **all byte-identical one month later** — `typescript 5.8.3`, `vite 7.3.6`, `@biomejs/biome 1.9.4`, `@fro.bot/space-bus 0.14.0`, `@modelcontextprotocol/sdk 1.29.0`, `zod ^4.4.3`, `dockview ^7.0.2`, React 19.1, `@changesets/cli 2.31.1`, `@tauri-apps/cli 2.11.4` all held. Renovate has been live ~1 month and driven **only** the agent-pin bump train (see below), not the TS 6 / Biome 2 catch-up. `@types/react` did move to `19.2.17` / `@types/react-dom 19.2.3` (types-only), and `@vitejs/plugin-react` to `4.7.0`. The TS6/Biome2 sweep remains the standing open thread — a full month of Renovate cadence has not touched it, suggesting these majors are either grouped-and-held or awaiting a manual cutover like the sibling repos.
 
 ## Repository Structure
 
@@ -176,12 +181,12 @@ The `.github/` surface matured dramatically between surveys. All six of the work
 | Workflow | File | Trigger | Purpose |
 | --- | --- | --- | --- |
 | CI | `ci.yaml` | PR + push to `main`, dispatch | Design Check (permanent gate) + `verify` matrix (typecheck/lint/test) + **Release Config Smoke** (new) + Check Workflows (actionlint) |
-| Fro Bot | `fro-bot.yaml` | PR, issue, comment, schedule (daily 06:15 UTC), dispatch | PR review, daily oversight + autohealing (single unified run); agent bumped `v0.83.1` → **`v0.93.1`** |
+| Fro Bot | `fro-bot.yaml` | PR, issue, comment, schedule (daily 06:15 UTC), dispatch | PR review, daily oversight + autohealing (single unified run); agent `v0.83.1` → `v0.93.1` → **`v0.100.0`** (SHA `7b9a281`, #58, 2026-08-19; ecosystem version leader, matching [[marcusrbrown--marcusrbrown]]) |
 | Release | `release.yaml` | version tag push (`v*.*.*`) or maintainer dispatch | Signed/notarized macOS release pipeline — the **only** workflow that touches Apple signing / updater keys (new) |
 | Version | `version.yml` | push to `main` | Opens/updates the Changesets "Version Packages" PR; never builds or signs (new) |
 | Renovate | `renovate.yaml` | issue/PR edit, non-main push, `workflow_run` after CI, dispatch | Calls `bfra-me/.github` shared Renovate workflow `@v4.16.37` (new) |
-| CodeQL | `codeql.yaml` | PR, push `main`, weekly (Wed 07:31), dispatch | `javascript-typescript` + `actions` analysis, `+security-and-quality` (Rust deferred pending a macOS lane) (new) |
-| Scorecard | `scorecard.yaml` | branch-protection-rule, weekly (Tue 07:20), push `main` | OSSF Scorecard supply-chain scan, publishes SARIF (new) |
+| CodeQL | `codeql.yaml` | PR, push `main`, weekly (Wed 07:31), dispatch | `javascript-typescript` + `actions` analysis, `+security-and-quality` (Rust deferred pending a macOS lane); `github/codeql-action@v4.37.0` |
+| Scorecard | `scorecard.yaml` | branch-protection-rule, weekly (Tue 07:20), push `main` | OSSF Scorecard supply-chain scan, publishes SARIF; `ossf/scorecard-action@v2.4.3`, `permissions: read-all` |
 | Dependency Review | `dependency-review.yaml` | PR to `main` | `actions/dependency-review-action`, `fail-on-severity: high` (new) |
 
 Still **no Probot `settings.yml`** — release-critical repo settings are instead managed in code by `scripts/apply-release-settings.ts` / `verify-release-settings.ts` plus `.github/rulesets/v0-1-release-tags.json` and `CODEOWNERS`, a different (script-driven) posture than the fleet's `common-settings.yaml` inheritance.
@@ -210,7 +215,7 @@ A deliberately gated, secrets-minimizing macOS signing pipeline. The design wort
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present and active** (`fro-bot.yaml`, pinned `fro-bot/agent@a4976f45… # v0.93.1` at 2026-07-21 — was `v0.83.1` at 2026-07-06). This is a mature, repo-specific configuration, reflecting that mothership was scaffolded with the current fleet workflow template rather than growing one incrementally.
+**Fro Bot workflow is present and active** (`fro-bot.yaml`, pinned `fro-bot/agent@7b9a2816… # v0.100.0` at 2026-08-22 — was `v0.93.1` at 2026-07-21, `v0.83.1` at 2026-07-06). This is a mature, repo-specific configuration, reflecting that mothership was scaffolded with the current fleet workflow template rather than growing one incrementally. The `v0.95.0 → v0.100.0` jump (#58) is the sole substantive commit landed in the 2026-07-21 → 2026-08-22 window; the structural shape (triggers, concurrency key, guards, prompt routing, six autoheal categories, Rust-review-only tooling constraint, `@3.2.0` design-gate pin) is **byte-identical** across the interval.
 
 Structural shape (the dominant fleet pattern — single unified job, mode routed by prompt):
 
@@ -237,7 +242,7 @@ Hard boundaries mirror the fleet: no force-push, no direct main pushes (only exi
 
 ## Design System
 
-Systematic / Fro Bot lineage — **afrofuturism × cyberpunk, dark-default, cyan/magenta/orange with strict intent**. `PRODUCT.md` + `DESIGN.md` are the Impeccable design context; tokens live in `design/tokens.css` (seed) and `src/styles/tokens.css` (runtime). The Impeccable skill is installed at `.agents/skills/impeccable/` and CI runs `impeccable detect` as a hard gate. Intentional brand exceptions get scoped entries in `.impeccable/config.json`, never rule-wide disables. This is the same design-gate pattern seen in [[fro-bot--dashboard]] — and as of that repo's 2026-07-23 survey the convergence is now near-total: dashboard vendors the Impeccable **skill** at `.agents/skills/impeccable/`, an Impeccable **OpenCode plugin** at `.opencode/impeccable/`, and a brand-token `assets/tokens.css` + `styleguide.md`, mirroring Mothership's skill-install + `tokens.css` seed pattern (dashboard also keeps `impeccable detect` as a hard CI gate, pinned `impeccable@3.2.1`).
+Systematic / Fro Bot lineage — **afrofuturism × cyberpunk, dark-default, cyan/magenta/orange with strict intent**. `PRODUCT.md` + `DESIGN.md` are the Impeccable design context; tokens live in `design/tokens.css` (seed) and `src/styles/tokens.css` (runtime). The Impeccable skill is installed at `.agents/skills/impeccable/` and CI runs `impeccable detect` as a hard gate. Intentional brand exceptions get scoped entries in `.impeccable/config.json` — as of 2026-08-22 exactly one: a `bounce-easing` allow for the `cubic-bezier(0.34, 1.56, 0.64, 1)` `--ease-spring` brand token — never rule-wide disables. This is the same design-gate pattern seen in [[fro-bot--dashboard]] — and as of that repo's 2026-07-23 survey the convergence is now near-total: dashboard vendors the Impeccable **skill** at `.agents/skills/impeccable/`, an Impeccable **OpenCode plugin** at `.opencode/impeccable/`, and a brand-token `assets/tokens.css` + `styleguide.md`, mirroring Mothership's skill-install + `tokens.css` seed pattern (dashboard also keeps `impeccable detect` as a hard CI gate, pinned `impeccable@3.2.1`).
 
 ## Relationship to the Fro Bot Ecosystem
 
@@ -265,15 +270,17 @@ Systematic / Fro Bot lineage — **afrofuturism × cyberpunk, dark-default, cyan
 
 ### Still open
 
-- **Probot Settings** — still no `.github/settings.yml`. Repo settings are managed by script (`apply-/verify-release-settings.ts` + rulesets + CODEOWNERS) rather than `common-settings.yaml` inheritance. Confirm whether the fleet expects this repo to adopt Probot Settings or keep the script-driven posture.
-- **`@fro.bot/space-bus` pin (now 0.14.0):** was 0.7.0 at 2026-07-06 (0.0.0 unpublished at the 2026-07-03 space-bus survey) — +7 minors in ~2 weeks. Confirm lockstep and update the [[fro-bot--space-bus]] page's version trail next survey.
-- **Toolchain pins (`typescript 5.8.3`, `vite 7.3.6`, `@biomejs/biome 1.9.4`):** still predate the fleet's TS 6 / Biome 2 sweep — now that Renovate is onboarded, watch for the driven catch-up.
-- **Planned-but-unbuilt surfaces:** read-only/diff code view, Storybook panels, MCP Apps skill panels (SEP-1865) — still not built (ARCHITECTURE.md confirms sandboxed skill panels remain a planned panel type). Track when they land.
-- **Rust CodeQL deferred:** the CodeQL matrix covers `javascript-typescript` + `actions` only; Rust analysis waits on a macOS build lane (Tauri system-lib build fails on `ubuntu-latest`) — the same tooling constraint the daily autoheal prompt already encodes.
+- **Probot Settings** — still no `.github/settings.yml` (re-confirmed 2026-08-22). Repo settings are managed by script (`apply-/verify-release-settings.ts` + rulesets + CODEOWNERS) rather than `common-settings.yaml` inheritance. Confirm whether the fleet expects this repo to adopt Probot Settings or keep the script-driven posture.
+- **`@fro.bot/space-bus` pin — held at 0.14.0** (re-confirmed 2026-08-22): was 0.7.0 at 2026-07-06 (0.0.0 unpublished at the 2026-07-03 space-bus survey), 0.14.0 at 2026-07-21, still 0.14.0 now. [[fro-bot--space-bus]] shipped 0.15.0 (2026-08-04 survey), so Mothership is one minor behind live — Renovate has not driven the bump. Confirm lockstep intent next survey.
+- **Toolchain pins (`typescript 5.8.3`, `vite 7.3.6`, `@biomejs/biome 1.9.4`) — unchanged after a full month of live Renovate:** still predate the fleet's TS 6 / Biome 2 sweep. Renovate's cadence has driven agent-pin + types-only bumps but not the majors — likely grouped-and-held or awaiting a manual cutover. Escalating priority: this is now a two-survey-old drift with automation present but not acting.
+- **Planned-but-unbuilt surfaces:** read-only/diff code view, Storybook panels, MCP Apps skill panels (SEP-1865) — still not built as of 2026-08-22 (README still lists them under "planned but not built"). Track when they land.
+- **Rust CodeQL deferred:** the CodeQL matrix covers `javascript-typescript` + `actions` only; Rust analysis waits on a macOS build lane (Tauri system-lib build fails on `ubuntu-latest`) — the same tooling constraint the daily autoheal prompt already encodes. Still deferred 2026-08-22.
+- **v0.1 release drought:** the full signed/notarized release apparatus (release.yaml, ruleset, protected `release` env, runbooks) has been in place since 2026-07-21, but **no `v*.*.*` tag has shipped** — `version 0.1.0` across `package.json` / `Cargo.toml` / `tauri.conf.json`. The release machinery remains untested against an actual published tag. Confirm the `release` protected environment is configured live and run the `docs/release/v0-1-checklist.md` burn-down against a real draft.
 
 ## Survey History
 
 | Date       | HEAD      | Notes                                                                          |
 | ---------- | --------- | ------------------------------------------------------------------------------ |
+| 2026-08-22 | `739f230` | Re-survey. **No structural change in ~1 month** — the 8-workflow surface, signed/notarized release pipeline, `ide_*` MCP sidecar, dockview panel model, Changesets/version.yml, script-driven release settings, and all eight AGENTS.md invariants are durable (steady-state). The **sole substantive commit** in the interval is the Fro Bot agent pin `v0.95.0 → v0.100.0` (#58, `mrbro-bot[bot]`, 2026-08-19) — ecosystem version leader, matching [[marcusrbrown--marcusrbrown]]. Manifest pins **byte-identical** (TS 5.8.3, Vite 7.3.6, Biome 1.9.4, `@fro.bot/space-bus` 0.14.0, MCP SDK 1.29.0, zod ^4.4.3, dockview ^7.0.2, React 19.1) except types-only `@types/react` 19.2.17 + `@vitejs/plugin-react` 4.7.0. Confirmed exact pins: `github/codeql-action@v4.37.0`, `ossf/scorecard-action@v2.4.3`, Renovate reusable `@v4.16.37`, config `#5.2.4`, Bun `1.3.14`, `.impeccable/config.json` single `bounce-easing`/`--ease-spring` exception. Open issues 6→7. **Renovate live ~1 month but TS6/Biome2 sweep untouched** and **space-bus 0.15.0 available but pin held at 0.14.0** — automation present, majors not driven. Still no Probot Settings; Rust CodeQL deferred; no `v*.*.*` release tag yet (still `0.1.0`). |
 | 2026-07-21 | `e7e305f` | Re-survey. Major CI/CD + release-engineering maturation in ~2 weeks: workflows 2→8 (added `release.yaml` signed/notarized macOS pipeline with a protected `release` environment + Checks-API required-check preflight + resolved-tag-SHA discipline, `version.yml` Changesets Version PR, `renovate.yaml`, `codeql.yaml`, `scorecard.yaml`, `dependency-review.yaml`; `ci.yaml` gained a Release Config Smoke gate). Release-preparedness epic largely landed: `ARCHITECTURE.md`, `STRUCTURE.md`, `CHANGELOG.md`, Changesets, `CODEOWNERS`, `v0-1-release-tags` ruleset, `docs/release/` runbooks, `scripts/{release-policy,verify-/apply-release-settings,sync-version,validate-updater-manifest}.ts`. Renovate onboarded (`renovate-config#5.2.4`). `@fro.bot/space-bus` 0.7.0→0.14.0; `tauri-plugin-opener`→`@tauri-apps/plugin-opener`; Fro Bot agent v0.83.1→v0.93.1. Open issues 1→6. Still no Probot Settings; Rust CodeQL deferred. |
 | 2026-07-06 | `48bd14a` | Initial survey. New repo (created 2026-07-05), public, MIT, private/unpublished Bun/TS + Rust/Tauri v2 package. Tracer-stage multimodal agentic IDE rendering a directory-routed `opencode serve` workspace via dockview; exposes layout as `ide_*` MCP tools (loopback + per-launch bearer token rendezvous); space-bus 0.7.0 as the bus client. **Fro Bot workflow present** (`fro-bot/agent@v0.83.1`, unified single-run oversight+autoheal, 06:15 UTC) + CI (Impeccable design gate, verify matrix, actionlint). **No Renovate / no Probot Settings / no CodeQL** yet. |
