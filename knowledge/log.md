@@ -3855,3 +3855,23 @@ Sources: https://github.com/marcusrbrown/mothership (SHA 739f23065e786f59a91c5fd
 Surveyed marcusrbrown/mothership and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mothership
+
+## [2026-08-23 02:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`, which resolves to repo id `1174807412` (the mrbro.dev developer portfolio, canonical [[marcusrbrown--mrbro-dev]]) — not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Name-collision binding unchanged since 2026-07-20. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log + Survey History row + source entry, `updated` → 2026-08-23) and the `index.md` catalog entry.
+
+Findings:
+
+- `main` HEAD **still frozen at `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31) — 23 days, no trunk drift. `pushed_at` 2026-08-22 = PR-branch pushes only; `updated_at` still 2026-07-31. Because the tree is frozen, no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page.
+- Queue delta: daily-report renumber #282 → #286, **plus new PR #283 (`docs: correct automation script count`, author `fro-bot`, created 2026-08-21, `mergeable_state: unstable`) — a byte-title duplicate of the still-open #254 of the same title.** Open PRs now 5, up from 4 (#283/#266/#263/#254/#253), none merged since 2026-08-07. Open issues 5 (#286/#271/#270/#261/#258/#212) + #1 Dependency Dashboard. `open_issues_count` 12 (was 11).
+- The propose-without-merge / report-without-remediation pattern (flagged since 2026-06-12) has compounded into **re-derivation**: the autoheal daemon regenerated its own unmerged #254 docs fix as #283 rather than noticing the open one, while the security-remediation PR #266 stays unmerged against a 23-day-frozen trunk.
+- Fro Bot workflow present and active (`fro-bot/agent@a4976f4 # v0.93.1`, single `30 3` daily oversight+autoheal cron, 8 workflows, Renovate #5.2.7, pnpm 11.1.3 / Node >=24, `pnpm.overrides` empty, name `mrbro.dev`) — **no onboarding follow-up draft PR warranted for this name.**
+- `gh` credential gap again (unauthenticated GitHub API + raw fetch only) — the same authenticated-access gap the current occupant's own issue #212 tracks.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-23 05:49] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
