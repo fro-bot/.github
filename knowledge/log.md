@@ -3875,3 +3875,21 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-23 12:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+Second same-day survey (dispatch re-run) of the *name* `marcusrbrown/marcusrbrown.github.io` — resolves to repo id `1174807412` (the mrbro.dev developer portfolio, canonical page [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Byte-identical to the earlier 2026-08-23 pass; recorded as a confirming pass to keep the source/access chain continuous.
+
+- `main` HEAD still `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z) — trunk frozen 23 days; `pushed_at` 2026-08-22T07:03:10Z (PR-branch pushes only), `updated_at` still 2026-07-31. No tree-level drift → no durable delta on [[marcusrbrown--mrbro-dev]].
+- Queue unchanged from the earlier same-day pass: open issues 5 (#286 Daily Fro Bot Report / #271 / #270 / #261 / #258 / #212) + #1 Dependency Dashboard; open PRs 5 (#283 / #266 / #263 / #254 / #253). The duplicate docs PR **#283 vs #254** (both `docs: correct automation script count`) still stands, none merged since 2026-08-07. `open_issues_count` 12, stars 1.
+- Fro Bot workflow present and active (`fro-bot/agent@a4976f4 # v0.93.1`, single `30 3` daily oversight+autoheal cron, 8 workflows, Renovate #5.2.7, pnpm 11.1.3 / Node >=24, `pnpm.overrides` empty, name `mrbro.dev`) — **no onboarding follow-up draft PR warranted for this name.**
+- Verified via unauthenticated `api.github.com` (repo + issues + `commits/main`); `GH_TOKEN` unset — the same access gap the current occupant's issue #212 tracks.
+- Touched pages: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md` (delta log + Survey History row), `knowledge/index.md` (same-day-pass note).
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-23 05:54] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
