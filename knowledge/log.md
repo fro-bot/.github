@@ -3894,21 +3894,21 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-24 06:00] ingest | fro-bot/fro-bot.github.io
+## [2026-08-24 06:00] ingest | repo:fro-bot/dashboard
 
-No-delta re-survey of the `fro-bot` org's custom-domain Pages holder ([[fro-bot--fro-bot-github-io]]).
+Sixth survey of [[fro-bot--dashboard]] (HEAD `008d10b480858cc25f0f4bb4df5fc694e8a0dc05`, `chore(dev): update dependency @bfra.me/eslint-config to v0.51.4 (#372)`, 2026-08-24T05:24:17Z). **No structural change — steady-state maintenance interval.** Read-only listings + README/manifests/workflows only, via unauthenticated `api.github.com` + `raw.githubusercontent.com` (`GH_TOKEN`/`GITHUB_TOKEN` unset in this step; public repo so anonymous reads suffice).
 
-- `git ls-remote` confirms `main` = `3e44653c4d185b239b44b3af12255d18c86463ab` — HEAD still frozen at the original 2026-02-09 `Create CNAME` commit, now **199 days** stale.
-- Raw-content probes byte-identical to the 2026-08-10 pass: `CNAME` present, body `fro.bot` (HTTP 200); no `README.md`, no `.github/workflows/fro-bot.yaml`, no `.github/settings.yml`, no `index.html` (all 404). Tree is still a lone `CNAME` blob.
-- Fro Bot workflow, Probot Settings, README/license all still **absent** — all four follow-up recommendations carried forward. A follow-up draft PR to seed a minimal Fro Bot workflow / Probot Settings remains the outstanding suggestion (issue #1 already tracks CodeQL/Scorecard parity).
-- **Read-scope note:** no GitHub API token this cycle (`GH_TOKEN`/`GITHUB_TOKEN` both unset), so Pages config, TLS cert state, issue #1 status, and domain-verification (`unverified`) fields could not be re-fetched; carried forward from 2026-06-26 unverified.
-- TLS cert expiry **2026-09-07** now ~14 days out — **deep inside the renewal window**. Auto-renewal should surface a new far-future expiry imminently; if the next token-bearing survey still shows 2026-09-07 past that date, escalate (a stalled renewal drops HTTPS on the org vanity domain `fro.bot`).
-- Touched pages: `knowledge/wiki/repos/fro-bot--fro-bot-github-io.md` (frontmatter `updated`/new source entry, TLS note refresh, 2026-08-24 Survey History row), `knowledge/index.md` (delta note).
+- **Durable, unchanged in shape:** 7 workflows (`main.yaml`/`fro-bot.yaml`/`release.yaml`/`codeql.yaml`/`scorecard.yaml`/`dependency-review.yaml`/`renovate.yaml`); multi-stage Dockerfile (`builder`→`prod-deps`→final, all `node:24-slim@sha256:3638d9a6…` — digest byte-identical to 2026-08-08); operator control surface; vendored operator-contract barrel (`OPERATOR_CONTRACT_VERSION = 1.6.0`); fixture harness; in-repo Impeccable skill (`.agents/skills/impeccable/`) + OpenCode plugin (`.opencode/impeccable/`); read-only-by-construction + denylist-before-query/fail-closed redaction model; `main.yaml` six-job CI; `release.yaml` CalVer chain.
+- **Fleet upkeep delta:** Fro Bot agent pin **v0.97.0 → v0.105.0** (`3f19f02` → `335e4f8`, +8 minors, again front-of-fleet); CalVer GHCR releases 104 → ~114 (latest `2026.08.24`, published 2026-08-23); dep bumps — eslint 10.8.0 → 10.8.1, vite 8.2.0 → 8.2.2, vitest 4.1.10 → 4.1.11, `@opencode-ai/plugin` 1.18.14 → 1.18.19, `@bfra.me/eslint-config` 0.51.1 → 0.51.4, `@bfra.me/tsconfig` 0.13.1 → 0.13.2, pnpm 11.20.0 → 11.22.0.
+- **Additive config surfaces (new):** root `opencode.json` (`$schema` + `plugin: ["./.opencode/impeccable/plugin.ts"]`) registers the Impeccable plugin at the OpenCode config level, not only via CI; root `.ignore` (oh-my-opencode-slim managed) un-ignores `.slim/clonedeps/` while excluding nested `.git/`. `pnpm-workspace.yaml` gained `minimumReleaseAgeExclude` allowlisting `@bfra.me/eslint-config@0.51.2||0.51.3||0.51.4` + `@bfra.me/tsconfig@0.13.2` past the org-wide min-release-age quarantine.
+- **Carried drift (6th survey):** operator-contract `README.md` header still `OPERATOR_CONTRACT_VERSION = 1.5.0` vs `version.ts` `1.6.0`; `.slim/clonedeps.json` frozen at `fro-bot/agent@v0.78.0` while the action runs v0.105.0 (by-design inspection-source skew, ~27 agent-minors wide).
+- **Open issues flat at 5** (#370 Daily Fro Bot Report — 2026-08-24, #238 operator push privacy policy, #193 Impeccable timeout subprocess cancel, #112 dedicated infra-dispatch App, #8 Dependency Dashboard) — no new issues opened since 2026-07-23 (third consecutive survey). Fro Bot workflow present and self-hosted; **no follow-up onboarding draft PR needed.**
+- Touched pages: `knowledge/wiki/repos/fro-bot--dashboard.md` (frontmatter source+`updated`, 2026-08-24 delta paragraph, Overview/dependencies/pnpm-workspace/fro-bot-status refreshes, Survey History row), `knowledge/index.md` (dashboard catalog entry), `knowledge/log.md` (this entry).
 
-Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+Sources: https://github.com/fro-bot/dashboard (SHA 008d10b480858cc25f0f4bb4df5fc694e8a0dc05)
 
-## [2026-08-24 05:58] ingest | repo:fro-bot/fro-bot.github.io
+## [2026-08-24 06:00] ingest | repo:fro-bot/dashboard
 
-Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
-Sources: https://github.com/fro-bot/fro-bot.github.io
+Sources: https://github.com/fro-bot/dashboard
