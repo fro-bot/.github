@@ -3893,3 +3893,22 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-24 06:00] ingest | fro-bot/fro-bot.github.io
+
+No-delta re-survey of the `fro-bot` org's custom-domain Pages holder ([[fro-bot--fro-bot-github-io]]).
+
+- `git ls-remote` confirms `main` = `3e44653c4d185b239b44b3af12255d18c86463ab` — HEAD still frozen at the original 2026-02-09 `Create CNAME` commit, now **199 days** stale.
+- Raw-content probes byte-identical to the 2026-08-10 pass: `CNAME` present, body `fro.bot` (HTTP 200); no `README.md`, no `.github/workflows/fro-bot.yaml`, no `.github/settings.yml`, no `index.html` (all 404). Tree is still a lone `CNAME` blob.
+- Fro Bot workflow, Probot Settings, README/license all still **absent** — all four follow-up recommendations carried forward. A follow-up draft PR to seed a minimal Fro Bot workflow / Probot Settings remains the outstanding suggestion (issue #1 already tracks CodeQL/Scorecard parity).
+- **Read-scope note:** no GitHub API token this cycle (`GH_TOKEN`/`GITHUB_TOKEN` both unset), so Pages config, TLS cert state, issue #1 status, and domain-verification (`unverified`) fields could not be re-fetched; carried forward from 2026-06-26 unverified.
+- TLS cert expiry **2026-09-07** now ~14 days out — **deep inside the renewal window**. Auto-renewal should surface a new far-future expiry imminently; if the next token-bearing survey still shows 2026-09-07 past that date, escalate (a stalled renewal drops HTTPS on the org vanity domain `fro.bot`).
+- Touched pages: `knowledge/wiki/repos/fro-bot--fro-bot-github-io.md` (frontmatter `updated`/new source entry, TLS note refresh, 2026-08-24 Survey History row), `knowledge/index.md` (delta note).
+
+Sources: https://github.com/fro-bot/fro-bot.github.io (SHA 3e44653c4d185b239b44b3af12255d18c86463ab)
+
+## [2026-08-24 05:58] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
