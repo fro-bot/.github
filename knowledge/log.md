@@ -3914,22 +3914,28 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-25 06:00] ingest | marcusrbrown/marcusrbrown.github.io
+## [2026-08-25 00:00] ingest | marcusrbrown/opencode-copilot-delegate
 
-No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`, which resolves to repo id `1174807412` (the mrbro.dev developer portfolio, canonical [[marcusrbrown--mrbro-dev]]) — not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Name-collision binding unchanged since 2026-07-20. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log 2026-08-25 + Survey History row + `accessed: 2026-08-25` source, `updated` → 2026-08-25) and the `index.md` catalog entry.
+Re-survey of `marcusrbrown/opencode-copilot-delegate` (HEAD `c6c055d906b8df3de5f371221daf930c8bd49f99`, 2026-08-23). Updated repo page `marcusrbrown--opencode-copilot-delegate.md`, topic page `opencode-plugins.md`, and `index.md` (repo + topic catalog lines). Reads limited to the GitHub API (repo metadata, commit list, open issues/PRs) plus `package.json` and `mise.toml` at HEAD — repo is public (`visibility: public`), confirmed before any ingest.
 
-Findings:
+Delta from prior survey (SHA `61bc146`, 2026-07-24):
 
-- `main` HEAD **still frozen at `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31) — 25 days, no trunk drift. `pushed_at` 2026-08-24T07:11:19Z = PR-branch pushes only; `updated_at` still 2026-07-31. Because the tree is frozen, no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page.
-- Queue delta since 2026-08-24: **daily-report renumber only** #288 → #289 (`Daily Fro Bot Report — 2026-08-25 (UTC)`). Flattest interval yet — no new substantive work, no merges. Open issues 6 (#289/#287/#271/#270/#261/#258/#212) + #1 Dependency Dashboard. Open PRs steady at 5, all carried, none merged since 2026-08-07 (#283 docs-dup of #254 / #266 / #263 / #254 / #253) — the #283-vs-#254 docs duplicate still stands. `open_issues_count` 13.
-- The propose-without-merge / report-without-remediation pattern (flagged since 2026-06-12) is now maximally hardened: 25 days of a frozen trunk, #266 security-remediation unmerged ~18 days, a self-duplicated docs PR (#283 vs #254), a four-item self-filed least-privilege cluster (#287/#271/#270/#261) — and the only thing that moved is the daily-report issue number. The queue is a fixed point the oversight pass keeps re-stamping with a new date.
-- Fro Bot workflow present and active (`fro-bot/agent@a4976f4 # v0.93.1`, single `30 3` daily oversight+autoheal cron, 8 workflows, Renovate #5.2.7, pnpm 11.1.3 / Node >=24, `pnpm.overrides` empty, name `mrbro.dev`) — **no onboarding follow-up draft PR warranted for this name.**
-- Access note: `gh` CLI unauthenticated again this run (`GH_TOKEN` unset; refuses without it) — the same authenticated-access gap the current occupant's own issue #212 tracks. Surveyed via unauthenticated `api.github.com` (repo + issues + `commits/main` + workflow dir listing) + `raw.githubusercontent.com`, limited to directory listings, README/manifest/workflow files per the untrusted-input constraint. Delivery mode `working-dir` — file changes only, no GitHub mutation. Public-only invariant satisfied (repo verified public via API; `sources[].url` declares exact public owner/repo).
+- **Still v0.12.1 — 5th straight steady-release survey; no source-tree/tool change.** Every commit in the window is `mrbro-bot[bot]` Renovate automerge; no human `marcusrbrown` commit landed. Pure dependency-churn + autoheal.
+- **Bun 1.3.14 → 1.4.0** (#370) — first Bun-minor crossing in the survey series.
+- Biome 2.5.4 → **2.5.9**; `@opencode-ai/plugin` dev pin 1.18.4 → **1.18.19**; `opencode-ai` mise 1.18.4 → **1.18.19**; `@github/copilot` CLI 1.0.73 → **1.0.80**; `solid-js` 1.9.14 → **1.9.15**.
+- `bfra-me/.github` reusable → **v4.19.0** (#367 v4.18.0 → #369 v4.19.0); Fro Bot agent **v0.94.2 → v0.105.0** (SHA `335e4f8`, ~11 minors in a month, crossing cosmetic v0.100 while still 0.x, HEAD is bump #376).
+- New devDeps surfaced in manifest: `@types/bun` **1.3.14**, `@types/babel__core` **7.20.5**.
+- Unchanged: TypeScript **7.0.2**, `@types/node` **24.13.3** (24.x LTS), zod **^4.3.0**, `@opentui/*` runtime **0.2.7**, `@changesets/cli` **2.31.1**.
+- **New fro-bot autoheal PR #335** carries the stale Renovate `@opentui/*` 0.4.x branch (#135, `0.4.3`) forward to `0.4.5` as a fro-bot-managed branch with an `overrides.@opentui/core` entry (collapses duplicate `@opentui/core` branded type identities that break `bun run typecheck`) + patch changeset. Generalized into `opencode-plugins.md` as the **single-root type-identity override** rule (same class as the zod TS2883 `overrides` fix).
+- Biome schema-vs-CLI drift is now a durable recurring pattern: #302 (2.5.4) resolved → #332 targets 2.5.8 → newest bundle #377 already queues 2.5.9 → 2.5.10.
+- Open count steady at 9 (6 PRs #377/#335/#332/#278/#241/#135 + 3 issues #38/#26/#25). GH Actions majors #276/#277 merged since prior survey.
+- Fro Bot workflow present and active (`fro-bot.yaml`, six workflows) — no onboarding PR needed.
+- No contradictions with prior ingest; all architectural narrative confirmed unchanged at v0.12.1.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA c6c055d906b8df3de5f371221daf930c8bd49f99)
 
-## [2026-08-25 05:55] ingest | repo:marcusrbrown/marcusrbrown.github.io
+## [2026-08-25 05:56] ingest | repo:marcusrbrown/opencode-copilot-delegate
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate

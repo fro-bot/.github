@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/opencode-copilot-delegate
 created: 2026-04-23
-updated: 2026-07-24
+updated: 2026-08-25
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -25,6 +25,9 @@ sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: 61bc146a5e8fe6b92f84248594e9561d0f36819d
     accessed: 2026-07-24
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: c6c055d906b8df3de5f371221daf930c8bd49f99
+    accessed: 2026-08-25
 tags: [opencode, plugin, copilot, delegation, subprocess, async, bun, typescript, biome, changesets, tui, rpc, orphan-reaper]
 related: [marcusrbrown--dotfiles, marcusrbrown--systematic]
 ---
@@ -36,6 +39,8 @@ OpenCode plugin that delegates tasks to GitHub Copilot CLI as background subproc
 ## Overview
 
 An [OpenCode](https://opencode.ai) plugin registering three tools — `copilot_delegate`, `copilot_output`, `copilot_cancel` — that allow a parent OpenCode agent to spawn `copilot -p` as a background process, continue productive work, and receive a `<system-reminder>` notification when the subprocess completes. The async pattern mirrors OMO's `background_task` / `background_output` architecture.
+
+**Status (2026-08-25):** **v0.12.1** on npm — unchanged; **five straight surveys now hold the release line steady while the source tree hasn't moved.** The month since 2026-07-24 (SHA `61bc146` → `c6c055d`) is pure dependency-churn plus autoheal: no release, no source-tree change, no new tools, no new workflows. Every commit in the window is `mrbro-bot[bot]` Renovate automerge (no human `marcusrbrown` commit landed). HEAD `c6c055d` is a Fro Bot agent bump (#376, v0.104.0 → **v0.105.0**). Toolchain deltas: **Bun 1.3.14 → 1.4.0** (a runtime minor, first Bun-minor crossing since the survey series began), `@biomejs/biome` 2.5.4 → **2.5.9**, `@opencode-ai/plugin` dev pin 1.18.4 → **1.18.19**, `opencode-ai` mise 1.18.4 → **1.18.19**, `@github/copilot` CLI 1.0.73 → **1.0.80**, `solid-js` 1.9.14 → **1.9.15**, `bfra-me/.github` reusable v4.16.28-era → **v4.19.0** (via #367 v4.18.0 → #369 v4.19.0), and the Fro Bot agent **v0.94.2 → v0.105.0** (SHA `335e4f8`, ~11 minors in a month, crossing the cosmetic v0.100 line while still 0.x). Two new devDeps surfaced in the manifest: **`@types/bun` 1.3.14** and **`@types/babel__core` 7.20.5**. Unchanged pins: TypeScript **7.0.2**, `@types/node` **24.13.3** (still 24.x LTS), zod **^4.3.0**, `@opentui/*` **0.2.7** (runtime), `@changesets/cli` **2.31.1**. Open count steady at 9 (6 PRs + 3 issues). **The Biome schema-vs-CLI drift became a durable recurring pattern:** the earlier #302 (2.5.4 sync) resolved, but the chase never ends — fro-bot PR **#332** now targets `biome.json` schema 2.5.8 (chasing installed 2.5.8), and the newest Renovate PR **#377** already queues 2.5.9 → 2.5.10, so the config schema perpetually trails the CLI by one hop. **New durable autoheal artifact: fro-bot PR #335** carries the stale Renovate `@opentui/*` 0.4.x branch (#135, `0.4.3`) forward to upstream `0.4.5` as a fro-bot-managed branch with an `overrides.@opentui/core` entry + patch changeset — a concrete instance of the "adopt-and-refresh a stalled Renovate major as an autoheal branch" pattern (see [[opencode-plugins]]). The architectural narrative below remains current as of v0.12.1.
 
 **Status (2026-07-24):** **v0.12.1** on npm — first release since v0.12.0 held across four surveys. The one-month window since 2026-06-24 (SHA `bea97ea` → `61bc146`) shipped a single patch changeset (`488e8da`): *"Skip delayed orphan PID registration after a Copilot task has already reached a terminal state"* — closing a race where a subprocess that finished before its PID landed in the orphan file would still get registered, leaving a stale entry the reaper had to clean up. The source tree at `61bc146` matches the documented v0.12.0 layout (4 tools, `runtime/`, `discovery/`, `lib/`, `tui/`); no new tools or workflows. The TUI half gained three named components — `confirm-card.tsx`, `modal-list.tsx`, `row.tsx` — replacing the earlier flat `components/` set, and test fixtures now include `connect-mismatch.jsonl` / `resume-mismatch.jsonl` (origin-discriminator coverage). The rest is toolchain churn, with two notable *majors* landing: **TypeScript 6.0.3 → 7.0.2** (a full major, tracking the TS 7 "Corsa"/native-port line) and **`@opentui/*` 0.2.6 → 0.2.7** (the long-stalled #130/#135 pins finally moving — though #135 immediately reopened targeting v0.4.3). Other pins: **Biome 2.5.0 → 2.5.4**, `@opencode-ai/plugin` dev pin 1.17.8 → **1.18.4**, `opencode-ai` mise 1.17.8 → **1.18.4**, `@github/copilot` CLI 1.0.63 → **1.0.73**, `@types/node` 24.13.2 → **24.13.3** (still 24.x LTS), `@changesets/cli` 2.31.0 → **2.31.1**, `solid-js` 1.9.13 → **1.9.14**, Renovate preset `#5.2.3` → **`#5.2.9`**, and the Fro Bot agent **v0.76.0 → v0.94.2** (an 18-minor jump in a month, SHA `64029d5`). zod still `^4.3.0`. The architectural narrative below remains current as of v0.12.1 — the patch touches only the orphan-registration timing guard, not the tool catalog or contracts.
 
@@ -54,13 +59,14 @@ An [OpenCode](https://opencode.ai) plugin registering three tools — `copilot_d
 | Aspect | Detail |
 |--------|--------|
 | Language | TypeScript 7.0.2 (strict, ES2022 target, ESM modules). Bumped from 6.0.3 → 7.0.2 (major) in the 2026-07-24 window. |
-| Runtime/Build | Bun 1.3.14 (both development and production build target) |
-| Linting/Formatting | Biome 2.5.4 (NOT ESLint/Prettier — diverges from other Marcus repos using `@bfra.me/eslint-config`). v2.5.0 schema migration landed in #223, which also dropped the deprecated `recommended` field. `biome.json` config schema tracks 2.5.3; PR #302 open to sync the `$schema` pin to 2.5.4. |
+| Runtime/Build | Bun 1.4.0 (both development and production build target; bumped from 1.3.14 in the 2026-08-25 window via #370) |
+| Linting/Formatting | Biome 2.5.9 (NOT ESLint/Prettier — diverges from other Marcus repos using `@bfra.me/eslint-config`). v2.5.0 schema migration landed in #223, which also dropped the deprecated `recommended` field. `biome.json` config schema perpetually trails the installed CLI by one hop — the sync chase moved #302 (2.5.4) → #332 (targeting 2.5.8) and the newest #377 already queues 2.5.9 → 2.5.10. |
 | Versioning | Changesets (`@changesets/cli` v2.31.1, OIDC trusted publishing to npm) |
 | Package Manager | Bun (`bun.lock`, `bun install`) |
 | Test Runner | `bun test` — separate scripts for unit, TUI (with `--preload @opentui/solid/preload`), and integration |
-| Peer Dependencies | `@opencode-ai/plugin >=1.14.41` (narrowed from `>=1.14.0` in v0.12.0; dev pin: **1.18.4** as of 2026-07-24, up from 1.17.8). `@opencode-ai/sdk` peer dep removed in v0.6.0 — it was never imported. |
-| Runtime Dependencies | `fkill` 10.0.3 (cross-platform process tree kill); `@opentui/core` + `@opentui/solid` **0.2.7** (TUI; bumped from 0.2.6 in the 2026-07-24 window — #130/#135 pins finally moved); `solid-js` **1.9.14** (TUI reactive layer); `zod` ^4.3.0 (pinned with `overrides` to dodge TS2883 from dual-zod trees, added v0.7.0) |
+| Peer Dependencies | `@opencode-ai/plugin >=1.14.41` (narrowed from `>=1.14.0` in v0.12.0; dev pin: **1.18.19** as of 2026-08-25, up from 1.18.4). `@opencode-ai/sdk` peer dep removed in v0.6.0 — it was never imported. |
+| Runtime Dependencies | `fkill` 10.0.3 (cross-platform process tree kill); `@opentui/core` + `@opentui/solid` **0.2.7** (TUI; runtime pin held — the 0.4.x jump is carried in fro-bot autoheal PR #335, not yet merged); `solid-js` **1.9.15** (TUI reactive layer; up from 1.9.14); `zod` ^4.3.0 (pinned with `overrides` to dodge TS2883 from dual-zod trees, added v0.7.0) |
+| Dev Type Packages | `@types/bun` **1.3.14** and `@types/babel__core` **7.20.5** surfaced in the manifest by the 2026-08-25 survey (both devDeps) |
 | License | MIT |
 | Node Engine | >=24 |
 | Package exports | `.` (server plugin), `./plugin` (alias), `./tui` (opt-in TUI entry). `oc-plugin: ["server", "tui"]` declares both halves to OpenCode. |
@@ -68,7 +74,7 @@ An [OpenCode](https://opencode.ai) plugin registering three tools — `copilot_d
 
 ### Mise Tooling
 
-`mise.toml` pins (2026-07-24): Bun 1.3.14, `npm:opencode-ai` **1.18.4**, `npm:@github/copilot` **1.0.73**. (Prior survey: opencode-ai 1.17.8, copilot 1.0.63.)
+`mise.toml` pins (2026-08-25): Bun **1.4.0**, `npm:opencode-ai` **1.18.19**, `npm:@github/copilot` **1.0.80**. (Prior 2026-07-24: Bun 1.3.14, opencode-ai 1.18.4, copilot 1.0.73.)
 
 ## Architecture
 
@@ -230,7 +236,7 @@ Six workflows on `main`:
 
 ### Fro Bot Integration
 
-- **Agent:** `fro-bot/agent@v0.94.2` (SHA `64029d5189e9feea4718960d9b1700108c7a3686`) as of 2026-07-24 — up from v0.76.0 at the 2026-06-24 survey, an 18-minor jump in a month tracking the ecosystem-wide agent rollout. (Prior: v0.76.0, SHA `07d86219`.)
+- **Agent:** `fro-bot/agent@v0.105.0` (SHA `335e4f8a9c74f7fe7a40565d23acfbf321dc983e`) as of 2026-08-25 — up from v0.94.2 at the 2026-07-24 survey, ~11 minors in a month (crossing the cosmetic v0.100 line while still 0.x). (Prior: v0.94.2, SHA `64029d5`.)
 - **PR review:** Structured verdict format (PASS/CONDITIONAL/REJECT) with plugin-specific focus areas: TypeScript type safety, OpenCode API contracts (tool schema correctness, `ToolResult` shape, peerDependency compatibility), subprocess safety (spawn correctness, stdin/stdout buffering, signal propagation, process-tree kill, no zombies), tool output safety (no secrets/PATs/PII), changeset hygiene
 - **Daily autohealing (16:00 UTC):** 4-category sweep — errored PRs, security, health & maintenance, developer experience. Single perpetual issue ("Daily Autohealing Report" #26) strategy.
 - **Required secrets:** `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG`
@@ -239,7 +245,7 @@ Six workflows on `main`:
 
 ### Renovate Configuration
 
-- Extends `marcusrbrown/renovate-config#5.2.9` (advanced from `#5.2.3` in the 2026-07-24 window). Renovate config lives at `.github/renovate.json5`.
+- Extends `marcusrbrown/renovate-config#5.2.9`. Renovate config lives at `.github/renovate.json5`. The `bfra-me/.github` reusable Renovate workflow advanced to **v4.19.0** in this window (via #367 → #369).
 - LTS-only Node.js constraints for `@types/node` (even majors via regex `/^v?([0-9]*[02468])\\./`) and GitHub Actions node versions. An in-flight autoheal PR (#134) is tightening this further to caret-range LTS pinning.
 - `@opencode-ai/*` packages use `build` semantic commit type
 - Post-upgrade tasks: `bun install`, `bun run fix`, `bun run build`
@@ -264,18 +270,18 @@ Uses Changesets via `changesets/action@v1.9.0` (bumped from v1.7.0 in #178 on 20
 | 26 | Daily Autohealing Report | Perpetual issue managed by Fro Bot |
 | 25 | Dependency Dashboard | Renovate tracking issue |
 
-## Open PRs (2026-07-24)
+## Open PRs (2026-08-25)
 
 | # | Title | Notes |
 |---|-------|-------|
-| 302 | chore(dev): bump biome config schema to 2.5.4 | New — syncs `biome.json` `$schema` (2.5.3) to the CLI's 2.5.4. Successor to the closed #169 (same schema-sync concern) |
-| 278 | chore(dev): update dependency @types/node to v26 | Duplicate-track of #241 (both target major 26); blocked by the LTS-only even-majors rule |
-| 277 | chore(deps): update actions/checkout action to v7 | Renovate GitHub Actions major |
-| 276 | chore(deps): update actions/cache action to v6 | Renovate GitHub Actions major |
-| 241 | chore(dev): update @types/node 24 → 26 (major) | Carried over from 2026-06-24; still stalled under the LTS-only (even majors) rule |
-| 135 | fix(deps): update dependency @opentui/solid to v0.4.3 | Renovate — reopened/retargeted to v0.4.3 after 0.2.7 landed; the 0.2.x → 0.4.x jump keeps it from auto-merging |
+| 377 | build(dev): update all non-major dependencies | New (mrbro-bot, automerge-labeled) — chases Biome 2.5.9 → 2.5.10, `@opencode-ai/plugin` 1.18.19 → 1.18.21, `@types/bun` 1.3.14 → 1.4.0, `bfra-me/.github` v4.19.0 → v4.20.0, `opencode-ai` mise 1.18.19 → 1.18.21 |
+| 335 | fix(deps): bump @opentui/core and @opentui/solid to 0.4.5 | **New fro-bot autoheal branch** — supersedes the stale Renovate #135 (`0.4.3`), carries the `@opentui/*` 0.2.7 → 0.4.5 major forward with an `overrides.@opentui/core` entry (forces single-root type identity to fix dual-`@opentui/core` TS breakage) + patch changeset. Concrete "adopt-and-refresh a stalled Renovate major as an autoheal branch" instance |
+| 332 | chore(dev): bump biome config schema to 2.5.8 | fro-bot — successor to the resolved #302 (2.5.4); syncs `biome.json` `$schema` to installed 2.5.8. The perpetual schema-vs-CLI chase |
+| 278 | chore(dev): update dependency @types/node to v26 | mrbro-bot duplicate-track of #241 (both target major 26); blocked by the LTS-only even-majors rule |
+| 241 | chore(dev): update @types/node 24 → 26 (major) | fro-bot — carried since 2026-06-22; still stalled under the LTS-only (even majors) rule |
+| 135 | fix(deps): update dependency @opentui/solid to v0.4.3 | Renovate — stale at 0.4.3; superseded by fro-bot #335 (recommend manual close + Renovate ignore) |
 
-Delta from the 2026-06-24 survey: **#130 (`@opentui/core` 0.2.7) merged** and **#135 landed 0.2.7 then reopened at v0.4.3**, so both `@opentui/*` pins advanced to 0.2.7. **#169 (Biome schema sync) closed**, superseded by the new **#302** (2.5.4 sync). **#134** (autoheal LTS constraint) merged/closed. New Renovate GitHub Actions majors **#276/#277** and a second `@types/node` v26 track **#278** appeared. #241 still stalled. Open issues unchanged across all surveys: #38 (re-add integration tests to CI), #26 (Daily Autohealing Report), #25 (Dependency Dashboard).
+Delta from the 2026-07-24 survey: **#302 (Biome 2.5.4 schema) resolved**, replaced by the ongoing schema-sync chain **#332** (2.5.8) with the newest bundle **#377** already queuing 2.5.9 → 2.5.10. GitHub Actions majors **#276/#277** merged/closed (no longer open). **New fro-bot autoheal PR #335** adopts the stale Renovate `@opentui/*` 0.4.x branch and refreshes it to 0.4.5. **New mrbro-bot bundle #377** (non-major deps). #278/#241 (@types/node v26) and #135 (opentui 0.4.3) still stalled/carried. Open issues unchanged across all surveys: #38 (re-add integration tests to CI), #26 (Daily Autohealing Report), #25 (Dependency Dashboard). Open count steady at 9 (6 PRs + 3 issues).
 
 ## Design Documentation
 
@@ -329,6 +335,7 @@ Releases under `0.x` are unstable and may include breaking changes between minor
 
 | Date | SHA | Key delta |
 |------|-----|-----------|
+| 2026-08-25 | `c6c055d` | **v0.12.1 held (5th straight steady-release survey); no source-tree/tool change.** Pure dependency-churn + autoheal window — every commit is `mrbro-bot[bot]` Renovate automerge, no human commit. **Bun 1.3.14 → 1.4.0** (first Bun-minor crossing in the series), Biome 2.5.4 → **2.5.9**, `@opencode-ai/plugin` 1.18.4 → **1.18.19**, `opencode-ai` mise 1.18.4 → **1.18.19**, `@github/copilot` CLI 1.0.73 → **1.0.80**, `solid-js` 1.9.14 → **1.9.15**, `bfra-me/.github` reusable → **v4.19.0**, Fro Bot agent **v0.94.2 → v0.105.0** (SHA `335e4f8`, ~11 minors, crosses cosmetic v0.100). New devDeps `@types/bun` **1.3.14** + `@types/babel__core` **7.20.5**. Unchanged: TS 7.0.2, `@types/node` 24.13.3, zod ^4.3.0, `@opentui/*` runtime 0.2.7, `@changesets/cli` 2.31.1. Open PRs reshuffled: **#302 resolved**, schema-sync chain now **#332** (2.5.8) + newest **#377** (2.5.9 → 2.5.10); GH Actions majors #276/#277 merged; **new fro-bot autoheal #335** adopts stale Renovate `@opentui/*` 0.4.x → 0.4.5 with `overrides.@opentui/core`; #278/#241/#135 stalled. Open count steady at 9. Six workflows including `fro-bot.yaml` present. |
 | 2026-07-24 | `61bc146` | **v0.12.0 → v0.12.1** — first release in four surveys. Single patch changeset (`488e8da`): skip delayed orphan-PID registration after a task reaches a terminal state (closes a stale-entry race). Source-tree layout unchanged (4 tools); TUI components refactored to `confirm-card.tsx`/`modal-list.tsx`/`row.tsx`; fixtures added `connect-mismatch.jsonl`/`resume-mismatch.jsonl`. Two major bumps: **TypeScript 6.0.3 → 7.0.2** and **`@opentui/*` 0.2.6 → 0.2.7** (#130 merged, #135 landed then reopened at v0.4.3). Also **Biome 2.5.0 → 2.5.4**, `@opencode-ai/plugin` 1.17.8 → **1.18.4**, `opencode-ai` mise 1.17.8 → **1.18.4**, `@github/copilot` CLI 1.0.63 → **1.0.73**, `@types/node` 24.13.2 → **24.13.3**, `@changesets/cli` 2.31.0 → **2.31.1**, `solid-js` 1.9.13 → **1.9.14**, Renovate preset `#5.2.3` → **`#5.2.9`**, Fro Bot agent **v0.76.0 → v0.94.2** (SHA `64029d5`, 18-minor jump). zod still `^4.3.0`. Open PRs reshuffled: #169/#134 closed, #302 (Biome 2.5.4 schema) new, GH Actions majors #276/#277 new, #278 second `@types/node` v26 track new; #241 stalled. Open issues unchanged (#38/#26/#25). Six workflows including `fro-bot.yaml` present. |
 | 2026-06-24 | `bea97ea` | No release (still v0.12.0) and no source-tree change since `60cbe42`. Dependency-churn-only window: **Biome 2.4.16 → 2.5.0** (config schema migration #223, deprecated `recommended` field replaced); Fro Bot agent **v0.62.0 → v0.76.0** (14-minor jump in eleven days, through v0.63.0–v0.76.0); `@opencode-ai/plugin` dev pin 1.17.2 → **1.17.8**; `opencode-ai` mise 1.17.2 → **1.17.8**; `@github/copilot` CLI 1.0.61 → **1.0.63**; `@types/node` 24.13.1 → **24.13.2** (still within 24.x LTS); `bfra-me/.github` Renovate reusable v4.16.25 → **v4.16.28**. Renovate preset held at `#5.2.3`, `@opentui/*` held at 0.2.6, zod still `^4.3.0`. Open PR set shifted: #127 (24 → 25 major) closed, new #241 (24 → 26 major); #130/#134/#135/#169 still open (#169 now likely redundant post-#223). Open issues unchanged (#38/#26/#25). Six workflows including `fro-bot.yaml` present. |
 | 2026-06-13 | `60cbe42` | No release (still v0.12.0) and no source-tree change since `f9aaeea`. Dependency-churn-only window: Fro Bot agent **v0.51.0 → v0.62.0** (11-minor jump in ten days, through v0.55.x–v0.61.0); `@opencode-ai/plugin` dev pin 1.15.13 → **1.17.2**; `opencode-ai` mise 1.15.13 → **1.17.2**; `@github/copilot` CLI 1.0.56 → **1.0.61**; `@types/node` 24.12.4 → **24.13.1** (still within 24.x LTS); Renovate preset `#5.2.0` → **`#5.2.3`**; `bfra-me/.github` Renovate reusable → **v4.16.25**. Biome held at 2.4.16, `@opentui/*` held at 0.2.6, zod still `^4.3.0`. Open PR set identical (#127/#130/#134/#135/#169 all still open); open issues unchanged (#38/#26/#25). Six workflows including `fro-bot.yaml` present. |

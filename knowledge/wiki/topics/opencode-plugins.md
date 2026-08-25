@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-08-21
+updated: 2026-08-25
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -55,6 +55,9 @@ sources:
   - url: https://github.com/fro-bot/systematic
     sha: a40e544
     accessed: 2026-08-21
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: c6c055d906b8df3de5f371221daf930c8bd49f99
+    accessed: 2026-08-25
 tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution]
 ---
 
@@ -288,6 +291,8 @@ Two known workarounds:
 2. **`.describe().optional()`** (v0.6.0 partial fix): zod's `toJSONSchema(…, { io: 'input' })` unwraps `.optional()` and drops descriptions attached to the wrapper. Reordering to `.describe(…).optional()` places the description on the leaf type so it survives the unwrap. Insufficient on its own when host/plugin zod are different module instances — pair with the override above.
 
 Pin zod as a direct dependency with a matching `overrides` entry so the plugin's own install tree stays on one version (resolves TS2883 from dual-zod trees at build time). `overrides` is local-install-only; downstream consumers may still see a different transitive zod from their OpenCode host.
+
+**Generalized "single-root type identity" override (2026-08-25):** the same footgun recurs whenever a TUI/runtime dep bundles its own copy of a peer. [[marcusrbrown--opencode-copilot-delegate]]'s stalled `@opentui/*` 0.4.x upgrade (fro-bot autoheal PR #335, `0.2.7 → 0.4.5`) is blocked because `@opentui/solid@0.4.x` bundles its own `@opentui/core`, producing duplicate branded type identities (`TextRenderable`, `BoxRenderable`, `KeyEvent`, …) that break `bun run typecheck`. The fix mirrors the zod pattern exactly: add an `overrides.@opentui/core` entry pinning both packages to the same version so TypeScript resolves the branded renderables from a single root install. Rule of thumb: any dep that re-bundles a shared core needs a root `overrides` pin to collapse type identities before a major will typecheck.
 
 ### `api.command.register` removal isn't the only churn — narrow peer ranges accordingly
 
