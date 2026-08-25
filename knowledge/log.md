@@ -3913,3 +3913,23 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-25 06:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`, which resolves to repo id `1174807412` (the mrbro.dev developer portfolio, canonical [[marcusrbrown--mrbro-dev]]) — not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Name-collision binding unchanged since 2026-07-20. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log 2026-08-25 + Survey History row + `accessed: 2026-08-25` source, `updated` → 2026-08-25) and the `index.md` catalog entry.
+
+Findings:
+
+- `main` HEAD **still frozen at `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31) — 25 days, no trunk drift. `pushed_at` 2026-08-24T07:11:19Z = PR-branch pushes only; `updated_at` still 2026-07-31. Because the tree is frozen, no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page.
+- Queue delta since 2026-08-24: **daily-report renumber only** #288 → #289 (`Daily Fro Bot Report — 2026-08-25 (UTC)`). Flattest interval yet — no new substantive work, no merges. Open issues 6 (#289/#287/#271/#270/#261/#258/#212) + #1 Dependency Dashboard. Open PRs steady at 5, all carried, none merged since 2026-08-07 (#283 docs-dup of #254 / #266 / #263 / #254 / #253) — the #283-vs-#254 docs duplicate still stands. `open_issues_count` 13.
+- The propose-without-merge / report-without-remediation pattern (flagged since 2026-06-12) is now maximally hardened: 25 days of a frozen trunk, #266 security-remediation unmerged ~18 days, a self-duplicated docs PR (#283 vs #254), a four-item self-filed least-privilege cluster (#287/#271/#270/#261) — and the only thing that moved is the daily-report issue number. The queue is a fixed point the oversight pass keeps re-stamping with a new date.
+- Fro Bot workflow present and active (`fro-bot/agent@a4976f4 # v0.93.1`, single `30 3` daily oversight+autoheal cron, 8 workflows, Renovate #5.2.7, pnpm 11.1.3 / Node >=24, `pnpm.overrides` empty, name `mrbro.dev`) — **no onboarding follow-up draft PR warranted for this name.**
+- Access note: `gh` CLI unauthenticated again this run (`GH_TOKEN` unset; refuses without it) — the same authenticated-access gap the current occupant's own issue #212 tracks. Surveyed via unauthenticated `api.github.com` (repo + issues + `commits/main` + workflow dir listing) + `raw.githubusercontent.com`, limited to directory listings, README/manifest/workflow files per the untrusted-input constraint. Delivery mode `working-dir` — file changes only, no GitHub mutation. Public-only invariant satisfied (repo verified public via API; `sources[].url` declares exact public owner/repo).
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-25 05:55] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
