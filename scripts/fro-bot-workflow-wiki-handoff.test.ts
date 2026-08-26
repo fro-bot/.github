@@ -85,6 +85,16 @@ describe('fro-bot.yaml baseline wiki handoff wiring', () => {
     expect(prompt.toLowerCase()).toContain('optional')
   })
 
+  it('the progressive improvement prompt flags stalled learning proposals', () => {
+    // #then category 7 names the intake, expected authoring action, thresholds,
+    // and the Improvement Metrics false-green warning
+    expect(raw).toContain('open issues labeled `learning-proposal`')
+    expect(raw).toContain('authoring the learning into `docs/solutions/`')
+    expect(raw).toContain('older than 14')
+    expect(raw).toContain('two or more open at once')
+    expect(raw).toContain('Improvement Metrics report (#3674)')
+  })
+
   it('baseline wiki context is still injected as before', () => {
     // #then the <wiki_context> block referencing WIKI_CONTEXT remains in the prompt
     expect(raw).toContain('<wiki_context>')
