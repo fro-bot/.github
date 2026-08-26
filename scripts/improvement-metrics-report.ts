@@ -21,7 +21,6 @@
  * Strip-only safe: no enums, namespaces, parameter properties, or `any`.
  */
 
-import type {DetectEdge, MetricsDigest} from './improvement-metrics-detect.ts'
 import process from 'node:process'
 import {isRecord} from './capture-learnings-privacy.ts'
 import {
@@ -33,6 +32,7 @@ import {
   parseReportVersionMarker,
   recoverPriorTickState,
 } from './improvement-metrics-core.ts'
+import {isMetricsDigest, type DetectEdge, type MetricsDigest} from './improvement-metrics-detect.ts'
 import {applyPublicOutputGate, type PublicOutputTokens} from './status-truth-public-output.ts'
 
 // ---------------------------------------------------------------------------
@@ -388,7 +388,14 @@ interface ReportResult {
 export async function readDigestFile(path: string): Promise<DigestFile> {
   const {readFile} = await import('node:fs/promises')
   const raw = await readFile(path, 'utf8')
-  return JSON.parse(raw) as DigestFile
+  const parsed: unknown = JSON.parse(raw)
+  if (!isRecord(parsed) || !isMetricsDigest(parsed.digest) || !Array.isArray(parsed.edges)) {
+    writeReportLog('improvement-metrics-report: digest file has invalid shape\n')
+    throw new TypeError('improvement-metrics-report: invalid digest file shape')
+  }
+
+  // DetectEdge elements are trusted from detect's writer; this boundary validates only the array container.
+  return {digest: parsed.digest, edges: parsed.edges as DetectEdge[]}
 }
 
 /**
@@ -399,7 +406,7 @@ export async function readDigestFile(path: string): Promise<DigestFile> {
  * Best-effort: a digest read failure is fail-soft (no write, presence bit set).
  * A token-load failure is fail-closed (no create/update, presence bit set).
  */
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const owner = 'fro-bot'
   const repo = '.github'
 
