@@ -2,7 +2,7 @@
 type: topic
 title: Dotfiles Management
 created: 2026-04-18
-updated: 2026-07-27
+updated: 2026-08-26
 tags: [dotfiles, shell, configuration, bare-git-repo, xdg]
 related:
   - marcusrbrown--dotfiles
@@ -78,13 +78,16 @@ Devcontainer configurations with custom features enable the same environment in 
 
 Marcus's dotfiles include a rich AI agent configuration layer, treating the development environment itself as an agentic platform:
 
-- **OpenCode** (`.config/opencode/`): Full plugin stack — current state and version history live in [[marcusrbrown--dotfiles]]. As of 2026-07-27: `oh-my-opencode-slim` crossed a **v1→v2 major** (2.2.8) and the **active preset flipped `mixed` → `openai`** — routing migrated onto a new `openai/gpt-5.6-*` model line (sol/luna/terra) with an `anthropic/claude-sonnet-5` oracle. A new top-level `agents.fast-generic` mechanical agent (`gpt-5.3-codex-spark`) was added for routine git/command work. `@fro.bot/systematic` crossed a **v2→v3 major** (3.3.0) with a retuned v3 `systematic.jsonc`. `@cortexkit/opencode-magic-context` (v0.33.0) and `@cortexkit/aft-opencode` (v0.48.1) still run on **plugin defaults** — the previously heavily-tuned `magic-context.jsonc` / `aft.jsonc` config files remain deleted. MCP set holds at three remote servers (context7, grep_app, exa; `tavily` removed). A companion `@cortexkit/opencode-openai-auth` plugin was added to back the OpenAI-heavy preset. The top-level headless default model stays removed — routing is fully delegated to the slim presets.
+- **OpenCode** (`.config/opencode/`): Full plugin stack — current state and version history live in [[marcusrbrown--dotfiles]]. As of 2026-08-26 (SHA `3479589`): the July experiment partially reverted — the OMO-slim **active preset flipped back `openai` → `mixed`** (plugin 2.2.11), with the Anthropic seat moved onto **`anthropic/claude-opus-5`** as the mixed orchestrator; OpenAI routing stays on the `gpt-5.6-*` line (sol/luna/terra). The top-level `fast-generic` mechanical agent now uses a **model fallback array** (`gpt-5.3-codex-spark` → `github-copilot/gpt-5.4-mini`). **`opencode-copilot-delegate@0.12.1` returned to the plugin array** (reversing the 2026-07-10 drop), so plugin-driven and skill-driven Copilot delegation now coexist. `@fro.bot/systematic` climbed the v3 minor train to 3.15.0 with a retuned `systematic.jsonc` (added a `workflow` category + a `workflow_guard` block). MCP set **contracted 3 → 2** (`websearch`/Exa removed; `grep_app` renamed `gh_grep`). `@cortexkit/opencode-magic-context` (0.38.1) and `@cortexkit/aft-opencode` (0.52.1) still run on **plugin defaults**. The top-level headless default model stays removed — routing is fully delegated to the slim presets.
+  - _Prior (2026-07-27):_ `oh-my-opencode-slim` crossed a **v1→v2 major** (2.2.8), active preset flipped `mixed` → `openai`, `@fro.bot/systematic` crossed **v2→v3** (3.3.0), companion `@cortexkit/opencode-openai-auth` added.
 - **Claude Code** (`.claude/`): Repo-scoped agents, commands, and rules
 - **Repo-scoped skills**: `.agents/skills/copilot-cli` (non-interactive GitHub Copilot CLI delegation) remains the sole `.agents/` bundle, but as of 2026-07-10 a second skills tree lives under `.config/opencode/skills/` with six bespoke skills — `clonedeps`, `codemap`, `content-research-writer`, `copilot-cloud-agent`, `file-organizer`, `simplify`. See [[marcusrbrown--dotfiles]].
 - **Local-LLM distillation**: A new `ollama-distill` pipeline (`.config/opencode/scripts/ollama-distill.ts`, `mise run distill`) reads the OpenCode session SQLite DB and produces Markdown summaries via local Ollama — keeping session summarization off hosted models.
 - **AGENTS.md**: Canonical knowledge base for all AI agents operating in the repo
 
 This pattern — dotfiles as AI agent configuration — is distinctive: the home directory becomes the ground truth for agent personas, model routing, and skill availability across all projects. A recurring theme in 2026-07 is **deferring to upstream plugin defaults** (deleting bespoke magic-context/aft config) while keeping bespoke logic where no upstream exists (local distillation, copilot delegation skills). Late July 2026 saw two upstream **major-version boundaries land together** (oh-my-opencode-slim v2, systematic v3) alongside a fresh `openai/gpt-5.6-*` model migration — the config tracks provider model churn aggressively while holding the structural conventions steady.
+
+A newer distinctive move (2026-08-26): the repo's **operational agent-tooling scripts now have CI-enforced unit tests**. The Bun/TypeScript maintenance scripts under `.config/opencode/scripts/` (`opencode-doctor`, `ollama-distill`) are exercised by a `Script Tests` matrix on **both Linux and macOS** in the repo's `Main` workflow, with a stable aggregator status context wired into branch protection. Treating home-directory agent scripts as first-class, cross-platform-tested software — rather than throwaway glue — is a step beyond typical dotfiles hygiene. It also shows the config's churn is not monotonic: the same window that added test rigor also **reverted** two July decisions (active preset `openai` → `mixed`; re-adding the `opencode-copilot-delegate` plugin), a reminder that these are live-tuned experiments, not one-way migrations.
 
 ## Related Technologies
 

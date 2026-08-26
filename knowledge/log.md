@@ -3940,14 +3940,27 @@ Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wi
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
 
-## [2026-08-26 06:00] ingest | marcusrbrown/marcusrbrown.github.io
+## [2026-08-26 06:00] ingest | marcusrbrown/.dotfiles
 
-No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`, which resolves to repo id `1174807412` (the mrbro.dev developer portfolio, canonical page [[marcusrbrown--mrbro-dev]]) — not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-collision binding is unchanged since 2026-07-20. `main` HEAD **still frozen at `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31) — 26 days without a trunk commit; `pushed_at` 2026-08-25 reflects PR-branch pushes only, `updated_at` still 2026-07-31. No tree drift, no structural change, no durable delta on the canonical mrbro.dev page. Queue delta since 2026-08-24 is the daily-report renumber #288 → #290 only; substantive backlog byte-identical — open issues 6 (#290/#287/#271/#270/#261/#258/#212) + #1, open PRs 5 (#283/#266/#263/#254/#253) all carried and none merged since 2026-08-07, the #283-vs-#254 docs duplicate and the ~19-day-unmerged #266 security-remediation PR still standing. `fro-bot.yaml` + `package.json` re-read at HEAD: agent v0.93.1 (`a4976f4`), single `30 3` cron, `response-mode: none` scheduled pass, pnpm 11.1.3 / Node >=24, `pnpm.overrides` empty. Fro Bot active — no onboarding PR warranted for this name. `GH_TOKEN` unset; reads limited to unauthenticated GitHub API + raw fetch (directory listings, README, `package.json`, workflow files). Touched: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md`, `knowledge/index.md`, `knowledge/log.md`.
+Re-survey of `marcusrbrown/.dotfiles` (HEAD `347958930a27f22f630996c1d0d65e02416218f0`, 2026-08-26; HEAD commit `ci: run the script tests on macOS as well as Linux` #2432). Repo confirmed public (`private: false`) before any ingest. Reads limited to the GitHub API (repo metadata, HEAD commit, languages, open issues/PRs, directory listings) plus README/manifest/workflow/config files at HEAD: `.config/mise/config.toml`, `.config/opencode/{opencode.json,tui.json,systematic.jsonc,oh-my-opencode-slim.jsonc}`, `.github/workflows/{main,fro-bot}.yaml`, `.github/renovate.json5`, `.devcontainer/devcontainer.json`. Updated repo page `marcusrbrown--dotfiles.md`, topic page `dotfiles.md`, and `index.md` (repo catalog line).
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+Delta from prior survey (SHA `cd03ad8`, 2026-07-27):
 
-## [2026-08-26 05:57] ingest | repo:marcusrbrown/marcusrbrown.github.io
+- **New CI Script Tests matrix (structural).** `main.yaml` gained a `script-tests-matrix` job on `[ubuntu-latest, macos-latest]` (`fail-fast: false`) running `bun test opencode-doctor.test.ts` + `ollama-distill.test.ts` (Bun 1.4.0 via `oven-sh/setup-bun@v2.2.0`) under `.config/opencode/scripts`, plus a `script-tests` aggregator job (`if: always()`) collapsing per-leg names into one stable status context for branch protection. First CI unit-test surface for the repo's operational scripts and first macOS CI leg; scripts dir gained `lib/` + `tsconfig.json`. Required checks on `main` now include **Script Tests**.
+- **Two July decisions reverted.** OMO-slim active preset flipped back `openai` → `mixed` (plugin 2.2.8 → 2.2.11), Anthropic seat migrated to **`anthropic/claude-opus-5`** (mixed orchestrator, variant high). And **`opencode-copilot-delegate@0.12.1` returned to `opencode.json`** (dropped 2026-07-10) — plugin-driven + skill-driven Copilot delegation now coexist. Contradictions noted inline against the prior page's framing.
+- **mise tool-set removals.** Stock `opencode-ai`, `puppeteer`, `vibe-tools` all dropped from `[tools]`; `pipx` pinned (1.16.7). `@fro.bot/harness` 1.18.5 → **1.18.21-harness.22dee0ee** is now the sole OpenCode CLI. Bumps: node 24.19.0, npm 11.19.0, bun 1.4.0, pnpm 11.22.0, python 3.14.7, deno 2.9.5, rust 1.98.0, go 1.27.0, biome 2.5.10, tsx 4.23.12, playwright 1.62.1, copilot 1.0.80, agent-browser 0.34.0, skills 1.5.23, ocx 2.0.15, pyright 1.1.413, cargo-binstall 1.22.0, prettier-config 0.16.11.
+- **MCP set 3 → 2.** `websearch` (Exa) removed; `grep_app` renamed `gh_grep` (same URL). OMO-slim librarian MCP arrays updated in lockstep (no stale ref this time).
+- **Plugin bumps.** systematic 3.3.0 → **3.15.0** (steady v3 minor; cross-confirmed at fro-bot--systematic), auth 1.18.0 → 1.19.1, openai-auth 0.4.3 → 0.6.3, magic-context 0.33.0 → 0.38.1, aft 0.48.1 → 0.52.1.
+- **systematic.jsonc retuned:** +`workflow` category (`opencode-go/gpt-5.6-luna`), review seat moved off `openai/gpt-5.5` → Copilot `gpt-5.4-mini`, systematic-implementer → `opencode-go/gpt-5.6-luna` (variant high, temp dropped), new top-level `workflow_guard: { mode: protected, debug: false }`.
+- **`.config/opencode/skills/` grew 6 → 11** (+`deepwork`, `oh-my-opencode-slim`, `reflect`, `verification-planning`, `worktrees`). `fast-generic` model is now a fallback array `["openai/gpt-5.3-codex-spark", "github-copilot/gpt-5.4-mini"]`.
+- Fro Bot agent workflow **v0.95.0 → v0.105.0** (SHA `335e4f8`, crosses cosmetic v0.100); single daily `30 15` cron; `actions/checkout` holds v7.0.1; mise-action v4.2.0 → v4.3.0, MISE_VERSION 2026.7.5 → 2026.8.14; Renovate preset `#5.2.0` → `#5.2.12`, automerge preset `#5.2.1` → `#5.2.7`. Devcontainer base 2.1.9 unchanged.
+- **License still undetectable** (License API + `/license` both 404; no LICENSE file) — 5th consecutive survey. Stars 20 (flat); open issues 5 → 6 (new #2434 "docs/ allowlist entries don't take effect"); `open_issues_count` 7 = 6 issues + 1 PR (#2433 AFT runbook).
+- Fro Bot workflow present and active — no onboarding PR needed.
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+Sources: https://github.com/marcusrbrown/.dotfiles (SHA 347958930a27f22f630996c1d0d65e02416218f0)
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+## [2026-08-26 06:01] ingest | repo:marcusrbrown/.dotfiles
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.dotfiles
