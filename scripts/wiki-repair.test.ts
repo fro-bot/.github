@@ -350,6 +350,26 @@ describe('planWikiRepairs', () => {
     )
   })
 
+  it('counts broken markdown links as judgment-class findings without repairing them', () => {
+    const files = buildCleanFiles()
+    const baseline = [
+      {
+        kind: 'broken-markdown-link' as const,
+        path: 'knowledge/wiki/repos/fro-bot--github.md',
+        target: 'missing.md',
+        message: 'broken markdown link',
+      },
+    ]
+
+    const plan = planWikiRepairs({baselineFindings: baseline, wikiFiles: files})
+
+    expect(plan.counts.outOfScope).toBe(1)
+    expect(plan.counts.repairableSeen).toBe(0)
+    expect(plan.repairedFiles['knowledge/wiki/repos/fro-bot--github.md']).toBe(
+      files['knowledge/wiki/repos/fro-bot--github.md'],
+    )
+  })
+
   it('treats unparseable frontmatter YAML as out-of-scope, file byte-identical', () => {
     const files = buildCleanFiles()
     const path = 'knowledge/wiki/repos/fro-bot--broken.md'

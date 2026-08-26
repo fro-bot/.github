@@ -221,6 +221,52 @@ describe('lintWikiSnapshot', () => {
     expect(result.report).toContain('missing-frontmatter')
   })
 
+  it('reports dead standard markdown links as deterministic findings', () => {
+    const files = Object.fromEntries([
+      [
+        'knowledge/index.md',
+        buildIndex([
+          '## Repos',
+          '',
+          '- [[fro-bot--github]] — Fro Bot .github',
+          '',
+          '## Topics',
+          '',
+          '_No topic pages yet._',
+          '',
+          '## Entities',
+          '',
+          '_No entity pages yet._',
+          '',
+          '## Comparisons',
+          '',
+          '_No comparison pages yet._',
+        ]),
+      ],
+      buildPage({
+        path: 'knowledge/wiki/repos/fro-bot--github.md',
+        type: 'repo',
+        title: 'Fro Bot .github',
+        bodyLines: ['See [missing](missing-topic.md) for context.'],
+      }),
+    ])
+
+    const result = lintWikiSnapshot({files, now: new Date('2026-05-02T00:00:00Z')})
+
+    expect(result.deterministicFindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'broken-markdown-link',
+          path: 'knowledge/wiki/repos/fro-bot--github.md',
+          target: 'missing-topic.md',
+        }),
+      ]),
+    )
+    expect(result.advisoryFindings).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({kind: 'broken-markdown-link'})]),
+    )
+  })
+
   it('reports malformed frontmatter as a deterministic finding instead of crashing the run', () => {
     const files = Object.fromEntries([
       [

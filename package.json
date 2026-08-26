@@ -23,7 +23,8 @@
     "check-types": "tsc --noEmit --project ./tsconfig.json",
     "coverage": "vitest run --coverage",
     "fix": "pnpm run lint --fix",
-    "lint": "eslint",
+    "check:md-links": "node scripts/check-md-links.ts",
+    "lint": "eslint && pnpm run check:md-links",
     "test": "vitest run",
     "test:watch": "vitest"
   },

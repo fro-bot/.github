@@ -28,6 +28,7 @@ const INDEX_KINDS = new Set<WikiLintFinding['kind']>(['index-drift', 'orphan-pag
 const FRONTMATTER_KINDS = new Set<WikiLintFinding['kind']>(['missing-frontmatter', 'invalid-frontmatter'])
 const JUDGMENT_KINDS = new Set<WikiLintFinding['kind']>([
   'broken-wikilink',
+  'broken-markdown-link',
   'stale-claim',
   'missing-cross-reference',
   'knowledge-gap',

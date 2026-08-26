@@ -144,6 +144,20 @@ describe('planIssueLifecycle', () => {
     expect(draft.title).toContain('knowledge/wiki/repos/foo.md')
   })
 
+  it('opens a deterministic broken-markdown-link finding like other lint findings', () => {
+    const finding = makeFinding({kind: 'broken-markdown-link', target: 'missing.md'})
+    const report = makeReport({
+      status: 'findings',
+      findings: [finding],
+      counts: {findings_total: 1, findings_deterministic: 1, findings_advisory: 0, pages_scanned: 1, pages_stale: 0},
+    })
+
+    const plan = planIssueLifecycle(emptyInput({report}))
+
+    expect(plan.toOpen).toHaveLength(1)
+    expect(plan.toOpen[0]?.title).toContain('broken-markdown-link')
+  })
+
   it('2. deterministic finding matching an existing OPEN issue → toUpdate, NOT toOpen', () => {
     const finding = makeFinding()
     const report = makeReport({
