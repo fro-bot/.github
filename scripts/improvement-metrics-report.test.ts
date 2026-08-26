@@ -17,6 +17,7 @@ import {join} from 'node:path'
 import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 import {buildEdgeChecklistLine, buildReportVersionMarker, parseReportVersionMarker} from './improvement-metrics-core.ts'
+import {isMetricsDigest} from './improvement-metrics-detect.ts'
 import {
   IMPROVEMENT_METRICS_REPORT_TITLE,
   main,
@@ -284,6 +285,39 @@ describe('readDigestFile', () => {
     } finally {
       await rm(path, {force: true})
     }
+  })
+})
+
+describe('isMetricsDigest', () => {
+  it('accepts a fully valid digest', () => {
+    expect(isMetricsDigest(makeDigest())).toBe(true)
+  })
+
+  it('rejects a digest missing a required number', () => {
+    const missingAnchors: Record<string, unknown> = {...makeDigest()}
+    delete missingAnchors.anchors
+
+    expect(isMetricsDigest(missingAnchors)).toBe(false)
+  })
+
+  it('rejects a non-numeric required number', () => {
+    expect(isMetricsDigest({...makeDigest(), anchors: '4'})).toBe(false)
+  })
+
+  it('rejects NaN in a required number', () => {
+    expect(isMetricsDigest({...makeDigest(), anchors: Number.NaN})).toBe(false)
+  })
+
+  it('rejects Infinity in a required number', () => {
+    expect(isMetricsDigest({...makeDigest(), anchors: Number.POSITIVE_INFINITY})).toBe(false)
+  })
+
+  it('rejects undefined oldestPendingAgeDays', () => {
+    expect(isMetricsDigest({...makeDigest(), oldestPendingAgeDays: undefined})).toBe(false)
+  })
+
+  it('rejects an invalid report state', () => {
+    expect(isMetricsDigest({...makeDigest(), state: 'unknown'})).toBe(false)
   })
 })
 

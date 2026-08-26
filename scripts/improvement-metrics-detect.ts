@@ -29,6 +29,7 @@ import {
   buildEdgeFingerprint,
   IMPROVEMENT_METRICS_REPORT_LABEL,
   recoverPriorTickState,
+  recoverReportState,
   type ClassKeyFrontmatter,
   type ReportState,
 } from './improvement-metrics-core.ts'
@@ -176,6 +177,34 @@ export interface MetricsDigest {
   backlogCount: number
   oldestPendingAgeDays: number | null
   state: ReportState
+}
+
+/** Runtime narrowing for the JSON digest crossing into the report step. */
+export function isMetricsDigest(value: unknown): value is MetricsDigest {
+  if (!isRecord(value)) return false
+
+  const numericFields = [
+    'windowDays',
+    'anchors',
+    'discovery',
+    'priorDiscovery',
+    'confirmedRecidivism',
+    'backlogCount',
+  ] as const
+  for (const field of numericFields) {
+    const fieldValue = value[field]
+    if (typeof fieldValue !== 'number' || !Number.isFinite(fieldValue)) return false
+  }
+
+  const oldestPendingAgeDays = value.oldestPendingAgeDays
+  if (
+    oldestPendingAgeDays !== null &&
+    (typeof oldestPendingAgeDays !== 'number' || !Number.isFinite(oldestPendingAgeDays))
+  ) {
+    return false
+  }
+
+  return typeof value.state === 'string' && recoverReportState(value.state) !== null
 }
 
 export interface ComputeMetricsResult {
