@@ -287,7 +287,7 @@ Delta-based inverted gate (no private resolution, grandfathers existing pages):
 
 ## Sources & References
 
-- **Origin document:** [docs/brainstorms/2026-06-01-data-branch-sole-writer-requirements.md](docs/brainstorms/2026-06-01-data-branch-sole-writer-requirements.md)
+- **Origin document:** [docs/brainstorms/2026-06-01-data-branch-sole-writer-requirements.md](../brainstorms/2026-06-01-data-branch-sole-writer-requirements.md)
 - Related code: `scripts/check-wiki-private-presence.ts`, `scripts/merge-data-pr.ts`, `.github/workflows/merge-data.yaml`, `scripts/check-wiki-authority.ts`
 - Related PRs: #3394 (orphan deletion, policy reverted here), #3395 (cp workaround, reverted here), #3396 (the conflicted promotion, merged manually)
 - Related plan: `docs/plans/2026-05-05-002-feat-private-repo-handling-plan.md` (Unit 8 owns private-page-removal-as-check)
