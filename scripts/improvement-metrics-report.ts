@@ -388,7 +388,13 @@ interface ReportResult {
 export async function readDigestFile(path: string): Promise<DigestFile> {
   const {readFile} = await import('node:fs/promises')
   const raw = await readFile(path, 'utf8')
-  return JSON.parse(raw) as DigestFile
+  const parsed: unknown = JSON.parse(raw)
+  if (!isRecord(parsed) || !isRecord(parsed.digest) || !Array.isArray(parsed.edges)) {
+    writeReportLog('improvement-metrics-report: digest file has invalid shape\n')
+    throw new TypeError('improvement-metrics-report: invalid digest file shape')
+  }
+
+  return {digest: parsed.digest as unknown as MetricsDigest, edges: parsed.edges as DetectEdge[]}
 }
 
 /**
@@ -399,7 +405,7 @@ export async function readDigestFile(path: string): Promise<DigestFile> {
  * Best-effort: a digest read failure is fail-soft (no write, presence bit set).
  * A token-load failure is fail-closed (no create/update, presence bit set).
  */
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const owner = 'fro-bot'
   const repo = '.github'
 

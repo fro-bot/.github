@@ -168,9 +168,9 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           IMPROVEMENT_METRICS_DIGEST_PATH: ${{ runner.temp }}/improvement-metrics-digest.json
           IMPROVEMENT_METRICS_RESULT_PATH: ${{ runner.temp }}/improvement-metrics-result.json
-        # pipefail: a failure in `node ...` must fail this step even though `tee`
-        # (the last command in the pipe) exits 0.
-        run: node scripts/improvement-metrics-report.ts | tee "$RUNNER_TEMP/improvement-metrics-result.json"
+        # The report script owns the result-file write, so there is no second writer
+        # that can clobber the result after the script completes.
+        run: node scripts/improvement-metrics-report.ts
         shell: bash -Eeuo pipefail {0}
 
       - if: always()
