@@ -3939,3 +3939,15 @@ Sources: https://github.com/marcusrbrown/opencode-copilot-delegate (SHA c6c055d9
 Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-08-26 06:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io`, which resolves to repo id `1174807412` (the mrbro.dev developer portfolio, canonical page [[marcusrbrown--mrbro-dev]]) — not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-collision binding is unchanged since 2026-07-20. `main` HEAD **still frozen at `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31) — 26 days without a trunk commit; `pushed_at` 2026-08-25 reflects PR-branch pushes only, `updated_at` still 2026-07-31. No tree drift, no structural change, no durable delta on the canonical mrbro.dev page. Queue delta since 2026-08-24 is the daily-report renumber #288 → #290 only; substantive backlog byte-identical — open issues 6 (#290/#287/#271/#270/#261/#258/#212) + #1, open PRs 5 (#283/#266/#263/#254/#253) all carried and none merged since 2026-08-07, the #283-vs-#254 docs duplicate and the ~19-day-unmerged #266 security-remediation PR still standing. `fro-bot.yaml` + `package.json` re-read at HEAD: agent v0.93.1 (`a4976f4`), single `30 3` cron, `response-mode: none` scheduled pass, pnpm 11.1.3 / Node >=24, `pnpm.overrides` empty. Fro Bot active — no onboarding PR warranted for this name. `GH_TOKEN` unset; reads limited to unauthenticated GitHub API + raw fetch (directory listings, README, `package.json`, workflow files). Touched: `knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md`, `knowledge/index.md`, `knowledge/log.md`.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-26 05:57] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
