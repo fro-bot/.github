@@ -117,6 +117,8 @@ const OPERATOR_LOGIN = 'marcusrbrown'
  * Node's default `execFileSync` ceiling is 1 MiB, which is smaller than legitimate
  * promotion diffs. If a command still exceeds this ceiling, `execFileSync` throws
  * (typically with `ENOBUFS`) and the caller exits non-zero rather than passing.
+ * Apply this to responses that scale with repository or diff size; bounded fixed-shape
+ * responses intentionally keep Node's default ceiling.
  */
 export const LARGE_OUTPUT_MAX_BUFFER_BYTES = 32 * 1024 * 1024
 
@@ -857,6 +859,8 @@ export async function runPromotionCli(
   reposYamlReader: ReposYamlReader = defaultReposYamlReader,
   resolverFactory: ResolverFactory = defaultResolverFactory,
 ): Promise<number> {
+  // This path intentionally does not write scan_result: scheduled promotion runs post
+  // no commit status. If it gains a status surface, emit scan_result here too.
   const pat = process.env.FRO_BOT_POLL_PAT
   if (pat === undefined || pat === '') {
     process.stderr.write(
