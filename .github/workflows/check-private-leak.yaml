@@ -83,7 +83,7 @@ jobs:
       # Run the scan. FRO_BOT_POLL_PAT is scoped to this step only.
       # The script reads GITHUB_EVENT_PATH (set automatically by Actions to the
       # workflow_run payload), resolves PR identity via the API, fetches the diff
-      # as data, and exits 0 (pass) or non-zero (fail/error).
+      # as data, writes scan_result (success/detection/error), and exits 0 or non-zero.
       # GH_TOKEN is set to github.token so gh CLI uses the default token for
       # diff fetch and PR API — never the broad-scope PAT.
       - id: scan
@@ -108,13 +108,17 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          SCAN_RESULT: ${{ steps.scan.outputs.scan_result }}
         run: |
           if [ "$SCAN_OUTCOME" = "success" ]; then
             state="success"
             description="No private repository names detected in PR diff."
+          elif [ "$SCAN_RESULT" = "detection" ]; then
+            state="failure"
+            description="Private repository name found in PR diff."
           else
             state="failure"
-            description="Private repository name(s) detected or scan error — see run logs for file paths."
+            description="Private leak scan could not complete (scan error); see run logs."
           fi
 
           gh api \

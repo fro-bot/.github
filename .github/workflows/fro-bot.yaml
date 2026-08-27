@@ -211,6 +211,10 @@ env:
        Find open PRs with failing CI. Skip dependency/security PRs here (handle
        in category 2). Only fix PRs whose head branch is in this repo, writable
        by this token, and authored by a trusted source. For each fixable PR:
+       inspect both sources: check runs and legacy commit statuses. `gh pr checks`
+       and `/commits/{sha}/check-runs` enumerate check runs only; legacy statuses
+       are separate `/commits/{sha}/status` records, so inspect both and report
+       failures from either source under "Errored PRs".
        check out the branch, read the failing check logs, diagnose the root
        cause, apply a focused fix, push to that PR branch, and post a concise PR
        comment (root cause, fix applied, remaining risk). If the PR touches
