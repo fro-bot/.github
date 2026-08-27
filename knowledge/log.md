@@ -3964,3 +3964,23 @@ Sources: https://github.com/marcusrbrown/.dotfiles (SHA 347958930a27f22f630996c1
 Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-08-28 00:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey. A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** — the mrbro.dev developer portfolio (canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-collision the 2026-07-13 header warned of holds steady since 2026-07-20.
+
+`main` HEAD is **still `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31) — frozen 28 days. `pushed_at` advanced to `2026-08-27T10:00:48Z` (PR-branch pushes only), `updated_at` still 2026-07-31. No tree-level drift: 8 workflows, single-file three-mode Fro Bot design, single `30 3` daily oversight+autoheal cron all hold. Agent pin steady `fro-bot/agent@a4976f4 # v0.93.1`; pnpm 11.1.3 / Node >=24; `pnpm.overrides` empty (ledger consolidated in `pnpm-workspace.yaml`); Renovate `#5.2.7`.
+
+Only queue motion since 2026-08-24 is the daily-report renumber #288 → #291 (`Daily Fro Bot Report — 2026-08-27 (UTC)`). Substantive backlog byte-identical: open issues 6 (#291/#287/#271/#270/#261/#258/#212) + #1 Dependency Dashboard; open PRs 5, all carried, none merged since 2026-08-07 (#283 docs-duplicate / #266 security-remediation ~21d unmerged / #263/#254/#253); `open_issues_count` 13 (unchanged). The #283-vs-#254 docs duplicate still stands. Propose-without-merge pattern fully hardened; this cycle even quieter — no new self-filed issue.
+
+Because the tree is frozen, no durable delta landed on [[marcusrbrown--mrbro-dev]]. Recorded the collision-confirm delta + survey-history row on [[marcusrbrown--marcusrbrown-github-io]] to keep the source/access chain continuous. Fro Bot workflow present and active — no onboarding follow-up draft PR warranted. `gh` credential gap again (`GH_TOKEN` unset; unauthenticated GitHub API + raw fetch only).
+
+Pages touched: knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md, knowledge/index.md, knowledge/log.md
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-27 16:37] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
