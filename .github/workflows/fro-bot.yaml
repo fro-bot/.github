@@ -262,8 +262,15 @@ env:
        Scan for durable improvement opportunities: tool-version drift in
        package.json (ESLint, Prettier, TypeScript, Vitest more than a minor
        behind), missing or degraded CI jobs, convention drift from
-       copilot-instructions.md, and stale TODO/FIXME annotations. Report under
-        "Progressive Improvement"; make no changes here.
+       copilot-instructions.md, and stale TODO/FIXME annotations. Also scan
+       open issues labeled `learning-proposal`: the expected action for each
+       is authoring the learning into `docs/solutions/`, so any older than 14
+       days, or two or more open at once, means the compounding pipeline has
+       stalled. Report the count and ages. Do not treat a `healthy` reading on
+       the Improvement Metrics report (#3674) as evidence this is fine —
+       unauthored proposals never become classes there, so that report stays
+       green precisely while this is stalled. Report under "Progressive
+       Improvement"; make no changes here.
 
     8. GATEWAY OPERATOR CONTROL-SURFACE ROLLOUT TRACKER
        Review awareness only. Check whether the Gateway operator control-surface
