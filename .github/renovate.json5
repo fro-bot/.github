@@ -17,11 +17,14 @@
       // typescript-eslint reads `ts.Extension.Cjs`, which TypeScript 7's native
       // rewrite no longer exposes, so type-aware linting crashes outright rather
       // than warning. Upstream: typescript-eslint#12518. Every release through
-      // 8.68.0 still peers `typescript >=4.8.4 <6.1.0`. Remove this hold once
-      // @typescript-eslint/parser publishes a peer range that permits 7.x.
-      description: 'Hold TypeScript below 7 until typescript-eslint supports it',
+      // 8.68.0 still peers `typescript >=4.8.4 <6.1.0`, so this mirrors that peer
+      // ceiling exactly rather than capping at `<7`: 6.1.x is equally unsupported,
+      // and no other rule here restricts TypeScript to patch-only updates, so a
+      // minor bump would otherwise flow. Lift this once @typescript-eslint/parser
+      // publishes a peer range that permits 7.x.
+      description: 'Hold TypeScript below 6.1 to match the typescript-eslint peer ceiling',
       matchPackageNames: ['typescript'],
-      allowedVersions: '<7',
+      allowedVersions: '<6.1.0',
     },
   ],
   postUpgradeTasks: {
