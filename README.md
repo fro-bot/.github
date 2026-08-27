@@ -97,7 +97,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 ### Prerequisites
 
 - **Node.js** 24 (pinned in [`mise.toml`](mise.toml); native TypeScript execution, no build step)
-- **pnpm** 11.9.0 (pinned in `packageManager`)
+- **pnpm** 11 (exact version pinned in [`package.json`](package.json) under `packageManager`)
 - **Git** for version control
 - Optional: [`mise`](https://mise.jdx.dev/) to auto-install the pinned toolchain
 
