@@ -1,7 +1,7 @@
 import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
-import {readFileSync} from 'node:fs'
+import {appendFileSync, readFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
 import {parse as parseYaml} from 'yaml'
@@ -111,6 +111,26 @@ export type MainReposYamlReader = (path: string) => string
  * Kept as a literal constant so it never leaks via computed interpolation.
  */
 const OPERATOR_LOGIN = 'marcusrbrown'
+
+/**
+ * Maximum output accepted from commands that return diffs or repository metadata.
+ * Node's default `execFileSync` ceiling is 1 MiB, which is smaller than legitimate
+ * promotion diffs. If a command still exceeds this ceiling, `execFileSync` throws
+ * (typically with `ENOBUFS`) and the caller exits non-zero rather than passing.
+ * Apply this to responses that scale with repository or diff size; bounded fixed-shape
+ * responses intentionally keep Node's default ceiling.
+ */
+export const LARGE_OUTPUT_MAX_BUFFER_BYTES = 32 * 1024 * 1024
+
+type ScanResultOutput = 'success' | 'detection' | 'error'
+
+/** Write a redacted machine-readable result for the workflow's status step. */
+function writeScanResult(result: ScanResultOutput): void {
+  const outputPath = process.env.GITHUB_OUTPUT
+  if (outputPath !== undefined && outputPath !== '') {
+    appendFileSync(outputPath, `scan_result=${result}\n`)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Pure decision function
@@ -432,6 +452,7 @@ const defaultPrApiResolver: PrApiResolver = {
   fetchPrsByHeadSha: async (headSha: string): Promise<Record<string, unknown>[]> => {
     const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/commits/${headSha}/pulls`, '--jq', '.'], {
       encoding: 'utf8',
+      maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES,
     })
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) {
@@ -510,7 +531,7 @@ function fetchPrivateNodeIds(
     encoded = execFileSync(
       'gh',
       ['api', `repos/${fullName}/contents/metadata/repos.yaml?ref=data`, '--jq', '.content'],
-      {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']},
+      {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES},
     ).trim()
   } catch (error: unknown) {
     if (!isGh404Error(error)) {
@@ -543,7 +564,7 @@ function fetchPrivateNodeIds(
       retryEncoded = execFileSync(
         'gh',
         ['api', `repos/${fullName}/contents/metadata/repos.yaml?ref=data`, '--jq', '.content'],
-        {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']},
+        {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES},
       ).trim()
     } catch {
       // Retry also 404 or other error → fail closed.
@@ -637,7 +658,7 @@ function fetchDiffForSha(headSha: string, env: NodeJS.ProcessEnv): string {
   const compareJsonRaw = execFileSync(
     'gh',
     ['api', `repos/{owner}/{repo}/compare/${EXPECTED_BASE_BRANCH}...${headSha}`],
-    {encoding: 'utf8', env},
+    {encoding: 'utf8', env, maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES},
   )
   const compareJson: unknown = JSON.parse(compareJsonRaw)
   assertCompareNotTruncated(compareJson)
@@ -652,7 +673,7 @@ function fetchDiffForSha(headSha: string, env: NodeJS.ProcessEnv): string {
       '-H',
       'Accept: application/vnd.github.v3.diff',
     ],
-    {encoding: 'utf8', env},
+    {encoding: 'utf8', env, maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES},
   )
 }
 
@@ -806,7 +827,7 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
  * env built by the caller.
  */
 const defaultGitDiffRunner: GitDiffRunner = (args: string[], env: NodeJS.ProcessEnv): string =>
-  execFileSync('git', args, {encoding: 'utf8', env})
+  execFileSync('git', args, {encoding: 'utf8', env, maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES})
 
 const defaultReposYamlReader: ReposYamlReader = async (path: string): Promise<string> => readFile(path, 'utf8')
 
@@ -838,6 +859,8 @@ export async function runPromotionCli(
   reposYamlReader: ReposYamlReader = defaultReposYamlReader,
   resolverFactory: ResolverFactory = defaultResolverFactory,
 ): Promise<number> {
+  // This path intentionally does not write scan_result: scheduled promotion runs post
+  // no commit status. If it gains a status surface, emit scan_result here too.
   const pat = process.env.FRO_BOT_POLL_PAT
   if (pat === undefined || pat === '') {
     process.stderr.write(
@@ -960,6 +983,7 @@ export async function main(
 ): Promise<void> {
   const eventPath = process.env.GITHUB_EVENT_PATH
   if (eventPath === undefined || eventPath === '') {
+    writeScanResult('error')
     process.stderr.write(
       'check-private-leak: GITHUB_EVENT_PATH not set. This script must run inside a GitHub Actions workflow_run event.\n',
     )
@@ -969,6 +993,7 @@ export async function main(
   // Fail-closed if FRO_BOT_POLL_PAT is absent — resolver cannot run without it.
   const pat = process.env.FRO_BOT_POLL_PAT
   if (pat === undefined || pat === '') {
+    writeScanResult('error')
     process.stderr.write(
       'check-private-leak: FRO_BOT_POLL_PAT not set. This is required to resolve private repo names.\n',
     )
@@ -988,6 +1013,7 @@ export async function main(
       headSha: scannedHeadSha,
     } = await readWorkflowRunContext(eventPath, workflowRunReader, prApiResolver))
   } catch (error) {
+    writeScanResult('error')
     process.stderr.write(`check-private-leak: ${error instanceof Error ? error.message : String(error)}\n`)
     process.exit(1)
   }
@@ -1001,12 +1027,14 @@ export async function main(
   try {
     privateNodeIds = fetchPrivateNodeIds(fullName, dataBranchChecker, mainReposYamlReader)
   } catch (error) {
+    writeScanResult('error')
     process.stderr.write(
       `check-private-leak: failed to fetch private node_ids — fail closed: ${error instanceof Error ? error.message : String(error)}\n`,
     )
     process.exit(1)
   }
   if (privateNodeIds.length === 0) {
+    writeScanResult('success')
     process.stdout.write('check-private-leak: no private entries found in metadata/repos.yaml — skipping scan\n')
     return
   }
@@ -1063,6 +1091,7 @@ export async function main(
       process.stderr.write(
         'check-private-leak: cannot guarantee a complete scan — refusing to pass the PR without full resolution\n',
       )
+      writeScanResult('error')
       process.exit(1)
     }
   }
@@ -1084,12 +1113,14 @@ export async function main(
   try {
     diff = fetchDiffForSha(scannedHeadSha, diffEnv)
   } catch (error) {
+    writeScanResult('error')
     process.stderr.write(`check-private-leak: ${error instanceof Error ? error.message : String(error)}\n`)
     process.exit(1)
   }
   const result = checkPrivateLeak(privateTokens, diff, override)
 
   if (result.ok) {
+    writeScanResult('success')
     if (titlePrefixed && isOperator) {
       process.stderr.write(
         `check-private-leak: ⚠️  override honored for operator ${author} — bypassing private-leak guard\n`,
@@ -1106,6 +1137,7 @@ export async function main(
 
   // Failure: print file paths only, never the matched name.
   // Redact any private token from the matched file paths before printing (parity with promotion path).
+  writeScanResult('detection')
   process.stderr.write('check-private-leak: FAILED — private repository name(s) detected in PR diff\n')
   process.stderr.write('\nMatched files:\n')
   for (const file of result.matchedFiles) {
