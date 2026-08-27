@@ -3984,3 +3984,23 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-28 12:00] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+No-op re-survey (second same-day dispatch after the 2026-08-28 00:00 pass). A survey of the *name* `marcusrbrown/marcusrbrown.github.io` again resolves to repo **id `1174807412`** — the mrbro.dev developer portfolio (canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-collision holds steady since 2026-07-20.
+
+`main` HEAD **byte-identical to the earlier pass**: still `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31) — frozen 28 days. `pushed_at` `2026-08-27T10:00:48Z` (PR-branch pushes only), `updated_at` still 2026-07-31, `open_issues_count` 13, stars 1. No tree drift: 8 workflows, single-file three-mode Fro Bot, single `30 3` cron; agent pin `fro-bot/agent@a4976f4 # v0.93.1`; pnpm 11.1.3 / Node >=24; `pnpm.overrides` empty; Renovate `#5.2.7`.
+
+Queue unchanged from the earlier pass: open issues 6 (#291 daily report / #287 / #271 / #270 / #261 / #258 / #212) + #1; open PRs 5, all carried, none merged since 2026-08-07 (#283 docs-duplicate / #266 security-remediation ~21d unmerged / #263/#254/#253). This pass additionally read the #291 report body — the daemon's own summary corroborates the stall: CI failed all 9 completed weekly runs on a shared `pnpm audit` root cause (7 high advisories across fast-uri/ip-address/brace-expansion/js-yaml/extract-zip/nanoid/postcss), #266 is the open remediation, and the report notes the agent pinned at v0.93.1 while v0.105.0 is current (Renovate owns the bump).
+
+Because the tree is frozen, no durable delta landed on [[marcusrbrown--mrbro-dev]]. Appended a "Second same-day pass" note to the 2026-08-28 delta log on [[marcusrbrown--marcusrbrown-github-io]] + a source row to keep the access chain continuous. Fro Bot workflow present and active — no onboarding follow-up draft PR warranted. `gh` credential gap again (`GH_TOKEN` unset; unauthenticated GitHub API + raw fetch only).
+
+Pages touched: knowledge/wiki/repos/marcusrbrown--marcusrbrown-github-io.md, knowledge/index.md, knowledge/log.md
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-27 16:40] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io

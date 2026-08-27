@@ -100,6 +100,9 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf
     accessed: 2026-08-28
+  - url: https://github.com/marcusrbrown/marcusrbrown.github.io
+    sha: 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf
+    accessed: 2026-08-28
 tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page, name-collision, superseded]
 aliases: [marcusrbrown-github-io]
 related:
@@ -582,6 +585,8 @@ The only queue motion since 2026-08-24 is the daily-report renumber; the substan
 The report-without-remediation / propose-without-merge pattern first flagged at 2026-06-12 remains fully hardened: 28 days of a frozen trunk, a security-remediation PR (#266) unmerged for ~21 days, a self-duplicated docs PR (#283-vs-#254), and a four-item CI least-privilege issue cluster the daemon files but the merge loop never lands. This cycle is quieter still — not even a new self-filed issue, only the daily-report renumber. The daemon audits and drafts; nobody promotes.
 
 `fro-bot.yaml` + `package.json` re-read at HEAD: agent pin steady `fro-bot/agent@a4976f45a51458c349eb232aa1795f6fa25d5500 # v0.93.1`; single `30 3 * * *` daily oversight+autoheal cron (#234 consolidation holds); `response-mode: none` on the scheduled pass; `Validate review mode inputs` guard + fork-guard + category-10 Upstream Modernization Watch (Sundays UTC) present. 8 workflows (`blog-refresh`, `ci`, `copilot-setup-steps`, `deploy`, `e2e-tests`, `fro-bot`, `performance`, `renovate`); Renovate `#5.2.7`; `package.json` (name `mrbro.dev`, `packageManager pnpm@11.1.3`, `engines.node >=24.0.0`, `pnpm.overrides` empty — ledger consolidated in `pnpm-workspace.yaml`). Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.** This run had a `gh` credential gap again (`GH_TOKEN` unset; unauthenticated GitHub API + raw fetch only) — the same authenticated-access gap the current occupant's own issue #212 tracks. No new facts about the *brand site* (id `1021912280`) were observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+
+**Second same-day pass (2026-08-28, dispatch re-run):** A re-dispatch against this name later on 2026-08-28 re-observed **byte-identical state** — id `1174807412` (mrbro.dev), `main` still `9e54dbc` (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z), `pushed_at` `2026-08-27T10:00:48Z`, `updated_at` `2026-07-31T21:42:16Z`, `open_issues_count` 13, stars 1, homepage `https://mrbro.dev/`, topics `blog/developer/github-pages/portfolio/react/typescript/vite`, license API-null (MIT declared in `package.json`). Queue unchanged: open issues 6 (#291 daily report / #287 / #271 / #270 / #261 / #258 / #212) + #1, open PRs 5 (#283 / #266 / #263 / #254 / #253), all carried — the **#283-vs-#254 docs duplicate** and the ~21-day-unmerged security PR #266 both still stand. This pass also read the #291 report body: the daemon's own run summary corroborates the stall — CI failed in all 9 completed runs this week on the shared `pnpm audit` root cause (7 high advisories across `fast-uri`/`ip-address`/`brace-expansion`/`js-yaml`/`extract-zip`/`nanoid`/`postcss`), #266 is the open remediation, and the report flags `fro-bot/agent` pinned at v0.93.1 while v0.105.0 is current (Renovate owns the bump). No trunk drift, no queue drift, no contradictions. Verified via authenticated-free reads (`api.github.com` repo + issues + `commits/main`); the same `gh` credential gap persists (`GH_TOKEN` unset). Recorded only to keep the source/access chain continuous; no durable delta on [[marcusrbrown--mrbro-dev]].
 
 ## Survey History
 
