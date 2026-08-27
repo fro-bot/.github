@@ -1687,6 +1687,102 @@ describe('main() — workflow_run event: happy path with pull_requests[] populat
   })
 })
 
+describe('main() — compare fetch buffer handling', () => {
+  it('passes an explicit large-output buffer to both compare API fetches', async () => {
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-buffer-options'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-buffer-options'}),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github')
+      .mockReturnValueOnce(makeYamlBase64(['R_buffer_options']))
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'org/repo'}}}))
+      .mockReturnValueOnce(makeCompareJson())
+      .mockReturnValueOnce('')
+
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await main(makeWorkflowRunReader(eventJson), prApiResolver)
+
+      const compareCalls = (mockExecFileSync.mock.calls as unknown[][]).filter(
+        call => call[0] === 'gh' && Array.isArray(call[1]) && String(call[1][1]).includes('/compare/'),
+      )
+      expect(compareCalls).toHaveLength(2)
+      for (const call of compareCalls) {
+        const options: unknown = call[2]
+        if (
+          typeof options !== 'object' ||
+          options === null ||
+          !('maxBuffer' in options) ||
+          typeof options.maxBuffer !== 'number'
+        ) {
+          throw new TypeError('compare call did not receive a numeric maxBuffer')
+        }
+        expect(options.maxBuffer).toBeGreaterThan(1024 * 1024)
+      }
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+
+  it('fails closed when the compare fetch exceeds its output buffer', async () => {
+    const eventJson = makeWorkflowRunEvent({headSha: 'sha-buffer-exceeded'})
+    const prApiResolver = makePrApiResolver({
+      prByNumber: makePrApiResponse({number: 42, headSha: 'sha-buffer-exceeded'}),
+    })
+
+    mockExecFileSync.mockReset()
+    mockExecFileSync
+      .mockReturnValueOnce('fro-bot/.github')
+      .mockReturnValueOnce(makeYamlBase64(['R_buffer_exceeded']))
+      .mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'org/repo'}}}))
+      .mockImplementationOnce(() => {
+        const error = new Error('spawnSync gh ENOBUFS') as Error & {code?: string}
+        error.code = 'ENOBUFS'
+        throw error
+      })
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((message: unknown) => {
+      stderrOutput.push(String(message))
+      return true
+    })
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(mockExecFileSync).toHaveBeenCalledTimes(4)
+      expect(stderrOutput.join('')).toContain('ENOBUFS')
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      mockExecFileSync.mockReset()
+    }
+  })
+})
+
 // ---------------------------------------------------------------------------
 // Regression lock: abbreviated pull_requests[] objects must NOT fail-closed
 // This is the exact live bug: abbreviated entries lack base.repo.full_name, so

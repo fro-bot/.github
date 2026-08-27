@@ -10,16 +10,37 @@
 import type {DetectEdge, MetricsDigest} from './improvement-metrics-detect.ts'
 import type {ImprovementMetricsReportOctokitClient} from './improvement-metrics-report.ts'
 
+import {randomUUID} from 'node:crypto'
+import {rm, writeFile} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 import {buildEdgeChecklistLine, buildReportVersionMarker, parseReportVersionMarker} from './improvement-metrics-core.ts'
+import {isMetricsDigest} from './improvement-metrics-detect.ts'
 import {
   IMPROVEMENT_METRICS_REPORT_TITLE,
+  main,
+  readDigestFile,
   renderReportBody,
   renderRunSummary,
   ReportRenderBlockedError,
   upsertReportIssue,
 } from './improvement-metrics-report.ts'
 import {makePublicOutputTokens, type PublicOutputTokens} from './status-truth-public-output.ts'
+
+const {mockCreateOctokitFromEnv, mockLoadRedactedCanonicalIdsFromDisk} = vi.hoisted(() => ({
+  mockCreateOctokitFromEnv: vi.fn(),
+  mockLoadRedactedCanonicalIdsFromDisk: vi.fn(),
+}))
+
+vi.mock('./capture-learnings-harvest.ts', () => ({
+  createOctokitFromEnv: mockCreateOctokitFromEnv,
+}))
+
+vi.mock('./status-truth-proposals.ts', () => ({
+  loadRedactedCanonicalIdsFromDisk: mockLoadRedactedCanonicalIdsFromDisk,
+}))
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -54,6 +75,12 @@ function makeEdge(overrides: Partial<DetectEdge> = {}): DetectEdge {
     ticked: false,
     ...overrides,
   }
+}
+
+async function writeDigestFixture(value: unknown): Promise<string> {
+  const path = join(tmpdir(), `improvement-metrics-digest-${randomUUID()}.json`)
+  await writeFile(path, typeof value === 'string' ? value : JSON.stringify(value), 'utf8')
+  return path
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +248,149 @@ const SAFE_TOKENS: PublicOutputTokens = makePublicOutputTokens({
 })
 
 const FAILED_TOKENS: PublicOutputTokens = {loaded: false, error: 'token load failure'}
+
+describe('readDigestFile', () => {
+  it('accepts a valid {digest, edges} shape', async () => {
+    const digest = makeDigest()
+    const edges = [makeEdge()]
+    const path = await writeDigestFixture({digest, edges})
+
+    try {
+      await expect(readDigestFile(path)).resolves.toEqual({digest, edges})
+    } finally {
+      await rm(path, {force: true})
+    }
+  })
+
+  it.each([
+    ['missing digest', {edges: []}],
+    ['missing edges', {digest: makeDigest()}],
+    ['edges is not an array', {digest: makeDigest(), edges: {}}],
+    ['top-level value is not an object', []],
+  ])('rejects malformed shape: %s', async (_name, value) => {
+    const path = await writeDigestFixture(value)
+
+    try {
+      await expect(readDigestFile(path)).rejects.toThrow(/digest file shape/u)
+    } finally {
+      await rm(path, {force: true})
+    }
+  })
+
+  it('rejects invalid JSON', async () => {
+    const path = await writeDigestFixture('{not-json')
+
+    try {
+      await expect(readDigestFile(path)).rejects.toThrow()
+    } finally {
+      await rm(path, {force: true})
+    }
+  })
+})
+
+describe('isMetricsDigest', () => {
+  it('accepts a fully valid digest', () => {
+    expect(isMetricsDigest(makeDigest())).toBe(true)
+  })
+
+  it('rejects a digest missing a required number', () => {
+    const missingAnchors: Record<string, unknown> = {...makeDigest()}
+    delete missingAnchors.anchors
+
+    expect(isMetricsDigest(missingAnchors)).toBe(false)
+  })
+
+  it('rejects a non-numeric required number', () => {
+    expect(isMetricsDigest({...makeDigest(), anchors: '4'})).toBe(false)
+  })
+
+  it('rejects NaN in a required number', () => {
+    expect(isMetricsDigest({...makeDigest(), anchors: Number.NaN})).toBe(false)
+  })
+
+  it('rejects Infinity in a required number', () => {
+    expect(isMetricsDigest({...makeDigest(), anchors: Number.POSITIVE_INFINITY})).toBe(false)
+  })
+
+  it('rejects undefined oldestPendingAgeDays', () => {
+    expect(isMetricsDigest({...makeDigest(), oldestPendingAgeDays: undefined})).toBe(false)
+  })
+
+  it('rejects an invalid report state', () => {
+    expect(isMetricsDigest({...makeDigest(), state: 'unknown'})).toBe(false)
+  })
+})
+
+interface ReportResultFixture {
+  outcome: string | null
+  tokenLoadFailure: boolean
+  digestReadFailure: boolean
+}
+
+describe('main digest-read failure handling', () => {
+  it('treats a malformed digest like an unreadable digest: sets digestReadFailure and performs no issue write', async () => {
+    const malformedPath = join(tmpdir(), `improvement-metrics-malformed-${randomUUID()}.json`)
+    const resultPath = join(tmpdir(), `improvement-metrics-result-${randomUUID()}.json`)
+    const malformed = await runMainWithDigestPath(malformedPath, resultPath, {digest: makeDigest()})
+    const unreadable = await runMainWithDigestPath(`${malformedPath}-missing`, resultPath)
+
+    try {
+      expect(malformed.result).toEqual(unreadable.result)
+      expect(malformed.result).toEqual({outcome: null, tokenLoadFailure: false, digestReadFailure: true})
+      expect(malformed.stderr).toContain('digest file has invalid shape')
+      expect(malformed.stdout).toBe('{"outcome":null,"tokenLoadFailure":false,"digestReadFailure":true}\n')
+      expect(malformed.create).not.toHaveBeenCalled()
+      expect(malformed.update).not.toHaveBeenCalled()
+      expect(unreadable.create).not.toHaveBeenCalled()
+      expect(unreadable.update).not.toHaveBeenCalled()
+    } finally {
+      await rm(malformedPath, {force: true})
+      await rm(resultPath, {force: true})
+    }
+  })
+})
+
+async function runMainWithDigestPath(
+  digestPath: string,
+  resultPath: string,
+  digestValue?: unknown,
+): Promise<{
+  result: ReportResultFixture
+  stderr: string
+  stdout: string
+  create: ReturnType<typeof vi.fn>
+  update: ReturnType<typeof vi.fn>
+}> {
+  if (digestValue !== undefined) {
+    await writeFile(digestPath, JSON.stringify(digestValue), 'utf8')
+  }
+
+  const mock = makeMockOctokit({listResponses: [{data: []}]})
+  mockLoadRedactedCanonicalIdsFromDisk.mockResolvedValue(new Set())
+  mockCreateOctokitFromEnv.mockResolvedValue({rest: mock.octokit})
+  process.env.IMPROVEMENT_METRICS_DIGEST_PATH = digestPath
+  process.env.IMPROVEMENT_METRICS_RESULT_PATH = resultPath
+  const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+  const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+  try {
+    await main()
+    const output = String(stdoutSpy.mock.calls.at(-1)?.[0] ?? '')
+    const errorOutput = stderrSpy.mock.calls.map(call => String(call[0])).join('')
+    return {
+      result: JSON.parse(output) as ReportResultFixture,
+      stderr: errorOutput,
+      stdout: output,
+      create: mock.create,
+      update: mock.update,
+    }
+  } finally {
+    stdoutSpy.mockRestore()
+    stderrSpy.mockRestore()
+    delete process.env.IMPROVEMENT_METRICS_DIGEST_PATH
+    delete process.env.IMPROVEMENT_METRICS_RESULT_PATH
+  }
+}
 
 describe('upsertReportIssue', () => {
   it('creates once with the STATIC title + body + marker when no report issue exists (happy path)', async () => {

@@ -157,9 +157,9 @@ describe('improvement-metrics.yaml workflow contract', () => {
     expect(agentStep).toBeUndefined()
   })
 
-  it('the report node|tee pipeline runs under pipefail so a node failure fails the step', () => {
+  it('the report step runs the result-file-owning script directly under pipefail', () => {
     const reportStep = reportJob?.steps.find(step => step.id === 'report')
-    expect(String(reportStep?.run ?? '')).toContain('| tee')
+    expect(String(reportStep?.run ?? '').trim()).toBe('node scripts/improvement-metrics-report.ts')
     expect(String((reportStep as WorkflowStep & {shell?: string})?.shell ?? '')).toContain('pipefail')
   })
 

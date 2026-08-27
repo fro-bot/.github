@@ -211,6 +211,10 @@ env:
        Find open PRs with failing CI. Skip dependency/security PRs here (handle
        in category 2). Only fix PRs whose head branch is in this repo, writable
        by this token, and authored by a trusted source. For each fixable PR:
+       inspect both sources: check runs and legacy commit statuses. `gh pr checks`
+       and `/commits/{sha}/check-runs` enumerate check runs only; legacy statuses
+       are separate `/commits/{sha}/status` records, so inspect both and report
+       failures from either source under "Errored PRs".
        check out the branch, read the failing check logs, diagnose the root
        cause, apply a focused fix, push to that PR branch, and post a concise PR
        comment (root cause, fix applied, remaining risk). If the PR touches
@@ -262,8 +266,15 @@ env:
        Scan for durable improvement opportunities: tool-version drift in
        package.json (ESLint, Prettier, TypeScript, Vitest more than a minor
        behind), missing or degraded CI jobs, convention drift from
-       copilot-instructions.md, and stale TODO/FIXME annotations. Report under
-        "Progressive Improvement"; make no changes here.
+       copilot-instructions.md, and stale TODO/FIXME annotations. Also scan
+       open issues labeled `learning-proposal`: the expected action for each
+       is authoring the learning into `docs/solutions/`, so any older than 14
+       days, or two or more open at once, means the compounding pipeline has
+       stalled. Report the count and ages. Do not treat a `healthy` reading on
+       the Improvement Metrics report (#3674) as evidence this is fine —
+       unauthored proposals never become classes there, so that report stays
+       green precisely while this is stalled. Report under "Progressive
+       Improvement"; make no changes here.
 
     8. GATEWAY OPERATOR CONTROL-SURFACE ROLLOUT TRACKER
        Review awareness only. Check whether the Gateway operator control-surface
@@ -463,7 +474,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@25cb559971ceb5fb7c127b8d6ac70b7c1d804669 # v0.96.1
+        uses: fro-bot/agent@335e4f8a9c74f7fe7a40565d23acfbf321dc983e # v0.105.0
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}

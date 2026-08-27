@@ -950,7 +950,7 @@ Renovate dispatch, metadata refresh, and wiki lint. Scheduled autonomy ships onl
 ## Sources & References
 
 - **Origin document:** [docs/brainstorms/2025-04-15-frobot-control-plane-requirements.md](/docs/brainstorms/2025-04-15-frobot-control-plane-requirements.md)
-- **Rewrite directives:** [docs/plans/2025-04-15-001-frobot-control-plane-DIRECTIVES.md](/docs/plans/2025-04-15-001-frobot-control-plane-DIRECTIVES.md)
+- **Rewrite directives:** `docs/plans/2025-04-15-001-frobot-control-plane-DIRECTIVES.md` (historical source, not present in this repository)
 - **Karpathy wiki pattern reference:** `fro-bot/agent/docs/wiki/`
 - **bfra-me/.github:** Renovate dispatch and metadata maintenance patterns
 - **GitHub APIs:** repository invitations, starring, pull requests, contents updates, and workflow dispatch

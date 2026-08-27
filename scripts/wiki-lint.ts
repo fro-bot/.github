@@ -3,6 +3,7 @@ import {appendFile, readdir, readFile, writeFile} from 'node:fs/promises'
 import {join} from 'node:path'
 import process from 'node:process'
 
+import {resolveMarkdownLinks} from './markdown-links.ts'
 import {collectWikilinks, collectPageTargets as collectWikiPageTargets, splitFrontmatter} from './wiki-utils.ts'
 
 const PAGE_PATH_PATTERN = /^knowledge\/wiki\/[^/]+\/.+\.md$/u
@@ -11,6 +12,7 @@ const STALE_DAYS = 90
 
 export type WikiLintFindingKind =
   | 'broken-wikilink'
+  | 'broken-markdown-link'
   | 'orphan-page'
   | 'index-drift'
   | 'missing-frontmatter'
@@ -232,6 +234,23 @@ export function lintWikiSnapshot(params: LintWikiSnapshotParams): WikiLintResult
 
   const deterministicFindings: WikiLintFinding[] = []
   const advisoryFindings: WikiLintFinding[] = []
+
+  const markdownLinkSources: readonly {readonly path: string; readonly content: string}[] = [
+    {path: 'knowledge/index.md', content: params.files['knowledge/index.md'] ?? ''},
+    ...pages.map(page => ({path: page.path, content: page.content})),
+  ]
+  for (const source of markdownLinkSources) {
+    for (const link of resolveMarkdownLinks(source.content, source.path, {files: params.files})) {
+      if (!link.exists) {
+        deterministicFindings.push({
+          kind: 'broken-markdown-link',
+          path: source.path,
+          target: link.target,
+          message: `Broken markdown link to ${link.target}`,
+        })
+      }
+    }
+  }
 
   for (const page of pages) {
     const missingFields = REQUIRED_FRONTMATTER_FIELDS.filter(field => !hasNonEmptyString(page.frontmatter[field]))
