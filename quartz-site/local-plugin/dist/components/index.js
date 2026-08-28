@@ -15,7 +15,7 @@ const Sources = () => {
         safeSources.map((src, i) =>
           h("li", { key: i },
             h("a", { href: src.url, target: "_blank", rel: "noopener noreferrer" }, src.url),
-            src.sha ? h("span", { class: "source-sha" }, ` (${src.sha.slice(0, 7)})`) : null,
+            src.sha ? h("span", { class: "source-sha" }, ` (${String(src.sha).slice(0, 7)})`) : null,
             src.accessed ? h("span", { class: "source-accessed" }, ` - accessed ${src.accessed}`) : null
           )
         )
