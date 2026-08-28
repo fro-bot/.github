@@ -210,6 +210,10 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # Lookup assumes at least one prior successful upsert created the report
+          # issue; a failure before that first upsert has nothing to comment on and
+          # exits 1 by design. Title filter is deliberately stricter than the report
+          # script's label-only lookup — the two need not stay identical.
           issue_number="$(gh issue list \
             --repo "$REPOSITORY" \
             --state open \
