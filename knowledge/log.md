@@ -4004,3 +4004,25 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-29 00:00] ingest | marcusrbrown/.github
+
+Re-survey of `marcusrbrown/.github` (HEAD `66270bac`, up from `7ce5ae7`). Updated repo page `marcusrbrown--github.md` (frontmatter source + `updated`, Overview last-push, structure table workflow pins, shared-workflows SHA/version, Fro Bot integration section, new survey-history row) and its `index.md` entry (expanded from the prior thin one-liner). No new topic/entity/comparison pages warranted — the repo remains structurally frozen; all cross-cutting patterns already cataloged.
+
+Delta from prior survey (SHA `7ce5ae7`, 2026-07-28) — **dependency-only churn, no structural change:**
+
+- `bfra-me/.github` reusable workflows advanced **v4.16.41 → v4.22.0** (latest merge #418, `chore(deps): update bfra-me/.github action to v4.22.0`, 2026-08-27), now pinned at SHA `b830359a19878c0dd40b92b2c8b60673e71dceac` in both `renovate.yaml` and `update-repo-settings.yaml` — crosses the v4.16 → v4.22 minor band in one interval.
+- Prettier steady at **3.9.6** (`main.yaml` `PRETTIER_VERSION` env + `renovate.json5` post-upgrade task unchanged); `actions/checkout` steady at **v5.1.0** (`fbc6f399`).
+- `common-settings.yaml`, `settings.yml`, `.prettierrc.yaml`, and the `main.yaml` Lint job all unchanged; **same 15-blob file tree, no new paths, no `fro-bot.yaml`.**
+- `renovate.json5` preset still `marcusrbrown/renovate-config#4.5.9` — **v4.x holdout**, now ~14 weeks behind `marcusrbrown/renovate-config` at v5.2.x.
+- **Still no Fro Bot agent workflow (13th consecutive survey)** — follow-up draft PR to add the single-file three-mode `fro-bot.yaml` template remains open. `fro-bot` retains `push` collaborator access via the settings template but is not in the merge loop; recent PRs are Renovate bumps auto-merged by `mrbro-bot[bot]`.
+- 2 open issues (#37 move-settings-action, #214 Dependency Dashboard), 0 open PRs, 4 stars, 2 watchers. `pushed_at` 2026-08-27T02:02Z.
+- Surveyed via unauthenticated public GitHub REST + raw-file reads (no repo credentials in this run environment); reads limited to directory tree, workflow files, `renovate.json5`, `settings.yml`, `common-settings.yaml`, and issue listing per the untrusted-input read constraints.
+
+Sources: https://github.com/marcusrbrown/.github (SHA 66270bac1d3c7b814972b59268e95f6646d7a6c5)
+
+## [2026-08-28 17:30] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/.github
