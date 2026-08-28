@@ -69,7 +69,7 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
     if (typeof source === 'string') {
       if (!source.startsWith('github:')) continue // not a remote plugin
       enabledRemoteSources.add(source)
-      const entry = Object.values(lockPlugins).find(p => p.source === source)
+      const entry = Object.values(lockPlugins).some(p => p.source === source)
       if (!entry) errors.push(`missing lock entry for enabled remote plugin: ${source}`)
       continue
     }
@@ -83,7 +83,7 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
       if (typeof source.repo === 'string' && source.repo.length > 0) {
         const normalized = `github:${source.repo}`
         enabledRemoteSources.add(normalized)
-        const entry = Object.values(lockPlugins).find(p => p.source === normalized)
+        const entry = Object.values(lockPlugins).some(p => p.source === normalized)
         if (!entry) errors.push(`missing lock entry for enabled remote plugin: ${normalized}`)
       }
     }
