@@ -2,7 +2,7 @@
 type: repo
 title: "marcusrbrown/tokentoilet"
 created: 2026-04-18
-updated: 2026-07-18
+updated: 2026-08-19
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -31,6 +31,9 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 8d7648c7e0e57fafbb13778689ae1b7bacbe72d0
     accessed: 2026-07-18
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: 74368593b059e21ede67df7d0e2524cedb3b75e4
+    accessed: 2026-08-19
 tags: [next-js, react, web3, defi, wagmi, reown-appkit, tailwindcss, vitest, storybook, vercel, typescript, sepolia, alchemy, viem, code-splitting]
 aliases: [tokentoilet]
 related:
@@ -47,14 +50,15 @@ A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens,
 - **Purpose:** Web3 DeFi token disposal and charity donation platform
 - **Default branch:** `main`
 - **Created:** 2023-07-05
-- **Last push:** 2026-07 (HEAD `8d7648c` as of 2026-07-18)
+- **Last push:** 2026-08-19 (HEAD `7436859` as of 2026-08-19)
 - **Homepage:** https://v0-token-toilet-mrbro-dev.vercel.app
+- **Description:** "Chump and dump" (changed from prior blank/default GitHub description as of the 2026-08-19 survey — a terse token-disposal pun, matching the repo's dry register)
 - **Topics:** `next-js`, `react`
 - **License:** None specified
-- **Visibility:** Public
-- **Package manager:** pnpm 11.11.0 (was 11.9.0 as of 2026-07-03 → 11.11.0; bumped in non-major batches)
-- **Open issues:** 4 (Dependency Dashboard #995, Daily Autohealing Report #1013, #1171 E2E migration for jsdom-limited wallet integration tests — replaces the closed #1142; #1189 docs drift: copilot instructions reference pnpm 11.7.0). Note: #1143 (design-system/Web3 validation gates) has been resolved and closed — see below.
-- **Open PRs:** 0 (was 5 on 2026-06-20) — the entire queue cleared. #1033 (`@bfra.me/eslint-config` v0.51.1) landed 2026-06-20 after 35+ days blocked; both fro-bot security override PRs (#1156, #1144) and the lint-cleanup PR merged; Renovate is keeping pace with an empty backlog.
+- **Visibility:** Public (not archived — a transient `isArchived: true` flag seen in one 2026-08-19 org-list snapshot did not hold on direct repo read; `archived: false` confirmed at HEAD)
+- **Package manager:** pnpm 11.22.0 (11.11.0 → 11.22.0 across this cycle; bumped in non-major batches)
+- **Open issues:** 7 (Dependency Dashboard #995, Daily Autohealing Report #1013, #1171 E2E migration for jsdom-limited wallet integration tests, #1189 docs drift: copilot instructions reference pnpm 11.7.0, plus three new autoheal-surfaced hygiene issues: #1241 daily coverage regression, #1284 AGENTS.md overstates `pnpm validate` coverage, #1347 AGENTS.md command reference drift).
+- **Open PRs:** 8 (was 0 on 2026-07-18) — the queue refilled with a **security-remediation cluster**. Six fro-bot-authored `fix(security)` PRs remediate transitive advisories via `pnpm.overrides`: #1303 axios (clean), #1309 fast-uri (clean), #1310 sharp (clean), #1326 js-yaml (clean), #1327 brace-expansion (clean), #1370 nanoid (dirty — lockfile conflict). Plus #1298 (`chore(web3): enforce component hook abstraction` — routes `WalletAutoConnect` through `useWallet` + regression test, clean) and #1400 (`chore(deps): maintain lockfiles`, `mrbro-bot[bot]`, unstable). Several security PRs sat open 3–4 weeks; the merge-conflict-dirty ones (#1370, #1303) are stalling on lockfile drift as newer bumps land underneath.
 
 ## Core Concept
 
@@ -114,25 +118,40 @@ Concurrent hygiene refactors landed in the same Unreleased window and resolved l
 
 Still not implemented after this cycle: smart contracts, NFT receipts, charity routing, token fountain, mainnet/multi-chain. Sepolia-only lock unchanged.
 
+### Hygiene & Dependency Cycle (as of 2026-08-19)
+
+The 2026-07-18 → 2026-08-19 window is **dependency-churn-dominated with two durable hygiene wins** — no new feature code. The `CHANGELOG.md` Unreleased section is byte-for-byte unchanged from the prior survey: the Dynamic Loading Infrastructure is still marked "infrastructure complete, awaiting feature page implementation." The staged bundle win has now sat un-integrated for a full cycle — the "dead chrome" risk flagged at 2026-07-18 is materializing.
+
+Two structural hygiene changes did land, both resolving tensions this wiki has tracked for months:
+
+- **`process.env` access is now enforced-centralized.** A new root `process-env.test.ts` recursively scans `app/`, `components/`, `hooks/`, `lib/` for any `process.env` reference and fails the suite unless the only offender is `env.ts` (`allowedFiles = new Set(['env.ts'])`, excluding `.test.tsx?`/`.stories.tsx?`). This retires the "`process.env.NODE_ENV` used in 4 source files directly instead of the `env` import" footgun noted across prior surveys — the mandate is now a test gate, not a convention. `env.ts` also moved to the repository root (from `config/`), so the typed-env module sits alongside `next.config.ts`.
+- **Hook-abstraction enforcement in flight.** PR #1298 (`chore(web3): enforce component hook abstraction`) routes `WalletAutoConnect`'s auto-reconnect through `useWallet` instead of calling AppKit directly from a component, and adds a regression test that fails when components reach past the abstraction. This is the "components never import wagmi/AppKit directly" architecture rule (see Architecture Patterns) being converted from documented convention to enforced invariant — the same convention-to-gate move as `process-env.test.ts`. Open, clean, not yet merged.
+
+- **`readme.md` lowercased** — filename normalized to lowercase `readme.md` (matches the lowercase-community-file pattern seen in sibling repos like [[bfra-me--works]]).
+
+The dependency churn underneath: Fro Bot agent **v0.93.1 → v0.100.0** (SHA `7b9a281`; crossed the v1.00 milestone pin), `bfra-me/.github` reusable workflows **v4.16.37 → v4.18.0** (SHA `647b362`), Renovate preset **#5.2.7 → #5.2.12**, pnpm **11.11.0 → 11.22.0**, Next.js **16.2.10 → 16.3.1** (minor), React **19.2.7 → 19.2.8**, viem **2.55.2 → 2.55.16**, Storybook core **10.5.0 → 10.5.8** (alpha addons unchanged — 5th cycle), ESLint **10.7.0 → 10.8.1**, Vite **8.1.4 → 8.2.1**, postcss → 8.5.26, prettier 3.9.6, `@types/node` 24.13.3, `lucide-react` 0.577.0. `actions/checkout` v6.1.0, `actions/upload-artifact` v7.0.1, `actions/dependency-review-action` v5.0.0 pinned in `ci.yaml`.
+
+Still not implemented after this cycle: smart contracts, NFT receipts, charity routing, token fountain, mainnet/multi-chain. Sepolia-only lock unchanged.
+
 ## Tech Stack
 
 | Layer      | Technology                  | Version                        |
 | ---------- | --------------------------- | ------------------------------ |
-| Framework  | Next.js (App Router)        | 16.2.10                        |
-| UI library | React                       | 19.2.7                         |
+| Framework  | Next.js (App Router)        | 16.3.1                         |
+| UI library | React                       | 19.2.8                         |
 | Language   | TypeScript                  | 6.0.3                          |
 | Web3       | Wagmi v3 + Reown AppKit     | wagmi ^3.0.0 / appkit ^1.7.18  |
-| Styling    | Tailwind CSS v4 (CSS-first) | 4.3.2                          |
+| Styling    | Tailwind CSS v4 (CSS-first) | 4.3.3                          |
 | Testing    | Vitest                      | 4.1.10                         |
-| Components | Storybook                   | 10.5.0 (mixed with stale 9.0.0-alpha.* addons) |
+| Components | Storybook                   | 10.5.8 (mixed with stale 9.0.0-alpha.* addons — 5th cycle) |
 | Deployment | Vercel (GitHub integration) | —                              |
 | State      | TanStack React Query        | ^5.66.0                        |
-| Virtualization | TanStack React Virtual  | ^3.13.12 (new — token list rendering) |
+| Virtualization | TanStack React Virtual  | ^3.13.12 (token list rendering) |
 | Validation | Zod                         | ^4.1.8                         |
-| Chain RPC  | viem (now direct devDep)    | 2.55.2                         |
+| Chain RPC  | viem (direct devDep)        | 2.55.16                        |
 | Discovery  | Alchemy (`alchemy_getTokenBalances`) | via `NEXT_PUBLIC_ALCHEMY_API_KEY` |
-| Build      | Vite (dev tooling)          | 8.1.4                          |
-| Lint       | ESLint                      | 10.7.0                         |
+| Build      | Vite (dev tooling)          | 8.2.1                          |
+| Lint       | ESLint                      | 10.8.1                         |
 
 ## Repository Structure
 
@@ -218,7 +237,7 @@ Vercel handles deployment via its GitHub integration:
 
 ## Fro Bot Integration
 
-**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.93.1` (SHA `a4976f45a51458c349eb232aa1795f6fa25d5500`, bumped via Renovate from v0.82.0 to v0.93.1 across ~11 releases between 2026-07-03 and 2026-07-18) with:
+**Fro Bot workflow is present** (`fro-bot.yaml`). Uses `fro-bot/agent@v0.100.0` (SHA `7b9a2816e4d12315f21134bde48858e0e12baddb`, bumped via Renovate from v0.93.1 to v0.100.0 between 2026-07-18 and 2026-08-19 — crossing the v1.00 milestone pin) with:
 
 - **PR Review:** Structured review with Web3 security focus, mandatory verdict (PASS/CONDITIONAL/REJECT), specific review sections for blocking issues, Web3 security assessment, missing tests, risk assessment.
 - **Daily Autohealing (schedule):** Five-category sweep — errored PRs, security, code quality/hygiene, developer experience, quality gates. Produces a single summary issue per run. Respects Renovate ownership of dependency bumps.
@@ -241,10 +260,10 @@ The Fro Bot workflow conditionals filter out: fork PRs, bot-authored PRs/issues,
 - **ESLint:** `@bfra.me/eslint-config` with React, Next.js, and Prettier plugins.
 - **Bundle analysis:** `@next/bundle-analyzer` available via `NEXT_BUILD_ENV_ANALYZE=true`.
 - **Environment:** `@t3-oss/env-nextjs` + Zod for typed environment validation. Access via `import {env} from '@/env'`, never `process.env`.
-- **Renovate:** Via reusable workflow, extends `marcusrbrown/renovate-config#5.2.7` (bumped 5.2.4 → 5.2.7 between surveys; tracks the [[marcusrbrown--renovate-config]] release line). Post-upgrade tasks run `pnpm install` + `pnpm run fix`. Custom rule: `lucide-react` 0.x minor automerge monthly; v1 pending approval in Dependency Dashboard. Same preset ecosystem as [[marcusrbrown--ha-config]] and [[marcusrbrown--vbs]].
+- **Renovate:** Via reusable workflow, extends `marcusrbrown/renovate-config#5.2.12` (bumped 5.2.7 → 5.2.12 between surveys; tracks the [[marcusrbrown--renovate-config]] release line). Config lives in `.github/renovate.json5`. Post-upgrade tasks run `pnpm install` + `pnpm run fix` (branch execution mode). Custom rule: `lucide-react` 0.x minor automerge monthly; v1 pending approval in Dependency Dashboard. Same preset ecosystem as [[marcusrbrown--ha-config]] and [[marcusrbrown--vbs]].
 - **Abandoned dependencies flagged by Renovate:** `@testing-library/user-event` (last updated 2025-01-21), `class-variance-authority` (2024-11-26), `clsx` (2024-04-23), `consola` (2025-03-18), `crypto-js` (2023-10-24), `vitest-axe` (2025-01-22). These are in the Dependency Dashboard #995 but no replacements have been actioned.
 - **Deprecated packages:** `@metamask/sdk` and `@metamask/sdk-communication-layer` flagged as deprecated with no available replacement PRs.
-- **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` via `bfra-me/.github` reusable workflow (pinned v4.16.37, SHA `058b812`, as of 2026-07-18; was v4.16.33 prior survey). Branch protection requires: Build, Build Storybook, Lint, Renovate, Security Audit, Test. Linear history enforced, admin enforcement enabled, no required PR reviews.
+- **Probot Settings:** Extends `.github:common-settings.yaml` via `bfra-me/.github` reusable workflow (pinned v4.18.0, SHA `647b362`, as of 2026-08-19; was v4.16.37 prior survey). Branch protection requires: Build, Build Storybook, Lint, Renovate, Security Audit, Test. Linear history enforced, admin enforcement enabled, no required PR reviews.
 
 ## Architecture Patterns
 
@@ -277,11 +296,11 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | Pattern              | tokentoilet                            | ha-config       | vbs      |
 | -------------------- | -------------------------------------- | --------------- | -------- |
 | Probot settings base | `fro-bot/.github:common-settings.yaml` | Same            | Same     |
-| Renovate preset      | `marcusrbrown/renovate-config#5.2.7`   | `#4.5.8`        | `#4.5.8` |
+| Renovate preset      | `marcusrbrown/renovate-config#5.2.12`  | `#4.5.8`        | `#4.5.8` |
 | ESLint config        | `@bfra.me/eslint-config`               | N/A (YAML repo) | Same     |
 | Prettier config      | `@bfra.me/prettier-config/120-proof`   | N/A             | Same     |
-| Package manager      | pnpm 11.11.0                           | N/A (YAML repo) | pnpm     |
-| Fro Bot workflow     | Present (v0.93.1)                      | **Missing**     | Present  |
+| Package manager      | pnpm 11.22.0                           | N/A (YAML repo) | pnpm     |
+| Fro Bot workflow     | Present (v0.100.0)                     | **Missing**     | Present  |
 | Copilot setup steps  | Present                                | Not present     | Present  |
 | AGENTS.md            | Present                                | Not present     | Present  |
 
@@ -292,7 +311,7 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 - **Storybook alpha:** Using Storybook 10.4.6 / 9.0.0-alpha.* releases — mixed pinning is a known footgun (addons at alpha vs. core at stable). **Update (2026-07-03):** the 5-of-15 missing component test/story files were completed in #1168 (design-system coverage closed, #1143 resolved); the alpha-vs-stable addon split itself persists.
 - **TypeScript 6:** Early adopter of TS 6.0.3.
 - **No license:** The repo has no license file specified, which is unusual for a public repository.
-- **Persistent lint warnings (not errors):** As of 2026-07-03 there were 8 lint warnings on `main`: 4 `@eslint-react/jsx-no-leaked-dollar` false positives (currency `$` display in JSX), 2 ref naming, 2 setState-in-effect. **Update (2026-07-18):** the ref-naming and setState-in-effect warnings were retired by the hooks best-practices refactor (#619–#622) and Fast Refresh compliance work (#601–#605). The `jsx-no-leaked-dollar` currency false positives are the likely remainder. `process.env.NODE_ENV` used in 4 source files directly instead of `env` import — unresolved tension between the mandate and `NODE_ENV` not being in `experimental__runtimeEnv`.
+- **Persistent lint warnings (not errors):** As of 2026-07-03 there were 8 lint warnings on `main`: 4 `@eslint-react/jsx-no-leaked-dollar` false positives (currency `$` display in JSX), 2 ref naming, 2 setState-in-effect. **Update (2026-07-18):** the ref-naming and setState-in-effect warnings were retired by the hooks best-practices refactor (#619–#622) and Fast Refresh compliance work (#601–#605). The `jsx-no-leaked-dollar` currency false positives are the likely remainder. **Update (2026-08-19):** the `process.env`-in-source tension is now resolved by enforcement — `process-env.test.ts` gates all `app`/`components`/`hooks`/`lib` files to `env.ts`-only `process.env` access. If direct-`NODE_ENV` usage remained, that test would be red; its presence on `main` means the source was cleaned to satisfy the gate.
 - **Web3 validation false positives:** `scripts/validate-web3-integration.ts` flagged 2 issues: multi-chain support config.ts false-positive, and Button missing Web3 variant styles. These persisted without resolution across multiple daily autohealing runs — **resolved 2026-07-03 in #1168**, which realigned the validator to actual MVP scope (Sepolia-only) rather than the deferred multi-chain vision.
 - **Security posture clean:** 0 moderate+ vulnerabilities on `main` as of 2026-06-09. 1 low advisory (elliptic, no patched version). `qs` advisory resolved in a prior cycle. The two fro-bot security override PRs opened 2026-06-20 (#1156 undici/ws/form-data/js-yaml, #1144 esbuild) both merged this cycle.
 - **Fro Bot agent rapid churn:** v0.45.0 → v0.59.0 between 2026-05-28 and 2026-06-09 (14 separate Renovate PRs merged). Aggressive Renovate automerge cadence for `fro-bot/agent` is intentional per workflow config.
@@ -313,7 +332,20 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | 2026-06-09 | `76d543e` | **Dependency velocity sprint**: 20 commits since 2026-06-04, all Renovate non-major bumps + Fro Bot agent releases. Fro Bot v0.45.0→v0.59.0 (14 releases merged). pnpm 11.3.0→11.5.2. Next.js 16.2.6→16.2.7. React 19.2.6→19.2.7 (react monorepo). vite→8.0.16, vitest→4.1.8, eslint→10.4.1, Storybook→10.4.2. Renovate preset bumped to #5.2.1. bfra-me/.github reusable workflow→v4.16.24. Only 1 PR open (PR #1033, blocked). Perpetual autohealing issue #1013 active, design system / Web3 validation failures stable for 12+ days. |
 | 2026-06-20 | `3be6b76` | **Continued Renovate/Fro Bot churn, no structural change**: ~40 commits since 2026-06-09, all dependency bumps. Fro Bot v0.59.0→v0.71.0 (~20 releases merged). pnpm 11.5.2→11.7.0. Next.js 16.2.7→16.2.9. Storybook→10.4.6, vitest→4.1.9, eslint→10.5.0, tailwindcss→4.3.1, prettier→3.8.4. Renovate preset #5.2.1→#5.2.3, bfra-me/.github→v4.16.27. Open PRs 1→5: two new fro-bot security overrides (#1156 undici/ws/form-data/js-yaml, #1144 esbuild) + lint cleanup #1157 + Renovate #1153; #1033 still blocked (35+ days). Autoheal extracted its two stable human-decision blockers into standalone issues #1142 (stale wallet-test TODOs) and #1143 (design-system/Web3 validation gates). New root docs: `CHANGELOG.md`, `CONTRIBUTING.md`, `mvp.md`, `.env.example`. |
 | 2026-07-03 | `c6e10e0` | **Feature work resumes — disposal path matures from scaffold to functional**: the churn-only streak broke. Real token discovery via Alchemy `getTokenBalances` (#1179, fail-closed — no static fallback), transfer simulation before signature (#1175), discovery error hardening (#1180/#1183/#1184), analytics telemetry flipped to opt-in/off (#1174, privacy), design-system coverage completed + Web3 validator aligned to MVP (#1168, closes #1143), mainnet readiness spike → NO-GO (#1178). `viem` promoted to direct devDep (2.54.1). Dep churn continued underneath: Fro Bot v0.71.0→v0.82.0 (~15 releases), pnpm 11.7.0→11.9.0, Renovate preset #5.2.3→#5.2.4, prettier→3.9.4, vite→8.1.2, eslint→10.6.0, tailwindcss→4.3.2, bfra-me/.github→v4.16.33. Open PRs 5→0 (queue fully cleared; #1033 landed). Open issues: #1142 closed, #1143 resolved; new #1171 (E2E migration) and #1189 (docs drift). |
+| 2026-08-19 | `7436859` | **Hygiene-gate + dependency cycle — no new feature code.** Two conventions became CI-enforced test gates: new root `process-env.test.ts` fails if any `app`/`components`/`hooks`/`lib` file touches `process.env` outside `env.ts` (retires the long-tracked process.env footgun), and PR #1298 adds a regression test enforcing the `useWallet` hook abstraction. `env.ts` moved to repo root; `readme.md` lowercased. CHANGELOG Unreleased byte-identical to prior — Dynamic Loading Infrastructure still staged/un-integrated (bundle win aging in place). Security cluster: PR queue 0 → 8 with six fro-bot `fix(security)` override PRs (axios #1303, fast-uri #1309, sharp #1310, js-yaml #1326, brace-expansion #1327, nanoid #1370 — #1370/#1303 dirty on lockfile drift) + hook-abstraction #1298 + lockfile #1400. Dep churn: Fro Bot v0.93.1 → **v0.100.0** (SHA `7b9a281`, crossed v1.00 pin), bfra-me/.github v4.16.37 → v4.18.0, Renovate preset #5.2.7 → #5.2.12, pnpm 11.11.0 → 11.22.0, Next.js 16.2.10 → 16.3.1, React 19.2.7 → 19.2.8, viem 2.55.2 → 2.55.16, Storybook core 10.5.0 → 10.5.8 (alpha addons unchanged, 5th cycle), ESLint 10.7.0 → 10.8.1, Vite 8.1.4 → 8.2.1. Open issues 4 → 7 (new #1241 coverage regression, #1284/#1347 AGENTS.md accuracy). Description set to "Chump and dump". |
 | 2026-07-18 | `8d7648c` | **Performance/bundle cycle — disposal path gets code-split.** Headline: Dynamic Loading Infrastructure (`CHANGELOG.md` Unreleased) — 10+ `next/dynamic` wrappers for Web3 components with Suspense boundaries, 7 skeleton loaders, error boundary with `1s→2s→4s→8s` retry backoff, and import telemetry (#641–#646). Targets 50–100 KB (10–18%) initial-bundle reduction, but staged: "infrastructure complete, awaiting feature-page implementation." New deps track this: `@tanstack/react-virtual` (^3.13.12), `lru-cache` (^11.2.4), `std-env`. Concurrent lint-debt cleanup retired prior warnings: Fast Refresh compliance (variant/util extraction, #601–#605) and hooks best-practices refactor (setState/ref-in-effect fixes, #619–#622). Dep churn: Fro Bot v0.82.0→v0.93.1 (~11 releases, SHA `a4976f4`), pnpm 11.9.0→11.11.0, Next.js 16.2.9→16.2.10, Renovate preset #5.2.4→#5.2.7, viem 2.54.1→2.55.2, Storybook core 10.4.6→10.5.0 (alpha addons still 9.0.0-alpha.*), eslint→10.7.0, vite→8.1.4, vitest→4.1.10, prettier→3.9.5, bfra-me/.github v4.16.33→v4.16.37. **Note:** GitHub API rate-limited on the shared runner IP this run — issue/PR counts not re-verified; durable data sourced from raw manifests, workflows, CHANGELOG, and `.env.example` at HEAD. |
+
+## Notable Deltas (2026-08-19)
+
+- **Two conventions became test gates.** The headline is not feature code — it's enforcement. A new root `process-env.test.ts` fails the suite if any file under `app/`/`components/`/`hooks/`/`lib/` touches `process.env` outside `env.ts`, retiring the "process.env used directly in 4 source files" footgun this wiki flagged repeatedly. In parallel, PR #1298 adds a regression test that fails when a component reaches past the `useWallet` abstraction to AppKit. Both moves convert long-documented conventions ("access env via the `env` import", "components never import wagmi/AppKit directly") into CI-enforced invariants. This repo has a habit of turning its own advice into daemons that guard the boundary.
+- **`env.ts` migrated to the repo root** (from `config/`), sitting beside `next.config.ts`, and `readme.md` was lowercased — small structural normalization, no behavior change.
+- **The staged bundle win is now aging in place.** `CHANGELOG.md` Unreleased is byte-identical to the 2026-07-18 survey: Dynamic Loading Infrastructure still "awaiting feature page implementation." A full cycle with the 50–100 KB reduction machinery built but un-integrated. The "dead chrome" caveat from last survey is no longer hypothetical — infrastructure that ships but never gets wired in is exactly this.
+- **Security-remediation cluster refilled the PR queue (0 → 8).** Six fro-bot `fix(security)` PRs remediate transitive advisories via `pnpm.overrides`: axios (#1303), fast-uri (#1309), sharp (#1310), js-yaml (#1326), brace-expansion (#1327), nanoid (#1370). Four are mergeable-clean; #1370 and #1303 have gone `dirty` on lockfile conflicts as newer bumps land underneath — the same override-PR-vs-lockfile-drift race seen in sibling override-ledger repos ([[marcusrbrown--mrbro-dev]], [[marcusrbrown--marcusrbrown]]). Watch whether these automerge or calcify. Plus #1298 (hook-abstraction enforcement) and #1400 (`mrbro-bot[bot]` lockfile maintenance).
+- **Agent crossed the v1.00 milestone pin.** `fro-bot/agent` v0.93.1 → **v0.100.0** (SHA `7b9a281`). No `fro-bot.yaml` logic change beyond the pin — schedule still `30 3` UTC, workflow-health heuristics intact.
+- **`bfra-me/.github` crossed a minor-family boundary** v4.16.37 → **v4.18.0** (SHA `647b362`) across both `renovate.yaml` and `update-repo-settings.yaml`; Renovate preset #5.2.7 → **#5.2.12**; pnpm 11.11.0 → **11.22.0** (11-minor jump).
+- **New hygiene issues from the autoheal loop.** Three fresh issues surfaced: #1241 (daily coverage regression — worth watching against the ~61% statements baseline), #1284 (AGENTS.md overstates what `pnpm validate` covers), #1347 (AGENTS.md command-reference drift). The autoheal daemon is now largely policing its own internal docs — the #1189 pnpm-11.7.0 doc-drift issue from 2026-07-03 is still open, joined by two more AGENTS.md accuracy flags.
+- **Storybook alpha pin persists (fifth consecutive cycle).** Core 10.5.0 → 10.5.8, but `addon-essentials` (9.0.0-alpha.12), `addon-interactions` (9.0.0-alpha.10), `blocks` (9.0.0-alpha.17), `test` (9.0.0-alpha.2) unchanged. Sediment, not drift — this footgun is now a permanent fixture.
+- **Description set to "Chump and dump."** The GitHub repo description now carries a terse token-disposal pun. Cosmetic, but worth recording as the first description change observed. (A transient `isArchived: true` appeared in one org-list snapshot but did not hold — direct repo read confirms `archived: false`.)
 
 ## Notable Deltas (2026-07-18)
 

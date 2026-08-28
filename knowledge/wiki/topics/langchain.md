@@ -2,7 +2,7 @@
 type: topic
 title: LangChain
 created: 2026-04-18
-updated: 2026-06-30
+updated: 2026-08-08
 tags: [langchain, llm, ai, python, typescript]
 related:
   - marcusrbrown--copiloting
@@ -16,7 +16,7 @@ LLM application framework available in Python and TypeScript. Used across the Fr
 ## Repos Using LangChain
 
 - [[marcusrbrown--copiloting]] — Polyglot monorepo with LangChain-based tutorials (TS), course sections (Python), and a Flask + SvelteKit PDF chat app using LangChain chains, retrievers, memory, and embeddings.
-- [[marcusrbrown--gpt]] — Production React 19 app on the modern LangChain.js 1.x line (`langchain` 1.5.2, `@langchain/core` 1.2.1, `@langchain/openai` 1.5.3, `@langchain/anthropic` 1.5.1, `@langchain/langgraph` 1.4.7 as of 2026-06-30; was `langchain` 1.4.4 / `@langchain/core` 1.1.48 on 2026-06-08). All LangChain access is gated through a `BaseLLMProvider` abstraction — UI code never imports LangChain or LLM SDKs directly. Renovate groups the entire `langchain-ai/langchainjs` monorepo into a single `langchainjs-monorepo` PR and automerges unstable minor/patch updates of `@langchain/**` and `langchain`.
+- [[marcusrbrown--gpt]] — Production React 19 app on the modern LangChain.js 1.x line (`langchain` 1.5.4, `@langchain/core` 1.2.4, `@langchain/openai` 1.5.5, `@langchain/anthropic` 1.5.3, `@langchain/langgraph` 1.4.7 as of 2026-08-08; was `langchain` 1.5.2 / `@langchain/core` 1.2.1 on 2026-06-30, `langchain` 1.4.4 / `@langchain/core` 1.1.48 on 2026-06-08 — steady 1.5.x minor tracking). All LangChain access is gated through a `BaseLLMProvider` abstraction — UI code never imports LangChain or LLM SDKs directly. Renovate groups the entire `langchain-ai/langchainjs` monorepo into a single `langchainjs-monorepo` PR and automerges unstable minor/patch updates of `@langchain/**` and `langchain`.
 
 ## Version Notes
 

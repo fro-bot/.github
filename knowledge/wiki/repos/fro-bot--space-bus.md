@@ -2,7 +2,7 @@
 type: repo
 title: "fro-bot/space-bus"
 created: 2026-07-03
-updated: 2026-07-18
+updated: 2026-08-04
 sources:
   - url: https://github.com/fro-bot/space-bus
     sha: ad8eefe00c467ba342353d5bbd3d8cc6fbb61fc5
@@ -10,7 +10,10 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: 8e20e01775918a01855eb5aba64d04bf966f4d51
     accessed: 2026-07-18
-tags: [opencode, mcp, workspace-agent, agent-bus, directory-routing, opencode-server, custom-tools, claude-desktop, typescript, bun, zod, delegation, control-agent, dogfood, plugin, published-npm, managed-server, launchd, multi-roster, async-delegation, library-surface, browser-safe, changesets, oidc-publishing, fro-bot]
+  - url: https://github.com/fro-bot/space-bus
+    sha: fd8a746dd04bbf41b0d34dd0da55814686048ee9
+    accessed: 2026-08-04
+tags: [opencode, mcp, workspace-agent, agent-bus, directory-routing, opencode-server, custom-tools, claude-desktop, typescript, bun, zod, delegation, control-agent, dogfood, plugin, published-npm, managed-server, launchd, multi-roster, async-delegation, library-surface, browser-safe, changesets, oidc-publishing, message-correlation, session-api, fro-bot]
 related:
   - fro-bot--agent
   - fro-bot--dashboard
@@ -25,26 +28,28 @@ related:
 
 `@fro.bot/space-bus` — a **workspace agent bus** for OpenCode, now a **published, distributable OpenCode plugin** (npm `@fro.bot/space-bus`). One control agent (an ordinary OpenCode TUI running with this plugin installed) sees and tasks dedicated per-project agents across a roster, all riding a **single `opencode serve`/`harness serve` instance via per-request directory routing**. A thin stdio MCP facade exposes the same tools to Claude Desktop. It is the org-level "control board" that turns a fleet of managed repos ([[fro-bot--agent]], [[fro-bot--dashboard]], the control plane, [[marcusrbrown--infra]]) into delegation targets addressable from one seat.
 
+> **2026-08-04 survey (HEAD `fd8a746`, npm `0.15.0`) — no structural change; two additive library-surface minors.** Since the 2026-07-18 shipped-plugin survey the repo held its shape (six `bus_*` tools, browser-safe/Node-only lane split, managed-server + CLI + launchd, full Fro Bot/CI/CodeQL/Scorecard/Renovate/Probot automation all durable). Deltas are **feature-additive on the browser-safe `/core` lane**: (1) **`0.14.0` (#109) — explicit session-interaction primitives** (`messages()` bounded full-message read, `questions()` complete nested pending-question read, `answerQuestion()` ownership+cardinality-checked answer, plus an opt-in **fail-closed `dispatch({ onPendingQuestion: "blocked" })`** alongside the default fail-open `question-reply`) so consumers like [[marcusrbrown--mothership]]'s `ide_*` surface stop duplicating OpenCode HTTP behavior; (2) **`0.15.0` (#113) — dispatch message correlation** (`createDispatchMessageId()` no-Node-builtin id minting + optional `messageId` threaded through `dispatch()`/`toDispatchArgs()`/`dispatchMetadata()`/`bus_task`, plus a typed `DispatchFailure` handle with `phase: "not_sent" | "indeterminate"` for safe reconciliation after ambiguous failures). Also: **`assets/` brand-token system** (`banner.svg`/`styleguide.md`/`tokens.css`) landed — mirroring the [[fro-bot--dashboard]]/[[marcusrbrown--mrbro-dev]] design-token pattern; `opencode.jsonc` now loads the local dev plugin (`./src/index.ts`, #99); `build.ts` custom build script + `tsconfig.build.json`; Fro Bot **agent pin advanced v0.88.0 → v0.93.1**; `bfra-me/.github` reusable-workflow pin → **v4.16.44**; `@opencode-ai/plugin` dev-pin `1.17.18 → 1.18.2` (peer range `>=1.17.13 <2` unchanged); test suite grew ~30 → **~40 `*.test.ts`** (502 passing per #113). npm advanced `0.13.1 → 0.15.0` (22 versions). Open issues 8 → 9, stars 1. Sections below preserve the 2026-07-18 shipped-plugin record and the 2026-07-03 MVP record; this banner marks what changed.
+
 > **2026-07-18 survey (HEAD `8e20e01`) — the repo matured from MVP dogfood to shipped plugin.** Since the 2026-07-03 initial survey it has: (1) **converted to a published OpenCode plugin** on npm (`0.13.1`, 20 versions via changesets + npm OIDC trusted publishing — resolving the private/`0.0.0` → published contradiction flagged at 2026-07-06); (2) grown from **four tools to six** (`bus_wait` async-delegation, `bus_registry` multi-roster) — the "exactly four tools" MVP constraint is **superseded**; (3) added a **plugin-managed server lifecycle** + `space-bus` CLI + macOS **launchd** reboot-persistence; (4) exposed a **CI-enforced browser-safe library surface** (subpath exports for renderers like [[marcusrbrown--mothership]]); and (5) **grown a full Fro Bot workflow + CI/CodeQL/Scorecard/Renovate/Probot Settings** — resolving the "no automation" thread. Sections below preserve the 2026-07-03 MVP record and mark what changed.
 
 ## Overview
 
-| Attribute        | Value (2026-07-18 survey, HEAD `8e20e01`)                                      |
+| Attribute        | Value (2026-08-04 survey, HEAD `fd8a746`)                                      |
 | ---------------- | ------------------------------------------------------------------------------ |
 | Created          | 2026-07-03                                                                     |
-| Last push        | 2026-07-17 (`pushed_at`; HEAD commit `8e20e01` dated 2026-07-13, "chore(deps): update fro-bot/agent to v0.88.0" #98) |
+| Last push        | 2026-08-04 (`pushed_at`; HEAD commit `fd8a746` dated 2026-08-03, "chore(deps): update bfra-me/.github to v4.16.44" #128) |
 | Description      | Space Bus — workspace agent bus for OpenCode; control agent tasking per-project agents over the OpenCode server API, with an MCP facade for Claude Desktop |
 | Homepage         | https://www.npmjs.com/package/@fro.bot/space-bus                              |
 | Language         | TypeScript (strict, ESM)                                                       |
 | Runtime          | Bun (dev/build/test); published dist targets Node ESM (`main: ./dist/index.js`) |
 | Package manager  | Bun (`bun.lock`, `bun install`)                                               |
-| Package          | `@fro.bot/space-bus` — **published to npm, `0.13.1`** (20 versions `0.0.0`→`0.13.1`; changesets + npm OIDC trusted publishing) |
+| Package          | `@fro.bot/space-bus` — **published to npm, `0.15.0`** (22 versions `0.0.0`→`0.15.0`; changesets + npm OIDC trusted publishing) |
 | License          | MIT                                                                            |
 | Visibility       | Public                                                                         |
 | Stars            | 1                                                                              |
-| Open issues      | 8                                                                              |
+| Open issues      | 9                                                                              |
 | Topics           | `opencode`, `plugin`, `mcp`, `agent-orchestration`, `bun`, `typescript`       |
-| Status           | **Shipped OpenCode plugin.** Six-tool bus + managed-server lifecycle + CLI + macOS launchd service + browser-safe library surface. Full CI/CodeQL/Scorecard/Renovate/Fro Bot automation |
+| Status           | **Shipped OpenCode plugin (steady-state).** Six-tool bus + managed-server lifecycle + CLI + macOS launchd service + browser-safe library surface (now with explicit session-interaction + message-correlation `/core` primitives). Full CI/CodeQL/Scorecard/Renovate/Fro Bot automation |
 
 ### Prior status (2026-07-03 survey, HEAD `ad8eefe` — historical)
 
@@ -145,6 +150,25 @@ Experimental subpath exports expose the bus's internals directly for renderers (
 
 `./server` was **remapped to the plugin entry** in `0.10.0` — OpenCode's loader resolves `exports["./server"]` before `main`, so publishing the lifecycle API there broke plugin loading with `Plugin export is not a function` (affected `0.6.0`–`0.9.0` from npm). The lifecycle API moved to `/managed-server`; a documented integration-issue solution captures the reserved-subpath loader-resolution trap.
 
+## Browser-safe `/core` session API + message correlation (2026-08-04 — new)
+
+Two additive minors extended the browser-safe `/core` lane so renderers (e.g. [[marcusrbrown--mothership]]'s `ide_*` MCP surface) stop maintaining parallel OpenCode HTTP clients. All of this lives inside `@fro.bot/space-bus/core` — session-directory resolution, localhost auth, per-call context validation, and discriminated-union failure semantics stay on the bus side; no Node builtins, no ambient env reads.
+
+**`0.14.0` (#109, `8802338`) — explicit session-interaction primitives:**
+
+- `messages(sessionId, { context, limit? })` — bounded full-message read; resolves ownership from the roster (never a caller-supplied directory), returns `{ sessionId, project, messages: [{ id?, role, createdAt?, parts }] }` with stable identity/ordering. `limit` defaults 20, hard-capped 200; `0`/negative/fractional/`NaN`/`Infinity` rejected before any fetch.
+- `questions(target, { context })` — complete project- or session-scoped pending-question read (`target: { project } | { sessionId }`, exactly one). One entry per pending request with its **full nested subquestion list** (`requestId`, `sessionId`, `questions[]` each with `header?/question/multiple/custom/options[]`).
+- `answerQuestion({ sessionId, requestId, answers }, { context })` — explicit answer; runtime-validates `answers` is a non-empty `string[][]`, verifies `requestId` belongs to a pending question on `sessionId` (cross-session `requestId` refused with no mutation), and verifies `answers.length` matches the request's subquestion count (mismatch refused with no mutation).
+- `dispatch()` gains `args.onPendingQuestion: "question-reply" | "blocked"`. Default preserves `0.13.1`'s fail-open reply behavior; **`"blocked"` is fail-closed** — returns typed `{ mode: "blocked", requestId }` (no reply, no follow-up) when a question is pending, and a stable `Result` error rather than guessing when pending-question state can't be verified (non-2xx / unparseable `GET /question`). For callers that must never silently reinterpret a follow-up prompt as an answer.
+
+**`0.15.0` (#113, `fe0cc42`) — dispatch message correlation:**
+
+- `createDispatchMessageId()` — mints an OpenCode-compatible ascending user-message id (`msg_` + 12-hex timestamp/counter prefix + 14 base62) using only `Date.now()` + Web Crypto `getRandomValues`; same-millisecond ids sort ascending via an internal per-ms counter, matching OpenCode's own ordering.
+- optional `messageId` on `DispatchArgs`, threaded through `toDispatchArgs()`/`dispatch()`/`dispatchMetadata()`/`bus_task` (plugin + MCP `outputSchema`). Validated against the exact `msg_` + 12-hex + 14-alnum shape; rejection returns one stable generic error that **never echoes the rejected value**. Key omitted entirely (not `null`) when unset; `blocked`/`question-reply` branches never carry a `messageId`.
+- new `DispatchFailure` type + optional `dispatchFailure` on dispatch's error branch: `phase: "not_sent"` (verified to precede any mutation) vs `phase: "indeterminate"` (a mutating request may already have reached OpenCode). Known-safe fields only (`project`, and `sessionId`/`messageId` when known); unknowns omitted, never sent as `undefined`.
+
+Both preserve the existing `Result<T>`/`DispatchResult`/`BusContext` contract and the browser-safe import lane. The `bus_task` human-readable text output is unchanged.
+
 ## Security Posture
 
 - **Localhost only.** Roster `server.baseUrl` must resolve to `127.0.0.1`/`::1`/`localhost`; non-local hosts are refused so bus credentials never leave the machine. The guard travels with the discovery handshake (an attached endpoint is re-validated as loopback regardless of source) and with the `BusContext` (re-checked at core's single validation gate per call).
@@ -161,9 +185,9 @@ Experimental subpath exports expose the bus's internals directly for renderers (
 | ------------------------------ | ---------- | ----- | ------------------------------------------------ |
 | `@modelcontextprotocol/sdk`    | 1.29.0     | dep   | stdio MCP server for the Claude Desktop facade   |
 | `zod`                          | **^4.4.3** | dep   | Manifest + API-response + discovery-file boundary parsing (**bumped v3 → v4** since MVP) |
-| `@opencode-ai/plugin`          | **>=1.17.13 <2** | peer | Plugin `tool()` API — now a **peerDependency** (published-plugin shape), dev-pinned `1.17.18` |
+| `@opencode-ai/plugin`          | **>=1.17.13 <2** | peer | Plugin `tool()` API — a **peerDependency** (published-plugin shape); dev-pin advanced `1.17.18 → 1.18.2` (2026-08-04) |
 | `@biomejs/biome`               | 2.5.2      | dev   | Lint + format (`biome check`) — **replaced the MVP's undocumented lint**        |
-| `@changesets/cli`              | 2.31.0     | dev   | Versioning + npm publish pipeline                |
+| `@changesets/cli`              | **2.31.1** | dev   | Versioning + npm publish pipeline (`2.31.0 → 2.31.1`, #108) |
 | `@types/bun`                   | 1.3.14     | dev   | Bun runtime types                                |
 | `typescript`                   | 5.9.3      | dev   | Typecheck + `.d.ts` emit                         |
 
@@ -197,7 +221,7 @@ The original MVP was built in three verified phases (`HANDOFF.md` no longer pres
 
 The 2026-07-03 "no automation" gap is **closed** — the meta-irony (an agent-coordination surface not wired into the fleet's own automation) is retired. The repo now carries a full `.github/` automation suite:
 
-- **`fro-bot.yaml`** — self-hosted Fro Bot workflow consuming `fro-bot/agent@v0.88.0` (SHA-pinned), the **consolidated three-mode** shape (PR review / daily schedule oversight+autoheal at `0 0 * * *` / `workflow_dispatch`). PR-head-SHA concurrency keying, bot/fork guards, `FRO_BOT_PAT`. The PR-review prompt is space-bus-specific (six-tool contract fidelity, two-surface parity, localhost guard, never-`process.cwd()`, MCP stdio discipline, discriminated-union boundary, changeset hygiene). The daily prompt maintains one perpetual "Daily Fro Bot Report" issue.
+- **`fro-bot.yaml`** — self-hosted Fro Bot workflow consuming `fro-bot/agent` (SHA-pinned; **agent pin advanced v0.88.0 → v0.93.1** as of the 2026-08-04 survey, SHA `a4976f4`), the **consolidated three-mode** shape (PR review / daily schedule oversight+autoheal at `0 0 * * *` / `workflow_dispatch`). Reusable-workflow base `bfra-me/.github` at **v4.16.44** (2026-08-04; #103 → #116 → #128). PR-head-SHA concurrency keying, bot/fork guards, `FRO_BOT_PAT`. The PR-review prompt is space-bus-specific (six-tool contract fidelity, two-surface parity, localhost guard, never-`process.cwd()`, MCP stdio discipline, discriminated-union boundary, changeset hygiene). The daily prompt maintains one perpetual "Daily Fro Bot Report" issue.
 - **`ci.yaml`** — `Check` job: Bun install (frozen) → typecheck → lint → build → **Node ESM export-shape smoke** (asserts `default` export is a function) → `bun test`.
 - **`codeql-analysis.yaml`** + **`scorecard.yaml`** — CodeQL + OSSF Scorecard coverage.
 - **`release.yaml`** — changesets/action via a GitHub App token; **npm OIDC trusted publishing** (no `NPM_TOKEN`), npm upgraded to `11.18.0` for OIDC, `id-token: write`.
@@ -214,6 +238,8 @@ A **downstream consumer** surfaced during the 2026-07-06 survey of [[marcusrbrow
 
 **Consumer pin update (2026-07-21, from the mothership re-survey):** mothership advanced its `@fro.bot/space-bus` production pin **0.7.0 → 0.14.0** (HEAD `e7e305f`), and now also consumes the `/attach` subpath (`resolveManagedServer`) in addition to `/contract` + `/core`. Confirm the current published `latest` on this repo's own manifest next space-bus survey.
 
+**Published-`latest` confirmation (2026-08-04, this repo's manifest):** `latest` is now **`0.15.0`** (22 versions). Mothership's last-known pin `0.14.0` is one minor behind — the `0.15.0` message-correlation additions (`createDispatchMessageId`, `messageId` on `dispatch`, `DispatchFailure`) are strictly additive on the browser-safe `/core` lane, so a mothership bump to `0.15.0` picks them up without contract breakage. Verify mothership's pin on its next survey.
+
 ## Relationship to the Fro Bot Ecosystem
 
 - **[[marcusrbrown--mothership]]** — the first observed downstream consumer of `@fro.bot/space-bus` (mothership pinned 0.7.0 at its 2026-07-06 survey; space-bus is now at 0.13.1). A Tauri v2 desktop IDE that _renders_ the bus: it consumes the browser-safe `/contract`/`/core` (and now `/attach`) surface and layers an `ide_*` MCP tool surface for driving its own UI. The `0.10.1` dist-level browser-safety fix was driven specifically by Mothership's Vite bundling breaking on the old Node prelude. Complements the space-bus tasking plane and the dashboard observation plane as a third operator surface.
@@ -224,11 +250,13 @@ A **downstream consumer** surfaced during the 2026-07-06 survey of [[marcusrbrow
 
 ## Open Threads / To Re-confirm Next Survey
 
-- **Resolved this survey:** plugin conversion landed (packaging-move bet held); package published (0.13.1); Fro Bot workflow + CI/CodeQL/Scorecard/Probot Settings present; four→six tools.
-- **Library-surface stability** — subpath exports are marked *experimental* (shapes may change in minors). Track whether they stabilize (drop the "experimental" caveat) and whether any break lands on the browser-safe lane that Mothership depends on.
+- **Resolved 2026-07-18:** plugin conversion landed (packaging-move bet held); package published (0.13.1); Fro Bot workflow + CI/CodeQL/Scorecard/Probot Settings present; four→six tools.
+- **No structural change 2026-08-04:** six-tool surface, lane split, managed-server/CLI/launchd, and full automation all durable; the only motion was additive `/core` primitives + dep bumps + `assets/` brand tokens. The plugin is in steady-state.
+- **Library-surface stability** — subpath exports (including the new `messages`/`questions`/`answerQuestion` and message-correlation additions) are still marked *experimental* (`registry-entry.ts` carries the `@experimental` banner). Track whether they stabilize (drop the caveat) and whether any break lands on the browser-safe lane that Mothership depends on.
 - **Managed-daemon / launchd persistence** — v1 is macOS-only. Watch for a systemd/Linux equivalent and for the deferred fire-and-forget push-notification follow-on to `bus_wait`.
-- **`@opencode-ai/plugin` peer range** (`>=1.17.13 <2`, dev-pinned `1.17.18`) + `@fro.bot/harness` alignment — verify the peer range and dev pin stay lockstep as the harness base advances in [[fro-bot--agent]].
+- **`@opencode-ai/plugin` peer range** (`>=1.17.13 <2`, dev-pin advanced `1.17.18 → 1.18.2`) + `@fro.bot/harness` alignment — verify the peer range and dev pin stay lockstep as the harness base advances in [[fro-bot--agent]].
 - **zod v4** — confirm no downstream consumer (Mothership) is stranded on zod v3 schemas from `/contract`.
+- **`assets/` brand-token system** (`banner.svg`/`styleguide.md`/`tokens.css`) — landed 2026-08-04 but no consuming surface observed in-repo (space-bus has no web UI); likely staged for the `apply-branding` fleet pattern. Confirm whether it wires into anything or stays dormant next survey.
 
 ## Survey History
 
@@ -236,4 +264,5 @@ A **downstream consumer** surfaced during the 2026-07-06 survey of [[marcusrbrow
 | ---------- | --------- | ------------------------------------------------------------------------------ |
 | 2026-07-03 | `ad8eefe` | Initial survey. New repo (created 2026-07-03), public, MIT, private-unpublished Bun/TS package. Four-tool workspace agent bus over one directory-routed `opencode serve`; MCP facade for Claude Desktop; MVP verified (Phases 0–2); plugin conversion drafted. **No Fro Bot workflow / no CI / no Probot Settings.** |
 | 2026-07-06 | (not re-surveyed) | Cross-reference update only, from the [[marcusrbrown--mothership]] survey. First downstream consumer observed: mothership pins `@fro.bot/space-bus` **0.7.0**, implying the package went private/unpublished (`0.0.0`) → published (`0.7.0`). Package-status shift and current published version to be re-verified against this repo's own manifest next space-bus survey (see "First Consumer" section). |
+| 2026-08-04 | `fd8a746` | Re-survey. **No structural change** — six-tool bus, lane split, managed-server/CLI/launchd, full CI/CodeQL/Scorecard/Renovate/Fro Bot/Probot automation all durable. Additive only: **`0.14.0` (#109)** explicit session-interaction `/core` primitives (`messages`/`questions`/`answerQuestion` + opt-in fail-closed `dispatch({onPendingQuestion:"blocked"})`); **`0.15.0` (#113)** dispatch message correlation (`createDispatchMessageId`, optional `messageId`, typed `DispatchFailure` `not_sent`/`indeterminate`). New `assets/` brand-token system; `opencode.jsonc` loads local dev plugin (#99); `build.ts`+`tsconfig.build.json`. Fro Bot **agent pin v0.88.0 → v0.93.1**; `bfra-me/.github` → **v4.16.44**; `@opencode-ai/plugin` dev-pin `1.17.18 → 1.18.2`; `@changesets/cli` `2.31.0 → 2.31.1`. npm `0.13.1 → 0.15.0` (22 versions); tests ~30 → ~40 files (502 passing). Open issues 8 → 9, stars 1. |
 | 2026-07-18 | `8e20e01` | Full re-survey. **MVP → shipped plugin.** Package **published to npm** (`0.13.1`, 20 versions via changesets + npm OIDC trusted publishing) — resolves the 2026-07-06 private→published contradiction. **Four → six tools** (`bus_wait` async-delegation `0.9.0`, `bus_registry` multi-roster `0.13.0`); "exactly four" MVP constraint superseded. New: **plugin-managed server lifecycle** + `space-bus` CLI + macOS **launchd** service; **CI-enforced browser-safe library surface** (7 subpath exports); **full Fro Bot workflow** (agent v0.88.0) + CI/CodeQL/Scorecard/Renovate/**Probot Settings** — resolves the "no automation" thread. `workspace.json` → `spacebus.json`; `.opencode/tools/` → `src/index.ts`+`src/tools/`; **zod v3 → v4**; Biome lint; `@opencode-ai/sdk` dropped, `@opencode-ai/plugin` now a peer dep. Stars 0→1, topics set, 8 open issues. |
