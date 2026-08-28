@@ -2471,15 +2471,12 @@ export async function syncStars(params: {
   }
 
   // Fetch the full starred set in one paginated read.
-  type StarredRepo =
-    RestEndpointMethodTypes['activity']['listReposStarredByAuthenticatedUser']['response']['data'][number]
-
   let starredSet: Set<string>
   try {
-    const starred = (await params.userOctokit.paginate(
+    const starred = await params.userOctokit.paginate(
       params.userOctokit.rest.activity.listReposStarredByAuthenticatedUser,
       {per_page: 100},
-    )) as unknown as StarredRepo[]
+    )
     starredSet = new Set(starred.map(r => `${r.owner.login.toLowerCase()}/${r.name.toLowerCase()}`))
   } catch (readError: unknown) {
     // Fail-safe: do NOT blind-star candidates. Return all as failures so they retry next run.
@@ -3225,7 +3222,7 @@ async function loadOctokitConstructor(): Promise<OctokitConstructor> {
       remediation: 'Verify @octokit/rest is installed and its export surface has not changed.',
     })
   }
-  return Octokit as unknown as OctokitConstructor
+  return Octokit
 }
 
 function toApiError(error: unknown, action: string): ReconcileError {

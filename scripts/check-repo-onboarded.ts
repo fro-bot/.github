@@ -102,7 +102,7 @@ export async function runCheck(
 }
 
 async function main(): Promise<void> {
-  const result = await runCheck(process.env as Record<string, string | undefined>)
+  const result = await runCheck(process.env)
 
   if (!result.onboarded && result.reason !== undefined) {
     process.stderr.write(`check-repo-onboarded: ${result.reason}\n`)

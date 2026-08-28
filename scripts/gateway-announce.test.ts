@@ -17,7 +17,7 @@ async function noSleep(_ms: number): Promise<void> {
 }
 
 function makeOkFetch(status = 200): typeof globalThis.fetch {
-  return vi.fn().mockResolvedValue(new Response('ok', {status})) as unknown as typeof globalThis.fetch
+  return vi.fn().mockResolvedValue(new Response('ok', {status}))
 }
 
 function makeStatusFetch(...statuses: number[]): typeof globalThis.fetch {
@@ -25,7 +25,7 @@ function makeStatusFetch(...statuses: number[]): typeof globalThis.fetch {
   for (const s of statuses) {
     mock.mockResolvedValueOnce(new Response('', {status: s}))
   }
-  return mock as unknown as typeof globalThis.fetch
+  return mock
 }
 
 // Capture stderr output during a test
@@ -647,7 +647,7 @@ describe('runCli', () => {
   })
 
   it('daily_digest EVENT_TYPE: accepted (not invalid-event-type), announceImpl called with parsed context', async () => {
-    const spy = vi.fn(async () => ({posted: true, status: 200}) as AnnounceResult)
+    const spy = vi.fn(async () => ({posted: true, status: 200}))
 
     const result = await runCli(
       {

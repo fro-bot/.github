@@ -988,7 +988,7 @@ function makeMockOctokit(overrides: Partial<StatusTruthPrOctokitClient['rest']> 
         ...overrides.issues,
       },
     },
-  } as unknown as StatusTruthPrOctokitClient
+  }
 }
 
 function makeExecuteInput(overrides: Partial<ExecuteStatusTruthPrActionsInput> = {}): ExecuteStatusTruthPrActionsInput {
@@ -1639,7 +1639,7 @@ function makeFetchClientStub(
         })),
       },
     },
-  } as unknown as StatusTruthPrFetchClient
+  }
 }
 
 function makeRunPrsCoreDeps(overrides: Partial<RunPrsCoreDeps> = {}): RunPrsCoreDeps {

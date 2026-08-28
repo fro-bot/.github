@@ -1898,9 +1898,9 @@ describe('reconcileRepos', () => {
 describe('fetchPerRepoStatus 5-state classification', () => {
   it('HTTP 200 with valid body, entry not in access list → revoked', async () => {
     const reposGet = vi.fn(async () => ({
-      data: {private: true, node_id: 'R_test'} as RepoGetResponse,
+      data: {private: true, node_id: 'R_test'},
     }))
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'secret-repo'), [], logger)
@@ -1913,7 +1913,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     const reposGet = vi.fn(async () => {
       throw new Error('should not probe redacted identity')
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
     const currentRepos: ReposFile = {
       version: 1,
@@ -1938,7 +1938,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     const reposGet = vi.fn(async () => {
       throw apiError(404, 'Not Found')
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'gone-repo'), [], logger)
@@ -1950,7 +1950,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     const reposGet = vi.fn(async () => {
       throw apiError(451, 'Unavailable For Legal Reasons')
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'taken-down-repo'), [], logger)
@@ -1962,7 +1962,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     const reposGet = vi.fn(async () => {
       throw apiError(403, 'Forbidden')
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'blocked-repo'), [], logger)
@@ -1974,7 +1974,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     const reposGet = vi.fn(async () => {
       throw apiError(429, 'Too Many Requests')
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'rate-limited'), [], logger)
@@ -1990,7 +1990,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
         response: {headers: {'retry-after': '60'}},
       })
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'secondary-limited'), [], logger)
@@ -2006,7 +2006,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
         response: {headers: {'x-ratelimit-remaining': '0'}},
       })
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'header-limited'), [], logger)
@@ -2020,7 +2020,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
         status: 403,
       })
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'abuse-flagged'), [], logger)
@@ -2032,7 +2032,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     const reposGet = vi.fn(async () => {
       throw apiError(502, 'Bad Gateway')
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'flaky-repo'), [], logger)
@@ -2045,7 +2045,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     const reposGet = vi.fn(async () => {
       throw apiError(503, 'Service Unavailable')
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'overloaded-repo'), [], logger)
@@ -2057,7 +2057,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     const reposGet = vi.fn(async () => {
       throw new Error('ECONNRESET')
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'offline-repo'), [], logger)
@@ -2069,9 +2069,9 @@ describe('fetchPerRepoStatus 5-state classification', () => {
 
   it('HTTP 200 with malformed body (empty data) → malformed', async () => {
     const reposGet = vi.fn(async () => ({
-      data: {} as RepoGetResponse,
+      data: {},
     }))
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'broken-repo'), [], logger)
@@ -2084,7 +2084,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     const reposGet = vi.fn(async () => ({
       data: {private: 'not-a-bool', node_id: 'R_ok'} as unknown as RepoGetResponse,
     }))
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'weird-repo'), [], logger)
@@ -2097,9 +2097,9 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     // here would defer the failure to assertReposFile with a less actionable error path.
     // Match the schema constraint at probe time.
     const reposGet = vi.fn(async () => ({
-      data: {private: false, node_id: ''} as RepoGetResponse,
+      data: {private: false, node_id: ''},
     }))
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     const result = await fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'empty-id-repo'), [], logger)
@@ -2113,7 +2113,7 @@ describe('fetchPerRepoStatus 5-state classification', () => {
     const reposGet = vi.fn(async () => {
       throw apiError(422, 'Unprocessable')
     })
-    const userOctokit = mockOctokit({reposGet: reposGet as never})
+    const userOctokit = mockOctokit({reposGet})
     const logger = silentLogger()
 
     await expect(fetchPerRepoStatus(userOctokit, reposFileWith('fro-bot', 'weird-repo'), [], logger)).rejects.toThrow(
@@ -2174,7 +2174,7 @@ describe('fetchFieldProbes — database_id capture', () => {
     const reposGet = vi.fn(async () => ({
       data: {private: false, node_id: 'R_test', id: 987654} satisfies FieldProbeRepoGetResponse,
     }))
-    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const userOctokit = makeFieldProbeOctokit({reposGet})
     const logger = silentLogger()
 
     // WHEN probing
@@ -2196,9 +2196,9 @@ describe('fetchFieldProbes — database_id capture', () => {
     const accessList: AccessListEntry[] = [makeAccess({owner: 'fro-bot', name: 'test-repo', node_id: 'R_test'})]
     const reposGet = vi.fn(async () => ({
       // id is absent — simulates a response where databaseId is not returned
-      data: {private: false, node_id: 'R_test'} as FieldProbeRepoGetResponse,
+      data: {private: false, node_id: 'R_test'},
     }))
-    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const userOctokit = makeFieldProbeOctokit({reposGet})
     const logger = silentLogger()
 
     // WHEN probing
@@ -2223,7 +2223,7 @@ describe('fetchFieldProbes — database_id capture', () => {
     const reposGet = vi.fn(async () => ({
       data: {private: false, node_id: 'R_test', id: null} as unknown as FieldProbeRepoGetResponse,
     }))
-    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const userOctokit = makeFieldProbeOctokit({reposGet})
     const logger = silentLogger()
 
     // WHEN probing
@@ -2248,7 +2248,7 @@ describe('fetchFieldProbes — database_id capture', () => {
     const reposGet = vi.fn(async () => ({
       data: {private: true, node_id: 'R_private', id: 1234567} satisfies FieldProbeRepoGetResponse,
     }))
-    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const userOctokit = makeFieldProbeOctokit({reposGet})
     const logger = silentLogger()
 
     // WHEN probing
@@ -2273,7 +2273,7 @@ describe('fetchFieldProbes — database_id capture', () => {
     const reposGet = vi.fn(async () => {
       throw apiError(500, 'Internal Server Error')
     })
-    const userOctokit = makeFieldProbeOctokit({reposGet: reposGet as never})
+    const userOctokit = makeFieldProbeOctokit({reposGet})
     const logger = silentLogger()
 
     // WHEN probing — should not throw
@@ -2514,7 +2514,7 @@ function mockOctokit(overrides: OctokitMockOverrides = {}): OctokitClient {
         get:
           overrides.reposGet ??
           (async () => ({
-            data: {archived: false, private: false, node_id: 'R_default'} as RepoGetResponse,
+            data: {archived: false, private: false, node_id: 'R_default'},
           })),
         getBranch:
           overrides.getBranch ??
@@ -2597,11 +2597,9 @@ function baseParams(overrides: Partial<HandleReconcileParams> = {}): HandleRecon
     reposPath: overrides.reposPath ?? 'metadata/repos.yaml',
     now: overrides.now ?? NOW,
     readMetadata: overrides.readMetadata ?? makeReadMetadata(),
-    commitMetadata:
-      overrides.commitMetadata ?? (vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1})) as never),
+    commitMetadata: overrides.commitMetadata ?? vi.fn(async () => ({committed: true, sha: 'commit-sha', attempts: 1})),
     bootstrapDataBranch:
-      overrides.bootstrapDataBranch ??
-      (vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 'data-sha'})) as never),
+      overrides.bootstrapDataBranch ?? vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 'data-sha'})),
     dispatchTimeoutMs: overrides.dispatchTimeoutMs ?? 100,
     dispatchStaggerMs: overrides.dispatchStaggerMs ?? 0,
     // Tests default to the cap disabled so existing dispatch-count assertions remain valid.
@@ -2630,7 +2628,7 @@ describe('handleReconcile (I/O shell)', () => {
 
       await handleReconcile(
         baseParams({
-          bootstrapDataBranch: bootstrap as never,
+          bootstrapDataBranch: bootstrap,
           readMetadata,
         }),
       )
@@ -2672,7 +2670,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit,
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['marcusrbrown'])}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -2702,7 +2700,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({createWorkflowDispatch, issuesCreate}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['trusted'])}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -2737,7 +2735,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({createWorkflowDispatch, issuesCreate}),
           readMetadata: makeReadMetadata({repos: existing}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -2784,7 +2782,7 @@ describe('handleReconcile (I/O shell)', () => {
         baseParams({
           userOctokit,
           readMetadata: makeReadMetadata({repos: existing}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -2819,7 +2817,7 @@ describe('handleReconcile (I/O shell)', () => {
             reposGet,
           }),
           readMetadata: makeReadMetadata({repos: existing}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -2856,7 +2854,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({createWorkflowDispatch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           logger,
         }),
       )
@@ -2897,7 +2895,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({createWorkflowDispatch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           dispatchStaggerMs: 5000,
           dispatchSleep,
         }),
@@ -2932,7 +2930,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({createWorkflowDispatch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           dispatchStaggerMs: 0,
           dispatchSleep,
         }),
@@ -2971,7 +2969,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({createWorkflowDispatch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           dispatchTimeoutMs: 20, // tight timeout for test speed
         }),
       )
@@ -3004,7 +3002,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({createWorkflowDispatch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
         }),
       )
 
@@ -3065,7 +3063,7 @@ describe('handleReconcile (I/O shell)', () => {
               ],
             },
           }),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           maxDispatchesPerRun: 2,
         }),
       )
@@ -3108,7 +3106,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({createWorkflowDispatch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['trusted'])}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           maxDispatchesPerRun: 12,
         }),
       )
@@ -3141,7 +3139,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({createWorkflowDispatch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['trusted'])}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
         }),
       )
 
@@ -3221,7 +3219,7 @@ describe('handleReconcile (I/O shell)', () => {
               ],
             },
           }),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           maxDispatchesPerRun: 2,
         }),
       )
@@ -3254,7 +3252,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({createWorkflowDispatch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           maxDispatchesPerRun: 0,
         }),
       )
@@ -3293,7 +3291,7 @@ describe('handleReconcile (I/O shell)', () => {
             userOctokit: makeOctokit(),
             appOctokit: mockOctokit({createWorkflowDispatch}),
             readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-            commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+            commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
             now,
             maxDispatchesPerRun: 2,
           }),
@@ -3322,7 +3320,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({issuesCreate}),
           readMetadata: makeReadMetadata({}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
         }),
       )
 
@@ -3347,7 +3345,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({issuesCreate}),
           readMetadata: makeReadMetadata({}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
         }),
       )
 
@@ -3375,7 +3373,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({issuesCreate}),
           readMetadata: makeReadMetadata({}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
         }),
       )
 
@@ -3416,7 +3414,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({issuesCreate}),
           readMetadata: makeReadMetadata({}),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           logger,
         }),
       )
@@ -3470,7 +3468,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({issuesListForRepo, issuesUpdate}),
           readMetadata: makeReadMetadata({repos: existing}),
-          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
         }),
       )
 
@@ -3523,7 +3521,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({issuesListForRepo, issuesUpdate}),
           readMetadata: makeReadMetadata({repos: existing}),
-          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
         }),
       )
 
@@ -3574,7 +3572,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({issuesListForRepo, issuesUpdate}),
           readMetadata: makeReadMetadata({repos: existing}),
-          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
         }),
       )
 
@@ -3613,7 +3611,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
           readMetadata: makeReadMetadata({repos: existing}),
-          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
         }),
       )
 
@@ -3666,7 +3664,7 @@ describe('handleReconcile (I/O shell)', () => {
           appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
           // Empty repos + no bfra-me in allowlist → both repos classified as unsolicited-new
           readMetadata: makeReadMetadata({repos: {version: 1, repos: []}, allowlist: makeAllowlist([])}),
-          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
         }),
       )
 
@@ -3712,7 +3710,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
           readMetadata: makeReadMetadata({repos: existing}),
-          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
         }),
       )
 
@@ -3781,7 +3779,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
           readMetadata: makeReadMetadata({repos: {version: 1, repos: []}, allowlist: makeAllowlist([])}),
-          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
         }),
       )
 
@@ -3841,7 +3839,7 @@ describe('handleReconcile (I/O shell)', () => {
           appOctokit: mockOctokit({issuesCreate, issuesListForRepo}),
           // Pre-existing repos so step 10 sees no new pending-review → currentRunRollupOwners is empty.
           readMetadata: makeReadMetadata({repos: existing, allowlist: makeAllowlist([])}),
-          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
         }),
       )
 
@@ -3874,7 +3872,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({getBranch, issuesCreate}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -3908,7 +3906,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({getBranch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -3934,7 +3932,7 @@ describe('handleReconcile (I/O shell)', () => {
             userOctokit,
             appOctokit: mockOctokit({getBranch, issuesCreate}),
             readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-            commitMetadata: commitMetadata as never,
+            commitMetadata,
           }),
         ),
       ).rejects.toMatchObject({code: 'DATA_BRANCH_TAMPER'})
@@ -3962,7 +3960,7 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({getBranch}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -3992,8 +3990,8 @@ describe('handleReconcile (I/O shell)', () => {
           userOctokit,
           appOctokit: mockOctokit({getBranch, issuesCreate}),
           readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-          commitMetadata: commitMetadata as never,
-          bootstrapDataBranch: bootstrap as never,
+          commitMetadata,
+          bootstrapDataBranch: bootstrap,
         }),
       )
 
@@ -4030,7 +4028,7 @@ describe('handleReconcile (I/O shell)', () => {
             userOctokit,
             appOctokit: mockOctokit({createWorkflowDispatch}),
             readMetadata: makeReadMetadata({allowlist: makeAllowlist(['t'])}),
-            commitMetadata: commitMetadata as never,
+            commitMetadata,
           }),
         ),
       ).rejects.toMatchObject({code: 'CONFLICT_EXHAUSTED'})
@@ -4077,7 +4075,7 @@ describe('handleReconcile (I/O shell)', () => {
         baseParams({
           userOctokit,
           readMetadata: makeReadMetadata({repos: v1, allowlist: makeAllowlist(['fro-bot'])}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -4102,8 +4100,8 @@ describe('handleReconcile (I/O shell)', () => {
           owner: 'fro-bot',
           repo: '.github',
           readMetadata: makeReadMetadata(),
-          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
-          bootstrapDataBranch: vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 's'})) as never,
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
+          bootstrapDataBranch: vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 's'})),
         }).catch((error: unknown) => error)
 
         expect(caught).toBeInstanceOf(ReconcileError)
@@ -4130,8 +4128,8 @@ describe('handleReconcile (I/O shell)', () => {
           owner: 'fro-bot',
           repo: '.github',
           readMetadata: makeReadMetadata(),
-          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})) as never,
-          bootstrapDataBranch: vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 's'})) as never,
+          commitMetadata: vi.fn(async () => ({committed: false, attempts: 1})),
+          bootstrapDataBranch: vi.fn(async () => ({created: false, ref: 'refs/heads/data', sha: 's'})),
         }).catch((error: unknown) => error)
 
         expect(caught).toBeInstanceOf(ReconcileError)
@@ -4221,7 +4219,7 @@ jobs:
         baseParams({
           appOctokit: mockOctokit({paginate: appPaginate(installationRepos)}),
           readMetadata: makeReadMetadata(),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -4244,7 +4242,7 @@ jobs:
         baseParams({
           appOctokit: mockOctokit({paginate: appPaginate(installationRepos)}),
           readMetadata: makeReadMetadata(),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -4285,7 +4283,7 @@ jobs:
             reposGet,
           }),
           readMetadata: makeReadMetadata({allowlist}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -4324,7 +4322,7 @@ jobs:
             reposGet,
           }),
           readMetadata: makeReadMetadata({allowlist}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -4358,7 +4356,7 @@ jobs:
             // open-org/no-workflow has no fro-bot.yaml — getContent throws 404 by default
           }),
           readMetadata: makeReadMetadata({allowlist}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
           logger,
         }),
       )
@@ -4384,7 +4382,7 @@ jobs:
         baseParams({
           appOctokit: mockOctokit({paginate: appPaginate([])}),
           readMetadata: makeReadMetadata({allowlist}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
           logger,
         }),
       )
@@ -4432,7 +4430,7 @@ jobs:
           userOctokit,
           appOctokit,
           readMetadata: makeReadMetadata({allowlist}),
-          commitMetadata: commitMetadata as never,
+          commitMetadata,
         }),
       )
 
@@ -5468,9 +5466,7 @@ describe('classifyTracked — discovery_channel refresh', () => {
     const accessList = contribRepos.map(e =>
       makeAccess({owner: e.owner, name: e.name, node_id: e.node_id ?? `R_${e.name}`, private: false}),
     )
-    const channelMap = new Map<string, DiscoveryChannel>(
-      contribRepos.map(e => [`${e.owner}/${e.name}`, 'contrib' as DiscoveryChannel]),
-    )
+    const channelMap = new Map<string, DiscoveryChannel>(contribRepos.map(e => [`${e.owner}/${e.name}`, 'contrib']))
     const fieldProbes = new Map(
       contribRepos.map(e => [`${e.owner}/${e.name}`, {has_fro_bot_workflow: false, has_renovate: false}]),
     )
@@ -6142,7 +6138,7 @@ describe('handleReconcile stuck-candidate telemetry', () => {
             ],
           }),
         }),
-        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
       }),
     )
 
@@ -6200,7 +6196,7 @@ describe('handleReconcile stuck-candidate telemetry', () => {
             ],
           }),
         }),
-        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
       }),
     )
 
@@ -6281,7 +6277,7 @@ describe('handleReconcile floor integration', () => {
           allowlist: makeAllowlist(['fro-bot']),
           repos: {version: 1, repos: floorRepos},
         }),
-        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
         // Cap=1: floor adds 2 (FLOOR_MIN=2), cap cuts to 1.
         maxDispatchesPerRun: 1,
       }),
@@ -6316,7 +6312,7 @@ describe('handleReconcile floor integration', () => {
           allowlist: makeAllowlist(['fro-bot']),
           repos: {version: 1, repos: [a, b]},
         }),
-        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
         logger,
       }),
     )
@@ -6344,7 +6340,7 @@ describe('handleReconcile floor integration', () => {
         }),
         appOctokit: mockOctokit(),
         readMetadata: makeReadMetadata({allowlist: makeAllowlist(['fro-bot'])}),
-        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+        commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
         logger,
       }),
     )
@@ -6380,7 +6376,7 @@ describe('handleReconcile floor integration', () => {
             allowlist: makeAllowlist(['fro-bot']),
             repos: {version: 1, repos: [a, b]},
           }),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           logger: throwingLogger,
         }),
       ),
@@ -6430,7 +6426,7 @@ describe('handleReconcile floor integration', () => {
             allowlist: makeAllowlist(['fro-bot']),
             repos: {version: 1, repos},
           }),
-          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})) as never,
+          commitMetadata: vi.fn(async () => ({committed: true, sha: 's', attempts: 1})),
           // Cap=1: floor adds 2 (FLOOR_MIN=2), rotation picks 1 per run.
           maxDispatchesPerRun: 1,
         }),
@@ -6866,7 +6862,7 @@ describe('handleReconcile visibility-transition duplicatesSkipped counter', () =
   function makeSkipParams(paginateMock: OctokitMockOverrides['paginate']): HandleReconcileParams {
     return baseParams({
       appOctokit: mockOctokit({
-        paginate: paginateMock as unknown as OctokitMockOverrides['paginate'],
+        paginate: paginateMock,
         issuesCreate: async () => ({data: {number: 50}}),
       }),
       readMetadata: makeReadMetadata({
@@ -7441,7 +7437,7 @@ describe('syncStars', () => {
           {owner: {login: 'marcusrbrown'}, name: 'cool-repo'},
           {owner: {login: 'marcusrbrown'}, name: 'other-repo'},
         ]),
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
       })
       const logger = silentLogger()
 
@@ -7470,7 +7466,7 @@ describe('syncStars', () => {
       const starRepo = vi.fn(async () => undefined)
       const userOctokit = mockOctokit({
         paginate: starredPaginate([]),
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
       })
       const logger = silentLogger()
 
@@ -7501,7 +7497,7 @@ describe('syncStars', () => {
       const starRepo = vi.fn(async () => undefined)
       const userOctokit = mockOctokit({
         paginate: starredPaginate([{owner: {login: 'owner-a'}, name: 'repo-a'}]),
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
       })
       const logger = silentLogger()
 
@@ -7533,7 +7529,7 @@ describe('syncStars', () => {
       const starRepo = vi.fn(async () => undefined)
       const userOctokit = mockOctokit({
         paginate: starredPaginate([{owner: {login: 'Owner'}, name: 'Repo'}]),
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
       })
       const logger = silentLogger()
 
@@ -7670,7 +7666,7 @@ describe('syncStars', () => {
         paginate: async () => {
           throw apiError(500, 'Internal Server Error')
         },
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
       })
       const logger = silentLogger()
 
@@ -7706,7 +7702,7 @@ describe('syncStars', () => {
         paginate: async () => {
           throw apiError(429, 'Too Many Requests')
         },
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
       })
       const logger = silentLogger()
 
@@ -7737,8 +7733,8 @@ describe('syncStars', () => {
       const paginate = vi.fn(async () => [])
       const starRepo = vi.fn(async () => undefined)
       const userOctokit = mockOctokit({
-        paginate: paginate as never,
-        starRepoForAuthenticatedUser: starRepo as never,
+        paginate,
+        starRepoForAuthenticatedUser: starRepo,
       })
       const logger = silentLogger()
 
@@ -7759,7 +7755,7 @@ describe('syncStars', () => {
       const starRepo = vi.fn(async () => undefined)
       const userOctokit = mockOctokit({
         paginate: starredPaginate([]),
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
       })
       const logger = silentLogger()
 
@@ -7792,7 +7788,7 @@ describe('syncStars', () => {
           {owner: {login: 'extra-owner'}, name: 'extra-repo-1'},
           {owner: {login: 'extra-owner'}, name: 'extra-repo-2'},
         ]),
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
       })
       const logger = silentLogger()
 
@@ -7827,7 +7823,7 @@ describe('handleReconcile — star sync integration', () => {
       const starRepo = vi.fn(async () => undefined)
 
       const userOctokit = mockOctokit({
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
         // Provide collab access list: one collab repo
         listForAuthenticatedUser: async () => ({
           data: [
@@ -7850,7 +7846,7 @@ describe('handleReconcile — star sync integration', () => {
         ]
       }
       const appOctokit = mockOctokit({
-        paginate: appPaginateOwned as never,
+        paginate: appPaginateOwned,
       })
 
       const result = await handleReconcile(
@@ -7881,7 +7877,7 @@ describe('handleReconcile — star sync integration', () => {
         listReposStarredByAuthenticatedUser: async () => ({
           data: [{owner: {login: 'owner-b'}, name: 'repo-b'}] as StarredRepoApiEntry[],
         }),
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
         listForAuthenticatedUser: async () => ({
           data: [
             {owner: {login: 'owner-a'}, name: 'repo-a', archived: false, private: false, node_id: 'R_a'},
@@ -7952,7 +7948,7 @@ describe('handleReconcile — star sync integration', () => {
 
       const userOctokit = mockOctokit({
         // Default paginate + default listReposStarredByAuthenticatedUser → empty starred set.
-        starRepoForAuthenticatedUser: userStarRepo as never,
+        starRepoForAuthenticatedUser: userStarRepo,
         listForAuthenticatedUser: async () => ({
           data: [
             {owner: {login: 'marcusrbrown'}, name: 'some-repo', archived: false, private: false, node_id: 'R_some'},
@@ -7962,7 +7958,7 @@ describe('handleReconcile — star sync integration', () => {
       // appOctokit has its own star mock — if syncStars mistakenly used appOctokit,
       // this would be called and the assertion below would catch it.
       const appOctokit = mockOctokit({
-        starRepoForAuthenticatedUser: appStarRepo as never,
+        starRepoForAuthenticatedUser: appStarRepo,
       })
 
       // WHEN handleReconcile runs end-to-end
@@ -8014,7 +8010,7 @@ jobs:
         // Default paginate: calls fn(opts) and returns response.data.
         // listReposStarredByAuthenticatedUser defaults to {data: []} → empty starred set.
         // listForAuthenticatedUser defaults to {data: []} → no collab repos.
-        starRepoForAuthenticatedUser: starRepo as never,
+        starRepoForAuthenticatedUser: starRepo,
         // No collab repos — only contrib
         listForAuthenticatedUser: async () => ({data: []}),
       })

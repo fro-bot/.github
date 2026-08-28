@@ -248,7 +248,7 @@ describe('planPatternProposalOpens: error paths', () => {
             [digestA.fingerprint]: {
               ...makeDraftedBody(),
               unknownField: 'leak',
-            } as unknown as DraftedPatternProposalBody,
+            },
             [digestB.fingerprint]: makeDraftedBody(),
           },
         },
@@ -333,7 +333,7 @@ describe('planPatternProposalOpens: privacy', () => {
             [makeDigest().fingerprint]: {
               ...makeDraftedBody(),
               privateToken: 'shhh',
-            } as unknown as DraftedPatternProposalBody,
+            },
           },
         },
       }),
@@ -423,7 +423,7 @@ describe('openPatternProposalIssues', () => {
   it('opens issues with required labels when label preflight succeeds', async () => {
     const octokit = makeMockOctokit()
     const result = await openPatternProposalIssues(
-      octokit as never,
+      octokit,
       'fro-bot',
       '.github',
       [{fingerprint: 'a'.repeat(64), title: 'Pattern proposal: retries', body: 'body text'}],
@@ -438,7 +438,7 @@ describe('openPatternProposalIssues', () => {
     octokit.rest.issues.getLabel.mockRejectedValue({status: 500})
     octokit.rest.issues.createLabel.mockRejectedValue({status: 500})
     const result = await openPatternProposalIssues(
-      octokit as never,
+      octokit,
       'fro-bot',
       '.github',
       [{fingerprint: 'a'.repeat(64), title: 'Pattern proposal: retries', body: 'body text'}],
@@ -457,7 +457,7 @@ describe('openPatternProposalIssues', () => {
     })
     octokit.rest.issues.createLabel.mockRejectedValue({status: 500})
     const result = await openPatternProposalIssues(
-      octokit as never,
+      octokit,
       'fro-bot',
       '.github',
       [{fingerprint: 'a'.repeat(64), title: 'Pattern proposal: retries', body: 'body text'}],
@@ -475,7 +475,7 @@ describe('openPatternProposalIssues', () => {
       title: `Pattern proposal: ${c}`,
       body: 'body text',
     }))
-    const result = await openPatternProposalIssues(octokit as never, 'fro-bot', '.github', toCreate, silentLog)
+    const result = await openPatternProposalIssues(octokit, 'fro-bot', '.github', toCreate, silentLog)
     expect(result.opened).toBe(3)
     expect(result.skippedOverCap).toBe(1)
   })
@@ -492,7 +492,7 @@ describe('openPatternProposalIssues', () => {
       body: 'body text',
     }))
 
-    const result = await openPatternProposalIssues(octokit as never, 'fro-bot', '.github', toCreate, silentLog)
+    const result = await openPatternProposalIssues(octokit, 'fro-bot', '.github', toCreate, silentLog)
 
     expect(result.opened).toBe(2)
     expect(result.failed).toBe(1)
@@ -501,7 +501,7 @@ describe('openPatternProposalIssues', () => {
 
   it('empty toCreate is a successful no-op with no label preflight call', async () => {
     const octokit = makeMockOctokit()
-    const result = await openPatternProposalIssues(octokit as never, 'fro-bot', '.github', [], silentLog)
+    const result = await openPatternProposalIssues(octokit, 'fro-bot', '.github', [], silentLog)
     expect(result.opened).toBe(0)
     expect(octokit.rest.issues.getLabel).not.toHaveBeenCalled()
   })
@@ -512,7 +512,7 @@ describe('ensurePatternProposalLabelsExist', () => {
     const octokit = makeMockOctokit()
     octokit.rest.issues.getLabel.mockRejectedValueOnce({status: 404})
     const confirmed = await ensurePatternProposalLabelsExist(
-      octokit as never,
+      octokit,
       'fro-bot',
       '.github',
       [{name: 'pattern-proposal', color: '5319e7', description: 'x'}],

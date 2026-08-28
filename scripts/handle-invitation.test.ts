@@ -1009,7 +1009,7 @@ describe('handleInvitations', () => {
           {
             id: 106,
             // GitHub returns inviter: null when the inviting user's account has been deleted.
-            inviter: null as unknown as {login: string},
+            inviter: null,
             repository: {name: 'orphaned-repo', node_id: 'R_kgDOORPHANED', private: false, owner: {login: 'fro-bot'}},
           },
         ],

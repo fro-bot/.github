@@ -186,7 +186,7 @@ describe('capture-patterns.yaml workflow contract', () => {
   it('the digest artifact retains for 1 day, not the default longer window', () => {
     const uploadStep = detectJob?.steps.find(
       step => typeof step.name === 'string' && step.name.includes('Upload digest artifact'),
-    ) as (WorkflowStep & {with?: {'retention-days'?: number}}) | undefined
+    )
     expect(uploadStep?.with?.['retention-days']).toBe(1)
   })
 

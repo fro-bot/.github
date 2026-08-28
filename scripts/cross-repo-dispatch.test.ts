@@ -694,7 +694,7 @@ describe('classifyReceiptCapability', () => {
   })
 
   it('fails closed on an unknown capability value', () => {
-    expect(() => classifyReceiptCapability({...base, cross_repo_receipts: 'bogus-value'} as GateEntry)).toThrow(
+    expect(() => classifyReceiptCapability({...base, cross_repo_receipts: 'bogus-value'})).toThrow(
       /cross_repo_receipts/,
     )
   })
