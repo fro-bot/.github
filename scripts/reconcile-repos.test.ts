@@ -2431,6 +2431,80 @@ describe('fetchFieldProbes — database_id capture', () => {
     expect(graphql).toHaveBeenCalledWith(expect.stringContaining('node(id: $id)'), {id: 'R_old'})
   })
 
+  it('classifies a 404 GraphQL node(id:) failure as unresolvable and demotes the entry', async () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => ({
+        data: {
+          private: false,
+          node_id: 'R_new',
+          id: 987654,
+          name: 'old-name',
+          owner: {login: 'alice'},
+        },
+      }),
+      graphql: async () => {
+        throw apiError(404, 'Not Found')
+      },
+    })
+
+    const probeResult = await fetchFieldProbes(
+      userOctokit,
+      {version: 1, repos: [entry]},
+      [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})],
+      silentLogger(),
+    )
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})],
+        fieldProbes: probeResult.probes,
+      }),
+    )
+
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({resolution: 'unresolvable'})
+    expect(result.nextRepos.repos).toHaveLength(1)
+    expect(result.nextRepos.repos[0]?.onboarding_status).toBe('lost-access')
+    expect(result.nextRepos.repos[0]?.name).toBe('R_old')
+    expect(result.summary).toMatchObject({added: 0, renamed: 0, lostAccess: 1})
+  })
+
+  it('classifies a 500 GraphQL node(id:) failure as transient and preserves the entry', async () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => ({
+        data: {
+          private: false,
+          node_id: 'R_new',
+          id: 987654,
+          name: 'old-name',
+          owner: {login: 'alice'},
+        },
+      }),
+      graphql: async () => {
+        throw apiError(500, 'Internal Server Error')
+      },
+    })
+
+    const probeResult = await fetchFieldProbes(
+      userOctokit,
+      {version: 1, repos: [entry]},
+      [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})],
+      silentLogger(),
+    )
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})],
+        fieldProbes: probeResult.probes,
+      }),
+    )
+
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({resolution: 'transient'})
+    expect(result.nextRepos.repos).toEqual([entry])
+    expect(result.summary).toMatchObject({added: 0, renamed: 0, lostAccess: 0, transient: 1})
+  })
+
   it('happy path: GraphQL/REST returns databaseId → probe result carries numeric database_id', async () => {
     // GIVEN a tracked repo in the access list with a known numeric id
     const currentRepos: ReposFile = {
