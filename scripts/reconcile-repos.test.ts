@@ -782,6 +782,134 @@ describe('reconcileRepos', () => {
       expect(result.summary.merged).toBe(1)
     })
 
+    it('uses the current API name as the deterministic survivor when duplicate survey dates tie', () => {
+      const current = makeEntry({
+        owner: 'alice',
+        name: 'current-name',
+        node_id: 'R_same',
+        discovery_channel: 'owned',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-01',
+      })
+      const alias = makeEntry({
+        owner: 'alice',
+        name: 'old-name',
+        node_id: 'R_same',
+        discovery_channel: 'collab',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'failure',
+        next_survey_eligible_at: '2026-08-15',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [current, alias]},
+          accessList: [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_same'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'alice',
+        name: 'current-name',
+        discovery_channel: 'owned',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-01',
+      })
+      expect(result.summary.merged).toBe(1)
+    })
+
+    it('uses a deterministic survivor when all duplicate rows have null survey dates', () => {
+      const current = makeEntry({
+        owner: 'alice',
+        name: 'current-name',
+        node_id: 'R_null',
+        discovery_channel: 'owned',
+        last_survey_at: null,
+        last_survey_status: 'failure',
+        next_survey_eligible_at: null,
+      })
+      const alias = makeEntry({
+        owner: 'alice',
+        name: 'old-name',
+        node_id: 'R_null',
+        discovery_channel: 'collab',
+        last_survey_at: null,
+        last_survey_status: null,
+        next_survey_eligible_at: null,
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [current, alias]},
+          accessList: [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_null'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'alice',
+        name: 'current-name',
+        discovery_channel: 'owned',
+        last_survey_at: null,
+        last_survey_status: 'failure',
+        next_survey_eligible_at: null,
+      })
+      expect(result.summary.merged).toBe(1)
+    })
+
+    it('merges a three-row duplicate group into one row with two removals and coherent cadence', () => {
+      const first = makeEntry({
+        owner: 'alice',
+        name: 'old-name-a',
+        node_id: 'R_three',
+        added: '2025-01-01',
+        last_survey_at: '2026-06-01',
+        last_survey_status: 'failure',
+        next_survey_eligible_at: '2026-07-01',
+      })
+      const current = makeEntry({
+        owner: 'alice',
+        name: 'current-name',
+        node_id: 'R_three',
+        added: '2025-03-01',
+        discovery_channel: 'owned',
+        last_survey_at: '2026-07-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-08-01',
+      })
+      const freshestAlias = makeEntry({
+        owner: 'alice',
+        name: 'old-name-b',
+        node_id: 'R_three',
+        added: '2025-02-01',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-01',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [current, first, freshestAlias]},
+          accessList: [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_three'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'alice',
+        name: 'current-name',
+        discovery_channel: 'owned',
+        added: '2025-01-01',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-01',
+      })
+      expect(result.summary.merged).toBe(2)
+    })
+
     it('leaves a pending-review, still-accessible entry unchanged when no field drift', () => {
       const entry = makeEntry({
         onboarding_status: 'pending-review',
