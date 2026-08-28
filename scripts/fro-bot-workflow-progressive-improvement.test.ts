@@ -49,6 +49,7 @@ describe('fro-bot.yaml progressive improvement prompt', () => {
   })
 
   it('requires bounded methods for daily report detections', () => {
+    expect(prompt).toContain('✅/⚠️/❌/❔')
     expect(prompt).toContain('paginated repository listing')
     expect(prompt).toMatch(/at least read\s+access/)
     expect(prompt).toContain('could not be enumerated')

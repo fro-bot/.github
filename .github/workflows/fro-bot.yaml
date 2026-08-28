@@ -333,13 +333,13 @@ env:
     ### Run Summary
     | Category | Status | Notes |
     | --- | --- | --- |
-    | Errored PRs | ✅/⚠️/❌ | ... |
-    | Security | ✅/⚠️/❌ | ... |
-    | Control-Plane Integrity | ✅/⚠️/❌ | ... |
-    | Code Quality | ✅/⚠️/❌ | ... |
-    | Oversight | ✅/⚠️/❌ | ... |
-    | Cross-Project Intelligence | ✅/⚠️/❌ | ... |
-    | Progressive Improvement | ✅/⚠️/❌ | ... |
+    | Errored PRs | ✅/⚠️/❌/❔ | ... |
+    | Security | ✅/⚠️/❌/❔ | ... |
+    | Control-Plane Integrity | ✅/⚠️/❌/❔ | ... |
+    | Code Quality | ✅/⚠️/❌/❔ | ... |
+    | Oversight | ✅/⚠️/❌/❔ | ... |
+    | Cross-Project Intelligence | ✅/⚠️/❌/❔ | ... |
+    | Progressive Improvement | ✅/⚠️/❌/❔ | ... |
     ### Errored PRs
     ### Security
     ### Control-Plane Integrity
