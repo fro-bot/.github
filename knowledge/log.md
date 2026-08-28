@@ -4005,24 +4005,23 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-29 00:00] ingest | marcusrbrown/.github
+## [2026-08-29 00:00] ingest | marcusrbrown/marcusrbrown.github.io
 
-Re-survey of `marcusrbrown/.github` (HEAD `66270bac`, up from `7ce5ae7`). Updated repo page `marcusrbrown--github.md` (frontmatter source + `updated`, Overview last-push, structure table workflow pins, shared-workflows SHA/version, Fro Bot integration section, new survey-history row) and its `index.md` entry (expanded from the prior thin one-liner). No new topic/entity/comparison pages warranted — the repo remains structurally frozen; all cross-cutting patterns already cataloged.
+No-op re-survey of the *name* `marcusrbrown/marcusrbrown.github.io` (SHA `9e54dbc`, unchanged). The name resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). The name-to-repo binding is unchanged since 2026-07-20 — collision holds. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (new Delta Log + Survey History row + frontmatter `updated`/source) and `index.md`. No topic/entity/comparison pages warranted; tree is frozen so no durable delta lands on the canonical [[marcusrbrown--mrbro-dev]] page.
 
-Delta from prior survey (SHA `7ce5ae7`, 2026-07-28) — **dependency-only churn, no structural change:**
+Key findings:
 
-- `bfra-me/.github` reusable workflows advanced **v4.16.41 → v4.22.0** (latest merge #418, `chore(deps): update bfra-me/.github action to v4.22.0`, 2026-08-27), now pinned at SHA `b830359a19878c0dd40b92b2c8b60673e71dceac` in both `renovate.yaml` and `update-repo-settings.yaml` — crosses the v4.16 → v4.22 minor band in one interval.
-- Prettier steady at **3.9.6** (`main.yaml` `PRETTIER_VERSION` env + `renovate.json5` post-upgrade task unchanged); `actions/checkout` steady at **v5.1.0** (`fbc6f399`).
-- `common-settings.yaml`, `settings.yml`, `.prettierrc.yaml`, and the `main.yaml` Lint job all unchanged; **same 15-blob file tree, no new paths, no `fro-bot.yaml`.**
-- `renovate.json5` preset still `marcusrbrown/renovate-config#4.5.9` — **v4.x holdout**, now ~14 weeks behind `marcusrbrown/renovate-config` at v5.2.x.
-- **Still no Fro Bot agent workflow (13th consecutive survey)** — follow-up draft PR to add the single-file three-mode `fro-bot.yaml` template remains open. `fro-bot` retains `push` collaborator access via the settings template but is not in the merge loop; recent PRs are Renovate bumps auto-merged by `mrbro-bot[bot]`.
-- 2 open issues (#37 move-settings-action, #214 Dependency Dashboard), 0 open PRs, 4 stars, 2 watchers. `pushed_at` 2026-08-27T02:02Z.
-- Surveyed via unauthenticated public GitHub REST + raw-file reads (no repo credentials in this run environment); reads limited to directory tree, workflow files, `renovate.json5`, `settings.yml`, `common-settings.yaml`, and issue listing per the untrusted-input read constraints.
+- `main` HEAD **still `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z) — trunk frozen **29 days**; `updated_at` still 2026-07-31, `pushed_at` 2026-08-28T10:11 (PR-branch pushes only). No tree-level drift.
+- Queue delta since 2026-08-28: daily-report renumber #291 → **#292** (`Daily Fro Bot Report — 2026-08-28 (UTC)`), plus the **legacy rolling `#162 Daily Autohealing Report`** (from 2026-05-04, pre-#234 consolidation) re-entering the open listing after a daily-autoheal touch (updated 2026-08-28T06:12). This ticks API `open_issues_count` 13 → **14** — not new work.
+- Open issues 7 (#292 / #287 `ci: remove unused E2E contents write permission` / #271 / #270 / #261 / #258 / #212 — all carried; + #162 legacy autoheal-report) + #1 Dependency Dashboard (`mrbro-bot[bot]`). Open PRs 4, all carried, none merged since 2026-08-07 (#283 docs-duplicate / #266 `fix(security): remediate high audit advisories` ~23d unmerged / #263 / #254 / #253). The #283-vs-#254 docs duplicate for one "correct automation script count" fix still stands.
+- The report-without-remediation / propose-without-merge pattern (first flagged 2026-06-12) remains fully hardened: 29 days of a frozen trunk, security PR #266 unmerged ~23 days, self-duplicated docs PR, four-item CI least-privilege issue cluster (#287/#271/#270/#261). The daemon audits and drafts; nobody promotes.
+- `fro-bot.yaml` + `package.json` re-read at HEAD: agent pin steady `fro-bot/agent@a4976f4 # v0.93.1`, single `30 3 * * *` daily oversight+autoheal cron (#234 consolidation holds), `response-mode: none`, `Validate review mode inputs` + fork guard + category-10 Upstream Modernization Watch (Sundays UTC, `IS_SUNDAY_UTC` step-output). 8 workflows; Renovate `#5.2.7`; name `mrbro.dev`, `packageManager pnpm@11.1.3`, `engines.node >=24.0.0`, `pnpm.overrides` empty. Fro Bot workflow present and active — **no onboarding follow-up draft PR warranted for this name.**
+- `gh` credential gap again (`GH_TOKEN` unset; unauthenticated GitHub API + raw fetch only) — the same authenticated-access gap the current occupant's own issue #212 tracks. No new facts about the *brand site* (id `1021912280`) observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
 
-Sources: https://github.com/marcusrbrown/.github (SHA 66270bac1d3c7b814972b59268e95f6646d7a6c5)
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
 
-## [2026-08-28 17:30] ingest | repo:marcusrbrown/.github
+## [2026-08-28 17:33] ingest | repo:marcusrbrown/marcusrbrown.github.io
 
-Surveyed marcusrbrown/.github and updated the control-plane wiki.
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/.github
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
