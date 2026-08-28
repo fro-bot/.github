@@ -345,6 +345,27 @@ describe('addRepoEntry', () => {
 })
 
 describe('recordSurveyResult', () => {
+  it('fails loudly when duplicate node_id rows would make survey write-back ambiguous', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        repoEntry({owner: 'alice', name: 'first', node_id: PUBLIC_NODE_ID}),
+        repoEntry({owner: 'alice', name: 'second', node_id: PUBLIC_NODE_ID}),
+      ],
+    }
+
+    expect(() =>
+      recordSurveyResult(current, {
+        owner: 'alice',
+        repo: 'first',
+        node_id: PUBLIC_NODE_ID,
+        private: false,
+        at: NOW,
+        status: 'success',
+      }),
+    ).toThrow(/duplicate.*node_id/i)
+  })
+
   // Behavioral contract: writes ISO date + status on a matching entry
   it('writes last_survey_at (ISO date) and last_survey_status when the entry exists', () => {
     const current: ReposFile = {
