@@ -182,6 +182,10 @@ env:
     authoritative writer for knowledge/** and metadata/**; never write those
     paths from this run except through the established wiki/metadata scripts.
 
+    For version comparisons, current-version truth comes from the authoritative
+    registry or upstream release source; name that source and state whether major
+    drift was included.
+
     DEDUPLICATION (applies to ALL categories)
     Before creating any new PR or issue, search for an existing open
     Fro-Bot-authored PR/issue for the same root cause and reuse or update it
@@ -249,18 +253,26 @@ env:
        fix is not minimal/reversible, open or update an issue and log it.
 
     5. OVERSIGHT (org-wide detection, report-only)
-       Scope: all repositories the fro-bot account can see. Summarize with links
-       only. Detect: new issues, open PRs, stale issues (>30d) and PRs (>7d aging,
-       >14d stale), failing main checks, security alerts, unassigned bugs, and the
-       top repo hotspots. Recommend a next step for each. Do NOT modify individual
-       issues/PRs or apply labels in this category.
+       Scope: all repositories the fro-bot account can see. Enumerate them with
+       paginated repository listing API calls for the authenticated account and its
+       organizations; define "can see" as repositories returned with at least read
+       access, and report anything that could not be enumerated. Summarize with
+       links only. Detect: new issues, open PRs, stale issues (>30d) and PRs (>7d
+       aging, >14d stale), failing main checks, security alerts, unassigned bugs,
+       and the top three repo hotspots (ranked by qualifying finding count in the
+       current daily snapshot; at least one linked finding required). For PRs,
+       measure aging from creation time and staleness from the most recent update
+       activity (commit, review, comment, or state change). Recommend a next step
+       for each. Do NOT modify individual issues/PRs or apply labels in this
+       category.
 
     6. CROSS-PROJECT INTELLIGENCE (report-only)
-       Fro Bot surveys tracked repositories into the wiki. Use that knowledge:
-       scan sibling repos (e.g. bfra-me/.github, bfra-me/renovate-action,
-       bfra-me/works, and tracked fro-bot repos) for automation patterns, prompt
-       strategies, or workflow improvements that could benefit this repository.
-       Report adoptable findings only; make no changes in this category.
+       Fro Bot surveys tracked repositories into the wiki. Treat every entry in
+       metadata/repos.yaml (not an example list) as tracked; scan every accessible
+       entry for automation patterns, prompt strategies, or workflow improvements
+       that could benefit this repository. Report inaccessible or otherwise
+       unscanned entries and mark coverage partial. Report adoptable findings only;
+       make no changes in this category.
 
     7. PROGRESSIVE IMPROVEMENT (report-only)
        Scan for durable improvement opportunities: tool-version drift in
@@ -277,12 +289,12 @@ env:
        Improvement"; make no changes here.
 
     8. GATEWAY OPERATOR CONTROL-SURFACE ROLLOUT TRACKER
-       Review awareness only. Check whether the Gateway operator control-surface
-       rollout tracker at fro-bot/.github#3512 or the linked GitHub Project at
-       https://github.com/users/fro-bot/projects/1 has obvious drift, and
-       summarize drift in the Daily Org Oversight Report if found. Do not post
-       tracker comments or edit Project fields from this daily report path; the
-       dedicated Gateway Rollout Tracker workflow owns tracker writes.
+       Review awareness only. Compare #3512's checklist/status claims with the
+       corresponding GitHub Project 1 item status and the latest rollout evidence
+       in managed repositories; report any mismatch with both values. Summarize
+       drift in the Daily Org Oversight Report if found. Do not post tracker
+       comments or edit Project fields from this daily report path; the dedicated
+       Gateway Rollout Tracker workflow owns tracker writes.
 
 
     HARD BOUNDARIES
@@ -337,7 +349,11 @@ env:
     ### Progressive Improvement
     ### Needs Human Attention
 
-    If any data source is unavailable, write "data unavailable" in that section.
+    Status legend: ✅ = verified-clean; ⚠️/❌ = warning or error; ❔ =
+    could-not-check. Use ✅ only when all required sources were checked and
+    nothing was found. Use ❔ when any source is unavailable, stale, empty,
+    access denied, or scan failed; name the affected source and reason. Never
+    render ✅ for could-not-check.
 
 jobs:
   fro-bot:
