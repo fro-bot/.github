@@ -132,6 +132,9 @@ jobs:
     if: ${{ always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')) }}
     permissions:
       contents: read
+      # Needed only so scheduled-failure notification can fall back to the job
+      # token when App-token minting fails.
+      issues: write
 
     steps:
       - name: ⤵ Checkout Branch
@@ -197,3 +200,29 @@ jobs:
               echo "| Status | (report result unavailable) |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify scheduled failure
+        id: notify-scheduled-failure
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          issue_number="$(gh issue list \
+            --repo "$REPOSITORY" \
+            --state open \
+            --label improvement-metrics-report \
+            --limit 10 \
+            --json number,title \
+            --jq 'first(.[] | select(.title == "Improvement Metrics") | .number)')"
+
+          if [[ -z "$issue_number" || "$issue_number" == "null" ]]; then
+            echo 'Improvement Metrics report issue not found.' >&2
+            exit 1
+          fi
+
+          gh issue comment "$issue_number" \
+            --repo "$REPOSITORY" \
+            --body "Scheduled Improvement Metrics run failed: $RUN_URL; the report may be stale until the next successful run."

@@ -80,9 +80,9 @@ describe('improvement-metrics.yaml workflow contract', () => {
     expect(detectJob?.permissions).toEqual({contents: 'read', issues: 'read'})
   })
 
-  it('report job carries only read-only contents permission on the job token', () => {
+  it('report job grants only contents:read and issues:write on the job token', () => {
     expect(reportJob).toBeDefined()
-    expect(reportJob?.permissions).toEqual({contents: 'read'})
+    expect(reportJob?.permissions).toEqual({contents: 'read', issues: 'write'})
   })
 
   it('the report job writes on schedule or explicit live dispatch, while preserving manual dry-run behavior', () => {
@@ -167,6 +167,35 @@ describe('improvement-metrics.yaml workflow contract', () => {
     const token = String(reportStep?.env?.GITHUB_TOKEN ?? '')
     expect(token).toContain('steps.app-token.outputs.token')
     expect(token).not.toContain('github.token')
+  })
+
+  it('has a scheduled-failure notification step that does not notify manual dispatch failures', () => {
+    const notifyStep = reportJob?.steps.find(step => step.id === 'notify-scheduled-failure')
+    expect(notifyStep).toBeDefined()
+    expect(notifyStep?.if).toBe('$' + "{{ failure() && github.event_name == 'schedule' }}")
+  })
+
+  it('finds the perpetual report issue by its exact title and label before commenting', () => {
+    const notifyStep = reportJob?.steps.find(step => step.id === 'notify-scheduled-failure')
+    const run = String(notifyStep?.run ?? '')
+    expect(run).toContain('gh issue list')
+    expect(run).toContain('--label improvement-metrics-report')
+    expect(run).toContain('select(.title == "Improvement Metrics")')
+    expect(run).toContain('gh issue comment')
+  })
+
+  it('pins scheduled failure comments to the failing workflow run URL', () => {
+    const notifyStep = reportJob?.steps.find(step => step.id === 'notify-scheduled-failure')
+    const runUrl = String(notifyStep?.env?.RUN_URL ?? '')
+    expect(runUrl).toBe(
+      '$' + '{{ github.server_url }}/' + '$' + '{{ github.repository }}/actions/runs/' + '$' + '{{ github.run_id }}',
+    )
+    expect(String(notifyStep?.run ?? '')).toContain('$RUN_URL')
+  })
+
+  it('falls back to the default token only when app-token minting produced no token', () => {
+    const notifyStep = reportJob?.steps.find(step => step.id === 'notify-scheduled-failure')
+    expect(notifyStep?.env?.GH_TOKEN).toBe('$' + '{{ steps.app-token.outputs.token || github.token }}')
   })
 
   it('the detect step writes the digest to IMPROVEMENT_METRICS_DIGEST_PATH under runner.temp', () => {
