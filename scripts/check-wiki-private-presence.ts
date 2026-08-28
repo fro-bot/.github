@@ -537,7 +537,7 @@ export async function runCli(
 }
 
 async function main(): Promise<void> {
-  const result = await runCli(process.argv.slice(2), process.env as Record<string, string | undefined>)
+  const result = await runCli(process.argv.slice(2), process.env)
   if (result.stdout) process.stdout.write(result.stdout)
   if (result.stderr) process.stderr.write(result.stderr)
   if (result.exitCode !== 0) process.exit(result.exitCode)

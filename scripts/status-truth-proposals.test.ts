@@ -1547,7 +1547,7 @@ function makeFetchOctokit(
         },
       },
     },
-  } as unknown as StatusTruthOctokitClient
+  }
 }
 
 describe('fetchExistingProposalIssues', () => {
@@ -2426,7 +2426,7 @@ describe('countsByKind in planner result', () => {
           expect(typeof entry.closed).toBe('number')
           expect(typeof entry.suppressed).toBe('number')
           // No path or fingerprint fields — KindActionCounts only has numeric count fields
-          const entryKeys = Object.keys(entry as object)
+          const entryKeys = Object.keys(entry)
           expect(entryKeys).not.toContain('path')
           expect(entryKeys).not.toContain('fingerprint')
         }

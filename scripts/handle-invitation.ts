@@ -580,7 +580,7 @@ async function loadOctokitConstructor(): Promise<OctokitConstructor> {
     })
   }
 
-  return Octokit as unknown as OctokitConstructor
+  return Octokit
 }
 
 function isApiStatus(error: unknown, status: number): boolean {

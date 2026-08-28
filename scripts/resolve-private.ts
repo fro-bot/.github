@@ -109,7 +109,7 @@ function formatTable(entries: ResolvedEntry[]): string {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  const token = requireToken(process.env as Record<string, string | undefined>)
+  const token = requireToken(process.env)
 
   const filePath = process.argv[2] ?? 'metadata/repos.yaml'
   const raw = await readFile(filePath, 'utf8')

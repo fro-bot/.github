@@ -878,15 +878,13 @@ function decodeGetContentResponse(data: {content?: string; encoding?: string}): 
 }
 
 function isApiStatus(error: unknown, status: number): boolean {
-  return (
-    typeof error === 'object' && error !== null && 'status' in error && (error as {status: unknown}).status === status
-  )
+  return typeof error === 'object' && error !== null && 'status' in error && error.status === status
 }
 
 /** Extract a numeric API status code from an error, if present. Never extracts message text. */
 function extractApiStatus(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null || !('status' in error)) return undefined
-  const status = (error as {status: unknown}).status
+  const status = error.status
   return typeof status === 'number' ? status : undefined
 }
 

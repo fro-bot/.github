@@ -283,7 +283,7 @@ export function hashState(state: Omit<GoalState, 'markerHash'>): string {
 function sortedReplacer(_key: string, value: unknown): unknown {
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
     const sorted: Record<string, unknown> = {}
-    for (const k of Object.keys(value as Record<string, unknown>).sort()) {
+    for (const k of Object.keys(value).sort()) {
       sorted[k] = (value as Record<string, unknown>)[k]
     }
     return sorted
@@ -986,7 +986,7 @@ export function planSnapshot(input: SnapshotPlanInput): SnapshotPlanResult {
     if (signal === undefined) return item
     if (TERMINAL_STATUSES.has(item.status)) return item
     if (signal.gateBlocked !== true) return item
-    return {...item, status: 'blocked' as ItemStatus}
+    return {...item, status: 'blocked'}
   })
 
   const updatedState: GoalState = {
@@ -1479,12 +1479,12 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
     const registryEntry = registryByKey.get(`${item.target.owner}/${item.target.name}`)
     classifyReceiptCapability(registryEntry)
     const gate = gateTarget(registryEntry)
-    if (gate !== 'ok') return {...item, status: 'blocked' as ItemStatus}
+    if (gate !== 'ok') return {...item, status: 'blocked'}
     // An eligible target owner missing a minted dispatch token is an ops
     // misconfiguration (App-installation mint didn't cover this owner) —
     // fail this item closed rather than dispatch with the wrong token.
     if (input.hasTargetToken !== undefined && !input.hasTargetToken(item.target.owner)) {
-      return {...item, status: 'blocked' as ItemStatus}
+      return {...item, status: 'blocked'}
     }
     return item
   })
@@ -1804,7 +1804,7 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       if (resolution?.attentionReason !== undefined) {
         return {
           ...item,
-          status: 'needs-attention' as ItemStatus,
+          status: 'needs-attention',
           needsAttentionReason: resolution.attentionReason,
           ...(resolution.attentionReason === 'unparseable-receipt' ? {noReceiptDiagnostic: undefined} : {}),
         }
@@ -1844,7 +1844,7 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
     const preItemsWithSla = preItems.map<DispatchItem>(item => {
       if (item.status !== 'dispatched') return item
       if (item.epoch !== undefined && now - item.epoch > slaMs) {
-        return {...item, status: 'needs-attention' as ItemStatus, needsAttentionReason: 'no-receipt' as const}
+        return {...item, status: 'needs-attention', needsAttentionReason: 'no-receipt' as const}
       }
       return item
     })
@@ -2051,7 +2051,7 @@ type CrossRepoOctokitConstructor = new (params: {
 
 async function loadOctokitConstructor(): Promise<CrossRepoOctokitConstructor> {
   const {Octokit} = await import('@octokit/rest')
-  return Octokit as unknown as CrossRepoOctokitConstructor
+  return Octokit
 }
 
 async function createOctokitForToken(token: string): Promise<CrossRepoDispatchOctokitClient> {

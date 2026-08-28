@@ -1161,7 +1161,7 @@ describe('mergeDataPr', () => {
     const octokit = mockOctokit({
       getPullRequest: async () => ({data: {mergeable_state: 'dirty', head: {sha: 'data-commit-sha'}}}),
       createIssue,
-      paginate: paginate as MockOverrides['paginate'],
+      paginate,
     })
 
     // #given an existing conflict alert is open on a page that a per_page:30 call would miss
@@ -1201,7 +1201,7 @@ describe('mergeDataPr', () => {
         },
       }),
       createIssue,
-      paginate: paginate as MockOverrides['paginate'],
+      paginate,
     })
 
     // #given an existing stale-divergence alert is open on a page that a per_page:30 call would miss

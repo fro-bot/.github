@@ -437,7 +437,7 @@ function makeFetchOctokit(
         },
       },
     },
-  } as unknown as PatternProposalOctokitClient
+  }
 }
 
 describe('fetchExistingPatternProposals', () => {

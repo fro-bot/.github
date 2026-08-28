@@ -1263,7 +1263,7 @@ function mockOctokit(
     // Route: if fn is the listReviews function, use paginateListReviews override or call fn directly
     if (fn === listReviewsFn) {
       if (overrides.paginateListReviews !== undefined) {
-        return overrides.paginateListReviews() as Promise<unknown[]>
+        return overrides.paginateListReviews()
       }
       const result = await listReviewsFn(opts)
       return result.data
@@ -1271,7 +1271,7 @@ function mockOctokit(
     // Route: if fn is the listReviewComments function
     if (fn === listReviewCommentsFn) {
       if (overrides.paginateListReviewComments !== undefined) {
-        return overrides.paginateListReviewComments() as Promise<unknown[]>
+        return overrides.paginateListReviewComments()
       }
       return []
     }
@@ -1743,7 +1743,7 @@ describe('harvestCandidates', () => {
         candidate1Pr,
         candidate2Pr,
       ],
-      paginateListReviews: paginateListReviews as () => Promise<ReviewItem[]>,
+      paginateListReviews,
     })
 
     // #when harvesting
@@ -1898,7 +1898,7 @@ describe('fetchOpenedLearningShas', () => {
   it('uses the LEARNING_PROPOSAL_LABEL constant when querying issues', async () => {
     // #given a paginate spy that captures the options
     const paginateSpy = vi.fn(async () => [])
-    const octokit = mockOctokitForIssues({paginate: paginateSpy as (fn: unknown, opts: unknown) => Promise<unknown[]>})
+    const octokit = mockOctokitForIssues({paginate: paginateSpy})
 
     // #when fetching proposed SHAs
     await fetchOpenedLearningShas(octokit, 'fro-bot', '.github')
@@ -2335,8 +2335,8 @@ describe('harvestCandidates — enrichment fetch', () => {
 
     const octokit = mockOctokit({
       paginatePrList: async () => [pr],
-      paginateListReviews: paginateListReviews as () => Promise<ReviewItem[]>,
-      paginateListReviewComments: paginateListReviewComments as () => Promise<ReviewCommentItem[]>,
+      paginateListReviews,
+      paginateListReviewComments,
     })
 
     // #when harvesting
@@ -2530,7 +2530,7 @@ describe('harvestCandidates — enrichment fetch', () => {
     const octokit = mockOctokit({
       paginatePrList: async () => [pr1, pr2],
       paginateListReviews: async () => reviews,
-      paginateListReviewComments: paginateListReviewComments as () => Promise<ReviewCommentItem[]>,
+      paginateListReviewComments,
     })
 
     // #when harvesting
