@@ -363,6 +363,9 @@ export async function upsertReportIssue(params: UpsertReportIssueParams): Promis
       throw error
     }
 
+    // In production this branch effectively never fires: the freshness stamp
+    // embeds generatedAt, so successive runs are never byte-identical. It remains
+    // for callers that pin generatedAt (tests) and as a guard if the stamp moves.
     if (priorVersion === REPORT_BODY_VERSION && renderedBody === priorBody) {
       return {outcome: 'noop', issueNumber: existing.number}
     }
