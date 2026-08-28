@@ -981,7 +981,7 @@ export function planDispatch(input: DispatchPlanInput): DispatchPlanResult {
  * (identical markerHash → no write).
  */
 export function planSnapshot(input: SnapshotPlanInput): SnapshotPlanResult {
-  const updatedItems = input.state.items.map(item => {
+  const updatedItems = input.state.items.map<DispatchItem>(item => {
     const signal = input.signals[item.id]
     if (signal === undefined) return item
     if (TERMINAL_STATUSES.has(item.status)) return item
@@ -1474,7 +1474,7 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
   // an unrecognized `cross_repo_receipts` value must fail closed at this point,
   // not later at confirmed-dispatch time after `createWorkflowDispatch` already ran.
   let state: GoalState = {...marker.state, markerHash: marker.hash}
-  const gatedItems = state.items.map(item => {
+  const gatedItems = state.items.map<DispatchItem>(item => {
     if (item.status !== 'pending') return item
     const registryEntry = registryByKey.get(`${item.target.owner}/${item.target.name}`)
     classifyReceiptCapability(registryEntry)
@@ -1788,13 +1788,18 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
     // did not resolve.
     const receiptResolutions = resolveReceipts(state.items, comments)
 
-    const preItems = state.items.map(item => {
+    const preItems = state.items.map<DispatchItem>(item => {
       if (TERMINAL_STATUSES.has(item.status)) return item
 
       const resolution = receiptResolutions.get(item.id)
       if (resolution?.terminal !== undefined) {
         const nextStatus: ItemStatus = resolution.terminal === 'failed' ? 'failed' : 'completed'
-        return {...item, status: nextStatus, needsAttentionReason: undefined, noReceiptDiagnostic: undefined}
+        return {
+          ...item,
+          status: nextStatus,
+          needsAttentionReason: undefined,
+          noReceiptDiagnostic: undefined,
+        }
       }
       if (resolution?.attentionReason !== undefined) {
         return {
@@ -1836,7 +1841,7 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
     // and past the confirm-time SLA -> needs-attention/no-receipt. An item
     // never confirmed (`epoch` unset) is never SLA-aged (a pre-confirm crash
     // is a dispatch failure, not an SLA miss).
-    const preItemsWithSla = preItems.map(item => {
+    const preItemsWithSla = preItems.map<DispatchItem>(item => {
       if (item.status !== 'dispatched') return item
       if (item.epoch !== undefined && now - item.epoch > slaMs) {
         return {...item, status: 'needs-attention' as ItemStatus, needsAttentionReason: 'no-receipt' as const}
