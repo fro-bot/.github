@@ -2,6 +2,10 @@
 name: Improvement Metrics
 
 on:
+  # Deliberately after Sunday's data-promotion sequence (wiki-lint 20:00,
+  # merge-data 22:00, reconcile 22:30) so metrics use freshly promoted metadata.
+  schedule:
+    - cron: '0 23 * * 0'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -14,7 +18,7 @@ on:
           - 'false'
 
 # Default permissions: read-only. The report job overrides to issues: write, and only
-# when a live (non-dry-run) manual dispatch explicitly requests it.
+# for scheduled runs or when a live (non-dry-run) manual dispatch explicitly requests it.
 permissions:
   contents: read
 
@@ -121,11 +125,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: detect
-    # Skip the entire job on dry-run (the default): the report issue is only
-    # ever upserted on an explicit live (dry_run=false) manual dispatch.
+    # Skip the entire job on dry-run (the default): scheduled runs are live, while
+    # manual dispatches only upsert on an explicit live (dry_run=false) request.
     # `always()` keeps the job eligible even if the detect job's non-critical
     # steps report a failure state, without gating on detect's own conclusion.
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
+    if: ${{ always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')) }}
     permissions:
       contents: read
 
@@ -144,11 +148,11 @@ jobs:
           name: improvement-metrics-digest
           path: ${{ runner.temp }}
 
-      # Mint a scoped app token only for an explicit live (non-dry-run) manual
-      # dispatch. Dry-run runs (the default) never mint this token and never
-      # mutate issues.
+      # Mint a scoped app token for scheduled runs or an explicit live
+      # (non-dry-run) manual dispatch. Dry-run runs (the default) never mint this
+      # token and never mutate issues.
       - name: 🔑 Mint write token
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false') }}
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
