@@ -3,9 +3,10 @@ import {describe, expect, it} from 'vitest'
 import {
   buildRecordSurveyResultInput,
   formatRecordSurveyResultError,
+  formatRecordSurveyResultNonFatalOutcome,
   formatSurveyResultTarget,
 } from './record-survey-result.ts'
-import {RepoEntryNotFoundError} from './repos-metadata.ts'
+import {DuplicateRepoIdentityError, RepoEntryNotFoundError} from './repos-metadata.ts'
 
 describe('buildRecordSurveyResultInput', () => {
   it('includes private/node_id when supplied by the workflow environment', () => {
@@ -66,5 +67,27 @@ describe('formatRecordSurveyResultError', () => {
     expect(message).toContain('R_kgDOPRIVATE')
     expect(message).not.toContain('private-owner')
     expect(message).not.toContain('secret-repo')
+  })
+})
+
+describe('formatRecordSurveyResultNonFatalOutcome', () => {
+  it('formats duplicate identity write-back as a non-fatal structured outcome', () => {
+    const outcome = formatRecordSurveyResultNonFatalOutcome(
+      new DuplicateRepoIdentityError({node_id: 'R_duplicate', database_id: 1174807412}),
+      {
+        REPO_OWNER: 'private-owner',
+        REPO_NAME: 'secret-repo',
+        REPO_PRIVATE: 'true',
+        REPO_NODE_ID: 'R_duplicate',
+        SURVEY_STATUS: 'success',
+      },
+    )
+
+    expect(outcome).toEqual({
+      exitCode: 0,
+      stderr:
+        'record-survey-result: duplicate repo identity match during metadata write-back (node_id=R_duplicate, database_id=1174807412); scheduled reconcile run owns the repair (non-fatal)\n',
+      stdout: `${JSON.stringify({committed: false, outcome: 'duplicate-identity', target: 'R_duplicate', status: 'success'})}\n`,
+    })
   })
 })

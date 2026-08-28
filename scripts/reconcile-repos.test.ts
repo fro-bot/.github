@@ -127,6 +127,7 @@ describe('reconcileRepos', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 0,
+        transferBlocked: 0,
         renamed: 0,
         merged: 0,
         transient: 0,
@@ -1578,6 +1579,7 @@ describe('reconcileRepos', () => {
         lostAccess: 1,
         refreshed: 1,
         migrated: 0,
+        transferBlocked: 0,
         renamed: 0,
         merged: 0,
         transient: 0,
@@ -1625,6 +1627,7 @@ describe('reconcileRepos', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 0,
+        transferBlocked: 0,
         renamed: 0,
         merged: 0,
         transient: 0,
@@ -1656,6 +1659,7 @@ describe('reconcileRepos', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 0,
+        transferBlocked: 0,
         renamed: 0,
         merged: 0,
         transient: 0,
@@ -2557,6 +2561,117 @@ describe('fetchFieldProbes — database_id capture', () => {
       resolved_name: 'current-name',
     })
     expect(graphql).toHaveBeenCalledWith(expect.stringContaining('node(id: $id)'), {id: 'R_old'})
+  })
+
+  it('repairs a rename when REST probing fails but stored node_id resolves through GraphQL', async () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => {
+        throw apiError(404, 'Not Found')
+      },
+      graphql: async () => ({
+        node: {__typename: 'Repository', name: 'current-name', owner: {login: 'alice'}},
+      }),
+    })
+    const accessList = [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_old'})]
+
+    const probeResult = await fetchFieldProbes(userOctokit, {version: 1, repos: [entry]}, accessList, silentLogger())
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList,
+        fieldProbes: probeResult.probes,
+      }),
+    )
+
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({
+      returned_node_id: 'R_old',
+      resolution: 'resolved',
+      resolved_owner: 'alice',
+      resolved_name: 'current-name',
+    })
+    expect(result.nextRepos.repos[0]).toMatchObject({owner: 'alice', name: 'current-name', node_id: 'R_old'})
+    expect(result.summary).toMatchObject({renamed: 1, lostAccess: 0})
+  })
+
+  it('demotes an entry when REST probing fails and stored node_id is unresolvable', async () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => {
+        throw apiError(404, 'Not Found')
+      },
+      graphql: async () => ({node: null}),
+    })
+    const accessList = [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})]
+
+    const probeResult = await fetchFieldProbes(userOctokit, {version: 1, repos: [entry]}, accessList, silentLogger())
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList,
+        fieldProbes: probeResult.probes,
+      }),
+    )
+
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({resolution: 'unresolvable'})
+    expect(result.nextRepos.repos[0]?.onboarding_status).toBe('lost-access')
+    expect(result.summary).toMatchObject({renamed: 0, lostAccess: 1})
+  })
+
+  it('leaves an entry unchanged when REST probing fails and node resolution is transient', async () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => {
+        throw apiError(500, 'Internal Server Error')
+      },
+      graphql: async () => {
+        throw apiError(500, 'Internal Server Error')
+      },
+    })
+    const accessList = [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})]
+
+    const probeResult = await fetchFieldProbes(userOctokit, {version: 1, repos: [entry]}, accessList, silentLogger())
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList,
+        fieldProbes: probeResult.probes,
+      }),
+    )
+
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({resolution: 'transient'})
+    expect(result.nextRepos.repos).toEqual([entry])
+    expect(result.summary).toMatchObject({renamed: 0, lostAccess: 0, transient: 1})
+  })
+
+  it('blocks a node-id-preserving owner transfer instead of rebinding the entry', () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({owner: 'bob', name: 'transferred-name', node_id: 'R_old'})],
+        fieldProbes: new Map([
+          [
+            'alice/old-name',
+            {
+              has_fro_bot_workflow: false,
+              has_renovate: false,
+              identity: {
+                returned_node_id: 'R_new',
+                returned_owner: 'bob',
+                returned_name: 'transferred-name',
+                resolution: 'resolved',
+                resolved_owner: 'bob',
+                resolved_name: 'transferred-name',
+              },
+            } as unknown as FieldProbe,
+          ],
+        ]),
+      }),
+    )
+
+    expect(result.nextRepos.repos).toEqual([entry])
+    expect(result.summary).toMatchObject({renamed: 0, transferBlocked: 1, lostAccess: 0})
   })
 
   it('classifies a 404 GraphQL node(id:) failure as unresolvable and demotes the entry', async () => {
@@ -5232,6 +5347,7 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 2,
         migrated: 0,
+        transferBlocked: 0,
         renamed: 0,
         merged: 0,
         transient: 0,
@@ -5256,6 +5372,7 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 18,
+        transferBlocked: 0,
         renamed: 0,
         merged: 0,
         transient: 0,
@@ -5280,6 +5397,7 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 1,
         migrated: 0,
+        transferBlocked: 0,
         renamed: 0,
         merged: 0,
         transient: 0,
@@ -5304,6 +5422,7 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 1,
         migrated: 18,
+        transferBlocked: 0,
         renamed: 0,
         merged: 0,
         transient: 0,

@@ -148,8 +148,8 @@ export interface FieldProbe {
 
 export interface RepoIdentityProbe {
   returned_node_id: string
-  returned_owner: string
-  returned_name: string
+  returned_owner?: string
+  returned_name?: string
   resolution: 'matched' | 'resolved' | 'unresolvable' | 'transient'
   resolved_owner?: string
   resolved_name?: string
@@ -258,6 +258,8 @@ export interface ReconcileSummary {
   renamed: number
   /** Number of duplicate node_id/database_id rows removed by deterministic merge. */
   merged: number
+  /** Number of node-ID-preserving owner transfers rejected by the rename trust gate. */
+  transferBlocked: number
   unchanged: number
   /**
    * Number of tracked entries whose probe returned a `transient` classification this run
@@ -454,6 +456,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     migrated: 0,
     renamed: 0,
     merged: 0,
+    transferBlocked: 0,
     unchanged: 0,
     transient: 0,
     malformed: 0,
@@ -905,7 +908,10 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   const storedNodeId = storedRepoNodeId(entry)
   let renameTarget: {owner: string; name: string} | undefined
 
-  if (storedNodeId !== undefined && identity !== undefined && identity.returned_node_id !== storedNodeId) {
+  const identityNeedsRepair =
+    identity !== undefined && (identity.returned_node_id !== storedNodeId || identity.resolution !== 'matched')
+
+  if (storedNodeId !== undefined && identityNeedsRepair) {
     if (identity.resolution === 'transient') {
       summary.unchanged += 1
       summary.transient += 1
@@ -953,6 +959,12 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
         transitionIssues,
       })
       return normalizeLostAccessEntry(entry)
+    }
+
+    if (identity.resolved_owner.toLowerCase() !== entry.owner.toLowerCase()) {
+      summary.transferBlocked += 1
+      summary.unchanged += 1
+      return entry
     }
 
     access = resolvedAccess
@@ -1368,6 +1380,7 @@ function isNoOp(summary: ReconcileSummary, dispatches: DispatchRequest[], issues
     summary.migrated === 0 &&
     summary.renamed === 0 &&
     summary.merged === 0 &&
+    summary.transferBlocked === 0 &&
     dispatches.length === 0 &&
     issues.length === 0
   )
@@ -2257,7 +2270,17 @@ async function probeRepoIdentity(
     const result = await userOctokit.rest.repos.get({owner, repo: name})
     response = result.data
   } catch {
-    return undefined
+    if (storedNodeId === undefined) return undefined
+    const resolved = await resolveRepoNodeId(userOctokit, storedNodeId)
+    if (resolved.status === 'resolved') {
+      return {
+        returned_node_id: storedNodeId,
+        resolution: 'resolved',
+        resolved_owner: resolved.repository.owner,
+        resolved_name: resolved.repository.name,
+      }
+    }
+    return {returned_node_id: storedNodeId, resolution: resolved.status}
   }
 
   if (
