@@ -568,12 +568,7 @@ type OctokitConstructor = new (params: {auth: string}) => OctokitClient
 
 async function loadOctokitConstructor(): Promise<OctokitConstructor> {
   const loaded: unknown = await import('@octokit/rest')
-  if (
-    typeof loaded !== 'object' ||
-    loaded === null ||
-    !('Octokit' in loaded) ||
-    typeof (loaded as {Octokit: unknown}).Octokit !== 'function'
-  ) {
+  if (typeof loaded !== 'object' || loaded === null || !('Octokit' in loaded) || typeof loaded.Octokit !== 'function') {
     throw new Error('wiki-repair: failed to load @octokit/rest Octokit constructor')
   }
   return (loaded as {Octokit: OctokitConstructor}).Octokit

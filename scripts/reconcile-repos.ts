@@ -3222,7 +3222,7 @@ async function loadOctokitConstructor(): Promise<OctokitConstructor> {
       remediation: 'Verify @octokit/rest is installed and its export surface has not changed.',
     })
   }
-  return Octokit as unknown as OctokitConstructor
+  return Octokit
 }
 
 function toApiError(error: unknown, action: string): ReconcileError {

@@ -64,10 +64,10 @@ function stubReadFile(content: string): ReadFileImpl {
 }
 
 function stubReadFileThrow(code: string): ReadFileImpl {
-  return (async () => {
+  return async () => {
     const err = Object.assign(new Error(`stub error: ${code}`), {code})
     throw err
-  }) as unknown as ReadFileImpl
+  }
 }
 
 describe('runCheck', () => {

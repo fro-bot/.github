@@ -608,12 +608,7 @@ async function main(): Promise<void> {
     alreadyCreatedFingerprints: new Set(),
   })
 
-  const openResult = await openPatternProposalIssues(
-    octokit as unknown as PatternProposalOpenOctokitClient,
-    owner,
-    repo,
-    plan.toCreate,
-  )
+  const openResult = await openPatternProposalIssues(octokit, owner, repo, plan.toCreate)
 
   const result: PatternProposalOpenResult = {
     candidatesExamined: plan.counts.candidatesExamined,

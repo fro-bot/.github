@@ -861,7 +861,7 @@ async function loadOctokitConstructor(): Promise<OctokitConstructor> {
   if (typeof Octokit !== 'function') {
     throw new TypeError('Failed to load @octokit/rest Octokit constructor')
   }
-  return Octokit as OctokitConstructor
+  return Octokit
 }
 
 export async function createOctokitFromEnv(): Promise<OctokitClient> {
@@ -1425,7 +1425,7 @@ export async function harvestCiFixCandidates(
         // Bare re-run with no diff — drop the candidate (scope boundary)
         continue
       }
-      diffExcerpt = buildDiffExcerpt(files as {filename?: string; patch?: string}[], MAX_EXCERPT_CHARS_PER_CANDIDATE)
+      diffExcerpt = buildDiffExcerpt(files, MAX_EXCERPT_CHARS_PER_CANDIDATE)
       if (diffExcerpt === '') {
         // No patches in any file — drop
         continue

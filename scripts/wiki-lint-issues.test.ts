@@ -1,5 +1,5 @@
 import type {ExistingIssue, OctokitClient, PlanInput} from './wiki-lint-issues.ts'
-import type {WikiLintFindingKind, WikiLintJsonFinding, WikiLintJsonReport} from './wiki-lint.ts'
+import type {WikiLintJsonFinding, WikiLintJsonReport} from './wiki-lint.ts'
 
 import {readFileSync} from 'node:fs'
 import process from 'node:process'
@@ -37,7 +37,7 @@ function makeReport(overrides: Partial<WikiLintJsonReport> = {}): WikiLintJsonRe
 
 function makeFinding(overrides: Partial<WikiLintJsonFinding> = {}): WikiLintJsonFinding {
   return {
-    kind: 'broken-wikilink' as WikiLintFindingKind,
+    kind: 'broken-wikilink',
     severity: 'deterministic',
     path: 'knowledge/wiki/repos/foo.md',
     target: null,

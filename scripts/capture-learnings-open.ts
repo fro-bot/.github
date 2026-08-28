@@ -294,7 +294,7 @@ export async function openLearningIssues(
         title,
         body: item.body,
         labels: [LEARNING_PROPOSAL_LABEL],
-      } as unknown as Parameters<OctokitClient['rest']['issues']['create']>[0])
+      })
 
       // Mark as created only after the API call succeeds
       createdThisRun.add(item.mergeSha)
