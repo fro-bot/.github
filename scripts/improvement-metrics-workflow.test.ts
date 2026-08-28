@@ -58,8 +58,8 @@ describe('improvement-metrics.yaml workflow contract', () => {
     expect(dryRunInput?.default).toBe('true')
   })
 
-  it('has no schedule trigger — manual dispatch only', () => {
-    expect(parsed.on).not.toHaveProperty('schedule')
+  it('has a weekly Sunday schedule trigger at 23:00 UTC', () => {
+    expect(parsed.on.schedule).toEqual([{cron: '0 23 * * 0'}])
   })
 
   it('serializes runs with a static concurrency group and never cancels in-progress runs', () => {
@@ -85,17 +85,55 @@ describe('improvement-metrics.yaml workflow contract', () => {
     expect(reportJob?.permissions).toEqual({contents: 'read'})
   })
 
-  it('the report job itself is skipped entirely on dry-run — the job-level `if` requires an explicit live dispatch', () => {
+  it('the report job writes on schedule or explicit live dispatch, while preserving manual dry-run behavior', () => {
     expect(reportJob?.if).toBeDefined()
     expect(String(reportJob?.if)).toContain("github.event_name == 'workflow_dispatch'")
     expect(String(reportJob?.if)).toContain("github.event.inputs.dry_run == 'false'")
+    expect(String(reportJob?.if)).toContain("github.event_name == 'schedule'")
+    expect(reportJob?.if).toBe(
+      '$' +
+        "{{ always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')) }}",
+    )
   })
 
-  it('the write-scoped app token is minted only for an explicit live (dry_run=false) manual dispatch', () => {
+  it('keeps the report job eligible when detect completes with a non-critical failure state', () => {
+    expect(String(reportJob?.if)).toContain('always()')
+  })
+
+  it('keeps scheduled report writes independent of absent dispatch inputs', () => {
+    expect(String(reportJob?.if)).toMatch(
+      /github\.event_name == 'schedule' \|\| \(github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.dry_run == 'false'\)/u,
+    )
+  })
+
+  it('keeps manual report writes gated on dry_run=false', () => {
+    expect(String(reportJob?.if)).toContain(
+      "github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false'",
+    )
+  })
+
+  it('the write-scoped app token is minted for scheduled runs or explicit live manual dispatches', () => {
     const mintStep = reportJob?.steps.find(step => step.id === 'app-token')
     expect(mintStep).toBeDefined()
     expect(mintStep?.if).toContain("github.event_name == 'workflow_dispatch'")
     expect(mintStep?.if).toContain("github.event.inputs.dry_run == 'false'")
+    expect(mintStep?.if).toContain("github.event_name == 'schedule'")
+    expect(mintStep?.if).toBe(
+      '$' +
+        "{{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false') }}",
+    )
+  })
+
+  it('keeps scheduled app-token minting independent of absent dispatch inputs', () => {
+    const mintStep = reportJob?.steps.find(step => step.id === 'app-token')
+    expect(String(mintStep?.if)).toMatch(
+      /github\.event_name == 'schedule' \|\| \(github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.dry_run == 'false'\)/u,
+    )
+  })
+
+  it('keeps manual app-token minting gated on dry_run=false', () => {
+    const mintStep = reportJob?.steps.find(step => step.id === 'app-token')
+    expect(mintStep?.if).toContain("github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false'")
   })
 
   it('the app token is scoped to this repository only, with issues:write', () => {
@@ -118,6 +156,10 @@ describe('improvement-metrics.yaml workflow contract', () => {
     const token = String(detectStep?.env?.GITHUB_TOKEN ?? '')
     expect(token).toContain('github.token')
     expect(token).not.toContain('steps.app-token')
+  })
+
+  it('the detect job has no workflow-dispatch input assumptions', () => {
+    expect(JSON.stringify(detectJob)).not.toContain('github.event.inputs')
   })
 
   it('the report step uses only the minted app token and does not fall back to the job token', () => {
