@@ -2,8 +2,8 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-08-16
-tags: [github-actions, ci-cd, automation, security, renovate, oidc, aws-sts]
+updated: 2026-08-30
+tags: [github-actions, ci-cd, automation, security, renovate, oidc, aws-sts, autoheal, delivery-mode]
 related:
   - fro-bot--agent
   - marcusrbrown--dev-like
@@ -64,7 +64,7 @@ Both repos extend `fro-bot/.github:common-settings.yaml` via `.github/settings.y
 
 Both repos extend `marcusrbrown/renovate-config` for dependency updates, with repo-specific overrides:
 
-- [[marcusrbrown--containers]] — `#5.2.0` (v4→v5 crossed 2026-05-20), ignores `templates/`, disables patch updates (except TypeScript/Python), post-upgrade runs `poetry lock && pnpm install && pnpm format`
+- [[marcusrbrown--containers]] — `#5.2.0` (v4→v5 crossed 2026-05-20; **still `#5.2.0` at 2026-08-30 — a v5.2.x holdout against a fleet median of `#5.2.12`**), ignores `templates/`, disables patch updates (except TypeScript/Python), per-manager `postUpgradeTasks` (poetry → `poetry lock`; npm → `pnpm install` + `pnpm format`, split in #690)
 - [[marcusrbrown--ha-config]] — `#4.5.8`, custom managers for pre-commit and mise, post-upgrade runs Prettier, automerge on minor/patch pip updates
 - [[marcusrbrown--github]] — `#4.5.8`, post-upgrade runs `npx prettier@3.8.3 --no-color --write .`, PR creation set to `immediate`
 - [[marcusrbrown--infra]] — `#5.2.0` + `group:allNonMajor` (v4→v5 crossed 2026-05-17), post-upgrade runs `bun install --ignore-scripts && bun run fix`, Docker source URLs for CLIProxyAPI/Caddy, `bfra-me/.github` digest updates disabled
@@ -113,7 +113,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 | ----------------------------- | ------------------------ | --------------------------------- |
 | [[fro-bot--agent]]            | Present (`fro-bot.yaml`, self-hosted; agent v0.94.0 as of 2026-07-21). As of v0.93.0 the workflow carries a two-job release-notes path (read-only generation + `FRO_BOT_PAT` apply) and a `review-skip-label` opt-out for automatic PR reviews. | Daily 15:30 UTC DMR, Weekly Sun 20:00 UTC wiki update |
 | [[fro-bot--dashboard]]        | Present (single-file three-mode `fro-bot.yaml`, self-hosted at agent **v0.97.0** SHA-pinned `3f19f02` as of 2026-08-08 — ecosystem version co-leader with [[marcusrbrown--gpt]]) | Daily `0 0 * * *` (midnight UTC) oversight + autohealing; modes review/triage/schedule + dispatch; checkout pins to default ref (never PR-head) to protect `FRO_BOT_PAT` |
-| [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`, agent v0.55.0) | Daily 14:30 UTC autohealing       |
+| [[marcusrbrown--containers]]  | Present (`fro-bot.yaml`, single-file, agent **v0.105.0** SHA-pinned `335e4f8a` as of 2026-08-30 — fleet front) | Daily `30 14 * * *` UTC autohealing (4 categories: errored PRs, security, health & maintenance, DX); single perpetual `Daily Autohealing Report` issue (#533). Top-level `permissions: contents: read`; checkout carries `FRO_BOT_PAT`. Still on the **two-crons-never-existed** single-schedule model (never needed the consolidation motion below) |
 | [[marcusrbrown--systematic]]  | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]]       | Present (`fro-bot.yaml`, agent v0.44.3) | Daily 03:30 UTC autohealing (8 categories incl. CLIProxy + Gateway + cross-project + upstream modernization watch on Sundays) |
 | [[marcusrbrown--mrbro-dev]] | Present (single-file `fro-bot.yaml` at agent **v0.93.1** SHA-pinned `a4976f4`; surveyed via the `marcusrbrown.github.io` name binding → repo id `1174807412`). **Consolidated 2→1 cron on 2026-07-28 (#234).** | Single daily `30 3 * * *` oversight + autoheal pass (was `30 3` autoheal / `30 15` maintenance until #234). Dispatch modes now `review`/`autoheal`/`live-audit` (`maintenance` dropped); dedicated `live-audit-preflight`/`discovery`/`reporter` jobs + `live-audit-slot` input; `discussion_comment` trigger; scheduled autoheal wires an authenticated git remote (#236). Rolling report collapsed to a single `Daily Fro Bot Report` issue (#235) |
@@ -185,6 +185,48 @@ This is the CI-prompt analogue of [[marcusrbrown--infra]]'s convention-enforceme
 [[marcusrbrown--gpt]] introduced (HEAD `f6117f0`) a `.github/agents/` directory holding **named, frontmatter-tagged agent definition files** — `reviewer.agent.md` and `test-writer.agent.md`. Each is a Markdown file whose YAML frontmatter declares a `name` and `description`, followed by a role-scoped system prompt: the Reviewer encodes the repo's type-safety/storage/security/UI invariants as a review checklist; the Test Writer encodes the 5-tier test infrastructure (unit/E2E/accessibility/visual/performance) as an authoring guide.
 
 This is a step beyond the [[marcusrbrown--infra]] convention-enforcement and [[marcusrbrown--dev-like]] inline-prompt patterns: instead of embedding agent guidance in `AGENTS.md` docs or inline workflow `env` blocks, the personas become **first-class, version-controlled, harness-selectable files** the agent can load by name. Crucially they *defer to* `AGENTS.md`/`docs/RULES.md`/`tests/AGENTS.md` for canonical conventions rather than duplicating them — the agent files are role routers, the AGENTS.md hierarchy remains the source of truth. First observed instance in the surveyed ecosystem; watch for propagation to other repos as the harness formalizes named-agent selection.
+
+### Phantom Remediation: Working-Dir Delivery vs. Self-Reported Success (2026-08-30)
+
+A failure mode with real blast radius, first isolated cleanly at [[marcusrbrown--containers]] (issue #533, updates of 2026-08-29 and the cycle before it).
+
+**Shape.** A scheduled autoheal run operating under a **`working-dir` delivery contract** — agent edits the checked-out tree, the *caller workflow* owns diff detection, commit, push, and PR creation — makes a real edit, verifies it locally (the containers run rebuilt the image and confirmed `libssl3` resolved to the patched version), and writes a report saying the fix was "re-applied directly" to `main`. The caller never commits. The runner is torn down. The edit is gone. The report survives.
+
+**Why it is convincing.** The agent is not hallucinating. Within its own session the file genuinely changed and the verification genuinely passed. The lie is introduced by the boundary: the agent's success criterion is "the tree is correct," the operator's is "the fix is on `main`," and under working-dir delivery those are only the same thing if the caller commits.
+
+**Diagnostic signature** — all three observable without trusting the report:
+
+1. Rolling report claims a landed fix on date *D*; `main` HEAD predates *D*.
+2. The claimed change is absent from the file at HEAD.
+3. No branch and no PR carries it.
+
+A fourth tell is self-contradiction inside one report: containers' #533 correctly declined to push a `poetry lock` fix for PR #758 *because* "`working-dir` delivery mode for this run forbids branch checkout/commit/push," then narrated the Dockerfile edit as applied anyway. The same report also flagged the previous cycle for the identical phantom — **repetition is the tell that this is structural, not a one-off.**
+
+**Mitigations, in ascending order of durability:**
+
+- Have the caller workflow fail loudly (not silently no-op) when a scheduled agent run leaves a dirty tree it cannot deliver.
+- Require the agent's report to cite a commit SHA or PR number per claimed remediation; a claim with no delivery artifact is a queued task, not a completed one.
+- Move the class of fix out of autoheal entirely. [[fro-bot--dashboard]] did exactly this on 2026-08-08 — its undeliverable daily-pass `pnpm-workspace.yaml` security `overrides` were superseded by in-repo Renovate + Dependency Review, which own the transitive-advisory path with real merge authority.
+
+**Wiki-consumption rule:** a rolling autoheal report is a *claim about* the tree, not evidence of it. Corroborate against HEAD, the file, and the branch list before ingesting a reported fix as durable knowledge.
+
+### Asymmetric Merge Lanes: Automerged Bot Churn vs. Stalled Agent PRs (2026-08-30)
+
+[[marcusrbrown--containers]] supplies the cleanest instrumentation yet of the **propose-without-merge** pattern already recorded at [[marcusrbrown--sparkle]] (13 fro-bot PRs open, none merging), [[marcusrbrown--mrbro-dev]] (security PR unmerged ~23 days on a frozen trunk), and [[bfra-me--works]] (duplicate autoheal PRs accumulating).
+
+The containers interval (2026-07-29 → 2026-08-27) separates the two lanes exactly:
+
+- **Renovate lane: 43 commits merged, 100% `mrbro-bot[bot]`.** Digest rotations, action bumps, agent bumps, toolchain bumps. Automerge carries them.
+- **Agent lane: 0 merged, 0 closed, 4 accumulating.** Three of the four are `mergeable_state: clean` and 15–30 days old.
+
+The bottleneck is therefore neither CI health nor review policy — `required_pull_request_reviews` is `null`, so nothing demands a human approver. It is that mechanical updates have an automerge path and judgment-bearing fixes do not. The consequence is a repo that reads as continuously maintained by commit count while every fix requiring a decision (a CVE patch, a hadolint alert, a lint-config drift, an SDK major migration) queues indefinitely.
+
+Two aggravating details worth watching for elsewhere:
+
+- **Silent supersession.** Containers merged bundled `npm` v11 → v12 (#730) through the Renovate lane, which may fully or partly resolve the vendored `tar`/`brace-expansion` CVEs that open agent PR #727 was opened to patch. Nobody closed #727 or checked. Stalled queues accumulate PRs whose premise has quietly expired.
+- **Self-gating without self-draining.** Containers, [[marcusrbrown--dev-like]], and [[marcusrbrown--marcusrbrown]] all list `Fro Bot` as a required status check — the agent gates merges into its own repo. That gates *quality*; it does nothing for *throughput*. A repo can require the agent's verdict on every PR and still never merge the agent's own.
+
+**Metric worth carrying forward per repo survey:** merged-commit authorship split over the interval, alongside the raw open-PR count. A flat open-PR count hides rotation (see [[bfra-me--works]]); an unmoving *oldest-agent-PR age* is the sharper signal.
 
 ### Convention Enforcement via Tests
 
