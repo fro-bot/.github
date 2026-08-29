@@ -4026,23 +4026,26 @@ Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
 
-## [2026-08-29 12:00] ingest | marcusrbrown/marcusrbrown.github.io
+## [2026-08-29 00:00] ingest | marcusrbrown/sparkle
 
-Second same-day pass (`workflow_dispatch` re-run) of the *name* `marcusrbrown/marcusrbrown.github.io` (SHA `9e54dbc`, unchanged). The name resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Name-to-repo binding unchanged since 2026-07-20 — collision holds. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (second-same-day-pass fold into the 2026-08-29 Delta Log + Survey History row + frontmatter source) and `index.md`. Tree frozen — no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page.
+Re-survey of `marcusrbrown/sparkle` (SHA `8508b71`, up from `9c215ee` 2026-07-28). Public repo confirmed (`private: false`). Updated repo page `marcusrbrown--sparkle.md` (frontmatter `updated`/new source, Overview facts, 2026-08-29 toolchain-drift note, Fro Bot agent version, Active Perpetual Issues, two new Notable Patterns, new Open PRs/Issues survey block, Survey History row) and the `index.md` sparkle entry. No new topic/entity/comparison pages warranted — the deltas are version churn plus autoheal-queue dynamics already covered by existing pages.
 
-Key findings:
+Reads limited to directory listings, README/manifest/workflow files, and the public GitHub API (unauthenticated; `gh` had no token — `GH_TOKEN` unset, same credential gap tracked across the portfolio).
 
-- `main` HEAD **still `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z) — trunk frozen **29 days**; `updated_at` still 2026-07-31T21:42:16Z, `pushed_at` 2026-08-29T06:51:58Z (PR-branch pushes only — #253 blog-snapshot re-push 2026-08-29T06:57, #1 dashboard refresh 2026-08-29T08:38). No tree-level drift.
-- Queue delta vs the earlier 2026-08-29 pass is churn-only: (1) daily-report renumber #292 → **#293** (`Daily Fro Bot Report — 2026-08-29 (UTC)`); (2) the **legacy `#162 Daily Autohealing Report` dropped back off** the open listing (it had transiently resurfaced earlier same-day), so API `open_issues_count` settled **14 → 13**.
-- Open issues 6 (#293 / #287 `ci: remove unused E2E contents write permission` / #271 / #270 / #261 / #258 / #212 — all carried) + #1 Dependency Dashboard (`mrbro-bot[bot]`). Open PRs **5, all carried, none merged since 2026-08-07** (#283 docs-duplicate / #266 `fix(security): remediate high audit advisories` ~23d unmerged / #263 `docs: refresh repository inventory` / #254 `docs: correct automation script count` / #253 `chore(blog): refresh snapshot and preview images`). The #283-vs-#254 docs duplicate for one "correct automation script count" fix still stands.
-- Report-without-remediation / propose-without-merge pattern (first flagged 2026-06-12) remains fully hardened: 29 days of a frozen trunk, security PR #266 unmerged ~23 days, self-duplicated docs PR, four-item CI least-privilege issue cluster (#287/#271/#270/#261). The daemon audits and drafts; nobody promotes.
-- Fro Bot workflow present and active at agent v0.93.1 (`a4976f4`); single `30 3` daily oversight+autoheal cron (#234 consolidation holds); 8 workflows; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24 — **no onboarding follow-up draft PR warranted for this name.**
-- `gh` credential gap again (`GH_TOKEN` unset; unauthenticated GitHub API + raw fetch only) — the same authenticated-access gap the current occupant's own issue #212 tracks. No new facts about the *brand site* (id `1021912280`) observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+Delta from prior survey (SHA `9c215ee`, 2026-07-28):
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+- **No structural change** — 7 workflows (`fro-bot.yaml` present), `apps/`+`packages/` layout, and the three inline fro-bot prompts (PR review / maintenance / autoheal categories 1–8) all durable.
+- **Fro Bot agent bumped v0.95.0 → v0.105.1** (`fro-bot/agent@e9501a9`, crosses cosmetic v0.100); `actions/checkout@d23441a` v6.1.0 and both crons (05:00 autoheal / 17:00 maintenance) unchanged.
+- Toolchain: pnpm `11.17.0` → **`11.24.0`**; turbo `2.10.7` → **`2.10.12`**; tsx `4.23.1` → **`4.23.12`**; `@axe-core/cli` `4.12.1` → `4.13.0`; `@bfra.me/eslint-config` `0.51.1` → `0.51.2`, `@bfra.me/prettier-config` `0.16.9` → `0.16.11` (`120-proof`), `@bfra.me/tsconfig` `0.13.1` → `0.13.2`; `.node-version` `24.18.0` → **`24.20.0`**. TypeScript 5.9.3, eslint 9.39.5, prettier 3.9.6, tsdown 0.16.8, `@changesets/cli` 2.31.1 unchanged. Strict-mode TS + ESM-only invariants hold. Renovate preset `#5.2.9` → **`#5.2.12`**.
+- **Open PR queue quadrupled 3 → 15 — 13 fro-bot autoheal-authored, none merging:** six `chore(lint)` auto-fix PRs (#1787, #1816, #1883, #1886, #1891, #1914), four security `pnpm.overrides` (#1838 adm-zip `GHSA-xcpc-8h2w-3j85`, #1862 postcss, #1866 brace-expansion, #1904 nanoid `GHSA-2v37-7h3g-55p8`), #1875 moo-dang test-utils dep, #1841 theme spacing-scale, #1844 docs font preload; plus 2 Renovate (#1812 typedoc, #1956 eslint-config). Textbook **propose-without-merge** backlog — the daemon opens fixes reliably but the human merge gate hasn't drained the queue; six near-identical lint-fix PRs stack without supersede.
+- Open non-PR issues 7 → 9: new **#1937** (convention drift — residual `any`/`@ts-expect-error`/non-Error class in `src/`) and **#1940** (moo-dang flaky — `turbo.json` package-specific build-task aliases missing from most `package.json` scripts, the Turbo-side twin of the recurring moo-dang cross-package build-reachability class after #1681/#1875). Steady-state issues (#1664/#1665/#1666/#212/#876) plus carried #1799/#1800 persist.
+- **#1800 "llms.txt drift" still OPEN across three surveys** — `llms.txt` still text-declares `packageManager: pnpm@10.33.4` (now a full major + fourteen minors behind actual `11.24.0`) and names Node only as `24.x`. The category-3 autoheal check flags-but-does-not-heal; remediation waits on a human closing the loop.
+- **Fro Bot workflow present and active** — no onboarding follow-up draft PR warranted.
 
-## [2026-08-29 11:46] ingest | repo:marcusrbrown/marcusrbrown.github.io
+Sources: https://github.com/marcusrbrown/sparkle (SHA 8508b7163202f2e547864b5419ab25253e55191c)
 
-Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+## [2026-08-29 11:47] ingest | repo:marcusrbrown/sparkle
 
-Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
