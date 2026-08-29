@@ -1,7 +1,7 @@
 import {performance} from 'node:perf_hooks'
 import {describe, expect, it} from 'vitest'
 import {checkPrivateLeak} from './private-leak.ts'
-import {mergeWikiLogs} from './wiki-ingest.ts'
+import {mergeWikiLogs, validateWikilinks, WikiIngestError} from './wiki-ingest.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
 import {collectWikilinks} from './wiki-utils.ts'
 
@@ -31,20 +31,23 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
     smallMilliseconds = measure(smallOperation, repetitions)
   }
 
-  const smallMeasurements = [smallMilliseconds]
+  const smallMeasurements: number[] = []
   const largeMeasurements: number[] = []
-  for (let sample = 1; sample < samples; sample += 1) {
-    smallMeasurements.push(measure(smallOperation, repetitions))
-  }
+  const ratios: number[] = []
   for (let sample = 0; sample < samples; sample += 1) {
-    largeMeasurements.push(measure(largeOperation, repetitions))
+    const smallMeasurement = sample === 0 ? smallMilliseconds : measure(smallOperation, repetitions)
+    const largeMeasurement = measure(largeOperation, repetitions)
+    smallMeasurements.push(smallMeasurement)
+    largeMeasurements.push(largeMeasurement)
+    ratios.push(largeMeasurement / Math.max(smallMeasurement, 0.01))
   }
 
   smallMeasurements.sort((left, right) => left - right)
   largeMeasurements.sort((left, right) => left - right)
+  ratios.sort((left, right) => left - right)
   smallMilliseconds = smallMeasurements[Math.floor(smallMeasurements.length / 2)] ?? smallMilliseconds
   const largeMilliseconds = largeMeasurements[Math.floor(largeMeasurements.length / 2)] ?? 0
-  const ratio = largeMilliseconds / Math.max(smallMilliseconds, 0.01)
+  const ratio = ratios[Math.floor(ratios.length / 2)] ?? largeMilliseconds / Math.max(smallMilliseconds, 0.01)
   expect(ratio).toBeLessThan(3)
   return {smallMilliseconds, largeMilliseconds, ratio, repetitions}
 }
@@ -120,11 +123,39 @@ describe('linear-time input parsing', () => {
   it('scales wikilink parsing linearly for an unterminated opening-bracket run', () => {
     const smallContent = '[['.repeat(8_000)
     const largeContent = '[['.repeat(16_000)
-    const measurement = expectLinearScaling(size => {
-      collectWikilinks(size === 8_000 ? smallContent : largeContent)
-    }, 8_000)
+    const measurement = expectLinearScaling(
+      size => {
+        collectWikilinks(size === 8_000 ? smallContent : largeContent)
+      },
+      8_000,
+      3,
+    )
 
     // The old global regex retries the remaining body from each opening marker and fails this ratio guard.
+    expect(measurement.ratio).toBeLessThan(3)
+  })
+
+  it('scales exported wikilink validation linearly for an unterminated opening-bracket run', () => {
+    const pagePrefix = [
+      '---',
+      'type: topic',
+      'title: Source',
+      'created: 2026-08-29',
+      'updated: 2026-08-29',
+      '---',
+      '',
+    ].join('\n')
+    const smallFiles = {'knowledge/wiki/topics/source.md': `${pagePrefix}${'[['.repeat(8_000)}`}
+    const largeFiles = {'knowledge/wiki/topics/source.md': `${pagePrefix}${'[['.repeat(16_000)}`}
+    const measurement = expectLinearScaling(
+      size => {
+        validateWikilinks(size === 8_000 ? smallFiles : largeFiles)
+      },
+      8_000,
+      3,
+    )
+
+    // The exported save-path gate must retain the same linearity contract as its parser.
     expect(measurement.ratio).toBeLessThan(3)
   })
 
@@ -153,12 +184,37 @@ describe('linear-time input parsing', () => {
   it('scales malformed wiki log header parsing linearly', () => {
     const smallLog = Array.from({length: 8_000}, () => '\n## [unterminated').join('')
     const largeLog = Array.from({length: 16_000}, () => '\n## [unterminated').join('')
-    const measurement = expectLinearScaling(size => {
-      mergeWikiLogs([size === 8_000 ? smallLog : largeLog])
-    }, 8_000)
+    const measurement = expectLinearScaling(
+      size => {
+        mergeWikiLogs([size === 8_000 ? smallLog : largeLog])
+      },
+      8_000,
+      3,
+    )
 
     // The old capture regex rescans the remaining malformed log from each marker and fails this ratio guard.
     expect(measurement.ratio).toBeLessThan(3)
+  })
+
+  it('fails validation on malformed wikilinks under the unified grammar', () => {
+    const files = {
+      'knowledge/wiki/topics/source.md': [
+        '---',
+        'type: topic',
+        'title: Source',
+        'created: 2026-08-29',
+        'updated: 2026-08-29',
+        '---',
+        '',
+        'See [[a]b]].',
+        '',
+      ].join('\n'),
+    }
+
+    // Deliberately adopts collectWikilinks' tolerant grammar so malformed text fails loudly
+    // instead of remaining invisible to the exported validation gate.
+    expect(() => validateWikilinks(files)).toThrow(WikiIngestError)
+    expect(() => validateWikilinks(files)).toThrow('[[a]b]]')
   })
 
   it.each([

@@ -14,6 +14,7 @@ import {
 } from './data-branch-bootstrap.ts'
 import {assertReposFile} from './schemas.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
+import {collectWikilinks} from './wiki-utils.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
@@ -906,15 +907,7 @@ function collectWikiPages(files: Record<string, string>): ParsedWikiPage[] {
 }
 
 function extractWikilinks(content: string): string[] {
-  const links = new Set<string>()
-  const pattern = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gu
-  for (const match of content.matchAll(pattern)) {
-    const slug = match[1]
-    if (slug !== undefined) {
-      links.add(slug.trim())
-    }
-  }
-  return [...links]
+  return [...new Set(collectWikilinks(content).map(link => link.trim()))]
 }
 
 function extractIndexHeader(index: string): string {
