@@ -21,6 +21,10 @@
       "types": "./src/private-leak.ts",
       "import": "./src/private-leak.ts"
     },
+    "./private-leak-adapter": {
+      "types": "./src/private-leak-adapter.ts",
+      "import": "./src/private-leak-adapter.ts"
+    },
     "./rendering-policy": {
       "types": "./src/rendering-policy.ts",
       "import": "./src/rendering-policy.ts"

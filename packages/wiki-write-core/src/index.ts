@@ -1,4 +1,5 @@
 export * from './frontmatter.ts'
+export * from './private-leak-adapter.ts'
 export * from './private-leak.ts'
 export * from './rendering-policy.ts'
 export * from './wiki-ingest.ts'
