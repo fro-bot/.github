@@ -9,6 +9,13 @@ import {parse} from 'yaml'
 
 /** Narrow the parsed YAML to the shape we index into, without any broad cast. */
 function assertMergeDataWorkflow(value: unknown): asserts value is {
+  on: {
+    push?: {branches?: string[]}
+    schedule?: {cron?: string}[]
+    workflow_dispatch?: unknown
+  }
+  permissions?: Record<string, string>
+  concurrency?: {group?: string; 'cancel-in-progress'?: boolean | string}
   jobs: Record<string, {steps: {name?: string; run?: string; 'continue-on-error'?: boolean; if?: string}[]}>
 } {
   if (
@@ -62,5 +69,36 @@ describe('merge-data.yaml workflow step order', () => {
     expect(gateStep?.['continue-on-error']).toBeFalsy()
     // #then if: must be absent — a conditional skip would allow the gate to be bypassed
     expect(gateStep?.if).toBeUndefined()
+  })
+
+  it('triggers on data pushes alongside the weekly schedule and manual dispatch', () => {
+    expect(parsed.on.push?.branches).toEqual(['data'])
+    expect(parsed.on.schedule).toEqual([{cron: '0 22 * * 0'}])
+    expect(parsed.on).toHaveProperty('workflow_dispatch')
+  })
+
+  it('keeps least-privilege top-level permissions unchanged', () => {
+    expect(parsed.permissions).toEqual({contents: 'read'})
+  })
+
+  it('uses trigger-discriminated concurrency with push-only cancellation', () => {
+    const expressionStart = '$' + '{{'
+    expect(parsed.concurrency?.group).toBe(
+      `merge-data-${expressionStart} github.event_name == 'push' && 'push' || 'manual' }}`,
+    )
+    expect(parsed.concurrency?.['cancel-in-progress']).toBe(`${expressionStart} github.event_name == 'push' }}`)
+  })
+
+  it('preserves the existing gate and promotion step ordering', () => {
+    expect(steps.map(step => step.name)).toEqual([
+      'Get Workflow Access Token',
+      '⤵ Checkout Branch',
+      '📦 Setup',
+      '⤵ Fetch data branch for privacy check',
+      '🔒 Block private wiki pages',
+      '🔒 Fetch data ref for promotion diff',
+      '🔒 Block private repo names in promotion diff',
+      '🔀 Open weekly data merge PR',
+    ])
   })
 })

@@ -2,9 +2,16 @@
 name: Merge Data Branch
 
 on:
+  push:
+    branches:
+      - data
   schedule:
     - cron: '0 22 * * 0' # Every Sunday at 22:00 UTC
   workflow_dispatch:
+
+concurrency:
+  group: merge-data-${{ github.event_name == 'push' && 'push' || 'manual' }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 permissions:
   contents: read
