@@ -153,6 +153,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Files:**
 - Create: `packages/wiki-write-core/` (package source, exports: snapshot lint, wikilink validation, private-leak pure core + adapter interfaces, frontmatter reconstruction, rendering-policy validation, commit primitives with typed errors)
+- Modify: `pnpm-workspace.yaml` (currently config-only — no `packages:` key; adding one changes hoisting semantics with `shamefullyHoist: true`, review deliberately), `tsconfig.json` / Vitest include globs as needed for the new package root
 - Modify: `scripts/wiki-ingest.ts`, `scripts/wiki-lint.ts`, `scripts/check-private-leak.ts`, `scripts/wiki-repair.ts` (import from the package or re-export shared source; no behavior change)
 - Test: `packages/wiki-write-core/src/*.test.ts`, contract fixtures exercising workflow CLI and package entrypoints against identical inputs
 
@@ -160,9 +161,9 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 - This repo has NO existing package/release machinery (verified: single private root package, no `.changeset/`, no publish workflow) — Unit 1 creates the package boundary from scratch: package-local `package.json` with explicit `exports`, runtime artifacts consumable by Node 24 strip-only TS, and a documented exact-pin/update procedure.
 - Distribution per the Key Technical Decision: pinned git dependency first cut. Acceptance requires a working pnpm prototype: dashboard-side install of the subdirectory package at an immutable commit, with lockfile proof.
 - `appendLogEntry` learns to render `manual-edit` operations distinctly (currently always `ingest`).
-- Rendering policy: sanitize/strip unsafe HTML per R12, validated in the package so every consumer inherits it.
+- Rendering policy placement (decided here, not deferred): the PRIMARY control is render-side — the Quartz build pipeline must sanitize/refuse unsafe HTML for ALL content regardless of writer (operator saves are only one of at least two writers; surveyor ingest is the other, and `quartz-site/` currently configures no sanitizer at all). The package's save-time validation is fast operator feedback, not the security boundary. Unit 1 delivers the save-side check; the render-side control lands in `quartz-site/` config/plugin within this plan's scope.
 
-**Patterns to follow:** `wiki-repair.ts` composition; pure-core-privacy-gates learning; existing package/release setup in this repo.
+**Patterns to follow:** `wiki-repair.ts` composition; pure-core-privacy-gates learning.
 
 **Test scenarios:**
 - Happy path: a valid edit snapshot passes all gates and produces a commit payload with preserved system frontmatter.
@@ -170,7 +171,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 - Edge case: edit to a page with node_id identity vs legacy page without; missing `data` branch → bootstrap path still works.
 - Integration: CLI entrypoint and package entrypoint produce identical findings for identical fixtures (drift guard).
 
-**Verification:** full repo gate green; package builds and publishes dry-run; contract fixtures pass against both entrypoints.
+**Verification:** full repo gate green; `pnpm pack` produces a consumable artifact and the dashboard-side git-subdirectory install prototype succeeds with lockfile proof (this prototype runs BEFORE Unit 7 planning starts — a fallback to npm publishing changes that repo's dependency story); contract fixtures pass against both entrypoints.
 
 - [ ] **Unit 2: Request-time privacy adapter**
 
@@ -202,8 +203,8 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 **Dependencies:** Unit 1
 
 **Files:**
-- Create: schema + read/write module in `packages/wiki-write-core/` or `scripts/` (planning note: system-owned file under `knowledge/`, guarded-path status decided here)
-- Modify: `scripts/check-wiki-authority.ts` guard list if the corrections file must be data-branch-guarded
+- Create: schema + read/write module in `packages/wiki-write-core/` or `scripts/` (system-owned file under `knowledge/`)
+- Modify: `scripts/check-wiki-authority.ts` — the corrections store MUST be a guarded path (requirement, not option): Unit 4 makes it fail-closed against ingest, so an unguarded store is a denial-of-service primitive on page regeneration
 - Test: schema round-trip, lifecycle transitions, migration tolerance (loose-then-tight)
 
 **Approach:** fields optional during rollout; corrections keyed to page node_id + span; never rendered into page content.
@@ -229,7 +230,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 - Modify: `scripts/wiki-ingest.ts` (post-ingest survival verification against the corrections store)
 - Test: workflow contract test for the injection step; lint tests for the finding; ingest tests for erosion detection
 
-**Approach:** prompt contract mirrors the untrusted-target-repo precedent — corrections are data to preserve, isolated from instructions; enforcement is the mechanical check, not LLM compliance. Erosion blocks the ingest commit (fail-closed) and surfaces the finding.
+**Approach:** prompt contract mirrors the untrusted-target-repo precedent — corrections are data to preserve, isolated from instructions; enforcement is the mechanical check, not LLM compliance. Erosion blocks the ingest commit (fail-closed) and surfaces the finding. Context assembly follows the randomized-delimiter pattern at `survey-repo.yaml:183` (`EOF_$(openssl rand -hex 8)`) or passes a file path — correction text must never be able to forge step outputs in a job holding a PAT.
 
 **Test scenarios:**
 - Happy path: correction present in regenerated page → no finding, commit proceeds.
@@ -252,11 +253,11 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Approach:**
 - Add `push: branches: [data]` alongside the retained weekly cron and manual dispatch (verified compatible; `merge-data.yaml` currently has NO concurrency group).
-- Coalesce by cancellation: a workflow-level concurrency group keyed to the data-promotion path, newest push wins; the weekly cron is the backstop for any run cancelled mid-promotion.
+- Coalesce by cancellation for pushes only: the concurrency group sets `cancel-in-progress` conditionally on the trigger (a push may cancel a queued/in-flight push run, but a `schedule`/`workflow_dispatch` run is never cancelable by a push) — otherwise a survey push landing during the Sunday cron would cancel the backstop itself, starving promotions silently.
 - The promotion operation is already idempotent-friendly: `merge-data-pr.ts` reuses/updates the existing promotion PR rather than creating one per push (verified :127-146, :521-571) — keep it safely rerunnable.
 - Scope note (verified): `merge-data-pr.ts` only CLASSIFIES and LABELS (`knowledge/`+`metadata/`-only diffs get `auto-merge`, else `needs-review`); the actual merge depends on repo automation consuming the label. Operator edits (knowledge/-only) ride the existing fast lane; this unit changes trigger cadence only, never the gate or label semantics.
 
-**Test scenarios:** contract: push trigger present alongside cron/dispatch; concurrency group present with intended cancellation semantics; permissions unchanged; gate step ordering unchanged; existing-PR reuse behavior pinned.
+**Test scenarios:** contract: push trigger present alongside cron/dispatch; concurrency configuration asserts a push run can never cancel a schedule/dispatch run (the exact conditional pinned); permissions unchanged; gate step ordering unchanged; existing-PR reuse behavior pinned.
 
 **Verification:** a data push produces a promotion PR/merge through the existing gate path within the interactive horizon.
 
@@ -274,7 +275,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Approach:** static link construction from page frontmatter (node_id + slug); no credentials, no session awareness on the wiki side (R14 holds by construction — the link is inert for non-operators, who simply can't authenticate on the dashboard).
 
-**Test expectation:** none — static link rendering in a harness-less committed-dist plugin; verified by site build inspection.
+**Test expectation:** component rendering itself is harness-less (committed-dist plugin, per repo status quo); the LINK TARGET SHAPE is a cross-repo contract with Unit 7 and gets a config-level contract test in the style of `scripts/publish-wiki-workflow.test.ts` pinning the URL format.
 
 **Verification:** local Quartz build renders the link on repo/topic pages, absent on index/log; link target matches Unit 7's contract.
 
@@ -315,6 +316,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 | Correction spans unmatchable after heavy regeneration | Deterministic normalized-span matching defined against fixtures in Unit 4; needs-reconfirmation state instead of false erosion where ambiguous |
 | Promotion-on-push spams the gate pipeline (12 survey pushes/day) | Cancelable concurrency group (newest wins) + existing-PR reuse; weekly cron backstop covers cancelled runs |
 | Git-dependency distribution proves unworkable in pnpm | Prototype gate in Unit 1 acceptance; npm-registry fallback decided deliberately, not improvised |
+| Promotion frequency turns fail-closed privacy gates into alert-fatigue generators (`FRO_BOT_POLL_PAT` runs weekly → ~12×/day) | Coalescing bounds run count; gate failures stay fail-closed but route to the existing reporting channel with dedup; watch the first weeks for fatigue signal before considering any relaxation |
 
 ## Documentation / Operational Notes
 
