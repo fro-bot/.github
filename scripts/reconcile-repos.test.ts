@@ -127,6 +127,9 @@ describe('reconcileRepos', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 0,
+        transferBlocked: 0,
+        renamed: 0,
+        merged: 0,
         transient: 0,
         malformed: 0,
         skippedPrivate: 0,
@@ -561,6 +564,353 @@ describe('reconcileRepos', () => {
   })
 
   describe('tracked entries — still accessible', () => {
+    it('detects a renamed repo from a node_id mismatch and preserves survey history', () => {
+      const entry = makeEntry({
+        owner: 'alice',
+        name: 'old-name',
+        node_id: 'R_old',
+        private: false,
+        last_survey_at: '2026-01-15',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-02-15',
+        added: '2025-12-01',
+      })
+      const identityProbe = {
+        returned_node_id: 'R_new',
+        returned_owner: 'alice',
+        returned_name: 'new-name',
+        resolution: 'resolved',
+        resolved_owner: 'alice',
+        resolved_name: 'current-name',
+      }
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_old'})],
+          fieldProbes: new Map([
+            [
+              'alice/old-name',
+              {
+                has_fro_bot_workflow: false,
+                has_renovate: false,
+                identity: identityProbe,
+              } as unknown as FieldProbe,
+            ],
+          ]),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'alice',
+        name: 'current-name',
+        node_id: 'R_old',
+        added: '2025-12-01',
+        last_survey_at: '2026-01-15',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-02-15',
+      })
+      expect(result.summary.renamed).toBe(1)
+    })
+
+    it('routes an unresolvable stored node_id through lost-access without adding a newcomer', () => {
+      const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [entry]},
+          accessList: [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})],
+          fieldProbes: new Map([
+            [
+              'alice/old-name',
+              {
+                has_fro_bot_workflow: false,
+                has_renovate: false,
+                identity: {
+                  returned_node_id: 'R_new',
+                  returned_owner: 'alice',
+                  returned_name: 'old-name',
+                  resolution: 'unresolvable',
+                },
+              } as unknown as FieldProbe,
+            ],
+          ]),
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]?.onboarding_status).toBe('lost-access')
+      expect(result.summary.lostAccess).toBe(1)
+      expect(result.summary.added).toBe(0)
+    })
+
+    it('backfills node_id from the returned probe when the stored entry lacks one', () => {
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [makeEntry({owner: 'alice', name: 'backfill'})]},
+          accessList: [makeAccess({owner: 'alice', name: 'backfill', node_id: 'R_access-list'})],
+          fieldProbes: new Map([
+            [
+              'alice/backfill',
+              {
+                has_fro_bot_workflow: false,
+                has_renovate: false,
+                identity: {
+                  returned_node_id: 'R_backfilled',
+                  returned_owner: 'alice',
+                  returned_name: 'backfill',
+                  resolution: 'matched',
+                },
+              } as unknown as FieldProbe,
+            ],
+          ]),
+        }),
+      )
+
+      expect(result.nextRepos.repos[0]?.node_id).toBe('R_backfilled')
+    })
+
+    it('merges duplicate node_id rows using the current API name and coherent freshest cadence', () => {
+      const currentEntry = makeEntry({
+        owner: 'marcusrbrown',
+        name: 'marcusrbrown.github.io',
+        node_id: 'R_kgDORgYjdA',
+        private: false,
+        added: '2025-01-01',
+        last_survey_at: '2026-08-27',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-28',
+        discovery_channel: 'collab',
+      })
+      const zombieEntry = makeEntry({
+        owner: 'marcusrbrown',
+        name: 'mrbro.dev',
+        node_id: 'R_kgDORgYjdA',
+        private: false,
+        added: '2025-02-01',
+        last_survey_at: '2026-07-07',
+        last_survey_status: 'failure',
+        next_survey_eligible_at: '2026-08-09',
+        discovery_channel: 'collab',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          now: new Date('2026-08-28T12:00:00Z'),
+          currentRepos: {version: 1, repos: [currentEntry, zombieEntry]},
+          accessList: [makeAccess({owner: 'marcusrbrown', name: 'marcusrbrown.github.io', node_id: 'R_kgDORgYjdA'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'marcusrbrown',
+        name: 'marcusrbrown.github.io',
+        node_id: 'R_kgDORgYjdA',
+        added: '2025-01-01',
+        last_survey_at: '2026-08-27',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-28',
+      })
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.merged).toBe(1)
+    })
+
+    it('uses freshest survey cadence when no duplicate row matches the current API name', () => {
+      const older = makeEntry({owner: 'alice', name: 'alias-a', node_id: 'R_same', last_survey_at: '2026-06-01'})
+      const fresher = makeEntry({owner: 'alice', name: 'alias-b', node_id: 'R_same', last_survey_at: '2026-07-01'})
+
+      const result = reconcileRepos(makeInput({currentRepos: {version: 1, repos: [older, fresher]}}))
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]?.name).toBe('alias-b')
+      expect(result.nextRepos.repos[0]?.last_survey_at).toBe('2026-07-01')
+      expect(result.summary.merged).toBe(1)
+    })
+
+    it('prefers the current API name as survivor even when an alias has fresher survey data', () => {
+      const current = makeEntry({
+        owner: 'alice',
+        name: 'current-name',
+        node_id: 'R_same',
+        discovery_channel: 'owned',
+        last_survey_at: '2026-06-01',
+        last_survey_status: 'failure',
+        next_survey_eligible_at: '2026-07-01',
+      })
+      const alias = makeEntry({
+        owner: 'alice',
+        name: 'old-name',
+        node_id: 'R_same',
+        discovery_channel: 'collab',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-01',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [current, alias]},
+          accessList: [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_same'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        name: 'current-name',
+        discovery_channel: 'owned',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-01',
+      })
+    })
+
+    it('merges duplicate database_id rows even when their node_ids differ', () => {
+      const first = makeEntry({owner: 'alice', name: 'current-name', node_id: 'R_first', database_id: 42})
+      const second = makeEntry({owner: 'alice', name: 'alias-name', node_id: 'R_second', database_id: 42})
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [first, second]},
+          accessList: [
+            makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_first'}),
+            makeAccess({owner: 'alice', name: 'alias-name', node_id: 'R_second'}),
+          ],
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({name: 'current-name', database_id: 42})
+      expect(result.summary.merged).toBe(1)
+    })
+
+    it('uses the current API name as the deterministic survivor when duplicate survey dates tie', () => {
+      const current = makeEntry({
+        owner: 'alice',
+        name: 'current-name',
+        node_id: 'R_same',
+        discovery_channel: 'owned',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-01',
+      })
+      const alias = makeEntry({
+        owner: 'alice',
+        name: 'old-name',
+        node_id: 'R_same',
+        discovery_channel: 'collab',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'failure',
+        next_survey_eligible_at: '2026-08-15',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [current, alias]},
+          accessList: [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_same'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'alice',
+        name: 'current-name',
+        discovery_channel: 'owned',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-01',
+      })
+      expect(result.summary.merged).toBe(1)
+    })
+
+    it('uses a deterministic survivor when all duplicate rows have null survey dates', () => {
+      const current = makeEntry({
+        owner: 'alice',
+        name: 'current-name',
+        node_id: 'R_null',
+        discovery_channel: 'owned',
+        last_survey_at: null,
+        last_survey_status: 'failure',
+        next_survey_eligible_at: null,
+      })
+      const alias = makeEntry({
+        owner: 'alice',
+        name: 'old-name',
+        node_id: 'R_null',
+        discovery_channel: 'collab',
+        last_survey_at: null,
+        last_survey_status: null,
+        next_survey_eligible_at: null,
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [current, alias]},
+          accessList: [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_null'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'alice',
+        name: 'current-name',
+        discovery_channel: 'owned',
+        last_survey_at: null,
+        last_survey_status: 'failure',
+        next_survey_eligible_at: null,
+      })
+      expect(result.summary.merged).toBe(1)
+    })
+
+    it('merges a three-row duplicate group into one row with two removals and coherent cadence', () => {
+      const first = makeEntry({
+        owner: 'alice',
+        name: 'old-name-a',
+        node_id: 'R_three',
+        added: '2025-01-01',
+        last_survey_at: '2026-06-01',
+        last_survey_status: 'failure',
+        next_survey_eligible_at: '2026-07-01',
+      })
+      const current = makeEntry({
+        owner: 'alice',
+        name: 'current-name',
+        node_id: 'R_three',
+        added: '2025-03-01',
+        discovery_channel: 'owned',
+        last_survey_at: '2026-07-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-08-01',
+      })
+      const freshestAlias = makeEntry({
+        owner: 'alice',
+        name: 'old-name-b',
+        node_id: 'R_three',
+        added: '2025-02-01',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-01',
+      })
+
+      const result = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [current, first, freshestAlias]},
+          accessList: [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_three'})],
+        }),
+      )
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: 'alice',
+        name: 'current-name',
+        discovery_channel: 'owned',
+        added: '2025-01-01',
+        last_survey_at: '2026-08-01',
+        last_survey_status: 'success',
+        next_survey_eligible_at: '2026-09-01',
+      })
+      expect(result.summary.merged).toBe(2)
+    })
+
     it('leaves a pending-review, still-accessible entry unchanged when no field drift', () => {
       const entry = makeEntry({
         onboarding_status: 'pending-review',
@@ -1229,6 +1579,9 @@ describe('reconcileRepos', () => {
         lostAccess: 1,
         refreshed: 1,
         migrated: 0,
+        transferBlocked: 0,
+        renamed: 0,
+        merged: 0,
         transient: 0,
         malformed: 0,
         skippedPrivate: 0,
@@ -1274,6 +1627,9 @@ describe('reconcileRepos', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 0,
+        transferBlocked: 0,
+        renamed: 0,
+        merged: 0,
         transient: 0,
         malformed: 0,
         skippedPrivate: 0,
@@ -1303,6 +1659,9 @@ describe('reconcileRepos', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 0,
+        transferBlocked: 0,
+        renamed: 0,
+        merged: 0,
         transient: 0,
         malformed: 0,
         skippedPrivate: 0,
@@ -2132,6 +2491,8 @@ interface FieldProbeRepoGetResponse {
   private?: boolean
   node_id?: string
   id?: number
+  name?: string
+  owner?: {login: string}
 }
 
 /**
@@ -2143,6 +2504,7 @@ function makeFieldProbeOctokit(
   overrides: {
     reposGet?: (params: {owner: string; repo: string}) => Promise<{data: FieldProbeRepoGetResponse}>
     getContent?: (params: {owner: string; repo: string; path: string}) => Promise<unknown>
+    graphql?: (query: string, variables: {id: string}) => Promise<unknown>
   } = {},
 ): OctokitClient {
   return {
@@ -2160,10 +2522,232 @@ function makeFieldProbeOctokit(
           }),
       },
     },
+    graphql: overrides.graphql,
   } as unknown as OctokitClient
 }
 
 describe('fetchFieldProbes — database_id capture', () => {
+  it('resolves a returned node_id mismatch through GraphQL node(id:)', async () => {
+    const currentRepos: ReposFile = {
+      version: 1,
+      repos: [makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old'})],
+    }
+    const accessList: AccessListEntry[] = [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_old'})]
+    const graphql = vi.fn(async (query: string, variables: {id: string}) => ({
+      node: {__typename: 'Repository', name: 'current-name', owner: {login: 'alice'}},
+      query,
+      variables,
+    }))
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => ({
+        data: {
+          private: false,
+          node_id: 'R_new',
+          id: 987654,
+          name: 'old-name',
+          owner: {login: 'alice'},
+        },
+      }),
+      graphql,
+    })
+
+    const result = await fetchFieldProbes(userOctokit, currentRepos, accessList, silentLogger())
+    const identity = result.probes.get('alice/old-name')?.identity
+
+    expect(identity).toMatchObject({
+      returned_node_id: 'R_new',
+      resolution: 'resolved',
+      resolved_owner: 'alice',
+      resolved_name: 'current-name',
+    })
+    expect(graphql).toHaveBeenCalledWith(expect.stringContaining('node(id: $id)'), {id: 'R_old'})
+  })
+
+  it('repairs a rename when REST probing fails but stored node_id resolves through GraphQL', async () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => {
+        throw apiError(404, 'Not Found')
+      },
+      graphql: async () => ({
+        node: {__typename: 'Repository', name: 'current-name', owner: {login: 'alice'}},
+      }),
+    })
+    const accessList = [makeAccess({owner: 'alice', name: 'current-name', node_id: 'R_old'})]
+
+    const probeResult = await fetchFieldProbes(userOctokit, {version: 1, repos: [entry]}, accessList, silentLogger())
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList,
+        fieldProbes: probeResult.probes,
+      }),
+    )
+
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({
+      returned_node_id: 'R_old',
+      resolution: 'resolved',
+      resolved_owner: 'alice',
+      resolved_name: 'current-name',
+    })
+    expect(result.nextRepos.repos[0]).toMatchObject({owner: 'alice', name: 'current-name', node_id: 'R_old'})
+    expect(result.summary).toMatchObject({renamed: 1, lostAccess: 0})
+  })
+
+  it('preserves an entry when GraphQL returns no node without an HTTP 404', async () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => {
+        throw apiError(404, 'Not Found')
+      },
+      graphql: async () => ({node: null}),
+    })
+    const accessList = [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})]
+
+    const probeResult = await fetchFieldProbes(userOctokit, {version: 1, repos: [entry]}, accessList, silentLogger())
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList,
+        fieldProbes: probeResult.probes,
+      }),
+    )
+
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({resolution: 'transient'})
+    expect(result.nextRepos.repos).toEqual([entry])
+    expect(result.summary).toMatchObject({renamed: 0, lostAccess: 0, transient: 1})
+  })
+
+  it('leaves an entry unchanged when REST probing fails and node resolution is transient', async () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => {
+        throw apiError(500, 'Internal Server Error')
+      },
+      graphql: async () => {
+        throw apiError(500, 'Internal Server Error')
+      },
+    })
+    const accessList = [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})]
+
+    const probeResult = await fetchFieldProbes(userOctokit, {version: 1, repos: [entry]}, accessList, silentLogger())
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList,
+        fieldProbes: probeResult.probes,
+      }),
+    )
+
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({resolution: 'transient'})
+    expect(result.nextRepos.repos).toEqual([entry])
+    expect(result.summary).toMatchObject({renamed: 0, lostAccess: 0, transient: 1})
+  })
+
+  it('blocks a node-id-preserving owner transfer instead of rebinding the entry', () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({owner: 'bob', name: 'transferred-name', node_id: 'R_old'})],
+        fieldProbes: new Map([
+          [
+            'alice/old-name',
+            {
+              has_fro_bot_workflow: false,
+              has_renovate: false,
+              identity: {
+                returned_node_id: 'R_new',
+                returned_owner: 'bob',
+                returned_name: 'transferred-name',
+                resolution: 'resolved',
+                resolved_owner: 'bob',
+                resolved_name: 'transferred-name',
+              },
+            } as unknown as FieldProbe,
+          ],
+        ]),
+      }),
+    )
+
+    expect(result.nextRepos.repos).toEqual([entry])
+    expect(result.summary).toMatchObject({renamed: 0, transferBlocked: 1, lostAccess: 0})
+  })
+
+  it('classifies a 404 GraphQL node(id:) failure as unresolvable and demotes the entry', async () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => ({
+        data: {
+          private: false,
+          node_id: 'R_new',
+          id: 987654,
+          name: 'old-name',
+          owner: {login: 'alice'},
+        },
+      }),
+      graphql: async () => {
+        throw apiError(404, 'Not Found')
+      },
+    })
+
+    const probeResult = await fetchFieldProbes(
+      userOctokit,
+      {version: 1, repos: [entry]},
+      [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})],
+      silentLogger(),
+    )
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})],
+        fieldProbes: probeResult.probes,
+      }),
+    )
+
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({resolution: 'unresolvable'})
+    expect(result.nextRepos.repos).toHaveLength(1)
+    expect(result.nextRepos.repos[0]?.onboarding_status).toBe('lost-access')
+    expect(result.nextRepos.repos[0]?.name).toBe('R_old')
+    expect(result.summary).toMatchObject({added: 0, renamed: 0, lostAccess: 1})
+  })
+
+  it('classifies a 500 GraphQL node(id:) failure as transient and preserves the entry', async () => {
+    const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
+    const userOctokit = makeFieldProbeOctokit({
+      reposGet: async () => ({
+        data: {
+          private: false,
+          node_id: 'R_new',
+          id: 987654,
+          name: 'old-name',
+          owner: {login: 'alice'},
+        },
+      }),
+      graphql: async () => {
+        throw apiError(500, 'Internal Server Error')
+      },
+    })
+
+    const probeResult = await fetchFieldProbes(
+      userOctokit,
+      {version: 1, repos: [entry]},
+      [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})],
+      silentLogger(),
+    )
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [makeAccess({owner: 'alice', name: 'old-name', node_id: 'R_new'})],
+        fieldProbes: probeResult.probes,
+      }),
+    )
+
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({resolution: 'transient'})
+    expect(result.nextRepos.repos).toEqual([entry])
+    expect(result.summary).toMatchObject({added: 0, renamed: 0, lostAccess: 0, transient: 1})
+  })
+
   it('happy path: GraphQL/REST returns databaseId → probe result carries numeric database_id', async () => {
     // GIVEN a tracked repo in the access list with a known numeric id
     const currentRepos: ReposFile = {
@@ -4763,6 +5347,9 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 2,
         migrated: 0,
+        transferBlocked: 0,
+        renamed: 0,
+        merged: 0,
         transient: 0,
         malformed: 0,
         skippedPrivate: 0,
@@ -4785,6 +5372,9 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 0,
         migrated: 18,
+        transferBlocked: 0,
+        renamed: 0,
+        merged: 0,
         transient: 0,
         malformed: 0,
         skippedPrivate: 0,
@@ -4807,6 +5397,9 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 1,
         migrated: 0,
+        transferBlocked: 0,
+        renamed: 0,
+        merged: 0,
         transient: 0,
         malformed: 0,
         skippedPrivate: 2,
@@ -4829,6 +5422,9 @@ describe('formatCommitMessage', () => {
         lostAccess: 0,
         refreshed: 1,
         migrated: 18,
+        transferBlocked: 0,
+        renamed: 0,
+        merged: 0,
         transient: 0,
         malformed: 0,
         skippedPrivate: 0,

@@ -64,16 +64,27 @@ function definedPrivacyFields(
 }
 
 function findRepoEntryIndex(repos: readonly RepoEntry[], input: RepoIdentityInput): number {
+  const identityMatches: number[] = []
   if (input.node_id !== undefined) {
-    const nodeIdMatch = repos.findIndex(entry => entry.node_id === input.node_id)
-    if (nodeIdMatch !== -1) {
-      return nodeIdMatch
-    }
+    repos.forEach((entry, index) => {
+      if (entry.node_id === input.node_id || (entry.owner === REDACTED_OWNER && entry.name === input.node_id)) {
+        identityMatches.push(index)
+      }
+    })
+  }
+  if (input.database_id !== undefined) {
+    repos.forEach((entry, index) => {
+      if (entry.database_id === input.database_id && !identityMatches.includes(index)) {
+        identityMatches.push(index)
+      }
+    })
+  }
 
-    const redactedNameMatch = repos.findIndex(entry => entry.owner === REDACTED_OWNER && entry.name === input.node_id)
-    if (redactedNameMatch !== -1) {
-      return redactedNameMatch
-    }
+  if (identityMatches.length > 1) {
+    throw new DuplicateRepoIdentityError({node_id: input.node_id, database_id: input.database_id})
+  }
+  if (identityMatches.length === 1) {
+    return identityMatches[0] ?? -1
   }
 
   return repos.findIndex(entry => entry.owner === input.owner && entry.name === input.repo)
@@ -472,5 +483,19 @@ export class RepoEntryNotFoundError extends Error {
     this.name = 'RepoEntryNotFoundError'
     this.owner = owner
     this.repo = repo
+  }
+}
+
+export class DuplicateRepoIdentityError extends Error {
+  readonly code = 'DUPLICATE_REPO_IDENTITY'
+  readonly node_id: string | undefined
+  readonly database_id: number | undefined
+
+  constructor(input: {node_id?: string; database_id?: number}) {
+    const identifier = input.node_id === undefined ? 'unknown identity' : `node_id=${input.node_id}`
+    super(`duplicate repo identity match during metadata write-back (${identifier})`)
+    this.name = 'DuplicateRepoIdentityError'
+    this.node_id = input.node_id
+    this.database_id = input.database_id
   }
 }
