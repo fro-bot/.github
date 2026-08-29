@@ -4025,3 +4025,24 @@ Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43
 Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-08-29 12:00] ingest | marcusrbrown/marcusrbrown.github.io
+
+Second same-day pass (`workflow_dispatch` re-run) of the *name* `marcusrbrown/marcusrbrown.github.io` (SHA `9e54dbc`, unchanged). The name resolves to repo **id `1174807412`** — the **mrbro.dev developer portfolio** (canonical [[marcusrbrown--mrbro-dev]]), not the brand site (id `1021912280`, now [[marcusrbrown--marcusrbrown-com]]). Name-to-repo binding unchanged since 2026-07-20 — collision holds. Updated repo page `marcusrbrown--marcusrbrown-github-io.md` (second-same-day-pass fold into the 2026-08-29 Delta Log + Survey History row + frontmatter source) and `index.md`. Tree frozen — no durable delta on the canonical [[marcusrbrown--mrbro-dev]] page.
+
+Key findings:
+
+- `main` HEAD **still `9e54dbc`** (`fix(analytics): preserve umami pageview context (#257)`, 2026-07-31T21:42:11Z) — trunk frozen **29 days**; `updated_at` still 2026-07-31T21:42:16Z, `pushed_at` 2026-08-29T06:51:58Z (PR-branch pushes only — #253 blog-snapshot re-push 2026-08-29T06:57, #1 dashboard refresh 2026-08-29T08:38). No tree-level drift.
+- Queue delta vs the earlier 2026-08-29 pass is churn-only: (1) daily-report renumber #292 → **#293** (`Daily Fro Bot Report — 2026-08-29 (UTC)`); (2) the **legacy `#162 Daily Autohealing Report` dropped back off** the open listing (it had transiently resurfaced earlier same-day), so API `open_issues_count` settled **14 → 13**.
+- Open issues 6 (#293 / #287 `ci: remove unused E2E contents write permission` / #271 / #270 / #261 / #258 / #212 — all carried) + #1 Dependency Dashboard (`mrbro-bot[bot]`). Open PRs **5, all carried, none merged since 2026-08-07** (#283 docs-duplicate / #266 `fix(security): remediate high audit advisories` ~23d unmerged / #263 `docs: refresh repository inventory` / #254 `docs: correct automation script count` / #253 `chore(blog): refresh snapshot and preview images`). The #283-vs-#254 docs duplicate for one "correct automation script count" fix still stands.
+- Report-without-remediation / propose-without-merge pattern (first flagged 2026-06-12) remains fully hardened: 29 days of a frozen trunk, security PR #266 unmerged ~23 days, self-duplicated docs PR, four-item CI least-privilege issue cluster (#287/#271/#270/#261). The daemon audits and drafts; nobody promotes.
+- Fro Bot workflow present and active at agent v0.93.1 (`a4976f4`); single `30 3` daily oversight+autoheal cron (#234 consolidation holds); 8 workflows; Renovate `#5.2.7`; pnpm 11.1.3 / Node >=24 — **no onboarding follow-up draft PR warranted for this name.**
+- `gh` credential gap again (`GH_TOKEN` unset; unauthenticated GitHub API + raw fetch only) — the same authenticated-access gap the current occupant's own issue #212 tracks. No new facts about the *brand site* (id `1021912280`) observable through this name; defer to [[marcusrbrown--marcusrbrown-com]].
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io (SHA 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf)
+
+## [2026-08-29 11:46] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
