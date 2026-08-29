@@ -240,7 +240,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Verification:** end-to-end fixture: seeded correction + simulated regeneration missing it → blocked with finding.
 
-- [ ] **Unit 5: Promotion cadence for operator edits**
+- [x] **Unit 5: Promotion cadence for operator edits**
 
 **Goal:** An accepted edit reaches the published site in one sitting: the dashboard broker dispatches the existing gated promotion pipeline instead of waiting for the weekly cron.
 
