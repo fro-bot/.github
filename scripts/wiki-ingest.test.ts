@@ -77,21 +77,30 @@ function createWikiPage(params: {
   title: string
   created?: string
   updated?: string
+  node_id?: string
+  aliases?: string[]
+  sources?: {url: string; sha?: string; accessed: string}[]
   body?: string
 }): {path: string; content: string} {
+  const frontmatter = [
+    '---',
+    `type: ${params.type}`,
+    `title: ${params.title}`,
+    `created: ${params.created ?? '2026-04-16'}`,
+    `updated: ${params.updated ?? '2026-04-16'}`,
+    ...(params.node_id === undefined ? [] : [`node_id: ${params.node_id}`]),
+    ...(params.sources === undefined
+      ? []
+      : [
+          'sources:',
+          ...params.sources.flatMap(source => [`  - url: ${source.url}`, `    accessed: ${source.accessed}`]),
+        ]),
+    ...(params.aliases === undefined ? [] : [`aliases: [${params.aliases.join(', ')}]`]),
+    '---',
+  ]
   return {
     path: params.path,
-    content: [
-      '---',
-      `type: ${params.type}`,
-      `title: ${params.title}`,
-      `created: ${params.created ?? '2026-04-16'}`,
-      `updated: ${params.updated ?? '2026-04-16'}`,
-      '---',
-      '',
-      params.body ?? 'Body.',
-      '',
-    ].join('\n'),
+    content: [...frontmatter, '', params.body ?? 'Body.', ''].join('\n'),
   }
 }
 
@@ -137,6 +146,123 @@ describe('buildWikiIngestChanges', () => {
     // #when the ingest path validation runs
     // #then dot-containing repo slugs are accepted and emitted
     expect(result.files['knowledge/wiki/repos/fro-bot--.github.md']).toContain('type: repo')
+  })
+
+  it('emits node_id in repo frontmatter when creating or updating a page', () => {
+    const result = buildWikiIngestChanges({
+      existingFiles: createEmptyWikiFiles(),
+      operation: 'survey',
+      target: 'repo:alice/project',
+      summary: 'Surveyed the repository.',
+      timestamp: new Date('2026-04-16T12:34:00.000Z'),
+      sources: [],
+      repoNodeId: 'R_repo',
+      pages: [
+        createWikiPage({
+          path: 'knowledge/wiki/repos/alice--project.md',
+          type: 'repo',
+          title: 'alice/project',
+        }),
+      ],
+    })
+
+    expect(result.files['knowledge/wiki/repos/alice--project.md']).toContain('node_id: R_repo')
+  })
+
+  it('migrates a node-matched repo page to the current slug while preserving aliases, sources, and history', () => {
+    const result = buildWikiIngestChanges({
+      operation: 'survey',
+      target: 'repo:alice/current-name',
+      summary: 'Surveyed the renamed repository.',
+      timestamp: new Date('2026-04-16T12:34:00.000Z'),
+      sources: [],
+      repoNodeId: 'R_repo',
+      existingFiles: {
+        ...createEmptyWikiFiles(),
+        'knowledge/wiki/repos/alice--old-name.md': createWikiPage({
+          path: 'knowledge/wiki/repos/alice--old-name.md',
+          type: 'repo',
+          title: 'alice/old-name',
+          node_id: 'R_repo',
+          aliases: ['historic-name'],
+          sources: [{url: 'https://github.com/alice/old-name', accessed: '2026-04-15'}],
+          body: 'Historical repository notes.',
+        }).content,
+      },
+      pages: [
+        createWikiPage({
+          path: 'knowledge/wiki/repos/alice--current-name.md',
+          type: 'repo',
+          title: 'alice/current-name',
+          body: 'Current repository notes.',
+        }),
+      ],
+    })
+
+    const migrated = result.files['knowledge/wiki/repos/alice--current-name.md']
+    expect(migrated).toContain('title: alice/current-name')
+    expect(migrated).toContain('node_id: R_repo')
+    expect(migrated).toContain('historic-name')
+    expect(migrated).toContain('alice--old-name')
+    expect(migrated).toContain('https://github.com/alice/old-name')
+    expect(migrated).toContain('Historical repository notes.')
+    expect(migrated).toContain('Current repository notes.')
+    expect(result.deletedPaths).toEqual(['knowledge/wiki/repos/alice--old-name.md'])
+  })
+
+  it('falls back to the current slug for legacy pages and backfills node_id', () => {
+    const result = buildWikiIngestChanges({
+      existingFiles: {
+        ...createEmptyWikiFiles(),
+        'knowledge/wiki/repos/alice--project.md': createWikiPage({
+          path: 'knowledge/wiki/repos/alice--project.md',
+          type: 'repo',
+          title: 'alice/project',
+          sources: [{url: 'https://github.com/alice/project', accessed: '2026-04-15'}],
+        }).content,
+      },
+      operation: 'survey',
+      target: 'repo:alice/project',
+      summary: 'Refreshed the legacy page.',
+      timestamp: new Date('2026-04-16T12:34:00.000Z'),
+      sources: [],
+      repoNodeId: 'R_repo',
+      pages: [
+        createWikiPage({
+          path: 'knowledge/wiki/repos/alice--project.md',
+          type: 'repo',
+          title: 'alice/project',
+        }),
+      ],
+    })
+
+    expect(result.deletedPaths).toEqual([])
+    expect(result.files['knowledge/wiki/repos/alice--project.md']).toContain('node_id: R_repo')
+    expect(result.files['knowledge/wiki/repos/alice--project.md']).toContain('https://github.com/alice/project')
+  })
+
+  it('does not migrate when node_id and current slug already match', () => {
+    const page = createWikiPage({
+      path: 'knowledge/wiki/repos/alice--project.md',
+      type: 'repo',
+      title: 'alice/project',
+      node_id: 'R_repo',
+      aliases: ['historic-name'],
+    })
+    const result = buildWikiIngestChanges({
+      existingFiles: {...createEmptyWikiFiles(), [page.path]: page.content},
+      operation: 'survey',
+      target: 'repo:alice/project',
+      summary: 'No identity migration required.',
+      timestamp: new Date('2026-04-16T12:34:00.000Z'),
+      sources: [],
+      repoNodeId: 'R_repo',
+      pages: [page],
+    })
+
+    expect(result.deletedPaths).toEqual([])
+    expect(result.files['knowledge/wiki/repos/alice--project.md']).toContain('historic-name')
+    expect(result.files).not.toHaveProperty('knowledge/wiki/repos/alice--old-name.md')
   })
 
   it('builds index and log files when existing wiki files are missing', () => {
@@ -510,6 +636,41 @@ describe('commitWikiChanges', () => {
     expect(createTree).toHaveBeenCalledTimes(2)
     expect(createCommit).toHaveBeenCalledTimes(2)
     expect(updateRef).toHaveBeenCalledTimes(2)
+  })
+
+  it('includes the old repo page as a deletion when committing a rename migration', async () => {
+    const createTree = vi.fn(
+      async (_params: {tree: {path: string; mode: '100644'; type: 'blob'; sha: string | null}[]}) => ({
+        data: {sha: 'tree-after-migration'},
+      }),
+    )
+    const octokit = createOctokitMock({createTree})
+
+    await commitWikiChanges({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'data',
+      message: 'feat(knowledge): migrate renamed repo page',
+      files: {'knowledge/wiki/repos/alice--current-name.md': 'current page'},
+      deletedPaths: ['knowledge/wiki/repos/alice--old-name.md'],
+    })
+
+    const firstCall = createTree.mock.calls[0]
+    expect(firstCall).toBeDefined()
+    const tree = firstCall?.[0].tree
+    expect(tree).toContainEqual({
+      path: 'knowledge/wiki/repos/alice--current-name.md',
+      mode: '100644',
+      type: 'blob',
+      sha: 'blob-12',
+    })
+    expect(tree).toContainEqual({
+      path: 'knowledge/wiki/repos/alice--old-name.md',
+      mode: '100644',
+      type: 'blob',
+      sha: null,
+    })
   })
 
   it('bootstraps the data branch before reading the wiki head ref', async () => {

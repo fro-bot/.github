@@ -35,7 +35,9 @@ tags: [relevant, tags]
 ---
 ```
 
-Required fields: `type`, `title`, `created`, `updated`. Optional fields: `sources`, `tags`, `aliases`, `related`.
+Required fields: `type`, `title`, `created`, `updated`. Repo pages must also include the stable GitHub
+`node_id` (for example, `node_id: R_kgDO...`); it is safe to expose because wiki pages are public-only.
+Optional fields: `sources`, `tags`, `aliases`, `related`.
 
 ## Filename Conventions
 

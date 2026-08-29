@@ -6,12 +6,13 @@ import {basename} from 'node:path'
 import process from 'node:process'
 import {promisify} from 'node:util'
 
-import {parse} from 'yaml'
+import {parse, stringify} from 'yaml'
 import {
   bootstrapDataBranch as defaultBootstrapDataBranch,
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
+import {assertReposFile} from './schemas.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
@@ -49,10 +50,13 @@ export interface BuildWikiIngestChangesParams {
   timestamp: Date
   sources: WikiSource[]
   pages: WikiPageInput[]
+  /** Stable GitHub repository identity used for repo-page canonicalization. */
+  repoNodeId?: string
 }
 
 export interface BuildWikiIngestChangesResult {
   files: Record<string, string>
+  deletedPaths: string[]
 }
 
 export interface CommitWikiChangesParams {
@@ -61,6 +65,7 @@ export interface CommitWikiChangesParams {
   branch?: string
   message: string
   files: Record<string, string>
+  deletedPaths?: readonly string[]
   octokit?: OctokitClient
   maxRetries?: number
   /**
@@ -118,6 +123,8 @@ interface WikiFrontmatter {
   title: string
   created: string
   updated: string
+  node_id?: string
+  sources?: WikiSource[]
   tags?: string[]
   aliases?: string[]
   related?: string[]
@@ -130,6 +137,7 @@ interface WikiIngestPayload {
   timestamp?: string
   sources: WikiSource[]
   pages: WikiPageInput[]
+  node_id?: string
   message?: string
   owner?: string
   repo?: string
@@ -147,8 +155,10 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
 
   const files: Record<string, string> = {}
   const nextFiles = {...params.existingFiles}
+  const deletedPaths: string[] = []
 
-  for (const page of params.pages) {
+  for (const inputPage of params.pages) {
+    const page = prepareWikiPage(inputPage, nextFiles, params.repoNodeId, params.target, deletedPaths)
     assertWikiPagePath(page.path)
     validateWikiPage(page.path, page.content)
     const normalized = normalizeText(page.content)
@@ -165,7 +175,7 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
   files[INDEX_PATH] = index
   files[LOG_PATH] = log
 
-  return {files}
+  return {files, deletedPaths}
 }
 
 export async function commitWikiChanges(params: CommitWikiChangesParams): Promise<CommitWikiChangesResult> {
@@ -206,11 +216,15 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         path: string
         mode: '100644'
         type: 'blob'
-        sha: string
+        sha: string | null
       }[] = []
       for (const [path, content] of Object.entries(params.files)) {
         const blob = await octokit.rest.git.createBlob({owner, repo, content, encoding: 'utf-8'})
         tree.push({path, mode: '100644' as const, type: 'blob' as const, sha: blob.data.sha})
+      }
+      for (const path of params.deletedPaths ?? []) {
+        if (params.files[path] !== undefined) continue
+        tree.push({path, mode: '100644' as const, type: 'blob' as const, sha: null})
       }
 
       const createdTree = await octokit.rest.git.createTree({
@@ -579,10 +593,145 @@ function parseFrontmatter(path: string, content: string): WikiFrontmatter {
     title: parsed.title,
     created: parsed.created,
     updated: parsed.updated,
+    node_id: typeof parsed.node_id === 'string' ? parsed.node_id : undefined,
+    sources: Array.isArray(parsed.sources) ? parsed.sources.filter(isWikiSource) : undefined,
     tags: Array.isArray(parsed.tags) ? parsed.tags.filter(tag => typeof tag === 'string') : undefined,
     aliases: Array.isArray(parsed.aliases) ? parsed.aliases.filter(alias => typeof alias === 'string') : undefined,
     related: Array.isArray(parsed.related) ? parsed.related.filter(related => typeof related === 'string') : undefined,
   }
+}
+
+function prepareWikiPage(
+  page: WikiPageInput,
+  existingFiles: Record<string, string>,
+  repoNodeId: string | undefined,
+  target: string,
+  deletedPaths: string[],
+): WikiPageInput {
+  if (!isRepoPagePath(page.path)) return page
+
+  const incomingFrontmatter = parseFrontmatter(page.path, page.content)
+  const identity = repoNodeId ?? incomingFrontmatter.node_id
+  if (identity === undefined) return page
+
+  const nodeMatch = findRepoPageByNodeId(existingFiles, identity)
+  const slugMatch = existingFiles[page.path]
+  const currentTitle = repoTargetTitle(target) ?? incomingFrontmatter.title
+  const historicalPages: string[] = []
+
+  if (nodeMatch !== undefined && nodeMatch.path !== page.path) {
+    historicalPages.push(nodeMatch.content)
+    delete existingFiles[nodeMatch.path]
+    if (!deletedPaths.includes(nodeMatch.path)) deletedPaths.push(nodeMatch.path)
+  }
+  if (slugMatch !== undefined && (nodeMatch === undefined || nodeMatch.path !== page.path)) {
+    historicalPages.push(slugMatch)
+  }
+
+  return {
+    path: page.path,
+    content: mergeRepoPageContent(page.content, historicalPages, {
+      nodeId: identity,
+      title: nodeMatch === undefined ? undefined : currentTitle,
+      aliases: nodeMatch === undefined || nodeMatch.path === page.path ? undefined : [nodeMatch.slug],
+    }),
+  }
+}
+
+function findRepoPageByNodeId(
+  files: Record<string, string>,
+  nodeId: string,
+): {path: string; slug: string; content: string} | undefined {
+  const candidates = Object.entries(files)
+    .filter(([path]) => isRepoPagePath(path))
+    .sort(([left], [right]) => left.localeCompare(right))
+  for (const [path, content] of candidates) {
+    const frontmatter = parseFrontmatter(path, content)
+    if (frontmatter.node_id === nodeId) {
+      return {path, slug: basename(path, '.md'), content}
+    }
+  }
+  return undefined
+}
+
+function mergeRepoPageContent(
+  incomingContent: string,
+  historicalContents: string[],
+  changes: {nodeId: string; title?: string; aliases?: string[]},
+): string {
+  const incoming = parseFrontmatterDocument(incomingContent)
+  const historical = historicalContents.map(content => parseFrontmatterDocument(content))
+  const values: Record<string, unknown> = {...incoming.values}
+  const records = [incoming.values, ...historical.map(page => page.values)]
+
+  for (const key of ['aliases', 'tags', 'related', 'sources']) {
+    const merged = mergeFrontmatterArray(records, key)
+    if (merged.length > 0) values[key] = merged
+  }
+  const aliases = mergeFrontmatterArray(records, 'aliases').filter(
+    (value): value is string => typeof value === 'string',
+  )
+  for (const alias of changes.aliases ?? []) {
+    if (!aliases.includes(alias)) aliases.push(alias)
+  }
+  if (aliases.length > 0) values.aliases = aliases
+  if (changes.title !== undefined) values.title = changes.title
+  values.node_id = changes.nodeId
+  delete values.database_id
+
+  const createdDates = records
+    .map(record => record.created)
+    .filter((value): value is string => typeof value === 'string' && DATE_PATTERN.test(value))
+    .sort()
+  if (createdDates[0] !== undefined) values.created = createdDates[0]
+
+  let body = incoming.body.trim()
+  for (const page of historical) {
+    const historicalBody = page.body.trim()
+    if (historicalBody !== '' && !body.includes(historicalBody)) {
+      body = body === '' ? historicalBody : `${body}\n\n${historicalBody}`
+    }
+  }
+
+  return normalizeText(`---\n${stringify(values).trimEnd()}\n---\n\n${body}\n`)
+}
+
+function mergeFrontmatterArray(records: Record<string, unknown>[], key: string): unknown[] {
+  const values: unknown[] = []
+  const seen = new Set<string>()
+  for (const record of records) {
+    const candidate = record[key]
+    if (!Array.isArray(candidate)) continue
+    for (const value of candidate) {
+      const fingerprint = JSON.stringify(value)
+      if (seen.has(fingerprint)) continue
+      seen.add(fingerprint)
+      values.push(value)
+    }
+  }
+  return values
+}
+
+function parseFrontmatterDocument(content: string): {values: Record<string, unknown>; body: string} {
+  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+  if (match === null || match[1] === undefined) {
+    throw new Error('validated wiki page is missing frontmatter')
+  }
+  const parsed: unknown = parse(match[1])
+  if (!isRecord(parsed)) throw new Error('validated wiki page frontmatter is not an object')
+  return {values: parsed, body: content.slice(match[0].length)}
+}
+
+function isRepoPagePath(path: string): boolean {
+  return path.startsWith(`${WIKI_ROOT}/repos/`) && path.endsWith('.md')
+}
+
+function repoTargetTitle(target: string): string | undefined {
+  if (!target.startsWith('repo:')) return undefined
+  const nameWithOwner = target.slice('repo:'.length)
+  const slash = nameWithOwner.indexOf('/')
+  if (slash < 1 || slash === nameWithOwner.length - 1) return undefined
+  return nameWithOwner
 }
 
 function collectWikiPages(files: Record<string, string>): ParsedWikiPage[] {
@@ -810,9 +959,9 @@ export function parsePorcelainPaths(stdout: string): string[] {
       .split('\n')
       .map(line => line.replace(/\r$/, ''))
       .filter(line => line.length >= 4)
-      // Skip any status where X or Y is 'D' (deletion). The wiki commit path is
-      // additive-only; feeding deletions into `loadWorkingTreeWikiFiles` crashes
-      // with ENOENT when it tries to readFile a path no longer on disk.
+      // Skip any status where X or Y is 'D' (deletion). Working-tree ingestion only
+      // reads surviving files; canonical page migrations carry deletions explicitly
+      // through `BuildWikiIngestChangesResult.deletedPaths` into the Git Data API tree.
       .filter(line => !line.slice(0, 2).includes('D'))
       .map(line => line.slice(3))
       .filter(path => path !== '')
@@ -843,6 +992,7 @@ function parsePayload(raw: string): WikiIngestPayload {
     timestamp: typeof parsed.timestamp === 'string' ? parsed.timestamp : undefined,
     sources: parsed.sources.filter(isWikiSource),
     pages: parsed.pages.filter(isWikiPageInput),
+    node_id: typeof parsed.node_id === 'string' ? parsed.node_id : undefined,
     message: typeof parsed.message === 'string' ? parsed.message : undefined,
     owner: typeof parsed.owner === 'string' ? parsed.owner : undefined,
     repo: typeof parsed.repo === 'string' ? parsed.repo : undefined,
@@ -895,6 +1045,7 @@ async function main(): Promise<void> {
 
   if (payloadPath !== undefined && payloadPath !== '') {
     const payload = parsePayload(await readFile(payloadPath, 'utf8'))
+    const repoNodeId = payload.node_id ?? (await loadRepoNodeIdForTarget(payload.target))
     built = buildWikiIngestChanges({
       existingFiles,
       operation: payload.operation,
@@ -903,6 +1054,7 @@ async function main(): Promise<void> {
       timestamp: payload.timestamp === undefined ? new Date() : new Date(payload.timestamp),
       sources: payload.sources,
       pages: payload.pages,
+      repoNodeId,
     })
     owner = payload.owner
     repo = payload.repo
@@ -918,14 +1070,18 @@ async function main(): Promise<void> {
     }
 
     const pages = await loadWorkingTreeWikiFiles(changedPaths)
+    const operation = isWikiOperation(process.env.WIKI_OPERATION) ? process.env.WIKI_OPERATION : 'event'
+    const target = process.env.WIKI_TARGET ?? 'repo:unknown/unknown'
+    const repoNodeId = await loadRepoNodeIdForTarget(target)
     built = buildWikiIngestChanges({
       existingFiles,
-      operation: isWikiOperation(process.env.WIKI_OPERATION) ? process.env.WIKI_OPERATION : 'event',
-      target: process.env.WIKI_TARGET ?? 'repo:unknown/unknown',
+      operation,
+      target,
       summary: process.env.WIKI_SUMMARY ?? 'Updated wiki content from working tree changes.',
       timestamp: process.env.WIKI_TIMESTAMP === undefined ? new Date() : new Date(process.env.WIKI_TIMESTAMP),
       sources: parseSources(process.env.WIKI_SOURCES),
       pages: Object.entries(pages).map(([path, content]) => ({path, content})),
+      repoNodeId,
     })
     owner = process.env.WIKI_OWNER
     repo = process.env.WIKI_REPO
@@ -942,11 +1098,48 @@ async function main(): Promise<void> {
     branch,
     message,
     files: built.files,
+    deletedPaths: built.deletedPaths,
   })
 
   const pagesChanged = countWikiPages(committedPagePaths)
   await emitPagesChanged(pagesChanged)
   process.stdout.write(`${JSON.stringify({...result, pagesChanged})}\n`)
+}
+
+async function loadRepoNodeIdForTarget(target: string): Promise<string | undefined> {
+  const parsedTarget = repoTargetParts(target)
+  if (parsedTarget === undefined) return undefined
+
+  let raw: string
+  try {
+    raw = await readFile('metadata/repos.yaml', 'utf8')
+  } catch {
+    return undefined
+  }
+
+  let parsed: unknown
+  try {
+    parsed = parse(raw)
+    assertReposFile(parsed)
+  } catch {
+    return undefined
+  }
+
+  const entry = parsed.repos.find(
+    candidate =>
+      candidate.private === false &&
+      candidate.owner.toLowerCase() === parsedTarget.owner.toLowerCase() &&
+      candidate.name.toLowerCase() === parsedTarget.name.toLowerCase(),
+  )
+  return entry?.node_id
+}
+
+function repoTargetParts(target: string): {owner: string; name: string} | undefined {
+  if (!target.startsWith('repo:')) return undefined
+  const nameWithOwner = target.slice('repo:'.length)
+  const slash = nameWithOwner.indexOf('/')
+  if (slash < 1 || slash === nameWithOwner.length - 1) return undefined
+  return {owner: nameWithOwner.slice(0, slash), name: nameWithOwner.slice(slash + 1)}
 }
 
 function parseSources(raw: string | undefined): WikiSource[] {
