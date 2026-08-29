@@ -3,6 +3,7 @@ import {describe, expect, it} from 'vitest'
 import {
   buildWikiIngestChanges,
   checkPrivateLeakWithAdapter,
+  maskCodeContent,
   reconstructFrontmatter,
   validateRenderingPolicy,
 } from './index.ts'
@@ -61,6 +62,21 @@ describe('wiki write core', () => {
         content: ['```html', '<script>alert(1)</script>', '```'].join('\n'),
       }),
     ).toEqual([])
+  })
+
+  it('keeps content masked after a mismatched fence marker', () => {
+    const masked = maskCodeContent(
+      ['```html', '<script>alert(1)</script>', '~~~', '<script>still code</script>'].join('\n'),
+    )
+
+    expect(masked).not.toContain('<script>')
+  })
+
+  it('masks inline code content', () => {
+    const masked = maskCodeContent('Safe text with `<script>alert(1)</script>` inline.')
+
+    expect(masked).not.toContain('<script>')
+    expect(masked).toContain('Safe text with ')
   })
 
   it('fails the pure privacy gate through an injected authority adapter', async () => {

@@ -88,8 +88,8 @@ function sanitizeSegment(segment: string): string {
     .replaceAll(/^-+|-+$/g, '')
 }
 
-async function main(): Promise<void> {
-  const [, , owner, repo] = process.argv
+export async function runWikiSlugCli(argv: readonly string[] = process.argv): Promise<void> {
+  const [, , owner, repo] = argv
 
   if (owner === undefined || repo === undefined || owner === '' || repo === '') {
     process.stderr.write('Usage: node scripts/wiki-slug.ts <owner> <repo>\n')
@@ -100,5 +100,5 @@ async function main(): Promise<void> {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  await main()
+  await runWikiSlugCli()
 }

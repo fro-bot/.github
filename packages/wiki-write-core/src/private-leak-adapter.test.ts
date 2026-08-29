@@ -1,11 +1,13 @@
 import {Buffer} from 'node:buffer'
 import {describe, expect, it, vi} from 'vitest'
+import {buildPrivateNameTokens as workflowPrivateNameTokens} from '../../../scripts/wiki-slug.ts'
 import {
   checkPrivateLeakWithGitHub,
   createGitHubPrivateLeakAdapter,
   PrivateLeakAdapterError,
   type GitHubPrivateLeakClient,
 } from './private-leak-adapter.ts'
+import {buildPrivateNameTokens as packagePrivateNameTokens} from './wiki-slug.ts'
 
 const {octokitConstructor} = vi.hoisted(() => ({octokitConstructor: vi.fn()}))
 
@@ -68,7 +70,7 @@ function mockClient(params: {
     },
     graphql: vi.fn(async () => {
       params.onGraphql?.()
-      return {data: {nodes: params.nodes ?? []}}
+      return {nodes: params.nodes ?? []}
     }),
   } as unknown as GitHubPrivateLeakClient
 }
@@ -92,7 +94,7 @@ describe('GitHub private-leak adapter', () => {
     expect(result).toEqual({ok: true})
   })
 
-  it('returns a finding when a private repository name appears in added content', async () => {
+  it('accepts the unwrapped Octokit GraphQL response shape', async () => {
     const client = mockClient({
       metadata: metadataResponse([{private: true, node_id: 'R_private'}]),
       nodes: [{nameWithOwner: 'acme/private-repo', isPrivate: true}],
@@ -107,6 +109,22 @@ describe('GitHub private-leak adapter', () => {
     })
 
     expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/security.md']})
+  })
+
+  it('returns the same canonical token authority set as the workflow gate', async () => {
+    const resolvedName = 'acme/private_repo'
+    const client = mockClient({
+      metadata: metadataResponse([{private: true, node_id: 'R_private'}]),
+      nodes: [{nameWithOwner: resolvedName, isPrivate: true}],
+    })
+    const adapter = await createGitHubPrivateLeakAdapter({token: 'token-only-input', octokit: client})
+
+    const tokens = await adapter.resolvePrivateRepositoryNames({content: resolvedName})
+
+    expect(tokens).toEqual(packagePrivateNameTokens(resolvedName))
+    expect(tokens).toEqual(workflowPrivateNameTokens(resolvedName))
+    expect(tokens).toContain('acme--private_repo')
+    expect(tokens).toContain('acme--private-repo')
   })
 
   it('fails closed with a typed metadata error when authority cannot be read', async () => {

@@ -16,6 +16,6 @@
     "category": "transformer",
     "quartzVersion": ">=5.0.0",
     "defaultEnabled": true,
-    "defaultOrder": 1
+    "defaultOrder": 999
   }
 }

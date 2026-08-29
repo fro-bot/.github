@@ -19,14 +19,33 @@ const UNSAFE_ELEMENTS = new Set([
   "math"
 ])
 
-const URL_PROPERTIES = new Set(["href", "src", "srcset", "action", "formaction", "xlink:href", "poster", "background", "cite"])
+const URL_PROPERTIES = new Set(["href", "src", "srcset", "action", "formaction", "xlinkhref", "poster", "background", "cite"])
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function isUnsafeUrl(value) {
-  return typeof value === "string" && /^(?:javascript|vbscript|data):/iu.test(value.trim())
+  if (typeof value !== "string") return false
+  const decoded = decodeCharacterReferences(value)
+  const normalized = decoded.replaceAll(/[\u0000-\u0020\u007f]/gu, "").toLowerCase()
+  return /^(?:javascript|vbscript|data):/u.test(normalized)
+}
+
+function decodeCharacterReferences(value) {
+  return value
+    .replaceAll(/&#(?:x([0-9a-f]+)|([0-9]+));?/giu, (match, hexadecimal, decimal) => {
+      const digits = hexadecimal ?? decimal
+      const radix = hexadecimal === undefined ? 10 : 16
+      const codePoint = Number.parseInt(digits, radix)
+      return Number.isInteger(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff
+        ? String.fromCodePoint(codePoint)
+        : match
+    })
+    .replaceAll(/&(colon|newline|tab);?/giu, (_match, name) => {
+      if (name.toLowerCase() === "colon") return ":"
+      return name.toLowerCase() === "tab" ? "\t" : "\n"
+    })
 }
 
 function sanitizeProperties(properties) {

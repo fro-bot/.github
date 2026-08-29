@@ -33,7 +33,7 @@ export function validateRenderingPolicy(params: RenderingPolicyValidationParams)
   return findings
 }
 
-function maskCodeContent(content: string): string {
+export function maskCodeContent(content: string): string {
   const lines = content.split('\n')
   let fence: {character: string; length: number} | undefined
 

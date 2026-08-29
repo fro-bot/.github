@@ -36,11 +36,18 @@ describe('wiki write core entrypoint contract', () => {
         '---',
         '',
         'Project notes.',
+        'See [[missing-page]].',
         '',
       ].join('\n'),
     }
 
     const params = {files, now: new Date('2026-08-29T00:00:00.000Z')}
-    expect(packageLintWikiSnapshot(params)).toEqual(cliLintWikiSnapshot(params))
+    const packageResult = packageLintWikiSnapshot(params)
+    const cliResult = cliLintWikiSnapshot(params)
+
+    expect(packageResult).toEqual(cliResult)
+    expect(packageResult.deterministicFindings).toEqual(
+      expect.arrayContaining([expect.objectContaining({kind: 'broken-wikilink'})]),
+    )
   })
 })

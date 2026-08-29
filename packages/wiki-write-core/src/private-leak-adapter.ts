@@ -8,6 +8,7 @@ import {
   type PrivateLeakScanRequest,
 } from './private-leak.ts'
 import {assertReposFile} from './schemas.ts'
+import {buildPrivateNameTokens} from './wiki-slug.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
@@ -216,8 +217,7 @@ async function resolvePrivateRepositoryNames(
     })
   }
 
-  const data = isRecord(response) && isRecord(response.data) ? response.data : undefined
-  const nodes = data?.nodes
+  const nodes = isRecord(response) ? response.nodes : undefined
   if (!Array.isArray(nodes) || nodes.length !== nodeIds.length) {
     throw new PrivateLeakAdapterError({
       code: 'RESOLUTION_FAILED',
@@ -244,7 +244,7 @@ async function resolvePrivateRepositoryNames(
       })
     }
 
-    names.push(node.nameWithOwner)
+    names.push(...buildPrivateNameTokens(node.nameWithOwner))
   }
 
   return names

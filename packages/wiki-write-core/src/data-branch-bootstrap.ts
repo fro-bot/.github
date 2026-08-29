@@ -193,12 +193,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-async function main(): Promise<void> {
+export async function runDataBranchBootstrapCli(): Promise<void> {
   const result = await bootstrapDataBranch()
   const action = result.created ? 'created' : 'exists'
   process.stdout.write(`${action}:${result.ref}:${result.sha}\n`)
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  await main()
+  await runDataBranchBootstrapCli()
 }
