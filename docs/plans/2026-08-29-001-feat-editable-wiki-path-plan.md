@@ -11,7 +11,7 @@ deepened: 2026-08-29
 
 ## Overview
 
-Build the operator wiki-edit path: Edit links on the Quartz wiki deep-link into an editor served by `fro-bot/dashboard`, whose backend verifies the operator session, runs this repo's validation gates synchronously via a published library, and commits accepted edits to the `data` branch under Fro Bot's identity. Marked corrections become durable constraints in the survey loop with a deterministic survival check. This repo owns the validation/commit library, the correction and survey-side machinery, the promotion cadence fix, and the wiki-side affordance; `fro-bot/dashboard` owns the editor and save API; `marcusrbrown/infra` owns deployment wiring. `fro-bot/agent` is deliberately untouched — the gateway stays control-plane-agnostic.
+Build the operator wiki-edit path: Edit links on the Quartz wiki deep-link into an editor served by `fro-bot/dashboard`, whose backend verifies the operator session, runs this repo's validation gates synchronously via a shared pinned library, and commits accepted edits to the `data` branch under Fro Bot's identity. Marked corrections become durable constraints in the survey loop with a deterministic survival check. This repo owns the validation/commit library, the correction and survey-side machinery, the promotion cadence fix, and the wiki-side affordance; `fro-bot/dashboard` owns the editor and save API; `marcusrbrown/infra` owns deployment wiring. `fro-bot/agent` is deliberately untouched — the gateway stays control-plane-agnostic.
 
 ## Problem Frame
 
@@ -128,14 +128,14 @@ Requirements R1–R18 from the origin doc. Unit coverage:
 
 - Broker placement: `fro-bot/dashboard` (operator decision; gateway stays control-plane-agnostic).
 - Cross-origin auth: dissolved — editor and API share the dashboard origin.
-- Validation-code consumption: published package over vendoring/subprocess/workflow-callback.
+- Validation-code consumption: importable package (git-dependency-pinned first cut, npm fallback) over vendoring/subprocess/workflow-callback.
 - Page-version definition: page blob SHA (+ observed head SHA).
 
 ### Deferred to Implementation
 
 - Correction metadata file layout and exact schema fields (loose-then-tight; system-owned path under `knowledge/`): settled when Unit 3 touches real data.
 - Survival-check matching (normalized-span rules, supersession mechanics): Unit 4, against real correction fixtures.
-- Rendering-policy sanitizer specifics within the package: Unit 1, against Quartz's actual rendering pipeline.
+- Rendering-policy sanitizer selection (which sanitizer/rehype configuration the Quartz build uses): Unit 1, placement already decided — render-side primary, save-side feedback.
 - pnpm git-subdirectory dependency viability: Unit 1's acceptance prototype; if unworkable, escalate to the npm-registry fallback rather than improvising.
 - Editor UX details (draft persistence, pending-state polling source): dashboard-side planning.
 
@@ -145,7 +145,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 - [ ] **Unit 1: Extract `@fro-bot/wiki-write-core` package**
 
-**Goal:** One importable, published library holding the gate and commit machinery the save path needs; workflow CLIs consume the same source.
+**Goal:** One importable library (git-dependency-pinned) holding the gate and commit machinery the save path needs, with workflow CLIs consuming the same source — plus the render-side sanitizer in the Quartz build, live before any operator save path exists.
 
 **Requirements:** R2, R3, R4, R6, R12
 
@@ -170,6 +170,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 - Error path: private-repo name in body → privacy finding, no commit payload; unsafe HTML → rendering finding.
 - Edge case: edit to a page with node_id identity vs legacy page without; missing `data` branch → bootstrap path still works.
 - Integration: CLI entrypoint and package entrypoint produce identical findings for identical fixtures (drift guard).
+- Integration (render-side control): a fixture page containing scriptable content, built through the local Quartz pipeline, produces inert output — the primary security control gets a build-level assertion, not just a config edit.
 
 **Verification:** full repo gate green; `pnpm pack` produces a consumable artifact and the dashboard-side git-subdirectory install prototype succeeds with lockfile proof (this prototype runs BEFORE Unit 7 planning starts — a fallback to npm publishing changes that repo's dependency story); contract fixtures pass against both entrypoints.
 
@@ -285,7 +286,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Requirements:** R2–R7, R12–R18
 
-**Dependencies:** Units 1, 2 published; Unit 3 schema for correction marking in the editor
+**Dependencies:** Units 1, 2 landed and consumable; Unit 3 schema for correction marking in the editor
 
 **Planning note:** detailed planning happens in `fro-bot/dashboard` against this contract; this repo reviews the contract surface (route shapes, error taxonomy, latency budget ≤5s p95/10s hard).
 
