@@ -64,6 +64,17 @@ export interface BuildWikiIngestChangesResult {
   deletedPaths: string[]
 }
 
+export interface WikiIngestWarning {
+  code: 'duplicate-repo-identity'
+  node_ids: string[]
+  slugs: string[]
+}
+
+export interface TrackedRepoNodeIdsResult {
+  nodeIds: Map<string, string>
+  warnings: WikiIngestWarning[]
+}
+
 export interface CommitWikiChangesParams {
   owner?: string
   repo?: string
@@ -181,7 +192,7 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
 
   const parsedPages = collectWikiPages(nextFiles)
   const index = buildIndexDocument(nextFiles[INDEX_PATH], parsedPages)
-  const log = appendLogEntry(params.existingFiles[LOG_PATH], params)
+  const log = appendLogEntry(nextFiles[LOG_PATH], params)
 
   files[INDEX_PATH] = index
   files[LOG_PATH] = log
@@ -233,11 +244,12 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         const blob = await octokit.rest.git.createBlob({owner, repo, content, encoding: 'utf-8'})
         tree.push({path, mode: '100644' as const, type: 'blob' as const, sha: blob.data.sha})
       }
+      const presentPaths =
+        params.deletedPaths === undefined || params.deletedPaths.length === 0
+          ? new Set<string>()
+          : await getPresentPathsInTree(octokit, owner, repo, commit.data.tree.sha)
       for (const path of params.deletedPaths ?? []) {
-        if (
-          params.files[path] !== undefined ||
-          !(await isPathPresentInTree(octokit, owner, repo, commit.data.tree.sha, path))
-        ) {
+        if (params.files[path] !== undefined || !presentPaths.has(path)) {
           continue
         }
         tree.push({path, mode: '100644' as const, type: 'blob' as const, sha: null})
@@ -322,17 +334,17 @@ async function assertWritableWikiBranch(
   }
 }
 
-async function isPathPresentInTree(
+async function getPresentPathsInTree(
   octokit: OctokitClient,
   owner: string,
   repo: string,
   treeSha: string,
-  path: string,
-): Promise<boolean> {
+): Promise<Set<string>> {
   const response = await octokit.rest.git.getTree({owner, repo, tree_sha: treeSha, recursive: 'true'})
+  if (response.data.truncated === true) return new Set()
   const tree: unknown = response.data.tree
-  if (!Array.isArray(tree)) return false
-  return tree.some(entry => isRecord(entry) && typeof entry.path === 'string' && entry.path === path)
+  if (!Array.isArray(tree)) return new Set()
+  return new Set(tree.flatMap(entry => (isRecord(entry) && typeof entry.path === 'string' ? [entry.path] : [])))
 }
 
 async function createOctokitFromEnv(): Promise<OctokitClient> {
@@ -662,7 +674,12 @@ function prepareWikiPage(
     fallbackNodeId: isTargetPage ? params.fallbackNodeId : undefined,
     frontmatterNodeId: incomingFrontmatter.node_id,
   })
-  if (identity === undefined) return page
+  if (identity === undefined || !identity.trusted) {
+    return {
+      path: page.path,
+      content: updateRepoPageFrontmatter(page.content),
+    }
+  }
 
   const nodeMatch = identity.trusted ? findRepoPageByNodeId(existingFiles, identity.nodeId) : undefined
   const historicalPages: string[] = []
@@ -761,9 +778,10 @@ function mergeRepoPageContent(
   return renderFrontmatterDocument(values, body)
 }
 
-function updateRepoPageFrontmatter(content: string, nodeId: string): string {
+function updateRepoPageFrontmatter(content: string, nodeId?: string): string {
   const document = parseFrontmatterDocument(content)
-  document.values.node_id = nodeId
+  if (nodeId === undefined) delete document.values.node_id
+  else document.values.node_id = nodeId
   delete document.values.database_id
   return renderFrontmatterDocument(document.values, document.body)
 }
@@ -1136,12 +1154,14 @@ async function main(): Promise<void> {
   let repo: string | undefined
   let branch: string | undefined
   let message: string
+  let identityWarnings: WikiIngestWarning[] = []
 
   let committedPagePaths: string[]
 
   if (payloadPath !== undefined && payloadPath !== '') {
     const payload = parsePayload(await readFile(payloadPath, 'utf8'))
-    const trackedRepoNodeIds = await loadTrackedRepoNodeIds()
+    const tracked = await loadTrackedRepoNodeIds()
+    identityWarnings = tracked.warnings
     built = buildWikiIngestChanges({
       existingFiles,
       operation: payload.operation,
@@ -1150,7 +1170,7 @@ async function main(): Promise<void> {
       timestamp: payload.timestamp === undefined ? new Date() : new Date(payload.timestamp),
       sources: payload.sources,
       pages: payload.pages,
-      trackedRepoNodeIds,
+      trackedRepoNodeIds: tracked.nodeIds,
       fallbackNodeId: payload.node_id,
     })
     owner = payload.owner
@@ -1169,7 +1189,8 @@ async function main(): Promise<void> {
     const pages = await loadWorkingTreeWikiFiles(changedPaths)
     const operation = isWikiOperation(process.env.WIKI_OPERATION) ? process.env.WIKI_OPERATION : 'event'
     const target = process.env.WIKI_TARGET ?? 'repo:unknown/unknown'
-    const trackedRepoNodeIds = await loadTrackedRepoNodeIds()
+    const tracked = await loadTrackedRepoNodeIds()
+    identityWarnings = tracked.warnings
     built = buildWikiIngestChanges({
       existingFiles,
       operation,
@@ -1178,7 +1199,7 @@ async function main(): Promise<void> {
       timestamp: process.env.WIKI_TIMESTAMP === undefined ? new Date() : new Date(process.env.WIKI_TIMESTAMP),
       sources: parseSources(process.env.WIKI_SOURCES),
       pages: Object.entries(pages).map(([path, content]) => ({path, content})),
-      trackedRepoNodeIds,
+      trackedRepoNodeIds: tracked.nodeIds,
       targetNodeId: process.env.REPO_NODE_ID,
     })
     owner = process.env.WIKI_OWNER
@@ -1188,6 +1209,10 @@ async function main(): Promise<void> {
       process.env.WIKI_COMMIT_MESSAGE ??
       `feat(knowledge): ${process.env.WIKI_OPERATION ?? 'event'} ${process.env.WIKI_TARGET ?? 'wiki update'}`
     committedPagePaths = changedPaths
+  }
+
+  for (const warning of identityWarnings) {
+    process.stderr.write(`wiki-ingest:warning:${JSON.stringify(warning)}\n`)
   }
 
   const result = await commitWikiChanges({
@@ -1208,23 +1233,14 @@ type ReadUtf8File = (path: string, encoding: 'utf8') => Promise<string>
 
 const readUtf8File: ReadUtf8File = async (path, encoding) => readFile(path, encoding)
 
-export async function loadRepoNodeIdForTarget(
-  target: string,
+export async function loadTrackedRepoNodeIds(
   readFileImpl: ReadUtf8File = readUtf8File,
-): Promise<string | undefined> {
-  const parsedTarget = repoTargetParts(target)
-  if (parsedTarget === undefined) return undefined
-
-  const trackedRepoNodeIds = await loadTrackedRepoNodeIds(readFileImpl)
-  return trackedRepoNodeIds.get(computeRepoSlug(parsedTarget.owner, parsedTarget.name))
-}
-
-async function loadTrackedRepoNodeIds(readFileImpl: ReadUtf8File = readUtf8File): Promise<Map<string, string>> {
+): Promise<TrackedRepoNodeIdsResult> {
   let raw: string
   try {
     raw = await readFileImpl('metadata/repos.yaml', 'utf8')
   } catch {
-    return new Map()
+    return {nodeIds: new Map(), warnings: []}
   }
 
   let parsed: unknown
@@ -1232,15 +1248,62 @@ async function loadTrackedRepoNodeIds(readFileImpl: ReadUtf8File = readUtf8File)
     parsed = parse(raw)
     assertReposFile(parsed)
   } catch {
-    return new Map()
+    return {nodeIds: new Map(), warnings: []}
   }
 
-  const nodeIds = new Map<string, string>()
-  for (const entry of parsed.repos) {
-    if (entry.private !== false || entry.node_id === undefined) continue
-    nodeIds.set(computeRepoSlug(entry.owner, entry.name), entry.node_id)
+  const candidates = parsed.repos.flatMap(entry => {
+    if (entry.private !== false || typeof entry.node_id !== 'string') return []
+    return [
+      {
+        databaseId: entry.database_id,
+        nodeId: entry.node_id,
+        slug: computeRepoSlug(entry.owner, entry.name),
+      },
+    ]
+  })
+  const nodeSlugs = new Map<string, Set<string>>()
+  const databaseSlugs = new Map<number, Set<string>>()
+  for (const candidate of candidates) {
+    const nodeGroup = nodeSlugs.get(candidate.nodeId) ?? new Set<string>()
+    nodeGroup.add(candidate.slug)
+    nodeSlugs.set(candidate.nodeId, nodeGroup)
+    if (candidate.databaseId !== undefined) {
+      const databaseGroup = databaseSlugs.get(candidate.databaseId) ?? new Set<string>()
+      databaseGroup.add(candidate.slug)
+      databaseSlugs.set(candidate.databaseId, databaseGroup)
+    }
   }
-  return nodeIds
+
+  const collidingSlugs = new Set<string>()
+  const warningGroups = new Map<string, Set<string>>()
+  const registerCollision = (slugs: Set<string>): void => {
+    if (slugs.size < 2) return
+    const orderedSlugs = [...slugs].sort((left, right) => left.localeCompare(right))
+    const key = orderedSlugs.join('\u0000')
+    warningGroups.set(key, slugs)
+    for (const slug of slugs) collidingSlugs.add(slug)
+  }
+  for (const slugs of nodeSlugs.values()) registerCollision(slugs)
+  for (const slugs of databaseSlugs.values()) registerCollision(slugs)
+
+  const warnings: WikiIngestWarning[] = [...warningGroups.values()]
+    .map((slugs): WikiIngestWarning => ({
+      code: 'duplicate-repo-identity' as const,
+      node_ids: candidates
+        .filter(candidate => slugs.has(candidate.slug))
+        .map(candidate => candidate.nodeId)
+        .filter((nodeId, index, values) => values.indexOf(nodeId) === index)
+        .sort((left, right) => left.localeCompare(right)),
+      slugs: [...slugs].sort((left, right) => left.localeCompare(right)),
+    }))
+    .sort((left, right) => left.slugs.join('\u0000').localeCompare(right.slugs.join('\u0000')))
+
+  const nodeIds = new Map<string, string>()
+  for (const candidate of candidates) {
+    if (collidingSlugs.has(candidate.slug)) continue
+    nodeIds.set(candidate.slug, candidate.nodeId)
+  }
+  return {nodeIds, warnings}
 }
 
 function repoTargetParts(target: string): {owner: string; name: string} | undefined {
