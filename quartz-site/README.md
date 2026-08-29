@@ -61,6 +61,14 @@ The build points at `knowledge/`, not `knowledge/wiki/`, so `knowledge/index.md`
 
 `quartz.config.yaml` sets `analytics: null` explicitly. No third-party or unconsented telemetry — Plausible, GA, or otherwise — ships with this site.
 
+## Rendering policy
+
+`local-plugin/sanitizer/` is a separate Quartz transformer and runs last in the
+HTML pipeline (`order: 999`). It removes raw HTML nodes, scriptable elements,
+event-handler attributes, executable URLs, and inline styles before emission.
+This is the primary rendering control; the save-side
+`@fro-bot/wiki-write-core` validation only provides fast operator feedback.
+
 ## No Generic Frontmatter Rendering
 
 The local plugin's components read only the explicit frontmatter fields they need. Neither one iterates over arbitrary frontmatter and renders whatever it finds. That's deliberate: wiki pages carry internal bookkeeping fields (`node_id`, `database_id`) that must never show up on a rendered page, and a "render everything" component would leak them the first time someone adds a new field upstream.
