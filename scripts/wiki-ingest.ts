@@ -13,6 +13,7 @@ import {
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
 import {assertReposFile} from './schemas.ts'
+import {computeRepoSlug} from './wiki-slug.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
@@ -50,8 +51,12 @@ export interface BuildWikiIngestChangesParams {
   timestamp: Date
   sources: WikiSource[]
   pages: WikiPageInput[]
-  /** Stable GitHub repository identity used for repo-page canonicalization. */
-  repoNodeId?: string
+  /** Trusted metadata identities keyed by canonical repo-page slug. */
+  trackedRepoNodeIds?: ReadonlyMap<string, string>
+  /** Trusted dispatch identity; usable only for the page matching `target`. */
+  targetNodeId?: string
+  /** Untrusted payload fallback; never authorizes a page migration or deletion. */
+  fallbackNodeId?: string
 }
 
 export interface BuildWikiIngestChangesResult {
@@ -156,20 +161,26 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
   const files: Record<string, string> = {}
   const nextFiles = {...params.existingFiles}
   const deletedPaths: string[] = []
+  const migrations: {oldSlug: string; newSlug: string}[] = []
 
   for (const inputPage of params.pages) {
-    const page = prepareWikiPage(inputPage, nextFiles, params.repoNodeId, params.target, deletedPaths)
+    const page = prepareWikiPage(inputPage, nextFiles, params, deletedPaths, migrations)
     assertWikiPagePath(page.path)
-    validateWikiPage(page.path, page.content)
-    const normalized = normalizeText(page.content)
+    const normalized = normalizeText(validateWikiPage(page.path, page.content))
     nextFiles[page.path] = normalized
     files[page.path] = normalized
   }
 
+  rewriteInboundWikilinks(nextFiles, migrations)
+  for (const [path, content] of Object.entries(nextFiles)) {
+    if (params.existingFiles[path] !== content && !deletedPaths.includes(path)) {
+      files[path] = content
+    }
+  }
   validateWikilinks(nextFiles)
 
   const parsedPages = collectWikiPages(nextFiles)
-  const index = buildIndexDocument(params.existingFiles[INDEX_PATH], parsedPages)
+  const index = buildIndexDocument(nextFiles[INDEX_PATH], parsedPages)
   const log = appendLogEntry(params.existingFiles[LOG_PATH], params)
 
   files[INDEX_PATH] = index
@@ -223,7 +234,12 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         tree.push({path, mode: '100644' as const, type: 'blob' as const, sha: blob.data.sha})
       }
       for (const path of params.deletedPaths ?? []) {
-        if (params.files[path] !== undefined) continue
+        if (
+          params.files[path] !== undefined ||
+          !(await isPathPresentInTree(octokit, owner, repo, commit.data.tree.sha, path))
+        ) {
+          continue
+        }
         tree.push({path, mode: '100644' as const, type: 'blob' as const, sha: null})
       }
 
@@ -306,6 +322,19 @@ async function assertWritableWikiBranch(
   }
 }
 
+async function isPathPresentInTree(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  treeSha: string,
+  path: string,
+): Promise<boolean> {
+  const response = await octokit.rest.git.getTree({owner, repo, tree_sha: treeSha, recursive: 'true'})
+  const tree: unknown = response.data.tree
+  if (!Array.isArray(tree)) return false
+  return tree.some(entry => isRecord(entry) && typeof entry.path === 'string' && entry.path === path)
+}
+
 async function createOctokitFromEnv(): Promise<OctokitClient> {
   const token = process.env.GITHUB_TOKEN
 
@@ -335,7 +364,7 @@ async function loadOctokitConstructor(): Promise<OctokitConstructor> {
   return loaded.Octokit as OctokitConstructor
 }
 
-function validateWikiPage(path: string, content: string): void {
+function validateWikiPage(path: string, content: string): string {
   const frontmatter = parseFrontmatter(path, content)
   const expectedType = pageTypeFromPath(path)
 
@@ -364,6 +393,18 @@ function validateWikiPage(path: string, content: string): void {
         'Use lowercase kebab-case filenames. Repo pages must be {owner}--{repo}.md and comparisons must be {a}-vs-{b}.md.',
     })
   }
+
+  if (hasDatabaseId(content)) {
+    const document = parseFrontmatterDocument(content)
+    delete document.values.database_id
+    return renderFrontmatterDocument(document.values, document.body)
+  }
+
+  return content
+}
+
+function hasDatabaseId(content: string): boolean {
+  return 'database_id' in parseFrontmatterDocument(content).values
 }
 
 function validateWikilinks(files: Record<string, string>): void {
@@ -604,38 +645,62 @@ function parseFrontmatter(path: string, content: string): WikiFrontmatter {
 function prepareWikiPage(
   page: WikiPageInput,
   existingFiles: Record<string, string>,
-  repoNodeId: string | undefined,
-  target: string,
+  params: BuildWikiIngestChangesParams,
   deletedPaths: string[],
+  migrations: {oldSlug: string; newSlug: string}[],
 ): WikiPageInput {
   if (!isRepoPagePath(page.path)) return page
 
   const incomingFrontmatter = parseFrontmatter(page.path, page.content)
-  const identity = repoNodeId ?? incomingFrontmatter.node_id
+  const pageSlug = basename(page.path, '.md')
+  const targetSlug = repoTargetSlug(params.target)
+  const trackedNodeId = params.trackedRepoNodeIds?.get(pageSlug)
+  const isTargetPage = targetSlug === pageSlug
+  const identity = resolvePageIdentity({
+    trackedNodeId,
+    targetNodeId: isTargetPage ? params.targetNodeId : undefined,
+    fallbackNodeId: isTargetPage ? params.fallbackNodeId : undefined,
+    frontmatterNodeId: incomingFrontmatter.node_id,
+  })
   if (identity === undefined) return page
 
-  const nodeMatch = findRepoPageByNodeId(existingFiles, identity)
-  const slugMatch = existingFiles[page.path]
-  const currentTitle = repoTargetTitle(target) ?? incomingFrontmatter.title
+  const nodeMatch = identity.trusted ? findRepoPageByNodeId(existingFiles, identity.nodeId) : undefined
   const historicalPages: string[] = []
 
   if (nodeMatch !== undefined && nodeMatch.path !== page.path) {
     historicalPages.push(nodeMatch.content)
     delete existingFiles[nodeMatch.path]
     if (!deletedPaths.includes(nodeMatch.path)) deletedPaths.push(nodeMatch.path)
-  }
-  if (slugMatch !== undefined && (nodeMatch === undefined || nodeMatch.path !== page.path)) {
-    historicalPages.push(slugMatch)
+    const slugMatch = existingFiles[page.path]
+    if (slugMatch !== undefined) historicalPages.push(slugMatch)
+    migrations.push({oldSlug: nodeMatch.slug, newSlug: pageSlug})
+    return {
+      path: page.path,
+      content: mergeRepoPageContent(page.content, historicalPages, {
+        nodeId: identity.nodeId,
+        title: repoTargetTitle(params.target) ?? incomingFrontmatter.title,
+        aliases: [nodeMatch.slug],
+      }),
+    }
   }
 
   return {
     path: page.path,
-    content: mergeRepoPageContent(page.content, historicalPages, {
-      nodeId: identity,
-      title: nodeMatch === undefined ? undefined : currentTitle,
-      aliases: nodeMatch === undefined || nodeMatch.path === page.path ? undefined : [nodeMatch.slug],
-    }),
+    content: updateRepoPageFrontmatter(page.content, identity.nodeId),
   }
+}
+
+function resolvePageIdentity(params: {
+  trackedNodeId?: string
+  targetNodeId?: string
+  fallbackNodeId?: string
+  frontmatterNodeId?: string
+}): {nodeId: string; trusted: boolean} | undefined {
+  if (params.trackedNodeId !== undefined) return {nodeId: params.trackedNodeId, trusted: true}
+  if (params.targetNodeId !== undefined) return {nodeId: params.targetNodeId, trusted: true}
+  if (params.fallbackNodeId !== undefined) return {nodeId: params.fallbackNodeId, trusted: false}
+  if (params.frontmatterNodeId !== undefined) return {nodeId: params.frontmatterNodeId, trusted: false}
+  return undefined
 }
 
 function findRepoPageByNodeId(
@@ -693,7 +758,33 @@ function mergeRepoPageContent(
     }
   }
 
-  return normalizeText(`---\n${stringify(values).trimEnd()}\n---\n\n${body}\n`)
+  return renderFrontmatterDocument(values, body)
+}
+
+function updateRepoPageFrontmatter(content: string, nodeId: string): string {
+  const document = parseFrontmatterDocument(content)
+  document.values.node_id = nodeId
+  delete document.values.database_id
+  return renderFrontmatterDocument(document.values, document.body)
+}
+
+function renderFrontmatterDocument(values: Record<string, unknown>, body: string): string {
+  return normalizeText(`---\n${stringify(values).trimEnd()}\n---\n\n${body.trim()}\n`)
+}
+
+function rewriteInboundWikilinks(
+  files: Record<string, string>,
+  migrations: readonly {oldSlug: string; newSlug: string}[],
+): void {
+  for (const migration of migrations) {
+    // eslint-disable-next-line unicorn/prefer-string-raw
+    const escapedOldSlug = migration.oldSlug.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+    // eslint-disable-next-line unicorn/prefer-string-raw
+    const pattern = new RegExp(`\\[\\[${escapedOldSlug}(?=\\||\\]\\])`, 'gu')
+    for (const [path, content] of Object.entries(files)) {
+      files[path] = content.replace(pattern, `[[${migration.newSlug}`)
+    }
+  }
 }
 
 function mergeFrontmatterArray(records: Record<string, unknown>[], key: string): unknown[] {
@@ -732,6 +823,11 @@ function repoTargetTitle(target: string): string | undefined {
   const slash = nameWithOwner.indexOf('/')
   if (slash < 1 || slash === nameWithOwner.length - 1) return undefined
   return nameWithOwner
+}
+
+function repoTargetSlug(target: string): string | undefined {
+  const parts = repoTargetParts(target)
+  return parts === undefined ? undefined : computeRepoSlug(parts.owner, parts.name)
 }
 
 function collectWikiPages(files: Record<string, string>): ParsedWikiPage[] {
@@ -1045,7 +1141,7 @@ async function main(): Promise<void> {
 
   if (payloadPath !== undefined && payloadPath !== '') {
     const payload = parsePayload(await readFile(payloadPath, 'utf8'))
-    const repoNodeId = payload.node_id ?? (await loadRepoNodeIdForTarget(payload.target))
+    const trackedRepoNodeIds = await loadTrackedRepoNodeIds()
     built = buildWikiIngestChanges({
       existingFiles,
       operation: payload.operation,
@@ -1054,7 +1150,8 @@ async function main(): Promise<void> {
       timestamp: payload.timestamp === undefined ? new Date() : new Date(payload.timestamp),
       sources: payload.sources,
       pages: payload.pages,
-      repoNodeId,
+      trackedRepoNodeIds,
+      fallbackNodeId: payload.node_id,
     })
     owner = payload.owner
     repo = payload.repo
@@ -1072,7 +1169,7 @@ async function main(): Promise<void> {
     const pages = await loadWorkingTreeWikiFiles(changedPaths)
     const operation = isWikiOperation(process.env.WIKI_OPERATION) ? process.env.WIKI_OPERATION : 'event'
     const target = process.env.WIKI_TARGET ?? 'repo:unknown/unknown'
-    const repoNodeId = await loadRepoNodeIdForTarget(target)
+    const trackedRepoNodeIds = await loadTrackedRepoNodeIds()
     built = buildWikiIngestChanges({
       existingFiles,
       operation,
@@ -1081,7 +1178,8 @@ async function main(): Promise<void> {
       timestamp: process.env.WIKI_TIMESTAMP === undefined ? new Date() : new Date(process.env.WIKI_TIMESTAMP),
       sources: parseSources(process.env.WIKI_SOURCES),
       pages: Object.entries(pages).map(([path, content]) => ({path, content})),
-      repoNodeId,
+      trackedRepoNodeIds,
+      targetNodeId: process.env.REPO_NODE_ID,
     })
     owner = process.env.WIKI_OWNER
     repo = process.env.WIKI_REPO
@@ -1106,15 +1204,27 @@ async function main(): Promise<void> {
   process.stdout.write(`${JSON.stringify({...result, pagesChanged})}\n`)
 }
 
-async function loadRepoNodeIdForTarget(target: string): Promise<string | undefined> {
+type ReadUtf8File = (path: string, encoding: 'utf8') => Promise<string>
+
+const readUtf8File: ReadUtf8File = async (path, encoding) => readFile(path, encoding)
+
+export async function loadRepoNodeIdForTarget(
+  target: string,
+  readFileImpl: ReadUtf8File = readUtf8File,
+): Promise<string | undefined> {
   const parsedTarget = repoTargetParts(target)
   if (parsedTarget === undefined) return undefined
 
+  const trackedRepoNodeIds = await loadTrackedRepoNodeIds(readFileImpl)
+  return trackedRepoNodeIds.get(computeRepoSlug(parsedTarget.owner, parsedTarget.name))
+}
+
+async function loadTrackedRepoNodeIds(readFileImpl: ReadUtf8File = readUtf8File): Promise<Map<string, string>> {
   let raw: string
   try {
-    raw = await readFile('metadata/repos.yaml', 'utf8')
+    raw = await readFileImpl('metadata/repos.yaml', 'utf8')
   } catch {
-    return undefined
+    return new Map()
   }
 
   let parsed: unknown
@@ -1122,16 +1232,15 @@ async function loadRepoNodeIdForTarget(target: string): Promise<string | undefin
     parsed = parse(raw)
     assertReposFile(parsed)
   } catch {
-    return undefined
+    return new Map()
   }
 
-  const entry = parsed.repos.find(
-    candidate =>
-      candidate.private === false &&
-      candidate.owner.toLowerCase() === parsedTarget.owner.toLowerCase() &&
-      candidate.name.toLowerCase() === parsedTarget.name.toLowerCase(),
-  )
-  return entry?.node_id
+  const nodeIds = new Map<string, string>()
+  for (const entry of parsed.repos) {
+    if (entry.private !== false || entry.node_id === undefined) continue
+    nodeIds.set(computeRepoSlug(entry.owner, entry.name), entry.node_id)
+  }
+  return nodeIds
 }
 
 function repoTargetParts(target: string): {owner: string; name: string} | undefined {

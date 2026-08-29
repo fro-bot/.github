@@ -35,8 +35,10 @@ tags: [relevant, tags]
 ---
 ```
 
-Required fields: `type`, `title`, `created`, `updated`. Repo pages must also include the stable GitHub
-`node_id` (for example, `node_id: R_kgDO...`); it is safe to expose because wiki pages are public-only.
+Required fields: `type`, `title`, `created`, `updated`. Repo pages may include the stable GitHub
+`node_id` (for example, `node_id: R_kgDO...`); ingestion system-populates it from tracked repository
+metadata or the trusted survey identity. Agents must not invent or copy this value. It is safe to expose
+because wiki pages are public-only.
 Optional fields: `sources`, `tags`, `aliases`, `related`.
 
 ## Filename Conventions
