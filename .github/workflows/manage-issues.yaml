@@ -114,7 +114,8 @@ jobs:
           pr-comment: This pull request is locked because of inactivity.
           pr-inactive-days: '30'
 
-      - env:
+      - if: ${{ always() }}
+        env:
           issues: ${{ steps.lock-threads.outputs.issues }}
           prs: ${{ steps.lock-threads.outputs.prs }}
         name: Output summary
