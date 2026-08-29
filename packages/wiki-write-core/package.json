@@ -1,0 +1,43 @@
+{
+  "name": "@fro-bot/wiki-write-core",
+  "version": "0.0.0",
+  "private": false,
+  "description": "Shared validation and commit primitives for Fro Bot wiki writes",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./wiki-lint": {
+      "types": "./src/wiki-lint.ts",
+      "import": "./src/wiki-lint.ts"
+    },
+    "./wiki-ingest": {
+      "types": "./src/wiki-ingest.ts",
+      "import": "./src/wiki-ingest.ts"
+    },
+    "./private-leak": {
+      "types": "./src/private-leak.ts",
+      "import": "./src/private-leak.ts"
+    },
+    "./rendering-policy": {
+      "types": "./src/rendering-policy.ts",
+      "import": "./src/rendering-policy.ts"
+    },
+    "./frontmatter": {
+      "types": "./src/frontmatter.ts",
+      "import": "./src/frontmatter.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "yaml": "^2.6.0"
+  }
+}

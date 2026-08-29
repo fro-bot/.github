@@ -4,6 +4,7 @@ import {execFileSync} from 'node:child_process'
 import {appendFileSync, readFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
 import process from 'node:process'
+import {checkPrivateLeak} from '@fro-bot/wiki-write-core/private-leak'
 import {parse as parseYaml} from 'yaml'
 import {isRecord, makeGhNodeIdResolver} from './private-repo-resolution.ts'
 import {assertReposFile} from './schemas.ts'
@@ -13,7 +14,7 @@ import {buildPrivateNameTokens} from './wiki-slug.ts'
 // Types
 // ---------------------------------------------------------------------------
 
-export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly matchedFiles: readonly string[]}
+export type {GuardResult} from '@fro-bot/wiki-write-core/private-leak'
 
 /**
  * Result of a promotion scan.
@@ -132,123 +133,7 @@ function writeScanResult(result: ScanResultOutput): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Pure decision function
-// ---------------------------------------------------------------------------
-
-/**
- * Scan the unified diff for case-insensitive substring matches against a list of
- * private repository tokens (canonical `owner/name`, slug `owner--name`, etc.).
- *
- * Three leak surfaces are scanned:
- * 1. **File paths of newly-added files** — detected via `--- /dev/null` header immediately
- *    before the `+++ b/<path>` line.
- * 2. **Rename/copy destination paths** — detected via `rename to <path>` / `copy to <path>`
- *    extended headers, and via `diff --git a/X b/Y` when X ≠ Y (rename without content change).
- * 3. **Added content lines** — `+` lines (excluding `+++` headers).
- *
- * Scope invariant: the *path* of a MODIFIED file (not new/renamed) is not itself a scanned
- * surface — such a file is caught only if a private token also appears in one of its added `+`
- * lines. This is correct by construction for `main...data` promotions (wiki pages arrive as
- * additions; pre-existing paths are grandfathered by the slug gate), but a future caller scanning
- * a different diff shape must not assume modified-file paths are covered.
- *
- * Returns which FILES contained a match, never which token matched.
- * Override: if `override.titlePrefixed && override.isOperator` → bypass and return `{ok:true}`.
- */
-export function checkPrivateLeak(
-  privateNames: readonly string[],
-  diff: string,
-  override: OverrideOptions,
-): GuardResult {
-  // Honor override only when BOTH conditions hold.
-  if (override.titlePrefixed && override.isOperator) {
-    return {ok: true}
-  }
-
-  if (privateNames.length === 0 || diff.length === 0) {
-    return {ok: true}
-  }
-
-  // Build lowercased name list once for efficiency.
-  const lowerNames = privateNames.map(n => n.toLowerCase())
-
-  const matchedFiles: string[] = []
-  let currentFile: string | null = null
-  // True when the preceding `---` line was `/dev/null` (new file being added).
-  let checkPathAsNew = false
-
-  /** Check a path as a new disclosure surface and record it if it matches. */
-  const checkPath = (path: string): void => {
-    const pathLower = path.toLowerCase()
-    if (lowerNames.some(n => pathLower.includes(n)) && !matchedFiles.includes(path)) {
-      matchedFiles.push(path)
-    }
-  }
-
-  for (const line of diff.split('\n')) {
-    // Track current file from diff headers.
-    if (line.startsWith('diff --git ')) {
-      const match = /^diff --git a\/.+ b\/(.+)$/.exec(line)
-      if (match !== null && match[1] !== undefined) {
-        const bPath = match[1]
-        // Derive a-path by removing the known prefix and suffix.
-        const aPath = line.slice('diff --git a/'.length, line.length - ` b/${bPath}`.length)
-        currentFile = bPath
-        checkPathAsNew = false
-        // If a-path ≠ b-path this is a rename/copy; b-path is a new disclosure surface.
-        // Handles renames with no content change (no subsequent ---/+++ in some git configs).
-        if (aPath !== bPath) {
-          checkPath(bPath)
-        }
-      } else {
-        currentFile = null
-        checkPathAsNew = false
-      }
-      continue
-    }
-
-    // Extended headers: `rename to <path>` and `copy to <path>` — destination is new disclosure.
-    if (line.startsWith('rename to ') || line.startsWith('copy to ')) {
-      const destPath = line.startsWith('rename to ') ? line.slice('rename to '.length) : line.slice('copy to '.length)
-      if (destPath !== '') {
-        checkPath(destPath)
-      }
-      continue
-    }
-
-    // `--- /dev/null` signals a new-file addition; any other `--- ` is a modification/deletion.
-    if (line.startsWith('--- ')) {
-      checkPathAsNew = line === '--- /dev/null'
-      continue
-    }
-
-    // `+++` header: if this is a new file, also check the path itself as a leak surface.
-    if (line.startsWith('+++')) {
-      if (checkPathAsNew && currentFile !== null) {
-        checkPath(currentFile)
-      }
-      checkPathAsNew = false
-      continue
-    }
-
-    // Only scan added content lines.
-    if (!line.startsWith('+')) {
-      continue
-    }
-
-    const content = line.slice(1).toLowerCase()
-    if (currentFile !== null && lowerNames.some(n => content.includes(n)) && !matchedFiles.includes(currentFile)) {
-      matchedFiles.push(currentFile)
-    }
-  }
-
-  if (matchedFiles.length === 0) {
-    return {ok: true}
-  }
-
-  return {ok: false, matchedFiles}
-}
+export {checkPrivateLeak}
 
 // ---------------------------------------------------------------------------
 // CLI helpers
