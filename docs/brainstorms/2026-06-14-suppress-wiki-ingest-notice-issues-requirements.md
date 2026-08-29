@@ -1,7 +1,8 @@
 ---
 title: Suppress agent-authored wiki-ingest notice issues
 date: 2026-06-14
-status: ready
+status: superseded
+resolution: 'Shipped via PR #3497 (commit e6718e1).'
 scope: lightweight
 ---
 

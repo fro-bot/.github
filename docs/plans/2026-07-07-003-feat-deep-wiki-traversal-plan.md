@@ -1,7 +1,7 @@
 ---
 title: 'feat: Add agent-invoked deep wiki traversal'
 type: feat
-status: active
+status: complete
 date: 2026-07-07
 origin: docs/brainstorms/2026-07-07-a1-phase-3-deep-wiki-traversal-requirements.md
 deepened: 2026-07-07
