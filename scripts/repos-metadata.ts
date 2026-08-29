@@ -492,11 +492,8 @@ export class DuplicateRepoIdentityError extends Error {
   readonly database_id: number | undefined
 
   constructor(input: {node_id?: string; database_id?: number}) {
-    const identifiers = [
-      input.node_id === undefined ? undefined : `node_id=${input.node_id}`,
-      input.database_id === undefined ? undefined : `database_id=${input.database_id}`,
-    ].filter((value): value is string => value !== undefined)
-    super(`duplicate repo identity match during metadata write-back (${identifiers.join(', ') || 'unknown identity'})`)
+    const identifier = input.node_id === undefined ? 'unknown identity' : `node_id=${input.node_id}`
+    super(`duplicate repo identity match during metadata write-back (${identifier})`)
     this.name = 'DuplicateRepoIdentityError'
     this.node_id = input.node_id
     this.database_id = input.database_id

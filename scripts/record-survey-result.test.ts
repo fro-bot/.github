@@ -86,7 +86,7 @@ describe('formatRecordSurveyResultNonFatalOutcome', () => {
     expect(outcome).toEqual({
       exitCode: 0,
       stderr:
-        'record-survey-result: duplicate repo identity match during metadata write-back (node_id=R_duplicate, database_id=1174807412); scheduled reconcile run owns the repair (non-fatal)\n',
+        'record-survey-result: duplicate repo identity match during metadata write-back (node_id=R_duplicate); scheduled reconcile run owns the repair (non-fatal)\n',
       stdout: `${JSON.stringify({committed: false, outcome: 'duplicate-identity', target: 'R_duplicate', status: 'success'})}\n`,
     })
   })

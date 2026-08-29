@@ -2594,7 +2594,7 @@ describe('fetchFieldProbes — database_id capture', () => {
     expect(result.summary).toMatchObject({renamed: 1, lostAccess: 0})
   })
 
-  it('demotes an entry when REST probing fails and stored node_id is unresolvable', async () => {
+  it('preserves an entry when GraphQL returns no node without an HTTP 404', async () => {
     const entry = makeEntry({owner: 'alice', name: 'old-name', node_id: 'R_old', private: false})
     const userOctokit = makeFieldProbeOctokit({
       reposGet: async () => {
@@ -2613,9 +2613,9 @@ describe('fetchFieldProbes — database_id capture', () => {
       }),
     )
 
-    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({resolution: 'unresolvable'})
-    expect(result.nextRepos.repos[0]?.onboarding_status).toBe('lost-access')
-    expect(result.summary).toMatchObject({renamed: 0, lostAccess: 1})
+    expect(probeResult.probes.get('alice/old-name')?.identity).toMatchObject({resolution: 'transient'})
+    expect(result.nextRepos.repos).toEqual([entry])
+    expect(result.summary).toMatchObject({renamed: 0, lostAccess: 0, transient: 1})
   })
 
   it('leaves an entry unchanged when REST probing fails and node resolution is transient', async () => {

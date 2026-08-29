@@ -2353,10 +2353,13 @@ async function resolveRepoNodeId(userOctokit: OctokitClient, nodeId: string): Pr
       typeof node.owner?.login !== 'string' ||
       node.owner.login.length === 0
     ) {
-      return {status: 'unresolvable'}
+      return {status: 'transient'}
     }
     return {status: 'resolved', repository: {owner: node.owner.login, name: node.name}}
   } catch (error: unknown) {
+    // Only an explicit HTTP 404 is definitive unresolvable identity evidence.
+    // GraphQL-layer NOT_FOUND in a 200 response, and every other failure, remain transient:
+    // sticky preservation defers repair rather than risking an incorrect lost-access demotion.
     if (isApiStatus(error, 404)) return {status: 'unresolvable'}
     return {status: 'transient'}
   }
