@@ -1183,7 +1183,7 @@ describe('collectLeaks path validation', () => {
     // #when the full detection pipeline runs
     // #then the degenerate path configuration is rejected before scanning either snapshot
     await expect(runCli([], {GRANDFATHER_WIKI_REPOS_DIR: resolve('knowledge/wiki/repos')})).rejects.toThrow(
-      'data and grandfather wiki directories must be distinct',
+      'data and grandfather wiki directories must not resolve to the same path',
     )
   })
 })

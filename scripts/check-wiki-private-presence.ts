@@ -464,7 +464,10 @@ async function collectLeaks(env: Record<string, string | undefined>): Promise<Pr
   const dataWikiDir = resolve('knowledge/wiki/repos')
   const grandfatherDir = resolve(requireGrandfatherDir(env.GRANDFATHER_WIKI_REPOS_DIR))
   if (dataWikiDir === grandfatherDir) {
-    throw new TypeError('data and grandfather wiki directories must be distinct')
+    // This catches path aliasing when GRANDFATHER_WIKI_REPOS_DIR collapses onto the data wiki.
+    // Separate checkouts with identical content are not covered; ref: main in merge-data.yaml
+    // is the control for that grandfather-collapse case.
+    throw new TypeError('data and grandfather wiki directories must not resolve to the same path')
   }
 
   // 1. Read and validate data branch's own metadata/repos.yaml (CWD = data-branch-check).
