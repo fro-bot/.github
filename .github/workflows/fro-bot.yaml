@@ -689,4 +689,18 @@ jobs:
           WIKI_SUMMARY: Persisted durable knowledge from the ${{ github.event_name }} interaction on ${{ github.repository }}.
           WIKI_COMMIT_MESSAGE: 'feat(knowledge): ingest ${{ github.event_name }} context for ${{ github.repository }}'
           WIKI_SOURCES: '[{"url":"https://github.com/${{ github.repository }}","sha":"${{ github.sha }}","accessed":"${{ steps.ingest-ts.outputs.now }}"}]'
-        run: node scripts/wiki-ingest.ts
+        run: |
+          warning_file="$RUNNER_TEMP/wiki-ingest-warnings"
+          if node scripts/wiki-ingest.ts 2>"$warning_file"; then
+            status=0
+          else
+            status=$?
+          fi
+          cat "$warning_file" >&2
+          if grep -q '^wiki-ingest:warning:' "$warning_file"; then
+            {
+              echo '### Wiki ingest warnings'
+              grep '^wiki-ingest:warning:' "$warning_file" | sed 's/^wiki-ingest:warning:/- /'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
