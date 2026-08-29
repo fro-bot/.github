@@ -457,10 +457,9 @@ export function rebuildWikiIndex(params: {existingIndex?: string; wikiFiles: Rec
 
 const LOG_HEADER =
   '# Wiki Log\n\nChronological record of all wiki operations.\n\n---\n\n_Entries are appended by ingest, query, lint, and manual-edit operations. This file is append-only._\n'
-// Matches a log entry header line: "## [YYYY-MM-DD HH:MM] <op> | <target>".
-// `[ \t]*` instead of `\s*` keeps the regex anchored to single-line whitespace and
-// avoids the super-linear backtracking risk on adjacent variable-length classes.
-const LOG_ENTRY_PATTERN = /\n## \[([^\]]+)\] (?:ingest|query|lint|manual-edit) \| ([^\n]+)\n/g
+// Finds only the fixed header marker. The rest of the line is parsed with string
+// operations so malformed uncontrolled input cannot trigger regex backtracking.
+const LOG_ENTRY_PATTERN = /\n## \[/gu
 
 interface WikiLogEntry {
   timestamp: string
@@ -498,21 +497,51 @@ export function mergeWikiLogs(logs: (string | undefined)[]): string {
 function parseWikiLogEntries(log: string): WikiLogEntry[] {
   const entries: WikiLogEntry[] = []
   const matches = [...log.matchAll(LOG_ENTRY_PATTERN)]
-  for (let i = 0; i < matches.length; i += 1) {
-    const match = matches[i]
-    if (match === undefined || match.index === undefined) continue
-    const [, timestamp, target] = match
-    if (timestamp === undefined || target === undefined) continue
+
+  const validEntries: {readonly start: number; readonly timestamp: string; readonly target: string}[] = []
+  for (const match of matches) {
+    if (match.index === undefined) continue
     const start = match.index
-    const nextMatch = matches[i + 1]
-    const end = nextMatch?.index ?? log.length
+    const headerEnd = log.indexOf('\n', start + 1)
+    if (headerEnd === -1) continue
+
+    const header = log.slice(start, headerEnd + 1)
+    const parsed = parseWikiLogHeader(header)
+    if (parsed === undefined) continue
+    validEntries.push({start, timestamp: parsed.timestamp, target: parsed.target})
+  }
+
+  for (let i = 0; i < validEntries.length; i += 1) {
+    const entry = validEntries[i]
+    if (entry === undefined) continue
+    const nextEntry = validEntries[i + 1]
+    const end = nextEntry?.start ?? log.length
     entries.push({
-      timestamp: timestamp.trim(),
-      target: target.trim(),
-      raw: log.slice(start, end),
+      timestamp: entry.timestamp,
+      target: entry.target,
+      raw: log.slice(entry.start, end),
     })
   }
   return entries
+}
+
+function parseWikiLogHeader(header: string): {readonly timestamp: string; readonly target: string} | undefined {
+  const prefix = '\n## ['
+  const timestampEnd = header.indexOf('] ')
+  if (!header.startsWith(prefix) || timestampEnd <= prefix.length) return undefined
+
+  const timestamp = header.slice(prefix.length, timestampEnd)
+  if (timestamp.includes(']')) return undefined
+
+  const operationAndTarget = header.slice(timestampEnd + 2, -1)
+  const separator = operationAndTarget.indexOf(' | ')
+  if (separator <= 0) return undefined
+
+  const operation = operationAndTarget.slice(0, separator)
+  if (!['ingest', 'query', 'lint', 'manual-edit'].includes(operation)) return undefined
+
+  const rawTarget = operationAndTarget.slice(separator + 3)
+  return rawTarget === '' ? undefined : {timestamp: timestamp.trim(), target: rawTarget.trim()}
 }
 
 function buildIndexDocument(existingIndex: string | undefined, pages: ParsedWikiPage[]): string {

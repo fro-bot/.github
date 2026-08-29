@@ -3,7 +3,7 @@ import {basename} from 'node:path'
 
 import {parse} from 'yaml'
 
-const WIKILINK_PATTERN = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gu
+const WIKILINK_PATTERN = /\[\[/gu
 
 /** Canonical root directory for wiki page content. Shared by every wiki script. */
 export const WIKI_ROOT = 'knowledge/wiki'
@@ -65,8 +65,30 @@ export function splitFrontmatter(content: string): SplitFrontmatterResult {
 
 /** Collect `[[target]]` and `[[target|label]]` wikilink targets from page body content. */
 export function collectWikilinks(content: string): string[] {
-  const matches = content.matchAll(WIKILINK_PATTERN)
-  return Array.from(matches, match => match[1]).filter((value): value is string => value !== undefined && value !== '')
+  const links: string[] = []
+  let match = WIKILINK_PATTERN.exec(content)
+
+  while (match !== null) {
+    const start = match.index
+    const close = content.indexOf(']]', start + 2)
+    if (close === -1) {
+      break
+    }
+
+    const inner = content.slice(start + 2, close)
+    const separator = inner.indexOf('|')
+    const target = separator === -1 ? inner : inner.slice(0, separator)
+    const label = separator === -1 ? undefined : inner.slice(separator + 1)
+    if (target !== '' && (label === undefined || label !== '')) {
+      links.push(target)
+    }
+
+    WIKILINK_PATTERN.lastIndex = close + 2
+    match = WIKILINK_PATTERN.exec(content)
+  }
+
+  WIKILINK_PATTERN.lastIndex = 0
+  return links
 }
 
 /** Parse a single wiki page's content (relative path + raw content) into a page record. */

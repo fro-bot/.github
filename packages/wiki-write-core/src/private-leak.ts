@@ -48,11 +48,14 @@ export function checkPrivateLeak(
   }
 
   for (const line of diff.split('\n')) {
-    if (line.startsWith('diff --git ')) {
-      const match = /^diff --git a\/.+ b\/(.+)$/.exec(line)
-      if (match !== null && match[1] !== undefined) {
-        const bPath = match[1]
-        const aPath = line.slice('diff --git a/'.length, line.length - ` b/${bPath}`.length)
+    if (line.startsWith('diff --git a/')) {
+      const diffPrefix = 'diff --git a/'
+      const separator = ' b/'
+      // The old regex selected the rightmost separator with at least one trailing character.
+      const separatorIndex = line.lastIndexOf(separator, line.length - separator.length - 1)
+      if (separatorIndex > diffPrefix.length && separatorIndex + separator.length < line.length) {
+        const bPath = line.slice(separatorIndex + separator.length)
+        const aPath = line.slice(diffPrefix.length, separatorIndex)
         currentFile = bPath
         checkPathAsNew = false
         if (aPath !== bPath) {
