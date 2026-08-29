@@ -1,7 +1,7 @@
 import type {Dirent} from 'node:fs'
 import {createHash} from 'node:crypto'
 import {readdir, readFile} from 'node:fs/promises'
-import {join} from 'node:path'
+import {join, resolve} from 'node:path'
 import process from 'node:process'
 
 import YAML from 'yaml'
@@ -461,6 +461,15 @@ export function formatOperatorReport(leaks: readonly PrivateWikiLeak[]): string 
  * (unredacted) path use ONE detection implementation with no drift risk.
  */
 async function collectLeaks(env: Record<string, string | undefined>): Promise<PrivateWikiLeak[]> {
+  const dataWikiDir = resolve('knowledge/wiki/repos')
+  const grandfatherDir = resolve(requireGrandfatherDir(env.GRANDFATHER_WIKI_REPOS_DIR))
+  if (dataWikiDir === grandfatherDir) {
+    // This catches path aliasing when GRANDFATHER_WIKI_REPOS_DIR collapses onto the data wiki.
+    // Separate checkouts with identical content are not covered; ref: main in merge-data.yaml
+    // is the control for that grandfather-collapse case.
+    throw new TypeError('data and grandfather wiki directories must not resolve to the same path')
+  }
+
   // 1. Read and validate data branch's own metadata/repos.yaml (CWD = data-branch-check).
   //    Fail closed: throws on read/parse error.
   const reposRaw = await readFile('metadata/repos.yaml', 'utf8')
@@ -474,15 +483,14 @@ async function collectLeaks(env: Record<string, string | undefined>): Promise<Pr
 
   // 3. Check for structural violations (subdirs, symlinks) in the wiki repos dir.
   //    Any non-regular entry is blocked immediately — nesting is always illegal.
-  const structuralLeaks = await findStructuralViolations('knowledge/wiki/repos')
+  const structuralLeaks = await findStructuralViolations(dataWikiDir)
 
   // 4. Load data wiki pages (flat scan — only regular .md files).
-  const dataWikiPages = await loadWikiPages('knowledge/wiki/repos')
+  const dataWikiPages = await loadWikiPages(dataWikiDir)
 
   // 5. Load grandfather pages from main's wiki dir.
   //    Fail closed: GRANDFATHER_WIKI_REPOS_DIR MUST be supplied by the workflow.
   //    An unset var → throw loudly; misconfiguration must not silently pass or over-block.
-  const grandfatherDir = requireGrandfatherDir(env.GRANDFATHER_WIKI_REPOS_DIR)
   const grandfatherPages = await loadWikiPages(grandfatherDir)
 
   // 6. Detect content-attribution leaks — pure function, no GraphQL.

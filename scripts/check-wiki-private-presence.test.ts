@@ -1,5 +1,6 @@
 import type {RepoEntry} from './schemas.ts'
 
+import {resolve} from 'node:path'
 import process from 'node:process'
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {
@@ -132,7 +133,10 @@ describe('detectPrivateWikiLeaks', () => {
       const result = detectPrivateWikiLeaks({
         dataWikiPages: [page('marcusrbrown--copiloting.md', 'same-hash', '# copiloting content')],
         publicSlugMap: new Map(), // not in public set
-        grandfatherPages: [page('marcusrbrown--copiloting.md', 'same-hash', '# copiloting content')],
+        grandfatherPages: [
+          page('marcusrbrown--copiloting.md', 'same-hash', '# copiloting content'),
+          page('other--grandfathered.md', 'other-hash', '# other content'),
+        ],
       })
       expect(result).toEqual([])
     })
@@ -292,7 +296,10 @@ describe('detectPrivateWikiLeaks', () => {
       const result = detectPrivateWikiLeaks({
         dataWikiPages: [page('marcusrbrown--copiloting.md', 'copiloting-hash', '# content')],
         publicSlugMap: new Map(),
-        grandfatherPages: [page('marcusrbrown--copiloting.md', 'copiloting-hash', '# content')],
+        grandfatherPages: [
+          page('marcusrbrown--copiloting.md', 'copiloting-hash', '# content'),
+          page('other--grandfathered.md', 'other-hash', '# other content'),
+        ],
       })
       expect(result).toEqual([])
     })
@@ -1167,6 +1174,17 @@ describe('requireGrandfatherDir (fail-closed missing-env branch)', () => {
     // #given a clean path string
     const result = requireGrandfatherDir('/workspace/main/knowledge/wiki/repos')
     expect(result).toBe('/workspace/main/knowledge/wiki/repos')
+  })
+})
+
+describe('collectLeaks path validation', () => {
+  it('rejects identical data and grandfather paths as caller error', async () => {
+    // #given GRANDFATHER_WIKI_REPOS_DIR resolves to the data wiki directory
+    // #when the full detection pipeline runs
+    // #then the degenerate path configuration is rejected before scanning either snapshot
+    await expect(runCli([], {GRANDFATHER_WIKI_REPOS_DIR: resolve('knowledge/wiki/repos')})).rejects.toThrow(
+      'data and grandfather wiki directories must not resolve to the same path',
+    )
   })
 })
 

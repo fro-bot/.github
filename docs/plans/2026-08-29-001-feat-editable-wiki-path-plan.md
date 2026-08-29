@@ -242,25 +242,26 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 - [ ] **Unit 5: Promotion cadence for operator edits**
 
-**Goal:** An accepted edit reaches the published site in one sitting: data-branch pushes trigger the existing gated promotion pipeline instead of waiting for the weekly cron.
+**Goal:** An accepted edit reaches the published site in one sitting: the dashboard broker dispatches the existing gated promotion pipeline instead of waiting for the weekly cron.
 
 **Requirements:** success criterion 1; R16, R17 (pending state has a bounded horizon)
 
 **Dependencies:** None (parallel)
 
 **Files:**
-- Modify: `.github/workflows/merge-data.yaml` (add a push-on-data trigger or a dispatchable fast-path with the same gates; least privilege unchanged)
+- Modify: `.github/workflows/merge-data.yaml` (add a repository-dispatch fast path with the same gates; least privilege unchanged)
 - Test: workflow contract test updates
 
 **Approach:**
-- Add `push: branches: [data]` alongside the retained weekly cron and manual dispatch (verified compatible; `merge-data.yaml` currently has NO concurrency group).
-- Coalesce by cancellation for pushes only, via TRIGGER-DISCRIMINATED GROUPS: push runs share one concurrency group (cancel-in-progress among themselves, newest wins) while `schedule`/`workflow_dispatch` runs live in a separate group a push can never reach — e.g. `group: merge-data-${{ github.event_name == 'push' && 'push' || 'manual' }}`. A single group with a conditional `cancel-in-progress` flag does NOT work: the flag is evaluated on the incoming run and applied to whatever is in progress, so a push would still cancel the Sunday cron and starve the backstop.
-- The promotion operation is already idempotent-friendly: `merge-data-pr.ts` reuses/updates the existing promotion PR rather than creating one per push (verified :127-146, :521-571) — keep it safely rerunnable.
+- Add `repository_dispatch` with an explicit `promote-data` type alongside the retained weekly cron and manual dispatch. The dashboard broker fires it after a successful `data` commit, while survey writes continue to use the weekly backstop.
+- Execute the fast path from `main`'s workflow definition and scripts: `data` carries executable copies under `scripts/` and `.github/workflows/` and is autonomously written without branch protection, so a push trigger would invert the trust boundary and let the promoted branch decide how it is checked.
+- Coalesce automated dispatch runs by cancellation via TRIGGER-DISCRIMINATED GROUPS: repository-dispatch runs share one group (cancel-in-progress among themselves, newest wins) while `schedule`/`workflow_dispatch` runs live in a separate group a dispatch can never reach — e.g. `group: merge-data-${{ github.event_name == 'repository_dispatch' && 'dispatch' || 'manual' }}`. A single group with a conditional `cancel-in-progress` flag does NOT work: the flag is evaluated on the incoming run and applied to whatever is in progress, so a dispatch would still cancel the Sunday cron and starve the backstop.
+- The promotion operation is already idempotent-friendly: `merge-data-pr.ts` reuses/updates the existing promotion PR rather than creating one per dispatch (verified :127-146, :521-571) — keep it safely rerunnable.
 - Scope note (verified): `merge-data-pr.ts` only CLASSIFIES and LABELS (`knowledge/`+`metadata/`-only diffs get `auto-merge`, else `needs-review`); the actual merge depends on repo automation consuming the label. Operator edits (knowledge/-only) ride the existing fast lane; this unit changes trigger cadence only, never the gate or label semantics.
 
-**Test scenarios:** contract: push trigger present alongside cron/dispatch; the concurrency GROUP KEY discriminates by trigger (asserting the flag alone can pass against a broken single-group config — the test must pin the group-key split); permissions unchanged; gate step ordering unchanged; existing-PR reuse behavior pinned.
+**Test scenarios:** contract: explicit `repository_dispatch` type present alongside cron/dispatch and `push` absent; the concurrency GROUP KEY discriminates by trigger (asserting the flag alone can pass against a broken single-group config — the test must pin the group-key split); first checkout pins `main`; permissions unchanged; gate step ordering unchanged; existing-PR reuse behavior pinned. Unit: identical data/grandfather snapshots are rejected as a caller error (or an unattributable stem is still flagged).
 
-**Verification:** a data push produces a promotion PR/merge through the existing gate path within the interactive horizon.
+**Verification:** a `promote-data` repository dispatch produces a promotion PR/merge through the existing gate path within the interactive horizon.
 
 - [ ] **Unit 6: Wiki Edit affordance**
 
