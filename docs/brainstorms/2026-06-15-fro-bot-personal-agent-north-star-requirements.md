@@ -357,9 +357,9 @@ acute near-term pain, per the stated motivation.
 
 ## Open decisions (resolve at the relevant phase kickoff)
 
-- **D1 — Visibility-slice scope (Phase 1):** What's the minimum viable view? Candidates:
-  a generated single-pane report issue (zero new infra), a static read-only web page on an
-  `infra` droplet, or a thin always-on dashboard. Shapes the Phase-1 brainstorm.
+- **D1 — Visibility-slice scope (Phase 1): RESOLVED BY EVENTS (2026-08-29):** The visibility
+  slice shipped as the read-only dashboard PWA, live at dashboard.fro.bot, per the 2026-07-10
+  reconciliation. The scope question is closed.
 - **D2 — Surface ownership model (before Phase 3):** Is Discord the canonical command
   surface with the dashboard as an augment/read layer, or are both first-class command
   surfaces? Undefined risks a second control plane diverging from Discord's proven model.
@@ -379,6 +379,7 @@ acute near-term pain, per the stated motivation.
 
 ## Next step
 
-Run a focused `ce:brainstorm` on the **Phase-1 visibility slice** (resolving D1), which this
-north-star doc feeds directly. Begin S1/S2 spine *design* in parallel as a `fro-bot/agent`
-workstream (D3/D5).
+As of 2026-08-29, the genuinely open north-star threads are R2 inline notification actions
+(requirements complete in `fro-bot/agent`, awaiting planning there), R3's editable wiki path
+(control plane + dashboard — the next control-plane brainstorm), the #3512 spine deploy-
+verification tail, and the Tier-3 frontier.
