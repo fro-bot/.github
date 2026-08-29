@@ -18,6 +18,21 @@
       "allowedVersions": "<=3.13"
     },
     {
+      "description": [
+        "Pin the fro-bot/agent action to its v0.x release line.",
+        "fro-bot/agent also publishes @fro.bot/harness binaries as GitHub Releases in the same repo.",
+        "Releases tagged before 2026-08-29 use SemVer build metadata (1.18.21+harness.<sha>), which is",
+        "ignored for precedence, so the github-tags datasource reads them as stable 1.18.x and ranks them",
+        "above the real v0.x action line. Newer harness tags use a prerelease identifier (-harness.<sha>)",
+        "and are excluded by ignoreUnstable, but the older tags stay stable-shaped permanently: deleting",
+        "them would 404 the asset URLs that shipped action versions build from their own bundled code.",
+        "This cap is the durable guard for consumers. Lift it only when the action itself reaches 1.0."
+      ],
+      "matchDepTypes": ["action"],
+      "matchPackageNames": ["fro-bot/agent"],
+      "allowedVersions": "<1.0.0"
+    },
+    {
       "description": "Group GitHub actions except for @bfra-me.",
       "matchDepTypes": ["action"],
       "matchPackageNames": ["!bfra-me/{/,}**"],
