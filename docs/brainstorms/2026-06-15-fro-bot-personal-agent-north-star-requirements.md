@@ -381,5 +381,5 @@ acute near-term pain, per the stated motivation.
 
 As of 2026-08-29, the genuinely open north-star threads are R2 inline notification actions
 (requirements complete in `fro-bot/agent`, awaiting planning there), R3's editable wiki path
-(control plane + dashboard — the next control-plane brainstorm), the #3512 spine deploy-
-verification tail, and the Tier-3 frontier.
+(control plane + dashboard — the next control-plane brainstorm), the #3512 spine deploy-verification
+tail, and the Tier-3 frontier.
