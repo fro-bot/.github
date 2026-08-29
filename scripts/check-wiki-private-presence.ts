@@ -128,6 +128,11 @@ function sourceUrlMatchesRepo(sourceUrl: string, owner: string, name: string): b
 // detectPrivateWikiLeaks — emits redaction-safe stderr warnings on substring-fallback path
 // ---------------------------------------------------------------------------
 
+// The candidate and grandfather inputs must come from distinct snapshot collections.
+function isSameSnapshotCollection(left: readonly WikiPageSnapshot[], right: readonly WikiPageSnapshot[]): boolean {
+  return left.length > 0 && left === right
+}
+
 /**
  * Flag data wiki pages that cannot be attributed to a known-public
  * or unchanged-grandfathered repo.
@@ -163,6 +168,10 @@ export function detectPrivateWikiLeaks(params: {
   grandfatherPages: readonly WikiPageSnapshot[]
 }): PrivateWikiLeak[] {
   const {dataWikiPages, publicSlugMap, grandfatherPages} = params
+
+  if (isSameSnapshotCollection(dataWikiPages, grandfatherPages)) {
+    throw new TypeError('dataWikiPages and grandfatherPages must be distinct snapshots')
+  }
 
   // Build grandfather index: stem → hash (for O(1) lookup)
   const grandfatherByStem = new Map<string, string>()

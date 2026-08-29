@@ -2,19 +2,21 @@
 name: Merge Data Branch
 
 on:
-  push:
-    branches:
-      - data
+  repository_dispatch:
+    types:
+      - promote-data
   schedule:
     - cron: '0 22 * * 0' # Every Sunday at 22:00 UTC
   workflow_dispatch:
 
 concurrency:
-  group: merge-data-${{ github.event_name == 'push' && 'push' || 'manual' }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  group: merge-data-${{ github.event_name == 'repository_dispatch' && 'dispatch' || 'manual' }}
+  cancel-in-progress: ${{ github.event_name == 'repository_dispatch' }}
 
 permissions:
   contents: read
+
+# The broker dispatches the fast path after a successful data commit; the weekly cron is the backstop.
 
 jobs:
   merge-data:
@@ -32,6 +34,7 @@ jobs:
       - name: ⤵ Checkout Branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: main
           fetch-depth: 0 # full history needed for three-dot diff in promotion privacy check
 
       - name: 📦 Setup
@@ -76,7 +79,7 @@ jobs:
           PROMOTION_REPOS_YAML_PATH: data-branch-check/metadata/repos.yaml
         run: node scripts/check-private-leak.ts --promotion
 
-      - name: 🔀 Open weekly data merge PR
+      - name: 🔀 Open data merge PR
         env:
           GITHUB_TOKEN: ${{ steps.get-workflow-app-token.outputs.token }}
         run: node scripts/merge-data-pr.ts

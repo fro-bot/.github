@@ -132,7 +132,10 @@ describe('detectPrivateWikiLeaks', () => {
       const result = detectPrivateWikiLeaks({
         dataWikiPages: [page('marcusrbrown--copiloting.md', 'same-hash', '# copiloting content')],
         publicSlugMap: new Map(), // not in public set
-        grandfatherPages: [page('marcusrbrown--copiloting.md', 'same-hash', '# copiloting content')],
+        grandfatherPages: [
+          page('marcusrbrown--copiloting.md', 'same-hash', '# copiloting content'),
+          page('other--grandfathered.md', 'other-hash', '# other content'),
+        ],
       })
       expect(result).toEqual([])
     })
@@ -292,7 +295,10 @@ describe('detectPrivateWikiLeaks', () => {
       const result = detectPrivateWikiLeaks({
         dataWikiPages: [page('marcusrbrown--copiloting.md', 'copiloting-hash', '# content')],
         publicSlugMap: new Map(),
-        grandfatherPages: [page('marcusrbrown--copiloting.md', 'copiloting-hash', '# content')],
+        grandfatherPages: [
+          page('marcusrbrown--copiloting.md', 'copiloting-hash', '# content'),
+          page('other--grandfathered.md', 'other-hash', '# other content'),
+        ],
       })
       expect(result).toEqual([])
     })
@@ -308,6 +314,21 @@ describe('detectPrivateWikiLeaks', () => {
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'marcusrbrown--copiloting.md', reason: 'unattributable-page'})
+    })
+
+    it('rejects identical data and grandfather snapshots as caller error', () => {
+      // #given the same non-public page is supplied as both the data and grandfather snapshot
+      // #when detection runs
+      // #then the degenerate input is rejected instead of silently grandfathering the page
+      const snapshot = page('acme--secret-repo.md', 'same-hash', 'secret content')
+      const snapshots = [snapshot]
+      expect(() =>
+        detectPrivateWikiLeaks({
+          dataWikiPages: snapshots,
+          publicSlugMap: new Map(),
+          grandfatherPages: snapshots,
+        }),
+      ).toThrow('dataWikiPages and grandfatherPages must be distinct snapshots')
     })
 
     it('DOES flag marcusrbrown--copiloting.md when hash differs from grandfather', () => {

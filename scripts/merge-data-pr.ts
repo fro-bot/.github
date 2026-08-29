@@ -632,7 +632,7 @@ function createPullRequestBody(params: {
   changedFiles: {filename: string}[]
 }): string {
   return [
-    `Automated weekly merge from ${params.headBranch} into ${params.baseBranch}.`,
+    `Automated data merge from ${params.headBranch} into ${params.baseBranch}.`,
     '',
     'Changed paths:',
     ...params.changedFiles.map(file => `- ${file.filename}`),
@@ -645,7 +645,7 @@ function createConflictJournalBody(params: {
   changedFiles: {filename: string}[]
 }): string {
   return [
-    `Weekly merge from ${params.headBranch} into ${params.baseBranch} hit merge conflicts.`,
+    `Data merge from ${params.headBranch} into ${params.baseBranch} hit merge conflicts.`,
     '',
     'Changed paths awaiting manual resolution:',
     ...params.changedFiles.map(file => `- ${file.filename}`),
