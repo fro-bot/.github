@@ -19,18 +19,22 @@
     },
     {
       "description": [
-        "Pin the fro-bot/agent action to its v0.x release line.",
-        "fro-bot/agent also publishes @fro.bot/harness binaries as GitHub Releases in the same repo.",
-        "Releases tagged before 2026-08-29 use SemVer build metadata (1.18.21+harness.<sha>), which is",
-        "ignored for precedence, so the github-tags datasource reads them as stable 1.18.x and ranks them",
-        "above the real v0.x action line. Newer harness tags use a prerelease identifier (-harness.<sha>)",
-        "and are excluded by ignoreUnstable, but the older tags stay stable-shaped permanently: deleting",
-        "them would 404 the asset URLs that shipped action versions build from their own bundled code.",
-        "This cap is the durable guard for consumers. Lift it only when the action itself reaches 1.0."
+        "Never treat a fro-bot/agent harness release as an action version.",
+        "fro-bot/agent is both a GitHub Action and the publishing home for @fro.bot/harness binaries.",
+        "Harness releases tagged before 2026-08-29 use SemVer build metadata (1.18.21+harness.<sha>);",
+        "build metadata is ignored for precedence, so the github-tags datasource reads them as stable",
+        "1.18.x and ranks them above the real v0.x action line. Newer harness tags use a prerelease",
+        "identifier (-harness.<sha>) that ignoreUnstable already excludes, but the older tags stay",
+        "stable-shaped permanently: deleting them would 404 the asset URLs that shipped action versions",
+        "build from their own bundled code.",
+        "This excludes every harness tag by shape rather than capping the version line, so it needs no",
+        "maintenance when the action reaches 1.0 and cannot fail silently by holding a stale ceiling.",
+        "Both depTypes are listed: renovate#45443 (44.46.0) splits reusable-workflow uses: into",
+        "depType 'workflow', and consumers may wire in via fro-bot/agent/.github/workflows/fro-bot.yaml."
       ],
-      "matchDepTypes": ["action"],
+      "matchDepTypes": ["action", "workflow"],
       "matchPackageNames": ["fro-bot/agent"],
-      "allowedVersions": "<1.0.0"
+      "allowedVersions": "!/harness\\./"
     },
     {
       "description": "Group GitHub actions except for @bfra-me.",
