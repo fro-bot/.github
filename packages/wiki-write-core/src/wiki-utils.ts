@@ -3,8 +3,6 @@ import {basename} from 'node:path'
 
 import {parse} from 'yaml'
 
-const WIKILINK_PATTERN = /\[\[/gu
-
 /** Canonical root directory for wiki page content. Shared by every wiki script. */
 export const WIKI_ROOT = 'knowledge/wiki'
 
@@ -66,7 +64,8 @@ export function splitFrontmatter(content: string): SplitFrontmatterResult {
 /** Collect `[[target]]` and `[[target|label]]` wikilink targets from page body content. */
 export function collectWikilinks(content: string): string[] {
   const links: string[] = []
-  let match = WIKILINK_PATTERN.exec(content)
+  const pattern = /\[\[/gu
+  let match = pattern.exec(content)
 
   while (match !== null) {
     const start = match.index
@@ -83,11 +82,10 @@ export function collectWikilinks(content: string): string[] {
       links.push(target)
     }
 
-    WIKILINK_PATTERN.lastIndex = close + 2
-    match = WIKILINK_PATTERN.exec(content)
+    pattern.lastIndex = close + 2
+    match = pattern.exec(content)
   }
 
-  WIKILINK_PATTERN.lastIndex = 0
   return links
 }
 

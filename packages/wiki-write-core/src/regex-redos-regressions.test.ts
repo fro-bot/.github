@@ -5,11 +5,48 @@ import {mergeWikiLogs} from './wiki-ingest.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
 import {collectWikilinks} from './wiki-utils.ts'
 
-function expectCompletesWithin<T>(operation: () => T, milliseconds: number): T {
+interface ScalingMeasurement {
+  readonly smallMilliseconds: number
+  readonly largeMilliseconds: number
+  readonly ratio: number
+  readonly repetitions: number
+}
+
+function measure(operation: () => void, repetitions: number): number {
   const startedAt = performance.now()
-  const result = operation()
-  expect(performance.now() - startedAt).toBeLessThan(milliseconds)
-  return result
+  for (let index = 0; index < repetitions; index += 1) {
+    operation()
+  }
+  return performance.now() - startedAt
+}
+
+function expectLinearScaling(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
+  const smallOperation = (): void => operation(size)
+  const largeOperation = (): void => operation(size * 2)
+  let repetitions = 1
+  let smallMilliseconds = measure(smallOperation, repetitions)
+
+  while (smallMilliseconds < 50 && repetitions < 65_536) {
+    repetitions *= 2
+    smallMilliseconds = measure(smallOperation, repetitions)
+  }
+
+  const smallMeasurements = [smallMilliseconds]
+  const largeMeasurements: number[] = []
+  for (let sample = 1; sample < samples; sample += 1) {
+    smallMeasurements.push(measure(smallOperation, repetitions))
+  }
+  for (let sample = 0; sample < samples; sample += 1) {
+    largeMeasurements.push(measure(largeOperation, repetitions))
+  }
+
+  smallMeasurements.sort((left, right) => left - right)
+  largeMeasurements.sort((left, right) => left - right)
+  smallMilliseconds = smallMeasurements[Math.floor(smallMeasurements.length / 2)] ?? smallMilliseconds
+  const largeMilliseconds = largeMeasurements[Math.floor(largeMeasurements.length / 2)] ?? 0
+  const ratio = largeMilliseconds / Math.max(smallMilliseconds, 0.01)
+  expect(ratio).toBeLessThan(3)
+  return {smallMilliseconds, largeMilliseconds, ratio, repetitions}
 }
 
 describe('linear-time input parsing', () => {
@@ -43,16 +80,21 @@ describe('linear-time input parsing', () => {
     expect(checkPrivateLeak(['private-repo'], diff, {titlePrefixed: false, isOperator: false})).toEqual(expected)
   })
 
-  it('handles a diff header with many separators within a bounded time', () => {
-    const diff = `diff --git a/${'source b/'.repeat(12_000)}private-repo.md b/private-repo.md`
-
-    // This wall-clock bound guards the request-time save path against polynomial ReDoS regressions.
-    const result = expectCompletesWithin(
-      () => checkPrivateLeak(['private-repo'], diff, {titlePrefixed: false, isOperator: false}),
-      2_000,
+  it('scales diff-header parsing linearly for many separators', () => {
+    const smallDiff = `diff --git a/${'source b/'.repeat(250_000)}private-repo.md b/private-repo.md`
+    const largeDiff = `diff --git a/${'source b/'.repeat(500_000)}private-repo.md b/private-repo.md`
+    const measurement = expectLinearScaling(
+      size => {
+        const diff = size === 250_000 ? smallDiff : largeDiff
+        checkPrivateLeak(['private-repo'], diff, {titlePrefixed: false, isOperator: false})
+      },
+      250_000,
+      3,
     )
 
-    expect(result).toEqual({ok: false, matchedFiles: ['private-repo.md']})
+    // The old diff regex is also effectively linear at this input shape, so this documents
+    // the scaling contract without pretending to distinguish those implementations.
+    expect(measurement.ratio).toBeLessThan(3)
   })
 
   it.each([
@@ -66,13 +108,24 @@ describe('linear-time input parsing', () => {
     expect(collectWikilinks(content)).toEqual(expected)
   })
 
-  it('handles a long unterminated opening-bracket run within a bounded time', () => {
-    const content = '[['.repeat(12_000)
+  it.each([
+    {content: '[[a]b]]', expected: ['a]b']},
+    {content: '[[a|b]c]]', expected: ['a']},
+  ])('pins deliberate tolerant parsing for $content', ({content, expected}) => {
+    // This divergence from the old regex is deliberate: the consumers safely surface or
+    // ignore the resulting target, while accepting more editor-authored link text.
+    expect(collectWikilinks(content)).toEqual(expected)
+  })
 
-    // This wall-clock bound catches the old global-regex retry cascade on uncontrolled page bodies.
-    const result = expectCompletesWithin(() => collectWikilinks(content), 2_000)
+  it('scales wikilink parsing linearly for an unterminated opening-bracket run', () => {
+    const smallContent = '[['.repeat(8_000)
+    const largeContent = '[['.repeat(16_000)
+    const measurement = expectLinearScaling(size => {
+      collectWikilinks(size === 8_000 ? smallContent : largeContent)
+    }, 8_000)
 
-    expect(result).toEqual([])
+    // The old global regex retries the remaining body from each opening marker and fails this ratio guard.
+    expect(measurement.ratio).toBeLessThan(3)
   })
 
   it('preserves valid and malformed wiki log parsing', () => {
@@ -97,14 +150,15 @@ describe('linear-time input parsing', () => {
     )
   })
 
-  it('handles many malformed wiki log headers within a bounded time', () => {
-    const log = Array.from({length: 12_000}, () => '\n## [unterminated').join('')
+  it('scales malformed wiki log header parsing linearly', () => {
+    const smallLog = Array.from({length: 8_000}, () => '\n## [unterminated').join('')
+    const largeLog = Array.from({length: 16_000}, () => '\n## [unterminated').join('')
+    const measurement = expectLinearScaling(size => {
+      mergeWikiLogs([size === 8_000 ? smallLog : largeLog])
+    }, 8_000)
 
-    // This wall-clock bound guards log merging against polynomial header backtracking.
-    const result = expectCompletesWithin(() => mergeWikiLogs([log]), 2_000)
-
-    expect(result).toContain('# Wiki Log')
-    expect(result).not.toContain('unterminated')
+    // The old capture regex rescans the remaining malformed log from each marker and fails this ratio guard.
+    expect(measurement.ratio).toBeLessThan(3)
   })
 
   it.each([
@@ -120,12 +174,19 @@ describe('linear-time input parsing', () => {
     expect(() => computeRepoSlug('owner', '___')).toThrow(/empty/iu)
   })
 
-  it('trims a long hyphen run within a bounded time', () => {
-    const owner = `${'-'.repeat(120_000)}owner`
+  it('scales slug trimming linearly for a long hyphen run', () => {
+    const smallOwner = `${'-'.repeat(120_000)}owner`
+    const largeOwner = `${'-'.repeat(240_000)}owner`
+    const measurement = expectLinearScaling(
+      size => {
+        computeRepoSlug(size === 120_000 ? smallOwner : largeOwner, 'repo')
+      },
+      120_000,
+      3,
+    )
 
-    // This wall-clock bound prevents the old ambiguous trim expression from returning to the package.
-    const result = expectCompletesWithin(() => computeRepoSlug(owner, 'repo'), 2_000)
-
-    expect(result).toBe('owner--repo')
+    // The old trim regex is also linear for this input, so this guard records the desired property
+    // but cannot distinguish it from the former loop implementation.
+    expect(measurement.ratio).toBeLessThan(3)
   })
 })

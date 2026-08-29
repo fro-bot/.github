@@ -24,7 +24,6 @@ const INDEX_PATH = 'knowledge/index.md'
 const LOG_PATH = 'knowledge/log.md'
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-const WIKILINK_PATTERN = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g
 const execFileAsync = promisify(execFile)
 
 type OctokitConstructor = new (params: {auth: string}) => OctokitClient
@@ -908,7 +907,8 @@ function collectWikiPages(files: Record<string, string>): ParsedWikiPage[] {
 
 function extractWikilinks(content: string): string[] {
   const links = new Set<string>()
-  for (const match of content.matchAll(WIKILINK_PATTERN)) {
+  const pattern = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/gu
+  for (const match of content.matchAll(pattern)) {
     const slug = match[1]
     if (slug !== undefined) {
       links.add(slug.trim())

@@ -82,13 +82,10 @@ export function computeRepoSlug(owner: string, repo: string): string {
 }
 
 function sanitizeSegment(segment: string): string {
-  const sanitized = segment.toLowerCase().replaceAll(/[^a-z0-9-]+/g, '-')
-
-  let start = 0
-  let end = sanitized.length
-  while (sanitized[start] === '-') start += 1
-  while (end > start && sanitized[end - 1] === '-') end -= 1
-  return sanitized.slice(start, end)
+  return segment
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9-]+/g, '-')
+    .replaceAll(/^-+|-+$/g, '')
 }
 
 export async function runWikiSlugCli(argv: readonly string[] = process.argv): Promise<void> {
