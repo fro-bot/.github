@@ -143,7 +143,7 @@ Requirements R1–R18 from the origin doc. Unit coverage:
 
 Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planned in their owning repos; they are listed here for sequencing and requirements coverage.
 
-- [ ] **Unit 1: Extract `@fro-bot/wiki-write-core` package**
+- [x] **Unit 1: Extract `@fro-bot/wiki-write-core` package**
 
 **Goal:** One importable library (git-dependency-pinned) holding the gate and commit machinery the save path needs, with workflow CLIs consuming the same source — plus the render-side sanitizer in the Quartz build, live before any operator save path exists.
 
@@ -174,7 +174,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Verification:** full repo gate green; `pnpm pack` produces a consumable artifact and the dashboard-side git-subdirectory install prototype succeeds with lockfile proof (this prototype runs BEFORE Unit 7 planning starts — a fallback to npm publishing changes that repo's dependency story); contract fixtures pass against both entrypoints.
 
-- [ ] **Unit 2: Request-time privacy adapter**
+- [x] **Unit 2: Request-time privacy adapter**
 
 **Goal:** The privacy scan runs outside workflow context: candidate content + current authority in, findings out, fail-closed on resolution failure.
 
@@ -240,7 +240,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Verification:** end-to-end fixture: seeded correction + simulated regeneration missing it → blocked with finding.
 
-- [ ] **Unit 5: Promotion cadence for operator edits**
+- [x] **Unit 5: Promotion cadence for operator edits**
 
 **Goal:** An accepted edit reaches the published site in one sitting: the dashboard broker dispatches the existing gated promotion pipeline instead of waiting for the weekly cron.
 

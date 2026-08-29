@@ -37,6 +37,11 @@ configuration:
         highlight: "rgba(0, 188, 212, 0.15)"
         textHighlight: "#ffc10788"
 plugins:
+  - source:
+      repo: ./local-plugin/sanitizer
+      name: RenderingPolicy
+    enabled: true
+    order: 999
   - source: github:quartz-community/created-modified-date
     enabled: true
     options:

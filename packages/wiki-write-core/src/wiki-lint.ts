@@ -1,0 +1,613 @@
+import {createHash} from 'node:crypto'
+import {appendFile, readdir, readFile, writeFile} from 'node:fs/promises'
+import {join} from 'node:path'
+import process from 'node:process'
+
+import {resolveMarkdownLinks} from './markdown-links.ts'
+import {collectWikilinks, collectPageTargets as collectWikiPageTargets, splitFrontmatter} from './wiki-utils.ts'
+
+const PAGE_PATH_PATTERN = /^knowledge\/wiki\/[^/]+\/.+\.md$/u
+const REQUIRED_FRONTMATTER_FIELDS = ['type', 'title', 'created', 'updated'] as const
+const STALE_DAYS = 90
+
+export type WikiLintFindingKind =
+  | 'broken-wikilink'
+  | 'broken-markdown-link'
+  | 'orphan-page'
+  | 'index-drift'
+  | 'missing-frontmatter'
+  | 'invalid-frontmatter'
+  | 'stale-claim'
+  | 'missing-cross-reference'
+  | 'knowledge-gap'
+
+export interface WikiLintFinding {
+  readonly kind: WikiLintFindingKind
+  readonly path: string
+  readonly message: string
+  readonly target?: string
+}
+
+export interface WikiLintResult {
+  readonly ok: boolean
+  readonly deterministicFindings: readonly WikiLintFinding[]
+  readonly advisoryFindings: readonly WikiLintFinding[]
+  readonly summary: string
+  readonly report: string
+  readonly pages: readonly WikiLintPageInfo[]
+}
+
+export interface WikiLintPageInfo {
+  readonly path: string
+  readonly updated: string | null
+}
+
+export interface WikiLintJsonFinding {
+  readonly kind: WikiLintFindingKind
+  readonly severity: 'deterministic' | 'advisory'
+  readonly path: string
+  readonly target: string | null
+  readonly message: string
+  readonly fingerprint: string
+}
+
+export interface WikiLintFreshnessEntry {
+  readonly path: string
+  readonly updated: string | null
+  readonly days_stale: number | null
+  readonly stale_threshold_days: number
+}
+
+export interface WikiLintCounts {
+  readonly findings_total: number
+  readonly findings_deterministic: number
+  readonly findings_advisory: number
+  readonly pages_scanned: number
+  readonly pages_stale: number
+}
+
+export interface WikiLintJsonReport {
+  readonly schema_version: number
+  readonly fingerprint_version: number
+  readonly status: 'clean' | 'findings' | 'execution-failure'
+  readonly scan_complete: boolean
+  readonly snapshot_sha: string | null
+  readonly generated_at: string
+  readonly failure_class: 'snapshot-restore' | 'lint-execution' | null
+  readonly repair_eligible: boolean
+  readonly findings: readonly WikiLintJsonFinding[]
+  readonly freshness: readonly WikiLintFreshnessEntry[]
+  readonly counts: WikiLintCounts
+}
+
+export interface BuildWikiLintJsonReportParams {
+  readonly result: WikiLintResult
+  readonly status: 'clean' | 'findings' | 'execution-failure'
+  readonly scanComplete: boolean
+  readonly snapshotSha: string | null
+  readonly generatedAt: string
+  readonly failureClass: 'snapshot-restore' | 'lint-execution' | null
+}
+
+export interface LintWikiSnapshotParams {
+  readonly files: Record<string, string>
+  readonly now?: Date
+}
+
+export interface WriteWikiLintOutputsParams {
+  readonly result: WikiLintResult
+  readonly reportPath: string
+  readonly jsonPath?: string
+  readonly snapshotSha?: string | null
+  readonly generatedAt?: string
+  readonly githubStepSummaryPath?: string
+  readonly githubOutputPath?: string
+}
+
+export interface WriteWikiLintOutputsResult {
+  readonly status: 'clean' | 'findings'
+  readonly reportPath: string
+  readonly jsonPath: string
+}
+
+export interface WriteWikiLintFailureOutputsParams {
+  readonly message: string
+  readonly reportPath: string
+  readonly jsonPath?: string
+  readonly failureClass?: 'snapshot-restore' | 'lint-execution'
+  readonly githubStepSummaryPath?: string
+  readonly githubOutputPath?: string
+}
+
+export interface WriteWikiLintFailureOutputsResult {
+  readonly status: 'execution-failure'
+  readonly reportPath: string
+  readonly jsonPath: string
+}
+
+export interface RunWikiLintParams {
+  readonly rootDir?: string
+  readonly reportPath: string
+  readonly jsonPath?: string
+  readonly snapshotSha?: string | null
+  readonly githubStepSummaryPath?: string
+  readonly githubOutputPath?: string
+  readonly now?: Date
+}
+
+export interface RunWikiLintResult extends WriteWikiLintOutputsResult {
+  readonly result: WikiLintResult
+}
+
+interface ParsedPage {
+  readonly path: string
+  readonly slug: string
+  readonly content: string
+  readonly body: string
+  readonly frontmatter: Record<string, unknown>
+  readonly frontmatterError?: string
+}
+
+export function buildWikiLintJsonReport(params: BuildWikiLintJsonReportParams): WikiLintJsonReport {
+  const {result, status, scanComplete, snapshotSha, generatedAt, failureClass} = params
+
+  const deterministicFindings: WikiLintJsonFinding[] = result.deterministicFindings.map(f => ({
+    kind: f.kind,
+    severity: 'deterministic' as const,
+    path: f.path,
+    target: f.target ?? null,
+    message: f.message,
+    fingerprint: computeFingerprint(f.kind, f.path, f.target ?? null),
+  }))
+
+  const advisoryFindings: WikiLintJsonFinding[] = result.advisoryFindings.map(f => ({
+    kind: f.kind,
+    severity: 'advisory' as const,
+    path: f.path,
+    target: f.target ?? null,
+    message: f.message,
+    fingerprint: computeFingerprint(f.kind, f.path, f.target ?? null),
+  }))
+
+  const allFindings = [...deterministicFindings, ...advisoryFindings]
+
+  const freshnessNow = new Date(generatedAt)
+  const freshness: WikiLintFreshnessEntry[] = result.pages.map(page => {
+    const daysStale = computeDaysStale(page.updated, freshnessNow)
+    return {
+      path: page.path,
+      updated: page.updated,
+      days_stale: daysStale,
+      stale_threshold_days: STALE_DAYS,
+    }
+  })
+
+  const pagesStale = freshness.filter(f => f.days_stale !== null && f.days_stale >= STALE_DAYS).length
+
+  return {
+    schema_version: 1,
+    fingerprint_version: 1,
+    status,
+    scan_complete: scanComplete,
+    snapshot_sha: snapshotSha,
+    generated_at: generatedAt,
+    failure_class: failureClass,
+    repair_eligible: scanComplete && status === 'findings',
+    findings: allFindings,
+    freshness,
+    counts: {
+      findings_total: allFindings.length,
+      findings_deterministic: deterministicFindings.length,
+      findings_advisory: advisoryFindings.length,
+      pages_scanned: result.pages.length,
+      pages_stale: pagesStale,
+    },
+  }
+}
+
+function computeFingerprint(kind: string, path: string, target: string | null): string {
+  const input = `${kind}\u0000${path}\u0000${target ?? ''}`
+  return createHash('sha256').update(input).digest('hex').slice(0, 16)
+}
+
+function computeDaysStale(updated: string | null, now: Date): number | null {
+  if (updated === null || updated === '') {
+    return null
+  }
+  const updatedDate = new Date(`${updated}T00:00:00Z`)
+  if (Number.isNaN(updatedDate.getTime())) {
+    return null
+  }
+  const ageMs = now.getTime() - updatedDate.getTime()
+  return Math.floor(ageMs / (24 * 60 * 60 * 1000))
+}
+
+export function lintWikiSnapshot(params: LintWikiSnapshotParams): WikiLintResult {
+  const now = params.now ?? new Date()
+  const pages = collectPages(params.files)
+  const pageTargets = collectPageTargets(pages)
+  const indexedSlugs = collectIndexedSlugs(params.files['knowledge/index.md'] ?? '')
+  const hasNonRepoKnowledge = pages.some(
+    page =>
+      page.frontmatter.type === 'topic' || page.frontmatter.type === 'entity' || page.frontmatter.type === 'comparison',
+  )
+
+  const deterministicFindings: WikiLintFinding[] = []
+  const advisoryFindings: WikiLintFinding[] = []
+
+  const markdownLinkSources: readonly {readonly path: string; readonly content: string}[] = [
+    {path: 'knowledge/index.md', content: params.files['knowledge/index.md'] ?? ''},
+    ...pages.map(page => ({path: page.path, content: page.content})),
+  ]
+  for (const source of markdownLinkSources) {
+    for (const link of resolveMarkdownLinks(source.content, source.path, {files: params.files})) {
+      if (!link.exists) {
+        deterministicFindings.push({
+          kind: 'broken-markdown-link',
+          path: source.path,
+          target: link.target,
+          message: `Broken markdown link to ${link.target}`,
+        })
+      }
+    }
+  }
+
+  for (const page of pages) {
+    const missingFields = REQUIRED_FRONTMATTER_FIELDS.filter(field => !hasNonEmptyString(page.frontmatter[field]))
+    if (page.frontmatterError !== undefined) {
+      deterministicFindings.push({
+        kind: 'invalid-frontmatter',
+        path: page.path,
+        message: page.frontmatterError,
+      })
+      continue
+    }
+
+    if (missingFields.length > 0) {
+      deterministicFindings.push({
+        kind: 'missing-frontmatter',
+        path: page.path,
+        message: `Missing required frontmatter: ${missingFields.join(', ')}`,
+      })
+    }
+
+    for (const target of collectWikilinks(page.body)) {
+      if (!pageTargets.has(target)) {
+        deterministicFindings.push({
+          kind: 'broken-wikilink',
+          path: page.path,
+          target,
+          message: `Broken wikilink to [[${target}]]`,
+        })
+      }
+    }
+
+    if (!indexedSlugs.has(page.slug)) {
+      deterministicFindings.push({
+        kind: 'orphan-page',
+        path: page.path,
+        message: `Page ${page.slug} exists on disk but is missing from knowledge/index.md`,
+      })
+    }
+
+    if (isStale(page.frontmatter.updated, now)) {
+      advisoryFindings.push({
+        kind: 'stale-claim',
+        path: page.path,
+        message: `Page has not been updated in ${STALE_DAYS}+ days`,
+      })
+    }
+
+    if (!page.body.includes('[[')) {
+      advisoryFindings.push({
+        kind: 'missing-cross-reference',
+        path: page.path,
+        message: 'Page has no wikilinks to related knowledge',
+      })
+
+      if (page.frontmatter.type === 'repo' && hasNonRepoKnowledge) {
+        advisoryFindings.push({
+          kind: 'knowledge-gap',
+          path: 'knowledge/index.md',
+          message: `Repo page ${page.slug} is not connected to existing non-repo knowledge`,
+        })
+      }
+    }
+  }
+
+  for (const indexedSlug of indexedSlugs) {
+    if (pageTargets.has(indexedSlug)) {
+      continue
+    }
+
+    deterministicFindings.push({
+      kind: 'index-drift',
+      path: 'knowledge/index.md',
+      target: indexedSlug,
+      message: `Index references [[${indexedSlug}]] but no page exists on disk`,
+    })
+  }
+
+  const summary = [
+    '# Wiki lint summary',
+    '',
+    `Deterministic findings: ${deterministicFindings.length}`,
+    `Advisory findings: ${advisoryFindings.length}`,
+  ].join('\n')
+
+  const reportSections = [
+    '# Wiki Lint Report',
+    '',
+    renderSection('Deterministic findings', deterministicFindings),
+    '',
+    '## Advisory findings',
+    '',
+    '_These are non-blocking advisory signals._',
+    '',
+    ...renderFindingLines(advisoryFindings),
+  ]
+
+  const report = reportSections.join('\n')
+
+  const pageInfos: WikiLintPageInfo[] = pages.map(page => ({
+    path: page.path,
+    updated: hasNonEmptyString(page.frontmatter.updated) ? String(page.frontmatter.updated) : null,
+  }))
+
+  return {
+    ok: deterministicFindings.length === 0,
+    deterministicFindings,
+    advisoryFindings,
+    summary,
+    report,
+    pages: pageInfos,
+  }
+}
+
+export async function writeWikiLintOutputs(params: WriteWikiLintOutputsParams): Promise<WriteWikiLintOutputsResult> {
+  const status =
+    params.result.deterministicFindings.length === 0 && params.result.advisoryFindings.length === 0
+      ? 'clean'
+      : 'findings'
+
+  await writeFile(params.reportPath, `${params.result.report}\n`, 'utf8')
+
+  const resolvedJsonPath = params.jsonPath ?? process.env.WIKI_LINT_JSON_PATH ?? 'wiki-lint-report.json'
+  const generatedAt = params.generatedAt ?? new Date().toISOString()
+  const snapshotSha = params.snapshotSha ?? null
+
+  const jsonReport = buildWikiLintJsonReport({
+    result: params.result,
+    status,
+    scanComplete: true,
+    snapshotSha,
+    generatedAt,
+    failureClass: null,
+  })
+  await writeFile(resolvedJsonPath, `${JSON.stringify(jsonReport, null, 2)}\n`, 'utf8')
+
+  if (params.githubStepSummaryPath !== undefined && params.githubStepSummaryPath !== '') {
+    await appendFile(params.githubStepSummaryPath, `${params.result.summary}\n`, 'utf8')
+  }
+
+  if (params.githubOutputPath !== undefined && params.githubOutputPath !== '') {
+    const lines = [`status=${status}`, `report_path=${params.reportPath}`]
+    await appendFile(params.githubOutputPath, `${lines.join('\n')}\n`, 'utf8')
+  }
+
+  return {status, reportPath: params.reportPath, jsonPath: resolvedJsonPath}
+}
+
+export async function writeWikiLintFailureOutputs(
+  params: WriteWikiLintFailureOutputsParams,
+): Promise<WriteWikiLintFailureOutputsResult> {
+  const summary = ['# Wiki lint summary', '', 'Execution failure', '', params.message].join('\n')
+  const report = ['# Wiki Lint Report', '', '## Execution failure', '', params.message].join('\n')
+
+  await writeFile(params.reportPath, `${report}\n`, 'utf8')
+
+  const resolvedJsonPath = params.jsonPath ?? process.env.WIKI_LINT_JSON_PATH ?? 'wiki-lint-report.json'
+  const failureClass = params.failureClass ?? 'lint-execution'
+
+  const emptyResult: WikiLintResult = {
+    ok: false,
+    deterministicFindings: [],
+    advisoryFindings: [],
+    summary: '',
+    report: '',
+    pages: [],
+  }
+
+  const jsonReport = buildWikiLintJsonReport({
+    result: emptyResult,
+    status: 'execution-failure',
+    scanComplete: false,
+    snapshotSha: null,
+    generatedAt: new Date().toISOString(),
+    failureClass,
+  })
+  await writeFile(resolvedJsonPath, `${JSON.stringify(jsonReport, null, 2)}\n`, 'utf8')
+
+  if (params.githubStepSummaryPath !== undefined && params.githubStepSummaryPath !== '') {
+    await appendFile(params.githubStepSummaryPath, `${summary}\n`, 'utf8')
+  }
+
+  if (params.githubOutputPath !== undefined && params.githubOutputPath !== '') {
+    const lines = ['status=execution-failure', `report_path=${params.reportPath}`]
+    await appendFile(params.githubOutputPath, `${lines.join('\n')}\n`, 'utf8')
+  }
+
+  return {status: 'execution-failure', reportPath: params.reportPath, jsonPath: resolvedJsonPath}
+}
+
+export async function runWikiLint(params: RunWikiLintParams): Promise<RunWikiLintResult> {
+  const rootDir = params.rootDir ?? process.cwd()
+  const files = await loadWikiFilesFromDisk(rootDir)
+  const result = lintWikiSnapshot({files, now: params.now})
+  const outputs = await writeWikiLintOutputs({
+    result,
+    reportPath: params.reportPath,
+    jsonPath: params.jsonPath,
+    snapshotSha: params.snapshotSha,
+    githubStepSummaryPath: params.githubStepSummaryPath,
+    githubOutputPath: params.githubOutputPath,
+  })
+
+  return {...outputs, result}
+}
+
+function renderSection(title: string, findings: readonly WikiLintFinding[]): string {
+  return [`## ${title}`, '', ...renderFindingLines(findings)].join('\n')
+}
+
+function renderFindingLines(findings: readonly WikiLintFinding[]): string[] {
+  if (findings.length === 0) {
+    return ['No findings.']
+  }
+
+  return findings.map(
+    finding =>
+      `- \`${finding.kind}\` | ${finding.path}${finding.target === undefined ? '' : ` | target=${finding.target}`} | ${finding.message}`,
+  )
+}
+
+async function loadWikiFilesFromDisk(rootDir: string): Promise<Record<string, string>> {
+  const files: Record<string, string> = {}
+  const indexPath = join(rootDir, 'knowledge', 'index.md')
+  files['knowledge/index.md'] = await readFile(indexPath, 'utf8')
+
+  for (const directory of ['repos', 'topics', 'entities', 'comparisons']) {
+    const directoryPath = join(rootDir, 'knowledge', 'wiki', directory)
+    let entries
+
+    try {
+      entries = await readdir(directoryPath, {withFileTypes: true})
+    } catch (error: unknown) {
+      if (isErrorWithCode(error, 'ENOENT')) {
+        continue
+      }
+      throw error
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.md')) {
+        continue
+      }
+
+      const relativePath = `knowledge/wiki/${directory}/${entry.name}`
+      files[relativePath] = await readFile(join(directoryPath, entry.name), 'utf8')
+    }
+  }
+
+  return files
+}
+
+function collectPages(files: Record<string, string>): ParsedPage[] {
+  return Object.entries(files)
+    .filter(([path]) => PAGE_PATH_PATTERN.test(path))
+    .map(([path, content]) => {
+      const {frontmatter, body, error} = splitFrontmatter(content)
+      const pathParts = path.split('/')
+      // eslint-disable-next-line unicorn/prefer-at -- false-positive here; tsconfig/lsp intermittently flags .at()
+      const fileName = pathParts[pathParts.length - 1]
+      return {
+        path,
+        slug: (fileName ?? path).replace(/\.md$/u, ''),
+        content,
+        body,
+        frontmatter,
+        frontmatterError: error,
+      }
+    })
+}
+
+function collectIndexedSlugs(indexContent: string): Set<string> {
+  return new Set(collectWikilinks(indexContent))
+}
+
+function collectPageTargets(pages: readonly ParsedPage[]): Set<string> {
+  return collectWikiPageTargets(
+    pages.map(page => ({
+      slug: page.slug,
+      aliases: Array.isArray(page.frontmatter.aliases)
+        ? page.frontmatter.aliases.filter((alias): alias is string => typeof alias === 'string' && alias.trim() !== '')
+        : [],
+    })),
+  )
+}
+
+export {splitFrontmatter} from './wiki-utils.ts'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isErrorWithCode(error: unknown, code: string): boolean {
+  return isRecord(error) && typeof error.code === 'string' && error.code === code
+}
+
+function hasNonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== ''
+}
+
+function isStale(updated: unknown, now: Date): boolean {
+  if (!hasNonEmptyString(updated)) {
+    return false
+  }
+
+  const updatedDate = new Date(`${String(updated)}T00:00:00Z`)
+  if (Number.isNaN(updatedDate.getTime())) {
+    return false
+  }
+
+  const ageMs = now.getTime() - updatedDate.getTime()
+  return ageMs >= STALE_DAYS * 24 * 60 * 60 * 1000
+}
+
+export async function runWikiLintCli(): Promise<void> {
+  const reportPath = process.env.WIKI_LINT_REPORT_PATH ?? 'wiki-lint-report.md'
+  const jsonPath = process.env.WIKI_LINT_JSON_PATH ?? 'wiki-lint-report.json'
+  const failureMessage = process.env.WIKI_LINT_FAILURE_MESSAGE
+  const snapshotSha = process.env.WIKI_LINT_SNAPSHOT_SHA ?? null
+
+  if (failureMessage !== undefined && failureMessage !== '') {
+    await writeWikiLintFailureOutputs({
+      message: failureMessage,
+      reportPath,
+      jsonPath,
+      failureClass: 'snapshot-restore',
+      githubStepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
+      githubOutputPath: process.env.GITHUB_OUTPUT,
+    })
+    process.stderr.write(`wiki-lint: ${failureMessage}\n`)
+    process.exit(1)
+  }
+
+  try {
+    const result = await runWikiLint({
+      reportPath,
+      jsonPath,
+      snapshotSha,
+      githubStepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
+      githubOutputPath: process.env.GITHUB_OUTPUT,
+    })
+
+    process.stdout.write(`${JSON.stringify(result.result)}\n`)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown wiki lint execution failure'
+    await writeWikiLintFailureOutputs({
+      message,
+      reportPath,
+      jsonPath,
+      failureClass: 'lint-execution',
+      githubStepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
+      githubOutputPath: process.env.GITHUB_OUTPUT,
+    })
+    process.stderr.write(`wiki-lint: ${message}\n`)
+    process.exit(1)
+  }
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  await runWikiLintCli()
+}

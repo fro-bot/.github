@@ -76,6 +76,15 @@ importers:
         specifier: 4.1.4
         version: 4.1.4(@types/node@24.13.2)(@vitest/coverage-v8@4.1.4)(vite@8.0.16(@types/node@24.13.2)(jiti@2.7.0)(yaml@2.9.0))
 
+  packages/wiki-write-core:
+    dependencies:
+      '@octokit/rest':
+        specifier: ^22.0.1
+        version: 22.0.1
+      yaml:
+        specifier: '>=2.8.3'
+        version: 2.9.0
+
 packages:
 
   '@atproto/api@0.20.16':
