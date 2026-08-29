@@ -525,6 +525,43 @@ describe('buildWikiIngestChanges', () => {
     await expect(loadTrackedRepoNodeIds(readFileImpl)).resolves.toMatchObject({nodeIds: new Map()})
   })
 
+  it('preserves an existing node_id and warns when tracked metadata is unavailable', async () => {
+    const readFileImpl = async (_path: string, _encoding: BufferEncoding): Promise<string> => {
+      throw Object.assign(new Error('metadata unavailable'), {code: 'ENOENT'})
+    }
+    const tracked = await loadTrackedRepoNodeIds(readFileImpl)
+    const result = buildWikiIngestChanges({
+      existingFiles: {
+        ...createEmptyWikiFiles(),
+        'knowledge/wiki/repos/alice--project.md': createWikiPage({
+          path: 'knowledge/wiki/repos/alice--project.md',
+          type: 'repo',
+          title: 'alice/project',
+          node_id: 'R_existing',
+          body: 'Existing identity.',
+        }).content,
+      },
+      operation: 'survey',
+      target: 'repo:alice/project',
+      summary: 'Metadata was unavailable.',
+      timestamp: new Date('2026-04-16T12:34:00.000Z'),
+      sources: [],
+      trackedRepoNodeIds: tracked.nodeIds,
+      trackedMetadataAvailable: tracked.metadataAvailable,
+      pages: [
+        createWikiPage({
+          path: 'knowledge/wiki/repos/alice--project.md',
+          type: 'repo',
+          title: 'alice/project',
+          body: 'Updated content.',
+        }),
+      ],
+    })
+
+    expect(tracked.warnings).toEqual([{code: 'repos-metadata-unavailable', reason: 'read-failed'}])
+    expect(result.files['knowledge/wiki/repos/alice--project.md']).toContain('node_id: R_existing')
+  })
+
   it('falls back without identity when tracked metadata is malformed', async () => {
     const readFileImpl = async (): Promise<string> => 'not: [valid'
     await expect(loadTrackedRepoNodeIds(readFileImpl)).resolves.toMatchObject({nodeIds: new Map()})
@@ -574,6 +611,33 @@ describe('buildWikiIngestChanges', () => {
         slugs: ['marcusrbrown--marcusrbrown-github-io', 'marcusrbrown--mrbro-dev'],
       },
     ])
+  })
+
+  it('drops a database_id collision even when node_id formats have diverged', async () => {
+    const readFileImpl = async (): Promise<string> =>
+      `version: 1\nrepos:\n${createRepoMetadataEntry({
+        owner: 'alice',
+        name: 'legacy-name',
+        node_id: 'MDEwOlJlcG9zaXRvcnkx',
+        database_id: 1174807412,
+      })}\n${createRepoMetadataEntry({
+        owner: 'alice',
+        name: 'current-name',
+        node_id: 'R_kgDOcurrent',
+        database_id: 1174807412,
+      })}\n`
+
+    const result = await loadTrackedRepoNodeIds(readFileImpl)
+
+    expect(result.nodeIds).toEqual(new Map())
+    expect(result.warnings).toEqual([
+      {
+        code: 'duplicate-repo-identity',
+        node_ids: ['MDEwOlJlcG9zaXRvcnkx', 'R_kgDOcurrent'],
+        slugs: ['alice--current-name', 'alice--legacy-name'],
+      },
+    ])
+    expect(JSON.stringify(result.warnings)).not.toContain('1174807412')
   })
 
   it('refuses migration when a tracked node_id is duplicated', async () => {

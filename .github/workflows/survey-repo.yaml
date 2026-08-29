@@ -291,7 +291,21 @@ jobs:
           WIKI_SUMMARY: Surveyed ${{ steps.ingest-prompt.outputs.target-repository }} and updated the control-plane wiki.
           WIKI_COMMIT_MESSAGE: 'feat(knowledge): survey ${{ steps.ingest-prompt.outputs.target-repository }}'
           WIKI_SOURCES: '[{"url":"https://github.com/${{ steps.ingest-prompt.outputs.target-repository }}","accessed":"${{ steps.ts.outputs.now }}"}]'
-        run: node scripts/wiki-ingest.ts
+        run: |
+          warning_file="$RUNNER_TEMP/wiki-ingest-warnings"
+          if node scripts/wiki-ingest.ts 2>"$warning_file"; then
+            status=0
+          else
+            status=$?
+          fi
+          cat "$warning_file" >&2
+          if grep -q '^wiki-ingest:warning:' "$warning_file"; then
+            {
+              echo '### Wiki ingest warnings'
+              grep '^wiki-ingest:warning:' "$warning_file" | sed 's/^wiki-ingest:warning:/- /'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
 
       # Write the survey outcome back to metadata/repos.yaml on the data branch so
       # the reconcile staleness gate (30 days or more since last survey) can filter this

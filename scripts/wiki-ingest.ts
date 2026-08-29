@@ -57,6 +57,8 @@ export interface BuildWikiIngestChangesParams {
   targetNodeId?: string
   /** Untrusted payload fallback; never authorizes a page migration or deletion. */
   fallbackNodeId?: string
+  /** False means metadata state is unknown; preserve existing page identity. */
+  trackedMetadataAvailable?: boolean
 }
 
 export interface BuildWikiIngestChangesResult {
@@ -65,12 +67,14 @@ export interface BuildWikiIngestChangesResult {
 }
 
 export interface WikiIngestWarning {
-  code: 'duplicate-repo-identity'
-  node_ids: string[]
-  slugs: string[]
+  code: 'duplicate-repo-identity' | 'repos-metadata-unavailable'
+  node_ids?: string[]
+  reason?: 'read-failed' | 'parse-failed'
+  slugs?: string[]
 }
 
 export interface TrackedRepoNodeIdsResult {
+  metadataAvailable: boolean
   nodeIds: Map<string, string>
   warnings: WikiIngestWarning[]
 }
@@ -675,9 +679,13 @@ function prepareWikiPage(
     frontmatterNodeId: incomingFrontmatter.node_id,
   })
   if (identity === undefined || !identity.trusted) {
+    const preserveNodeId =
+      params.trackedMetadataAvailable === false
+        ? (getExistingRepoNodeId(existingFiles[page.path], page.path) ?? incomingFrontmatter.node_id)
+        : undefined
     return {
       path: page.path,
-      content: updateRepoPageFrontmatter(page.content),
+      content: updateRepoPageFrontmatter(page.content, preserveNodeId),
     }
   }
 
@@ -784,6 +792,11 @@ function updateRepoPageFrontmatter(content: string, nodeId?: string): string {
   else document.values.node_id = nodeId
   delete document.values.database_id
   return renderFrontmatterDocument(document.values, document.body)
+}
+
+function getExistingRepoNodeId(content: string | undefined, path: string): string | undefined {
+  if (content === undefined) return undefined
+  return parseFrontmatter(path, content).node_id
 }
 
 function renderFrontmatterDocument(values: Record<string, unknown>, body: string): string {
@@ -1172,6 +1185,7 @@ async function main(): Promise<void> {
       pages: payload.pages,
       trackedRepoNodeIds: tracked.nodeIds,
       fallbackNodeId: payload.node_id,
+      trackedMetadataAvailable: tracked.metadataAvailable,
     })
     owner = payload.owner
     repo = payload.repo
@@ -1201,6 +1215,7 @@ async function main(): Promise<void> {
       pages: Object.entries(pages).map(([path, content]) => ({path, content})),
       trackedRepoNodeIds: tracked.nodeIds,
       targetNodeId: process.env.REPO_NODE_ID,
+      trackedMetadataAvailable: tracked.metadataAvailable,
     })
     owner = process.env.WIKI_OWNER
     repo = process.env.WIKI_REPO
@@ -1240,7 +1255,11 @@ export async function loadTrackedRepoNodeIds(
   try {
     raw = await readFileImpl('metadata/repos.yaml', 'utf8')
   } catch {
-    return {nodeIds: new Map(), warnings: []}
+    return {
+      metadataAvailable: false,
+      nodeIds: new Map(),
+      warnings: [{code: 'repos-metadata-unavailable', reason: 'read-failed'}],
+    }
   }
 
   let parsed: unknown
@@ -1248,7 +1267,11 @@ export async function loadTrackedRepoNodeIds(
     parsed = parse(raw)
     assertReposFile(parsed)
   } catch {
-    return {nodeIds: new Map(), warnings: []}
+    return {
+      metadataAvailable: false,
+      nodeIds: new Map(),
+      warnings: [{code: 'repos-metadata-unavailable', reason: 'parse-failed'}],
+    }
   }
 
   const candidates = parsed.repos.flatMap(entry => {
@@ -1296,14 +1319,16 @@ export async function loadTrackedRepoNodeIds(
         .sort((left, right) => left.localeCompare(right)),
       slugs: [...slugs].sort((left, right) => left.localeCompare(right)),
     }))
-    .sort((left, right) => left.slugs.join('\u0000').localeCompare(right.slugs.join('\u0000')))
+    .sort((left, right) =>
+      (left.slugs?.join('\u0000') ?? left.code).localeCompare(right.slugs?.join('\u0000') ?? right.code),
+    )
 
   const nodeIds = new Map<string, string>()
   for (const candidate of candidates) {
     if (collidingSlugs.has(candidate.slug)) continue
     nodeIds.set(candidate.slug, candidate.nodeId)
   }
-  return {nodeIds, warnings}
+  return {metadataAvailable: true, nodeIds, warnings}
 }
 
 function repoTargetParts(target: string): {owner: string; name: string} | undefined {
