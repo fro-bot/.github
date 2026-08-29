@@ -16,7 +16,8 @@ concurrency:
 permissions:
   contents: read
 
-# The broker dispatches the fast path after a successful data commit; the weekly cron is the backstop.
+# The future `fro-bot/dashboard` broker will dispatch the fast path after a successful data commit; the weekly cron is the backstop.
+# It must use the App token or `FRO_BOT_PAT`: `GITHUB_TOKEN`-created events, including `repository_dispatch`, return 204 but do not start workflow runs.
 
 jobs:
   merge-data:

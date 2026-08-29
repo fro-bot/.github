@@ -1,5 +1,6 @@
 import type {RepoEntry} from './schemas.ts'
 
+import {resolve} from 'node:path'
 import process from 'node:process'
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {
@@ -314,21 +315,6 @@ describe('detectPrivateWikiLeaks', () => {
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'marcusrbrown--copiloting.md', reason: 'unattributable-page'})
-    })
-
-    it('rejects identical data and grandfather snapshots as caller error', () => {
-      // #given the same non-public page is supplied as both the data and grandfather snapshot
-      // #when detection runs
-      // #then the degenerate input is rejected instead of silently grandfathering the page
-      const snapshot = page('acme--secret-repo.md', 'same-hash', 'secret content')
-      const snapshots = [snapshot]
-      expect(() =>
-        detectPrivateWikiLeaks({
-          dataWikiPages: snapshots,
-          publicSlugMap: new Map(),
-          grandfatherPages: snapshots,
-        }),
-      ).toThrow('dataWikiPages and grandfatherPages must be distinct snapshots')
     })
 
     it('DOES flag marcusrbrown--copiloting.md when hash differs from grandfather', () => {
@@ -1188,6 +1174,17 @@ describe('requireGrandfatherDir (fail-closed missing-env branch)', () => {
     // #given a clean path string
     const result = requireGrandfatherDir('/workspace/main/knowledge/wiki/repos')
     expect(result).toBe('/workspace/main/knowledge/wiki/repos')
+  })
+})
+
+describe('collectLeaks path validation', () => {
+  it('rejects identical data and grandfather paths as caller error', async () => {
+    // #given GRANDFATHER_WIKI_REPOS_DIR resolves to the data wiki directory
+    // #when the full detection pipeline runs
+    // #then the degenerate path configuration is rejected before scanning either snapshot
+    await expect(runCli([], {GRANDFATHER_WIKI_REPOS_DIR: resolve('knowledge/wiki/repos')})).rejects.toThrow(
+      'data and grandfather wiki directories must be distinct',
+    )
   })
 })
 

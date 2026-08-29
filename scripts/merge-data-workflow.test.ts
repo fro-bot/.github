@@ -57,7 +57,8 @@ function assertMergeDataWorkflow(value: unknown): asserts value is {
 describe('merge-data.yaml workflow step order', () => {
   // #given the merge-data workflow file parsed as a YAML document
   const workflowPath = resolve(import.meta.dirname, '../.github/workflows/merge-data.yaml')
-  const parsed: unknown = parse(readFileSync(workflowPath, 'utf8'))
+  const workflowRaw = readFileSync(workflowPath, 'utf8')
+  const parsed: unknown = parse(workflowRaw)
   assertMergeDataWorkflow(parsed)
   const steps = parsed.jobs['merge-data']?.steps ?? []
 
@@ -121,6 +122,10 @@ describe('merge-data.yaml workflow step order', () => {
   it('pins the first checkout to main rather than inheriting github.ref', () => {
     const checkoutStep = steps.find(step => step.uses?.startsWith('actions/checkout@'))
     expect(checkoutStep?.with?.ref).toBe('main')
+  })
+
+  it('does not reference repository_dispatch client payload data', () => {
+    expect(workflowRaw).not.toContain('client_payload')
   })
 
   it('preserves the existing gate and promotion step ordering', () => {
