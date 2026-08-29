@@ -1,0 +1,21 @@
+{
+  "name": "@fro-bot/wiki-rendering-policy",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "quartz": {
+    "name": "RenderingPolicy",
+    "displayName": "Wiki Rendering Policy",
+    "description": "Removes raw and scriptable HTML before Quartz emits pages.",
+    "version": "1.0.0",
+    "category": "transformer",
+    "quartzVersion": ">=5.0.0",
+    "defaultEnabled": true,
+    "defaultOrder": 999
+  }
+}

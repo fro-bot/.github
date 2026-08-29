@@ -2,7 +2,7 @@ import type {Dirent} from 'node:fs'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 
-import {mergeWikiLogs, rebuildWikiIndex} from './wiki-ingest.ts'
+import {mergeWikiLogs, rebuildWikiIndex} from '@fro-bot/wiki-write-core'
 
 /**
  * Heal `knowledge/index.md` (and optionally `knowledge/log.md`) after merge
