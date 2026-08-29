@@ -153,7 +153,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Files:**
 - Create: `packages/wiki-write-core/` (package source, exports: snapshot lint, wikilink validation, private-leak pure core + adapter interfaces, frontmatter reconstruction, rendering-policy validation, commit primitives with typed errors)
-- Modify: `pnpm-workspace.yaml` (currently config-only — no `packages:` key; adding one changes hoisting semantics with `shamefullyHoist: true`, review deliberately), `tsconfig.json` / Vitest include globs as needed for the new package root
+- Modify: `pnpm-workspace.yaml` (currently config-only — no `packages:` key; adding one changes hoisting semantics with `shamefullyHoist: true`, review deliberately), `tsconfig.json` / Vitest include globs as needed for the new package root, `quartz-site/` config/plugin for the render-side sanitizer (see rendering-policy decision below)
 - Modify: `scripts/wiki-ingest.ts`, `scripts/wiki-lint.ts`, `scripts/check-private-leak.ts`, `scripts/wiki-repair.ts` (import from the package or re-export shared source; no behavior change)
 - Test: `packages/wiki-write-core/src/*.test.ts`, contract fixtures exercising workflow CLI and package entrypoints against identical inputs
 
@@ -161,7 +161,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 - This repo has NO existing package/release machinery (verified: single private root package, no `.changeset/`, no publish workflow) — Unit 1 creates the package boundary from scratch: package-local `package.json` with explicit `exports`, runtime artifacts consumable by Node 24 strip-only TS, and a documented exact-pin/update procedure.
 - Distribution per the Key Technical Decision: pinned git dependency first cut. Acceptance requires a working pnpm prototype: dashboard-side install of the subdirectory package at an immutable commit, with lockfile proof.
 - `appendLogEntry` learns to render `manual-edit` operations distinctly (currently always `ingest`).
-- Rendering policy placement (decided here, not deferred): the PRIMARY control is render-side — the Quartz build pipeline must sanitize/refuse unsafe HTML for ALL content regardless of writer (operator saves are only one of at least two writers; surveyor ingest is the other, and `quartz-site/` currently configures no sanitizer at all). The package's save-time validation is fast operator feedback, not the security boundary. Unit 1 delivers the save-side check; the render-side control lands in `quartz-site/` config/plugin within this plan's scope.
+- Rendering policy placement (decided here, not deferred): the PRIMARY control is render-side — the Quartz build pipeline must sanitize/refuse unsafe HTML for ALL content regardless of writer (operator saves are only one of at least two writers; surveyor ingest is the other, and `quartz-site/` currently configures no sanitizer at all). The package's save-time validation is fast operator feedback, not the security boundary. Unit 1 owns BOTH: the save-side check in the package AND the render-side sanitizer in `quartz-site/` config — the render-side control must be live before Unit 7 makes operator saves possible, so it cannot ride with Unit 6 (which ships last).
 
 **Patterns to follow:** `wiki-repair.ts` composition; pure-core-privacy-gates learning.
 
@@ -253,11 +253,11 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Approach:**
 - Add `push: branches: [data]` alongside the retained weekly cron and manual dispatch (verified compatible; `merge-data.yaml` currently has NO concurrency group).
-- Coalesce by cancellation for pushes only: the concurrency group sets `cancel-in-progress` conditionally on the trigger (a push may cancel a queued/in-flight push run, but a `schedule`/`workflow_dispatch` run is never cancelable by a push) — otherwise a survey push landing during the Sunday cron would cancel the backstop itself, starving promotions silently.
+- Coalesce by cancellation for pushes only, via TRIGGER-DISCRIMINATED GROUPS: push runs share one concurrency group (cancel-in-progress among themselves, newest wins) while `schedule`/`workflow_dispatch` runs live in a separate group a push can never reach — e.g. `group: merge-data-${{ github.event_name == 'push' && 'push' || 'manual' }}`. A single group with a conditional `cancel-in-progress` flag does NOT work: the flag is evaluated on the incoming run and applied to whatever is in progress, so a push would still cancel the Sunday cron and starve the backstop.
 - The promotion operation is already idempotent-friendly: `merge-data-pr.ts` reuses/updates the existing promotion PR rather than creating one per push (verified :127-146, :521-571) — keep it safely rerunnable.
 - Scope note (verified): `merge-data-pr.ts` only CLASSIFIES and LABELS (`knowledge/`+`metadata/`-only diffs get `auto-merge`, else `needs-review`); the actual merge depends on repo automation consuming the label. Operator edits (knowledge/-only) ride the existing fast lane; this unit changes trigger cadence only, never the gate or label semantics.
 
-**Test scenarios:** contract: push trigger present alongside cron/dispatch; concurrency configuration asserts a push run can never cancel a schedule/dispatch run (the exact conditional pinned); permissions unchanged; gate step ordering unchanged; existing-PR reuse behavior pinned.
+**Test scenarios:** contract: push trigger present alongside cron/dispatch; the concurrency GROUP KEY discriminates by trigger (asserting the flag alone can pass against a broken single-group config — the test must pin the group-key split); permissions unchanged; gate step ordering unchanged; existing-PR reuse behavior pinned.
 
 **Verification:** a data push produces a promotion PR/merge through the existing gate path within the interactive horizon.
 
@@ -271,7 +271,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Files:**
 - Modify: `quartz-site/local-plugin/` (new component or extension of the existing Sources component region), `quartz-site/quartz.config.yaml`
-- Test: none — committed-dist plugin has no harness (per repo status quo); verification via build
+- Test: component rendering none (harness-less committed-dist plugin); link target shape gets the contract test below
 
 **Approach:** static link construction from page frontmatter (node_id + slug); no credentials, no session awareness on the wiki side (R14 holds by construction — the link is inert for non-operators, who simply can't authenticate on the dashboard).
 
@@ -314,7 +314,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 | Runtime gates drift from workflow gates | Single source consumed by both; exact version pinning; dual-entrypoint contract fixtures; coordinated rollout for security-affecting gate changes |
 | Race/ambiguous GitHub outcomes on save | Blob-SHA precondition; no blind retry; 409 + preserved draft; head inspection on ambiguous failure |
 | Correction spans unmatchable after heavy regeneration | Deterministic normalized-span matching defined against fixtures in Unit 4; needs-reconfirmation state instead of false erosion where ambiguous |
-| Promotion-on-push spams the gate pipeline (12 survey pushes/day) | Cancelable concurrency group (newest wins) + existing-PR reuse; weekly cron backstop covers cancelled runs |
+| Promotion-on-push spams the gate pipeline (12 survey pushes/day) | Push runs coalesce in their own concurrency group (newest wins) + existing-PR reuse; cron/dispatch runs are in a separate group pushes cannot cancel |
 | Git-dependency distribution proves unworkable in pnpm | Prototype gate in Unit 1 acceptance; npm-registry fallback decided deliberately, not improvised |
 | Promotion frequency turns fail-closed privacy gates into alert-fatigue generators (`FRO_BOT_POLL_PAT` runs weekly → ~12×/day) | Coalescing bounds run count; gate failures stay fail-closed but route to the existing reporting channel with dedup; watch the first weeks for fatigue signal before considering any relaxation |
 
