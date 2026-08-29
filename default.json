@@ -29,6 +29,8 @@
         "build from their own bundled code.",
         "This excludes every harness tag by shape rather than capping the version line, so it needs no",
         "maintenance when the action reaches 1.0 and cannot fail silently by holding a stale ceiling.",
+        "The pattern is deliberately unanchored: it must match the harness marker anywhere in the tag,",
+        "including any future suffix shape. Do not anchor it to the version prefix.",
         "Both depTypes are listed: renovate#45443 (44.46.0) splits reusable-workflow uses: into",
         "depType 'workflow', and consumers may wire in via fro-bot/agent/.github/workflows/fro-bot.yaml."
       ],
