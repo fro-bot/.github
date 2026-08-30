@@ -195,7 +195,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Verification:** adapter usable with only a token + content, no workflow env.
 
-- [ ] **Unit 3: Correction metadata schema and attribution**
+- [x] **Unit 3: Correction metadata schema and attribution**
 
 **Goal:** System-owned storage for marked corrections: operator attribution (server-derived), correction spans, lifecycle state (active/superseded/retired/needs-reconfirmation).
 
@@ -217,7 +217,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Verification:** corrections survive a simulated page migration; guard behavior explicit.
 
-- [ ] **Unit 4: Survey-loop correction injection and survival check**
+- [x] **Unit 4: Survey-loop correction injection and survival check**
 
 **Goal:** Marked corrections reach the surveyor as delimited data and their survival is mechanically verified.
 
