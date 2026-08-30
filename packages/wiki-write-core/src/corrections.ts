@@ -1,6 +1,10 @@
+import type {WikiLintFinding} from './wiki-lint.ts'
+
 import {readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 import {parse, stringify} from 'yaml'
+
+import {collectWikiPages} from './wiki-utils.ts'
 
 /** System-owned sidecar state; it is deliberately outside rendered page content. */
 export const CORRECTIONS_PATH = 'knowledge/corrections.yaml' as const
@@ -50,6 +54,12 @@ export interface RecordCorrectionInput {
 export interface CorrectionsReadResult {
   readonly corrections: CorrectionsFile
   readonly warnings: readonly string[]
+}
+
+export interface CorrectionSurvivalResult {
+  readonly ok: boolean
+  readonly deterministicFindings: readonly WikiLintFinding[]
+  readonly advisoryFindings: readonly WikiLintFinding[]
 }
 
 export type ReadUtf8File = (path: string, encoding: 'utf8') => Promise<string>
@@ -198,11 +208,14 @@ export async function readCorrections(
   let raw: string
   try {
     raw = await readFileImpl(path, 'utf8')
-  } catch {
+  } catch (error: unknown) {
+    if (isMissingFileError(error)) return {corrections: emptyCorrectionsFile(), warnings: []}
     const message = `corrections: unable to read ${path}; continuing with no corrections`
     warn(message)
     return {corrections: emptyCorrectionsFile(), warnings: [message]}
   }
+
+  if (raw.trim() === '') return {corrections: emptyCorrectionsFile(), warnings: []}
 
   try {
     return {corrections: parseCorrections(raw), warnings: []}
@@ -212,6 +225,73 @@ export async function readCorrections(
     warn(message)
     return {corrections: emptyCorrectionsFile(), warnings: [message]}
   }
+}
+
+/**
+ * Verify marked spans mechanically after ingest regeneration.
+ *
+ * Matching trims the span and collapses every whitespace run to one space, then
+ * performs an exact substring search in the page body. This deliberately avoids
+ * semantic or fuzzy matching: an active correction that cannot be located is
+ * erosion and therefore blocks the ingest.
+ */
+export function verifyCorrectionSurvival(
+  files: Record<string, string>,
+  corrections: CorrectionsFile | undefined,
+): CorrectionSurvivalResult {
+  if (corrections === undefined) return {ok: true, deterministicFindings: [], advisoryFindings: []}
+
+  assertCorrectionsFile(corrections)
+  const pages = collectWikiPages(files)
+  const pagesByNodeId = new Map<string, (typeof pages)[number]>()
+  for (const page of pages) {
+    const nodeId = page.frontmatter.node_id
+    if (typeof nodeId === 'string' && nodeId !== '') pagesByNodeId.set(nodeId, page)
+  }
+
+  const deterministicFindings: WikiLintFinding[] = []
+  const advisoryFindings: WikiLintFinding[] = []
+  for (const correction of corrections.corrections) {
+    const state = getCorrectionLifecycle(correction)
+    if (state === 'superseded' || state === 'retired') continue
+
+    const page = pagesByNodeId.get(correction.page_node_id)
+    const path = page?.path ?? CORRECTIONS_PATH
+    if (state === 'needs-reconfirmation') {
+      advisoryFindings.push({
+        kind: 'correction-needs-reconfirmation',
+        path,
+        target: correction.id,
+        message: `Correction ${correction.id} needs operator reconfirmation before it is enforced.`,
+      })
+      continue
+    }
+
+    const normalizedSpan = normalizeCorrectionText(correction.span.text)
+    const normalizedBody = page === undefined ? '' : normalizeCorrectionText(page.body)
+    if (page === undefined || normalizedSpan === '' || !normalizedBody.includes(normalizedSpan)) {
+      deterministicFindings.push({
+        kind: 'correction-eroded',
+        path,
+        target: correction.id,
+        message: `Active correction ${correction.id} was not found in the regenerated page.`,
+      })
+    }
+  }
+
+  return {
+    ok: deterministicFindings.length === 0,
+    deterministicFindings,
+    advisoryFindings,
+  }
+}
+
+function normalizeCorrectionText(value: string): string {
+  return value.trim().replaceAll(/\s+/gu, ' ')
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return isRecord(error) && error.code === 'ENOENT'
 }
 
 export async function writeCorrections(

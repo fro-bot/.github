@@ -155,6 +155,14 @@ describe('corrections sidecar', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(CORRECTIONS_PATH))
   })
 
+  it('treats an empty corrections file as a clean no-op', async () => {
+    const warn = vi.fn()
+    const result = await readCorrections(async () => '', warn)
+
+    expect(result).toEqual({corrections: emptyCorrections, warnings: []})
+    expect(warn).not.toHaveBeenCalled()
+  })
+
   it('fails hard on malformed writes', async () => {
     const malformed: unknown = {
       version: 1,

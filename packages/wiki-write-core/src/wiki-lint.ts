@@ -20,6 +20,8 @@ export type WikiLintFindingKind =
   | 'stale-claim'
   | 'missing-cross-reference'
   | 'knowledge-gap'
+  | 'correction-eroded'
+  | 'correction-needs-reconfirmation'
 
 export interface WikiLintFinding {
   readonly kind: WikiLintFindingKind
