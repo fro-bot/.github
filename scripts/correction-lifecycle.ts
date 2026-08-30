@@ -176,6 +176,8 @@ export function buildHelp(): CorrectionLifecycleCliHelp {
       WRITE_FAILED: 'Fix store write access and retry.',
       IO_FAILURE: 'Inspect filesystem or runtime I/O and retry.',
       RUNTIME_FAILURE: 'Rare fallback: inspect the emitted message and execution context.',
+      path_semantics:
+        'path is a filesystem path for READ_FAILED/WRITE_FAILED and a record-field pointer for INVALID_CORRECTIONS/INVALID_TRANSITION.',
     },
   }
 }
