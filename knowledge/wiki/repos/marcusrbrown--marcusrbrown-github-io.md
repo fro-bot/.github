@@ -1,6 +1,6 @@
 ---
 type: repo
-title: "marcusrbrown/marcusrbrown.github.io"
+title: marcusrbrown/marcusrbrown.github.io
 created: 2026-04-25
 updated: 2026-08-29
 sources:
@@ -106,12 +106,23 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
     sha: 9e54dbcfb43b9c850c321b22a1c5ea945fa224bf
     accessed: 2026-08-29
-tags: [brand-site, react, typescript, vite, github-pages, pnpm, single-page, name-collision, superseded]
-aliases: [marcusrbrown-github-io]
+tags:
+  - brand-site
+  - react
+  - typescript
+  - vite
+  - github-pages
+  - pnpm
+  - single-page
+  - name-collision
+  - superseded
+aliases:
+  - marcusrbrown-github-io
 related:
   - marcusrbrown--marcusrbrown-com
   - marcusrbrown--mrbro-dev
   - marcusrbrown--gpt
+node_id: R_kgDORgYjdA
 ---
 
 # marcusrbrown/marcusrbrown.github.io

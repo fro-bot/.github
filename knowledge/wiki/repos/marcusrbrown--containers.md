@@ -1,6 +1,6 @@
 ---
 type: repo
-title: "marcusrbrown/containers"
+title: marcusrbrown/containers
 created: 2026-04-18
 updated: 2026-08-30
 sources:
@@ -34,12 +34,25 @@ sources:
   - url: https://github.com/marcusrbrown/containers
     sha: 98c03d19e81af2a946128374dd57ae30ee84ff27
     accessed: 2026-08-30
-tags: [docker, containers, dockerfiles, multi-arch, python, github-actions, ci-cd, security-scanning, ai, ollama, sqlite]
-aliases: [containers]
+tags:
+  - docker
+  - containers
+  - dockerfiles
+  - multi-arch
+  - python
+  - github-actions
+  - ci-cd
+  - security-scanning
+  - ai
+  - ollama
+  - sqlite
+aliases:
+  - containers
 related:
   - marcusrbrown--ha-config
   - github-actions-ci
   - docker-containers
+node_id: MDEwOlJlcG9zaXRvcnk3Njg3NTEzMg==
 ---
 
 # marcusrbrown/containers

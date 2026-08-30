@@ -3,7 +3,7 @@ type: topic
 title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-08-30
-tags: [github-actions, ci-cd, automation, security, renovate, oidc, aws-sts, autoheal, gh-cli]
+tags: [github-actions, ci-cd, automation, security, renovate, oidc, aws-sts, autoheal, gh-cli, contract-testing]
 related:
   - fro-bot--agent
   - marcusrbrown--dev-like
@@ -21,6 +21,7 @@ related:
   - marcusrbrown--renovate-config
   - marcusrbrown--sparkle
   - marcusrbrown--vbs
+  - marcusrbrown--extend-vscode
   - bfra-me--github
   - bfra-me--works
   - bfra-me--renovate-action
@@ -41,7 +42,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
 - [[marcusrbrown--sparkle]] — Turborepo-orchestrated Setup → Check → Build pipeline, Astro Starlight docs deployment to GitHub Pages, auto-regenerate-docs PR workflow
 - [[marcusrbrown--dev-like]] — 7 workflows (as of 2026-07-31): `ci.yaml` (Bun `validate` + Node/Bun dual-runner tests), `release.yaml` (Changesets + npm OIDC trusted-publish + `mrbro-bot`-App version PRs + `alias-release`), `fro-bot.yaml` (**two-mode** autoheal + pr-review, agent v0.96.0), `site.yaml` (Astro/Starlight → Pages), `link-check.yaml`, `renovate.yaml` (extends [[marcusrbrown--renovate-config]]), `update-repo-settings.yaml` (Probot Settings extends `.github:common-settings.yaml`, gates `main` on `validate`+`Fro Bot`). No CodeQL/Scorecard yet.
-- [[bfra-me--github]] — Org control center; **16 workflows** (2026-08-06, durable since the 2026-07-02 consolidation) including `main.yaml` (Quality Check), a **single unified `fro-bot.yaml`** (per-repo persona + org-wide sweep folded in; the separate `fro-bot-autoheal-org.yaml` was **removed** 2026-07-02, and a single `30 15` daily pass now does both oversight and autohealing), `renovate.yaml` + `trigger-org-renovate.yaml` (self-hosted Renovate fan-out), and three custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). Source of the reusable workflows that `marcusrbrown/*` repos consume. 2026-08-06 note: two upstream **majors** (`bfra-me/renovate-action` v9 → v10, `actions/checkout` v6 → v7) landed as ordinary SHA-pin automerge churn — a data point that the SHA-pin-plus-Renovate model absorbs even major action bumps without workflow-structure change (agent pin v0.96.0, fleet lead). The [[bfra-me--renovate-action]] `v10.0.0` in particular was a **Renovate-engine major (v43 → v44), not a runtime-architecture change** (confirmed 2026-08-10 source survey) — its composite/Docker mechanics are byte-stable across the boundary, which is precisely why downstream `@v10` consumers absorbed it as noise. The action's own major version tracks the vendored Renovate engine major, so a `v_N → v_{N+1}` action bump generally means "new Renovate major inside," not "action rewritten."
+- [[bfra-me--github]] — Org control center; **16 workflows** (2026-08-06, durable since the 2026-07-02 consolidation) including `main.yaml` (Quality Check), a **single unified `fro-bot.yaml`** (per-repo persona + org-wide sweep folded in; the separate `fro-bot-autoheal-org.yaml` was **removed** 2026-07-02, and a single `30 15` daily pass now does both oversight and autohealing), `renovate.yaml` + `trigger-org-renovate.yaml` (self-hosted Renovate fan-out), and three custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). Source of the reusable workflows that `marcusrbrown/*` repos consume. 2026-08-06 note: two upstream **majors** (`bfra-me/renovate-action` v9 → v10, `actions/checkout` v6 → v7) landed as ordinary SHA-pin automerge churn — a data point that the SHA-pin-plus-Renovate model absorbs even major action bumps without workflow-structure change (agent pin v0.96.0, fleet lead). The [[bfra-me--renovate-action]] `v10.0.0` in particular was a **Renovate-engine major (v43 → v44), not a runtime-architecture change** (confirmed 2026-08-10 source survey) — its composite/Docker mechanics are byte-stable across the boundary, which is precisely why downstream `@v10` consumers absorbed it as noise. The action's own major version tracks the vendored Renovate engine major, so a `v_N → v_{N+1}` action bump generally means "new Renovate major inside," not "action rewritten." **2026-08-30 update:** workflow set still 16 and byte-stable in shape (five windows), agent pin **v0.106.1** (sole fleet leader) with a new `OPENCODE_PROMPT_ARTIFACT` env making the runtime-assembled prompt auditable; the `renovate-action` pin absorbed 10.1.0 → **10.25.1** with no workflow-source change, corroborating the vendored-engine-major reading. The *product* layer moved instead — see [Consumer-Fixture Contract Testing](#consumer-fixture-contract-testing-for-shared-actions-2026-08-30), [Two Tag Families](#two-tag-families--silent-sha-pin-rot-2026-08-30), and [Autoheal Category Expansion](#autoheal-category-expansion-8--10-and-prompt-guardrails-2026-08-30).
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo; 11 workflows including `main.yaml` (Prepare → parallel {Lint+type-coverage, Test, Build, Workspace Analysis} → CI), `release.yaml` (Changesets, `workflow_run` after Main + Sunday cron + dispatch with force-release toggle), `fro-bot.yaml` (three-mode single-file at v0.44.2), `docs.yaml` (Astro Starlight → GitHub Pages), `docs-sync.yaml` (path-filtered @bfra.me/doc-sync re-sync), `renovate.yaml` + `update-repo-settings.yaml` (reusable `bfra-me/.github` callers), `renovate-changeset.yaml`, `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review. Local composite action `.github/actions/pnpm-install` consumed by every workflow.
 
 ## Common Patterns
@@ -219,6 +220,156 @@ Generalizable guidance for any agent that composes long output then delivers it 
 - If a temp-file path is unavoidable, **assert the delivered body doesn't start with `@` and is longer than the path**, or post-verify the comment length. A body that is exactly a filesystem path is always a bug.
 
 This sits alongside the two-phase credential-boundary pattern as a reminder that the *delivery* leg of an agent run deserves the same scrutiny as the reasoning leg. An agent can investigate correctly, write a correct report, and still deliver nothing.
+
+### Consumer-Fixture Contract Testing for Shared Actions (2026-08-30)
+
+An action developed in one repo but executed in many has a contract far
+wider than its own build. [[bfra-me--github]]'s `renovate-changesets`
+made this explicit on 2026-08-19 by adding a **second Vitest project**
+(`vitest.contract.config.ts`) and a `test/contract/` tree — 10
+`*.contract.test.ts` scenarios / 25 tests plus fixture workspaces that
+model **actual downstream repositories**.
+
+The problem statement, from the repo's own learning doc: a prior slimming
+refactor was *"scoped by local reachability — it mapped what could be
+deleted here, never modeling the environment the action actually runs
+in."* Correct behaviour in the consumer was *"an aspiration, never a
+gate."* Six assumptions were true in the development repo and false in
+consumers — bot identity is always `renovate[bot]` (consumers use
+`bfra-me[bot]`/`mrbro-bot[bot]`), Docker refs always carry full digests
+(consumers pass short SHAs), `node_modules` is installed when
+`@changesets/write` runs (it isn't), affected packages are always
+manifest-listed, every workspace package is releasable, one grouped
+Renovate PR has one package manager.
+
+Mechanics that make the tier work, all reusable:
+
+- **Fixtures replicate real consumers, hostilely.**
+  `fixtures/marcusrbrown-infra/repo/` mirrors [[marcusrbrown--infra]]'s
+  `apps/*`/`packages/*`/`libs/*` topology *and* its awkward edges: an
+  unresolvable prettier config, versionless apps, a
+  `.changeset/config.json` that ignores a package while enabling
+  private-package versioning, and a `packages/shared` with real
+  dependents so propagation and exclusion are both exercised. A friendly
+  fixture proves nothing.
+- **Enter through the real entry point, not the module index.** Tests
+  call `run()` in `src/run.ts`; importing `index.ts` would execute the
+  action as an import side effect.
+- **Real temporary workspaces**, copied per scenario via
+  `fs.cp(..., {recursive: true})` — not an in-memory filesystem shim.
+- **A mock boundary that fails loudly.** Only `@actions/core`,
+  `@octokit/rest`, and one exec lookup are stubbed; `getExecOutput`
+  accepts exactly `git rev-parse --short HEAD` and **throws on anything
+  else**. An unplanned shell-out surfaces as a test failure instead of a
+  silently-defaulted mock return — the inverse of the usual permissive
+  `vi.mock()` posture.
+
+Directly applicable to the other foreign-executing actions in the
+ecosystem: [[bfra-me--renovate-action]] (composite action running in
+every `bfra-me`/`marcusrbrown` repo) and [[fro-bot--agent]] (the harness
+running in all of them). Neither carried such a tier at last survey.
+
+### Two Tag Families → Silent SHA-Pin Rot (2026-08-30)
+
+A release-tagging footgun with a wholly silent failure mode, recorded in
+[[bfra-me--github]]'s `AGENTS.md` and `docs/solutions/`.
+
+That repo publishes each custom action under `{action}@{ver}` (e.g.
+`renovate-changesets@0.2.34`) while the repo itself is tagged `v{ver}`
+(e.g. `v4.16.48`). The two are cut on independent triggers — the repo tag
+only when the *root* package has pending changesets — so they frequently
+coincide but are not guaranteed to.
+
+Renovate's built-in `github-actions` manager resolves only the `v{ver}`
+family. A downstream repo that SHA-pins the action and annotates the pin
+`# {action}@{ver}` therefore receives **no update PRs at all**, with no
+error, no dashboard entry, and no signal of any kind.
+[[marcusrbrown--infra]] sat **four months** behind this way.
+
+Remedies, in preference order: call the *reusable workflow* rather than
+SHA-pinning the action (unaffected by the issue entirely), or add a regex
+`customManager` with `extractVersionTemplate: '^{action}@(?<version>.+)$'`.
+
+Generalize: any repository publishing artifacts under a tag namespace
+distinct from its own release tags will rot downstream pins unless
+consumers opt into a matching manager. The failure is invisible from the
+publisher's side — it looks like nobody upgrading — so the burden of
+documenting the second tag family sits with the publisher.
+
+### Autoheal Category Expansion 8 → 10, and Prompt Guardrails (2026-08-30)
+
+Two independent repos expanded their autoheal taxonomy from 8 to 10
+categories in the same window with converging vocabulary:
+[[marcusrbrown--infra]] (2026-08-16, added WORKFLOW INTEGRITY and QUALITY
+GATES VERIFICATION) and [[bfra-me--github]] (2026-08-30, added
+**CROSS-PROJECT INTELLIGENCE** and **PROGRESSIVE IMPROVEMENT**, both
+report-only, and renamed category 3 to **ACTION & WORKFLOW INTEGRITY**).
+
+The bfra-me additions are notable for their provenance: both are the
+surviving half of deleted `.ai/plan/` proposals ("org-health monitoring",
+"production-readiness validation"). Ambitions to *build* monitoring
+systems were downgraded to *prompt categories that emit a table row in
+the daily report*. Cheaper, and it produces the same signal — a
+reasonable default when the alternative is a system nobody has time to
+maintain.
+
+Four prompt guardrails from the same rewrite generalize beyond that repo:
+
+- **Poisoned-branch execution guard.** *"If the PR touches workflows,
+  automation prompts, package-manager config, lockfiles, or execution
+  scripts, do not run project commands from that branch."* Autoheal flows
+  repair branches by *running* their build/test commands — on a runner
+  holding a PAT. Author trust is not sufficient, because the dangerous
+  content can arrive in a trusted author's PR. This draws the boundary
+  correctly: the file classes that make a branch unsafe to **execute**
+  are broader than those that make it unsafe to **merge**. Most autoheal
+  prompts in the fleet do not draw it at all.
+- **Trusted-authors gate.** Repair only branches from the owner, a
+  write-access collaborator, or an approved bot
+  (`renovate[bot]`/`dependabot[bot]`/`fro-bot`); otherwise skip and log.
+- **Delivery contract.** An explicit numbered branch → commit → push →
+  `gh pr create` obligation, closing *"The agent that writes the fix is
+  the agent that ships it. Do not delegate the push/PR to a 'caller
+  workflow' — there is none."* Same family as the `gh --body`/`@path`
+  footgun below: a single-step agent that writes a correct fix to disk
+  and exits produces a green build and zero delivered work.
+- **Guardrail preservation.** *"Never make checks pass by disabling
+  tests, deleting failing assertions, lowering coverage thresholds,
+  weakening lint/type rules, or editing workflows/configuration only to
+  suppress failures."* The most predictable way an autoheal daemon
+  destroys value is by optimizing for a green check rather than a working
+  repo.
+
+Plus one hygiene rule worth copying fleet-wide: **bound the rolling
+report issue.** bfra-me's prompt collapses daily sections older than 14
+days into a single in-place `## Historical Summary`. Perpetual issues
+otherwise grow without limit — [[marcusrbrown--dev-like]]'s rolling issue
+carries 53 comments, [[bfra-me--github]]'s #2344 has run daily since
+2026-06-25.
+
+### Annotated Version Holds vs. Silent Bump Backlogs (2026-08-30)
+
+[[bfra-me--github]] resolved a stuck TypeScript v7 bump not by merging it
+and not by leaving the PRs open, but by writing the constraint into
+`renovate.json5` with its exit condition:
+
+```json5
+{
+  description: 'Hold TypeScript below v7 because typescript-eslint lacks TS7 support; remove once support lands.',
+  matchPackageNames: ['typescript'],
+  allowedVersions: '<7',
+}
+```
+
+The bump PRs closed and the queue drained from 7 to 2. Compare the fleet
+repos carrying long-open, unannotated major-bump PRs —
+[[marcusrbrown--gpt]]'s HeroUI v3 across five surveys,
+[[marcusrbrown--extend-vscode]]'s `typescript` v6 across ~9 weeks,
+[[marcusrbrown--mothership]]'s untouched TS6/Biome2 sweep. An open PR is
+not a record of a decision; it is a record of an unmade one. A pin whose
+reason and removal trigger live next to the pin doesn't decay into
+unexplained lag, and it stops the daily autoheal from re-litigating the
+same bump.
 
 ### Convention Enforcement via Tests
 

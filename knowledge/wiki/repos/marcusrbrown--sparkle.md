@@ -1,6 +1,6 @@
 ---
 type: repo
-title: "marcusrbrown/sparkle"
+title: marcusrbrown/sparkle
 created: 2026-04-28
 updated: 2026-08-29
 sources:
@@ -34,14 +34,31 @@ sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: 8508b7163202f2e547864b5419ab25253e55191c
     accessed: 2026-08-29
-tags: [typescript, react, react-native, monorepo, design-system, storybook, tailwindcss, radix-ui, turborepo, expo, vite, astro, github-pages, zig, wasm]
-aliases: [sparkle]
+tags:
+  - typescript
+  - react
+  - react-native
+  - monorepo
+  - design-system
+  - storybook
+  - tailwindcss
+  - radix-ui
+  - turborepo
+  - expo
+  - vite
+  - astro
+  - github-pages
+  - zig
+  - wasm
+aliases:
+  - sparkle
 related:
   - github-actions-ci
   - marcusrbrown--mrbro-dev
   - marcusrbrown--gpt
   - marcusrbrown--tokentoilet
   - marcusrbrown--vbs
+node_id: MDEwOlJlcG9zaXRvcnkzMTYxMDA5ODY=
 ---
 
 # marcusrbrown/sparkle

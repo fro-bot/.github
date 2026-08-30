@@ -1,6 +1,6 @@
 ---
 type: repo
-title: "marcusrbrown/dev-like"
+title: marcusrbrown/dev-like
 created: 2026-07-12
 updated: 2026-08-30
 sources:
@@ -13,14 +13,35 @@ sources:
   - url: https://github.com/marcusrbrown/dev-like
     sha: 218aa444da9e7ffafffecfdbae50b6229427c6c6
     accessed: 2026-08-30
-tags: [agent-skills, claude-code, plugin, marketplace, npm, cli, registry, osint, engineering-culture, changesets, bun, mit, provenance, fro-bot-workflow, autoheal, astro-starlight, evals, renovate-automerge, steady-state]
-aliases: [dev-like]
+tags:
+  - agent-skills
+  - claude-code
+  - plugin
+  - marketplace
+  - npm
+  - cli
+  - registry
+  - osint
+  - engineering-culture
+  - changesets
+  - bun
+  - mit
+  - provenance
+  - fro-bot-workflow
+  - autoheal
+  - astro-starlight
+  - evals
+  - renovate-automerge
+  - steady-state
+aliases:
+  - dev-like
 related:
   - opencode-plugins
   - github-actions-ci
   - marcusrbrown--systematic
   - fro-bot--systematic
   - marcusrbrown--mothership
+node_id: R_kgDOTVrJ0w
 ---
 
 # marcusrbrown/dev-like

@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/.github
 created: 2026-05-20
-updated: 2026-08-06
+updated: 2026-08-30
 sources:
   - url: https://github.com/bfra-me/.github
     sha: a81be4c5d5c93824fdcc426418c9433d5e5bd9be
@@ -22,15 +22,31 @@ sources:
   - url: https://github.com/bfra-me/.github
     sha: d9feab2e628a21b1f38048fd2bf0563dbc814c5e
     accessed: 2026-08-06
-tags: [bfra-me, dotgithub, monorepo, pnpm, typescript, github-actions, probot, renovate, template]
+  - url: https://github.com/bfra-me/.github
+    sha: 1b219902fd37d2f4206a9505e3cda8dabba786e0
+    accessed: 2026-08-30
+tags:
+  - bfra-me
+  - dotgithub
+  - monorepo
+  - pnpm
+  - typescript
+  - github-actions
+  - probot
+  - renovate
+  - template
+  - contract-testing
 related:
   - bfra-me--ha-addon-repository
   - bfra-me--renovate-action
   - marcusrbrown--github
   - marcusrbrown--renovate-config
+  - marcusrbrown--infra
+  - bfra-me--works
   - fro-bot--agent
   - github-actions-ci
   - probot-settings
+node_id: R_kgDOHBEXpg
 ---
 
 # bfra-me/.github
@@ -57,56 +73,71 @@ license/secret/container scanning).
 - **License:** MIT
 - **Default branch:** `main`
 - **Created:** 2022-03-17
-- **Last push:** 2026-08-04 (HEAD commit dated 2026-07-31; was 2026-07-16)
-- **Package version:** `@bfra.me/.github` v4.16.44 (private root; was
-  v4.16.37 on 2026-07-16)
-- **Node:** 24.18.1 (`.node-version`; **first bump since 2026-07-02** —
-  was 24.18.0 across the prior two surveys, 24.17.0 on 2026-06-20,
-  24.16.0 on 2026-06-10, 24.15.0 on 2026-05-20)
-- **Package manager:** pnpm **11.17.0** (2026-08-06; was 11.11.0 on
-  2026-07-16 — routine minor churn within the 11.x line, six sequential
-  Renovate bumps 11.12.0 → 11.17.0 across the window; the 10→11 boundary
-  remains settled)
-- **TypeScript:** 6.0.3, strict (unchanged across all six surveys; note
-  a **v7** major bump is now in the open-PR queue — #2526/#2527)
-- **Open issues / PRs:** 2 / 7 (2026-08-06). Open issues: #2344 (unified
-  **Daily Fro Bot Report** — see Fro Bot Integration) and #7 (Dependency
-  Dashboard) — the same two durable surfaces. Open PRs are **all
-  `bfra-me[bot]` Renovate major-version bumps** the automerge policy
-  holds back for human review: #2528 (lint-staged v17), #2526/#2527
-  (typescript v7, dup), #2525 (fossas/fossa-action v2), #2524
-  (actions/setup-node v7), #2523 (actions/labeler v7), #2522
-  (actions/dependency-review-action v5). Was 2/2 on 2026-07-16. The
-  standing report surface (#2344) and the Dependency Dashboard (#7)
-  remain the only two durable open issues — the three-into-one report
-  consolidation from 2026-07-02 holds across four windows.
+- **Last push:** 2026-08-30 (HEAD commit `1b21990`, dated 2026-08-30;
+  was 2026-08-04)
+- **Package version:** `@bfra.me/.github` **v4.22.0** (private root; was
+  v4.16.44 on 2026-08-06, v4.16.37 on 2026-07-16). First time the minor
+  digit has moved off `16` in the surveyed history — the
+  renovate-changesets refactor drove a run of minor releases.
+- **Node:** **24.20.0** (`.node-version`; was 24.18.1 on 2026-08-06,
+  24.18.0 through 2026-07-16, 24.17.0 on 2026-06-20, 24.16.0 on
+  2026-06-10, 24.15.0 on 2026-05-20)
+- **Package manager:** pnpm **11.24.0** (2026-08-30; was 11.17.0 on
+  2026-08-06, 11.11.0 on 2026-07-16 — routine minor churn within the
+  11.x line; the 10→11 boundary remains settled)
+- **TypeScript:** 6.0.3, strict — **unchanged across all seven surveys,
+  and now deliberately frozen.** The v7 bump PRs open on 2026-08-06
+  (#2526/#2527) are gone, replaced by an explicit Renovate rule
+  (`allowedVersions: '<7'`) with the rationale *"typescript-eslint lacks
+  TS7 support; remove once support lands."* The prior survey read this
+  as a held-back queue item; it is now a recorded decision with an exit
+  condition. See [Renovate](#renovate).
+- **Open issues / PRs:** **4 / 2** (2026-08-30; was 2 / 7). The
+  seven-deep major-bump queue **fully drained** — lint-staged v17,
+  `actions/setup-node` v7, `actions/labeler` v7,
+  `actions/dependency-review-action` v5, `fossas/fossa-action` v2 all
+  landed; typescript v7 was closed in favour of the pin rule. Remaining
+  open PRs are both routine `bfra-me[bot]` maintenance (#2642 publish
+  release, #2640 internal action SHA pins). Open issues: the two durable
+  bot surfaces #2344 (**Daily Fro Bot Report**) and #7 (Dependency
+  Dashboard), plus **two new human-authored issues** — #2545 (add test
+  coverage for `scripts/release.ts`) and #2546 (automate
+  workflow-templates standards validation), both filed by `marcusrbrown`
+  on 2026-08-15 alongside the refactor planning burst. These are the
+  **first non-bot open issues** recorded here across seven surveys; the
+  backlog is no longer purely machine-generated. Note the contrast with
+  the fleet's propose-without-merge queues ([[marcusrbrown--sparkle]] at
+  15 open PRs, [[bfra-me--works]] at 12) — this repo drains.
 
 ## Layout
 
+Layout at HEAD `1b21990` (2026-08-30, 314 blobs). The `.ai/` corpus is
+**gone** — see [AI planning corpus](#ai-planning-corpus-ai-removed-2026-08-30).
+
 ```
 .
-├── .ai/                                 # AI-consumed roadmap (added by 2026-07-16)
-│   ├── notes/implementation-plan-prompts.md
-│   └── plan/                            # 10 plan docs (federation, Astro docs, org health, etc.)
 ├── .husky/                             # Git hooks (pre-commit → pnpm exec lint-staged)
 ├── .github/
 │   ├── actions/
-│   │   ├── renovate-changesets/         # Complex action: auto-changeset Renovate PRs (~125 src files)
-│   │   ├── update-metadata/             # Repo metadata generator
-│   │   └── update-repository-settings/  # Plugin-based settings sync
+│   │   ├── renovate-changesets/         # Auto-changeset Renovate PRs (75 src files; was ~125 pre-refactor)
+│   │   ├── update-metadata/             # Repo metadata generator (1 src file)
+│   │   └── update-repository-settings/  # Plugin-based settings sync (26 src files, incl. src/plugins/)
 │   ├── instructions/                    # AI-consumed dev guides (changesets, GH Actions, pnpm, Renovate, TS)
 │   ├── workflows/                       # 16 workflows: CI, Fro Bot, security, Copilot, renovate (was 17; autoheal-org merged into fro-bot.yaml 2026-07-02)
 │   ├── codeql/
+│   ├── auto-assign.yaml
 │   ├── copilot-instructions.md
 │   ├── gitleaks.toml
 │   ├── labeler.yaml
 │   ├── renovate.json5
 │   └── settings.yml
 ├── workflow-templates/                  # Org-wide templates (.yaml + .properties.json pairs)
-├── scripts/                             # tsx utilities: release, build perf, workspace validation
+├── scripts/                             # 7 tsx utilities: release, build perf, workspace + TS-reference validation
 ├── docs/
 │   ├── workflows/                       # Workflow docs and troubleshooting
-│   └── solutions/                       # Compound-engineering learnings
+│   ├── plans/                           # 3 plan docs (2 promoted from .ai/plan/, 1 dated refactor plan) — new 2026-08-30
+│   ├── brainstorms/                     # Requirements docs — new 2026-08-30
+│   └── solutions/                       # Compound-engineering learnings: README contract + 7 entries (was README-only)
 ├── metadata/
 │   └── renovate.yaml                    # Org-wide Renovate config consumed by other repos
 ├── profile/                             # GitHub org profile README
@@ -118,11 +149,12 @@ license/secret/container scanning).
 ├── .cursorindexingignore                # Cursor indexing excludes (added by 2026-07-16)
 ├── .gitattributes                       # Git attributes (present ≥2026-07-16)
 ├── .markdownlint-cli2.yaml              # Markdown lint config (present ≥2026-07-16)
+├── .vscode/                             # extensions.json, settings.json, spellright.dict (first enumerated 2026-08-30)
 ├── llms.txt                             # AI-consumption manifest (present ≥2026-07-16, first enumerated 2026-08-06)
 ├── eslint.config.ts
 ├── internal.json5                       # Renovate internal config extended by .github/renovate.json5
 ├── mise.toml                            # Adds ./node_modules/.bin to PATH
-├── package.json                         # `@bfra.me/.github` v4.16.18
+├── package.json                         # `@bfra.me/.github` v4.22.0
 ├── pnpm-workspace.yaml
 ├── tsconfig.json / tsconfig.build.json / tsconfig.eslint.json
 └── vitest.config.ts
@@ -136,12 +168,31 @@ license/secret/container scanning).
 - `shamefullyHoist: true`, `autoInstallPeers: true`, `savePrefix: ''`,
   `shellEmulator: true`, `strictPeerDependencies: false` (latter two
   confirmed 2026-06-10)
-- Overrides (HEAD 2026-08-06): `esbuild@>=0.17.0 <0.28.1` forced to
-  `>=0.28.1` (security, PR #2292 — on `main` since 2026-06-25);
-  `flatted` pinned to `3.4.3` (bumped from `3.4.2` via #2491);
-  `undici@<6.27.0` forced to `>=6.27.0`; `vite@>=8.0.0 <=8.0.4` forced to
-  `>=8.0.5`. Override _set_ is otherwise stable across the window — no
-  new security overrides added, one pin refresh only.
+- Overrides (HEAD 2026-08-30) — **grew 4 → 7**, the first override-set
+  expansion since the esbuild remediation: `brace-expansion@<5.0.9` →
+  `>=5.0.9` (**new**), `esbuild@>=0.17.0 <0.28.1` → `>=0.28.1`
+  (security, PR #2292 — on `main` since 2026-06-25),
+  `fast-uri@>=3.0.0 <3.1.5` → `>=3.1.5` (**new**), `flatted` pinned to
+  `3.4.4` (was 3.4.3), `js-yaml@>=3.0.0 <3.15.1` → `3.15.2` (**new**),
+  `undici@<6.27.0` → `>=6.27.0`, `vite@>=8.0.0 <=8.0.4` → `>=8.0.5`.
+  The `brace-expansion` and `fast-uri` additions are the same transitive
+  advisories that produced override entries at
+  [[marcusrbrown--marcusrbrown-com]], [[bfra-me--works]], and
+  [[fro-bot--dashboard]] — the fleet converged on the same two pins in
+  the same window.
+- **New key: `minimumReleaseAgeExclude:`** (2026-08-30) listing
+  `@bfra.me/eslint-config@0.51.2 || 0.52.1` and
+  `@bfra.me/prettier-config@0.16.10 || 0.16.11`. This is a
+  **cooldown-bypass allowlist**: the org's own first-party configs are
+  exempted from the install-time release-age quarantine that otherwise
+  delays fresh npm versions. Notably, **no `minimumReleaseAge` value is
+  declared anywhere in the surveyed files** — not in
+  `pnpm-workspace.yaml`, not in `internal.json5`, and there is no
+  `.npmrc` in the tree. The exclusion list therefore modifies a cooldown
+  sourced from pnpm's own default or an unsurveyed location. Worth
+  resolving next survey; an allowlist whose enabling setting isn't
+  visible in-repo is the kind of config that quietly stops meaning
+  anything after a package-manager upgrade.
 - Built-dependency allowlist: `esbuild`, `unrs-resolver`. As of
   2026-07-16 this is expressed via a pnpm **`allowBuilds:`** block in
   `pnpm-workspace.yaml` (`esbuild: true`, `unrs-resolver: true`) — the
@@ -166,6 +217,97 @@ All actions:
 - Standardized on `action.yaml` (never `action.yml`)
 - Have their own AGENTS.md for action-local conventions
 
+Source-file counts at HEAD (2026-08-30): `renovate-changesets` 75 src /
+64 test, `update-repository-settings` 26 src / 13 test,
+`update-metadata` 1 src / 1 test.
+
+### `renovate-changesets` simplification (landed 2026-08-15 → 08-19)
+
+**The one structural change of this window, and the largest single
+refactor observed in this repo.** The action's version is `0.2.45`.
+
+Deleted wholesale:
+
+- **`src/detectors/` (~40 files)** — a per-ecosystem breaking-change
+  detection layer covering Docker (compose analyzer, file parser, image
+  and version comparators), GitHub Actions (workflow parser, change
+  analyzer, version comparator), Go, JVM (Gradle/Maven/properties
+  parsers), npm (package + lockfile parsers, version comparator),
+  Python (requirements parser, package-manager analyzer), and security
+  advisories (parser, patterns, severity classifier), plus the
+  `breaking-change-{analyzers,patterns,synthesizer}` trio.
+- **`src/summaries/` (~11 files)** — a template-context/summary-builder
+  layer (`ci-`, `infrastructure-`, `js-ecosystem-`, `jvm-ecosystem-`,
+  `manager-`, `structural-summaries`, `summary-contexts`,
+  `summary-helpers`, `template-context-builders`).
+- The seven `src/*-change-detector.ts` façades, `detector-runner.ts`,
+  `changeset-template-engine.ts`, and their nine matching test files.
+
+Replaced by a much smaller pipeline: `classify/renovate-classifier.ts`,
+`extract/renovate-body-extractor.ts` + `extract/non-package-renovate-operation.ts`,
+`format/changeset-summary-formatter.ts`, `changesets-release-policy.ts`,
+and `compatibility-adapter.ts` (with `detectors/security-vulnerability-types.ts`
+renamed up to `src/analysis-types.ts`). Net: **src 125 → 75 files.**
+
+The refactor was planned in-repo rather than improvised — a requirements
+doc (`docs/brainstorms/renovate-changesets-simplification-requirements.md`)
+and a dated plan (`docs/plans/2026-08-15-001-refactor-renovate-changesets-simplification-plan.md`)
+both landed with it, and five `docs/solutions/` entries record what broke
+along the way.
+
+### Consumer-fixture contract testing (new tier, 2026-08-19)
+
+The refactor shipped with a **second Vitest project**
+(`vitest.contract.config.ts`) and a `test/contract/` tree — 12
+non-fixture files (10 `*.contract.test.ts` scenarios + `setup.ts` +
+`changesets-oracle.ts`, 25 tests) plus 19 fixture files. This is the
+durable artifact, more interesting than the deletion.
+
+The action is *developed* here but *executes in other repositories*, so
+its real contract is far wider than this repo's build: consumer bot
+identity, Renovate PR body dialect, workspace topology, dependency-install
+state, and `.changeset/config.json` semantics. The repo's own learning
+doc is blunt about the prior failure mode: an earlier slimming pass was
+*"scoped by local reachability — it mapped what could be deleted here,
+never modeling the environment the action actually runs in"*, and
+`marcusrbrown/infra` correctness was *"an aspiration, never a gate."*
+
+Six assumptions that were true here and false in consumers, now
+executable as tests:
+
+1. Renovate always runs as `renovate[bot]` — consumers also use
+   `bfra-me[bot]` and `mrbro-bot[bot]`.
+2. Docker references always carry full digests — consumers supply short
+   SHAs.
+3. `@changesets/write` succeeds because dependencies are installed —
+   consumer workspaces have no `node_modules` at that point.
+4. An affected package is always listed in a manifest.
+5. Every workspace package is releasable.
+6. One grouped Renovate PR has one package manager.
+
+Mechanics worth copying:
+
+- **Fixtures model real downstream repos.** `test/contract/fixtures/`
+  carries `bfra-github/` (this repo's own 4-package shape) and
+  `marcusrbrown-infra/repo/` — a deliberately hostile replica of
+  [[marcusrbrown--infra]] with `apps/*`/`packages/*`/`libs/*`
+  workspaces, an unresolvable prettier config, versionless
+  `apps/cliproxy` and `apps/vpn`, a `.changeset/config.json` that
+  ignores a package while enabling private-package versioning, and a
+  `packages/shared` with real dependents so both propagation and
+  exclusion are exercised.
+- **Enter through the real `run()` in `src/run.ts`, never `index.ts`** —
+  importing `index.ts` executes the action as an import side effect.
+- **Real temp workspaces**, copied per scenario with
+  `fs.cp(..., {recursive: true})`.
+- **Deliberately narrow mock boundary.** Only `@actions/core`,
+  `@octokit/rest`, and a single exec lookup are stubbed;
+  `getExecOutput` accepts exactly `git rev-parse --short HEAD` and
+  **throws on anything else**, so an unplanned shell-out fails loudly
+  instead of silently returning a mock default.
+
+Cataloged as a cross-cutting pattern in [[github-actions-ci]].
+
 ## Workflows (16)
 
 ```
@@ -176,6 +318,12 @@ renovate-changeset.yaml    renovate.yaml                scorecard.yaml
 secret-scan.yaml           trigger-org-renovate.yaml    update-metadata.yaml
 update-repo-settings.yaml
 ```
+
+Workflow set re-verified byte-identical at 2026-08-30 (same 16 names).
+All 16 files were *modified* across the window, but by SHA-pin
+maintenance only — no trigger, job, or permission changes observed in
+`fro-bot.yaml`, and no workflow added or removed. Five survey windows of
+structural stability in the control plane.
 
 **Structural change (2026-07-02):** `fro-bot-autoheal-org.yaml` was
 **removed**; its org-wide sweep folded into a single unified
@@ -200,19 +348,30 @@ Notable surface area:
 ## Fro Bot Integration
 
 This repo **is** a Fro Bot workflow host, and it also _runs_ the org-wide
-autoheal sweep. As of HEAD (2026-08-06) it pins:
+autoheal sweep. As of HEAD (2026-08-30) it pins:
 
-- `fro-bot/agent@c29ac295b8da06768b140c32e5bd0ae3aff45dc6 # v0.96.0`
-  (was v0.92.1 on 2026-07-16, v0.81.0 on 2026-07-02, v0.71.0 on
-  2026-06-20, v0.59.1 on 2026-06-10, v0.44.2 on 2026-05-20). Renovate
-  landed **~7 more sequential agent bumps** across the window
-  (v0.93.0 → v0.93.1 → v0.94.0 → v0.94.1 → v0.94.2 → v0.94.3 → v0.94.4
-  → v0.95.0 → v0.95.1 → v0.96.0). Cumulative: **~57 agent bumps in
-  ~2.5 months**. Back at the front of the fleet — v0.96.0 ties the
-  ecosystem lead held survey-to-survey by [[marcusrbrown--dotfiles]]
-  (v0.95.0/v0.96.0), [[marcusrbrown--marcusrbrown-com]] (v0.96.0), and
-  [[marcusrbrown--dev-like]] (v0.96.0); the pins cluster within a day of
-  each release as automerge fans the bumps across the fleet.
+- `fro-bot/agent@d8c47fdac44f39f6ef8fb4bab65609c6e645c58d # v0.106.1`
+  (was v0.96.0 on 2026-08-06, v0.92.1 on 2026-07-16, v0.81.0 on
+  2026-07-02, v0.71.0 on 2026-06-20, v0.59.1 on 2026-06-10, v0.44.2 on
+  2026-05-20). Cumulative: **~68 agent bumps in ~3.5 months**. HEAD
+  itself is the pin bump (`chore(deps): update fro-bot/agent to v0.106.1
+  (#2656)`). **Sole ecosystem version leader** at this survey — ahead of
+  [[marcusrbrown--dev-like]] and [[marcusrbrown--sparkle]] (v0.105.1),
+  [[marcusrbrown--dotfiles]] and
+  [[marcusrbrown--opencode-copilot-delegate]] (v0.105.0). Consistent
+  with the pattern that the org control center absorbs agent releases
+  first.
+- The agent step gained a new env var: **`OPENCODE_PROMPT_ARTIFACT: 'true'`**,
+  which opts this repo into uploading the resolved prompt as a run
+  artifact. Given that the prompt is assembled at runtime from
+  `PR_REVIEW_PROMPT`/`AUTOHEAL_PROMPT` plus an optional `TARGET_REPO`
+  suffix, this makes the *actual* instruction text auditable after the
+  fact rather than reconstructable from workflow source. First observed
+  use of this flag in the surveyed ecosystem.
+- Runner action pins at HEAD: `actions/checkout@3d3c42e # v7.0.1`,
+  `pnpm/action-setup@0977fd9 # v6.0.10`,
+  `actions/setup-node@8207627 # v7.0.0` (the v7 major from the
+  2026-08-06 held-back queue, now landed).
 
 ### Fro Bot workflow consolidation (2026-07-02)
 
@@ -254,7 +413,145 @@ guardrails, the category taxonomy (1–6 this-repo, 7–8 org-wide), and the
 dedup-before-create rule are all intact. The consolidation is now
 four-window steady state.
 
-### AI planning corpus (`.ai/`, new 2026-07-16)
+**Re-confirmed durable (2026-08-30):** fourth consecutive survey with no
+structural regression to the *shape* — one `fro-bot.yaml`, two
+`review`/`autoheal` modes (`default: autoheal`), single `30 15 * * *`
+unified pass, `target-repo` narrowing input, `cancel-in-progress: false`,
+`permissions: contents: read` at workflow level, and the same
+author-association gate (`OWNER`/`MEMBER`/`COLLABORATOR` for `@fro-bot`
+mentions, bot-authored events excluded, forks excluded). The
+consolidation is now **five-window steady state**. The *prompt body*,
+however, changed substantially — see below.
+
+### Autoheal prompt expansion: 8 → 10 categories (2026-08-30)
+
+The category taxonomy grew for the first time since the 2026-07-02
+consolidation. Categories 1–6 remain this-repo, 7–8 remain org-wide, and
+two new **report-only** categories were appended:
+
+- **9. CROSS-PROJECT INTELLIGENCE** — scan sibling repos (`bfra-me/works`,
+  [[bfra-me--renovate-action]], and tracked `fro-bot` repos) for
+  automation patterns, prompt strategies, or workflow improvements
+  adoptable here or org-wide. Report only; no changes.
+- **10. PROGRESSIVE IMPROVEMENT** — durable improvement opportunities:
+  tool-version drift in `package.json` (ESLint, Prettier, TypeScript,
+  Vitest more than a minor behind), missing or degraded CI jobs,
+  convention drift from AGENTS.md, stale TODO/FIXME. Report only.
+
+Both are recognizable as *the surviving half* of deleted `.ai/plan/`
+proposals — "org-health monitoring" and "production-readiness
+validation" reduced from systems-to-build into prompt categories that
+emit a table row in the daily report. That is a strictly cheaper way to
+buy the same signal, and a fair trade to note when evaluating whether an
+aspirational plan corpus was "lost."
+
+Categories 3 and 4 were also renamed to **ACTION & WORKFLOW INTEGRITY**
+and **CODE QUALITY & MONOREPO HEALTH** — the same "WORKFLOW INTEGRITY"
+naming [[marcusrbrown--infra]] adopted when it went 8 → 10 categories on
+2026-08-16. Two repos, same window, same expansion count, converging
+vocabulary.
+
+### New autoheal guardrails (2026-08-30)
+
+Five additions to `AUTOHEAL_PROMPT`, all of which generalize:
+
+- **TRUSTED AUTHORS gate.** *"Only repair a PR branch authored by the
+  repository owner/a collaborator with write access, or an approved
+  automation bot (`renovate[bot]`, `dependabot[bot]`, `fro-bot`). If
+  author trust cannot be established, skip the PR and log it under
+  'Needs Human Attention'."* An agent with push access to PR branches is
+  an agent that can be steered by anyone who can open a PR; this makes
+  provenance a precondition rather than an assumption.
+- **Poisoned-branch execution guard.** *"If the PR touches workflows,
+  automation prompts, package-manager config, lockfiles, or execution
+  scripts, do not run project commands from that branch. Skip it and log
+  why."* This is the sharper of the two — trusting the *author* is not
+  enough, because the autoheal flow's remedy is to run `pnpm bootstrap` /
+  `pnpm build` / `pnpm run quality-check` from the branch under repair.
+  A lockfile or postinstall change in a "trusted" PR would execute on a
+  runner holding `FRO_BOT_PAT`. Naming the exact file classes that make
+  a branch unsafe to *execute* (as distinct from unsafe to *merge*) is
+  the correct boundary and one most autoheal prompts in the fleet do not
+  draw.
+- **Tool-skepticism on missing data.** *"If security advisory/alert data
+  is unavailable to the token or CLI, skip this category and note
+  'security alerts unavailable' under 'Needs Human Attention'. Do not
+  guess."* Same family as [[marcusrbrown--dev-like]]'s dead-code
+  clause: absence of a signal is not a clean signal.
+- **DELIVERY CONTRACT.** An explicit, numbered branch → commit → push →
+  `gh pr create` obligation, closing with *"The agent that writes the fix
+  is the agent that ships it. Do not delegate the push/PR to a 'caller
+  workflow' — there is none."* This reads as a scar: a single-step agent
+  that writes a correct fix to disk and ends the run produces a green
+  build and zero delivered work. It is the same class of failure as the
+  `gh --body`/`@path` footgun recorded in [[github-actions-ci]] — the
+  *delivery* leg silently doing nothing.
+- **Guardrail-preservation clause.** *"Never make checks pass by
+  disabling tests, deleting failing assertions, lowering coverage
+  thresholds, weakening lint/type rules, or editing workflows/
+  configuration only to suppress failures… If the smallest safe fix
+  would weaken a guardrail or reduce validation, skip it and log it."*
+  The failure mode this blocks — an agent optimizing for a green check
+  rather than a working repo — is the single most predictable way an
+  autoheal daemon destroys value.
+
+Two further hygiene rules:
+
+- **Bounded report issue.** After prepending the daily section, sections
+  older than **14 days** collapse into a single `## Historical Summary`
+  listing prior-run count and items unresolved across them, updated in
+  place. Perpetual rolling issues otherwise grow without limit; this is
+  the first explicit bound observed in the fleet.
+- **AGENT NOTES.** *"Do NOT create follow-up tasks addressed to a
+  specific agent (Fro Bot, Copilot, etc.)."* Deferrals must be written
+  cold-readable — exact paths, root cause, smallest safe fix,
+  "do not retry" warnings, and how to verify. Deferred work addressed to
+  a named agent is work addressed to nobody.
+
+### AI planning corpus (`.ai/`, REMOVED 2026-08-30)
+
+> **Resolved:** the 2026-08-06 note asked whether any `.ai/plan/` doc
+> would "graduate from `.ai/plan/` into real workflows." The answer
+> arrived as a deletion. `.ai/` no longer exists. **One** plan shipped
+> (`feature-enhanced-renovate-changesets-action-1.md` → promoted to
+> `docs/plans/enhanced-renovate-changesets-action.md` and executed as the
+> simplification refactor above); **one** was retained as a plan
+> (`infrastructure-monorepo-build-optimization-1.md` →
+> `docs/plans/monorepo-build-optimization.md`); the remaining **eight
+> were deleted outright**, along with the `implementation-plan-prompts.md`
+> index:
+>
+> - `architecture-cross-platform-bridge-1.md`
+> - `architecture-template-federation-system-1.md`
+> - `feature-astro-starlight-docs-platform-1.md`
+> - `feature-intelligent-workflow-generation-1.md`
+> - `feature-release-testing-infrastructure-1.md`
+> - `feature-workflow-validation-system-1.md`
+> - `infrastructure-org-health-monitoring-1.md`
+> - `infrastructure-production-readiness-validation-1.md`
+>
+> The two most remit-expanding proposals — **multi-org template
+> federation** and **org-health monitoring** — are among the deleted.
+> The prior survey's caution that these "would substantially expand this
+> repo's remit beyond settings/workflow distribution into active
+> cross-org governance" is now moot: that direction was abandoned rather
+> than pursued. Read as a pruning of aspirational scope, not a loss —
+> the surviving planning surface (`docs/plans/` + `docs/brainstorms/`)
+> is smaller, dated, and demonstrably attached to shipped work. Two of
+> the deleted themes did partly resurface, but as *report-only agent
+> prompt categories* rather than built systems (see autoheal categories
+> 9–10 below), which is a far cheaper way to get the same signal.
+>
+> Note that `feature-release-testing-infrastructure-1.md` was deleted as
+> a plan while the same need reappeared as human-filed issue #2545
+> ("Add test coverage for `scripts/release.ts`"), and
+> `feature-workflow-validation-system-1.md` was deleted while its need
+> reappeared as #2546 ("Automate workflow-templates standards
+> validation"). The work didn't vanish — it moved from speculative
+> agent-consumed plan docs into the ordinary issue tracker, at a
+> realistic size.
+
+Historical description (accurate 2026-07-16 → 2026-08-06):
 
 A new top-level `.ai/` directory carries an **AI-consumed roadmap** — not
 runtime config, but structured planning input for coding agents:
@@ -280,6 +577,62 @@ active cross-org governance. Worth watching whether any graduate from
 have graduated yet — `.ai/plan/` is unchanged, still 10 aspirational
 docs, still no corresponding shipped workflow. The declared direction
 held static across the window.
+
+### Solved-problem corpus (`docs/solutions/`, materialized 2026-08-19)
+
+Through 2026-08-06 `docs/solutions/` existed but held only a README. It
+is now a **real corpus**: a README that defines a repo-local,
+self-described **authoritative** frontmatter contract plus seven entries
+across `best-practices/`, `integration-issues/`, `logic-errors/`, and
+`process/`.
+
+The contract is worth noting because it decouples the store from the
+tooling that populates it — *"Entries are written by the `ce:compound`
+workflow, but the frontmatter contract below is repo-local and
+authoritative on its own — you do not need the skill to add or read an
+entry."* Two tracks (**Bug** and **Knowledge**) select required fields;
+files live in a category directory named after `problem_type` and are
+named `[problem-slug]-[YYYY-MM-DD].md`. The README is also candid that
+the inherited `component`/`root_cause`/`resolution_type` enums carry
+Rails/Hotwire values irrelevant to a TypeScript/Actions monorepo, and
+names the subset that actually applies rather than silently mismatching.
+
+Five of the seven entries were written during the refactor window and
+read as a post-mortem of it:
+
+| Entry | Class |
+| --- | --- |
+| `best-practices/contract-testing-actions-that-run-in-foreign-repos-2026-08-19` | The contract-suite rationale above |
+| `best-practices/test-fixtures-underspecified-in-ignored-dimension-2026-08-19` | Fixtures that under-specify the dimension under test |
+| `integration-issues/renovate-sha-pin-rot-two-tag-families-2026-08-15` | Two tag families → silent SHA-pin rot (below) |
+| `logic-errors/changeset-dedup-ignored-summaries-2026-08-19` | Dedup keyed without summary content |
+| `logic-errors/release-propagation-walked-dependency-graph-backwards-2026-08-19` | Propagation traversed dependents/dependencies inverted |
+| `integration-issues/shallow-checkout-breaks-paths-filter-on-push-events-2026-06-25` | Carried from June |
+| `process/renovate-changesets-fix-workflow` | Workflow guide, kept for inbound cross-links |
+
+This is the same `docs/solutions/` convention `fro-bot/.github` itself
+uses and that [[marcusrbrown--dev-like]] arrived at independently — three
+repos, one shape.
+
+### Two tag families and silent SHA-pin rot
+
+Recorded in `AGENTS.md` and in `docs/solutions/integration-issues/renovate-sha-pin-rot-two-tag-families-2026-08-15.md`.
+A released action is tagged `{action}@{ver}`; the repo tag `v{ver}` is cut
+only when the **root** package also has pending changesets. The two often
+land on the same commit but are not guaranteed to — the repo cites
+`renovate-changesets@0.2.34` with no companion `v4.16.48`.
+
+The footgun: Renovate's built-in `github-actions` manager resolves only
+the `v{ver}` family. An external repo that SHA-pins one of these actions
+and annotates the pin `# {action}@{ver}` therefore receives **no updates
+at all**, silently. [[marcusrbrown--infra]] sat **four months behind**
+this way. The fix is a regex `customManager` with
+`extractVersionTemplate: '^{action}@(?<version>.+)$'`; consumers calling
+the *reusable workflow* instead of SHA-pinning the action are unaffected.
+
+Generalizable: any repo that publishes artifacts under a tag namespace
+distinct from its release tags will rot downstream pins unless consumers
+opt into a matching custom manager. Cataloged in [[github-actions-ci]].
 
 ### AI-consumption manifest (`llms.txt`)
 
@@ -372,6 +725,18 @@ produced a real, transitive-only, advisory-scoped patch and it shipped.
   versioning; `elstudio/actions-settings` disabled (the settings action
   is consumed via the local custom action); `mise` manager disabled
   (workaround for missing `tools` key)
+- **New rule (2026-08-30) — TypeScript held below v7:**
+  `matchPackageNames: ['typescript'], allowedVersions: '<7'` with the
+  `description` *"Hold TypeScript below v7 because typescript-eslint
+  lacks TS7 support; remove once support lands."* This resolves the
+  2026-08-06 open PRs #2526/#2527 not by merging or ignoring them but by
+  **recording the blocker with its exit condition in the config that
+  enforces it**. Good practice worth propagating: a version pin whose
+  reason and removal trigger live next to the pin doesn't decay into
+  unexplained lag. Contrast the fleet repos carrying long-open,
+  unannotated major-bump PRs ([[marcusrbrown--gpt]]'s HeroUI v3 across
+  five surveys, [[marcusrbrown--extend-vscode]]'s `typescript` v6 across
+  ~9 weeks).
 - Post-upgrade tasks: `pnpm run bootstrap && pnpm run build && pnpm run
   fix`, executionMode `branch`
 - `metadata/renovate.yaml` is the **org-wide** Renovate config inherited
@@ -455,9 +820,20 @@ action can detect it as a published package.
   it within a day of each agent release.
 - **[[bfra-me--renovate-action]]** — the org's Renovate execution
   surface, consumed here via `renovate.yaml`; crossed its own **v9 → v10
-  major** during this window (#2520, now v10.1.0). This repo tracks it as
-  a routine action pin, so the major landed as ordinary automerge churn
-  rather than a structural event.
+  major** in the prior window (#2520). This repo tracks it as a routine
+  action pin, so the major landed as ordinary automerge churn rather than
+  a structural event. At 2026-08-30 the pin is **`10.25.1`**
+  (`d39cbd8`), up from `10.1.0` — 24 minors absorbed in ~3.5 weeks with
+  no workflow-source change, which is the strongest available evidence
+  that the v10 boundary really was a vendored-engine major and not a
+  runtime-architecture change.
+- **[[marcusrbrown--infra]]** — a downstream consumer that SHA-pins
+  these actions directly rather than calling the reusable workflows. It
+  is the repo named in the two-tag-family pin-rot learning (four months
+  behind), and its workspace layout is replicated as a hostile fixture in
+  the new `renovate-changesets` contract suite. The dependency now runs
+  both ways: this repo's release-tag scheme broke infra's pins, and
+  infra's topology is now a regression gate here.
 - **[[marcusrbrown--renovate-config]]** — Marcus's preset is the
   Renovate baseline for `marcusrbrown/*` repos; `bfra-me/.github` ships
   its own `metadata/renovate.yaml` for `bfra-me/*` repos.
@@ -500,6 +876,33 @@ action can detect it as a published package.
   vitest 4.1.10, @vitest/coverage-v8 4.1.10, vite 8.1.4, @types/node
   24.13.3, tsx 4.23.1, @bfra.me/eslint-config 0.51.1,
   @bfra.me/prettier-config 0.16.9, @bfra.me/tsconfig 0.13.1.
+- **Doc drift (persists, widened again, and now demonstrably skipped —
+  2026-08-30):** `CONTRIBUTING.md` **still** states "pnpm: Version 10.8.1
+  or later" and lists "pnpm 10.8.1 (workspaces)" / "Changesets 2.29.5",
+  against an enforced pnpm **11.24.0** and `@changesets/cli` **2.31.1**.
+  Third consecutive survey unhealed, and the gap widened again
+  (11.17.0 → 11.24.0). The sharper finding: **`CONTRIBUTING.md` was
+  modified in this window** and the stale prerequisite survived the edit
+  — this is no longer "the drift detector never looked at the file," it
+  is "the file was edited and the drift wasn't noticed." The same file
+  also documents `pnpm run test:coverage` and `pnpm run test:watch`,
+  neither of which exists in `package.json`.
+- **New drift (2026-08-30): `AGENTS.md` file count is stale.** Line 15
+  describes `renovate-changesets/` as *"Complex action: auto-generates
+  changesets for Renovate PRs (125 src files)"*. Actual count at HEAD is
+  **75** — the simplification refactor cut 40% of the tree and the
+  self-description didn't follow. This one stings because
+  `AUTOHEAL_PROMPT` category 5b is *precisely* this check: *"Verify
+  AGENTS.md accuracy: check that the directory structure and file counts
+  described in AGENTS.md match reality. If drift is found, open a PR with
+  corrections."* An org control center running a daily pass that
+  explicitly audits its own AGENTS.md for stale file counts is carrying a
+  stale file count in its AGENTS.md. Either the check isn't being
+  executed, or "125 src files" isn't being parsed as a count claim.
+  Worth confirming against the #2344 report body next survey — if
+  category 5 has been reporting ✅ throughout, that is a
+  self-verification gap of the same class as
+  [[marcusrbrown--dev-like]]'s dangling `$schema` pointer.
 - **Doc drift (persists, widened — 2026-08-06):** `CONTRIBUTING.md`
   still states a pnpm prerequisite of "Version 10.8.1 or later" and
   lists "pnpm 10.8.1 (workspaces)" / "Changesets 2.29.5", but the repo
@@ -542,6 +945,51 @@ action can detect it as a published package.
   v9 → v10, `actions/checkout` v6 → v7) but neither altered this repo's
   own structure; `llms.txt`/`.gitattributes`/`.markdownlint-cli2.yaml`
   first enumerated but confirmed pre-existing.
+- Commit traffic between 2026-08-06 and 2026-08-30 is **125 commits, and
+  for the first time since 2026-07-02 it is not pure churn.** The diff
+  spans 238 files: 78 added, 74 removed, 83 modified, 3 renamed —
+  overwhelmingly the `renovate-changesets` refactor plus its contract
+  suite, the `.ai/` deletion, and the `docs/solutions/` corpus. All 16
+  workflow files and 6 of 14 `workflow-templates/` files were touched,
+  but by SHA-pin maintenance rather than logic change (the workflow
+  *set* and `fro-bot.yaml`'s trigger/mode/cron surface are unchanged).
+- Version churn 2026-08-06 → 2026-08-30: pkg **v4.16.44 → v4.22.0**,
+  Node 24.18.1 → **24.20.0**, pnpm 11.17.0 → **11.24.0**,
+  `fro-bot/agent` v0.96.0 → **v0.106.1**, eslint 10.8.0 → **10.9.1**,
+  vitest + `@vitest/coverage-v8` 4.1.10 → **4.1.11**, vite 8.1.5 →
+  **8.2.2**, tsx 4.23.1 → **4.23.12**, lint-staged 16.4.0 → **17.3.0**
+  (**v16 → v17 major landed**), `@bfra.me/eslint-config` 0.51.1 →
+  **0.52.1**, `@bfra.me/prettier-config` 0.16.9 → **0.16.11**,
+  `@bfra.me/tsconfig` 0.13.1 → **0.13.2**,
+  `bfra-me/renovate-action` v10.1.0 → **10.25.1**, `actions/setup-node`
+  v6 → **v7.0.0** (major), `actions/checkout` **v7.0.1**,
+  `pnpm/action-setup` **v6.0.10**. Held: TypeScript **6.0.3** (pinned
+  `<7` by rule), prettier 3.9.6, husky 9.1.7, `@types/node` 24.13.3,
+  `@changesets/cli` 2.31.1, glob 13.0.6.
+- New root devDeps this window, all Changesets/workspace tooling
+  consistent with the release-policy work in the refactor:
+  `@changesets/config` 3.1.4, `@changesets/should-skip-package` 0.1.2,
+  `@changesets/types` 6.1.0, `@manypkg/get-packages` 3.1.0,
+  `@svitejs/changesets-changelog-github-compact` 1.2.0, plus `jiti`
+  2.7.0, `eslint-config-prettier` 10.1.8, `eslint-plugin-prettier`
+  5.5.6.
+- New root scripts: `build:composite:*` (TS project-reference builds via
+  `tsc --build tsconfig.build.json`, incl. `--dry` validate and
+  `--watch`), `typescript:validate-type-only`,
+  `workspace:export-{dot,json,mermaid}`,
+  `workspace:standardize-scripts[:apply]`, `type-check:build`. Two new
+  `scripts/` utilities back them: `validate-type-only-imports.ts` and
+  the existing `audit-typescript-references.ts` (modified).
+- **Structural changes 2026-08-06→2026-08-30: yes** — the first since
+  2026-07-02, and the first that is *product* rather than *control
+  plane*: `renovate-changesets` src 125 → 75 with detectors/summaries
+  deleted, a new consumer-fixture contract-test tier, `.ai/` removed
+  (8 plans deleted / 2 promoted), `docs/{plans,brainstorms}/` created,
+  `docs/solutions/` populated 0 → 7 entries, autoheal categories 8 → 10,
+  five new autoheal guardrails. Unchanged: 16 workflows, 2 modes, 3
+  custom actions, 4-package workspace, single `30 15` unified pass,
+  branch protection (12 contexts, `enforce_admins`, 0 required
+  approvals).
 
 ## Open Questions / Follow-Ups
 
@@ -553,6 +1001,40 @@ action can detect it as a published package.
   [[probot-settings]] topic currently documents only the first two.
   A follow-up survey should map which repos extend which and reconcile
   the relationship between `bfra-me` and `fro-bot` org settings.
+  **Still open at 2026-08-30** — `.github/settings.yml` and its
+  `_extends: .github:common-settings.yaml` self-reference are byte-stable
+  across this window, so nothing new to reconcile from this side.
+- **Is autoheal category 5b actually running?** The `AGENTS.md` "125 src
+  files" claim is exactly what that check exists to catch and it went
+  uncaught across ~11 days of daily passes. Reading the #2344 report body
+  would settle whether category 5 reported ✅ over stale data (a
+  self-verification gap) or ⚠️ with no PR (a merge-gate issue). Not
+  resolvable from directory/manifest reads alone.
+- **Where does `minimumReleaseAge` come from?** `pnpm-workspace.yaml`
+  declares `minimumReleaseAgeExclude` with no corresponding
+  `minimumReleaseAge` in any surveyed file and no `.npmrc` in the tree.
+  Either pnpm 11 supplies a default the exclusion list is trimming, or
+  the setting lives somewhere unsurveyed (CI env, org-level npm config).
+  An allowlist with no visible enabling key is a quiet no-op risk.
+- **Page-size pressure (schema).** `knowledge/schema.md` targets 500–2000
+  words per page and asks that larger pages be split into sub-topics.
+  This page is well past that and grew substantially this survey.
+  A defensible split would lift the durable, non-time-varying material
+  (Layout, Workspace, Custom Actions, Conventions, Anti-Patterns, Build/
+  Test/Release) into a stable core and move the seven survey deltas into
+  a dated companion, or promote the `renovate-changesets` action to its
+  own page — it now has a version line, a refactor history, and a test
+  architecture of its own. Not attempted here because the ingest brief is
+  additive-only; recording it so the decision is deliberate rather than
+  deferred by neglect. The same pressure applies fleet-wide to
+  [[marcusrbrown--dotfiles]], [[marcusrbrown--infra]], and
+  [[marcusrbrown--mrbro-dev]].
+- **Does the contract-suite pattern propagate?** The consumer-fixture
+  approach is the most reusable thing this repo has produced in months
+  and applies directly to [[bfra-me--renovate-action]] (a composite
+  action executing in foreign repos) and to
+  [[fro-bot--agent]] (an action executing in every repo in the fleet).
+  Neither had such a tier at last survey. Worth checking next pass.
 
 ## Survey History
 
@@ -564,3 +1046,4 @@ action can detect it as a published package.
 | 2026-07-02 | `d51473c`  | Re-survey. v4.16.33, pnpm **11.9.0** (major 10→11), Node 24.18.0, agent v0.81.0 (~10 more bumps, ~39 in six weeks). **First structural change since initial survey:** `fro-bot-autoheal-org.yaml` merged into `fro-bot.yaml` (17→16 workflows); `maintenance` mode + `0 5` cron retired (3→2 modes, single `30 15` unified pass); three report issues (#2185/#1960/#1959) closed and consolidated into #2344. Issue #2213 **RESOLVED** (closed 2026-06-25). PR #2292 esbuild remediation **MERGED** (override now on `main`). Added husky/lint-staged + manypkg + build-cache tooling. Custom actions unchanged (3). |
 | 2026-07-16 | `1c12695`  | Re-survey. v4.16.37, pnpm 11.11.0 (routine 11.x churn; #2436 queues 11.12.0), Node 24.18.0, agent **v0.92.1** (~11 more bumps, ~50 in two months). **No structural change** — 16 workflows, 2 modes, 3 custom actions, single `30 15` unified pass all confirmed durable; the 2026-07-02 consolidation is now steady-state. Additive scaffolding: new `.ai/` planning corpus (10 aspirational plan docs + notes), `.husky/pre-commit`, root `CHANGELOG.md`/`CONTRIBUTING.md`, `.git-blame-ignore-revs`, `.cursorindexingignore`. `onlyBuiltDependencies` array migrated to pnpm 11 `allowBuilds:` block (same allowlist). Doc drift: `CONTRIBUTING.md` cites pnpm "10.8.1+" while repo enforces 11.x. Open 2/2 (report #2344, dashboard #7; PRs #2444 release, #2436 pnpm bump). |
 | 2026-08-06 | `d9feab2`  | Re-survey (82 commits ahead, all Renovate/release/SHA-pin churn). v4.16.44, pnpm **11.17.0** (six 11.x bumps), Node **24.18.1** (first bump since 2026-07-02), agent **v0.96.0** (~10 more bumps, ~57 in ~2.5 months, back at fleet lead). **No structural change** — 16 workflows, 2 modes, 3 custom actions, single `30 15` unified pass, security `PR_REVIEW_PROMPT` all durable (4th steady-state window). Two upstream **majors** landed as ordinary automerge: `bfra-me/renovate-action` v9 → **v10.1.0** (#2520), `actions/checkout` v6 → **v7** (#2521). Overrides stable (only `flatted` 3.4.2 → 3.4.3). `.ai/plan/` unchanged (0 of 10 graduated). `llms.txt`/`.gitattributes`/`.markdownlint-cli2.yaml` first enumerated but pre-existing. Doc drift persists + widened (`CONTRIBUTING.md` still "pnpm 10.8.1" vs enforced 11.17.0). Open **2/7** (report #2344, dashboard #7; 7 held-back major-bump PRs #2522–#2528 incl. typescript v7, lint-staged v17, actions v5–v7). |
+| 2026-08-30 | `1b21990`  | Re-survey (125 commits ahead; 238 files changed — **not pure churn**). v**4.22.0**, pnpm **11.24.0**, Node **24.20.0**, agent **v0.106.1** (`d8c47fd`, ~68 bumps in ~3.5 months, sole ecosystem leader). **First structural change since 2026-07-02, and the first at the product layer:** the `renovate-changesets` **simplification landed** — `src/detectors/` (~40 files, 6 ecosystem detectors + security advisories) and `src/summaries/` (~11 template files) **deleted**, replaced by a small `classify`/`extract`/`format` + `changesets-release-policy` pipeline (src **125 → 75**, action v0.2.45); planned in-repo via new `docs/brainstorms/` + `docs/plans/`. Shipped with a **consumer-fixture contract-test tier** (`vitest.contract.config.ts`, `test/contract/` — 10 scenarios/25 tests + hostile fixtures modeling [[marcusrbrown--infra]] and this repo), entering through real `run()`, real temp workspaces, and a mock boundary that throws on unexpected `getExecOutput`. **`.ai/` removed** — 1 plan shipped, 1 promoted to `docs/plans/`, **8 deleted** (incl. template federation + org-health monitoring); two of the deleted needs resurfaced as human issues #2545/#2546. **`docs/solutions/` materialized** 0 → 7 entries under a repo-local authoritative frontmatter contract. **Autoheal categories 8 → 10** (+CROSS-PROJECT INTELLIGENCE, +PROGRESSIVE IMPROVEMENT, both report-only) with five new guardrails: TRUSTED AUTHORS gate, **poisoned-branch execution guard** (don't run project commands from branches touching workflows/prompts/PM config/lockfiles/scripts), missing-data tool-skepticism, an explicit **DELIVERY CONTRACT** ("the agent that writes the fix is the agent that ships it"), and a guardrail-preservation clause; report issue now bounded to 14 days + Historical Summary. New `OPENCODE_PROMPT_ARTIFACT` env. **TypeScript frozen `<7` by an annotated Renovate rule** (typescript-eslint gap) — resolves #2526/#2527 as a recorded decision. Overrides 4 → 7 (+brace-expansion/fast-uri/js-yaml); new `minimumReleaseAgeExclude` with no visible `minimumReleaseAge`. Majors landed: lint-staged v17, `actions/setup-node` v7; `bfra-me/renovate-action` 10.1.0 → 10.25.1. Open **4/2** — 7-deep major queue **fully drained**, first non-bot open issues (#2545/#2546). Unchanged: 16 workflows, 2 modes, 3 actions, single `30 15` pass, branch protection. Drift: `CONTRIBUTING.md` pnpm/Changesets stale for a 3rd survey **despite the file being edited this window**; **new** — `AGENTS.md` still claims 125 src files vs actual 75, the exact claim autoheal category 5b exists to catch. |

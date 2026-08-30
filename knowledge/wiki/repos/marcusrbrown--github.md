@@ -1,6 +1,6 @@
 ---
 type: repo
-title: "marcusrbrown/.github"
+title: marcusrbrown/.github
 created: 2025-06-18
 updated: 2026-08-29
 sources:
@@ -46,8 +46,15 @@ sources:
   - url: https://github.com/marcusrbrown/.github
     sha: 66270bac1d3c7b814972b59268e95f6646d7a6c5
     accessed: 2026-08-29
-tags: [github, repository-settings, probot, community-health, prettier, renovate]
-aliases: [marcusrbrown-dotgithub]
+tags:
+  - github
+  - repository-settings
+  - probot
+  - community-health
+  - prettier
+  - renovate
+aliases:
+  - marcusrbrown-dotgithub
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--containers
@@ -56,6 +63,7 @@ related:
   - marcusrbrown--infra
   - marcusrbrown--dotfiles
   - probot-settings
+node_id: MDEwOlJlcG9zaXRvcnkzMDg1MzMxOTg=
 ---
 
 # marcusrbrown/.github
