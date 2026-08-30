@@ -12,6 +12,7 @@ import {
   retireCorrection,
   serializeCorrections,
   writeCorrections,
+  type CorrectionRecord,
   type CorrectionsFile,
 } from './corrections.ts'
 import {buildWikiIngestChanges} from './wiki-ingest.ts'
@@ -26,6 +27,26 @@ const correctionInput = {
 }
 
 describe('corrections sidecar', () => {
+  it('requires lifecycle-specific fields at compile time', () => {
+    // @ts-expect-error Superseded corrections must identify their replacement.
+    const missingSupersessionTarget: CorrectionRecord = {
+      id: 'superseded',
+      page_node_id: 'R_123',
+      span: {text: 'The corrected fact.'},
+      state: 'superseded',
+    }
+    // @ts-expect-error Reconfirmation records must explain why operator review is required.
+    const missingReconfirmationReason: CorrectionRecord = {
+      id: 'reconfirmation',
+      page_node_id: 'R_123',
+      span: {text: 'The corrected fact.'},
+      state: 'needs-reconfirmation',
+    }
+
+    expect(missingSupersessionTarget).toBeDefined()
+    expect(missingReconfirmationReason).toBeDefined()
+  })
+
   it('records server-derived attribution and remains readable by survey tooling', async () => {
     const recorded = recordCorrection(emptyCorrections, correctionInput)
     const raw = serializeCorrections(recorded)

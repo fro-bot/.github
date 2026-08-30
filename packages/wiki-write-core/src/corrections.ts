@@ -26,16 +26,48 @@ export interface CorrectionAttribution {
   readonly recorded_at: string
 }
 
-export interface CorrectionRecord {
+interface CorrectionRecordBase {
   readonly id: string
   readonly page_node_id: string
   readonly span: CorrectionSpan
   /** Optional during the loose rollout phase; new writes always include it. The tight phase will require it. */
   readonly attribution?: CorrectionAttribution
-  /** Optional during the loose rollout phase; new writes always include `active`. The tight phase will require it. */
-  readonly state?: CorrectionLifecycle
-  readonly superseded_by?: string
 }
+
+/** Active is the default lifecycle for legacy records without a state field. */
+export interface ActiveCorrectionRecord extends CorrectionRecordBase {
+  readonly state: 'active'
+  readonly superseded_by?: never
+}
+
+/** Compatibility member for the current loose on-disk rollout shape. */
+export interface LegacyActiveCorrectionRecord extends CorrectionRecordBase {
+  readonly state?: undefined
+  readonly superseded_by?: never
+}
+
+export interface SupersededCorrectionRecord extends CorrectionRecordBase {
+  readonly state: 'superseded'
+  readonly superseded_by: string
+}
+
+export interface RetiredCorrectionRecord extends CorrectionRecordBase {
+  readonly state: 'retired'
+  readonly superseded_by?: never
+}
+
+export interface NeedsReconfirmationCorrectionRecord extends CorrectionRecordBase {
+  readonly state: 'needs-reconfirmation'
+  readonly reason: string
+  readonly superseded_by?: never
+}
+
+export type CorrectionRecord =
+  | ActiveCorrectionRecord
+  | LegacyActiveCorrectionRecord
+  | SupersededCorrectionRecord
+  | RetiredCorrectionRecord
+  | NeedsReconfirmationCorrectionRecord
 
 export interface CorrectionsFile {
   readonly version: typeof CORRECTIONS_VERSION
@@ -115,12 +147,9 @@ function isCorrectionRecord(value: unknown): value is CorrectionRecord {
   if (!isCorrectionSpan(value.span)) return false
   if (value.attribution !== undefined && !isCorrectionAttribution(value.attribution)) return false
   if (value.state !== undefined && !isCorrectionLifecycle(value.state)) return false
-  if (
-    value.superseded_by !== undefined &&
-    (typeof value.superseded_by !== 'string' || value.superseded_by.length === 0)
-  )
-    return false
-  return true
+  if (value.state === 'superseded') return typeof value.superseded_by === 'string' && value.superseded_by.length > 0
+  if (value.state === 'needs-reconfirmation') return typeof value.reason === 'string' && value.reason.length > 0
+  return value.superseded_by === undefined
 }
 
 export function isCorrectionsFile(value: unknown): value is CorrectionsFile {
@@ -150,11 +179,18 @@ function assertCorrectionRecord(value: unknown, path: string): asserts value is 
   if (value.attribution !== undefined) assertCorrectionAttribution(value.attribution, `${path}.attribution`)
   if (value.state !== undefined && !isCorrectionLifecycle(value.state))
     throw invalidCorrections(`${path}.state`, 'expected active, superseded, retired, or needs-reconfirmation')
-  if (
-    value.superseded_by !== undefined &&
-    (typeof value.superseded_by !== 'string' || value.superseded_by.length === 0)
-  )
-    throw invalidCorrections(`${path}.superseded_by`, 'expected non-empty string')
+  if (value.state === 'superseded') {
+    if (typeof value.superseded_by !== 'string' || value.superseded_by.length === 0)
+      throw invalidCorrections(`${path}.superseded_by`, 'superseded corrections require a target')
+    return
+  }
+  if (value.state === 'needs-reconfirmation') {
+    if (typeof value.reason !== 'string' || value.reason.length === 0)
+      throw invalidCorrections(`${path}.reason`, 'needs-reconfirmation corrections require a reason')
+    return
+  }
+  if (value.superseded_by !== undefined)
+    throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
 }
 
 function assertCorrectionSpan(value: unknown, path: string): asserts value is CorrectionSpan {
@@ -192,7 +228,12 @@ const emptyCorrectionsFile = (): CorrectionsFile => ({version: CORRECTIONS_VERSI
 export function parseCorrections(raw: string): CorrectionsFile {
   const value: unknown = parse(raw)
   assertCorrectionsFile(value)
-  return value
+  return {version: CORRECTIONS_VERSION, corrections: value.corrections.map(normalizeCorrectionRecord)}
+}
+
+/** Preserve omitted legacy state as the compatibility active union member. */
+function normalizeCorrectionRecord(record: CorrectionRecord): CorrectionRecord {
+  return record
 }
 
 export function serializeCorrections(value: unknown): string {
@@ -447,6 +488,7 @@ export function transitionCorrection(
   id: string,
   state: CorrectionLifecycle,
   supersededBy?: string,
+  reason?: string,
 ): CorrectionsFile {
   assertCorrectionsFile(file)
   const index = file.corrections.findIndex(correction => correction.id === id)
@@ -459,13 +501,26 @@ export function transitionCorrection(
       path: `corrections[${index}].state`,
       message: `corrections: ${current.state} correction ${id} cannot transition`,
     })
-  if (state === 'superseded' && (supersededBy === undefined || supersededBy.length === 0))
-    throw new CorrectionStoreError({
-      code: 'INVALID_TRANSITION',
-      path: `corrections[${index}].superseded_by`,
-      message: 'corrections: superseded corrections require supersededBy',
-    })
-  const next = {...current, state, ...(state === 'superseded' ? {superseded_by: supersededBy} : {})}
+  const base = {
+    id: current.id,
+    page_node_id: current.page_node_id,
+    span: current.span,
+    ...(current.attribution === undefined ? {} : {attribution: current.attribution}),
+  }
+  let next: CorrectionRecord
+  if (state === 'superseded') {
+    if (supersededBy === undefined || supersededBy.length === 0)
+      throw new CorrectionStoreError({
+        code: 'INVALID_TRANSITION',
+        path: `corrections[${index}].superseded_by`,
+        message: 'corrections: superseded corrections require supersededBy',
+      })
+    next = {...base, state, superseded_by: supersededBy}
+  } else if (state === 'needs-reconfirmation') {
+    next = {...base, state, reason: reason ?? 'Legacy correction requires reconfirmation'}
+  } else {
+    next = {...base, state}
+  }
   const corrections = file.corrections.slice()
   corrections[index] = next
   return {version: CORRECTIONS_VERSION, corrections}
