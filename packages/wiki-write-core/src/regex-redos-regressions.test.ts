@@ -1,4 +1,5 @@
-import {performance} from 'node:perf_hooks'
+import process from 'node:process'
+
 import {describe, expect, it} from 'vitest'
 import {checkPrivateLeak} from './private-leak.ts'
 import {mergeWikiLogs, validateWikilinks, WikiIngestError} from './wiki-ingest.ts'
@@ -13,17 +14,20 @@ interface ScalingMeasurement {
 }
 
 function measure(operation: () => void, repetitions: number): number {
-  const startedAt = performance.now()
+  const startedAt = process.cpuUsage()
   for (let index = 0; index < repetitions; index += 1) {
     operation()
   }
-  return performance.now() - startedAt
+  const elapsed = process.cpuUsage(startedAt)
+  return (elapsed.user + elapsed.system) / 1_000
 }
 
-function expectLinearScaling(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
+function measureScalingRatio(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
   const smallOperation = (): void => operation(size)
   const largeOperation = (): void => operation(size * 2)
   let repetitions = 1
+  smallOperation()
+  largeOperation()
   let smallMilliseconds = measure(smallOperation, repetitions)
 
   while (smallMilliseconds < 50 && repetitions < 65_536) {
@@ -49,15 +53,51 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
   ratios.sort((left, right) => left - right)
   smallMilliseconds = smallMeasurements[Math.floor(smallMeasurements.length / 2)] ?? smallMilliseconds
   const largeMilliseconds = largeMeasurements[Math.floor(largeMeasurements.length / 2)] ?? 0
-  // Take the lowest ratio across interleaved pairs. Contention only ever adds time, so the least
-  // disturbed pair is the closest estimate of true scaling. Discrimination is unaffected: a
-  // genuinely superlinear implementation exceeds the bound in every pair, not just noisy ones.
-  const ratio = ratios[0] ?? largeMilliseconds / Math.max(smallMilliseconds, 0.01)
-  expect(ratio).toBeLessThan(3)
+  // Take the median ratio, never the minimum. Because ratio = large / small, contention on the
+  // small term deflates the ratio, so the minimum is structurally the most understated pair --
+  // biased toward silence on a guard whose whole job is catching a superlinear regression.
+  const ratio = ratios[Math.floor(ratios.length / 2)] ?? largeMilliseconds / Math.max(smallMilliseconds, 0.01)
   return {smallMilliseconds, largeMilliseconds, ratio, repetitions}
 }
 
+function expectLinearScaling(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
+  const measurement = measureScalingRatio(operation, size, samples)
+  expect(measurement.ratio).toBeLessThan(3)
+  return measurement
+}
+
 describe('linear-time input parsing', () => {
+  it('proves the scaling helper discriminates quadratic work', () => {
+    const quadratic = (size: number): void => {
+      let total = 0
+      for (let outer = 0; outer < size; outer += 1) {
+        for (let inner = 0; inner < size; inner += 1) total += (outer + inner) & 1
+      }
+      if (total < 0) throw new Error('unreachable')
+    }
+    const linear = (size: number): void => {
+      let total = 0
+      for (let index = 0; index < size; index += 1) {
+        for (let repeat = 0; repeat < 256; repeat += 1) total += (index + repeat) & 1
+      }
+      if (total < 0) throw new Error('unreachable')
+    }
+
+    // Warm both sizes before measuring so JIT compilation cannot deflate the first ratio.
+    quadratic(4_000)
+    quadratic(8_000)
+    linear(20_000)
+    linear(40_000)
+
+    // This is the standing guard on the guard: relative separation is robust to runner speed,
+    // while the production bound remains the separate contract for linear parser implementations.
+    const quadraticMeasurement = measureScalingRatio(quadratic, 4_000, 3)
+    const linearMeasurement = measureScalingRatio(linear, 20_000, 3)
+
+    expect(quadraticMeasurement.ratio).toBeGreaterThanOrEqual(linearMeasurement.ratio * 1.5)
+    expect(linearMeasurement.ratio).toBeLessThan(3)
+  })
+
   it.each([
     {
       name: 'extracts a standard destination path',
@@ -89,14 +129,14 @@ describe('linear-time input parsing', () => {
   })
 
   it('scales diff-header parsing linearly for many separators', () => {
-    const smallDiff = `diff --git a/${'source b/'.repeat(250_000)}private-repo.md b/private-repo.md`
-    const largeDiff = `diff --git a/${'source b/'.repeat(500_000)}private-repo.md b/private-repo.md`
+    const smallDiff = `diff --git a/${'source b/'.repeat(100_000)}private-repo.md b/private-repo.md`
+    const largeDiff = `diff --git a/${'source b/'.repeat(200_000)}private-repo.md b/private-repo.md`
     const measurement = expectLinearScaling(
       size => {
-        const diff = size === 250_000 ? smallDiff : largeDiff
+        const diff = size === 100_000 ? smallDiff : largeDiff
         checkPrivateLeak(['private-repo'], diff, {titlePrefixed: false, isOperator: false})
       },
-      250_000,
+      100_000,
       3,
     )
 

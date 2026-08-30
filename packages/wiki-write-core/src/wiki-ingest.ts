@@ -115,6 +115,7 @@ export interface CommitWikiChangesResult {
 export interface RunWikiIngestCliDependencies {
   readonly readCorrections?: typeof readCorrections
   readonly commitWikiChanges?: typeof commitWikiChanges
+  readonly getChangedWikiPaths?: typeof getChangedWikiPaths
 }
 
 /**
@@ -236,13 +237,17 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
         .map(finding => finding.path)
         .filter(path => path.startsWith(`${WIKI_ROOT}/`) && path.endsWith('.md')),
     )
-    for (const page of collectWikiPages(nextFiles)) {
-      const nodeId = parseFrontmatter(page.path, page.content).node_id
-      if (typeof nodeId === 'string' && blockedNodeIds.has(nodeId)) blockedPagePaths.add(page.path)
+    const parsedNextFrontmatter = collectWikiFrontmatter(nextFiles)
+    const parsedExistingFrontmatter = collectWikiFrontmatter(params.existingFiles)
+    for (const [path, frontmatter] of parsedNextFrontmatter) {
+      const nodeId = frontmatter.node_id
+      if (typeof nodeId === 'string' && blockedNodeIds.has(nodeId)) blockedPagePaths.add(path)
     }
     const restoredPaths = restoreBlockedCorrectionPages(
       nextFiles,
       params.existingFiles,
+      parsedNextFrontmatter,
+      parsedExistingFrontmatter,
       blockedNodeIds,
       blockedPagePaths,
     )
@@ -274,16 +279,15 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
 function restoreBlockedCorrectionPages(
   nextFiles: Record<string, string>,
   existingFiles: Record<string, string>,
+  nextFrontmatter: ReadonlyMap<string, WikiFrontmatter>,
+  existingFrontmatter: ReadonlyMap<string, WikiFrontmatter>,
   blockedNodeIds: ReadonlySet<string>,
   blockedPagePaths: ReadonlySet<string>,
 ): Set<string> {
   const blockedPaths = new Set(blockedPagePaths)
-  for (const fileSet of [nextFiles, existingFiles]) {
-    for (const [path, content] of Object.entries(fileSet)) {
-      if (!path.startsWith(`${WIKI_ROOT}/`) || !path.endsWith('.md')) continue
-      const frontmatter = parseFrontmatter(path, content)
-      if (typeof frontmatter.node_id === 'string' && blockedNodeIds.has(frontmatter.node_id)) blockedPaths.add(path)
-    }
+  for (const [path, frontmatter] of [...nextFrontmatter, ...existingFrontmatter]) {
+    const nodeId = frontmatter.node_id
+    if (typeof nodeId === 'string' && blockedNodeIds.has(nodeId)) blockedPaths.add(path)
   }
 
   for (const path of blockedPaths) {
@@ -291,6 +295,14 @@ function restoreBlockedCorrectionPages(
     else nextFiles[path] = existingFiles[path]
   }
   return blockedPaths
+}
+
+function collectWikiFrontmatter(files: Record<string, string>): Map<string, WikiFrontmatter> {
+  const frontmatter = new Map<string, WikiFrontmatter>()
+  for (const [path, content] of Object.entries(files)) {
+    if (path.startsWith(`${WIKI_ROOT}/`) && path.endsWith('.md')) frontmatter.set(path, parseFrontmatter(path, content))
+  }
+  return frontmatter
 }
 
 export async function commitWikiChanges(params: CommitWikiChangesParams): Promise<CommitWikiChangesResult> {
@@ -1274,6 +1286,7 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
   const payloadPath = process.argv[2] ?? process.env.WIKI_INGEST_INPUT
   const readCorrectionsImpl = dependencies.readCorrections ?? readCorrections
   const commitWikiChangesImpl = dependencies.commitWikiChanges ?? commitWikiChanges
+  const getChangedWikiPathsImpl = dependencies.getChangedWikiPaths ?? getChangedWikiPaths
   const existingFiles = await loadExistingWikiFiles()
   let correctionRead: CorrectionsReadResult
   try {
@@ -1328,7 +1341,7 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
       message = payload.message ?? defaultCommitMessage(payload)
       committedPagePaths = payload.pages.map(p => p.path)
     } else {
-      const changedPaths = await getChangedWikiPaths()
+      const changedPaths = await getChangedWikiPathsImpl()
       if (changedPaths.length === 0) {
         await emitPagesChanged(0)
         process.stdout.write(`${JSON.stringify({committed: false, attempts: 1, pagesChanged: 0})}\n`)

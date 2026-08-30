@@ -47,6 +47,7 @@ describe('survey-repo correction injection contract', () => {
     expect(run).toContain('node scripts/render-corrections-context.ts')
     expect(run).not.toContain('GITHUB_OUTPUT')
     expect(run).not.toContain('client_payload')
+    expect(run).toContain('exit "$status"')
   })
 
   it('passes the correction context through the agent prompt contract', () => {
@@ -65,6 +66,5 @@ describe('survey-repo correction injection contract', () => {
 
     expect(run).toContain("grep '^wiki-ingest:finding:'")
     expect(run).toContain("echo '### Wiki ingest findings'")
-    expect(run).toContain('exit "$status"')
   })
 })

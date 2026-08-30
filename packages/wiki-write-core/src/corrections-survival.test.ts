@@ -181,6 +181,43 @@ describe('correction survival verification', () => {
     expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
   })
 
+  it.each([
+    ['standalone indented code', 'prose\n\n    The corrected fact.'],
+    ['indented content after a list item', '- outer\n\n    The corrected fact.'],
+  ])('keeps %s from counting as correction survival', (_label, body) => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page(body)},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+  })
+
+  it('handles nested link parentheses without treating the label as prose', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('[The corrected fact.](a_(b))')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.deterministicFindings).toEqual([])
+    expect(result.advisoryFindings).toEqual([
+      expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
+    ])
+  })
+
+  it('leaves an unclosed link bracket visible to the exact prose matcher', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('[The corrected fact.')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
   it('derives distinct existing fingerprints from each correction target', () => {
     const result = verifyCorrectionSurvival(
       {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
@@ -292,6 +329,7 @@ describe('correction survival verification', () => {
 
     await runWikiIngestCli({
       readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+      getChangedWikiPaths: async () => [],
       commitWikiChanges,
     })
 
