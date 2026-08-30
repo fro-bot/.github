@@ -65,5 +65,6 @@ describe('survey-repo correction injection contract', () => {
 
     expect(run).toContain("grep '^wiki-ingest:finding:'")
     expect(run).toContain("echo '### Wiki ingest findings'")
+    expect(run).toContain('exit "$status"')
   })
 })

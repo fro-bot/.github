@@ -12,6 +12,11 @@ const activeCorrection = {
   state: 'active' as const,
 }
 
+const activeCorrections = (text: string): CorrectionsFile => ({
+  version: 1,
+  corrections: [{...activeCorrection, span: {text}}],
+})
+
 const page = (body: string): string =>
   [
     '---',
@@ -63,6 +68,36 @@ describe('correction survival verification', () => {
     expect(built.findings).toEqual([])
   })
 
+  it('does not mask prose after a leading inline-code span', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('`mise.toml` is minimal — only Bun 1.3.14 is pinned.')},
+      {...activeCorrections('is minimal — only Bun 1.3.14 is pinned.')},
+    )
+
+    expect(result.ok).toBe(true)
+  })
+
+  it.each([
+    ['a heading', '> quoted\n## Heading\nThe corrected fact.'],
+    ['a list item', '> quoted\n- list item\nThe corrected fact.'],
+  ])('resets blockquote state after %s', (_label, body) => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page(body)},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result.ok).toBe(true)
+  })
+
+  it('keeps correction text in a nested list item out of indented-code masking', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('- outer\n    - The corrected fact.')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result.ok).toBe(true)
+  })
+
   it('reports correction-eroded with a per-correction target when the span is absent', () => {
     const result = verifyCorrectionSurvival(
       {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
@@ -77,6 +112,19 @@ describe('correction survival verification', () => {
         target: 'correction-active',
       }),
     ])
+  })
+
+  it('keeps a verbatim prose survival clean when the same text is also a link label', () => {
+    const result = verifyCorrectionSurvival(
+      {
+        'knowledge/wiki/repos/alice--project.md': page(
+          'The corrected fact.\n\nSee [The corrected fact.](https://example.com/source).',
+        ),
+      },
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
   })
 
   it.each([

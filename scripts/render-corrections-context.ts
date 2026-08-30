@@ -1,4 +1,4 @@
-import {writeFile} from 'node:fs/promises'
+import {writeFile as writeUtf8File} from 'node:fs/promises'
 import process from 'node:process'
 
 import {
@@ -18,6 +18,12 @@ export interface CorrectionContext {
   readonly corrections: readonly CorrectionRecord[]
 }
 
+export interface RenderCorrectionsContextDependencies {
+  readonly nodeId?: string
+  readonly readCorrections?: typeof readCorrections
+  readonly writeFile?: (path: string, content: string, encoding: 'utf8') => Promise<void>
+}
+
 export function formatCorrectionsContext(corrections: readonly CorrectionRecord[]): string {
   const context: CorrectionContext = {
     contract: 'corrections-data-v1',
@@ -27,13 +33,15 @@ export function formatCorrectionsContext(corrections: readonly CorrectionRecord[
   return `${JSON.stringify(context, null, 2)}\n`
 }
 
-async function main(): Promise<void> {
-  const nodeId = process.env.REPO_NODE_ID
+export async function main(dependencies: RenderCorrectionsContextDependencies = {}): Promise<void> {
+  const nodeId = dependencies.nodeId ?? process.env.REPO_NODE_ID
   if (nodeId === undefined || nodeId === '') throw new Error('REPO_NODE_ID is required')
 
+  const readCorrectionsImpl = dependencies.readCorrections ?? readCorrections
+  const writeFileImpl = dependencies.writeFile ?? writeUtf8File
   let result: CorrectionsReadResult
   try {
-    result = await readCorrections()
+    result = await readCorrectionsImpl()
   } catch (error: unknown) {
     if (error instanceof CorrectionStoreError) {
       process.stderr.write(
@@ -48,7 +56,7 @@ async function main(): Promise<void> {
     const state = getCorrectionLifecycle(correction)
     return state === 'active' || state === 'needs-reconfirmation'
   })
-  await writeFile(CONTEXT_PATH, formatCorrectionsContext(corrections), 'utf8')
+  await writeFileImpl(CONTEXT_PATH, formatCorrectionsContext(corrections), 'utf8')
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -293,10 +293,8 @@ export function verifyCorrectionSurvival(
 
     const normalizedSpan = normalizeCorrectionText(correction.span.text)
     const proseBody = page === undefined ? '' : maskNonProseContent(page.body)
-    const normalizedBody = normalizeCorrectionText(proseBody)
-    const exactMatch = normalizedBody.includes(normalizedSpan)
-    const exactMatchInsideLink = containsMarkdownLinkText(proseBody, normalizedSpan)
-    if (page === undefined || normalizedSpan === '' || !exactMatch || exactMatchInsideLink) {
+    const normalizedBody = normalizeCorrectionText(maskMarkdownLinks(proseBody))
+    if (page === undefined || normalizedSpan === '' || !normalizedBody.includes(normalizedSpan)) {
       const formattingSpan = normalizeFormattingText(correction.span.text)
       const formattingBody = normalizeFormattingText(proseBody)
       if (formattingSpan !== '' && formattingBody.includes(formattingSpan)) {
@@ -348,15 +346,30 @@ function renderVisibleLinkText(
   return markdownText ?? wikiLabel ?? wikiTarget ?? ''
 }
 
-function containsMarkdownLinkText(content: string, normalizedSpan: string): boolean {
+function maskMarkdownLinks(content: string): string {
+  const masked = content.split('')
   let open = -1
-  for (let index = 0; index < content.length; index += 1) {
+  let index = 0
+  while (index < content.length) {
     if (content[index] === '[') open = index
-    if (content[index] !== ']' || content[index + 1] !== '(' || open === -1) continue
-    if (normalizeCorrectionText(content.slice(open + 1, index)) === normalizedSpan) return true
-    open = -1
+    if (content[index] === ']' && content[index + 1] === '(' && open !== -1) {
+      let close = index + 2
+      let depth = 1
+      while (close < content.length && depth > 0) {
+        if (content[close] === '(') depth += 1
+        else if (content[close] === ')') depth -= 1
+        close += 1
+      }
+      if (depth === 0) {
+        for (let maskIndex = open; maskIndex < close; maskIndex += 1) masked[maskIndex] = ' '
+        index = close
+        open = -1
+        continue
+      }
+    }
+    index += 1
   }
-  return false
+  return masked.join('')
 }
 
 function isMissingFileError(error: unknown): boolean {
