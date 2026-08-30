@@ -1,3 +1,4 @@
+export * from './corrections.ts'
 export * from './frontmatter.ts'
 export * from './private-leak-adapter.ts'
 export * from './private-leak.ts'
