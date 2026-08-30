@@ -48,6 +48,16 @@ export interface CorrectionLifecycleCliFailure {
 
 export type CorrectionLifecycleCliResult = CorrectionLifecycleCliSuccess | CorrectionLifecycleCliFailure
 
+export interface CorrectionLifecycleCliHelp {
+  readonly ok: true
+  readonly command: 'help'
+  readonly commands: Readonly<
+    Record<LifecycleCommand, {readonly required: readonly string[]; readonly optional: readonly string[]}>
+  >
+  readonly failure_codes: readonly string[]
+  readonly failure_code_descriptions: Readonly<Record<string, string>>
+}
+
 export class CorrectionLifecycleCliError extends Error {
   readonly code: 'INVALID_ARGUMENT' | 'MISSING_ACTOR'
   readonly remediation: string
@@ -96,6 +106,10 @@ export async function main(
 ): Promise<number> {
   const stdout = dependencies.stdout ?? (value => process.stdout.write(value))
   const stderr = dependencies.stderr ?? (value => process.stderr.write(value))
+  if (args[0] === '--help' || args[0] === 'help') {
+    stdout(`${JSON.stringify(buildHelp())}\n`)
+    return 0
+  }
   try {
     const result = await executeCorrectionLifecycle(args, dependencies)
     stdout(`${JSON.stringify(result)}\n`)
@@ -104,6 +118,41 @@ export async function main(
     const payload = toFailure(error)
     stderr(`${JSON.stringify(payload)}\n`)
     return 1
+  }
+}
+
+export function buildHelp(): CorrectionLifecycleCliHelp {
+  return {
+    ok: true,
+    command: 'help',
+    commands: {
+      record: {required: ['--id', '--node-id', '--text'], optional: ['--start', '--end']},
+      retire: {required: ['--id'], optional: []},
+      reconfirm: {required: ['--id'], optional: []},
+      supersede: {required: ['--id', '--supersedes-id', '--node-id', '--text'], optional: ['--start', '--end']},
+    },
+    failure_codes: [
+      'INVALID_ARGUMENT',
+      'MISSING_ACTOR',
+      'INVALID_CORRECTIONS',
+      'CORRECTION_NOT_FOUND',
+      'INVALID_TRANSITION',
+      'READ_FAILED',
+      'WRITE_FAILED',
+      'IO_FAILURE',
+      'RUNTIME_FAILURE',
+    ],
+    failure_code_descriptions: {
+      INVALID_ARGUMENT: 'Fix the command options.',
+      MISSING_ACTOR: 'Run with authenticated server identity; never supply identity as an argument.',
+      INVALID_CORRECTIONS: 'Repair the corrections store before retrying.',
+      CORRECTION_NOT_FOUND: 'Use an existing correction id.',
+      INVALID_TRANSITION: 'Choose a lifecycle operation valid for the current state.',
+      READ_FAILED: 'Fix store access and retry.',
+      WRITE_FAILED: 'Fix store write access and retry.',
+      IO_FAILURE: 'Inspect filesystem or runtime I/O and retry.',
+      RUNTIME_FAILURE: 'Rare fallback: inspect the emitted message and execution context.',
+    },
   }
 }
 
@@ -241,11 +290,28 @@ function toFailure(error: unknown): CorrectionLifecycleCliFailure {
   }
   if (error instanceof CorrectionLifecycleCliError)
     return {ok: false, error: {code: error.code, message: error.message, remediation: error.remediation}}
+  if (isErrnoError(error))
+    return {
+      ok: false,
+      error: {code: 'IO_FAILURE', message: error.message, remediation: 'Inspect filesystem or runtime I/O and retry.'},
+    }
   const message = error instanceof Error ? error.message : 'unknown correction lifecycle failure'
   return {
     ok: false,
-    error: {code: 'CLI_FAILURE', message, remediation: 'Inspect the command context and retry.'},
+    error: {
+      code: 'RUNTIME_FAILURE',
+      message,
+      remediation: 'Rare fallback: inspect the emitted message and execution context.',
+    },
   }
+}
+
+function isErrnoError(error: unknown): error is {readonly code: string; readonly message: string} {
+  return isRecord(error) && typeof error.code === 'string' && typeof error.message === 'string'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

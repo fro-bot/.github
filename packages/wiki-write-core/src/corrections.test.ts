@@ -2,9 +2,11 @@ import {describe, expect, it, vi} from 'vitest'
 
 import {
   CORRECTIONS_PATH,
+  CorrectionStoreError,
   flagCorrectionForReconfirmation,
   getCorrectionLifecycle,
   getCorrectionsForPage,
+  normalizeLooseCorrectionRecord,
   parseCorrections,
   readCorrections,
   reconfirmCorrection,
@@ -14,6 +16,8 @@ import {
   writeCorrections,
   type CorrectionRecord,
   type CorrectionsFile,
+  type LegacyActiveCorrectionRecord,
+  type LooseCorrectionRecord,
 } from './corrections.ts'
 import {buildWikiIngestChanges} from './wiki-ingest.ts'
 
@@ -112,6 +116,55 @@ describe('corrections sidecar', () => {
     })
     if (legacyRecord === undefined) throw new Error('expected legacy correction fixture')
     expect(getCorrectionLifecycle(legacyRecord)).toBe('active')
+  })
+
+  it('rejects spans that normalize to an empty string at the package boundary', () => {
+    expect(() =>
+      recordCorrection(emptyCorrections, {
+        ...correctionInput,
+        span: {text: ' \n\t '},
+      }),
+    ).toThrow(CorrectionStoreError)
+  })
+
+  it('preserves unknown record fields through every lifecycle transition', () => {
+    const parsed = parseCorrections(
+      `version: 1\ncorrections:\n  - id: legacy\n    page_node_id: R_123\n    span:\n      text: Legacy fact\n    state: active\n    extra_metadata:\n      source: operator\n`,
+    )
+    const original = parsed.corrections[0]
+    if (original === undefined) throw new Error('expected unknown-field fixture')
+
+    const retired = retireCorrection(parsed, 'legacy').corrections[0]
+    expect(retired).toMatchObject({extra_metadata: {source: 'operator'}})
+
+    const flagged = flagCorrectionForReconfirmation(parsed, 'legacy')
+    const reconfirmed = reconfirmCorrection(flagged, 'legacy').corrections[0]
+    expect(reconfirmed).toMatchObject({extra_metadata: {source: 'operator'}})
+
+    const superseded = recordCorrection(parsed, {
+      ...correctionInput,
+      id: 'replacement',
+      pageNodeId: 'R_123',
+      span: {text: 'Replacement fact.'},
+      supersedesId: 'legacy',
+    }).corrections[0]
+    expect(superseded).toMatchObject({extra_metadata: {source: 'operator'}})
+  })
+
+  it('keeps the legacy normalizer boundary explicit for future tightening', () => {
+    const legacy: LooseCorrectionRecord = {
+      id: 'legacy',
+      page_node_id: 'R_123',
+      span: {text: 'Legacy fact'},
+    }
+    const normalized = normalizeLooseCorrectionRecord(legacy)
+
+    expect(normalized).toEqual(legacy)
+    expect(getCorrectionLifecycle(normalized)).toBe('active')
+
+    // @ts-expect-error: removing the legacy union member must force this boundary to be reviewed.
+    const strictOnly: Exclude<CorrectionRecord, LegacyActiveCorrectionRecord> = normalized
+    expect(strictOnly).toBeDefined()
   })
 
   it('keeps page corrections attached to node_id across a slug migration', () => {

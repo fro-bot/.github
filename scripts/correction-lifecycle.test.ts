@@ -1,4 +1,10 @@
-import {CORRECTIONS_PATH, serializeCorrections, type CorrectionsFile} from '@fro-bot/wiki-write-core/corrections'
+import {
+  CORRECTIONS_PATH,
+  CorrectionStoreError,
+  parseCorrections,
+  serializeCorrections,
+  type CorrectionsFile,
+} from '@fro-bot/wiki-write-core/corrections'
 import {describe, expect, it} from 'vitest'
 import {main} from './correction-lifecycle.ts'
 
@@ -19,6 +25,14 @@ const activeFile: CorrectionsFile = {
 
 const activeCorrection = activeFile.corrections[0]
 if (activeCorrection === undefined) throw new Error('expected active correction fixture')
+
+const untouchedCorrection = {
+  id: 'untouched',
+  page_node_id: 'R_999',
+  span: {text: 'An untouched fact.'},
+  attribution,
+  state: 'active' as const,
+}
 
 function dependencies(file: CorrectionsFile, actor: string | undefined = 'marcusrbrown') {
   let writtenPath = ''
@@ -48,6 +62,35 @@ function dependencies(file: CorrectionsFile, actor: string | undefined = 'marcus
 }
 
 describe('correction-lifecycle CLI', () => {
+  it.each([['--help'], ['help']])('prints machine-readable help for %s', async arg => {
+    const deps = dependencies({version: 1, corrections: [activeCorrection]})
+
+    const exitCode = await main([arg], deps)
+    const output = JSON.parse(deps.stdoutLines[0] ?? '') as {
+      ok: boolean
+      commands: Record<string, unknown>
+      failure_codes: string[]
+    }
+
+    expect(exitCode).toBe(0)
+    expect(output.ok).toBe(true)
+    expect(Object.keys(output.commands)).toEqual(['record', 'retire', 'reconfirm', 'supersede'])
+    expect(output.failure_codes).toEqual(
+      expect.arrayContaining([
+        'INVALID_ARGUMENT',
+        'MISSING_ACTOR',
+        'INVALID_CORRECTIONS',
+        'CORRECTION_NOT_FOUND',
+        'INVALID_TRANSITION',
+        'READ_FAILED',
+        'WRITE_FAILED',
+        'IO_FAILURE',
+        'RUNTIME_FAILURE',
+      ]),
+    )
+    expect(deps.writtenPath).toBe('')
+  })
+
   it.each([
     ['record', ['record', '--id', 'new', '--node-id', 'R_456', '--text', 'A new fact.']],
     ['retire', ['retire', '--id', 'active']],
@@ -66,9 +109,10 @@ describe('correction-lifecycle CLI', () => {
                 state: 'needs-reconfirmation',
                 reason: 'Review',
               },
+              untouchedCorrection,
             ],
           }
-        : activeFile
+        : {...activeFile, corrections: [...activeFile.corrections, untouchedCorrection]}
     const deps = dependencies(file)
 
     const exitCode = await main(args, deps)
@@ -77,10 +121,14 @@ describe('correction-lifecycle CLI', () => {
     expect(deps.stderrLines).toEqual([])
     expect(deps.writtenPath).toBe(CORRECTIONS_PATH)
     expect(JSON.parse(deps.stdoutLines[0] ?? '')).toMatchObject({ok: true, command: args[0], path: CORRECTIONS_PATH})
+    const written = parseCorrections(deps.writtenContent)
+    expect(written.corrections.find(correction => correction.id === untouchedCorrection.id)).toEqual(
+      untouchedCorrection,
+    )
   })
 
   it('supports supersede through the package record operation', async () => {
-    const deps = dependencies(activeFile)
+    const deps = dependencies({...activeFile, corrections: [...activeFile.corrections, untouchedCorrection]})
 
     const exitCode = await main(
       [
@@ -100,6 +148,10 @@ describe('correction-lifecycle CLI', () => {
     expect(exitCode).toBe(0)
     expect(JSON.parse(deps.stdoutLines[0] ?? '')).toMatchObject({ok: true, command: 'supersede'})
     expect(deps.writtenPath).toBe(CORRECTIONS_PATH)
+    const written = parseCorrections(deps.writtenContent)
+    expect(written.corrections.find(correction => correction.id === untouchedCorrection.id)).toEqual(
+      untouchedCorrection,
+    )
   })
 
   it('derives attribution from GITHUB_ACTOR and rejects argv spoofing', async () => {
@@ -124,6 +176,30 @@ describe('correction-lifecycle CLI', () => {
     expect(exitCode).toBe(1)
     expect(deps.writtenContent).toBe('')
     expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'MISSING_ACTOR'}})
+  })
+
+  it('reports typed store failures with their stable JSON error shape', async () => {
+    const deps = dependencies(activeFile)
+    deps.readFile = async () => {
+      throw new CorrectionStoreError({
+        code: 'READ_FAILED',
+        path: CORRECTIONS_PATH,
+        message: 'corrections: unable to read knowledge/corrections.yaml',
+      })
+    }
+
+    const exitCode = await main(['retire', '--id', 'active'], deps)
+
+    expect(exitCode).toBe(1)
+    expect(JSON.parse(deps.stderrLines[0] ?? '')).toEqual({
+      ok: false,
+      error: {
+        code: 'READ_FAILED',
+        message: 'corrections: unable to read knowledge/corrections.yaml',
+        remediation: 'Fix the corrections store or lifecycle transition and retry.',
+        path: CORRECTIONS_PATH,
+      },
+    })
   })
 
   it.each([
@@ -160,5 +236,40 @@ describe('correction-lifecycle CLI', () => {
     expect(exitCode).toBe(1)
     expect(deps.writtenContent).toBe('')
     expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'INVALID_TRANSITION'}})
+  })
+
+  it('rejects repeated reconfirm and retire transitions', async () => {
+    let currentFile: CorrectionsFile = {
+      version: 1,
+      corrections: [
+        {
+          id: 'reconfirm',
+          page_node_id: 'R_123',
+          span: {text: 'A fact.'},
+          attribution,
+          state: 'needs-reconfirmation',
+          reason: 'Review',
+        },
+        {
+          id: 'retire',
+          page_node_id: 'R_123',
+          span: {text: 'Another fact.'},
+          attribution,
+          state: 'active',
+        },
+      ],
+    }
+    const deps = dependencies(currentFile)
+    deps.readFile = async () => serializeCorrections(currentFile)
+    deps.writeFile = async (path: string, content: string) => {
+      currentFile = parseCorrections(content)
+      expect(path).toBe(CORRECTIONS_PATH)
+    }
+
+    expect(await main(['reconfirm', '--id', 'reconfirm'], deps)).toBe(0)
+    expect(await main(['reconfirm', '--id', 'reconfirm'], deps)).toBe(1)
+    expect(await main(['retire', '--id', 'retire'], deps)).toBe(0)
+    expect(await main(['retire', '--id', 'retire'], deps)).toBe(1)
+    expect(deps.stderrLines.filter(line => line.includes('INVALID_TRANSITION'))).toHaveLength(2)
   })
 })

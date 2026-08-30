@@ -3,6 +3,8 @@ import type {WikiLintFinding} from './wiki-lint.ts'
 import {readFile, writeFile} from 'node:fs/promises'
 import {parse, stringify} from 'yaml'
 
+import {normalizeCorrectionText} from './correction-text.ts'
+
 /** System-owned sidecar state; it is deliberately outside rendered page content. */
 export const CORRECTIONS_PATH = 'knowledge/corrections.yaml' as const
 
@@ -23,12 +25,40 @@ export interface CorrectionAttribution {
   readonly recorded_at: string
 }
 
+/** Loose boundary shape accepted during the rollout window. Never use it past parsing. */
+export interface LooseCorrectionRecord {
+  readonly id: string
+  readonly page_node_id: string
+  readonly span: CorrectionSpan
+  readonly attribution?: CorrectionAttribution
+  readonly state?: CorrectionLifecycle
+  readonly superseded_by?: string
+  readonly reason?: string
+  readonly [key: string]: unknown
+}
+
 interface CorrectionRecordBase {
   readonly id: string
   readonly page_node_id: string
   readonly span: CorrectionSpan
   /** Optional during the loose rollout phase; new writes always include it. The tight phase will require it. */
   readonly attribution?: CorrectionAttribution
+}
+
+function withoutLifecycleFields<
+  T extends CorrectionRecordBase & {state?: unknown; superseded_by?: unknown; reason?: unknown},
+>(record: T): CorrectionRecordBase & Record<string, unknown> {
+  const copy: Record<string, unknown> = {...(record as Record<string, unknown>)}
+  delete copy.state
+  delete copy.superseded_by
+  delete copy.reason
+  return {
+    ...copy,
+    id: record.id,
+    page_node_id: record.page_node_id,
+    span: record.span,
+    ...(record.attribution === undefined ? {} : {attribution: record.attribution}),
+  }
 }
 
 /** Active is the default lifecycle for legacy records without a state field. */
@@ -65,6 +95,8 @@ export type CorrectionRecord =
   | SupersededCorrectionRecord
   | RetiredCorrectionRecord
   | NeedsReconfirmationCorrectionRecord
+
+export type StrictCorrectionRecord = Exclude<CorrectionRecord, LegacyActiveCorrectionRecord>
 
 export interface CorrectionsFile {
   readonly version: typeof CORRECTIONS_VERSION
@@ -117,36 +149,13 @@ function isCorrectionLifecycle(value: unknown): value is CorrectionLifecycle {
   return value === 'active' || value === 'superseded' || value === 'retired' || value === 'needs-reconfirmation'
 }
 
-function isCorrectionSpan(value: unknown): value is CorrectionSpan {
-  if (!isRecord(value) || typeof value.text !== 'string' || value.text.length === 0) return false
-  const start = value.start
-  const end = value.end
-  if (start !== undefined && (typeof start !== 'number' || !Number.isInteger(start) || start < 0)) return false
-  if (end !== undefined && (typeof end !== 'number' || !Number.isInteger(end) || end < 0)) return false
-  if (typeof start === 'number' && typeof end === 'number' && end < start) return false
-  return true
-}
-
-function isCorrectionAttribution(value: unknown): value is CorrectionAttribution {
-  return (
-    isRecord(value) &&
-    typeof value.actor === 'string' &&
-    value.actor.length > 0 &&
-    typeof value.recorded_at === 'string' &&
-    value.recorded_at.length > 0
-  )
-}
-
 function isCorrectionRecord(value: unknown): value is CorrectionRecord {
-  if (!isRecord(value)) return false
-  if (typeof value.id !== 'string' || value.id.length === 0) return false
-  if (typeof value.page_node_id !== 'string' || value.page_node_id.length === 0) return false
-  if (!isCorrectionSpan(value.span)) return false
-  if (value.attribution !== undefined && !isCorrectionAttribution(value.attribution)) return false
-  if (value.state !== undefined && !isCorrectionLifecycle(value.state)) return false
-  if (value.state === 'superseded') return typeof value.superseded_by === 'string' && value.superseded_by.length > 0
-  if (value.state === 'needs-reconfirmation') return typeof value.reason === 'string' && value.reason.length > 0
-  return value.superseded_by === undefined
+  try {
+    assertCorrectionRecord(value, 'corrections')
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function isCorrectionsFile(value: unknown): value is CorrectionsFile {
@@ -167,33 +176,14 @@ export function assertCorrectionsFile(value: unknown, path = 'corrections'): ass
 }
 
 function assertCorrectionRecord(value: unknown, path: string): asserts value is CorrectionRecord {
-  if (!isRecord(value)) throw invalidCorrections(path, 'expected object')
-  if (typeof value.id !== 'string' || value.id.length === 0)
-    throw invalidCorrections(`${path}.id`, 'expected non-empty string')
-  if (typeof value.page_node_id !== 'string' || value.page_node_id.length === 0)
-    throw invalidCorrections(`${path}.page_node_id`, 'expected non-empty string')
-  assertCorrectionSpan(value.span, `${path}.span`)
-  if (value.attribution !== undefined) assertCorrectionAttribution(value.attribution, `${path}.attribution`)
-  if (value.state !== undefined && !isCorrectionLifecycle(value.state))
-    throw invalidCorrections(`${path}.state`, 'expected active, superseded, retired, or needs-reconfirmation')
-  if (value.state === 'superseded') {
-    if (typeof value.superseded_by !== 'string' || value.superseded_by.length === 0)
-      throw invalidCorrections(`${path}.superseded_by`, 'superseded corrections require a target')
-    return
-  }
-  if (value.state === 'needs-reconfirmation') {
-    if (typeof value.reason !== 'string' || value.reason.length === 0)
-      throw invalidCorrections(`${path}.reason`, 'needs-reconfirmation corrections require a reason')
-    return
-  }
-  if (value.superseded_by !== undefined)
-    throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+  const loose = parseLooseCorrectionRecord(value, path)
+  normalizeLooseCorrectionRecord(loose, path)
 }
 
 function assertCorrectionSpan(value: unknown, path: string): asserts value is CorrectionSpan {
   if (!isRecord(value)) throw invalidCorrections(path, 'expected object')
-  if (typeof value.text !== 'string' || value.text.length === 0)
-    throw invalidCorrections(`${path}.text`, 'expected non-empty string')
+  if (typeof value.text !== 'string' || normalizeCorrectionText(value.text) === '')
+    throw invalidCorrections(`${path}.text`, 'expected text with non-empty normalized content')
   const start = value.start
   const end = value.end
   if (start !== undefined && (!Number.isInteger(start) || typeof start !== 'number' || start < 0))
@@ -224,13 +214,77 @@ const emptyCorrectionsFile = (): CorrectionsFile => ({version: CORRECTIONS_VERSI
 
 export function parseCorrections(raw: string): CorrectionsFile {
   const value: unknown = parse(raw)
-  assertCorrectionsFile(value)
-  return {version: CORRECTIONS_VERSION, corrections: value.corrections.map(normalizeCorrectionRecord)}
+  if (!isRecord(value)) throw invalidCorrections('corrections', 'expected object')
+  if (value.version !== CORRECTIONS_VERSION)
+    throw invalidCorrections('corrections.version', `expected ${CORRECTIONS_VERSION}`)
+  if (!Array.isArray(value.corrections)) throw invalidCorrections('corrections.corrections', 'expected array')
+  return {
+    version: CORRECTIONS_VERSION,
+    corrections: value.corrections.map((entry, index) =>
+      normalizeLooseCorrectionRecord(
+        parseLooseCorrectionRecord(entry, `corrections.corrections[${index}]`),
+        `corrections.corrections[${index}]`,
+      ),
+    ),
+  }
 }
 
-/** Preserve omitted legacy state as the compatibility active union member. */
-function normalizeCorrectionRecord(record: CorrectionRecord): CorrectionRecord {
-  return record
+/** Explicitly convert the loose I/O shape into one lifecycle union member. */
+export function normalizeLooseCorrectionRecord(record: LooseCorrectionRecord, path = 'corrections'): CorrectionRecord {
+  const base = withoutLifecycleFields(record)
+  if (record.state === undefined) {
+    if (record.superseded_by !== undefined)
+      throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+    return base
+  }
+  if (record.state === 'active') {
+    if (record.superseded_by !== undefined)
+      throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+    return {...base, state: 'active'}
+  }
+  if (record.state === 'retired') {
+    if (record.superseded_by !== undefined)
+      throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+    return {...base, state: 'retired'}
+  }
+  if (record.state === 'superseded') {
+    if (record.superseded_by === undefined || record.superseded_by === '')
+      throw invalidCorrections(`${path}.superseded_by`, 'superseded corrections require a target')
+    return {...base, state: 'superseded', superseded_by: record.superseded_by}
+  }
+  if (record.reason === undefined || record.reason === '')
+    throw invalidCorrections(`${path}.reason`, 'needs-reconfirmation corrections require a reason')
+  if (record.superseded_by !== undefined)
+    throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+  return {...base, state: 'needs-reconfirmation', reason: record.reason}
+}
+
+function parseLooseCorrectionRecord(value: unknown, path: string): LooseCorrectionRecord {
+  if (!isRecord(value)) throw invalidCorrections(path, 'expected object')
+  if (typeof value.id !== 'string' || value.id === '')
+    throw invalidCorrections(`${path}.id`, 'expected non-empty string')
+  if (typeof value.page_node_id !== 'string' || value.page_node_id === '')
+    throw invalidCorrections(`${path}.page_node_id`, 'expected non-empty string')
+  assertCorrectionSpan(value.span, `${path}.span`)
+  let attribution: CorrectionAttribution | undefined
+  if (value.attribution !== undefined) {
+    assertCorrectionAttribution(value.attribution, `${path}.attribution`)
+    attribution = value.attribution
+  }
+  if (value.state !== undefined && !isCorrectionLifecycle(value.state))
+    throw invalidCorrections(`${path}.state`, 'expected active, superseded, retired, or needs-reconfirmation')
+  if (value.superseded_by !== undefined && (typeof value.superseded_by !== 'string' || value.superseded_by === ''))
+    throw invalidCorrections(`${path}.superseded_by`, 'expected non-empty string')
+  if (value.reason !== undefined && (typeof value.reason !== 'string' || value.reason === ''))
+    throw invalidCorrections(`${path}.reason`, 'expected non-empty string')
+  const base = {...value, id: value.id, page_node_id: value.page_node_id, span: value.span}
+  return {
+    ...base,
+    ...(attribution === undefined ? {} : {attribution}),
+    ...(value.state === undefined ? {} : {state: value.state}),
+    ...(value.superseded_by === undefined ? {} : {superseded_by: value.superseded_by}),
+    ...(value.reason === undefined ? {} : {reason: value.reason}),
+  }
 }
 
 export function serializeCorrections(value: unknown): string {
@@ -299,6 +353,8 @@ export async function writeCorrections(
 
 export function recordCorrection(file: CorrectionsFile, input: RecordCorrectionInput): CorrectionsFile {
   assertCorrectionsFile(file)
+  assertCorrectionSpan(input.span, 'input.span')
+  assertCorrectionAttribution(input.serverDerivedAttribution, 'input.serverDerivedAttribution')
   if (file.corrections.some(correction => correction.id === input.id))
     throw new CorrectionStoreError({
       code: 'INVALID_CORRECTIONS',
@@ -367,12 +423,7 @@ export function transitionCorrection(
       path: `corrections[${index}].state`,
       message: `corrections: active correction ${id} is not awaiting reconfirmation`,
     })
-  const base = {
-    id: current.id,
-    page_node_id: current.page_node_id,
-    span: current.span,
-    ...(current.attribution === undefined ? {} : {attribution: current.attribution}),
-  }
+  const base = withoutLifecycleFields(current)
   let next: CorrectionRecord
   if (state === 'superseded') {
     if (supersededBy === undefined || supersededBy.length === 0)

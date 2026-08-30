@@ -1,7 +1,7 @@
 import {describe, expect, it, vi} from 'vitest'
 
 import {verifyCorrectionSurvival} from './corrections-survival.ts'
-import {readCorrections, type CorrectionsFile} from './corrections.ts'
+import {parseCorrections, readCorrections, type CorrectionsFile} from './corrections.ts'
 import {buildWikiIngestChanges, runWikiIngestCli, WikiIngestError} from './wiki-ingest.ts'
 import {buildWikiLintJsonReport, type WikiLintResult} from './wiki-lint.ts'
 
@@ -67,6 +67,19 @@ describe('correction survival verification', () => {
       pages: [{path: 'knowledge/wiki/repos/alice--project.md', content: page('The corrected fact.')}],
     })
     expect(built.findings).toEqual([])
+  })
+
+  it('enforces a legacy no-state correction exactly like an active correction', () => {
+    const legacy = parseCorrections(
+      `version: 1\ncorrections:\n  - id: legacy\n    page_node_id: R_123\n    span:\n      text: The corrected fact.\n`,
+    )
+
+    const result = verifyCorrectionSurvival({'knowledge/wiki/repos/alice--project.md': page('The old fact.')}, legacy)
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'legacy'}),
+    ])
   })
 
   it('does not mask prose after a leading inline-code span', () => {
