@@ -10,12 +10,6 @@ export const CORRECTIONS_VERSION = 1 as const
 
 export type CorrectionLifecycle = 'active' | 'superseded' | 'retired' | 'needs-reconfirmation'
 
-export interface CorrectionSurvivalResult {
-  readonly ok: boolean
-  readonly deterministicFindings: readonly WikiLintFinding[]
-  readonly advisoryFindings: readonly WikiLintFinding[]
-}
-
 /** The text span is the durable constraint consumed by the future survival check. */
 export interface CorrectionSpan {
   readonly text: string
@@ -366,6 +360,12 @@ export function transitionCorrection(
       code: 'INVALID_TRANSITION',
       path: `corrections[${index}].state`,
       message: `corrections: ${current.state} correction ${id} cannot transition`,
+    })
+  if (state === 'active' && current.state !== 'needs-reconfirmation')
+    throw new CorrectionStoreError({
+      code: 'INVALID_TRANSITION',
+      path: `corrections[${index}].state`,
+      message: `corrections: active correction ${id} is not awaiting reconfirmation`,
     })
   const base = {
     id: current.id,

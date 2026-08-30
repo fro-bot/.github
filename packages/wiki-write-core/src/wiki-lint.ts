@@ -23,11 +23,22 @@ export type WikiLintFindingKind =
   | 'correction-eroded'
   | 'correction-needs-reconfirmation'
 
+export type WikiLintCorrectionLifecycle = 'active' | 'needs-reconfirmation'
+
+export type WikiLintCorrectionAction = 'restore-span' | 'reconfirm-correction'
+
+export interface WikiLintCorrectionRecovery {
+  readonly lifecycle: WikiLintCorrectionLifecycle
+  readonly action: WikiLintCorrectionAction
+}
+
 export interface WikiLintFinding {
   readonly kind: WikiLintFindingKind
   readonly path: string
   readonly message: string
   readonly target?: string
+  /** Structured recovery data for correction findings; absent for other finding kinds. */
+  readonly recovery?: WikiLintCorrectionRecovery
 }
 
 export interface WikiLintResult {
@@ -51,6 +62,7 @@ export interface WikiLintJsonFinding {
   readonly target: string | null
   readonly message: string
   readonly fingerprint: string
+  readonly recovery?: WikiLintCorrectionRecovery
 }
 
 export interface WikiLintFreshnessEntry {
@@ -160,6 +172,7 @@ export function buildWikiLintJsonReport(params: BuildWikiLintJsonReportParams): 
     target: f.target ?? null,
     message: f.message,
     fingerprint: computeFingerprint(f.kind, f.path, f.target ?? null),
+    ...(f.recovery === undefined ? {} : {recovery: f.recovery}),
   }))
 
   const advisoryFindings: WikiLintJsonFinding[] = result.advisoryFindings.map(f => ({
@@ -169,6 +182,7 @@ export function buildWikiLintJsonReport(params: BuildWikiLintJsonReportParams): 
     target: f.target ?? null,
     message: f.message,
     fingerprint: computeFingerprint(f.kind, f.path, f.target ?? null),
+    ...(f.recovery === undefined ? {} : {recovery: f.recovery}),
   }))
 
   const allFindings = [...deterministicFindings, ...advisoryFindings]

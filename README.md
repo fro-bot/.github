@@ -248,6 +248,8 @@ Fro Bot uses [Probot Settings](https://probot.github.io/apps/settings/) to synch
 
 Runtime state lives in version-controlled YAML under [`metadata/`](metadata/) (allowlist, tracked repos, Renovate targets, social cooldowns). See [`metadata/README.md`](metadata/README.md) for schemas and update conventions. Autonomous writes target the unprotected `data` branch and promote to `main` via the **Merge Data Branch** workflow. `Update Metadata`, invitation handling, reconcile, social cooldown writes, and wiki ingest all follow that model.
 
+Correction lifecycle operations use `scripts/correction-lifecycle.ts`. Agents can `record`, `retire`, `reconfirm`, or `supersede` entries in `knowledge/corrections.yaml`; the command emits JSON and derives attribution from the authenticated `GITHUB_ACTOR`. It prepares the guarded sidecar locally but never pushes or commits to `data` itself. Ingest correction findings are JSONL with `target` plus `recovery.lifecycle` and `recovery.action` fields, so agents can act without scraping prose.
+
 ### Knowledge Wiki
 
 Fro Bot maintains a [Karpathy-style LLM wiki](knowledge/) (`schema.md`, `index.md`, `log.md`, plus `wiki/{repos,topics,entities,comparisons}/`) that compounds cross-repo knowledge. The **Survey Repo** workflow ingests repositories into the wiki; **Reconcile Repos** schedules those surveys; **Wiki Lint** validates the authoritative snapshot restored from `origin/data` before reporting findings.

@@ -60,6 +60,7 @@ export function verifyCorrectionSurvival(
         kind: 'correction-needs-reconfirmation',
         path,
         target: correction.id,
+        recovery: {lifecycle: 'needs-reconfirmation', action: 'reconfirm-correction'},
         message: `Correction ${correction.id} needs operator reconfirmation before it is enforced.`,
       })
       continue
@@ -76,6 +77,7 @@ export function verifyCorrectionSurvival(
           kind: 'correction-needs-reconfirmation',
           path,
           target: correction.id,
+          recovery: {lifecycle: 'needs-reconfirmation', action: 'reconfirm-correction'},
           message: `Correction ${correction.id} appears preserved with formatting-only changes and needs operator reconfirmation.`,
         })
         continue
@@ -84,6 +86,7 @@ export function verifyCorrectionSurvival(
         kind: 'correction-eroded',
         path,
         target: correction.id,
+        recovery: {lifecycle: 'active', action: 'restore-span'},
         message: `Active correction ${correction.id} was not found in the regenerated page.`,
       })
     }

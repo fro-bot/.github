@@ -115,6 +115,32 @@ describe('correction survival verification', () => {
     ])
   })
 
+  it('includes machine-readable lifecycle recovery data on correction findings', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
+      {
+        version: 1,
+        corrections: [
+          activeCorrection,
+          {...activeCorrection, id: 'reconfirm', state: 'needs-reconfirmation', reason: 'Review'},
+        ],
+      },
+    )
+
+    expect(result.deterministicFindings[0]).toMatchObject({
+      kind: 'correction-eroded',
+      path: 'knowledge/wiki/repos/alice--project.md',
+      target: 'correction-active',
+      recovery: {lifecycle: 'active', action: 'restore-span'},
+    })
+    expect(result.advisoryFindings[0]).toMatchObject({
+      kind: 'correction-needs-reconfirmation',
+      path: 'knowledge/wiki/repos/alice--project.md',
+      target: 'reconfirm',
+      recovery: {lifecycle: 'needs-reconfirmation', action: 'reconfirm-correction'},
+    })
+  })
+
   it('keeps a verbatim prose survival clean when the same text is also a link label', () => {
     const result = verifyCorrectionSurvival(
       {
