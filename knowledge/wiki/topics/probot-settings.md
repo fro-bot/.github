@@ -2,7 +2,7 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-07-31
+updated: 2026-08-30
 tags: [probot, github, repository-settings, automation, governance]
 related:
   - marcusrbrown--github
@@ -102,7 +102,60 @@ Repos using Probot Settings typically include an `update-repo-settings.yaml` wor
   `update-repo-settings` workflow's `Filter Changed Files` step fails
   with git exit 128 on push events (bfra-me/.github#2213, opened
   2026-05-23, still open) — the settings-sync path has a live bug at
-  its source repo
+  its source repo. The upstream workflow now carries an explicit
+  `fetch-depth: 0` with a comment citing #2213, so the source-side
+  workaround has landed (confirmed at v4.22.0, 2026-08-30)
+
+### Upstream contract (`bfra-me/.github`, confirmed at v4.22.0, 2026-08-30)
+
+The canonical settings-sync reusable workflow lives at
+`bfra-me/.github/.github/workflows/update-repo-settings.yaml`. Its
+`workflow_call` interface is deliberately minimal:
+
+- **Secrets:** `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY`, both
+  `required: true`
+- **Inputs:** none
+- **Permissions:** `contents: read` at the workflow level; write
+  authority arrives via the App token
+- Internally it path-filters (`common-settings.yaml`,
+  `.github/settings.yml`, the workflow file itself) on push events with
+  `fetch-depth: 0`, and skips the token mint entirely when nothing
+  relevant changed
+
+Because the secrets signature is identical to the Renovate reusable
+workflow's, a caller can be pointed at the wrong one and still resolve,
+authenticate, and report success. That is exactly the failure mode below.
+
+### Settings sync that never syncs settings (esphome.life, 7th confirmation)
+
+[[marcusrbrown--esphome-life]]'s `update-repo-settings.yaml` calls
+`bfra-me/.github/.github/workflows/renovate.yaml` rather than the
+settings workflow. The workflow, the job, and the file are all named
+"Update Repo Settings"; the daily `23 12` cron and the push-to-`main`
+trigger both fire and both report success — while running Renovate.
+`.github/settings.yml` in that repo has therefore never been applied by
+the repo's own automation, and every merge to `main` runs Renovate
+twice.
+
+Two governance implications worth generalizing:
+
+1. **A declared `settings.yml` is not an applied `settings.yml`.** The
+   branch protection that repo declares (four required contexts, strict,
+   linear history, admin enforcement) is in force — but that state
+   traces to the Probot Settings App and/or historical manual
+   application, not to the workflow that claims to maintain it. If the
+   App is ever uninstalled or the declaration is edited, the drift will
+   be silent. Verify sync by reading the workflow's actual run logs, not
+   its name.
+2. **Identical secrets signatures make miswiring undetectable.** Both
+   reusable workflows take the same two required secrets and no inputs,
+   so there is no type-level guard. When publishing a family of reusable
+   workflows, differentiating the input surface (even a single required
+   no-op input) would turn this class of error into a hard failure at
+   `workflow_call` resolution time.
+
+The repair is a one-token path swap. See [[github-actions-ci]] for the
+generalized "SHA pinning validates the ref, not the path" analysis.
 
 ## Common Configuration Patterns
 
