@@ -122,8 +122,8 @@ export async function main(
 ): Promise<number> {
   const stdout = dependencies.stdout ?? (value => process.stdout.write(value))
   const stderr = dependencies.stderr ?? (value => process.stderr.write(value))
-  const helpIndex = args.indexOf('--help')
-  if (args[0] === 'help' || (args[0] === '--help' && helpIndex === 0)) {
+  const helpIndex = findHelpOption(args)
+  if (args[0] === 'help' || args[0] === '--help') {
     stdout(`${JSON.stringify(buildHelp())}\n`)
     return 0
   }
@@ -156,6 +156,7 @@ export function buildHelp(): CorrectionLifecycleCliHelp {
     failure_codes: [
       'INVALID_ARGUMENT',
       'MISSING_ACTOR',
+      'INVALID_CONTEXT',
       'INVALID_CORRECTIONS',
       'CORRECTION_NOT_FOUND',
       'INVALID_TRANSITION',
@@ -167,6 +168,7 @@ export function buildHelp(): CorrectionLifecycleCliHelp {
     failure_code_descriptions: {
       INVALID_ARGUMENT: 'Fix the command options.',
       MISSING_ACTOR: 'Run with authenticated server identity; never supply identity as an argument.',
+      INVALID_CONTEXT: 'Run with the repository root as the working directory.',
       INVALID_CORRECTIONS: 'Repair the corrections store before retrying.',
       CORRECTION_NOT_FOUND: 'Use an existing correction id.',
       INVALID_TRANSITION: 'Choose a lifecycle operation valid for the current state.',
@@ -206,14 +208,18 @@ function parseArguments(args: readonly string[]): ParsedArguments {
 
   const options = new Map<string, string>()
   for (let index = 1; index < args.length; index += 1) {
-    const option = args[index]
-    const value = args[index + 1]
-    if (option === undefined || !option.startsWith('--') || value === undefined) {
+    const token = args[index]
+    if (token === undefined || !token.startsWith('--'))
+      throw invalidArguments('Each option must be a `--name value` pair.')
+    const equalsIndex = token.indexOf('=')
+    const option = equalsIndex === -1 ? token : token.slice(0, equalsIndex)
+    const value = equalsIndex === -1 ? args[index + 1] : token.slice(equalsIndex + 1)
+    if (value === undefined || (equalsIndex === -1 && value.startsWith('--'))) {
       throw invalidArguments('Each option must be a `--name value` pair.')
     }
     if (options.has(option)) throw invalidArguments(`Option ${option} was provided more than once.`)
     options.set(option, value)
-    index += 1
+    if (equalsIndex === -1) index += 1
   }
 
   const allowed = new Set(
@@ -314,7 +320,7 @@ function invalidArguments(message: string): CorrectionLifecycleCliError {
   )
 }
 
-function toFailure(error: unknown): CorrectionLifecycleCliFailure {
+export function toFailure(error: unknown): CorrectionLifecycleCliFailure {
   if (error instanceof CorrectionStoreError) {
     return {
       ok: false,
@@ -354,7 +360,7 @@ function assertRepositoryRoot(cwd: string, repositoryRoot: string | undefined): 
     )
 }
 
-function findRepositoryRoot(start: string): string | undefined {
+export function findRepositoryRoot(start: string): string | undefined {
   let current = resolve(start)
   while (true) {
     if (existsSync(join(current, 'package.json')) && existsSync(join(current, 'knowledge'))) return current
@@ -362,6 +368,17 @@ function findRepositoryRoot(start: string): string | undefined {
     if (parent === current) return undefined
     current = parent
   }
+}
+
+function findHelpOption(args: readonly string[]): number {
+  let index = 1
+  while (index < args.length) {
+    const token = args[index]
+    if (token === '--help') return index
+    if (token === undefined || !token.startsWith('--')) return -1
+    index += token.includes('=') ? 1 : 2
+  }
+  return -1
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

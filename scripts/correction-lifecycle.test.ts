@@ -1,3 +1,4 @@
+import {join} from 'node:path'
 import process from 'node:process'
 
 import {
@@ -8,7 +9,7 @@ import {
   type CorrectionsFile,
 } from '@fro-bot/wiki-write-core/corrections'
 import {describe, expect, it} from 'vitest'
-import {main} from './correction-lifecycle.ts'
+import {buildHelp, CorrectionLifecycleCliError, findRepositoryRoot, main, toFailure} from './correction-lifecycle.ts'
 
 const attribution = {actor: 'marcusrbrown', recorded_at: '2026-08-30T12:00:00.000Z'}
 
@@ -42,6 +43,8 @@ function dependencies(file: CorrectionsFile, actor: string | undefined = 'marcus
   const stdoutLines: string[] = []
   const stderrLines: string[] = []
   const env: Record<string, string | undefined> = {GITHUB_ACTOR: actor}
+  let cwd: string | undefined = process.cwd()
+  let repositoryRoot: string | undefined = process.cwd()
   return {
     env,
     now: () => new Date('2026-08-30T12:00:00.000Z'),
@@ -52,8 +55,18 @@ function dependencies(file: CorrectionsFile, actor: string | undefined = 'marcus
     },
     stdout: (value: string) => stdoutLines.push(value),
     stderr: (value: string) => stderrLines.push(value),
-    cwd: process.cwd(),
-    repositoryRoot: process.cwd(),
+    get cwd() {
+      return cwd
+    },
+    set cwd(value: string | undefined) {
+      cwd = value
+    },
+    get repositoryRoot() {
+      return repositoryRoot
+    },
+    set repositoryRoot(value: string | undefined) {
+      repositoryRoot = value
+    },
     get writtenPath() {
       return writtenPath
     },
@@ -110,6 +123,39 @@ describe('correction-lifecycle CLI', () => {
     expect(output).toMatchObject({ok: true, command})
     expect(output.required.length).toBeGreaterThan(0)
     expect(output.optional).toBeInstanceOf(Array)
+  })
+
+  it('does not treat --help in a value position as a successful write', async () => {
+    const deps = dependencies(activeFile)
+
+    const exitCode = await main(['record', '--id', 'x', '--node-id', 'R_1', '--text', '--help'], deps)
+
+    expect(exitCode).toBe(1)
+    expect(deps.writtenContent).toBe('')
+    expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'INVALID_ARGUMENT'}})
+  })
+
+  it('accepts an equals-form flag-shaped span as literal text', async () => {
+    const deps = dependencies(activeFile)
+
+    const exitCode = await main(['record', '--id', 'x', '--node-id', 'R_1', '--text=--help'], deps)
+
+    expect(exitCode).toBe(0)
+    expect(parseCorrections(deps.writtenContent).corrections).toEqual(
+      expect.arrayContaining([expect.objectContaining({id: 'x', span: {text: '--help'}})]),
+    )
+  })
+
+  it('keeps every toFailure discriminant in the help contract', () => {
+    const help = buildHelp()
+    const produced = [
+      toFailure(new CorrectionLifecycleCliError('INVALID_ARGUMENT', 'bad', 'fix')),
+      toFailure(new CorrectionStoreError({code: 'READ_FAILED', path: CORRECTIONS_PATH, message: 'read failed'})),
+      toFailure({code: 'EACCES', message: 'permission denied'}),
+      toFailure(new Error('unexpected')),
+    ]
+
+    for (const failure of produced) expect(help.failure_codes).toContain(failure.error.code)
   })
 
   it.each([
@@ -190,7 +236,7 @@ describe('correction-lifecycle CLI', () => {
 
   it('accepts flag-shaped, spaced, and multiline text values', async () => {
     const deps = dependencies(activeFile)
-    const text = '--legacy flag is gone\nwith multiple words'
+    const text = 'legacy flag is gone\nwith multiple words'
 
     const exitCode = await main(['record', '--id', 'new', '--node-id', 'R_456', '--text', text], deps)
 
@@ -209,6 +255,34 @@ describe('correction-lifecycle CLI', () => {
     expect(exitCode).toBe(1)
     expect(deps.writtenContent).toBe('')
     expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'INVALID_CONTEXT'}})
+  })
+
+  it('discovers the repository root from a workspace member and rejects that cwd', async () => {
+    const deps = dependencies(activeFile)
+    deps.repositoryRoot = undefined
+    deps.cwd = join(process.cwd(), 'packages/wiki-write-core')
+
+    const exitCode = await main(['retire', '--id', 'active'], deps)
+
+    expect(findRepositoryRoot(deps.cwd)).toBe(process.cwd())
+    expect(exitCode).toBe(1)
+    expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'INVALID_CONTEXT'}})
+  })
+
+  it('allows lifecycle writes from the discovered repository root', async () => {
+    const deps = dependencies(activeFile)
+    deps.repositoryRoot = undefined
+    deps.cwd = process.cwd()
+
+    const exitCode = await main(['retire', '--id', 'active'], deps)
+
+    expect(findRepositoryRoot(deps.cwd)).toBe(process.cwd())
+    expect(exitCode).toBe(0)
+  })
+
+  it('does not mistake an unrelated package.json for the repository root', () => {
+    expect(findRepositoryRoot(join(process.cwd(), 'packages/wiki-write-core'))).toBe(process.cwd())
+    expect(findRepositoryRoot('/tmp')).toBeUndefined()
   })
 
   it('fails when server-derived attribution is unavailable', async () => {
