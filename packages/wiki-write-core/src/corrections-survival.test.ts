@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from 'vitest'
 
-import {readCorrections, verifyCorrectionSurvival, type CorrectionsFile} from './corrections.ts'
+import {verifyCorrectionSurvival} from './corrections-survival.ts'
+import {readCorrections, type CorrectionsFile} from './corrections.ts'
 import {buildWikiIngestChanges, runWikiIngestCli, WikiIngestError} from './wiki-ingest.ts'
 import {buildWikiLintJsonReport, type WikiLintResult} from './wiki-lint.ts'
 
@@ -251,9 +252,9 @@ describe('correction survival verification', () => {
     const corrections: CorrectionsFile = {
       version: 1,
       corrections: [
-        {...activeCorrection, id: 'superseded', state: 'superseded'},
+        {...activeCorrection, id: 'superseded', state: 'superseded', superseded_by: 'replacement'},
         {...activeCorrection, id: 'retired', state: 'retired'},
-        {...activeCorrection, id: 'reconfirm', state: 'needs-reconfirmation'},
+        {...activeCorrection, id: 'reconfirm', state: 'needs-reconfirmation', reason: 'Upstream changed'},
       ],
     }
 

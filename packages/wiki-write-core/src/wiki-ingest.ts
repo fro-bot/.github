@@ -8,13 +8,8 @@ import process from 'node:process'
 import {promisify} from 'node:util'
 
 import {parse, stringify} from 'yaml'
-import {
-  CorrectionStoreError,
-  readCorrections,
-  verifyCorrectionSurvival,
-  type CorrectionsFile,
-  type CorrectionsReadResult,
-} from './corrections.ts'
+import {verifyCorrectionSurvival} from './corrections-survival.ts'
+import {CorrectionStoreError, readCorrections, type CorrectionsFile, type CorrectionsReadResult} from './corrections.ts'
 import {
   bootstrapDataBranch as defaultBootstrapDataBranch,
   type DataBranchBootstrapParams,
