@@ -62,6 +62,7 @@ export interface CorrectionLifecycleCliHelp {
   >
   readonly failure_codes: readonly string[]
   readonly failure_code_descriptions: Readonly<Record<string, string>>
+  readonly path_semantics: string
 }
 
 export interface CorrectionLifecycleCliCommandHelp {
@@ -71,6 +72,7 @@ export interface CorrectionLifecycleCliCommandHelp {
   readonly optional: readonly string[]
   readonly failure_codes: readonly string[]
   readonly failure_code_descriptions: Readonly<Record<string, string>>
+  readonly path_semantics: string
 }
 
 export class CorrectionLifecycleCliError extends Error {
@@ -176,9 +178,9 @@ export function buildHelp(): CorrectionLifecycleCliHelp {
       WRITE_FAILED: 'Fix store write access and retry.',
       IO_FAILURE: 'Inspect filesystem or runtime I/O and retry.',
       RUNTIME_FAILURE: 'Rare fallback: inspect the emitted message and execution context.',
-      path_semantics:
-        'path is a filesystem path for READ_FAILED/WRITE_FAILED and a record-field pointer for INVALID_CORRECTIONS/INVALID_TRANSITION.',
     },
+    path_semantics:
+      'path is a filesystem path for READ_FAILED/WRITE_FAILED and a record-field pointer for INVALID_CORRECTIONS/INVALID_TRANSITION.',
   }
 }
 
@@ -191,6 +193,7 @@ export function buildCommandHelp(command: LifecycleCommand): CorrectionLifecycle
     optional: help.commands[command].optional,
     failure_codes: help.failure_codes,
     failure_code_descriptions: help.failure_code_descriptions,
+    path_semantics: help.path_semantics,
   }
 }
 

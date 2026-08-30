@@ -158,6 +158,12 @@ describe('correction-lifecycle CLI', () => {
     for (const failure of produced) expect(help.failure_codes).toContain(failure.error.code)
   })
 
+  it('keeps failure descriptions keyed exactly by failure code', () => {
+    const help = buildHelp()
+
+    expect(new Set(Object.keys(help.failure_code_descriptions))).toEqual(new Set(help.failure_codes))
+  })
+
   it.each([
     ['record', ['record', '--id', 'new', '--node-id', 'R_456', '--text', 'A new fact.']],
     ['retire', ['retire', '--id', 'active']],
