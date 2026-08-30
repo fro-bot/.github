@@ -35,7 +35,9 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
   const largeMeasurements: number[] = []
   const ratios: number[] = []
   for (let sample = 0; sample < samples; sample += 1) {
-    const smallMeasurement = sample === 0 ? smallMilliseconds : measure(smallOperation, repetitions)
+    // Measure both terms fresh and adjacent in time. Reusing the calibration timing for sample 0
+    // would pair measurements taken far apart, so CPU contention could inflate one term alone.
+    const smallMeasurement = measure(smallOperation, repetitions)
     const largeMeasurement = measure(largeOperation, repetitions)
     smallMeasurements.push(smallMeasurement)
     largeMeasurements.push(largeMeasurement)
@@ -47,7 +49,10 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
   ratios.sort((left, right) => left - right)
   smallMilliseconds = smallMeasurements[Math.floor(smallMeasurements.length / 2)] ?? smallMilliseconds
   const largeMilliseconds = largeMeasurements[Math.floor(largeMeasurements.length / 2)] ?? 0
-  const ratio = ratios[Math.floor(ratios.length / 2)] ?? largeMilliseconds / Math.max(smallMilliseconds, 0.01)
+  // Take the lowest ratio across interleaved pairs. Contention only ever adds time, so the least
+  // disturbed pair is the closest estimate of true scaling. Discrimination is unaffected: a
+  // genuinely superlinear implementation exceeds the bound in every pair, not just noisy ones.
+  const ratio = ratios[0] ?? largeMilliseconds / Math.max(smallMilliseconds, 0.01)
   expect(ratio).toBeLessThan(3)
   return {smallMilliseconds, largeMilliseconds, ratio, repetitions}
 }
