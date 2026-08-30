@@ -296,6 +296,7 @@ function parseSpan(options: ReadonlyMap<string, string>): {
 function parseOptionalInteger(options: ReadonlyMap<string, string>, option: string): number | undefined {
   const value = options.get(option)
   if (value === undefined) return undefined
+  if (!/^\d+$/u.test(value)) throw invalidArguments(`${option} must be a plain non-negative decimal integer.`)
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed < 0) throw invalidArguments(`${option} must be a non-negative integer.`)
   return parsed

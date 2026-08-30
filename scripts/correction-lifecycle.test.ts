@@ -234,7 +234,7 @@ describe('correction-lifecycle CLI', () => {
     expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'INVALID_ARGUMENT'}})
   })
 
-  it('accepts flag-shaped, spaced, and multiline text values', async () => {
+  it('accepts spaced and multiline text values', async () => {
     const deps = dependencies(activeFile)
     const text = 'legacy flag is gone\nwith multiple words'
 
@@ -244,6 +244,70 @@ describe('correction-lifecycle CLI', () => {
     expect(parseCorrections(deps.writtenContent).corrections).toEqual(
       expect.arrayContaining([expect.objectContaining({id: 'new', span: {text}})]),
     )
+  })
+
+  it('stores valid decimal start and end offsets for record and supersede', async () => {
+    const recordDeps = dependencies(activeFile)
+    const recordExitCode = await main(
+      ['record', '--id', 'new', '--node-id', 'R_456', '--text', 'A new fact.', '--start', '12', '--end', '34'],
+      recordDeps,
+    )
+
+    expect(recordExitCode).toBe(0)
+    expect(parseCorrections(recordDeps.writtenContent).corrections).toEqual(
+      expect.arrayContaining([expect.objectContaining({id: 'new', span: {text: 'A new fact.', start: 12, end: 34}})]),
+    )
+
+    const supersedeDeps = dependencies(activeFile)
+    const supersedeExitCode = await main(
+      [
+        'supersede',
+        '--id',
+        'replacement',
+        '--supersedes-id',
+        'active',
+        '--node-id',
+        'R_123',
+        '--text',
+        'The new fact.',
+        '--start=5',
+        '--end=21',
+      ],
+      supersedeDeps,
+    )
+
+    expect(supersedeExitCode).toBe(0)
+    expect(parseCorrections(supersedeDeps.writtenContent).corrections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({id: 'replacement', span: {text: 'The new fact.', start: 5, end: 21}}),
+      ]),
+    )
+  })
+
+  it.each(['-1', '1.5', '1e3', '0x10', ''])('rejects non-decimal --start values: %s', async value => {
+    const deps = dependencies(activeFile)
+
+    const exitCode = await main(
+      ['record', '--id', 'new', '--node-id', 'R_456', '--text', 'A fact.', '--start', value],
+      deps,
+    )
+
+    expect(exitCode).toBe(1)
+    expect(deps.writtenContent).toBe('')
+    expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'INVALID_ARGUMENT'}})
+  })
+
+  it('rejects non-decimal --end values', async () => {
+    const deps = dependencies(activeFile)
+
+    const exitCode = await main(
+      ['record', '--id', 'new', '--node-id', 'R_456', '--text', 'A fact.', '--end', '1.5'],
+      deps,
+    )
+
+    expect(exitCode).toBe(1)
+    expect(deps.writtenContent).toBe('')
+    expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'INVALID_ARGUMENT'}})
   })
 
   it('rejects lifecycle writes outside the repository root', async () => {
