@@ -3,6 +3,7 @@ import type {WikiLintFinding} from './wiki-lint.ts'
 import {readFile, writeFile} from 'node:fs/promises'
 import {parse, stringify} from 'yaml'
 
+import {maskNonProseContent} from './rendering-policy.ts'
 import {collectWikiPages} from './wiki-utils.ts'
 
 /** System-owned sidecar state; it is deliberately outside rendered page content. */
@@ -240,9 +241,15 @@ export async function readCorrections(
  * Verify marked spans mechanically after ingest regeneration.
  *
  * Matching trims the span and collapses every whitespace run to one space, then
- * performs an exact substring search in the page body. This deliberately avoids
- * semantic or fuzzy matching: an active correction that cannot be located is
- * erosion and therefore blocks the ingest.
+ * performs an exact substring search in prose only. Fenced code, indented code,
+ * and blockquotes are excluded because quoted material is not evidence that the
+ * correction survived in the page's actual prose.
+ *
+ * If exact prose matching fails, a second conservative comparison replaces
+ * Markdown links with their visible text, removes Markdown emphasis/code markers,
+ * converts punctuation to whitespace, collapses whitespace, and lowercases text.
+ * A match under that rule is formatting-only drift and emits an advisory
+ * `correction-needs-reconfirmation`; any other miss is erosion and blocks ingest.
  */
 export function verifyCorrectionSurvival(
   files: Record<string, string>,
@@ -285,8 +292,22 @@ export function verifyCorrectionSurvival(
     }
 
     const normalizedSpan = normalizeCorrectionText(correction.span.text)
-    const normalizedBody = page === undefined ? '' : normalizeCorrectionText(page.body)
-    if (page === undefined || normalizedSpan === '' || !normalizedBody.includes(normalizedSpan)) {
+    const proseBody = page === undefined ? '' : maskNonProseContent(page.body)
+    const normalizedBody = normalizeCorrectionText(proseBody)
+    const exactMatch = normalizedBody.includes(normalizedSpan)
+    const exactMatchInsideLink = containsMarkdownLinkText(proseBody, normalizedSpan)
+    if (page === undefined || normalizedSpan === '' || !exactMatch || exactMatchInsideLink) {
+      const formattingSpan = normalizeFormattingText(correction.span.text)
+      const formattingBody = normalizeFormattingText(proseBody)
+      if (formattingSpan !== '' && formattingBody.includes(formattingSpan)) {
+        advisoryFindings.push({
+          kind: 'correction-needs-reconfirmation',
+          path,
+          target: correction.id,
+          message: `Correction ${correction.id} appears preserved with formatting-only changes and needs operator reconfirmation.`,
+        })
+        continue
+      }
       deterministicFindings.push({
         kind: 'correction-eroded',
         path,
@@ -305,6 +326,37 @@ export function verifyCorrectionSurvival(
 
 function normalizeCorrectionText(value: string): string {
   return value.trim().replaceAll(/\s+/gu, ' ')
+}
+
+function normalizeFormattingText(value: string): string {
+  const markdownLinkPattern = /!?(?:\[([^\]]*)\]\([^)]*\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/gu
+  return value
+    .normalize('NFKC')
+    .replaceAll(markdownLinkPattern, renderVisibleLinkText)
+    .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replaceAll(/\s+/gu, ' ')
+    .toLowerCase()
+}
+
+function renderVisibleLinkText(
+  _match: string,
+  markdownText: string | undefined,
+  wikiTarget: string | undefined,
+  wikiLabel: string | undefined,
+): string {
+  return markdownText ?? wikiLabel ?? wikiTarget ?? ''
+}
+
+function containsMarkdownLinkText(content: string, normalizedSpan: string): boolean {
+  let open = -1
+  for (let index = 0; index < content.length; index += 1) {
+    if (content[index] === '[') open = index
+    if (content[index] !== ']' || content[index + 1] !== '(' || open === -1) continue
+    if (normalizeCorrectionText(content.slice(open + 1, index)) === normalizedSpan) return true
+    open = -1
+  }
+  return false
 }
 
 function isMissingFileError(error: unknown): boolean {

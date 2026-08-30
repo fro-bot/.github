@@ -54,3 +54,20 @@ export function maskCodeContent(content: string): string {
 
   return masked.join('\n').replaceAll(/`[^`\n]*`/gu, value => value.replaceAll(/[^\n]/gu, ' '))
 }
+
+/** Mask fenced/indented code and blockquotes so prose-only checks ignore quoted material. */
+export function maskNonProseContent(content: string): string {
+  let inBlockquote = false
+  return maskCodeContent(content)
+    .split('\n')
+    .map(line => {
+      const isBlockquoteLine = /^ {0,3}>/u.test(line)
+      if (isBlockquoteLine) inBlockquote = true
+      else if (line.trim() === '') inBlockquote = false
+
+      const isIndentedCode = /^(?: {4}|\t)/u.test(line)
+      if (isBlockquoteLine || inBlockquote || isIndentedCode) return line.replaceAll(/[^\n]/gu, ' ')
+      return line
+    })
+    .join('\n')
+}

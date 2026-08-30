@@ -79,6 +79,60 @@ describe('correction survival verification', () => {
     ])
   })
 
+  it.each([
+    ['emphasis', 'The **corrected fact.**'],
+    ['link', 'See [The corrected fact.](https://example.com/source).'],
+    ['punctuation', 'The corrected fact!'],
+  ])('classifies %s-only rewrites as needs-reconfirmation', (_label, body) => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page(body)},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.deterministicFindings).toEqual([])
+    expect(result.advisoryFindings).toEqual([
+      expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
+    ])
+  })
+
+  it('keeps genuine content changes as blocking erosion', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('The changed fact.')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
+  })
+
+  it.each([
+    ['a fenced code block', '```\nThe corrected fact.\n```'],
+    ['a blockquote', '> The corrected fact.'],
+  ])('does not count a span present only inside %s as survival', (_label, body) => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page(body)},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+  })
+
+  it('counts a prose occurrence even when the same span is also inside a code fence', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('The corrected fact.\n\n```\nThe corrected fact.\n```')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
   it('derives distinct existing fingerprints from each correction target', () => {
     const result = verifyCorrectionSurvival(
       {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
