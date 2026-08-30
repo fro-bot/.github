@@ -1,7 +1,7 @@
-import {describe, expect, it} from 'vitest'
+import {describe, expect, it, vi} from 'vitest'
 
-import {verifyCorrectionSurvival, type CorrectionsFile} from './corrections.ts'
-import {buildWikiIngestChanges, WikiIngestError} from './wiki-ingest.ts'
+import {readCorrections, verifyCorrectionSurvival, type CorrectionsFile} from './corrections.ts'
+import {buildWikiIngestChanges, runWikiIngestCli, WikiIngestError} from './wiki-ingest.ts'
 import {buildWikiLintJsonReport, type WikiLintResult} from './wiki-lint.ts'
 
 const activeCorrection = {
@@ -18,6 +18,20 @@ const page = (body: string): string =>
     'type: repo',
     'title: alice/project',
     'node_id: R_123',
+    'created: 2026-08-29',
+    'updated: 2026-08-29',
+    '---',
+    '',
+    body,
+    '',
+  ].join('\n')
+
+const topicPage = (nodeId: string, body: string): string =>
+  [
+    '---',
+    'type: topic',
+    'title: Related topic',
+    `node_id: ${nodeId}`,
     'created: 2026-08-29',
     'updated: 2026-08-29',
     '---',
@@ -153,6 +167,87 @@ describe('correction survival verification', () => {
       expect(error.findings).toEqual([
         expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
       ])
+    }
+  })
+
+  it('does not reach commit when malformed corrections are read', async () => {
+    const commitWikiChanges = vi.fn()
+
+    await expect(
+      runWikiIngestCli({
+        readCorrections: async () =>
+          readCorrections(
+            async () => 'version: 1\ncorrections:\n  - id: broken\n    page_node_id: R_123\n    span: nope\n',
+          ),
+        commitWikiChanges,
+      }),
+    ).rejects.toMatchObject({name: 'CorrectionStoreError', code: 'INVALID_CORRECTIONS'})
+    expect(commitWikiChanges).not.toHaveBeenCalled()
+  })
+
+  it('permits the ingest path to continue when the corrections store is absent', async () => {
+    const commitWikiChanges = vi.fn()
+
+    await runWikiIngestCli({
+      readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+      commitWikiChanges,
+    })
+
+    expect(commitWikiChanges).not.toHaveBeenCalled()
+  })
+
+  it('commits unaffected pages while refusing only the page with eroded corrections', () => {
+    const result = buildWikiIngestChanges({
+      existingFiles: {'knowledge/index.md': '# Wiki Index\n', 'knowledge/log.md': '# Wiki Log\n'},
+      operation: 'manual-edit',
+      target: 'repo:alice/project',
+      summary: 'Regenerated pages.',
+      timestamp: new Date('2026-08-29T12:00:00.000Z'),
+      sources: [],
+      targetNodeId: 'R_123',
+      corrections: {version: 1, corrections: [activeCorrection]},
+      pages: [
+        {path: 'knowledge/wiki/repos/alice--project.md', content: page('The old fact.')},
+        {path: 'knowledge/wiki/topics/related.md', content: topicPage('R_456', 'The related topic.')},
+      ],
+    })
+
+    expect(result.files['knowledge/wiki/repos/alice--project.md']).toBeUndefined()
+    expect(result.files['knowledge/wiki/topics/related.md']).toContain('The related topic.')
+    expect(result.findings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', path: 'knowledge/wiki/repos/alice--project.md'}),
+    ])
+  })
+
+  it('fails clearly without committing when every regenerated page is blocked', () => {
+    let error: unknown
+    try {
+      buildWikiIngestChanges({
+        existingFiles: {'knowledge/index.md': '# Wiki Index\n', 'knowledge/log.md': '# Wiki Log\n'},
+        operation: 'manual-edit',
+        target: 'repo:alice/project',
+        summary: 'Regenerated pages.',
+        timestamp: new Date('2026-08-29T12:00:00.000Z'),
+        sources: [],
+        targetNodeId: 'R_123',
+        corrections: {
+          version: 1,
+          corrections: [activeCorrection, {...activeCorrection, id: 'correction-related', page_node_id: 'R_456'}],
+        },
+        pages: [
+          {path: 'knowledge/wiki/repos/alice--project.md', content: page('The old fact.')},
+          {path: 'knowledge/wiki/topics/related.md', content: topicPage('R_456', 'The other old fact.')},
+        ],
+      })
+    } catch (error_: unknown) {
+      error = error_
+    }
+
+    expect(error).toBeInstanceOf(WikiIngestError)
+    if (error instanceof WikiIngestError) {
+      expect(error.code).toBe('CORRECTION_ERODED')
+      expect(error.findings.filter(finding => finding.kind === 'correction-eroded')).toHaveLength(2)
+      expect(error.message).toContain('refused')
     }
   })
 })

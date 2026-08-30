@@ -1,7 +1,6 @@
 import type {WikiLintFinding} from './wiki-lint.ts'
 
 import {readFile, writeFile} from 'node:fs/promises'
-import process from 'node:process'
 import {parse, stringify} from 'yaml'
 
 import {collectWikiPages} from './wiki-utils.ts'
@@ -66,7 +65,7 @@ export type ReadUtf8File = (path: string, encoding: 'utf8') => Promise<string>
 export type WriteUtf8File = (path: string, content: string, encoding: 'utf8') => Promise<void>
 
 export type CorrectionStoreErrorCode =
-  'INVALID_CORRECTIONS' | 'CORRECTION_NOT_FOUND' | 'INVALID_TRANSITION' | 'WRITE_FAILED'
+  'INVALID_CORRECTIONS' | 'CORRECTION_NOT_FOUND' | 'INVALID_TRANSITION' | 'READ_FAILED' | 'WRITE_FAILED'
 
 export class CorrectionStoreError extends Error {
   readonly code: CorrectionStoreErrorCode
@@ -202,28 +201,38 @@ export function serializeCorrections(value: unknown): string {
 
 export async function readCorrections(
   readFileImpl: ReadUtf8File = async (path, encoding) => readFile(path, encoding),
-  warn: (message: string) => void = message => process.stderr.write(`${message}\n`),
+  warn: (message: string) => void = () => undefined,
   path = CORRECTIONS_PATH,
 ): Promise<CorrectionsReadResult> {
   let raw: string
   try {
     raw = await readFileImpl(path, 'utf8')
   } catch (error: unknown) {
+    // ENOENT means there is nothing to enforce during first-write bootstrap. Any other
+    // read failure means we cannot prove corrections survived, so it must fail closed.
     if (isMissingFileError(error)) return {corrections: emptyCorrectionsFile(), warnings: []}
-    const message = `corrections: unable to read ${path}; continuing with no corrections`
-    warn(message)
-    return {corrections: emptyCorrectionsFile(), warnings: [message]}
+    const storeError = new CorrectionStoreError({
+      code: 'READ_FAILED',
+      path,
+      message: `corrections: unable to read ${path}`,
+    })
+    warn(storeError.message)
+    throw storeError
   }
 
-  if (raw.trim() === '') return {corrections: emptyCorrectionsFile(), warnings: []}
+  if (raw.trim() === '') {
+    const storeError = invalidCorrections(path, 'existing file is empty')
+    warn(storeError.message)
+    throw storeError
+  }
 
   try {
     return {corrections: parseCorrections(raw), warnings: []}
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : 'invalid YAML or schema'
-    const message = `corrections: unable to parse ${path}; continuing with no corrections (${detail})`
-    warn(message)
-    return {corrections: emptyCorrectionsFile(), warnings: [message]}
+    const storeError = invalidCorrections(path, `unable to parse existing file (${detail})`)
+    warn(storeError.message)
+    throw storeError
   }
 }
 
@@ -238,15 +247,22 @@ export async function readCorrections(
 export function verifyCorrectionSurvival(
   files: Record<string, string>,
   corrections: CorrectionsFile | undefined,
+  fallbackFiles: Record<string, string> = {},
 ): CorrectionSurvivalResult {
   if (corrections === undefined) return {ok: true, deterministicFindings: [], advisoryFindings: []}
 
   assertCorrectionsFile(corrections)
   const pages = collectWikiPages(files)
+  const fallbackPages = collectWikiPages(fallbackFiles)
   const pagesByNodeId = new Map<string, (typeof pages)[number]>()
+  const fallbackPagesByNodeId = new Map<string, (typeof fallbackPages)[number]>()
   for (const page of pages) {
     const nodeId = page.frontmatter.node_id
     if (typeof nodeId === 'string' && nodeId !== '') pagesByNodeId.set(nodeId, page)
+  }
+  for (const page of fallbackPages) {
+    const nodeId = page.frontmatter.node_id
+    if (typeof nodeId === 'string' && nodeId !== '') fallbackPagesByNodeId.set(nodeId, page)
   }
 
   const deterministicFindings: WikiLintFinding[] = []
@@ -256,7 +272,8 @@ export function verifyCorrectionSurvival(
     if (state === 'superseded' || state === 'retired') continue
 
     const page = pagesByNodeId.get(correction.page_node_id)
-    const path = page?.path ?? CORRECTIONS_PATH
+    const fallbackPage = fallbackPagesByNodeId.get(correction.page_node_id)
+    const path = page?.path ?? fallbackPage?.path ?? CORRECTIONS_PATH
     if (state === 'needs-reconfirmation') {
       advisoryFindings.push({
         kind: 'correction-needs-reconfirmation',

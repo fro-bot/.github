@@ -8,7 +8,13 @@ import process from 'node:process'
 import {promisify} from 'node:util'
 
 import {parse, stringify} from 'yaml'
-import {readCorrections, verifyCorrectionSurvival, type CorrectionsFile} from './corrections.ts'
+import {
+  CorrectionStoreError,
+  readCorrections,
+  verifyCorrectionSurvival,
+  type CorrectionsFile,
+  type CorrectionsReadResult,
+} from './corrections.ts'
 import {
   bootstrapDataBranch as defaultBootstrapDataBranch,
   type DataBranchBootstrapParams,
@@ -106,6 +112,11 @@ export interface CommitWikiChangesResult {
   attempts: number
 }
 
+export interface RunWikiIngestCliDependencies {
+  readonly readCorrections?: typeof readCorrections
+  readonly commitWikiChanges?: typeof commitWikiChanges
+}
+
 /**
  * Narrow Octokit client type derived from the real `@octokit/rest` SDK.
  * See commit-metadata.ts for the rationale behind deriving rather than handwriting.
@@ -188,7 +199,7 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
 
   const files: Record<string, string> = {}
   const nextFiles = {...params.existingFiles}
-  const deletedPaths: string[] = []
+  let deletedPaths: string[] = []
   const migrations: {oldSlug: string; newSlug: string}[] = []
 
   for (const inputPage of params.pages) {
@@ -207,15 +218,47 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
   }
   validateWikilinks(nextFiles)
 
-  const correctionSurvival = verifyCorrectionSurvival(nextFiles, params.corrections)
+  const correctionSurvival = verifyCorrectionSurvival(nextFiles, params.corrections, params.existingFiles)
+  const correctionFindings = [...correctionSurvival.deterministicFindings, ...correctionSurvival.advisoryFindings]
   if (!correctionSurvival.ok) {
-    throw new WikiIngestError({
-      code: 'CORRECTION_ERODED',
-      message: `wiki ingest refused: ${correctionSurvival.deterministicFindings.length} active correction(s) did not survive regeneration`,
-      remediation:
-        'Restore each marked correction in the regenerated page or retire/supersede it explicitly before ingesting.',
-      findings: [...correctionSurvival.deterministicFindings, ...correctionSurvival.advisoryFindings],
-    })
+    const blockedCorrectionIds = new Set(
+      correctionSurvival.deterministicFindings
+        .map(finding => finding.target)
+        .filter((target): target is string => target !== undefined),
+    )
+    const blockedNodeIds = new Set(
+      (params.corrections?.corrections ?? [])
+        .filter(correction => blockedCorrectionIds.has(correction.id))
+        .map(correction => correction.page_node_id),
+    )
+    const blockedPagePaths = new Set(
+      correctionSurvival.deterministicFindings
+        .map(finding => finding.path)
+        .filter(path => path.startsWith(`${WIKI_ROOT}/`) && path.endsWith('.md')),
+    )
+    for (const page of collectWikiPages(nextFiles)) {
+      const nodeId = parseFrontmatter(page.path, page.content).node_id
+      if (typeof nodeId === 'string' && blockedNodeIds.has(nodeId)) blockedPagePaths.add(page.path)
+    }
+    const restoredPaths = restoreBlockedCorrectionPages(
+      nextFiles,
+      params.existingFiles,
+      blockedNodeIds,
+      blockedPagePaths,
+    )
+    for (const path of restoredPaths) delete files[path]
+    deletedPaths = deletedPaths.filter(path => nextFiles[path] === undefined)
+
+    const hasUnblockedPage = params.pages.some(page => !blockedPagePaths.has(page.path))
+    if (!hasUnblockedPage || blockedPagePaths.size === 0) {
+      throw new WikiIngestError({
+        code: 'CORRECTION_ERODED',
+        message: `wiki ingest refused: all regenerated pages were blocked by ${correctionSurvival.deterministicFindings.length} eroded correction(s)`,
+        remediation:
+          'Restore each marked correction in the regenerated page or retire/supersede it explicitly before ingesting.',
+        findings: correctionFindings,
+      })
+    }
   }
 
   const parsedPages = collectWikiPages(nextFiles)
@@ -225,7 +268,29 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
   files[INDEX_PATH] = index
   files[LOG_PATH] = log
 
-  return {files, deletedPaths, findings: correctionSurvival.advisoryFindings}
+  return {files, deletedPaths, findings: correctionFindings}
+}
+
+function restoreBlockedCorrectionPages(
+  nextFiles: Record<string, string>,
+  existingFiles: Record<string, string>,
+  blockedNodeIds: ReadonlySet<string>,
+  blockedPagePaths: ReadonlySet<string>,
+): Set<string> {
+  const blockedPaths = new Set(blockedPagePaths)
+  for (const fileSet of [nextFiles, existingFiles]) {
+    for (const [path, content] of Object.entries(fileSet)) {
+      if (!path.startsWith(`${WIKI_ROOT}/`) || !path.endsWith('.md')) continue
+      const frontmatter = parseFrontmatter(path, content)
+      if (typeof frontmatter.node_id === 'string' && blockedNodeIds.has(frontmatter.node_id)) blockedPaths.add(path)
+    }
+  }
+
+  for (const path of blockedPaths) {
+    if (existingFiles[path] === undefined) delete nextFiles[path]
+    else nextFiles[path] = existingFiles[path]
+  }
+  return blockedPaths
 }
 
 export async function commitWikiChanges(params: CommitWikiChangesParams): Promise<CommitWikiChangesResult> {
@@ -1205,10 +1270,27 @@ async function emitPagesChanged(n: number): Promise<void> {
   }
 }
 
-export async function runWikiIngestCli(): Promise<void> {
+export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencies = {}): Promise<void> {
   const payloadPath = process.argv[2] ?? process.env.WIKI_INGEST_INPUT
+  const readCorrectionsImpl = dependencies.readCorrections ?? readCorrections
+  const commitWikiChangesImpl = dependencies.commitWikiChanges ?? commitWikiChanges
   const existingFiles = await loadExistingWikiFiles()
-  const correctionRead = await readCorrections()
+  let correctionRead: CorrectionsReadResult
+  try {
+    correctionRead = await readCorrectionsImpl()
+  } catch (error: unknown) {
+    if (error instanceof CorrectionStoreError) {
+      process.stderr.write(
+        `wiki-ingest:warning:${JSON.stringify({
+          code: 'corrections-read-failed',
+          error: error.code,
+          path: error.path,
+          message: error.message,
+        })}\n`,
+      )
+    }
+    throw error
+  }
   for (const warning of correctionRead.warnings) {
     process.stderr.write(`wiki-ingest:warning:${JSON.stringify({code: 'corrections-read-failed', message: warning})}\n`)
   }
@@ -1295,7 +1377,7 @@ export async function runWikiIngestCli(): Promise<void> {
     process.stderr.write(`wiki-ingest:finding:${JSON.stringify(finding)}\n`)
   }
 
-  const result = await commitWikiChanges({
+  const result = await commitWikiChangesImpl({
     owner,
     repo,
     branch,

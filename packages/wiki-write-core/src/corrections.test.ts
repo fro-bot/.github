@@ -143,24 +143,41 @@ describe('corrections sidecar', () => {
     expect(getCorrectionsForPage(recorded, 'alice--old')).toEqual([])
   })
 
-  it('fails soft on malformed reads and emits a warning', async () => {
+  it('fails closed on malformed reads with the existing typed store error', async () => {
     const warn = vi.fn()
-    const result = await readCorrections(
+    const promise = readCorrections(
       async () => 'version: 1\ncorrections:\n  - id: broken\n    page_node_id: R_123\n    span: nope\n',
       warn,
     )
 
-    expect(result.corrections).toEqual(emptyCorrections)
-    expect(result.warnings).toHaveLength(1)
+    await expect(promise).rejects.toMatchObject({name: 'CorrectionStoreError', code: 'INVALID_CORRECTIONS'})
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(CORRECTIONS_PATH))
   })
 
-  it('treats an empty corrections file as a clean no-op', async () => {
+  it('keeps an absent corrections file as a clean no-op', async () => {
     const warn = vi.fn()
-    const result = await readCorrections(async () => '', warn)
+    const result = await readCorrections(async () => {
+      throw Object.assign(new Error('missing'), {code: 'ENOENT'})
+    }, warn)
 
     expect(result).toEqual({corrections: emptyCorrections, warnings: []})
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when an existing corrections file is empty', async () => {
+    await expect(readCorrections(async () => ' \n\t')).rejects.toMatchObject({
+      name: 'CorrectionStoreError',
+      code: 'INVALID_CORRECTIONS',
+    })
+  })
+
+  it('fails closed on non-ENOENT corrections read failures', async () => {
+    const error = Object.assign(new Error('permission denied'), {code: 'EACCES'})
+
+    await expect(readCorrections(async () => Promise.reject(error))).rejects.toMatchObject({
+      name: 'CorrectionStoreError',
+      code: 'READ_FAILED',
+    })
   })
 
   it('fails hard on malformed writes', async () => {
