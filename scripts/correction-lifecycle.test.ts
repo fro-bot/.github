@@ -310,6 +310,22 @@ describe('correction-lifecycle CLI', () => {
     expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'INVALID_ARGUMENT'}})
   })
 
+  it('relays end-before-start span validation as a structured corrections failure', async () => {
+    const deps = dependencies(activeFile)
+
+    const exitCode = await main(
+      ['record', '--id', 'new', '--node-id', 'R_456', '--text', 'A fact.', '--start', '34', '--end', '12'],
+      deps,
+    )
+
+    expect(exitCode).toBe(1)
+    expect(deps.writtenContent).toBe('')
+    expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({
+      ok: false,
+      error: {code: 'INVALID_CORRECTIONS', path: 'input.span'},
+    })
+  })
+
   it('rejects lifecycle writes outside the repository root', async () => {
     const deps = dependencies(activeFile)
     deps.cwd = '/tmp'
