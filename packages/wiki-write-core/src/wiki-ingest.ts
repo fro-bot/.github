@@ -1,5 +1,6 @@
 import type {Dirent} from 'node:fs'
 import type {Octokit} from '@octokit/rest'
+import type {WikiLintFinding} from './wiki-lint.ts'
 import {execFile} from 'node:child_process'
 import {appendFile, readdir, readFile} from 'node:fs/promises'
 import {basename} from 'node:path'
@@ -7,6 +8,13 @@ import process from 'node:process'
 import {promisify} from 'node:util'
 
 import {parse, stringify} from 'yaml'
+import {
+  CorrectionStoreError,
+  readCorrections,
+  verifyCorrectionSurvival,
+  type CorrectionsFile,
+  type CorrectionsReadResult,
+} from './corrections.ts'
 import {
   bootstrapDataBranch as defaultBootstrapDataBranch,
   type DataBranchBootstrapParams,
@@ -59,11 +67,14 @@ export interface BuildWikiIngestChangesParams {
   fallbackNodeId?: string
   /** False means metadata state is unknown; preserve existing page identity. */
   trackedMetadataAvailable?: boolean
+  /** System-owned correction state used for post-regeneration survival verification. */
+  corrections?: CorrectionsFile
 }
 
 export interface BuildWikiIngestChangesResult {
   files: Record<string, string>
   deletedPaths: string[]
+  findings: readonly WikiLintFinding[]
 }
 
 export interface WikiIngestWarning {
@@ -101,6 +112,12 @@ export interface CommitWikiChangesResult {
   attempts: number
 }
 
+export interface RunWikiIngestCliDependencies {
+  readonly readCorrections?: typeof readCorrections
+  readonly commitWikiChanges?: typeof commitWikiChanges
+  readonly getChangedWikiPaths?: typeof getChangedWikiPaths
+}
+
 /**
  * Narrow Octokit client type derived from the real `@octokit/rest` SDK.
  * See commit-metadata.ts for the rationale behind deriving rather than handwriting.
@@ -112,6 +129,7 @@ export type WikiIngestErrorCode =
   | 'INVALID_PAGE_PATH'
   | 'INVALID_FRONTMATTER'
   | 'INVALID_WIKILINK'
+  | 'CORRECTION_ERODED'
   | 'INVALID_RETRIES'
   | 'PROTECTED_BRANCH'
   | 'MISSING_TOKEN'
@@ -121,12 +139,19 @@ export type WikiIngestErrorCode =
 export class WikiIngestError extends Error {
   readonly code: WikiIngestErrorCode
   readonly remediation: string
+  readonly findings: readonly WikiLintFinding[]
 
-  constructor(params: {code: WikiIngestErrorCode; message: string; remediation: string}) {
+  constructor(params: {
+    code: WikiIngestErrorCode
+    message: string
+    remediation: string
+    findings?: readonly WikiLintFinding[]
+  }) {
     super(params.message)
     this.name = 'WikiIngestError'
     this.code = params.code
     this.remediation = params.remediation
+    this.findings = params.findings ?? []
   }
 }
 
@@ -175,7 +200,7 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
 
   const files: Record<string, string> = {}
   const nextFiles = {...params.existingFiles}
-  const deletedPaths: string[] = []
+  let deletedPaths: string[] = []
   const migrations: {oldSlug: string; newSlug: string}[] = []
 
   for (const inputPage of params.pages) {
@@ -194,6 +219,53 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
   }
   validateWikilinks(nextFiles)
 
+  const correctionSurvival = verifyCorrectionSurvival(nextFiles, params.corrections, params.existingFiles)
+  const correctionFindings = [...correctionSurvival.deterministicFindings, ...correctionSurvival.advisoryFindings]
+  if (!correctionSurvival.ok) {
+    const blockedCorrectionIds = new Set(
+      correctionSurvival.deterministicFindings
+        .map(finding => finding.target)
+        .filter((target): target is string => target !== undefined),
+    )
+    const blockedNodeIds = new Set(
+      (params.corrections?.corrections ?? [])
+        .filter(correction => blockedCorrectionIds.has(correction.id))
+        .map(correction => correction.page_node_id),
+    )
+    const blockedPagePaths = new Set(
+      correctionSurvival.deterministicFindings
+        .map(finding => finding.path)
+        .filter(path => path.startsWith(`${WIKI_ROOT}/`) && path.endsWith('.md')),
+    )
+    const parsedNextFrontmatter = collectWikiFrontmatter(nextFiles)
+    const parsedExistingFrontmatter = collectWikiFrontmatter(params.existingFiles)
+    for (const [path, frontmatter] of parsedNextFrontmatter) {
+      const nodeId = frontmatter.node_id
+      if (typeof nodeId === 'string' && blockedNodeIds.has(nodeId)) blockedPagePaths.add(path)
+    }
+    const restoredPaths = restoreBlockedCorrectionPages(
+      nextFiles,
+      params.existingFiles,
+      parsedNextFrontmatter,
+      parsedExistingFrontmatter,
+      blockedNodeIds,
+      blockedPagePaths,
+    )
+    for (const path of restoredPaths) delete files[path]
+    deletedPaths = deletedPaths.filter(path => nextFiles[path] === undefined)
+
+    const hasUnblockedPage = params.pages.some(page => !blockedPagePaths.has(page.path))
+    if (!hasUnblockedPage || blockedPagePaths.size === 0) {
+      throw new WikiIngestError({
+        code: 'CORRECTION_ERODED',
+        message: `wiki ingest refused: all regenerated pages were blocked by ${correctionSurvival.deterministicFindings.length} eroded correction(s)`,
+        remediation:
+          'Restore each marked correction in the regenerated page or retire/supersede it explicitly before ingesting.',
+        findings: correctionFindings,
+      })
+    }
+  }
+
   const parsedPages = collectWikiPages(nextFiles)
   const index = buildIndexDocument(nextFiles[INDEX_PATH], parsedPages)
   const log = appendLogEntry(nextFiles[LOG_PATH], params)
@@ -201,7 +273,36 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
   files[INDEX_PATH] = index
   files[LOG_PATH] = log
 
-  return {files, deletedPaths}
+  return {files, deletedPaths, findings: correctionFindings}
+}
+
+function restoreBlockedCorrectionPages(
+  nextFiles: Record<string, string>,
+  existingFiles: Record<string, string>,
+  nextFrontmatter: ReadonlyMap<string, WikiFrontmatter>,
+  existingFrontmatter: ReadonlyMap<string, WikiFrontmatter>,
+  blockedNodeIds: ReadonlySet<string>,
+  blockedPagePaths: ReadonlySet<string>,
+): Set<string> {
+  const blockedPaths = new Set(blockedPagePaths)
+  for (const [path, frontmatter] of [...nextFrontmatter, ...existingFrontmatter]) {
+    const nodeId = frontmatter.node_id
+    if (typeof nodeId === 'string' && blockedNodeIds.has(nodeId)) blockedPaths.add(path)
+  }
+
+  for (const path of blockedPaths) {
+    if (existingFiles[path] === undefined) delete nextFiles[path]
+    else nextFiles[path] = existingFiles[path]
+  }
+  return blockedPaths
+}
+
+function collectWikiFrontmatter(files: Record<string, string>): Map<string, WikiFrontmatter> {
+  const frontmatter = new Map<string, WikiFrontmatter>()
+  for (const [path, content] of Object.entries(files)) {
+    if (path.startsWith(`${WIKI_ROOT}/`) && path.endsWith('.md')) frontmatter.set(path, parseFrontmatter(path, content))
+  }
+  return frontmatter
 }
 
 export async function commitWikiChanges(params: CommitWikiChangesParams): Promise<CommitWikiChangesResult> {
@@ -1181,9 +1282,31 @@ async function emitPagesChanged(n: number): Promise<void> {
   }
 }
 
-export async function runWikiIngestCli(): Promise<void> {
+export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencies = {}): Promise<void> {
   const payloadPath = process.argv[2] ?? process.env.WIKI_INGEST_INPUT
+  const readCorrectionsImpl = dependencies.readCorrections ?? readCorrections
+  const commitWikiChangesImpl = dependencies.commitWikiChanges ?? commitWikiChanges
+  const getChangedWikiPathsImpl = dependencies.getChangedWikiPaths ?? getChangedWikiPaths
   const existingFiles = await loadExistingWikiFiles()
+  let correctionRead: CorrectionsReadResult
+  try {
+    correctionRead = await readCorrectionsImpl()
+  } catch (error: unknown) {
+    if (error instanceof CorrectionStoreError) {
+      process.stderr.write(
+        `wiki-ingest:warning:${JSON.stringify({
+          code: 'corrections-read-failed',
+          error: error.code,
+          path: error.path,
+          message: error.message,
+        })}\n`,
+      )
+    }
+    throw error
+  }
+  for (const warning of correctionRead.warnings) {
+    process.stderr.write(`wiki-ingest:warning:${JSON.stringify({code: 'corrections-read-failed', message: warning})}\n`)
+  }
 
   let built: BuildWikiIngestChangesResult
   let owner: string | undefined
@@ -1194,66 +1317,80 @@ export async function runWikiIngestCli(): Promise<void> {
 
   let committedPagePaths: string[]
 
-  if (payloadPath !== undefined && payloadPath !== '') {
-    const payload = parsePayload(await readFile(payloadPath, 'utf8'))
-    const tracked = await loadTrackedRepoNodeIds()
-    identityWarnings = tracked.warnings
-    built = buildWikiIngestChanges({
-      existingFiles,
-      operation: payload.operation,
-      target: payload.target,
-      summary: payload.summary,
-      timestamp: payload.timestamp === undefined ? new Date() : new Date(payload.timestamp),
-      sources: payload.sources,
-      pages: payload.pages,
-      trackedRepoNodeIds: tracked.nodeIds,
-      fallbackNodeId: payload.node_id,
-      trackedMetadataAvailable: tracked.metadataAvailable,
-    })
-    owner = payload.owner
-    repo = payload.repo
-    branch = payload.branch
-    message = payload.message ?? defaultCommitMessage(payload)
-    committedPagePaths = payload.pages.map(p => p.path)
-  } else {
-    const changedPaths = await getChangedWikiPaths()
-    if (changedPaths.length === 0) {
-      await emitPagesChanged(0)
-      process.stdout.write(`${JSON.stringify({committed: false, attempts: 1, pagesChanged: 0})}\n`)
-      return
-    }
+  try {
+    if (payloadPath !== undefined && payloadPath !== '') {
+      const payload = parsePayload(await readFile(payloadPath, 'utf8'))
+      const tracked = await loadTrackedRepoNodeIds()
+      identityWarnings = tracked.warnings
+      built = buildWikiIngestChanges({
+        existingFiles,
+        operation: payload.operation,
+        target: payload.target,
+        summary: payload.summary,
+        timestamp: payload.timestamp === undefined ? new Date() : new Date(payload.timestamp),
+        sources: payload.sources,
+        pages: payload.pages,
+        trackedRepoNodeIds: tracked.nodeIds,
+        fallbackNodeId: payload.node_id,
+        trackedMetadataAvailable: tracked.metadataAvailable,
+        corrections: correctionRead.corrections,
+      })
+      owner = payload.owner
+      repo = payload.repo
+      branch = payload.branch
+      message = payload.message ?? defaultCommitMessage(payload)
+      committedPagePaths = payload.pages.map(p => p.path)
+    } else {
+      const changedPaths = await getChangedWikiPathsImpl()
+      if (changedPaths.length === 0) {
+        await emitPagesChanged(0)
+        process.stdout.write(`${JSON.stringify({committed: false, attempts: 1, pagesChanged: 0})}\n`)
+        return
+      }
 
-    const pages = await loadWorkingTreeWikiFiles(changedPaths)
-    const operation = isWikiOperation(process.env.WIKI_OPERATION) ? process.env.WIKI_OPERATION : 'event'
-    const target = process.env.WIKI_TARGET ?? 'repo:unknown/unknown'
-    const tracked = await loadTrackedRepoNodeIds()
-    identityWarnings = tracked.warnings
-    built = buildWikiIngestChanges({
-      existingFiles,
-      operation,
-      target,
-      summary: process.env.WIKI_SUMMARY ?? 'Updated wiki content from working tree changes.',
-      timestamp: process.env.WIKI_TIMESTAMP === undefined ? new Date() : new Date(process.env.WIKI_TIMESTAMP),
-      sources: parseSources(process.env.WIKI_SOURCES),
-      pages: Object.entries(pages).map(([path, content]) => ({path, content})),
-      trackedRepoNodeIds: tracked.nodeIds,
-      targetNodeId: process.env.REPO_NODE_ID,
-      trackedMetadataAvailable: tracked.metadataAvailable,
-    })
-    owner = process.env.WIKI_OWNER
-    repo = process.env.WIKI_REPO
-    branch = process.env.WIKI_BRANCH
-    message =
-      process.env.WIKI_COMMIT_MESSAGE ??
-      `feat(knowledge): ${process.env.WIKI_OPERATION ?? 'event'} ${process.env.WIKI_TARGET ?? 'wiki update'}`
-    committedPagePaths = changedPaths
+      const pages = await loadWorkingTreeWikiFiles(changedPaths)
+      const operation = isWikiOperation(process.env.WIKI_OPERATION) ? process.env.WIKI_OPERATION : 'event'
+      const target = process.env.WIKI_TARGET ?? 'repo:unknown/unknown'
+      const tracked = await loadTrackedRepoNodeIds()
+      identityWarnings = tracked.warnings
+      built = buildWikiIngestChanges({
+        existingFiles,
+        operation,
+        target,
+        summary: process.env.WIKI_SUMMARY ?? 'Updated wiki content from working tree changes.',
+        timestamp: process.env.WIKI_TIMESTAMP === undefined ? new Date() : new Date(process.env.WIKI_TIMESTAMP),
+        sources: parseSources(process.env.WIKI_SOURCES),
+        pages: Object.entries(pages).map(([path, content]) => ({path, content})),
+        trackedRepoNodeIds: tracked.nodeIds,
+        targetNodeId: process.env.REPO_NODE_ID,
+        trackedMetadataAvailable: tracked.metadataAvailable,
+        corrections: correctionRead.corrections,
+      })
+      owner = process.env.WIKI_OWNER
+      repo = process.env.WIKI_REPO
+      branch = process.env.WIKI_BRANCH
+      message =
+        process.env.WIKI_COMMIT_MESSAGE ??
+        `feat(knowledge): ${process.env.WIKI_OPERATION ?? 'event'} ${process.env.WIKI_TARGET ?? 'wiki update'}`
+      committedPagePaths = changedPaths
+    }
+  } catch (error: unknown) {
+    if (error instanceof WikiIngestError) {
+      for (const finding of error.findings) {
+        process.stderr.write(`wiki-ingest:finding:${JSON.stringify(finding)}\n`)
+      }
+    }
+    throw error
   }
 
   for (const warning of identityWarnings) {
     process.stderr.write(`wiki-ingest:warning:${JSON.stringify(warning)}\n`)
   }
+  for (const finding of built.findings) {
+    process.stderr.write(`wiki-ingest:finding:${JSON.stringify(finding)}\n`)
+  }
 
-  const result = await commitWikiChanges({
+  const result = await commitWikiChangesImpl({
     owner,
     repo,
     branch,

@@ -53,6 +53,10 @@
       "types": "./src/frontmatter.ts",
       "import": "./src/frontmatter.ts"
     },
+    "./corrections": {
+      "types": "./src/corrections.ts",
+      "import": "./src/corrections.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [

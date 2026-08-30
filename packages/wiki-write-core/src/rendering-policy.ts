@@ -54,3 +54,65 @@ export function maskCodeContent(content: string): string {
 
   return masked.join('\n').replaceAll(/`[^`\n]*`/gu, value => value.replaceAll(/[^\n]/gu, ' '))
 }
+
+/**
+ * Mask fenced/indented code and blockquotes so prose-only checks ignore quoted material.
+ * Block structure is read from the original lines because inline-code masking can create
+ * leading spaces. List tracking intentionally covers ordinary nested list content; a
+ * blank line ends that bounded list context rather than attempting full CommonMark parsing.
+ */
+export function maskNonProseContent(content: string): string {
+  const originalLines = content.split('\n')
+  const maskedLines = maskCodeContent(content).split('\n')
+  let inBlockquote = false
+  let listIndent: number | undefined
+
+  return originalLines
+    .map((originalLine, index) => {
+      const maskedLine = maskedLines[index] ?? originalLine
+      const isBlank = originalLine.trim() === ''
+      const isBlockquoteLine = /^ {0,3}>/u.test(originalLine)
+      const isBlockStart = isMarkdownBlockStart(originalLine)
+
+      if (isBlockquoteLine) inBlockquote = true
+      else if (isBlank || (inBlockquote && isBlockStart)) inBlockquote = false
+
+      if (isBlank) listIndent = undefined
+      else if (!isBlockquoteLine && listIndent !== undefined && countIndent(originalLine) <= listIndent && isBlockStart)
+        listIndent = undefined
+
+      const listMarker = getListIndent(originalLine)
+      const isListContinuation = listIndent !== undefined && countIndent(originalLine) > listIndent
+      const isIndentedCode = /^(?: {4}|\t)/u.test(originalLine) && !isListContinuation
+      if (listMarker !== undefined && !isBlockquoteLine) listIndent = listMarker
+
+      if (isBlockquoteLine || inBlockquote || isIndentedCode) return originalLine.replaceAll(/[^\n]/gu, ' ')
+      return maskedLine
+    })
+    .join('\n')
+}
+
+function isMarkdownBlockStart(line: string): boolean {
+  const content = line.replace(/^ {0,3}/u, '')
+  return (
+    /^#{1,6}(?:\s|$)/u.test(content) ||
+    getListIndent(line) !== undefined ||
+    /^(?:`{3,}|~{3,})/u.test(content) ||
+    /^(?:(?:\*\s*){3,}|(?:-\s*){3,}|(?:_\s*){3,})$/u.test(content)
+  )
+}
+
+function getListIndent(line: string): number | undefined {
+  const match = /^( *)(?:[-+*]|\d+[.)])(?:\s|$)/u.exec(line)
+  return match?.[1]?.length
+}
+
+function countIndent(line: string): number {
+  let indent = 0
+  for (const character of line) {
+    if (character === ' ') indent += 1
+    else if (character === '\t') indent += 4
+    else break
+  }
+  return indent
+}

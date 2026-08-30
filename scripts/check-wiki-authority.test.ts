@@ -1,5 +1,5 @@
+import {CORRECTIONS_PATH} from '@fro-bot/wiki-write-core/corrections'
 import {describe, expect, it, vi} from 'vitest'
-
 import {checkWikiAuthority, fetchChangedFiles, formatBlockMessage} from './check-wiki-authority.ts'
 
 // Hoisted mock for execFileSync — must precede any import that might trigger the module.
@@ -237,6 +237,11 @@ describe('checkWikiAuthority', () => {
   })
 
   describe('path-matching edge cases', () => {
+    it('guards the system-owned corrections sidecar path', () => {
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: [CORRECTIONS_PATH]})
+      expect(result).toEqual({ok: false, blockedFiles: [CORRECTIONS_PATH]})
+    })
+
     it('blocks nested wiki subdirectories via the wiki glob', () => {
       // #given a deep nested wiki path
       // #when the guard evaluates the PR
