@@ -1,5 +1,6 @@
 import type {WikiLintFinding} from './wiki-lint.ts'
 
+import {normalizeCorrectionText} from './correction-text.ts'
 import {
   assertCorrectionsFile,
   getCorrectionLifecycle,
@@ -97,10 +98,6 @@ export function verifyCorrectionSurvival(
     deterministicFindings,
     advisoryFindings,
   }
-}
-
-function normalizeCorrectionText(value: string): string {
-  return value.trim().replaceAll(/\s+/gu, ' ')
 }
 
 function normalizeFormattingText(value: string): string {

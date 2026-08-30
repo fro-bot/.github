@@ -240,16 +240,22 @@ export function normalizeLooseCorrectionRecord(record: LooseCorrectionRecord, pa
   if (record.state === 'active') {
     if (record.superseded_by !== undefined)
       throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+    if (record.reason !== undefined)
+      throw invalidCorrections(`${path}.reason`, 'only needs-reconfirmation corrections may have a reason')
     return {...base, state: 'active'}
   }
   if (record.state === 'retired') {
     if (record.superseded_by !== undefined)
       throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+    if (record.reason !== undefined)
+      throw invalidCorrections(`${path}.reason`, 'only needs-reconfirmation corrections may have a reason')
     return {...base, state: 'retired'}
   }
   if (record.state === 'superseded') {
     if (record.superseded_by === undefined || record.superseded_by === '')
       throw invalidCorrections(`${path}.superseded_by`, 'superseded corrections require a target')
+    if (record.reason !== undefined)
+      throw invalidCorrections(`${path}.reason`, 'only needs-reconfirmation corrections may have a reason')
     return {...base, state: 'superseded', superseded_by: record.superseded_by}
   }
   if (record.reason === undefined || record.reason === '')
@@ -374,7 +380,7 @@ export function recordCorrection(file: CorrectionsFile, input: RecordCorrectionI
 
   const corrections = file.corrections.map(correction =>
     correction.id === input.supersedesId
-      ? {...correction, state: 'superseded' as const, superseded_by: input.id}
+      ? {...withoutLifecycleFields(correction), state: 'superseded' as const, superseded_by: input.id}
       : correction,
   )
   corrections.push({

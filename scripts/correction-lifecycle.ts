@@ -1,4 +1,6 @@
+import {existsSync} from 'node:fs'
 import {readFile, writeFile} from 'node:fs/promises'
+import {dirname, join, resolve} from 'node:path'
 import process from 'node:process'
 
 import {
@@ -18,6 +20,8 @@ import {
 
 type LifecycleCommand = 'record' | 'retire' | 'reconfirm' | 'supersede'
 
+const LIFECYCLE_COMMANDS = ['record', 'retire', 'reconfirm', 'supersede'] as const
+
 export interface CorrectionLifecycleCliDependencies {
   readonly env?: Readonly<Record<string, string | undefined>>
   readonly now?: () => Date
@@ -25,6 +29,8 @@ export interface CorrectionLifecycleCliDependencies {
   readonly writeFile?: WriteUtf8File
   readonly stdout?: (value: string) => void
   readonly stderr?: (value: string) => void
+  readonly cwd?: string
+  readonly repositoryRoot?: string
 }
 
 export interface CorrectionLifecycleCliSuccess {
@@ -58,11 +64,20 @@ export interface CorrectionLifecycleCliHelp {
   readonly failure_code_descriptions: Readonly<Record<string, string>>
 }
 
+export interface CorrectionLifecycleCliCommandHelp {
+  readonly ok: true
+  readonly command: LifecycleCommand
+  readonly required: readonly string[]
+  readonly optional: readonly string[]
+  readonly failure_codes: readonly string[]
+  readonly failure_code_descriptions: Readonly<Record<string, string>>
+}
+
 export class CorrectionLifecycleCliError extends Error {
-  readonly code: 'INVALID_ARGUMENT' | 'MISSING_ACTOR'
+  readonly code: 'INVALID_ARGUMENT' | 'MISSING_ACTOR' | 'INVALID_CONTEXT'
   readonly remediation: string
 
-  constructor(code: 'INVALID_ARGUMENT' | 'MISSING_ACTOR', message: string, remediation: string) {
+  constructor(code: 'INVALID_ARGUMENT' | 'MISSING_ACTOR' | 'INVALID_CONTEXT', message: string, remediation: string) {
     super(message)
     this.name = 'CorrectionLifecycleCliError'
     this.code = code
@@ -80,6 +95,7 @@ export async function executeCorrectionLifecycle(
   dependencies: Omit<CorrectionLifecycleCliDependencies, 'stdout' | 'stderr'> = {},
 ): Promise<CorrectionLifecycleCliSuccess> {
   const parsed = parseArguments(args)
+  assertRepositoryRoot(dependencies.cwd ?? process.cwd(), dependencies.repositoryRoot)
   const readFileImpl = dependencies.readFile ?? (async (path, encoding) => readFile(path, encoding))
   const writeFileImpl =
     dependencies.writeFile ?? (async (path, content, encoding) => writeFile(path, content, encoding))
@@ -106,8 +122,14 @@ export async function main(
 ): Promise<number> {
   const stdout = dependencies.stdout ?? (value => process.stdout.write(value))
   const stderr = dependencies.stderr ?? (value => process.stderr.write(value))
-  if (args[0] === '--help' || args[0] === 'help') {
+  const helpIndex = args.indexOf('--help')
+  if (args[0] === 'help' || (args[0] === '--help' && helpIndex === 0)) {
     stdout(`${JSON.stringify(buildHelp())}\n`)
+    return 0
+  }
+  if (helpIndex !== -1) {
+    const command = args[0]
+    stdout(`${JSON.stringify(isLifecycleCommand(command) ? buildCommandHelp(command) : buildHelp())}\n`)
     return 0
   }
   try {
@@ -156,6 +178,22 @@ export function buildHelp(): CorrectionLifecycleCliHelp {
   }
 }
 
+export function buildCommandHelp(command: LifecycleCommand): CorrectionLifecycleCliCommandHelp {
+  const help = buildHelp()
+  return {
+    ok: true,
+    command,
+    required: help.commands[command].required,
+    optional: help.commands[command].optional,
+    failure_codes: help.failure_codes,
+    failure_code_descriptions: help.failure_code_descriptions,
+  }
+}
+
+function isLifecycleCommand(value: string | undefined): value is LifecycleCommand {
+  return value !== undefined && (LIFECYCLE_COMMANDS as readonly string[]).includes(value)
+}
+
 function parseArguments(args: readonly string[]): ParsedArguments {
   const command = args[0]
   if (command !== 'record' && command !== 'retire' && command !== 'reconfirm' && command !== 'supersede') {
@@ -170,7 +208,7 @@ function parseArguments(args: readonly string[]): ParsedArguments {
   for (let index = 1; index < args.length; index += 1) {
     const option = args[index]
     const value = args[index + 1]
-    if (option === undefined || !option.startsWith('--') || value === undefined || value.startsWith('--')) {
+    if (option === undefined || !option.startsWith('--') || value === undefined) {
       throw invalidArguments('Each option must be a `--name value` pair.')
     }
     if (options.has(option)) throw invalidArguments(`Option ${option} was provided more than once.`)
@@ -306,12 +344,32 @@ function toFailure(error: unknown): CorrectionLifecycleCliFailure {
   }
 }
 
-function isErrnoError(error: unknown): error is {readonly code: string; readonly message: string} {
-  return isRecord(error) && typeof error.code === 'string' && typeof error.message === 'string'
+function assertRepositoryRoot(cwd: string, repositoryRoot: string | undefined): void {
+  const root = repositoryRoot ?? findRepositoryRoot(cwd)
+  if (root === undefined || resolve(cwd) !== resolve(root))
+    throw new CorrectionLifecycleCliError(
+      'INVALID_CONTEXT',
+      'correction-lifecycle must run from the repository root',
+      'Run this command with the repository root as the working directory.',
+    )
+}
+
+function findRepositoryRoot(start: string): string | undefined {
+  let current = resolve(start)
+  while (true) {
+    if (existsSync(join(current, 'package.json')) && existsSync(join(current, 'knowledge'))) return current
+    const parent = dirname(current)
+    if (parent === current) return undefined
+    current = parent
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function isErrnoError(error: unknown): error is {readonly code: string; readonly message: string} {
+  return isRecord(error) && typeof error.code === 'string' && typeof error.message === 'string'
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

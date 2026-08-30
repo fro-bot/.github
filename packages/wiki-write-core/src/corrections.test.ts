@@ -103,6 +103,31 @@ describe('corrections sidecar', () => {
     expect(retireCorrection(replacement, 'correction-2').corrections[1]?.state).toBe('retired')
   })
 
+  it('does not preserve reconfirmation reasons on a superseded record', () => {
+    const flagged: CorrectionsFile = {
+      version: 1,
+      corrections: [
+        {
+          ...correctionInput,
+          id: correctionInput.id,
+          page_node_id: correctionInput.pageNodeId,
+          state: 'needs-reconfirmation',
+          reason: 'Upstream changed',
+        },
+      ],
+    }
+    const replacement = recordCorrection(flagged, {
+      ...correctionInput,
+      id: 'replacement',
+      span: {text: 'The superseding fact.'},
+      supersedesId: correctionInput.id,
+    })
+    const roundTripped = parseCorrections(serializeCorrections(replacement)).corrections[0]
+
+    expect(roundTripped).toMatchObject({state: 'superseded', superseded_by: 'replacement'})
+    expect(roundTripped).not.toHaveProperty('reason')
+  })
+
   it('accepts legacy records while optional rollout fields are absent', () => {
     const legacy = parseCorrections(
       `version: 1\ncorrections:\n  - id: legacy\n    page_node_id: R_123\n    span:\n      text: Legacy fact\n`,

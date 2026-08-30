@@ -1,3 +1,5 @@
+import process from 'node:process'
+
 import {
   CORRECTIONS_PATH,
   CorrectionStoreError,
@@ -50,6 +52,8 @@ function dependencies(file: CorrectionsFile, actor: string | undefined = 'marcus
     },
     stdout: (value: string) => stdoutLines.push(value),
     stderr: (value: string) => stderrLines.push(value),
+    cwd: process.cwd(),
+    repositoryRoot: process.cwd(),
     get writtenPath() {
       return writtenPath
     },
@@ -89,6 +93,23 @@ describe('correction-lifecycle CLI', () => {
       ]),
     )
     expect(deps.writtenPath).toBe('')
+  })
+
+  it.each(['record', 'retire', 'reconfirm', 'supersede'])('prints per-command help for %s --help', async command => {
+    const deps = dependencies({version: 1, corrections: [activeCorrection]})
+
+    const exitCode = await main([command, '--help'], deps)
+    const output = JSON.parse(deps.stdoutLines[0] ?? '') as {
+      ok: boolean
+      command: string
+      required: string[]
+      optional: string[]
+    }
+
+    expect(exitCode).toBe(0)
+    expect(output).toMatchObject({ok: true, command})
+    expect(output.required.length).toBeGreaterThan(0)
+    expect(output.optional).toBeInstanceOf(Array)
   })
 
   it.each([
@@ -165,6 +186,29 @@ describe('correction-lifecycle CLI', () => {
     expect(exitCode).toBe(1)
     expect(deps.writtenContent).toBe('')
     expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'INVALID_ARGUMENT'}})
+  })
+
+  it('accepts flag-shaped, spaced, and multiline text values', async () => {
+    const deps = dependencies(activeFile)
+    const text = '--legacy flag is gone\nwith multiple words'
+
+    const exitCode = await main(['record', '--id', 'new', '--node-id', 'R_456', '--text', text], deps)
+
+    expect(exitCode).toBe(0)
+    expect(parseCorrections(deps.writtenContent).corrections).toEqual(
+      expect.arrayContaining([expect.objectContaining({id: 'new', span: {text}})]),
+    )
+  })
+
+  it('rejects lifecycle writes outside the repository root', async () => {
+    const deps = dependencies(activeFile)
+    deps.cwd = '/tmp'
+
+    const exitCode = await main(['retire', '--id', 'active'], deps)
+
+    expect(exitCode).toBe(1)
+    expect(deps.writtenContent).toBe('')
+    expect(JSON.parse(deps.stderrLines[0] ?? '')).toMatchObject({ok: false, error: {code: 'INVALID_CONTEXT'}})
   })
 
   it('fails when server-derived attribution is unavailable', async () => {

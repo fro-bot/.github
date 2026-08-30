@@ -1,5 +1,8 @@
+import {readFile} from 'node:fs/promises'
+
 import {describe, expect, it, vi} from 'vitest'
 
+import {normalizeCorrectionText} from './correction-text.ts'
 import {verifyCorrectionSurvival} from './corrections-survival.ts'
 import {parseCorrections, readCorrections, type CorrectionsFile} from './corrections.ts'
 import {buildWikiIngestChanges, runWikiIngestCli, WikiIngestError} from './wiki-ingest.ts'
@@ -47,6 +50,14 @@ const topicPage = (nodeId: string, body: string): string =>
   ].join('\n')
 
 describe('correction survival verification', () => {
+  it('uses the shared storage normalizer rather than a private duplicate', async () => {
+    const source = await readFile(new URL('./corrections-survival.ts', import.meta.url), 'utf8')
+
+    expect(source).toContain("import {normalizeCorrectionText} from './correction-text.ts'")
+    expect(source).not.toMatch(/function normalizeCorrectionText\s*\(/u)
+    expect(normalizeCorrectionText('  shared\nnormalizer  ')).toBe('shared normalizer')
+  })
+
   it('accepts an active correction that survives in the regenerated page', () => {
     const result = verifyCorrectionSurvival(
       {'knowledge/wiki/repos/alice--project.md': page('The corrected fact.')},
