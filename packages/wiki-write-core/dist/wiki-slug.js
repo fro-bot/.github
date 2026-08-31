@@ -78,6 +78,8 @@ export function computeRepoSlug(owner, repo) {
 }
 function sanitizeSegment(segment) {
     const sanitized = segment.toLowerCase().replaceAll(/[^a-z0-9-]+/g, '-');
+    // Boundary loops, not `/^-+|-+$/g`: the anchored alternation backtracked on long hyphen runs.
+    // Keep the trim loop-based -- no timing guard covers this path (#3810).
     let start = 0;
     let end = sanitized.length;
     while (sanitized[start] === '-')

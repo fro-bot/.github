@@ -60,18 +60,18 @@ function measureScalingRatio(operation: (size: number) => void, size: number, sa
   return {smallMilliseconds, largeMilliseconds, ratio, repetitions}
 }
 
-// Only guards that provably fail against the pre-fix implementation live here. Two earlier guards
-// (diff-header parsing, slug trimming) were removed: both operations are linear in the old code
-// too, so neither could fail against the regression it named, while both were fast enough that
-// fixed overhead dominated the ratio and produced CI flakes. A guard that cannot catch its own
-// regression but can fail a healthy build is worse than no guard. Behavior for both parsers stays
-// covered by the correctness cases above.
 function expectLinearScaling(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
   const measurement = measureScalingRatio(operation, size, samples)
   expect(measurement.ratio).toBeLessThan(3)
   return measurement
 }
 
+// Only guards that provably fail against the pre-fix implementation belong in this suite. Two
+// earlier guards (diff-header parsing, slug trimming) were removed: both operations are linear in
+// the old code too, so neither could fail against the regression it named, while both were fast
+// enough that fixed overhead dominated the ratio and flaked CI. A guard that cannot catch its own
+// regression but can fail a healthy build is worse than no guard. Those parsers stay pinned by the
+// correctness cases below, and their call sites carry a comment against reintroducing a regex.
 describe('linear-time input parsing', () => {
   it('proves the scaling helper discriminates quadratic work', () => {
     const quadratic = (size: number): void => {
