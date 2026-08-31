@@ -2,12 +2,13 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-08-30
+updated: 2026-08-31
 tags: [github-actions, ci-cd, automation, security, renovate, oidc, aws-sts, autoheal, gh-cli, reusable-workflows]
 related:
   - fro-bot--agent
   - marcusrbrown--dev-like
   - marcusrbrown--esphome-life
+  - marcusrbrown--extend-vscode
   - marcusrbrown--gpt
   - fro-bot--dashboard
   - marcusrbrown--containers
@@ -257,6 +258,47 @@ Two concrete checks worth running on any Renovate-managed repo:
 
 - **Calendar-versioned deps must not use `versioning: loose`.** Loose has no notion of a year rollover; pairing it with `separateMajorMinor: false` removes the branch that would surface `2025.12 → 2026.8`. A pin that never moves under an otherwise-hot bot is a suppression signal, not a stability signal.
 - **Inventory the dependencies with no manifest.** CDN `<script src>` tags, `curl | sh` install lines in workflows, version strings in docs and templates. These are the ones actually shipped to users and the ones nothing is watching. A `customManagers` regex is usually a five-line fix.
+
+### Blanket Patch Suppression Freezes the Config That Governs Updates (2026-08-31)
+
+A third member of the same family as the two sections above — a Renovate rule authored for queue hygiene that converts a class of drift into a blind spot. Observed at [[marcusrbrown--extend-vscode]]:
+
+```json5
+{
+  description: 'Disable patch updates except for select dependencies.',
+  matchUpdateTypes: ['patch'],
+  matchPackageNames: ['!typescript'],
+  enabled: false,
+}
+```
+
+The intent is reasonable: patch churn is noise, and a repo with 34 exact-pinned devDependencies would otherwise open several PRs a week that no one reads. The measured consequences after ~3.5 months:
+
+| Pin                                   | Repo     | Fleet current | Frozen since         |
+| ------------------------------------- | -------- | ------------- | -------------------- |
+| `marcusrbrown/renovate-config` preset | `#5.2.0` | `#5.2.12`     | 2026-05-14 (PR #487) |
+| `pnpm/action-setup`                   | `v6.0.0` | `v6.0.9`      | since adoption       |
+
+The sharp edge is the first row: **the repo's dependency policy is defined by a preset that the repo's dependency policy prevents it from updating.** Twelve patch releases of [[marcusrbrown--renovate-config]] have shipped without reaching a consumer that is otherwise on daily automerge. Policy pins deserve an exemption rule of their own — the same way `typescript` already has one here.
+
+Second-order effect: the security path bypasses `enabled: false` (vulnerability alerts are not subject to `packageRules` disablement), so the *only* patches that land are CVEs. Every `[SECURITY]` bump in this repo's history merged same-day while ordinary patches never appeared. Read from the outside, the queue looks immaculate — zero open PRs, fast CVE response. Read from the inside, an entire update class was muted.
+
+Generalization across the three cases now recorded ([[marcusrbrown--esphome-life]] calver suppression, esphome's untracked CDN URL, this): **suppression rules are load-bearing configuration and should be reviewed on the same cadence as the dependencies they hide.** A useful audit question for any Renovate config: for each `enabled: false` rule, what is currently sitting behind it? If nobody can answer, the rule is no longer a policy, it is a curtain.
+
+### A Renovate PR Title Is Mutable State (2026-08-31)
+
+[[marcusrbrown--extend-vscode]] PR #508 opened 2026-06-27 as `chore(deps): update pnpm to v11 [SECURITY]` on branch `renovate/npm-pnpm-vulnerability`. Three consecutive wiki surveys recorded it as a stalled pnpm major and built a hypothesis about `packageManager`/lockfile lockstep gating. It merged 2026-08-13 as `chore(deps): update pnpm to v10.34.4 [SECURITY]` — a one-line `packageManager` patch closing CVE-2026-50021 / GHSA-q6j5-fjx5-2mc3. Renovate had retargeted the branch from the v11 line to the in-major patch carrying the same fix, and rewrote the title in place.
+
+Nothing malfunctioned. Renovate behaved correctly and preferred the smaller upgrade that satisfied the advisory. The failure was in the observer: a PR title was treated as a stable identifier for a payload.
+
+Practical rules for anything (human or agent) that tracks long-lived bot PRs:
+
+- **Titles and bodies are rewritten on rebase.** Renovate rewrites both whenever the resolved target version changes. A title captured at open time can be arbitrarily stale by merge time.
+- **The branch name is far more stable** — `renovate/npm-pnpm-vulnerability` survived the retarget intact and correctly identified the *class* (a vulnerability remediation) even when the version moved.
+- **The diff is the only ground truth.** For a merged PR, read the merge commit's files; for an open one, read the branch. One `curl` of the commit resolved seven weeks of accumulated misreading.
+- **Re-read at merge, not at open.** A survey that samples an open PR and carries the observation forward will propagate whatever the title said on the day it looked.
+
+Corollary for security tracking: "the security PR merged" does **not** imply "the version in the title landed." Verify the resulting pin.
 
 ### Convention Enforcement via Tests
 

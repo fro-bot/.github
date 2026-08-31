@@ -1,8 +1,8 @@
 ---
 type: repo
-title: "marcusrbrown/extend-vscode"
+title: marcusrbrown/extend-vscode
 created: 2026-04-18
-updated: 2026-08-02
+updated: 2026-08-31
 sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: a4dcbbb175828a60855053d778fd21903a3d73d6
@@ -46,11 +46,26 @@ sources:
   - url: https://github.com/marcusrbrown/extend-vscode
     sha: 9ecc7a554408716c714ab384240d623bf6cb6888
     accessed: 2026-08-02
-tags: [vscode, vscode-extension, typescript, toolkit, tsup, vitest, semantic-release]
-aliases: [extend-vscode]
+  - url: https://github.com/marcusrbrown/extend-vscode
+    sha: 2a3ec00223b951119cce53664dd8ce03ffa63d05
+    accessed: 2026-08-31
+tags:
+  - vscode
+  - vscode-extension
+  - typescript
+  - toolkit
+  - tsup
+  - vitest
+  - semantic-release
+  - renovate
+aliases:
+  - extend-vscode
 related:
   - vscode-extensions
   - marcusrbrown--renovate-config
+  - github-actions-ci
+  - probot-settings
+node_id: MDEwOlJlcG9zaXRvcnkzMTMzNjg1OTU=
 ---
 
 # marcusrbrown/extend-vscode
@@ -62,13 +77,14 @@ Modular toolkit for building VS Code extensions. Provides typed abstractions for
 - **Purpose:** Reference extension + reusable toolkit for VS Code extension development
 - **Default branch:** `main`
 - **Created:** 2020-11-16
-- **Last push:** 2026-06-03
-- **Version:** 0.1.0 (pre-release, semantic-release configured)
+- **Last push:** 2026-08-31 (re-verified 2026-08-31; repo id `313368595`, `private: false`, not a fork, not archived)
+- **Version:** 0.1.0 (pre-release, semantic-release configured — **never fired**: zero tags, zero GitHub releases as of 2026-08-31)
 - **License:** MIT
 - **Engine:** VS Code `^1.102.0`
 - **Topics:** `vscode`, `vscode-extension`
-- **Package manager:** pnpm 10.33.0
-- **Node target:** 24.16.0 (`.node-version`)
+- **Package manager:** pnpm 10.34.4 (`packageManager` field; the fleet is on 11.x — see 2026-08-31 delta)
+- **Node target:** 24.20.0 (`.node-version`)
+- **Tree size:** 156 tracked blobs at HEAD (path list unchanged since 2026-07-28)
 
 ## Architecture
 
@@ -136,9 +152,31 @@ The extension builds for both Node.js (`out/node/`) and Web (`out/web/`) via `ts
 | Cache Cleanup | `cache-cleanup.yaml` | PR close, weekly cron, dispatch | Prune stale action caches |
 | Update Repo Settings | `update-repo-settings.yaml` | push to `main`, daily cron, dispatch | Probot settings sync via `bfra-me/.github` reusable workflow |
 
+### Reusable-workflow wiring (verified 2026-08-31)
+
+Both `bfra-me/.github` callers are SHA-pinned to the same ref and — importantly — to the **correct paths**:
+
+| Caller                        | `uses:`                                                          | Pin                         |
+| ----------------------------- | ---------------------------------------------------------------- | --------------------------- |
+| `renovate.yaml`               | `bfra-me/.github/.github/workflows/renovate.yaml`                | `eb1772eb` (v4.23.0)        |
+| `update-repo-settings.yaml`   | `bfra-me/.github/.github/workflows/update-repo-settings.yaml`     | `eb1772eb` (v4.23.0)        |
+
+This is the **counter-example** to the seven-survey settings-sync footgun at [[marcusrbrown--esphome-life]], where `update-repo-settings.yaml` calls the upstream *`renovate.yaml`* and has therefore never applied `settings.yml`. Same operator, same reusable-workflow family, same tag — extend-vscode wired it correctly, so the repair specified in the 2026-08-30 esphome ingest is not hypothetical: it exists verbatim in-fleet at `eb1772eb`. Because the two upstream workflows share an identical secrets signature (`APPLICATION_ID` + `APPLICATION_PRIVATE_KEY`, zero inputs), the difference between the working and broken wiring is one path token. See [[probot-settings]].
+
+`update-repo-settings.yaml` fires on push to `main`, a `23 0` daily cron, and dispatch. Note the cron differs from esphome.life's `23 12` — no shared schedule between the two callers.
+
+### `main.yaml` concurrency-group typo (noted 2026-08-31)
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-$${{ github.event.number || github.ref }}
+```
+
+The stray `$` before the second expression makes every group name literally `Main-$<ref>`. Benign — the group still varies per PR/ref, so cancel-in-progress behaves correctly — but it is a literal dollar sign living rent-free in every run's concurrency key. Cosmetic; recorded so a future reader doesn't mistake it for interpolation subtlety.
+
 ### Branch Protection
 
-Required status checks on `main`: `Renovate / Renovate`, `Run Checks`. Linear history enforced, admin enforcement enabled, no required PR reviews.
+Required status checks on `main`: `Renovate / Renovate`, `Run Checks`. Linear history enforced, admin enforcement enabled, no required PR reviews. Declared in `.github/settings.yml` and applied by the Probot Settings App.
 
 ### Publishing Pipeline
 
@@ -162,19 +200,65 @@ Emergency rollback workflow supports per-platform rollback (all, npm-only, marke
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` (part of Fro Bot-managed ecosystem).
 - **Authentication:** Renovate and settings workflows use `APPLICATION_ID` + `APPLICATION_PRIVATE_KEY` secrets (GitHub App via `bfra-me/.github` reusable workflows).
 
+### Effective update policy: minors, majors, and CVEs only (established 2026-08-31)
+
+The first `packageRules` entry in `.github/renovate.json5` is a blanket patch kill-switch:
+
+```json5
+{
+  description: 'Disable patch updates except for select dependencies.',
+  matchUpdateTypes: ['patch'],
+  matchPackageNames: ['!typescript'],
+  enabled: false,
+}
+```
+
+Written to keep the PR queue quiet, it also makes an entire update class structurally invisible. Two measurable consequences at HEAD:
+
+| Pin                                  | This repo | Fleet current | Frozen since             |
+| ------------------------------------ | --------- | ------------- | ------------------------ |
+| `marcusrbrown/renovate-config` preset | `#5.2.0`  | `#5.2.12`     | 2026-05-14 (PR #487)     |
+| `pnpm/action-setup`                  | `v6.0.0`  | `v6.0.9`      | no minor since adoption  |
+
+The repo's own dependency policy is set by a preset that its own dependency policy prevents it from updating. That is a closed loop — twelve patch releases of [[marcusrbrown--renovate-config]] have shipped without reaching the repo that consumes them. Nothing here is broken; the point is that **the queue looks drain-clean because a whole update class was muted, not because there is nothing to update.**
+
+The security path bypasses the rule (Renovate's vulnerability alerts ignore `enabled: false`), which is why every `[SECURITY]` patch in this repo's history — `tmp` #494/#505, `form-data` #502, pnpm #508 — landed while ordinary patches did not. Same shape as the calendar-versioning suppression recorded at [[marcusrbrown--esphome-life]] (`versioning: loose` + `separateMajorMinor: false`): a rule authored for tidiness converts a class of drift into a blind spot, and the resulting quiet queue reads as health. Cataloged in [[github-actions-ci]].
+
+### Release posture: full pipeline, zero releases
+
+As of 2026-08-31 the repository has **zero git tags and zero GitHub releases**, and `package.json` has read `"version": "0.1.0"` across all sixteen surveys since 2026-04-18. Standing against that: a three-target semantic-release publish workflow, a per-platform emergency rollback workflow with confirmation gate, `release.config.mjs`, `scripts/{rollback,publish-utils,validate-tokens}.ts`, and `CHANGELOG.md` wired into the published `files` array.
+
+`CHANGELOG.md`'s sole entry is `## [0.1.0](https://github.com/marcusrbrown/extend-vscode/releases/tag/v0.1.0) (2025-08-17)` — a hand-seeded entry in semantic-release's output format whose release link 404s, because no `v0.1.0` tag exists. The changelog documents a release that never cut. It is scaffolding wearing the costume of history.
+
+This is not a defect so much as a posture: the publishing chrome was built first and has been maintained by Renovate ever since (`semantic-release` 25.0.1, `semantic-release-vsce` 6.1.0, `ovsx` 0.10.5, `@vscode/vsce` 3.9.0 all kept current). The gap worth watching is that an unexercised release path accumulates untested assumptions — the first real `publish.yaml` run will be the first integration test of a pipeline that has been drifting under dependency updates for over a year.
+
 ## AI/LLM Context
 
 The repo ships AI context files:
 
 - **`llms.txt`** — Structured LLM context document (architecture, file references, testing, configuration)
 - **`.github/copilot-instructions.md`** — GitHub Copilot development guidelines (architecture, patterns, dual-platform support, command registration, testing strategy)
-- **`.ai/`** and **`.cursor/`** directories present (likely additional AI assistant rules)
+
+### `.ai/` and `.cursor/` (enumerated 2026-08-31; present but uncataloged in prior surveys)
+
+Both directories predate the 2026-08-31 survey — earlier entries flagged them as "likely additional AI assistant rules" without enumerating. Contents at HEAD:
+
+| Path                 | Files | Contents                                                                                                                                                                                                       |
+| -------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.ai/analysis/`      | 5     | Kebab-case migration artifacts: `conversion-mapping.md`, `edge-cases-analysis.md`, `file-inventory-kebab-case.md`, `import-dependency-analysis.md`, `rollback-procedure.md`                                     |
+| `.ai/plan/`          | 8     | `architecture-modern-development-research-1`, `feature-advanced-testing-infrastructure-1`, `feature-configuration-validation-1`, `feature-developer-experience-tooling-1`, `feature-dual-purpose-documentation-1`, `feature-explorer-context-menu-1`, `infrastructure-publishing-workflow-1`, `refactor-kebab-case-naming-1` |
+| `.ai/scripts/`       | 2     | `convert-to-kebab-case.mjs`, `convert-to-kebab-case.sh`                                                                                                                                                        |
+| `.cursor/rules/`     | 4     | `tsup-best-practices.mdc`, `typescript-best-practices.mdc`, `vitest-best-practices.mdc`, `vscode-extension-best-practices.mdc`                                                                                  |
+
+`.ai/plan/feature-advanced-testing-infrastructure-1.md` is the source document for the long-open issue triad #317/#318/#319 (Advanced Testing Infrastructure Phases 3–5, filed 2025-08-17, untouched for ~12.5 months). The `.ai/analysis/` set is closed work — the kebab-case refactor landed; the plan corpus is the aspirational half.
+
+This is the same **aspirational `.ai/` planning corpus** shape recorded at [[bfra-me--github]] (2026-07-16, 10 plan docs). Two independent repos in the fleet keep a version-controlled plan directory whose contents outlive their execution. Useful signal for a future agent: `.ai/plan/` is intent, not state — do not read it as a description of the repo.
 
 ## Fro Bot Integration
 
-**No Fro Bot agent workflow detected.** The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration for automated PR review and triage. A follow-up draft PR should be proposed to add the Fro Bot agent workflow.
+**No Fro Bot agent workflow detected** (re-confirmed 2026-08-31, sixteenth consecutive survey, ~19 weeks). The repository does not contain a `fro-bot.yaml` workflow or any Fro Bot-specific CI integration for automated PR review and triage. The six workflows present are all dependency/publish/settings plumbing. A follow-up draft PR should be proposed to add the Fro Bot agent workflow.
 
-The repo references `fro-bot/.github:common-settings.yaml` in its Probot settings, confirming it is part of the Fro Bot-managed ecosystem.
+The repo references `.github:common-settings.yaml` in its Probot settings (`_extends`), confirming it is part of the Fro Bot-managed ecosystem. Note that a bare `_extends: .github:common-settings.yaml` resolves within the repository's **own owner org** — for `marcusrbrown/*` repos that is `marcusrbrown/.github`, not `fro-bot/.github`. Earlier entries on this page assert `fro-bot/.github:common-settings.yaml`; that is the same misattribution corrected for [[marcusrbrown--esphome-life]] on 2026-07-12. Recorded as a contradiction rather than silently rewritten — the underlying fact (this repo inherits an org-level settings template) holds either way; the resolving org is `marcusrbrown`.
 
 ## Notable Patterns
 
@@ -184,6 +268,10 @@ The repo references `fro-bot/.github:common-settings.yaml` in its Probot setting
 - **Generated metadata:** `vscode-ext-gen` auto-generates TypeScript types from `package.json` contributions, eliminating string-literal drift between manifest and code.
 - **Three-target publishing:** Semantic-release publishes to VS Code Marketplace, OpenVSIX, and npm simultaneously, with rollback support per platform.
 - **No external telemetry:** Default telemetry reporter logs only to the VS Code output channel. No data leaves the machine unless a custom reporter is plugged in.
+- **Patch suppression as an invisible-drift generator** (2026-08-31): a `matchUpdateTypes: ['patch'] → enabled: false` rule keeps the queue quiet and simultaneously freezes the repo's own Renovate preset pin (`#5.2.0` vs `#5.2.12`) and its action pins (`pnpm/action-setup` v6.0.0 vs v6.0.9). The policy that governs updates is itself an update the policy forbids. See [[github-actions-ci]].
+- **A Renovate PR title is mutable state** (2026-08-31): #508 opened as "update pnpm to v11 [SECURITY]" and merged as a `10.34.0 → 10.34.4` patch after Renovate retargeted and retitled the branch. Long-lived bot PRs must be re-read at merge; the branch name and diff are durable, the title is not.
+- **Publishing chrome without a release** (2026-08-31): three-target semantic-release, per-platform rollback workflow, seeded `CHANGELOG.md`, and `files[]` packaging — with zero tags and zero releases across 16 surveys. The changelog's `[0.1.0]` link 404s. The pipeline has been maintained by dependency automation for over a year without ever executing.
+- **`.ai/plan/` is intent, not state** (2026-08-31): the plan corpus describes eight features, three of which have been open as issues #317–#319 since 2025-08-17 without movement. Same shape as [[bfra-me--github]]'s `.ai/` corpus. Read it as a wishlist, never as documentation.
 
 ## Delta Log
 
@@ -467,3 +555,93 @@ Two of the seven bumps this cycle (#516, #518) are GitHub Actions SHA updates (`
 Repo metadata: 2 stars, 2 watchers, not archived, not forked, public. `pushed_at` 2026-07-28. Open issues: 5 (#142 Uplift `vscode-bash`, #162 Dependency Dashboard, #317–#319 Advanced Testing Infrastructure Phases 3–5 — issue set unchanged across ~15 weeks of surveys). Open PRs: 1 — #508 (`pnpm` v11 [SECURITY], automerge). Zero pending majors in the manifest.
 
 **Still no Fro Bot agent workflow** — follow-up PR recommendation carried forward (~15 weeks open across surveys). The repo remains part of the Fro Bot-managed ecosystem via Probot (`.github/settings.yml` `_extends: .github:common-settings.yaml`), but has no `fro-bot.yaml` for automated PR review/triage. A follow-up draft PR to add the agent workflow should be proposed separately. Six workflows present, unchanged: `main.yaml`, `publish.yaml`, `rollback.yaml`, `renovate.yaml`, `cache-cleanup.yaml`, `update-repo-settings.yaml`. `.github/` also carries `copilot-instructions.md`, `renovate.json5`, and `settings.yml`.
+
+### 2026-08-31 (SHA `2a3ec002` from `9ecc7a55`)
+
+Fifteen commits merged between 2026-08-03 and 2026-08-31 (#522–#535, plus the long-pending #508), every one a `mrbro-bot[bot]` Renovate automerge. **The recursive tracked-tree path list is byte-identical at `9ecc7a55` and `2a3ec002` — 156 blobs each.** Zero files added, zero removed. Sixteenth consecutive survey with no structural, architectural, or workflow change.
+
+| PR   | Date       | Change                                              |
+| ---- | ---------- | --------------------------------------------------- |
+| #535 | 2026-08-31 | `bfra-me/.github` → v4.23.0                         |
+| #534 | 2026-08-27 | `typescript-eslint` v8.67.0 → v8.68.0                |
+| #533 | 2026-08-27 | `bfra-me/.github` → v4.22.0                         |
+| #532 | 2026-08-26 | Node.js → v24.20.0 (`.node-version`)                 |
+| #531 | 2026-08-26 | `bfra-me/.github` → v4.21.0                         |
+| #530 | 2026-08-25 | `@bfra.me/eslint-config` 0.51.0 → 0.52.0             |
+| #529 | 2026-08-24 | `eslint` v10.8.0 → v10.9.0                           |
+| #528 | 2026-08-23 | `bfra-me/.github` → v4.20.0                         |
+| #527 | 2026-08-20 | `bfra-me/.github` → v4.19.0                         |
+| #526 | 2026-08-19 | `bfra-me/.github` → v4.18.0                         |
+| #525 | 2026-08-17 | `bfra-me/.github` → v4.17.0                         |
+| #524 | 2026-08-13 | `typescript-eslint` v8.66.0 → v8.67.0                |
+| #508 | 2026-08-13 | `pnpm` → v10.34.4 [SECURITY] — **see correction**    |
+| #523 | 2026-08-07 | `typescript-eslint` v8.65.0 → v8.66.0                |
+| #522 | 2026-08-03 | Node.js → v24.19.0                                   |
+
+**Open PR queue drained to zero** — first zero-PR reading in the survey series. Open issues steady at 5 (#142, #162, #317–#319), unchanged for ~19 weeks. Stars 2, watchers 2, subscribers 1, forks 0. `pushed_at` 2026-08-31T01:08.
+
+#### Correction: #508 was never a pnpm v11 major
+
+Three prior surveys (2026-06-29, 2026-07-13, 2026-08-02) recorded PR #508 as `chore(deps): update pnpm to v11 [SECURITY]` — a stalled major on the automerge track — and advanced a standing hypothesis that it was blocked by a `packageManager`-field / lockfile lockstep mismatch. **Both the characterization and the hypothesis are wrong**, and the record is corrected here rather than overwritten.
+
+At merge, the PR's title read `chore(deps): update pnpm to v10.34.4 [SECURITY]` and its single commit (`e7e222dd`) is a one-line diff:
+
+```diff
+-  "packageManager": "pnpm@10.34.0",
++  "packageManager": "pnpm@10.34.4",
+```
+
+Renovate had retargeted and retitled the branch (`renovate/npm-pnpm-vulnerability`) from the v11 line to the in-major patch that carries the same fix. The advisory is **CVE-2026-50021 / GHSA-q6j5-fjx5-2mc3** — pnpm's tarball-extraction worker skipping integrity verification when the lockfile `integrity` field is absent. The security fix landed; the major did not. Prior surveys read a title and inferred a payload. Lesson worth generalizing: **a Renovate PR's title is mutable state, not a record of what it will merge** — the branch name (`-vulnerability`) and the diff are the durable facts, and long-lived PRs should be re-read at merge, not at open.
+
+What survives from the earlier entries: the PR *did* sit ~47 days (2026-06-27 → 2026-08-13) despite carrying `security` + `automerge` labels, so the stall itself was real. What does not survive: the claim that a pnpm major was pending or that a lockstep mismatch was gating it.
+
+#### pnpm 10 holdout, quantified
+
+`packageManager` is now `pnpm@10.34.4`; `pnpm-lock.yaml` is `lockfileVersion: '9.0'`. The fleet crossed pnpm 10 → 11 months ago — [[marcusrbrown--sparkle]] at 11.24.0, [[marcusrbrown--marcusrbrown]] at 11.22.0, [[bfra-me--works]] and [[fro-bot--dashboard]] at 11.20.0, [[marcusrbrown--gpt]] and [[marcusrbrown--containers]] across the boundary since June. extend-vscode is now the fleet's last pnpm-10 repository.
+
+Root cause is not mystery, it is policy: see **Effective update policy** above. `pnpm-workspace.yaml` still uses the pnpm-10 `onlyBuiltDependencies:` key (pnpm 11 renames it to `allowBuilds:`, the migration recorded at [[bfra-me--github]] and [[marcusrbrown--marcusrbrown-com]]), so the eventual v11 crossing carries a real workspace-config edit, not just a field bump. Whoever schedules it should expect the `onlyBuiltDependencies` → `allowBuilds` rewrite plus a lockfile regeneration in the same PR.
+
+The `pnpm-workspace.yaml` override ledger is also recorded here for the first time — 8 entries, all transitive security pins, several matching GHSA ranges (`form-data 4.0.6`, `glob@>=11.0.0 <11.1.0`, `js-yaml@>=4.0.0 <4.1.1`, `koa@>=2.16.2 <2.16.3`, `on-headers 1.1.0`, `tar-fs@>=3.0.0 <3.1.1`, `tmp 0.2.7`, `vite@>=6.0.0 <=6.4.0`) alongside `saveExact: true`, `shamefullyHoist: true`, `shellEmulator: true`, `autoInstallPeers: false`. The `saveExact: true` setting is the mechanical enforcement behind the pin-exact devDependency policy noted since 2026-05-26 — it was never contributor discipline, it was a workspace flag.
+
+#### `bfra-me/.github` minor surge — cross-repo corroboration
+
+Seven minor boundaries in fifteen days: v4.16.x → **v4.23.0** (#525, #526, #527, #528, #531, #533, #535, 08-17 → 08-31). The 2026-08-30 [[marcusrbrown--esphome-life]] survey recorded six-in-eleven-days to v4.22.0 from the same upstream; this repo carries the same wave one release further and independently confirms it is upstream cadence, not a per-repo artifact. Both callers absorbed it as ordinary automerge churn — `bfra-me/*` is deliberately excluded from the `GitHub Actions` grouping rule, so each release arrives as its own PR.
+
+#### Settings-sync wiring: the working reference
+
+`update-repo-settings.yaml` here calls `bfra-me/.github/.github/workflows/update-repo-settings.yaml@eb1772eb` — the correct path, pinned to the same v4.23.0 SHA as its `renovate.yaml` sibling. This is the live in-fleet counter-example to esphome.life's seven-survey miswiring and makes that repair a copy-paste. Recorded in the **Reusable-workflow wiring** section above and in [[probot-settings]].
+
+#### Carried forward
+
+- **TypeScript v6 still deferred.** `typescript` remains 5.9.3. #466 autoclosed unmerged 2026-07-11; ~7 weeks later Renovate has not re-proposed it. Zero pending majors in the manifest — the queue is empty because the proposals are gone, not because the work is done.
+- **Still no Fro Bot agent workflow — sixteenth consecutive survey, ~19 weeks.** Six workflows, unchanged. The repo is in the Fro Bot-managed ecosystem by Probot (`_extends: .github:common-settings.yaml`) but has no `fro-bot.yaml`. The recommendation strengthens: this survey produced three actionable items (pnpm 10 → 11 with the `allowBuilds` rewrite, the frozen `#5.2.0` preset pin, the unexercised release pipeline) that a resident autoheal daemon would plausibly have surfaced months ago. A follow-up draft PR to onboard the agent should be proposed separately.
+- Code scanning status **unverified** this run — the API returned `401` (unauthenticated), which is inconclusive rather than the `404` that would indicate "not enabled." No claim recorded either way.
+
+#### Dependency snapshot at HEAD (`2a3ec002`)
+
+- Runtime: **pnpm 10.34.4**, Node **24.20.0** (`.node-version`), VS Code engine `^1.102.0`, lockfile `9.0`
+- Core: `typescript` 5.9.3 (v6 deferred), `tsup` 8.5.1, `vitest` 4.1.0, `@vitest/coverage-v8` 4.1.0, `@vitest/eslint-plugin` 1.6.1, `@vitest/ui` 4.1.0
+- Lint: `eslint` **10.9.0**, `typescript-eslint` **8.68.0**, `@bfra.me/eslint-config` **0.52.0**, `@bfra.me/tsconfig` 0.13.0, `eslint-plugin-node-dependencies` 2.2.0, `eslint-plugin-no-only-tests` 3.4.0, `eslint-plugin-prettier` 5.5.0, `eslint-config-prettier` 10.1.1, `prettier` 3.9.0
+- VS Code tooling: `@types/vscode` 1.125.0, `@types/node` 24.13.2, `@vscode/vsce` 3.9.0, `@vscode/test-electron` 2.5.2, `@vscode/test-web` 0.0.67, `@vscode/test-cli` 0.0.10, `vscode-ext-gen` 1.6.0
+- Publishing: `semantic-release` 25.0.1, `semantic-release-vsce` 6.1.0, `ovsx` 0.10.5, `@semantic-release/changelog` 6.0.3, `@semantic-release/git` 10.0.1
+- Testing/build: `@playwright/test` 1.62.0, `jsdom` 29.1.0, `type-fest` 5.8.0, `esbuild-plugin-polyfill-node` 0.3.0, `tsx` 4.23.0, `jiti` 2.7.0
+- Actions: `actions/checkout` v6.1.0 (`d23441a4`), `actions/setup-node` v6.5.0 (`24997072`), `pnpm/action-setup` **v6.0.0** (`08c4be7e`, frozen by the patch rule), `bfra-me/.github` v4.23.0 (`eb1772eb`)
+
+## Survey History
+
+| Date       | HEAD       | Headline                                                                                              |
+| ---------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| 2026-04-18 | `a4dcbbb1` | Initial survey — toolkit architecture, dual-target build, three-target publish pipeline                |
+| 2026-04-21 | `342872f8` | Three Renovate bumps; no structural change                                                             |
+| 2026-04-23 | `342872f8` | No change; 4 pending majors (#466–#469)                                                                |
+| 2026-04-24 | `342872f8` | No change; dependency snapshot confirmed                                                               |
+| 2026-04-25 | `342872f8` | No change; 5-day dormancy                                                                              |
+| 2026-04-26 | `b457a34f` | `typescript-eslint` 8.59.0; dormancy broken                                                            |
+| 2026-04-27 | `b457a34f` | No change; full dependency snapshot                                                                    |
+| 2026-05-26 | `516a9eb4` | Renovate preset v4 → **v5.2.0** (#487); `tsup` pinned; 3 of 4 majors closed                            |
+| 2026-06-08 | `73790dd8` | `tmp` #494 [SECURITY]; devDeps promoted to explicit manifest entries                                   |
+| 2026-06-18 | `5724bd8b` | `form-data` #502 [SECURITY]; second consecutive CVE cycle                                              |
+| 2026-06-29 | `347447ca` | `tmp` #505 [SECURITY], third consecutive; #508 opened (mis-read as pnpm v11 major)                     |
+| 2026-07-13 | `c322c419` | TS v6 (#466) **autoclosed unmerged**; CVE streak breaks                                                |
+| 2026-08-02 | `9ecc7a55` | `CHANGELOG.md` wired into published `files[]`; #508 still open                                         |
+| 2026-08-31 | `2a3ec002` | **Tree byte-identical (156 blobs); PR queue drained to 0; #508 corrected — patch, not major; patch-suppression policy root-caused; pnpm-10 holdout; zero releases** |

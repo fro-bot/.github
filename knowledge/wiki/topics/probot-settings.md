@@ -2,13 +2,14 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-08-30
+updated: 2026-08-31
 tags: [probot, github, repository-settings, automation, governance]
 related:
   - marcusrbrown--github
   - marcusrbrown--dev-like
   - marcusrbrown--ha-config
   - marcusrbrown--esphome-life
+  - marcusrbrown--extend-vscode
   - bfra-me--github
   - bfra-me--ha-addon-repository
   - bfra-me--works
@@ -156,6 +157,28 @@ Two governance implications worth generalizing:
 
 The repair is a one-token path swap. See [[github-actions-ci]] for the
 generalized "SHA pinning validates the ref, not the path" analysis.
+
+### The working reference wiring (2026-08-31)
+
+[[marcusrbrown--extend-vscode]] is the in-fleet counter-example, and it settles the question of what the esphome.life repair should look like. Both of its `bfra-me/.github` callers are pinned to the same SHA and to matching paths:
+
+| Caller file                            | `uses:` path                                                 | Pin                  |
+| -------------------------------------- | ------------------------------------------------------------ | -------------------- |
+| `.github/workflows/renovate.yaml`      | `bfra-me/.github/.github/workflows/renovate.yaml`             | `eb1772eb` (v4.23.0) |
+| `.github/workflows/update-repo-settings.yaml` | `bfra-me/.github/.github/workflows/update-repo-settings.yaml` | `eb1772eb` (v4.23.0) |
+
+Same operator, same reusable-workflow family, same upstream tag — one repo wired it correctly and one did not. The fix for the broken caller is therefore not a design exercise; it is a copy of a line that already exists, tested daily, three repositories over.
+
+Two details worth carrying:
+
+- **Cron schedules are per-caller, not inherited.** extend-vscode runs settings sync on `23 0` UTC; esphome.life on `23 12`. Nothing about the upstream workflow imposes a schedule, so a "consistent org-wide sync time" is an illusion unless someone enforces it.
+- **The correct wiring is indistinguishable from the broken one at review time.** Both are ten-line files, both resolve, both report success, both are SHA-pinned with a version comment. The only distinguishing feature is that the `uses:` basename matches the caller's own filename. That is exactly the assertion worth automating.
+
+### `_extends` resolves within the repository's own owner (correction, 2026-08-31)
+
+A bare `_extends: .github:common-settings.yaml` — no owner prefix — resolves to the **`.github` repository of the org that owns the repo declaring it**. For any `marcusrbrown/*` repository that is `marcusrbrown/.github`, not `fro-bot/.github`.
+
+Several wiki repo pages have asserted the `fro-bot/.github` reading. It was corrected for [[marcusrbrown--esphome-life]] on 2026-07-12 and is corrected for [[marcusrbrown--extend-vscode]] on 2026-08-31; other `marcusrbrown/*` pages carrying the same phrasing should be treated as suspect until re-verified. The downstream fact usually survives the correction — the repo does inherit an org-level template — but the *identity of the template* changes, and with it which repository a settings change must land in. Owner-prefix the `_extends` value (`marcusrbrown/.github:common-settings.yaml`) if the intent is to be unambiguous to a reader; the bare form is only unambiguous to the resolver.
 
 ## Common Configuration Patterns
 
