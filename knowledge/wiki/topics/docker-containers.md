@@ -2,11 +2,13 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-08-30
-tags: [docker, containers, multi-arch, oci, security, ci-cd, hadolint, cve]
+updated: 2026-08-31
+tags: [docker, containers, multi-arch, oci, security, ci-cd, hadolint, cve, renovate, alpine]
 related:
   - marcusrbrown--containers
+  - bfra-me--ha-addon-repository
   - github-actions-ci
+  - home-assistant
 ---
 
 # Docker Containers
@@ -16,6 +18,7 @@ Docker container build patterns, security practices, and CI/CD integration obser
 ## Repos Using Docker
 
 - [[marcusrbrown--containers]] — Primary container collection with multi-arch builds, Python automation, and template system
+- [[bfra-me--ha-addon-repository]] — HA add-on template; four-arch (`aarch64`/`amd64`/`armhf`/`armv7`) builds via `home-assistant/builder` with cosign signing to GHCR, digest-pinned `ARG BUILD_FROM`, `repology` custom manager for apk pins
 
 ## Dockerfile Patterns Observed
 
@@ -73,6 +76,29 @@ Trivy is used for both vulnerability scanning (image scan) and misconfiguration 
 The Docker build toolchain actions are kept current through major boundaries by Renovate while retaining SHA pins. As of 2026-07-12, [[marcusrbrown--containers]] crossed a coordinated major sweep: `docker/build-push-action` v6 → v7, `docker/metadata-action` v5 → v6, `docker/login-action` v3 → v4, `docker/setup-buildx-action` v3 → v4, `docker/setup-qemu-action` v3 → v4 (plus `actions/checkout` v6 → v7). Each bump lands as a separate Renovate PR with an updated `# vN.N.N` comment on the pinned SHA.
 
 Post-sweep the cadence settles into minor drift absorbed the same way — at the 2026-08-30 survey containers sat at `docker/login-action` v4.6.0, `docker/setup-buildx-action` v4.3.0, `hadolint/hadolint-action` v3.5.0, `github/codeql-action/upload-sarif` v4.37.0, and `actions/setup-python` v6 → v7, all as individual automerged Renovate PRs with no workflow-structure change. This is the same "SHA-pin-plus-Renovate absorbs even majors as ordinary churn" observation recorded for [[bfra-me--github]].
+
+### Renovate Custom Managers Encode an Alpine Branch — and Then Drift (2026-08-31)
+
+Observed in [[bfra-me--ha-addon-repository]]. Resolving bare `pkg=version` pins in a Dockerfile requires telling Renovate which distro package set to look in, typically via the `repology` datasource:
+
+```json5
+{
+  customType: 'regex',
+  managerFilePatterns: ['/(^|/|\\.)Dockerfile$/'],
+  matchStrings: ['\\s\\s(?<package>[a-z0-9-]+)=(?<currentValue>[a-z0-9_.-]+)\\s+'],
+  versioningTemplate: 'loose',
+  datasourceTemplate: 'repology',
+  depNameTemplate: 'alpine_3_20/{{package}}',
+}
+```
+
+The Alpine release is **hard-coded into `depNameTemplate`**, and nothing links it to the base image the Dockerfile actually uses. In that repo the base images are `ghcr.io/home-assistant/{arch}-base:3.23` (64-bit) and `:3.22` (32-bit ARM) — the manager resolves against **Alpine 3.20**, three releases behind.
+
+The failure mode is quiet in both directions: with no `apk` pins present the manager matches nothing and reports clean forever; the moment someone adds `apk add --no-cache foo=1.2.3-r0`, Renovate proposes versions from the wrong package set with full confidence. The regex is valid, the datasource is valid, the PR looks routine.
+
+This is the same class as the wrong-`uses:`-path defect in [[github-actions-ci]]: **the configuration is syntactically correct and semantically aimed at the wrong target**, so every green run is evidence of nothing. Mitigations: bump the branch in the same PR that bumps the base image (treat them as one coupled change), or drop version-pinned `apk` lines entirely and rely on the digest-pinned base plus an `apk upgrade` step — which is already the preferred posture per *Base Image Pinning* above.
+
+Extra weight when the file lives in a **template repository**: a wrong default propagates to every fork, and adding pinned apk packages is among the first things a forker does.
 
 ## Related Technologies
 

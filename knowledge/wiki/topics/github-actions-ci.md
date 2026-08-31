@@ -3,12 +3,12 @@ type: topic
 title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-08-31
-tags: [github-actions, ci-cd, automation, security, renovate, oidc, aws-sts, autoheal, gh-cli, reusable-workflows]
+tags: [github-actions, ci-cd, automation, security, renovate, oidc, aws-sts, autoheal, gh-cli, reusable-workflows, branch-protection, sha-pinning]
 related:
   - fro-bot--agent
+  - bfra-me--ha-addon-repository
   - marcusrbrown--dev-like
   - marcusrbrown--esphome-life
-  - marcusrbrown--extend-vscode
   - marcusrbrown--gpt
   - fro-bot--dashboard
   - marcusrbrown--containers
@@ -259,46 +259,62 @@ Two concrete checks worth running on any Renovate-managed repo:
 - **Calendar-versioned deps must not use `versioning: loose`.** Loose has no notion of a year rollover; pairing it with `separateMajorMinor: false` removes the branch that would surface `2025.12 → 2026.8`. A pin that never moves under an otherwise-hot bot is a suppression signal, not a stability signal.
 - **Inventory the dependencies with no manifest.** CDN `<script src>` tags, `curl | sh` install lines in workflows, version strings in docs and templates. These are the ones actually shipped to users and the ones nothing is watching. A `customManagers` regex is usually a five-line fix.
 
-### Blanket Patch Suppression Freezes the Config That Governs Updates (2026-08-31)
+### A Required Check That Cannot Fail Loudly (2026-08-31)
 
-A third member of the same family as the two sections above — a Renovate rule authored for queue hygiene that converts a class of drift into a blind spot. Observed at [[marcusrbrown--extend-vscode]]:
+From [[bfra-me--ha-addon-repository]]. The `Fro Bot` workflow is a **required status check** on `main` — the strongest signal branch protection can give. Its scheduled autoheal job failed **17 consecutive days** (2026-08-14 → 2026-08-30) without anyone noticing.
 
-```json5
-{
-  description: 'Disable patch updates except for select dependencies.',
-  matchUpdateTypes: ['patch'],
-  matchPackageNames: ['!typescript'],
-  enabled: false,
-}
-```
+The mechanism is worth internalizing because it generalizes to any multi-trigger workflow used as a status check:
 
-The intent is reasonable: patch churn is noise, and a repo with 34 exact-pinned devDependencies would otherwise open several PRs a week that no one reads. The measured consequences after ~3.5 months:
+1. Branch protection evaluates a check's state **only in the context of a PR's head SHA**.
+2. The workflow's job-level `if:` guard skips bot-authored PRs; a skipped job reports as **passing**.
+3. Every PR in the repo is Renovate-authored, so the required check is *always* skipped-and-green.
+4. `schedule` runs share the workflow name but never attach to a PR head SHA, so their `failure` conclusion is invisible to the gate.
 
-| Pin                                   | Repo     | Fleet current | Frozen since         |
-| ------------------------------------- | -------- | ------------- | -------------------- |
-| `marcusrbrown/renovate-config` preset | `#5.2.0` | `#5.2.12`     | 2026-05-14 (PR #487) |
-| `pnpm/action-setup`                   | `v6.0.0` | `v6.0.9`      | since adoption       |
+Net: the same workflow name carries two entirely different jobs — a PR reviewer and a nightly autoheal daemon — and the governance surface only observes the one that is structurally incapable of failing. The daemon's death produced zero red anywhere a human looks.
 
-The sharp edge is the first row: **the repo's dependency policy is defined by a preset that the repo's dependency policy prevents it from updating.** Twelve patch releases of [[marcusrbrown--renovate-config]] have shipped without reaching a consumer that is otherwise on daily automerge. Policy pins deserve an exemption rule of their own — the same way `typescript` already has one here.
+Mitigations, roughly in order of cost:
 
-Second-order effect: the security path bypasses `enabled: false` (vulnerability alerts are not subject to `packageRules` disablement), so the *only* patches that land are CVEs. Every `[SECURITY]` bump in this repo's history merged same-day while ordinary patches never appeared. Read from the outside, the queue looks immaculate — zero open PRs, fast CVE response. Read from the inside, an entire update class was muted.
+- **Split the schedule into its own workflow file.** A `Fro Bot Autoheal` workflow that is not a required check is at least legible as a separate red row in the Actions list.
+- **Make failure self-reporting.** An `if: failure()` step that comments on the perpetual issue or opens one converts a silent workflow-run conclusion into an artifact in the surface humans actually read. The autoheal daemon already owns an issue; it just can't write to it when it's the thing that's broken.
+- **Monitor externally.** A scheduled job elsewhere in the fleet that queries `actions/workflows/*/runs?event=schedule` and alerts on consecutive failures. [[fro-bot--dashboard]] already ingests `metadata/repos.yaml`; scheduled-run health is a natural extension.
 
-Generalization across the three cases now recorded ([[marcusrbrown--esphome-life]] calver suppression, esphome's untracked CDN URL, this): **suppression rules are load-bearing configuration and should be reviewed on the same cadence as the dependencies they hide.** A useful audit question for any Renovate config: for each `enabled: false` rule, what is currently sitting behind it? If nobody can answer, the rule is no longer a policy, it is a curtain.
+Corollary rule: **"required check is green" and "the automation works" are different claims.** Ask which trigger produced the green.
 
-### A Renovate PR Title Is Mutable State (2026-08-31)
+### Renovate Autoclose Erases the Evidence of a Governance Stall (2026-08-31)
 
-[[marcusrbrown--extend-vscode]] PR #508 opened 2026-06-27 as `chore(deps): update pnpm to v11 [SECURITY]` on branch `renovate/npm-pnpm-vulnerability`. Three consecutive wiki surveys recorded it as a stalled pnpm major and built a hypothesis about `packageManager`/lockfile lockstep gating. It merged 2026-08-13 as `chore(deps): update pnpm to v10.34.4 [SECURITY]` — a one-line `packageManager` patch closing CVE-2026-50021 / GHSA-q6j5-fjx5-2mc3. Renovate had retargeted the branch from the v11 line to the in-major patch carrying the same fix, and rewrote the title in place.
+From [[bfra-me--ha-addon-repository]]. PR #556 sat open, green, and `REVIEW_REQUIRED` for **106 days**, retargeted upward through eight surveys of the wiki as the definitive artifact of the repo's review deadlock. On 2026-08-30 Renovate **autoclosed it unmerged** — the title now carries Renovate's `- autoclosed` suffix — and the update reappeared as a checkbox under *Rate-Limited* on the Dependency Dashboard.
 
-Nothing malfunctioned. Renovate behaved correctly and preferred the smaller upgrade that satisfied the advisory. The failure was in the observer: a PR title was treated as a stable identifier for a payload.
+Nothing was fixed. The record was garbage-collected.
 
-Practical rules for anything (human or agent) that tracks long-lived bot PRs:
+Three transferable points:
 
-- **Titles and bodies are rewritten on rebase.** Renovate rewrites both whenever the resolved target version changes. A title captured at open time can be arbitrarily stale by merge time.
-- **The branch name is far more stable** — `renovate/npm-pnpm-vulnerability` survived the retarget intact and correctly identified the *class* (a vulnerability remediation) even when the version moved.
-- **The diff is the only ground truth.** For a merged PR, read the merge commit's files; for an open one, read the branch. One `curl` of the commit resolved seven weeks of accumulated misreading.
-- **Re-read at merge, not at open.** A survey that samples an open PR and carries the observation forward will propagate whatever the title said on the day it looked.
+1. **PR age is not a durable record.** A dependency bot owns the lifecycle of its own PRs and will recycle them on its own schedule. An auditor arriving after the autoclose sees a tidy queue and no evidence of a 106-day stall. If you are tracking a governance failure, the record has to live somewhere the bot does not control — a wiki survey history, a tracked issue, a metrics snapshot.
+2. **A fixed open-PR count is a ceiling, not a measurement.** This repo reported exactly 5 open PRs on every survey from 2026-06-10 through 2026-08-31 while the membership rotated and the dashboard's rate-limited section grew to 6. That is `prConcurrentLimit` behavior, not a 5-item backlog. Reading queue depth off the PR list systematically understates it — always cross-check the Dependency Dashboard's *Rate-Limited* and *Pending Approval* sections.
+3. **Dashboard checkboxes are not notifications.** Major-version updates gated behind `dependencyDashboardApproval` (here: `actions/checkout` v7, `home-assistant/tempio` v2026 against a pin that is ~21 months stale) generate no PR, no review request, and no email. They accumulate silently in an issue body. Combine this with the calendar-versioning trap from [[marcusrbrown--esphome-life]] and you get pins that freeze indefinitely under an otherwise-hot bot.
 
-Corollary for security tracking: "the security PR merged" does **not** imply "the version in the title landed." Verify the resulting pin.
+### The `issues: [edited]` No-Op Run Storm (2026-08-31)
+
+From [[bfra-me--ha-addon-repository]]: the `Fro Bot` workflow has **8,471 runs** against an agent that has produced 23 comments in the repo's lifetime; 40,000 total Actions runs on a 31-blob template that has not merged a commit in 107 days. Roughly **1,500 Fro Bot runs fired in a two-day window**, every one concluding `skipped`.
+
+Cause: `fro-bot.yaml` listens on `issues: [opened, edited]` and `renovate.yaml` on `issues.edited`, while Renovate continuously rewrites the Dependency Dashboard issue and retargets PR bodies in the same repo. Each edit dispatches **both** workflows; each boots a runner and evaluates a bot-author guard in the job-level `if:`, then skips.
+
+The guard is correct — its *placement* is the problem. A job-level `if:` is evaluated after the workflow is queued and the runner assigned. GitHub exposes no event-level "sender is not a Bot" filter, so there is no way to decline the trigger.
+
+Mitigations:
+
+- **Drop `edited` from the `issues` trigger** unless there is a concrete reason to react to issue-body rewrites. An agent has essentially no reason to re-run because a bot rewrote a dashboard.
+- **Move the guard to the workflow level** where possible; a top-level `if:` on the job still queues, but consolidating multiple jobs behind one guard reduces the multiplier.
+- **Treat "a bot that edits an issue" and "a workflow that triggers on issue edits" in the same repo as a self-amplifying loop** and check for it explicitly when onboarding an agent into a Renovate-managed repo.
+
+Cost is not primarily billing (skipped jobs are cheap) — it is queue slots, API budget, and the destruction of the Actions run list as a diagnostic surface. When 99% of runs are no-ops, 17 days of scheduled failures do not stand out. The storm and the silent-death pattern above are the same incident viewed from two angles.
+
+### SHA-Pinning Rules That Only Reject Known-Bad Refs (2026-08-31)
+
+From [[bfra-me--ha-addon-repository]]. Both the repo's PR-review and autoheal prompts instruct the agent to enforce *"SHA-pinned actions (no @latest/@main/@develop)"*. Every action in the repo satisfies that rule. One of them is not SHA-pinned: `home-assistant/builder@2026.03.2` — a mutable tag — in the only job holding `packages: write` + `id-token: write` and performing the cosign signing.
+
+The rule is written as a **denylist of three known-bad refs**, so any ref that merely *looks* like a version passes. Write the rule as an allowlist instead: *the ref must be a 40-character hex SHA, with the human-readable version in a trailing comment.* This applies equally to prompt-encoded policy and to CI assertions.
+
+Second-order finding from the same repo: a companion action, `chrisdickinson/setup-yq`, **is** SHA-pinned but carries no `# vX.Y.Z` comment — and is therefore **absent from Renovate's detected-dependency list entirely**. It is unmaintained upstream (last push 2024-05-15, latest release v1.0.0 from 2019) and is invisible to the abandonment detector too, because abandonment detection only reports on packages Renovate already tracks. The version comment is not cosmetic; it is what makes the pin *legible* to the bot. Pin the SHA **and** annotate the version, or the dependency drops out of governance while looking maximally rigorous.
 
 ### Convention Enforcement via Tests
 
