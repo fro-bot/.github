@@ -1,8 +1,8 @@
 ---
 type: repo
-title: "marcusrbrown/esphome.life"
+title: marcusrbrown/esphome.life
 created: 2026-04-18
-updated: 2026-08-01
+updated: 2026-08-30
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -28,11 +28,31 @@ sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: 08ca7a9e68a3d071068407e4504bff97f8ab3e43
     accessed: 2026-08-01
-tags: [esphome, iot, esp32, bluetooth-proxy, home-assistant, firmware, github-pages]
-aliases: [esphome-life, esphome.life]
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 5fffe20526f0a29abfcb198a8b82330a90f7e621
+    accessed: 2026-08-30
+tags:
+  - esphome
+  - iot
+  - esp32
+  - bluetooth-proxy
+  - home-assistant
+  - firmware
+  - github-pages
+  - renovate
+aliases:
+  - esphome-life
+  - esphome.life
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--renovate-config
+  - marcusrbrown--github
+  - bfra-me--github
+  - esphome
+  - home-assistant
+  - probot-settings
+  - github-actions-ci
+node_id: R_kgDOIZmGgg
 ---
 
 # marcusrbrown/esphome.life
@@ -44,12 +64,13 @@ ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forke
 - **Purpose:** ESPHome device firmware definitions, CI-built and deployed to GitHub Pages
 - **Default branch:** `main`
 - **Created:** 2022-11-09
-- **Last push:** 2026-07-31
-- **Visibility:** Public
+- **Last push:** 2026-08-27 (HEAD `5fffe20`, `chore(deps): update bfra-me/.github action to v4.22.0` #408)
+- **Visibility:** Public (repo id `563709570`, not a fork)
 - **License:** None specified
 - **Description:** "Projects and configuration for my ESPHome devices"
-- **Topics:** _(none set)_
+- **Topics:** _(none set)_ · **Homepage:** _(unset)_ — the Pages site is not declared in repo metadata
 - **ESPHome version:** 2025.12.7 (pinned in CI workflow and devcontainer)
+- **Stars / forks / watchers:** 2 / 0 / 2 (2026-08-30)
 - **Linked from:** [[marcusrbrown--ha-config]] as a git submodule at `esphome/`
 
 ## Repository Structure
@@ -62,7 +83,10 @@ ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forke
 | `static/`                              | GitHub Pages site (Jekyll with slate theme, ESP Web Tools install button) |
 | `docs/`                                | Template README from upstream project template (not customized)           |
 | `.devcontainer.json`                   | VS Code devcontainer using `ptr727/esphome-nonroot:2025.12.7`             |
+| `.cache/`                              | Bind-mount target for the devcontainer's `/cache` (only `.gitkeep` tracked) |
 | `.github/`                             | Workflows, Renovate config, Probot settings                               |
+
+The tracked tree is 17 blobs and is **byte-identical across the 2026-08-01 and 2026-08-30 surveys** (and, by path list, unchanged since at least 2026-04-21). `.gitignore` keeps `.cache/` alive with a three-line negation (`!.cache/` → `.cache/*` → `!.cache/.gitkeep`) so the devcontainer bind mount has a directory to land on.
 
 ### Device Configurations
 
@@ -111,13 +135,35 @@ The CI workflow has four jobs:
 
 Publish uses a GitHub App token (`APPLICATION_ID` / `APPLICATION_PRIVATE_KEY` secrets) and commits as `mrbro-bot[bot]`.
 
-All actions are SHA-pinned with version comments. As of 2026-08-01: `actions/checkout@v5.1.0` (SHA `fbc6f39`, bumped from v5.0.1 on 2026-07-20 via #387), `esphome/build-action@v7.4.0` (SHA `82ec6bd`, bumped from v7.3.0 by 2026-07-16 via #385's non-major bundle), `actions/upload-artifact@v5.0.0` (SHA `330a01c`), `actions/create-github-app-token@v2.2.2` (SHA `fee1f7d`), `actions/download-artifact@v6.0.0` (SHA `018cc2c`). ESPHome pin still `2025.12.7`.
+All actions are SHA-pinned with version comments. As of 2026-08-30: `actions/checkout@v5.1.0` (SHA `fbc6f39`), `esphome/build-action@v7.4.0` (SHA `82ec6bd`), `actions/upload-artifact@v5.0.0` (SHA `330a01c`), `actions/create-github-app-token@v2.2.2` (SHA `fee1f7d`), `actions/download-artifact@v6.0.0` (SHA `018cc2c`), and **`JamesIves/github-pages-deploy-action@v4.9.0` (SHA `fa24774`, bumped from v4.8.0 on 2026-08-08 via #398)** — the first movement on the Pages deploy action across the survey series. ESPHome pin still `2025.12.7`.
+
+Note the ESPHome runtime pin carries an inline Renovate datasource comment:
+
+```yaml
+version: 2025.12.7 # renovate: datasource=github-releases depName=esphome/esphome versioning=loose
+```
+
+Combined with the `versioning: loose` / `separateMajorMinor: false` package rule in `renovate.json5`, this is the mechanism that has held the runtime still while every action around it advances. See [[esphome]] for the drift analysis.
 
 ### Reusable Workflow Pins
 
-Both `renovate.yaml` and `update-repo-settings.yaml` delegate to `bfra-me/.github` reusable workflows at v4.16.44 (SHA `dd02bc5`, bumped from v4.16.35 across nine weekly releases by 2026-07-31 via #382/#384/#386/#390/#391/#393/#394/#395 with intermediate v4.16.36–.43). Earlier chain: v4.16.20 (2026-05-25) → v4.16.23 (2026-06-07) → v4.16.27 (2026-06-18) → v4.16.32 (2026-06-29) → v4.16.35 (2026-07-09).
+Both `renovate.yaml` and `update-repo-settings.yaml` delegate to `bfra-me/.github` reusable workflows at **v4.22.0** (SHA `b830359`, 2026-08-27 via #408). Chain: v4.16.20 (2026-05-25) → v4.16.23 (2026-06-07) → v4.16.27 (2026-06-18) → v4.16.32 (2026-06-29) → v4.16.35 (2026-07-09) → v4.16.44 (2026-07-31) → **v4.16.47 (2026-08-16) → v4.17.0 (08-17) → v4.17.1 → v4.18.0 → v4.19.0 → v4.20.0 → v4.21.0 → v4.22.0 (08-27)**.
 
-**Footgun (first noted 2026-05-26; reconfirmed 2026-06-07, 2026-06-18, 2026-06-29, 2026-07-12, and 2026-08-01):** `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.44` — the same path used by the Renovate workflow, rather than a settings-specific reusable workflow. Renovate has continued to bump this version alongside the Renovate workflow across every weekly release, meaning the footgun is actively maintained by automation. The daily settings-sync cron is running Renovate twice, not syncing settings. Six consecutive surveys have flagged this without a patch landing; it remains a candidate for a follow-up issue.
+**Cadence shift (new, 2026-08-30):** after ~47 patch releases inside the `v4.16.x` line, [[bfra-me--github]] crossed **six minor boundaries in eleven days** (#402–#408, 2026-08-17 → 08-27). This repo absorbed all six as ordinary automerge churn — consistent with the ecosystem-wide observation that the SHA-pin + Renovate model swallows minor and even major reusable-workflow bumps without any structural change downstream.
+
+### The settings-sync footgun (seventh confirmation — now with a confirmed one-line fix)
+
+`update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml@v4.22.0` — the *Renovate* reusable workflow, under a workflow and job both named "Update Repo Settings." First noted 2026-05-26; reconfirmed 2026-06-07, 2026-06-18, 2026-06-29, 2026-07-12, 2026-08-01, and 2026-08-30.
+
+Three findings added this survey:
+
+1. **The correct target exists and is drop-in compatible.** `bfra-me/.github` ships `.github/workflows/update-repo-settings.yaml` at v4.22.0 with `on: workflow_call` and an identical secrets signature — `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY`, both `required: true`, **zero inputs**. The fix is a single-token path swap (`renovate.yaml` → `update-repo-settings.yaml`) in the `uses:` line. Nothing else in the caller changes. Prior surveys flagged the defect without establishing that a correct target was available; it is.
+
+2. **The cost is measurable, not theoretical.** The Actions run history shows `Update Repo Settings` firing on the `23 12 * * *` cron *and* on every push to `main` — each run executing a full Renovate pass. So (a) `.github/settings.yml` is never applied by this repo's own automation, and (b) every merge to `main` triggers Renovate at least twice: once via the mislabeled settings workflow's `push` trigger, once via the real Renovate workflow's `workflow_run`-on-CI-success trigger. Roughly one extra full Renovate run per day plus one per merge, indefinitely.
+
+3. **Renovate has been maintaining the misconfiguration for over a year.** The commit history for `update-repo-settings.yaml` is ≥100 commits deep and every sampled entry is a `chore(deps): update bfra-me/.github` bump; the oldest page reachable reaches `v4.0.9` on **2025-07-27** without hitting the introduction. SHA pinning validates the *ref*, not the *path* — so automation has faithfully kept a wrong `uses:` target current for ~13+ months. Generalized in [[github-actions-ci]].
+
+Still a candidate for a follow-up PR; the diff is now fully specified.
 
 ### Branch Protection
 
@@ -129,7 +175,7 @@ CI workflow uses concurrency group `${{ github.workflow }}-${{ github.event.numb
 
 ## Developer Tooling
 
-- **Renovate:** Config now lives in `.github/renovate.json5` (JSON5 with comments; prior surveys observed a `renovate.json`). Extends [[marcusrbrown--renovate-config]] at `#5.2.9` (bumped from `#5.2.4` across #383/#388/#389 by 2026-07-21, with #5.2.6 intermediate). Custom package rule tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with `versioning: loose`, `separateMajorMinor: false`, `separateMinorPatch: false`, `pinDigests: false`, and semantic commit types (`feat` for major/minor, `build` for patch). Post-upgrade runs `npx prettier@3.9.6` (advanced 3.9.4 → 3.9.6 via #381/#392).
+- **Renovate:** Config lives in `.github/renovate.json5` (JSON5 with comments; surveys before 2026-08-01 observed a `renovate.json`). Extends [[marcusrbrown--renovate-config]] at **`#5.2.12`** (bumped from `#5.2.9` via #396 `#5.2.10` → #397 `#5.2.12`, 2026-08-03/08-08). Custom package rule tracks ESPHome across Docker images (`ptr727/esphome-nonroot`, `esphome/esphome`, `ghcr.io/esphome/esphome`) with `versioning: loose`, `separateMajorMinor: false`, `separateMinorPatch: false`, `pinDigests: false`, and semantic commit types (`feat` for major/minor, `build` for patch). Post-upgrade runs `npx prettier@3.9.6` (advanced 3.9.4 → 3.9.6 via #381/#392).
 - **Devcontainer:** Uses `docker.io/ptr727/esphome-nonroot:2025.12.7` with ESPHome dashboard, verbose logging, `America/Phoenix` timezone. Forwards port 6052 (ESPHome native API). VS Code extensions include ESPHome, PlatformIO, Python, YAML, EditorConfig, Markdown lint, serial monitor, and spell checker. File associations map `*.yaml`/`*.yml` to ESPHome language mode (with exceptions for workflow/settings files).
 - **Probot Settings:** `.github/settings.yml` uses `_extends: .github:common-settings.yaml`. Overrides description and branch protection.
   - **Contradiction (noted 2026-07-12):** The bare `.github` short-form resolves to the **owner's** org/user `.github` repo — i.e. `marcusrbrown/.github:common-settings.yaml` (see [[marcusrbrown--github]]), not `fro-bot/.github`. Prior surveys (2026-04-21 → 2026-06-29) recorded this as extending `fro-bot/.github:common-settings.yaml`; the file itself has always written the un-prefixed `.github`, so the earlier attribution to `fro-bot/.github` was an over-read. The [[probot-settings]] inheritance chain for this repo runs through `marcusrbrown/.github`. This repo is still part of the Fro Bot-managed ecosystem by other signals (see Fro Bot Integration), but its settings-template ancestor is Marcus's personal `.github`, not the `fro-bot` org one.
@@ -139,15 +185,25 @@ CI workflow uses concurrency group `${{ github.workflow }}-${{ github.event.numb
 
 ## GitHub Pages Site
 
-The repo deploys a static site to GitHub Pages using Jekyll (slate theme). The site provides a browser-based firmware installer via ESP Web Tools (`esp-web-tools@8.0.3`). The `manifest.json` is generated by CI from build artifacts.
+The repo deploys a static site to GitHub Pages using Jekyll (slate theme, `static/_config.yml` title "ESPHome Life"). The site provides a browser-based firmware installer via ESP Web Tools. The `manifest.json` is generated by CI from build artifacts and merged with the static site by the `Publish` job. `pages build and deployment` runs green on `gh-pages` after every merge to `main`.
 
-The site content (`static/index.md`) is minimal — the upstream template placeholder text has not been customized.
+The site content (`static/index.md`) is minimal — the upstream template placeholder text ("Add some information about your project here.") has not been customized.
+
+**Untracked runtime dependency (new, 2026-08-30).** `static/index.md` loads the installer widget from a hand-written CDN URL inside the markdown body:
+
+```html
+<script type="module" src="https://unpkg.com/esp-web-tools@8.0.3/dist/web/install-button.js?module"></script>
+```
+
+This is the only runtime dependency the public-facing page has, and **nothing in the repo tracks it**: there is no `package.json`, the Renovate config declares no custom manager for markdown `<script src>` tags, and there is no SRI `integrity` attribute. So while Renovate keeps `bfra-me/.github`, the preset, Prettier, and every SHA-pinned action current on a near-daily cadence, the one dependency actually shipped to a browser is frozen at a version nobody is watching, fetched from a third-party CDN without subresource integrity. Low severity in absolute terms (the widget flashes firmware over WebSerial and the manifest is same-origin), but it is the exact inverse of the repo's otherwise meticulous supply-chain posture — every `uses:` is SHA-pinned; the thing users' browsers execute is not.
 
 ## Fro Bot Integration
 
 **No Fro Bot agent workflow detected.** The repository does not contain a `fro-bot.yaml` workflow. Ecosystem membership is signaled by the shared `common-settings.yaml` inheritance and the `mrbro-bot[bot]` GitHub App automation, not by a `fro-bot/.github` settings extend (see the Probot Settings contradiction above — the settings ancestor resolves to `marcusrbrown/.github`).
 
-A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage. This recommendation has been carried forward across nine surveys (2026-04-18, 2026-04-21, 2026-04-23, 2026-05-26, 2026-06-07, 2026-06-18, 2026-06-29, 2026-07-12, 2026-08-01).
+A follow-up draft PR should be proposed to add the Fro Bot agent workflow for automated PR review and triage. This recommendation has been carried forward across **ten** surveys (2026-04-18, 2026-04-21, 2026-04-23, 2026-05-26, 2026-06-07, 2026-06-18, 2026-06-29, 2026-07-12, 2026-08-01, 2026-08-30).
+
+The case has strengthened: this survey produced three actionable, fully-specified items (the one-token settings-workflow path swap, the ~8-month ESPHome pin drift, the untracked `esp-web-tools` CDN pin) that a resident autoheal daemon would plausibly have surfaced months ago. Renovate is excellent at moving version numbers it has been told about; it is structurally incapable of noticing the ones it hasn't. This repo is the clearest instance in the fleet of **automation coverage mistaken for automation completeness** — 400+ green dependency PRs sitting on top of three defects that no `uses:` bump can reach.
 
 ## Notable Patterns
 
@@ -156,8 +212,10 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 - **Template heritage:** The repo was generated from `esphome/esphome-project-template`. Template artifacts remain in `docs/readme.md` and `static/index.md` without customization.
 - **Ethernet-only devices:** All devices use ESP32-PoE-ISO with LAN8720 Ethernet — no Wi-Fi. This is notable for a Bluetooth Proxy setup where wired backhaul provides more reliable connectivity.
 - **Git submodule consumer:** This repo is referenced as a submodule from [[marcusrbrown--ha-config]] at the `esphome/` path, linking ESPHome device firmware to the Home Assistant configuration.
-- **Renovate-only commit log:** Every commit since the prior content change (2026-03-12) has been a Renovate dependency bump. No human-authored changes to device configs, workflows, or static site in ~4.6 months. The repo is on autopilot: `mrbro-bot[bot]` authors all commits. The last human-authored commit was `2d315c2` (2026-05-14, Renovate preset v4 → 5.2.0). As of 2026-08-01 the 30 most recent commits are all `mrbro-bot[bot]` `chore(deps)` bumps (#366–#395); HEAD is `08ca7a9` (bfra-me/.github → v4.16.44, #395).
-- **Open issues:** 3 open — the Dependency Dashboard (Renovate, issue #26), the `Uplift esphome-life` meta-issue (#8, longstanding), and a community note about BPPLUG devices (#298, spam-adjacent — not a real bug report).
+- **Renovate-only commit log:** Every commit since the prior content change (2026-03-12) has been a Renovate dependency bump. No human-authored changes to device configs, workflows, or static site in **~5.6 months**. The repo is on autopilot: `mrbro-bot[bot]` authors all commits. The last human-authored commit was `2d315c2` (2026-05-14, Renovate preset v4 → 5.2.0). As of 2026-08-30 the 40 most recent commits are all `mrbro-bot[bot]` `chore(deps)` bumps (#369–#408); HEAD is `5fffe20` (bfra-me/.github → v4.22.0, #408).
+- **Zero-backlog queue:** 0 open PRs across every survey — every Renovate PR opens, goes green, and merges, usually same-day. This puts esphome.life in the same drain-clean cohort as [[marcusrbrown--dev-like]] and the opposite of the propose-without-merge backlogs at [[marcusrbrown--sparkle]] (15 open) and [[bfra-me--works]] (12 open). The discriminator is surface area plus automerge coverage: a 17-blob config repo with a four-check gate drains trivially.
+- **Automation coverage ≠ automation completeness:** the three defects standing on this repo (settings-workflow path, ESPHome pin drift, untracked CDN pin) are each invisible to Renovate by construction — a wrong-but-valid `uses:` path, a deliberately-suppressed version range, and a dependency with no manifest. A dependency bot measures the health of what it was pointed at, not the health of the repo. Recorded in [[github-actions-ci]].
+- **Open issues:** 3 open, unchanged across seven surveys — the Dependency Dashboard (Renovate, issue #26, opened 2024-02-22), the `Uplift esphome-life` meta-issue (#8, opened 2023-06-18, longstanding), and a community note about BPPLUG/Feit outdoor plugs (#298, opened 2025-12-10 — a passer-by leaving notes, not a bug report). Nothing has been opened *or* closed here since 2025-12.
 
 ## Survey History
 
@@ -172,3 +230,4 @@ A follow-up draft PR should be proposed to add the Fro Bot agent workflow for au
 | 2026-06-29 | `9e1618f` | Dependency-only delta. `bfra-me/.github` v4.16.27 → v4.16.32 (SHA `bbf77bc`; #367/#370/#371 plus non-major bundles #368/#369). Renovate preset (`#5.2.3`), Prettier (3.8.4), `esphome/build-action` (v7.3.0), ESPHome version (2025.12.7), all CI action SHAs, and Olimex device configs unchanged. `update-repo-settings.yaml` footgun reconfirmed (now `renovate.yaml@v4.16.32`) — fourth survey flagged, no patch. No Fro Bot workflow; open issues unchanged (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). |
 | 2026-07-12 | `1c430cf` | Dependency-only delta. `bfra-me/.github` v4.16.32 → v4.16.35 (SHA `aac0d9b`; #376/#379/#380 + intermediate v4.16.33/.34). Renovate preset `#5.2.3` → `#5.2.4` (#375). Prettier crossed 3.8 → 3.9 minor boundary, now 3.9.4 (#372/#373/#374/#377/#378). `esphome/build-action` (v7.3.0), ESPHome version (2025.12.7), all CI action SHAs, devcontainer image (`ptr727/esphome-nonroot:2025.12.7`), and Olimex device configs unchanged. `update-repo-settings.yaml` footgun reconfirmed (now `renovate.yaml@v4.16.35`) — fifth survey flagged, no patch. **Corrected long-standing Probot-settings misattribution:** `settings.yml` uses bare `_extends: .github:...`, which resolves to `marcusrbrown/.github`, not `fro-bot/.github` as prior surveys claimed. No Fro Bot workflow (eighth survey); open issues unchanged (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). |
 | 2026-08-01 | `08ca7a9` | Dependency-only delta (19 Renovate bumps, #381–#395). **Two CI action bumps that had been static for months finally moved:** `esphome/build-action` v7.3.0 → **v7.4.0** (SHA `82ec6bd`, #385 bundle) and `actions/checkout` v5.0.1 → **v5.1.0** (SHA `fbc6f39`, #387). `bfra-me/.github` v4.16.35 → v4.16.44 (SHA `dd02bc5`; nine weekly releases). Renovate preset `#5.2.4` → `#5.2.9`. Prettier 3.9.4 → 3.9.6 (#381/#392). **Renovate config file is now `.github/renovate.json5`** (JSON5) — prior surveys observed `renovate.json`; the ESPHome-tracking package rule and `versioning: loose`/`separateMajorMinor: false` flags carry over unchanged. ESPHome pin (`2025.12.7`), devcontainer image, and Olimex device configs unchanged — the pin has now held across nine surveys (~4.6 months) despite upstream 2026.x releases. `update-repo-settings.yaml` footgun reconfirmed (now `renovate.yaml@v4.16.44`) — sixth survey flagged, no patch. No Fro Bot workflow (ninth survey); open issues unchanged (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). |
+| 2026-08-30 | `5fffe20` | Dependency-only delta (13 Renovate bumps, #396–#408); **tracked tree byte-identical to `08ca7a9`** (17 blobs). `bfra-me/.github` v4.16.44 → **v4.22.0** (SHA `b830359`) — after ~47 `v4.16.x` patches, **six minor boundaries in eleven days** (#402–#408, 08-17 → 08-27), absorbed as ordinary automerge churn. `JamesIves/github-pages-deploy-action` v4.8.0 → **v4.9.0** (#398, first movement in the series). Renovate preset `#5.2.9` → **`#5.2.12`** (#396/#397). Prettier held at 3.9.6; `esphome/build-action` (v7.4.0), `actions/checkout` (v5.1.0), all other action SHAs, devcontainer image, `settings.yml`, `renovate.json5` package rule, and both Olimex device configs unchanged. ESPHome pin `2025.12.7` held for a **tenth** survey (~5.6 months) while upstream shipped **2026.8.1** (2026-08-23) — the pin is now ~8 months and nine minor series behind. **Three new findings:** (1) the settings-sync footgun has a **confirmed drop-in fix** — `bfra-me/.github` ships `.github/workflows/update-repo-settings.yaml` at v4.22.0 with `workflow_call` and an identical secrets signature (`APPLICATION_ID`/`APPLICATION_PRIVATE_KEY`, zero inputs), so the repair is a one-token path swap; (2) the footgun's cost is now **measured** — Actions history shows `Update Repo Settings` executing a full Renovate pass on the daily `23 12` cron *and* on every push to `main`, so `settings.yml` is never applied by this repo's automation and each merge runs Renovate twice; (3) the file's history is **≥100 commits deep, every one a Renovate bump of the wrong path**, reaching back to v4.0.9 on 2025-07-27 without hitting the introduction — SHA pinning validates the ref, not the path. Also newly recorded: `static/index.md` hand-pins `esp-web-tools@8.0.3` via an unpkg `<script type="module">` with no manifest, no Renovate custom manager, and no SRI — the one dependency shipped to browsers is the one nothing tracks. Seventh footgun confirmation; no Fro Bot workflow (tenth survey); 0 open PRs; open issues unchanged (#8, #26, #298); stars 2. |

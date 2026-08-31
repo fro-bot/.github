@@ -1,8 +1,8 @@
 ---
 type: repo
-title: "marcusrbrown/sparkle"
+title: marcusrbrown/sparkle
 created: 2026-04-28
-updated: 2026-07-28
+updated: 2026-08-29
 sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: 770356b3c83cec08a666960eab9c5fb4e1ab2a85
@@ -31,14 +31,34 @@ sources:
   - url: https://github.com/marcusrbrown/sparkle
     sha: 9c215ee477fb785ba148b826f7bf0ef8c7111617
     accessed: 2026-07-28
-tags: [typescript, react, react-native, monorepo, design-system, storybook, tailwindcss, radix-ui, turborepo, expo, vite, astro, github-pages, zig, wasm]
-aliases: [sparkle]
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: 8508b7163202f2e547864b5419ab25253e55191c
+    accessed: 2026-08-29
+tags:
+  - typescript
+  - react
+  - react-native
+  - monorepo
+  - design-system
+  - storybook
+  - tailwindcss
+  - radix-ui
+  - turborepo
+  - expo
+  - vite
+  - astro
+  - github-pages
+  - zig
+  - wasm
+aliases:
+  - sparkle
 related:
   - github-actions-ci
   - marcusrbrown--mrbro-dev
   - marcusrbrown--gpt
   - marcusrbrown--tokentoilet
   - marcusrbrown--vbs
+node_id: MDEwOlJlcG9zaXRvcnkzMTYxMDA5ODY=
 ---
 
 # marcusrbrown/sparkle
@@ -50,14 +70,14 @@ related:
 - **Purpose:** Experimental playground for modern TypeScript monorepo patterns, cross-platform UI, and design system tooling
 - **Default branch:** `main`
 - **Created:** 2020-11-26
-- **Last push:** 2026-07-28
-- **Homepage:** https://sparkle.mrbro.dev (Astro Starlight docs site on GitHub Pages; the GitHub `homepage` API field reads `null` at the 2026-07-28 survey, but Pages is live)
+- **Last push:** 2026-08-28
+- **Homepage:** https://sparkle.mrbro.dev (Astro Starlight docs site on GitHub Pages; the GitHub `homepage` API field reads `null` at the 2026-08-29 survey, unchanged, but Pages is live)
 - **License:** MIT
 - **Topics:** `typescript`, `playground`, `next-js`, `react`, `vite`
-- **Package manager:** pnpm 11.17.0
-- **Node.js:** 24.18.0 (pinned via `.node-version`)
-- **Stars:** 2, **Forks:** 1, **Watchers:** 2 (stars 1 → 2 since 2026-07-11)
-- **Open issues:** 7 (non-PR), **Open PRs:** 3, **Has GitHub Pages:** yes
+- **Package manager:** pnpm 11.24.0
+- **Node.js:** 24.20.0 (pinned via `.node-version`)
+- **Stars:** 2, **Forks:** 0, **Watchers:** 2 (forks 1 → 0 since 2026-07-28)
+- **Open issues:** 9 (non-PR), **Open PRs:** 15, **Has GitHub Pages:** yes
 
 ## Tech Stack
 
@@ -85,6 +105,8 @@ _Toolchain drift (2026-06-16 survey at SHA `5ccf106`):_ pnpm `10.34.1` → `10.3
 _Toolchain drift (2026-06-27 survey at SHA `81cbd99`):_ pnpm `10.34.3` → `10.34.4` (root `packageManager`). `.node-version` bumped `24.16.0` → **`24.18.0`** (first Node minor bump since 24.16.0 held across four surveys). Turborepo `2.9.18`, `@types/node` `24.13.2`, `prettier` `3.8.4`, `tsdown` `0.16.8`, `tsx` `4.22.4` — all unchanged. `@bfra.me/eslint-config` 0.51.1, `@bfra.me/prettier-config` 0.16.9 (`120-proof`), `@bfra.me/tsconfig` 0.13.1, TypeScript 5.9.3 — all unchanged. `engines` floor remains `node >=22.13.1` / `pnpm >=9.15.4`. `llms.txt` **still pins `pnpm@10.33.4` and `node 24.x`** — the pnpm doc drift now widens to three patch releases behind actual `10.34.4`, and the Node pin in docs no longer names the concrete `.node-version` value. The `category 3` autoheal prompt explicitly checks `llms.txt` accuracy and "open an issue (not a PR)" on drift — yet the drift persists across multiple surveys, suggesting the llms.txt accuracy check isn't firing or the drift isn't being flagged. Worth confirming on next survey.
 
 _Toolchain drift (2026-07-28 survey at SHA `9c215ee`):_ Steady patch-level cadence after the v11 major cutover. **pnpm `11.10.0` → `11.17.0`** (root `packageManager`; `engines.pnpm` floor holds `>=11.8.0`). **turbo `2.10.4` → `2.10.7`** (HEAD commit itself is `chore(dev): update dependency turbo to v2.10.7` #1876, mrbro-bot/Renovate). `prettier` `3.9.4` → `3.9.6`; `tsx` `4.23.0` → `4.23.1`; `@types/node` `24.13.2` → `24.13.3`; `eslint` `9.39.4` → `9.39.5`; `@changesets/cli` `2.31.0` → `2.31.1`. `.node-version` holds `24.18.0`; `engines.node` floor `>=22.13.1`. `@bfra.me/eslint-config` 0.51.1, `@bfra.me/prettier-config` 0.16.9 (`120-proof`), `@bfra.me/tsconfig` 0.13.1, `tsdown` 0.16.8, TypeScript 5.9.3, `consola` 3.4.2, `@axe-core/cli` 4.12.1, `@lhci/cli` 0.15.1, `markdownlint` 0.39.0 — all unchanged. Strict-mode TypeScript + ESM-only `"type": "module"` remain stable invariants. **llms.txt drift persists and remains unremediated:** `llms.txt` line 40 still text-declares `packageManager: pnpm@10.33.4` (now a full major plus seven minors behind actual `11.17.0`) and line 41 still names Node only as `24.x`. Autoheal-authored issue **#1800** (opened 2026-07-11) is **still OPEN** — the category-3 check surfaced the drift but no fix PR has landed against `llms.txt` itself. The autoheal loop flags-but-does-not-heal the doc: it opens an issue (per prompt contract) rather than editing the file, and the human hasn't actioned #1800 across two surveys.
+
+_Toolchain drift (2026-08-29 survey at SHA `8508b71`):_ Steady patch/minor cadence, no engine-level shift. **pnpm `11.17.0` → `11.24.0`** (root `packageManager`; `engines.pnpm` floor holds `>=11.8.0`). **turbo `2.10.7` → `2.10.12`**; **tsx `4.23.1` → `4.23.12`** (a multi-patch jump); `@axe-core/cli` `4.12.1` → `4.13.0`. **`.node-version` `24.18.0` → `24.20.0`** (`engines.node` floor holds `>=22.13.1`). `@bfra.me/*` toolchain nudged: `@bfra.me/eslint-config` `0.51.1` → `0.51.2`, `@bfra.me/prettier-config` `0.16.9` → `0.16.11` (still `120-proof`), `@bfra.me/tsconfig` `0.13.1` → `0.13.2`. `eslint` `9.39.5`, `prettier` `3.9.6`, `@types/node` `24.13.3`, `tsdown` `0.16.8`, `@changesets/cli` `2.31.1`, `consola` `3.4.2`, `@lhci/cli` `0.15.1`, `markdownlint` `0.39.0`, TypeScript `5.9.3` — all unchanged. Strict-mode TypeScript + ESM-only `"type": "module"` remain stable invariants. **llms.txt drift persists and widens further:** `llms.txt` still text-declares `packageManager: pnpm@10.33.4` — now a full major plus **fourteen** minors behind actual `11.24.0` — and still names Node only as `24.x`. Autoheal-authored issue **#1800** (opened 2026-07-11) is **still OPEN across three surveys**; the category-3 check flags but does not heal (see "llms.txt drift: flagged but unhealed" under Notable Patterns).
 
 _Toolchain drift (2026-07-11 survey at SHA `2ef1cf1`):_ **Major version cutover: pnpm `10.34.4` → `11.10.0`** (root `packageManager`) — the pnpm v11 security bump (PR #1773 at the 2026-06-27 survey) has landed. `engines.pnpm` floor raised `>=9.15.4` → **`>=11.8.0`** to match. Turborepo `2.9.18` → **`2.10.4`** (first minor bump since the 2.9 line). `prettier` `3.8.4` → `3.9.4`; `tsx` `4.22.4` → `4.23.0`. `@axe-core/cli` now pinned `4.12.1`; `@lhci/cli` `0.15.1`; `markdownlint` `0.39.0` present as devDeps. `.node-version` holds at `24.18.0`. `@types/node` `24.13.2`, `tsdown` `0.16.8`, `@bfra.me/eslint-config` 0.51.1, `@bfra.me/prettier-config` 0.16.9 (`120-proof`), `@bfra.me/tsconfig` 0.13.1, TypeScript 5.9.3, `consola` 3.4.2 — all unchanged. `engines.node` floor remains `>=22.13.1`. **The `llms.txt` drift is now being flagged:** fro-bot opened issue **#1800** ("llms.txt drift: pnpm version reference is stale"). `llms.txt` still text says `packageManager: pnpm@10.33.4` (now four-plus releases behind actual `11.10.0`, and a full major behind), but the category-3 autoheal check **is firing** — resolving the prior open question about whether the llms.txt accuracy check was working. Strict-mode TypeScript + ESM-only `"type": "module"` remain stable invariants.
 
@@ -160,7 +182,7 @@ Astro Starlight at `docs/` with automated documentation generation:
 | --- | --- |
 | `turbo.json` | Task graph and caching configuration |
 | `pnpm-workspace.yaml` | Workspace packages: `packages/*`, `apps/*`, `docs`, `scripts` |
-| `.node-version` | Node.js 24.18.0 |
+| `.node-version` | Node.js 24.20.0 |
 | `eslint.config.ts` | Root ESLint config |
 | `tsconfig.json` / `tsconfig.node.json` | TypeScript project references |
 | `.github/actions/setup-ci/` | Composite CI setup action |
@@ -203,7 +225,7 @@ The `regenerate-docs.yaml` workflow detects package source changes, runs TypeDoc
 
 ### Workflow: `fro-bot.yaml`
 
-- **Agent version:** `fro-bot/agent@4ad00541cd9e4f1853f9dcd1fb2ac316d559d54f` (**v0.95.0** as of 2026-07-28 survey; was `e7453bd...` v0.85.0 at 2026-07-11, `720b721...` v0.79.1 at 2026-06-27, `b7efdd6...` v0.65.0 at 2026-06-16, `07820934...` v0.54.2 at 2026-06-05). The repo continues to track the agent release cadence aggressively — a full minor per survey. The action ref pins `actions/checkout@d23441a` v6.1.0 in the fro-bot job (was `df4cb1c` v6.0.3 at 2026-07-11).
+- **Agent version:** `fro-bot/agent@e9501a93f428fec4eedcef3f11ee97bbd903d6e8` (**v0.105.1** as of 2026-08-29 survey; was `4ad0054...` v0.95.0 at 2026-07-28, `e7453bd...` v0.85.0 at 2026-07-11, `720b721...` v0.79.1 at 2026-06-27, `b7efdd6...` v0.65.0 at 2026-06-16, `07820934...` v0.54.2 at 2026-06-05). The repo continues to track the agent release cadence aggressively — ~a full minor per survey, now crossing the cosmetic v0.100 line. The action ref pins `actions/checkout@d23441a` v6.1.0 in the fro-bot job (unchanged since 2026-07-28).
 - **Triggers:**
   - `pull_request` (opened, synchronize, reopened, ready_for_review, review_requested)
   - `issues` (opened, edited) — from OWNER/MEMBER/COLLABORATOR only
@@ -235,8 +257,10 @@ The workflow has an explicit fork PR head refusal step on `issue_comment` trigge
 
 - **#1665** — "Daily Autohealing Report" (open, `fro-bot`-authored, first run 2026-06-05; still open at 2026-07-11)
 - **#1666** — "Daily Maintenance Report" (`fro-bot`-authored; observed **OPEN** at the 2026-06-27 and 2026-07-11 surveys, after being **CLOSED** at 2026-06-16). **Resolved:** the maintenance perpetual issue is back in the open/reused state the 17:00 UTC prompt intends. The MAINTENANCE_PROMPT explicitly instructs reopening a closed matching issue rather than creating a new one ("If the most recent matching issue is closed, reopen it instead of creating a new one"), which matches the observed transition CLOSED → OPEN on the same issue number. The earlier closure was a transient state, not a lifecycle bug.
-- **#1800** — "llms.txt drift: pnpm version reference is stale" (`fro-bot`-authored, opened by autoheal, observed at 2026-07-11; **still OPEN at 2026-07-28**). **Resolves the prior open question:** the AUTOHEAL_PROMPT category-3 llms.txt-accuracy check *is* firing — it correctly opened an issue (not a PR, per the prompt's "open an issue" instruction) flagging the stale `pnpm@10.33.4` reference. **New observation (2026-07-28):** the issue has now sat open across two surveys and `llms.txt` still text-declares `pnpm@10.33.4` (actual is `11.17.0`). The check flags but does not heal — remediation waits on a human to close #1800, which hasn't happened. See the "llms.txt drift: flagged but unhealed" note under Notable Patterns.
+- **#1800** — "llms.txt drift: pnpm version reference is stale" (`fro-bot`-authored, opened by autoheal, observed at 2026-07-11; **still OPEN at 2026-08-29**). **Resolves the prior open question:** the AUTOHEAL_PROMPT category-3 llms.txt-accuracy check *is* firing — it correctly opened an issue (not a PR, per the prompt's "open an issue" instruction) flagging the stale `pnpm@10.33.4` reference. **New observation (2026-08-29):** the issue has now sat open across **three** surveys and `llms.txt` still text-declares `pnpm@10.33.4` (actual is `11.24.0` — a full major plus fourteen minors ahead). The check flags but does not heal — remediation waits on a human to close #1800, which hasn't happened. See the "llms.txt drift: flagged but unhealed" note under Notable Patterns.
 - **#1799** — "Stale TODOs" (`fro-bot`-authored, opened by autoheal, observed at 2026-07-11) — companion to the older #1664 stale-annotation review issue.
+- **#1937** — "Convention drift: residual `any` / `@ts-expect-error` / non-Error class usage in src/" (`fro-bot`-authored, opened by autoheal, first observed 2026-08-29). The autoheal daemon now surfaces the repo's own no-class / no-`any` conventions (from `copilot-instructions.md`) as a hygiene issue where `src/` violates them — a code-quality category-3/4 flag, again as an issue rather than a fix PR.
+- **#1940** — "moo-dang#test flaky: turbo.json package-specific build task aliases (build:ui/build:config/build:types/build:utils) missing from most package.json scripts" (`fro-bot`-authored, opened by autoheal, first observed 2026-08-29). Third distinct surfacing of the recurring `moo-dang` cross-package build-reachability class (after #1681 Turbo-graph and #1875 manifest-declaration) — this one points at the `turbo.json` package-specific task aliases lacking matching `package.json` scripts, which is the Turbo-side twin of the #1940 symptom. Corroborates the "worth a lint that asserts every `@sparkle/*` coupling is declared" recommendation.
 
 The repo also has:
 
@@ -247,7 +271,7 @@ The repo also has:
 
 ## Developer Tooling
 
-- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.9` (was `#5.2.0` at 2026-07-11; major-bumped from `#4.5.9` between 2026-05-01 and 2026-05-23 — same ecosystem-wide cutover seen across the Marcus and Fro Bot portfolios) + `sanity-io/renovate-config:semantic-commit-type` + `:preserveSemverRanges`. Post-upgrade runs `pnpm bootstrap && pnpm fix`. React Native package grouping rules. Automerge on unstable minor/patch for `@astrojs/check` and `typedoc`. PR creation: `immediate`.
+- **Renovate:** Extends `marcusrbrown/renovate-config#5.2.12` (was `#5.2.9` at 2026-07-28, `#5.2.0` at 2026-07-11; major-bumped from `#4.5.9` between 2026-05-01 and 2026-05-23 — same ecosystem-wide cutover seen across the Marcus and Fro Bot portfolios) + `sanity-io/renovate-config:semantic-commit-type` + `:preserveSemverRanges`. Post-upgrade runs `pnpm bootstrap && pnpm fix`. React Native package grouping rules. Automerge on unstable minor/patch for `@astrojs/check` and `typedoc`. PR creation: `immediate`.
 - **OpenCode config:** `opencode.jsonc` added at root — points `instructions` to `.github/copilot-instructions.md`. First survey confirmation of OpenCode config presence in this repo.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml` — confirmed Fro Bot ecosystem membership.
 - **Git hooks:** `simple-git-hooks` runs `nano-staged` on pre-commit. nano-staged runs `eslint --fix` on TS/JS/CSS/MD/JSON/YAML and `sort-package-json` on package.json files.
@@ -278,19 +302,22 @@ The repo also has:
 - **Security-override PR archetype (2026-07-28):** Two open fro-bot autoheal PRs (#1866 brace-expansion `GHSA-mh99-v99m-4gvg`, #1862 postcss `GHSA-6g55-p6wh-862q`) remediate Dependabot alerts by adding `pnpm.overrides` entries in `pnpm-workspace.yaml` and regenerating the lockfile — forcing transitive dev-tooling deps up to a patched floor rather than waiting for the upstream package to bump. This is a distinct autoheal category-2 (security) shape from the earlier lint-fix and docs-regen archetypes: it targets transitive vulns that Renovate's direct-dependency model can't reach. The pattern (`pnpm.overrides` with `adm-zip`/`tmp` precedent noted in #1862's body) is the correct lever for pnpm workspaces — the alternative of pinning each intermediate package would be brittle chrome.
 - **Recurring moo-dang test-utils dep gap (2026-07-28):** PR #1875 re-fixes the same class of bug PR #1681 addressed (2026-06-05): `apps/moo-dang` test files import `@sparkle/test-utils` subpaths (`/console`, `/dom`, `/react`, `/terminal`) but the package was never declared as a `workspace:*` devDependency. Under pnpm's strict non-hoisted linking this leaves the package unresolved. #1681 fixed the *Turbo task-graph* reachability (missing `build:test-utils` dependency); #1875 fixes the *package.json declaration* gap. Same root symptom — undeclared cross-package coupling in `moo-dang` tests — surfacing through two different resolution layers. Worth a lint that asserts every `@sparkle/*` import has a matching manifest entry.
 
+- **Autoheal PR backlog accretion (2026-08-29):** The open PR queue jumped **3 → 15** in one survey interval, and **13 of 15 are fro-bot autoheal-authored** — none merging. The queue now stacks every archetype this repo has grown: lint auto-fixes (#1787, #1816, #1883, #1886, #1891, #1914 — six of them), security `pnpm.overrides` (#1838 adm-zip `GHSA-xcpc-8h2w-3j85`, #1862 postcss, #1866 brace-expansion, #1904 nanoid `GHSA-2v37-7h3g-55p8`), the moo-dang test-utils manifest fix (#1875), plus new correctness fixes (#1841 theme spacing-scale zero-anchor check, #1844 broken docs font preload). This is the same **propose-without-merge** dynamic catalogued in [[marcusrbrown--marcusrbrown-github-io]] and [[marcusrbrown--mrbro-dev]]: the daemon reliably *opens* fixes but the merge gate is human, and the human hasn't drained the queue. Six near-identical `chore(lint): apply auto-fixes from autohealing run` PRs stacking without consolidation is the sharpest signal — each autoheal run re-emits its lint delta as a fresh PR rather than updating or superseding the prior one, so the queue grows monotonically. Worth a dedup/supersede rule on the lint-fix archetype, or an automerge lane for the mechanical lint/security-override classes.
+- **Convention-drift self-report (2026-08-29):** New issue #1937 has the autoheal daemon auditing `src/` against the repo's *own* declared conventions (no ES6 classes except Error extensions, no `any`, no `@ts-expect-error`) and filing the residual violations as an issue. This is the code-quality analogue of the llms.txt self-report (#1800): the daemon can *see* the drift from the copilot-instructions contract but files-not-fixes, consistent with the autoheal issue-vs-PR boundary.
+
 ## Shared Ecosystem Patterns
 
 | Feature | Sparkle | Portfolio Standard |
 | --- | --- | --- |
 | Probot settings | `fro-bot/.github:common-settings.yaml` | Same |
-| Renovate preset | `marcusrbrown/renovate-config#5.2.9` | Same (major-bumped portfolio-wide) |
-| ESLint config | `@bfra.me/eslint-config` 0.51.1 | Same (version varies) |
-| Prettier config | `@bfra.me/prettier-config` 0.16.9 (`120-proof`) | Same |
-| TS config | `@bfra.me/tsconfig` 0.13.1 | Same |
-| pnpm | 11.17.0 | ~11.x |
-| Node.js | 24.18.0 | 22–24 |
+| Renovate preset | `marcusrbrown/renovate-config#5.2.12` | Same (major-bumped portfolio-wide) |
+| ESLint config | `@bfra.me/eslint-config` 0.51.2 | Same (version varies) |
+| Prettier config | `@bfra.me/prettier-config` 0.16.11 (`120-proof`) | Same |
+| TS config | `@bfra.me/tsconfig` 0.13.2 | Same |
+| pnpm | 11.24.0 | ~11.x |
+| Node.js | 24.20.0 | 22–24 |
 | TypeScript | 5.9.3 | 5.9–6.0 |
-| Fro Bot workflow | **Present** (`fro-bot.yaml`, agent v0.95.0) | Present in most active repos |
+| Fro Bot workflow | **Present** (`fro-bot.yaml`, agent v0.105.1) | Present in most active repos |
 | Fro Bot autoheal | **Present** (05:00 UTC, categories 1–8) | Present in most active repos |
 | Maintenance report | **Present** (17:00 UTC perpetual issue) | Present in most active repos |
 | Copilot setup steps | **Missing** | Present in most active repos |
@@ -298,6 +325,30 @@ The repo also has:
 | `opencode.jsonc` | **Present** (points to copilot-instructions.md) | Emerging pattern |
 
 ## Open PRs and Issues
+
+_As of 2026-08-29 survey (SHA `8508b71`):_
+
+### Open PRs (15)
+
+fro-bot autoheal-authored (13): **#1787, #1816, #1883, #1886, #1891, #1914** (six `chore(lint): apply auto-fixes from autohealing run` — #1883 is the variant `chore(lint): add missing fenced code block languages`); **#1838** (adm-zip override, `GHSA-xcpc-8h2w-3j85`), **#1862** (postcss override, carried from 2026-07-28), **#1866** (brace-expansion override, carried), **#1904** (nanoid override, `GHSA-2v37-7h3g-55p8`); **#1875** (moo-dang @sparkle/test-utils workspace dep, carried); **#1841** (theme spacing-scale zero-anchor consistency fix); **#1844** (remove broken `system-ui.woff2` docs font preload). Renovate/mrbro-bot (2): **#1812** (typedoc v0.28.20, carried from 2026-07-11), **#1956** (`@bfra.me/eslint-config` v0.52.1).
+
+_The queue **quadrupled 3 → 15** since 2026-07-28. #1862/#1866/#1875 persist unmerged from the prior survey; #1787/#1816 (lint-fixes) resurfaced/persisted; everything else is new fro-bot autoheal output. HEAD `8508b71` is a Renovate typedoc-plugin-markdown bump (#1966) that already merged. See "Autoheal PR backlog accretion" under Notable Patterns — this is propose-without-merge, not throughput._
+
+### Open Issues (9 non-PR)
+
+- **#1940** — "moo-dang#test flaky: turbo.json package-specific build task aliases missing from most package.json scripts" (fro-bot, **new** — third surfacing of the moo-dang cross-package build-reachability class)
+- **#1937** — "Convention drift: residual `any` / `@ts-expect-error` / non-Error class usage in src/" (fro-bot, **new** — autoheal auditing src/ against the repo's own conventions)
+- **#1800** — "llms.txt drift: pnpm version reference is stale" (fro-bot, **still OPEN** across three surveys; `llms.txt` still pins `pnpm@10.33.4` vs actual `11.24.0`)
+- **#1799** — "Stale TODOs" (fro-bot, opened by autoheal)
+- **#1666** — "Daily Maintenance Report" (fro-bot perpetual issue, open)
+- **#1665** — "Daily Autohealing Report" (fro-bot perpetual issue, open)
+- **#1664** — "chore: review stale TODO/FIXME annotations (>90 days old)" (fro-bot, opened by autoheal)
+- **#876** — [Feature] Astro Starlight Documentation - Phase 6: Deployment and CI/CD (marcusrbrown)
+- **#212** — Dependency Dashboard (mrbro-bot / Renovate)
+
+_Non-PR issue set grew 7 → 9: two new autoheal-authored hygiene issues (#1937 convention drift, #1940 moo-dang turbo aliases). The four steady-state issues (#1664/#1665/#1666/#212), the two carried autoheal issues (#1799/#1800), and the marcusrbrown feature issue (#876) all persist._
+
+---
 
 _As of 2026-07-28 survey (SHA `9c215ee`):_
 
@@ -409,6 +460,7 @@ _Issue #57 ("Uplift `sparkle`") and the Astro v6 security PR #1604 are no longer
 
 | Date | SHA | Delta |
 | --- | --- | --- |
+| 2026-08-29 | `8508b71` | Re-survey — Fro Bot agent bumped v0.95.0 → **v0.105.1** (SHA `e9501a9`, crosses cosmetic v0.100); checkout still `d23441a` v6.1.0; crons unchanged. **pnpm `11.17.0` → `11.24.0`**; **turbo `2.10.7` → `2.10.12`**; **tsx `4.23.1` → `4.23.12`**; `@axe-core/cli` `4.12.1`→`4.13.0`; `@bfra.me/eslint-config` `0.51.1`→`0.51.2`, `@bfra.me/prettier-config` `0.16.9`→`0.16.11`, `@bfra.me/tsconfig` `0.13.1`→`0.13.2`. **`.node-version` `24.18.0` → `24.20.0`**; TypeScript 5.9.3 / eslint 9.39.5 / prettier 3.9.6 / tsdown 0.16.8 unchanged. Renovate preset `#5.2.9` → **`#5.2.12`**. Workflow count steady at 7; `apps/`+`packages/` layout + all three prompts durable — **no structural change**. Stars 2 / watchers 2 steady; **forks 1 → 0**. **Open PRs exploded 3 → 15** — 13 fro-bot autoheal-authored, none merging (six `chore(lint)` auto-fix PRs + four security `pnpm.overrides` #1838/#1862/#1866/#1904 + #1875 test-utils + #1841 theme + #1844 docs font); propose-without-merge backlog. Open non-PR issues 7 → 9 with two new autoheal issues: **#1937** (convention drift: residual any/@ts-expect-error/non-Error class in src/) and **#1940** (moo-dang turbo package-specific build-task aliases missing from package.json scripts — third surfacing of the moo-dang cross-package build-reachability class). **#1800 "llms.txt drift" still OPEN across three surveys** — `llms.txt` still pins `pnpm@10.33.4` (now a full major + fourteen minors behind actual `11.24.0`). |
 | 2026-04-28 | `770356b` | Initial survey — full page created |
 | 2026-04-30 | `712ab1b` | Re-survey — Renovate preset bumped `#4.5.8` → `#4.5.9`, `bfra-me/.github` reusable workflows bumped to v4.16.11, lockfile maintenance. No structural changes. |
 | 2026-05-01 | `712ab1b` | Re-survey — SHA unchanged. Open PRs: 2 (including Astro v6 security update #1604). Open issues: 5. No structural changes. Still no Fro Bot agent workflow. |
