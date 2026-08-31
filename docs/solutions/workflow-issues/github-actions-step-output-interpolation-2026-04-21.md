@@ -1,7 +1,7 @@
 ---
 title: "Use env vars for step outputs in GitHub Actions run: blocks"
 date: 2026-04-21
-category: docs/solutions/workflow-issues/
+category: workflow-issues
 module: github-workflows
 problem_type: workflow_issue
 component: development_workflow
