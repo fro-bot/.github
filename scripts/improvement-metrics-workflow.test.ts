@@ -58,8 +58,8 @@ describe('improvement-metrics.yaml workflow contract', () => {
     expect(dryRunInput?.default).toBe('true')
   })
 
-  it('has no schedule trigger — manual dispatch only', () => {
-    expect(parsed.on).not.toHaveProperty('schedule')
+  it('has a weekly Sunday schedule trigger at 23:00 UTC', () => {
+    expect(parsed.on.schedule).toEqual([{cron: '0 23 * * 0'}])
   })
 
   it('serializes runs with a static concurrency group and never cancels in-progress runs', () => {
@@ -80,22 +80,60 @@ describe('improvement-metrics.yaml workflow contract', () => {
     expect(detectJob?.permissions).toEqual({contents: 'read', issues: 'read'})
   })
 
-  it('report job carries only read-only contents permission on the job token', () => {
+  it('report job grants only contents:read and issues:write on the job token', () => {
     expect(reportJob).toBeDefined()
-    expect(reportJob?.permissions).toEqual({contents: 'read'})
+    expect(reportJob?.permissions).toEqual({contents: 'read', issues: 'write'})
   })
 
-  it('the report job itself is skipped entirely on dry-run — the job-level `if` requires an explicit live dispatch', () => {
+  it('the report job writes on schedule or explicit live dispatch, while preserving manual dry-run behavior', () => {
     expect(reportJob?.if).toBeDefined()
     expect(String(reportJob?.if)).toContain("github.event_name == 'workflow_dispatch'")
     expect(String(reportJob?.if)).toContain("github.event.inputs.dry_run == 'false'")
+    expect(String(reportJob?.if)).toContain("github.event_name == 'schedule'")
+    expect(reportJob?.if).toBe(
+      '$' +
+        "{{ always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')) }}",
+    )
   })
 
-  it('the write-scoped app token is minted only for an explicit live (dry_run=false) manual dispatch', () => {
+  it('keeps the report job eligible when detect completes with a non-critical failure state', () => {
+    expect(String(reportJob?.if)).toContain('always()')
+  })
+
+  it('keeps scheduled report writes independent of absent dispatch inputs', () => {
+    expect(String(reportJob?.if)).toMatch(
+      /github\.event_name == 'schedule' \|\| \(github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.dry_run == 'false'\)/u,
+    )
+  })
+
+  it('keeps manual report writes gated on dry_run=false', () => {
+    expect(String(reportJob?.if)).toContain(
+      "github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false'",
+    )
+  })
+
+  it('the write-scoped app token is minted for scheduled runs or explicit live manual dispatches', () => {
     const mintStep = reportJob?.steps.find(step => step.id === 'app-token')
     expect(mintStep).toBeDefined()
     expect(mintStep?.if).toContain("github.event_name == 'workflow_dispatch'")
     expect(mintStep?.if).toContain("github.event.inputs.dry_run == 'false'")
+    expect(mintStep?.if).toContain("github.event_name == 'schedule'")
+    expect(mintStep?.if).toBe(
+      '$' +
+        "{{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false') }}",
+    )
+  })
+
+  it('keeps scheduled app-token minting independent of absent dispatch inputs', () => {
+    const mintStep = reportJob?.steps.find(step => step.id === 'app-token')
+    expect(String(mintStep?.if)).toMatch(
+      /github\.event_name == 'schedule' \|\| \(github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.dry_run == 'false'\)/u,
+    )
+  })
+
+  it('keeps manual app-token minting gated on dry_run=false', () => {
+    const mintStep = reportJob?.steps.find(step => step.id === 'app-token')
+    expect(mintStep?.if).toContain("github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false'")
   })
 
   it('the app token is scoped to this repository only, with issues:write', () => {
@@ -120,11 +158,44 @@ describe('improvement-metrics.yaml workflow contract', () => {
     expect(token).not.toContain('steps.app-token')
   })
 
+  it('the detect job has no workflow-dispatch input assumptions', () => {
+    expect(JSON.stringify(detectJob)).not.toContain('github.event.inputs')
+  })
+
   it('the report step uses only the minted app token and does not fall back to the job token', () => {
     const reportStep = reportJob?.steps.find(step => step.id === 'report')
     const token = String(reportStep?.env?.GITHUB_TOKEN ?? '')
     expect(token).toContain('steps.app-token.outputs.token')
     expect(token).not.toContain('github.token')
+  })
+
+  it('has a scheduled-failure notification step that does not notify manual dispatch failures', () => {
+    const notifyStep = reportJob?.steps.find(step => step.id === 'notify-scheduled-failure')
+    expect(notifyStep).toBeDefined()
+    expect(notifyStep?.if).toBe('$' + "{{ failure() && github.event_name == 'schedule' }}")
+  })
+
+  it('finds the perpetual report issue by its exact title and label before commenting', () => {
+    const notifyStep = reportJob?.steps.find(step => step.id === 'notify-scheduled-failure')
+    const run = String(notifyStep?.run ?? '')
+    expect(run).toContain('gh issue list')
+    expect(run).toContain('--label improvement-metrics-report')
+    expect(run).toContain('select(.title == "Improvement Metrics")')
+    expect(run).toContain('gh issue comment')
+  })
+
+  it('pins scheduled failure comments to the failing workflow run URL', () => {
+    const notifyStep = reportJob?.steps.find(step => step.id === 'notify-scheduled-failure')
+    const runUrl = String(notifyStep?.env?.RUN_URL ?? '')
+    expect(runUrl).toBe(
+      '$' + '{{ github.server_url }}/' + '$' + '{{ github.repository }}/actions/runs/' + '$' + '{{ github.run_id }}',
+    )
+    expect(String(notifyStep?.run ?? '')).toContain('$RUN_URL')
+  })
+
+  it('falls back to the default token only when app-token minting produced no token', () => {
+    const notifyStep = reportJob?.steps.find(step => step.id === 'notify-scheduled-failure')
+    expect(notifyStep?.env?.GH_TOKEN).toBe('$' + '{{ steps.app-token.outputs.token || github.token }}')
   })
 
   it('the detect step writes the digest to IMPROVEMENT_METRICS_DIGEST_PATH under runner.temp', () => {

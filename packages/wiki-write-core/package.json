@@ -1,0 +1,75 @@
+{
+  "name": "@fro-bot/wiki-write-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared validation and commit primitives for Fro Bot wiki writes",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./wiki-lint": {
+      "types": "./src/wiki-lint.ts",
+      "import": "./src/wiki-lint.ts"
+    },
+    "./wiki-ingest": {
+      "types": "./src/wiki-ingest.ts",
+      "import": "./src/wiki-ingest.ts"
+    },
+    "./private-leak": {
+      "types": "./src/private-leak.ts",
+      "import": "./src/private-leak.ts"
+    },
+    "./private-leak-adapter": {
+      "types": "./src/private-leak-adapter.ts",
+      "import": "./src/private-leak-adapter.ts"
+    },
+    "./schemas": {
+      "types": "./src/schemas.ts",
+      "import": "./src/schemas.ts"
+    },
+    "./wiki-slug": {
+      "types": "./src/wiki-slug.ts",
+      "import": "./src/wiki-slug.ts"
+    },
+    "./markdown-links": {
+      "types": "./src/markdown-links.ts",
+      "import": "./src/markdown-links.ts"
+    },
+    "./wiki-utils": {
+      "types": "./src/wiki-utils.ts",
+      "import": "./src/wiki-utils.ts"
+    },
+    "./data-branch-bootstrap": {
+      "types": "./src/data-branch-bootstrap.ts",
+      "import": "./src/data-branch-bootstrap.ts"
+    },
+    "./rendering-policy": {
+      "types": "./src/rendering-policy.ts",
+      "import": "./src/rendering-policy.ts"
+    },
+    "./frontmatter": {
+      "types": "./src/frontmatter.ts",
+      "import": "./src/frontmatter.ts"
+    },
+    "./corrections": {
+      "types": "./src/corrections.ts",
+      "import": "./src/corrections.ts"
+    },
+    "./corrections-survival": {
+      "types": "./src/corrections-survival.ts",
+      "import": "./src/corrections-survival.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "README.md",
+    "package.json",
+    "src"
+  ],
+  "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "yaml": "^2.6.0"
+  }
+}

@@ -18,6 +18,7 @@ const FROBOT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
  *   `repos/`, `topics/`, `entities/`, and `comparisons/` subdirectories per the
  *   Karpathy schema. Top-level `knowledge/wiki/README.md` is human scaffolding.
  * - `knowledge/index.md` and `knowledge/log.md` are auto-maintained catalog and journal.
+ * - `knowledge/corrections.yaml` is system-owned sidecar state for marked corrections.
  * - `metadata/*.yaml` are all auto-managed state. Manual edits to allowlist.yaml or
  *   any other metadata YAML still land via the `data` branch and are promoted by the
  *   `Merge Data Branch` workflow under the `fro-bot[bot]` identity.
@@ -29,6 +30,7 @@ const GUARDED_PATTERNS: readonly RegExp[] = [
   /^knowledge\/wiki\/[^/]+\/.+\.md$/,
   /^knowledge\/index\.md$/,
   /^knowledge\/log\.md$/,
+  /^knowledge\/corrections\.yaml$/,
   /^metadata\/[^/]+\.yaml$/,
 ]
 

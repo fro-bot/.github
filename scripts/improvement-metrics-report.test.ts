@@ -83,11 +83,58 @@ async function writeDigestFixture(value: unknown): Promise<string> {
   return path
 }
 
+const GENERATED_AT = new Date('2026-08-27T12:34:56.789Z')
+
+function withEnvironment<T>(values: Readonly<Record<string, string | undefined>>, callback: () => T): T {
+  const originalEnvironment = {...process.env}
+
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+
+  try {
+    return callback()
+  } finally {
+    process.env = originalEnvironment
+  }
+}
+
 // ---------------------------------------------------------------------------
 // renderReportBody
 // ---------------------------------------------------------------------------
 
 describe('renderReportBody', () => {
+  it('renders a compact UTC stamp and source workflow run link alongside the metrics', () => {
+    const body = withEnvironment(
+      {
+        GITHUB_SERVER_URL: 'https://github.com',
+        GITHUB_REPOSITORY: 'fro-bot/.github',
+        GITHUB_RUN_ID: '123456789',
+      },
+      () => renderReportBody(makeDigest(), [], NO_PRIVATE_TOKENS, {generatedAt: GENERATED_AT}),
+    )
+
+    const stamp =
+      'Generated: 2026-08-27T12:34:56.789Z · [Source workflow run](https://github.com/fro-bot/.github/actions/runs/123456789)'
+    expect(body).toContain(stamp)
+    expect(body.indexOf(stamp)).toBeLessThan(body.indexOf('Window: 90 days'))
+  })
+
+  it('renders the UTC stamp without a broken workflow link when Actions run variables are absent', () => {
+    const body = withEnvironment(
+      {
+        GITHUB_SERVER_URL: undefined,
+        GITHUB_REPOSITORY: undefined,
+        GITHUB_RUN_ID: undefined,
+      },
+      () => renderReportBody(makeDigest(), [], NO_PRIVATE_TOKENS, {generatedAt: GENERATED_AT}),
+    )
+
+    expect(body).toContain('Generated: 2026-08-27T12:34:56.789Z')
+    expect(body).not.toContain('Source workflow run')
+  })
+
   it('renders counts, window, state, backlog, and a checklist with edge fingerprints (happy path)', () => {
     const digest = makeDigest()
     const edge = makeEdge()
@@ -462,6 +509,29 @@ describe('upsertReportIssue', () => {
     expect(updateArgs.body).toContain(`- [x] <!-- improvement-metrics:edge=${stillPresentEdge.fingerprint} -->`)
   })
 
+  it('preserves tick state while rewriting a report with the new generation stamp', async () => {
+    const stillPresentEdge = makeEdge({fingerprint: 'f'.repeat(64), ticked: true})
+    const priorBody = renderReportBody(makeDigest(), [stillPresentEdge], SAFE_TOKENS, {generatedAt: GENERATED_AT})
+    const {octokit, update} = makeMockOctokit({
+      listResponses: [{data: [{number: 7, body: priorBody}]}],
+    })
+
+    const result = await upsertReportIssue({
+      octokit,
+      owner: 'fro-bot',
+      repo: '.github',
+      digest: makeDigest(),
+      edges: [{...stillPresentEdge, ticked: false}],
+      tokens: SAFE_TOKENS,
+      generatedAt: new Date('2026-08-27T13:00:00.000Z'),
+    })
+
+    expect(result.outcome).toBe('updated')
+    const updateArgs = update.mock.calls[0]?.[0] as {body: string}
+    expect(updateArgs.body).toContain('Generated: 2026-08-27T13:00:00.000Z')
+    expect(updateArgs.body).toContain(`- [x] <!-- improvement-metrics:edge=${stillPresentEdge.fingerprint} -->`)
+  })
+
   it('drops a ticked edge cleanly when it is no longer present in the new digest (close-on-clear)', async () => {
     const goneFingerprint = 'e'.repeat(64)
     const priorBody = [
@@ -491,7 +561,7 @@ describe('upsertReportIssue', () => {
   it('no-ops when the existing issue is at the current version and content is byte-identical', async () => {
     const digest = makeDigest()
     const edges: DetectEdge[] = []
-    const renderedBody = renderReportBody(digest, edges, SAFE_TOKENS)
+    const renderedBody = renderReportBody(digest, edges, SAFE_TOKENS, {generatedAt: GENERATED_AT})
 
     const {octokit, update, create} = makeMockOctokit({
       listResponses: [{data: [{number: 7, body: renderedBody}]}],
@@ -504,6 +574,7 @@ describe('upsertReportIssue', () => {
       digest,
       edges,
       tokens: SAFE_TOKENS,
+      generatedAt: GENERATED_AT,
     })
 
     expect(result.outcome).toBe('noop')

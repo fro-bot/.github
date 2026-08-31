@@ -1,7 +1,7 @@
 ---
 title: 'feat: Recurring pattern synthesis'
 type: feat
-status: active
+status: complete
 date: 2026-07-07
 origin: docs/brainstorms/2026-07-07-a1-recurring-pattern-synthesis-requirements.md
 deepened: 2026-07-07

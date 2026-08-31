@@ -55,8 +55,8 @@ importers:
         specifier: 10.1.1
         version: 10.1.1(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))
       eslint-plugin-erasable-syntax-only:
-        specifier: 0.4.0
-        version: 0.4.0(@typescript-eslint/parser@8.67.0(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
+        specifier: 0.7.1
+        version: 0.7.1(@typescript-eslint/parser@8.67.0(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
       eslint-plugin-node-dependencies:
         specifier: 2.2.0
         version: 2.2.0(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))
@@ -75,6 +75,15 @@ importers:
       vitest:
         specifier: 4.1.4
         version: 4.1.4(@types/node@24.13.2)(@vitest/coverage-v8@4.1.4)(vite@8.0.16(@types/node@24.13.2)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/wiki-write-core:
+    dependencies:
+      '@octokit/rest':
+        specifier: ^22.0.1
+        version: 22.0.1
+      yaml:
+        specifier: '>=2.8.3'
+        version: 2.9.0
 
 packages:
 
@@ -834,8 +843,8 @@ packages:
     resolution: {integrity: sha512-bkXY9WsVpY7CvMhKSR6pZilZu9Ln5WDrKVBUXf2S443etkmEO4V58heTecXcUIsNsi4Rx8JUO4NfX1IcQl4deg==}
     engines: {node: '>=18.20'}
 
-  cached-factory@0.1.0:
-    resolution: {integrity: sha512-IGOSWu+NuED5UzCRmBeqQPZ8z7SkgrD/nN67W2iY1Qv83CVhevyMexkGclJ86saXisIqxoOnbeiTWvsCHRqJBw==}
+  cached-factory@0.3.0:
+    resolution: {integrity: sha512-8PWf78SYJg9kGpUNlqOlg2iE4nu/iW7FidBVdvEZPy0GJRUyN91X7q0VzX/oyJE6bGrgr/bR0VhcGF87vgeQaw==}
     engines: {node: '>=18'}
 
   caniuse-lite@1.0.30001810:
@@ -1014,8 +1023,8 @@ packages:
       '@typescript-eslint/utils': '*'
       eslint: '*'
 
-  eslint-plugin-erasable-syntax-only@0.4.0:
-    resolution: {integrity: sha512-7dx2gpfVn0FFEGukLqsF/izW4hGvSaySNOkcuSCO4q6Khh0ecOGYlRhW9hhDUtNryuKc+cXd1WFiQdpae3xzaQ==}
+  eslint-plugin-erasable-syntax-only@0.7.1:
+    resolution: {integrity: sha512-2zpgLgFq/HmIVQU2KNOsuuQdJQAiRdq23xpCamhatbH4ZlzinqXdDmbxGALj7VSiC9GMBHqmu4Cu7KaSqQfNhw==}
     engines: {node: '>=20.18.0'}
     peerDependencies:
       '@typescript-eslint/parser': '>=8'
@@ -2924,7 +2933,7 @@ snapshots:
 
   builtin-modules@5.0.0: {}
 
-  cached-factory@0.1.0: {}
+  cached-factory@0.3.0: {}
 
   caniuse-lite@1.0.30001810: {}
 
@@ -3055,11 +3064,11 @@ snapshots:
       '@typescript-eslint/utils': 8.68.0(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
       eslint: 10.9.0(jiti@2.7.0)(supports-color@7.2.0)
 
-  eslint-plugin-erasable-syntax-only@0.4.0(@typescript-eslint/parser@8.67.0(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3):
+  eslint-plugin-erasable-syntax-only@0.7.1(@typescript-eslint/parser@8.67.0(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3):
     dependencies:
       '@typescript-eslint/parser': 8.67.0(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
       '@typescript-eslint/utils': 8.68.0(eslint@10.9.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
-      cached-factory: 0.1.0
+      cached-factory: 0.3.0
       eslint: 10.9.0(jiti@2.7.0)(supports-color@7.2.0)
       typescript: 6.0.3
     transitivePeerDependencies:

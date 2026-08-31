@@ -9,6 +9,15 @@ interface CreateIssueParams {
   body: string
 }
 
+interface CreatePullRequestParams {
+  owner: string
+  repo: string
+  title: string
+  head: string
+  base: string
+  body: string
+}
+
 function isoDaysAgo(daysAgo: number): string {
   return new Date(Date.UTC(2026, 3, 16 - daysAgo, 0, 0, 0)).toISOString()
 }
@@ -111,9 +120,14 @@ function mockLogger(): MergeDataPrLogger {
 
 describe('mergeDataPr', () => {
   it('opens PR with auto-merge label when only knowledge and metadata files changed', async () => {
-    const createPullRequest = vi.fn(async () => ({
-      data: {number: 42, html_url: 'https://github.com/fro-bot/.github/pull/42'},
-    }))
+    let createPullRequestParams: CreatePullRequestParams | undefined
+    const createPullRequest = vi.fn(async (params: CreatePullRequestParams) => {
+      createPullRequestParams = params
+
+      return {
+        data: {number: 42, html_url: 'https://github.com/fro-bot/.github/pull/42'},
+      }
+    })
     const addLabels = vi.fn(async () => ({data: {labels: [{name: 'auto-merge'}]}}))
     const octokit = mockOctokit({createPullRequest, addLabels})
 
@@ -124,6 +138,8 @@ describe('mergeDataPr', () => {
     expect(result.createdPullRequest).toBe(true)
     expect(result.label).toBe('auto-merge')
     expect(result.pullRequestNumber).toBe(42)
+    expect(createPullRequestParams?.body).toContain('Automated data merge from data into main.')
+    expect(createPullRequestParams?.body).not.toContain('weekly')
     expect(addLabels).toHaveBeenCalledWith({
       owner: 'fro-bot',
       repo: '.github',

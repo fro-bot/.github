@@ -4,6 +4,7 @@ import {describe, expect, it} from 'vitest'
 import {
   addRepoEntry,
   computeNextEligibleAt,
+  DuplicateRepoIdentityError,
   normalizeRepoEntryForStorage,
   publicRepoEntryExists,
   recordSurveyResult,
@@ -188,6 +189,26 @@ describe('addRepoEntry', () => {
     expect(result).toBe(existing)
   })
 
+  it('fails loudly when adding a repo with an ambiguous node_id', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        repoEntry({owner: 'alice', name: 'first', node_id: PUBLIC_NODE_ID}),
+        repoEntry({owner: 'alice', name: 'second', node_id: PUBLIC_NODE_ID}),
+      ],
+    }
+
+    expect(() =>
+      addRepoEntry(current, {
+        owner: 'alice',
+        repo: 'third',
+        node_id: PUBLIC_NODE_ID,
+        private: false,
+        now: NOW,
+      }),
+    ).toThrow(DuplicateRepoIdentityError)
+  })
+
   // Privacy contract: node_id is the stable key for redacted entries.
   it('does not add a duplicate when a redacted entry already exists with the same node_id', () => {
     const existingEntry = repoEntry({
@@ -345,6 +366,27 @@ describe('addRepoEntry', () => {
 })
 
 describe('recordSurveyResult', () => {
+  it('fails loudly when duplicate node_id rows would make survey write-back ambiguous', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        repoEntry({owner: 'alice', name: 'first', node_id: PUBLIC_NODE_ID, database_id: 1174807412}),
+        repoEntry({owner: 'alice', name: 'second', node_id: PUBLIC_NODE_ID, database_id: 1174807412}),
+      ],
+    }
+
+    expect(() =>
+      recordSurveyResult(current, {
+        owner: 'alice',
+        repo: 'first',
+        node_id: PUBLIC_NODE_ID,
+        private: false,
+        at: NOW,
+        status: 'success',
+      }),
+    ).toThrow('duplicate repo identity match during metadata write-back (node_id=R_kgDOPUBLIC)')
+  })
+
   // Behavioral contract: writes ISO date + status on a matching entry
   it('writes last_survey_at (ISO date) and last_survey_status when the entry exists', () => {
     const current: ReposFile = {
@@ -836,6 +878,25 @@ describe('resetSurveyResult', () => {
     // #when resetting a nonexistent entry
     // #then the shared RepoEntryNotFoundError surfaces (same typed error used by recordSurveyResult)
     expect(() => resetSurveyResult(current, {owner: 'ghost', repo: 'nowhere'})).toThrow(RepoEntryNotFoundError)
+  })
+
+  it('fails loudly when resetting a repo with an ambiguous node_id', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        repoEntry({owner: 'alice', name: 'first', node_id: PUBLIC_NODE_ID}),
+        repoEntry({owner: 'alice', name: 'second', node_id: PUBLIC_NODE_ID}),
+      ],
+    }
+
+    expect(() =>
+      resetSurveyResult(current, {
+        owner: 'alice',
+        repo: 'first',
+        node_id: PUBLIC_NODE_ID,
+        private: false,
+      }),
+    ).toThrow(DuplicateRepoIdentityError)
   })
 
   // Cadence model: reset clears next_survey_eligible_at so onboarded entries are dispatched again

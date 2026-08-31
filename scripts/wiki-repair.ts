@@ -1,12 +1,24 @@
+import type {
+  CommitWikiChangesParams,
+  CommitWikiChangesResult,
+  OctokitClient,
+  WikiLintFinding,
+} from '@fro-bot/wiki-write-core'
 import type {PrivateWikiLeak, WikiPageSnapshot} from './check-wiki-private-presence.ts'
 import type {RepoEntry} from './schemas.ts'
-import type {CommitWikiChangesParams, CommitWikiChangesResult, OctokitClient} from './wiki-ingest.ts'
-import type {WikiLintFinding} from './wiki-lint.ts'
 import {createHash} from 'node:crypto'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import {join} from 'node:path'
 import process from 'node:process'
 
+import {
+  commitWikiChanges,
+  lintWikiSnapshot,
+  pageTypeFromPath,
+  rebuildWikiIndex,
+  splitFrontmatter,
+  WikiIngestError,
+} from '@fro-bot/wiki-write-core'
 import YAML from 'yaml'
 import {
   buildPublicSlugMap,
@@ -15,8 +27,6 @@ import {
   requireGrandfatherDir,
 } from './check-wiki-private-presence.ts'
 import {assertReposFile} from './schemas.ts'
-import {commitWikiChanges, pageTypeFromPath, rebuildWikiIndex, WikiIngestError} from './wiki-ingest.ts'
-import {lintWikiSnapshot, splitFrontmatter} from './wiki-lint.ts'
 
 // ---------------------------------------------------------------------------
 // Unit 1: pure repair core

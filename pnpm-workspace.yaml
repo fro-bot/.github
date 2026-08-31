@@ -1,6 +1,9 @@
 allowBuilds:
   unrs-resolver: true
 
+packages:
+  - 'packages/*'
+
 onlyBuiltDependencies:
   - esbuild
   - unrs-resolver

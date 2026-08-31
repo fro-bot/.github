@@ -142,6 +142,17 @@ export interface FieldProbe {
    * format-independent.
    */
   database_id?: number
+  /** Identity returned by probing the stored owner/name, including rename resolution. */
+  identity?: RepoIdentityProbe
+}
+
+export interface RepoIdentityProbe {
+  returned_node_id: string
+  returned_owner?: string
+  returned_name?: string
+  resolution: 'matched' | 'resolved' | 'unresolvable' | 'transient'
+  resolved_owner?: string
+  resolved_name?: string
 }
 
 export interface ReconcileInput {
@@ -243,6 +254,12 @@ export interface ReconcileSummary {
    * field-probe drift. Drops to zero on the next run after migration completes.
    */
   migrated: number
+  /** Number of tracked entries whose owner/name was repaired from a stable node identity. */
+  renamed: number
+  /** Number of duplicate node_id/database_id rows removed by deterministic merge. */
+  merged: number
+  /** Number of node-ID-preserving owner transfers rejected by the rename trust gate. */
+  transferBlocked: number
   unchanged: number
   /**
    * Number of tracked entries whose probe returned a `transient` classification this run
@@ -437,6 +454,9 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
     lostAccess: 0,
     refreshed: 0,
     migrated: 0,
+    renamed: 0,
+    merged: 0,
+    transferBlocked: 0,
     unchanged: 0,
     transient: 0,
     malformed: 0,
@@ -457,7 +477,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
 
   // Pass 1 — classify every tracked entry against the access list and probes.
   const trackedKeys = new Set<string>()
-  const nextEntries: RepoEntry[] = currentRepos.repos.map(entry => {
+  let nextEntries: RepoEntry[] = currentRepos.repos.map(entry => {
     const key = repoKey(entry.owner, entry.name)
     trackedKeys.add(key)
     return classifyTracked({
@@ -477,6 +497,16 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       now,
     })
   })
+
+  nextEntries = mergeDuplicateEntries(nextEntries, accessList, summary)
+  const postMergeDispatches = filterDispatchesAfterMerge({
+    dispatches,
+    nextEntries,
+    accessByNodeId,
+    accessNodePrivacy,
+    now,
+  })
+  dispatches.splice(0, dispatches.length, ...postMergeDispatches)
 
   let next: ReposFile = {...currentRepos, repos: nextEntries}
 
@@ -714,6 +744,134 @@ function maybeQueueVisibilityTransition(params: {
   params.transitionIssues.push({kind: 'visibility-transition', node_id: params.node_id})
 }
 
+function identityKeys(entry: RepoEntry): string[] {
+  const keys: string[] = []
+  const nodeId = storedRepoNodeId(entry)
+  if (nodeId !== undefined) keys.push(`node_id:${nodeId}`)
+  if (entry.database_id !== undefined) keys.push(`database_id:${entry.database_id}`)
+  return keys
+}
+
+function surveyDateRank(value: string | null): number {
+  if (value === null) return Number.NEGATIVE_INFINITY
+  const parsed = Date.parse(`${value}T00:00:00Z`)
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY
+}
+
+function mergeRepoEntries(left: RepoEntry, right: RepoEntry): boolean {
+  return identityKeys(left).some(key => identityKeys(right).includes(key))
+}
+
+function mergeDuplicateEntries(
+  entries: RepoEntry[],
+  accessList: AccessListEntry[],
+  summary: ReconcileSummary,
+): RepoEntry[] {
+  const currentNameByNodeId = new Map(accessList.map(access => [access.node_id, repoKey(access.owner, access.name)]))
+  const groups: number[][] = []
+
+  entries.forEach((entry, index) => {
+    const matchingGroups = groups.filter(group =>
+      group.some(member => {
+        const candidate = entries[member]
+        return candidate !== undefined && mergeRepoEntries(entry, candidate)
+      }),
+    )
+    if (matchingGroups.length === 0) {
+      groups.push([index])
+      return
+    }
+
+    const first = matchingGroups[0]
+    if (first === undefined) throw new Error('reconcile: duplicate group index missing')
+    first.push(index)
+    for (const group of matchingGroups.slice(1)) {
+      first.push(...group)
+      groups.splice(groups.indexOf(group), 1)
+    }
+  })
+
+  const mergedByIndex = new Map<number, RepoEntry>()
+  const removed = new Set<number>()
+  for (const group of groups) {
+    if (group.length < 2) continue
+
+    const currentNameMatch = group
+      .map(index => ({index, entry: entries[index]}))
+      .filter((item): item is {index: number; entry: RepoEntry} => item.entry !== undefined)
+      .find(({entry}) => {
+        const nodeId = storedRepoNodeId(entry)
+        return nodeId !== undefined && currentNameByNodeId.get(nodeId) === repoKey(entry.owner, entry.name)
+      })
+    const freshestCandidates = group
+      .map(index => ({index, entry: entries[index]}))
+      .filter((item): item is {index: number; entry: RepoEntry} => item.entry !== undefined)
+      .sort((left, right) => {
+        const freshness = surveyDateRank(right.entry.last_survey_at) - surveyDateRank(left.entry.last_survey_at)
+        if (freshness === 0) return left.index - right.index
+        return freshness
+      })
+    const freshest = freshestCandidates[0]
+    if (freshest === undefined) throw new Error('reconcile: freshest duplicate entry missing')
+    const survivor = currentNameMatch ?? freshest
+    const freshestSurvey = freshest.entry
+    const firstIndex = group[0]
+    if (firstIndex === undefined) throw new Error('reconcile: duplicate group is empty')
+    const merged: RepoEntry = {
+      ...survivor.entry,
+      added:
+        group
+          .map(index => entries[index]?.added)
+          .filter((value): value is string => value !== undefined)
+          .sort()[0] ?? survivor.entry.added,
+      last_survey_at: freshestSurvey.last_survey_at,
+      last_survey_status: freshestSurvey.last_survey_status,
+      next_survey_eligible_at: freshestSurvey.next_survey_eligible_at,
+    }
+
+    mergedByIndex.set(firstIndex, merged)
+    for (const index of group) {
+      if (index !== firstIndex) removed.add(index)
+    }
+    summary.merged += group.length - 1
+  }
+
+  return entries.flatMap((entry, index) => {
+    if (removed.has(index)) return []
+    return [mergedByIndex.get(index) ?? entry]
+  })
+}
+
+function filterDispatchesAfterMerge(params: {
+  dispatches: DispatchRequest[]
+  nextEntries: RepoEntry[]
+  accessByNodeId: Map<string, AccessListEntry>
+  accessNodePrivacy: Map<string, AccessNodePrivacy>
+  now: Date
+}): DispatchRequest[] {
+  const seenNodeIds = new Set<string>()
+  return params.dispatches.filter(dispatch => {
+    if (seenNodeIds.has(dispatch.node_id)) return false
+    const entry = params.nextEntries.find(
+      candidate =>
+        repoKey(candidate.owner, candidate.name) === repoKey(dispatch.owner, dispatch.repo) ||
+        storedRepoNodeId(candidate) === dispatch.node_id,
+    )
+    const access = params.accessByNodeId.get(dispatch.node_id)
+    if (entry === undefined || access === undefined) return false
+    if (entry.private !== false || accessPrivateForStorage(access, params.accessNodePrivacy)) return false
+
+    const eligible =
+      (entry.onboarding_status === 'onboarded' && isEligibleForSurvey(entry.next_survey_eligible_at, params.now)) ||
+      (entry.onboarding_status === 'pending' &&
+        (entry.last_survey_status !== 'success' || isEligibleForSurvey(entry.next_survey_eligible_at, params.now)))
+    if (!eligible) return false
+
+    seenNodeIds.add(dispatch.node_id)
+    return true
+  })
+}
+
 /**
  * Determine the fate of one tracked repo. Returns a fresh entry when the status or fields
  * need to change; otherwise returns the original entry by reference. Mutates the shared
@@ -744,8 +902,78 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   }
   const entry = migrated
   const key = params.key
-  const access = accessForTrackedEntry(entry, key, accessByKey, accessByNodeId)
-  const accessKey = access === undefined ? key : repoKey(access.owner, access.name)
+  let access = accessForTrackedEntry(entry, key, accessByKey, accessByNodeId)
+  let accessKey = access === undefined ? key : repoKey(access.owner, access.name)
+  const identity = fieldProbes.get(key)?.identity ?? fieldProbes.get(accessKey)?.identity
+  const storedNodeId = storedRepoNodeId(entry)
+  let renameTarget: {owner: string; name: string} | undefined
+
+  const identityNeedsRepair =
+    identity !== undefined && (identity.returned_node_id !== storedNodeId || identity.resolution !== 'matched')
+
+  if (storedNodeId !== undefined && identityNeedsRepair) {
+    if (identity.resolution === 'transient') {
+      summary.unchanged += 1
+      summary.transient += 1
+      return entry
+    }
+
+    if (
+      identity.resolution === 'unresolvable' ||
+      identity.resolved_owner === undefined ||
+      identity.resolved_name === undefined
+    ) {
+      if (entry.onboarding_status === 'lost-access') {
+        summary.unchanged += 1
+        return entry
+      }
+      summary.lostAccess += 1
+      summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
+      maybeQueueVisibilityTransition({
+        storedPrivate: entry.private,
+        newPrivate: true,
+        node_id: storedNodeId,
+        summary,
+        transitionIssues,
+      })
+      return normalizeLostAccessEntry(entry)
+    }
+
+    const resolvedAccess = accessByNodeId.get(storedNodeId)
+    if (
+      resolvedAccess === undefined ||
+      resolvedAccess.owner !== identity.resolved_owner ||
+      resolvedAccess.name !== identity.resolved_name
+    ) {
+      if (entry.onboarding_status === 'lost-access') {
+        summary.unchanged += 1
+        return entry
+      }
+      summary.lostAccess += 1
+      summary.byChannel[entry.discovery_channel ?? 'collab'].lostAccess += 1
+      maybeQueueVisibilityTransition({
+        storedPrivate: entry.private,
+        newPrivate: true,
+        node_id: storedNodeId,
+        summary,
+        transitionIssues,
+      })
+      return normalizeLostAccessEntry(entry)
+    }
+
+    if (identity.resolved_owner.toLowerCase() !== entry.owner.toLowerCase()) {
+      summary.transferBlocked += 1
+      summary.unchanged += 1
+      return entry
+    }
+
+    access = resolvedAccess
+    accessKey = repoKey(access.owner, access.name)
+    renameTarget = {owner: identity.resolved_owner, name: identity.resolved_name}
+    if (entry.owner !== renameTarget.owner || entry.name !== renameTarget.name) {
+      summary.renamed += 1
+    }
+  }
 
   if (access === undefined) {
     if (entry.owner === '[REDACTED]' && storedRepoNodeId(entry) !== undefined) {
@@ -848,8 +1076,8 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     })
     return {
       ...normalizeRepoEntryForStorage(entry, {
-        owner: access.owner,
-        repo: access.name,
+        owner: renameTarget?.owner ?? access.owner,
+        repo: renameTarget?.name ?? access.name,
         private: true,
         node_id: access.node_id,
       }),
@@ -885,8 +1113,8 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     }
     return {
       ...normalizeRepoEntryForStorage(entry, {
-        owner: access.owner,
-        repo: access.name,
+        owner: renameTarget?.owner ?? access.owner,
+        repo: renameTarget?.name ?? access.name,
         private: accessPrivate,
         node_id: access.node_id,
       }),
@@ -966,8 +1194,13 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   // Field refresh: apply probe results when they disagree with tracked fields,
   // and write live private/node_id from the access list when they differ.
   const probe = fieldProbes.get(key) ?? fieldProbes.get(accessKey)
-  const accessNodeId = access.node_id
-  const storageInput = {owner: access.owner, repo: access.name, private: accessPrivate, node_id: accessNodeId}
+  const accessNodeId = storedNodeId === undefined ? (identity?.returned_node_id ?? access.node_id) : access.node_id
+  const storageInput = {
+    owner: renameTarget?.owner ?? access.owner,
+    repo: renameTarget?.name ?? access.name,
+    private: accessPrivate,
+    node_id: accessNodeId,
+  }
 
   if (probe === undefined) {
     // No field probe — but access list still has private/node_id. Apply if changed.
@@ -990,8 +1223,9 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   const privacyMatch = workingEntry.private === accessPrivate && workingEntry.node_id === accessNodeId
   const databaseIdMatch = probe.database_id === undefined || workingEntry.database_id === probe.database_id
   const channelMatch = workingEntry === entry // true only when no channel refresh occurred
+  const identityMatch = renameTarget === undefined
 
-  if (fieldsMatch && privacyMatch && databaseIdMatch && channelMatch) {
+  if (fieldsMatch && privacyMatch && databaseIdMatch && channelMatch && identityMatch) {
     summary.unchanged += 1
     return entry
   }
@@ -1144,6 +1378,9 @@ function isNoOp(summary: ReconcileSummary, dispatches: DispatchRequest[], issues
     summary.lostAccess === 0 &&
     summary.refreshed === 0 &&
     summary.migrated === 0 &&
+    summary.renamed === 0 &&
+    summary.merged === 0 &&
+    summary.transferBlocked === 0 &&
     dispatches.length === 0 &&
     issues.length === 0
   )
@@ -1780,6 +2017,8 @@ function planHasChanges(plan: ReconcileResult): boolean {
     summary.lostAccess > 0 ||
     summary.refreshed > 0 ||
     summary.migrated > 0 ||
+    summary.renamed > 0 ||
+    summary.merged > 0 ||
     plan.dispatches.length > 0 ||
     plan.issues.length > 0
   )
@@ -1792,9 +2031,11 @@ function planHasChanges(plan: ReconcileResult): boolean {
  */
 export function formatCommitMessage(summary: ReconcileSummary): string {
   const base = `chore(reconcile): +${summary.added} new, ${summary.pendingReview} pending-review, ${summary.lostAccess} lost-access, ${summary.refreshed} refreshes`
-  const suffixes = [summary.migrated > 0 ? `+${summary.migrated} migrated` : undefined].filter(
-    (suffix): suffix is string => suffix !== undefined,
-  )
+  const suffixes = [
+    summary.migrated > 0 ? `+${summary.migrated} migrated` : undefined,
+    summary.renamed > 0 ? `+${summary.renamed} renamed` : undefined,
+    summary.merged > 0 ? `+${summary.merged} merged` : undefined,
+  ].filter((suffix): suffix is string => suffix !== undefined)
   return suffixes.length > 0 ? `${base}, ${suffixes.join(', ')}` : base
 }
 
@@ -1971,7 +2212,9 @@ export async function fetchFieldProbes(
     const access = accessForTrackedEntry(entry, key, accessByKey, accessByNodeId)
     if (access === undefined) continue // only probe still-accessible tracked entries
     try {
-      const probe = await probeSingleRepo(userOctokit, access.owner, access.name)
+      const probeOwner = entry.owner === '[REDACTED]' ? access.owner : entry.owner
+      const probeName = entry.owner === '[REDACTED]' ? access.name : entry.name
+      const probe = await probeSingleRepo(userOctokit, probeOwner, probeName, storedRepoNodeId(entry))
       map.set(key, probe)
     } catch (error: unknown) {
       // Non-blocking: omit from map so reconcileRepos treats as no-field-change.
@@ -1983,17 +2226,143 @@ export async function fetchFieldProbes(
   return {probes: map, failed}
 }
 
-async function probeSingleRepo(userOctokit: OctokitClient, owner: string, name: string): Promise<FieldProbe> {
-  const [hasWorkflow, hasRenovate, databaseId] = await Promise.all([
+async function probeSingleRepo(
+  userOctokit: OctokitClient,
+  owner: string,
+  name: string,
+  storedNodeId?: string,
+): Promise<FieldProbe> {
+  const [hasWorkflow, hasRenovate, databaseId, identity] = await Promise.all([
     probeFroBotWorkflow(userOctokit, owner, name),
     probeRenovateConfig(userOctokit, owner, name),
     probeRepoDatabaseId(userOctokit, owner, name),
+    probeRepoIdentity(userOctokit, owner, name, storedNodeId),
   ])
   const probe: FieldProbe = {has_fro_bot_workflow: hasWorkflow, has_renovate: hasRenovate}
   if (databaseId !== undefined) {
     probe.database_id = databaseId
   }
+  if (identity !== undefined) {
+    probe.identity = identity
+  }
   return probe
+}
+
+interface RepositoryIdentityApiResponse {
+  node_id?: unknown
+  name?: unknown
+  owner?: {login?: unknown} | null
+}
+
+interface ResolvedRepositoryNode {
+  owner: string
+  name: string
+}
+
+async function probeRepoIdentity(
+  userOctokit: OctokitClient,
+  owner: string,
+  name: string,
+  storedNodeId?: string,
+): Promise<RepoIdentityProbe | undefined> {
+  let response: RepositoryIdentityApiResponse
+  try {
+    const result = await userOctokit.rest.repos.get({owner, repo: name})
+    response = result.data
+  } catch {
+    if (storedNodeId === undefined) return undefined
+    const resolved = await resolveRepoNodeId(userOctokit, storedNodeId)
+    if (resolved.status === 'resolved') {
+      return {
+        returned_node_id: storedNodeId,
+        resolution: 'resolved',
+        resolved_owner: resolved.repository.owner,
+        resolved_name: resolved.repository.name,
+      }
+    }
+    return {returned_node_id: storedNodeId, resolution: resolved.status}
+  }
+
+  if (
+    typeof response.node_id !== 'string' ||
+    response.node_id.length === 0 ||
+    typeof response.name !== 'string' ||
+    response.name.length === 0 ||
+    response.owner === null ||
+    typeof response.owner?.login !== 'string' ||
+    response.owner.login.length === 0
+  ) {
+    return undefined
+  }
+
+  const identity: RepoIdentityProbe = {
+    returned_node_id: response.node_id,
+    returned_owner: response.owner.login,
+    returned_name: response.name,
+    resolution: storedNodeId === undefined || storedNodeId === response.node_id ? 'matched' : 'transient',
+  }
+
+  if (storedNodeId === undefined || storedNodeId === response.node_id) return identity
+
+  const resolved = await resolveRepoNodeId(userOctokit, storedNodeId)
+  if (resolved.status === 'resolved') {
+    return {
+      ...identity,
+      resolution: 'resolved',
+      resolved_owner: resolved.repository.owner,
+      resolved_name: resolved.repository.name,
+    }
+  }
+  return {...identity, resolution: resolved.status}
+}
+
+type ResolveRepoNodeResult =
+  {status: 'resolved'; repository: ResolvedRepositoryNode} | {status: 'unresolvable'} | {status: 'transient'}
+
+async function resolveRepoNodeId(userOctokit: OctokitClient, nodeId: string): Promise<ResolveRepoNodeResult> {
+  try {
+    const response = await userOctokit.graphql<{
+      node:
+        | {
+            __typename?: unknown
+            name?: unknown
+            owner?: {login?: unknown} | null
+          }
+        | null
+        | undefined
+    }>(
+      `query ResolveRepository($id: ID!) {
+        node(id: $id) {
+          __typename
+          ... on Repository {
+            name
+            owner { login }
+          }
+        }
+      }`,
+      {id: nodeId},
+    )
+    const node = response.node
+    if (
+      node === null ||
+      node === undefined ||
+      node.__typename !== 'Repository' ||
+      typeof node.name !== 'string' ||
+      node.name.length === 0 ||
+      node.owner === null ||
+      typeof node.owner?.login !== 'string' ||
+      node.owner.login.length === 0
+    ) {
+      return {status: 'transient'}
+    }
+    return {status: 'resolved', repository: {owner: node.owner.login, name: node.name}}
+  } catch (error: unknown) {
+    // Only an explicit HTTP 404 is definitive unresolvable identity evidence.
+    // GraphQL-layer NOT_FOUND in a 200 response, and every other failure, remain transient:
+    // sticky preservation defers repair rather than risking an incorrect lost-access demotion.
+    if (isApiStatus(error, 404)) return {status: 'unresolvable'}
+    return {status: 'transient'}
+  }
 }
 
 /**

@@ -63,6 +63,31 @@ export const REPORT_BODY_VERSION = 1
 // Report body rendering
 // ---------------------------------------------------------------------------
 
+export interface ReportRenderOptions {
+  readonly generatedAt?: Date
+}
+
+function buildWorkflowRunUrl(): string | null {
+  const serverUrl = process.env.GITHUB_SERVER_URL?.trim()
+  const repository = process.env.GITHUB_REPOSITORY?.trim()
+  const runId = process.env.GITHUB_RUN_ID?.trim()
+
+  if (serverUrl === undefined || serverUrl === '') return null
+  if (repository === undefined || repository === '') return null
+  if (runId === undefined || runId === '') return null
+
+  return `${serverUrl.replace(/\/+$/u, '')}/${repository}/actions/runs/${runId}`
+}
+
+function buildGenerationStamp(generatedAt: Date): string {
+  const timestamp = generatedAt.toISOString()
+  const workflowRunUrl = buildWorkflowRunUrl()
+
+  return workflowRunUrl === null
+    ? `Generated: ${timestamp}`
+    : `Generated: ${timestamp} · [Source workflow run](${workflowRunUrl})`
+}
+
 function renderCandidateChecklist(edges: readonly DetectEdge[]): string[] {
   if (edges.length === 0) {
     return ['(no pending or confirmed candidates this run)']
@@ -92,12 +117,15 @@ export function renderReportBody(
   digest: MetricsDigest,
   edges: readonly DetectEdge[],
   tokens: PublicOutputTokens,
+  options: ReportRenderOptions = {},
 ): string {
   const lines: string[] = []
+  const generatedAt = options.generatedAt ?? new Date()
 
   lines.push('# Improvement Metrics')
   lines.push('')
   lines.push(`Report state: **${digest.state}**`)
+  lines.push(buildGenerationStamp(generatedAt))
   lines.push('')
   lines.push(`Window: ${digest.windowDays} days`)
   lines.push(`Codified anchors in window: ${digest.anchors}`)
@@ -279,6 +307,8 @@ export interface UpsertReportIssueParams {
   digest: MetricsDigest
   edges: readonly DetectEdge[]
   tokens: PublicOutputTokens
+  /** Timestamp shared by all body renders in one report run. */
+  generatedAt?: Date
   /** In-memory guard against a same-run create-then-relist staleness duplicate. */
   createdIssueNumbers?: Set<number>
   writeLog?: ReportLogSink
@@ -297,6 +327,7 @@ export async function upsertReportIssue(params: UpsertReportIssueParams): Promis
   const {octokit, owner, repo, digest, edges, tokens} = params
   const writeLog = params.writeLog ?? writeReportLog
   const createdIssueNumbers = params.createdIssueNumbers ?? new Set<number>()
+  const generatedAt = params.generatedAt ?? new Date()
 
   const listResponse = await octokit.issues.listForRepo({
     owner,
@@ -323,7 +354,7 @@ export async function upsertReportIssue(params: UpsertReportIssueParams): Promis
 
     let renderedBody: string
     try {
-      renderedBody = renderReportBody(digest, edgesWithPriorTicks, tokens)
+      renderedBody = renderReportBody(digest, edgesWithPriorTicks, tokens, {generatedAt})
     } catch (error: unknown) {
       if (error instanceof ReportRenderBlockedError) {
         writeLog(`improvement-metrics-report: blocked rendering surface "${error.surface}"; no update performed\n`)
@@ -332,6 +363,9 @@ export async function upsertReportIssue(params: UpsertReportIssueParams): Promis
       throw error
     }
 
+    // In production this branch effectively never fires: the freshness stamp
+    // embeds generatedAt, so successive runs are never byte-identical. It remains
+    // for callers that pin generatedAt (tests) and as a guard if the stamp moves.
     if (priorVersion === REPORT_BODY_VERSION && renderedBody === priorBody) {
       return {outcome: 'noop', issueNumber: existing.number}
     }
@@ -342,7 +376,7 @@ export async function upsertReportIssue(params: UpsertReportIssueParams): Promis
 
   let createdBody: string
   try {
-    createdBody = renderReportBody(digest, edges, tokens)
+    createdBody = renderReportBody(digest, edges, tokens, {generatedAt})
   } catch (error: unknown) {
     if (error instanceof ReportRenderBlockedError) {
       writeLog(`improvement-metrics-report: blocked rendering surface "${error.surface}"; no create performed\n`)

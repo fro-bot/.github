@@ -1,7 +1,12 @@
 import process from 'node:process'
 
 import {commitMetadata} from './commit-metadata.ts'
-import {recordSurveyResult, RepoEntryNotFoundError, type RecordSurveyResultInput} from './repos-metadata.ts'
+import {
+  DuplicateRepoIdentityError,
+  recordSurveyResult,
+  RepoEntryNotFoundError,
+  type RecordSurveyResultInput,
+} from './repos-metadata.ts'
 
 /**
  * Write the outcome of a Survey Repo run back to `metadata/repos.yaml` on the `data` branch.
@@ -22,9 +27,10 @@ import {recordSurveyResult, RepoEntryNotFoundError, type RecordSurveyResultInput
  *                       metadata/repos.yaml (GitHub Actions sets this automatically).
  *
  * Writes to: `metadata/repos.yaml` on the `data` branch via `commitMetadata`. Exits 0 on
- * success, non-zero with a typed error on failure. When the survey target has no entry in
- * `metadata/repos.yaml`, writes nothing and exits 0 with a warning (the entry must already
- * exist — reconcile is the canonical writer for new entries).
+ * success, duplicate-identity write-back (reconcile owns the repair), or a missing entry;
+ * other failures exit non-zero. When the survey target has no entry in `metadata/repos.yaml`,
+ * writes nothing and exits 0 with a warning (the entry must already exist — reconcile is the
+ * canonical writer for new entries).
  */
 async function main(): Promise<void> {
   const input = buildRecordSurveyResultInput(process.env)
@@ -90,6 +96,27 @@ export function formatRecordSurveyResultError(error: unknown, env: NodeJS.Proces
     }
   }
   return error instanceof Error ? error.message : String(error)
+}
+
+export interface RecordSurveyResultNonFatalOutcome {
+  exitCode: 0
+  stderr: string
+  stdout: string
+}
+
+export function formatRecordSurveyResultNonFatalOutcome(
+  error: unknown,
+  env: NodeJS.ProcessEnv,
+): RecordSurveyResultNonFatalOutcome | undefined {
+  if (!(error instanceof DuplicateRepoIdentityError)) return undefined
+
+  const input = buildRecordSurveyResultInput(env)
+  const target = formatSurveyResultTarget(input)
+  return {
+    exitCode: 0,
+    stderr: `record-survey-result: ${error.message}; scheduled reconcile run owns the repair (non-fatal)\n`,
+    stdout: `${JSON.stringify({committed: false, outcome: 'duplicate-identity', target, status: input.status})}\n`,
+  }
 }
 
 function safeSurveyResultTarget(env: NodeJS.ProcessEnv): string | undefined {
@@ -158,6 +185,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         `record-survey-result: ${formatRecordSurveyResultError(error, process.env)}; skipping (non-fatal)\n`,
       )
       process.exit(0)
+    }
+    const nonFatalOutcome = formatRecordSurveyResultNonFatalOutcome(error, process.env)
+    if (nonFatalOutcome !== undefined) {
+      process.stdout.write(nonFatalOutcome.stdout)
+      process.stderr.write(nonFatalOutcome.stderr)
+      process.exit(nonFatalOutcome.exitCode)
     }
     process.stderr.write(`record-survey-result: ${formatRecordSurveyResultError(error, process.env)}\n`)
     process.exit(1)

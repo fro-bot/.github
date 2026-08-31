@@ -35,7 +35,23 @@ tags: [relevant, tags]
 ---
 ```
 
-Required fields: `type`, `title`, `created`, `updated`. Optional fields: `sources`, `tags`, `aliases`, `related`.
+Required fields: `type`, `title`, `created`, `updated`. Repo pages may include the stable GitHub
+`node_id` (for example, `node_id: R_kgDO...`); ingestion system-populates it from tracked repository
+metadata or the trusted survey identity. Agents must not invent or copy this value. It is safe to expose
+because wiki pages are public-only.
+Optional fields: `sources`, `tags`, `aliases`, `related`.
+
+## Corrections Store
+
+`knowledge/corrections.yaml` is a system-owned sidecar containing operator-marked corrections. Records
+are keyed by the page's stable GitHub `node_id`, not its slug, so corrections survive page slug migrations.
+Each record stores a correction span, server-derived attribution, and one lifecycle state: `active`,
+`superseded`, `retired`, or `needs-reconfirmation`.
+
+The store is never rendered into wiki page content. Ingest mechanically verifies every active correction
+after regeneration and fails closed for the affected page when its normalized span is absent. A missing
+store is a clean first-write bootstrap and disables no existing constraints; an unreadable, malformed, or
+empty existing store fails closed because the system cannot prove that any correction survived.
 
 ## Filename Conventions
 
