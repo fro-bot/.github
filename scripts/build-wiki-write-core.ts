@@ -55,6 +55,7 @@ async function main(): Promise<void> {
 interface SourceTreeHashOptions {
   buildConfigPath?: string
   manifestPath?: string
+  resolvedBuildConfig?: unknown
   sourceRoot?: string
 }
 
@@ -73,14 +74,23 @@ export async function computeSourceTreeHash(options: SourceTreeHashOptions = {})
     updateHash(hash, `source/${relativePath}`, content)
   }
 
-  const configContent = await readFile(currentBuildConfig, 'utf8')
-  updateHash(hash, 'build-config/tsconfig.build.json', configContent)
+  const resolvedConfig = options.resolvedBuildConfig ?? resolveBuildConfig(currentBuildConfig)
+  updateHash(hash, 'build-config/tsconfig.build.json', stableJson(resolvedConfig))
 
   const manifest = parsePackageManifest(await readFile(currentManifest, 'utf8'), currentManifest)
   updateHash(hash, 'package/exports', stableJson(manifest.exports))
   updateHash(hash, 'package/files', stableJson([...manifest.files].sort((left, right) => left.localeCompare(right))))
 
   return hash.digest('hex')
+}
+
+export function resolveBuildConfig(configPath: string): unknown {
+  const resolvedConfig = execFileSync(
+    'pnpm',
+    ['exec', 'tsc', '--showConfig', '--project', configPath, '--pretty', 'false'],
+    {cwd: repositoryRoot, encoding: 'utf8'},
+  )
+  return JSON.parse(resolvedConfig) as unknown
 }
 
 export async function collectFiles(directory: string, label = 'wiki-write-core dist'): Promise<string[]> {
@@ -106,7 +116,7 @@ export async function collectFiles(directory: string, label = 'wiki-write-core d
   return files
 }
 
-async function embedSourceTreeHash(outputRoot: string, sourceHash: string): Promise<void> {
+export async function embedSourceTreeHash(outputRoot: string, sourceHash: string): Promise<void> {
   const contractPath = join(outputRoot, 'gate-contract.js')
   const content = await readFile(contractPath, 'utf8')
   const occurrences = content.split(sourceHashPlaceholder).length - 1
@@ -116,19 +126,19 @@ async function embedSourceTreeHash(outputRoot: string, sourceHash: string): Prom
   await writeFile(contractPath, content.replace(sourceHashPlaceholder, sourceHash), 'utf8')
 }
 
-async function rewriteDeclarationExtensions(outputRoot: string): Promise<void> {
+export async function rewriteDeclarationExtensions(outputRoot: string): Promise<void> {
   for (const path of await collectFiles(outputRoot)) {
     if (!path.endsWith('.d.ts')) continue
     const content = await readFile(path, 'utf8')
-    const rewritten = content.replaceAll(/(['"])(\.\.?\/[^'"]+)\.ts\1/gu, '$1$2.js$1')
+    const rewritten = content.replaceAll(/(\bfrom\s+|\bimport\s*\(\s*)(['"])(\.\.?\/[^'"]+)\.ts\2/gu, '$1$2$3.js$2')
     if (rewritten !== content) {
       await writeFile(path, rewritten, 'utf8')
     }
   }
 }
 
-async function compareTrees(leftRoot: string, rightRoot: string): Promise<string[]> {
-  const [leftFiles, rightFiles] = await Promise.all([collectFiles(leftRoot), collectFiles(rightRoot)])
+export async function compareTrees(leftRoot: string, rightRoot: string): Promise<string[]> {
+  const [leftFiles, rightFiles] = await Promise.all([collectFiles(leftRoot), collectFilesIfPresent(rightRoot)])
   const allPaths = new Set([
     ...leftFiles.map(path => relative(leftRoot, path)),
     ...rightFiles.map(path => relative(rightRoot, path)),
@@ -161,20 +171,24 @@ async function compareTrees(leftRoot: string, rightRoot: string): Promise<string
   return differences
 }
 
-async function replaceDirectoryAtomically(source: string, target: string): Promise<void> {
+export async function replaceDirectoryAtomically(
+  source: string,
+  target: string,
+  renameDirectory: typeof rename = rename,
+): Promise<void> {
   const backup = await mkdtemp(join(dirname(target), '.wiki-write-core-dist-backup-'))
   await rm(backup, {force: true, recursive: true})
   let targetMoved = false
 
   try {
     if (await pathExists(target)) {
-      await rename(target, backup)
+      await renameDirectory(target, backup)
       targetMoved = true
     }
-    await rename(source, target)
+    await renameDirectory(source, target)
   } catch (error: unknown) {
     if (targetMoved) {
-      await rename(backup, target)
+      await renameDirectory(backup, target)
       targetMoved = false
     }
     throw error
@@ -195,7 +209,7 @@ function updateHash(hash: ReturnType<typeof createHash>, label: string, content:
   hash.update('\0')
 }
 
-function parsePackageManifest(content: string, path: string): {exports: unknown; files: string[]} {
+export function parsePackageManifest(content: string, path: string): {exports: unknown; files: string[]} {
   const parsed: unknown = JSON.parse(content)
   if (
     !isRecord(parsed) ||
@@ -240,6 +254,15 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
+async function collectFilesIfPresent(directory: string): Promise<string[]> {
+  try {
+    return await collectFiles(directory)
+  } catch (error: unknown) {
+    if (isFileNotFoundError(error)) return []
+    throw error
+  }
+}
+
 function displayPath(path: string): string {
   return relative(repositoryRoot, path).split(sep).join('/') || path
 }
@@ -248,6 +271,8 @@ function isFileNotFoundError(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
 }
 
+// Deliberately use Node's main-module check: unlike the repository's legacy scripts, it survives
+// symlinks and spaces in paths without reconstructing a file URL from argv[1].
 if (import.meta.main) {
   main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error)

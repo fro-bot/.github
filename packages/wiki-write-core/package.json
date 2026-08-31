@@ -66,8 +66,7 @@
   "files": [
     "README.md",
     "dist",
-    "package.json",
-    "src"
+    "package.json"
   ],
   "dependencies": {
     "@octokit/rest": "^22.0.1",
