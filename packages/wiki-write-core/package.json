@@ -6,65 +6,66 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./wiki-lint": {
-      "types": "./src/wiki-lint.ts",
-      "import": "./src/wiki-lint.ts"
+      "types": "./dist/wiki-lint.d.ts",
+      "import": "./dist/wiki-lint.js"
     },
     "./wiki-ingest": {
-      "types": "./src/wiki-ingest.ts",
-      "import": "./src/wiki-ingest.ts"
+      "types": "./dist/wiki-ingest.d.ts",
+      "import": "./dist/wiki-ingest.js"
     },
     "./private-leak": {
-      "types": "./src/private-leak.ts",
-      "import": "./src/private-leak.ts"
+      "types": "./dist/private-leak.d.ts",
+      "import": "./dist/private-leak.js"
     },
     "./private-leak-adapter": {
-      "types": "./src/private-leak-adapter.ts",
-      "import": "./src/private-leak-adapter.ts"
+      "types": "./dist/private-leak-adapter.d.ts",
+      "import": "./dist/private-leak-adapter.js"
     },
     "./schemas": {
-      "types": "./src/schemas.ts",
-      "import": "./src/schemas.ts"
+      "types": "./dist/schemas.d.ts",
+      "import": "./dist/schemas.js"
     },
     "./wiki-slug": {
-      "types": "./src/wiki-slug.ts",
-      "import": "./src/wiki-slug.ts"
+      "types": "./dist/wiki-slug.d.ts",
+      "import": "./dist/wiki-slug.js"
     },
     "./markdown-links": {
-      "types": "./src/markdown-links.ts",
-      "import": "./src/markdown-links.ts"
+      "types": "./dist/markdown-links.d.ts",
+      "import": "./dist/markdown-links.js"
     },
     "./wiki-utils": {
-      "types": "./src/wiki-utils.ts",
-      "import": "./src/wiki-utils.ts"
+      "types": "./dist/wiki-utils.d.ts",
+      "import": "./dist/wiki-utils.js"
     },
     "./data-branch-bootstrap": {
-      "types": "./src/data-branch-bootstrap.ts",
-      "import": "./src/data-branch-bootstrap.ts"
+      "types": "./dist/data-branch-bootstrap.d.ts",
+      "import": "./dist/data-branch-bootstrap.js"
     },
     "./rendering-policy": {
-      "types": "./src/rendering-policy.ts",
-      "import": "./src/rendering-policy.ts"
+      "types": "./dist/rendering-policy.d.ts",
+      "import": "./dist/rendering-policy.js"
     },
     "./frontmatter": {
-      "types": "./src/frontmatter.ts",
-      "import": "./src/frontmatter.ts"
+      "types": "./dist/frontmatter.d.ts",
+      "import": "./dist/frontmatter.js"
     },
     "./corrections": {
-      "types": "./src/corrections.ts",
-      "import": "./src/corrections.ts"
+      "types": "./dist/corrections.d.ts",
+      "import": "./dist/corrections.js"
     },
     "./corrections-survival": {
-      "types": "./src/corrections-survival.ts",
-      "import": "./src/corrections-survival.ts"
+      "types": "./dist/corrections-survival.d.ts",
+      "import": "./dist/corrections-survival.js"
     },
     "./package.json": "./package.json"
   },
   "files": [
     "README.md",
+    "dist",
     "package.json",
     "src"
   ],

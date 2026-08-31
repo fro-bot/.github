@@ -22,6 +22,10 @@ dist
 # Quartz v5 symlinks local plugins without building them.
 !quartz-site/local-plugin/dist/
 
+# The wiki-write-core package ships committed ESM build output.
+!packages/wiki-write-core/dist/
+!packages/wiki-write-core/dist/**
+
 # Test output
 coverage
 .vitest-cache
