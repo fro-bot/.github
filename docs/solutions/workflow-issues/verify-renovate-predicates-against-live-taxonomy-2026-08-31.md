@@ -1,6 +1,7 @@
 ---
 title: Verify Renovate predicates against the live dependency taxonomy
 date: 2026-08-31
+last_updated: 2026-08-31
 category: workflow-issues
 module: default.json
 problem_type: workflow_issue

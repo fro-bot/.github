@@ -1,6 +1,7 @@
 ---
 title: Extend status vocabularies across every reporting surface
 date: 2026-08-31
+last_updated: 2026-08-31
 category: best-practices
 module: .github/workflows/fro-bot.yaml
 problem_type: best_practice

@@ -1,6 +1,7 @@
 ---
 title: Shared invariants need one implementation and an explicit removal path
 date: 2026-08-31
+last_updated: 2026-08-31
 category: best-practices
 module: packages/wiki-write-core
 problem_type: best_practice
@@ -141,4 +142,4 @@ or superseded.
 - [Make failure boundaries and shared predicates explicit](make-failure-boundaries-and-predicates-explicit-2026-08-25.md) — the broader rule for canonical feature-local predicates and checking every consumer.
 - [Loose-then-tight schema migration pattern](loose-then-tight-schema-migration-pattern-2026-05-05.md) — the producer, parser, and backfill sequencing behind a safe compatibility window.
 - [Pure-Core Privacy Gates with a Shared Module and Mutation-Proof Tests](pure-core-privacy-gates-shared-module-2026-06-22.md) — a parallel example where shared enforcement is proved at the consuming seams.
-- [A status vocabulary must cover every report surface](status-vocabulary-must-cover-every-report-surface-2026-08-31.md) — the same partial-application failure mode, but across reporting surfaces rather than code and type boundaries.
+- [Extend status vocabularies across every reporting surface](status-vocabulary-must-cover-every-report-surface-2026-08-31.md) — the same partial-application failure mode, but across reporting surfaces rather than code and type boundaries.

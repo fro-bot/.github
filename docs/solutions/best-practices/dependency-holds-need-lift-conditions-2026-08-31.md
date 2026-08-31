@@ -1,6 +1,7 @@
 ---
 title: Dependency holds need explicit lift conditions
 date: 2026-08-31
+last_updated: 2026-08-31
 category: best-practices
 module: .github/renovate.json5
 problem_type: best_practice

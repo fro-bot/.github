@@ -1,6 +1,7 @@
 ---
 title: Size subprocess buffers selectively at the call sites that can grow
 date: 2026-08-31
+last_updated: 2026-08-31
 category: best-practices
 module: scripts/check-private-leak.ts
 problem_type: best_practice
@@ -134,4 +135,4 @@ the field.
 - [Make failure boundaries and shared predicates explicit](make-failure-boundaries-and-predicates-explicit-2026-08-25.md) — name fail-hard versus fail-soft boundaries and keep shared predicates canonical.
 - [Diagnostic patches must fail loudly and preserve stderr](diagnostic-patches-observability-discipline-2026-05-20.md) — preserve the error evidence needed to distinguish an infrastructure failure from a policy finding.
 - [Privacy Gate Design for Data→Main Promotion Leak Prevention](privacy-gate-promotion-leak-prevention-2026-06-04.md) — the fail-closed privacy contract this capacity fix preserves.
-- [Silent Failures in Autonomous Multi-Step Pipelines](../runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md) — aggregate workflow status must reflect whether every required step actually completed.
+- [Silent Failures in Autonomous Multi-Step Pipelines (Wiki Commit Drift + Misclassified Status)](../runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md) — aggregate workflow status must reflect whether every required step actually completed.
