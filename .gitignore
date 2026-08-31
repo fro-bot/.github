@@ -22,6 +22,10 @@ dist
 # Quartz v5 symlinks local plugins without building them.
 !quartz-site/local-plugin/dist/
 
+# The wiki-write-core package ships committed ESM build output.
+!packages/wiki-write-core/dist/
+!packages/wiki-write-core/dist/**
+
 # Test output
 coverage
 .vitest-cache
@@ -42,3 +46,6 @@ wiki-lint-report.json
 
 # Runtime artifact written by the survey workflow's correction-context step
 .github/corrections-context.json
+
+# Build staging/backup dirs; siblings of dist/ so the atomic rename stays on one filesystem
+packages/wiki-write-core/.wiki-write-core-dist-*

@@ -78,6 +78,24 @@ jobs:
       - name: 🧪 Run Tests
         run: pnpm test
 
+  check-wiki-write-core-dist:
+    name: Check Wiki Write Core Dist
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: ✅ Verify committed package build
+        run: pnpm check:wiki-write-core-dist
+
   test-scripts-load:
     name: Test Scripts Load
     permissions:

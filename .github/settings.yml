@@ -15,6 +15,7 @@ branches:
           - Analyze (typescript)
           - Check Types
           - Check Wiki Authority
+          - Check Wiki Write Core Dist
           - Check Workflows
           - CodeQL
           - Fro Bot

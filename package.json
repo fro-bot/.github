@@ -20,13 +20,15 @@
   "type": "module",
   "scripts": {
     "bootstrap": "pnpm install --prefer-offline --loglevel warn",
-    "check-types": "tsc --noEmit --project ./tsconfig.json",
-    "coverage": "vitest run --coverage",
+    "build": "node scripts/build-wiki-write-core.ts",
+    "check:wiki-write-core-dist": "node scripts/build-wiki-write-core.ts --check",
+    "check-types": "pnpm build && tsc --noEmit --project ./tsconfig.json",
+    "coverage": "pnpm build && vitest run --coverage",
     "fix": "pnpm run lint --fix",
     "check:md-links": "node scripts/check-md-links.ts",
     "lint": "pnpm run check:md-links && eslint",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "pnpm build && vitest run",
+    "test:watch": "pnpm build && echo 'test:watch builds dist once; rerun after source changes' && vitest"
   },
   "prettier": "@bfra.me/prettier-config/120-proof",
   "dependencies": {

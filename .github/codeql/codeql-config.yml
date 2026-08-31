@@ -1,0 +1,4 @@
+name: Fro Bot CodeQL configuration
+
+paths-ignore:
+  - packages/wiki-write-core/dist/**
