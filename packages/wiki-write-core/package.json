@@ -57,6 +57,10 @@
       "types": "./src/corrections.ts",
       "import": "./src/corrections.ts"
     },
+    "./corrections-survival": {
+      "types": "./src/corrections-survival.ts",
+      "import": "./src/corrections-survival.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [

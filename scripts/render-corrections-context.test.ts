@@ -39,6 +39,7 @@ describe('render-corrections-context', () => {
               page_node_id: 'R_123',
               span: {text: 'Reconfirm target.'},
               state: 'needs-reconfirmation',
+              reason: 'Upstream changed',
             },
             {
               id: 'retired-target',

@@ -3,8 +3,7 @@ import type {WikiLintFinding} from './wiki-lint.ts'
 import {readFile, writeFile} from 'node:fs/promises'
 import {parse, stringify} from 'yaml'
 
-import {maskNonProseContent} from './rendering-policy.ts'
-import {collectWikiPages} from './wiki-utils.ts'
+import {normalizeCorrectionText} from './correction-text.ts'
 
 /** System-owned sidecar state; it is deliberately outside rendered page content. */
 export const CORRECTIONS_PATH = 'knowledge/corrections.yaml' as const
@@ -26,16 +25,78 @@ export interface CorrectionAttribution {
   readonly recorded_at: string
 }
 
-export interface CorrectionRecord {
+/** Loose boundary shape accepted during the rollout window. Never use it past parsing. */
+export interface LooseCorrectionRecord {
+  readonly id: string
+  readonly page_node_id: string
+  readonly span: CorrectionSpan
+  readonly attribution?: CorrectionAttribution
+  readonly state?: CorrectionLifecycle
+  readonly superseded_by?: string
+  readonly reason?: string
+  readonly [key: string]: unknown
+}
+
+interface CorrectionRecordBase {
   readonly id: string
   readonly page_node_id: string
   readonly span: CorrectionSpan
   /** Optional during the loose rollout phase; new writes always include it. The tight phase will require it. */
   readonly attribution?: CorrectionAttribution
-  /** Optional during the loose rollout phase; new writes always include `active`. The tight phase will require it. */
-  readonly state?: CorrectionLifecycle
-  readonly superseded_by?: string
 }
+
+function withoutLifecycleFields<
+  T extends CorrectionRecordBase & {state?: unknown; superseded_by?: unknown; reason?: unknown},
+>(record: T): CorrectionRecordBase & Record<string, unknown> {
+  const copy: Record<string, unknown> = {...(record as Record<string, unknown>)}
+  delete copy.state
+  delete copy.superseded_by
+  delete copy.reason
+  return {
+    ...copy,
+    id: record.id,
+    page_node_id: record.page_node_id,
+    span: record.span,
+    ...(record.attribution === undefined ? {} : {attribution: record.attribution}),
+  }
+}
+
+/** Active is the default lifecycle for legacy records without a state field. */
+export interface ActiveCorrectionRecord extends CorrectionRecordBase {
+  readonly state: 'active'
+  readonly superseded_by?: never
+}
+
+/** Compatibility member for the current loose on-disk rollout shape. */
+export interface LegacyActiveCorrectionRecord extends CorrectionRecordBase {
+  readonly state?: undefined
+  readonly superseded_by?: never
+}
+
+export interface SupersededCorrectionRecord extends CorrectionRecordBase {
+  readonly state: 'superseded'
+  readonly superseded_by: string
+}
+
+export interface RetiredCorrectionRecord extends CorrectionRecordBase {
+  readonly state: 'retired'
+  readonly superseded_by?: never
+}
+
+export interface NeedsReconfirmationCorrectionRecord extends CorrectionRecordBase {
+  readonly state: 'needs-reconfirmation'
+  readonly reason: string
+  readonly superseded_by?: never
+}
+
+export type CorrectionRecord =
+  | ActiveCorrectionRecord
+  | LegacyActiveCorrectionRecord
+  | SupersededCorrectionRecord
+  | RetiredCorrectionRecord
+  | NeedsReconfirmationCorrectionRecord
+
+export type StrictCorrectionRecord = Exclude<CorrectionRecord, LegacyActiveCorrectionRecord>
 
 export interface CorrectionsFile {
   readonly version: typeof CORRECTIONS_VERSION
@@ -88,39 +149,13 @@ function isCorrectionLifecycle(value: unknown): value is CorrectionLifecycle {
   return value === 'active' || value === 'superseded' || value === 'retired' || value === 'needs-reconfirmation'
 }
 
-function isCorrectionSpan(value: unknown): value is CorrectionSpan {
-  if (!isRecord(value) || typeof value.text !== 'string' || value.text.length === 0) return false
-  const start = value.start
-  const end = value.end
-  if (start !== undefined && (typeof start !== 'number' || !Number.isInteger(start) || start < 0)) return false
-  if (end !== undefined && (typeof end !== 'number' || !Number.isInteger(end) || end < 0)) return false
-  if (typeof start === 'number' && typeof end === 'number' && end < start) return false
-  return true
-}
-
-function isCorrectionAttribution(value: unknown): value is CorrectionAttribution {
-  return (
-    isRecord(value) &&
-    typeof value.actor === 'string' &&
-    value.actor.length > 0 &&
-    typeof value.recorded_at === 'string' &&
-    value.recorded_at.length > 0
-  )
-}
-
 function isCorrectionRecord(value: unknown): value is CorrectionRecord {
-  if (!isRecord(value)) return false
-  if (typeof value.id !== 'string' || value.id.length === 0) return false
-  if (typeof value.page_node_id !== 'string' || value.page_node_id.length === 0) return false
-  if (!isCorrectionSpan(value.span)) return false
-  if (value.attribution !== undefined && !isCorrectionAttribution(value.attribution)) return false
-  if (value.state !== undefined && !isCorrectionLifecycle(value.state)) return false
-  if (
-    value.superseded_by !== undefined &&
-    (typeof value.superseded_by !== 'string' || value.superseded_by.length === 0)
-  )
+  try {
+    assertCorrectionRecord(value, 'corrections')
+    return true
+  } catch {
     return false
-  return true
+  }
 }
 
 export function isCorrectionsFile(value: unknown): value is CorrectionsFile {
@@ -141,26 +176,14 @@ export function assertCorrectionsFile(value: unknown, path = 'corrections'): ass
 }
 
 function assertCorrectionRecord(value: unknown, path: string): asserts value is CorrectionRecord {
-  if (!isRecord(value)) throw invalidCorrections(path, 'expected object')
-  if (typeof value.id !== 'string' || value.id.length === 0)
-    throw invalidCorrections(`${path}.id`, 'expected non-empty string')
-  if (typeof value.page_node_id !== 'string' || value.page_node_id.length === 0)
-    throw invalidCorrections(`${path}.page_node_id`, 'expected non-empty string')
-  assertCorrectionSpan(value.span, `${path}.span`)
-  if (value.attribution !== undefined) assertCorrectionAttribution(value.attribution, `${path}.attribution`)
-  if (value.state !== undefined && !isCorrectionLifecycle(value.state))
-    throw invalidCorrections(`${path}.state`, 'expected active, superseded, retired, or needs-reconfirmation')
-  if (
-    value.superseded_by !== undefined &&
-    (typeof value.superseded_by !== 'string' || value.superseded_by.length === 0)
-  )
-    throw invalidCorrections(`${path}.superseded_by`, 'expected non-empty string')
+  const loose = parseLooseCorrectionRecord(value, path)
+  normalizeLooseCorrectionRecord(loose, path)
 }
 
 function assertCorrectionSpan(value: unknown, path: string): asserts value is CorrectionSpan {
   if (!isRecord(value)) throw invalidCorrections(path, 'expected object')
-  if (typeof value.text !== 'string' || value.text.length === 0)
-    throw invalidCorrections(`${path}.text`, 'expected non-empty string')
+  if (typeof value.text !== 'string' || normalizeCorrectionText(value.text) === '')
+    throw invalidCorrections(`${path}.text`, 'expected text with non-empty normalized content')
   const start = value.start
   const end = value.end
   if (start !== undefined && (!Number.isInteger(start) || typeof start !== 'number' || start < 0))
@@ -191,8 +214,83 @@ const emptyCorrectionsFile = (): CorrectionsFile => ({version: CORRECTIONS_VERSI
 
 export function parseCorrections(raw: string): CorrectionsFile {
   const value: unknown = parse(raw)
-  assertCorrectionsFile(value)
-  return value
+  if (!isRecord(value)) throw invalidCorrections('corrections', 'expected object')
+  if (value.version !== CORRECTIONS_VERSION)
+    throw invalidCorrections('corrections.version', `expected ${CORRECTIONS_VERSION}`)
+  if (!Array.isArray(value.corrections)) throw invalidCorrections('corrections.corrections', 'expected array')
+  return {
+    version: CORRECTIONS_VERSION,
+    corrections: value.corrections.map((entry, index) =>
+      normalizeLooseCorrectionRecord(
+        parseLooseCorrectionRecord(entry, `corrections.corrections[${index}]`),
+        `corrections.corrections[${index}]`,
+      ),
+    ),
+  }
+}
+
+/** Explicitly convert the loose I/O shape into one lifecycle union member. */
+export function normalizeLooseCorrectionRecord(record: LooseCorrectionRecord, path = 'corrections'): CorrectionRecord {
+  const base = withoutLifecycleFields(record)
+  if (record.state === undefined) {
+    if (record.superseded_by !== undefined)
+      throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+    return base
+  }
+  if (record.state === 'active') {
+    if (record.superseded_by !== undefined)
+      throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+    if (record.reason !== undefined)
+      throw invalidCorrections(`${path}.reason`, 'only needs-reconfirmation corrections may have a reason')
+    return {...base, state: 'active'}
+  }
+  if (record.state === 'retired') {
+    if (record.superseded_by !== undefined)
+      throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+    if (record.reason !== undefined)
+      throw invalidCorrections(`${path}.reason`, 'only needs-reconfirmation corrections may have a reason')
+    return {...base, state: 'retired'}
+  }
+  if (record.state === 'superseded') {
+    if (record.superseded_by === undefined || record.superseded_by === '')
+      throw invalidCorrections(`${path}.superseded_by`, 'superseded corrections require a target')
+    if (record.reason !== undefined)
+      throw invalidCorrections(`${path}.reason`, 'only needs-reconfirmation corrections may have a reason')
+    return {...base, state: 'superseded', superseded_by: record.superseded_by}
+  }
+  if (record.reason === undefined || record.reason === '')
+    throw invalidCorrections(`${path}.reason`, 'needs-reconfirmation corrections require a reason')
+  if (record.superseded_by !== undefined)
+    throw invalidCorrections(`${path}.superseded_by`, 'only superseded corrections may have a target')
+  return {...base, state: 'needs-reconfirmation', reason: record.reason}
+}
+
+function parseLooseCorrectionRecord(value: unknown, path: string): LooseCorrectionRecord {
+  if (!isRecord(value)) throw invalidCorrections(path, 'expected object')
+  if (typeof value.id !== 'string' || value.id === '')
+    throw invalidCorrections(`${path}.id`, 'expected non-empty string')
+  if (typeof value.page_node_id !== 'string' || value.page_node_id === '')
+    throw invalidCorrections(`${path}.page_node_id`, 'expected non-empty string')
+  assertCorrectionSpan(value.span, `${path}.span`)
+  let attribution: CorrectionAttribution | undefined
+  if (value.attribution !== undefined) {
+    assertCorrectionAttribution(value.attribution, `${path}.attribution`)
+    attribution = value.attribution
+  }
+  if (value.state !== undefined && !isCorrectionLifecycle(value.state))
+    throw invalidCorrections(`${path}.state`, 'expected active, superseded, retired, or needs-reconfirmation')
+  if (value.superseded_by !== undefined && (typeof value.superseded_by !== 'string' || value.superseded_by === ''))
+    throw invalidCorrections(`${path}.superseded_by`, 'expected non-empty string')
+  if (value.reason !== undefined && (typeof value.reason !== 'string' || value.reason === ''))
+    throw invalidCorrections(`${path}.reason`, 'expected non-empty string')
+  const base = {...value, id: value.id, page_node_id: value.page_node_id, span: value.span}
+  return {
+    ...base,
+    ...(attribution === undefined ? {} : {attribution}),
+    ...(value.state === undefined ? {} : {state: value.state}),
+    ...(value.superseded_by === undefined ? {} : {superseded_by: value.superseded_by}),
+    ...(value.reason === undefined ? {} : {reason: value.reason}),
+  }
 }
 
 export function serializeCorrections(value: unknown): string {
@@ -237,143 +335,6 @@ export async function readCorrections(
   }
 }
 
-/**
- * Verify marked spans mechanically after ingest regeneration.
- *
- * Matching trims the span and collapses every whitespace run to one space, then
- * performs an exact substring search in prose only. Markdown inline links are
- * excluded from that exact search; wiki links remain in it because their target
- * text is page prose for this purpose. Fenced code, indented code, and blockquotes
- * are excluded because quoted material is not evidence that the correction survived
- * in the page's actual prose.
- *
- * If exact prose matching fails, a second conservative comparison replaces
- * Markdown links with their visible text, removes Markdown emphasis/code markers,
- * converts punctuation to whitespace, collapses whitespace, and lowercases text.
- * A match under that rule is formatting-only drift and emits an advisory
- * `correction-needs-reconfirmation`; any other miss is erosion and blocks ingest.
- */
-export function verifyCorrectionSurvival(
-  files: Record<string, string>,
-  corrections: CorrectionsFile | undefined,
-  fallbackFiles: Record<string, string> = {},
-): CorrectionSurvivalResult {
-  if (corrections === undefined) return {ok: true, deterministicFindings: [], advisoryFindings: []}
-
-  assertCorrectionsFile(corrections)
-  const pages = collectWikiPages(files)
-  const fallbackPages = collectWikiPages(fallbackFiles)
-  const pagesByNodeId = new Map<string, (typeof pages)[number]>()
-  const fallbackPagesByNodeId = new Map<string, (typeof fallbackPages)[number]>()
-  for (const page of pages) {
-    const nodeId = page.frontmatter.node_id
-    if (typeof nodeId === 'string' && nodeId !== '') pagesByNodeId.set(nodeId, page)
-  }
-  for (const page of fallbackPages) {
-    const nodeId = page.frontmatter.node_id
-    if (typeof nodeId === 'string' && nodeId !== '') fallbackPagesByNodeId.set(nodeId, page)
-  }
-
-  const deterministicFindings: WikiLintFinding[] = []
-  const advisoryFindings: WikiLintFinding[] = []
-  for (const correction of corrections.corrections) {
-    const state = getCorrectionLifecycle(correction)
-    if (state === 'superseded' || state === 'retired') continue
-
-    const page = pagesByNodeId.get(correction.page_node_id)
-    const fallbackPage = fallbackPagesByNodeId.get(correction.page_node_id)
-    const path = page?.path ?? fallbackPage?.path ?? CORRECTIONS_PATH
-    if (state === 'needs-reconfirmation') {
-      advisoryFindings.push({
-        kind: 'correction-needs-reconfirmation',
-        path,
-        target: correction.id,
-        message: `Correction ${correction.id} needs operator reconfirmation before it is enforced.`,
-      })
-      continue
-    }
-
-    const normalizedSpan = normalizeCorrectionText(correction.span.text)
-    const proseBody = page === undefined ? '' : maskNonProseContent(page.body)
-    const normalizedBody = normalizeCorrectionText(maskMarkdownLinks(proseBody))
-    if (page === undefined || normalizedSpan === '' || !normalizedBody.includes(normalizedSpan)) {
-      const formattingSpan = normalizeFormattingText(correction.span.text)
-      const formattingBody = normalizeFormattingText(proseBody)
-      if (formattingSpan !== '' && formattingBody.includes(formattingSpan)) {
-        advisoryFindings.push({
-          kind: 'correction-needs-reconfirmation',
-          path,
-          target: correction.id,
-          message: `Correction ${correction.id} appears preserved with formatting-only changes and needs operator reconfirmation.`,
-        })
-        continue
-      }
-      deterministicFindings.push({
-        kind: 'correction-eroded',
-        path,
-        target: correction.id,
-        message: `Active correction ${correction.id} was not found in the regenerated page.`,
-      })
-    }
-  }
-
-  return {
-    ok: deterministicFindings.length === 0,
-    deterministicFindings,
-    advisoryFindings,
-  }
-}
-
-function normalizeCorrectionText(value: string): string {
-  return value.trim().replaceAll(/\s+/gu, ' ')
-}
-
-function normalizeFormattingText(value: string): string {
-  const markdownLinkPattern = /!?(?:\[([^\]]*)\]\([^)]*\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/gu
-  return value
-    .normalize('NFKC')
-    .replaceAll(markdownLinkPattern, renderVisibleLinkText)
-    .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-    .replaceAll(/\s+/gu, ' ')
-    .toLowerCase()
-}
-
-function renderVisibleLinkText(
-  _match: string,
-  markdownText: string | undefined,
-  wikiTarget: string | undefined,
-  wikiLabel: string | undefined,
-): string {
-  return markdownText ?? wikiLabel ?? wikiTarget ?? ''
-}
-
-function maskMarkdownLinks(content: string): string {
-  const masked = content.split('')
-  let open = -1
-  let index = 0
-  while (index < content.length) {
-    if (content[index] === '[') open = index
-    if (content[index] === ']' && content[index + 1] === '(' && open !== -1) {
-      let close = index + 2
-      let depth = 1
-      while (close < content.length && depth > 0) {
-        if (content[close] === '(') depth += 1
-        else if (content[close] === ')') depth -= 1
-        close += 1
-      }
-      if (depth === 0) {
-        for (let maskIndex = open; maskIndex < close; maskIndex += 1) masked[maskIndex] = ' '
-        index = close
-        open = -1
-        continue
-      }
-    }
-    index += 1
-  }
-  return masked.join('')
-}
-
 function isMissingFileError(error: unknown): boolean {
   return isRecord(error) && error.code === 'ENOENT'
 }
@@ -398,6 +359,8 @@ export async function writeCorrections(
 
 export function recordCorrection(file: CorrectionsFile, input: RecordCorrectionInput): CorrectionsFile {
   assertCorrectionsFile(file)
+  assertCorrectionSpan(input.span, 'input.span')
+  assertCorrectionAttribution(input.serverDerivedAttribution, 'input.serverDerivedAttribution')
   if (file.corrections.some(correction => correction.id === input.id))
     throw new CorrectionStoreError({
       code: 'INVALID_CORRECTIONS',
@@ -417,7 +380,7 @@ export function recordCorrection(file: CorrectionsFile, input: RecordCorrectionI
 
   const corrections = file.corrections.map(correction =>
     correction.id === input.supersedesId
-      ? {...correction, state: 'superseded' as const, superseded_by: input.id}
+      ? {...withoutLifecycleFields(correction), state: 'superseded' as const, superseded_by: input.id}
       : correction,
   )
   corrections.push({
@@ -447,6 +410,7 @@ export function transitionCorrection(
   id: string,
   state: CorrectionLifecycle,
   supersededBy?: string,
+  reason?: string,
 ): CorrectionsFile {
   assertCorrectionsFile(file)
   const index = file.corrections.findIndex(correction => correction.id === id)
@@ -459,13 +423,27 @@ export function transitionCorrection(
       path: `corrections[${index}].state`,
       message: `corrections: ${current.state} correction ${id} cannot transition`,
     })
-  if (state === 'superseded' && (supersededBy === undefined || supersededBy.length === 0))
+  if (state === 'active' && current.state !== 'needs-reconfirmation')
     throw new CorrectionStoreError({
       code: 'INVALID_TRANSITION',
-      path: `corrections[${index}].superseded_by`,
-      message: 'corrections: superseded corrections require supersededBy',
+      path: `corrections[${index}].state`,
+      message: `corrections: active correction ${id} is not awaiting reconfirmation`,
     })
-  const next = {...current, state, ...(state === 'superseded' ? {superseded_by: supersededBy} : {})}
+  const base = withoutLifecycleFields(current)
+  let next: CorrectionRecord
+  if (state === 'superseded') {
+    if (supersededBy === undefined || supersededBy.length === 0)
+      throw new CorrectionStoreError({
+        code: 'INVALID_TRANSITION',
+        path: `corrections[${index}].superseded_by`,
+        message: 'corrections: superseded corrections require supersededBy',
+      })
+    next = {...base, state, superseded_by: supersededBy}
+  } else if (state === 'needs-reconfirmation') {
+    next = {...base, state, reason: reason ?? 'Legacy correction requires reconfirmation'}
+  } else {
+    next = {...base, state}
+  }
   const corrections = file.corrections.slice()
   corrections[index] = next
   return {version: CORRECTIONS_VERSION, corrections}
@@ -487,3 +465,7 @@ function correctionNotFound(id: string): CorrectionStoreError {
     message: `corrections: correction ${id} was not found`,
   })
 }
+
+// Preserve the historical direct corrections-module import while the implementation
+// lives with wiki page traversal in corrections-survival.ts.
+export {verifyCorrectionSurvival} from './corrections-survival.ts'

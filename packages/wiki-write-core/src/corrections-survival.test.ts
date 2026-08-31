@@ -1,6 +1,10 @@
+import {readFile} from 'node:fs/promises'
+
 import {describe, expect, it, vi} from 'vitest'
 
-import {readCorrections, verifyCorrectionSurvival, type CorrectionsFile} from './corrections.ts'
+import {normalizeCorrectionText} from './correction-text.ts'
+import {verifyCorrectionSurvival} from './corrections-survival.ts'
+import {parseCorrections, readCorrections, type CorrectionsFile} from './corrections.ts'
 import {buildWikiIngestChanges, runWikiIngestCli, WikiIngestError} from './wiki-ingest.ts'
 import {buildWikiLintJsonReport, type WikiLintResult} from './wiki-lint.ts'
 
@@ -46,6 +50,14 @@ const topicPage = (nodeId: string, body: string): string =>
   ].join('\n')
 
 describe('correction survival verification', () => {
+  it('uses the shared storage normalizer rather than a private duplicate', async () => {
+    const source = await readFile(new URL('./corrections-survival.ts', import.meta.url), 'utf8')
+
+    expect(source).toContain("import {normalizeCorrectionText} from './correction-text.ts'")
+    expect(source).not.toMatch(/function normalizeCorrectionText\s*\(/u)
+    expect(normalizeCorrectionText('  shared\nnormalizer  ')).toBe('shared normalizer')
+  })
+
   it('accepts an active correction that survives in the regenerated page', () => {
     const result = verifyCorrectionSurvival(
       {'knowledge/wiki/repos/alice--project.md': page('The corrected fact.')},
@@ -66,6 +78,19 @@ describe('correction survival verification', () => {
       pages: [{path: 'knowledge/wiki/repos/alice--project.md', content: page('The corrected fact.')}],
     })
     expect(built.findings).toEqual([])
+  })
+
+  it('enforces a legacy no-state correction exactly like an active correction', () => {
+    const legacy = parseCorrections(
+      `version: 1\ncorrections:\n  - id: legacy\n    page_node_id: R_123\n    span:\n      text: The corrected fact.\n`,
+    )
+
+    const result = verifyCorrectionSurvival({'knowledge/wiki/repos/alice--project.md': page('The old fact.')}, legacy)
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'legacy'}),
+    ])
   })
 
   it('does not mask prose after a leading inline-code span', () => {
@@ -112,6 +137,32 @@ describe('correction survival verification', () => {
         target: 'correction-active',
       }),
     ])
+  })
+
+  it('includes machine-readable lifecycle recovery data on correction findings', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
+      {
+        version: 1,
+        corrections: [
+          activeCorrection,
+          {...activeCorrection, id: 'reconfirm', state: 'needs-reconfirmation', reason: 'Review'},
+        ],
+      },
+    )
+
+    expect(result.deterministicFindings[0]).toMatchObject({
+      kind: 'correction-eroded',
+      path: 'knowledge/wiki/repos/alice--project.md',
+      target: 'correction-active',
+      recovery: {lifecycle: 'active', action: 'restore-span'},
+    })
+    expect(result.advisoryFindings[0]).toMatchObject({
+      kind: 'correction-needs-reconfirmation',
+      path: 'knowledge/wiki/repos/alice--project.md',
+      target: 'reconfirm',
+      recovery: {lifecycle: 'needs-reconfirmation', action: 'reconfirm-correction'},
+    })
   })
 
   it('keeps a verbatim prose survival clean when the same text is also a link label', () => {
@@ -251,9 +302,9 @@ describe('correction survival verification', () => {
     const corrections: CorrectionsFile = {
       version: 1,
       corrections: [
-        {...activeCorrection, id: 'superseded', state: 'superseded'},
+        {...activeCorrection, id: 'superseded', state: 'superseded', superseded_by: 'replacement'},
         {...activeCorrection, id: 'retired', state: 'retired'},
-        {...activeCorrection, id: 'reconfirm', state: 'needs-reconfirmation'},
+        {...activeCorrection, id: 'reconfirm', state: 'needs-reconfirmation', reason: 'Upstream changed'},
       ],
     }
 
