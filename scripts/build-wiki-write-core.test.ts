@@ -136,7 +136,6 @@ describe('wiki-write-core build inputs', () => {
       await writeFile(join(right, 'entry.js'), 'export const value = 1\n')
       await mutate(right)
 
-      await expect(compareTrees(left, right)).resolves.toEqual(expect.arrayContaining([expect.any(String)]))
       await expect(compareTrees(left, right)).resolves.toContain(_change === 'added' ? 'added.js' : 'entry.js')
     } finally {
       await rm(left, {force: true, recursive: true})
