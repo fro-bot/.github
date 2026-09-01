@@ -51,6 +51,8 @@ export function checkPrivateLeak(
     if (line.startsWith('diff --git a/')) {
       const diffPrefix = 'diff --git a/'
       const separator = ' b/'
+      // Index scanning, not a regex: the original `/^diff --git a\/.+ b\/(.+)$/` backtracked on
+      // caller-supplied diff text. Keep this branch regex-free -- no timing guard covers it (#3810).
       // The old regex selected the rightmost separator with at least one trailing character.
       const separatorIndex = line.lastIndexOf(separator, line.length - separator.length - 1)
       if (separatorIndex > diffPrefix.length && separatorIndex + separator.length < line.length) {

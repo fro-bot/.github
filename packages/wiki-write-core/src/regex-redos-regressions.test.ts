@@ -66,6 +66,12 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
   return measurement
 }
 
+// Only guards that provably fail against the pre-fix implementation belong in this suite. Two
+// earlier guards (diff-header parsing, slug trimming) were removed: both operations are linear in
+// the old code too, so neither could fail against the regression it named, while both were fast
+// enough that fixed overhead dominated the ratio and flaked CI. A guard that cannot catch its own
+// regression but can fail a healthy build is worse than no guard. Those parsers stay pinned by the
+// correctness cases below, and their call sites carry a comment against reintroducing a regex.
 describe('linear-time input parsing', () => {
   it('proves the scaling helper discriminates quadratic work', () => {
     const quadratic = (size: number): void => {
@@ -126,23 +132,6 @@ describe('linear-time input parsing', () => {
     },
   ])('preserves diff-path extraction: $name', ({diff, expected}) => {
     expect(checkPrivateLeak(['private-repo'], diff, {titlePrefixed: false, isOperator: false})).toEqual(expected)
-  })
-
-  it('scales diff-header parsing linearly for many separators', () => {
-    const smallDiff = `diff --git a/${'source b/'.repeat(100_000)}private-repo.md b/private-repo.md`
-    const largeDiff = `diff --git a/${'source b/'.repeat(200_000)}private-repo.md b/private-repo.md`
-    const measurement = expectLinearScaling(
-      size => {
-        const diff = size === 100_000 ? smallDiff : largeDiff
-        checkPrivateLeak(['private-repo'], diff, {titlePrefixed: false, isOperator: false})
-      },
-      100_000,
-      3,
-    )
-
-    // The old diff regex is also effectively linear at this input shape, so this documents
-    // the scaling contract without pretending to distinguish those implementations.
-    expect(measurement.ratio).toBeLessThan(3)
   })
 
   it.each([
@@ -273,21 +262,5 @@ describe('linear-time input parsing', () => {
   it('still rejects empty slug segments', () => {
     expect(() => computeRepoSlug('___', 'repo')).toThrow(/empty/iu)
     expect(() => computeRepoSlug('owner', '___')).toThrow(/empty/iu)
-  })
-
-  it('scales slug trimming linearly for a long hyphen run', () => {
-    const smallOwner = `${'-'.repeat(120_000)}owner`
-    const largeOwner = `${'-'.repeat(240_000)}owner`
-    const measurement = expectLinearScaling(
-      size => {
-        computeRepoSlug(size === 120_000 ? smallOwner : largeOwner, 'repo')
-      },
-      120_000,
-      3,
-    )
-
-    // The old trim regex is also linear for this input, so this guard records the desired property
-    // but cannot distinguish it from the former loop implementation.
-    expect(measurement.ratio).toBeLessThan(3)
   })
 })
