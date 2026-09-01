@@ -2,14 +2,15 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-08-31
-tags: [probot, github, repository-settings, automation, governance]
+updated: 2026-09-01
+tags: [probot, github, repository-settings, automation, governance, reconciler-coverage]
 related:
   - marcusrbrown--github
   - marcusrbrown--dev-like
   - marcusrbrown--ha-config
   - marcusrbrown--esphome-life
   - marcusrbrown--extend-vscode
+  - marcusrbrown--presentations
   - bfra-me--github
   - bfra-me--ha-addon-repository
   - bfra-me--works
@@ -179,6 +180,25 @@ Two details worth carrying:
 A bare `_extends: .github:common-settings.yaml` — no owner prefix — resolves to the **`.github` repository of the org that owns the repo declaring it**. For any `marcusrbrown/*` repository that is `marcusrbrown/.github`, not `fro-bot/.github`.
 
 Several wiki repo pages have asserted the `fro-bot/.github` reading. It was corrected for [[marcusrbrown--esphome-life]] on 2026-07-12 and is corrected for [[marcusrbrown--extend-vscode]] on 2026-08-31; other `marcusrbrown/*` pages carrying the same phrasing should be treated as suspect until re-verified. The downstream fact usually survives the correction — the repo does inherit an org-level template — but the *identity of the template* changes, and with it which repository a settings change must land in. Owner-prefix the `_extends` value (`marcusrbrown/.github:common-settings.yaml`) if the intent is to be unambiguous to a reader; the bare form is only unambiguous to the resolver.
+
+### Declared keys the reconciler silently ignores — `repository.archived` (2026-09-01)
+
+From [[marcusrbrown--presentations]]. `.github/settings.yml` there has declared `repository.archived: true` since `chore: archive repository (#48)` in March 2024. The repository is **not archived** and never has been.
+
+This is not a broken sync. Four independent facts rule out the usual explanations:
+
+1. The caller `update-repo-settings.yaml` targets the **correct** upstream reusable workflow (`bfra-me/.github/.github/workflows/update-repo-settings.yaml`) — not the mis-pathed `renovate.yaml` variant documented below for [[marcusrbrown--esphome-life]].
+2. Actions history shows `Update Repo Settings` concluding **`success`** on its daily `19 14` cron across consecutive days, plus on push to `main`.
+3. Every *other* key in the same file demonstrably applies — description, homepage, the 10-topic list, and branch protection with required contexts all match live state.
+4. A human edited that exact file on 2026-08-05 (`#62` rewrote `homepage`, `topics`, and the required-check list) and **left `archived: true` in place**, so this is not an unreviewed leftover.
+
+A correctly-wired sync succeeding daily for ~18 months against `archived: true`, on a repo that merged 21 PRs in the last month, admits one conclusion: **Probot Settings does not apply `repository.archived`.** It drops the key without erroring.
+
+Three generalizable consequences:
+
+- **Green does not mean applied.** A successful settings-sync run proves the workflow executed. It does not prove any particular key was reconciled. This is the same lesson as the mis-pathed-`uses:` case from the opposite direction: there the workflow succeeded while syncing the *wrong file*; here it succeeds while dropping part of the *right file*. Only a read-back diff — fetch live settings, compare against the declaration — distinguishes the three states.
+- **Silently-ignored declarative config is worse than absent config.** Every reader of that file, human or agent, reasonably concludes the repo is archived or about to be. This wiki's own first survey (2026-08-05) flagged it as a live risk and warned that "the next successful settings-sync run will freeze the repo" — a prediction the reconciler was never going to fulfil. Delete keys the reconciler does not honour.
+- **Keys are not uniformly supported, and the unsupported set is undocumented at the call site.** `settings.yml` reads as a complete declarative surface for repository state. It is not. Treat any key you have not *observed* taking effect as unverified, particularly destructive or lifecycle keys (`archived`, and by extension anything that would change repo existence or visibility). A reasonable hardening step for the reusable workflow is to warn on declared keys it knows it will not apply.
 
 ## Common Configuration Patterns
 
