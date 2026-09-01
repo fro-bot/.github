@@ -156,6 +156,21 @@ describe('wiki-write-core build inputs', () => {
     }
   })
 
+  it('compares JSON distribution files', async () => {
+    const left = await mkdtemp(join(tmpdir(), 'wiki-write-core-left-'))
+    const right = await mkdtemp(join(tmpdir(), 'wiki-write-core-right-'))
+
+    try {
+      await writeFile(join(left, 'gate-contract.json'), '{"version":1}\n')
+      await writeFile(join(right, 'gate-contract.json'), '{"version":2}\n')
+
+      await expect(compareTrees(left, right)).resolves.toEqual(['gate-contract.json'])
+    } finally {
+      await rm(left, {force: true, recursive: true})
+      await rm(right, {force: true, recursive: true})
+    }
+  })
+
   it('restores the target when the replacement rename fails', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wiki-write-core-atomic-'))
     const target = join(root, 'dist')
@@ -216,6 +231,7 @@ describe('wiki-write-core build inputs', () => {
           '',
         ].join('\n'),
       )
+      await writeFile(join(root, 'gate-contract.json'), '{"path":"./literal.ts"}\n')
 
       await rewriteDeclarationExtensions(root)
 
@@ -227,6 +243,7 @@ describe('wiki-write-core build inputs', () => {
           '',
         ].join('\n'),
       )
+      await expect(readFile(join(root, 'gate-contract.json'), 'utf8')).resolves.toBe('{"path":"./literal.ts"}\n')
     } finally {
       await rm(root, {force: true, recursive: true})
     }
