@@ -198,6 +198,8 @@ Units 1–6 (including 1b) land in this repo. Units 7–8 are cross-repo contrac
 
 **Approach:** generate the marker from `GATE_CONTRACT_VERSION` during the build rather than committing a hand-maintained file beside a test that checks it. The build already substitutes a derived value into a built artifact and `--check` already tree-compares committed output against a fresh build, so the existing required `Check Wiki Write Core Dist` enforces the mirror for free — no second gate to keep green. A test detects drift after the fact; a generated artifact cannot drift at all, and this repo already owns the machine for it. The marker ships under `dist/`, equally reachable through the contents API.
 
+The write seam is load-bearing and has exactly one correct position: inside `main()` between the `tsc` invocation and the `checkOnly` branch, beside `embedSourceTreeHash`, writing into `temporaryRoot`. Writing to `distRoot` directly instead means the next build's atomic directory swap deletes the marker, and nothing surfaces it until the writer starts refusing writes against a 404. Writing after `compareTrees` means `--check` never sees the file, restoring the exact drift this design eliminates while labelled as structural. This would also be the first non-`.js`/`.d.ts` file in `dist/` — the path is unexercised, so run the scenarios below rather than reasoning about them.
+
 **Test scenarios:** hand-editing the generated marker fails `check:wiki-write-core-dist`; bumping `GATE_CONTRACT_VERSION` without rebuilding fails it; a rebuilt pair passes.
 
 **Verification:** the drift check fails against a hand-edited marker and passes against the committed one.
