@@ -139,6 +139,7 @@ Requirements R1–R18 from the origin doc. Unit coverage:
 - Page-version definition: opaque edit-snapshot `ETag` covering page version and page-relevant correction state; `node_id` remains identity, not version.
 - Sole-writer identity: the private writer mints repo-scoped installation tokens for the existing Fro Bot App; the Dashboard App never commits to `data`.
 - Writer boundary: private-network reachability from dashboard only, no public port or Caddy route, restricted GitHub egress, separate internal auth, and independent constraint enforcement.
+- Dashboard write-path invariant: `fro-bot/dashboard`'s `AGENTS.md` currently says “never add a write code path,” which this design makes false. It is rewritten honestly rather than reinterpreted — read-only by default with one isolated wiki-write capability, `DASHBOARD_GITHUB_APP_*` strictly read-only and never minting write tokens, and the only write authority being the separately deployed writer scoped to `fro-bot/.github:data` under an explicit path allowlist. The cost is stated plainly in that document: dashboard authentication compromise can now produce valid wiki edits. Any additional write target requires approval and a new threat model. Prerequisite for Unit 7a, owned by `fro-bot/dashboard`.
 
 ### Deferred to Implementation
 
@@ -146,7 +147,6 @@ Requirements R1–R18 from the origin doc. Unit coverage:
 - Survival-check matching (normalized-span rules, supersession mechanics): Unit 4, against real correction fixtures.
 - Rendering-policy sanitizer selection (which sanitizer/rehype configuration the Quartz build uses): Unit 1, placement already decided — render-side primary, save-side feedback.
 - Editor UX details (draft persistence, pending-state polling source): dashboard-side planning.
-- `fro-bot/dashboard`'s current `AGENTS.md` says “never add a write code path.” Unit 7a requires that invariant to be rewritten honestly as read-only by default with one isolated wiki-write capability; this prerequisite is owned by `fro-bot/dashboard`.
 
 ## Implementation Units
 
@@ -251,7 +251,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 - [x] **Unit 5: Promotion cadence for operator edits**
 
-**Goal:** An accepted edit reaches the published site in one sitting: the dashboard broker dispatches the existing gated promotion pipeline instead of waiting for the weekly cron.
+**Goal:** An accepted edit reaches the published site in one sitting: the private writer dispatches the existing gated promotion pipeline instead of waiting for the weekly cron.
 
 **Requirements:** success criterion 1; R16, R17 (pending state has a bounded horizon)
 
@@ -262,7 +262,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 - Test: workflow contract test updates
 
 **Approach:**
-- Add `repository_dispatch` with an explicit `promote-data` type alongside the retained weekly cron and manual dispatch. The dashboard broker fires it after a successful `data` commit, while survey writes continue to use the weekly backstop.
+- Add `repository_dispatch` with an explicit `promote-data` type alongside the retained weekly cron and manual dispatch. The private writer fires it after a successful `data` commit, while survey writes continue to use the weekly backstop.
 - Execute the fast path from `main`'s workflow definition and scripts: `data` carries executable copies under `scripts/` and `.github/workflows/` and is autonomously written without branch protection, so a push trigger would invert the trust boundary and let the promoted branch decide how it is checked.
 - Coalesce automated dispatch runs by cancellation via TRIGGER-DISCRIMINATED GROUPS: repository-dispatch runs share one group (cancel-in-progress among themselves, newest wins) while `schedule`/`workflow_dispatch` runs live in a separate group a dispatch can never reach — e.g. `group: merge-data-${{ github.event_name == 'repository_dispatch' && 'dispatch' || 'manual' }}`. A single group with a conditional `cancel-in-progress` flag does NOT work: the flag is evaluated on the incoming run and applied to whatever is in progress, so a dispatch would still cancel the Sunday cron and starve the backstop.
 - The promotion operation is already idempotent-friendly: `merge-data-pr.ts` reuses/updates the existing promotion PR rather than creating one per dispatch (verified :127-146, :521-571) — keep it safely rerunnable.
