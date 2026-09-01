@@ -1,5 +1,5 @@
 ---
-title: Editable Wiki Path — Dashboard-Brokered Operator Edits
+title: Editable Wiki Path — Dashboard-Backed Operator Edits
 type: feat
 status: active
 date: 2026-08-29
@@ -7,29 +7,30 @@ origin: docs/brainstorms/2026-08-29-editable-wiki-path-requirements.md
 deepened: 2026-08-29
 ---
 
-# Editable Wiki Path — Dashboard-Brokered Operator Edits
+# Editable Wiki Path — Dashboard-Backed Operator Edits
 
 ## Overview
 
-Build the operator wiki-edit path: Edit links on the Quartz wiki deep-link into an editor served by `fro-bot/dashboard`, whose backend verifies the operator session, runs this repo's validation gates synchronously via a shared pinned library, and commits accepted edits to the `data` branch under Fro Bot's identity. Marked corrections become durable constraints in the survey loop with a deterministic survival check. This repo owns the validation/commit library, the correction and survey-side machinery, the promotion cadence fix, and the wiki-side affordance; `fro-bot/dashboard` owns the editor and save API; `marcusrbrown/infra` owns deployment wiring. `fro-bot/agent` is deliberately untouched — the gateway stays control-plane-agnostic.
+Build the operator wiki-edit path: Edit links on the Quartz wiki deep-link into an editor served by `fro-bot/dashboard`, whose backend verifies the operator session and calls the private writer; the writer runs this repo's validation gates synchronously via a shared pinned library and commits accepted edits to the `data` branch under Fro Bot's identity. Marked corrections become durable constraints in the survey loop with a deterministic survival check. This repo owns the validation/commit library, the correction and survey-side machinery, the promotion cadence fix, and the wiki-side affordance; `fro-bot/dashboard` owns the editor, save API, and writer image; `marcusrbrown/infra` owns deployment wiring. `fro-bot/agent` is deliberately untouched — the gateway stays control-plane-agnostic.
 
 ## Problem Frame
 
-The wiki is readable at `fro.bot/.github` but operator-uncorrectable except by issue round-trips through agent runs (see origin doc). The sole-writer invariant on `data` correctly forbids direct pushes, so an edit path must be brokered: authenticated, gate-validated, committed as Fro Bot. The control plane is workflows-only and cannot host request-time HTTP; the dashboard already serves the authenticated operator surface on its own origin.
+The wiki is readable at `fro.bot/.github` but operator-uncorrectable except by issue round-trips through agent runs (see origin doc). The sole-writer invariant on `data` correctly forbids direct pushes, so an edit path must be authenticated, gate-validated, and committed as Fro Bot. The control plane is workflows-only and cannot host request-time HTTP; the dashboard already serves the authenticated operator surface on its own origin.
 
 ## Requirements Trace
 
 Requirements R1–R18 from the origin doc. Unit coverage:
 
 - R1 (wiki Edit affordance) → Unit 6
-- R2, R3 (free-form raw markdown, system-owned frontmatter) → Units 1, 7
-- R4, R5 (synchronous gates, reject-with-reason) → Units 1, 2, 7
-- R6 (Fro Bot identity commit, sole-writer preserved) → Units 1, 7
-- R7 (session revalidation, origin/CSRF, version precondition, limits) → Unit 7
+- R2, R3 (free-form raw markdown, system-owned frontmatter) → Units 1, 7a, 7b
+- R4 (gate parity between runtime and workflow execution) → Units 1, 1b, 2, 7a, 7b
+- R5 (synchronous gates, reject-with-reason) → Units 1, 2, 7a, 7b
+- R6 (Fro Bot identity commit, sole-writer preserved) → Units 1, 7b
+- R7 (session revalidation, origin/CSRF, version precondition, limits) → Units 7a, 7b
 - R8–R11 (marked corrections, attribution, survival check, lifecycle) → Units 3, 4
-- R12 (rendering policy) → Units 1, 7
-- R13, R14 (dashboard-origin auth, unauthenticated invisibility) → Units 6, 7
-- R15–R18 (interaction states, pending, conflict, draft preservation) → Unit 7
+- R12 (rendering policy) → Units 1, 7a, 7b
+- R13, R14 (dashboard-origin auth, unauthenticated invisibility) → Units 6, 7a
+- R15–R18 (interaction states, pending, conflict, draft preservation) → Units 7a, 7b
 - Success criterion "live in one sitting" → Unit 5
 
 ## Scope Boundaries
@@ -40,7 +41,7 @@ Requirements R1–R18 from the origin doc. Unit coverage:
 
 ### Deferred to Separate Tasks
 
-- Dashboard editor implementation details (component design, draft persistence UX): planned in `fro-bot/dashboard` from this plan's Unit 7 contract.
+- Dashboard editor implementation details (component design, draft persistence UX): planned in `fro-bot/dashboard` from this plan's Unit 7a contract.
 - Infra deployment wiring: planned in `marcusrbrown/infra` from Unit 8.
 - Push/notification delivery of erosion findings: north-star R2 territory.
 - Historical-source annotation on migrated pages (deferred in origin doc).
@@ -69,7 +70,7 @@ Requirements R1–R18 from the origin doc. Unit coverage:
 
 ### External References
 
-- Oracle architecture review (this session): gateway-vs-dashboard-vs-broker placement, sidecar isolation, package consumption model, blob-SHA versioning, 409-no-retry, latency budget ≤5s p95 / 10s hard.
+- Cross-repo contract: the dashboard owns the authenticated editor and save API, a private writer owns GitHub mutation, and infra owns the writer's deployment boundary.
 
 ## Prior-Art Survey
 
@@ -114,11 +115,18 @@ Requirements R1–R18 from the origin doc. Unit coverage:
 
 ## Key Technical Decisions
 
-- **Broker lives in `fro-bot/dashboard`, not the gateway and not `apps/broker`**: the dashboard already serves the authenticated operator surface on its own origin with server-side credentials; the gateway stays control-plane-agnostic by design; extending the OIDC credential broker would put GitHub write authority beside `CLIPROXY_MANAGEMENT_KEY` in the wrong trust domain.
+- **Dashboard owns the editor and save API; a private writer owns mutation**: `fro-bot/dashboard` handles operator auth, CSRF/origin verification, recent-auth enforcement, request validation, rate limiting, server-derived attribution, and the writer call. It never receives the Fro Bot App key and performs no GitHub writes. A separate private `wiki-writer` process/container owns commits and the Fro Bot App credential; its code and image live in `fro-bot/dashboard`, while its service definition, private network, and credential mount live in `marcusrbrown/infra/apps/dashboard/docker-compose.yaml`. `fro-bot/.github` remains workflows-only: no service, image, or deployment ownership.
 - **Editor on the dashboard origin, entry on the wiki**: Edit links carry page identity + return URL; the input surface lives where origin/CSRF guarantees already hold. No credentialed CORS relaxation anywhere.
-- **Gate code ships as an importable package (`@fro-bot/wiki-write-core`)**, extracted from existing scripts with the workflow CLIs consuming the same source — one implementation, pinned consumption, no runtime checkout or subprocess. Contract fixtures run against both entrypoints to prevent drift. Distribution: **git dependency pinned to an immutable commit** for the first cut (this repo has no package-publishing machinery — single private root package, no changesets, no publish workflow — and inventing a registry for one consumer is unjustified), contingent on a pnpm prototype proving subdirectory installation and Node 24 runtime consumption. Fallback if the prototype fails or a second consumer appears: public npm with deliberate release infrastructure. GitHub Packages rejected — private-registry credential plumbing in the dashboard deployment raises the auth blast radius for no requirement.
-- **Page versioning by blob SHA** (optionally paired with the observed `data` head SHA); `node_id` is identity, not version. Stale saves return 409 with the draft preserved; no blind conflict retry — the existing `commitWikiChanges` retry loop is not used for operator saves without full refetch + revalidation.
-- **Writer isolation**: the save API's commit step runs with a dedicated Fro Bot App write key scoped to this repo's `data` branch, materialized only to the writer component; hardcoded repo/branch/path allowlist; server-derived attribution; fixed commit format with correlation metadata.
+- **Gate code ships as an importable package (`@fro-bot/wiki-write-core`)**, extracted from existing scripts with the workflow CLIs consuming the same source — one implementation, pinned consumption, no runtime checkout or subprocess. Contract fixtures run against both entrypoints to prevent drift. Distribution is **a git subdirectory dependency pinned by immutable SHA**: pnpm subdirectory installation works with a clean lockfile and `--frozen-lockfile`, `private: true` is irrelevant to git installs, and exports resolve. Node 24 runtime consumption from real `node_modules` failed for strip-only TypeScript with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, so the package now ships committed compiled ESM `dist/`; all 13 subpath exports resolve to `dist/*.js` plus `dist/*.d.ts`. A real `node_modules` install and Node 24 execution gate pass. `GATE_CONTRACT_VERSION` and `GATE_SOURCE_TREE_HASH` are embedded in the artifact, and required CI check `Check Wiki Write Core Dist` fails if committed `dist/` drifts from a fresh build. npm publishing stays deferred until a second independent consumer appears or committed build output becomes painful. GitHub Packages remains rejected because private-registry credential plumbing adds auth blast radius without a requirement.
+- **Page snapshots, not blob SHAs, are the concurrency contract**: `GET` returns an opaque edit-snapshot `ETag` covering page version and page-relevant correction state; the blob SHA is an input to that snapshot, not the contract itself. Writes require `If-Match`; a missing precondition returns 428, a stale snapshot returns 412 with the draft preserved, and a later branch-head race returns 409 unless the writer fully refetches and revalidates first. `node_id` is identity, not version. Ambiguous GitHub outcomes reconcile through the idempotency key, current blob, and commit correlation metadata; never blind retry.
+- **Writer isolation**: the writer has no public port and no Caddy route, is reachable only from the dashboard server over a dedicated private network, and has outbound access restricted to required GitHub endpoints. Dashboard-to-writer authentication is separate and internal. The Fro Bot App write key is mounted only in the writer. The writer independently enforces repo (`fro-bot/.github`), branch (`data`), an explicit path allowlist, body limits, blob CAS, validation gates, and no-blind-retry; otherwise this is credential concealment, not privilege separation.
+- **Sole-writer identity remains Fro Bot's**: the dashboard authenticates as a separate `DASHBOARD_GITHUB_APP_*` App, so it must not commit to `data`, widen `EXPECTED_AUTHORS`, or forge Fro Bot git author fields. The writer uses a separately managed private key for the existing Fro Bot App, minting installation tokens scoped to this repo with only the writer's required permissions. Before rollout, a canary commit on a disposable branch must verify GitHub reports `fro-bot[bot]`; after every production write, tip identity is checked and the writer is disabled loudly on mismatch.
+- **Privilege separation has an honest limit**: it prevents credential exfiltration and arbitrary GitHub operations, but it cannot prevent a compromised dashboard from submitting in-scope wiki edits because the dashboard is the authenticated caller.
+- **Request limits**: accept a 1 MiB request envelope and a 512 KiB decoded page body. The larger envelope covers JSON escaping and correction spans duplicating selected page text. Reject unsupported request compression, enforce byte limits before JSON parsing, and parse only after auth and CSRF. Three of the 46 live wiki pages already exceed 64 KiB (130.8/80.9/73.7 KiB), and three more are within 1.5% of it; a small cap would make roughly 13% of pages unsaveable on day one and rising.
+- **Rate limiting**: retain the dashboard's coarse 60/min IP limiter and add a writer-specific authenticated limiter: save burst 3, sustained 10/min per operator, one in-flight save per page, and a small global writer concurrency cap starting at 2. Caddy owns the coarse external cap; the application owns identity- and page-scoped limiting.
+- **Session step-up**: the existing 24-hour signed cookie remains for reading, but writes require authentication issued within the last 30 minutes. Return a step-up response and preserve the draft when needed. Wiki CSRF tokens bind to session identifier, action, and a bounded time window.
+- **Gate-contract drift is fail-closed**: the writer fetches `packages/wiki-write-core/dist/gate-contract.json` from this repo's `main` through the GitHub API and compares its `version` with embedded `GATE_CONTRACT_VERSION`. Unit 1b generates that marker from the constant during the build, so the existing dist drift check makes divergence structurally impossible rather than merely detectable — a marker free to drift would invert the control, letting the writer approve a stale contract while reporting green. Cache the marker by `main` head SHA with a 5-minute TTL so the ≤5s p95 save budget absorbs at most one conditional request. A version mismatch refuses writes. Fetch failure is not a mismatch: with a cached value inside a 1-hour bounded staleness ceiling, proceed on cache, log a warning, and surface staleness in readiness/audit metadata; with no cache or past the ceiling, refuse writes because the contract cannot be established. Fail-closed on mismatch is correct; fail-closed on transient unavailability is an outage wearing a security control's clothes.
+- **Draft persistence is required**: drafts survive step-up auth, session expiry, 412 responses, and network failures.
 - **Corrections are data, not instructions**: serialized into the survey prompt under an explicit delimited-data contract (precedent: the untrusted-target-repo block); survival verified mechanically by a wiki-lint finding kind, not by trusting the LLM.
 - **Latency budget**: ≤5s p95, 10s hard deadline for the synchronous path; candidate-snapshot and privacy-resolution caching keyed by blob SHAs.
 
@@ -126,22 +134,24 @@ Requirements R1–R18 from the origin doc. Unit coverage:
 
 ### Resolved During Planning
 
-- Broker placement: `fro-bot/dashboard` (operator decision; gateway stays control-plane-agnostic).
+- Component placement: dashboard editor/save API, private `wiki-writer` process in the dashboard deployment, and workflows-only `fro-bot/.github`; the gateway stays control-plane-agnostic.
 - Cross-origin auth: dissolved — editor and API share the dashboard origin.
-- Validation-code consumption: importable package (git-dependency-pinned first cut, npm fallback) over vendoring/subprocess/workflow-callback.
-- Page-version definition: page blob SHA (+ observed head SHA).
+- Validation-code consumption: importable package pinned to a git subdirectory by immutable SHA; committed compiled `dist/` makes real Node 24 `node_modules` consumption work. npm publishing is deferred until a second independent consumer appears or committed build output becomes painful.
+- Page-version definition: opaque edit-snapshot `ETag` covering page version and page-relevant correction state; `node_id` remains identity, not version.
+- Sole-writer identity: the private writer mints repo-scoped installation tokens for the existing Fro Bot App; the Dashboard App never commits to `data`.
+- Writer boundary: private-network reachability from dashboard only, no public port or Caddy route, restricted GitHub egress, separate internal auth, and independent constraint enforcement.
+- Dashboard write-path invariant: `fro-bot/dashboard`'s `AGENTS.md` currently says “never add a write code path,” which this design makes false. It is rewritten honestly rather than reinterpreted — read-only by default with one isolated wiki-write capability, `DASHBOARD_GITHUB_APP_*` strictly read-only and never minting write tokens, and the only write authority being the separately deployed writer scoped to `fro-bot/.github:data` under an explicit path allowlist. The cost is stated plainly in that document: dashboard authentication compromise can now produce valid wiki edits. Any additional write target requires approval and a new threat model. Prerequisite for Unit 7a, owned by `fro-bot/dashboard`.
 
 ### Deferred to Implementation
 
 - Correction metadata file layout and exact schema fields (loose-then-tight; system-owned path under `knowledge/`): settled when Unit 3 touches real data.
 - Survival-check matching (normalized-span rules, supersession mechanics): Unit 4, against real correction fixtures.
 - Rendering-policy sanitizer selection (which sanitizer/rehype configuration the Quartz build uses): Unit 1, placement already decided — render-side primary, save-side feedback.
-- pnpm git-subdirectory dependency viability: Unit 1's acceptance prototype; if unworkable, escalate to the npm-registry fallback rather than improvising.
 - Editor UX details (draft persistence, pending-state polling source): dashboard-side planning.
 
 ## Implementation Units
 
-Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planned in their owning repos; they are listed here for sequencing and requirements coverage.
+Units 1–6 (including 1b) land in this repo. Units 7–8 are cross-repo contracts to be planned in their owning repos; they are listed here for sequencing and requirements coverage.
 
 - [x] **Unit 1: Extract `@fro-bot/wiki-write-core` package**
 
@@ -173,6 +183,26 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 - Integration (render-side control): a fixture page containing scriptable content, built through the local Quartz pipeline, produces inert output — the primary security control gets a build-level assertion, not just a config edit.
 
 **Verification:** full repo gate green; `pnpm pack` produces a consumable artifact and the dashboard-side git-subdirectory install prototype succeeds with lockfile proof (this prototype runs BEFORE Unit 7 planning starts — a fallback to npm publishing changes that repo's dependency story); contract fixtures pass against both entrypoints.
+
+- [ ] **Unit 1b: Gate-contract marker and drift test**
+
+**Goal:** The control plane publishes a fetchable contract marker so the writer's drift check has a real counterparty instead of comparing its embedded constant against itself.
+
+**Requirements:** R4 (gate parity between runtime and workflow execution)
+
+**Dependencies:** Unit 1. Must land before Unit 7b starts.
+
+**Files:**
+- Modify: `scripts/build-wiki-write-core.ts` (emit the marker as a build artifact)
+- Create: `packages/wiki-write-core/dist/gate-contract.json` (generated, committed: `{"version": <GATE_CONTRACT_VERSION>}`)
+
+**Approach:** generate the marker from `GATE_CONTRACT_VERSION` during the build rather than committing a hand-maintained file beside a test that checks it. The build already substitutes a derived value into a built artifact and `--check` already tree-compares committed output against a fresh build, so the existing required `Check Wiki Write Core Dist` enforces the mirror for free — no second gate to keep green. A test detects drift after the fact; a generated artifact cannot drift at all, and this repo already owns the machine for it. The marker ships under `dist/`, equally reachable through the contents API.
+
+The write seam is load-bearing and has exactly one correct position: inside `main()` between the `tsc` invocation and the `checkOnly` branch, beside `embedSourceTreeHash`, writing into `temporaryRoot`. Writing to `distRoot` directly instead means the next build's atomic directory swap deletes the marker, and nothing surfaces it until the writer starts refusing writes against a 404. Writing after `compareTrees` means `--check` never sees the file, restoring the exact drift this design eliminates while labelled as structural. This would also be the first non-`.js`/`.d.ts` file in `dist/` — the path is unexercised, so run the scenarios below rather than reasoning about them.
+
+**Test scenarios:** hand-editing the generated marker fails `check:wiki-write-core-dist`; bumping `GATE_CONTRACT_VERSION` without rebuilding fails it; a rebuilt pair passes.
+
+**Verification:** the drift check fails against a hand-edited marker and passes against the committed one.
 
 - [x] **Unit 2: Request-time privacy adapter**
 
@@ -242,7 +272,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 - [x] **Unit 5: Promotion cadence for operator edits**
 
-**Goal:** An accepted edit reaches the published site in one sitting: the dashboard broker dispatches the existing gated promotion pipeline instead of waiting for the weekly cron.
+**Goal:** An accepted edit reaches the published site in one sitting: the private writer dispatches the existing gated promotion pipeline instead of waiting for the weekly cron.
 
 **Requirements:** success criterion 1; R16, R17 (pending state has a bounded horizon)
 
@@ -253,7 +283,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 - Test: workflow contract test updates
 
 **Approach:**
-- Add `repository_dispatch` with an explicit `promote-data` type alongside the retained weekly cron and manual dispatch. The dashboard broker fires it after a successful `data` commit, while survey writes continue to use the weekly backstop.
+- Add `repository_dispatch` with an explicit `promote-data` type alongside the retained weekly cron and manual dispatch. The private writer fires it after a successful `data` commit, while survey writes continue to use the weekly backstop.
 - Execute the fast path from `main`'s workflow definition and scripts: `data` carries executable copies under `scripts/` and `.github/workflows/` and is autonomously written without branch protection, so a push trigger would invert the trust boundary and let the promoted branch decide how it is checked.
 - Coalesce automated dispatch runs by cancellation via TRIGGER-DISCRIMINATED GROUPS: repository-dispatch runs share one group (cancel-in-progress among themselves, newest wins) while `schedule`/`workflow_dispatch` runs live in a separate group a dispatch can never reach — e.g. `group: merge-data-${{ github.event_name == 'repository_dispatch' && 'dispatch' || 'manual' }}`. A single group with a conditional `cancel-in-progress` flag does NOT work: the flag is evaluated on the incoming run and applied to whatever is in progress, so a dispatch would still cancel the Sunday cron and starve the backstop.
 - The promotion operation is already idempotent-friendly: `merge-data-pr.ts` reuses/updates the existing promotion PR rather than creating one per dispatch (verified :127-146, :521-571) — keep it safely rerunnable.
@@ -269,7 +299,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Requirements:** R1, R13, R14
 
-**Dependencies:** Unit 7's route contract (URL shape only)
+**Dependencies:** Unit 7a's route contract (URL shape only)
 
 **Files:**
 - Modify: `quartz-site/local-plugin/` (new component or extension of the existing Sources component region), `quartz-site/quartz.config.yaml`
@@ -277,27 +307,45 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Approach:** static link construction from page frontmatter (node_id + slug); no credentials, no session awareness on the wiki side (R14 holds by construction — the link is inert for non-operators, who simply can't authenticate on the dashboard).
 
-**Test expectation:** component rendering itself is harness-less (committed-dist plugin, per repo status quo); the LINK TARGET SHAPE is a cross-repo contract with Unit 7 and gets a config-level contract test in the style of `scripts/publish-wiki-workflow.test.ts` pinning the URL format.
+**Test expectation:** component rendering itself is harness-less (committed-dist plugin, per repo status quo); the LINK TARGET SHAPE is a cross-repo contract with Unit 7a and gets a config-level contract test in the style of `scripts/publish-wiki-workflow.test.ts` pinning the URL format.
 
-**Verification:** local Quartz build renders the link on repo/topic pages, absent on index/log; link target matches Unit 7's contract.
+**Verification:** local Quartz build renders the link on repo/topic pages, absent on index/log; link target matches Unit 7a's contract.
 
-- [ ] **Unit 7 (cross-repo contract — `fro-bot/dashboard`): Editor + save API + writer**
+- [ ] **Unit 7a (cross-repo contract — `fro-bot/dashboard`): Editor UI and save API**
 
-**Goal:** `/operator/wiki/edit` page and `/operator/wiki/pages/:nodeId` GET/POST: session revalidation per request, origin/CSRF binding, blob-SHA precondition (409 + draft preserved on mismatch), size/rate limits, synchronous gates via pinned `@fro-bot/wiki-write-core`, commit via a dedicated Fro Bot App write key held only by the writer component, pending-state UX until publish, structured audit records.
+**Goal:** The dashboard owns the editor UI and public save API: `/operator/wiki/edit` and `/operator/wiki/pages/:nodeId` GET/POST with authenticated, draft-preserving saves.
 
-**Requirements:** R2–R7, R12–R18
+**Requirements:** R2–R5, R7, R12–R18
 
 **Dependencies:** Units 1, 2 landed and consumable; Unit 3 schema for correction marking in the editor
 
-**Planning note:** detailed planning happens in `fro-bot/dashboard` against this contract; this repo reviews the contract surface (route shapes, error taxonomy, latency budget ≤5s p95/10s hard).
+**Planning note:** `fro-bot/dashboard` follows its existing React-state view switching in `web/src/App.tsx`; it does not introduce a router. The API revalidates the session per request, enforces origin/CSRF, recent-auth step-up, request/body limits, authenticated and page-scoped rate limits, opaque edit-snapshot `ETag`/`If-Match` semantics (428/412/409), server-derived attribution, draft persistence, and pending-state UX. Established mutation posture from `web/src/push/subscribe.ts` is mandatory: `credentials: 'include'`, `redirect: 'error'`, CSRF fetched before mutations, and `idempotency-key`. Do not copy its bounded POST retry; GitHub commits are not safely retryable. The dashboard performs no GitHub writes and never receives the Fro Bot App key; it authenticates and calls Unit 7b. The `AGENTS.md` write-path invariant must be updated before this unit starts.
+
+**Test scenarios:** authenticated editor load and save; unauthenticated invisibility; missing/invalid CSRF and origin; stale/missing `If-Match`; body and envelope limits; rate-limit boundaries; step-up response with draft preservation; network failure with draft preservation; idempotency key propagation; no retry after an ambiguous writer response; pending state after accepted commit; route contract matches Unit 6.
+
+**Verification:** dashboard tests cover the route/error contract and full mutation posture; the save API reaches the private writer without GitHub credentials in the dashboard process; drafts survive every specified failure state.
+
+- [ ] **Unit 7b (cross-repo contract — `fro-bot/dashboard`): Private wiki-writer service**
+
+**Goal:** The private `wiki-writer` process/container owns the commit path and existing Fro Bot App credential, executes gates through the pinned `@fro-bot/wiki-write-core`, and enforces the complete privilege boundary independently.
+
+**Requirements:** R2–R7, R12, R15–R18
+
+**Dependencies:** Unit 7a's writer-call contract; Units 1, 1b, 2 landed and consumable; Unit 3 schema for correction marking
+
+**Planning note:** the writer has no public port or Caddy route and is reachable only from the dashboard server over a dedicated private network with restricted GitHub egress and separate internal authentication. It mounts only the separately managed private key for the existing Fro Bot App, mints repo-scoped installation tokens, and refuses any repo other than `fro-bot/.github`, branch other than `data`, or path outside the explicit allowlist. It independently enforces body limits, blob CAS, gate-contract version, validation gates, idempotency/reconciliation, commit correlation metadata, no-blind-retry, and Fro Bot tip identity. For gate-contract drift, it fetches `packages/wiki-write-core/dist/gate-contract.json` from this repo's `main` through the GitHub API and compares `version` with embedded `GATE_CONTRACT_VERSION`. Unit 1b generates that marker and must land first. Cache by `main` head SHA with a 5-minute TTL and allow a cached value for at most 1 hour of bounded staleness: mismatch refuses writes, while fetch failure uses fresh-enough cache with a warning and readiness/audit staleness metadata; no cache or expired cache refuses writes. Fail-closed on mismatch is correct; fail-closed on transient unavailability is an outage wearing a security control's clothes. A compromised dashboard may still submit in-scope edits; the boundary prevents credential exfiltration and arbitrary GitHub operations, not abuse of the dashboard's authenticated edit capability.
+
+**Test scenarios:** valid commit with preserved system frontmatter; rejection of wrong repo/branch/path, oversized body, stale blob, contract drift, invalid gates, and missing internal auth; ambiguous GitHub outcome reconciled without blind retry; canary and production tip identity checks; writer concurrency and per-page in-flight limits; dashboard cannot read the Fro Bot key.
+
+**Verification:** writer tests cover independent enforcement and reconciliation; a disposable-branch canary reports `fro-bot[bot]`; real Node 24 consumption of all 13 pinned package exports passes; no writer endpoint is public or routed through Caddy.
 
 - [ ] **Unit 8 (cross-repo contract — `marcusrbrown/infra`): Deployment wiring**
 
-**Goal:** Writer credential (separate Fro Bot App write key) materialized only to the dashboard droplet's writer component; image/deploy updates; post-deploy save-path probe.
+**Goal:** Define and deploy the private writer service alongside the existing dashboard deployment: service definition, private network, credential mount, image/deploy updates, and post-deploy save-path probe.
 
-**Dependencies:** Unit 7
+**Dependencies:** Units 7a and 7b
 
-**Planning note:** planned in `marcusrbrown/infra`; no new droplet or public origin.
+**Planning note:** `marcusrbrown/infra` adds the writer service to `apps/dashboard/docker-compose.yaml`, which currently runs `caddy` and `dashboard` pulling `ghcr.io/fro-bot/dashboard`. The writer remains on the dedicated private network, has no public port or Caddy route, mounts the separately managed Fro Bot App key only into the writer, and receives the dashboard image/deploy updates. No new droplet and no new public origin. `marcusrbrown/infra` owns operational rotation and revocation of the writer key and maintains an inventory recording which key is deployed where. Rotation and revocation are a two-party operation with `fro-bot/dashboard`: dashboard owns the writer image/config changes and infra owns the deployed secret plus GitHub App revocation. If the writer key leaks, revoke that key, remove it from the infra secret mount and writer deployment, deploy the replacement, and keep operator saves disabled until the canary and tip-identity checks pass. Pulling the writer key does not interrupt autonomous survey writes: those 16 workflows authenticate with `secrets.APPLICATION_PRIVATE_KEY`, a distinct key object on the same App, so revoking the writer's key pauses only operator wiki writes until replacement validation completes. That containment holds at the key tier ONLY. Suspending the App installation or rotating the App itself takes the entire control plane dark — survey, promotion, reconcile, and every other autonomous loop. The runbook must name that escalation tier explicitly, because an operator reaching for the bigger hammer mid-incident will otherwise still believe the narrower reassurance applies. Verify the save path after deployment, including the Fro Bot tip-identity check.
 
 ## System-Wide Impact
 
@@ -306,25 +354,26 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 - **State lifecycle risks:** corrections store must survive page migrations (node_id-keyed, tested in Unit 3); ambiguous commit outcomes (timeout after ref update) return "outcome unknown" to the editor rather than retrying.
 - **API surface parity:** none — no existing API changes; the gateway operator contract is untouched.
 - **Integration coverage:** Unit 4's end-to-end erosion fixture; Unit 1's dual-entrypoint contract fixtures.
-- **Unchanged invariants:** `data` sole-writer + tamper check (all commits remain Fro Bot-authored); `publicRepoEntryExists` and privacy gates; publish-wiki build contract; gateway operator API.
+- **Unchanged invariants:** `data` sole-writer + tamper check remains true because only Unit 7b authenticates the ref mutation with the existing Fro Bot App; the Dashboard App never commits and git author fields are not treated as the authority boundary. `publicRepoEntryExists` and privacy gates; publish-wiki build contract; gateway operator API.
 
 ## Risks & Dependencies
 
 | Risk | Mitigation |
 |------|------------|
-| Writer compromise = valid Fro Bot commits the tamper check can't distinguish | Dedicated write key only in the writer; hardcoded repo/branch/path allowlist; fixed commit format with correlation metadata; server-derived attribution; audit records |
+| Writer compromise = valid Fro Bot commits the tamper check can't distinguish | Dedicated write key only in the writer; hardcoded repo/branch/path allowlist; fixed commit format with correlation metadata; server-derived attribution; audit records. Dashboard compromise can still submit in-scope edits, which is the honest limit of this boundary |
+| Writer key leaks or requires rotation | `marcusrbrown/infra` owns revocation/rotation and a deployed-key inventory; coordinate the two-party operation with `fro-bot/dashboard` to remove the old mount, deploy the replacement, and rerun canary/tip-identity checks. Pulling the writer key pauses operator saves but does not interrupt autonomous survey writes, which use their separate credential |
 | Runtime gates drift from workflow gates | Single source consumed by both; exact version pinning; dual-entrypoint contract fixtures; coordinated rollout for security-affecting gate changes |
-| Race/ambiguous GitHub outcomes on save | Blob-SHA precondition; no blind retry; 409 + preserved draft; head inspection on ambiguous failure |
+| Race/ambiguous GitHub outcomes on save | Opaque edit-snapshot `ETag` + required `If-Match`; 428 when missing, 412 when stale, 409 for a later branch-head race; reconcile ambiguous outcomes with idempotency key, current blob, and commit correlation metadata; preserve the draft and never blind retry |
 | Correction spans unmatchable after heavy regeneration | Deterministic normalized-span matching defined against fixtures in Unit 4; needs-reconfirmation state instead of false erosion where ambiguous |
-| Promotion-on-push spams the gate pipeline (12 survey pushes/day) | Push runs coalesce in their own concurrency group (newest wins) + existing-PR reuse; cron/dispatch runs are in a separate group pushes cannot cancel |
-| Git-dependency distribution proves unworkable in pnpm | Prototype gate in Unit 1 acceptance; npm-registry fallback decided deliberately, not improvised |
+| Promotion dispatch can spam the gate pipeline (12 survey writes/day) | Unit 5 uses `repository_dispatch`, not `push`: dispatch runs coalesce in their own concurrency group (newest wins), while cron/manual-dispatch runs are in a separate group that dispatch cannot cancel; existing-PR reuse remains |
+| Git-subdirectory distribution fails in real Node 24 consumption | Resolved: pnpm subdirectory installation and frozen lockfile pass; committed compiled `dist/` makes all 13 exports consumable from real `node_modules`; required `Check Wiki Write Core Dist` fails closed on drift. npm publishing stays deferred until a second independent consumer appears or committed output becomes painful |
 | Promotion frequency turns fail-closed privacy gates into alert-fatigue generators (`FRO_BOT_POLL_PAT` runs weekly → ~12×/day) | Coalescing bounds run count; gate failures stay fail-closed but route to the existing reporting channel with dedup; watch the first weeks for fatigue signal before considering any relaxation |
 
 ## Documentation / Operational Notes
 
 - `knowledge/schema.md` gains the corrections-store documentation when Unit 3 lands.
 - `docs/status.md` / north-star: R3 editable path moves to in-progress once this plan's units start.
-- Rollout order: Units 1–5 (this repo) → dashboard planning + build (Unit 7) → infra wiring (Unit 8) → enable the Edit affordance (Unit 6 ships last, dark until the API exists).
+- Rollout order: Units 1–5 (this repo, done) → Unit 1b gate-contract marker (this repo, gates Unit 7b) → dashboard AGENTS.md prerequisite → dashboard Unit 7a editor/save API → dashboard Unit 7b private writer → infra Unit 8 wiring and post-deploy probe → enable the Unit 6 Edit affordance last, dark until the API and writer exist.
 
 ## Sources & References
 

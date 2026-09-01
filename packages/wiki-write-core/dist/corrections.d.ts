@@ -65,7 +65,7 @@ export interface RecordCorrectionInput {
     readonly id: string;
     readonly pageNodeId: string;
     readonly span: CorrectionSpan;
-    /** This value must come from the broker's authenticated server session. */
+    /** Derived from the dashboard's authenticated operator session and forwarded to the writer; the writer never receives an operator session. */
     readonly serverDerivedAttribution: CorrectionAttribution;
     readonly supersedesId?: string;
 }
