@@ -124,7 +124,7 @@ Requirements R1–R18 from the origin doc. Unit coverage:
 - **Request limits**: accept a 1 MiB request envelope and a 512 KiB decoded page body. The larger envelope covers JSON escaping and correction spans duplicating selected page text. Reject unsupported request compression, enforce byte limits before JSON parsing, and parse only after auth and CSRF. Three of the 46 live wiki pages already exceed 64 KiB (130.8/80.9/73.7 KiB), and three more are within 1.5% of it; a small cap would make roughly 13% of pages unsaveable on day one and rising.
 - **Rate limiting**: retain the dashboard's coarse 60/min IP limiter and add a writer-specific authenticated limiter: save burst 3, sustained 10/min per operator, one in-flight save per page, and a small global writer concurrency cap starting at 2. Caddy owns the coarse external cap; the application owns identity- and page-scoped limiting.
 - **Session step-up**: the existing 24-hour signed cookie remains for reading, but writes require authentication issued within the last 30 minutes. Return a step-up response and preserve the draft when needed. Wiki CSRF tokens bind to session identifier, action, and a bounded time window.
-- **Gate-contract drift is fail-closed**: the writer fetches `packages/wiki-write-core/gate-contract.json` from this repo's `main` through the GitHub API and compares its `version` with embedded `GATE_CONTRACT_VERSION`; this repo must add and maintain that marker. Cache the marker by `main` head SHA with a 5-minute TTL so the ≤5s p95 save budget absorbs at most one conditional request. A version mismatch refuses writes. Fetch failure is not a mismatch: with a cached value inside a 1-hour bounded staleness ceiling, proceed on cache, log a warning, and surface staleness in readiness/audit metadata; with no cache or past the ceiling, refuse writes because the contract cannot be established. Fail-closed on mismatch is correct; fail-closed on transient unavailability is an outage wearing a security control's clothes. When the marker lands, a structural test should pin `gate-contract.json.version === GATE_CONTRACT_VERSION`.
+- **Gate-contract drift is fail-closed**: the writer fetches `packages/wiki-write-core/gate-contract.json` from this repo's `main` through the GitHub API and compares its `version` with embedded `GATE_CONTRACT_VERSION`; Unit 1b creates that marker and pins it to the constant with a required structural test — a marker free to drift inverts the control, letting the writer approve a stale contract while reporting green. Cache the marker by `main` head SHA with a 5-minute TTL so the ≤5s p95 save budget absorbs at most one conditional request. A version mismatch refuses writes. Fetch failure is not a mismatch: with a cached value inside a 1-hour bounded staleness ceiling, proceed on cache, log a warning, and surface staleness in readiness/audit metadata; with no cache or past the ceiling, refuse writes because the contract cannot be established. Fail-closed on mismatch is correct; fail-closed on transient unavailability is an outage wearing a security control's clothes.
 - **Draft persistence is required**: drafts survive step-up auth, session expiry, 412 responses, and network failures.
 - **Corrections are data, not instructions**: serialized into the survey prompt under an explicit delimited-data contract (precedent: the untrusted-target-repo block); survival verified mechanically by a wiki-lint finding kind, not by trusting the LLM.
 - **Latency budget**: ≤5s p95, 10s hard deadline for the synchronous path; candidate-snapshot and privacy-resolution caching keyed by blob SHAs.
@@ -150,7 +150,7 @@ Requirements R1–R18 from the origin doc. Unit coverage:
 
 ## Implementation Units
 
-Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planned in their owning repos; they are listed here for sequencing and requirements coverage.
+Units 1–6 (including 1b) land in this repo. Units 7–8 are cross-repo contracts to be planned in their owning repos; they are listed here for sequencing and requirements coverage.
 
 - [x] **Unit 1: Extract `@fro-bot/wiki-write-core` package**
 
@@ -182,6 +182,24 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 - Integration (render-side control): a fixture page containing scriptable content, built through the local Quartz pipeline, produces inert output — the primary security control gets a build-level assertion, not just a config edit.
 
 **Verification:** full repo gate green; `pnpm pack` produces a consumable artifact and the dashboard-side git-subdirectory install prototype succeeds with lockfile proof (this prototype runs BEFORE Unit 7 planning starts — a fallback to npm publishing changes that repo's dependency story); contract fixtures pass against both entrypoints.
+
+- [ ] **Unit 1b: Gate-contract marker and drift test**
+
+**Goal:** The control plane publishes a fetchable contract marker so the writer's drift check has a real counterparty instead of comparing its embedded constant against itself.
+
+**Requirements:** R4 (gate parity between runtime and workflow execution)
+
+**Dependencies:** Unit 1. Must land before Unit 7b starts.
+
+**Files:**
+- Create: `packages/wiki-write-core/gate-contract.json` (`{"version": <GATE_CONTRACT_VERSION>}`)
+- Test: structural test pinning `gate-contract.json.version === GATE_CONTRACT_VERSION`
+
+**Approach:** the marker's only job is to mirror the constant faithfully, so the mirror is enforced, not documented. The structural test is REQUIRED, not advisory: a marker that can drift from `GATE_CONTRACT_VERSION` unnoticed inverts the control — the writer would validate against a number nobody maintains and approve a stale contract while reporting green. `Check Wiki Write Core Dist` is the precedent for this enforcement shape.
+
+**Test scenarios:** marker matches the constant; a hand-edited marker fails the test; a bumped constant without a marker update fails the test.
+
+**Verification:** the test fails against a deliberately mismatched pair and passes against the committed one.
 
 - [x] **Unit 2: Request-time privacy adapter**
 
@@ -310,9 +328,9 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Requirements:** R2–R7, R12, R15–R18
 
-**Dependencies:** Unit 7a's writer-call contract; Units 1, 2 landed and consumable; Unit 3 schema for correction marking
+**Dependencies:** Unit 7a's writer-call contract; Units 1, 1b, 2 landed and consumable; Unit 3 schema for correction marking
 
-**Planning note:** the writer has no public port or Caddy route and is reachable only from the dashboard server over a dedicated private network with restricted GitHub egress and separate internal authentication. It mounts only the separately managed private key for the existing Fro Bot App, mints repo-scoped installation tokens, and refuses any repo other than `fro-bot/.github`, branch other than `data`, or path outside the explicit allowlist. It independently enforces body limits, blob CAS, gate-contract version, validation gates, idempotency/reconciliation, commit correlation metadata, no-blind-retry, and Fro Bot tip identity. For gate-contract drift, it fetches `packages/wiki-write-core/gate-contract.json` from this repo's `main` through the GitHub API and compares `version` with embedded `GATE_CONTRACT_VERSION`. The repo must add and maintain that file with at least `{"version": <GATE_CONTRACT_VERSION>}`; when the marker lands, a structural test should pin `gate-contract.json.version === GATE_CONTRACT_VERSION` (neither the file nor test is part of this plan update). Cache by `main` head SHA with a 5-minute TTL and allow a cached value for at most 1 hour of bounded staleness: mismatch refuses writes, while fetch failure uses fresh-enough cache with a warning and readiness/audit staleness metadata; no cache or expired cache refuses writes. Fail-closed on mismatch is correct; fail-closed on transient unavailability is an outage wearing a security control's clothes. A compromised dashboard may still submit in-scope edits; the boundary prevents credential exfiltration and arbitrary GitHub operations, not abuse of the dashboard's authenticated edit capability.
+**Planning note:** the writer has no public port or Caddy route and is reachable only from the dashboard server over a dedicated private network with restricted GitHub egress and separate internal authentication. It mounts only the separately managed private key for the existing Fro Bot App, mints repo-scoped installation tokens, and refuses any repo other than `fro-bot/.github`, branch other than `data`, or path outside the explicit allowlist. It independently enforces body limits, blob CAS, gate-contract version, validation gates, idempotency/reconciliation, commit correlation metadata, no-blind-retry, and Fro Bot tip identity. For gate-contract drift, it fetches `packages/wiki-write-core/gate-contract.json` from this repo's `main` through the GitHub API and compares `version` with embedded `GATE_CONTRACT_VERSION`. Unit 1b creates and enforces that marker in this repo and must land first. Cache by `main` head SHA with a 5-minute TTL and allow a cached value for at most 1 hour of bounded staleness: mismatch refuses writes, while fetch failure uses fresh-enough cache with a warning and readiness/audit staleness metadata; no cache or expired cache refuses writes. Fail-closed on mismatch is correct; fail-closed on transient unavailability is an outage wearing a security control's clothes. A compromised dashboard may still submit in-scope edits; the boundary prevents credential exfiltration and arbitrary GitHub operations, not abuse of the dashboard's authenticated edit capability.
 
 **Test scenarios:** valid commit with preserved system frontmatter; rejection of wrong repo/branch/path, oversized body, stale blob, contract drift, invalid gates, and missing internal auth; ambiguous GitHub outcome reconciled without blind retry; canary and production tip identity checks; writer concurrency and per-page in-flight limits; dashboard cannot read the Fro Bot key.
 
@@ -324,7 +342,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 **Dependencies:** Units 7a and 7b
 
-**Planning note:** `marcusrbrown/infra` adds the writer service to `apps/dashboard/docker-compose.yaml`, which currently runs `caddy` and `dashboard` pulling `ghcr.io/fro-bot/dashboard`. The writer remains on the dedicated private network, has no public port or Caddy route, mounts the separately managed Fro Bot App key only into the writer, and receives the dashboard image/deploy updates. No new droplet and no new public origin. `marcusrbrown/infra` owns operational rotation and revocation of the writer key and maintains an inventory recording which key is deployed where. Rotation and revocation are a two-party operation with `fro-bot/dashboard`: dashboard owns the writer image/config changes and infra owns the deployed secret plus GitHub App revocation. If the writer key leaks, revoke that key, remove it from the infra secret mount and writer deployment, deploy the replacement, and keep operator saves disabled until the canary and tip-identity checks pass. Pulling the writer key does not interrupt autonomous survey writes because those workflows use their existing separate credential; it pauses only operator wiki writes until replacement validation completes. Verify the save path after deployment, including the Fro Bot tip-identity check.
+**Planning note:** `marcusrbrown/infra` adds the writer service to `apps/dashboard/docker-compose.yaml`, which currently runs `caddy` and `dashboard` pulling `ghcr.io/fro-bot/dashboard`. The writer remains on the dedicated private network, has no public port or Caddy route, mounts the separately managed Fro Bot App key only into the writer, and receives the dashboard image/deploy updates. No new droplet and no new public origin. `marcusrbrown/infra` owns operational rotation and revocation of the writer key and maintains an inventory recording which key is deployed where. Rotation and revocation are a two-party operation with `fro-bot/dashboard`: dashboard owns the writer image/config changes and infra owns the deployed secret plus GitHub App revocation. If the writer key leaks, revoke that key, remove it from the infra secret mount and writer deployment, deploy the replacement, and keep operator saves disabled until the canary and tip-identity checks pass. Pulling the writer key does not interrupt autonomous survey writes: those 16 workflows authenticate with `secrets.APPLICATION_PRIVATE_KEY`, a distinct key object on the same App, so revoking the writer's key pauses only operator wiki writes until replacement validation completes. That containment holds at the key tier ONLY. Suspending the App installation or rotating the App itself takes the entire control plane dark — survey, promotion, reconcile, and every other autonomous loop. The runbook must name that escalation tier explicitly, because an operator reaching for the bigger hammer mid-incident will otherwise still believe the narrower reassurance applies. Verify the save path after deployment, including the Fro Bot tip-identity check.
 
 ## System-Wide Impact
 
@@ -352,7 +370,7 @@ Units 1–6 land in this repo. Units 7–8 are cross-repo contracts to be planne
 
 - `knowledge/schema.md` gains the corrections-store documentation when Unit 3 lands.
 - `docs/status.md` / north-star: R3 editable path moves to in-progress once this plan's units start.
-- Rollout order: Units 1–5 (this repo) → dashboard AGENTS.md prerequisite → dashboard Unit 7a editor/save API → dashboard Unit 7b private writer → infra Unit 8 wiring and post-deploy probe → enable the Unit 6 Edit affordance last, dark until the API and writer exist.
+- Rollout order: Units 1–5 (this repo, done) → Unit 1b gate-contract marker (this repo, gates Unit 7b) → dashboard AGENTS.md prerequisite → dashboard Unit 7a editor/save API → dashboard Unit 7b private writer → infra Unit 8 wiring and post-deploy probe → enable the Unit 6 Edit affordance last, dark until the API and writer exist.
 
 ## Sources & References
 
