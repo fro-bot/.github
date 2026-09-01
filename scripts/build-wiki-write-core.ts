@@ -5,6 +5,8 @@ import {lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile} from 'n
 import {dirname, join, relative, resolve, sep} from 'node:path'
 import process from 'node:process'
 
+import {GATE_CONTRACT_VERSION} from '../packages/wiki-write-core/src/gate-contract.ts'
+
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const sourceRoot = join(repositoryRoot, 'packages', 'wiki-write-core', 'src')
 const distRoot = join(repositoryRoot, 'packages', 'wiki-write-core', 'dist')
@@ -32,6 +34,7 @@ async function main(): Promise<void> {
     const sourceHash = await computeSourceTreeHash()
     await collectFiles(temporaryRoot)
     await embedSourceTreeHash(temporaryRoot, sourceHash)
+    await writeGateContractMarker(temporaryRoot, sourceHash)
     await rewriteDeclarationExtensions(temporaryRoot)
     await collectFiles(temporaryRoot)
 
@@ -124,6 +127,13 @@ export async function embedSourceTreeHash(outputRoot: string, sourceHash: string
     throw new Error(`expected one source-tree hash placeholder in ${contractPath}, found ${occurrences}`)
   }
   await writeFile(contractPath, content.replace(sourceHashPlaceholder, sourceHash), 'utf8')
+}
+
+// The version is the gate criterion; sourceTreeHash is diagnostic only because it moves with
+// ordinary source changes and must not turn unrelated package edits into write refusals.
+export async function writeGateContractMarker(outputRoot: string, sourceTreeHash: string): Promise<void> {
+  const markerPath = join(outputRoot, 'gate-contract.json')
+  await writeFile(markerPath, `${JSON.stringify({version: GATE_CONTRACT_VERSION, sourceTreeHash})}\n`, 'utf8')
 }
 
 export async function rewriteDeclarationExtensions(outputRoot: string): Promise<void> {
