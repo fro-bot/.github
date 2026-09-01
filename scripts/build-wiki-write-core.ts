@@ -34,7 +34,7 @@ async function main(): Promise<void> {
     const sourceHash = await computeSourceTreeHash()
     await collectFiles(temporaryRoot)
     await embedSourceTreeHash(temporaryRoot, sourceHash)
-    await writeGateContractMarker(temporaryRoot)
+    await writeGateContractMarker(temporaryRoot, sourceHash)
     await rewriteDeclarationExtensions(temporaryRoot)
     await collectFiles(temporaryRoot)
 
@@ -129,9 +129,11 @@ export async function embedSourceTreeHash(outputRoot: string, sourceHash: string
   await writeFile(contractPath, content.replace(sourceHashPlaceholder, sourceHash), 'utf8')
 }
 
-export async function writeGateContractMarker(outputRoot: string): Promise<void> {
+// The version is the gate criterion; sourceTreeHash is diagnostic only because it moves with
+// ordinary source changes and must not turn unrelated package edits into write refusals.
+export async function writeGateContractMarker(outputRoot: string, sourceTreeHash: string): Promise<void> {
   const markerPath = join(outputRoot, 'gate-contract.json')
-  await writeFile(markerPath, `${JSON.stringify({version: GATE_CONTRACT_VERSION})}\n`, 'utf8')
+  await writeFile(markerPath, `${JSON.stringify({version: GATE_CONTRACT_VERSION, sourceTreeHash})}\n`, 'utf8')
 }
 
 export async function rewriteDeclarationExtensions(outputRoot: string): Promise<void> {

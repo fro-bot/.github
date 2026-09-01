@@ -3,6 +3,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {describe, expect, it} from 'vitest'
 
+import {GATE_CONTRACT_VERSION} from '../packages/wiki-write-core/src/gate-contract.ts'
 import {
   collectFiles,
   compareTrees,
@@ -12,6 +13,7 @@ import {
   replaceDirectoryAtomically,
   resolveBuildConfig,
   rewriteDeclarationExtensions,
+  writeGateContractMarker,
 } from './build-wiki-write-core.ts'
 
 describe('wiki-write-core build inputs', () => {
@@ -156,18 +158,18 @@ describe('wiki-write-core build inputs', () => {
     }
   })
 
-  it('compares JSON distribution files', async () => {
-    const left = await mkdtemp(join(tmpdir(), 'wiki-write-core-left-'))
-    const right = await mkdtemp(join(tmpdir(), 'wiki-write-core-right-'))
+  it('writes the marker from the source constant', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wiki-write-core-marker-'))
+    const sourceTreeHash = 'a'.repeat(64)
 
     try {
-      await writeFile(join(left, 'gate-contract.json'), '{"version":1}\n')
-      await writeFile(join(right, 'gate-contract.json'), '{"version":2}\n')
+      await writeGateContractMarker(root, sourceTreeHash)
 
-      await expect(compareTrees(left, right)).resolves.toEqual(['gate-contract.json'])
+      await expect(readFile(join(root, 'gate-contract.json'), 'utf8')).resolves.toBe(
+        `${JSON.stringify({version: GATE_CONTRACT_VERSION, sourceTreeHash})}\n`,
+      )
     } finally {
-      await rm(left, {force: true, recursive: true})
-      await rm(right, {force: true, recursive: true})
+      await rm(root, {force: true, recursive: true})
     }
   })
 
@@ -231,7 +233,7 @@ describe('wiki-write-core build inputs', () => {
           '',
         ].join('\n'),
       )
-      await writeFile(join(root, 'gate-contract.json'), '{"path":"./literal.ts"}\n')
+      await writeFile(join(root, 'gate-contract.json'), '{"note":"from \'./literal.ts\'"}\n')
 
       await rewriteDeclarationExtensions(root)
 
@@ -243,7 +245,9 @@ describe('wiki-write-core build inputs', () => {
           '',
         ].join('\n'),
       )
-      await expect(readFile(join(root, 'gate-contract.json'), 'utf8')).resolves.toBe('{"path":"./literal.ts"}\n')
+      await expect(readFile(join(root, 'gate-contract.json'), 'utf8')).resolves.toBe(
+        '{"note":"from \'./literal.ts\'"}\n',
+      )
     } finally {
       await rm(root, {force: true, recursive: true})
     }
