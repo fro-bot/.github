@@ -75,7 +75,11 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // This meta-test stays because its discrimination check is the only assertion proving that the
 // estimator works at all. It is deliberately expensive so the measurements are meaningful, and
 // CPU contention can push it past the global 10-second test ceiling; failures present as timeouts,
-// not assertion failures.
+// not assertion failures. Only it carries a raised timeout. Measured under a 12-process CPU load,
+// it burns roughly 5.4s of the 10s budget while the three production guards below take ~1.1s,
+// ~1.1s, and ~0.5s -- so they retain several times the headroom that this one had when it started
+// timing out under full-suite contention. If a production guard ever does time out, isolate the
+// timing suite rather than scattering more per-test literals.
 describe('linear-time input parsing', () => {
   it('proves the scaling helper discriminates quadratic work', () => {
     const quadratic = (size: number): void => {
@@ -101,8 +105,7 @@ describe('linear-time input parsing', () => {
 
     // Keep both checks: the separation proves that the estimator discriminates quadratic work,
     // while the absolute bound anchors the synthetic linear control against a uniformly inflated
-    // estimator. This test is intentionally expensive, and under CPU contention it can exceed the
-    // global 10-second ceiling; the per-test timeout supplies headroom without weakening other tests.
+    // estimator, which a ratio of ratios cannot see because both terms scale together.
     const quadraticMeasurement = measureScalingRatio(quadratic, 4_000, 3)
     const linearMeasurement = measureScalingRatio(linear, 20_000, 3)
 
