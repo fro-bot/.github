@@ -72,6 +72,10 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // enough that fixed overhead dominated the ratio and flaked CI. A guard that cannot catch its own
 // regression but can fail a healthy build is worse than no guard. Those parsers stay pinned by the
 // correctness cases below, and their call sites carry a comment against reintroducing a regex.
+// This meta-test stays because its discrimination check is the only assertion proving that the
+// estimator works at all. It is deliberately expensive so the measurements are meaningful, and
+// CPU contention can push it past the global 10-second test ceiling; failures present as timeouts,
+// not assertion failures.
 describe('linear-time input parsing', () => {
   it('proves the scaling helper discriminates quadratic work', () => {
     const quadratic = (size: number): void => {
@@ -95,14 +99,16 @@ describe('linear-time input parsing', () => {
     linear(20_000)
     linear(40_000)
 
-    // This is the standing guard on the guard: relative separation is robust to runner speed,
-    // while the production bound remains the separate contract for linear parser implementations.
+    // Keep both checks: the separation proves that the estimator discriminates quadratic work,
+    // while the absolute bound anchors the synthetic linear control against a uniformly inflated
+    // estimator. This test is intentionally expensive, and under CPU contention it can exceed the
+    // global 10-second ceiling; the per-test timeout supplies headroom without weakening other tests.
     const quadraticMeasurement = measureScalingRatio(quadratic, 4_000, 3)
     const linearMeasurement = measureScalingRatio(linear, 20_000, 3)
 
     expect(quadraticMeasurement.ratio).toBeGreaterThanOrEqual(linearMeasurement.ratio * 1.5)
     expect(linearMeasurement.ratio).toBeLessThan(3)
-  })
+  }, 30_000)
 
   it.each([
     {
