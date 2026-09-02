@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-08-25
+updated: 2026-09-02
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -58,7 +58,10 @@ sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: c6c055d906b8df3de5f371221daf930c8bd49f99
     accessed: 2026-08-25
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution]
+  - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+    sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
+    accessed: 2026-09-02
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission]
 ---
 
 # OpenCode Plugin Development
@@ -355,6 +358,22 @@ This is the first instance in the Marcus ecosystem of a repo-local skill scoped 
 
 Contrast with [[marcusrbrown--systematic]] which ships general-purpose skills (`ce:plan`, `ce:work`, etc.) distributed for consumption by other OpenCode users — the cortexkit-auth pattern is internal/operational, not distributable.
 
+**Follow-up (2026-09-02): the skill outlived the practice it encodes.** The skill still ships and still describes upstream sync, fork-conflict resolution, `vX.Y.Z-mb.N` release cutting, and npm metadata validation. It has been exercised exactly once. The fork is now 334 commits behind upstream with 32 missed releases, and the two-branch mechanism the skill assumes — an upstream-tracking `main` alongside a fork-specific default branch — was abandoned at that single use: the mirror sits at `release: v1.2.2` (2026-05-21), older than the fork's own sync point, because the v1.2.5 merge landed directly on `marcusrbrown/main`.
+
+The transferable caution for repo-local operational skills: **a skill is documentation with an execution surface, and it decays exactly like documentation.** Nothing verifies that the branches, tags, or lanes a skill names still exist in the shape it describes, and an agent handed a stale procedural skill will follow it confidently. If the procedure has preconditions (here: "the mirror is current"), the skill should assert them before acting rather than assume them.
+
+## Decommissioning a Release Lane Takes Three Deletions (2026-09-02)
+
+From [[marcusrbrown--cortexkit-anthropic-auth]]. The repo's release contract forbids the `mb` dist-tag lane in three separate places — `.github/instructions/release.instructions.md` (_"Do **not** reintroduce the `mb` dist-tag lane"_), `.github/copilot-instructions.md`, and the `fro-bot.yaml` prompt env vars that every mode references. PR #6 removed the lane from the publish workflow on 2026-05-26.
+
+The tag is still live on npm. Both fork packages carry `dist-tags: { latest: 1.2.5-mb.3, mb: 1.2.2-mb.2 }` as of 2026-09-02. `npm install @marcusrbrown/opencode-anthropic-auth@mb` resolves, succeeds, and installs a build three fork-releases stale — permanently, because the pipeline that would advance it no longer exists.
+
+**A dangling dist-tag is strictly worse than a deleted one: it is a live install surface with no producer, and it fails by succeeding.** No CI assertion catches it, and the reason is structural — `verify-artifacts.mjs` and the release-lane-watch prompt section both validate *what the release publishes*, and the release does not publish to `mb`. Removing a code path removes it from the set of things your tests can observe.
+
+The rule: retiring a distribution channel requires deleting the **CI job**, the **registry pointer** (`npm dist-tag rm`), and the **documentation that references it**. Only the first is verifiable by the pipeline; the other two need a deliberate step. Applies equally to GHCR tags, GitHub release channels, and `latest`-style aliases on any registry.
+
+The same repo supplies the third-deletion instance in isolation: `README.md` still instructs `Pin @marcusrbrown/opencode-anthropic-auth@1.2.2-mb.2` and describes both packages as published "at `1.2.2-mb.2`", never updated across three subsequent tagged releases. So the registry metadata and the install docs are **two independent stale pointers that converge on the same abandoned version** while the pipeline moved on without either. For plugin repos specifically this matters more than usual: OpenCode resolves plugins by package specifier from user config, so a stale documented pin propagates into consumers' `opencode.json` and stays there — the namespace-pinning rationale that motivated the fork in the first place cuts both ways.
+
 ## App-Embedded Design-Gate Plugin (in-repo `.opencode/impeccable/`)
 
 Not every OpenCode plugin is published or general-purpose. A recurring **app-embedded** pattern: an application repo vendors an OpenCode plugin *in-tree* to run a design/quality gate against the agents that work on that same repo, rather than consuming the gate as a pinned CI action.
@@ -370,7 +389,7 @@ Distinguishing traits vs the distributable plugins above: **no npm publish**, **
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.15.0): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths (now exposing `messages`/`questions`/`answerQuestion` + dispatch message correlation)
-- [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi; Fro Bot active at v0.45.0 (as of 2026-06-09)
+- [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi. Fro Bot was active at v0.45.0 (2026-06-09) and is **`disabled_inactivity` as of 2026-09-02**; the fork is frozen at `1.2.5-mb.3` and 334 commits / 32 releases behind upstream `cortexkit/anthropic-auth` (`v1.21.0`, actively maintained). Contributes the cross-process OAuth refresh-lock and plugin-singleton prior art above, plus the dangling-dist-tag decommissioning rule
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
 - [[github-pages]] — GitHub Pages deployment patterns including cross-repo Starlight deploy

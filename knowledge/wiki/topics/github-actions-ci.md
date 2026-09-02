@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-01
+updated: 2026-09-02
 tags:
   [
     github-actions,
@@ -21,10 +21,15 @@ tags:
     propose-without-merge,
     doc-drift,
     prompt-drift,
+    dependabot,
+    disabled-workflow,
+    forks,
+    observability,
   ]
 related:
   - fro-bot--agent
   - bfra-me--ha-addon-repository
+  - marcusrbrown--cortexkit-anthropic-auth
   - marcusrbrown--marcusrbrown-com
   - marcusrbrown--dev-like
   - marcusrbrown--esphome-life
@@ -64,6 +69,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--dev-like]] — 7 workflows (as of 2026-07-31): `ci.yaml` (Bun `validate` + Node/Bun dual-runner tests), `release.yaml` (Changesets + npm OIDC trusted-publish + `mrbro-bot`-App version PRs + `alias-release`), `fro-bot.yaml` (**two-mode** autoheal + pr-review, agent v0.96.0), `site.yaml` (Astro/Starlight → Pages), `link-check.yaml`, `renovate.yaml` (extends [[marcusrbrown--renovate-config]]), `update-repo-settings.yaml` (Probot Settings extends `.github:common-settings.yaml`, gates `main` on `validate`+`Fro Bot`). No CodeQL/Scorecard yet.
 - [[bfra-me--github]] — Org control center; **16 workflows** (2026-08-06, durable since the 2026-07-02 consolidation) including `main.yaml` (Quality Check), a **single unified `fro-bot.yaml`** (per-repo persona + org-wide sweep folded in; the separate `fro-bot-autoheal-org.yaml` was **removed** 2026-07-02, and a single `30 15` daily pass now does both oversight and autohealing), `renovate.yaml` + `trigger-org-renovate.yaml` (self-hosted Renovate fan-out), and three custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). Source of the reusable workflows that `marcusrbrown/*` repos consume. 2026-08-06 note: two upstream **majors** (`bfra-me/renovate-action` v9 → v10, `actions/checkout` v6 → v7) landed as ordinary SHA-pin automerge churn — a data point that the SHA-pin-plus-Renovate model absorbs even major action bumps without workflow-structure change (agent pin v0.96.0, fleet lead). The [[bfra-me--renovate-action]] `v10.0.0` in particular was a **Renovate-engine major (v43 → v44), not a runtime-architecture change** (confirmed 2026-08-10 source survey) — its composite/Docker mechanics are byte-stable across the boundary, which is precisely why downstream `@v10` consumers absorbed it as noise. The action's own major version tracks the vendored Renovate engine major, so a `v_N → v_{N+1}` action bump generally means "new Renovate major inside," not "action rewritten."
 - [[marcusrbrown--marcusrbrown-com]] — 5 workflows (2026-09-01): `ci.yaml` (shared `setup` → parallel Lint/Build/Test/Type Check/Validate → `quality-gate` aggregator that mints a GitHub App token and comments "Ready for review"), `deploy.yaml` (push-to-`main` → Pages), `fro-bot.yaml` (single-file **three-mode**, 625 lines / 29 KB, agent **v0.107.0** — 20 minutes behind upstream release, fleet's fastest adopter), `renovate.yaml` (`bfra-me/.github` reusable @ v4.23.0), `copilot-setup-steps.yaml`; local composite `.github/actions/setup` (Node 22 + pnpm + **opt-in** Playwright). No CodeQL/Scorecard; no Probot `settings.yml` (branch protection is imperative via `scripts/configure-branch-protection.mjs`). Notable: **two of three declared test tiers have no CI actuator** — `playwright.config.ts` + `tests/e2e/` are only installed by the autoheal job, and `lhci.config.js` has no workflow at all.
+- [[marcusrbrown--cortexkit-anthropic-auth]] — 4 workflow files: `ci.yml` (**`on: pull_request` only** — no default-branch verification), `release.yaml` (tag-driven, npm Trusted Publishing/OIDC + provenance, tag-commit integrity check, no manifest mutation in CI), `fro-bot.yaml` (three-mode single-file, agent **v0.45.0** — the fleet's oldest pin by a wide margin), `copilot-setup-steps.yml`. Dependabot instead of Renovate, and it has never opened a PR. **As of 2026-09-02 the Fro Bot workflow is `disabled_inactivity`** (GitHub's 60-day shutoff, last run 2026-07-30) and had already stopped writing its report six weeks earlier while running green. The fleet's reference case for automation that is present in the tree and absent in reality — see the three 2026-09-02 sections below.
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo; 11 workflows including `main.yaml` (Prepare → parallel {Lint+type-coverage, Test, Build, Workspace Analysis} → CI), `release.yaml` (Changesets, `workflow_run` after Main + Sunday cron + dispatch with force-release toggle), `fro-bot.yaml` (three-mode single-file at v0.44.2), `docs.yaml` (Astro Starlight → GitHub Pages), `docs-sync.yaml` (path-filtered @bfra.me/doc-sync re-sync), `renovate.yaml` + `update-repo-settings.yaml` (reusable `bfra-me/.github` callers), `renovate-changeset.yaml`, `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review. Local composite action `.github/actions/pnpm-install` consumed by every workflow.
 
 ## Common Patterns
@@ -400,6 +406,50 @@ Mitigations:
 - **Do not restate versions in prompts.** Point at `AGENTS.md` / `package.json` and instruct the agent to read them. This repo's prompts already say "Read AGENTS.md for full project conventions" — the version restatement above that line is pure liability.
 - **Assert prompt identity in CI.** A trivial check that the repository name appearing in workflow prompt text matches `github.repository` would have caught this at rename time.
 - **Count prompt prose in the drift budget.** The same category-3 sweep that audits `AGENTS.md` should audit the prompt block that defines it.
+
+### The 60-Day Scheduled-Workflow Inactivity Shutoff (2026-09-02)
+
+From [[marcusrbrown--cortexkit-anthropic-auth]], and the cleanest causal chain in the survey history so far.
+
+GitHub automatically disables scheduled workflows in repositories with no activity for 60 days. The affected repo's `pushed_at` is `2026-05-31T04:03:34Z`; `pushed_at + 60d` is `2026-07-30T04:03:34Z`; the last `Fro Bot` run in the repo's history fired at `2026-07-30T06:05:02Z` — the daily `30 3` cron slot, ~2 hours past the mark — concluded `success`, and was the last run ever. Workflow `state` is now `disabled_inactivity` and its `updated_at` is byte-identical to that final run's timestamp.
+
+The generalizable statement: **the condition that disables the watchdog is the condition the watchdog exists to detect.** An autoheal daemon's marginal value is highest on a repository nobody is touching, because that is where drift accumulates unobserved. GitHub's policy is calibrated against abandoned repos burning free minutes and cannot distinguish "abandoned" from "deliberately quiet and bot-monitored." Any repo whose Fro Bot workflow is triggered only by `schedule`, and whose tree is stable for 60 days, is on this clock.
+
+Detection and mitigation:
+
+- **`disabled_inactivity` is a first-class API field.** `GET /repos/{o}/{r}/actions/workflows` returns `state` per workflow. A fleet lint that flags any workflow not in state `active` is a few lines and catches this the week it happens. This belongs next to the scheduled-run-failure monitor proposed under [A Required Check That Cannot Fail Loudly](#a-required-check-that-cannot-fail-loudly-2026-08-31) — the two checks are complementary, and neither subsumes the other.
+- **A disabled workflow rejects every trigger, not just `schedule`.** `workflow_dispatch` will not revive it; re-enabling requires the Actions UI, `gh workflow enable`, or a push to the repo. An operator reaching for a manual run to diagnose the silence will find the button does nothing.
+- **Alert on absence, not just failure.** Every monitoring instinct here is tuned to red. The failure signature is an empty result set, which reads identically to "healthy and quiet."
+
+Contrast with [[bfra-me--ha-addon-repository]], the fleet's other dead daemon: that one **fails loudly** 17 consecutive times and goes unnoticed because branch protection only evaluates the workflow name against PR head SHAs, where the bot guard makes it skip-and-green. Same outcome — an autoheal daemon that has not healed anything in over a month — reached by opposite mechanisms. One produces red nobody looks at; the other produces nothing at all. Both are invisible to any survey that reads only repository content, which is the durable lesson: **workflow files describe intent, `actions/workflows` describes reality, and they diverge silently.**
+
+### A Run's Conclusion Measures the Harness, Not the Deliverable (2026-09-02)
+
+From [[marcusrbrown--cortexkit-anthropic-auth]]. Before the workflow was disabled, its autoheal mode went **44 consecutive `success` runs without writing a single comment** to the perpetual issue that is its only output surface (last comment 2026-06-16, runs green through 2026-07-30). The maintenance mode's last body write was 2026-06-29, followed by two more green Mondays. 35 scheduled runs fired after the last write of any kind; 33 concluded `success`.
+
+The proximate suspect is a size cliff. The prompt says:
+
+> `If the issue body approaches 50,000 characters, keep the 30 most recent sections and add an archival note.`
+
+The issue body is **54,813 characters**, with no archival note and no rotation performed. A soft, judgement-loaded directive ("approaches", "keep the 30 most recent") requires the model to correctly rewrite a 54 KB body to comply; when it can neither append nor safely truncate, declining to write is a locally reasonable choice that the harness has no way to distinguish from having nothing to report.
+
+Three rules:
+
+- **If a job's purpose is "produce an artifact," assert success against the artifact.** Exit status reflects the process completing. An `if: failure()` guard cannot fire on an outcome the job never classified as a failure, so this whole class is invisible to the standard self-reporting mitigation.
+- **Unbounded append-only artifacts have a cliff, and the rotation logic runs least reliably at exactly the moment it is needed.** A perpetual issue crosses its ceiling once, silently, and every subsequent run inherits the broken state. Prefer mechanisms the agent cannot get wrong — a fresh dated comment per run, or a hard section cap enforced in code — over a prose size budget the model must reason about.
+- **Monitor output freshness, not run status.** `issue.updated_at` would have caught this on day two. "Last successful run" stayed green for six weeks past the last useful output.
+
+Same family as [A Narrowly-Scoped Check That Emits a Whole-Artifact Verdict](#a-narrowly-scoped-check-that-emits-a-whole-artifact-verdict-2026-09-01), one level further out: there the check's verdict overclaimed relative to its evidence; here the *run's* verdict overclaims relative to its output. Note also the concealment coupling in that repo — the reporting failure came first, so by the time the 60-day timer expired there was already no artifact anyone was watching. Two independent failures, mutually masking.
+
+### Fork-Inherited Dependency-Bot Config That Never Runs (2026-09-02)
+
+From [[marcusrbrown--cortexkit-anthropic-auth]]. The repo ships a valid `.github/dependabot.yml` declaring two weekly ecosystems (`bun` with `enable-beta-ecosystems: true`, and `github-actions`). Across 93 frozen days — roughly 13 weekly cycles each — **Dependabot has opened zero pull requests**, and has never opened one in the repo's lifetime (all 15 PRs are human- or Copilot-authored). The `github-actions` ecosystem is stable, non-beta, and demonstrably had updates available the whole time (`actions/checkout@v6` → v6.1.0/v7, `actions/setup-node@v6` → v7).
+
+The likely cause is that **Dependabot version updates are disabled by default on forks** and must be enabled per-fork. The config file is repository *content* and forks inherit it; the enablement is repository *settings* and forks do not. The result is a config that reads as governance and provides none.
+
+Generalize past Dependabot: **forking copies the declarations, not the activations.** The same split applies to Actions enablement, secrets, environments, branch protection, Probot Settings application, and security features. A fork therefore looks better-governed than it is, and looks it in exactly the files a content-based audit reads. Related in kind to the [[probot-settings]] rule that a declared manifest is not an applied one — this is the fork-shaped instance of it.
+
+Practical check when onboarding or auditing a fork: for every declared automation, find its most recent *output* (a PR, a run, a commit), not its config. Zero output over multiple scheduled cycles is the signal. In this repo the absence stacked — no dependency bot, no default-branch CI (`ci.yml` is `on: pull_request` only), no branch protection, and a disabled agent — and each gap was individually plausible enough to escape five consecutive surveys.
 
 ### Convention Enforcement via Tests
 
