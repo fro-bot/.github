@@ -287,12 +287,12 @@ repos:
     name: renovate-action
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-08-10
-    last_survey_status: success
+    last_survey_at: 2026-09-02
+    last_survey_status: failure
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: contrib
-    next_survey_eligible_at: 2026-09-02
+    next_survey_eligible_at: 2026-09-26
     private: false
     node_id: R_kgDOKWu8zQ
     database_id: 694926541
