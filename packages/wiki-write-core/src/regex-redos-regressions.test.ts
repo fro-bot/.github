@@ -75,11 +75,13 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // This meta-test stays because its discrimination check is the only assertion proving that the
 // estimator works at all. It is deliberately expensive so the measurements are meaningful, and
 // CPU contention can push it past the global 10-second test ceiling; failures present as timeouts,
-// not assertion failures. Only it carries a raised timeout. Measured under a 12-process CPU load,
-// it burns roughly 5.4s of the 10s budget while the three production guards below take ~1.1s,
-// ~1.1s, and ~0.5s -- so they retain several times the headroom that this one had when it started
-// timing out under full-suite contention. If a production guard ever does time out, isolate the
-// timing suite rather than scattering more per-test literals.
+// not assertion failures. Only it carries a raised timeout, because it is by far the most
+// expensive test here: under CPU contention it consumes over half the 10-second budget, while the
+// costliest production guard below -- malformed wiki log header parsing -- uses well under a
+// quarter, and the two wikilink guards less again. Absolute timings are not portable across
+// machines, but that ordering is: the log header guard is the one to check first if a production
+// guard ever does time out, and the answer then is to isolate the timing suite rather than scatter
+// more per-test literals.
 describe('linear-time input parsing', () => {
   it('proves the scaling helper discriminates quadratic work', () => {
     const quadratic = (size: number): void => {
