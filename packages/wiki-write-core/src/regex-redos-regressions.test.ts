@@ -77,8 +77,8 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // CPU contention can push it past the global 10-second test ceiling; failures present as timeouts,
 // not assertion failures. Only it carries a raised timeout, because it is by far the most
 // expensive test here: under CPU contention it consumes over half the 10-second budget, while the
-// costliest production guard below -- malformed wiki log header parsing -- uses well under a
-// quarter, and the two wikilink guards less again. Absolute timings are not portable across
+// costliest production guard below -- malformed wiki log header parsing -- stays comfortably under
+// half, and the two wikilink guards less again. Absolute timings are not portable across
 // machines, but that ordering is: the log header guard is the one to check first if a production
 // guard ever does time out, and the answer then is to isolate the timing suite rather than scatter
 // more per-test literals.
