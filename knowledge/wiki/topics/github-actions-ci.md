@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-02
+updated: 2026-09-03
 tags:
   [
     github-actions,
@@ -450,6 +450,25 @@ The likely cause is that **Dependabot version updates are disabled by default on
 Generalize past Dependabot: **forking copies the declarations, not the activations.** The same split applies to Actions enablement, secrets, environments, branch protection, Probot Settings application, and security features. A fork therefore looks better-governed than it is, and looks it in exactly the files a content-based audit reads. Related in kind to the [[probot-settings]] rule that a declared manifest is not an applied one — this is the fork-shaped instance of it.
 
 Practical check when onboarding or auditing a fork: for every declared automation, find its most recent *output* (a PR, a run, a commit), not its config. Zero output over multiple scheduled cycles is the signal. In this repo the absence stacked — no dependency bot, no default-branch CI (`ci.yml` is `on: pull_request` only), no branch protection, and a disabled agent — and each gap was individually plausible enough to escape five consecutive surveys.
+
+### A `>=` Override Floor Is a Snapshot, Not a Guarantee (2026-09-03)
+
+From the `fro-bot/.github` control plane itself. `pnpm-workspace.yaml` carries an `overrides:` block pinning ten transitive packages to minimum-safe versions — `fast-uri: '>=4.1.2'`, `brace-expansion: '>=5.0.8'`, and eight more. The mechanism is correct and matches `bfra-me/github-action` (PR #1463) and `bfra-me/github-app` (PR #840), which used it to remediate the same `fast-uri` advisories in June 2026.
+
+On 2026-09-03 the repository carried **6 HIGH + 1 MODERATE** live advisories, four of them reachable *through* those floors: `fast-uri` needed `>=4.1.3`, `brace-expansion` needed `>=5.0.9`, and `nanoid`/`@humanfs/node` had no override at all.
+
+The mechanic that makes this quiet is worth stating exactly. A `>=` floor written at the then-current patch is a point-in-time assertion. When the next advisory ships, the floor does not become invalid — it becomes *insufficient*, which looks identical in the file. And because the lockfile already resolves a version satisfying the old floor (`4.1.2` satisfies `>=4.1.2`), **no routine `pnpm install` will ever move it**. The override does not decay loudly; it sits in the manifest looking exactly like a security control while enforcing a version that is no longer safe. Raising the floor is not cosmetic — it is the only mechanism that forces re-resolution.
+
+This is the manifest-level sibling of the pinning rule two sections up: a SHA pin proves *provenance*, not *currency*; a `>=` floor proves a *past* minimum, not a current one. Both are frozen dependencies wearing a security control's uniform. In this repository both defects were live on the same day, which is the useful data point — the anti-pattern is not specific to Actions refs or to npm ranges, it is specific to any pin whose correctness is evaluated once and then assumed.
+
+Two aggravating factors observed together, and they compound:
+
+- **The bot that would refresh the floor is disabled for that update class.** `.github/renovate.json5` disables all `patch` updates except `python`/`typescript`, unqualified by `matchDatasources`, so it swallows `github-tags` alongside npm. The same rule kept `dessant/lock-threads@v6.0.2` — a 103-day-old fix for a `Joi.string().max(100)` `github-token` validation failure — out of reach while `Lock` failed four consecutive scheduled runs. One `packageRules` entry, two unrelated live failures.
+- **The scanner disagrees with itself across sources.** `GET /dependabot/alerts` reported 5 of the 7 advisories `pnpm audit` and the Scorecard `Vulnerabilities` probe both named (it missed `brace-expansion` and `nanoid`). The day before it reported **zero** against `pnpm audit`'s two. Treat a Dependabot count as a floor, never a total, and never let it downgrade a finding two other scanners agree on.
+
+Practical checks: (1) audit override *floors* against current advisories on a schedule, not just the resolved tree — a satisfied floor and a safe floor are different questions; (2) prefer scoping the key when a package's latest major is far ahead of the patched line (`nanoid@3: '>=3.3.18'`, following the `ajv@8:` precedent — an unscoped `nanoid: '>=3.3.18'` admits `6.0.1` and breaks the `postcss`/`vite` chain); (3) if a patch-disable rule exists, qualify it with `matchDatasources` so it cannot silently own the fix path for a different ecosystem.
+
+Corollary observed the same day, and it generalizes past this repo: the four security PRs that established this pattern in `bfra-me/*` were **green and unmerged for 78–79 days**. Stale floors here, a 103-day-old upstream patch, and four idle verified security PRs are one condition sampled four ways — **remediation is being authored faster than it is being landed**. Detection that never merges is an elaborate way of writing things down. Related in kind to [[marcusrbrown--marcusrbrown-com]]'s "merge gates sorted by authorship, not quality" (2026-09-01): both describe a fleet whose bottleneck is the merge path, not the diagnosis.
 
 ### Convention Enforcement via Tests
 
