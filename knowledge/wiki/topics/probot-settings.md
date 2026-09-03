@@ -2,9 +2,10 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-01
-tags: [probot, github, repository-settings, automation, governance, branch-protection, drift-detection]
+updated: 2026-09-03
+tags: [probot, github, repository-settings, automation, governance, branch-protection, drift-detection, required-checks]
 related:
+  - marcusrbrown--gpt
   - marcusrbrown--github
   - marcusrbrown--dev-like
   - marcusrbrown--marcusrbrown-com
@@ -153,6 +154,19 @@ Both templates enforce squash-only merging (merge commits and rebase disabled) w
 ### Branch Protection
 
 Both templates require linear history and enforce admin restrictions. The key divergence is PR review requirements — personal repos (marcusrbrown) skip reviews, org repos (fro-bot) require them.
+
+### A `contexts:` list stores names, not guarantees (2026-09-03)
+
+From [[marcusrbrown--gpt]], whose `.github/settings.yml` declares the fleet's longest required-check list — 13 contexts under `branches[0].protection.required_status_checks`, with `strict: false`, `enforce_admins: true`, `required_pull_request_reviews: null`.
+
+It reads as strong governance. Three of the 13 pass without doing their nominal work, because GitHub scores a **skipped** required check as passing: `Deploy` is `if: github.ref == 'refs/heads/main'` and therefore skips on every pull request it gates; `E2E Test Coverage` / `E2E Test Report` skip together on a `dorny/paths-filter` miss; `Run Tests` and `Build` no-op on a cache hit. Full mechanics in [[github-actions-ci]] under "Required Checks That Pass by Not Running."
+
+Two rules for anyone reading or authoring a `settings.yml`:
+
+- **A `contexts:` entry is a string, and Probot Settings will happily store a string that no job ever emits, or that a job emits only when skipped.** Nothing in the manifest, the sync workflow, or branch protection itself validates that a listed context corresponds to a job that runs under the conditions being gated. The manifest is the least informative artifact in the chain, and it is the one that looks most authoritative.
+- **Context names are repository-global, not workflow-scoped.** `Prepare` is a job name in five of that repo's workflows and appears once in `contexts:`; whichever workflow reports first satisfies it. Prefer workflow-qualified naming (`Renovate / Renovate` in the same list is the correct shape) so a context maps to exactly one job.
+
+This extends the page's existing rule — *a declared manifest is not an applied one; an applied setting is not a recorded one* — with a third term: **an applied required check is not an executed one.** All three failures are invisible to a reviewer reading only `settings.yml`.
 
 ### Collaborator Access Model
 
