@@ -248,12 +248,12 @@ repos:
     name: systematic
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-08-21
+    last_survey_at: 2026-09-04
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: owned
-    next_survey_eligible_at: 2026-09-04
+    next_survey_eligible_at: 2026-09-19
     private: false
     node_id: R_kgDORLx6ew
     database_id: 1153202811
