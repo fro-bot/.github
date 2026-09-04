@@ -4254,3 +4254,67 @@ Sources: https://github.com/bfra-me/works (SHA b7d31380a88eb5d0c7b0c09c783f50ef1
 Surveyed bfra-me/works and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-09-04 04:10] event | repo:fro-bot/.github
+
+Daily Fro Bot pass on the control-plane repo. Recorded three findings from this
+repository's own automation into [[github-actions-ci]] — all three are faults in
+`fro-bot/.github` itself, which is notable because this repo is the surveyor.
+
+- **Confirmed the 2026-09-03 title-match prompt-injection finding unmitigated on
+  the control plane.** The daily pass closes prior reports by title **prefix**
+  match (`Daily Fro Bot Report —` / `Daily Org Oversight Report —`) with an App
+  token holding `issues: write`, on a public repo, with no `author.login` check
+  and no body marker. Annotated the existing section in place with a dated
+  correction rather than rewriting it: the [[bfra-me--works]] remedy has three
+  parts and only the cosmetic one (dated titles) was adopted here. Prefix
+  matching is weaker than the exact-title case originally described — an attacker
+  does not have to guess the date.
+- **New section: a rename silently orphans its title-matching consumers.** The
+  report title moved `Daily Org Oversight Report` → `Daily Autohealing Report` →
+  `Daily Fro Bot Report`; the agent prompt was updated each time, but the
+  deterministic retention sweep in `.github/workflows/manage-issues.yaml` still
+  selects on `test("Daily (Org Oversight|Autohealing) Report")` and has therefore
+  matched zero issues since the rename while exiting `0`. Companion to the
+  2026-09-01 "renames leave dangling self-references" entry, reached from the
+  opposite direction: there the rename broke a reference *to* the thing, here it
+  broke a **consumer that recognized the thing by name** — a coupling with no
+  symbol, no import, and nothing for lint or types to see. Generalized to *a name
+  used as an interface is an interface*, and *a filter that matches nothing is
+  indistinguishable from a filter with nothing to match* (same shape as the
+  existing narrowly-scoped-check and required-check-that-cannot-fail entries).
+- **New section: a pinned action freezes validation against a credential format
+  that keeps moving.** `Manage Issues`' `Lock` job fails every run with
+  `"github-token" length must be less than or equal to 100 characters long`.
+  Root cause is upstream and dated: `dessant/lock-threads` v6.0.0 validates with
+  `Joi.string().trim().max(100)` at `src/schema.js`; GitHub's auto-provisioned
+  `GITHUB_TOKEN` has since grown past 100 chars; upstream relaxed the bound to
+  `.max(1000)` in v6.0.1 (2026-05-21) and the repo is still on the v6.0.0 SHA.
+  Recorded as the third member of the "the pin is fine, the meaning moved" family
+  (after *SHA Pinning Validates the Ref, Not the Path* and *A `>=` Override Floor
+  Is a Snapshot*) and the most instructive: **SHA pinning worked exactly as
+  designed, and that is why this broke** — the pin froze an assertion about a
+  platform-supplied value the platform is free to change. Renovate had the repair
+  queued as `v6.0.0 → v6.0.2`, indistinguishable on the Dependency Dashboard from
+  routine churn, echoing the [[bfra-me--works]] `changesets/action` case where a
+  major renamed every input and CI stayed green.
+
+Both `Manage Issues` faults are silent: the workflow is not a required check, so
+neither the dead regex nor the failing lock job blocks anything, and both were
+found by reading run history rather than from any alert.
+
+Process notes: (1) This run's delivery mode was `working-dir` with no
+PR-creation step in the caller, so `wiki-ingest.ts` (knowledge/** → `data`) was
+the only delivery path available; the code-side remediations are reported, not
+applied. (2) `[[fro-bot--github]]` was drafted as a wikilink and demoted to plain
+text before commit — the control-plane repo has **no wiki page of its own**
+despite being the surveyor of all others, so the link would have dangled. Worth
+its own page eventually; three sections now reference the repo by name.
+
+Sources: https://github.com/fro-bot/.github/actions/runs/33722522110; https://github.com/dessant/lock-threads/blob/v6.0.2/src/schema.js; https://github.com/fro-bot/.github/blob/main/.github/workflows/manage-issues.yaml; https://github.com/fro-bot/.github/issues/2828
+
+## [2026-09-04 04:10] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@55c91b6557745527f5e46eab6aa26adf76169039

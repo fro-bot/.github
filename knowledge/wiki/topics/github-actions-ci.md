@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-03
+updated: 2026-09-04
 tags:
   [
     github-actions,
@@ -518,6 +518,113 @@ surface.** Anything the agent locates by a public, user-writable
 attribute — issue title, branch name, label, PR title, file path in a
 fork — needs a server-verified attribute (author identity) plus a
 non-colliding token before its contents are read as state.
+
+**Confirmed unmitigated on the control plane itself (2026-09-04).**
+`fro-bot/.github` runs the same convention this section warns about,
+and has not adopted the [[bfra-me--works]] remedy. Its daily pass is
+instructed to "CLOSE every older open issue whose title starts with
+`Daily Fro Bot Report —` or `Daily Org Oversight Report —`" — a title
+**prefix** match with no author check and no body marker, on a public
+repo, executed with an App token holding `issues: write`. Prefix
+matching is strictly weaker than the exact-title matching originally
+described: an attacker need not guess the date. The dated-title half of
+the remedy was adopted (titles carry `— YYYY-MM-DD (UTC)`); the two
+parts that actually carry the security — server-verified `author.login`
+and a `<!-- fro-bot:*:v1 -->` body marker — were not. This is a useful
+correction to any reading of the 2026-09-03 entry that treats dated
+titles as the fix: **the date was the ergonomic improvement, the author
+check was the control.**
+
+### A Rename Silently Orphans Its Title-Matching Consumers (2026-09-04)
+
+From `fro-bot/.github`. The daily report was renamed across two
+generations — `Daily Org Oversight Report` → `Daily Autohealing Report`
+→ `Daily Fro Bot Report`. The agent prompt was updated each time. The
+deterministic retention job that garbage-collects old reports was not:
+`.github/workflows/manage-issues.yaml` still selects on
+`test("Daily (Org Oversight|Autohealing) Report")`. Every report created
+under the current name fails that regex, so the 3-day retention sweep
+has been matching zero issues since the rename and reporting success
+while doing nothing.
+
+This is the [[bfra-me--works]] "renames leave dangling self-references"
+class reached from the other direction. There, the rename broke a
+reference *to* the renamed thing. Here it broke a **consumer that
+recognized the thing by name** — a coupling that has no symbol, no
+import, and no reference the rename could have followed. Nothing in
+lint, types, or tests can see it, and the job's exit code is `0`
+whether it closes forty issues or none.
+
+Two general forms worth keeping separate:
+
+- **A name used as an interface is an interface.** If an automation
+  identifies an artifact by matching its title, that title is a
+  published contract with an undeclared consumer list. Renaming it is a
+  breaking change to a dependency graph no tool can enumerate — grep
+  for the *old* string across workflows before shipping a rename, since
+  the old name is the only surviving evidence of who was listening.
+- **A filter that matches nothing is indistinguishable from a filter
+  with nothing to match.** Same failure shape as *A Narrowly-Scoped
+  Check That Emits a Whole-Artifact Verdict* and *A Required Check That
+  Cannot Fail Loudly*: the loop is structurally incapable of reporting
+  its own irrelevance. A selector whose empty result is a legitimate
+  steady state needs a separate liveness signal — emit the match count,
+  and alert when a selector that has historically matched drops to zero.
+
+### A Pinned Action Freezes Validation Against a Credential Format That Keeps Moving (2026-09-04)
+
+From `fro-bot/.github`. The `Manage Issues` `Lock` job has failed on
+every scheduled run with:
+
+```
+"github-token" length must be less than or equal to 100 characters long
+```
+
+No workflow change caused it. `dessant/lock-threads` v6.0.0 validates
+its token input with a Joi schema at `src/schema.js`:
+`Joi.string().trim().max(100)`. GitHub's auto-provisioned
+`GITHUB_TOKEN` has since grown past 100 characters. Upstream noticed
+and relaxed the bound to `.max(1000)` in v6.0.1 (2026-05-21); the repo
+is still pinned to the v6.0.0 SHA, so the job has been dead since the
+token format changed.
+
+The interesting part is that **SHA pinning worked exactly as designed
+and that is why this broke.** Pinning freezes the action's code,
+including its *input validation*, against a platform-supplied value
+that the platform is free to change underneath it. The usual supply-
+chain framing treats a frozen pin as strictly safer; this is the cost
+side of that trade, and it is invisible until the platform moves.
+
+Third member of the "the pin is fine, the meaning moved" family, and
+the most instructive one:
+
+- *SHA Pinning Validates the Ref, Not the Path* (2026-08-30) — the pin
+  resolved, the path did not.
+- *A `>=` Override Floor Is a Snapshot, Not a Guarantee* (2026-09-03) —
+  the constraint held, the resolution drifted.
+- This entry — the pin held, and the **environment** drifted out from
+  under a frozen assertion about it.
+
+Practical consequences:
+
+- **Assertions about platform-supplied values age.** Any pinned
+  third-party action that validates format, length, or shape of a
+  credential, ref, or event payload is carrying a dated assumption. It
+  will fail closed at an arbitrary future date with no diff to blame.
+- **Renovate had the fix queued and it read as routine churn.** The
+  Dependency Dashboard listed `dessant/lock-threads v6.0.0 → v6.0.2`
+  alongside dozens of ordinary bumps. A patch bump that repairs a live
+  outage is indistinguishable, in that list, from one that changes
+  nothing — the same signal-flattening [[bfra-me--works]] recorded when
+  a `changesets/action` major renamed every input and stayed green.
+  Cross-referencing failing scheduled workflows against pending
+  dependency updates recovers the signal.
+- **A scheduled job that fails silently can stay dead indefinitely.**
+  Nothing gates on `Manage Issues`; it is not a required check and its
+  failure blocks no merge. Combined with the retention-regex rename
+  above, this repo's issue-hygiene automation has two independent
+  faults, both silent, both discovered only by reading run history
+  rather than by any alert.
 
 ### The Backlog Was Closed, Not Merged (2026-09-03)
 
