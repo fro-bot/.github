@@ -49,9 +49,6 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: fd8a746dd04bbf41b0d34dd0da55814686048ee9
     accessed: 2026-08-04
-  - url: https://github.com/fro-bot/space-bus
-    sha: 6c32dec910bddde52cd6e8b492a853dd5af3635d
-    accessed: 2026-09-04
   - url: https://github.com/fro-bot/systematic
     sha: 1938bb1
     accessed: 2026-08-06
@@ -64,7 +61,10 @@ sources:
   - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
     sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
     accessed: 2026-09-02
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission]
+  - url: https://github.com/fro-bot/systematic
+    sha: 8e26a01
+    accessed: 2026-09-04
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission, schema-fingerprint, custom-keywords, release-gated-deploy]
 ---
 
 # OpenCode Plugin Development
@@ -208,7 +208,7 @@ space-bus also documents using **one `opencode serve` instance to multiplex many
 | [[marcusrbrown--systematic]] | `@fro.bot/systematic` | Structured engineering workflows (~48 bundled skill dirs, 51 agents) | Bun, Biome, Zod-typed config, semantic-release | Active, v2.33.3 |
 | [[marcusrbrown--opencode-copilot-delegate]] | `opencode-copilot-delegate` | Delegate tasks to Copilot CLI as background subprocesses; opt-in `/copilot-status` TUI half | Bun, Biome, Changesets | Active, v0.12.0 (4 tools: delegate/output/cancel/resume) |
 | [[marcusrbrown--cortexkit-anthropic-auth]] | `@marcusrbrown/opencode-anthropic-auth` + `@marcusrbrown/anthropic-auth-core` | Claude Pro/Max OAuth, fallback accounts, quota routing, prompt-cache controls, optional Cloudflare Worker relay; OpenCode + Pi share the same core | Bun, Biome, Lefthook, monorepo workspaces | Active fork, `1.2.2-mb.2` (fork of `cortexkit/anthropic-auth`); Pi package private in fork |
-| [[fro-bot--space-bus]] | `@fro.bot/space-bus` | Workspace agent bus — a control agent tasks per-project agents over one directory-routed `opencode serve`; MCP facade + browser-safe library subpaths (now with session-interaction + message-correlation `/core` primitives) | Bun, Biome, zod v4, Changesets + npm OIDC | **v0.15.0**, code-frozen since 2026-07-19 (6 tools: bus_roster/task/status/result/wait/registry); 47-day publish drought as of 2026-09-04, automation still green |
+| [[fro-bot--space-bus]] | `@fro.bot/space-bus` | Workspace agent bus — a control agent tasks per-project agents over one directory-routed `opencode serve`; MCP facade + browser-safe library subpaths (now with session-interaction + message-correlation `/core` primitives) | Bun, Biome, zod v4, Changesets + npm OIDC | Active, **v0.15.0** (6 tools: bus_roster/task/status/result/wait/registry) |
 
 These plugins use Bun + Biome (not the `@bfra.me/*` ESLint/Prettier stack), establishing this as the standard for Marcus's/Fro Bot's OpenCode plugin repos. space-bus and copilot-delegate both publish via **Changesets** (space-bus via **npm OIDC trusted publishing**, no `NPM_TOKEN`); systematic uses semantic-release.
 
@@ -349,6 +349,19 @@ Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_s
 
 **Axis independence re-confirmed with the pairing inverted (2026-08-21 [[fro-bot--systematic]] survey):** across the v3 minor train v3.6.0 → v3.12.4, the **config schema held flat at 10 properties** (no additions since 2026-08-06) while the **OCX catalog version advanced six minors** (still 73 components — the catalog *count* is frozen at the major boundary, but the advertised `version` string tracks each release). This is the first non-mutating schema interval since 2026-06-25, breaking the three-in-a-row additive streak — and it demonstrates the two axes are genuinely decoupled in *both* directions: prior three intervals were "catalog-count frozen, schema grows"; this one is "schema frozen, catalog version climbs." The rule stands; neither axis is a leading indicator of the other. Also observed: an npm `2.33.4` v2 backport published to the retired major line did **not** re-serve the dropped `schemas/v2/` path (still 404) because the deploy target only mirrors `dist-tags.latest` (3.12.4) — the wholesale-replace-at-major precedent is not reversible by a late v2 patch.
 
+**Refinement — "the schema is unchanged" was measuring a header (2026-09-04 [[fro-bot--systematic]] survey):** the two-axis rule above stands as stated, but the axes are not orthogonal beneath the surface. Four surveys tracked the config schema by counting its **top-level properties** (7 → 8 → 10 → flat). The served file is 38,180 bytes with 74 `definitions`, and its `agents` property is a **closed enumeration of the entire bundled agent roster** — 74 explicit keys (37 bare names + 37 `category/name` aliases) under `additionalProperties: false`. Adding or removing one agent upstream rewrites the schema body while the top-level count stays at ten. So "schema frozen" readings were claims about a header, not content.
+
+Two transferable rules for any generated, published JSON Schema:
+
+1. **Track a content fingerprint, not a property count.** Byte length, `definitions` count, and a hash prefix turn a nested mutation into a detectable event. (Baseline recorded on the repo page.)
+2. **A generated schema that enumerates a runtime roster is a second copy of that roster.** It is therefore a cross-checkable artifact: the schema's 37 bare agent names and the OCX registry's 37 `agent` components must agree, and a mismatch means the catalog and the IDE contract disagree about what exists. Two published artifacts from one build are worth diffing against each other, not just against their own history.
+
+**Asymmetric strictness inside one schema — closed `agents`, open `categories`:** `agents` names every valid key and rejects the rest; `categories` is `{propertyNames: {type: string}, additionalProperties: <overlay>}`, so any string is a valid category name even though the bundled categories are real and finite. Net effect for a user editing `systematic.json`: **misspell an agent and the editor underlines it; misspell a category and the editor is silent and the overlay does nothing.** Generated schemas inherit strictness from whatever the generator happened to model as an enum versus a record — the looser half is invisible precisely where a typo costs the most to debug. When emitting a schema from types, audit which keyed objects ended up open.
+
+**A non-standard keyword is documentation, not enforcement:** the same schema carries 16 occurrences of a `"trust"` keyword with values `any` and `project-or-higher`, attached to fields like `model`, `temperature`, `top_p`, and per-agent `skills`. Draft-07 validators ignore unknown keywords, so this vocabulary is inert for every consumer except the plugin's own loader — not enforced, not surfaced in IDEs, invisible through any standard validator. The naming implies a config-source trust tier (which fields a project-level file may set versus which require user-level config); that reading is inference. Either way: **if a distinction matters for safety, expressing it as a custom keyword in a published schema communicates it to nobody who is not already reading your loader.** Encode it in the shape (separate schemas per trust tier, or `$comment` plus real constraints) or document it in prose the consumer actually sees.
+
+**Deploy fan-out is release-gated, not push-gated (2026-09-04):** the docs/registry/schema deploy fires on npm publish, not on merge. Sixteen source commits (one `docs:`, fifteen `chore(deps)`/`chore(dev)`) landed on `main` after the last deploy and produced zero deploys, because semantic-release cut no release from non-releasable commit types. Consequence for anyone auditing a plugin's published artifacts: **a stale docs/registry host under a conventional-commits release gate is the correct output of a healthy pipeline**, and the cheap way to tell it apart from a dead pipeline is to read the producer's *release* feed rather than its `pushed_at` — which in this case showed same-day activity from open PR branches while the last release was ten days old.
+
 ## Bundled Skill for Upstream Sync (cortexkit_anthropic-auth pattern)
 
 [[marcusrbrown--cortexkit-anthropic-auth]] ships a `.agents/skills/anthropic-auth-upstream-release/SKILL.md` in the repo root. OpenCode's `.agents/` discovery path picks it up automatically for any agent working in that repo, giving the agent explicit procedural context for upstream sync operations and fork-invariant release cutting.
@@ -386,72 +399,12 @@ Not every OpenCode plugin is published or general-purpose. A recurring **app-emb
 
 Distinguishing traits vs the distributable plugins above: **no npm publish**, **relative-path plugin registration** (`./.opencode/...` not a package name), and **the plugin is a repo-local build artifact type-checked by the app's own `tsc` pass**. This is the Impeccable gate propagating from a pinned CI action into a repo-local plugin across the fleet — worth tracking whether it lands a shared/published shape or stays vendored per-repo.
 
-## Renovate Cannot Regenerate a Bun Lockfile Under `binarySource=install` (2026-09-04)
-
-From [[fro-bot--space-bus]], and relevant to every Bun-based plugin repo in the
-fleet ([[marcusrbrown--systematic]], [[marcusrbrown--opencode-copilot-delegate]],
-[[marcusrbrown--mothership]], [[fro-bot--agent]]). The repo's `renovate.json5`
-carries a comment that is worth reading as a fleet-level constraint:
-
-```json5
-{
-  // bfra-me/renovate-action sets RENOVATE_BINARY_SOURCE=install, so
-  // Renovate's built-in artifact update path calls `install-tool bun <ver>`
-  // before regenerating bun.lock. That fails in this environment; the
-  // postUpgradeTasks `bun install` below regenerates bun.lock instead.
-  matchManagers: ['bun', 'npm'],
-  skipArtifactsUpdate: true,
-}
-```
-
-The workaround is sound and the failure mode it creates is not obvious:
-`skipArtifactsUpdate` disables the *only* path Renovate has to self-heal a
-lockfile, so if `postUpgradeTasks: ['bun install', 'bun run fix', 'bun run build']`
-fails on a branch, `bun.lock` stays stale, `bun install --frozen-lockfile` fails
-in CI, and the PR is red with **no bot able to fix it** — Renovate's repair
-mechanism is the thing that was turned off. Observed cost: PR #72
-(`@biomejs/biome` 2.5.2 → 2.5.11) red for **55 days** with both `Check` and
-`renovate/artifacts` failing.
-
-Two consequences specific to plugin repos, where Biome and `@opencode-ai/plugin`
-bumps are the routine churn: (1) a formatter major is especially prone to this,
-because `postUpgradeTasks` runs `bun run fix` with the *new* Biome and must both
-reformat and relock in one branch pass; (2) the `@opencode-ai/plugin` dev-pin
-(here frozen at `1.18.2` while upstream is at `1.18.25`) is what CI actually
-tests against, while the published `peerDependencies` range `>=1.17.13 <2`
-promises compatibility across everything — so a stalled dev-pin quietly widens
-the gap between the tested and the promised surface. Cross-check with the
-narrow-peer-range guidance under *`api.command.register` removal isn't the only
-churn*.
-
-## A Published Plugin Can Be Finished, and the Automation Can't Tell (2026-09-04)
-
-[[fro-bot--space-bus]] built its entire published surface in a 16-day sprint
-(2026-07-03 → 07-19: `0.0.0` → `0.15.0`, 22 npm versions, six tools, managed
-server, CLI, launchd service, browser-safe library lane, full CI/CodeQL/Scorecard/
-Renovate/Fro Bot automation, 8 brainstorms + 9 plans + 19 solution docs) and has
-not changed a line of `src/` since. At 2026-09-04: 5 of 117 blobs changed in the
-prior month, all action pins; no human commit and no npm publish in 47 days;
-`.changeset/` empty; **1,007 Fro Bot workflow runs** over the static tree.
-
-The relevant pattern for this topic is the **consumer-gap freeze**.
-[[marcusrbrown--mothership]] pins `@fro.bot/space-bus@0.14.0` while `latest` is
-`0.15.0` — normally a one-minor lag that closes itself on the next routine bump.
-With the producer frozen, it becomes a **fixed offset**, and the `@experimental`
-caveat on the subpath exports accumulates 47 days of *no change*, which reads
-like stability and is not the same as validation. For a plugin whose value
-proposition is a library surface other apps import, "quiet" is ambiguous between
-*settled contract* and *unmaintained contract*, and nothing in the release
-metadata distinguishes them. A repo in this state benefits from an explicit
-signal — a `stable`/`experimental` note in the README, or dropping the
-`@experimental` banner — more than from another green daily report.
-
 ## Related Pages
 
 - [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows; **crossed v2 → v3 major (v3.2.5, 2026-07-22)** with catalog contraction 104 → 73 components (confirmed downstream via [[fro-bot--systematic]]); discovered-skills-as-slash-commands added v2.33.0
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
-- [[fro-bot--space-bus]] — Workspace agent bus, a **published plugin** (`@fro.bot/space-bus` v0.15.0): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths (`messages`/`questions`/`answerQuestion` + dispatch message correlation). **Code-frozen since 2026-07-19** (2026-09-04 survey); contributes the `binarySource=install` Bun-lockfile constraint and the consumer-gap-freeze note above
+- [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.15.0): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths (now exposing `messages`/`questions`/`answerQuestion` + dispatch message correlation)
 - [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi. Fro Bot was active at v0.45.0 (2026-06-09) and is **`disabled_inactivity` as of 2026-09-02**; the fork is frozen at `1.2.5-mb.3` and 334 commits / 32 releases behind upstream `cortexkit/anthropic-auth` (`v1.21.0`, actively maintained). Contributes the cross-process OAuth refresh-lock and plugin-singleton prior art above, plus the dangling-dist-tag decommissioning rule
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)

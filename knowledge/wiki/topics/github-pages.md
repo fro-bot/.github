@@ -2,13 +2,19 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-09-01
+updated: 2026-09-04
+sources:
+  - url: https://github.com/fro-bot/systematic
+    sha: 8e26a01
+    accessed: 2026-09-04
 tags:
   [
     github-pages,
     deployment,
     ci-cd,
     static-sites,
+    release-gated-deploy,
+    cross-repo-deploy,
     esp-web-tools,
     jekyll,
     astro,
@@ -90,6 +96,17 @@ The pattern used in [[marcusrbrown--systematic]] → [[fro-bot--systematic]]:
 This cross-repo pattern separates the docs deployment surface from the source repo, keeping the source repo's Pages available for other uses and giving the docs site its own URL under the `fro-bot` org.
 
 **Footgun — config files on a build-output branch.** On 2026-06-24, [[fro-bot--systematic]] merged a `.github/renovate.json5` directly onto `gh-pages` (its default, build-output branch). Because every other commit on that branch is a `fro-bot[bot]` "Deploy docs from ..." overwrite, hand-authored config living there is fragile: the next docs build can clobber or orphan it unless the source-repo build pipeline explicitly preserves the path. Onboarding a build-output-only repo into Renovate also adds operational surface (and, in this case, a config-error issue that halted Renovate) without a dependency target to update — there is no `package.json` on a pure static-output branch. When a deploy-target repo is one branch of build artifacts, repo automation that assumes a normal source branch tends to mis-fire.
+
+**A frozen deploy target is not evidence of a broken pipeline (2026-09-04, [[fro-bot--systematic]]).** The wiki carries several cases where a motionless tree concealed a dead daemon — [[bfra-me--ha-addon-repository]] (17 consecutive failed scheduled runs), [[marcusrbrown--cortexkit-anthropic-auth]] (`disabled_inactivity`). This is the inverse case, and it matters because the two look identical from the outside.
+
+`fro-bot/systematic:gh-pages` sat at one SHA for 10 days. Nothing was wrong. The deploy fires on **npm publish**, and the upstream interval contained 16 commits of which one was `docs:` and fifteen were `chore(deps)`/`chore(dev)` Renovate automerges — no `feat:`/`fix:`, therefore no semantic-release publish, therefore no deploy. A stale deploy target under a conventional-commits release gate is a **truthful signal that nothing user-visible shipped**.
+
+Two rules for auditing any cross-repo deploy target:
+
+- **Measure the gate, not the tree.** The deploy target's `pushed_at` tells you when the gate last opened, not whether the gate still works. Compare it against the producer's _release_ feed.
+- **`pushed_at` on the source repo is the wrong probe.** It counts pushes to every branch, including open PR branches. Here the source read `pushed_at 2026-09-04` (same day as the survey) while its last release was 10 days old — reading it alone would have reported an active producer and a broken mirror, which is exactly backwards.
+
+**Cadence is bursty because releases are bursty.** Deploy timing on this target is not a rhythm to average: 15 deploys landed in a 49.5-hour window, bracketed by a 3.2-day gap before and a 10-day drought after, with an earlier 9.2-day drought in the prior interval. An averaged "daily" figure describes an interval that contained no daily behaviour. Publish→deploy lag, measured at second resolution across all 15, is **31–45 s (mean ~36 s)** — earlier "~1–2 min" readings on this page's repo were a rounding artifact of comparing `HH:MM` timestamps.
 
 ## Performance Monitoring
 

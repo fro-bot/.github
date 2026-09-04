@@ -1,8 +1,8 @@
 ---
 type: repo
-title: "marcusrbrown/systematic"
+title: marcusrbrown/systematic
 created: 2026-04-24
-updated: 2026-07-22
+updated: 2026-09-04
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
@@ -25,13 +25,29 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 4eecc77c6482895698645748beff0f336142bc64
     accessed: 2026-07-15
-tags: [opencode, plugin, ai, workflow, typescript, bun, biome, semantic-release, npm, zod, json-schema, slash-commands]
+tags:
+  - opencode
+  - plugin
+  - ai
+  - workflow
+  - typescript
+  - bun
+  - biome
+  - semantic-release
+  - npm
+  - zod
+  - json-schema
+  - slash-commands
+  - conventional-commits
 related:
+  - fro-bot--systematic
+  - opencode-plugins
   - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--dotfiles
   - marcusrbrown--copiloting
   - marcusrbrown--gpt
   - marcusrbrown--vbs
+node_id: R_kgDORAJegA
 ---
 
 # marcusrbrown/systematic
@@ -266,6 +282,18 @@ Extends `fro-bot/.github:common-settings.yaml` — same pattern as [[marcusrbrow
 | v2.33.1 | 2026-07-07 | Follow-up to #592: `disabled_commands` now actually suppresses discovered-skill commands (filters emission by the free-form `disabled_commands` field, leaving the stricter `disabled_skills` bundled-name enum untouched); closes a CodeQL `js/file-system-race` TOCTOU (dropped `statSync` pre-check, read file directly relying on existing `EISDIR`/`ENOENT` catch); single-read fix — `extractFrontmatterFromContent` split out so command-only discovered skills read `SKILL.md` once instead of twice (#593) |
 | v2.33.2 | 2026-07-07 | Labelling honesty for skills-as-commands (#594): discovered skills lose the `(Systematic - Skill)` prefix entirely (it falsely implied Systematic authorship) and surface the skill's own description as-is; bundled skills-as-commands drop the `- Skill` qualifier to read simply `(Systematic)`, matching bundled plain commands. `isSystematicCommandConfig` recognizes only `(Systematic)` going forward — no migration needed since OpenCode applies config-hook mutations in memory per load and never persists them |
 | v2.33.3 | 2026-07-14 | Maintenance patch: security bump of Pillow minimum version to patch known CVEs (#620, closes #28); OpenCode v1.17.14→v1.17.18; `semantic-release` v25.0.6 (#619); `fro-bot/agent` v0.84.0→v0.88.0; `bfra-me/.github` v4.16.35→v4.16.36; CodeQL action v4.37.0 |
+
+### Downstream-observed release activity (2026-09-04) — not a source-side survey
+
+Gathered incidentally while surveying the deploy target [[fro-bot--systematic]]; recorded here because this page's release history stops at v2.33.3 (2026-07-14) and is now ~7 weeks stale. **A direct source-side survey remains warranted** — the v3 architecture change has still never been examined from the source, and nothing below inspects the tree.
+
+- **npm `dist-tags.latest` = `3.15.0`**, published 2026-08-25T07:59:53Z. 204 published versions total. The v3 line has run `3.2.5` (2026-07-22) → `3.15.0` in ~5 weeks.
+- **Release cadence is burst-and-drought, not steady.** 31 publishes landed 2026-08-13 → 2026-08-25 (including 15 in the final 49.5 hours), bracketed by a 9.2-day drought (2026-08-04 → 08-13) and the current **10-day drought** (2026-08-25 → 2026-09-04, npm packument `modified` = the 3.15.0 publish timestamp).
+- **The drought is compositional, not a fault.** `main` HEAD is `4cea0620` (2026-09-03T01:17:27Z). The 16 commits after the last released commit (`c5273ee8`) are one `docs(solutions):` and fifteen `chore(deps)`/`chore(dev)` Renovate automerges — no releasable conventional-commit type, so semantic-release correctly published nothing. Repo `pushed_at` reads 2026-09-04 (open PR branches).
+- **`fro-bot/agent` pin moved v0.105.1 → v0.107.1** across six bumps in nine days (#882, #884, #886, #887, #889, #892) — the fastest-moving dependency in the interval and consistent with the ecosystem-wide agent version train.
+- **Catalog flat at 73 components** (37 agents / 31 skills / 2 bundles / 2 profiles / 1 plugin) since the v3 boundary — six weeks with no agent or skill added or removed, the longest flat stretch on record. The prior page text describing **51 agents / 48 skill dirs** is v2-era and superseded by the v3 contraction; treat those figures as historical.
+- **A `workflow` agent category exists as of 3.15.0** ([[marcusrbrown--dotfiles]], 2026-08-26) but does **not** appear in the published config schema, which models `categories` as an open-keyed record rather than an enum. See [[fro-bot--systematic]] and [[opencode-plugins]] for why that asymmetry matters to users.
+- Open issues 10, stars 24 (up from 23 at the 2026-07-15 survey).
 
 ## Open Issues / PRs
 
