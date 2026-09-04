@@ -32,6 +32,7 @@ tags:
   ]
 related:
   - fro-bot--agent
+  - fro-bot--space-bus
   - bfra-me--ha-addon-repository
   - marcusrbrown--cortexkit-anthropic-auth
   - marcusrbrown--marcusrbrown-com
@@ -74,6 +75,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[bfra-me--github]] — Org control center; **16 workflows** (2026-08-06, durable since the 2026-07-02 consolidation) including `main.yaml` (Quality Check), a **single unified `fro-bot.yaml`** (per-repo persona + org-wide sweep folded in; the separate `fro-bot-autoheal-org.yaml` was **removed** 2026-07-02, and a single `30 15` daily pass now does both oversight and autohealing), `renovate.yaml` + `trigger-org-renovate.yaml` (self-hosted Renovate fan-out), and three custom actions (`renovate-changesets`, `update-metadata`, `update-repository-settings`). Source of the reusable workflows that `marcusrbrown/*` repos consume. 2026-08-06 note: two upstream **majors** (`bfra-me/renovate-action` v9 → v10, `actions/checkout` v6 → v7) landed as ordinary SHA-pin automerge churn — a data point that the SHA-pin-plus-Renovate model absorbs even major action bumps without workflow-structure change (agent pin v0.96.0, fleet lead). The [[bfra-me--renovate-action]] `v10.0.0` in particular was a **Renovate-engine major (v43 → v44), not a runtime-architecture change** (confirmed 2026-08-10 source survey) — its composite/Docker mechanics are byte-stable across the boundary, which is precisely why downstream `@v10` consumers absorbed it as noise. The action's own major version tracks the vendored Renovate engine major, so a `v_N → v_{N+1}` action bump generally means "new Renovate major inside," not "action rewritten."
 - [[marcusrbrown--marcusrbrown-com]] — 5 workflows (2026-09-01): `ci.yaml` (shared `setup` → parallel Lint/Build/Test/Type Check/Validate → `quality-gate` aggregator that mints a GitHub App token and comments "Ready for review"), `deploy.yaml` (push-to-`main` → Pages), `fro-bot.yaml` (single-file **three-mode**, 625 lines / 29 KB, agent **v0.107.0** — 20 minutes behind upstream release, fleet's fastest adopter), `renovate.yaml` (`bfra-me/.github` reusable @ v4.23.0), `copilot-setup-steps.yaml`; local composite `.github/actions/setup` (Node 22 + pnpm + **opt-in** Playwright). No CodeQL/Scorecard; no Probot `settings.yml` (branch protection is imperative via `scripts/configure-branch-protection.mjs`). Notable: **two of three declared test tiers have no CI actuator** — `playwright.config.ts` + `tests/e2e/` are only installed by the autoheal job, and `lhci.config.js` has no workflow at all.
 - [[marcusrbrown--cortexkit-anthropic-auth]] — 4 workflow files: `ci.yml` (**`on: pull_request` only** — no default-branch verification), `release.yaml` (tag-driven, npm Trusted Publishing/OIDC + provenance, tag-commit integrity check, no manifest mutation in CI), `fro-bot.yaml` (three-mode single-file, agent **v0.45.0** — the fleet's oldest pin by a wide margin), `copilot-setup-steps.yml`. Dependabot instead of Renovate, and it has never opened a PR. **As of 2026-09-02 the Fro Bot workflow is `disabled_inactivity`** (GitHub's 60-day shutoff, last run 2026-07-30) and had already stopped writing its report six weeks earlier while running green. The fleet's reference case for automation that is present in the tree and absent in reality — see the three 2026-09-02 sections below.
+- [[fro-bot--space-bus]] — 7 workflows (2026-09-04): `ci.yaml` (Bun frozen install → typecheck → lint → build → **Node ESM export-shape smoke** asserting `default` is a function → `bun test`), `fro-bot.yaml` (three-mode single-file, agent **v0.106.0**, daily `0 0` pass, **no commit/push/PR step** — delivery is the agent's own job via `FRO_BOT_PAT`), `release.yaml` (Changesets + npm **OIDC trusted publishing**, no `NPM_TOKEN`, App-token git identity), `codeql-analysis.yaml`, `scorecard.yaml`, `renovate.yaml` + `update-repo-settings.yaml` (both `bfra-me/.github` reusable @ v4.16.44, both correctly pathed). Probot `settings.yml` gates `main` on `Analyze`/`CodeQL`/`Check`/`Fro Bot`/`Renovate / Renovate` with code-owner review + `enforce_admins`. Contributes the three 2026-09-04 sections below (split-major SHA pins, grouping vs automerge carve-outs, autoheal reporting undeliverable fixes).
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo; 11 workflows including `main.yaml` (Prepare → parallel {Lint+type-coverage, Test, Build, Workspace Analysis} → CI), `release.yaml` (Changesets, `workflow_run` after Main + Sunday cron + dispatch with force-release toggle), `fro-bot.yaml` (three-mode single-file at v0.44.2), `docs.yaml` (Astro Starlight → GitHub Pages), `docs-sync.yaml` (path-filtered @bfra.me/doc-sync re-sync), `renovate.yaml` + `update-repo-settings.yaml` (reusable `bfra-me/.github` callers), `renovate-changeset.yaml`, `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review. Local composite action `.github/actions/pnpm-install` consumed by every workflow.
 
 ## Common Patterns
@@ -803,6 +805,154 @@ Rule: **read `run_started_at` from the API; treat the cron expression as
 a request, not a record.** A finding of the form "the 03:30 pass did X"
 is only safe if the workflow has one cron or the run was matched by
 `workflow_run.event`/`display_title` rather than by hour.
+
+### An Autoheal That Reports a Fix It Has No Path to Deliver (2026-09-04)
+
+From [[fro-bot--space-bus]]. The daily pass diagnosed, applied, and reported the
+same two-file documentation fix on **eight consecutive days** (#156 → #164) and
+`main` never received it. The drift is real — independently confirmed at HEAD,
+not taken on the agent's word — and the reports escalate then invert:
+
+| Report | Verdict |
+| --- | --- |
+| #156 (08-28) | ⚠️ "fixed, working tree only — delivery pipeline suspected" |
+| #159 (08-30) | ⚠️ "**5th consecutive day** this exact diff has been diagnosed and applied without landing" |
+| #161 (09-01) | ✅ "**no drift found** (yesterday's fixes still accurate)" |
+| #162–#163 | ✅ "Found and fixed" / "Found and fixed (again)" |
+| #164 (09-04) | ⚠️ "Fixed again … root cause identified this run" |
+
+Two failures stack. The **delivery gap** is the visible one. The **inverted
+verification** on 09-01 is worse: the file's blob SHA had not changed since
+2026-08-03, so there was no window in which "yesterday's fixes" could have
+landed. A ✅ retires the ⚠️ that was accumulating evidence, which is how a
+recurring defect resets its own counter.
+
+The agent's own root-cause — "the harness step that turns this run's diff into a
+commit/PR is not running" — is half right and worth correcting, because the
+correction is the generalizable part. The workflow genuinely has no delivery
+step (checkout → setup → install → `Run Fro Bot`, `permissions: contents: read`),
+but the agent holds a PAT and is expected to deliver via `gh` itself. The real
+blocker is **inside the prompt**:
+
+- Category 4 (DOCS DRIFT): *"Fix small, unambiguous drift directly on a PR branch."*
+- HARD BOUNDARIES: *"Direct pushes are allowed only to an existing non-default PR branch you are repairing **under category 1 or 2**."*
+
+Category 4 has no whitelisted delivery path. A well-behaved agent resolves the
+conflict in favor of the boundary, edits the working tree, finds no permitted way
+to ship, and the checkout is discarded at job end. **The prompt structurally
+forbids the delivery it asks for**, and the failure is silent because "edited
+files" and "shipped a fix" are indistinguishable from inside the run.
+
+Rule: **a work category and a permission boundary are one artifact and must be
+diffed against each other.** Prompt sections are written at different times by
+different reasoning; nothing type-checks the union. Two cheap mitigations, both
+mechanical: make every remediation verdict **cite a PR URL or commit SHA** so an
+unciteable ✅ is not representable, and have the run diff against `origin/main`
+rather than the tree it just edited.
+
+Related members of this family: [[marcusrbrown--marcusrbrown-com]]'s autoheal
+loop open at the *merge* step (this one is open one step earlier, at delivery);
+*Autoheal Delivery Is a Token-Scope Problem Before It Is a Prompt Problem* (the
+symmetric case — here the token is sufficient and the prose is not);
+*A Run's Conclusion Measures the Harness, Not the Deliverable*; and the contrast
+case in [[marcusrbrown--dev-like]], where a null verdict is **explicitly
+granted** so the agent reports honestly instead of claiming a phantom fix.
+
+### One Action, Two Majors: a SHA Pin Is a Dependency Per Call Site (2026-09-04)
+
+From [[fro-bot--space-bus]]. `actions/checkout` is pinned at **v6.1.0** in
+`ci.yaml`/`release.yaml`/`fro-bot.yaml` and at **v7.0.1** in
+`codeql-analysis.yaml`/`scorecard.yaml`, in the same repository, at the same
+commit. Renovate's grouped PR body lists `actions/checkout` **twice** —
+`v7.0.0 → v7.0.1` *and* `v6.0.3 → v6.1.0` — and the Dependency Dashboard
+enumerates all five call sites separately.
+
+Renovate is not confused; it is correct. In a `uses: owner/action@<sha> # vX.Y.Z`
+pin, the **comment is the `currentValue`**. Each call site is therefore its own
+dependency instance with its own version line, and nothing in the model asserts
+that two instances of the same action should agree. The v6 → v7 reconciliation
+exists only as an unchecked `renovate/major-github-actions` box in the dashboard's
+Pending Approval section.
+
+Likely origin: **template provenance**. `codeql-analysis.yaml` and
+`scorecard.yaml` are upstream-template-shaped files that arrived carrying v7;
+`ci`/`release`/`fro-bot` are in-repo authored and stayed on v6. A repo can
+therefore fork its own action-version policy without any commit that looks like
+a policy decision.
+
+Rule: **SHA pinning gives you reproducibility per call site and nothing about
+coherence across call sites.** This joins *SHA Pinning Validates the Ref, Not the
+Path* ([[marcusrbrown--esphome-life]]) and *A Pinned Action Freezes Validation
+Against a Credential Format That Keeps Moving* in the "the pin is fine, the
+meaning moved" family. The lint is trivial and nobody runs it: parse every
+`uses:` across `.github/workflows/`, group by `owner/action`, flag any group with
+more than one distinct version comment. The same query would have caught the
+[[bfra-me--works]] settings-sync ref stuck at v4.16.0 while its siblings tracked
+v4.24.0.
+
+### Grouping Defeats a Per-Package Automerge Carve-Out (2026-09-04)
+
+From [[fro-bot--space-bus]]. The repo's `renovate.json5` declares an explicit
+exemption — human review for third-party Actions, hands-free for the first-party
+agent pin:
+
+```json5
+{
+  matchManagers: ['github-actions'],
+  matchPackageNames: ['!fro-bot/agent'],
+  automerge: false,
+}
+```
+
+It has never fired. The inherited org preset groups **all** `github-actions`
+updates onto a single `renovate/github-actions` branch, so `fro-bot/agent` rides
+in a PR whose other members are explicitly non-automergeable. **Automerge is a
+property of the PR, not of a package inside it**, and the union resolves to the
+most restrictive member.
+
+Measured cost: PR #118 was **open 41 days** (2026-07-20 → 08-30), during which
+Renovate kept rebasing it, so the agent pin finally landed as a single
+**v0.93.1 → v0.106.0** jump (~13 minors at once). It merged **out of order** —
+27 days after the higher-numbered #128 — which is the visible fingerprint of a
+long-parked rebased branch and a useful thing to look for in a commit log. The
+*next* agent bump (v0.107.1) is now in the dashboard's **Rate-Limited** section
+on the same branch, behind a `prConcurrentLimit` consumed by five stalled PRs
+that have nothing to do with it.
+
+Rule: **a package-scoped policy needs a package-scoped branch.** Any
+`matchPackageNames` rule that sets `automerge`, `schedule`, `minimumReleaseAge`,
+or `dependencyDashboardApproval` is void unless the same rule also owns its
+`groupName`. Fleet-wide, this compounds with the fixed 5-PR window over a deep
+backlog in [[bfra-me--ha-addon-repository]] and with *Merge Gates Sorted by
+Authorship, Not Quality* — three independent mechanisms that all end with the
+first-party bump waiting on third-party churn.
+
+### A Failing Dependency PR With No Owner (2026-09-04)
+
+Also from [[fro-bot--space-bus]], and a useful companion to the section above.
+PR #72 (`@biomejs/biome` 2.5.2 → 2.5.11) has been open and red for **55 days**.
+Three defensible mechanisms hold it there:
+
+1. **The autoheal is not allowed to touch it.** Category 1 (ERRORED PRs) says
+   *"Skip dependency/security PRs here (handle in category 2)"*; category 2
+   covers **security** PRs only. A failing *non-security dependency* PR is named
+   by neither, and the run declines it citing DEPENDENCY OWNERSHIP.
+2. **Renovate cannot repair it.** The repo sets `skipArtifactsUpdate: true` for
+   the `bun`/`npm` managers — a documented workaround, because the self-hosted
+   runner uses `RENOVATE_BINARY_SOURCE=install` and the built-in artifact path's
+   `install-tool bun <ver>` fails there. Lockfile regeneration is delegated to
+   `postUpgradeTasks`. When that fallback fails, `bun.lock` is stale,
+   `bun install --frozen-lockfile` fails, and `Check` goes red.
+3. **The required review check skips.** `Fro Bot` is a required context, and the
+   workflow's `if:` excludes `[bot]` authors — so it reports **skipped** on every
+   PR in a queue that is 100% bot-authored. Skipped counts as satisfied (see
+   *A Required Check That Cannot Fail Loudly*).
+
+Rule: **an ownership rule that partitions work by actor must be checked for
+coverage, not just for conflict.** "Renovate owns routine bumps" and "the agent
+owns errored PRs" sound complementary and leave a hole exactly where they meet:
+a routine bump that errored. Disabling a bot's repair path (2) while deferring to
+that bot (1) is the specific combination that makes the hole permanent.
 
 ### Convention Enforcement via Tests
 

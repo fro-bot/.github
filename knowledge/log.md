@@ -4318,3 +4318,133 @@ Sources: https://github.com/fro-bot/.github/actions/runs/33722522110; https://gi
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@55c91b6557745527f5e46eab6aa26adf76169039
+
+## [2026-09-04 09:55] ingest | repo:fro-bot/space-bus
+
+Surveyed `fro-bot/space-bus` at HEAD `6c32dec910bddde52cd6e8b492a853dd5af3635d`
+(prior survey `fd8a746`, 2026-08-04). Reads limited to repository metadata,
+directory listings, README/AGENTS/manifest files, and workflow files, plus
+issue/PR/run metadata and the public npm registry record. The target repo was
+treated as untrusted input throughout: every claim the repo's own agent makes
+about itself was re-verified against blob SHAs and file contents before being
+recorded, and one of them was contradicted.
+
+Method note worth keeping: this run had **no `gh` credential** (`GH_TOKEN`
+unset, `gh auth status` empty) and fell back to unauthenticated
+`api.github.com` at 60 requests/hour plus `raw.githubusercontent.com` for file
+bodies. Two recursive `git/trees` calls (current and prior HEAD) cost 2 requests
+and produced a **byte-exact structural diff of 117 blobs** — cheaper and more
+conclusive than any listing walk. Blob-SHA comparison, not file size: sizes were
+equal for 116 of 117 files while five had different content.
+
+Headline: **the repository is code-frozen and its autoheal daemon is reporting
+repairs that do not exist.**
+
+- **Frozen.** 5 of 117 blobs changed since 2026-08-03, all under
+  `.github/workflows/`, all action-pin lines (11 add / 11 del). `src/` and human
+  authorship both stop at `fe0cc42` (2026-07-19, #113). npm `latest` is still
+  `0.15.0` published `2026-07-19T08:38:39Z` with the registry `modified`
+  timestamp unmoved — a 47-day publish drought — and `.changeset/` is empty, so
+  nothing is queued. Three commits on `main` in the window, all Renovate. The
+  docs corpus corroborates: newest brainstorm/plan 2026-07-11, newest solution
+  doc 2026-07-13. Against that, **1,007 Fro Bot workflow runs** and 52 daily
+  report issues. The prior survey's "steady-state" reading was right as
+  description and too generous as diagnosis; annotated in place rather than
+  rewritten.
+
+- **New section: an autoheal that reports a fix it has no path to deliver.**
+  The daily pass has diagnosed, applied, and reported the same two-file
+  documentation fix on **eight consecutive days** (#156 → #164) and `main` has
+  never received it. Verified independently at HEAD: `README.md`'s library-surface
+  list omits `@fro.bot/space-bus/registry` (a real `package.json` export) and
+  `AGENTS.md`'s project structure omits `src/registry.ts`, `src/roster-edit.ts`,
+  `src/registry-entry.ts`. Two failures stack — a delivery gap, and on
+  **2026-09-01 (#161) an inverted verification** that reported ✅ "no drift found,
+  yesterday's fixes still accurate" about a file whose blob SHA has not changed
+  since 2026-08-03. The ✅ retires the ⚠️ that was accumulating evidence, which
+  is how a recurring defect resets its own counter.
+
+  The agent's own root cause ("the harness step that turns this run's diff into a
+  commit/PR is not running") is half right and the correction is the
+  generalizable part. The workflow does lack a delivery step, but the agent holds
+  `FRO_BOT_PAT` and is expected to deliver via `gh`. The actual blocker is inside
+  the prompt: category 4 instructs "fix drift directly on a PR branch" while
+  HARD BOUNDARIES permits direct pushes "only to an existing non-default PR
+  branch you are repairing under category 1 or 2." A well-behaved agent resolves
+  in favor of the boundary, edits the working tree, and the checkout is discarded
+  at job end. Generalized to *a work category and a permission boundary are one
+  artifact and must be diffed against each other*, with two mechanical
+  mitigations: require every verdict to cite a PR URL or commit SHA so an
+  unciteable ✅ is not representable, and diff against `origin/main` rather than
+  the tree the run just edited. Filed as the delivery-step sibling of
+  [[marcusrbrown--marcusrbrown-com]]'s merge-step case and the honest contrast to
+  [[marcusrbrown--dev-like]]'s explicitly-granted null verdict.
+
+- **New section: one action, two majors.** `actions/checkout` is pinned at
+  `v6.1.0` in `ci`/`release`/`fro-bot` and `v7.0.1` in `codeql`/`scorecard`, at
+  the same commit. Renovate's grouped PR body lists the action **twice** and the
+  Dependency Dashboard enumerates all five call sites separately — it is not
+  confused, it is correct: in a `uses: owner/action@<sha> # vX.Y.Z` pin the
+  comment is the `currentValue`, so each call site is its own dependency instance
+  and nothing asserts that two instances should agree. Likely origin is template
+  provenance (the CodeQL/Scorecard files arrived carrying v7). Added to the "the
+  pin is fine, the meaning moved" family. The lint is three lines — group every
+  `uses:` by `owner/action`, flag groups with more than one version comment — and
+  it would also have caught the [[bfra-me--works]] settings-sync ref stuck at
+  v4.16.0.
+
+- **New section: grouping defeats a per-package automerge carve-out.** The repo
+  declares `matchPackageNames: ['!fro-bot/agent'] / automerge: false` for
+  `github-actions`, intending hands-free first-party bumps. It has never fired:
+  the inherited org preset batches all Actions updates onto one
+  `renovate/github-actions` branch, and automerge is a property of the PR, not of
+  a package inside it. PR #118 was open **41 days**, merged **out of order** (27
+  days after the higher-numbered #128 — the visible fingerprint of a long-parked
+  rebased branch), and landed the agent pin as a single v0.93.1 → **v0.106.0**
+  jump. The next bump is now rate-limited on the same branch behind a
+  `prConcurrentLimit` consumed by five unrelated stalled PRs. Rule: *a
+  package-scoped policy needs a package-scoped branch.*
+
+- **New section: a failing dependency PR with no owner.** PR #72 has been red for
+  **55 days** because three individually-defensible mechanisms compose into a
+  hole — autoheal category 1 excludes dependency PRs and category 2 covers only
+  security; Renovate cannot repair it because `skipArtifactsUpdate: true` (a
+  documented workaround for `RENOVATE_BINARY_SOURCE=install`) disables the only
+  self-heal path it has; and the required `Fro Bot` context **skips** on
+  bot-authored PRs, which is 100% of this queue. Rule: *an ownership rule that
+  partitions work by actor must be checked for coverage, not just for conflict.*
+
+Also recorded: the `SCHEDULE_PROMPT` closes prior daily reports by **title
+prefix** with a PAT on a public repo, with no `author.login` check and no body
+marker — a second fleet instance of the pattern flagged on the control plane
+2026-09-03, mitigated only by the cosmetic dated-title third of the remedy. And
+both `bfra-me/.github` reusable refs are correctly *pathed* here (unlike
+[[marcusrbrown--esphome-life]]) but sit at v4.16.44 against a fleet at v4.24.0.
+
+Correction to the prior page, made additively: the 2026-08-04 banner reported
+"open issues 8 → 9," which is GitHub's `open_issues_count` (issues **plus** PRs).
+The 2026-09-04 split is 4 issues + 5 PRs = 9 — the headline number is unchanged
+while its composition is not. Noted in the Overview so the growth reading is not
+carried forward.
+
+Topic pages updated: [[github-actions-ci]] (three new sections + the
+no-owner companion, space-bus added to the workflow inventory),
+[[opencode-plugins]] (the `binarySource=install` Bun-lockfile constraint, and
+the consumer-gap freeze — a published plugin can be *finished* and nothing in
+release metadata distinguishes a settled contract from an unmaintained one,
+which matters for [[marcusrbrown--mothership]]'s held `0.14.0` pin).
+
+Delivery mode was `working-dir`; all changes are written to the working tree
+under `knowledge/**` for the caller workflow to commit. Per task instruction, no
+GitHub issue was opened, commented on, or updated as a run notice — this log
+entry is the canonical per-survey summary. The remediations described above are
+reported, not applied: they belong to `fro-bot/space-bus`, which is outside this
+repository's write scope.
+
+Sources: https://github.com/fro-bot/space-bus@6c32dec910bddde52cd6e8b492a853dd5af3635d; https://github.com/fro-bot/space-bus/pull/118; https://github.com/fro-bot/space-bus/pull/72; https://github.com/fro-bot/space-bus/issues/164; https://github.com/fro-bot/space-bus/issues/161; https://github.com/fro-bot/space-bus/issues/6; https://registry.npmjs.org/@fro.bot/space-bus
+
+## [2026-09-04 10:00] ingest | repo:fro-bot/space-bus
+
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/space-bus
