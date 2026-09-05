@@ -15,6 +15,7 @@ import {
   resolveReporterConfig,
   runMutationGuardCheck,
   scanDirectiveViolations,
+  strykerConfigPath,
   VERDICTS,
   type DirectiveScanInput,
   type LocatedMutant,
@@ -690,6 +691,10 @@ function writeScratchConfig(dir: string, configBody: Record<string, unknown>): s
 
 describe('resolveReporterConfig (default reporterConfig resolution)', () => {
   const realConfigPath = resolve(import.meta.dirname, '..', 'stryker.config.json')
+
+  it('reads the same config file the production run reads', () => {
+    expect(realConfigPath).toBe(strykerConfigPath)
+  })
 
   // Blocking: a `reporters` field present but the wrong shape (a bare string, not an array)
   // previously silently coerced to `[]`, then failed the downstream "does not include json"

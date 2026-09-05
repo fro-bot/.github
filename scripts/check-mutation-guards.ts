@@ -4,7 +4,7 @@ import {dirname, join, resolve} from 'node:path'
 import process from 'node:process'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
-const strykerConfigPath = join(repositoryRoot, 'stryker.config.json')
+export const strykerConfigPath = join(repositoryRoot, 'stryker.config.json')
 // Exported so tests can stage/inspect a stale report at the exact path the runner reads.
 export const mutationReportPath = join(repositoryRoot, 'reports', 'mutation', 'mutation.json')
 
@@ -691,7 +691,11 @@ function readStrykerConfig(path: string): StrykerConfigShape {
  * to build its default `reporterConfig` when no override is given.
  */
 export function resolveReporterConfig(configPath: string): ReporterConfig {
-  const config = readStrykerConfig(configPath)
+  return reporterConfigFrom(readStrykerConfig(configPath), configPath)
+}
+
+// Same resolution from an already-parsed config, so the production path parses the file once.
+function reporterConfigFrom(config: StrykerConfigShape, configPath: string): ReporterConfig {
   return {
     reporters: config.reporters,
     resolvedJsonReportPath: join(dirname(configPath), config.jsonReportFileName),
@@ -859,7 +863,7 @@ export function runMutationGuardCheck(
   const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot)
   const directiveViolations = scanDirectiveViolations(directiveFiles)
   const literalMutateEntries = config.mutate.filter(isLiteralPath)
-  const effectiveReporterConfig: ReporterConfig = reporterConfig ?? resolveReporterConfig(strykerConfigPath)
+  const effectiveReporterConfig: ReporterConfig = reporterConfig ?? reporterConfigFrom(config, strykerConfigPath)
   return classifyMutationReport(
     reportJson,
     directiveViolations,
