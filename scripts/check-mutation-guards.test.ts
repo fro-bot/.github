@@ -1,5 +1,6 @@
-import {mkdirSync, rmSync, writeFileSync} from 'node:fs'
-import {dirname, resolve} from 'node:path'
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {dirname, join, resolve} from 'node:path'
 import process from 'node:process'
 
 import {describe, expect, it, vi} from 'vitest'
@@ -133,8 +134,21 @@ describe('classifyMutationReport', () => {
 
   it('reports instrumentation-failed, never clean, when the report is malformed JSON structure', () => {
     expect(classifyMutationReport({files: 'not-an-object'}, []).verdict).toBe('instrumentation-failed')
-    expect(classifyMutationReport({files: {}, extra: true}, []).verdict).toBe('clean')
     expect(classifyMutationReport('a string, not a report', []).verdict).toBe('instrumentation-failed')
+  })
+
+  // Blocking: a well-formed report with zero mutants (every `mutate` entry failed to resolve
+  // or instrument) means Stryker still exited 0 and wrote `{"files":{}}` — a ten-module
+  // enumerated set cannot legitimately yield zero mutants, and `not-applicable` (Unit 4) is
+  // the only verdict allowed to mean "nothing to check". Reading this as `clean` would be
+  // exactly the vacuous pass this checker exists to catch. This is the inverse of the old
+  // assertion that `{files: {}, extra: true}` was `clean`.
+  it('reports instrumentation-failed, never clean, when the report is well-formed but contains zero mutants', () => {
+    const result = classifyMutationReport({files: {}, extra: true}, [])
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(result.verdict).not.toBe('clean')
+    expect(result.mutants).toHaveLength(1)
+    expect(result.mutants[0]).toMatchObject({status: 'EmptyReport'})
   })
 
   it('reports directive-violation when an Ignored mutant has an empty statusReason', () => {
@@ -464,16 +478,17 @@ describe('exitCodeFor (exit-code contract)', () => {
 })
 
 describe('runMutationGuardCheck (stale-report fix)', () => {
-  const reportDir = dirname(mutationReportPath)
+  // A dedicated temp directory, never the real reports/mutation/mutation.json, so this test
+  // cannot clobber a real report a concurrent or subsequent run depends on.
+  const tempReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-test-')), 'mutation.json')
 
   // Fix 3 (blocking): a report left over from a prior run must never be classified as the
   // current result. Stage a stale "all Killed" report, then run the check with a spawner
   // that dies without writing anything — the fix (`rmSync` before spawning) makes this
   // `instrumentation-failed` (no fresh report); without it, the stale report reads as `clean`.
   it('never classifies a stale on-disk report as a fresh clean result', () => {
-    mkdirSync(reportDir, {recursive: true})
     writeFileSync(
-      mutationReportPath,
+      tempReportPath,
       JSON.stringify({
         files: {
           'stale-file.ts': {
@@ -489,9 +504,32 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
         // Simulates Stryker dying before it writes a report (dry-run timeout, missing
         // binary, crash): the spawner runs and returns, but the report file is untouched.
       }
-      const result = runMutationGuardCheck(diedWithoutWriting)
+      const result = runMutationGuardCheck(diedWithoutWriting, tempReportPath)
       expect(result.verdict).toBe('instrumentation-failed')
       expect(result.verdict).not.toBe('clean')
+    } finally {
+      rmSync(tempReportPath, {force: true})
+    }
+  })
+
+  // Sentinel proof: a real file at the real mutationReportPath must survive this whole test
+  // file's run untouched, proving reportPath injection actually redirects rmSync/readFileSync
+  // away from the real path rather than merely accepting the parameter and ignoring it.
+  it('never touches the real mutationReportPath when a reportPath override is given', () => {
+    const realReportDir = dirname(mutationReportPath)
+    mkdirSync(realReportDir, {recursive: true})
+    const sentinelContent = `sentinel-${String(Date.now())}`
+    writeFileSync(mutationReportPath, sentinelContent, 'utf8')
+
+    try {
+      const otherTempReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-sentinel-')), 'mutation.json')
+      const noOpSpawner = (): void => {
+        // Runs and returns without touching any report file.
+      }
+      runMutationGuardCheck(noOpSpawner, otherTempReportPath)
+
+      expect(readFileSync(mutationReportPath, 'utf8')).toBe(sentinelContent)
+      rmSync(dirname(otherTempReportPath), {recursive: true, force: true})
     } finally {
       rmSync(mutationReportPath, {force: true})
     }

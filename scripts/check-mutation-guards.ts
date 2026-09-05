@@ -168,13 +168,20 @@ export function classifyMutationReport(
   const flat = flattenReport(reportJson)
 
   const reportUnreadable = flat === undefined
+  // A well-formed report whose flattened mutant list is empty means every `mutate` entry
+  // failed to resolve or instrument (Stryker still exits 0 and writes `{"files":{}}` in this
+  // case) — an enumerated set of real modules cannot legitimately yield zero mutants. Reading
+  // this as `clean` would be the exact vacuous-pass this checker exists to prevent; only
+  // `not-applicable` (Unit 4's changed-file gating) is allowed to mean "nothing to check", and
+  // this classifier never produces that verdict, so an empty report always fails closed here.
+  const reportEmpty = flat !== undefined && flat.length === 0
   const hasUnrecognizedStatus = (flat ?? []).some(
     m => INCOMPLETE_RUN_STATUSES.has(m.status) || !KNOWN_MUTANT_STATUSES.has(m.status),
   )
   const hasIgnoredWithoutReason = (flat ?? []).some(m => m.status === 'Ignored' && isEmptyReason(m.reason))
 
   let verdict: Verdict
-  if (reportUnreadable || hasUnrecognizedStatus) {
+  if (reportUnreadable || reportEmpty || hasUnrecognizedStatus) {
     verdict = 'instrumentation-failed'
   } else if (directiveViolations.length > 0 || hasIgnoredWithoutReason) {
     verdict = 'directive-violation'
@@ -188,8 +195,21 @@ export function classifyMutationReport(
     verdict = 'clean'
   }
 
+  const emptyReportMutant: LocatedMutant[] = reportEmpty
+    ? [
+        {
+          file: 'reports/mutation/mutation.json',
+          line: 0,
+          col: 0,
+          mutator: 'report',
+          status: 'EmptyReport',
+          reason: 'report contains no mutants; every `mutate` entry failed to resolve or instrument',
+        },
+      ]
+    : []
+
   const reportedFromReport = (flat ?? []).filter(isFailingMutant).map(toLocatedMutant)
-  const mutants = [...reportedFromReport, ...directiveViolations].sort(compareLocatedMutants)
+  const mutants = [...reportedFromReport, ...emptyReportMutant, ...directiveViolations].sort(compareLocatedMutants)
 
   return {verdict, mutants}
 }
@@ -503,22 +523,28 @@ export function defaultStrykerSpawner(): void {
  * spawns Stryker, classifies whatever report exists afterward, and returns the result
  * without printing or setting an exit code (both are `main()`'s concern).
  *
- * Clearing `mutationReportPath` before the spawn is load-bearing: without it, a Stryker
- * process that dies before writing a report (dry-run timeout, missing binary, crash) would
- * leave a *previous* run's report on disk, and this check would silently classify that
- * stale report as the current result — including a stale `clean` with exit 0. "Never fail
- * open" is this script's entire contract, so the report is always removed first.
+ * Clearing `reportPath` before the spawn is load-bearing: without it, a Stryker process
+ * that dies before writing a report (dry-run timeout, missing binary, crash) would leave a
+ * previous* run's report on disk, and this check would silently classify that stale report
+ * as the current result — including a stale `clean` with exit 0. "Never fail open" is this
+ * script's entire contract, so the report is always removed first.
  *
  * `spawner` is an injectable seam (defaults to `defaultStrykerSpawner`) so tests can drive
  * the "Stryker died without writing anything" path without actually running Stryker.
+ * `reportPath` is a second injectable seam (defaults to `mutationReportPath`, the real path
+ * Stryker writes to) so a test staging or clearing a report never touches the real
+ * `reports/mutation/mutation.json` on disk.
  */
-export function runMutationGuardCheck(spawner: () => void = defaultStrykerSpawner): ClassificationResult {
+export function runMutationGuardCheck(
+  spawner: () => void = defaultStrykerSpawner,
+  reportPath: string = mutationReportPath,
+): ClassificationResult {
   const config = readStrykerConfig(strykerConfigPath)
 
-  rmSync(mutationReportPath, {force: true})
+  rmSync(reportPath, {force: true})
   spawner()
 
-  const reportJson = readMutationReport(mutationReportPath)
+  const reportJson = readMutationReport(reportPath)
   const directiveFiles = readMutateFileContents(config.mutate, repositoryRoot)
   const directiveViolations = scanDirectiveViolations(directiveFiles)
   return classifyMutationReport(reportJson, directiveViolations)
