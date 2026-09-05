@@ -38,11 +38,14 @@ const CALIBRATION_PROBES = 3
 // in a repetitions count that is too small once real (unloaded-again) conditions resume, which
 // widens the variance of every later sample taken at that fixed count. Taking the median of three
 // probes per doubling step, instead of one, smooths that single-probe noise out of the decision
-// that matters. Two measurements, on different machines, bound what that buys. On a 10-core box
-// where the honest count for the quadratic control is 8: under 12-process contention the old
-// single-probe calibration dropped to 4 once in 20 runs and under 30-process contention once in
-// 12; median-of-3 held 8 in every run measured (20 and 8 respectively). On a 4-core box where the
-// honest count is 4: under 12 busy loops (20 runs) single-probe and median-of-3 selected identical
+// that matters. The guarantee is structural, not statistical: a median needs two probes to lie in
+// the same direction where one used to suffice. The measurements below are consistent with that
+// but too sparse to separate the arms on their own (two drops in 32 single-probe runs against
+// none in 28 median runs; unequal run counts, arms interleaved -- a blocked design confounds this
+// with frequency drift in either direction). On a 10-core box where the honest count for the
+// quadratic control is 8: single-probe dropped to 4 once in 20 runs under 12-process contention
+// and once in 12 under 30-process; median-of-3 held 8 in 20 and 8 runs respectively. On a 4-core
+// box where the honest count is 4: under 12 busy loops (20 runs) both arms selected identical
 // counts every run (reps=2 x5, reps=4 x15). So the median rejects a transient spike on one probe;
 // when all three probes inflate together it inherits the bias and the count lands low. The ratio
 // absorbs that case because both terms are measured at the same repetitions count adjacent in
