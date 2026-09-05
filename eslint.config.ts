@@ -12,6 +12,7 @@ export default defineConfig({
     'reports/**',
     'docs/archive/',
     'docs/brainstorms/',
+    'docs/ideation/',
     'docs/plans/',
     'docs/solutions/',
     'knowledge/',

@@ -202,11 +202,12 @@ The mermaid sketch above collapses the four failing report classes into two node
 
 **Dependencies:** None. Operator approval for the devDependency and lockfile change.
 
-**Files:**
-- Modify: `package.json` (add `@stryker-mutator/core`, `@stryker-mutator/vitest-runner`, exact pins), `pnpm-lock.yaml`
-- Create: `stryker.config.json` (spike scope: `mutate` = `packages/wiki-write-core/src/corrections-survival.ts`, `testFiles` = its colocated test, `thresholds.break: null`, `reporters: ["json","clear-text"]`, `tempDirName: ".stryker-tmp"`)
-- Modify: `.gitignore` (`.stryker-tmp/`, `reports/`), `vitest.config.ts` coverage excludes, `eslint.config.ts` ignores — the sandbox copy must never be linted or counted as coverage
-- Create: `.github/workflows/mutation-spike.yaml` (temporary `workflow_dispatch` job using `./.github/actions/setup`; deleted in Unit 4 when the real job lands)
+**Files (as shipped):**
+- Modify: `package.json` (`@stryker-mutator/core`, `@stryker-mutator/vitest-runner`, exact pins), `pnpm-lock.yaml`, `pnpm-workspace.yaml` (`qs: '>=6.15.2'` override for GHSA-q8mj-m7cp-5q26, reached only through Stryker's `typed-rest-client`)
+- Create: `stryker.config.json` (spike scope: `mutate` = `corrections-survival.ts`, explicit `testFiles`, `vitest.related: false`, explicit `plugins`, `thresholds.break: null`, `reporters: ["json","clear-text"]`, `tempDirName: ".stryker-tmp"`, `allowConsoleColors: false`)
+- Modify: `.gitignore` (`/.stryker-tmp/`, `/reports/` — root-anchored), `vitest.config.ts` (`test.exclude` spreads `defaultExclude` — the option replaces Vitest's defaults — plus coverage excludes), `eslint.config.ts` ignores, `.github/codeql/codeql-config.yml` `paths-ignore`
+- Modify: `packages/wiki-write-core/src/corrections-survival.test.ts` (whitespace-tolerant source-introspection assertion)
+- Create: `.github/workflows/mutation-spike.yaml` (temporary; `pull_request` on its own dependency paths plus `workflow_dispatch`, since dispatch resolves workflow files from the default branch; concurrency group as `main.yaml`; deleted in Unit 4 when the real job lands)
 
 **Approach:**
 - Install and run Stryker against the single module locally first; record whether the dry run passes and how many mutants are killed, survived, no-coverage, compile-error, runtime-error.
