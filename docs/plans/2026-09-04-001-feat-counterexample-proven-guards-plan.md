@@ -148,9 +148,9 @@ The repository's guards almost all have negative tests and several carry hand-wr
 
 ### Deferred to Implementation
 
-- Exact `mutate`/`testFiles` globs once the spike shows whether `vitest.related` selects same-tree tests correctly or must be disabled in favor of an explicit list.
+- Exact `mutate`/`testFiles` globs. The spike settled the shape: `related` over-selects (it pulled the timing-guard file through the `index.ts` barrel), so `testFiles` is an explicit same-tree list and `vitest.related` is set false.
 - Whether each script's `main()` is covered by an assembled-flow test today or reports `NoCoverage` on the first full run; decided by the run itself in Unit 5, with the two allowed resolutions named there.
-- Stryker `timeoutMS` and `dryRunTimeoutMinutes` values, calibrated from the spike's measured runtime.
+- Stryker `timeoutMS` and `dryRunTimeoutMinutes` values. The spike saw 5 timeouts in 183 mutants at default settings on one module; calibrate once the full set runs.
 - Whether incremental mode (`--incremental`) is worth enabling on pull requests; content-based reuse is safe, but Vitest reports test locations per file, so gains may be small.
 - Whether a mutant that flips the `import.meta.main` guard in `scripts/build-wiki-write-core.ts` runs a build inside the Stryker sandbox; if so, that line gets a directive with reason.
 
@@ -192,7 +192,9 @@ The mermaid sketch above collapses the four failing report classes into two node
 
 ## Implementation Units
 
-- [ ] **Unit 1: Spike — instrument one package module under native TypeScript**
+- [x] **Unit 1: Spike — instrument one package module under native TypeScript**
+
+**Result:** the assumption holds. 183 mutants over `corrections-survival.ts`: 102 killed, 61 survived, 15 uncovered, 5 timeout, zero `RuntimeError`/`CompileError` — Node's strip-only loader accepted every re-emitted variant. Discrimination proven both directions at `corrections-survival.ts:60:29 ObjectLiteral`. Runtime 8–14 s for one module. Three findings feed Unit 2: (1) `plugins: ["@stryker-mutator/vitest-runner"]` must be explicit — the default plugin glob does not resolve under pnpm's layout; (2) `vitest.related` selected four test files including `regex-redos-regressions.test.ts`, so `testFiles` must be explicit and `related` cannot be relied on for same-tree pairing; (3) a source-introspecting test asserted a byte-exact import line and failed under instrumentation because the generator re-emits `import { x } from '...';` — fixed with a whitespace-tolerant match, and any future test that reads its subject's source must tolerate generator formatting.
 
 **Goal:** Prove Stryker 10 with the Vitest runner can mutate a strip-only TypeScript module, load the mutated source under Node 24, run its colocated tests, and kill mutants — in the CI topology, not only locally. Measure runtime.
 
@@ -421,6 +423,7 @@ The mermaid sketch above collapses the four failing report classes into two node
 | Flaky timeouts under contention (the #3818 class) | `Timeout` is its own verdict, never counted as killed or survived; timeouts calibrated from the spike, not guessed. |
 | Shell `main()` mutants report `NoCoverage` and the baseline stalls | Two named resolutions in Unit 5 (assembled-flow test via the existing injected-seam pattern, or `not-mutated` naming the core); per-line directives over a shell are ruled out. |
 | Sandbox copy linted, covered, or scanned as source | `.stryker-tmp/` and `reports/` excluded from `.gitignore`, coverage globs, ESLint, and CodeQL in Unit 1/2. |
+| A test reads its subject's source text and breaks under instrumentation | Seen once in the spike. Such tests must match structurally (whitespace-tolerant), never byte-exact; Unit 5 treats a dry-run failure of this shape as a test fix, not a directive. |
 | Required context string drifts from job name | Unit 6 test asserts byte equality; the learnings doc on quoted contexts is cited in the unit. |
 | Exceptions accrete into a threshold by another name | Every directive carries a reviewable reason and sits on the excused line; Unit 5 prefers test fixes over directives. |
 
