@@ -1,0 +1,44 @@
+{
+  "not-mutated": [
+    {
+      "path": "packages/wiki-write-core/src/frontmatter.ts",
+      "reason": "Throws on missing/invalid frontmatter, but no gate consumes it: wiki-ingest.ts implements its own local parseFrontmatterDocument/renderFrontmatterDocument instead of importing this module. Only wiki-write-core.test.ts exercises reconstructFrontmatter, and only its happy path."
+    },
+    {
+      "path": "packages/wiki-write-core/src/rendering-policy.ts",
+      "reason": "validateRenderingPolicy returns unsafe-html findings but no production gate consumes it (only wiki-write-core.test.ts calls it directly). maskCodeContent/maskNonProseContent, the functions the corrections-survival.ts gate does call, are pure content transforms with no rejection path of their own."
+    },
+    {
+      "path": "packages/wiki-write-core/src/wiki-utils.ts",
+      "reason": "splitFrontmatter's error field is the only rejection-shaped output here, and its sole consumer is wiki-lint.ts, itself not-mutated pending relocation. collectWikiPages/collectWikilinks, consumed by the mutated corrections-survival.ts and wiki-ingest.ts, are non-rejecting collection helpers."
+    },
+    {
+      "path": "packages/wiki-write-core/src/markdown-links.ts",
+      "reason": "resolveMarkdownLinks' exists signal is consumed only by wiki-lint.ts, itself not-mutated pending relocation; no mutated module reaches this file."
+    },
+    {
+      "path": "packages/wiki-write-core/src/index.ts",
+      "reason": "Pure re-export barrel with no logic of its own. The core logic lives in the modules it re-exports (corrections.ts, frontmatter.ts, gate-contract.ts, private-leak-adapter.ts, private-leak.ts, rendering-policy.ts, wiki-ingest.ts, wiki-lint.ts), each separately dispositioned in this list or stryker.config.json's mutate set."
+    },
+    {
+      "path": "packages/wiki-write-core/src/gate-contract.ts",
+      "reason": "Build-time constants only (version + source-tree hash placeholder), no logic to mutate. The module that carries the real check is scripts/build-wiki-write-core.ts (already in mutate), which populates and verifies GATE_SOURCE_TREE_HASH."
+    },
+    {
+      "path": "packages/wiki-write-core/src/wiki-lint.ts",
+      "reason": "Its real tests are scripts/wiki-lint.test.ts, reaching it through the built dist/ output rather than a same-tree source import. Unit 5 relocates those tests beside this module, after which this entry flips to mutate."
+    },
+    {
+      "path": "packages/wiki-write-core/src/correction-text.ts",
+      "reason": "Pure normalization helper (whitespace collapse) with no rejection path of its own; consumed by the already-mutated corrections-survival.ts gate."
+    },
+    {
+      "path": "packages/wiki-write-core/src/data-branch-bootstrap.ts",
+      "reason": "GitHub API infra-recovery helper (branch existence check/restore). Its throw paths are network/API failure handling, not content-validation logic a gate depends on."
+    },
+    {
+      "path": "scripts/check-mutation-guards.ts",
+      "reason": "A directive scanner cannot describe its own grammar in comments without matching it; the classifier and scanner are covered by their fixture tests, not by mutation."
+    }
+  ]
+}

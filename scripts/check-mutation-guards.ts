@@ -638,8 +638,15 @@ export function scanDirectiveViolations(files: readonly DirectiveScanInput[]): L
 // Runner — spawns Stryker, reads the report, classifies, prints
 // ---------------------------------------------------------------------------
 
-interface StrykerConfigShape {
+export interface StrykerConfigShape {
   readonly mutate: readonly string[]
+  /**
+   * Explicit same-tree test list. Optional in Stryker's own schema (absent means Stryker's
+   * `vitest.related` selection applies instead), so an absent field here defaults to `[]`
+   * rather than throwing — this wrapper never spawns Stryker off a config-shape guess, and
+   * Unit 3's enumeration guard is the consumer that needs this field, not the classifier.
+   */
+  readonly testFiles: readonly string[]
   readonly reporters: readonly string[]
   /**
    * Raw `jsonReporter.fileName` from config, or Stryker's own documented default
@@ -648,7 +655,7 @@ interface StrykerConfigShape {
   readonly jsonReportFileName: string
 }
 
-function readStrykerConfig(path: string): StrykerConfigShape {
+export function readStrykerConfig(path: string): StrykerConfigShape {
   const raw = readFileSync(path, 'utf8')
   const parsed: unknown = JSON.parse(raw)
   if (
@@ -658,6 +665,14 @@ function readStrykerConfig(path: string): StrykerConfigShape {
   ) {
     throw new Error(`check-mutation-guards: ${path} is missing a string[] "mutate" field`)
   }
+
+  if (
+    parsed.testFiles !== undefined &&
+    (!Array.isArray(parsed.testFiles) || !parsed.testFiles.every((entry): entry is string => typeof entry === 'string'))
+  ) {
+    throw new Error(`check-mutation-guards: ${path} "testFiles" must be a string[] when present`)
+  }
+  const testFiles: readonly string[] = Array.isArray(parsed.testFiles) ? parsed.testFiles : []
 
   // `reporters` is optional in Stryker's own schema, so an absent field defaults to `[]` here
   // (which then legitimately fails the "does not include json" cross-check downstream). A
@@ -678,7 +693,7 @@ function readStrykerConfig(path: string): StrykerConfigShape {
       ? jsonReporter.fileName
       : 'reports/mutation/mutation.json'
 
-  return {mutate: parsed.mutate, reporters, jsonReportFileName}
+  return {mutate: parsed.mutate, testFiles, reporters, jsonReportFileName}
 }
 
 /**
@@ -708,7 +723,7 @@ function reporterConfigFrom(config: StrykerConfigShape, configPath: string): Rep
 // before matching. Any of these treated as literal here would make this function try to
 // `readFileSync` a path that was never meant to exist verbatim, feeding a false
 // `MissingMutateFile` into an `instrumentation-failed` decision for a working Stryker config.
-const MINIMATCH_METACHARACTER_PATTERN = /^!|[*?[\]{}]|[+@!]\(/u
+export const MINIMATCH_METACHARACTER_PATTERN = /^!|[*?[\]{}]|[+@!]\(/u
 
 /**
  * Glob metacharacters (minimatch's, not just `*`/`?`) mark an entry as out of scope for this
@@ -718,7 +733,7 @@ const MINIMATCH_METACHARACTER_PATTERN = /^!|[*?[\]{}]|[+@!]\(/u
  * every mutated module is either explicitly listed or explicitly excused, which catches a
  * glob silently absorbing an undirected file the way it catches any other unlisted module.
  */
-function isLiteralPath(entry: string): boolean {
+export function isLiteralPath(entry: string): boolean {
   return !MINIMATCH_METACHARACTER_PATTERN.test(entry)
 }
 
