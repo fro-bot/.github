@@ -29,6 +29,18 @@
       "reason": "Its real tests are scripts/wiki-lint.test.ts, reaching it through the built dist/ output rather than a same-tree source import. Unit 5 relocates those tests beside this module, after which this entry flips to mutate."
     },
     {
+      "path": "packages/wiki-write-core/src/wiki-ingest.ts",
+      "reason": "Has a real rejection path (WikiIngestError on INVALID_PAYLOAD/INVALID_FRONTMATTER/INVALID_WIKILINK/CORRECTION_ERODED/PROTECTED_BRANCH) a gate depends on, but its real test is scripts/wiki-ingest.test.ts, which imports the built dist/ output through the scripts/wiki-ingest.ts re-export shell (`export * from '@fro-bot/wiki-write-core/wiki-ingest'`) rather than this source file. A live check:mutation-guards run confirmed 1474/1474 mutants NoCoverage under same-tree pairing. Unit 5 relocates scripts/wiki-ingest.test.ts beside this module, after which this entry flips to mutate."
+    },
+    {
+      "path": "packages/wiki-write-core/src/wiki-slug.ts",
+      "reason": "Has a real rejection path (computeRepoSlug throws on an empty sanitized segment) a gate depends on, but its real test is scripts/wiki-slug.test.ts, which imports the built dist/ output through the scripts/wiki-slug.ts re-export shell (`export * from '@fro-bot/wiki-write-core/wiki-slug'`) rather than this source file. A live check:mutation-guards run confirmed only partial coverage attributable to private-leak-adapter.test.ts's direct import, not this dedicated test. Unit 5 relocates scripts/wiki-slug.test.ts beside this module, after which this entry flips to mutate."
+    },
+    {
+      "path": "packages/wiki-write-core/src/schemas.ts",
+      "reason": "Has a real rejection path (assertReposFile throws SchemaValidationError) a gate depends on, but its real test is scripts/schemas.test.ts, which imports the built dist/ output through the scripts/schemas.ts re-export shell (`export * from '@fro-bot/wiki-write-core/schemas'`) rather than this source file. A live check:mutation-guards run confirmed only partial coverage attributable to private-leak-adapter.test.ts's indirect exercise of assertReposFile. Unit 5 relocates scripts/schemas.test.ts beside this module, after which this entry flips to mutate."
+    },
+    {
       "path": "packages/wiki-write-core/src/correction-text.ts",
       "reason": "Pure normalization helper (whitespace collapse) with no rejection path of its own; consumed by the already-mutated corrections-survival.ts gate."
     },
