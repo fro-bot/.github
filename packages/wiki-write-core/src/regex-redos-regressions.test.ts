@@ -43,8 +43,10 @@ const CALIBRATION_PROBES = 3
 // once, and under 30-process contention (12 runs) once more; median-of-3 calibration held the
 // correct count in all 20 and all 8 runs measured at those same contention levels. The median
 // rejects a transient spike on one probe; under sustained load all three probes inflate together
-// and the median inherits the bias, so the count still lands low -- the ratio absorbs that case
-// because both terms are measured at the same repetitions count adjacent in time.
+// and the median inherits the bias, so the count still lands low -- measured: against the
+// quadratic control under 12 busy loops (20 runs), single-probe and median-of-3 selected identical
+// counts every run (reps=2 x5, reps=4 x15). The ratio absorbs that case because both terms are
+// measured at the same repetitions count adjacent in time; 23/23 held at 8x oversubscription.
 function calibrateRepetitions(operation: () => void): number {
   const probe = (repetitions: number): number =>
     median(Array.from({length: CALIBRATION_PROBES}, () => measure(operation, repetitions)))
@@ -125,9 +127,11 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // oversubscription, 85% of the 10s global ceiling) and the two wikilink guards less again. Both
 // windows are wide because contention level varies run to run and neither figure is portable
 // across machines, but the ordering held in every run measured: the log header guard is the one
-// to check first if a timing test ever does time out.
+// to check first if a timing test ever does time out. Those are worst-case figures from imposed
+// busy loops; inside the full suite under Vitest's own file parallelism this file measured ~6s
+// total, with the meta-test at ~3.6s and the log header guard at ~1.7s -- about 12% of the budget.
 const TIMING_SUITE_TIMEOUT_MILLISECONDS = 30_000
-//
+
 // The separation check below was previously a relative multiplier (quadratic ratio >=
 // linear ratio * 1.5), which multiplied together the noise of two independently-measured ratios
 // instead of bounding either one. That noise's actual source was measureScalingRatio's
