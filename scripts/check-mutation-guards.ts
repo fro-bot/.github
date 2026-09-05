@@ -172,6 +172,38 @@ function extractReportFileKeys(reportJson: unknown): string[] | undefined {
 }
 
 /**
+ * Returns a `Map` of the report's top-level `testFiles` keys to their `tests` array length, or
+ * `undefined` if the report is not even shaped enough to have a `testFiles` record. A key
+ * present with a non-array or missing `tests` field counts as zero — this mirrors the report's
+ * own `files` shape check above and keeps a malformed entry from being silently skipped rather
+ * than counted as "no tests executed".
+ *
+ * This is the shape that closes the fail-open this wrapper had until now: Stryker's Vite
+ * dependency scan can silently drop one or more `testFiles` entries from dry-run collection
+ * (see `hasTestFileNotExecuted` in classifyMutationReport for the confirmed mechanism — an
+ * unrelated file's syntactically-invalid regex mutant, embedded as a ternary alternative,
+ * fails to parse at load time and zeros collection for the whole run) while every *other*
+ * configured test file still loads and the run still completes and writes a well-formed
+ * report. The dropped test file's module then reads as `NoCoverage` across the board — a
+ * `mutants-uncovered` verdict, not the `instrumentation-failed` the underlying tool failure
+ * actually is. Verified against a live scratched-config run: the report's `testFiles` map
+ * simply omits the dropped keys entirely (not present with zero tests) and nothing in the
+ * dry-run log at `--logLevel debug` names the drop — `ProjectReader` and `DryRunExecutor` both
+ * report success, just with fewer tests collected than configured test files would produce.
+ */
+function extractReportTestFileCounts(reportJson: unknown): Map<string, number> | undefined {
+  if (!isRecord(reportJson)) return undefined
+  const testFiles = reportJson.testFiles
+  if (!isRecord(testFiles)) return undefined
+  const counts = new Map<string, number>()
+  for (const [key, entry] of Object.entries(testFiles)) {
+    const tests = isRecord(entry) ? entry.tests : undefined
+    counts.set(key, Array.isArray(tests) ? tests.length : 0)
+  }
+  return counts
+}
+
+/**
  * Strips a single leading `./` so a `mutate` entry and a report `files` key that refer to the
  * same file but were written with a different relative-path prefix compare equal.
  */
@@ -246,6 +278,15 @@ function toLocatedMutant(mutant: FlatMutant): LocatedMutant {
  * report file (see readMutationReport) — threaded through so the `RuntimeError` sentinel
  * below can name the actual cause (ENOENT, JSON syntax error) instead of a generic message,
  * for whichever of the three ways a report can be unreadable actually occurred.
+ *
+ * `configuredTestFiles` is the full list of literal (non-glob) `vitest.testFiles` entries from
+ * `stryker.config.json`, normalized the same way as `literalMutateEntries`. Every entry must
+ * appear in the report's top-level `testFiles` map with at least one test, or this fails
+ * closed with `instrumentation-failed` — see `extractReportTestFileCounts`'s docstring for the
+ * confirmed failure mode this closes: a configured test file the dry run silently dropped,
+ * which otherwise reads as a legitimate `NoCoverage`/`mutants-uncovered` result for every
+ * module that test file was the sole coverage for. Only meaningful when the report is
+ * otherwise readable, mirroring `entriesAbsentFromReport` above.
  */
 export function classifyMutationReport(
   reportJson: unknown,
@@ -255,6 +296,7 @@ export function classifyMutationReport(
   literalMutateEntries: readonly string[] = [],
   reporterConfig?: ReporterConfig,
   readError?: string,
+  configuredTestFiles: readonly string[] = [],
 ): ClassificationResult {
   const flat = flattenReport(reportJson)
 
@@ -312,6 +354,23 @@ export function classifyMutationReport(
           return mutants.every(m => m.status === 'Ignored')
         })
   const hasVacuouslyIgnoredEntries = vacuouslyIgnoredEntries.length > 0
+
+  // Only meaningful when the report is otherwise readable — an unreadable report already
+  // fails via reportUnreadable, and reportTestFileCounts is undefined in that case anyway (the
+  // report never gets far enough to have a testFiles map worth trusting).
+  const reportTestFileCounts = extractReportTestFileCounts(reportJson)
+  const normalizedReportTestFileCounts =
+    reportTestFileCounts === undefined
+      ? undefined
+      : new Map([...reportTestFileCounts].map(([key, count]) => [normalizeMutatePath(key), count]))
+  const testFilesNotExecuted =
+    normalizedReportTestFileCounts === undefined
+      ? []
+      : configuredTestFiles
+          .map(normalizeMutatePath)
+          .filter(entry => (normalizedReportTestFileCounts.get(entry) ?? 0) === 0)
+  const hasTestFileNotExecuted = testFilesNotExecuted.length > 0
+
   // A well-formed report whose flattened mutant list is empty means every `mutate` entry
   // failed to resolve or instrument (Stryker still exits 0 and writes `{"files":{}}` in this
   // case) — an enumerated set of real modules cannot legitimately yield zero mutants. Reading
@@ -336,7 +395,8 @@ export function classifyMutationReport(
     hasEntriesAbsentFromReport ||
     hasVacuouslyIgnoredEntries ||
     hasReporterConfigMismatch ||
-    hasUnrecognizedStatus
+    hasUnrecognizedStatus ||
+    hasTestFileNotExecuted
   ) {
     verdict = 'instrumentation-failed'
   } else if (directiveViolations.length > 0 || hasIgnoredWithoutReason) {
@@ -422,6 +482,17 @@ export function classifyMutationReport(
     }
   })
 
+  const testFileNotExecutedMutants: LocatedMutant[] = testFilesNotExecuted.map(path => ({
+    file: path,
+    line: 0,
+    col: 0,
+    mutator: 'vitest-config',
+    status: 'TestFileNotExecuted',
+    reason:
+      'no tests executed from a configured test file; the dry run dropped it ' +
+      '(check for an unparseable instrumented module)',
+  }))
+
   const reportedFromReport = (flat ?? []).filter(isFailingMutant).map(toLocatedMutant)
   const mutants = [
     ...reportedFromReport,
@@ -431,6 +502,7 @@ export function classifyMutationReport(
     ...absentFromReportMutants,
     ...vacuouslyIgnoredMutants,
     ...reporterConfigMismatchMutants,
+    ...testFileNotExecutedMutants,
     ...directiveViolations,
   ].sort(compareLocatedMutants)
 
@@ -878,6 +950,7 @@ export function runMutationGuardCheck(
   const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot)
   const directiveViolations = scanDirectiveViolations(directiveFiles)
   const literalMutateEntries = config.mutate.filter(isLiteralPath)
+  const literalTestFileEntries = config.testFiles.filter(isLiteralPath)
   const effectiveReporterConfig: ReporterConfig = reporterConfig ?? reporterConfigFrom(config, strykerConfigPath)
   return classifyMutationReport(
     reportJson,
@@ -887,6 +960,7 @@ export function runMutationGuardCheck(
     literalMutateEntries,
     effectiveReporterConfig,
     readError,
+    literalTestFileEntries,
   )
 }
 
