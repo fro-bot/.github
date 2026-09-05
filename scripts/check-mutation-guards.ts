@@ -452,16 +452,23 @@ function readStrykerConfig(path: string): StrykerConfigShape {
   return {mutate: parsed.mutate}
 }
 
+// Stryker filters `mutate` entries through minimatch, whose pattern grammar is wider than
+// `*`/`?`: braces (`{a,b}`), character classes (`[k]`), and the extglob forms `+(x)`, `@(x)`,
+// `!(x)` are all patterns too. Any of these treated as literal here would make this function
+// try to `readFileSync` a path that was never meant to exist verbatim, feeding a false
+// `MissingMutateFile` into an `instrumentation-failed` decision for a working Stryker config.
+const MINIMATCH_METACHARACTER_PATTERN = /[*?[\]{}]|[+@!]\(/u
+
 /**
- * Glob metacharacters mark an entry as out of scope for this unit's literal enumerated set.
- * A glob entry is silently skipped for directive scanning here — once `mutate` grows a glob,
- * directive coverage for the files it expands to stops with no signal from this wrapper.
- * Unit 3's enumeration guard is the intended backstop: it asserts every mutated module is
- * either explicitly listed or explicitly excused, which catches a glob silently absorbing an
- * undirected file the way it catches any other unlisted module.
+ * Glob metacharacters (minimatch's, not just `*`/`?`) mark an entry as out of scope for this
+ * unit's literal enumerated set. A glob entry is silently skipped for directive scanning here
+ * — once `mutate` grows a glob, directive coverage for the files it expands to stops with no
+ * signal from this wrapper. Unit 3's enumeration guard is the intended backstop: it asserts
+ * every mutated module is either explicitly listed or explicitly excused, which catches a
+ * glob silently absorbing an undirected file the way it catches any other unlisted module.
  */
 function isLiteralPath(entry: string): boolean {
-  return !/[*?!]/u.test(entry)
+  return !MINIMATCH_METACHARACTER_PATTERN.test(entry)
 }
 
 export interface MutateFileReadResult {

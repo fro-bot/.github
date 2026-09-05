@@ -452,6 +452,33 @@ describe('readMutateFileContents (documented policy decisions)', () => {
     expect(result.missing).toEqual([])
   })
 
+  // Blocking: Stryker filters `mutate` through minimatch, whose grammar is wider than
+  // `*`/`?` — braces, character classes, and extglobs are all patterns too. Treating any of
+  // them as literal would try to readFileSync a path no one meant to exist verbatim, feeding
+  // a false MissingMutateFile into instrumentation-failed for a working Stryker config.
+  it('treats a brace-expansion entry as a glob (skipped, never reported missing)', () => {
+    const result = readMutateFileContents(['scripts/{a,b}.ts'], root)
+    expect(result.files).toEqual([])
+    expect(result.missing).toEqual([])
+  })
+
+  it('treats a character-class entry as a glob (skipped, never reported missing)', () => {
+    const result = readMutateFileContents(['scripts/a[k].ts'], root)
+    expect(result.files).toEqual([])
+    expect(result.missing).toEqual([])
+  })
+
+  it('treats an extglob entry as a glob (skipped, never reported missing)', () => {
+    const result = readMutateFileContents(['scripts/+(a).ts'], root)
+    expect(result.files).toEqual([])
+    expect(result.missing).toEqual([])
+  })
+
+  it('treats a plain literal path as literal, not a glob', () => {
+    const result = readMutateFileContents(['scripts/a.ts'], root)
+    expect(result.missing).toEqual(['scripts/a.ts'])
+  })
+
   it('mixes skipped, read, and missing entries in one call, preserving order of the readable ones', () => {
     const result = readMutateFileContents(['scripts/*.ts', 'package.json', 'scripts/nonexistent.ts'], root)
     expect(result.files).toHaveLength(1)
@@ -544,17 +571,24 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
   })
 
   // Sentinel proof: a real file at the real mutationReportPath must survive this whole test
-  // file's run untouched, proving reportPath injection actually redirects rmSync/readFileSync
-  // away from the real path rather than merely accepting the parameter and ignoring it. Any
-  // pre-existing content at that real path (e.g. a report from a real local run) is snapshotted
-  // first and restored afterward — this test must never destroy a file it did not create.
+  // untouched, proving reportPath injection actually redirects rmSync/readFileSync away from
+  // the real path rather than merely accepting the parameter and ignoring it. Pre-existing
+  // content at that real path (e.g. a report from a real local run) is NEVER overwritten, even
+  // transiently — a marker is written only when nothing already exists there, and only that
+  // marker (never real content) is ever removed in `finally`. Whatever was actually at the
+  // real path before this test ran — marker or genuine pre-existing content — is asserted to
+  // survive byte-for-byte.
   it('never touches the real mutationReportPath when a reportPath override is given', () => {
     const realReportDir = dirname(mutationReportPath)
     mkdirSync(realReportDir, {recursive: true})
 
     const preExistingContent = existsSync(mutationReportPath) ? readFileSync(mutationReportPath, 'utf8') : undefined
-    const sentinelContent = `sentinel-${String(Date.now())}`
-    writeFileSync(mutationReportPath, sentinelContent, 'utf8')
+    if (preExistingContent === undefined) {
+      // Nothing was there before: safe to write a disposable marker, since "nothing existed"
+      // is exactly the state `finally` restores by removing it again.
+      writeFileSync(mutationReportPath, `sentinel-${String(Date.now())}`, 'utf8')
+    }
+    const expectedContent = readFileSync(mutationReportPath, 'utf8')
 
     try {
       const otherTempReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-sentinel-')), 'mutation.json')
@@ -563,50 +597,14 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
       }
       runMutationGuardCheck(noOpSpawner, otherTempReportPath)
 
-      expect(readFileSync(mutationReportPath, 'utf8')).toBe(sentinelContent)
+      expect(readFileSync(mutationReportPath, 'utf8')).toBe(expectedContent)
       rmSync(dirname(otherTempReportPath), {recursive: true, force: true})
     } finally {
       if (preExistingContent === undefined) {
         rmSync(mutationReportPath, {force: true})
-      } else {
-        writeFileSync(mutationReportPath, preExistingContent, 'utf8')
       }
+      // else: preExistingContent was never overwritten, so there is nothing to restore.
     }
-  })
-
-  // Proves the restore-in-finally logic itself: pre-seed the real path with content that is
-  // NOT the sentinel, run the same scenario, and assert the pre-seeded content survives after
-  // the test's own cleanup — not just during the test body, but as the file left on disk.
-  it('restores pre-existing real-path content after the sentinel test scenario runs', () => {
-    const realReportDir = dirname(mutationReportPath)
-    mkdirSync(realReportDir, {recursive: true})
-    const preSeededContent = `pre-seeded-${String(Date.now())}`
-    writeFileSync(mutationReportPath, preSeededContent, 'utf8')
-
-    const preExistingContent = existsSync(mutationReportPath) ? readFileSync(mutationReportPath, 'utf8') : undefined
-    const sentinelContent = `sentinel-${String(Date.now())}-b`
-    writeFileSync(mutationReportPath, sentinelContent, 'utf8')
-
-    try {
-      const otherTempReportPath = join(
-        mkdtempSync(join(tmpdir(), 'check-mutation-guards-sentinel-restore-')),
-        'mutation.json',
-      )
-      const noOpSpawner = (): void => {
-        // Runs and returns without touching any report file.
-      }
-      runMutationGuardCheck(noOpSpawner, otherTempReportPath)
-      rmSync(dirname(otherTempReportPath), {recursive: true, force: true})
-    } finally {
-      if (preExistingContent === undefined) {
-        rmSync(mutationReportPath, {force: true})
-      } else {
-        writeFileSync(mutationReportPath, preExistingContent, 'utf8')
-      }
-    }
-
-    expect(readFileSync(mutationReportPath, 'utf8')).toBe(preSeededContent)
-    rmSync(mutationReportPath, {force: true})
   })
 })
 
