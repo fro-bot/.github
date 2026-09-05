@@ -202,6 +202,95 @@ describe('classifyMutationReport', () => {
     expect(result.verdict).toBe('clean')
   })
 
+  // Blocking: excludedMutations/ignoreStatic leave the report key present with every mutant
+  // Ignored (non-empty framework statusReason), which isFailingMutant correctly treats as
+  // non-failing on its own — the report-key cross-check alone cannot see this, since the key
+  // IS present. Verified live: 92 mutants, 90 Ignored + 2 Survived; neutralizing the two
+  // Survived leaves a `clean` verdict for a module that contributes nothing evaluable.
+  it('reports instrumentation-failed when a listed mutate entry has every mutant Ignored', () => {
+    const report = buildReport([
+      {
+        file: 'scripts/vacuous.ts',
+        line: 1,
+        column: 1,
+        mutatorName: 'StringLiteral',
+        status: 'Ignored',
+        statusReason: 'Ignored by excludedMutations',
+      },
+      {
+        file: 'scripts/vacuous.ts',
+        line: 2,
+        column: 1,
+        mutatorName: 'BooleanLiteral',
+        status: 'Ignored',
+        statusReason: 'Ignored by excludedMutations',
+      },
+    ])
+    const result = classifyMutationReport(report, [], [], mutationReportPath, ['scripts/vacuous.ts'])
+    expect(result.verdict).toBe('instrumentation-failed')
+    const sentinel = result.mutants.find(m => m.status === 'AllMutantsIgnored')
+    expect(sentinel?.file).toBe('scripts/vacuous.ts')
+    expect(sentinel?.reason).toContain('all 2 mutants ignored')
+  })
+
+  it('does not flag a listed mutate entry with a mix of Ignored and non-Ignored mutants', () => {
+    const report = buildReport([
+      {
+        file: 'scripts/mixed.ts',
+        line: 1,
+        column: 1,
+        mutatorName: 'StringLiteral',
+        status: 'Ignored',
+        statusReason: 'Ignored by excludedMutations',
+      },
+      {file: 'scripts/mixed.ts', line: 2, column: 1, mutatorName: 'BooleanLiteral', status: 'Killed'},
+    ])
+    const result = classifyMutationReport(report, [], [], mutationReportPath, ['scripts/mixed.ts'])
+    expect(result.verdict).toBe('clean')
+    expect(result.mutants.some(m => m.status === 'AllMutantsIgnored')).toBe(false)
+  })
+
+  // Blocking: mutationReportPath and stryker.config.json's jsonReporter.fileName are two
+  // independent declarations with no other cross-check. A config edit to one without the
+  // other would silently make the wrapper read a stale or nonexistent report.
+  it('reports instrumentation-failed when reporters does not include "json"', () => {
+    const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
+    const result = classifyMutationReport(report, [], [], mutationReportPath, [], {
+      reporters: ['clear-text'],
+      resolvedJsonReportPath: mutationReportPath,
+    })
+    expect(result.verdict).toBe('instrumentation-failed')
+    const sentinel = result.mutants.find(m => m.status === 'ReporterConfigMismatch')
+    expect(sentinel?.file).toBe('stryker.config.json')
+    expect(sentinel?.reason).toContain('does not include "json"')
+  })
+
+  it('reports instrumentation-failed when the resolved jsonReporter.fileName does not match reportPath', () => {
+    const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
+    const result = classifyMutationReport(report, [], [], mutationReportPath, [], {
+      reporters: ['json', 'clear-text'],
+      resolvedJsonReportPath: '/some/other/path/mutation.json',
+    })
+    expect(result.verdict).toBe('instrumentation-failed')
+    const sentinel = result.mutants.find(m => m.status === 'ReporterConfigMismatch')
+    expect(sentinel?.reason).toContain('/some/other/path/mutation.json')
+    expect(sentinel?.reason).toContain(mutationReportPath)
+  })
+
+  it('reports clean when reporterConfig matches (reporters includes json, path matches)', () => {
+    const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
+    const result = classifyMutationReport(report, [], [], mutationReportPath, [], {
+      reporters: ['json', 'clear-text'],
+      resolvedJsonReportPath: mutationReportPath,
+    })
+    expect(result.verdict).toBe('clean')
+  })
+
+  it('does not check reporterConfig at all when it is omitted', () => {
+    const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
+    expect(classifyMutationReport(report, []).verdict).toBe('clean')
+  })
+
   it('reports directive-violation when an Ignored mutant has an empty statusReason', () => {
     const report = buildReport([
       {file: 'a.ts', line: 4, column: 1, mutatorName: 'StringLiteral', status: 'Ignored', statusReason: ''},
@@ -623,6 +712,48 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
       expect(result.verdict).not.toBe('clean')
     } finally {
       rmSync(tempReportPath, {force: true})
+    }
+  })
+
+  // Blocking: an unreadable report previously produced instrumentation-failed with zero
+  // located mutants, giving a red build no clue why. Each of the three read-failure causes
+  // must now produce exactly one RuntimeError sentinel naming the path and the actual cause.
+  it('emits exactly one RuntimeError sentinel naming the path and ENOENT when the report file does not exist', () => {
+    const missingReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-missing-')), 'mutation.json')
+    const noOpSpawner = (): void => {
+      // Runs and returns without writing anything — the report path never exists.
+    }
+    try {
+      const result = runMutationGuardCheck(noOpSpawner, missingReportPath)
+      expect(result.verdict).toBe('instrumentation-failed')
+      const sentinels = result.mutants.filter(m => m.status === 'RuntimeError')
+      expect(sentinels).toHaveLength(1)
+      expect(sentinels[0]?.file).toBe(missingReportPath)
+      expect(sentinels[0]?.mutator).toBe('ReportUnreadable')
+      expect(sentinels[0]?.reason).toMatch(/ENOENT/u)
+    } finally {
+      rmSync(dirname(missingReportPath), {recursive: true, force: true})
+    }
+  })
+
+  it('emits exactly one RuntimeError sentinel naming the path and the parse error when the report file is malformed JSON', () => {
+    const malformedReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-malformed-')), 'mutation.json')
+    // runMutationGuardCheck clears reportPath before invoking the spawner, so the malformed
+    // content must be written BY the spawner (simulating Stryker writing bad output), not
+    // staged beforehand — staging first would just be deleted by the pre-spawn rmSync.
+    const spawnerThatWritesMalformedJson = (): void => {
+      writeFileSync(malformedReportPath, '{not valid json', 'utf8')
+    }
+    try {
+      const result = runMutationGuardCheck(spawnerThatWritesMalformedJson, malformedReportPath)
+      expect(result.verdict).toBe('instrumentation-failed')
+      const sentinels = result.mutants.filter(m => m.status === 'RuntimeError')
+      expect(sentinels).toHaveLength(1)
+      expect(sentinels[0]?.file).toBe(malformedReportPath)
+      expect(sentinels[0]?.mutator).toBe('ReportUnreadable')
+      expect(sentinels[0]?.reason?.length).toBeGreaterThan(0)
+    } finally {
+      rmSync(dirname(malformedReportPath), {recursive: true, force: true})
     }
   })
 

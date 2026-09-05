@@ -48,6 +48,18 @@ export interface ClassificationResult {
   readonly mutants: readonly LocatedMutant[]
 }
 
+/**
+ * The two Stryker config fields that determine where and whether a JSON report is written,
+ * fully resolved by the caller before being passed in: `reporters` as declared, and
+ * `resolvedJsonReportPath` as an absolute path (joined against the repository root the same
+ * way the wrapper's own `reportPath` is), so classifyMutationReport only ever compares two
+ * already-resolved absolute paths and never has to know about the config file's location.
+ */
+export interface ReporterConfig {
+  readonly reporters: readonly string[]
+  readonly resolvedJsonReportPath: string
+}
+
 export interface DirectiveScanInput {
   readonly file: string
   readonly content: string
@@ -133,6 +145,19 @@ function isEmptyReason(reason: string | undefined): boolean {
 }
 
 /**
+ * Names the cause of an unreadable report for the `RuntimeError` sentinel, covering all three
+ * ways `flattenReport` can return `undefined`: a `readError` from the file-read/JSON.parse
+ * attempt (ENOENT, syntax error — takes precedence, since it is the most specific available
+ * cause); `reportJson` being the literal value `undefined` (no report was ever read); or a
+ * successfully parsed JSON value that still does not match the expected report shape.
+ */
+function describeUnreadableReport(reportJson: unknown, readError: string | undefined): string {
+  if (readError !== undefined) return readError
+  if (reportJson === undefined) return 'no report was read (reportJson is undefined)'
+  return 'report JSON does not match the expected mutation-testing-report-schema v2 shape'
+}
+
+/**
  * Returns the raw `files` map's keys from a report, or `undefined` if the report is not even
  * shaped enough to have a `files` record (mirrors flattenReport's own shape check, kept
  * separate since a file with an empty `mutants` array is a valid key this needs to see but
@@ -196,13 +221,30 @@ function toLocatedMutant(mutant: FlatMutant): LocatedMutant {
  *
  * `literalMutateEntries` is the full list of literal (non-glob) `mutate` entries — every one
  * of them, whether or not it existed on disk (see `missingMutateFiles` for the disk check).
- * Every entry, normalized, must appear as a key in the report's `files` map; any that do not
- * fail closed. This subsumes config-level suppression this wrapper otherwise cannot see:
- * Stryker's `ignoreStatic`, `excludedMutations`, or a `!x.ts` exclude pattern shadowing a
- * listed entry can all make a real, on-disk, listed module silently absent from the report
- * with no other observable signal. Entries already reported via `missingMutateFiles` are
- * skipped here (they cannot possibly be report keys either, and are already explained by a
- * more specific reason) to avoid a duplicate, differently-worded entry for the same file.
+ * This closes two specific config-level-suppression channels this wrapper otherwise has no
+ * visibility into, each proven by its own test — no claim wider than that is made:
+ * 1. **Absent key.** A listed entry, normalized, does not appear as a key in the report's
+ *    `files` map at all. A `!x.ts` exclude pattern shadowing a listed entry can cause this.
+ *    Entries already reported via `missingMutateFiles` are skipped here (they cannot possibly
+ *    be report keys either, and are already explained by a more specific reason).
+ * 2. **All-Ignored file.** A listed entry's key is present, but every mutant under it has
+ *    status `Ignored` (including the vacuous case of zero mutants at all) — verified live
+ *    against a real Stryker run: `ignoreStatic`/`excludedMutations` can leave the key present
+ *    with every mutant `Ignored` and a non-empty framework `statusReason`, which
+ *    `isFailingMutant` correctly treats as non-failing on its own, so a file entirely
+ *    suppressed this way would otherwise silently read as `clean`.
+ *
+ * `reporterConfig`, when given, cross-checks `stryker.config.json` itself against the
+ * `reportPath` this wrapper actually reads: `mutationReportPath` and the config's
+ * `jsonReporter.fileName` are two independent declarations with no other cross-check, so a
+ * config edit that changes one without the other (or drops `"json"` from `reporters`
+ * entirely) would silently make the wrapper read a stale or nonexistent report. Fails closed
+ * on either mismatch, naming both the expected and actual values.
+ *
+ * `readError`, when given, is the raw error message from the attempt to read/parse the
+ * report file (see readMutationReport) — threaded through so the `RuntimeError` sentinel
+ * below can name the actual cause (ENOENT, JSON syntax error) instead of a generic message,
+ * for whichever of the three ways a report can be unreadable actually occurred.
  */
 export function classifyMutationReport(
   reportJson: unknown,
@@ -210,11 +252,28 @@ export function classifyMutationReport(
   missingMutateFiles: readonly string[] = [],
   reportPath: string = mutationReportPath,
   literalMutateEntries: readonly string[] = [],
+  reporterConfig?: ReporterConfig,
+  readError?: string,
 ): ClassificationResult {
   const flat = flattenReport(reportJson)
 
   const reportUnreadable = flat === undefined
   const hasMissingMutateFiles = missingMutateFiles.length > 0
+
+  const reporterConfigMismatchReasons: string[] = []
+  if (reporterConfig !== undefined) {
+    if (!reporterConfig.reporters.includes('json')) {
+      reporterConfigMismatchReasons.push(
+        `stryker.config.json "reporters" does not include "json" (got ${JSON.stringify(reporterConfig.reporters)})`,
+      )
+    }
+    if (reporterConfig.resolvedJsonReportPath !== reportPath) {
+      reporterConfigMismatchReasons.push(
+        `stryker.config.json "jsonReporter.fileName" resolves to "${reporterConfig.resolvedJsonReportPath}", but the wrapper reads "${reportPath}"`,
+      )
+    }
+  }
+  const hasReporterConfigMismatch = reporterConfigMismatchReasons.length > 0
 
   const normalizedMissing = new Set(missingMutateFiles.map(normalizeMutatePath))
   const reportFileKeys = extractReportFileKeys(reportJson)
@@ -228,6 +287,30 @@ export function classifyMutationReport(
           .map(normalizeMutatePath)
           .filter(entry => !normalizedMissing.has(entry) && !normalizedReportFileKeys.has(entry))
   const hasEntriesAbsentFromReport = entriesAbsentFromReport.length > 0
+
+  // Per-file grouping (keyed by the same normalization as the absent-key check) so an entry
+  // present in `files` but whose mutants are all `Ignored` — config-level suppression via
+  // `ignoreStatic`/`excludedMutations`, invisible any other way — can be told apart from a
+  // file that genuinely has surviving/killed mutants.
+  const flatByNormalizedFile = new Map<string, FlatMutant[]>()
+  for (const mutant of flat ?? []) {
+    const key = normalizeMutatePath(mutant.file)
+    const bucket = flatByNormalizedFile.get(key)
+    if (bucket === undefined) {
+      flatByNormalizedFile.set(key, [mutant])
+    } else {
+      bucket.push(mutant)
+    }
+  }
+  const vacuouslyIgnoredEntries =
+    reportFileKeys === undefined
+      ? []
+      : literalMutateEntries.map(normalizeMutatePath).filter(entry => {
+          if (normalizedMissing.has(entry) || !normalizedReportFileKeys.has(entry)) return false
+          const mutants = flatByNormalizedFile.get(entry) ?? []
+          return mutants.every(m => m.status === 'Ignored')
+        })
+  const hasVacuouslyIgnoredEntries = vacuouslyIgnoredEntries.length > 0
   // A well-formed report whose flattened mutant list is empty means every `mutate` entry
   // failed to resolve or instrument (Stryker still exits 0 and writes `{"files":{}}` in this
   // case) — an enumerated set of real modules cannot legitimately yield zero mutants. Reading
@@ -245,7 +328,15 @@ export function classifyMutationReport(
   const hasIgnoredWithoutReason = (flat ?? []).some(m => m.status === 'Ignored' && isEmptyReason(m.reason))
 
   let verdict: Verdict
-  if (reportUnreadable || reportEmpty || hasMissingMutateFiles || hasEntriesAbsentFromReport || hasUnrecognizedStatus) {
+  if (
+    reportUnreadable ||
+    reportEmpty ||
+    hasMissingMutateFiles ||
+    hasEntriesAbsentFromReport ||
+    hasVacuouslyIgnoredEntries ||
+    hasReporterConfigMismatch ||
+    hasUnrecognizedStatus
+  ) {
     verdict = 'instrumentation-failed'
   } else if (directiveViolations.length > 0 || hasIgnoredWithoutReason) {
     verdict = 'directive-violation'
@@ -259,6 +350,19 @@ export function classifyMutationReport(
     verdict = 'clean'
   }
 
+  const unreadableReportMutant: LocatedMutant[] = reportUnreadable
+    ? [
+        {
+          file: reportPath,
+          line: 0,
+          col: 0,
+          mutator: 'ReportUnreadable',
+          status: 'RuntimeError',
+          reason: describeUnreadableReport(reportJson, readError),
+        },
+      ]
+    : []
+
   const emptyReportMutant: LocatedMutant[] = reportEmpty
     ? [
         {
@@ -268,6 +372,19 @@ export function classifyMutationReport(
           mutator: 'report',
           status: 'EmptyReport',
           reason: 'report contains no mutants; every `mutate` entry failed to resolve or instrument',
+        },
+      ]
+    : []
+
+  const reporterConfigMismatchMutants: LocatedMutant[] = hasReporterConfigMismatch
+    ? [
+        {
+          file: 'stryker.config.json',
+          line: 0,
+          col: 0,
+          mutator: 'report',
+          status: 'ReporterConfigMismatch',
+          reason: reporterConfigMismatchReasons.join('; '),
         },
       ]
     : []
@@ -292,12 +409,27 @@ export function classifyMutationReport(
       '(likely suppressed by `ignoreStatic`, `excludedMutations`, or a shadowing `!` exclude pattern)',
   }))
 
+  const vacuouslyIgnoredMutants: LocatedMutant[] = vacuouslyIgnoredEntries.map(vacuousPath => {
+    const count = (flatByNormalizedFile.get(vacuousPath) ?? []).length
+    return {
+      file: vacuousPath,
+      line: 0,
+      col: 0,
+      mutator: 'mutate-config',
+      status: 'AllMutantsIgnored',
+      reason: `all ${String(count)} mutants ignored (likely \`ignoreStatic\` or \`excludedMutations\`); the file is present in the report but contributes no evaluable mutants`,
+    }
+  })
+
   const reportedFromReport = (flat ?? []).filter(isFailingMutant).map(toLocatedMutant)
   const mutants = [
     ...reportedFromReport,
+    ...unreadableReportMutant,
     ...emptyReportMutant,
     ...missingMutateFileMutants,
     ...absentFromReportMutants,
+    ...vacuouslyIgnoredMutants,
+    ...reporterConfigMismatchMutants,
     ...directiveViolations,
   ].sort(compareLocatedMutants)
 
@@ -507,6 +639,12 @@ export function scanDirectiveViolations(files: readonly DirectiveScanInput[]): L
 
 interface StrykerConfigShape {
   readonly mutate: readonly string[]
+  readonly reporters: readonly string[]
+  /**
+   * Raw `jsonReporter.fileName` from config, or Stryker's own documented default
+   * (`reports/mutation/mutation.json`, relative to the config file's directory) when absent.
+   */
+  readonly jsonReportFileName: string
 }
 
 function readStrykerConfig(path: string): StrykerConfigShape {
@@ -519,7 +657,19 @@ function readStrykerConfig(path: string): StrykerConfigShape {
   ) {
     throw new Error(`check-mutation-guards: ${path} is missing a string[] "mutate" field`)
   }
-  return {mutate: parsed.mutate}
+
+  const reporters =
+    Array.isArray(parsed.reporters) && parsed.reporters.every((entry): entry is string => typeof entry === 'string')
+      ? parsed.reporters
+      : []
+
+  const jsonReporter = isRecord(parsed.jsonReporter) ? parsed.jsonReporter : undefined
+  const jsonReportFileName =
+    jsonReporter !== undefined && typeof jsonReporter.fileName === 'string'
+      ? jsonReporter.fileName
+      : 'reports/mutation/mutation.json'
+
+  return {mutate: parsed.mutate, reporters, jsonReportFileName}
 }
 
 // Stryker filters `mutate` entries through minimatch, whose pattern grammar is wider than
@@ -576,11 +726,17 @@ export function readMutateFileContents(mutate: readonly string[], root: string):
   return {files, missing}
 }
 
-function readMutationReport(path: string): unknown {
+interface MutationReportRead {
+  readonly json: unknown
+  /** The raw error message from the read/parse attempt, or `undefined` on success. */
+  readonly readError: string | undefined
+}
+
+function readMutationReport(path: string): MutationReportRead {
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as unknown
-  } catch {
-    return undefined
+    return {json: JSON.parse(readFileSync(path, 'utf8')) as unknown, readError: undefined}
+  } catch (error) {
+    return {json: undefined, readError: error instanceof Error ? error.message : String(error)}
   }
 }
 
@@ -668,11 +824,23 @@ export function runMutationGuardCheck(
   rmSync(reportPath, {force: true})
   spawner()
 
-  const reportJson = readMutationReport(reportPath)
+  const {json: reportJson, readError} = readMutationReport(reportPath)
   const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot)
   const directiveViolations = scanDirectiveViolations(directiveFiles)
   const literalMutateEntries = config.mutate.filter(isLiteralPath)
-  return classifyMutationReport(reportJson, directiveViolations, missingMutateFiles, reportPath, literalMutateEntries)
+  const reporterConfig: ReporterConfig = {
+    reporters: config.reporters,
+    resolvedJsonReportPath: join(repositoryRoot, config.jsonReportFileName),
+  }
+  return classifyMutationReport(
+    reportJson,
+    directiveViolations,
+    missingMutateFiles,
+    reportPath,
+    literalMutateEntries,
+    reporterConfig,
+    readError,
+  )
 }
 
 /**
