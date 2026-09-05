@@ -230,7 +230,9 @@ The mermaid sketch above collapses the four failing report classes into two node
 - The spike PR description records mutant counts, runtime, and the discrimination result; the plan's Deferred-to-Implementation items about globs and timeouts are answered there.
 - `pnpm test`, `pnpm lint`, `pnpm check-types`, and `Test Scripts Load` still pass with the new devDependencies installed.
 
-- [ ] **Unit 2: Wrapper script with closed verdict vocabulary and directive rules**
+- [x] **Unit 2: Wrapper script with closed verdict vocabulary and directive rules**
+
+**Result:** 26 classifier and directive tests on fixture reports; three discrimination proofs (precedence, empty-reason, `next-line`) each went red with the rule removed — and the third exposed a fixture that passed for the wrong reason, now replaced. `timeoutMS: 30000` derived from Unit 1's CI figure (5 s default × 2.2 runner ratio, doubled for a cold runner); `dryRunTimeoutMinutes` left at 5 against a ~3 min extrapolation. First live run over ten modules: **`mutant-timeout`** — 725 survived, 429 uncovered, 7 timeout, 0 errors, 1m42s local; the dry run passes for every paired test file. Heaviest: `check-private-leak.ts` 239/81, `corrections.ts` 171/109, `build-wiki-write-core.ts` 100/57. That is Unit 5's baseline.
 
 **Goal:** A `scripts/check-*.ts`-style wrapper that runs Stryker over the configured set, classifies the JSON report into the closed verdict set, enforces directive rules, and prints locatable survivors.
 
@@ -296,7 +298,7 @@ The mermaid sketch above collapses the four failing report classes into two node
 - Test 3 (same-tree pairing): for each `mutate` entry under `packages/`, every `testFiles` entry lives under `packages/`; for each under `scripts/`, under `scripts/`. A cross-tree pairing fails naming both paths.
 - Test 4: `regex-redos-regressions.test.ts` is not in `testFiles`.
 - Test 5: every `not-mutated` reason is non-empty and names the module that carries the core when the entry is a shell.
-- Initial dispositions from research, to be confirmed by reading each file: `mutate` — `check-private-leak.ts`, `check-wiki-authority.ts` (exports `checkWikiAuthority`), `check-repo-onboarded.ts` (exports `runCheck`), `wiki-lockfile-gates.ts`, `wiki-context-safety.ts`, `build-wiki-write-core.ts`, and in the package `private-leak.ts`, `private-leak-adapter.ts`, `corrections.ts`, `corrections-survival.ts`, `wiki-lint.ts`; `not-mutated` with reason — `gate-contract.ts` (constants), and the transform/type modules (`frontmatter.ts`, `rendering-policy.ts`, `wiki-ingest.ts`, `wiki-slug.ts`, `wiki-utils.ts`, `markdown-links.ts`, `schemas.ts`, `index.ts`) unless reading shows a rejection path.
+- Initial dispositions from research, to be confirmed by reading each file: `mutate` — `check-private-leak.ts`, `check-wiki-authority.ts` (exports `checkWikiAuthority`), `check-repo-onboarded.ts` (exports `runCheck`), `wiki-lockfile-gates.ts`, `wiki-context-safety.ts`, `build-wiki-write-core.ts`, and in the package `private-leak.ts` (covered through `private-leak-adapter.test.ts` and the `index.ts` barrel: 47 killed in Unit 2's live run), `private-leak-adapter.ts`, `corrections.ts`, `corrections-survival.ts`; `not-mutated` pending relocation — `wiki-lint.ts`, whose real tests are `scripts/wiki-lint.test.ts` reaching it through `dist/` (same-tree pairing measured 441 uncovered / 10 killed); Unit 5 moves those tests beside the module they test, then Unit 3's list flips it to `mutate`; `not-mutated` with reason — `gate-contract.ts` (constants), and the transform/type modules (`frontmatter.ts`, `rendering-policy.ts`, `wiki-ingest.ts`, `wiki-slug.ts`, `wiki-utils.ts`, `markdown-links.ts`, `schemas.ts`, `index.ts`) unless reading shows a rejection path.
 
 **Patterns to follow:**
 - `scripts/wiki-write-core-contract.test.ts` and `scripts/improvement-metrics-workflow.test.ts` — tests that parse a config artifact and assert structural properties.
