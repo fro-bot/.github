@@ -46,7 +46,10 @@ interface FixtureMutant {
   readonly statusReason?: string
 }
 
-function buildReport(mutants: readonly FixtureMutant[]): unknown {
+function buildReport(
+  mutants: readonly FixtureMutant[],
+  testFiles?: Record<string, {tests: readonly unknown[]}>,
+): unknown {
   const files: Record<string, {mutants: unknown[]}> = {}
   for (const [index, mutant] of mutants.entries()) {
     files[mutant.file] ??= {mutants: []}
@@ -58,7 +61,7 @@ function buildReport(mutants: readonly FixtureMutant[]): unknown {
       ...(mutant.statusReason === undefined ? {} : {statusReason: mutant.statusReason}),
     })
   }
-  return {schemaVersion: '2.0', files}
+  return {schemaVersion: '2.0', files, ...(testFiles === undefined ? {} : {testFiles})}
 }
 
 describe('check-mutation-guards import safety', () => {
@@ -292,6 +295,70 @@ describe('classifyMutationReport', () => {
   it('does not check reporterConfig at all when it is omitted', () => {
     const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
     expect(classifyMutationReport(report, []).verdict).toBe('clean')
+  })
+
+  // Blocking: the full-run failure signature this closes — unlike the scoped-repro ConfigError
+  // shape (no report written at all), Stryker can silently drop one configured test file from
+  // dry-run collection while every other test file still loads, still complete, and still
+  // write a well-formed report. The dropped file's module then reads as 100% `NoCoverage`
+  // (`mutants-uncovered`), not the tool failure it actually is. Verified live: a scratch
+  // 13-module `mutate` config (12 real entries + `wiki-ingest.ts`, whose Regex mutator embeds
+  // one syntactically-invalid variant that fails to parse at load time) wrote a full report
+  // with `corrections.ts` 553/553 and `corrections-survival.ts` 183/183 `NoCoverage`; the
+  // dry-run log showed "Initial test run succeeded. Ran 316 tests" with no error or warning
+  // naming the drop, and the report's top-level `testFiles` map simply omitted the three
+  // dropped keys (`corrections.test.ts`, `corrections-survival.test.ts`,
+  // `wiki-write-core.test.ts`) rather than listing them with zero tests.
+  it('reports instrumentation-failed when a configured test file is absent from the report testFiles map', () => {
+    const report = buildReport(
+      [{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'NoCoverage'}],
+      {'scripts/present.test.ts': {tests: [{id: '1', name: 'a test'}]}},
+    )
+    const result = classifyMutationReport(report, [], [], mutationReportPath, [], undefined, undefined, [
+      'scripts/present.test.ts',
+      'scripts/dropped.test.ts',
+    ])
+    expect(result.verdict).toBe('instrumentation-failed')
+    const sentinel = result.mutants.find(m => m.status === 'TestFileNotExecuted')
+    expect(sentinel?.file).toBe('scripts/dropped.test.ts')
+    expect(sentinel?.reason).toContain('no tests executed from a configured test file')
+  })
+
+  it('reports instrumentation-failed when a configured test file is present but has zero tests', () => {
+    const report = buildReport(
+      [{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'NoCoverage'}],
+      {'scripts/dropped.test.ts': {tests: []}},
+    )
+    const result = classifyMutationReport(report, [], [], mutationReportPath, [], undefined, undefined, [
+      'scripts/dropped.test.ts',
+    ])
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(result.mutants.some(m => m.status === 'TestFileNotExecuted' && m.file === 'scripts/dropped.test.ts')).toBe(
+      true,
+    )
+  })
+
+  it('reports clean when every configured test file (normalizing a leading ./) has at least one test', () => {
+    const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}], {
+      'scripts/present.test.ts': {tests: [{id: '1', name: 'a test'}]},
+    })
+    const result = classifyMutationReport(report, [], [], mutationReportPath, [], undefined, undefined, [
+      './scripts/present.test.ts',
+    ])
+    expect(result.verdict).toBe('clean')
+  })
+
+  it('does not check configured test files at all when the list is empty (default)', () => {
+    const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
+    expect(classifyMutationReport(report, []).verdict).toBe('clean')
+  })
+
+  it('does not double-report a dropped test file when the report itself is unreadable', () => {
+    const result = classifyMutationReport(undefined, [], [], mutationReportPath, [], undefined, undefined, [
+      'scripts/dropped.test.ts',
+    ])
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(result.mutants.some(m => m.status === 'TestFileNotExecuted')).toBe(false)
   })
 
   it('reports directive-violation when an Ignored mutant has an empty statusReason', () => {
