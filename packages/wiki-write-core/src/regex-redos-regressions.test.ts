@@ -7,10 +7,7 @@ import {computeRepoSlug} from './wiki-slug.ts'
 import {collectWikilinks} from './wiki-utils.ts'
 
 interface ScalingMeasurement {
-  readonly smallMilliseconds: number
-  readonly largeMilliseconds: number
   readonly ratio: number
-  readonly repetitions: number
 }
 
 function measure(operation: () => void, repetitions: number): number {
@@ -22,14 +19,18 @@ function measure(operation: () => void, repetitions: number): number {
   return (elapsed.user + elapsed.system) / 1_000
 }
 
+// Odd input only. On even input the upper middle reads high, and both consumers fail silently in
+// that direction: calibration satisfies its target sooner and under-counts repetitions; the ratio
+// estimate inflates, which passes the quadratic floor at the meta-test below without earning it.
 function median(values: readonly number[]): number {
+  if (values.length % 2 === 0) {
+    throw new RangeError(`median needs an odd number of values, received ${values.length}`)
+  }
   const sorted = [...values].sort((left, right) => left - right)
   return sorted[Math.floor(sorted.length / 2)] ?? 0
 }
 
 const CALIBRATION_TARGET_MILLISECONDS = 50
-// Keep odd: `median` returns the upper middle value on even input, which reads the probe high,
-// satisfies the target sooner, and so *under*-counts repetitions -- the failure this calibration fixes.
 const CALIBRATION_PROBES = 3
 
 // The variance this test used to leak in under CPU contention lived here, not in the downstream
@@ -67,8 +68,9 @@ function calibrateRepetitions(operation: () => void): number {
 }
 
 function measureScalingRatio(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
-  // Fail loud: with zero (or NaN -- `NaN < 1` is false) samples every median below would resolve
-  // to 0 and each linearity assertion in this file would pass vacuously.
+  // Fail loud: with zero (or NaN -- `NaN < 1` is false) samples the median below would resolve
+  // to 0 and each linearity assertion in this file would pass vacuously; `median` itself rejects
+  // even counts.
   if (!Number.isInteger(samples) || samples < 1) {
     throw new RangeError(`measureScalingRatio needs a positive integer sample count, received ${samples}`)
   }
@@ -78,29 +80,19 @@ function measureScalingRatio(operation: (size: number) => void, size: number, sa
   largeOperation()
   const repetitions = calibrateRepetitions(smallOperation)
 
-  const smallMeasurements: number[] = []
-  const largeMeasurements: number[] = []
   const ratios: number[] = []
   for (let sample = 0; sample < samples; sample += 1) {
     // Measure both terms fresh and adjacent in time. Reusing the calibration timing for sample 0
     // would pair measurements taken far apart, so CPU contention could inflate one term alone.
     const smallMeasurement = measure(smallOperation, repetitions)
     const largeMeasurement = measure(largeOperation, repetitions)
-    smallMeasurements.push(smallMeasurement)
-    largeMeasurements.push(largeMeasurement)
     ratios.push(largeMeasurement / Math.max(smallMeasurement, 0.01))
   }
 
   // Take the median ratio, never the minimum. Because ratio = large / small, contention on the
   // small term deflates the ratio, so the minimum is structurally the most understated pair --
   // biased toward silence on a guard whose whole job is catching a superlinear regression.
-  // `samples` is pinned to a positive integer above, so none of these medians sees empty input.
-  return {
-    smallMilliseconds: median(smallMeasurements),
-    largeMilliseconds: median(largeMeasurements),
-    ratio: median(ratios),
-    repetitions,
-  }
+  return {ratio: median(ratios)}
 }
 
 // Named so these two bounds stay visually distinct from the unrelated sample count of 3 passed to
