@@ -1,0 +1,54 @@
+# Temporary spike workflow proving StrykerJS mutation testing runs in the CI
+# topology (symlinked node_modules, Node 24) against a single package module.
+# Deleted in Unit 4 of docs/plans/2026-09-04-001-feat-counterexample-proven-guards-plan.md
+# once the real `Check Mutation Guards` job lands in main.yaml.
+---
+name: Mutation Spike
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -Eeuo pipefail {0}
+
+jobs:
+  mutation-spike:
+    name: Mutation Spike
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🧬 Run Stryker
+        run: pnpm exec stryker run | tee mutation-clear-text.log
+
+      - name: 📝 Write step summary
+        if: always()
+        run: |
+          if [ -f mutation-clear-text.log ]; then
+            {
+              echo '```'
+              cat mutation-clear-text.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: ⬆ Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-report
+          path: reports/mutation/mutation.json
+          if-no-files-found: warn
