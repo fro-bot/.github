@@ -13,19 +13,26 @@ export const mutationReportPath = join(repositoryRoot, 'reports', 'mutation', 'm
 // ---------------------------------------------------------------------------
 
 /**
- * Precedence (top to bottom) when several conditions apply simultaneously:
- * instrumentation-failed > directive-violation > mutant-timeout > mutants-uncovered
- * > mutants-survived > clean. `not-applicable` is a typed seam for Unit 4's
- * changed-file gating; this module never produces it.
+ * The closed verdict vocabulary, in precedence order (top to bottom) for when several
+ * conditions apply simultaneously: instrumentation-failed > directive-violation >
+ * mutant-timeout > mutants-uncovered > mutants-survived > clean. `not-applicable` is a typed
+ * seam for Unit 4's changed-file gating; this module never produces it.
+ *
+ * This `as const` array is the single runtime source of truth for the verdict set —
+ * `Verdict` is derived from it, and `exitCodeFor` and its test both iterate it, so a new
+ * verdict added here fails `exitCodeFor`'s exhaustiveness test until it is given an exit code.
  */
-export type Verdict =
-  | 'instrumentation-failed'
-  | 'directive-violation'
-  | 'mutant-timeout'
-  | 'mutants-uncovered'
-  | 'mutants-survived'
-  | 'clean'
-  | 'not-applicable'
+export const VERDICTS = [
+  'instrumentation-failed',
+  'directive-violation',
+  'mutant-timeout',
+  'mutants-uncovered',
+  'mutants-survived',
+  'clean',
+  'not-applicable',
+] as const
+
+export type Verdict = (typeof VERDICTS)[number]
 
 export interface LocatedMutant {
   readonly file: string
@@ -196,16 +203,14 @@ function compareLocatedMutants(a: LocatedMutant, b: LocatedMutant): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Replaces the contents of every string/template literal on a line with spaces
- * of the same length, so column offsets stay aligned. Verified empirically that
- * Stryker honors a directive comment anywhere on a line — including trailing a
+ * Replaces the contents of every string/template literal on a line with spaces of the same
+ * length, so column offsets and downstream regex matches stay aligned. Verified empirically
+ * that Stryker honors a directive comment anywhere on a line — including trailing a
  * statement, e.g. `if (flag) return 'a' // Stryker disable all` — via Babel's
- * `leadingComments`/attachment to the following node, so the scanner must look
- * for `//` and `/* ... *\/` comments anywhere on the line, not only at the line
- * start. Stripping strings first keeps a directive-shaped string literal (e.g.
- * `const message = '// Stryker disable all'`) from being mistaken for a real
- * comment, since the only remaining `//`/`/*` sequences are genuine comment
- * markers.
+ * `leadingComments` attachment to the following node, so the scanner looks for the phrase
+ * anywhere on the line, not only at its start (see findDirectiveOnLine). Stripping strings
+ * first keeps a directive-shaped string literal (e.g. `const message = '// Stryker disable
+ * all'`) from ever being mistaken for a real directive.
  *
  * Known narrow gap (fails open): this stripper has no regex-literal state, so a quote
  * character inside a regex literal on the same line as a directive (e.g.
@@ -244,55 +249,46 @@ interface DirectiveMatch {
   readonly col: number
 }
 
-// Stryker's own anchor is `^\s?` — at most one leading whitespace character. This pattern
-// uses `\s*` (any amount), so `//  Stryker disable all` (two spaces) is flagged here but
-// silently ignored by Stryker itself. Deliberately stricter, not a bug: it fails closed on a
-// comment Stryker would ignore anyway, which is the safe direction for a check whose whole
-// point is refusing to guess at intent.
-const STRYKER_DISABLE_PATTERN = /^\s*Stryker disable\b(.*)$/u
+// Deliberately unanchored and comment-agnostic — see findDirectiveOnLine below for why.
+// `\r?$` strips a trailing CRLF carriage return so a directive at the end of a
+// CRLF-terminated line is still evaluated correctly (its remainder must not include `\r`,
+// or a trailing `\r` would make an otherwise-valid `: reason` look non-empty-but-wrong).
+const STRYKER_DISABLE_PATTERN = /Stryker disable\b(.*)\r?$/u
 
 /**
- * Finds the first `Stryker disable` directive comment on a line — either a
- * `//` line comment or a `/* ... *\/` block comment (single-line, or
- * multi-line with the directive on its opening line) — searching anywhere on
- * the line, not only at its start. String/template literal contents are
- * stripped first so a directive-shaped string is never matched.
+ * Finds a `Stryker disable` directive anywhere in a line's stripped text (string/template
+ * literal contents blanked first by stripStringLiterals, so a directive-shaped string is
+ * never matched).
  *
- * A multi-line block comment with no closing `*\/` on this line is still
- * scanned to end-of-line: Stryker's own regex is `/^\s?Stryker (disable|
- * restore).../` matched against the *whole* `comment.value` with no `m`
- * flag, so `^` only ever matches the very start of the comment content —
- * i.e. the opening line. A directive on a later continuation line (e.g. a
- * ` * Stryker disable all` line inside a `/**` block) can never match that
- * anchor and Stryker itself ignores it, so this scanner does not need to
- * (and structurally cannot, since it has no `/*` of its own) look at
- * continuation lines either.
+ * Deliberately does NOT try to locate or validate a surrounding comment. An earlier version
+ * of this scanner located a specific `//` or `/* ... *\/` comment and evaluated only the
+ * first one found per line — but Stryker's DirectiveBookkeeper attaches to *any* leading
+ * comment on a node, and a line can carry more than one comment. Both
+ * `/* a *\/ // Stryker disable all` and `/* a *\/ /* Stryker disable all *\/` suppress
+ * mutants under Stryker, and the comment-locating version evaluated only the first,
+ * unrelated `/* a *\/` comment and reported zero violations for either. Rather than keep
+ * extending the scanner to mirror every shape of Stryker's comment attachment, it now scans
+ * the whole stripped line for the phrase, unanchored: any line whose stripped text contains
+ * "Stryker disable" is evaluated by the scope/reason rules below.
+ *
+ * Accepted consequences, all fail-closed (a false positive that fails loudly, never a false
+ * negative that passes silently):
+ * - A JSDoc continuation line (` * Stryker disable all`) is now flagged even though
+ *   Stryker's own `^`-anchored regex (matched against the whole comment value, no `m` flag)
+ *   ignores it — that anchor only ever matches a comment's opening line.
+ * - Ordinary prose containing the phrase (e.g. `// Stryker disable directives are banned
+ *   here`) is flagged; the directive-violation reason string names this explicitly.
+ * - Stryker's own looser anchor (`^\s?`, at most one leading space) vs. no anchor at all
+ *   here is moot now: unanchored scanning is strictly more permissive than either, by design.
+ *
+ * Known narrow gap, unchanged from stripStringLiterals: no regex-literal state, so a quote
+ * inside a same-line regex literal can open a phantom string and hide a real directive.
  */
 function findDirectiveOnLine(line: string): DirectiveMatch | undefined {
   const stripped = stripStringLiterals(line)
-  const lineCommentIndex = stripped.indexOf('//')
-  const blockCommentIndex = stripped.indexOf('/*')
-
-  // A `//` comment consumes the rest of the line, so if it appears before any `/*`,
-  // the `/*` (if any) is just comment text, not the start of a separate comment.
-  if (lineCommentIndex !== -1 && (blockCommentIndex === -1 || lineCommentIndex < blockCommentIndex)) {
-    const match = STRYKER_DISABLE_PATTERN.exec(line.slice(lineCommentIndex + 2))
-    if (match === null) return undefined
-    return {remainder: match[1] ?? '', col: lineCommentIndex + 1}
-  }
-
-  if (blockCommentIndex !== -1) {
-    const closeIndex = stripped.indexOf('*/', blockCommentIndex + 2)
-    // No `*/` on this line: still the comment's opening line (the only line Stryker's
-    // anchor can ever match), so scan to end-of-line rather than bailing out.
-    const commentBody =
-      closeIndex === -1 ? line.slice(blockCommentIndex + 2) : line.slice(blockCommentIndex + 2, closeIndex)
-    const match = STRYKER_DISABLE_PATTERN.exec(commentBody)
-    if (match === null) return undefined
-    return {remainder: match[1] ?? '', col: blockCommentIndex + 1}
-  }
-
-  return undefined
+  const match = STRYKER_DISABLE_PATTERN.exec(stripped)
+  if (match === null) return undefined
+  return {remainder: match[1] ?? '', col: (match.index ?? 0) + 1}
 }
 
 /**
@@ -385,7 +381,14 @@ function isLiteralPath(entry: string): boolean {
   return !/[*?!]/u.test(entry)
 }
 
-function readMutateFileContents(mutate: readonly string[], root: string): DirectiveScanInput[] {
+/**
+ * Reads the content of every literal (non-glob) `mutate` entry, for directive scanning.
+ * Exported for unit testing of its two documented policy decisions: a glob entry is
+ * silently skipped (see isLiteralPath), and a listed file that does not exist on disk is
+ * also silently skipped rather than thrown — both are config problems for Unit 3's
+ * enumeration guard to catch, not this wrapper's concern.
+ */
+export function readMutateFileContents(mutate: readonly string[], root: string): DirectiveScanInput[] {
   const files: DirectiveScanInput[] = []
   for (const relativePath of mutate) {
     if (!isLiteralPath(relativePath)) continue
@@ -491,10 +494,20 @@ export function runMutationGuardCheck(spawner: () => void = defaultStrykerSpawne
   return classifyMutationReport(reportJson, directiveViolations)
 }
 
+/**
+ * The exit-code contract for the closed verdict vocabulary: 0 for `clean` and
+ * `not-applicable`, 1 for every failing verdict. Exported so the contract has a single,
+ * directly testable definition instead of being reconstructed inline wherever a verdict
+ * needs to become a process exit code.
+ */
+export function exitCodeFor(verdict: Verdict): number {
+  return verdict === 'clean' || verdict === 'not-applicable' ? 0 : 1
+}
+
 async function main(): Promise<void> {
   const result = runMutationGuardCheck()
   printResult(result)
-  process.exitCode = result.verdict === 'clean' || result.verdict === 'not-applicable' ? 0 : 1
+  process.exitCode = exitCodeFor(result.verdict)
 }
 
 // Deliberately use Node's main-module check, exactly as scripts/build-wiki-write-core.ts does:

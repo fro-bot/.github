@@ -39,7 +39,9 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Ten mutated modules now, each with an 8-minute dryRunTimeoutMinutes allowance in
+    # stryker.config.json; 10 minutes was sized for the single-module spike.
+    timeout-minutes: 20
     steps:
       - name: ⤵ Checkout Branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

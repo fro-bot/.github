@@ -1,5 +1,5 @@
 import {mkdirSync, rmSync, writeFileSync} from 'node:fs'
-import {dirname} from 'node:path'
+import {dirname, resolve} from 'node:path'
 import process from 'node:process'
 
 import {describe, expect, it, vi} from 'vitest'
@@ -7,10 +7,13 @@ import {describe, expect, it, vi} from 'vitest'
 import {
   classifyMutationReport,
   defaultStrykerSpawner,
+  exitCodeFor,
   flattenReport,
   mutationReportPath,
+  readMutateFileContents,
   runMutationGuardCheck,
   scanDirectiveViolations,
+  VERDICTS,
   type DirectiveScanInput,
   type LocatedMutant,
 } from './check-mutation-guards.ts'
@@ -318,15 +321,121 @@ describe('scanDirectiveViolations', () => {
     expect(violations).toEqual([])
   })
 
-  // Verified against Stryker's own `^\s?Stryker ...` anchor (no multiline flag, matched
-  // against the whole comment value): a directive on a *continuation* line of a block comment
-  // (e.g. the ` * Stryker disable all` line inside a `/**` doc-style block) can never be the
-  // start of `comment.value`, so Stryker itself never honors it. This scanner also has no
-  // `/*` on that line to key off, so it correctly leaves the line unscanned — matching
-  // Stryker's behavior rather than accidentally being stricter than it.
-  it('does not flag a block-comment continuation line, matching Stryker\'s own "opening line only" anchor', () => {
+  // Design change: the scanner now scans a line's whole stripped text for the phrase,
+  // unanchored, instead of locating a specific comment first (see findDirectiveOnLine's
+  // docstring). A JSDoc continuation line (` * Stryker disable all`) is therefore now
+  // flagged even though Stryker's own `^`-anchored regex (matched against the whole comment
+  // value, no `m` flag, so `^` only ever matches a comment's opening line) ignores it — an
+  // accepted fail-closed false positive, the inverse of this scanner's previous behavior.
+  it('flags a block-comment continuation line as a false positive, even though Stryker itself ignores it (fail-closed by design)', () => {
     const violations = scan('/**\n * Stryker disable all\n */\nconst x = 1\n')
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toMatchObject({file: 'a.ts', line: 2, mutator: 'directive', status: 'DirectiveViolation'})
+  })
+
+  // Blocking (review case 1): the comment-locating scanner evaluated only the first comment
+  // on a line and returned, so a leading, unrelated block comment hid a real trailing
+  // line-comment directive that Stryker still honors.
+  it('flags a line-comment directive that follows an unrelated block comment on the same line', () => {
+    const violations = scan('/* a */ // Stryker disable all\nconst x = 1\n')
+    expect(violations).toHaveLength(1)
+  })
+
+  // Blocking (review case 2): same defect, with the honored directive itself in a second
+  // block comment rather than a line comment.
+  it('flags a block-comment directive that follows an unrelated block comment on the same line', () => {
+    const violations = scan('/* a */ /* Stryker disable all */\nconst x = 1\n')
+    expect(violations).toHaveLength(1)
+  })
+
+  // CRLF: content.split('\n') on a CRLF-terminated file leaves a trailing '\r' on each line.
+  // The original comment-locating regex's `$` (no `m` flag) required true end-of-string, and
+  // `.` never matches '\r', so a directive on a CRLF line failed to match at all.
+  it('flags a bare disable-all directive on a CRLF-terminated line', () => {
+    const violations = scan('// Stryker disable all\r\nconst x = 1\r\n')
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toMatchObject({file: 'a.ts', line: 1, mutator: 'directive', status: 'DirectiveViolation'})
+  })
+
+  it('passes a next-line directive with a non-empty reason on a CRLF-terminated line', () => {
+    const violations = scan('// Stryker disable next-line ConditionalExpression: reason\r\nconst x = 1\r\n')
     expect(violations).toEqual([])
+  })
+})
+
+describe('readMutateFileContents (documented policy decisions)', () => {
+  // The repo root itself always exists and contains predictable fixtures for this test.
+  const root = resolve(import.meta.dirname, '..')
+
+  it('silently skips a glob entry rather than reading it or throwing', () => {
+    const files = readMutateFileContents(['scripts/*.ts'], root)
+    expect(files).toEqual([])
+  })
+
+  it('silently skips a literal entry that does not exist on disk rather than throwing', () => {
+    const files = readMutateFileContents(['scripts/this-file-does-not-exist.ts'], root)
+    expect(files).toEqual([])
+  })
+
+  it('reads the content of an existing literal entry', () => {
+    const files = readMutateFileContents(['package.json'], root)
+    expect(files).toHaveLength(1)
+    expect(files[0]?.file).toBe('package.json')
+    expect(files[0]?.content).toContain('"name"')
+  })
+
+  it('mixes skipped and read entries in one call, preserving order of the readable ones', () => {
+    const files = readMutateFileContents(['scripts/*.ts', 'package.json', 'scripts/nonexistent.ts'], root)
+    expect(files).toHaveLength(1)
+    expect(files[0]?.file).toBe('package.json')
+  })
+})
+
+describe('exitCodeFor (exit-code contract)', () => {
+  it('exits 0 for clean', () => {
+    expect(exitCodeFor('clean')).toBe(0)
+  })
+
+  it('exits 0 for not-applicable', () => {
+    expect(exitCodeFor('not-applicable')).toBe(0)
+  })
+
+  it('exits 1 for instrumentation-failed', () => {
+    expect(exitCodeFor('instrumentation-failed')).toBe(1)
+  })
+
+  it('exits 1 for directive-violation', () => {
+    expect(exitCodeFor('directive-violation')).toBe(1)
+  })
+
+  it('exits 1 for mutant-timeout', () => {
+    expect(exitCodeFor('mutant-timeout')).toBe(1)
+  })
+
+  it('exits 1 for mutants-uncovered', () => {
+    expect(exitCodeFor('mutants-uncovered')).toBe(1)
+  })
+
+  it('exits 1 for mutants-survived', () => {
+    expect(exitCodeFor('mutants-survived')).toBe(1)
+  })
+
+  // Set-equality: the seven verdicts asserted individually above must equal the full
+  // Verdict union, sourced from the same VERDICTS runtime array exitCodeFor is defined
+  // against — so a new verdict added to VERDICTS fails this test until exitCodeFor (and a
+  // dedicated assertion above) accounts for it.
+  it('asserts an exit code for every member of the Verdict union, and no more', () => {
+    const assertedVerdicts = [
+      'clean',
+      'not-applicable',
+      'instrumentation-failed',
+      'directive-violation',
+      'mutant-timeout',
+      'mutants-uncovered',
+      'mutants-survived',
+    ]
+    expect(new Set(assertedVerdicts)).toEqual(new Set(VERDICTS))
+    expect(assertedVerdicts).toHaveLength(VERDICTS.length)
   })
 })
 
