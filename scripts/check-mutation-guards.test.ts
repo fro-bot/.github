@@ -1108,14 +1108,20 @@ describe('closure-based trigger set against the real config', () => {
     expect(result).toBeUndefined()
   })
 
-  // (c) A file genuinely outside the real closure — computed from the real config, not
-  // hardcoded — still reports not-applicable. markdown-links.ts's own mutation-guards.json
-  // reason ("no mutated module reaches this file") is independently verified here by asserting
-  // it is absent from the real closure before relying on that absence for the not-applicable
-  // assertion, so a future change that starts reaching this file breaks this test loudly
-  // instead of silently invalidating what it claims to prove.
-  it('reports not-applicable for a real file confirmed outside the real import closure (packages/wiki-write-core/src/markdown-links.ts)', async () => {
-    const outsideClosureFile = 'packages/wiki-write-core/src/markdown-links.ts'
+  // (c) A file genuinely outside the real closure, computed from the real config rather than
+  // hardcoded, and confirmed both to EXIST on disk and to be absent from the real trigger set
+  // — so the premise ("this file really is unreachable from every mutate/testFiles entry") is
+  // visible in the test itself, not asserted by fiat. `scripts/reconcile-repos.ts` is a large,
+  // wholly separate control-plane module (repo reconciliation/star-sync) with no import path
+  // — direct, transitive, or via a `@fro-bot/wiki-write-core` package-name reference — from any
+  // `mutate` or `testFiles` entry in `stryker.config.json`; it does not itself import, or get
+  // imported by, anything in the mutation set. (`markdown-links.ts`, this test's previous
+  // subject, no longer qualifies: the transitive-import fix now correctly reaches it through
+  // `wiki-lint.ts`, which is itself reached from the mutated `corrections-survival.ts`'s
+  // `import type {WikiLintFinding} from './wiki-lint.ts'`.)
+  it('reports not-applicable for a real file confirmed outside the real import closure (scripts/reconcile-repos.ts)', async () => {
+    const outsideClosureFile = 'scripts/reconcile-repos.ts'
+    expect(existsSync(join(resolve(import.meta.dirname, '..'), outsideClosureFile))).toBe(true)
     expect(realTriggerSet.files.has(outsideClosureFile)).toBe(false)
 
     const result = await evaluateTriggerGate(
@@ -1154,6 +1160,38 @@ describe('closure-based trigger set against the real config', () => {
         ? undefined
         : `not-mutated entr(y/ies) reached by a mutate entry but missing from the trigger set: ${violations.join(', ')}`,
     ).toEqual([])
+  })
+
+  // Item 1's regular-import fix: private-leak-adapter.ts (mutate) imports wiki-slug.ts
+  // directly; wiki-lint.ts (reached from corrections-survival.ts, mutate, via `import type
+  // {WikiLintFinding} from './wiki-lint.ts'`) imports markdown-links.ts directly; wiki-ingest.ts
+  // (a testFiles entry's direct import) imports data-branch-bootstrap.ts directly. None of
+  // these three second-hop modules are themselves re-export barrels — they are only reachable
+  // if the BFS follows a REGULAR import, not just a re-export. Pins the exact closure-size
+  // delta this fix produces on the real config.
+  it('reaches markdown-links.ts and data-branch-bootstrap.ts through a regular (non-re-export) two-hop import chain', () => {
+    expect(realTriggerSet.files.has('packages/wiki-write-core/src/markdown-links.ts')).toBe(true)
+    expect(realTriggerSet.files.has('packages/wiki-write-core/src/data-branch-bootstrap.ts')).toBe(true)
+  })
+
+  // Item 3: a filesystem read failure during the closure walk itself (not just the PR-context
+  // or changed-files API calls) must also fail closed to instrumentation-failed, never escape
+  // as an uncaught exception. Injects a readSource that always throws.
+  it('reports instrumentation-failed, never throws, when the import-closure walk cannot read a source file', async () => {
+    const throwingReadSource = (): string => {
+      throw new Error('EACCES: permission denied (simulated)')
+    }
+
+    const result = await evaluateTriggerGate(
+      realConfig,
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['packages/wiki-write-core/src/wiki-slug.ts']}),
+      throwingReadSource,
+    )
+
+    expect(result?.verdict).toBe('instrumentation-failed')
+    expect(result?.mutants[0]?.status).toBe('ChangedFileGateFailed')
+    expect(result?.mutants[0]?.reason).toContain('EACCES')
   })
 })
 

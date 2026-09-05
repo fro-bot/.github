@@ -981,15 +981,23 @@ const DYNAMIC_IMPORT_STRING_PATTERN = /import\(\s*['"](\.\.?\/[^'"]+)['"]\s*\)/g
 // Dynamic `import(`./x${'.js'}`)` — the template literal's raw content is resolved separately
 // (see resolveTemplateLiteralSpecifier) since it may carry a literal-only `${...}` interpolation.
 const DYNAMIC_IMPORT_TEMPLATE_PATTERN = /import\(\s*`([^`]*)`\s*\)/gu
-// Only `export * from '...'` / `export {...} from '...'` — the subset of exports that forward
-// to another module and are therefore worth following transitively for barrel-chain reach.
-// `(?:type\s+)?` accepts the type-only forms too: `export type {...} from '...'` and
-// `export type * from '...'` re-export types only, but the file relationship they describe
-// (this file forwards to that one) is the same signal reach treats as coverage — a barrel
-// that only re-exports types from a module still names it as part of the same logical unit.
-const REEXPORT_PATTERN = /export\s+(?:type\s+)?(?:\*(?:\s+as\s+[$\w]+)?|\{[^}]*\})\s*from\s+['"](\.\.?\/[^'"]+)['"]/gu
 // A literal-only `${'...'}`/`${"..."}` interpolation inside a template literal specifier.
 const TEMPLATE_LITERAL_LOOKUP_PATTERN = /\$\{\s*(['"])((?:\\.|(?!\1).)*)\1\s*\}/gu
+
+/**
+ * Injectable seam for every filesystem read the import-closure extractor performs
+ * (`directSpecifiers`, `wikiWriteCoreSubpathSourceFiles`), defaulting to a real
+ * `readFileSync(path, 'utf8')`. Exists so a test can inject a reader that throws (a
+ * permission error, a symlink loop, a race with a concurrent delete) and prove
+ * `evaluateTriggerGate` converts that into `instrumentation-failed` rather than letting it
+ * escape as an uncaught exception — the same fail-closed contract every other read in this
+ * module already has.
+ */
+export type SourceReader = (absolutePath: string) => string
+
+function defaultReadSource(absolutePath: string): string {
+  return readFileSync(absolutePath, 'utf8')
+}
 
 /** The one internal package this repo builds, and the two directories a subpath import maps between. */
 const WIKI_WRITE_CORE_SRC_DIR = 'packages/wiki-write-core/src'
@@ -1117,8 +1125,8 @@ export function stripComments(content: string): string {
  * every pattern requires a leading `./` or `../` (see `wikiWriteCoreSubpathSourceFiles` for
  * the separate package-specifier scan this wrapper's trigger-set closure also needs).
  */
-function directSpecifiers(repoRelativeFilePath: string): string[] {
-  const content = stripComments(readFileSync(join(repositoryRoot, repoRelativeFilePath), 'utf8'))
+function directSpecifiers(repoRelativeFilePath: string, readSource: SourceReader): string[] {
+  const content = stripComments(readSource(join(repositoryRoot, repoRelativeFilePath)))
   const raw: string[] = []
 
   for (const match of content.matchAll(STATIC_RELATIVE_IMPORT_PATTERN)) {
@@ -1136,27 +1144,20 @@ function directSpecifiers(repoRelativeFilePath: string): string[] {
   return raw.map(specifier => resolveSpecifier(repoRelativeFilePath, specifier))
 }
 
-/** Only the `export ... from '...'` (re-export/barrel) specifiers a file forwards to. */
-function directReexportSpecifiers(repoRelativeFilePath: string): string[] {
-  const content = stripComments(readFileSync(join(repositoryRoot, repoRelativeFilePath), 'utf8'))
-  const raw: string[] = []
-  for (const match of content.matchAll(REEXPORT_PATTERN)) {
-    if (match[1] !== undefined) raw.push(match[1])
-  }
-  return raw.map(specifier => resolveSpecifier(repoRelativeFilePath, specifier))
-}
-
 /**
- * The set of repo-relative module paths a file "reaches": every direct relative-path
- * specifier it references (see `directSpecifiers`), plus — followed transitively through any
- * number of re-export barrel hops (see `directReexportSpecifiers`), bounded by a visited set
- * so a barrel cycle cannot loop forever — every module a reached barrel forwards to. Used both
- * by the enumeration guard's same-tree pairing check (a test file that imports a mutated
- * module, directly or via a chain of barrels it imports, is treated as covering it) and by
- * this wrapper's changed-file trigger gate (a `mutate`/`testFiles` entry's import closure must
- * itself be in the trigger set). Exported for both consumers and for direct testing against a
- * real file (Fro Bot's live `wiki-context-safety.ts`/`wiki-context-safety.test.ts`
- * counterexample, which reaches only through a dynamic
+ * The set of repo-relative module paths a file "reaches", transitively: every direct
+ * relative-path specifier it references (see `directSpecifiers`), plus — followed
+ * transitively through any number of hops of ANY relative import (not just re-export barrel
+ * hops; a regular `import {x} from './y.ts'` in a reached file is followed exactly the same
+ * as an `export * from './y.ts'`), bounded by a visited set so an import cycle cannot loop
+ * forever — every module reachable from the starting file by walking relative imports to
+ * depth N. Used both by the enumeration guard's same-tree pairing check (a test file that
+ * imports a mutated module, directly or via a chain of imports, is treated as covering it)
+ * and by this wrapper's changed-file trigger gate (a `mutate`/`testFiles` entry's full import
+ * closure, not just its direct imports, must be in the trigger set — a two-hop-away module
+ * can still change a mutated module's behavior). Exported for both consumers and for direct
+ * testing against a real file (Fro Bot's live `wiki-context-safety.ts`/
+ * `wiki-context-safety.test.ts` counterexample, which reaches only through a dynamic
  * `import(\`./wiki-context-safety${'.js'}\`)`, no static import at all).
  *
  * Every direct specifier is filtered through `existsSync` before being added to `reached` —
@@ -1168,12 +1169,15 @@ function directReexportSpecifiers(repoRelativeFilePath: string): string[] {
  * `stripComments`'s docstring) is narrower than "any import-shaped string" — it is now only an
  * import-shaped string that happens to name a module that *does* exist on disk.
  */
-export function reachedModulesTransitive(repoRelativeFilePath: string): Set<string> {
+export function reachedModulesTransitive(
+  repoRelativeFilePath: string,
+  readSource: SourceReader = defaultReadSource,
+): Set<string> {
   const reached = new Set<string>()
   const visited = new Set<string>()
   const followQueue: string[] = []
 
-  for (const target of directSpecifiers(repoRelativeFilePath)) {
+  for (const target of directSpecifiers(repoRelativeFilePath, readSource)) {
     if (!existsSync(join(repositoryRoot, target))) continue
     reached.add(target)
     followQueue.push(target)
@@ -1184,7 +1188,8 @@ export function reachedModulesTransitive(repoRelativeFilePath: string): Set<stri
     if (current === undefined || visited.has(current)) continue
     visited.add(current)
     if (!existsSync(join(repositoryRoot, current))) continue
-    for (const target of directReexportSpecifiers(current)) {
+    for (const target of directSpecifiers(current, readSource)) {
+      if (!existsSync(join(repositoryRoot, target))) continue
       if (reached.has(target)) continue
       reached.add(target)
       followQueue.push(target)
@@ -1205,8 +1210,11 @@ export function reachedModulesTransitive(repoRelativeFilePath: string): Set<stri
  * to find, so the relative-only reach computation above would never connect it to the source
  * file whose compiled output it actually depends on.
  */
-export function wikiWriteCoreSubpathSourceFiles(repoRelativeFilePath: string): string[] {
-  const content = stripComments(readFileSync(join(repositoryRoot, repoRelativeFilePath), 'utf8'))
+export function wikiWriteCoreSubpathSourceFiles(
+  repoRelativeFilePath: string,
+  readSource: SourceReader = defaultReadSource,
+): string[] {
+  const content = stripComments(readSource(join(repositoryRoot, repoRelativeFilePath)))
   const subpaths: string[] = []
   for (const match of content.matchAll(WIKI_WRITE_CORE_SPECIFIER_PATTERN)) {
     subpaths.push(match[1] ?? 'index')
@@ -1240,7 +1248,10 @@ export interface ImportClosure {
  * A glob entry (per `isLiteralPath`) or an entry that does not exist on disk is skipped
  * without attempting to read it — the same defensive posture as `readMutateFileContents`.
  */
-export function buildImportClosure(entries: readonly string[]): ImportClosure {
+export function buildImportClosure(
+  entries: readonly string[],
+  readSource: SourceReader = defaultReadSource,
+): ImportClosure {
   const files = new Set<string>()
   const visited = new Set<string>()
   const queue: string[] = [...entries]
@@ -1254,11 +1265,11 @@ export function buildImportClosure(entries: readonly string[]): ImportClosure {
     visited.add(normalized)
     if (!isLiteralPath(normalized) || !existsSync(join(repositoryRoot, normalized))) continue
 
-    for (const target of reachedModulesTransitive(normalized)) {
+    for (const target of reachedModulesTransitive(normalized, readSource)) {
       files.add(target)
     }
 
-    for (const srcFile of wikiWriteCoreSubpathSourceFiles(normalized)) {
+    for (const srcFile of wikiWriteCoreSubpathSourceFiles(normalized, readSource)) {
       hasWikiWriteCoreSubpathReference = true
       files.add(srcFile)
       if (!visited.has(srcFile)) queue.push(srcFile)
@@ -1344,12 +1355,17 @@ export interface TriggerSet {
  * `not-applicable` and never run Stryker at all — a fail-open this wrapper exists to prevent
  * for every other kind of drift. Entries are normalized the same way as everywhere else in
  * this module (`normalizeMutatePath`, stripping a single leading `./`).
+ *
+ * `readSource` is an injectable seam (defaults to a real `readFileSync`) passed straight
+ * through to `buildImportClosure`, so a test can force the closure walk's filesystem reads to
+ * throw — `evaluateTriggerGate` calls this from inside its own `try` specifically so that
+ * throw is caught and converted to `instrumentation-failed`, never left to escape uncaught.
  */
-export function buildTriggerSet(config: StrykerConfigShape): TriggerSet {
+export function buildTriggerSet(config: StrykerConfigShape, readSource: SourceReader = defaultReadSource): TriggerSet {
   const configEntries = [...config.mutate, ...config.testFiles]
   const hasGlobEntries = configEntries.some(entry => !isLiteralPath(entry))
   const baseFiles = new Set([...configEntries, ...FIXED_TRIGGER_FILES].map(normalizeMutatePath))
-  const closure = buildImportClosure(configEntries)
+  const closure = buildImportClosure(configEntries, readSource)
   const files = new Set([...baseFiles, ...closure.files])
   const closureSize = [...closure.files].filter(file => !baseFiles.has(file)).length
   const directoryPrefixes = closure.hasWikiWriteCoreSubpathReference ? [`${WIKI_WRITE_CORE_DIST_DIR}/`] : []
@@ -1410,7 +1426,17 @@ function triggerGateSentinel(
  * `env` and `deps` are injectable seams (both default to the real environment/functions) so
  * tests can drive every precedence case — no PR context, a fetch failure, no intersection, an
  * intersection — without setting real environment variables, writing a real event-payload
- * file, or ever invoking `gh`.
+ * file, or ever invoking `gh`. `readSource` is a fourth injectable seam, passed straight
+ * through to `buildTriggerSet`'s closure walk (defaults to a real `readFileSync`); a test can
+ * inject a reader that throws to prove a filesystem failure during the closure walk itself
+ * (not just the PR-context/API calls) is also caught here and converted to
+ * `instrumentation-failed` rather than escaping uncaught to `main()`'s caller.
+ *
+ * `buildTriggerSet` is called from inside the `try` block, not before it: computing the
+ * trigger set requires reading every `mutate`/`testFiles` entry's source (`buildImportClosure`),
+ * and any read failure there is exactly the kind of "cannot determine the trigger set"
+ * condition this gate must fail closed on, per the same R9 contract as an unreadable PR
+ * context or a failed changed-files API call.
  */
 export async function evaluateTriggerGate(
   config: StrykerConfigShape,
@@ -1419,12 +1445,13 @@ export async function evaluateTriggerGate(
     eventPath: process.env.GITHUB_EVENT_PATH,
   },
   deps: ChangedFileGateDeps = defaultChangedFileGateDeps,
+  readSource: SourceReader = defaultReadSource,
 ): Promise<ClassificationResult | undefined> {
   if (env.eventName !== 'pull_request') return undefined
 
-  const triggerSet = buildTriggerSet(config)
-
   try {
+    const triggerSet = buildTriggerSet(config, readSource)
+
     if (env.eventPath === undefined || env.eventPath === '') {
       throw new Error('GITHUB_EVENT_PATH not set for a pull_request event')
     }
