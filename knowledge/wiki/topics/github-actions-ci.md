@@ -3,6 +3,10 @@ type: topic
 title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-05
+sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 9bceff393c4d14c76b01625b9268d08d37fc4f01
+    accessed: 2026-09-05
 tags:
   [
     github-actions,
@@ -31,13 +35,10 @@ tags:
     token-scope,
     release-gated-deploy,
     conventional-commits,
-    agent-evals,
-    semver-prerelease,
-    npm-publishing,
-    merge-queue,
-    osv-scanner,
-    actions-cache-scope,
-    expression-coercion,
+    retention-policy,
+    rolling-issue,
+    cadence-gating,
+    body-marker,
   ]
 related:
   - fro-bot--agent
@@ -72,7 +73,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 
 ## Repos Using GitHub Actions
 
-- [[fro-bot--agent]] — Path-filtered Setup → Lint, Build (dist/ drift detection + CI SBOM as of v0.75.0), Test, Test Action (live self-referencing PR review), Dependency Review, Release (semantic-release via `next` → `release` PR flow), CodeQL, Scorecard; plus fenced `harness-release.yaml` (read-only build job / OIDC trusted-publish). **Bun-based workspace CI as of the 2026-06-24 survey** (migrated off pnpm; `packageManager: bun@1.3.14`, `bun.lock`), joining [[marcusrbrown--systematic]] / [[marcusrbrown--infra]] in the Bun-CI cohort. **2026-09-05: 12 workflows** — new `osv-scanner.yaml` (diff scan fails, full scan reports; see below), new `gateway-smoke` + `workspace-smoke` image jobs in `ci.yaml` promoted to **required contexts (10 → 12)** so the `deploy/` Compose stack is now merge-gated, `merge_group` triggers added, and a `scripts/` suite of repo-invariant guard tests including a `workspace-test-chain` guard on the root test fan-out. `pull_request` was **removed** from `fro-bot.yaml`'s trigger set; the live PR-review path is `ci.yaml`'s `test-action`. Also the fleet's only **agent-behavior eval corpus** (`evals/`)
+- [[fro-bot--agent]] — Path-filtered Setup → Lint, Build (dist/ drift detection + CI SBOM as of v0.75.0), Test, Test Action (live self-referencing PR review), Dependency Review, Release (semantic-release via `next` → `release` PR flow), CodeQL, Scorecard; plus fenced `harness-release.yaml` (read-only build job / OIDC trusted-publish). **Bun-based workspace CI as of the 2026-06-24 survey** (migrated off pnpm; `packageManager: bun@1.3.14`, `bun.lock`), joining [[marcusrbrown--systematic]] / [[marcusrbrown--infra]] in the Bun-CI cohort
 - [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
 - [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
@@ -971,200 +972,117 @@ gives the retention sweep a selector that cannot silently stop
 matching. The security argument and the maintenance argument land on
 the same design.
 
+### A Retention Policy With Two Numbers Nobody Multiplied (2026-09-05)
+
+The strongest instance yet of the rolling-report failure class, from [[marcusrbrown--systematic]]. It is notable because the agent did **everything right** and the outcome is still wrong.
+
+The `AUTOHEAL_PROMPT` asks for two things about the perpetual "Daily Autohealing Report" issue:
+
+- *"When the issue body approaches 50,000 characters, archive older updates…"*
+- *"…while retaining the **30 most recent** dated sections and a historical summary/recurrence note."*
+
+Issue #153 at survey time: **49,145 characters and exactly one dated section.** The bot's own archival note records the arithmetic it discovered by running into it:
+
+> *"Single-section retention is the measured steady state: a complete section has a **~31,000-character floor**, so two cannot coexist under the 50,000 cap."*
+
+50,000 ÷ 31,000 = 1. **The policy promises 30 and can deliver 1 — off by a factor of thirty, and no amount of correct execution fixes it, because the constraint pair has no solution.**
+
+This is a different failure from [[marcusrbrown--cortexkit-anthropic-auth]]'s issue #11, and the pair completes the class:
+
+| | cortexkit-anthropic-auth #11 | systematic #153 |
+| --- | --- | --- |
+| Directive | rotate at 50,000 | rotate at 50,000, keep 30 sections |
+| Executed? | **No** — never ran | **Yes** — ran on 6 recorded dates |
+| Result | 54,813 chars, unbounded growth | 49,145 chars, history destroyed daily |
+| Root cause | soft prose budget, no enforcement | soft prose budget, **internally contradictory** |
+
+**The damage is not cosmetic, because other clauses in the same prompt depend on the history this one deletes.** Category 8 (PROGRESSIVE IMPROVEMENT) instructs the agent to read the prior report and classify findings as *first-seen, recurring, resolved, or do-not-retry*. Category 5 asks for *"deltas, first-seen items, recurring items, and resolved items instead of repeating unchanged inventories."* Both are recurrence-detection over a baseline the archival clause removes every single day. Two policies in one prompt in direct conflict, and the conflict is invisible until someone divides.
+
+Three transferable rules:
+
+1. **A prose budget with two independent numeric constraints must be checked by arithmetic before shipping.** `cap ÷ per-item-floor ≥ retention-count`, or the retention count is fiction. Nobody multiplied 30 × 31,000.
+2. **Overshoot between passes is unbounded when the trigger is a model's judgment.** "Approaching 50,000" is evaluated by an LLM reasoning about prose; the same archival note records a peak of **139,930 characters** before a sweep caught it — 2.8× the cap.
+3. **A finding stored inside a rotating buffer has a shelf life.** The bot detected the contradiction, wrote it into the archival note *and* a Needs Human Attention entry — inside the artifact being truncated. Self-reporting is genuinely valuable and it is not durable. Findings about a retention mechanism must be stored outside the thing being retained.
+
+The broader point for anyone writing agent report prompts: **retention, size, and recurrence-tracking are one design, not three independent clauses.** Specify the per-entry size budget first, derive the retention count from the cap, and put durable findings somewhere the sweep cannot reach.
+
+### Weekly Cadence as a Day-Gated Category, Not a Second Cron (2026-09-05)
+
+[[marcusrbrown--systematic]] joins the fleet's cron-consolidation convergence (see *Fro Bot Scheduled-Run Consolidation* above) — modes 3 → 2, crons 2 → 1 — but does it with a mechanism worth extracting separately, because it solves the problem the other consolidations left open: **where does the weekly work go?**
+
+Elsewhere the weekly `maintenance` mode was simply dropped. Here it was **demoted into a day-gated category of the daily pass**:
+
+```yaml
+- name: Detect Sunday UTC for upstream modernization cadence
+  if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  run: |
+    if [ "$(date -u +%u)" = "7" ]; then
+      echo "IS_SUNDAY_UTC=true" >> "$GITHUB_ENV"
+    else
+      echo "IS_SUNDAY_UTC=false" >> "$GITHUB_ENV"
+    fi
+```
+
+Category 10 of the prompt then opens: *"Runs only when IS_SUNDAY_UTC=true. Before doing any category 10 work, read this environment variable. On other days, skip entirely and omit the category 10 section from the daily report."*
+
+**Why this beats a second cron, concretely:**
+
+- A weekly cron is a **second liveness surface**. GitHub's 60-day scheduled-workflow inactivity shutoff (see *The 60-Day Scheduled-Workflow Inactivity Shutoff*) disables schedules per workflow, and a rarely-firing schedule is exactly what dies unobserved. Folding cadence into a conditional category means the weekly work rides the daily heartbeat: **if the daily pass is alive, the Sunday pass is alive.** One signal instead of two.
+- It removes a routing branch. Multi-mode agent workflows route on `event_name × mode × cron`; every additional cron multiplies the combinations a `PROMPT` ternary must handle correctly, and that ternary is already the most fragile part of these files.
+- It keeps the report unified — one perpetual issue, one migration story, instead of the "Weekly Maintenance Report" / "Daily Autohealing Report" title split that the same repo now has to clean up with an explicit migration allowlist.
+
+The env-var handoff is defaulted defensively — `IS_SUNDAY_UTC: ${{ env.IS_SUNDAY_UTC || 'false' }}` — with an inline comment noting the detection step only runs on `schedule`/`workflow_dispatch` and that category 10 has no other consumer. **Fail-closed is the right default here:** an unset gate skips the weekly work rather than running it on every PR review.
+
+Caveat worth recording against *Cron Declarations Are Not Execution Times* (2026-09-03): a `30 3` cron observed firing between 03:36 and 06:07 across 15 runs means the "Sunday" the gate detects is whatever UTC day the *delayed* run lands on. For a 03:30 slot the drift never crossed midnight in the observed sample, but a cadence gate computed inside a queue-delayed run is a gate on execution time, not schedule time.
+
+### A Critical Publish Job That Cannot Be a Required Check (2026-09-05)
+
+[[marcusrbrown--systematic]] advertises three install paths. One of them — Claude Code — is served by a generated branch (`claude-code-plugin`) published by a `main.yaml` job:
+
+```yaml
+publish-claude-code-plugin:
+  if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        && needs.release.outputs.new-release-published == 'true'
+  needs: [build, typecheck, lint, test, release]
+```
+
+Required contexts on `main` are `[Build, Docs Build, Fro Bot, Typecheck, Lint, Test, Registry, Release, Analyze (typescript), CodeQL, Renovate / Renovate]`. `Publish Claude Code Plugin` is absent — **and by construction cannot be present**, because it only ever runs on `push` after a release and never on a `pull_request`, so it would have no status to report at merge time.
+
+This is the third variant of the same shape on this page, and the three together give the general rule:
+
+| Case | Mechanism | Symptom |
+| --- | --- | --- |
+| [[bfra-me--ha-addon-repository]] | required check evaluated only on `pull_request`, where a bot guard makes it **skip** ⇒ pass | 17 consecutive scheduled failures, mergeability untouched |
+| [[marcusrbrown--marcusrbrown-com]] | README badge points at a **different repository** after a rename | green badge, wrong subject |
+| systematic (here) | job runs **only post-merge**, so it is ineligible to gate | stale install path, `main` stays green |
+
+**The rule: a merge gate can only observe jobs that run before the merge.** Everything downstream of the merge — publish, deploy, branch-sync, registry push — is outside the gate's reach *by definition*, and needs a separate liveness check: a scheduled assertion that the artifact is current, or a stewardship category that compares the published artifact's provenance against the latest release. Systematic has the second (its autoheal category 5 checks per-workflow success/failure counts over 7 days), which is the right shape; the gap is that nothing compares the `claude-code-plugin` branch head to the current release tag.
+
+Observed state at survey: branch head built from `v3.15.1` while `v3.16.1` was live — a ~15-hour lag that is *correct* for a release-gated target and indistinguishable, from outside, from a job that has been broken for a month. Which is the whole problem.
+
+### An Exact-Title Allowlist Is a Fleet's Rename History, Hard-Coded (2026-09-05)
+
+Counterpoint to *Report Titles Fragmented Across the Fleet* (above). [[marcusrbrown--systematic]]'s autoheal prompt is the one place in the ecosystem where the title-drift problem is confronted head-on, and it is worth reading as a specimen of what the fragmented approach costs when you finally pay it down.
+
+The SINGLE ISSUE MANAGEMENT block:
+
+- Enumerates **three legacy title schemes** eligible for close/migration — `Daily Autohealing Report`, `Daily Autohealing Report — YYYY-MM-DD`, `Daily Fro Bot Report — YYYY-MM-DD (UTC)` — plus two `Weekly Maintenance Report` variants from the retired weekly mode.
+- States *"Do not use fuzzy or contains matching"* and pins the date placeholder character-by-character (*"exactly YYYY-MM-DD: four digits, a hyphen, two digits, a hyphen, and two digits"*).
+- Restricts "bot-authored" to logins **exactly** `fro-bot` or `mrbro-bot[bot]`, explicitly excluding every other app identity, and forbids closing a human-authored issue with a similar name.
+- Prescribes the write mechanic: build the full body in a local temp file, verify heading + byte count + dated-section retention, then update **once** with `gh issue edit --body-file`.
+
+Every clause is a scar from a documented incident. `--body-file` rather than `--body` is exactly the defect [[marcusrbrown--dev-like]] hit when a report evaporated as the literal string `@/tmp/opencode/autoheal-comment-final.md`. The exact-login restriction is the identity half of *A Title-Matched Rolling Issue Is a Public Write Surface*. The enumerated titles are the fleet's rename history, transcribed.
+
+**And the result works** — one open report, correct migration. But note the cost and the inconsistency:
+
+- **The allowlist grows monotonically.** Every future rename appends a line to a prompt that no test covers. This is *Prompt Text Is a Dependency With No Dependency Bot* in its purest form: a hand-maintained matcher whose correctness is unverifiable until it silently stops matching.
+- **The same file already has the better technique and does not use it here.** The new issue-triage mode anchors its single comment on a body marker — `<!-- fro-bot-triage -->` — which is precisely the remedy prescribed in the 09-05 fragmentation entry: *lifecycle on a body marker, identity on `author.login`, let the title be prose.* The repo demonstrates marker-based identity on its newest surface while its oldest surface still carries a five-entry title allowlist.
+
+The takeaway is not that the allowlist is wrong — it is a correct, careful fix. It is that **a marker would have made all five entries unnecessary, and the migration to markers is cheapest at the moment you are already rewriting the matcher.** If you find yourself enumerating your own historical titles, that is the signal to switch selectors, not to add a sixth line.
+
 ### Convention Enforcement via Tests
 
 [[marcusrbrown--infra]] introduced a pattern of mechanically enforcing AGENTS.md conventions at CI time via colocated test files (`conventions.test.ts`). Rules marked `(enforced)` in AGENTS.md are asserted by Bun tests, and drift between markers and assertions is itself detected. This replaces reliance on human review or agent-driven linting for structural invariants.
-
-**Extension (2026-09-05, [[fro-bot--agent]]):** the same technique now targets *workflows and manifests* rather than prose conventions. `scripts/` carries `fro-bot-workflow.test.ts`, `osv-scanner-workflow.test.ts`, `harness-tag-derivation.test.ts`, `action-input-defaults-guard.test.ts`, `module-taxonomy.test.ts`, `eslint-phantom-guard.test.ts`, `plan-frontmatter-guard.test.ts`, and — the reflexive one — `workspace-test-chain.test.ts`, which asserts that every workspace member is actually present in the root `test` script's fan-out. That last guard closes the failure mode where a new package is added, its tests are written, and nothing ever runs them: a green suite that silently covers less than it did yesterday. A test suite that does not assert its own reach is measuring an unknown denominator.
-
-### A Platform Capability Can Be Scoped by Trigger Class, Not by Actor or Permissions
-
-Discovered 2026-09-05 in [[fro-bot--agent]]'s README, which was rewritten to
-qualify its own headline claim (open issue #1514).
-
-The agent's central selling point is persistent session state across CI runs,
-restored from GitHub Actions cache. It does not work on the trigger most users
-reach for. **Cache writes are unavailable for `issue_comment` and `issues`
-runs**, because those triggers are initiable by an actor without repository
-write access, so GitHub supplies a read-only runner-injected
-`ACTIONS_RUNTIME_TOKEN` **for the entire trigger class**.
-
-Three consequences that are easy to get wrong:
-
-1. **The restriction is not about who triggered the run.** A run started by the
-   repository owner on an `issue_comment` gets the same read-only token as one
-   started by a drive-by commenter. Author-association gating in the workflow
-   `if:` does not restore the capability, because the token is minted before any
-   job condition is evaluated.
-2. **`permissions:` cannot change it.** The `permissions:` block governs
-   `GITHUB_TOKEN` scopes. `ACTIONS_RUNTIME_TOKEN` is a separate, runner-injected
-   credential outside that surface, so the usual "just add the scope" reflex
-   produces a workflow that looks correct and still cannot write.
-3. **The failure is silent and asymmetric.** Cache *restore* works; only *write*
-   fails. So the first run in a chain looks healthy, and the degradation only
-   shows as the agent re-investigating from scratch on every subsequent mention
-   — indistinguishable from a model that just forgot.
-
-The remedy in this case is an out-of-band durable backend (`s3-backup`), which
-is itself best-effort — continuity depends on a successful upload. The general
-rule: **before advertising a capability, enumerate which trigger classes can
-actually exercise it,** and state the exceptions in the same sentence as the
-claim rather than in a troubleshooting page. [[fro-bot--agent]]'s README now
-does exactly that, including an honest "`pull_request` triggers were not
-observed either way."
-
-### Build Metadata Is Not Version Identity
-
-Discovered 2026-09-05 in [[fro-bot--agent]]'s `harness-release.yaml` and the
-2026-08-29 harness release backfill.
-
-`@fro.bot/harness` publishes a patched OpenCode binary. Several distinct builds
-can share one upstream OpenCode base version, so the build needs its own
-identity. The intuitive encoding is semver build metadata:
-`1.18.29+harness.88b6b5fb`. It fails on both distribution channels for
-different reasons:
-
-- **npm ignores build metadata for identity.** `1.18.29+a` and `1.18.29+b` are
-  the *same version*; the registry will not hold both. Only a **prerelease**
-  identifier (`1.18.29-harness.88b6b5fb`) makes them distinct. Publishing one
-  then requires `npm publish --tag latest` explicitly, because npm refuses to
-  publish a prerelease without a tag — a second-order consequence that makes
-  `dist-tags.latest` a prerelease string, which downstream tooling may not
-  expect.
-- **Git refs cannot contain `+` at all**, so the string is unusable as a tag or
-  a branch name. The same workflow separately sanitizes `+` → `-` when deriving
-  a branch name for its sync PR.
-- **Renovate cannot order build-metadata versions**, so a pin written this way
-  is invisible to dependency automation — it will neither bump it nor warn that
-  it isn't bumping it.
-
-The resolution is not to pick one form but to accept that **one artifact can
-legitimately carry three version strings, and to say which surface owns which**:
-
-| Surface           | Form         | Constraint it satisfies                          |
-| ----------------- | ------------ | ------------------------------------------------ |
-| Git tag / release | `-harness.`  | refs forbid `+`; `--prerelease --latest=false` keeps it out of the product release line and outside semantic-release's `^v(.+)` scan |
-| npm version       | `-harness.`  | prerelease is the only distinct identity npm honors |
-| Binary self-report| `+harness.`  | build metadata is semantically correct here, and the release job asserts the binary reports exactly it |
-
-Two operational lessons follow. First, **migrating a tag namespace means
-backfilling it** — 16 historical builds were re-published as hyphen-form
-releases in one ~80-minute window so that every build is addressable under the
-new scheme; a namespace change that only applies going forward leaves consumers
-of old versions on a scheme nobody maintains. Second, **when automation cannot
-track a pin, replace it with an owned job rather than leaving it stale.**
-`harness-release.yaml` gained a `sync-default-version` job that opens a PR
-bumping the runtime constant and the workspace `Dockerfile` ARG together, with
-an idempotency guard that checks *both* files — because the Dockerfile step is
-`continue-on-error`, guarding on the constant alone would let a half-applied
-bump freeze the image surface indefinitely while looking done.
-
-### A Boolean Workflow Input Compared Against a String Is Always Truthy
-
-Discovered 2026-09-05, documented in-line by [[fro-bot--agent]]'s
-`harness-release.yaml` at the `sync-default-version` job.
-
-In a GitHub Actions expression, `inputs.dry_run != 'true'` where `dry_run` is
-declared `type: boolean` does **not** do what it reads like. Comparing a boolean
-to a string coerces both to numbers; `'true'` becomes `NaN`, and `NaN` is not
-equal to anything, so the expression is unconditionally true. A dry-run guard
-written this way runs the guarded job on every dry run.
-
-The correct comparison is against the boolean literal: `inputs.dry_run != true`.
-Note the second half of the same guard — **for a tag-triggered run,
-`inputs.dry_run` is `null`**, which is also `!= true`, so the boolean form
-happens to be right for both the dispatch and tag paths. That is worth checking
-rather than assuming: a multi-trigger workflow evaluates its `if:` against
-whatever the trigger supplies, and `null` behaves differently from `false` in
-several comparisons.
-
-The general shape: **Actions expressions have JavaScript-adjacent coercion
-without JavaScript's `===` escape hatch.** Any comparison mixing a typed input
-with a quoted literal is a candidate defect, and the defect's failure mode is
-"guard silently disabled," which is invisible in a green run.
-
-### Diff-Scoped Failure, Whole-Tree Reporting
-
-Observed 2026-09-05 in [[fro-bot--agent]]'s new `osv-scanner.yaml`.
-
-A vulnerability scanner wired to fail the build is a durable source of CI
-distrust, because the set of known advisories changes without anyone touching
-the repository. The file splits the concern rather than picking a global
-severity threshold:
-
-- **PR scan** (`pull_request`) diffs against `GITHUB_BASE_REF` and sets
-  `fail-on-vuln: true`. It can only fail on what *this change introduces*, so a
-  pre-existing finding cannot block an unrelated PR.
-- **Full scan** (`push` / `schedule` / `merge_group`) has no baseline, so it is
-  `fail-on-vuln: false` **deliberately**, with the reason written in the file:
-  failing here would break pushes to `main` and merge-queue entries whenever a
-  new advisory is published against a dependency nobody touched. Findings route
-  to code scanning.
-
-The merge-queue detail is the non-obvious part and is also documented in-file:
-**neither `GITHUB_BASE_REF` nor the `pull_request` payload exists in a
-`merge_group` event**, so a workflow that only implements the diff mode either
-crashes or silently no-ops in the queue. Any repo adopting merge queues needs to
-audit every workflow that reads base-ref or PR-payload context.
-
-The residual worth noting: in this repo neither OSV job is a **required status
-check**, so the one job that *can* fail on a real regression gates nothing at
-the merge boundary. A scanner's failure policy and its enforcement position are
-independent settings, and getting the first one thoughtfully right does not
-imply the second one is wired at all.
-
-### Test the Agent's Outcome, Never Its Method
-
-Observed 2026-09-05 in [[fro-bot--agent]]'s new `evals/` corpus — the first
-behavioral (as opposed to code) test surface in the surveyed fleet. Recorded
-here because every repo in the fleet runs an agent in CI and none of the others
-measures whether it is getting better or worse.
-
-The corpus's rules generalize beyond that repo:
-
-- **Assert outcomes, never method.** No assertion may reference tool calls, call
-  counts, step or turn order, or reasoning shape. Those are implementation of
-  the model, they change on every provider update, and pinning them produces a
-  suite that fails on improvements.
-- **Three result states, not two.** `passed` / `failed` / **`inconclusive`**.
-  The third exists because of a specific incident: a misconfiguration left the
-  agent running outside its fixture repository, so scenarios timed out while
-  searching the filesystem. Under a boolean, that reads as a catastrophic model
-  regression and sends the investigation at the model. As `inconclusive`, it
-  correctly reports that no outcome was obtainable and sends the investigation
-  at the harness. This is the same lesson as *A Run's Conclusion Measures the
-  Harness, Not the Deliverable*, reached independently at the eval layer and
-  encoded as a **type** rather than a review habit — which is the stronger form,
-  since a type cannot be forgotten under deadline.
-- **Assert presence, never absence, in generated prose.** A gate may require
-  that a signal appears in a free-form response; it may not require that one
-  does not. Absence is only meaningful for single-valued structured fields such
-  as an expected verdict. Absence in open-ended generation is unfalsifiable at
-  any sample size a CI budget can afford.
-- **Keep the answer out of the prompt.** The `clean-pr` / `planted-defect`
-  differential pair shares one neutral prompt, event, and file set; only one
-  source file differs, and the expectation lives in scorer-owned metadata.
-  Leaking the expectation into the agent-facing prompt converts the eval from a
-  measurement of judgment into a measurement of obedience.
-- **Safety gates outrank completion.** `no-forbidden-mutation` and
-  `no-secret-leak` still run on an *incomplete* execution, because unwanted
-  mutation and canary leakage are observable regardless of whether the task
-  finished.
-- **Bound the stochastic remedy.** A flaky quality result earns lazy repeats for
-  that scenario only, capped (4 candidate / 4 baseline). Mixed samples, or two
-  modes that both pass without discriminating, stay inconclusive and never
-  auto-promote a baseline. Unbounded retry-until-green is how an eval suite
-  becomes a random number generator with a changelog.
-- **Report the negative honestly.** A clean run reports "no large observed
-  regression across the covered scenarios" — not "quality improved."
-
-Two caveats the project records against itself, both instructive: the committed
-baseline predates the current outcome projection, so comparison returns explicit
-**missing-evidence** rather than backfilling candidate values into the baseline;
-and open issue #1532 found a redaction test inside the corpus whose assertion
-never truncates and is therefore trivially true. A suite built to reject
-unfalsifiable claims shipped one. Assertion-strength review is not something a
-discipline document buys you for free.
 
 ### Shared Config Heritage
 

@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/systematic
 created: 2026-05-07
-updated: 2026-09-04
+updated: 2026-09-05
 node_id: R_kgDORLx6ew
 sources:
   - url: https://github.com/fro-bot/systematic
@@ -35,6 +35,9 @@ sources:
   - url: https://github.com/fro-bot/systematic
     sha: 8e26a01
     accessed: 2026-09-04
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 9bceff393c4d14c76b01625b9268d08d37fc4f01
+    accessed: 2026-09-05
 tags:
   - documentation
   - github-pages
@@ -54,7 +57,17 @@ related:
 
 # fro-bot/systematic
 
-Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Starlight/Astro docs site for the `@fro.bot/systematic` OpenCode plugin at **https://fro.bot/systematic/**.
+Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Starlight/Astro docs site for `@fro.bot/systematic` at **https://fro.bot/systematic/**.
+
+> **2026-09-05 correction from the source-side survey of [[marcusrbrown--systematic]].** A direct survey of the upstream repository (HEAD `9bceff39`, v3.16.1) reached three of this page's standing claims. Recorded here rather than edited into the sections below, per the additive rule.
+>
+> 1. **The 10-day drought ended within hours of the 2026-09-04 survey.** `3.15.1` published 2026-09-04T17:52:51Z, then `3.16.0` at 2026-09-05T08:15:23Z and `3.16.1` at 08:39:16Z. This **confirms** the "compositional, not a fault" diagnosis rather than undermining it — the gate opened as soon as a releasable commit type appeared. The *measure the gate, not the tree* rule stands and is strengthened.
+> 2. **The schema fingerprint adopted on 2026-09-04 moved within 24 hours** — the fastest possible validation of adopting it. `38,180 B / 74 definitions / 10 top-level properties / sha256[:16] 0e82797b9f8f43ed` → **`58,954 B / 100 definitions / 12 top-level properties / 1f9b7c48a4b6455c`**. The two new properties are `profile` and `profiles`, from the v3.16.0 named-model-profiles feature. The "components flat at 73 / schema flat" reading was accurate for its interval and is now superseded.
+> 3. **The structural probes recorded on 2026-09-04 can no longer be reproduced, and this is an instrument change, not a semantic one.** The generator now wraps top-level objects in `allOf` + `$ref` composition; `properties.agents` and `properties.categories` are `$ref`s into `definitions`, so a shallow read of `additionalProperties` / `propertyNames` / key-count on either returns nothing. The 09-04 findings (`agents` as a closed 74-key enumeration with `additionalProperties: false`; `categories` open-keyed) **may still hold behind the indirection** — the source-side survey does not claim they were removed, only that the probe that measured them now silently returns empty. Any future re-measurement must deref `$ref`/`allOf` before asserting structure. Generalized in [[opencode-plugins]] as *Schema Fingerprints Survive Refactors; Structural Probes Do Not*.
+>
+> Also corrected upstream: the v3 boundary is **`3.0.0`, published 2026-07-17T02:09:38Z**, not `v3.2.5`/2026-07-22 — the latter was simply the first v3 version this deploy target exposed, which is exactly the limitation of downstream-only observation this page exists to flag.
+>
+> One claim **held up** on direct inspection: a `workflow` agent category exists (4 agents in `agents/workflow/`) and remains absent from the schema's `categories` enumeration, which is still open-keyed. Users still get no autocomplete or validation on category names.
 
 ## Overview
 

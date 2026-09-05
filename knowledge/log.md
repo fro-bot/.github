@@ -4468,94 +4468,106 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@71f7fa87d65289328adc8ba8c05745d306672b32
 
-## [2026-09-05 09:30] ingest | repo:fro-bot/agent
+## [2026-09-05 09:20] ingest | repo:marcusrbrown/systematic
 
-Surveyed `fro-bot/agent` at HEAD `096faf1e` (v0.108.1, `node_id R_kgDOQyTMEw`,
-public, MIT) — first re-survey since 2026-07-21 / v0.94.0. Reads limited to
-directory listings, README files, manifests, and workflow files; the target was
-treated as untrusted input. `gh` was unauthenticated this run, so all target
-data came from unauthenticated `api.github.com` / `raw.githubusercontent.com` /
-`registry.npmjs.org` reads.
+First direct source-side survey of the v3 architecture. The repo page had
+carried a standing note since 2026-07-22 that a source survey was
+"warranted" because the v2 → v3 major had only ever been observed
+downstream; that note is now discharged. 245 commits separate the last
+direct survey (`4eecc77`, v2.33.3, 2026-07-15) from HEAD `9bceff39`
+(v3.16.1, cut ~90 seconds before this survey read it).
 
-The 14-minor wave is **structural** — the first new top-level subsystem since
-`packages/harness`. Four durable findings persisted:
+**Corrections to accumulated knowledge** (prior claims retained and marked,
+not overwritten):
 
-(1) **`evals/` — an agent-outcome regression corpus.** The fleet's only
-behavioral (as opposed to code) test surface: it runs the real
-`executeOpenCode` path against disposable fixture repos, gated behind
-`FRO_BOT_EVAL=1` so normal CI costs nothing. Its rules are the transferable
-part — assert outcomes and never method (no tool-call, call-count, step-order,
-or reasoning-shape assertions); three result states rather than two, because a
-misconfiguration once ran the agent outside its fixture repo and a boolean
-would have scored those timeouts as a catastrophic model regression instead of
-a harness fault; assert presence but never absence in free-form prose; keep the
-planted-defect expectation in scorer-owned metadata so the eval measures
-judgment rather than obedience; safety gates run even on incomplete executions;
-stochastic repeats bounded 4×4 and never auto-promoting a baseline. The
-three-state design is this repo independently rediscovering the wiki's existing
-*A Run's Conclusion Measures the Harness, Not the Deliverable* finding and
-encoding it as a type. It also shipped `#1532` — a trivially-true assertion
-inside the corpus built to reject them.
+1. The v3 boundary is `3.0.0`, published 2026-07-17T02:09:38Z — two days
+   after the last survey, not the `v3.2.5`/2026-07-22 previously recorded.
+   That version was simply the first the deploy target happened to expose,
+   which is the exact limitation of downstream-only observation.
+2. The 10-day publish drought recorded on [[fro-bot--systematic]] ended
+   hours after that survey (`3.15.1` at 09-04T17:52Z, then `3.16.0` and
+   `3.16.1` on 09-05). This confirms the "compositional, not a fault"
+   diagnosis rather than undermining it.
+3. That page's 24-hour-old schema fingerprint already moved: 38,180 B /
+   74 definitions / 10 top-level properties / `0e82797b9f8f43ed` →
+   58,954 B / 100 definitions / 12 properties / `1f9b7c48a4b6455c`.
+4. The same page's structural probes can no longer be reproduced — the
+   generator now wraps top-level objects in `allOf`/`$ref`. Recorded as an
+   instrument change, **not** a semantic one; the closed-`agents` /
+   open-`categories` asymmetry is not claimed removed.
 
-(2) **Build metadata is not version identity.** The harness artifact carries
-three deliberately different version strings: `-harness.<sha>` for the GitHub
-Release tag (refs forbid `+`), `-harness.<sha>` for the npm version (npm treats
-`1.2.3+a` and `1.2.3+b` as the same version, so only a prerelease is a distinct
-identity — which then forces `npm publish --tag latest`), and `+harness.<sha>`
-for the binary's self-report. Sixteen historical builds were backfilled as
-hyphen-form releases in one ~80-minute window on 2026-08-29; npm had been
-hyphen-form since 2026-07-15, so GitHub migrated to match npm, not the reverse.
-Renovate cannot order build-metadata versions, so it was retired from
-`DEFAULT_OPENCODE_VERSION` in favor of a repo-owned `sync-default-version` PR
-job whose idempotency guard checks both the constant and the workspace
-Dockerfile — guarding on one alone would let a `continue-on-error` half-apply
-freeze the image surface while looking done.
+**Durable findings.**
 
-(3) **A platform capability scoped by trigger class.** The README now qualifies
-the project's own headline claim: cache *writes* are unavailable for
-`issue_comment` and `issues` runs because that whole trigger class receives a
-read-only runner-injected `ACTIONS_RUNTIME_TOKEN`. Not actor-dependent, not
-reachable from `permissions:`, and asymmetric — restore works while write
-fails, so the degradation presents as a model that forgot rather than a
-platform that refused.
+(1) **One content source, three harnesses, all peers optional.** Systematic
+is no longer an OpenCode plugin. `@opencode-ai/plugin`,
+`@earendil-works/pi-coding-agent`, and `typebox` are all optional peers;
+one tarball serves three hosts via three discovery channels and two build
+targets. `HARNESSES.md` ships inside the tarball as a 6-harness ×
+5-capability two-tier matrix with per-cell citation keys and literal
+`UNVERIFIED` markers for what the author could not confirm. Content parity
+is real, capability parity is not, and the matrix says which is which.
 
-(4) **Two smaller CI findings.** A `type: boolean` workflow input compared
-against the string `'true'` coerces to `NaN` and makes the guard
-unconditionally true (documented in-line by the repo itself); and a
-vulnerability scanner can split its policy — `fail-on-vuln: true` on the PR
-diff scan, deliberate report-only on the baseline-less full scan — with the
-residual that neither is a required status check here, so the job that *can*
-fail on a real regression gates nothing at the merge boundary.
+(2) **A retention policy with two numbers nobody multiplied.** The autoheal
+prompt demands both a 50,000-character cap and retention of "the 30 most
+recent dated sections" against a self-measured ~31,000-character section
+floor. The satisfiable answer is 1, and issue #153 sits at 49,145
+characters with exactly one section. The bot detected the contradiction,
+recorded a 139,930-character peak, and filed the finding inside the buffer
+being truncated. This completes a failure class with
+[[marcusrbrown--cortexkit-anthropic-auth]], where the same directive was
+stated and never executed.
 
-Also recorded: workflows 11 → 12 (`osv-scanner.yaml`); `gateway-smoke` +
-`workspace-smoke` promoted to required contexts (10 → 12), putting the
-`deploy/` Compose stack behind the merge gate for the first time;
-`pull_request` removed from `fro-bot.yaml`'s trigger set; the open-issue set
-inverted from bot-filed to human-filed with four `marcusrbrown` defect reports
-including `#1520` (first-party App PRs carry `author_association: CONTRIBUTOR`,
-so the agent's own PRs fall outside its own review gate); harness base
-1.18.4 → 1.18.29 with carries 12 → 13; oMo v3 → v4, OMO Slim v1 → v2,
-systematic 3.2.2 → 3.16.0.
+(3) **Weekly cadence as a day-gated category, not a second cron.** An
+`IS_SUNDAY_UTC` step demotes the retired `maintenance` mode into a
+conditional category of the daily pass, so weekly work rides the daily
+heartbeat instead of being a second rarely-firing schedule that GitHub's
+60-day inactivity shutoff can kill unobserved. This is the missing half of
+the fleet's cron-consolidation convergence.
 
-Pages touched: `wiki/repos/fro-bot--agent.md` (frontmatter + `node_id` +
-overview + two new sections + CI/Renovate/Probot/dependency/ecosystem/survey-
-history updates), `wiki/topics/github-actions-ci.md` (five new sections plus an
-extension to *Convention Enforcement via Tests*),
-`wiki/repos/marcusrbrown--systematic.md` (additive consumer-pin correction:
-its "current 10-day drought" closed at ≤11 days — flagged as a downstream
-observation, not a source survey), `index.md`, `log.md`.
+(4) **A critical publish job that cannot be a required check.**
+`Publish Claude Code Plugin` feeds one of three advertised install paths
+but runs only post-merge, making it structurally ineligible to gate.
+Completes a trio with [[bfra-me--ha-addon-repository]] and
+[[marcusrbrown--marcusrbrown-com]].
 
-Delivery mode was `working-dir`; only `knowledge/**` was modified. No GitHub
-issue or comment was opened for this survey — per the task contract this log
-entry is the canonical per-survey summary. Prettier was deliberately not run
-on the touched pages: the `data`-branch wiki content is not Prettier-clean, so
-formatting reflows unrelated surveys' prose and buries the ingest in noise;
-formatting normalizes on promotion to `main`.
+(5) **Schema fingerprints survive refactors; structural probes do not** —
+generalized to [[opencode-plugins]], along with the `profiles`
+schema-encoded trust boundary (a project config may select a routing
+overlay but may not define one), the generated-skill-with-drift-gate
+pattern, and the promotion of `tree-sitter-bash`/`web-tree-sitter` to
+runtime dependencies.
 
-Sources: https://github.com/fro-bot/agent@096faf1ea023264ecfe5bfadbbb6c95dc6508c96; https://registry.npmjs.org/@fro.bot%2Fharness
+(6) **Confirmed open issue #897 from the manifest**: `tsconfig.json`
+includes only `src/**/*`, leaving ~400 KB of TypeScript — including
+`content-integrity.ts`, the gate that enforces the repo's own conventions
+— outside a required `Typecheck` status check.
 
-## [2026-09-05 09:22] ingest | repo:fro-bot/agent
+The repo is the fleet's daemon control case (4,100 runs, 15/15 scheduled
+green, all 8 workflows `active`, report written minutes after the pass) and
+inverts the fleet's authorship pattern: 112 of 245 commits are human. Its
+queue carries six human-authored self-critiques, including #796
+(`ce:review` artifacts retain verbatim private source with no retention
+policy) and #854 (the workflow guard is OpenCode-only by state model, not
+by necessity).
 
-Surveyed fro-bot/agent and updated the control-plane wiki.
+Pages touched: created `wiki/entities/pi-coding-agent.md`; updated
+`wiki/repos/marcusrbrown--systematic.md`,
+`wiki/repos/fro-bot--systematic.md` (additive correction block),
+`wiki/topics/opencode-plugins.md`, `wiki/topics/github-actions-ci.md`, and
+`index.md`. All wikilinks verified resolving; no page content removed.
 
-Sources: https://github.com/fro-bot/agent
+Method note: no `GH_TOKEN` was present in this environment and writes
+outside the workspace were denied, so the survey ran read-only over the
+unauthenticated GitHub API plus `raw.githubusercontent.com` and the
+deployed schema URL, within the 60-request hourly budget. Reads were held
+to directory listings, README/manifest/workflow files, and public
+issue/release/run metadata, per the survey constraints. Delivery mode was
+`working-dir`; only `knowledge/**` was modified.
+
+Sources: https://github.com/marcusrbrown/systematic@9bceff393c4d14c76b01625b9268d08d37fc4f01; https://registry.npmjs.org/@fro.bot/systematic; https://fro.bot/systematic/schemas/v3/systematic-config.schema.json; https://github.com/fro-bot/.github/actions/runs/33957117791
+
+## [2026-09-05 09:29] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/systematic
