@@ -178,6 +178,30 @@ describe('classifyMutationReport', () => {
     expect(classifyMutationReport(report, [], []).verdict).toBe('clean')
   })
 
+  // Blocking: Stryker's own config-level suppression (ignoreStatic, excludedMutations, a
+  // shadowing `!` exclude pattern) can make a listed, on-disk module silently absent from the
+  // report's `files` map with no other observable signal — an all-Killed report for the
+  // module that DID make it in must not read as `clean` when a listed module is missing.
+  it('reports instrumentation-failed when a literal mutate entry is absent from the report files map', () => {
+    const report = buildReport([
+      {file: 'scripts/present.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'},
+    ])
+    const result = classifyMutationReport(report, [], [], mutationReportPath, [
+      'scripts/present.ts',
+      'scripts/absent.ts',
+    ])
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(result.mutants.some(m => m.status === 'AbsentFromReport' && m.file === 'scripts/absent.ts')).toBe(true)
+  })
+
+  it('reports clean when every literal mutate entry (normalizing a leading ./) appears in the report files map', () => {
+    const report = buildReport([
+      {file: 'scripts/x.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'},
+    ])
+    const result = classifyMutationReport(report, [], [], mutationReportPath, ['./scripts/x.ts'])
+    expect(result.verdict).toBe('clean')
+  })
+
   it('reports directive-violation when an Ignored mutant has an empty statusReason', () => {
     const report = buildReport([
       {file: 'a.ts', line: 4, column: 1, mutatorName: 'StringLiteral', status: 'Ignored', statusReason: ''},
@@ -363,7 +387,7 @@ describe('scanDirectiveViolations', () => {
   })
 
   // Design change: the scanner now scans a line's whole stripped text for the phrase,
-  // unanchored, instead of locating a specific comment first (see findDirectiveOnLine's
+  // unanchored, instead of locating a specific comment first (see findDirectivesOnLine's
   // docstring). A JSDoc continuation line (` * Stryker disable all`) is therefore now
   // flagged even though Stryker's own `^`-anchored regex (matched against the whole comment
   // value, no `m` flag, so `^` only ever matches a comment's opening line) ignores it — an
@@ -425,6 +449,32 @@ describe('scanDirectiveViolations', () => {
   it('does not flag a directive hidden behind a same-line regex literal (documented gap, unchanged)', () => {
     const violations = scan(`const re = /['"]/ // Stryker disable all\nconst x = 1\n`)
     expect(violations).toEqual([])
+  })
+
+  // Blocking: a non-global pattern that returns on the first hit evaluates only the first
+  // directive on a line, swallowing a second, independently honored directive into the
+  // first's remainder text. Stryker honors both comments on this line; the module is fully
+  // suppressed. Both orderings must each yield their own violation, not just one combined.
+  it('flags both directives when a block-comment directive with a reason precedes a bare block-comment directive', () => {
+    const violations = scan('/* Stryker disable next-line all: ok */ /* Stryker disable all */\nconst x = 1\n')
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toMatchObject({status: 'DirectiveViolation'})
+  })
+
+  it('flags both directives when a block-comment directive with a reason precedes a bare line-comment directive', () => {
+    const violations = scan('/* Stryker disable next-line all: ok */ // Stryker disable all\nconst x = 1\n')
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toMatchObject({status: 'DirectiveViolation'})
+  })
+
+  it('flags the same pair with the bare directive first (order-independent)', () => {
+    const violations = scan('// Stryker disable all /* Stryker disable next-line all: ok */\nconst x = 1\n')
+    expect(violations).toHaveLength(1)
+  })
+
+  it('flags a trailing disable-all directive even when an earlier string on the line contains a fake, well-formed directive', () => {
+    const violations = scan("const s = 'Stryker disable next-line all: fake' // Stryker disable all\nconst x = 1\n")
+    expect(violations).toHaveLength(1)
   })
 })
 

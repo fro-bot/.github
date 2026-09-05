@@ -132,6 +132,27 @@ function isEmptyReason(reason: string | undefined): boolean {
   return reason === undefined || reason.trim().length === 0
 }
 
+/**
+ * Returns the raw `files` map's keys from a report, or `undefined` if the report is not even
+ * shaped enough to have a `files` record (mirrors flattenReport's own shape check, kept
+ * separate since a file with an empty `mutants` array is a valid key this needs to see but
+ * flattenReport's flat mutant list would never surface).
+ */
+function extractReportFileKeys(reportJson: unknown): string[] | undefined {
+  if (!isRecord(reportJson)) return undefined
+  const files = reportJson.files
+  if (!isRecord(files)) return undefined
+  return Object.keys(files)
+}
+
+/**
+ * Strips a single leading `./` so a `mutate` entry and a report `files` key that refer to the
+ * same file but were written with a different relative-path prefix compare equal.
+ */
+function normalizeMutatePath(entry: string): string {
+  return entry.startsWith('./') ? entry.slice(2) : entry
+}
+
 /** A mutant is reported (listed in output) unless it was Killed or Ignored-with-a-reason. */
 function isFailingMutant(mutant: FlatMutant): boolean {
   if (mutant.status === 'Killed') return false
@@ -172,17 +193,41 @@ function toLocatedMutant(mutant: FlatMutant): LocatedMutant {
  * `reportPath` names the report file in the `EmptyReport` reason when the report is
  * well-formed but empty; it does not affect classification, only that message's accuracy
  * under an injected report path.
+ *
+ * `literalMutateEntries` is the full list of literal (non-glob) `mutate` entries — every one
+ * of them, whether or not it existed on disk (see `missingMutateFiles` for the disk check).
+ * Every entry, normalized, must appear as a key in the report's `files` map; any that do not
+ * fail closed. This subsumes config-level suppression this wrapper otherwise cannot see:
+ * Stryker's `ignoreStatic`, `excludedMutations`, or a `!x.ts` exclude pattern shadowing a
+ * listed entry can all make a real, on-disk, listed module silently absent from the report
+ * with no other observable signal. Entries already reported via `missingMutateFiles` are
+ * skipped here (they cannot possibly be report keys either, and are already explained by a
+ * more specific reason) to avoid a duplicate, differently-worded entry for the same file.
  */
 export function classifyMutationReport(
   reportJson: unknown,
   directiveViolations: readonly LocatedMutant[],
   missingMutateFiles: readonly string[] = [],
   reportPath: string = mutationReportPath,
+  literalMutateEntries: readonly string[] = [],
 ): ClassificationResult {
   const flat = flattenReport(reportJson)
 
   const reportUnreadable = flat === undefined
   const hasMissingMutateFiles = missingMutateFiles.length > 0
+
+  const normalizedMissing = new Set(missingMutateFiles.map(normalizeMutatePath))
+  const reportFileKeys = extractReportFileKeys(reportJson)
+  const normalizedReportFileKeys = new Set((reportFileKeys ?? []).map(normalizeMutatePath))
+  // Only meaningful when the report is otherwise readable — an unreadable report already
+  // fails via reportUnreadable, and reportFileKeys is undefined in that case anyway.
+  const entriesAbsentFromReport =
+    reportFileKeys === undefined
+      ? []
+      : literalMutateEntries
+          .map(normalizeMutatePath)
+          .filter(entry => !normalizedMissing.has(entry) && !normalizedReportFileKeys.has(entry))
+  const hasEntriesAbsentFromReport = entriesAbsentFromReport.length > 0
   // A well-formed report whose flattened mutant list is empty means every `mutate` entry
   // failed to resolve or instrument (Stryker still exits 0 and writes `{"files":{}}` in this
   // case) — an enumerated set of real modules cannot legitimately yield zero mutants. Reading
@@ -200,7 +245,7 @@ export function classifyMutationReport(
   const hasIgnoredWithoutReason = (flat ?? []).some(m => m.status === 'Ignored' && isEmptyReason(m.reason))
 
   let verdict: Verdict
-  if (reportUnreadable || reportEmpty || hasMissingMutateFiles || hasUnrecognizedStatus) {
+  if (reportUnreadable || reportEmpty || hasMissingMutateFiles || hasEntriesAbsentFromReport || hasUnrecognizedStatus) {
     verdict = 'instrumentation-failed'
   } else if (directiveViolations.length > 0 || hasIgnoredWithoutReason) {
     verdict = 'directive-violation'
@@ -236,11 +281,23 @@ export function classifyMutationReport(
     reason: 'listed in the `mutate` config but not found on disk; Stryker silently drops it and continues',
   }))
 
+  const absentFromReportMutants: LocatedMutant[] = entriesAbsentFromReport.map(absentPath => ({
+    file: absentPath,
+    line: 0,
+    col: 0,
+    mutator: 'mutate-config',
+    status: 'AbsentFromReport',
+    reason:
+      "listed in the `mutate` config and present on disk, but absent from the report's `files` map " +
+      '(likely suppressed by `ignoreStatic`, `excludedMutations`, or a shadowing `!` exclude pattern)',
+  }))
+
   const reportedFromReport = (flat ?? []).filter(isFailingMutant).map(toLocatedMutant)
   const mutants = [
     ...reportedFromReport,
     ...emptyReportMutant,
     ...missingMutateFileMutants,
+    ...absentFromReportMutants,
     ...directiveViolations,
   ].sort(compareLocatedMutants)
 
@@ -270,7 +327,7 @@ function compareLocatedMutants(a: LocatedMutant, b: LocatedMutant): number {
  * comment anywhere on a line — including trailing a statement, e.g. `if (flag) return 'a'
  * // Stryker disable all` — via Babel's `leadingComments` attachment to the following node,
  * so the scanner looks for the phrase anywhere on the line, not only at its start (see
- * findDirectiveOnLine). Stripping strings first keeps a directive-shaped string literal
+ * findDirectivesOnLine). Stripping strings first keeps a directive-shaped string literal
  * (e.g. `const message = '// Stryker disable all'`) from ever being mistaken for a real
  * directive.
  *
@@ -328,50 +385,62 @@ interface DirectiveMatch {
   readonly col: number
 }
 
-// Deliberately unanchored and comment-agnostic — see findDirectiveOnLine below for why.
-// `\r?$` strips a trailing CRLF carriage return so a directive at the end of a
-// CRLF-terminated line is still evaluated correctly (its remainder must not include `\r`,
-// or a trailing `\r` would make an otherwise-valid `: reason` look non-empty-but-wrong).
-// `\s+` between "Stryker" and "disable" (rather than a literal space) is a second, deliberate
-// divergence beside the `\s*`-vs-`\s?` scope-anchor note above: Stryker's own grammar
-// requires exactly one space, so `\s+` (one or more) is strictly a superset and fails closed
-// the same direction as the rest of this scanner's divergences.
-const STRYKER_DISABLE_PATTERN = /Stryker\s+disable\b(.*)\r?$/u
+// Deliberately unanchored, comment-agnostic, and global — see findDirectivesOnLine below for
+// why every match on a line matters, not just the first. `\s+` between "Stryker" and
+// "disable" (rather than a literal space) is a deliberate divergence beside the
+// `\s*`-vs-`\s?` scope-anchor note below: Stryker's own grammar requires exactly one space,
+// so `\s+` (one or more) is strictly a superset and fails closed the same direction as the
+// rest of this scanner's divergences.
+const STRYKER_DISABLE_SEARCH_PATTERN = /Stryker\s+disable\b/gu
 
 /**
- * Finds a `Stryker disable` directive anywhere in a line's stripped text (string/template
- * literal contents blanked first by stripStringLiterals, so a directive-shaped string is
- * never matched).
+ * Finds every `Stryker disable` directive occurrence in a line's stripped text
+ * (string/template literal contents blanked first by stripStringLiterals, so a
+ * directive-shaped string is never matched), each paired with the remainder of the line
+ * after that occurrence (trailing `\r` stripped, for a CRLF-terminated line).
  *
  * Deliberately does NOT try to locate or validate a surrounding comment. An earlier version
  * of this scanner located a specific `//` or `/* ... *\/` comment and evaluated only the
  * first one found per line — but Stryker's DirectiveBookkeeper attaches to *any* leading
- * comment on a node, and a line can carry more than one comment. Both
- * `/* a *\/ // Stryker disable all` and `/* a *\/ /* Stryker disable all *\/` suppress
- * mutants under Stryker, and the comment-locating version evaluated only the first,
- * unrelated `/* a *\/` comment and reported zero violations for either. Rather than keep
- * extending the scanner to mirror every shape of Stryker's comment attachment, it now scans
- * the whole stripped line for the phrase, unanchored: any line whose stripped text contains
- * "Stryker disable" is evaluated by the scope/reason rules below.
+ * comment on a node, and a line can carry more than one comment, each with its own
+ * independently honored directive. Both `/* a *\/ // Stryker disable all` and
+ * `/* a *\/ /* Stryker disable all *\/` suppress mutants under Stryker, and the
+ * comment-locating version evaluated only the first, unrelated `/* a *\/` comment and
+ * reported zero violations for either. A later fix scanned the whole stripped line for the
+ * phrase but still returned only the *first* match — so a line carrying two independently
+ * honored directives (e.g. `/* Stryker disable next-line all: ok *\/ // Stryker disable
+ * all`) evaluated only the first, and the file-wide second directive was swallowed into the
+ * first's remainder text and never separately judged, even though Stryker honors both and
+ * would suppress the module entirely. This now finds every occurrence with a global regex
+ * and evaluates each independently, so a line can produce more than one violation.
  *
  * Accepted consequences, all fail-closed (a false positive that fails loudly, never a false
  * negative that passes silently):
- * - A JSDoc continuation line (` * Stryker disable all`) is now flagged even though
- *   Stryker's own `^`-anchored regex (matched against the whole comment value, no `m` flag)
- *   ignores it — that anchor only ever matches a comment's opening line.
+ * - A JSDoc continuation line (` * Stryker disable all`) is flagged even though Stryker's
+ *   own `^`-anchored regex (matched against the whole comment value, no `m` flag) ignores it
+ *   — that anchor only ever matches a comment's opening line.
  * - Ordinary prose containing the phrase (e.g. `// Stryker disable directives are banned
  *   here`) is flagged; the directive-violation reason string names this explicitly.
+ * - A legitimate directive whose *reason text* itself contains the phrase (e.g. a next-line
+ *   directive explaining why disabling is normally rejected) now produces a second,
+ *   independent match against that reason text, which will itself fail the scope/reason
+ *   check and add a second violation for the same line — an extra fail-closed false positive
+ *   on an already-rare phrasing, not a missed real directive.
  * - Stryker's own looser anchor (`^\s?`, at most one leading space) vs. no anchor at all
- *   here is moot now: unanchored scanning is strictly more permissive than either, by design.
+ *   here is moot: unanchored scanning is strictly more permissive than either, by design.
  *
  * Known narrow gap, unchanged from stripStringLiterals: no regex-literal state, so a quote
  * inside a same-line regex literal can open a phantom string and hide a real directive.
  */
-function findDirectiveOnLine(line: string): DirectiveMatch | undefined {
+function findDirectivesOnLine(line: string): DirectiveMatch[] {
   const stripped = stripStringLiterals(line)
-  const match = STRYKER_DISABLE_PATTERN.exec(stripped)
-  if (match === null) return undefined
-  return {remainder: match[1] ?? '', col: (match.index ?? 0) + 1}
+  const matches: DirectiveMatch[] = []
+  for (const match of stripped.matchAll(STRYKER_DISABLE_SEARCH_PATTERN)) {
+    const start = match.index
+    const remainder = stripped.slice(start + match[0].length).replace(/\r$/u, '')
+    matches.push({remainder, col: start + 1})
+  }
+  return matches
 }
 
 /**
@@ -403,9 +472,10 @@ function evaluateDirectiveLine(remainder: string): {ok: boolean; reason: string}
 }
 
 /**
- * Scans the given files (expected to be exactly the configured `mutate` set)
- * for `Stryker disable` comment directives and reports every one that is not
- * `next-line` scoped with a non-empty reason. Exported for unit testing.
+ * Scans the given files (expected to be exactly the configured `mutate` set) for `Stryker
+ * disable` comment directives and reports every occurrence on every line that is not
+ * `next-line` scoped with a non-empty reason. A single line can produce more than one
+ * violation (see findDirectivesOnLine). Exported for unit testing.
  */
 export function scanDirectiveViolations(files: readonly DirectiveScanInput[]): LocatedMutant[] {
   const violations: LocatedMutant[] = []
@@ -413,18 +483,18 @@ export function scanDirectiveViolations(files: readonly DirectiveScanInput[]): L
   for (const {file, content} of files) {
     const lines = content.split('\n')
     for (const [index, line] of lines.entries()) {
-      const directive = findDirectiveOnLine(line)
-      if (directive === undefined) continue
-      const evaluation = evaluateDirectiveLine(directive.remainder)
-      if (evaluation.ok) continue
-      violations.push({
-        file,
-        line: index + 1,
-        col: directive.col,
-        mutator: 'directive',
-        status: 'DirectiveViolation',
-        reason: evaluation.reason,
-      })
+      for (const directive of findDirectivesOnLine(line)) {
+        const evaluation = evaluateDirectiveLine(directive.remainder)
+        if (evaluation.ok) continue
+        violations.push({
+          file,
+          line: index + 1,
+          col: directive.col,
+          mutator: 'directive',
+          status: 'DirectiveViolation',
+          reason: evaluation.reason,
+        })
+      }
     }
   }
 
@@ -601,7 +671,8 @@ export function runMutationGuardCheck(
   const reportJson = readMutationReport(reportPath)
   const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot)
   const directiveViolations = scanDirectiveViolations(directiveFiles)
-  return classifyMutationReport(reportJson, directiveViolations, missingMutateFiles, reportPath)
+  const literalMutateEntries = config.mutate.filter(isLiteralPath)
+  return classifyMutationReport(reportJson, directiveViolations, missingMutateFiles, reportPath, literalMutateEntries)
 }
 
 /**
