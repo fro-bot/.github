@@ -1,6 +1,6 @@
 import {spawnSync} from 'node:child_process'
 import {appendFileSync, readFileSync, rmSync} from 'node:fs'
-import {join, resolve} from 'node:path'
+import {dirname, join, resolve} from 'node:path'
 import process from 'node:process'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -51,9 +51,10 @@ export interface ClassificationResult {
 /**
  * The two Stryker config fields that determine where and whether a JSON report is written,
  * fully resolved by the caller before being passed in: `reporters` as declared, and
- * `resolvedJsonReportPath` as an absolute path (joined against the repository root the same
- * way the wrapper's own `reportPath` is), so classifyMutationReport only ever compares two
- * already-resolved absolute paths and never has to know about the config file's location.
+ * `resolvedJsonReportPath` as an absolute path, already resolved relative to the directory
+ * containing the config file that declared it (see resolveReporterConfig), so
+ * classifyMutationReport only ever compares two already-resolved absolute paths and never has
+ * to know about the config file's location.
  */
 export interface ReporterConfig {
   readonly reporters: readonly string[]
@@ -658,10 +659,18 @@ function readStrykerConfig(path: string): StrykerConfigShape {
     throw new Error(`check-mutation-guards: ${path} is missing a string[] "mutate" field`)
   }
 
-  const reporters =
-    Array.isArray(parsed.reporters) && parsed.reporters.every((entry): entry is string => typeof entry === 'string')
-      ? parsed.reporters
-      : []
+  // `reporters` is optional in Stryker's own schema, so an absent field defaults to `[]` here
+  // (which then legitimately fails the "does not include json" cross-check downstream). A
+  // *present* field of the wrong shape (e.g. a bare string instead of an array) is a config
+  // error, not an empty list — it throws with the same named-error shape as "mutate" above,
+  // rather than silently coercing to `[]` and reporting a misleading "got []" mismatch reason.
+  if (
+    parsed.reporters !== undefined &&
+    (!Array.isArray(parsed.reporters) || !parsed.reporters.every((entry): entry is string => typeof entry === 'string'))
+  ) {
+    throw new Error(`check-mutation-guards: ${path} "reporters" must be a string[] when present`)
+  }
+  const reporters: readonly string[] = Array.isArray(parsed.reporters) ? parsed.reporters : []
 
   const jsonReporter = isRecord(parsed.jsonReporter) ? parsed.jsonReporter : undefined
   const jsonReportFileName =
@@ -670,6 +679,23 @@ function readStrykerConfig(path: string): StrykerConfigShape {
       : 'reports/mutation/mutation.json'
 
   return {mutate: parsed.mutate, reporters, jsonReportFileName}
+}
+
+/**
+ * Resolves the default `ReporterConfig` for a given `stryker.config.json` path: its declared
+ * `reporters`, and `jsonReporter.fileName` (or Stryker's own documented default) resolved
+ * relative to the *directory containing the config file* — matching Stryker's own resolution
+ * semantics — not the repository root. For this project's real config the two happen to be
+ * the same directory, so this only matters when `configPath` is injected under a
+ * subdirectory (as a test can do). Exported as the single seam `runMutationGuardCheck` uses
+ * to build its default `reporterConfig` when no override is given.
+ */
+export function resolveReporterConfig(configPath: string): ReporterConfig {
+  const config = readStrykerConfig(configPath)
+  return {
+    reporters: config.reporters,
+    resolvedJsonReportPath: join(dirname(configPath), config.jsonReportFileName),
+  }
 }
 
 // Stryker filters `mutate` entries through minimatch, whose pattern grammar is wider than
@@ -833,10 +859,7 @@ export function runMutationGuardCheck(
   const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot)
   const directiveViolations = scanDirectiveViolations(directiveFiles)
   const literalMutateEntries = config.mutate.filter(isLiteralPath)
-  const effectiveReporterConfig: ReporterConfig = reporterConfig ?? {
-    reporters: config.reporters,
-    resolvedJsonReportPath: join(repositoryRoot, config.jsonReportFileName),
-  }
+  const effectiveReporterConfig: ReporterConfig = reporterConfig ?? resolveReporterConfig(strykerConfigPath)
   return classifyMutationReport(
     reportJson,
     directiveViolations,

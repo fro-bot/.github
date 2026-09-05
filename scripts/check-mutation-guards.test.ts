@@ -12,6 +12,7 @@ import {
   flattenReport,
   mutationReportPath,
   readMutateFileContents,
+  resolveReporterConfig,
   runMutationGuardCheck,
   scanDirectiveViolations,
   VERDICTS,
@@ -679,6 +680,76 @@ describe('exitCodeFor (exit-code contract)', () => {
     expect(new Set(assertedVerdicts)).toEqual(new Set(VERDICTS))
     expect(assertedVerdicts).toHaveLength(VERDICTS.length)
   })
+})
+
+function writeScratchConfig(dir: string, configBody: Record<string, unknown>): string {
+  const configPath = join(dir, 'stryker.config.json')
+  writeFileSync(configPath, JSON.stringify(configBody), 'utf8')
+  return configPath
+}
+
+describe('resolveReporterConfig (default reporterConfig resolution)', () => {
+  const realConfigPath = resolve(import.meta.dirname, '..', 'stryker.config.json')
+
+  // Blocking: a `reporters` field present but the wrong shape (a bare string, not an array)
+  // previously silently coerced to `[]`, then failed the downstream "does not include json"
+  // check with a misleading reason — the actual problem was a config shape error, not an
+  // empty list. It must now fail with the same named-error shape as an invalid "mutate".
+  it('throws a named type error when reporters is present but not a string[]', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'check-mutation-guards-reporters-type-'))
+    try {
+      const configPath = writeScratchConfig(dir, {mutate: ['a.ts'], reporters: 'json'})
+      expect(() => resolveReporterConfig(configPath)).toThrow(/"reporters" must be a string\[\]/u)
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+
+  it('defaults reporters to [] when the field is absent entirely (not a type error)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'check-mutation-guards-reporters-absent-'))
+    try {
+      const configPath = writeScratchConfig(dir, {mutate: ['a.ts']})
+      expect(() => resolveReporterConfig(configPath)).not.toThrow()
+      expect(resolveReporterConfig(configPath).reporters).toEqual([])
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+
+  // Blocking: jsonReporter.fileName must resolve relative to the directory containing the
+  // config file, not the repository root — the two happen to coincide for this project's real
+  // config, so only an injected configPath under a subdirectory can discriminate this.
+  it('resolves jsonReporter.fileName relative to the directory containing the config file, not the repository root', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'check-mutation-guards-subdir-'))
+    const subDir = join(dir, 'sub')
+    mkdirSync(subDir, {recursive: true})
+    try {
+      const configPath = writeScratchConfig(subDir, {
+        mutate: ['a.ts'],
+        reporters: ['json'],
+        jsonReporter: {fileName: 'reports/mutation.json'},
+      })
+      const result = resolveReporterConfig(configPath)
+      expect(result.resolvedJsonReportPath).toBe(join(subDir, 'reports/mutation.json'))
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+
+  // The production default: no override anywhere, resolved straight from the real
+  // stryker.config.json. Must match mutationReportPath exactly and include "json".
+  it('resolves the real stryker.config.json to reporters including "json" and resolvedJsonReportPath equal to mutationReportPath', () => {
+    const result = resolveReporterConfig(realConfigPath)
+    expect(result.reporters).toContain('json')
+    expect(result.resolvedJsonReportPath).toBe(mutationReportPath)
+  })
+
+  // runMutationGuardCheck's own default-construction line is `reporterConfig ??
+  // resolveReporterConfig(strykerConfigPath)`, where `strykerConfigPath` is this same
+  // repository's real config path — so the assertion above (resolveReporterConfig against
+  // `realConfigPath`, the identical file) already exercises the exact production default this
+  // wrapper falls back to when no override is given, without needing to invoke
+  // runMutationGuardCheck itself against the real, non-test-owned mutationReportPath.
 })
 
 describe('runMutationGuardCheck (stale-report fix)', () => {
