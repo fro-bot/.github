@@ -1,11 +1,12 @@
 import {spawnSync} from 'node:child_process'
-import {appendFileSync, readFileSync} from 'node:fs'
+import {appendFileSync, readFileSync, rmSync} from 'node:fs'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const strykerConfigPath = join(repositoryRoot, 'stryker.config.json')
-const mutationReportPath = join(repositoryRoot, 'reports', 'mutation', 'mutation.json')
+// Exported so tests can stage/inspect a stale report at the exact path the runner reads.
+export const mutationReportPath = join(repositoryRoot, 'reports', 'mutation', 'mutation.json')
 
 // ---------------------------------------------------------------------------
 // Closed verdict vocabulary
@@ -62,7 +63,15 @@ const KNOWN_MUTANT_STATUSES: ReadonlySet<string> = new Set([
   'RuntimeError',
   'CompileError',
   'Ignored',
+  'Pending',
 ])
+
+// `Pending` is a valid mutation-testing-report-schema v2 status for a mutant a run never
+// got to (e.g. the process was killed mid-run). It is listed in KNOWN_MUTANT_STATUSES so it
+// is not merely "unrecognized", but it is treated as instrumentation-failed by name, below,
+// so an incomplete run reads as the deliberate "not classifiable" decision it is, not an
+// accidental fall-through of the unrecognized-status catch-all.
+const INCOMPLETE_RUN_STATUSES: ReadonlySet<string> = new Set(['RuntimeError', 'CompileError', 'Pending'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -153,7 +162,7 @@ export function classifyMutationReport(
 
   const reportUnreadable = flat === undefined
   const hasUnrecognizedStatus = (flat ?? []).some(
-    m => m.status === 'RuntimeError' || m.status === 'CompileError' || !KNOWN_MUTANT_STATUSES.has(m.status),
+    m => INCOMPLETE_RUN_STATUSES.has(m.status) || !KNOWN_MUTANT_STATUSES.has(m.status),
   )
   const hasIgnoredWithoutReason = (flat ?? []).some(m => m.status === 'Ignored' && isEmptyReason(m.reason))
 
@@ -187,15 +196,93 @@ function compareLocatedMutants(a: LocatedMutant, b: LocatedMutant): number {
 // ---------------------------------------------------------------------------
 
 /**
- * A directive line must be a standalone `//` comment line (matching Stryker's
- * own `next-line` convention of sitting alone above the mutated line). This
- * also keeps the scan from tripping over a directive-shaped string literal,
- * since a string assignment does not begin the line with `//`.
+ * Replaces the contents of every string/template literal on a line with spaces
+ * of the same length, so column offsets stay aligned. Verified empirically that
+ * Stryker honors a directive comment anywhere on a line — including trailing a
+ * statement, e.g. `if (flag) return 'a' // Stryker disable all` — via Babel's
+ * `leadingComments`/attachment to the following node, so the scanner must look
+ * for `//` and `/* ... *\/` comments anywhere on the line, not only at the line
+ * start. Stripping strings first keeps a directive-shaped string literal (e.g.
+ * `const message = '// Stryker disable all'`) from being mistaken for a real
+ * comment, since the only remaining `//`/`/*` sequences are genuine comment
+ * markers.
  */
-const DIRECTIVE_LINE_PATTERN = /^\s*\/\/\s*Stryker disable\b(.*)$/u
+function stripStringLiterals(line: string): string {
+  let result = ''
+  let quote: string | undefined
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i] ?? ''
+    if (quote !== undefined) {
+      if (char === '\\') {
+        result += '  '
+        i += 1
+        continue
+      }
+      if (char === quote) quote = undefined
+      result += ' '
+      continue
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char
+      result += ' '
+      continue
+    }
+    result += char
+  }
+  return result
+}
 
+interface DirectiveMatch {
+  readonly remainder: string
+  readonly col: number
+}
+
+const STRYKER_DISABLE_PATTERN = /^\s*Stryker disable\b(.*)$/u
+
+/**
+ * Finds the first `Stryker disable` directive comment on a line — either a
+ * `//` line comment or a single-line `/* ... *\/` block comment — searching
+ * anywhere on the line, not only at its start. String/template literal
+ * contents are stripped first so a directive-shaped string is never matched.
+ * A multi-line block comment (no closing `*\/` on the same line) is out of
+ * this conservative scanner's scope and is not matched.
+ */
+function findDirectiveOnLine(line: string): DirectiveMatch | undefined {
+  const stripped = stripStringLiterals(line)
+  const lineCommentIndex = stripped.indexOf('//')
+  const blockCommentIndex = stripped.indexOf('/*')
+
+  // A `//` comment consumes the rest of the line, so if it appears before any `/*`,
+  // the `/*` (if any) is just comment text, not the start of a separate comment.
+  if (lineCommentIndex !== -1 && (blockCommentIndex === -1 || lineCommentIndex < blockCommentIndex)) {
+    const match = STRYKER_DISABLE_PATTERN.exec(line.slice(lineCommentIndex + 2))
+    if (match === null) return undefined
+    return {remainder: match[1] ?? '', col: lineCommentIndex + 1}
+  }
+
+  if (blockCommentIndex !== -1) {
+    const closeIndex = stripped.indexOf('*/', blockCommentIndex + 2)
+    if (closeIndex === -1) return undefined
+    const match = STRYKER_DISABLE_PATTERN.exec(line.slice(blockCommentIndex + 2, closeIndex))
+    if (match === null) return undefined
+    return {remainder: match[1] ?? '', col: blockCommentIndex + 1}
+  }
+
+  return undefined
+}
+
+/**
+ * Requires a literal `: ` (colon-space) before the reason. Stryker's own grammar is looser
+ * — `(?::(.+)?)?` accepts `:reason` with no space — so this is a deliberate, stricter
+ * divergence: it fails closed on `:reason` rather than accepting it, which is the safe
+ * direction for a check whose whole point is refusing to guess at intent.
+ */
 function evaluateDirectiveLine(remainder: string): {ok: boolean; reason: string} {
-  if (!remainder.includes('next-line')) {
+  // Scope must be evaluated on a prefix anchored to the start of the remainder — a
+  // substring search over the whole remainder (including the reason text) let a reason
+  // that merely mentions "next-line" (e.g. `disable all: next-line scoping is
+  // impractical here`) pass region/all suppression through undetected.
+  if (!/^\s*next-line\b/u.test(remainder)) {
     return {
       ok: false,
       reason: 'Stryker disable directive must be next-line scoped; region/all suppression is rejected',
@@ -211,7 +298,7 @@ function evaluateDirectiveLine(remainder: string): {ok: boolean; reason: string}
 
 /**
  * Scans the given files (expected to be exactly the configured `mutate` set)
- * for `Stryker disable` comment directives and reports every line that is not
+ * for `Stryker disable` comment directives and reports every one that is not
  * `next-line` scoped with a non-empty reason. Exported for unit testing.
  */
 export function scanDirectiveViolations(files: readonly DirectiveScanInput[]): LocatedMutant[] {
@@ -220,15 +307,14 @@ export function scanDirectiveViolations(files: readonly DirectiveScanInput[]): L
   for (const {file, content} of files) {
     const lines = content.split('\n')
     for (const [index, line] of lines.entries()) {
-      const match = DIRECTIVE_LINE_PATTERN.exec(line)
-      if (match === null) continue
-      const remainder = match[1] ?? ''
-      const evaluation = evaluateDirectiveLine(remainder)
+      const directive = findDirectiveOnLine(line)
+      if (directive === undefined) continue
+      const evaluation = evaluateDirectiveLine(directive.remainder)
       if (evaluation.ok) continue
       violations.push({
         file,
         line: index + 1,
-        col: line.length - line.trimStart().length + 1,
+        col: directive.col,
         mutator: 'directive',
         status: 'DirectiveViolation',
         reason: evaluation.reason,
@@ -260,7 +346,14 @@ function readStrykerConfig(path: string): StrykerConfigShape {
   return {mutate: parsed.mutate}
 }
 
-/** Glob metacharacters mark an entry as out of scope for this unit's literal enumerated set. */
+/**
+ * Glob metacharacters mark an entry as out of scope for this unit's literal enumerated set.
+ * A glob entry is silently skipped for directive scanning here — once `mutate` grows a glob,
+ * directive coverage for the files it expands to stops with no signal from this wrapper.
+ * Unit 3's enumeration guard is the intended backstop: it asserts every mutated module is
+ * either explicitly listed or explicitly excused, which catches a glob silently absorbing an
+ * undirected file the way it catches any other unlisted module.
+ */
 function isLiteralPath(entry: string): boolean {
   return !/[*?!]/u.test(entry)
 }
@@ -304,11 +397,12 @@ function printResult(result: ClassificationResult): void {
   }
 }
 
-async function main(): Promise<void> {
-  const config = readStrykerConfig(strykerConfigPath)
-
-  // Exit status is used only to detect "Stryker did not run at all" for an informational
-  // message; the verdict is derived exclusively from the JSON report below.
+/**
+ * Runs `stryker run` via `spawnSync`; the return value is used only to detect "Stryker did
+ * not run at all" for an informational message — the verdict is always derived from the
+ * JSON report, never this return value. Exported as an injectable seam for testing.
+ */
+export function defaultStrykerSpawner(): void {
   const run = spawnSync('pnpm', ['exec', 'stryker', 'run', strykerConfigPath], {
     cwd: repositoryRoot,
     stdio: 'inherit',
@@ -320,12 +414,36 @@ async function main(): Promise<void> {
       `check-mutation-guards: stryker exited ${String(run.status)} — informational only; the verdict below is derived from the JSON report, not the exit code\n`,
     )
   }
+}
+
+/**
+ * Runs the mutation guard check end to end: reads the config, clears any prior report,
+ * spawns Stryker, classifies whatever report exists afterward, and returns the result
+ * without printing or setting an exit code (both are `main()`'s concern).
+ *
+ * Clearing `mutationReportPath` before the spawn is load-bearing: without it, a Stryker
+ * process that dies before writing a report (dry-run timeout, missing binary, crash) would
+ * leave a *previous* run's report on disk, and this check would silently classify that
+ * stale report as the current result — including a stale `clean` with exit 0. "Never fail
+ * open" is this script's entire contract, so the report is always removed first.
+ *
+ * `spawner` is an injectable seam (defaults to `defaultStrykerSpawner`) so tests can drive
+ * the "Stryker died without writing anything" path without actually running Stryker.
+ */
+export function runMutationGuardCheck(spawner: () => void = defaultStrykerSpawner): ClassificationResult {
+  const config = readStrykerConfig(strykerConfigPath)
+
+  rmSync(mutationReportPath, {force: true})
+  spawner()
 
   const reportJson = readMutationReport(mutationReportPath)
   const directiveFiles = readMutateFileContents(config.mutate, repositoryRoot)
   const directiveViolations = scanDirectiveViolations(directiveFiles)
-  const result = classifyMutationReport(reportJson, directiveViolations)
+  return classifyMutationReport(reportJson, directiveViolations)
+}
 
+async function main(): Promise<void> {
+  const result = runMutationGuardCheck()
   printResult(result)
   process.exitCode = result.verdict === 'clean' || result.verdict === 'not-applicable' ? 0 : 1
 }

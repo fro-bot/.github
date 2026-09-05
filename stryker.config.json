@@ -42,5 +42,5 @@
   "tempDirName": ".stryker-tmp",
   "allowConsoleColors": false,
   "timeoutMS": 30000,
-  "dryRunTimeoutMinutes": 5
+  "dryRunTimeoutMinutes": 8
 }

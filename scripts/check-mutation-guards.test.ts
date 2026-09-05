@@ -1,15 +1,21 @@
+import {mkdirSync, rmSync, writeFileSync} from 'node:fs'
+import {dirname} from 'node:path'
+
 import {describe, expect, it, vi} from 'vitest'
 
 import {
   classifyMutationReport,
   flattenReport,
+  mutationReportPath,
+  runMutationGuardCheck,
   scanDirectiveViolations,
   type DirectiveScanInput,
   type LocatedMutant,
 } from './check-mutation-guards.ts'
 
-// Hoisted mocks — must precede the static import below so `main()` cannot
-// actually spawn anything if the import.meta.main guard were ever broken.
+// vi.mock calls are hoisted above all imports by Vitest's transform regardless of their
+// physical position in the file, so `main()` cannot actually spawn anything here if the
+// import.meta.main guard were ever broken.
 const {mockSpawnSync} = vi.hoisted(() => ({
   mockSpawnSync: vi.fn(),
 }))
@@ -101,6 +107,11 @@ describe('classifyMutationReport', () => {
     const report = buildReport([
       {file: 'a.ts', line: 1, column: 1, mutatorName: 'ObjectLiteral', status: 'RuntimeError'},
     ])
+    expect(classifyMutationReport(report, []).verdict).toBe('instrumentation-failed')
+  })
+
+  it('reports instrumentation-failed when a mutant is left Pending (run stopped early)', () => {
+    const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'ObjectLiteral', status: 'Pending'}])
     expect(classifyMutationReport(report, []).verdict).toBe('instrumentation-failed')
   })
 
@@ -243,5 +254,85 @@ describe('scanDirectiveViolations', () => {
     expect(violations).toHaveLength(2)
     expect(violations.find(v => v.file === 'a.ts')?.line).toBe(2)
     expect(violations.find(v => v.file === 'b.ts')?.line).toBe(1)
+  })
+
+  // Fix 1 (blocking): the next-line scope check must not be a substring search over the
+  // whole reason text — a reason that merely mentions "next-line" must not smuggle region
+  // suppression past the rule written to reject it.
+  it('rejects a disable-all directive whose reason text merely mentions "next-line"', () => {
+    const violations = scan('// Stryker disable all: next-line scoping is impractical here\nconst x = 1\n')
+    expect(violations).toHaveLength(1)
+  })
+
+  // Fix 2 (blocking): Stryker's DirectiveBookkeeper matches directives via Babel's
+  // leadingComments, which includes CommentBlock as well as CommentLine — a standalone
+  // block-comment directive is fully effective at suppressing mutants and must be scanned.
+  it('flags a standalone block-comment disable-all directive', () => {
+    const violations = scan('/* Stryker disable all */\nconst x = 1\n')
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toMatchObject({file: 'a.ts', line: 1, mutator: 'directive', status: 'DirectiveViolation'})
+  })
+
+  it('passes a block-comment next-line directive with a non-empty reason', () => {
+    expect(scan('/* Stryker disable next-line ConditionalExpression: reason */\nconst x = 1\n')).toEqual([])
+  })
+
+  it('does not scan a block-comment-shaped string literal', () => {
+    const violations = scan("const message = '/* Stryker disable all */'\n")
+    expect(violations).toEqual([])
+  })
+
+  // Fix 2 continued: empirically confirmed against a live Stryker run (see commit body) that
+  // a directive trailing a statement on the same line is honored — Babel attaches it as a
+  // leading comment of the following node — so the scanner must catch trailing directives,
+  // not only directives that begin their own line.
+  it('flags a trailing disable-all directive after code on the same line', () => {
+    const violations = scan("if (flag) return 'a' // Stryker disable all\nreturn 'b'\n")
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toMatchObject({file: 'a.ts', line: 1, mutator: 'directive', status: 'DirectiveViolation'})
+  })
+
+  it('passes a trailing next-line directive with a non-empty reason after code', () => {
+    expect(scan('const x = 1 // Stryker disable next-line ConditionalExpression: reason\n')).toEqual([])
+  })
+
+  it('does not scan a string literal containing directive text mid-line, even with real code after it', () => {
+    const violations = scan("const message = 'Stryker disable all'; const y = 2\n")
+    expect(violations).toEqual([])
+  })
+})
+
+describe('runMutationGuardCheck (stale-report fix)', () => {
+  const reportDir = dirname(mutationReportPath)
+
+  // Fix 3 (blocking): a report left over from a prior run must never be classified as the
+  // current result. Stage a stale "all Killed" report, then run the check with a spawner
+  // that dies without writing anything — the fix (`rmSync` before spawning) makes this
+  // `instrumentation-failed` (no fresh report); without it, the stale report reads as `clean`.
+  it('never classifies a stale on-disk report as a fresh clean result', () => {
+    mkdirSync(reportDir, {recursive: true})
+    writeFileSync(
+      mutationReportPath,
+      JSON.stringify({
+        files: {
+          'stale-file.ts': {
+            mutants: [{mutatorName: 'StringLiteral', status: 'Killed', location: {start: {line: 1, column: 1}}}],
+          },
+        },
+      }),
+      'utf8',
+    )
+
+    try {
+      const diedWithoutWriting = (): void => {
+        // Simulates Stryker dying before it writes a report (dry-run timeout, missing
+        // binary, crash): the spawner runs and returns, but the report file is untouched.
+      }
+      const result = runMutationGuardCheck(diedWithoutWriting)
+      expect(result.verdict).toBe('instrumentation-failed')
+      expect(result.verdict).not.toBe('clean')
+    } finally {
+      rmSync(mutationReportPath, {force: true})
+    }
   })
 })
