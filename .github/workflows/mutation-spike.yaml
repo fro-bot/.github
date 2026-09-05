@@ -6,6 +6,16 @@
 name: Mutation Spike
 
 on:
+  # workflow_dispatch resolves workflows from the default branch, so a file that
+  # exists only on a pull-request branch cannot be dispatched before it merges.
+  # Run on the pull request itself to prove the CI topology ahead of merge.
+  pull_request:
+    branches: [main]
+    paths:
+      - stryker.config.json
+      - .github/workflows/mutation-spike.yaml
+      - packages/wiki-write-core/src/corrections-survival.ts
+      - packages/wiki-write-core/src/corrections-survival.test.ts
   workflow_dispatch:
 
 permissions:
