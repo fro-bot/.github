@@ -53,7 +53,8 @@ describe('correction survival verification', () => {
   it('uses the shared storage normalizer rather than a private duplicate', async () => {
     const source = await readFile(new URL('./corrections-survival.ts', import.meta.url), 'utf8')
 
-    expect(source).toContain("import {normalizeCorrectionText} from './correction-text.ts'")
+    // Whitespace-tolerant: instrumented copies of this file are re-emitted by a code generator.
+    expect(source).toMatch(/import\s*\{\s*normalizeCorrectionText\s*\}\s*from\s*'\.\/correction-text\.ts'/u)
     expect(source).not.toMatch(/function normalizeCorrectionText\s*\(/u)
     expect(normalizeCorrectionText('  shared\nnormalizer  ')).toBe('shared normalizer')
   })
