@@ -68,11 +68,12 @@ function calibrateRepetitions(operation: () => void): number {
 }
 
 function measureScalingRatio(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
-  // Fail loud: with zero (or NaN -- `NaN < 1` is false) samples the median below would resolve
-  // to 0 and each linearity assertion in this file would pass vacuously; `median` itself rejects
-  // even counts.
-  if (!Number.isInteger(samples) || samples < 1) {
-    throw new RangeError(`measureScalingRatio needs a positive integer sample count, received ${samples}`)
+  // Reject a bad count here, where the diagnostic names the parameter and arrives before any
+  // measurement work, rather than letting `median` throw about its own input two seconds later.
+  // Even counts are rejected for the reason given at `median`; the rest (`0`, `1.5`, `-1`, `NaN`,
+  // `Infinity`) would never reach it as an odd length and need their own check.
+  if (!Number.isInteger(samples) || samples < 1 || samples % 2 === 0) {
+    throw new RangeError(`measureScalingRatio needs a positive odd integer sample count, received ${samples}`)
   }
   const smallOperation = (): void => operation(size)
   const largeOperation = (): void => operation(size * 2)
