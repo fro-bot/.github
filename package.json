@@ -22,6 +22,7 @@
     "bootstrap": "pnpm install --prefer-offline --loglevel warn",
     "build": "node scripts/build-wiki-write-core.ts",
     "check:wiki-write-core-dist": "node scripts/build-wiki-write-core.ts --check",
+    "check:mutation-guards": "node scripts/check-mutation-guards.ts",
     "check-types": "pnpm build && tsc --noEmit --project ./tsconfig.json",
     "coverage": "pnpm build && vitest run --coverage",
     "fix": "pnpm run lint --fix",

@@ -39,7 +39,9 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Ten mutated modules now, each with an 8-minute dryRunTimeoutMinutes allowance in
+    # stryker.config.json; 10 minutes was sized for the single-module spike.
+    timeout-minutes: 20
     steps:
       - name: ⤵ Checkout Branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -50,7 +52,12 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: 🧬 Run Stryker
-        run: pnpm exec stryker run | tee mutation-clear-text.log
+        # -u strips GITHUB_STEP_SUMMARY from Stryker's (and the Vitest runner's) env only —
+        # Vitest 4 auto-registers a github-actions reporter that appends a "## Vitest Test
+        # Report" block to that file on every spawn, and Stryker spawns Vitest once for the
+        # dry run and again per mutant batch. The "Write step summary" step below still writes
+        # to the real GITHUB_STEP_SUMMARY from the shell's own (untouched) env.
+        run: env -u GITHUB_STEP_SUMMARY pnpm exec stryker run | tee mutation-clear-text.log
 
       - name: 📝 Write step summary
         if: always()

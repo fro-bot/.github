@@ -1,7 +1,29 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "mutate": ["packages/wiki-write-core/src/corrections-survival.ts"],
-  "testFiles": ["packages/wiki-write-core/src/corrections-survival.test.ts"],
+  "mutate": [
+    "packages/wiki-write-core/src/corrections-survival.ts",
+    "packages/wiki-write-core/src/corrections.ts",
+    "packages/wiki-write-core/src/private-leak-adapter.ts",
+    "packages/wiki-write-core/src/private-leak.ts",
+    "scripts/build-wiki-write-core.ts",
+    "scripts/check-private-leak.ts",
+    "scripts/check-repo-onboarded.ts",
+    "scripts/check-wiki-authority.ts",
+    "scripts/wiki-context-safety.ts",
+    "scripts/wiki-lockfile-gates.ts"
+  ],
+  "testFiles": [
+    "packages/wiki-write-core/src/corrections-survival.test.ts",
+    "packages/wiki-write-core/src/corrections.test.ts",
+    "packages/wiki-write-core/src/private-leak-adapter.test.ts",
+    "packages/wiki-write-core/src/wiki-write-core.test.ts",
+    "scripts/build-wiki-write-core.test.ts",
+    "scripts/check-private-leak.test.ts",
+    "scripts/check-repo-onboarded.test.ts",
+    "scripts/check-wiki-authority.test.ts",
+    "scripts/wiki-context-safety.test.ts",
+    "scripts/wiki-lockfile-gates.test.ts"
+  ],
   "plugins": ["@stryker-mutator/vitest-runner"],
   "testRunner": "vitest",
   "vitest": {
@@ -18,5 +40,7 @@
     "fileName": "reports/mutation/mutation.json"
   },
   "tempDirName": ".stryker-tmp",
-  "allowConsoleColors": false
+  "allowConsoleColors": false,
+  "timeoutMS": 30000,
+  "dryRunTimeoutMinutes": 8
 }
