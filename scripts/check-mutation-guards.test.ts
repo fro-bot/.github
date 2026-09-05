@@ -17,6 +17,7 @@ import {
   VERDICTS,
   type DirectiveScanInput,
   type LocatedMutant,
+  type ReporterConfig,
 } from './check-mutation-guards.ts'
 
 // vi.mock calls are hoisted above all imports by Vitest's transform regardless of their
@@ -685,10 +686,17 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
   // cannot clobber a real report a concurrent or subsequent run depends on.
   const tempReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-test-')), 'mutation.json')
 
+  // A reporterConfig that agrees with tempReportPath, so this test proves only the
+  // stale-report behavior — without this, the real stryker.config.json's resolved path would
+  // never match a temp path and ReporterConfigMismatch would supply `instrumentation-failed`
+  // on its own, making the `rmSync` this test exists to prove entirely vacuous to remove.
+  const matchingReporterConfig: ReporterConfig = {reporters: ['json'], resolvedJsonReportPath: tempReportPath}
+
   // Fix 3 (blocking): a report left over from a prior run must never be classified as the
   // current result. Stage a stale "all Killed" report, then run the check with a spawner
   // that dies without writing anything — the fix (`rmSync` before spawning) makes this
-  // `instrumentation-failed` (no fresh report); without it, the stale report reads as `clean`.
+  // `instrumentation-failed` with a `ReportUnreadable` sentinel (no fresh report was read);
+  // without it, the stale report reads as `clean`.
   it('never classifies a stale on-disk report as a fresh clean result', () => {
     writeFileSync(
       tempReportPath,
@@ -707,9 +715,13 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
         // Simulates Stryker dying before it writes a report (dry-run timeout, missing
         // binary, crash): the spawner runs and returns, but the report file is untouched.
       }
-      const result = runMutationGuardCheck(diedWithoutWriting, tempReportPath)
+      const result = runMutationGuardCheck(diedWithoutWriting, tempReportPath, matchingReporterConfig)
       expect(result.verdict).toBe('instrumentation-failed')
       expect(result.verdict).not.toBe('clean')
+      const runtimeErrorSentinels = result.mutants.filter(m => m.status === 'RuntimeError')
+      expect(runtimeErrorSentinels).toHaveLength(1)
+      expect(runtimeErrorSentinels[0]?.reason).toMatch(/ENOENT/u)
+      expect(result.mutants.some(m => m.status === 'ReporterConfigMismatch')).toBe(false)
     } finally {
       rmSync(tempReportPath, {force: true})
     }
@@ -720,17 +732,19 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
   // must now produce exactly one RuntimeError sentinel naming the path and the actual cause.
   it('emits exactly one RuntimeError sentinel naming the path and ENOENT when the report file does not exist', () => {
     const missingReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-missing-')), 'mutation.json')
+    const reporterConfigForPath: ReporterConfig = {reporters: ['json'], resolvedJsonReportPath: missingReportPath}
     const noOpSpawner = (): void => {
       // Runs and returns without writing anything — the report path never exists.
     }
     try {
-      const result = runMutationGuardCheck(noOpSpawner, missingReportPath)
+      const result = runMutationGuardCheck(noOpSpawner, missingReportPath, reporterConfigForPath)
       expect(result.verdict).toBe('instrumentation-failed')
       const sentinels = result.mutants.filter(m => m.status === 'RuntimeError')
       expect(sentinels).toHaveLength(1)
       expect(sentinels[0]?.file).toBe(missingReportPath)
       expect(sentinels[0]?.mutator).toBe('ReportUnreadable')
       expect(sentinels[0]?.reason).toMatch(/ENOENT/u)
+      expect(result.mutants.some(m => m.status === 'ReporterConfigMismatch')).toBe(false)
     } finally {
       rmSync(dirname(missingReportPath), {recursive: true, force: true})
     }
@@ -738,6 +752,7 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
 
   it('emits exactly one RuntimeError sentinel naming the path and the parse error when the report file is malformed JSON', () => {
     const malformedReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-malformed-')), 'mutation.json')
+    const reporterConfigForPath: ReporterConfig = {reporters: ['json'], resolvedJsonReportPath: malformedReportPath}
     // runMutationGuardCheck clears reportPath before invoking the spawner, so the malformed
     // content must be written BY the spawner (simulating Stryker writing bad output), not
     // staged beforehand — staging first would just be deleted by the pre-spawn rmSync.
@@ -745,15 +760,78 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
       writeFileSync(malformedReportPath, '{not valid json', 'utf8')
     }
     try {
-      const result = runMutationGuardCheck(spawnerThatWritesMalformedJson, malformedReportPath)
+      const result = runMutationGuardCheck(spawnerThatWritesMalformedJson, malformedReportPath, reporterConfigForPath)
       expect(result.verdict).toBe('instrumentation-failed')
       const sentinels = result.mutants.filter(m => m.status === 'RuntimeError')
       expect(sentinels).toHaveLength(1)
       expect(sentinels[0]?.file).toBe(malformedReportPath)
       expect(sentinels[0]?.mutator).toBe('ReportUnreadable')
       expect(sentinels[0]?.reason?.length).toBeGreaterThan(0)
+      expect(result.mutants.some(m => m.status === 'ReporterConfigMismatch')).toBe(false)
     } finally {
       rmSync(dirname(malformedReportPath), {recursive: true, force: true})
+    }
+  })
+
+  // Blocking: the reporterConfig seam itself must be provably load-bearing on
+  // runMutationGuardCheck, not just accepted and ignored. A mismatched override on a
+  // perfectly good report must fail closed with the specific sentinel; a matching override
+  // on the same report must pass clean.
+  it('reports instrumentation-failed with a ReporterConfigMismatch sentinel when an injected reporterConfig disagrees with reportPath', () => {
+    const goodReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-mismatch-')), 'mutation.json')
+    const spawnerThatWritesAGoodReport = (): void => {
+      writeFileSync(
+        goodReportPath,
+        JSON.stringify({
+          files: {
+            'good-file.ts': {
+              mutants: [{mutatorName: 'StringLiteral', status: 'Killed', location: {start: {line: 1, column: 1}}}],
+            },
+          },
+        }),
+        'utf8',
+      )
+    }
+    const mismatchedReporterConfig: ReporterConfig = {
+      reporters: ['json'],
+      resolvedJsonReportPath: '/some/entirely/different/path/mutation.json',
+    }
+    try {
+      const result = runMutationGuardCheck(spawnerThatWritesAGoodReport, goodReportPath, mismatchedReporterConfig)
+      expect(result.verdict).toBe('instrumentation-failed')
+      expect(result.mutants.some(m => m.status === 'ReporterConfigMismatch')).toBe(true)
+    } finally {
+      rmSync(dirname(goodReportPath), {recursive: true, force: true})
+    }
+  })
+
+  // Note: cannot assert an overall 'clean' verdict here, because runMutationGuardCheck always
+  // reads the real stryker.config.json's `mutate` list, and this synthetic report's single
+  // fake file key will never satisfy the (unrelated) report-key cross-check against the real
+  // ten-module `mutate` set. Asserting the absence of ReporterConfigMismatch specifically is
+  // the precise claim this test exists to prove: a matching reporterConfig does not, on its
+  // own, fail the check.
+  it('does not report a ReporterConfigMismatch when an injected reporterConfig agrees with reportPath', () => {
+    const goodReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-match-')), 'mutation.json')
+    const spawnerThatWritesAGoodReport = (): void => {
+      writeFileSync(
+        goodReportPath,
+        JSON.stringify({
+          files: {
+            'good-file.ts': {
+              mutants: [{mutatorName: 'StringLiteral', status: 'Killed', location: {start: {line: 1, column: 1}}}],
+            },
+          },
+        }),
+        'utf8',
+      )
+    }
+    const matchingReporterConfig: ReporterConfig = {reporters: ['json'], resolvedJsonReportPath: goodReportPath}
+    try {
+      const result = runMutationGuardCheck(spawnerThatWritesAGoodReport, goodReportPath, matchingReporterConfig)
+      expect(result.mutants.some(m => m.status === 'ReporterConfigMismatch')).toBe(false)
+    } finally {
+      rmSync(dirname(goodReportPath), {recursive: true, force: true})
     }
   })
 

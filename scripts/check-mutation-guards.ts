@@ -813,11 +813,16 @@ export function defaultStrykerSpawner(): void {
  * the "Stryker died without writing anything" path without actually running Stryker.
  * `reportPath` is a second injectable seam (defaults to `mutationReportPath`, the real path
  * Stryker writes to) so a test staging or clearing a report never touches the real
- * `reports/mutation/mutation.json` on disk.
+ * `reports/mutation/mutation.json` on disk. `reporterConfig` is a third injectable seam
+ * (defaults to what is actually read from `stryker.config.json`) so a test injecting a
+ * `reportPath` can also inject a `reporterConfig` that agrees with it — without this, every
+ * temp-path test would trip the reporter/report-path cross-check regardless of what it is
+ * actually trying to prove, since the real config's resolved path never matches a temp path.
  */
 export function runMutationGuardCheck(
   spawner: () => void = defaultStrykerSpawner,
   reportPath: string = mutationReportPath,
+  reporterConfig?: ReporterConfig,
 ): ClassificationResult {
   const config = readStrykerConfig(strykerConfigPath)
 
@@ -828,7 +833,7 @@ export function runMutationGuardCheck(
   const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot)
   const directiveViolations = scanDirectiveViolations(directiveFiles)
   const literalMutateEntries = config.mutate.filter(isLiteralPath)
-  const reporterConfig: ReporterConfig = {
+  const effectiveReporterConfig: ReporterConfig = reporterConfig ?? {
     reporters: config.reporters,
     resolvedJsonReportPath: join(repositoryRoot, config.jsonReportFileName),
   }
@@ -838,7 +843,7 @@ export function runMutationGuardCheck(
     missingMutateFiles,
     reportPath,
     literalMutateEntries,
-    reporterConfig,
+    effectiveReporterConfig,
     readError,
   )
 }
