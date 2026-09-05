@@ -3,6 +3,8 @@ import {appendFileSync, readFileSync, rmSync} from 'node:fs'
 import {dirname, join, resolve} from 'node:path'
 import process from 'node:process'
 
+import {fetchChangedFiles, readPullRequestContext} from './check-wiki-authority.ts'
+
 const repositoryRoot = resolve(import.meta.dirname, '..')
 export const strykerConfigPath = join(repositoryRoot, 'stryker.config.json')
 // Exported so tests can stage/inspect a stale report at the exact path the runner reads.
@@ -15,8 +17,9 @@ export const mutationReportPath = join(repositoryRoot, 'reports', 'mutation', 'm
 /**
  * The closed verdict vocabulary, in precedence order (top to bottom) for when several
  * conditions apply simultaneously: instrumentation-failed > directive-violation >
- * mutant-timeout > mutants-uncovered > mutants-survived > clean. `not-applicable` is a typed
- * seam for Unit 4's changed-file gating; this module never produces it.
+ * mutant-timeout > mutants-uncovered > mutants-survived > clean. `not-applicable` is produced
+ * by the changed-file trigger gate (`evaluateTriggerGate`) when a `pull_request` event's
+ * changed files do not intersect the trigger set derived from `stryker.config.json`.
  *
  * This `as const` array is the single runtime source of truth for the verdict set —
  * `Verdict` is derived from it, and `exitCodeFor` and its test both iterate it, so a new
@@ -246,7 +249,8 @@ function toLocatedMutant(mutant: FlatMutant): LocatedMutant {
  * remainder instruments and reports `clean`. Any non-empty list here fails closed, with the
  * missing paths named in the reason so a red build says exactly what to fix. Glob entries are
  * exempt (see isLiteralPath's docstring) since a glob resolving to zero files is a config
- * shape Unit 3's enumeration guard owns, not this wrapper.
+ * shape the enumeration guard (`scripts/mutation-guards-config.test.ts`) owns, not this
+ * wrapper.
  *
  * `reportPath` names the report file in the `EmptyReport` reason when the report is
  * well-formed but empty; it does not affect classification, only that message's accuracy
@@ -391,7 +395,7 @@ export function classifyMutationReport(
   // failed to resolve or instrument (Stryker still exits 0 and writes `{"files":{}}` in this
   // case) — an enumerated set of real modules cannot legitimately yield zero mutants. Reading
   // this as `clean` would be the exact vacuous-pass this checker exists to prevent; only
-  // `not-applicable` (Unit 4's changed-file gating) is allowed to mean "nothing to check", and
+  // `not-applicable` (the changed-file trigger gate) is allowed to mean "nothing to check", and
   // this classifier never produces that verdict, so an empty report always fails closed here.
   // Redundant with hasMissingMutateFiles whenever every `mutate` entry is literal (the missing
   // entries alone already explain the empty report), but still load-bearing for a `mutate`
@@ -749,7 +753,8 @@ export interface StrykerConfigShape {
    * Explicit same-tree test list. Optional in Stryker's own schema (absent means Stryker's
    * `vitest.related` selection applies instead), so an absent field here defaults to `[]`
    * rather than throwing — this wrapper never spawns Stryker off a config-shape guess, and
-   * Unit 3's enumeration guard is the consumer that needs this field, not the classifier.
+   * the enumeration guard (`scripts/mutation-guards-config.test.ts`) is the consumer that
+   * needs this field, not the classifier.
    */
   readonly testFiles: readonly string[]
   readonly reporters: readonly string[]
@@ -834,9 +839,10 @@ export const MINIMATCH_METACHARACTER_PATTERN = /^!|[*?[\]{}]|[+@!]\(/u
  * Glob metacharacters (minimatch's, not just `*`/`?`) mark an entry as out of scope for this
  * unit's literal enumerated set. A glob entry is silently skipped for directive scanning here
  * — once `mutate` grows a glob, directive coverage for the files it expands to stops with no
- * signal from this wrapper. Unit 3's enumeration guard is the intended backstop: it asserts
- * every mutated module is either explicitly listed or explicitly excused, which catches a
- * glob silently absorbing an undirected file the way it catches any other unlisted module.
+ * signal from this wrapper. The enumeration guard (`scripts/mutation-guards-config.test.ts`)
+ * is the intended backstop: it asserts every mutated module is either explicitly listed or
+ * explicitly excused, which catches a glob silently absorbing an undirected file the way it
+ * catches any other unlisted module.
  */
 export function isLiteralPath(entry: string): boolean {
   return !MINIMATCH_METACHARACTER_PATTERN.test(entry)
@@ -859,7 +865,7 @@ export interface MutateFileReadResult {
  * purposes (see isLiteralPath), and a missing literal file's content is skipped rather than
  * thrown — but is now surfaced in `missing` rather than swallowed, since
  * classifyMutationReport fails closed on any non-empty `missing` list (a config problem this
- * wrapper used to leave entirely to Unit 3's enumeration guard, but which also means Stryker
+ * wrapper used to leave entirely to the enumeration guard, but which also means Stryker
  * silently dropped a mutated module and could report a false `clean`).
  */
 export function readMutateFileContents(mutate: readonly string[], root: string): MutateFileReadResult {
@@ -948,6 +954,153 @@ export function defaultStrykerSpawner(): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Changed-file trigger gate — short-circuits a pull_request run that cannot possibly be
+// affected by anything Stryker mutates or executes.
+// ---------------------------------------------------------------------------
+
+/**
+ * Fixed infrastructure files the mutation run depends on beyond the enumerated `mutate`/
+ * `testFiles` set: the Stryker/vitest/package configs that shape how the run resolves and
+ * executes; the wrapper and its own config-enumeration test (self-referential — a change to
+ * either changes what this check enforces or how); the workflow file that defines this very
+ * job (a job rename or trigger change is itself worth a run); and the two `tsconfig*.json`
+ * files whose settings affect how the mutated TypeScript compiles. `quartz-site/tsconfig.json`
+ * is deliberately excluded — it configures an unrelated documentation-site build, not anything
+ * Stryker mutates or runs.
+ */
+const FIXED_TRIGGER_FILES: readonly string[] = [
+  'stryker.config.json',
+  'mutation-guards.json',
+  'vitest.config.ts',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+  'scripts/check-mutation-guards.ts',
+  'scripts/mutation-guards-config.test.ts',
+  '.github/workflows/main.yaml',
+  'packages/wiki-write-core/package.json',
+  'tsconfig.json',
+  'packages/wiki-write-core/tsconfig.build.json',
+]
+
+export interface TriggerSet {
+  readonly files: ReadonlySet<string>
+  /**
+   * True when any `mutate`/`testFiles` entry contains a glob metacharacter (per
+   * `isLiteralPath`). A glob's expansion depends on the file tree at run time, which this
+   * gate has no cheap way to evaluate against a changed-file list without vendoring a
+   * minimatch implementation — the simplest correct behavior is to never short-circuit when a
+   * glob is present: `evaluateTriggerGate` always proceeds to run Stryker in that case, since
+   * a changed file might be one the glob newly matches.
+   */
+  readonly hasGlobEntries: boolean
+}
+
+/**
+ * Builds the changed-file trigger set from the Stryker config itself — every `mutate` and
+ * `testFiles` entry (literal or glob), plus the fixed infrastructure list above — rather than
+ * a second, hand-maintained list that could silently drift out of sync with what this check
+ * actually mutates or executes. Entries are normalized the same way as everywhere else in this
+ * module (`normalizeMutatePath`, stripping a single leading `./`).
+ */
+export function buildTriggerSet(config: StrykerConfigShape): TriggerSet {
+  const configEntries = [...config.mutate, ...config.testFiles]
+  const hasGlobEntries = configEntries.some(entry => !isLiteralPath(entry))
+  const files = new Set([...configEntries, ...FIXED_TRIGGER_FILES].map(normalizeMutatePath))
+  return {files, hasGlobEntries}
+}
+
+/** Whether any changed file (normalized) is a member of the trigger set. */
+export function changedFilesIntersectTriggerSet(changedFiles: readonly string[], triggerSet: TriggerSet): boolean {
+  return changedFiles.some(file => triggerSet.files.has(normalizeMutatePath(file)))
+}
+
+/**
+ * The two functions the changed-file gate needs from a `pull_request` event: reading the
+ * event payload (`readPullRequestContext`) and fetching the PR's changed files
+ * (`fetchChangedFiles`) — both reused directly from `scripts/check-wiki-authority.ts`, which
+ * already implements this exact `pull_request`-event shape for its own PR-scoped guard, rather
+ * than duplicating event-payload parsing and paginated-API fetching a second time.
+ */
+export interface ChangedFileGateDeps {
+  readonly readPullRequestContext: typeof readPullRequestContext
+  readonly fetchChangedFiles: typeof fetchChangedFiles
+}
+
+const defaultChangedFileGateDeps: ChangedFileGateDeps = {readPullRequestContext, fetchChangedFiles}
+
+function triggerGateSentinel(
+  verdict: 'not-applicable' | 'instrumentation-failed',
+  status: string,
+  reason: string,
+): ClassificationResult {
+  return {
+    verdict,
+    mutants: [{file: 'trigger-gate', line: 0, col: 0, mutator: 'trigger-gate', status, reason}],
+  }
+}
+
+/**
+ * The changed-file trigger gate: on a `pull_request` event, short-circuits to
+ * `not-applicable` when none of the PR's changed files intersect the trigger set built by
+ * `buildTriggerSet`, so a docs-only PR does not pay for a full Stryker run it cannot possibly
+ * affect. Fails closed to `instrumentation-failed` — never `not-applicable` — when the event
+ * context cannot be read or the changed-files API call fails, per R9: an inability to
+ * determine the trigger set is never treated as "nothing to check".
+ *
+ * Returns `undefined` when the caller should proceed to run Stryker exactly as it did before
+ * this gate existed: either the event is not a `pull_request` (a local run, `workflow_dispatch`,
+ * or a post-merge `push` to `main` all run the full check unconditionally, unaffected by this
+ * gate), or a `pull_request` event whose changed files DO intersect the trigger set (or whose
+ * `mutate`/`testFiles` config contains a glob entry — see `TriggerSet.hasGlobEntries`).
+ *
+ * `env` and `deps` are injectable seams (both default to the real environment/functions) so
+ * tests can drive every precedence case — no PR context, a fetch failure, no intersection, an
+ * intersection — without setting real environment variables, writing a real event-payload
+ * file, or ever invoking `gh`.
+ */
+export async function evaluateTriggerGate(
+  config: StrykerConfigShape,
+  env: {readonly eventName?: string; readonly eventPath?: string} = {
+    eventName: process.env.GITHUB_EVENT_NAME,
+    eventPath: process.env.GITHUB_EVENT_PATH,
+  },
+  deps: ChangedFileGateDeps = defaultChangedFileGateDeps,
+): Promise<ClassificationResult | undefined> {
+  if (env.eventName !== 'pull_request') return undefined
+
+  const triggerSet = buildTriggerSet(config)
+
+  try {
+    if (env.eventPath === undefined || env.eventPath === '') {
+      throw new Error('GITHUB_EVENT_PATH not set for a pull_request event')
+    }
+    const {prNumber, fullName} = await deps.readPullRequestContext(env.eventPath)
+    if (fullName === null) {
+      throw new Error('pull_request.base.repo.full_name missing from the event payload')
+    }
+    const changedFiles = deps.fetchChangedFiles(prNumber, fullName)
+
+    if (triggerSet.hasGlobEntries || changedFilesIntersectTriggerSet(changedFiles, triggerSet)) {
+      return undefined
+    }
+
+    return triggerGateSentinel(
+      'not-applicable',
+      'NotApplicable',
+      `none of ${String(changedFiles.length)} changed file(s) matched the ${String(triggerSet.files.size)}-file trigger set; nothing to check`,
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return triggerGateSentinel(
+      'instrumentation-failed',
+      'ChangedFileGateFailed',
+      `could not determine the changed-file trigger gate: ${message}`,
+    )
+  }
+}
+
 /**
  * Runs the mutation guard check end to end: reads the config, clears any prior report,
  * spawns Stryker, classifies whatever report exists afterward, and returns the result
@@ -968,13 +1121,24 @@ export function defaultStrykerSpawner(): void {
  * `reportPath` can also inject a `reporterConfig` that agrees with it — without this, every
  * temp-path test would trip the reporter/report-path cross-check regardless of what it is
  * actually trying to prove, since the real config's resolved path never matches a temp path.
+ * `triggerGateEnv`/`triggerGateDeps` are the fourth and fifth injectable seams, passed straight
+ * through to `evaluateTriggerGate` (the changed-file trigger gate) — both default to the real
+ * environment/functions, so an uninjected call behaves exactly as it did before this gate
+ * existed for any non-`pull_request` event. The gate runs before the report is cleared or
+ * Stryker is spawned: a `not-applicable` or gate-failure result must never touch the report
+ * file at all.
  */
-export function runMutationGuardCheck(
+export async function runMutationGuardCheck(
   spawner: () => void = defaultStrykerSpawner,
   reportPath: string = mutationReportPath,
   reporterConfig?: ReporterConfig,
-): ClassificationResult {
+  triggerGateEnv?: {readonly eventName?: string; readonly eventPath?: string},
+  triggerGateDeps?: ChangedFileGateDeps,
+): Promise<ClassificationResult> {
   const config = readStrykerConfig(strykerConfigPath)
+
+  const gateResult = await evaluateTriggerGate(config, triggerGateEnv, triggerGateDeps)
+  if (gateResult !== undefined) return gateResult
 
   rmSync(reportPath, {force: true})
   spawner()
@@ -1008,7 +1172,7 @@ export function exitCodeFor(verdict: Verdict): number {
 }
 
 async function main(): Promise<void> {
-  const result = runMutationGuardCheck()
+  const result = await runMutationGuardCheck()
   printResult(result)
   process.exitCode = exitCodeFor(result.verdict)
 }

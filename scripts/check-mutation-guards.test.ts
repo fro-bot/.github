@@ -6,8 +6,11 @@ import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 
 import {
+  buildTriggerSet,
+  changedFilesIntersectTriggerSet,
   classifyMutationReport,
   defaultStrykerSpawner,
+  evaluateTriggerGate,
   exitCodeFor,
   flattenReport,
   mutationReportPath,
@@ -17,9 +20,11 @@ import {
   scanDirectiveViolations,
   strykerConfigPath,
   VERDICTS,
+  type ChangedFileGateDeps,
   type DirectiveScanInput,
   type LocatedMutant,
   type ReporterConfig,
+  type StrykerConfigShape,
 } from './check-mutation-guards.ts'
 
 // vi.mock calls are hoisted above all imports by Vitest's transform regardless of their
@@ -32,6 +37,16 @@ const {mockSpawnSync} = vi.hoisted(() => ({
 vi.mock('node:child_process', () => ({
   spawnSync: mockSpawnSync,
 }))
+
+// Forces evaluateTriggerGate's env parameter default (real process.env) never to be used from
+// this pre-Unit-4 test suite: without this, a `runMutationGuardCheck` call made from inside a
+// pull_request CI run (this very test suite's own `Test` job in main.yaml) would pick up a
+// real GITHUB_EVENT_NAME=pull_request from the ambient environment and try to run the real
+// gate — reading a real GITHUB_EVENT_PATH and calling `fetchChangedFiles` (which this file's
+// `node:child_process` mock does not even provide `execFileSync` for). Every pre-existing
+// `runMutationGuardCheck` call below passes this explicitly so its behavior is identical
+// whether run locally or inside any CI event type.
+const NOT_A_PULL_REQUEST_ENV = {eventName: undefined, eventPath: undefined} as const
 
 // ---------------------------------------------------------------------------
 // Fixture builder — mutation-testing-report-schema v2 shape
@@ -145,8 +160,9 @@ describe('classifyMutationReport', () => {
 
   // Blocking: a well-formed report with zero mutants (every `mutate` entry failed to resolve
   // or instrument) means Stryker still exited 0 and wrote `{"files":{}}` — a ten-module
-  // enumerated set cannot legitimately yield zero mutants, and `not-applicable` (Unit 4) is
-  // the only verdict allowed to mean "nothing to check". Reading this as `clean` would be
+  // enumerated set cannot legitimately yield zero mutants, and `not-applicable` (the
+  // changed-file trigger gate) is the only verdict allowed to mean "nothing to check". Reading
+  // this as `clean` would be
   // exactly the vacuous pass this checker exists to catch. This is the inverse of the old
   // assertion that `{files: {}, extra: true}` was `clean`.
   it('reports instrumentation-failed, never clean, when the report is well-formed but contains zero mutants', () => {
@@ -842,6 +858,199 @@ describe('resolveReporterConfig (default reporterConfig resolution)', () => {
   // against the real, non-test-owned mutationReportPath.
 })
 
+// ---------------------------------------------------------------------------
+// Changed-file trigger gate
+// ---------------------------------------------------------------------------
+
+function fakeTriggerConfig(overrides: Partial<StrykerConfigShape> = {}): StrykerConfigShape {
+  return {
+    mutate: ['scripts/a.ts'],
+    testFiles: ['scripts/a.test.ts'],
+    reporters: ['json'],
+    jsonReportFileName: 'reports/mutation/mutation.json',
+    ...overrides,
+  }
+}
+
+function fakeGateDeps(overrides: Partial<ChangedFileGateDeps> = {}): ChangedFileGateDeps {
+  return {
+    readPullRequestContext: async () => ({
+      prNumber: 42,
+      author: 'someone',
+      headRef: 'feature/x',
+      fullName: 'fro-bot/.github',
+    }),
+    fetchChangedFiles: () => [],
+    ...overrides,
+  }
+}
+
+const PULL_REQUEST_EVENT = {eventName: 'pull_request', eventPath: '/fake/event.json'} as const
+
+describe('buildTriggerSet', () => {
+  it('includes every mutate and testFiles entry plus the fixed infrastructure files', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig())
+    expect(triggerSet.files.has('scripts/a.ts')).toBe(true)
+    expect(triggerSet.files.has('scripts/a.test.ts')).toBe(true)
+    expect(triggerSet.files.has('stryker.config.json')).toBe(true)
+    expect(triggerSet.files.has('mutation-guards.json')).toBe(true)
+    expect(triggerSet.files.has('package.json')).toBe(true)
+    expect(triggerSet.files.has('pnpm-lock.yaml')).toBe(true)
+    expect(triggerSet.files.has('pnpm-workspace.yaml')).toBe(true)
+    expect(triggerSet.files.has('scripts/check-mutation-guards.ts')).toBe(true)
+    expect(triggerSet.files.has('scripts/mutation-guards-config.test.ts')).toBe(true)
+    expect(triggerSet.files.has('.github/workflows/main.yaml')).toBe(true)
+    expect(triggerSet.files.has('packages/wiki-write-core/package.json')).toBe(true)
+    expect(triggerSet.files.has('tsconfig.json')).toBe(true)
+    expect(triggerSet.files.has('packages/wiki-write-core/tsconfig.build.json')).toBe(true)
+    expect(triggerSet.hasGlobEntries).toBe(false)
+  })
+
+  it('normalizes a leading ./ the same way as the rest of the module', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig({mutate: ['./scripts/a.ts']}))
+    expect(triggerSet.files.has('scripts/a.ts')).toBe(true)
+  })
+
+  it('sets hasGlobEntries when a mutate or testFiles entry contains a glob metacharacter', () => {
+    expect(buildTriggerSet(fakeTriggerConfig({mutate: ['scripts/*.ts']})).hasGlobEntries).toBe(true)
+    expect(buildTriggerSet(fakeTriggerConfig({testFiles: ['scripts/*.test.ts']})).hasGlobEntries).toBe(true)
+    expect(buildTriggerSet(fakeTriggerConfig()).hasGlobEntries).toBe(false)
+  })
+})
+
+describe('changedFilesIntersectTriggerSet', () => {
+  it('is true when a changed file (normalized) is a trigger-set member', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig())
+    expect(changedFilesIntersectTriggerSet(['./scripts/a.ts'], triggerSet)).toBe(true)
+  })
+
+  it('is false when no changed file is a trigger-set member', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig())
+    expect(changedFilesIntersectTriggerSet(['docs/x.md'], triggerSet)).toBe(false)
+  })
+})
+
+describe('evaluateTriggerGate (changed-file trigger gate scenarios)', () => {
+  // Scenario: not a pull_request event (local/workflow_dispatch/push) — full check runs
+  // unchanged, exactly as before this gate existed. No PR context is read, no fetch happens.
+  it('runs the full check unconditionally when the event is not a pull_request (local use unchanged)', async () => {
+    const fetchChangedFilesSpy = vi.fn(() => [])
+    const result = await evaluateTriggerGate(
+      fakeTriggerConfig(),
+      {eventName: undefined, eventPath: undefined},
+      fakeGateDeps({fetchChangedFiles: fetchChangedFilesSpy}),
+    )
+    expect(result).toBeUndefined()
+    expect(fetchChangedFilesSpy).not.toHaveBeenCalled()
+  })
+
+  // Scenario (happy path 1): changed set ['docs/x.md'] — no intersection — not-applicable.
+  it("reports not-applicable when the changed set is ['docs/x.md'] (no intersection)", async () => {
+    const result = await evaluateTriggerGate(
+      fakeTriggerConfig(),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['docs/x.md']}),
+    )
+    expect(result?.verdict).toBe('not-applicable')
+    expect(result?.mutants[0]?.reason).toContain('changed file')
+    expect(result?.mutants[0]?.reason).toContain('trigger set')
+  })
+
+  // Scenario (happy path 2): changed set includes a mutate entry — proceeds to run.
+  it('proceeds to run when the changed set includes a mutate entry', async () => {
+    const result = await evaluateTriggerGate(
+      fakeTriggerConfig(),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['docs/unrelated.md', 'scripts/a.ts']}),
+    )
+    expect(result).toBeUndefined()
+  })
+
+  // Scenario (edge case 1): changed set includes only pnpm-lock.yaml — a fixed infrastructure
+  // file, not a mutate/testFiles entry — still proceeds to run.
+  it('proceeds to run when the changed set includes only pnpm-lock.yaml', async () => {
+    const result = await evaluateTriggerGate(
+      fakeTriggerConfig(),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['pnpm-lock.yaml']}),
+    )
+    expect(result).toBeUndefined()
+  })
+
+  // Scenario (edge case 2): changed set includes only a not-mutated file — not-applicable,
+  // since a not-mutated module is, by definition, outside both mutate and testFiles.
+  it('reports not-applicable when the changed set includes only a not-mutated file', async () => {
+    const result = await evaluateTriggerGate(
+      fakeTriggerConfig(),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['packages/wiki-write-core/src/frontmatter.ts']}),
+    )
+    expect(result?.verdict).toBe('not-applicable')
+  })
+
+  // Scenario (error path): files API call fails — instrumentation-failed, never
+  // not-applicable, per R9 (fail closed).
+  it('reports instrumentation-failed, never not-applicable, when the changed-files API call fails', async () => {
+    const result = await evaluateTriggerGate(
+      fakeTriggerConfig(),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({
+        fetchChangedFiles: () => {
+          throw new Error('gh api call failed: rate limited')
+        },
+      }),
+    )
+    expect(result?.verdict).toBe('instrumentation-failed')
+    expect(result?.verdict).not.toBe('not-applicable')
+    expect(result?.mutants[0]?.reason).toContain('gh api call failed')
+  })
+
+  it('reports instrumentation-failed, never not-applicable, when reading the PR context fails', async () => {
+    const result = await evaluateTriggerGate(
+      fakeTriggerConfig(),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({
+        readPullRequestContext: async () => {
+          throw new Error('event payload missing pull_request.number')
+        },
+      }),
+    )
+    expect(result?.verdict).toBe('instrumentation-failed')
+    expect(result?.mutants[0]?.reason).toContain('event payload missing')
+  })
+
+  it('reports instrumentation-failed when GITHUB_EVENT_PATH is not set on a pull_request event', async () => {
+    const result = await evaluateTriggerGate(
+      fakeTriggerConfig(),
+      {eventName: 'pull_request', eventPath: undefined},
+      fakeGateDeps(),
+    )
+    expect(result?.verdict).toBe('instrumentation-failed')
+    expect(result?.mutants[0]?.reason).toContain('GITHUB_EVENT_PATH')
+  })
+
+  it('reports instrumentation-failed when the event payload has no base.repo.full_name', async () => {
+    const result = await evaluateTriggerGate(
+      fakeTriggerConfig(),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({readPullRequestContext: async () => ({prNumber: 1, author: 'x', headRef: 'y', fullName: null})}),
+    )
+    expect(result?.verdict).toBe('instrumentation-failed')
+    expect(result?.mutants[0]?.reason).toContain('full_name')
+  })
+
+  // A glob entry in mutate/testFiles must never let this gate short-circuit to not-applicable
+  // — its expansion is unknown to this gate, so the simplest correct behavior is always "run".
+  it('always proceeds to run when the config has a glob mutate/testFiles entry, regardless of changed files', async () => {
+    const result = await evaluateTriggerGate(
+      fakeTriggerConfig({mutate: ['scripts/*.ts']}),
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['docs/entirely-unrelated.md']}),
+    )
+    expect(result).toBeUndefined()
+  })
+})
+
 describe('runMutationGuardCheck (stale-report fix)', () => {
   // A dedicated temp directory, never the real reports/mutation/mutation.json, so this test
   // cannot clobber a real report a concurrent or subsequent run depends on.
@@ -858,7 +1067,7 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
   // that dies without writing anything — the fix (`rmSync` before spawning) makes this
   // `instrumentation-failed` with a `ReportUnreadable` sentinel (no fresh report was read);
   // without it, the stale report reads as `clean`.
-  it('never classifies a stale on-disk report as a fresh clean result', () => {
+  it('never classifies a stale on-disk report as a fresh clean result', async () => {
     writeFileSync(
       tempReportPath,
       JSON.stringify({
@@ -876,7 +1085,12 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
         // Simulates Stryker dying before it writes a report (dry-run timeout, missing
         // binary, crash): the spawner runs and returns, but the report file is untouched.
       }
-      const result = runMutationGuardCheck(diedWithoutWriting, tempReportPath, matchingReporterConfig)
+      const result = await runMutationGuardCheck(
+        diedWithoutWriting,
+        tempReportPath,
+        matchingReporterConfig,
+        NOT_A_PULL_REQUEST_ENV,
+      )
       expect(result.verdict).toBe('instrumentation-failed')
       expect(result.verdict).not.toBe('clean')
       const runtimeErrorSentinels = result.mutants.filter(m => m.status === 'RuntimeError')
@@ -891,14 +1105,19 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
   // Blocking: an unreadable report previously produced instrumentation-failed with zero
   // located mutants, giving a red build no clue why. Each of the three read-failure causes
   // must now produce exactly one RuntimeError sentinel naming the path and the actual cause.
-  it('emits exactly one RuntimeError sentinel naming the path and ENOENT when the report file does not exist', () => {
+  it('emits exactly one RuntimeError sentinel naming the path and ENOENT when the report file does not exist', async () => {
     const missingReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-missing-')), 'mutation.json')
     const reporterConfigForPath: ReporterConfig = {reporters: ['json'], resolvedJsonReportPath: missingReportPath}
     const noOpSpawner = (): void => {
       // Runs and returns without writing anything — the report path never exists.
     }
     try {
-      const result = runMutationGuardCheck(noOpSpawner, missingReportPath, reporterConfigForPath)
+      const result = await runMutationGuardCheck(
+        noOpSpawner,
+        missingReportPath,
+        reporterConfigForPath,
+        NOT_A_PULL_REQUEST_ENV,
+      )
       expect(result.verdict).toBe('instrumentation-failed')
       const sentinels = result.mutants.filter(m => m.status === 'RuntimeError')
       expect(sentinels).toHaveLength(1)
@@ -911,7 +1130,7 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
     }
   })
 
-  it('emits exactly one RuntimeError sentinel naming the path and the parse error when the report file is malformed JSON', () => {
+  it('emits exactly one RuntimeError sentinel naming the path and the parse error when the report file is malformed JSON', async () => {
     const malformedReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-malformed-')), 'mutation.json')
     const reporterConfigForPath: ReporterConfig = {reporters: ['json'], resolvedJsonReportPath: malformedReportPath}
     // runMutationGuardCheck clears reportPath before invoking the spawner, so the malformed
@@ -921,7 +1140,12 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
       writeFileSync(malformedReportPath, '{not valid json', 'utf8')
     }
     try {
-      const result = runMutationGuardCheck(spawnerThatWritesMalformedJson, malformedReportPath, reporterConfigForPath)
+      const result = await runMutationGuardCheck(
+        spawnerThatWritesMalformedJson,
+        malformedReportPath,
+        reporterConfigForPath,
+        NOT_A_PULL_REQUEST_ENV,
+      )
       expect(result.verdict).toBe('instrumentation-failed')
       const sentinels = result.mutants.filter(m => m.status === 'RuntimeError')
       expect(sentinels).toHaveLength(1)
@@ -938,7 +1162,7 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
   // runMutationGuardCheck, not just accepted and ignored. A mismatched override on a
   // perfectly good report must fail closed with the specific sentinel; a matching override
   // on the same report must pass clean.
-  it('reports instrumentation-failed with a ReporterConfigMismatch sentinel when an injected reporterConfig disagrees with reportPath', () => {
+  it('reports instrumentation-failed with a ReporterConfigMismatch sentinel when an injected reporterConfig disagrees with reportPath', async () => {
     const goodReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-mismatch-')), 'mutation.json')
     const spawnerThatWritesAGoodReport = (): void => {
       writeFileSync(
@@ -958,7 +1182,12 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
       resolvedJsonReportPath: '/some/entirely/different/path/mutation.json',
     }
     try {
-      const result = runMutationGuardCheck(spawnerThatWritesAGoodReport, goodReportPath, mismatchedReporterConfig)
+      const result = await runMutationGuardCheck(
+        spawnerThatWritesAGoodReport,
+        goodReportPath,
+        mismatchedReporterConfig,
+        NOT_A_PULL_REQUEST_ENV,
+      )
       expect(result.verdict).toBe('instrumentation-failed')
       expect(result.mutants.some(m => m.status === 'ReporterConfigMismatch')).toBe(true)
     } finally {
@@ -972,7 +1201,7 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
   // ten-module `mutate` set. Asserting the absence of ReporterConfigMismatch specifically is
   // the precise claim this test exists to prove: a matching reporterConfig does not, on its
   // own, fail the check.
-  it('does not report a ReporterConfigMismatch when an injected reporterConfig agrees with reportPath', () => {
+  it('does not report a ReporterConfigMismatch when an injected reporterConfig agrees with reportPath', async () => {
     const goodReportPath = join(mkdtempSync(join(tmpdir(), 'check-mutation-guards-match-')), 'mutation.json')
     const spawnerThatWritesAGoodReport = (): void => {
       writeFileSync(
@@ -989,7 +1218,12 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
     }
     const matchingReporterConfig: ReporterConfig = {reporters: ['json'], resolvedJsonReportPath: goodReportPath}
     try {
-      const result = runMutationGuardCheck(spawnerThatWritesAGoodReport, goodReportPath, matchingReporterConfig)
+      const result = await runMutationGuardCheck(
+        spawnerThatWritesAGoodReport,
+        goodReportPath,
+        matchingReporterConfig,
+        NOT_A_PULL_REQUEST_ENV,
+      )
       expect(result.mutants.some(m => m.status === 'ReporterConfigMismatch')).toBe(false)
     } finally {
       rmSync(dirname(goodReportPath), {recursive: true, force: true})
@@ -1004,7 +1238,7 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
   // marker (never real content) is ever removed in `finally`. Whatever was actually at the
   // real path before this test ran — marker or genuine pre-existing content — is asserted to
   // survive byte-for-byte.
-  it('never touches the real mutationReportPath when a reportPath override is given', () => {
+  it('never touches the real mutationReportPath when a reportPath override is given', async () => {
     const realReportDir = dirname(mutationReportPath)
     mkdirSync(realReportDir, {recursive: true})
 
@@ -1021,7 +1255,7 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
       const noOpSpawner = (): void => {
         // Runs and returns without touching any report file.
       }
-      runMutationGuardCheck(noOpSpawner, otherTempReportPath)
+      await runMutationGuardCheck(noOpSpawner, otherTempReportPath, undefined, NOT_A_PULL_REQUEST_ENV)
 
       expect(readFileSync(mutationReportPath, 'utf8')).toBe(expectedContent)
       rmSync(dirname(otherTempReportPath), {recursive: true, force: true})

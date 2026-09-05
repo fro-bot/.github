@@ -165,3 +165,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/check-wiki-authority.ts
+
+  check-mutation-guards:
+    name: Check Mutation Guards
+    # Only pull_request events carry a PR whose changed files can be compared against the
+    # trigger set. The wrapper's own changed-file trigger gate short-circuits to
+    # `not-applicable` when nothing in the trigger set changed; a post-merge push run on
+    # `main` has no PR to diff against, so this job does not run there at all.
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: ⤵ Checkout Branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: 🧬 Check Mutation Guards
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm check:mutation-guards

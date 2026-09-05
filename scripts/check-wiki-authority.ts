@@ -111,7 +111,12 @@ interface PullRequestEventPayload {
   }
 }
 
-async function readPullRequestContext(
+/**
+ * Exported so `scripts/check-mutation-guards.ts`'s changed-file trigger gate can reuse the
+ * same `pull_request` event payload parsing rather than duplicating it — both checks run on
+ * the same event shape and need the same fields (`prNumber`, `fullName`).
+ */
+export async function readPullRequestContext(
   eventPath: string,
 ): Promise<{prNumber: number; author: string; headRef: string; fullName: string | null}> {
   const raw = await readFile(eventPath, 'utf8')
