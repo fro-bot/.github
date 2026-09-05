@@ -31,8 +31,8 @@ coverage
 .vitest-cache
 
 # Mutation testing sandbox and reports (Stryker)
-.stryker-tmp/
-reports/
+/.stryker-tmp/
+/reports/
 
 # Local agent artifacts
 .context/

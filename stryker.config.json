@@ -1,10 +1,12 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": ["packages/wiki-write-core/src/corrections-survival.ts"],
+  "testFiles": ["packages/wiki-write-core/src/corrections-survival.test.ts"],
   "plugins": ["@stryker-mutator/vitest-runner"],
   "testRunner": "vitest",
   "vitest": {
-    "configFile": "vitest.config.ts"
+    "configFile": "vitest.config.ts",
+    "related": false
   },
   "thresholds": {
     "high": 100,

@@ -148,9 +148,9 @@ The repository's guards almost all have negative tests and several carry hand-wr
 
 ### Deferred to Implementation
 
-- Exact `mutate`/`testFiles` globs. The spike settled the shape: `related` over-selects (it pulled the timing-guard file through the `index.ts` barrel), so `testFiles` is an explicit same-tree list and `vitest.related` is set false.
+- Exact `mutate`/`testFiles` globs. The spike settled the shape: `related` over-selects because `regex-redos-regressions.test.ts` imports `wiki-ingest.ts`, which directly imports `corrections-survival.ts` — a real import edge, not a barrel artifact, so no barrel restructuring fixes it. `testFiles` is an explicit same-tree list and `vitest.related` is set `false`.
 - Whether each script's `main()` is covered by an assembled-flow test today or reports `NoCoverage` on the first full run; decided by the run itself in Unit 5, with the two allowed resolutions named there.
-- Stryker `timeoutMS` and `dryRunTimeoutMinutes` values. The spike saw 5 timeouts in 183 mutants at default settings on one module; calibrate once the full set runs.
+- Stryker `timeoutMS` and `dryRunTimeoutMinutes` values. The spike saw 5 timeouts in 183 mutants at default settings on one module (58.47% score = (102 killed + 5 timeout) / 183 — Stryker's default score counts `Timeout` as detected). The wrapper's closed vocabulary already refuses that conflation: `mutant-timeout` is its own failing verdict, never counted as killed. The spike's local runtime (8–14 s) ran ~2× faster than the CI-observed hosted-runner runtime (26 s), so timeouts must be calibrated from the CI-observed number with headroom, never from the local one — otherwise a slow-but-terminating mutant on a loaded runner reclassifies as `Timeout` and the guard grades itself higher under load.
 - Whether incremental mode (`--incremental`) is worth enabling on pull requests; content-based reuse is safe, but Vitest reports test locations per file, so gains may be small.
 - Whether a mutant that flips the `import.meta.main` guard in `scripts/build-wiki-write-core.ts` runs a build inside the Stryker sandbox; if so, that line gets a directive with reason.
 
@@ -194,7 +194,7 @@ The mermaid sketch above collapses the four failing report classes into two node
 
 - [x] **Unit 1: Spike — instrument one package module under native TypeScript**
 
-**Result:** the assumption holds. 183 mutants over `corrections-survival.ts`: 102 killed, 61 survived, 15 uncovered, 5 timeout, zero `RuntimeError`/`CompileError` — Node's strip-only loader accepted every re-emitted variant. Discrimination proven both directions at `corrections-survival.ts:60:29 ObjectLiteral`. Runtime 8–14 s for one module. Three findings feed Unit 2: (1) `plugins: ["@stryker-mutator/vitest-runner"]` must be explicit — the default plugin glob does not resolve under pnpm's layout; (2) `vitest.related` selected four test files including `regex-redos-regressions.test.ts`, so `testFiles` must be explicit and `related` cannot be relied on for same-tree pairing; (3) a source-introspecting test asserted a byte-exact import line and failed under instrumentation because the generator re-emits `import { x } from '...';` — fixed with a whitespace-tolerant match, and any future test that reads its subject's source must tolerate generator formatting.
+**Result:** the assumption holds. 183 mutants over `corrections-survival.ts`: 102 killed, 61 survived, 15 uncovered, 5 timeout, zero `RuntimeError`/`CompileError` — Node's strip-only loader accepted every re-emitted variant. Discrimination proven both directions at `corrections-survival.ts:60:29 ObjectLiteral`. Runtime 8–14 s for one module. Three findings feed Unit 2: (1) `plugins: ["@stryker-mutator/vitest-runner"]` must be explicit — the default plugin glob does not resolve under pnpm's layout; (2) `vitest.related` selected four test files including `regex-redos-regressions.test.ts` — not through any `index.ts` barrel, but because `regex-redos-regressions.test.ts` imports `wiki-ingest.ts`, which imports `corrections-survival.ts` directly, so Vitest's related-file analysis correctly (and unhelpfully) follows that direct edge; no barrel restructuring can break this coupling, so `testFiles` must be explicit and `vitest.related` set `false` for same-tree pairing; (3) a source-introspecting test asserted a byte-exact import line and failed under instrumentation because the generator re-emits `import { x } from '...';` — fixed with a whitespace-tolerant match, and any future test that reads its subject's source must tolerate generator formatting. CI-observed figures (hosted runner): 26 s wall clock, identical mutant counts to local (102 killed, 5 timeout, 61 survived, 15 uncovered, 0 errors). Corrected local run after adding explicit `testFiles` and `vitest.related: false`: the dry run selects exactly one test file (`corrections-survival.test.ts`, 29 tests), identical mutant counts (102/5/61/15/0), local wall clock ~8–9.7 s.
 
 **Goal:** Prove Stryker 10 with the Vitest runner can mutate a strip-only TypeScript module, load the mutated source under Node 24, run its colocated tests, and kill mutants — in the CI topology, not only locally. Measure runtime.
 
@@ -250,6 +250,7 @@ The mermaid sketch above collapses the four failing report classes into two node
 - The script must be inert on import: all execution sits behind an `import.meta.main` guard, exactly as `scripts/build-wiki-write-core.ts` does, because `Test Scripts Load` imports every non-test `scripts/*.ts`. An import-time Stryker spawn would make that job either run the mutation suite or fail.
 - Output: one line per survivor `path:line:col mutatorName` plus the verdict as the last line, and the same content into `GITHUB_STEP_SUMMARY` when set (reuse the summary pattern from `scripts/check-private-leak.ts`).
 - Never read the exit code for classification; use it only to detect "Stryker did not run at all".
+- Set `timeoutMS`/`dryRunTimeoutMinutes` from the CI-observed runtime with headroom, not the local one — the spike's local runtime ran ~2× faster than the hosted runner, and Stryker's default score already counts `Timeout` as detected, so a tight local-derived timeout would silently reclassify slow-but-terminating mutants as `mutant-timeout` under CI load. The wrapper's closed vocabulary keeps `mutant-timeout` a distinct failing verdict, never counted as killed, so this conflation cannot leak into `clean`.
 
 **Patterns to follow:**
 - `scripts/build-wiki-write-core.ts` for the wrapper/`--check` shape and message style.
@@ -332,6 +333,7 @@ The mermaid sketch above collapses the four failing report classes into two node
 - `not-applicable` is a real verdict: exit 0, summary line says which trigger set was checked and that nothing matched.
 - Fork pull requests: the files API is readable with the default token on a public repository; no write permission is requested.
 - Do not add the context to `.github/settings.yml` in this unit.
+- The real job must carry a `concurrency` group like `main.yaml`'s other jobs — the spike workflow lacked one.
 
 **Patterns to follow:**
 - `check-wiki-authority` job in `.github/workflows/main.yaml`.
@@ -426,6 +428,7 @@ The mermaid sketch above collapses the four failing report classes into two node
 | A test reads its subject's source text and breaks under instrumentation | Seen once in the spike. Such tests must match structurally (whitespace-tolerant), never byte-exact; Unit 5 treats a dry-run failure of this shape as a test fix, not a directive. |
 | Required context string drifts from job name | Unit 6 test asserts byte equality; the learnings doc on quoted contexts is cited in the unit. |
 | Exceptions accrete into a threshold by another name | Every directive carries a reviewable reason and sits on the excused line; Unit 5 prefers test fixes over directives. |
+| Timeouts calibrated from a fast machine | Derive from CI-observed runtime with headroom; `Timeout` is its own failing verdict. |
 
 ## Documentation / Operational Notes
 
