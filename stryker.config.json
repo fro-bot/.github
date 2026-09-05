@@ -17,5 +17,6 @@
   "jsonReporter": {
     "fileName": "reports/mutation/mutation.json"
   },
-  "tempDirName": ".stryker-tmp"
+  "tempDirName": ".stryker-tmp",
+  "allowConsoleColors": false
 }

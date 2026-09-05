@@ -11,8 +11,12 @@ on:
   # Run on the pull request itself to prove the CI topology ahead of merge.
   pull_request:
     branches: [main]
+    types: [opened, ready_for_review, reopened, synchronize]
     paths:
       - stryker.config.json
+      - vitest.config.ts
+      - package.json
+      - pnpm-lock.yaml
       - .github/workflows/mutation-spike.yaml
       - packages/wiki-write-core/src/corrections-survival.ts
       - packages/wiki-write-core/src/corrections-survival.test.ts
