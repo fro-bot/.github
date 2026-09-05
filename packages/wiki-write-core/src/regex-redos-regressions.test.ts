@@ -22,18 +22,46 @@ function measure(operation: () => void, repetitions: number): number {
   return (elapsed.user + elapsed.system) / 1_000
 }
 
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right)
+  return sorted[Math.floor(sorted.length / 2)] ?? 0
+}
+
+const CALIBRATION_TARGET_MILLISECONDS = 50
+const CALIBRATION_PROBES = 3
+
+// The variance this test used to leak in under CPU contention lived here, not in the downstream
+// sample count. A single process.cpuUsage() delta at a given repetitions count is a noisy probe:
+// under contention it can spuriously read high enough to satisfy the 50ms target early, locking
+// in a repetitions count that is too small once real (unloaded-again) conditions resume, which
+// widens the variance of every later sample taken at that fixed count. Taking the median of three
+// probes per doubling step, instead of one, smooths that single-probe noise out of the decision
+// that matters -- confirmed by measurement: under 12-process contention (20 runs) the old
+// single-probe calibration locked the quadratic control into half the correct repetitions count
+// once, and under 30-process contention (12 runs) once more; median-of-3 calibration held the
+// correct count in all 20 and all 8 runs measured at those same contention levels.
+function calibrateRepetitions(operation: () => void): {repetitions: number; smallMilliseconds: number} {
+  const probe = (repetitions: number): number =>
+    median(Array.from({length: CALIBRATION_PROBES}, () => measure(operation, repetitions)))
+
+  let repetitions = 1
+  let smallMilliseconds = probe(repetitions)
+
+  while (smallMilliseconds < CALIBRATION_TARGET_MILLISECONDS && repetitions < 65_536) {
+    repetitions *= 2
+    smallMilliseconds = probe(repetitions)
+  }
+
+  return {repetitions, smallMilliseconds}
+}
+
 function measureScalingRatio(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
   const smallOperation = (): void => operation(size)
   const largeOperation = (): void => operation(size * 2)
-  let repetitions = 1
   smallOperation()
   largeOperation()
-  let smallMilliseconds = measure(smallOperation, repetitions)
-
-  while (smallMilliseconds < 50 && repetitions < 65_536) {
-    repetitions *= 2
-    smallMilliseconds = measure(smallOperation, repetitions)
-  }
+  const {repetitions, smallMilliseconds: calibratedSmallMilliseconds} = calibrateRepetitions(smallOperation)
+  let smallMilliseconds = calibratedSmallMilliseconds
 
   const smallMeasurements: number[] = []
   const largeMeasurements: number[] = []
@@ -60,9 +88,14 @@ function measureScalingRatio(operation: (size: number) => void, size: number, sa
   return {smallMilliseconds, largeMilliseconds, ratio, repetitions}
 }
 
+// Named so the two meanings of the literal 3 elsewhere in this file -- this ratio ceiling and the
+// unrelated sample count passed to measureScalingRatio -- stay visually distinct.
+const LINEAR_RATIO_CEILING = 3
+const QUADRATIC_RATIO_FLOOR = 3
+
 function expectLinearScaling(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
   const measurement = measureScalingRatio(operation, size, samples)
-  expect(measurement.ratio).toBeLessThan(3)
+  expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
   return measurement
 }
 
@@ -76,25 +109,24 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // estimator works at all. It is deliberately expensive so the measurements are meaningful, and
 // CPU contention can push it past the global 10-second test ceiling; failures present as timeouts,
 // not assertion failures. Only it carries a raised timeout, because it is by far the most
-// expensive test here: under CPU contention it consumes over half the 10-second budget, while the
-// costliest production guard below -- malformed wiki log header parsing -- stays comfortably under
-// half, and the two wikilink guards less again. Absolute timings are not portable across
-// machines, but that ordering is: the log header guard is the one to check first if a production
-// guard ever does time out, and the answer then is to isolate the timing suite rather than scatter
-// more per-test literals.
+// expensive test here: measured under 12-process CPU contention it ran 4.8s-14.3s across repeated
+// runs, while the costliest production guard below -- malformed wiki log header parsing -- ran
+// 1.7s-8.7s and the two wikilink guards less again. Both windows are wide because contention level
+// varies run to run and neither figure is portable across machines, but the ordering held in every
+// run measured: the log header guard is the one to check first if a production guard ever does
+// time out, and the answer then is to isolate the timing suite rather than scatter more per-test
+// literals or raise the global default.
 //
 // The separation check below was previously a relative multiplier (quadratic ratio >=
-// linear ratio * 1.5). Measured across 20 unloaded and 20 CPU-contended runs (12 competing
-// busy-loop processes on a 10-core machine), that assertion multiplied together the noise of
-// two independently-measured ratios instead of bounding either one: contention degrades the
-// repetitions calibration in `measureScalingRatio` (a single noisy probe decides when to stop
-// doubling), and a too-low repetition count widens the variance of every later sample. Under
-// contention the quadratic ratio (theory: 4) was observed as low as ~3.7-3.9 and the linear
-// ratio (theory: 2) as high as ~2.3, so a fixed 1.5x margin against the linear reading left too
-// little room. Independent absolute floors/ceilings anchored to each control's own theoretical
-// value do not compound: the quadratic floor of 3 sits comfortably below every observed
-// contended sample while the linear ceiling of 3 (below) is unchanged from its original,
-// already-adequate margin.
+// linear ratio * 1.5), which multiplied together the noise of two independently-measured ratios
+// instead of bounding either one. That noise's actual source was measureScalingRatio's
+// repetitions calibration (see calibrateRepetitions), not this test's sample count -- with
+// calibration now robust to a single noisy probe, independent absolute floors/ceilings anchored
+// to each control's own theory (quadratic ~4, linear ~2) no longer need to compound to catch a
+// regression: QUADRATIC_RATIO_FLOOR sits comfortably below every contended sample measured
+// (worst observed ~3.88 under 12-process contention, ~3.89 under 30-process contention) while
+// LINEAR_RATIO_CEILING is the same bound expectLinearScaling already used for the production
+// guards below, now shared by name instead of by coincidence of both being the literal 3.
 describe('linear-time input parsing', () => {
   it('proves the scaling helper discriminates quadratic work', () => {
     const quadratic = (size: number): void => {
@@ -121,13 +153,14 @@ describe('linear-time input parsing', () => {
     // Keep both checks independent rather than multiplying one ratio by the other: each control
     // is bounded against its own theoretical value (quadratic ~4, linear ~2) with headroom drawn
     // from measured contended distributions, so noise in one measurement cannot erode the other's
-    // margin. Seven samples (median-selected) tightens the repetitions-calibration noise that
-    // three samples left exposed under contention.
-    const quadraticMeasurement = measureScalingRatio(quadratic, 4_000, 7)
-    const linearMeasurement = measureScalingRatio(linear, 20_000, 7)
-
-    expect(quadraticMeasurement.ratio).toBeGreaterThanOrEqual(3)
-    expect(linearMeasurement.ratio).toBeLessThan(3)
+    // margin. Three samples is unchanged from before: the noise that used to erode this test's
+    // margin lived in measureScalingRatio's repetitions calibration, not in this sample count --
+    // with the calibration fixed, three samples already holds the quadratic ratio comfortably
+    // above its floor under contention (see calibrateRepetitions for the measured evidence).
+    const quadraticMeasurement = measureScalingRatio(quadratic, 4_000, 3)
+    const linearMeasurement = measureScalingRatio(linear, 20_000, 3)
+    expect(quadraticMeasurement.ratio).toBeGreaterThanOrEqual(QUADRATIC_RATIO_FLOOR)
+    expect(linearMeasurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
   }, 30_000)
 
   it.each([
