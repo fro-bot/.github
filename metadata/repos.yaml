@@ -170,11 +170,11 @@ repos:
     name: systematic
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-08-15
-    last_survey_status: failure
+    last_survey_at: 2026-09-05
+    last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-09-17
+    next_survey_eligible_at: 2026-10-06
     discovery_channel: collab
     private: false
     node_id: R_kgDORAJegA
