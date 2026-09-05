@@ -454,10 +454,11 @@ function readStrykerConfig(path: string): StrykerConfigShape {
 
 // Stryker filters `mutate` entries through minimatch, whose pattern grammar is wider than
 // `*`/`?`: braces (`{a,b}`), character classes (`[k]`), and the extglob forms `+(x)`, `@(x)`,
-// `!(x)` are all patterns too. Any of these treated as literal here would make this function
-// try to `readFileSync` a path that was never meant to exist verbatim, feeding a false
+// `!(x)` are all patterns too, and a leading `!` is Stryker's own ignore-pattern prefix, stripped
+// before matching. Any of these treated as literal here would make this function try to
+// `readFileSync` a path that was never meant to exist verbatim, feeding a false
 // `MissingMutateFile` into an `instrumentation-failed` decision for a working Stryker config.
-const MINIMATCH_METACHARACTER_PATTERN = /[*?[\]{}]|[+@!]\(/u
+const MINIMATCH_METACHARACTER_PATTERN = /^!|[*?[\]{}]|[+@!]\(/u
 
 /**
  * Glob metacharacters (minimatch's, not just `*`/`?`) mark an entry as out of scope for this

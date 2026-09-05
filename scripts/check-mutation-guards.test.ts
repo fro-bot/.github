@@ -474,6 +474,12 @@ describe('readMutateFileContents (documented policy decisions)', () => {
     expect(result.missing).toEqual([])
   })
 
+  it('treats a leading-! ignore pattern as a glob (Stryker strips the prefix; it is never a path)', () => {
+    const result = readMutateFileContents(['!scripts/a.ts'], root)
+    expect(result.files).toEqual([])
+    expect(result.missing).toEqual([])
+  })
+
   it('treats a plain literal path as literal, not a glob', () => {
     const result = readMutateFileContents(['scripts/a.ts'], root)
     expect(result.missing).toEqual(['scripts/a.ts'])
