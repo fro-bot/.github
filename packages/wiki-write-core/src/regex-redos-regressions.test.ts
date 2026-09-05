@@ -41,7 +41,10 @@ const CALIBRATION_PROBES = 3
 // that matters -- confirmed by measurement: under 12-process contention (20 runs) the old
 // single-probe calibration locked the quadratic control into half the correct repetitions count
 // once, and under 30-process contention (12 runs) once more; median-of-3 calibration held the
-// correct count in all 20 and all 8 runs measured at those same contention levels.
+// correct count in all 20 and all 8 runs measured at those same contention levels. The median
+// rejects a transient spike on one probe; under sustained load all three probes inflate together
+// and the median inherits the bias, so the count still lands low -- the ratio absorbs that case
+// because both terms are measured at the same repetitions count adjacent in time.
 function calibrateRepetitions(operation: () => void): number {
   const probe = (repetitions: number): number =>
     median(Array.from({length: CALIBRATION_PROBES}, () => measure(operation, repetitions)))
@@ -58,9 +61,11 @@ function calibrateRepetitions(operation: () => void): number {
 }
 
 function measureScalingRatio(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
-  // Fail loud: with zero samples every median below would resolve to 0 and each linearity assertion
-  // in this file would pass vacuously.
-  if (samples < 1) throw new RangeError(`measureScalingRatio needs at least one sample, received ${samples}`)
+  // Fail loud: with zero (or NaN -- `NaN < 1` is false) samples every median below would resolve
+  // to 0 and each linearity assertion in this file would pass vacuously.
+  if (!Number.isInteger(samples) || samples < 1) {
+    throw new RangeError(`measureScalingRatio needs a positive integer sample count, received ${samples}`)
+  }
   const smallOperation = (): void => operation(size)
   const largeOperation = (): void => operation(size * 2)
   smallOperation()
@@ -112,14 +117,16 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // This meta-test stays because its discrimination check is the only assertion proving that the
 // estimator works at all. It is deliberately expensive so the measurements are meaningful, and
 // CPU contention can push it past the global 10-second test ceiling; failures present as timeouts,
-// not assertion failures. Every timing test in this suite therefore runs under one file-scoped
-// timeout (TIMING_SUITE_TIMEOUT_MILLISECONDS) rather than the global default: measured under
+// not assertion failures. The whole suite therefore runs under one describe-scoped timeout rather
+// than the global default -- the correctness tests here finish in milliseconds and gain nothing
+// from it, but the timing guards need it, and one scope beats per-test literals: measured under
 // 12-process CPU contention the meta-test ran 4.8s-14.3s across repeated runs, while the costliest
 // production guard below -- malformed wiki log header parsing -- ran 1.7s-8.7s (8.5s at 8x
 // oversubscription, 85% of the 10s global ceiling) and the two wikilink guards less again. Both
 // windows are wide because contention level varies run to run and neither figure is portable
 // across machines, but the ordering held in every run measured: the log header guard is the one
 // to check first if a timing test ever does time out.
+const TIMING_SUITE_TIMEOUT_MILLISECONDS = 30_000
 //
 // The separation check below was previously a relative multiplier (quadratic ratio >=
 // linear ratio * 1.5), which multiplied together the noise of two independently-measured ratios
@@ -131,8 +138,6 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // (worst observed ~3.88 under 12-process contention, ~3.89 under 30-process contention) while
 // LINEAR_RATIO_CEILING is the same bound expectLinearScaling already used for the production
 // guards below, now shared by name instead of by coincidence of both being the literal 3.
-const TIMING_SUITE_TIMEOUT_MILLISECONDS = 30_000
-
 describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECONDS}, () => {
   it('proves the scaling helper discriminates quadratic work', () => {
     const quadratic = (size: number): void => {
