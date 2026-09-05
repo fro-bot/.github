@@ -214,21 +214,21 @@ function compareLocatedMutants(a: LocatedMutant, b: LocatedMutant): number {
  * unmodified, since nothing after a line comment can be code); a `/*` is copied through
  * unmodified up to its matching `*\/` (or end of line, for a comment left open on this line)
  * and scanning resumes after it. Verified empirically that Stryker honors a directive
- * comment trailing a statement on the same line (e.g. `if (flag) return 'a'` followed by a
- * trailing `//` `disable`-all comment) via Babel's `leadingComments` attachment to the
- * following node, so the scanner looks for a `Stryker` `disable` phrase anywhere on the
- * line, not only at its start (see findDirectiveOnLine). Stripping strings first keeps a
- * directive-shaped string literal from ever being mistaken for a real directive.
+ * comment anywhere on a line — including trailing a statement, e.g. `if (flag) return 'a'
+ * // Stryker disable all` — via Babel's `leadingComments` attachment to the following node,
+ * so the scanner looks for the phrase anywhere on the line, not only at its start (see
+ * findDirectiveOnLine). Stripping strings first keeps a directive-shaped string literal
+ * (e.g. `const message = '// Stryker disable all'`) from ever being mistaken for a real
+ * directive.
  *
  * Known narrow gap (fails open), verified: this stripper still has no regex-literal state,
- * so a quote inside a *regex literal* that precedes a comment (e.g. a line like
- * `const re = /['"]/ //` immediately followed by a `disable`-all directive) still opens a
- * phantom string — the regex's `/` is ordinary code (not `//` or `/*`), so comment-detection
- * never triggers, and the unmatched `'` before the `"` inside `['"]` opens a string that
- * never finds its closing quote on this line, blanking everything after it, directive
- * included. Accepted as a narrow, documented limitation rather than a full tokenizer — a
- * directive line sharing a line with a regex literal is rare in this codebase's guard
- * modules.
+ * so a quote inside a *regex literal* that precedes a comment (e.g.
+ * `const re = /['"]/ // Stryker disable all`) still opens a phantom string — the regex's `/`
+ * is ordinary code (not `//` or `/*`), so comment-detection never triggers, and the
+ * unmatched `'` before the `"` inside `['"]` opens a string that never finds its closing
+ * quote on this line, blanking everything after it, directive included. Accepted as a
+ * narrow, documented limitation rather than a full tokenizer — a directive line sharing a
+ * line with a regex literal is rare in this codebase's guard modules.
  */
 function stripStringLiterals(line: string): string {
   let result = ''
@@ -279,15 +279,10 @@ interface DirectiveMatch {
 // `\r?$` strips a trailing CRLF carriage return so a directive at the end of a
 // CRLF-terminated line is still evaluated correctly (its remainder must not include `\r`,
 // or a trailing `\r` would make an otherwise-valid `: reason` look non-empty-but-wrong).
-// `\s+` between "Stryker" and "disable" (rather than a literal space) is a second,
-// deliberate divergence beside the `\s*`-vs-`\s?` scope-anchor note above: Stryker's own
-// grammar requires exactly one space, so `\s+` (one or more) is strictly a superset and
-// fails closed the same direction as the rest of this scanner's divergences. It also has a
-// structural side effect worth having anyway: this file may itself join the `mutate` set
-// (see stryker.config.json), and this file's own source containing the words "Stryker" and
-// "disable" contiguously would itself be flagged by the scanner it defines. Requiring `\s+`
-// instead of a literal space means this file's own source never contains that exact
-// contiguous phrase, so it scans clean without needing a directive or a not-mutated excuse.
+// `\s+` between "Stryker" and "disable" (rather than a literal space) is a second, deliberate
+// divergence beside the `\s*`-vs-`\s?` scope-anchor note above: Stryker's own grammar
+// requires exactly one space, so `\s+` (one or more) is strictly a superset and fails closed
+// the same direction as the rest of this scanner's divergences.
 const STRYKER_DISABLE_PATTERN = /Stryker\s+disable\b(.*)\r?$/u
 
 /**

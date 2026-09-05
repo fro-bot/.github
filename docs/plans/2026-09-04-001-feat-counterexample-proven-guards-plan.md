@@ -145,6 +145,8 @@ The repository's guards almost all have negative tests and several carry hand-wr
 - Importable cores: `check-wiki-authority.ts` exports `checkWikiAuthority`, `check-repo-onboarded.ts` exports `runCheck`, `check-private-leak.ts` delegates to the package's `checkPrivateLeak`; all three stay in `mutate`.
 - Changed-file listing: `fetchChangedFiles` and `readPullRequestContext` are already exported from `scripts/check-private-leak.ts`; Unit 4 imports them rather than extracting a helper module.
 - Enumeration criterion: path exhaustiveness for the package plus name patterns for scripts; the export-name heuristic was rejected after it false-negatived on `runCheck` and false-positived on `assertCorrectionsFile`.
+- Unit 3 disposition, `scripts/check-mutation-guards.ts`: `not-mutated`. A directive scanner cannot describe its own grammar in comments without matching it; the classifier and scanner are covered by their fixture tests, not by mutation.
+- Unit 3 disposition, `packages/wiki-write-core/src/wiki-write-core.test.ts`: stays in `testFiles` without a 1:1 `mutate` filename partner. It imports `./index.ts` relatively and reaches `private-leak.ts` and `corrections-survival.ts` through the barrel, so it is a real same-tree test of listed modules; Unit 3's pairing check must accept a same-tree test that covers a listed module via relative import, not require 1:1 filename pairing.
 
 ### Deferred to Implementation
 

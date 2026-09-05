@@ -1,4 +1,4 @@
-import {mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {mkdirSync, rmSync, writeFileSync} from 'node:fs'
 import {dirname, resolve} from 'node:path'
 import process from 'node:process'
 
@@ -383,17 +383,6 @@ describe('scanDirectiveViolations', () => {
   // line, blanking the trailing directive along with everything else after it.
   it('does not flag a directive hidden behind a same-line regex literal (documented gap, unchanged)', () => {
     const violations = scan(`const re = /['"]/ // Stryker disable all\nconst x = 1\n`)
-    expect(violations).toEqual([])
-  })
-
-  // Self-scan: the wrapper's own source must never need a directive or a not-mutated excuse
-  // for the scanner it defines, so it stays a plain, uncomplicated `mutate` candidate if
-  // Unit 3 ever adds it. This is a change-detector by design — any future edit that
-  // reintroduces a literal, unprotected "Stryker disable" phrase in this file's own prose
-  // fails this test.
-  it('reports zero violations when scanning its own source file', () => {
-    const ownSource = readFileSync(resolve(import.meta.dirname, 'check-mutation-guards.ts'), 'utf8')
-    const violations = scanDirectiveViolations([{file: 'scripts/check-mutation-guards.ts', content: ownSource}])
     expect(violations).toEqual([])
   })
 })
