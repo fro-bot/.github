@@ -160,20 +160,39 @@ function toLocatedMutant(mutant: FlatMutant): LocatedMutant {
  * code: the report's per-mutant `status` values are the only classification
  * input. Every failing verdict lists every mutant in every failing class, not
  * only the class that won precedence, so a single run gives the whole picture.
+ *
+ * `missingMutateFiles` is the list of literal (non-glob) `mutate` entries that did not exist
+ * on disk (see readMutateFileContents) — Stryker's ProjectReader warns per unresolvable
+ * pattern and continues, so a majority of a `mutate` set can silently drop out while the
+ * remainder instruments and reports `clean`. Any non-empty list here fails closed, with the
+ * missing paths named in the reason so a red build says exactly what to fix. Glob entries are
+ * exempt (see isLiteralPath's docstring) since a glob resolving to zero files is a config
+ * shape Unit 3's enumeration guard owns, not this wrapper.
+ *
+ * `reportPath` names the report file in the `EmptyReport` reason when the report is
+ * well-formed but empty; it does not affect classification, only that message's accuracy
+ * under an injected report path.
  */
 export function classifyMutationReport(
   reportJson: unknown,
   directiveViolations: readonly LocatedMutant[],
+  missingMutateFiles: readonly string[] = [],
+  reportPath: string = mutationReportPath,
 ): ClassificationResult {
   const flat = flattenReport(reportJson)
 
   const reportUnreadable = flat === undefined
+  const hasMissingMutateFiles = missingMutateFiles.length > 0
   // A well-formed report whose flattened mutant list is empty means every `mutate` entry
   // failed to resolve or instrument (Stryker still exits 0 and writes `{"files":{}}` in this
   // case) — an enumerated set of real modules cannot legitimately yield zero mutants. Reading
   // this as `clean` would be the exact vacuous-pass this checker exists to prevent; only
   // `not-applicable` (Unit 4's changed-file gating) is allowed to mean "nothing to check", and
   // this classifier never produces that verdict, so an empty report always fails closed here.
+  // Redundant with hasMissingMutateFiles whenever every `mutate` entry is literal (the missing
+  // entries alone already explain the empty report), but still load-bearing for a `mutate`
+  // set that is pure glob: a glob resolving to zero files produces no missingMutateFiles entry
+  // (globs are exempt from that check) yet still yields an empty, invalid report.
   const reportEmpty = flat !== undefined && flat.length === 0
   const hasUnrecognizedStatus = (flat ?? []).some(
     m => INCOMPLETE_RUN_STATUSES.has(m.status) || !KNOWN_MUTANT_STATUSES.has(m.status),
@@ -181,7 +200,7 @@ export function classifyMutationReport(
   const hasIgnoredWithoutReason = (flat ?? []).some(m => m.status === 'Ignored' && isEmptyReason(m.reason))
 
   let verdict: Verdict
-  if (reportUnreadable || reportEmpty || hasUnrecognizedStatus) {
+  if (reportUnreadable || reportEmpty || hasMissingMutateFiles || hasUnrecognizedStatus) {
     verdict = 'instrumentation-failed'
   } else if (directiveViolations.length > 0 || hasIgnoredWithoutReason) {
     verdict = 'directive-violation'
@@ -198,7 +217,7 @@ export function classifyMutationReport(
   const emptyReportMutant: LocatedMutant[] = reportEmpty
     ? [
         {
-          file: 'reports/mutation/mutation.json',
+          file: reportPath,
           line: 0,
           col: 0,
           mutator: 'report',
@@ -208,8 +227,22 @@ export function classifyMutationReport(
       ]
     : []
 
+  const missingMutateFileMutants: LocatedMutant[] = missingMutateFiles.map(missingPath => ({
+    file: missingPath,
+    line: 0,
+    col: 0,
+    mutator: 'mutate-config',
+    status: 'MissingMutateFile',
+    reason: 'listed in the `mutate` config but not found on disk; Stryker silently drops it and continues',
+  }))
+
   const reportedFromReport = (flat ?? []).filter(isFailingMutant).map(toLocatedMutant)
-  const mutants = [...reportedFromReport, ...emptyReportMutant, ...directiveViolations].sort(compareLocatedMutants)
+  const mutants = [
+    ...reportedFromReport,
+    ...emptyReportMutant,
+    ...missingMutateFileMutants,
+    ...directiveViolations,
+  ].sort(compareLocatedMutants)
 
   return {verdict, mutants}
 }
@@ -431,25 +464,38 @@ function isLiteralPath(entry: string): boolean {
   return !/[*?!]/u.test(entry)
 }
 
+export interface MutateFileReadResult {
+  readonly files: readonly DirectiveScanInput[]
+  /**
+   * Literal `mutate` entries that did not exist on disk. Glob entries are never included
+   * here (see isLiteralPath) — this list is what classifyMutationReport's
+   * `missingMutateFiles` fail-closed check is built from.
+   */
+  readonly missing: readonly string[]
+}
+
 /**
- * Reads the content of every literal (non-glob) `mutate` entry, for directive scanning.
- * Exported for unit testing of its two documented policy decisions: a glob entry is
- * silently skipped (see isLiteralPath), and a listed file that does not exist on disk is
- * also silently skipped rather than thrown — both are config problems for Unit 3's
- * enumeration guard to catch, not this wrapper's concern.
+ * Reads the content of every literal (non-glob) `mutate` entry, for directive scanning, and
+ * separately reports which literal entries were missing on disk. Exported for unit testing
+ * of its two documented policy decisions: a glob entry is silently skipped for content-reading
+ * purposes (see isLiteralPath), and a missing literal file's content is skipped rather than
+ * thrown — but is now surfaced in `missing` rather than swallowed, since
+ * classifyMutationReport fails closed on any non-empty `missing` list (a config problem this
+ * wrapper used to leave entirely to Unit 3's enumeration guard, but which also means Stryker
+ * silently dropped a mutated module and could report a false `clean`).
  */
-export function readMutateFileContents(mutate: readonly string[], root: string): DirectiveScanInput[] {
+export function readMutateFileContents(mutate: readonly string[], root: string): MutateFileReadResult {
   const files: DirectiveScanInput[] = []
+  const missing: string[] = []
   for (const relativePath of mutate) {
     if (!isLiteralPath(relativePath)) continue
     try {
       files.push({file: relativePath, content: readFileSync(join(root, relativePath), 'utf8')})
     } catch {
-      // A missing mutate target is a config problem for Unit 3's enumeration guard to catch;
-      // this wrapper does not fail closed on it so a stale config entry doesn't mask real results.
+      missing.push(relativePath)
     }
   }
-  return files
+  return {files, missing}
 }
 
 function readMutationReport(path: string): unknown {
@@ -545,9 +591,9 @@ export function runMutationGuardCheck(
   spawner()
 
   const reportJson = readMutationReport(reportPath)
-  const directiveFiles = readMutateFileContents(config.mutate, repositoryRoot)
+  const {files: directiveFiles, missing: missingMutateFiles} = readMutateFileContents(config.mutate, repositoryRoot)
   const directiveViolations = scanDirectiveViolations(directiveFiles)
-  return classifyMutationReport(reportJson, directiveViolations)
+  return classifyMutationReport(reportJson, directiveViolations, missingMutateFiles, reportPath)
 }
 
 /**

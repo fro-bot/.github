@@ -1,4 +1,4 @@
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {dirname, join, resolve} from 'node:path'
 import process from 'node:process'
@@ -149,6 +149,33 @@ describe('classifyMutationReport', () => {
     expect(result.verdict).not.toBe('clean')
     expect(result.mutants).toHaveLength(1)
     expect(result.mutants[0]).toMatchObject({status: 'EmptyReport'})
+  })
+
+  // The EmptyReport reason names the report file so a red build points at the right path.
+  // Under an injected reportPath (see runMutationGuardCheck's report-path seam), the default
+  // real path would name a file that was never read for this run.
+  it('names the actual reportPath, not the hardcoded default, in the EmptyReport entry', () => {
+    const result = classifyMutationReport({files: {}}, [], [], '/tmp/some-other/mutation.json')
+    expect(result.mutants).toHaveLength(1)
+    expect(result.mutants[0]?.file).toBe('/tmp/some-other/mutation.json')
+  })
+
+  // Blocking: Stryker's ProjectReader warns per unresolvable `mutate` pattern and continues,
+  // so a majority of a `mutate` set can silently drop out while the remainder instruments and
+  // reports `clean`. A single missing literal path must fail closed even when the report
+  // itself is well-formed and non-empty (the surviving module's mutants all Killed, say).
+  it('reports instrumentation-failed when any literal mutate entry is missing, even with a non-empty clean-looking report', () => {
+    const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
+    const result = classifyMutationReport(report, [], ['scripts/missing-module.ts'])
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(result.mutants.some(m => m.status === 'MissingMutateFile' && m.file === 'scripts/missing-module.ts')).toBe(
+      true,
+    )
+  })
+
+  it('reports clean when no mutate entries are missing', () => {
+    const report = buildReport([{file: 'a.ts', line: 1, column: 1, mutatorName: 'StringLiteral', status: 'Killed'}])
+    expect(classifyMutationReport(report, [], []).verdict).toBe('clean')
   })
 
   it('reports directive-violation when an Ignored mutant has an empty statusReason', () => {
@@ -405,27 +432,31 @@ describe('readMutateFileContents (documented policy decisions)', () => {
   // The repo root itself always exists and contains predictable fixtures for this test.
   const root = resolve(import.meta.dirname, '..')
 
-  it('silently skips a glob entry rather than reading it or throwing', () => {
-    const files = readMutateFileContents(['scripts/*.ts'], root)
-    expect(files).toEqual([])
+  it('silently skips reading a glob entry rather than throwing, and never reports it as missing', () => {
+    const result = readMutateFileContents(['scripts/*.ts'], root)
+    expect(result.files).toEqual([])
+    expect(result.missing).toEqual([])
   })
 
-  it('silently skips a literal entry that does not exist on disk rather than throwing', () => {
-    const files = readMutateFileContents(['scripts/this-file-does-not-exist.ts'], root)
-    expect(files).toEqual([])
+  it('skips reading a literal entry that does not exist on disk rather than throwing, and reports it as missing', () => {
+    const result = readMutateFileContents(['scripts/this-file-does-not-exist.ts'], root)
+    expect(result.files).toEqual([])
+    expect(result.missing).toEqual(['scripts/this-file-does-not-exist.ts'])
   })
 
-  it('reads the content of an existing literal entry', () => {
-    const files = readMutateFileContents(['package.json'], root)
-    expect(files).toHaveLength(1)
-    expect(files[0]?.file).toBe('package.json')
-    expect(files[0]?.content).toContain('"name"')
+  it('reads the content of an existing literal entry, reporting nothing missing', () => {
+    const result = readMutateFileContents(['package.json'], root)
+    expect(result.files).toHaveLength(1)
+    expect(result.files[0]?.file).toBe('package.json')
+    expect(result.files[0]?.content).toContain('"name"')
+    expect(result.missing).toEqual([])
   })
 
-  it('mixes skipped and read entries in one call, preserving order of the readable ones', () => {
-    const files = readMutateFileContents(['scripts/*.ts', 'package.json', 'scripts/nonexistent.ts'], root)
-    expect(files).toHaveLength(1)
-    expect(files[0]?.file).toBe('package.json')
+  it('mixes skipped, read, and missing entries in one call, preserving order of the readable ones', () => {
+    const result = readMutateFileContents(['scripts/*.ts', 'package.json', 'scripts/nonexistent.ts'], root)
+    expect(result.files).toHaveLength(1)
+    expect(result.files[0]?.file).toBe('package.json')
+    expect(result.missing).toEqual(['scripts/nonexistent.ts'])
   })
 })
 
@@ -514,10 +545,14 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
 
   // Sentinel proof: a real file at the real mutationReportPath must survive this whole test
   // file's run untouched, proving reportPath injection actually redirects rmSync/readFileSync
-  // away from the real path rather than merely accepting the parameter and ignoring it.
+  // away from the real path rather than merely accepting the parameter and ignoring it. Any
+  // pre-existing content at that real path (e.g. a report from a real local run) is snapshotted
+  // first and restored afterward — this test must never destroy a file it did not create.
   it('never touches the real mutationReportPath when a reportPath override is given', () => {
     const realReportDir = dirname(mutationReportPath)
     mkdirSync(realReportDir, {recursive: true})
+
+    const preExistingContent = existsSync(mutationReportPath) ? readFileSync(mutationReportPath, 'utf8') : undefined
     const sentinelContent = `sentinel-${String(Date.now())}`
     writeFileSync(mutationReportPath, sentinelContent, 'utf8')
 
@@ -531,8 +566,47 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
       expect(readFileSync(mutationReportPath, 'utf8')).toBe(sentinelContent)
       rmSync(dirname(otherTempReportPath), {recursive: true, force: true})
     } finally {
-      rmSync(mutationReportPath, {force: true})
+      if (preExistingContent === undefined) {
+        rmSync(mutationReportPath, {force: true})
+      } else {
+        writeFileSync(mutationReportPath, preExistingContent, 'utf8')
+      }
     }
+  })
+
+  // Proves the restore-in-finally logic itself: pre-seed the real path with content that is
+  // NOT the sentinel, run the same scenario, and assert the pre-seeded content survives after
+  // the test's own cleanup — not just during the test body, but as the file left on disk.
+  it('restores pre-existing real-path content after the sentinel test scenario runs', () => {
+    const realReportDir = dirname(mutationReportPath)
+    mkdirSync(realReportDir, {recursive: true})
+    const preSeededContent = `pre-seeded-${String(Date.now())}`
+    writeFileSync(mutationReportPath, preSeededContent, 'utf8')
+
+    const preExistingContent = existsSync(mutationReportPath) ? readFileSync(mutationReportPath, 'utf8') : undefined
+    const sentinelContent = `sentinel-${String(Date.now())}-b`
+    writeFileSync(mutationReportPath, sentinelContent, 'utf8')
+
+    try {
+      const otherTempReportPath = join(
+        mkdtempSync(join(tmpdir(), 'check-mutation-guards-sentinel-restore-')),
+        'mutation.json',
+      )
+      const noOpSpawner = (): void => {
+        // Runs and returns without touching any report file.
+      }
+      runMutationGuardCheck(noOpSpawner, otherTempReportPath)
+      rmSync(dirname(otherTempReportPath), {recursive: true, force: true})
+    } finally {
+      if (preExistingContent === undefined) {
+        rmSync(mutationReportPath, {force: true})
+      } else {
+        writeFileSync(mutationReportPath, preExistingContent, 'utf8')
+      }
+    }
+
+    expect(readFileSync(mutationReportPath, 'utf8')).toBe(preSeededContent)
+    rmSync(mutationReportPath, {force: true})
   })
 })
 
