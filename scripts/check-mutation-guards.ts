@@ -206,6 +206,13 @@ function compareLocatedMutants(a: LocatedMutant, b: LocatedMutant): number {
  * `const message = '// Stryker disable all'`) from being mistaken for a real
  * comment, since the only remaining `//`/`/*` sequences are genuine comment
  * markers.
+ *
+ * Known narrow gap (fails open): this stripper has no regex-literal state, so a quote
+ * character inside a regex literal on the same line as a directive (e.g.
+ * `const re = /['"]/ /* Stryker disable all *\/`) opens a phantom string that can hide a
+ * real directive from the scan. Accepted as a narrow, documented limitation rather than a
+ * full tokenizer — a directive line sharing a line with a regex literal is rare in this
+ * codebase's guard modules.
  */
 function stripStringLiterals(line: string): string {
   let result = ''
@@ -237,15 +244,29 @@ interface DirectiveMatch {
   readonly col: number
 }
 
+// Stryker's own anchor is `^\s?` — at most one leading whitespace character. This pattern
+// uses `\s*` (any amount), so `//  Stryker disable all` (two spaces) is flagged here but
+// silently ignored by Stryker itself. Deliberately stricter, not a bug: it fails closed on a
+// comment Stryker would ignore anyway, which is the safe direction for a check whose whole
+// point is refusing to guess at intent.
 const STRYKER_DISABLE_PATTERN = /^\s*Stryker disable\b(.*)$/u
 
 /**
  * Finds the first `Stryker disable` directive comment on a line — either a
- * `//` line comment or a single-line `/* ... *\/` block comment — searching
- * anywhere on the line, not only at its start. String/template literal
- * contents are stripped first so a directive-shaped string is never matched.
- * A multi-line block comment (no closing `*\/` on the same line) is out of
- * this conservative scanner's scope and is not matched.
+ * `//` line comment or a `/* ... *\/` block comment (single-line, or
+ * multi-line with the directive on its opening line) — searching anywhere on
+ * the line, not only at its start. String/template literal contents are
+ * stripped first so a directive-shaped string is never matched.
+ *
+ * A multi-line block comment with no closing `*\/` on this line is still
+ * scanned to end-of-line: Stryker's own regex is `/^\s?Stryker (disable|
+ * restore).../` matched against the *whole* `comment.value` with no `m`
+ * flag, so `^` only ever matches the very start of the comment content —
+ * i.e. the opening line. A directive on a later continuation line (e.g. a
+ * ` * Stryker disable all` line inside a `/**` block) can never match that
+ * anchor and Stryker itself ignores it, so this scanner does not need to
+ * (and structurally cannot, since it has no `/*` of its own) look at
+ * continuation lines either.
  */
 function findDirectiveOnLine(line: string): DirectiveMatch | undefined {
   const stripped = stripStringLiterals(line)
@@ -262,8 +283,11 @@ function findDirectiveOnLine(line: string): DirectiveMatch | undefined {
 
   if (blockCommentIndex !== -1) {
     const closeIndex = stripped.indexOf('*/', blockCommentIndex + 2)
-    if (closeIndex === -1) return undefined
-    const match = STRYKER_DISABLE_PATTERN.exec(line.slice(blockCommentIndex + 2, closeIndex))
+    // No `*/` on this line: still the comment's opening line (the only line Stryker's
+    // anchor can ever match), so scan to end-of-line rather than bailing out.
+    const commentBody =
+      closeIndex === -1 ? line.slice(blockCommentIndex + 2) : line.slice(blockCommentIndex + 2, closeIndex)
+    const match = STRYKER_DISABLE_PATTERN.exec(commentBody)
     if (match === null) return undefined
     return {remainder: match[1] ?? '', col: blockCommentIndex + 1}
   }
@@ -285,7 +309,10 @@ function evaluateDirectiveLine(remainder: string): {ok: boolean; reason: string}
   if (!/^\s*next-line\b/u.test(remainder)) {
     return {
       ok: false,
-      reason: 'Stryker disable directive must be next-line scoped; region/all suppression is rejected',
+      reason:
+        'Stryker disable directive must be next-line scoped; region/all suppression is rejected ' +
+        '(this also fires on ordinary prose that happens to contain "Stryker disable", e.g. ' +
+        '"// Stryker disable directives are banned here" — rephrase the comment to avoid the phrase)',
     }
   }
   const colonIndex = remainder.indexOf(': ')

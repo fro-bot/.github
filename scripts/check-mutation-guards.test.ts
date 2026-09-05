@@ -302,6 +302,32 @@ describe('scanDirectiveViolations', () => {
     const violations = scan("const message = 'Stryker disable all'; const y = 2\n")
     expect(violations).toEqual([])
   })
+
+  // Blocking: Stryker's regex (`/^\s?Stryker (disable|restore).../`, no `m` flag) matches
+  // against the whole leading-comment `comment.value`, so a directive on a block comment's
+  // *opening* line is honored even when the comment doesn't close until a later line.
+  // Previously the scanner bailed out entirely when `*/` was absent on the directive's line.
+  it('flags a multi-line block-comment disable-all directive on its opening line', () => {
+    const violations = scan('/* Stryker disable all\n   this module is generated */\nconst x = 1\n')
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toMatchObject({file: 'a.ts', line: 1, mutator: 'directive', status: 'DirectiveViolation'})
+  })
+
+  it('passes a multi-line block-comment next-line directive with a reason, closed on a later line', () => {
+    const violations = scan('/* Stryker disable next-line X: reason\n   still explaining */\nconst x = 1\n')
+    expect(violations).toEqual([])
+  })
+
+  // Verified against Stryker's own `^\s?Stryker ...` anchor (no multiline flag, matched
+  // against the whole comment value): a directive on a *continuation* line of a block comment
+  // (e.g. the ` * Stryker disable all` line inside a `/**` doc-style block) can never be the
+  // start of `comment.value`, so Stryker itself never honors it. This scanner also has no
+  // `/*` on that line to key off, so it correctly leaves the line unscanned — matching
+  // Stryker's behavior rather than accidentally being stricter than it.
+  it('does not flag a block-comment continuation line, matching Stryker\'s own "opening line only" anchor', () => {
+    const violations = scan('/**\n * Stryker disable all\n */\nconst x = 1\n')
+    expect(violations).toEqual([])
+  })
 })
 
 describe('runMutationGuardCheck (stale-report fix)', () => {
