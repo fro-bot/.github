@@ -38,15 +38,15 @@ const CALIBRATION_PROBES = 3
 // in a repetitions count that is too small once real (unloaded-again) conditions resume, which
 // widens the variance of every later sample taken at that fixed count. Taking the median of three
 // probes per doubling step, instead of one, smooths that single-probe noise out of the decision
-// that matters -- confirmed by measurement: under 12-process contention (20 runs) the old
-// single-probe calibration locked the quadratic control into half the correct repetitions count
-// once, and under 30-process contention (12 runs) once more; median-of-3 calibration held the
-// correct count in all 20 and all 8 runs measured at those same contention levels. The median
-// rejects a transient spike on one probe; under sustained load all three probes inflate together
-// and the median inherits the bias, so the count still lands low -- measured: against the
-// quadratic control under 12 busy loops (20 runs), single-probe and median-of-3 selected identical
-// counts every run (reps=2 x5, reps=4 x15). The ratio absorbs that case because both terms are
-// measured at the same repetitions count adjacent in time; 23/23 held at 8x oversubscription.
+// that matters. Two measurements, on different machines, bound what that buys. On a 10-core box
+// where the honest count for the quadratic control is 8: under 12-process contention the old
+// single-probe calibration dropped to 4 once in 20 runs and under 30-process contention once in
+// 12; median-of-3 held 8 in every run measured (20 and 8 respectively). On a 4-core box where the
+// honest count is 4: under 12 busy loops (20 runs) single-probe and median-of-3 selected identical
+// counts every run (reps=2 x5, reps=4 x15). So the median rejects a transient spike on one probe;
+// when all three probes inflate together it inherits the bias and the count lands low. The ratio
+// absorbs that case because both terms are measured at the same repetitions count adjacent in
+// time; 23/23 held at 8x oversubscription on the 4-core box.
 function calibrateRepetitions(operation: () => void): number {
   const probe = (repetitions: number): number =>
     median(Array.from({length: CALIBRATION_PROBES}, () => measure(operation, repetitions)))
