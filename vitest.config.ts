@@ -1,11 +1,13 @@
-import {defineConfig} from 'vitest/config'
+import {defaultExclude, defineConfig} from 'vitest/config'
 
 export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
     include: ['scripts/**/*.test.ts', 'packages/**/*.test.ts'],
-    exclude: ['.stryker-tmp/**', 'reports/**'],
+    // `exclude` replaces Vitest's defaults rather than merging with them; spread them back in
+    // so `**/node_modules/**` stays excluded from test discovery.
+    exclude: [...defaultExclude, '.stryker-tmp/**', 'reports/**'],
     testTimeout: 10000,
     coverage: {
       provider: 'v8',
