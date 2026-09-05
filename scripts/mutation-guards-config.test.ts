@@ -2,7 +2,7 @@ import {existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import {tmpdir} from 'node:os'
 import {dirname, join, relative, resolve} from 'node:path'
 
-import {afterAll, describe, expect, it} from 'vitest'
+import {afterAll, beforeAll, describe, expect, it} from 'vitest'
 import {isLiteralPath, readStrykerConfig} from './check-mutation-guards.ts'
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
@@ -170,15 +170,34 @@ function resolveSpecifier(repoRelativeFilePath: string, specifier: string): stri
  * spaces) — no column-offset preservation is needed here, unlike the directive scanner, since
  * nothing downstream reports a match's position within the original file.
  *
- * Known narrow gap (fails open), mirroring `stripStringLiterals`'s own documented gap: no
- * regex-literal state, so a quote inside a same-line regex literal preceding a comment can
- * open a phantom string and swallow a real comment boundary. Additionally, and more directly
- * relevant to this extractor's purpose: an import-shaped specifier that appears *inside* a
- * string literal (e.g. a test asserting on the literal text `"import {x} from './x.ts'"`)
- * still matches the import patterns below, since this stripper never blanks string content —
- * only comments are removed. Accepted as a narrow, documented limitation: a string literal
- * containing import-shaped text is rare, and the alternative (blanking strings) would break
- * every real specifier this extractor exists to find.
+ * Two known gaps, one of them NOT narrow:
+ *
+ * 1. **Regex-literal quote, file-scoped — fail-open, not a narrow edge case.** Unlike
+ *    `stripStringLiterals` (which resets its quote state every line, since it is called
+ *    per-line by the directive scanner), this function tracks quote state across the *entire
+ *    file* to correctly handle a multi-line template literal. That same file-wide tracking
+ *    means an unbalanced quote inside a regex literal (no regex-literal state exists here
+ *    either) does not just swallow the rest of one line — it opens a phantom string that can
+ *    run to the next matching quote character *anywhere later in the file*, silently
+ *    swallowing every comment boundary in between. Concretely, this un-hides a commented-out
+ *    import: `// Stryker disable next-line, see /foo['"]bar/` followed on a later line by
+ *    `// import {x} from './x.ts'` would have its `//` treated as ordinary code (inside the
+ *    still-open phantom string) rather than a comment, so the commented-out import would be
+ *    extracted as real reach. This is a fail-open for the *positive* pairing rule (a `mutate`
+ *    entry could read as reached when it should not), not a merely cosmetic gap, and is
+ *    accepted only because no such regex literal currently appears in any file this extractor
+ *    scans (pinned by a test below so a future change to this behavior is deliberate, not
+ *    accidental).
+ * 2. **Import-shaped text inside a string literal.** An import-shaped specifier appearing
+ *    inside* a string literal (e.g. `scripts/build-wiki-write-core.test.ts`'s fixture text
+ *    `"export type {Thing} from './thing.ts'"`, asserting on rewritten declaration output, not
+ *    an actual import) still matches the import patterns below, since this stripper never
+ *    blanks string content — only comments are removed. `reachedModulesTransitive` filters its
+ *    direct specifiers through `existsSync`, which closes this for a phantom target naming a
+ *    module that does not exist; the residual gap is narrower than "any import-shaped string"
+ *    — it is now only an import-shaped string that happens to name a module that *does* exist
+ *    on disk. Accepted as a narrow, documented limitation: the alternative (blanking strings)
+ *    would break every real specifier this extractor exists to find.
  */
 function stripComments(content: string): string {
   let result = ''
@@ -265,6 +284,17 @@ function directReexportSpecifiers(repoRelativeFilePath: string): string[] {
  * Exported so a test can exercise it directly against a real file (Fro Bot's live
  * `wiki-context-safety.ts`/`wiki-context-safety.test.ts` counterexample, which reaches only
  * through a dynamic `import(\`./wiki-context-safety${'.js'}\`)`, no static import at all).
+ *
+ * Every direct specifier is filtered through `existsSync` before being added to `reached` —
+ * `directSpecifiers` runs its patterns against comment-stripped-but-not-string-blanked content
+ * (see `stripComments`), so ordinary fixture text in a `*.test.ts` file that merely *looks*
+ * like an import (e.g. `scripts/build-wiki-write-core.test.ts`'s
+ * `"export type {Thing} from './thing.ts'"` string literal, asserting on rewritten declaration
+ * output, not an actual import) still matches the import patterns and would otherwise produce
+ * a phantom reach target that names a file that was never written and does not exist. This
+ * closes that case for files that name a genuinely nonexistent module; the residual gap (see
+ * `stripComments`'s docstring) is narrower than "any import-shaped string" — it is now only an
+ * import-shaped string that happens to name a module that *does* exist on disk.
  */
 export function reachedModulesTransitive(testFilePath: string): Set<string> {
   const reached = new Set<string>()
@@ -272,6 +302,7 @@ export function reachedModulesTransitive(testFilePath: string): Set<string> {
   const followQueue: string[] = []
 
   for (const target of directSpecifiers(testFilePath)) {
+    if (!existsSync(join(repositoryRoot, target))) continue
     reached.add(target)
     followQueue.push(target)
   }
@@ -511,24 +542,27 @@ describe('findMutateTestPairingViolations (pure)', () => {
 
 describe('reachedModulesTransitive comment handling (item 3)', () => {
   const tmpDir = mkdtempSync(join(tmpdir(), 'mutation-guards-comment-test-'))
-  afterAll(() => {
-    rmSync(tmpDir, {recursive: true, force: true})
-  })
   const testFileAbsolutePath = join(tmpDir, 'commented-import.test.ts')
   const repoRelativeTestFilePath = relative(repositoryRoot, testFileAbsolutePath).replaceAll('\\', '/')
   const expectedReachIfUncommented = relative(repositoryRoot, join(tmpDir, 'x.ts')).replaceAll('\\', '/')
 
-  writeFileSync(
-    testFileAbsolutePath,
-    [
-      "// import {value} from './x.ts'",
-      "/* import {other} from './x.ts' */",
-      "import {real} from './real.ts'",
-      'export {}',
-      '',
-    ].join('\n'),
-  )
-  writeFileSync(join(tmpDir, 'real.ts'), 'export const real = 1\n')
+  beforeAll(() => {
+    writeFileSync(
+      testFileAbsolutePath,
+      [
+        "// import {value} from './x.ts'",
+        "/* import {other} from './x.ts' */",
+        "import {real} from './real.ts'",
+        'export {}',
+        '',
+      ].join('\n'),
+    )
+    writeFileSync(join(tmpDir, 'x.ts'), 'export const value = 1\n')
+    writeFileSync(join(tmpDir, 'real.ts'), 'export const real = 1\n')
+  })
+  afterAll(() => {
+    rmSync(tmpDir, {recursive: true, force: true})
+  })
 
   it('does not reach a commented-out import (neither // nor block comment form)', () => {
     const reached = reachedModulesTransitive(repoRelativeTestFilePath)
@@ -545,23 +579,102 @@ describe('reachedModulesTransitive comment handling (item 3)', () => {
 // same as their non-type-only forms.
 describe('reachedModulesTransitive type-only re-export handling (item 4)', () => {
   const tmpDir = mkdtempSync(join(tmpdir(), 'mutation-guards-type-reexport-test-'))
-  afterAll(() => {
-    rmSync(tmpDir, {recursive: true, force: true})
-  })
   const barrelAbsolutePath = join(tmpDir, 'barrel.ts')
   const testFileAbsolutePath = join(tmpDir, 'uses-barrel.test.ts')
   const repoRelativeTestFilePath = relative(repositoryRoot, testFileAbsolutePath).replaceAll('\\', '/')
   const expectedTarget = relative(repositoryRoot, join(tmpDir, 'target.ts')).replaceAll('\\', '/')
 
-  writeFileSync(
-    barrelAbsolutePath,
-    ["export type {Target} from './target.ts'", "export type * from './target.ts'", ''].join('\n'),
-  )
-  writeFileSync(join(tmpDir, 'target.ts'), 'export interface Target { readonly id: string }\n')
-  writeFileSync(testFileAbsolutePath, ["import type {Target} from './barrel.ts'", 'export {}', ''].join('\n'))
+  beforeAll(() => {
+    writeFileSync(
+      barrelAbsolutePath,
+      ["export type {Target} from './target.ts'", "export type * from './target.ts'", ''].join('\n'),
+    )
+    writeFileSync(join(tmpDir, 'target.ts'), 'export interface Target { readonly id: string }\n')
+    writeFileSync(testFileAbsolutePath, ["import type {Target} from './barrel.ts'", 'export {}', ''].join('\n'))
+  })
+  afterAll(() => {
+    rmSync(tmpDir, {recursive: true, force: true})
+  })
 
   it('follows a type-only re-export barrel chain', () => {
     const reached = reachedModulesTransitive(repoRelativeTestFilePath)
     expect(reached.has(expectedTarget)).toBe(true)
+  })
+})
+
+// Item 1: a phantom reach target from fixture text that names a module that does not exist on
+// disk (the real shape found in scripts/build-wiki-write-core.test.ts:230-231, where declared
+// declaration-file fixtures happen to contain import-shaped string literals) must not be
+// counted as reach.
+describe('reachedModulesTransitive phantom-reach filtering (item 1)', () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'mutation-guards-phantom-reach-test-'))
+  const testFileAbsolutePath = join(tmpDir, 'fixture-text.test.ts')
+  const repoRelativeTestFilePath = relative(repositoryRoot, testFileAbsolutePath).replaceAll('\\', '/')
+  const phantomTarget = relative(repositoryRoot, join(tmpDir, 'thing.ts')).replaceAll('\\', '/')
+
+  beforeAll(() => {
+    writeFileSync(
+      testFileAbsolutePath,
+      [
+        'const fixture = "export type {Thing} from \'./thing.ts\'"',
+        'const other = "type Imported = import(\'./imported.ts\').Thing"',
+        'export {}',
+        '',
+      ].join('\n'),
+    )
+    // Deliberately never create thing.ts/imported.ts — the whole point is that neither name
+    // resolves to a real file.
+  })
+  afterAll(() => {
+    rmSync(tmpDir, {recursive: true, force: true})
+  })
+
+  it('does not reach a module named only by import-shaped fixture text that does not exist on disk', () => {
+    const reached = reachedModulesTransitive(repoRelativeTestFilePath)
+    expect(reached.has(phantomTarget)).toBe(false)
+    expect(reached.has(relative(repositoryRoot, join(tmpDir, 'imported.ts')).replaceAll('\\', '/'))).toBe(false)
+    expect(reached.size).toBe(0)
+  })
+})
+
+// Item 2: pins the CURRENT, documented (not desired) fail-open behavior described in
+// stripComments's docstring — a quote character inside a regex literal opens a phantom string
+// with no regex-literal state to prevent it, and because stripComments tracks quote state
+// across the whole file (not per line), that phantom string can run past a real comment
+// boundary anywhere later in the file and un-hide a commented-out import. This test exists so
+// a future change to this behavior (e.g. adding regex-literal awareness) is a deliberate,
+// visible diff to this test, not an accidental behavior change nobody notices.
+describe('reachedModulesTransitive regex-literal quote gap (item 2, pins documented fail-open)', () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'mutation-guards-regex-quote-test-'))
+  const testFileAbsolutePath = join(tmpDir, 'regex-quote.test.ts')
+  const repoRelativeTestFilePath = relative(repositoryRoot, testFileAbsolutePath).replaceAll('\\', '/')
+
+  beforeAll(() => {
+    writeFileSync(
+      testFileAbsolutePath,
+      [
+        // The regex literal's character class contains a bare `'`, opening a phantom string
+        // stripComments has no way to know is not a real string.
+        'const re = /[\'"]/ // has a quote in a regex',
+        "// import {x} from './x.ts'",
+        "import {real} from './real.ts'",
+        'export {}',
+        '',
+      ].join('\n'),
+    )
+    writeFileSync(join(tmpDir, 'x.ts'), 'export const x = 1\n')
+    writeFileSync(join(tmpDir, 'real.ts'), 'export const real = 1\n')
+  })
+  afterAll(() => {
+    rmSync(tmpDir, {recursive: true, force: true})
+  })
+
+  it('currently un-hides a commented-out import when a preceding regex literal opens a phantom string (documented, accepted)', () => {
+    const reached = reachedModulesTransitive(repoRelativeTestFilePath)
+    // This is the fail-open, pinned as-is: the commented-out import DOES currently count as
+    // reach because the phantom string opened by the regex literal's quote swallows the `//`
+    // comment marker ahead of it.
+    expect(reached.has(relative(repositoryRoot, join(tmpDir, 'x.ts')).replaceAll('\\', '/'))).toBe(true)
+    expect(reached.has(relative(repositoryRoot, join(tmpDir, 'real.ts')).replaceAll('\\', '/'))).toBe(true)
   })
 })
