@@ -58,6 +58,9 @@ function calibrateRepetitions(operation: () => void): number {
 }
 
 function measureScalingRatio(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
+  // Fail loud: with zero samples every median below would resolve to 0 and each linearity assertion
+  // in this file would pass vacuously.
+  if (samples < 1) throw new RangeError(`measureScalingRatio needs at least one sample, received ${samples}`)
   const smallOperation = (): void => operation(size)
   const largeOperation = (): void => operation(size * 2)
   smallOperation()
@@ -109,14 +112,14 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // This meta-test stays because its discrimination check is the only assertion proving that the
 // estimator works at all. It is deliberately expensive so the measurements are meaningful, and
 // CPU contention can push it past the global 10-second test ceiling; failures present as timeouts,
-// not assertion failures. Only it carries a raised timeout, because it is by far the most
-// expensive test here: measured under 12-process CPU contention it ran 4.8s-14.3s across repeated
-// runs, while the costliest production guard below -- malformed wiki log header parsing -- ran
-// 1.7s-8.7s and the two wikilink guards less again. Both windows are wide because contention level
-// varies run to run and neither figure is portable across machines, but the ordering held in every
-// run measured: the log header guard is the one to check first if a production guard ever does
-// time out, and the answer then is to isolate the timing suite rather than scatter more per-test
-// literals or raise the global default.
+// not assertion failures. Every timing test in this suite therefore runs under one file-scoped
+// timeout (TIMING_SUITE_TIMEOUT_MILLISECONDS) rather than the global default: measured under
+// 12-process CPU contention the meta-test ran 4.8s-14.3s across repeated runs, while the costliest
+// production guard below -- malformed wiki log header parsing -- ran 1.7s-8.7s (8.5s at 8x
+// oversubscription, 85% of the 10s global ceiling) and the two wikilink guards less again. Both
+// windows are wide because contention level varies run to run and neither figure is portable
+// across machines, but the ordering held in every run measured: the log header guard is the one
+// to check first if a timing test ever does time out.
 //
 // The separation check below was previously a relative multiplier (quadratic ratio >=
 // linear ratio * 1.5), which multiplied together the noise of two independently-measured ratios
@@ -128,7 +131,9 @@ function expectLinearScaling(operation: (size: number) => void, size: number, sa
 // (worst observed ~3.88 under 12-process contention, ~3.89 under 30-process contention) while
 // LINEAR_RATIO_CEILING is the same bound expectLinearScaling already used for the production
 // guards below, now shared by name instead of by coincidence of both being the literal 3.
-describe('linear-time input parsing', () => {
+const TIMING_SUITE_TIMEOUT_MILLISECONDS = 30_000
+
+describe('linear-time input parsing', {timeout: TIMING_SUITE_TIMEOUT_MILLISECONDS}, () => {
   it('proves the scaling helper discriminates quadratic work', () => {
     const quadratic = (size: number): void => {
       let total = 0
@@ -154,7 +159,7 @@ describe('linear-time input parsing', () => {
     // Keep both checks independent rather than multiplying one ratio by the other: each control
     // is bounded against its own theoretical value (quadratic ~4, linear ~2) with headroom drawn
     // from measured contended distributions, so noise in one measurement cannot erode the other's
-    // margin. Three samples is unchanged from before: the noise that used to erode this test's
+    // margin. Three samples, reverted from seven: the noise that used to erode this test's
     // margin lived in measureScalingRatio's repetitions calibration, not in this sample count --
     // with the calibration fixed, three samples already holds the quadratic ratio comfortably
     // above its floor under contention (see calibrateRepetitions for the measured evidence).
@@ -162,7 +167,7 @@ describe('linear-time input parsing', () => {
     const linearMeasurement = measureScalingRatio(linear, 20_000, 3)
     expect(quadraticMeasurement.ratio).toBeGreaterThanOrEqual(QUADRATIC_RATIO_FLOOR)
     expect(linearMeasurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
-  }, 30_000)
+  })
 
   it.each([
     {
