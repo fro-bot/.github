@@ -398,6 +398,27 @@ function printResult(result: ClassificationResult): void {
 }
 
 /**
+ * Builds the child env for the Stryker spawn: a copy of `process.env` with
+ * `GITHUB_STEP_SUMMARY` deleted, never mutating the parent env.
+ *
+ * Vitest 4 auto-registers its `github-actions` reporter whenever `GITHUB_ACTIONS === 'true'`,
+ * and that reporter appends a `## Vitest Test Report` block to `GITHUB_STEP_SUMMARY` on every
+ * run. Stryker's vitest runner spawns Vitest once for the dry run and again for every mutant
+ * batch, each inheriting the job env by default — so an unfiltered spawn floods the step
+ * summary with dozens of blocks. This wrapper is the only writer of the step summary (in
+ * `printResult`, after Stryker exits); deleting the key (rather than setting it to `''`) is
+ * the safe default — an empty string is still a defined env var and some future check could
+ * treat "set but empty" differently from "absent", so this closes the door entirely. Leaves
+ * `GITHUB_ACTIONS` untouched so nothing else about CI detection changes for the Stryker/Vitest
+ * child process.
+ */
+function buildStrykerSpawnEnv(): NodeJS.ProcessEnv {
+  const env = {...process.env}
+  delete env.GITHUB_STEP_SUMMARY
+  return env
+}
+
+/**
  * Runs `stryker run` via `spawnSync`; the return value is used only to detect "Stryker did
  * not run at all" for an informational message — the verdict is always derived from the
  * JSON report, never this return value. Exported as an injectable seam for testing.
@@ -406,6 +427,7 @@ export function defaultStrykerSpawner(): void {
   const run = spawnSync('pnpm', ['exec', 'stryker', 'run', strykerConfigPath], {
     cwd: repositoryRoot,
     stdio: 'inherit',
+    env: buildStrykerSpawnEnv(),
   })
   if (run.error) {
     process.stderr.write(`check-mutation-guards: stryker did not run: ${run.error.message}\n`)

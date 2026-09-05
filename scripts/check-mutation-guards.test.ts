@@ -1,10 +1,12 @@
 import {mkdirSync, rmSync, writeFileSync} from 'node:fs'
 import {dirname} from 'node:path'
+import process from 'node:process'
 
 import {describe, expect, it, vi} from 'vitest'
 
 import {
   classifyMutationReport,
+  defaultStrykerSpawner,
   flattenReport,
   mutationReportPath,
   runMutationGuardCheck,
@@ -333,6 +335,38 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
       expect(result.verdict).not.toBe('clean')
     } finally {
       rmSync(mutationReportPath, {force: true})
+    }
+  })
+})
+
+describe('defaultStrykerSpawner (CI step-summary isolation)', () => {
+  // Vitest 4's auto-registered github-actions reporter appends a "## Vitest Test Report"
+  // block to GITHUB_STEP_SUMMARY on every run. Stryker's vitest runner spawns Vitest once for
+  // the dry run and again per mutant batch, each inheriting the job env by default, so an
+  // unfiltered spawn floods the step summary. Only this wrapper's own printResult should ever
+  // write to it.
+  it('spawns Stryker with GITHUB_STEP_SUMMARY removed from the child env, without mutating the parent env', () => {
+    const original = process.env.GITHUB_STEP_SUMMARY
+    process.env.GITHUB_STEP_SUMMARY = '/tmp/parent-step-summary.md'
+    mockSpawnSync.mockReturnValue({error: undefined, status: 0})
+
+    try {
+      defaultStrykerSpawner()
+
+      const call = mockSpawnSync.mock.calls.at(-1) as [string, string[], {env?: NodeJS.ProcessEnv}] | undefined
+      const childEnv = call?.[2]?.env
+      expect(childEnv).toBeDefined()
+      expect(childEnv).not.toHaveProperty('GITHUB_STEP_SUMMARY')
+
+      // The parent process env must be untouched — only the child spawn's env is filtered.
+      expect(process.env.GITHUB_STEP_SUMMARY).toBe('/tmp/parent-step-summary.md')
+    } finally {
+      if (original === undefined) {
+        delete process.env.GITHUB_STEP_SUMMARY
+      } else {
+        process.env.GITHUB_STEP_SUMMARY = original
+      }
+      mockSpawnSync.mockReset()
     }
   })
 })
