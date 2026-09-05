@@ -31,6 +31,13 @@ tags:
     token-scope,
     release-gated-deploy,
     conventional-commits,
+    agent-evals,
+    semver-prerelease,
+    npm-publishing,
+    merge-queue,
+    osv-scanner,
+    actions-cache-scope,
+    expression-coercion,
   ]
 related:
   - fro-bot--agent
@@ -65,7 +72,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 
 ## Repos Using GitHub Actions
 
-- [[fro-bot--agent]] — Path-filtered Setup → Lint, Build (dist/ drift detection + CI SBOM as of v0.75.0), Test, Test Action (live self-referencing PR review), Dependency Review, Release (semantic-release via `next` → `release` PR flow), CodeQL, Scorecard; plus fenced `harness-release.yaml` (read-only build job / OIDC trusted-publish). **Bun-based workspace CI as of the 2026-06-24 survey** (migrated off pnpm; `packageManager: bun@1.3.14`, `bun.lock`), joining [[marcusrbrown--systematic]] / [[marcusrbrown--infra]] in the Bun-CI cohort
+- [[fro-bot--agent]] — Path-filtered Setup → Lint, Build (dist/ drift detection + CI SBOM as of v0.75.0), Test, Test Action (live self-referencing PR review), Dependency Review, Release (semantic-release via `next` → `release` PR flow), CodeQL, Scorecard; plus fenced `harness-release.yaml` (read-only build job / OIDC trusted-publish). **Bun-based workspace CI as of the 2026-06-24 survey** (migrated off pnpm; `packageManager: bun@1.3.14`, `bun.lock`), joining [[marcusrbrown--systematic]] / [[marcusrbrown--infra]] in the Bun-CI cohort. **2026-09-05: 12 workflows** — new `osv-scanner.yaml` (diff scan fails, full scan reports; see below), new `gateway-smoke` + `workspace-smoke` image jobs in `ci.yaml` promoted to **required contexts (10 → 12)** so the `deploy/` Compose stack is now merge-gated, `merge_group` triggers added, and a `scripts/` suite of repo-invariant guard tests including a `workspace-test-chain` guard on the root test fan-out. `pull_request` was **removed** from `fro-bot.yaml`'s trigger set; the live PR-review path is `ci.yaml`'s `test-action`. Also the fleet's only **agent-behavior eval corpus** (`evals/`)
 - [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
 - [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
@@ -967,6 +974,197 @@ the same design.
 ### Convention Enforcement via Tests
 
 [[marcusrbrown--infra]] introduced a pattern of mechanically enforcing AGENTS.md conventions at CI time via colocated test files (`conventions.test.ts`). Rules marked `(enforced)` in AGENTS.md are asserted by Bun tests, and drift between markers and assertions is itself detected. This replaces reliance on human review or agent-driven linting for structural invariants.
+
+**Extension (2026-09-05, [[fro-bot--agent]]):** the same technique now targets *workflows and manifests* rather than prose conventions. `scripts/` carries `fro-bot-workflow.test.ts`, `osv-scanner-workflow.test.ts`, `harness-tag-derivation.test.ts`, `action-input-defaults-guard.test.ts`, `module-taxonomy.test.ts`, `eslint-phantom-guard.test.ts`, `plan-frontmatter-guard.test.ts`, and — the reflexive one — `workspace-test-chain.test.ts`, which asserts that every workspace member is actually present in the root `test` script's fan-out. That last guard closes the failure mode where a new package is added, its tests are written, and nothing ever runs them: a green suite that silently covers less than it did yesterday. A test suite that does not assert its own reach is measuring an unknown denominator.
+
+### A Platform Capability Can Be Scoped by Trigger Class, Not by Actor or Permissions
+
+Discovered 2026-09-05 in [[fro-bot--agent]]'s README, which was rewritten to
+qualify its own headline claim (open issue #1514).
+
+The agent's central selling point is persistent session state across CI runs,
+restored from GitHub Actions cache. It does not work on the trigger most users
+reach for. **Cache writes are unavailable for `issue_comment` and `issues`
+runs**, because those triggers are initiable by an actor without repository
+write access, so GitHub supplies a read-only runner-injected
+`ACTIONS_RUNTIME_TOKEN` **for the entire trigger class**.
+
+Three consequences that are easy to get wrong:
+
+1. **The restriction is not about who triggered the run.** A run started by the
+   repository owner on an `issue_comment` gets the same read-only token as one
+   started by a drive-by commenter. Author-association gating in the workflow
+   `if:` does not restore the capability, because the token is minted before any
+   job condition is evaluated.
+2. **`permissions:` cannot change it.** The `permissions:` block governs
+   `GITHUB_TOKEN` scopes. `ACTIONS_RUNTIME_TOKEN` is a separate, runner-injected
+   credential outside that surface, so the usual "just add the scope" reflex
+   produces a workflow that looks correct and still cannot write.
+3. **The failure is silent and asymmetric.** Cache *restore* works; only *write*
+   fails. So the first run in a chain looks healthy, and the degradation only
+   shows as the agent re-investigating from scratch on every subsequent mention
+   — indistinguishable from a model that just forgot.
+
+The remedy in this case is an out-of-band durable backend (`s3-backup`), which
+is itself best-effort — continuity depends on a successful upload. The general
+rule: **before advertising a capability, enumerate which trigger classes can
+actually exercise it,** and state the exceptions in the same sentence as the
+claim rather than in a troubleshooting page. [[fro-bot--agent]]'s README now
+does exactly that, including an honest "`pull_request` triggers were not
+observed either way."
+
+### Build Metadata Is Not Version Identity
+
+Discovered 2026-09-05 in [[fro-bot--agent]]'s `harness-release.yaml` and the
+2026-08-29 harness release backfill.
+
+`@fro.bot/harness` publishes a patched OpenCode binary. Several distinct builds
+can share one upstream OpenCode base version, so the build needs its own
+identity. The intuitive encoding is semver build metadata:
+`1.18.29+harness.88b6b5fb`. It fails on both distribution channels for
+different reasons:
+
+- **npm ignores build metadata for identity.** `1.18.29+a` and `1.18.29+b` are
+  the *same version*; the registry will not hold both. Only a **prerelease**
+  identifier (`1.18.29-harness.88b6b5fb`) makes them distinct. Publishing one
+  then requires `npm publish --tag latest` explicitly, because npm refuses to
+  publish a prerelease without a tag — a second-order consequence that makes
+  `dist-tags.latest` a prerelease string, which downstream tooling may not
+  expect.
+- **Git refs cannot contain `+` at all**, so the string is unusable as a tag or
+  a branch name. The same workflow separately sanitizes `+` → `-` when deriving
+  a branch name for its sync PR.
+- **Renovate cannot order build-metadata versions**, so a pin written this way
+  is invisible to dependency automation — it will neither bump it nor warn that
+  it isn't bumping it.
+
+The resolution is not to pick one form but to accept that **one artifact can
+legitimately carry three version strings, and to say which surface owns which**:
+
+| Surface           | Form         | Constraint it satisfies                          |
+| ----------------- | ------------ | ------------------------------------------------ |
+| Git tag / release | `-harness.`  | refs forbid `+`; `--prerelease --latest=false` keeps it out of the product release line and outside semantic-release's `^v(.+)` scan |
+| npm version       | `-harness.`  | prerelease is the only distinct identity npm honors |
+| Binary self-report| `+harness.`  | build metadata is semantically correct here, and the release job asserts the binary reports exactly it |
+
+Two operational lessons follow. First, **migrating a tag namespace means
+backfilling it** — 16 historical builds were re-published as hyphen-form
+releases in one ~80-minute window so that every build is addressable under the
+new scheme; a namespace change that only applies going forward leaves consumers
+of old versions on a scheme nobody maintains. Second, **when automation cannot
+track a pin, replace it with an owned job rather than leaving it stale.**
+`harness-release.yaml` gained a `sync-default-version` job that opens a PR
+bumping the runtime constant and the workspace `Dockerfile` ARG together, with
+an idempotency guard that checks *both* files — because the Dockerfile step is
+`continue-on-error`, guarding on the constant alone would let a half-applied
+bump freeze the image surface indefinitely while looking done.
+
+### A Boolean Workflow Input Compared Against a String Is Always Truthy
+
+Discovered 2026-09-05, documented in-line by [[fro-bot--agent]]'s
+`harness-release.yaml` at the `sync-default-version` job.
+
+In a GitHub Actions expression, `inputs.dry_run != 'true'` where `dry_run` is
+declared `type: boolean` does **not** do what it reads like. Comparing a boolean
+to a string coerces both to numbers; `'true'` becomes `NaN`, and `NaN` is not
+equal to anything, so the expression is unconditionally true. A dry-run guard
+written this way runs the guarded job on every dry run.
+
+The correct comparison is against the boolean literal: `inputs.dry_run != true`.
+Note the second half of the same guard — **for a tag-triggered run,
+`inputs.dry_run` is `null`**, which is also `!= true`, so the boolean form
+happens to be right for both the dispatch and tag paths. That is worth checking
+rather than assuming: a multi-trigger workflow evaluates its `if:` against
+whatever the trigger supplies, and `null` behaves differently from `false` in
+several comparisons.
+
+The general shape: **Actions expressions have JavaScript-adjacent coercion
+without JavaScript's `===` escape hatch.** Any comparison mixing a typed input
+with a quoted literal is a candidate defect, and the defect's failure mode is
+"guard silently disabled," which is invisible in a green run.
+
+### Diff-Scoped Failure, Whole-Tree Reporting
+
+Observed 2026-09-05 in [[fro-bot--agent]]'s new `osv-scanner.yaml`.
+
+A vulnerability scanner wired to fail the build is a durable source of CI
+distrust, because the set of known advisories changes without anyone touching
+the repository. The file splits the concern rather than picking a global
+severity threshold:
+
+- **PR scan** (`pull_request`) diffs against `GITHUB_BASE_REF` and sets
+  `fail-on-vuln: true`. It can only fail on what *this change introduces*, so a
+  pre-existing finding cannot block an unrelated PR.
+- **Full scan** (`push` / `schedule` / `merge_group`) has no baseline, so it is
+  `fail-on-vuln: false` **deliberately**, with the reason written in the file:
+  failing here would break pushes to `main` and merge-queue entries whenever a
+  new advisory is published against a dependency nobody touched. Findings route
+  to code scanning.
+
+The merge-queue detail is the non-obvious part and is also documented in-file:
+**neither `GITHUB_BASE_REF` nor the `pull_request` payload exists in a
+`merge_group` event**, so a workflow that only implements the diff mode either
+crashes or silently no-ops in the queue. Any repo adopting merge queues needs to
+audit every workflow that reads base-ref or PR-payload context.
+
+The residual worth noting: in this repo neither OSV job is a **required status
+check**, so the one job that *can* fail on a real regression gates nothing at
+the merge boundary. A scanner's failure policy and its enforcement position are
+independent settings, and getting the first one thoughtfully right does not
+imply the second one is wired at all.
+
+### Test the Agent's Outcome, Never Its Method
+
+Observed 2026-09-05 in [[fro-bot--agent]]'s new `evals/` corpus — the first
+behavioral (as opposed to code) test surface in the surveyed fleet. Recorded
+here because every repo in the fleet runs an agent in CI and none of the others
+measures whether it is getting better or worse.
+
+The corpus's rules generalize beyond that repo:
+
+- **Assert outcomes, never method.** No assertion may reference tool calls, call
+  counts, step or turn order, or reasoning shape. Those are implementation of
+  the model, they change on every provider update, and pinning them produces a
+  suite that fails on improvements.
+- **Three result states, not two.** `passed` / `failed` / **`inconclusive`**.
+  The third exists because of a specific incident: a misconfiguration left the
+  agent running outside its fixture repository, so scenarios timed out while
+  searching the filesystem. Under a boolean, that reads as a catastrophic model
+  regression and sends the investigation at the model. As `inconclusive`, it
+  correctly reports that no outcome was obtainable and sends the investigation
+  at the harness. This is the same lesson as *A Run's Conclusion Measures the
+  Harness, Not the Deliverable*, reached independently at the eval layer and
+  encoded as a **type** rather than a review habit — which is the stronger form,
+  since a type cannot be forgotten under deadline.
+- **Assert presence, never absence, in generated prose.** A gate may require
+  that a signal appears in a free-form response; it may not require that one
+  does not. Absence is only meaningful for single-valued structured fields such
+  as an expected verdict. Absence in open-ended generation is unfalsifiable at
+  any sample size a CI budget can afford.
+- **Keep the answer out of the prompt.** The `clean-pr` / `planted-defect`
+  differential pair shares one neutral prompt, event, and file set; only one
+  source file differs, and the expectation lives in scorer-owned metadata.
+  Leaking the expectation into the agent-facing prompt converts the eval from a
+  measurement of judgment into a measurement of obedience.
+- **Safety gates outrank completion.** `no-forbidden-mutation` and
+  `no-secret-leak` still run on an *incomplete* execution, because unwanted
+  mutation and canary leakage are observable regardless of whether the task
+  finished.
+- **Bound the stochastic remedy.** A flaky quality result earns lazy repeats for
+  that scenario only, capped (4 candidate / 4 baseline). Mixed samples, or two
+  modes that both pass without discriminating, stay inconclusive and never
+  auto-promote a baseline. Unbounded retry-until-green is how an eval suite
+  becomes a random number generator with a changelog.
+- **Report the negative honestly.** A clean run reports "no large observed
+  regression across the covered scenarios" — not "quality improved."
+
+Two caveats the project records against itself, both instructive: the committed
+baseline predates the current outcome projection, so comparison returns explicit
+**missing-evidence** rather than backfilling candidate values into the baseline;
+and open issue #1532 found a redaction test inside the corpus whose assertion
+never truncates and is therefore trivially true. A suite built to reject
+unfalsifiable claims shipped one. Assertion-strength review is not something a
+discipline document buys you for free.
 
 ### Shared Config Heritage
 

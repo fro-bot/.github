@@ -4467,3 +4467,95 @@ Sources: https://github.com/fro-bot/.github@71f7fa87; https://github.com/fro-bot
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@71f7fa87d65289328adc8ba8c05745d306672b32
+
+## [2026-09-05 09:30] ingest | repo:fro-bot/agent
+
+Surveyed `fro-bot/agent` at HEAD `096faf1e` (v0.108.1, `node_id R_kgDOQyTMEw`,
+public, MIT) — first re-survey since 2026-07-21 / v0.94.0. Reads limited to
+directory listings, README files, manifests, and workflow files; the target was
+treated as untrusted input. `gh` was unauthenticated this run, so all target
+data came from unauthenticated `api.github.com` / `raw.githubusercontent.com` /
+`registry.npmjs.org` reads.
+
+The 14-minor wave is **structural** — the first new top-level subsystem since
+`packages/harness`. Four durable findings persisted:
+
+(1) **`evals/` — an agent-outcome regression corpus.** The fleet's only
+behavioral (as opposed to code) test surface: it runs the real
+`executeOpenCode` path against disposable fixture repos, gated behind
+`FRO_BOT_EVAL=1` so normal CI costs nothing. Its rules are the transferable
+part — assert outcomes and never method (no tool-call, call-count, step-order,
+or reasoning-shape assertions); three result states rather than two, because a
+misconfiguration once ran the agent outside its fixture repo and a boolean
+would have scored those timeouts as a catastrophic model regression instead of
+a harness fault; assert presence but never absence in free-form prose; keep the
+planted-defect expectation in scorer-owned metadata so the eval measures
+judgment rather than obedience; safety gates run even on incomplete executions;
+stochastic repeats bounded 4×4 and never auto-promoting a baseline. The
+three-state design is this repo independently rediscovering the wiki's existing
+*A Run's Conclusion Measures the Harness, Not the Deliverable* finding and
+encoding it as a type. It also shipped `#1532` — a trivially-true assertion
+inside the corpus built to reject them.
+
+(2) **Build metadata is not version identity.** The harness artifact carries
+three deliberately different version strings: `-harness.<sha>` for the GitHub
+Release tag (refs forbid `+`), `-harness.<sha>` for the npm version (npm treats
+`1.2.3+a` and `1.2.3+b` as the same version, so only a prerelease is a distinct
+identity — which then forces `npm publish --tag latest`), and `+harness.<sha>`
+for the binary's self-report. Sixteen historical builds were backfilled as
+hyphen-form releases in one ~80-minute window on 2026-08-29; npm had been
+hyphen-form since 2026-07-15, so GitHub migrated to match npm, not the reverse.
+Renovate cannot order build-metadata versions, so it was retired from
+`DEFAULT_OPENCODE_VERSION` in favor of a repo-owned `sync-default-version` PR
+job whose idempotency guard checks both the constant and the workspace
+Dockerfile — guarding on one alone would let a `continue-on-error` half-apply
+freeze the image surface while looking done.
+
+(3) **A platform capability scoped by trigger class.** The README now qualifies
+the project's own headline claim: cache *writes* are unavailable for
+`issue_comment` and `issues` runs because that whole trigger class receives a
+read-only runner-injected `ACTIONS_RUNTIME_TOKEN`. Not actor-dependent, not
+reachable from `permissions:`, and asymmetric — restore works while write
+fails, so the degradation presents as a model that forgot rather than a
+platform that refused.
+
+(4) **Two smaller CI findings.** A `type: boolean` workflow input compared
+against the string `'true'` coerces to `NaN` and makes the guard
+unconditionally true (documented in-line by the repo itself); and a
+vulnerability scanner can split its policy — `fail-on-vuln: true` on the PR
+diff scan, deliberate report-only on the baseline-less full scan — with the
+residual that neither is a required status check here, so the job that *can*
+fail on a real regression gates nothing at the merge boundary.
+
+Also recorded: workflows 11 → 12 (`osv-scanner.yaml`); `gateway-smoke` +
+`workspace-smoke` promoted to required contexts (10 → 12), putting the
+`deploy/` Compose stack behind the merge gate for the first time;
+`pull_request` removed from `fro-bot.yaml`'s trigger set; the open-issue set
+inverted from bot-filed to human-filed with four `marcusrbrown` defect reports
+including `#1520` (first-party App PRs carry `author_association: CONTRIBUTOR`,
+so the agent's own PRs fall outside its own review gate); harness base
+1.18.4 → 1.18.29 with carries 12 → 13; oMo v3 → v4, OMO Slim v1 → v2,
+systematic 3.2.2 → 3.16.0.
+
+Pages touched: `wiki/repos/fro-bot--agent.md` (frontmatter + `node_id` +
+overview + two new sections + CI/Renovate/Probot/dependency/ecosystem/survey-
+history updates), `wiki/topics/github-actions-ci.md` (five new sections plus an
+extension to *Convention Enforcement via Tests*),
+`wiki/repos/marcusrbrown--systematic.md` (additive consumer-pin correction:
+its "current 10-day drought" closed at ≤11 days — flagged as a downstream
+observation, not a source survey), `index.md`, `log.md`.
+
+Delivery mode was `working-dir`; only `knowledge/**` was modified. No GitHub
+issue or comment was opened for this survey — per the task contract this log
+entry is the canonical per-survey summary. Prettier was deliberately not run
+on the touched pages: the `data`-branch wiki content is not Prettier-clean, so
+formatting reflows unrelated surveys' prose and buries the ingest in noise;
+formatting normalizes on promotion to `main`.
+
+Sources: https://github.com/fro-bot/agent@096faf1ea023264ecfe5bfadbbb6c95dc6508c96; https://registry.npmjs.org/@fro.bot%2Fharness
+
+## [2026-09-05 09:22] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent

@@ -1,9 +1,13 @@
 ---
 type: repo
-title: "fro-bot/agent"
+title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-07-21
+updated: 2026-09-05
+node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 096faf1ea023264ecfe5bfadbbb6c95dc6508c96
+    accessed: 2026-09-05
   - url: https://github.com/fro-bot/agent
     sha: 9a4631f81a3d73d06bb18098e468b0cae52906b3
     accessed: 2026-07-21
@@ -31,9 +35,52 @@ sources:
   - url: https://github.com/fro-bot/agent
     sha: ef6b9525583d13f9443b80e6ceffff8af978410a
     accessed: 2026-05-07
-tags: [github-actions, agent, opencode, omo, omo-slim, typescript, persistent-memory, ci-cd, fro-bot, semantic-release, bun-workspace, monorepo, discord, effect, hono, docker-compose, mitmproxy, harness, orw, trusted-publishing, oidc, operator-web-surface, oauth, sse, sbom, credential-broker, shared-runtime, run-cancellation, release-notes-narration, prompt-injection-hardening, review-skip-label]
+tags:
+  - github-actions
+  - agent
+  - opencode
+  - omo
+  - omo-slim
+  - typescript
+  - persistent-memory
+  - ci-cd
+  - fro-bot
+  - semantic-release
+  - bun-workspace
+  - monorepo
+  - discord
+  - effect
+  - hono
+  - docker-compose
+  - mitmproxy
+  - harness
+  - orw
+  - trusted-publishing
+  - oidc
+  - operator-web-surface
+  - oauth
+  - sse
+  - sbom
+  - credential-broker
+  - shared-runtime
+  - run-cancellation
+  - release-notes-narration
+  - prompt-injection-hardening
+  - review-skip-label
+  - agent-evals
+  - eval-corpus
+  - semver-prerelease
+  - npm-publishing
+  - merge-queue
+  - osv-scanner
+  - image-smoke-test
+  - web-push
+  - actions-cache-scope
 related:
   - fro-bot--dashboard
+  - fro-bot--space-bus
+  - fro-bot--systematic
+  - github-actions-ci
   - marcusrbrown--systematic
   - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--infra
@@ -56,22 +103,24 @@ GitHub Action harness for [OpenCode](https://opencode.ai/) + [Oh My OpenAgent (o
 | Attribute              | Value                                                               |
 | ---------------------- | ------------------------------------------------------------------- |
 | Created                | 2026-01-02                                                         |
-| Last push              | 2026-07-20 (survey 2026-07-21, HEAD `9a4631f`)                     |
-| Latest release         | v0.94.0 (2026-07-21; was v0.83.1 @ 2026-07-07) — 11 minors + patches in ~2 weeks |
+| Repo `node_id`         | `R_kgDOQyTMEw`                                                     |
+| Last push              | 2026-09-05T08:58Z (survey 2026-09-05, HEAD `096faf1`, `docs: restore the persistent-runner write-ahead-log reasoning and mark the example prompt's divergence (#1553)`) |
+| Latest release         | **v0.108.1** (2026-09-05T07:09Z; was v0.94.0 @ 2026-07-21) — 14 minors + patches in ~6.5 weeks; v0.108.2 pending as PR #1551 |
 | Language               | TypeScript (strict, ESM-only)                                      |
 | Node.js                | `node24` action runtime; Docker images pin via `.node-version`    |
-| Package manager        | **Bun 1.3.14** (`packageManager: bun@1.3.14`, `bun.lock`, `bunfig.toml`) — Bun cutover holds; `pnpm-lock.yaml`/`pnpm-workspace.yaml` remain removed |
-| Runtime                | `node24` (GitHub Action `runs.using`); `.node-version` 24.18.0     |
-| Bundler                | tsdown 0.22.7 (Rolldown-based, dual entry points)                 |
-| Test framework         | Vitest 4.1.10                                                      |
-| Lint                   | ESLint 10.7.0 (`@bfra.me/eslint-config` 0.51.1), Prettier 3.9.5   |
+| Package manager        | **Bun 1.3.14** (`packageManager: bun@1.3.14`, `bun.lock`, `bunfig.toml`) — Bun cutover holds; `pnpm-lock.yaml`/`pnpm-workspace.yaml` remain removed. Bun 1.4.0 pending as PR #1550 |
+| Runtime                | `node24` (GitHub Action `runs.using`)                              |
+| Bundler                | tsdown 0.22.14 (Rolldown-based, dual entry points)                |
+| Test framework         | Vitest 4.1.11 (now also drives `evals/` and `scripts/` suites)     |
+| Lint                   | ESLint 10.9.1 (`@bfra.me/eslint-config` 0.52.1), Prettier 3.9.6   |
 | TypeScript             | 6.0.3                                                              |
-| OpenCode default       | **Harness build `1.18.4+harness.1ff4b323`** — `DEFAULT_OPENCODE_VERSION` is a harness GitHub-Release tag; SDK at 1.17.20; harness `base_version: 1.18.4` (rebased 1.17.14 → 1.17.20 → 1.18.4; **12 integration refs** now, was 10) |
+| OpenCode default       | **Harness build `1.18.29+harness.88b6b5fb`** — the *binary self-report* identity; the matching GitHub Release / npm version is `1.18.29-harness.88b6b5fb` (see "Harness Version Namespaces"). SDK at 1.18.26; harness `base_version: 1.18.29` (rebased 1.18.4 → 1.18.5 → 1.18.14 → 1.18.18 → 1.18.21 → 1.18.29; **13 integration refs**, was 12 — `anomalyco/opencode#47430` added) |
 | Release                | semantic-release on `release` branch, `next` → `release` PR model  |
+| License                | MIT                                                                |
 | Visibility             | Public                                                             |
-| Stars                  | 3                                                                  |
-| Open issues            | 6 (carried set: #1134 gateway test SIGTERM/SIGINT listener leak, #1126 harness-integrate mint scoped `contents:write` token inline, #1124 wire broker-minted App token into harness-integrate, #1069 action/gateway run-execution timeout tracking, #579 dep dashboard, #252 DMR — count flat at 6 across the window; per-issue set carried forward, GitHub API not queried this run) |
-| Open PRs               | 6 (mostly Renovate dep bumps + the standing pending-release PR on `next`; individual PR numbers drift faster than this survey — not enumerated) |
+| Stars                  | 4 (was 3)                                                          |
+| Open issues            | **7** (was 6, but the set churned almost completely): #252 DMR, #579 dep dashboard, **#1180** migrate harness-integrate minting to a dedicated minimal GitHub App (supersedes the closed #1124/#1126), **#1514** mention runs cannot persist session state without S3 and the default config doesn't say so, **#1517** withhold-run credential preflight misses `actions/checkout` v6 `includeIf` credentials (**fails open**), **#1520** PRs authored by a first-party GitHub App cannot receive a review (`author_association` is `CONTRIBUTOR`), **#1532** redaction test in `evals/diagnostics.test.ts` never truncates so its assertion is trivially true. Five of seven are human-authored by `marcusrbrown`; four are defect reports against the agent's own behavior. Closed this window: #1134, #1124, #1126, #1069 |
+| Open PRs               | 5, all `fro-bot[bot]` — #1551 pending release v0.108.2, #1554 `@fro.bot/systematic` v3.16.1, #1550 Bun v1.4.0, #1548 octokit, #1540 `oh-my-opencode-slim` v2.2.18 |
 | Topics                 | actions, agent, automation, bot, fro-bot, github-actions, github-app |
 
 ## Architecture
@@ -341,7 +390,7 @@ mitmproxy is configured to fail closed by default; `OBJECT_STORE_HOSTS` is the a
 
 ## CI Pipeline
 
-11 workflows total (`harness-integrate.yaml` added in the v0.80 broker wave):
+**12 workflows** as of the 2026-09-05 survey (`osv-scanner.yaml` added; `harness-integrate.yaml` added in the v0.80 broker wave):
 
 | Workflow                  | Purpose                                                     |
 | ------------------------- | ----------------------------------------------------------- |
@@ -357,10 +406,23 @@ mitmproxy is configured to fail closed by default; `OBJECT_STORE_HOSTS` is the a
 | `scorecard.yaml`          | OpenSSF supply-chain security                               |
 | `copilot-setup-steps.yaml`| GitHub Copilot agent bootstrap                              |
 | `update-repo-settings.yaml`| Probot settings sync                                       |
+| `osv-scanner.yaml`        | **New (2026-09-05 survey).** `google/osv-scanner-action` v2.5.1 reusable workflows, SHA-pinned, `permissions: {}` at file level. Two mutually exclusive jobs with **deliberately different failure policies** — see below |
+
+### OSV-Scanner: Two Scan Modes, Two Failure Policies (new)
+
+`osv-scanner.yaml` is the clearest example in the repo of a policy the rest of the fleet gets wrong by default:
+
+- **`scan-pr`** (`pull_request` only) uses the upstream *PR* reusable workflow, which checks out `GITHUB_BASE_REF` and diffs against it. `fail-on-vuln: true` — it fails only on vulnerabilities *this pull request introduces*, so a previously known finding cannot fail an unrelated change.
+- **`scan-scheduled`** (`push` / `schedule` / `merge_group`) runs the full-tree reusable workflow with **`fail-on-vuln: false`, report-only, deliberately**. The in-file comment gives the reason: a whole-tree scan has no baseline to compare against, so failing here would break pushes to `main` and merge-queue entries whenever a new advisory is published against a dependency nobody touched. Findings go to code scanning instead.
+
+The `merge_group` case is called out explicitly: neither `GITHUB_BASE_REF` nor the `pull_request` payload exists in a merge queue, so the merge-queue path runs the full scan rather than the diff scan. Both `ci.yaml` and `osv-scanner.yaml` now declare `merge_group: [checks_requested]` triggers — the repo is merge-queue-ready, though the queue itself is not expressible in `.github/settings.yml`.
 
 ### CI Details
 
 - **Path filtering** via `dorny/paths-filter` — lint and build only run when relevant files change.
+- **Image smoke tests (new, 2026-09-05 survey)** — `ci.yaml` grew two jobs, **`gateway-smoke` (Gateway Image Smoke Test)** and **`workspace-smoke` (Workspace Image Smoke Test)**, and both are now **required status checks on `main`** (contexts 10 → **12**). The `deploy/` Compose stack was previously built and verified only out of band; it is now gated by the same merge that gates the action. This is the largest contributor to `ci.yaml`'s growth to ~42 KB.
+- **Repo-invariant guards as unit tests** — `scripts/` now carries a suite of tests that assert properties of the repository's own configuration rather than of product code: `fro-bot-workflow.test.ts`, `osv-scanner-workflow.test.ts`, `harness-tag-derivation.test.ts`, `action-input-defaults-guard.test.ts`, `workspace-test-chain.test.ts` (guards that every workspace member is actually in the root `test` fan-out — a test for the test runner's own coverage), `module-taxonomy.test.ts`, `eslint-phantom-guard.test.ts`, `bfra-me-exemption-guard.test.ts`, `plan-frontmatter-guard.test.ts`, plus `md-links` and `third-party-notices`. Same family as [[marcusrbrown--infra]]'s `conventions.test.ts`, applied to workflows and manifests. A new `check:md-links` step joins `lint`.
+- **The gateway joined the root pipeline.** Root `build` / `lint` / `test` / `check-types` / `fix` now all fan out to `@fro-bot/gateway` in addition to runtime + action + harness. Previously the gateway built only via the Docker stack.
 - **dist/ drift detection** — `build` job compares rebuilt dist/ against committed dist/. Failures upload the expected dist/ as an artifact.
 - **Test Action job** — Live integration test: runs the action itself on PRs (non-fork, non-bot) using `./` self-reference with `FRO_BOT_PAT`. Introspects installed versions post-run.
 - **Release pipeline** — CI job merges `main` into `release` branch, runs semantic-release preview, pushes `next` branch, and creates/updates a "pending release" PR targeting `release`. `auto-release.yaml` triggers on PR merge to `release`, runs `semantic-release`, and updates the `v0` major version branch.
@@ -391,6 +453,45 @@ A new action input `review-skip-label` (default `skip-agent-review`, case-insens
 
 Authorized overrides still win: an `@fro-bot` mention on `opened`/`synchronize`/`reopened` (where the validated association is the PR body author's own) or a `review_requested` event naming the bot runs the review regardless of the label. The override authority is deliberately narrowed: on `ready_for_review`/`review_requested` the router substitutes the *webhook sender's* association rather than the PR author's, so a body-planted mention there would carry borrowed authorization — that path relies on the trusted reviewer-request override only (association-authority lesson in `docs/solutions/`, #1238).
 
+## Agent-Outcome Eval Corpus (`evals/`, new 2026-09-05 survey)
+
+The single largest structural addition since the harness. A new top-level `evals/` tree (23 files: `runner`, `corpus-runner`, `corpus-verdict`, `gates`, `scenarios/`, `baselines/`, `compare`, `diagnostics`, `fixture-repo`, `presearch-differential`, `update-baseline`, `types`, each with a colocated `*.test.ts`) is a **gated regression corpus for the quality of the agent's actual outcome** — it runs the real `executeOpenCode` path against disposable fixture repositories and writes a JSON report with provenance and hard gate results. It is wired into the root `test` script via `test:evals` (`vitest run evals/`), with `evals:baseline:update` and `evals:presearch` as operator entry points.
+
+This is the first observed *behavioral* test surface in the ecosystem. Everything else in the fleet tests code; this tests the agent.
+
+Its design discipline is the durable part, and it is unusually sharp:
+
+- **"Assert outcomes, never method."** The corpus may not assert that the agent called a particular tool, made a particular number of calls, followed a step or turn order, or used a particular reasoning shape. It may assert only observable outcomes: response-file parsing, the verdict, exactly one delivery artifact, forbidden mutations, secret leakage, and whether a planted defect was identified **by file path**. Tool calls, call counts, reasoning order, and step counts are explicitly declared "never quality fields."
+- **Three-valued result state, and the incident that produced it.** Scenarios report `passed` / `failed` / **`inconclusive`** rather than a boolean. The README records the origin: an early misconfiguration left the agent running *outside* the fixture repository, so scenarios burned their whole budget searching the filesystem and timed out. Under a boolean, every one of those runs reads as a catastrophic model regression; as `inconclusive` they correctly reported that no outcome was obtainable and **sent the investigation at the harness instead of the model**. The README names collapsing these states back into a boolean as "the main way this corpus degrades into a noisy artifact nobody trusts." This is the eval-layer rediscovery of the [[github-actions-ci]] finding *A Run's Conclusion Measures the Harness, Not the Deliverable* — arrived at independently and encoded as a type rather than a lint.
+- **Asymmetric assertion rule.** Quality gates may assert that a required signal is **present** in free-form response prose, but never that a signal is **absent**. Absence is only meaningful for single-valued structured fields such as the expected verdict. (Absence in generated prose is unfalsifiable at any sample size a CI budget allows.)
+- **Safety gates survive inconclusiveness.** `no-forbidden-mutation` and `no-secret-leak` still run on an incomplete execution, because repository mutation and canary leakage remain observable safety findings even without a completed review outcome. A suite with any inconclusive scenario and no failures is itself `inconclusive`; the command is green only for `passed`. An empty report set is `failed`, not vacuously green.
+- **Differential scenario pairs.** `clean-pr` / `planted-defect` share one neutral prompt, the same PR event, the same file set, and the same `diffFiles` summary; only the implementation of `src/access.ts` differs. The planted-defect expectation lives in **scorer-owned metadata, never in the agent-facing prompt** — "adding answer-revealing text destroys the corpus by measuring obedience rather than judgment."
+- **Bounded stochastic handling.** Safety and response-contract failures block immediately with no retries. A stochastic quality failure requests lazy repeats for that scenario only, capped at four candidate and four reviewed-baseline samples. Mixed samples — or two modes that both pass without discrimination — remain inconclusive and **never auto-promote a candidate baseline**.
+- **Honest negative-result framing.** A clean comparison reports only "no large observed regression across the six covered scenarios"; it explicitly does not claim improvement or production-surface quality.
+- **Costs nothing by default.** The live corpus is skipped unless `FRO_BOT_EVAL=1` is set; the gates themselves are pure functions in `gates.ts` and run in normal CI. `FRO_BOT_EVAL_MODEL` defaults to the free, credentialless `opencode/big-pickle`.
+
+Known debt, recorded by the project itself: the committed `evals/baselines/u1.json` **predates the stable outcome projection**, so comparison returns explicit missing-evidence rather than copying candidate values into the baseline or inferring a verdict from expected metadata. And open issue **#1532** reports that the redaction test in `evals/diagnostics.test.ts` never truncates, making its assertion trivially true — the corpus built to catch unfalsifiable claims shipped one.
+
+A `U4` "bounded session-presearch experiment" rides on the same seam: an eval-only differential strategy injected by DI through the runner (no action input, no feature flag, no env switch, no global state) that removes eager recent/prior-work context for the two continuation scenarios while preserving logical key, continuation identity, and native `session_*` capability. Its `sessionPresearch` accounting is advisory provenance, never a gate.
+
+## Harness Version Namespaces (`+harness.` vs `-harness.`, migrated 2026-08-29)
+
+One artifact, **three deliberately different version strings** — a resolution of a real semver/packaging constraint that the prior page conflated into one field:
+
+| Surface                          | Form                          | Why                                                                                                 |
+| -------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| GitHub Release tag               | `1.18.29-harness.88b6b5fb`    | Git refs cannot contain `+`; the release is created `--prerelease --latest=false` so a harness build never steals the "latest" pointer from the product agent releases, and the non-`v` prefix keeps it outside semantic-release's `^v(.+)` scan |
+| npm version (`@fro.bot/harness`) | `1.18.29-harness.88b6b5fb`    | Build metadata is **not** version identity in npm — `1.18.29+a` and `1.18.29+b` are the same version. A prerelease identifier is the only way multiple harness builds off one OpenCode base can coexist. Published `--tag latest` because npm refuses to publish a prerelease without an explicit tag, and harness *is* the latest line |
+| Binary self-report               | `1.18.29+harness.88b6b5fb`    | `buildHarnessVersion()` intentionally keeps build metadata; `harness-release.yaml` asserts the built binary self-reports exactly this string as an operational-integrity check. This is also the value of `DEFAULT_OPENCODE_VERSION` and the workspace Dockerfile `ARG` |
+
+**The 2026-08-29 backfill.** On 2026-08-29 between 22:34 and 23:54 UTC, **16 historical harness builds were re-published as hyphen-form GitHub Releases** (`1.17.6` through `1.18.21`), leaving 15 legacy `+harness.` releases and 17 `-harness.` releases side by side in the same tag namespace. npm was hyphen-form from the start (`1.17.20-harness.b78cc9e1`, published 2026-07-15) — it is the *GitHub Release* namespace that was migrated to match npm, not the reverse. `1.18.29` exists **only** in hyphen form (the `+` tag 404s), which is expected: the `+` string is a binary identity, not a fetchable ref.
+
+**Renovate cannot track this, and the repo stopped pretending it could.** `harness-release.yaml` gained a `sync-default-version` job — `needs: [prepare-integrate, build, publish]`, `continue-on-error: true`, gated on `needs.publish.result == 'success' && inputs.dry_run != true` — that opens a PR bumping `DEFAULT_OPENCODE_VERSION` in `packages/runtime/src/shared/constants.ts` **and** `ARG OPENCODE_VERSION` in `deploy/workspace.Dockerfile` to the same build, with rebuilt action `dist/`. The workflow comment states the rationale plainly: *"Replaces Renovate tracking for the harness version. Legacy `+harness.<sha>` build-metadata tags cannot be ordered; new `-harness.<sha>` tags are prereleases."* Merging that PR is the gate; not merging holds both surfaces at the prior build. Its idempotency guard checks **both** files, so a partial update (constants bumped, Dockerfile step failed under `continue-on-error`) cannot freeze the Dockerfile forever.
+
+The release step is likewise idempotent: if the release already exists it re-uploads all seven assets with `--clobber` so a partial prior run that created the release but missed assets is repaired rather than duplicated.
+
+**Actions-expression footgun documented in-workflow.** The `sync-default-version` job carries an explicit comment that `inputs.dry_run` is a **boolean** input and must be compared against the boolean `true`, not the string `'true'` — a boolean-vs-string `!=` coerces numerically (`'true'` → `NaN`), so `inputs.dry_run != 'true'` is *always truthy* and the job would run on dry-runs. For tag-triggered releases `inputs.dry_run` is `null`, which is also `!= true`. Generalized in [[github-actions-ci]].
+
 ## RFCs
 
 19 Architecture Decision Records:
@@ -408,31 +509,41 @@ The repo runs its own Fro Bot agent. As of 2026-06-03 `fro-bot.yaml` self-refere
 
 ## Dependency Highlights
 
-| Package               | Version (2026-07-21) | Was @ v0.83.1 | Purpose                              |
+| Package               | Version (2026-09-05) | Was @ v0.94.0 | Purpose                              |
 | --------------------- | -------------------- | ------------- | ------------------------------------ |
 | `@actions/artifact`   | 6.2.1                | 6.2.1         | Artifact upload (root dep now)       |
-| `@actions/cache`      | 6.1.0                | 6.0.1         | GitHub Actions cache operations (#1028) |
+| `@actions/cache`      | 6.2.0                | 6.1.0         | GitHub Actions cache operations      |
 | `@actions/core`       | 3.0.1                | 3.0.1         | Action I/O, logging, state           |
 | `@actions/exec`       | 3.0.0                | 3.0.0         | Subprocess execution                 |
 | `@actions/github`     | 9.1.1                | 9.1.1         | Octokit + GitHub context             |
 | `@actions/tool-cache` | 4.0.0                | 4.0.0         | Tool caching for setup phase         |
-| `@aws-sdk/client-s3`  | 3.1085.0             | 3.1078.0      | S3-compatible object storage         |
-| `@opencode-ai/sdk`    | 1.17.20              | 1.17.13       | OpenCode execution (base bumped 1.17.13 → 1.17.20; harness base separately at 1.18.4) |
-| `@octokit/auth-app`   | 8.2.0                | 8.2.0         | GitHub App authentication            |
+| `@aws-sdk/client-s3`  | 3.1124.0             | 3.1085.0      | S3-compatible object storage         |
+| `@opencode-ai/sdk`    | **1.18.26**          | 1.17.20       | OpenCode execution (harness base separately at 1.18.29) |
+| `@octokit/auth-app`   | 8.3.0                | 8.2.0         | GitHub App authentication            |
+| `@octokit/core`       | 7.0.7                | (new)         | Gateway Octokit core                 |
 | `@octokit/webhooks-types` | 7.6.1            | 7.6.1         | Webhook payload typing (dev)         |
-| `@fro.bot/systematic` | 3.2.2                | 2.33.1        | OpenCode plugin — **v2 → v3 major** (#1250) |
+| `@fro.bot/systematic` | **3.16.0**           | 3.2.2         | OpenCode plugin pin (constant, not a manifest dep); v3.16.1 pending as PR #1554 |
 | `@bfra.me/es`         | 0.1.0                | 0.1.0         | Shared ES utilities                  |
-| `discord.js`          | 14.26.4              | 14.26.4       | Gateway Discord client (gateway pkg) |
-| `effect`              | 3.21.3               | 3.21.3        | Gateway composition layer            |
-| `hono`                | 4.12.27              | 4.12.27       | HTTP layer (gateway + workspace-agent) |
-| `@hono/node-server`   | 2.0.9                | 1.19.14       | Node adapter for Hono — **v1 → v2 major** (#1249) |
-| `eslint`              | 10.7.0               | 10.6.0        | Lint (dev)                           |
-| `prettier`            | 3.9.5                | 3.9.4         | Format (dev)                         |
-| `tsdown`              | 0.22.7               | 0.22.3        | Rolldown-based bundler               |
-| `semantic-release`    | 25.0.7               | 25.0.5        | Automated versioning/publishing       |
-| `vite` (override)     | 8.1.4                | 8.1.2         | Pinned override                      |
-| `bun` (pkg manager)   | 1.3.14               | 1.3.14        | Workspace package manager (Bun cutover holds) |
-| `simple-git-hooks`    | 2.13.1               | 2.13.1        | Pre-commit (lint-staged), pre-push   |
+| `zod`                 | **4.5.4**            | (new)         | **New runtime dep** — schema validation landed in `@fro-bot/runtime`, not via Effect `Schema.*` as the v1 gateway plan anticipated |
+| `discord.js`          | 14.27.0              | 14.26.4       | Gateway Discord client (gateway pkg) |
+| `effect`              | 3.22.1               | 3.21.3        | Gateway composition layer            |
+| `hono`                | 4.13.5               | 4.12.27       | HTTP layer (gateway + workspace-agent) |
+| `@hono/node-server`   | 2.1.1                | 2.0.9         | Node adapter for Hono                |
+| `web-push`            | **3.6.7**            | (new)         | **New gateway dep** (+ `@types/web-push`) — browser push notifications on the operator web surface |
+| `yaml`                | 2.9.0                | (new, gateway)| Gateway `metadata/repos.yaml` redaction reader |
+| `eslint`              | 10.9.1               | 10.7.0        | Lint (dev)                           |
+| `prettier`            | 3.9.6                | 3.9.5         | Format (dev)                         |
+| `tsdown`              | 0.22.14              | 0.22.7        | Rolldown-based bundler               |
+| `vitest`              | 4.1.11               | 4.1.10        | Test runner (dev)                    |
+| `semantic-release`    | 25.0.9               | 25.0.7        | Automated versioning/publishing       |
+| `vite` (override)     | 8.2.2                | 8.1.4         | Pinned override                      |
+| `undici` (override)   | **>=8.9.0**          | >=7.24.0      | Override crossed a **major floor** (v7 → v8) |
+| `bun` (pkg manager)   | 1.3.14               | 1.3.14        | Workspace package manager (Bun cutover holds); 1.4.0 pending as PR #1550 |
+| `simple-git-hooks`    | 2.14.0               | 2.13.1        | Pre-commit (lint-staged), pre-push   |
+
+**Override ledger expanded** — root `package.json` `overrides` grew from 13 to **18** entries: new `conventional-changelog-writer >=9`, `js-yaml >=4.3.1`, `nanoid >=3.3.17 <7.0.0`, `postcss >=8.5.23`; floors raised on `brace-expansion` (5.0.6 → 5.0.9), `fast-uri` (**3.x → >=4.1.2**, major), `fast-xml-parser` (5.7.0 → 5.10.1), `flatted` (3.4.2 → 3.4.4), `ip-address` (10.1.1 → 10.3.1), `tar` (7.5.11 → 7.5.21), `undici` (**7.24.0 → 8.9.0**, major). New devDeps: `js-yaml` 5.4.1, `read-package-up` 12.0.0, `jiti` 2.7.0, `conventional-changelog-conventionalcommits` 10.4.0, `@vitest/eslint-plugin` 1.6.27.
+
+**Correction (2026-09-05):** the prior page recorded `@semantic-release/npm` as "added to `.releaserc.yaml`" at v0.94.0. It is in the plugin list — confirmed — but it is **not** a declared devDependency (it ships inside `semantic-release`). The declared `@semantic-release/*` devDeps are `exec` 7.1.0 and `git` 11.0.1 only.
 
 ## Renovate Configuration
 
@@ -440,13 +551,13 @@ Extends `github>fro-bot/.github` (the `.github` repo's Renovate config). `dist/*
 
 Five custom regex managers tracking pinned versions in `packages/runtime/src/shared/constants.ts` (the constants moved out of the action's `src/shared/` into the runtime package at v0.45+):
 
-| Constant (2026-07-21)              | Datasource                                   |
+| Constant (2026-09-05)              | Datasource                                   |
 | ---------------------------------- | -------------------------------------------- |
-| `DEFAULT_OPENCODE_VERSION = '1.18.4+harness.1ff4b323'` | **Harness build** — a fro-bot/agent GitHub Release (non-`v` tag) bundling the patched OpenCode (was `1.17.14+harness.e98fbc0f` @ v0.83.1); `FALLBACK_VERSION` in `opencode.ts` (Renovate `github-releases` datasource) is the plain stock base when latest-fetch fails |
+| `DEFAULT_OPENCODE_VERSION = '1.18.29+harness.88b6b5fb'` | **No longer Renovate-tracked.** Bumped by the repo-owned `sync-default-version` job in `harness-release.yaml` (see "Harness Version Namespaces"); `+harness.` build metadata is unorderable, which is exactly why Renovate was retired from this pin. `FALLBACK_VERSION` in `opencode.ts` (Renovate `github-releases`) remains the plain stock base when latest-fetch fails |
 | `DEFAULT_BUN_VERSION = '1.3.14'`   | GitHub releases `oven-sh/bun` (`extractVersionTemplate: ^bun-v(?<version>.*)$`) |
-| `DEFAULT_OMO_VERSION = '3.17.15'`  | npm `oh-my-openagent`                        |
-| `DEFAULT_OMO_SLIM_VERSION = '1.1.2'` | npm `oh-my-opencode-slim` (stable line only) |
-| `DEFAULT_SYSTEMATIC_VERSION = '3.2.2'` | npm `@fro.bot/systematic` — **crossed the v2 → v3 major** (was 2.33.1 @ v0.83.1; bumped 2.33.3 #1217/v0.91.0 then v3 #1250/v0.94.0) — see [[marcusrbrown--systematic]] |
+| `DEFAULT_OMO_VERSION = '4.19.4'`   | npm `oh-my-openagent` — **crossed the v3 → v4 major** (was 3.17.15) |
+| `DEFAULT_OMO_SLIM_VERSION = '2.2.17'` | npm `oh-my-opencode-slim` — **crossed the v1 → v2 major** (was 1.1.2). The prior page's "stable line only, the `2.0.0-beta` channel is deliberately not the default" guardrail has been resolved by v2 reaching stable; [[marcusrbrown--dotfiles]] independently sits on the same 2.2.x line |
+| `DEFAULT_SYSTEMATIC_VERSION = '3.16.0'` | npm `@fro.bot/systematic` (was 3.2.2) — see [[marcusrbrown--systematic]] |
 
 Renovate now also tracks the harness native-build Bun pin via two additional custom managers: `HARNESS_BUN_VERSION` in `packages/harness/src/bun-version.ts` and the `bun-version:` inputs (build + publish jobs) in `harness-release.yaml`, both against `oven-sh/bun` and kept in lockstep with the `BUN_VERSION` ARG in `deploy/gateway.Dockerfile`. `base_version` in `harness.config.json` is tracked via a `github-releases` manager (`1.17.14` as of 2026-07-07).
 
@@ -464,7 +575,9 @@ Post-upgrade tasks: `bun run bootstrap && bun run build && bun run fix` (Bun cut
 
 Extends `fro-bot/.github:common-settings.yaml` via `.github/settings.yml`.
 
-Branch protection on `main`: enforce admins, linear history, 1 required reviewer, dismiss stale reviews, code owner reviews, last push approval. Required checks: Analyze, Build, CodeQL, Dependency Review, Lint, Release, Test, Test GitHub Action, Setup, Renovate.
+Branch protection on `main`: enforce admins, linear history, `strict: true`, 1 required reviewer, dismiss stale reviews, code owner reviews, last push approval. Required checks (2026-09-05, **12 contexts**, up from 10): Analyze, Build, CodeQL, Dependency Review, **Gateway Image Smoke Test**, Lint, Release, Test, Test GitHub Action, Setup, `Renovate / Renovate`, **Workspace Image Smoke Test**. Merge settings: merge + squash allowed, **rebase disallowed**, delete branch on merge.
+
+Note that neither `OSV-Scanner PR scan` nor `Scorecard` is a required context — consistent with the OSV file's own report-only stance on the full scan, but it means the PR-diff scan (which *is* `fail-on-vuln: true`) gates nothing at the merge boundary.
 
 `v0` and `release` branches: force-push allowed, no PR reviews, no required checks.
 
@@ -494,6 +607,10 @@ A `FEATURES.md` at repo root documents v1.4 MVP with 73 features across 12 categ
 
 **New top-level surface (2026-06-24):** the root now carries `.opencode/` (project OpenCode config), `bun.lock` + `bunfig.toml` (Bun), `.ignore`, `tsconfig.base.json`, and `tsdown.config.test.ts` alongside the prior `.agents/`, `.slim/`, `RULES.md`, `AGENTS.md`, `FEATURES.md`, `PRD.md`, `RFCS.md`. `pnpm-lock.yaml` / `pnpm-workspace.yaml` are gone.
 
+**New 2026-09-05:** two new top-level directories — **`evals/`** (the agent-outcome eval corpus, its own section above) and **`assets/`** (`banner.svg`, `styleguide.md`, `fro-bot.png`, `github-app-logo{,-alt,-512}`), the same brand-token surface that landed in [[fro-bot--space-bus]] and [[fro-bot--dashboard]]; the README now renders `./assets/banner.svg`. `.opencode/` grew a `themes/` dir + `tui.json`. New `docs/reference/` holds **`carry-ledger.md`** — the harness carry list finally has a documented ledger rather than living only in `harness.config.json` and the Carry Policy prose. New `docs/github-app.md` + `docs/github-app-setup.md` at the docs root. Root `.markdownlint-cli2.yaml` and `LICENSE` (MIT) are present; `.agents/skills/` is still the two skills (`generating-project-docs`, `versioned-tool`).
+
+**README correction to the headline claim (2026-09-05).** The README no longer asserts unqualified persistent memory. It now records the precise platform constraint behind open issue #1514: cache **writes** are unavailable for `issue_comment` and `issues` runs because those triggers are initiable by an actor without repository write access, so GitHub supplies a read-only runner-injected `ACTIONS_RUNTIME_TOKEN` **for the whole trigger class** — a run started by a maintainer is affected too, and changing `permissions:` cannot change that token. `workflow_dispatch` and `schedule` are unaffected; `pull_request` triggers "were not observed either way"; fork PRs carry separate cache-scope restrictions. The stated remedy is `s3-backup` for mention-driven continuity, itself best-effort. Generalized in [[github-actions-ci]].
+
 ## Ecosystem Role
 
 This is the **central runtime** consumed by all Fro Bot-managed repositories. Every repo with a `fro-bot.yaml` workflow depends on `fro-bot/agent` as a GitHub Action reference (e.g., `fro-bot/agent@v0.42.8`). The action auto-installs and configures [[marcusrbrown--systematic]] as an OpenCode plugin, connecting the agent to 45+ skills and 50 agents.
@@ -512,6 +629,20 @@ This is the **central runtime** consumed by all Fro Bot-managed repositories. Ev
 - **Doc surface**: RFC bodies extracted into a `RFCs/` directory (19 files) alongside the `RFCS.md` index; new root `CHANGELOG.md` (PRD/requirements changelog); new `docs/privacy/operator-push-retention.md`; new `.agents/skills/versioned-tool` skill.
 
 Latest release **v0.94.0** (2026-07-21); stars 2 → **3**; open issues flat at 6.
+
+**Update (2026-09-05 survey, HEAD `096faf1`):** the v0.95–v0.108.1 wave (14 minors + patches in ~6.5 weeks). This one **is** structural — the first new top-level subsystem since `packages/harness`:
+
+- **`evals/` — an agent-outcome regression corpus** (own section above). Assert-outcomes-never-method; three-valued `passed`/`failed`/`inconclusive` states born from a harness misconfiguration that a boolean would have misattributed to the model; asymmetric present-but-never-absent prose assertions; scorer-owned planted-defect metadata; bounded 4×4 stochastic repeats that never auto-promote a baseline. Skipped without `FRO_BOT_EVAL=1`, so it costs nothing in normal CI. Known debt: `baselines/u1.json` predates the stable outcome projection, and #1532 reports a trivially-true assertion inside the corpus itself.
+- **Harness version namespaces split three ways** (own section above). 16 historical harness builds were backfilled as hyphen-form GitHub Releases on 2026-08-29 to match the npm namespace, which was hyphen-form from the start. Renovate was retired from `DEFAULT_OPENCODE_VERSION` in favor of a repo-owned `sync-default-version` PR job, because build-metadata versions cannot be ordered. Base rebased 1.18.4 → **1.18.29**; carries 12 → **13** (`anomalyco/opencode#47430`).
+- **CI grew a merge gate around the Docker stack.** New `gateway-smoke` + `workspace-smoke` jobs in `ci.yaml`, both promoted to required contexts (10 → 12). The gateway also joined the root `build`/`lint`/`test`/`check-types` fan-out. New `osv-scanner.yaml` (12 workflows) with a diff-scan-fails / full-scan-reports split. `merge_group` triggers added.
+- **`pull_request` dropped from `fro-bot.yaml`'s trigger set**; live PR review for this repo runs via `ci.yaml`'s `test-action` job.
+- **The open-issue set inverted from bot-filed to human-filed.** Six issues closed, five opened, four of them `marcusrbrown`-authored defect reports against agent behavior: #1514 (mention runs can't persist state without S3), #1517 (credential preflight **fails open** on `actions/checkout` v6 `includeIf`), #1520 (first-party App PRs can't be reviewed — `author_association: CONTRIBUTOR`), #1532 (trivially-true eval assertion). #1180 supersedes the closed broker-token pair #1124/#1126 with "migrate minting to a dedicated minimal GitHub App."
+- **Deps**: `@opencode-ai/sdk` 1.17.20 → **1.18.26**, `oh-my-openagent` **v3 → v4** (4.19.4), `oh-my-opencode-slim` **v1 → v2** (2.2.17), `@fro.bot/systematic` 3.2.2 → **3.16.0**, `zod` **4.5.4 new in the runtime**, `web-push` **new in the gateway**, `effect` 3.22.1, `discord.js` 14.27.0, `hono` 4.13.5, eslint 10.9.1, tsdown 0.22.14, aws-sdk 3.1124.0; override ledger 13 → 18 entries with `undici` and `fast-uri` crossing major floors.
+- **New surface**: `assets/` brand tokens, `docs/reference/carry-ledger.md`, `docs/github-app{,-setup}.md`, `scripts/` repo-invariant guard tests.
+
+Latest release **v0.108.1** (2026-09-05); stars 3 → **4**; open issues 6 → 7; open PRs 5, all `fro-bot[bot]`.
+
+**Cross-repo correction (2026-09-05):** [[marcusrbrown--systematic]]'s page records npm `latest` at **3.15.0** (2026-08-25) inside a "current 10-day drought" as of the 2026-09-04 [[fro-bot--systematic]] downstream observation. This repo pins **3.16.0** and has an open PR (#1554) for **3.16.1**, so the drought broke on or before 2026-09-05. Recorded here as an observation from a consumer pin, not a source survey of `marcusrbrown/systematic`.
 
 **Note (2026-06-15):** [[fro-bot--dashboard]] (new) is a downstream consumer of a *different* surface than the action — it reads the Fro Bot **Agent App's installations** (not the action) to build a read-only cross-repo monitoring view, and it deliberately mirrors `packages/gateway` + `packages/runtime` primitives (`Result<T,E>`, `Logger` + `redactSensitiveFields`, `readSecret`/`readMultilineSecret`, the read-only `installAuth` permissions pattern, and the app-factory/serve split) as the staging ground for a future shared `@fro.bot/runtime` package. Its `fro-bot.yaml` pins agent **v0.64.0** — a minor ahead of this page's last-surveyed v0.63.0.
 
@@ -533,7 +664,11 @@ Downstream consumers span the `marcusrbrown/*`, `bfra-me/*`, and `fro-bot/*` eco
 
 ## Fro Bot Workflow Status
 
-**Present and self-hosted.** `fro-bot.yaml` uses `./` (self-reference during CI test) and `fro-bot/agent@v0` (major version pin) in production triggers. Full trigger coverage: comment mentions, issue events, PR reviews, daily DMR (15:30 UTC), weekly wiki (Sun 20:00 UTC), manual dispatch with `use-schedule-prompt` / `use-wiki-prompt` boolean inputs.
+**Present and self-hosted.** `fro-bot.yaml` uses `./` (self-reference during CI test) and `fro-bot/agent@v0` (major version pin) in production triggers. Trigger set as of 2026-09-05: `issue_comment`, `pull_request_review_comment`, `discussion_comment`, `issues` (opened/edited), two crons (`30 15` daily DMR, `0 20 * * 0` weekly wiki), `workflow_dispatch`, `workflow_call`.
+
+**Change (2026-09-05 survey): `pull_request` is no longer a trigger on this workflow.** The prior page recorded PR review firing on `pull_request` events here; the `on:` block now omits it entirely. The job-level `if:` still carries a defensive `github.event.pull_request == null || (same-repo head && !bot author)` clause, which is now vestigial on this file. The live PR-review path for this repo runs through `ci.yaml`'s `test-action` job (which invokes the action on PRs against `./` with `FRO_BOT_PAT`) rather than through the self-hosted workflow. Workflow-level `permissions` are `contents: read` / `pull-requests: read`, with the write authority for the release-notes apply phase carried by `FRO_BOT_PAT` in a separate job.
+
+Access gating on the mention path is unchanged and explicit in the job `if:`: comment body must contain `@fro-bot`, commenter must not be `fro-bot`, and `author_association` must be one of `OWNER` / `MEMBER` / `COLLABORATOR`. Open issue **#1520** is the sharp edge of that rule — a PR authored by a **first-party GitHub App** carries `author_association: CONTRIBUTOR`, so the agent's own App-authored PRs fall outside its own review gate. The identity that opens the work is not the identity that is trusted to receive review on it.
 
 The `WIKI_PROMPT` env var in the workflow contains the full wiki maintenance instructions for the project's own `docs/wiki/` Obsidian vault — a parallel artifact to the wiki Fro Bot maintains for the `.github` repo. Branch contract: `fro-bot/wiki-update`, one open PR at a time, branch is deleted if it exists with no open PR.
 
@@ -549,12 +684,15 @@ The `WIKI_PROMPT` env var in the workflow contains the full wiki maintenance ins
 
 Root `package.json` (`@fro-bot/agent-workspace`) holds external action/dev deps; gateway- and workspace-agent-specific deps live in their own package manifests. Workspace protocol links `@fro-bot/action` and `@fro-bot/gateway` → `@fro-bot/runtime`. The runtime exports source-level TypeScript (no pre-built dist; consumed via workspace protocol). The root `build`/`test`/`lint`/`fix`/`check-types` scripts now run runtime + action + harness via `bun run --filter <pkg> ...` (was `pnpm --filter`) — the gateway and workspace-agent build via the Docker stack, not the action's `dist/` pipeline; the harness builds + publishes via the fenced `harness-release.yaml` workflow.
 
+**Member manifests (2026-09-05).** Workspace membership is unchanged at five, but three manifests moved: `@fro-bot/runtime` gained **`zod` 4.5.4** (its first schema dependency — the v1 gateway plan had earmarked Effect `Schema.*` for payload validation; zod landed in the runtime instead, below the Effect boundary); `@fro-bot/gateway` gained **`web-push` 3.6.7** + `@types/web-push` (browser push on the operator surface), **`@octokit/core` 7.0.7**, and **`yaml` 2.9.0** (the `metadata/repos.yaml` redaction reader now has an explicit parser dep). `@fro.bot/harness` still declares **zero runtime dependencies** — its per-platform binaries are injected as `optionalDependencies` at publish time. Both `hono` (4.13.5) and `@hono/node-server` (2.1.1) stay in lockstep across gateway and workspace-agent.
+
 **Bun workspace config (2026-06-24).** With the pnpm → Bun migration, workspace config moved out of `pnpm-workspace.yaml` (deleted) back into `package.json`: `workspaces: [apps/*, packages/*]`, `packageManager: bun@1.3.14`, `trustedDependencies: [esbuild, simple-git-hooks, unrs-resolver]` (the Bun analogue of pnpm's `onlyBuiltDependencies`), and the `overrides` block back in root `package.json` covering `brace-expansion >=5.0.6`, `fast-uri >=3.1.2`, `fast-xml-builder >=1.1.7`, `fast-xml-parser >=5.7.0`, `flatted 3.4.2`, `handlebars >=4.7.9`, `ip-address >=10.1.1`, `lodash`/`lodash-es >=4.18.0`, `picomatch >=4.0.4`, `tar >=7.5.11`, `undici >=7.24.0`, `vite 8.0.16`, `yaml >=2.8.3`. Lockfile is `bun.lock`; `bunfig.toml` carries Bun config.
 
 ## Survey History
 
 | Date       | SHA        | Key changes                                          |
 | ---------- | ---------- | ---------------------------------------------------- |
+| 2026-09-05 | `096faf1`  | Re-survey at v0.108.1 (v0.94.0 → v0.108.1, 14 minors + patches in ~6.5 weeks): **structural — first new top-level subsystem since `packages/harness`.** **(1) `evals/`, an agent-outcome regression corpus** (23 files, `test:evals` in the root chain, skipped without `FRO_BOT_EVAL=1`): "assert outcomes, never method"; three-valued `passed`/`failed`/`inconclusive` states adopted after a harness misconfiguration produced timeouts a boolean would have blamed on the model; quality gates may assert presence in free-form prose but never absence; `clean-pr`/`planted-defect` differential pair with scorer-owned expectations; bounded 4×4 lazy repeats that never auto-promote a baseline; safety gates (`no-forbidden-mutation`, `no-secret-leak`) run even on inconclusive runs. Debt: `baselines/u1.json` predates the stable outcome projection; #1532 reports a trivially-true assertion inside the corpus. **(2) Harness version namespaces split three ways** — GitHub Release tag and npm version both `-harness.<sha>` (prerelease; git refs forbid `+`, and npm treats build metadata as version-identical), binary self-report keeps `+harness.<sha>`; **16 historical builds backfilled as hyphen-form releases on 2026-08-29** (npm was hyphen-form since 2026-07-15, so it was GitHub that migrated); **Renovate retired from `DEFAULT_OPENCODE_VERSION`** in favor of a repo-owned `sync-default-version` PR job that bumps constants + workspace Dockerfile together with a both-files idempotency guard. Base 1.18.4 → **1.18.29**; carries 12 → **13** (+`anomalyco/opencode#47430`). **(3) CI**: new `gateway-smoke` + `workspace-smoke` image jobs, both promoted to **required contexts (10 → 12)**; gateway joined the root build/lint/test fan-out; new **`osv-scanner.yaml`** (workflows 11 → **12**) with `fail-on-vuln: true` on the PR diff scan and deliberate report-only on the full scan; `merge_group` triggers added; `scripts/` grew repo-invariant guard tests (`fro-bot-workflow`, `osv-scanner-workflow`, `harness-tag-derivation`, `workspace-test-chain`, …). **(4) `pull_request` dropped from `fro-bot.yaml`'s trigger set**; PR review runs via `ci.yaml`'s `test-action`. **(5) Open-issue set inverted bot-filed → human-filed** — 6 closed, 5 opened, four `marcusrbrown` defect reports (#1514 no session persistence on mention runs without S3, #1517 credential preflight **fails open** on checkout v6 `includeIf`, #1520 first-party App PRs unreviewable via `author_association`, #1532 trivial eval assertion); #1180 supersedes #1124/#1126. **(6) README now qualifies the persistent-memory headline** with the `ACTIONS_RUNTIME_TOKEN`-is-scoped-by-trigger-class constraint. Deps: SDK 1.18.26, oMo **v3→v4**, OMO Slim **v1→v2**, systematic 3.2.2 → 3.16.0, `zod` new in runtime, `web-push` new in gateway, overrides 13 → 18 (undici v7→v8, fast-uri v3→v4). New `assets/` brand tokens, `docs/reference/carry-ledger.md`. Stars 3 → 4; open issues 6 → 7. |
 | 2026-07-21 | `9a4631f`  | Re-survey at v0.94.0 (v0.83.1 → v0.94.0, 11 minors + patches in ~2 weeks): **no structural change** — 3 pkgs / 2 apps / 11 workflows / 19 RFCs / Bun cutover all durable. Feature+hardening wave on the release/review pipelines plus a harness rebase. **(1) Release-notes narration → two-phase credential boundary** (v0.93.0, #1239): read-only generation job (bounded evidence ≤25 PRs/≤5 diffs → artifact candidate) + apply job carrying write authority via `FRO_BOT_PAT`; fail-closed validator hardened (code-span exemption #1241, short-paragraph compose #1243). **(2) `review-skip-label` opt-out input** (#1234, default `skip-agent-review`, routing-time, mention/`review_requested` overrides via sender-substituted association #1238). **(3) Harness rebased 1.17.14 → 1.17.20 → 1.18.4** (#1222/#1254); merge model → `claude-sonnet-5`; 12 carries (churned, #1220 retired superseded, +#36045/#36361); runtime constant + Dockerfile ARG synced post-publish (#1256). Reliability: quota fail-fast (#1227), centralized error format (#1226), run-state retention tag (#1225), PR-release concurrency isolation (#1223), legacy schedule-session scaffolding removed (#1237). Deps: **systematic v2→v3** (#1250, 3.2.2), **@hono/node-server v1→v2** (#1249), @opencode-ai/sdk 1.17.20, aws-sdk 3.1085.0, eslint 10.7.0, prettier 3.9.5, tsdown 0.22.7, semantic-release 25.0.7 (+`@semantic-release/npm`), vite override 8.1.4. Doc surface: `RFCs/` dir extracted, root `CHANGELOG.md`, `docs/privacy/`, `.agents/skills/versioned-tool`. Stars 2→3; open issues flat at 6. |
 | 2026-07-07 | `8ee84bb`  | Re-survey at v0.83.1 (v0.76.1 → v0.83.1, 7 minors + patches in ~12 days): three arcs. **(1) Credential-broker consumer landed** — new `harness-integrate.yaml` `workflow_call` (v0.80.0, #1081, closes #1060) mints an OIDC credential against `broker.fro.bot` in a single `id-token: write` job and injects it as `auth-json`; durable secret scrubbed from env (#1080), integrate egress hardened (#1108), `github-token` masked/scrubbed from agent child env (#1119, closes #1107). **(2) Operator web surface reached wiring parity** — #1001/#1000 closed: launch route mounted (`POST /operator/runs`, #1030), approval routes + image-level registration smoke (#1031), run-index (`GET /operator/runs`, #1038), `contractVersion` on health (#1096), operator-initiated run cancellation (#1111), sanitized failure reasons (#1113), lost-event vs hang timeout detection (#1116). **(3) Docs + runtime restructure** — `RULES.md` retired for `ARCHITECTURE.md`/`STRUCTURE.md`/`CONTRIBUTING.md` (#1075/#1076), PRD/FEATURES archived to `docs/product/` (#1071), `generating-project-docs` skill (#1073); `packages/runtime/src/` consolidated into `agent/`+`coordination/`+`object-store/`+`session/`+`shared/` (object-store code now concretely in runtime). OpenCode rebased harness 1.17.9 → 1.17.11 (#1045) → 1.17.13 (#1086) → 1.17.14; **10 integration refs** (was 5). Deps: systematic 2.32.0 → 2.33.1, `@opencode-ai/sdk` 1.17.13, `@aws-sdk/client-s3` 3.1078.0, hono 4.12.27, `@actions/cache` 6.1.0, eslint 10.6.0, prettier 3.9.4, vite override 8.1.2. Open issues 9 → **6** (wiring gaps + #907 closed); 3 open PRs (pending release #1138 + two Renovate). |
 | 2026-06-24 | `20e9f34`  | Re-survey at v0.76.1 (v0.63.0 → v0.76.1, 13 minors + patches in 9 days): two structural shifts. **(1) pnpm → Bun migration** — `packageManager: bun@1.3.14`, `bun.lock` + `bunfig.toml`, `bun run --filter` scripts, `bunx` git hooks, `trustedDependencies`; `pnpm-lock.yaml`/`pnpm-workspace.yaml` removed; `overrides` moved back to root `package.json`; harness native build now Bun-based (`HARNESS_BUN_VERSION`). **(2) Gateway operator web surface** ("web-command spine", #907) — new `web/`, `operator-contract/`, `redaction/` dirs; operator GitHub OAuth + sessions (#936/#944/#939), authenticated SSE run status+output streaming (#961/#962/#974), web launch surface (#968), web tool-approval flow (#986), frozen+pinned operator API contract (#952/#996), `metadata/repos.yaml` redaction gate on operator surfaces (#955). OpenCode rebased harness `1.17.6` → `1.17.9` (#984, 5 carried refs, SQLite reliability); carries squashed into one fingerprint commit (#982); SBOM + deterministic-notice build hardening (#978), dist license/unicode pipeline decoupled from bundler (#991/#988, v0.76.1). Deps: systematic 2.31.0 → 2.32.0, hono 4.12.26, tsdown 0.22.3, `@aws-sdk/client-s3` 3.1071.0, `@opencode-ai/sdk` 1.17.9, eslint 10.5.0. Open issues 6 → 9 (new web-surface wiring gaps #1001/#1000, Bun deploy hardening #1003); 1 open PR (pending release #1007). |

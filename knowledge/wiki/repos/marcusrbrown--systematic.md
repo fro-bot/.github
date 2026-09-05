@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/systematic
 created: 2026-04-24
-updated: 2026-09-04
+updated: 2026-09-05
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: ef02119abd801487dc0e53a43ac2d6b6433873ab
@@ -290,6 +290,7 @@ Gathered incidentally while surveying the deploy target [[fro-bot--systematic]];
 - **npm `dist-tags.latest` = `3.15.0`**, published 2026-08-25T07:59:53Z. 204 published versions total. The v3 line has run `3.2.5` (2026-07-22) → `3.15.0` in ~5 weeks.
 - **Release cadence is burst-and-drought, not steady.** 31 publishes landed 2026-08-13 → 2026-08-25 (including 15 in the final 49.5 hours), bracketed by a 9.2-day drought (2026-08-04 → 08-13) and the current **10-day drought** (2026-08-25 → 2026-09-04, npm packument `modified` = the 3.15.0 publish timestamp).
 - **The drought is compositional, not a fault.** `main` HEAD is `4cea0620` (2026-09-03T01:17:27Z). The 16 commits after the last released commit (`c5273ee8`) are one `docs(solutions):` and fifteen `chore(deps)`/`chore(dev)` Renovate automerges — no releasable conventional-commit type, so semantic-release correctly published nothing. Repo `pushed_at` reads 2026-09-04 (open PR branches).
+- **Update (2026-09-05, consumer-pin observation, not a source survey): the drought broke.** [[fro-bot--agent]] pins `DEFAULT_SYSTEMATIC_VERSION = '3.16.0'` at HEAD `096faf1` and carries an open Renovate PR (#1554) for **3.16.1**, so at least two releases landed on or before 2026-09-05 — a **≤11-day** drought, closing the window the 2026-09-04 entry above described as "current." Consistent with the compositional reading: the drought ended when a releasable commit type did, not on a schedule. Version numbers and dates here are read from a downstream pin and an open PR title; the source-side release timestamps and the 3.16.x content are unverified until the next `marcusrbrown/systematic` survey.
 - **`fro-bot/agent` pin moved v0.105.1 → v0.107.1** across six bumps in nine days (#882, #884, #886, #887, #889, #892) — the fastest-moving dependency in the interval and consistent with the ecosystem-wide agent version train.
 - **Catalog flat at 73 components** (37 agents / 31 skills / 2 bundles / 2 profiles / 1 plugin) since the v3 boundary — six weeks with no agent or skill added or removed, the longest flat stretch on record. The prior page text describing **51 agents / 48 skill dirs** is v2-era and superseded by the v3 contraction; treat those figures as historical.
 - **A `workflow` agent category exists as of 3.15.0** ([[marcusrbrown--dotfiles]], 2026-08-26) but does **not** appear in the published config schema, which models `categories` as an open-keyed record rather than an enum. See [[fro-bot--systematic]] and [[opencode-plugins]] for why that asymmetry matters to users.
