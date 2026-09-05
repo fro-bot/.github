@@ -286,7 +286,11 @@ function toLocatedMutant(mutant: FlatMutant): LocatedMutant {
  * confirmed failure mode this closes: a configured test file the dry run silently dropped,
  * which otherwise reads as a legitimate `NoCoverage`/`mutants-uncovered` result for every
  * module that test file was the sole coverage for. Only meaningful when the report is
- * otherwise readable, mirroring `entriesAbsentFromReport` above.
+ * otherwise readable, mirroring `entriesAbsentFromReport` above. A readable report with no
+ * `testFiles` map at all is a distinct, more severe case than any single entry being absent
+ * from it — nothing about any configured test file can be verified — and fails closed
+ * separately via `TestFilesMapMissing` rather than silently skipping the check (which is what
+ * `extractReportTestFileCounts` returning `undefined` would otherwise cause).
  */
 export function classifyMutationReport(
   reportJson: unknown,
@@ -371,6 +375,18 @@ export function classifyMutationReport(
           .filter(entry => (normalizedReportTestFileCounts.get(entry) ?? 0) === 0)
   const hasTestFileNotExecuted = testFilesNotExecuted.length > 0
 
+  // A readable report with no top-level `testFiles` map at all cannot verify any configured
+  // test file was executed — `extractReportTestFileCounts` returns `undefined` for this shape
+  // exactly as it does for an unreadable report, but the two cases are not equivalent: an
+  // unreadable report already fails via `reportUnreadable` on its own, while a *readable*
+  // report missing only its `testFiles` map would otherwise silently skip the
+  // configured-test-file check entirely (`testFilesNotExecuted` above is `[]` in both cases).
+  // Gated on `configuredTestFiles.length > 0` so a caller that never passes any configured
+  // test files (every existing call site before this check existed, and any fixture report
+  // without a `testFiles` map) is unaffected.
+  const hasTestFilesMapMissing =
+    configuredTestFiles.length > 0 && flat !== undefined && reportTestFileCounts === undefined
+
   // A well-formed report whose flattened mutant list is empty means every `mutate` entry
   // failed to resolve or instrument (Stryker still exits 0 and writes `{"files":{}}` in this
   // case) — an enumerated set of real modules cannot legitimately yield zero mutants. Reading
@@ -396,7 +412,8 @@ export function classifyMutationReport(
     hasVacuouslyIgnoredEntries ||
     hasReporterConfigMismatch ||
     hasUnrecognizedStatus ||
-    hasTestFileNotExecuted
+    hasTestFileNotExecuted ||
+    hasTestFilesMapMissing
   ) {
     verdict = 'instrumentation-failed'
   } else if (directiveViolations.length > 0 || hasIgnoredWithoutReason) {
@@ -493,6 +510,21 @@ export function classifyMutationReport(
       '(check for an unparseable instrumented module)',
   }))
 
+  const testFilesMapMissingMutant: LocatedMutant[] = hasTestFilesMapMissing
+    ? [
+        {
+          file: reportPath,
+          line: 0,
+          col: 0,
+          mutator: 'report',
+          status: 'TestFilesMapMissing',
+          reason:
+            `report has no top-level "testFiles" map, so ${String(configuredTestFiles.length)} configured ` +
+            'test file(s) cannot be verified as executed',
+        },
+      ]
+    : []
+
   const reportedFromReport = (flat ?? []).filter(isFailingMutant).map(toLocatedMutant)
   const mutants = [
     ...reportedFromReport,
@@ -503,6 +535,7 @@ export function classifyMutationReport(
     ...vacuouslyIgnoredMutants,
     ...reporterConfigMismatchMutants,
     ...testFileNotExecutedMutants,
+    ...testFilesMapMissingMutant,
     ...directiveViolations,
   ].sort(compareLocatedMutants)
 

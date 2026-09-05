@@ -361,6 +361,23 @@ describe('classifyMutationReport', () => {
     expect(result.mutants.some(m => m.status === 'TestFileNotExecuted')).toBe(false)
   })
 
+  // Blocking 1: extractReportTestFileCounts returns undefined both for an unreadable report
+  // and for a readable report that simply has no top-level testFiles map — those are not the
+  // same failure. A readable report (mutants present, `files` well-formed) missing its
+  // testFiles map entirely must still fail closed when test files are configured, not silently
+  // skip verification because there was nothing to compare against.
+  it('reports instrumentation-failed when the report is readable but has no top-level testFiles map at all', () => {
+    const report = {schemaVersion: '2.0', files: {'a.ts': {mutants: []}}}
+    const result = classifyMutationReport(report, [], [], mutationReportPath, [], undefined, undefined, [
+      'scripts/one.test.ts',
+      'scripts/two.test.ts',
+    ])
+    expect(result.verdict).toBe('instrumentation-failed')
+    const sentinel = result.mutants.find(m => m.status === 'TestFilesMapMissing')
+    expect(sentinel?.reason).toContain('no top-level "testFiles" map')
+    expect(sentinel?.reason).toContain('2 configured')
+  })
+
   it('reports directive-violation when an Ignored mutant has an empty statusReason', () => {
     const report = buildReport([
       {file: 'a.ts', line: 4, column: 1, mutatorName: 'StringLiteral', status: 'Ignored', statusReason: ''},
