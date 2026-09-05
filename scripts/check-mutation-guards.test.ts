@@ -1,4 +1,4 @@
-import {mkdirSync, rmSync, writeFileSync} from 'node:fs'
+import {mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {dirname, resolve} from 'node:path'
 import process from 'node:process'
 
@@ -359,6 +359,41 @@ describe('scanDirectiveViolations', () => {
 
   it('passes a next-line directive with a non-empty reason on a CRLF-terminated line', () => {
     const violations = scan('// Stryker disable next-line ConditionalExpression: reason\r\nconst x = 1\r\n')
+    expect(violations).toEqual([])
+  })
+
+  // Blocking: an odd quote count earlier on the line (an apostrophe in ordinary prose, not
+  // just a regex literal) opened a phantom string that swallowed a later comment-initial
+  // directive, because the string-stripper had no idea a `//` or `/*` started a comment
+  // first — it just counted quote characters left to right across the whole line.
+  it('flags a line-comment directive after a block comment containing an apostrophe', () => {
+    const violations = scan("/* what's up */ // Stryker disable all\nconst x = 1\n")
+    expect(violations).toHaveLength(1)
+  })
+
+  it('flags a block-comment directive after a line comment containing an apostrophe', () => {
+    const violations = scan("const x = 1 // it's fine /* Stryker disable all */\nconst y = 2\n")
+    expect(violations).toHaveLength(1)
+  })
+
+  // Known, verified, narrow gap (fails open) that the apostrophe fix does NOT close: a quote
+  // inside an actual regex literal precedes the comment, and the regex's `/` is ordinary code
+  // (not `//` or `/*`), so comment-detection never triggers before the quote is reached. The
+  // unmatched `'` inside `['"]` opens a string that never finds its closing quote on this
+  // line, blanking the trailing directive along with everything else after it.
+  it('does not flag a directive hidden behind a same-line regex literal (documented gap, unchanged)', () => {
+    const violations = scan(`const re = /['"]/ // Stryker disable all\nconst x = 1\n`)
+    expect(violations).toEqual([])
+  })
+
+  // Self-scan: the wrapper's own source must never need a directive or a not-mutated excuse
+  // for the scanner it defines, so it stays a plain, uncomplicated `mutate` candidate if
+  // Unit 3 ever adds it. This is a change-detector by design — any future edit that
+  // reintroduces a literal, unprotected "Stryker disable" phrase in this file's own prose
+  // fails this test.
+  it('reports zero violations when scanning its own source file', () => {
+    const ownSource = readFileSync(resolve(import.meta.dirname, 'check-mutation-guards.ts'), 'utf8')
+    const violations = scanDirectiveViolations([{file: 'scripts/check-mutation-guards.ts', content: ownSource}])
     expect(violations).toEqual([])
   })
 })
