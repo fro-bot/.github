@@ -1,6 +1,6 @@
 import {spawnSync} from 'node:child_process'
-import {appendFileSync, readFileSync, rmSync} from 'node:fs'
-import {dirname, join, resolve} from 'node:path'
+import {appendFileSync, existsSync, readFileSync, rmSync} from 'node:fs'
+import {dirname, join, relative, resolve} from 'node:path'
 import process from 'node:process'
 
 import {fetchChangedFiles, readPullRequestContext} from './check-wiki-authority.ts'
@@ -915,7 +915,7 @@ function printResult(result: ClassificationResult): void {
 
 /**
  * Builds the child env for the Stryker spawn: a copy of `process.env` with
- * `GITHUB_STEP_SUMMARY` deleted, never mutating the parent env.
+ * `GITHUB_STEP_SUMMARY`, `GH_TOKEN`, and `GITHUB_TOKEN` deleted, never mutating the parent env.
  *
  * Vitest 4 auto-registers its `github-actions` reporter whenever `GITHUB_ACTIONS === 'true'`,
  * and that reporter appends a `## Vitest Test Report` block to `GITHUB_STEP_SUMMARY` on every
@@ -924,13 +924,24 @@ function printResult(result: ClassificationResult): void {
  * summary with dozens of blocks. This wrapper is the only writer of the step summary (in
  * `printResult`, after Stryker exits); deleting the key (rather than setting it to `''`) is
  * the safe default — an empty string is still a defined env var and some future check could
- * treat "set but empty" differently from "absent", so this closes the door entirely. Leaves
- * `GITHUB_ACTIONS` untouched so nothing else about CI detection changes for the Stryker/Vitest
- * child process.
+ * treat "set but empty" differently from "absent", so this closes the door entirely.
+ *
+ * `GH_TOKEN`/`GITHUB_TOKEN` are deleted for the same reason and the same way: by the time this
+ * spawn happens, the changed-file trigger gate (`evaluateTriggerGate`) has already made every
+ * `gh`/GitHub API call this check needs — the token has done its one job. Stryker's dry run and
+ * every mutant batch execute this repository's own test suite, including tests that could spawn
+ * arbitrary child processes reading `process.env`; neither the token nor its use is something
+ * mutated test code should be able to observe or exercise, so it is removed before the spawn
+ * rather than trusted to stay unused.
+ *
+ * Leaves `GITHUB_ACTIONS` untouched so nothing else about CI detection changes for the
+ * Stryker/Vitest child process.
  */
 function buildStrykerSpawnEnv(): NodeJS.ProcessEnv {
   const env = {...process.env}
   delete env.GITHUB_STEP_SUMMARY
+  delete env.GH_TOKEN
+  delete env.GITHUB_TOKEN
   return env
 }
 
@@ -955,6 +966,309 @@ export function defaultStrykerSpawner(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Import closure extractor — moved here from scripts/mutation-guards-config.test.ts so both
+// the enumeration guard's same-tree pairing check and this wrapper's changed-file trigger
+// gate share one implementation of "what does this file import", rather than two textual
+// scanners drifting apart over time.
+// ---------------------------------------------------------------------------
+
+// Static `import ... from '...'` / `export ... from '...'` (type-only or not), one or two
+// leading dots so both `./x.ts` and a deeper `../../scripts/x.ts` resolve.
+const STATIC_RELATIVE_IMPORT_PATTERN = /from\s+['"](\.\.?\/[^'"]+)['"]/gu
+// Dynamic `import('./x.ts')` — also matches inside `typeof import('./x.ts')`, since this is a
+// plain textual scan with no regard for what precedes `import(`.
+const DYNAMIC_IMPORT_STRING_PATTERN = /import\(\s*['"](\.\.?\/[^'"]+)['"]\s*\)/gu
+// Dynamic `import(`./x${'.js'}`)` — the template literal's raw content is resolved separately
+// (see resolveTemplateLiteralSpecifier) since it may carry a literal-only `${...}` interpolation.
+const DYNAMIC_IMPORT_TEMPLATE_PATTERN = /import\(\s*`([^`]*)`\s*\)/gu
+// Only `export * from '...'` / `export {...} from '...'` — the subset of exports that forward
+// to another module and are therefore worth following transitively for barrel-chain reach.
+// `(?:type\s+)?` accepts the type-only forms too: `export type {...} from '...'` and
+// `export type * from '...'` re-export types only, but the file relationship they describe
+// (this file forwards to that one) is the same signal reach treats as coverage — a barrel
+// that only re-exports types from a module still names it as part of the same logical unit.
+const REEXPORT_PATTERN = /export\s+(?:type\s+)?(?:\*(?:\s+as\s+[$\w]+)?|\{[^}]*\})\s*from\s+['"](\.\.?\/[^'"]+)['"]/gu
+// A literal-only `${'...'}`/`${"..."}` interpolation inside a template literal specifier.
+const TEMPLATE_LITERAL_LOOKUP_PATTERN = /\$\{\s*(['"])((?:\\.|(?!\1).)*)\1\s*\}/gu
+
+/** The one internal package this repo builds, and the two directories a subpath import maps between. */
+const WIKI_WRITE_CORE_SRC_DIR = 'packages/wiki-write-core/src'
+const WIKI_WRITE_CORE_DIST_DIR = 'packages/wiki-write-core/dist'
+// `from '@fro-bot/wiki-write-core'` (bare, group 1 undefined) or
+// `from '@fro-bot/wiki-write-core/wiki-slug'` (subpath, group 1 = 'wiki-slug') — matches the
+// same three reference shapes as the relative patterns above (static from-clause, dynamic
+// `import(...)`, and `export ... from`) in one pattern, since all three share the same
+// `from '...'`/`import('...')` text shape this is a plain textual scan over.
+const WIKI_WRITE_CORE_SPECIFIER_PATTERN =
+  /(?:from\s+['"]|import\(\s*['"])@fro-bot\/wiki-write-core(?:\/([\w-]+))?['"]/gu
+
+/**
+ * Resolves a dynamic-import template literal's raw content (e.g. `./x${'.js'}`) by inlining
+ * every literal-only `${'...'}`/`${"..."}` interpolation. Returns `undefined` if the result
+ * still contains an unresolved `${` (a non-literal interpolation this scanner cannot follow)
+ * or does not start with a relative-path dot, so a specifier this cannot safely resolve is
+ * dropped rather than mis-resolved.
+ */
+function resolveTemplateLiteralSpecifier(raw: string): string | undefined {
+  const resolved = raw.replaceAll(TEMPLATE_LITERAL_LOOKUP_PATTERN, (_match, _quote: string, inner: string) => inner)
+  if (resolved.includes('${') || !resolved.startsWith('.')) return undefined
+  return resolved
+}
+
+/**
+ * A specifier ending `.js`/`.mjs`/`.cjs` is rewritten to `.ts` — this codebase's dynamic
+ * imports and `typeof import(...)` type positions use the compiled-output extension by
+ * convention (Node's type-stripping resolution accepts it), but the actual source file on
+ * disk, and every `mutate`/`testFiles` config entry, uses `.ts`.
+ */
+function normalizeSpecifierExtension(specifier: string): string {
+  return specifier.replace(/\.(?:js|mjs|cjs)$/u, '.ts')
+}
+
+function resolveSpecifier(repoRelativeFilePath: string, specifier: string): string {
+  const fileDir = dirname(repoRelativeFilePath)
+  return relative(repositoryRoot, resolve(repositoryRoot, fileDir, normalizeSpecifierExtension(specifier))).replaceAll(
+    '\\',
+    '/',
+  )
+}
+
+/**
+ * Strips `//` line comments and `/* ... *\/` block comments from file content before the
+ * import/export patterns run against it, tracking quote state across the whole file (not
+ * reset per line, unlike `stripStringLiterals` above) so a multi-line template literal's
+ * contents are never mistaken for a comment. Deliberately does **not** reuse
+ * `stripStringLiterals`: that function blanks string/template contents to spaces, which would
+ * erase the very import specifiers this extractor needs to keep — comment stripping and
+ * string blanking cannot share one pass when the specifier lives inside a string, so this is a
+ * separate, narrower tool for a separate purpose (proving *reach*, not scanning directives).
+ *
+ * Only a line-comment's or block-comment's byte span is removed (dropped, not blanked to
+ * spaces) — no column-offset preservation is needed here, unlike the directive scanner, since
+ * nothing downstream reports a match's position within the original file.
+ *
+ * Two known gaps, one of them NOT narrow:
+ *
+ * 1. **Regex-literal quote, file-scoped — fail-open, not a narrow edge case.** Unlike
+ *    `stripStringLiterals` (which resets its quote state every line, since it is called
+ *    per-line by the directive scanner), this function tracks quote state across the *entire
+ *    file* to correctly handle a multi-line template literal. That same file-wide tracking
+ *    means an unbalanced quote inside a regex literal (no regex-literal state exists here
+ *    either) does not just swallow the rest of one line — it opens a phantom string that can
+ *    run to the next matching quote character *anywhere later in the file*, silently
+ *    swallowing every comment boundary in between. Accepted only because no such regex
+ *    literal currently appears in any file this extractor scans (pinned by a test in
+ *    `scripts/mutation-guards-config.test.ts` so a future change to this behavior is
+ *    deliberate, not accidental).
+ * 2. **Import-shaped text inside a string literal.** An import-shaped specifier appearing
+ *    inside* a string literal still matches the import patterns below, since this stripper
+ *    never blanks string content — only comments are removed. `reachedModulesTransitive`
+ *    filters its direct specifiers through `existsSync`, which closes this for a phantom
+ *    target naming a module that does not exist; the residual gap is narrower than "any
+ *    import-shaped string" — it is now only an import-shaped string that happens to name a
+ *    module that *does* exist on disk. Accepted as a narrow, documented limitation: the
+ *    alternative (blanking strings) would break every real specifier this extractor exists to
+ *    find.
+ */
+export function stripComments(content: string): string {
+  let result = ''
+  let quote: string | undefined
+  let i = 0
+  while (i < content.length) {
+    const char = content[i] ?? ''
+    if (quote !== undefined) {
+      if (char === '\\') {
+        result += content.slice(i, i + 2)
+        i += 2
+        continue
+      }
+      if (char === quote) quote = undefined
+      result += char
+      i += 1
+      continue
+    }
+    if (char === '/' && content[i + 1] === '/') {
+      const newlineIndex = content.indexOf('\n', i)
+      i = newlineIndex === -1 ? content.length : newlineIndex
+      continue
+    }
+    if (char === '/' && content[i + 1] === '*') {
+      const closeIndex = content.indexOf('*/', i + 2)
+      i = closeIndex === -1 ? content.length : closeIndex + 2
+      continue
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char
+      result += char
+      i += 1
+      continue
+    }
+    result += char
+    i += 1
+  }
+  return result
+}
+
+/**
+ * Every relative-path module specifier a file references directly: static import/export
+ * `from` clauses, dynamic `import('...')` (including inside `typeof import('...')`), and
+ * dynamic `import(\`...\`)` template literals with a literal-only interpolation. Resolved to
+ * repo-relative paths. Package specifiers (`@fro-bot/...`, bare module names) never match —
+ * every pattern requires a leading `./` or `../` (see `wikiWriteCoreSubpathSourceFiles` for
+ * the separate package-specifier scan this wrapper's trigger-set closure also needs).
+ */
+function directSpecifiers(repoRelativeFilePath: string): string[] {
+  const content = stripComments(readFileSync(join(repositoryRoot, repoRelativeFilePath), 'utf8'))
+  const raw: string[] = []
+
+  for (const match of content.matchAll(STATIC_RELATIVE_IMPORT_PATTERN)) {
+    if (match[1] !== undefined) raw.push(match[1])
+  }
+  for (const match of content.matchAll(DYNAMIC_IMPORT_STRING_PATTERN)) {
+    if (match[1] !== undefined) raw.push(match[1])
+  }
+  for (const match of content.matchAll(DYNAMIC_IMPORT_TEMPLATE_PATTERN)) {
+    if (match[1] === undefined) continue
+    const resolved = resolveTemplateLiteralSpecifier(match[1])
+    if (resolved !== undefined) raw.push(resolved)
+  }
+
+  return raw.map(specifier => resolveSpecifier(repoRelativeFilePath, specifier))
+}
+
+/** Only the `export ... from '...'` (re-export/barrel) specifiers a file forwards to. */
+function directReexportSpecifiers(repoRelativeFilePath: string): string[] {
+  const content = stripComments(readFileSync(join(repositoryRoot, repoRelativeFilePath), 'utf8'))
+  const raw: string[] = []
+  for (const match of content.matchAll(REEXPORT_PATTERN)) {
+    if (match[1] !== undefined) raw.push(match[1])
+  }
+  return raw.map(specifier => resolveSpecifier(repoRelativeFilePath, specifier))
+}
+
+/**
+ * The set of repo-relative module paths a file "reaches": every direct relative-path
+ * specifier it references (see `directSpecifiers`), plus — followed transitively through any
+ * number of re-export barrel hops (see `directReexportSpecifiers`), bounded by a visited set
+ * so a barrel cycle cannot loop forever — every module a reached barrel forwards to. Used both
+ * by the enumeration guard's same-tree pairing check (a test file that imports a mutated
+ * module, directly or via a chain of barrels it imports, is treated as covering it) and by
+ * this wrapper's changed-file trigger gate (a `mutate`/`testFiles` entry's import closure must
+ * itself be in the trigger set). Exported for both consumers and for direct testing against a
+ * real file (Fro Bot's live `wiki-context-safety.ts`/`wiki-context-safety.test.ts`
+ * counterexample, which reaches only through a dynamic
+ * `import(\`./wiki-context-safety${'.js'}\`)`, no static import at all).
+ *
+ * Every direct specifier is filtered through `existsSync` before being added to `reached` —
+ * `directSpecifiers` runs its patterns against comment-stripped-but-not-string-blanked content
+ * (see `stripComments`), so ordinary fixture text in a `*.test.ts` file that merely *looks*
+ * like an import still matches the import patterns and would otherwise produce a phantom
+ * reach target that names a file that was never written and does not exist. This closes that
+ * case for files that name a genuinely nonexistent module; the residual gap (see
+ * `stripComments`'s docstring) is narrower than "any import-shaped string" — it is now only an
+ * import-shaped string that happens to name a module that *does* exist on disk.
+ */
+export function reachedModulesTransitive(repoRelativeFilePath: string): Set<string> {
+  const reached = new Set<string>()
+  const visited = new Set<string>()
+  const followQueue: string[] = []
+
+  for (const target of directSpecifiers(repoRelativeFilePath)) {
+    if (!existsSync(join(repositoryRoot, target))) continue
+    reached.add(target)
+    followQueue.push(target)
+  }
+
+  while (followQueue.length > 0) {
+    const current = followQueue.shift()
+    if (current === undefined || visited.has(current)) continue
+    visited.add(current)
+    if (!existsSync(join(repositoryRoot, current))) continue
+    for (const target of directReexportSpecifiers(current)) {
+      if (reached.has(target)) continue
+      reached.add(target)
+      followQueue.push(target)
+    }
+  }
+
+  return reached
+}
+
+/**
+ * Resolves every `@fro-bot/wiki-write-core[/subpath]` specifier a file references directly
+ * (static from-clause, dynamic `import(...)`, or `export ... from`) to the *source* file the
+ * subpath's `package.json` `exports` map points to at build time — `<subpath>` (or `index` for
+ * the bare package specifier) maps to `packages/wiki-write-core/src/<subpath>.ts`. This is the
+ * relative-import extractor's blind spot: a `scripts/` file that imports the package by name
+ * (e.g. `scripts/check-private-leak.ts`'s `import {checkPrivateLeak} from
+ * '@fro-bot/wiki-write-core/private-leak'`) has no `./`/`../` specifier for `directSpecifiers`
+ * to find, so the relative-only reach computation above would never connect it to the source
+ * file whose compiled output it actually depends on.
+ */
+export function wikiWriteCoreSubpathSourceFiles(repoRelativeFilePath: string): string[] {
+  const content = stripComments(readFileSync(join(repositoryRoot, repoRelativeFilePath), 'utf8'))
+  const subpaths: string[] = []
+  for (const match of content.matchAll(WIKI_WRITE_CORE_SPECIFIER_PATTERN)) {
+    subpaths.push(match[1] ?? 'index')
+  }
+  return subpaths.map(subpath => `${WIKI_WRITE_CORE_SRC_DIR}/${subpath}.ts`)
+}
+
+export interface ImportClosure {
+  readonly files: ReadonlySet<string>
+  /**
+   * True when any visited file references the `@fro-bot/wiki-write-core` package by name
+   * (any subpath, or the bare barrel) rather than only by relative path — see
+   * `wikiWriteCoreSubpathSourceFiles`. `buildTriggerSet` uses this to decide whether the
+   * compiled* `packages/wiki-write-core/dist/` directory also needs to be a trigger: a
+   * `scripts/` file importing the package resolves against `dist/` at runtime, so a change
+   * there (a stale build, a hand-edited compiled file) can change this run's outcome even
+   * though no `.ts` source file changed.
+   */
+  readonly hasWikiWriteCoreSubpathReference: boolean
+}
+
+/**
+ * The transitive relative-import closure of every entry in `entries` — each entry's own
+ * `reachedModulesTransitive` result, plus (recursively) the same for every
+ * `@fro-bot/wiki-write-core` subpath specifier reference resolved to its source file (see
+ * `wikiWriteCoreSubpathSourceFiles`), so a package-by-name reference from a `mutate`/
+ * `testFiles` entry still pulls its source counterpart — and that counterpart's own further
+ * imports — into the closure. `entries` itself is not included in the returned `files`; the
+ * caller (`buildTriggerSet`) already has the raw config entries and unions them in separately.
+ *
+ * A glob entry (per `isLiteralPath`) or an entry that does not exist on disk is skipped
+ * without attempting to read it — the same defensive posture as `readMutateFileContents`.
+ */
+export function buildImportClosure(entries: readonly string[]): ImportClosure {
+  const files = new Set<string>()
+  const visited = new Set<string>()
+  const queue: string[] = [...entries]
+  let hasWikiWriteCoreSubpathReference = false
+
+  while (queue.length > 0) {
+    const current = queue.shift()
+    if (current === undefined) continue
+    const normalized = normalizeMutatePath(current)
+    if (visited.has(normalized)) continue
+    visited.add(normalized)
+    if (!isLiteralPath(normalized) || !existsSync(join(repositoryRoot, normalized))) continue
+
+    for (const target of reachedModulesTransitive(normalized)) {
+      files.add(target)
+    }
+
+    for (const srcFile of wikiWriteCoreSubpathSourceFiles(normalized)) {
+      hasWikiWriteCoreSubpathReference = true
+      files.add(srcFile)
+      if (!visited.has(srcFile)) queue.push(srcFile)
+    }
+  }
+
+  return {files, hasWikiWriteCoreSubpathReference}
+}
+
+// ---------------------------------------------------------------------------
 // Changed-file trigger gate — short-circuits a pull_request run that cannot possibly be
 // affected by anything Stryker mutates or executes.
 // ---------------------------------------------------------------------------
@@ -964,10 +1278,11 @@ export function defaultStrykerSpawner(): void {
  * `testFiles` set: the Stryker/vitest/package configs that shape how the run resolves and
  * executes; the wrapper and its own config-enumeration test (self-referential — a change to
  * either changes what this check enforces or how); the workflow file that defines this very
- * job (a job rename or trigger change is itself worth a run); and the two `tsconfig*.json`
- * files whose settings affect how the mutated TypeScript compiles. `quartz-site/tsconfig.json`
- * is deliberately excluded — it configures an unrelated documentation-site build, not anything
- * Stryker mutates or runs.
+ * job (a job rename or trigger change is itself worth a run); the shared setup action every
+ * job (including this one) depends on to install and cache dependencies; and the two
+ * `tsconfig*.json` files whose settings affect how the mutated TypeScript compiles.
+ * `quartz-site/tsconfig.json` is deliberately excluded — it configures an unrelated
+ * documentation-site build, not anything Stryker mutates or runs.
  */
 const FIXED_TRIGGER_FILES: readonly string[] = [
   'stryker.config.json',
@@ -979,6 +1294,7 @@ const FIXED_TRIGGER_FILES: readonly string[] = [
   'scripts/check-mutation-guards.ts',
   'scripts/mutation-guards-config.test.ts',
   '.github/workflows/main.yaml',
+  '.github/actions/setup/action.yaml',
   'packages/wiki-write-core/package.json',
   'tsconfig.json',
   'packages/wiki-write-core/tsconfig.build.json',
@@ -986,6 +1302,17 @@ const FIXED_TRIGGER_FILES: readonly string[] = [
 
 export interface TriggerSet {
   readonly files: ReadonlySet<string>
+  /**
+   * Directory-prefix triggers: a changed file matches when its normalized path *starts with*
+   * one of these prefixes, not just on exact membership in `files`. Currently only ever
+   * `packages/wiki-write-core/dist/` (see `hasGlobEntries`'s sibling concern, `hasGlobEntries`
+   * below, for the analogous reasoning) — the compiled output of a package the trigger set's
+   * import closure references by name, per `ImportClosure.hasWikiWriteCoreSubpathReference`.
+   * Any file under it (an individual `dist/<x>.js`, its `.d.ts`, or a new file the build adds)
+   * matches, since this gate has no reliable way to map a `scripts/` file's package-by-name
+   * import to only the one compiled artifact it actually resolves to at run time.
+   */
+  readonly directoryPrefixes: readonly string[]
   /**
    * True when any `mutate`/`testFiles` entry contains a glob metacharacter (per
    * `isLiteralPath`). A glob's expansion depends on the file tree at run time, which this
@@ -995,25 +1322,50 @@ export interface TriggerSet {
    * a changed file might be one the glob newly matches.
    */
   readonly hasGlobEntries: boolean
+  /**
+   * The number of `files` entries contributed solely by the import closure (`buildImportClosure`)
+   * — i.e. `files.size` minus the raw `mutate`/`testFiles`/fixed-infrastructure entries. Printed
+   * in the `not-applicable` summary so a red-team reading CI output can see at a glance whether
+   * the closure computed anything beyond the literal enumerated set.
+   */
+  readonly closureSize: number
 }
 
 /**
  * Builds the changed-file trigger set from the Stryker config itself — every `mutate` and
- * `testFiles` entry (literal or glob), plus the fixed infrastructure list above — rather than
- * a second, hand-maintained list that could silently drift out of sync with what this check
- * actually mutates or executes. Entries are normalized the same way as everywhere else in this
- * module (`normalizeMutatePath`, stripping a single leading `./`).
+ * `testFiles` entry (literal or glob), the fixed infrastructure list above, AND the transitive
+ * relative-import closure of every `mutate`/`testFiles` entry (`buildImportClosure`) — rather
+ * than a second, hand-maintained list that could silently drift out of sync with what this
+ * check actually mutates or executes.
+ *
+ * The closure is load-bearing, not cosmetic: without it, a pull request touching only
+ * `packages/wiki-write-core/src/wiki-slug.ts` (imported by the already-mutated
+ * `private-leak-adapter.ts`, but itself only `not-mutated`/pending relocation) would read
+ * `not-applicable` and never run Stryker at all — a fail-open this wrapper exists to prevent
+ * for every other kind of drift. Entries are normalized the same way as everywhere else in
+ * this module (`normalizeMutatePath`, stripping a single leading `./`).
  */
 export function buildTriggerSet(config: StrykerConfigShape): TriggerSet {
   const configEntries = [...config.mutate, ...config.testFiles]
   const hasGlobEntries = configEntries.some(entry => !isLiteralPath(entry))
-  const files = new Set([...configEntries, ...FIXED_TRIGGER_FILES].map(normalizeMutatePath))
-  return {files, hasGlobEntries}
+  const baseFiles = new Set([...configEntries, ...FIXED_TRIGGER_FILES].map(normalizeMutatePath))
+  const closure = buildImportClosure(configEntries)
+  const files = new Set([...baseFiles, ...closure.files])
+  const closureSize = [...closure.files].filter(file => !baseFiles.has(file)).length
+  const directoryPrefixes = closure.hasWikiWriteCoreSubpathReference ? [`${WIKI_WRITE_CORE_DIST_DIR}/`] : []
+  return {files, directoryPrefixes, hasGlobEntries, closureSize}
 }
 
-/** Whether any changed file (normalized) is a member of the trigger set. */
+/**
+ * Whether any changed file (normalized) is a member of the trigger set — an exact `files`
+ * match, or a prefix match against one of `directoryPrefixes` (see `TriggerSet`'s docstring).
+ */
 export function changedFilesIntersectTriggerSet(changedFiles: readonly string[], triggerSet: TriggerSet): boolean {
-  return changedFiles.some(file => triggerSet.files.has(normalizeMutatePath(file)))
+  return changedFiles.some(file => {
+    const normalized = normalizeMutatePath(file)
+    if (triggerSet.files.has(normalized)) return true
+    return triggerSet.directoryPrefixes.some(prefix => normalized.startsWith(prefix))
+  })
 }
 
 /**
@@ -1089,7 +1441,8 @@ export async function evaluateTriggerGate(
     return triggerGateSentinel(
       'not-applicable',
       'NotApplicable',
-      `none of ${String(changedFiles.length)} changed file(s) matched the ${String(triggerSet.files.size)}-file trigger set; nothing to check`,
+      `none of ${String(changedFiles.length)} changed file(s) matched the ${String(triggerSet.files.size)}-file trigger set ` +
+        `(${String(triggerSet.closureSize)} from the import closure); nothing to check`,
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

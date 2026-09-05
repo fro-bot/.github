@@ -6,6 +6,7 @@ import process from 'node:process'
 import {describe, expect, it, vi} from 'vitest'
 
 import {
+  buildImportClosure,
   buildTriggerSet,
   changedFilesIntersectTriggerSet,
   classifyMutationReport,
@@ -15,6 +16,7 @@ import {
   flattenReport,
   mutationReportPath,
   readMutateFileContents,
+  readStrykerConfig,
   resolveReporterConfig,
   runMutationGuardCheck,
   scanDirectiveViolations,
@@ -39,7 +41,7 @@ vi.mock('node:child_process', () => ({
 }))
 
 // Forces evaluateTriggerGate's env parameter default (real process.env) never to be used from
-// this pre-Unit-4 test suite: without this, a `runMutationGuardCheck` call made from inside a
+// this test suite's pre-trigger-gate call sites: without this, a `runMutationGuardCheck` call made from inside a
 // pull_request CI run (this very test suite's own `Test` job in main.yaml) would pick up a
 // real GITHUB_EVENT_NAME=pull_request from the ambient environment and try to run the real
 // gate — reading a real GITHUB_EVENT_PATH and calling `fetchChangedFiles` (which this file's
@@ -977,13 +979,19 @@ describe('evaluateTriggerGate (changed-file trigger gate scenarios)', () => {
     expect(result).toBeUndefined()
   })
 
-  // Scenario (edge case 2): changed set includes only a not-mutated file — not-applicable,
-  // since a not-mutated module is, by definition, outside both mutate and testFiles.
-  it('reports not-applicable when the changed set includes only a not-mutated file', async () => {
+  // Scenario (edge case 2): changed set includes only a file genuinely outside the import
+  // closure of the fake mutate/testFiles set — not-applicable. Uses docs/x.md (guaranteed
+  // outside any closure, since it is not TypeScript and not on any import graph) rather than a
+  // real not-mutated package module: the closure now follows testFiles' own imports too (not
+  // just mutate's), and several real not-mutated modules (e.g. frontmatter.ts) turn out to be
+  // reached transitively through a real testFiles entry's barrel import — see the
+  // 'closure-based trigger set against the real config' describe block below for that
+  // discrimination against the real config specifically.
+  it('reports not-applicable when the changed set includes only a file outside the trigger set (docs/x.md)', async () => {
     const result = await evaluateTriggerGate(
       fakeTriggerConfig(),
       PULL_REQUEST_EVENT,
-      fakeGateDeps({fetchChangedFiles: () => ['packages/wiki-write-core/src/frontmatter.ts']}),
+      fakeGateDeps({fetchChangedFiles: () => ['docs/x.md']}),
     )
     expect(result?.verdict).toBe('not-applicable')
   })
@@ -1048,6 +1056,104 @@ describe('evaluateTriggerGate (changed-file trigger gate scenarios)', () => {
       fakeGateDeps({fetchChangedFiles: () => ['docs/entirely-unrelated.md']}),
     )
     expect(result).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Closure-based trigger set against the REAL stryker.config.json / mutation-guards.json.
+// Blocking fix: buildTriggerSet's import closure must catch a change to a module that is only
+// *imported by* a mutate/testFiles entry, not itself listed — without it, a PR touching only
+// packages/wiki-write-core/src/wiki-slug.ts (imported by the mutated private-leak-adapter.ts)
+// would read not-applicable and never run Stryker at all.
+// ---------------------------------------------------------------------------
+
+describe('closure-based trigger set against the real config', () => {
+  const realConfig = readStrykerConfig(strykerConfigPath)
+  const realTriggerSet = buildTriggerSet(realConfig)
+
+  // Sanity: the real config's closure actually adds something beyond the literal enumerated
+  // set, so every test below is exercising real closure behavior, not an accidentally-empty one.
+  it('the real trigger set has a non-zero closure size', () => {
+    expect(realTriggerSet.closureSize).toBeGreaterThan(0)
+  })
+
+  // (a) Discrimination, red under the old (pre-closure) buildTriggerSet: wiki-slug.ts is not
+  // itself a mutate/testFiles entry (it is `not-mutated`, pending relocation per
+  // mutation-guards.json), but private-leak-adapter.ts (a real mutate entry) imports it
+  // directly (`import {buildPrivateNameTokens} from './wiki-slug.ts'`). A PR touching only this
+  // file must never read not-applicable — that would be exactly the fail-open the review
+  // flagged: a change that can affect a mutated module's behavior silently skipping the check.
+  it('does NOT report not-applicable for a changed set of only wiki-slug.ts (imported by the mutated private-leak-adapter.ts)', async () => {
+    const result = await evaluateTriggerGate(
+      realConfig,
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['packages/wiki-write-core/src/wiki-slug.ts']}),
+    )
+    expect(result).toBeUndefined()
+    expect(realTriggerSet.files.has('packages/wiki-write-core/src/wiki-slug.ts')).toBe(true)
+  })
+
+  // (b) A changed file under the compiled packages/wiki-write-core/dist/ directory must also
+  // proceed to run: several scripts/ mutate/testFiles entries (e.g.
+  // scripts/check-wiki-authority.ts) import the package by name
+  // (`@fro-bot/wiki-write-core/...`), which resolves against dist/ at run time — a stale or
+  // hand-edited compiled file there can change this run's outcome even with no .ts source change.
+  it('does NOT report not-applicable for a changed set of only a file under packages/wiki-write-core/dist/', async () => {
+    expect(realTriggerSet.directoryPrefixes).toContain('packages/wiki-write-core/dist/')
+    const result = await evaluateTriggerGate(
+      realConfig,
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['packages/wiki-write-core/dist/private-leak.js']}),
+    )
+    expect(result).toBeUndefined()
+  })
+
+  // (c) A file genuinely outside the real closure — computed from the real config, not
+  // hardcoded — still reports not-applicable. markdown-links.ts's own mutation-guards.json
+  // reason ("no mutated module reaches this file") is independently verified here by asserting
+  // it is absent from the real closure before relying on that absence for the not-applicable
+  // assertion, so a future change that starts reaching this file breaks this test loudly
+  // instead of silently invalidating what it claims to prove.
+  it('reports not-applicable for a real file confirmed outside the real import closure (packages/wiki-write-core/src/markdown-links.ts)', async () => {
+    const outsideClosureFile = 'packages/wiki-write-core/src/markdown-links.ts'
+    expect(realTriggerSet.files.has(outsideClosureFile)).toBe(false)
+
+    const result = await evaluateTriggerGate(
+      realConfig,
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => [outsideClosureFile]}),
+    )
+    expect(result?.verdict).toBe('not-applicable')
+  })
+
+  // (d) Every not-mutated entry in mutation-guards.json that IS imported (directly or
+  // transitively, per buildImportClosure) by a real mutate entry must be in the trigger set —
+  // the table the review's discrimination case (a) generalizes to every such entry, not just
+  // wiki-slug.ts.
+  it('includes every not-mutated entry that is imported by a mutate entry in the trigger set', () => {
+    const notMutated: {readonly path: string; readonly reason: string}[] = (
+      JSON.parse(readFileSync(join(resolve(import.meta.dirname, '..'), 'mutation-guards.json'), 'utf8')) as {
+        'not-mutated': {readonly path: string; readonly reason: string}[]
+      }
+    )['not-mutated']
+
+    const mutateClosure = buildImportClosure(realConfig.mutate)
+    const violations: string[] = []
+
+    for (const entry of notMutated) {
+      const isImportedByMutate = mutateClosure.files.has(entry.path)
+      const isInTriggerSet = realTriggerSet.files.has(entry.path)
+      if (isImportedByMutate && !isInTriggerSet) {
+        violations.push(entry.path)
+      }
+    }
+
+    expect(
+      violations,
+      violations.length === 0
+        ? undefined
+        : `not-mutated entr(y/ies) reached by a mutate entry but missing from the trigger set: ${violations.join(', ')}`,
+    ).toEqual([])
   })
 })
 
@@ -1268,7 +1374,7 @@ describe('runMutationGuardCheck (stale-report fix)', () => {
   })
 })
 
-describe('defaultStrykerSpawner (CI step-summary isolation)', () => {
+describe('defaultStrykerSpawner (CI step-summary and credential isolation)', () => {
   // Vitest 4's auto-registered github-actions reporter appends a "## Vitest Test Report"
   // block to GITHUB_STEP_SUMMARY on every run. Stryker's vitest runner spawns Vitest once for
   // the dry run and again per mutant batch, each inheriting the job env by default, so an
@@ -1294,6 +1400,45 @@ describe('defaultStrykerSpawner (CI step-summary isolation)', () => {
         delete process.env.GITHUB_STEP_SUMMARY
       } else {
         process.env.GITHUB_STEP_SUMMARY = original
+      }
+      mockSpawnSync.mockReset()
+    }
+  })
+
+  // By the time this spawn happens, evaluateTriggerGate has already made every gh/GitHub API
+  // call this check needs — the token has done its one job. Stryker's dry run and every
+  // mutant batch execute this repository's own test suite; neither the token nor its use
+  // should be observable to mutated test code, so both credential env vars are removed before
+  // the spawn rather than trusted to stay unused.
+  it('spawns Stryker with GH_TOKEN and GITHUB_TOKEN removed from the child env, without mutating the parent env', () => {
+    const originalGhToken = process.env.GH_TOKEN
+    const originalGithubToken = process.env.GITHUB_TOKEN
+    process.env.GH_TOKEN = 'parent-gh-token'
+    process.env.GITHUB_TOKEN = 'parent-github-token'
+    mockSpawnSync.mockReturnValue({error: undefined, status: 0})
+
+    try {
+      defaultStrykerSpawner()
+
+      const call = mockSpawnSync.mock.calls.at(-1) as [string, string[], {env?: NodeJS.ProcessEnv}] | undefined
+      const childEnv = call?.[2]?.env
+      expect(childEnv).toBeDefined()
+      expect(childEnv).not.toHaveProperty('GH_TOKEN')
+      expect(childEnv).not.toHaveProperty('GITHUB_TOKEN')
+
+      // The parent process env must be untouched — only the child spawn's env is filtered.
+      expect(process.env.GH_TOKEN).toBe('parent-gh-token')
+      expect(process.env.GITHUB_TOKEN).toBe('parent-github-token')
+    } finally {
+      if (originalGhToken === undefined) {
+        delete process.env.GH_TOKEN
+      } else {
+        process.env.GH_TOKEN = originalGhToken
+      }
+      if (originalGithubToken === undefined) {
+        delete process.env.GITHUB_TOKEN
+      } else {
+        process.env.GITHUB_TOKEN = originalGithubToken
       }
       mockSpawnSync.mockReset()
     }

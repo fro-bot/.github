@@ -13,6 +13,7 @@ interface MainWorkflowJobStep {
   readonly uses?: string
   readonly with?: Record<string, unknown>
   readonly env?: Record<string, unknown>
+  readonly if?: string
 }
 
 interface MainWorkflowJob {
@@ -20,7 +21,11 @@ interface MainWorkflowJob {
   readonly if?: string
   readonly permissions?: Record<string, string>
   readonly 'timeout-minutes'?: number
-  readonly steps: readonly MainWorkflowJobStep[]
+  // Optional (not `readonly steps: readonly MainWorkflowJobStep[]`): a reusable-workflow job
+  // (`uses: ./.github/workflows/other.yaml`) has no `steps` key at all, and this shape must
+  // describe every job actually parsed from main.yaml, not just the ones this file happens to
+  // assert against today.
+  readonly steps?: readonly MainWorkflowJobStep[]
 }
 
 /** Narrow the parsed YAML to the shape this file indexes into, without any broad cast. */
@@ -60,15 +65,23 @@ describe('main.yaml check-mutation-guards job', () => {
   })
 
   it('uses the shared setup action', () => {
-    const setupStep = job?.steps.find(step => step.uses === './.github/actions/setup')
+    const setupStep = job?.steps?.find(step => step.uses === './.github/actions/setup')
     expect(setupStep).toBeDefined()
   })
 
   it('runs pnpm check:mutation-guards with GH_TOKEN set', () => {
-    const checkStep = job?.steps.find(step => step.run === 'pnpm check:mutation-guards')
+    const checkStep = job?.steps?.find(step => step.run === 'pnpm check:mutation-guards')
     expect(checkStep).toBeDefined()
     const expressionStart = '$' + '{{'
     expect(checkStep?.env?.GH_TOKEN).toBe(`${expressionStart} github.token }}`)
+  })
+
+  it('uploads the mutation report artifact even when the check step fails', () => {
+    const uploadStep = job?.steps?.find(step => step.uses?.startsWith('actions/upload-artifact@') === true)
+    expect(uploadStep).toBeDefined()
+    expect(uploadStep?.if).toBe('always()')
+    expect(uploadStep?.with?.name).toBe('mutation-report')
+    expect(uploadStep?.with?.path).toBe('reports/mutation/')
   })
 
   it('sets a timeout of 20 minutes', () => {
@@ -87,8 +100,12 @@ describe('main.yaml top-level shape', () => {
   assertMainWorkflow(parsed)
 
   it('every job present in main.yaml has at least one step', () => {
+    // `job.steps?.length ?? 0`: a reusable-workflow job (`uses: ./.github/workflows/x.yaml`,
+    // no `steps` key at all) must fail this assertion with a clear "has no steps" message
+    // rather than throwing a TypeError on `undefined.length` — main.yaml has none of that
+    // shape today, but the assertion should describe the real requirement, not crash on it.
     for (const [jobName, job] of Object.entries(parsed.jobs)) {
-      expect(job.steps.length, `job "${jobName}" has no steps`).toBeGreaterThan(0)
+      expect(job.steps?.length ?? 0, `job "${jobName}" has no steps`).toBeGreaterThan(0)
     }
   })
 })
