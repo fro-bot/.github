@@ -4422,3 +4422,48 @@ Sources: https://github.com/fro-bot/systematic@8e26a01e7281b9fde755a3d00b46079d5
 Surveyed fro-bot/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/systematic
+
+## [2026-09-05 04:15] ingest | repo:fro-bot/.github
+
+Daily control-plane oversight pass. Persisted two durable findings to
+[[github-actions-ci]], both discovered by this repo's own oversight
+tooling disagreeing with itself.
+
+(1) **A Commit's Status Rollup Is Not Branch Health.** The 2026-09-04
+sweep reported 4 failing default branches; the 2026-09-05 sweep reported
+2, with nothing fixed in between — the first read run history, the second
+read `defaultBranchRef.target.statusCheckRollup`. Verified directly:
+`Manage Issues` concluded `failure` on 09-02, 09-03, and 09-04, while the
+09-05 `main` head (`71f7fa8`, 03:33 UTC) reports `SUCCESS` across 10
+contexts that do not include it. A check run attaches to whatever commit
+was `HEAD` when it started, so the next merge flushes a scheduled failure
+out of the current head's rollup. Rollup-measured branch health therefore
+decays with commit frequency rather than quality, and — because branch
+protection evaluates the same per-commit rollup — any workflow with a
+`schedule:` trigger sits outside the merge gate by construction. This is
+the mechanism underneath the earlier *A Required Check That Cannot Fail
+Loudly* finding, reached without a bot-author guard or a dual-trigger
+workflow.
+
+(2) **Report Titles Fragmented Across the Fleet.** Nine surveyed repos
+publish a daily agent report under four distinct title schemes, two
+differing from their nearest neighbour only by a trailing ` (UTC)`.
+Open-report accumulation tracks exactly with whether each repo's
+retention filter still matches its own titles (8 / 4 / 1). Extends the
+2026-09-04 *A Rename Silently Orphans Its Title-Matching Consumers*
+entry from a single repo to a fleet, where each repo carries a private
+copy of the matcher and no shared definition exists for the drift to
+surface in.
+
+Delivery mode was `working-dir`; the scheduled job's only commit path is
+`wiki-ingest.ts`, so only `knowledge/**` was modified. No code fix, PR,
+or branch push was possible this run — recorded in the daily report under
+Needs Human Attention.
+
+Sources: https://github.com/fro-bot/.github@71f7fa87; https://github.com/fro-bot/.github/actions/runs/33844029067
+
+## [2026-09-05 04:00] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@71f7fa87d65289328adc8ba8c05745d306672b32

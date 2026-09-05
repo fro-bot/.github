@@ -2,7 +2,7 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-04
+updated: 2026-09-05
 tags:
   [
     github-actions,
@@ -862,6 +862,107 @@ Rule: **read `run_started_at` from the API; treat the cron expression as
 a request, not a record.** A finding of the form "the 03:30 pass did X"
 is only safe if the workflow has one cron or the run was matched by
 `workflow_run.event`/`display_title` rather than by hour.
+
+### A Commit's Status Rollup Is Not Branch Health (2026-09-05)
+
+From `fro-bot/.github`, found by two org sweeps disagreeing with each
+other. The 2026-09-04 oversight pass reported **4 failing default
+branches**; the 2026-09-05 pass reported **2**. Nothing was fixed in
+between. The two passes measured different things:
+
+- Run-history method — `gh run list --branch main`, read conclusions.
+- Rollup method — GraphQL `defaultBranchRef.target.statusCheckRollup`.
+
+The rollup method is the one that looks canonical, and it is the one
+that lies. Verified directly on this repo: `Manage Issues` concluded
+`failure` on 2026-09-02, 09-03, and 09-04. The `main` head commit on
+2026-09-05 (`71f7fa8`, committed 03:33 UTC) reports
+`statusCheckRollup.state = SUCCESS` across 10 contexts, and **`Manage
+Issues` is not one of them.**
+
+The mechanism is mundane and worth stating plainly: a check run
+attaches to whatever commit was `HEAD` when it started. A scheduled run
+that fails at 06:21 attaches to that morning's commit. The next merge
+moves `HEAD`, and the failure does not follow — the new commit's rollup
+contains only the checks that ran against *it*, which for a scheduled
+workflow means nothing until its next cron fires. **The failure is not
+resolved, it is unaddressed.**
+
+Consequences, in increasing order of how much they should bother you:
+
+- **Rollup-measured branch health decays with commit frequency, not
+  with quality.** An active repo continuously flushes its own scheduled
+  failures out of view. A dormant repo retains them —
+  `marcusrbrown/extend-vscode` still shows `Pre-Release Validation
+  (vulnerabilities) FAILURE` in its head rollup precisely because
+  nothing has landed since. The repo that merges most looks cleanest.
+  That is the metric inverted.
+- **This is why branch protection cannot see it either.** Required
+  checks are evaluated per-commit against the same rollup. A scheduled
+  workflow can be permanently broken without ever blocking a merge —
+  the mechanism underneath *A Required Check That Cannot Fail Loudly*,
+  reached here without needing a bot-author guard or a dual-trigger
+  workflow. Any workflow with a `schedule:` trigger is outside the
+  merge gate by construction.
+- **Two honest methods, two different numbers, and no way to tell from
+  the output which one you got.** Both sweeps rendered a single
+  "failing default branches" count with no method disclosed. Same
+  family as *A Narrowly-Scoped Check That Emits a Whole-Artifact
+  Verdict*: the reading is not wrong, its **scope** is undisclosed, and
+  the consumer reads it as broader than it is.
+
+Rule: **to assess whether a repository's automation is healthy, query
+run history per workflow; use the head-commit rollup only to answer
+"is this specific commit green."** They are different questions, and
+the rollup is only ever a valid answer to the second one. A sweep that
+reports scheduled-workflow health from a commit rollup will report
+`SUCCESS` for a daemon that has been dead for months.
+
+Corroborating fleet data from the same pass: `Manage Issues` on this
+repo carries two independently silent faults (see the two 2026-09-04
+entries above), has failed every scheduled run since at least 09-02,
+and appears green by every commit-scoped instrument the repo has.
+
+### Report Titles Fragmented Across the Fleet (2026-09-05)
+
+Corroborates *A Rename Silently Orphans Its Title-Matching Consumers*
+(2026-09-04) with fleet-wide evidence. Nine surveyed repos publish a
+daily agent report under **four** distinct title schemes:
+
+| Scheme | Repos |
+| --- | --- |
+| `Daily Fro Bot Report — YYYY-MM-DD (UTC)` | `fro-bot/.github`, `fro-bot/dashboard`, `fro-bot/space-bus`, `bfra-me/renovate-action`, `marcusrbrown/mothership`, `marcusrbrown/marcusrbrown.github.io` |
+| `Daily Autohealing Report — YYYY-MM-DD (UTC)` | [[bfra-me--works]] |
+| `Daily Autohealing Report — YYYY-MM-DD` | [[marcusrbrown--infra]] |
+| `Daily Maintenance Report — YYYY-MM-DD` | `marcusrbrown/.dotfiles` |
+
+Note the last two differ from their nearest neighbour only by a
+trailing ` (UTC)` — a difference no human reviewer would register as
+semantic, and a difference that a `test("...")` selector treats as
+total.
+
+Open-report accumulation tracks exactly with whether each repo's
+retention filter still matches its own titles: `marcusrbrown/infra` at
+**8** open reports, `marcusrbrown/.dotfiles` at **4**, and every repo
+on a scheme its filter recognizes at **1**. The garbage collector is
+not broken in those repos; it is **aimed at a string that stopped being
+produced**.
+
+The generalization is stronger than the 09-04 entry stated. A rename
+does not merely orphan the consumers *in the same repository* — where
+the same artifact convention is copied across a fleet, each repo
+renames on its own schedule and each carries a private copy of the
+matcher. There is no shared definition to update, so there is no
+single place the drift becomes visible.
+
+The remedy is the one [[bfra-me--works]] already published for a
+different reason: **lifecycle on a body marker, identity on
+`author.login`, and let the title be prose.** A
+`<!-- fro-bot:daily-report:v1 -->` marker is stable under every rename,
+is not guessable by an outsider the way a dated title prefix is, and
+gives the retention sweep a selector that cannot silently stop
+matching. The security argument and the maintenance argument land on
+the same design.
 
 ### Convention Enforcement via Tests
 
