@@ -40,16 +40,17 @@ const CALIBRATION_PROBES = 3
 // probes per doubling step, instead of one, smooths that single-probe noise out of the decision
 // that matters. The guarantee is structural, not statistical: a median needs two probes to lie in
 // the same direction where one used to suffice. The measurements below are consistent with that
-// but too sparse to separate the arms on their own (two drops in 32 single-probe runs against
-// none in 28 median runs; unequal run counts, arms interleaved -- a blocked design confounds this
-// with frequency drift in either direction). On a 10-core box where the honest count for the
-// quadratic control is 8: single-probe dropped to 4 once in 20 runs under 12-process contention
-// and once in 12 under 30-process; median-of-3 held 8 in 20 and 8 runs respectively. On a 4-core
-// box where the honest count is 4: under 12 busy loops (20 runs) both arms selected identical
-// counts every run (reps=2 x5, reps=4 x15). So the median rejects a transient spike on one probe;
-// when all three probes inflate together it inherits the bias and the count lands low. The ratio
+// but too sparse to separate the arms on their own. On a 10-core box where the honest count for
+// the quadratic control is 8 (two drops in 32 single-probe runs against none in 28 median runs,
+// unequal run counts): single-probe dropped to 4 once in 20 runs under 12-process contention and
+// once in 12 under 30-process; median-of-3 held 8 in 20 and 8 runs respectively. On a 4-core box
+// where the honest count is 4: under 12 busy loops (20 runs) both arms selected identical counts
+// every run (reps=2 x5, reps=4 x15). So the median rejects a transient spike on one probe; when
+// all three probes inflate together it inherits the bias and the count lands low. The ratio
 // absorbs that case because both terms are measured at the same repetitions count adjacent in
-// time; 23/23 held at 8x oversubscription on the 4-core box.
+// time; 23/23 held at 8x oversubscription on the 4-core box. When reproducing any of these,
+// interleave the arms: a blocked design confounds the comparison with frequency drift, in either
+// direction depending on which arm runs first.
 function calibrateRepetitions(operation: () => void): number {
   const probe = (repetitions: number): number =>
     median(Array.from({length: CALIBRATION_PROBES}, () => measure(operation, repetitions)))
@@ -90,16 +91,16 @@ function measureScalingRatio(operation: (size: number) => void, size: number, sa
     ratios.push(largeMeasurement / Math.max(smallMeasurement, 0.01))
   }
 
-  smallMeasurements.sort((left, right) => left - right)
-  largeMeasurements.sort((left, right) => left - right)
-  ratios.sort((left, right) => left - right)
-  const smallMilliseconds = smallMeasurements[Math.floor(smallMeasurements.length / 2)] ?? 0
-  const largeMilliseconds = largeMeasurements[Math.floor(largeMeasurements.length / 2)] ?? 0
   // Take the median ratio, never the minimum. Because ratio = large / small, contention on the
   // small term deflates the ratio, so the minimum is structurally the most understated pair --
   // biased toward silence on a guard whose whole job is catching a superlinear regression.
-  const ratio = ratios[Math.floor(ratios.length / 2)] ?? largeMilliseconds / Math.max(smallMilliseconds, 0.01)
-  return {smallMilliseconds, largeMilliseconds, ratio, repetitions}
+  // `samples` is pinned to a positive integer above, so none of these medians sees empty input.
+  return {
+    smallMilliseconds: median(smallMeasurements),
+    largeMilliseconds: median(largeMeasurements),
+    ratio: median(ratios),
+    repetitions,
+  }
 }
 
 // Named so these two bounds stay visually distinct from the unrelated sample count of 3 passed to
