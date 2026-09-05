@@ -28,7 +28,8 @@ function median(values: readonly number[]): number {
 }
 
 const CALIBRATION_TARGET_MILLISECONDS = 50
-// Keep odd: `median` returns the upper middle value on even input, which biases repetitions high.
+// Keep odd: `median` returns the upper middle value on even input, which reads the probe high,
+// satisfies the target sooner, and so *under*-counts repetitions -- the failure this calibration fixes.
 const CALIBRATION_PROBES = 3
 
 // The variance this test used to leak in under CPU contention lived here, not in the downstream
@@ -41,7 +42,7 @@ const CALIBRATION_PROBES = 3
 // single-probe calibration locked the quadratic control into half the correct repetitions count
 // once, and under 30-process contention (12 runs) once more; median-of-3 calibration held the
 // correct count in all 20 and all 8 runs measured at those same contention levels.
-function calibrateRepetitions(operation: () => void): {repetitions: number; smallMilliseconds: number} {
+function calibrateRepetitions(operation: () => void): number {
   const probe = (repetitions: number): number =>
     median(Array.from({length: CALIBRATION_PROBES}, () => measure(operation, repetitions)))
 
@@ -53,7 +54,7 @@ function calibrateRepetitions(operation: () => void): {repetitions: number; smal
     smallMilliseconds = probe(repetitions)
   }
 
-  return {repetitions, smallMilliseconds}
+  return repetitions
 }
 
 function measureScalingRatio(operation: (size: number) => void, size: number, samples = 1): ScalingMeasurement {
@@ -61,8 +62,7 @@ function measureScalingRatio(operation: (size: number) => void, size: number, sa
   const largeOperation = (): void => operation(size * 2)
   smallOperation()
   largeOperation()
-  const {repetitions, smallMilliseconds: calibratedSmallMilliseconds} = calibrateRepetitions(smallOperation)
-  let smallMilliseconds = calibratedSmallMilliseconds
+  const repetitions = calibrateRepetitions(smallOperation)
 
   const smallMeasurements: number[] = []
   const largeMeasurements: number[] = []
@@ -80,7 +80,7 @@ function measureScalingRatio(operation: (size: number) => void, size: number, sa
   smallMeasurements.sort((left, right) => left - right)
   largeMeasurements.sort((left, right) => left - right)
   ratios.sort((left, right) => left - right)
-  smallMilliseconds = smallMeasurements[Math.floor(smallMeasurements.length / 2)] ?? smallMilliseconds
+  const smallMilliseconds = smallMeasurements[Math.floor(smallMeasurements.length / 2)] ?? 0
   const largeMilliseconds = largeMeasurements[Math.floor(largeMeasurements.length / 2)] ?? 0
   // Take the median ratio, never the minimum. Because ratio = large / small, contention on the
   // small term deflates the ratio, so the minimum is structurally the most understated pair --
@@ -89,8 +89,8 @@ function measureScalingRatio(operation: (size: number) => void, size: number, sa
   return {smallMilliseconds, largeMilliseconds, ratio, repetitions}
 }
 
-// Named so the two meanings of the literal 3 elsewhere in this file -- this ratio ceiling and the
-// unrelated sample count passed to measureScalingRatio -- stay visually distinct.
+// Named so these two bounds stay visually distinct from the unrelated sample count of 3 passed to
+// measureScalingRatio at the call sites below.
 const LINEAR_RATIO_CEILING = 3
 const QUADRATIC_RATIO_FLOOR = 3
 
