@@ -28,6 +28,7 @@ function median(values: readonly number[]): number {
 }
 
 const CALIBRATION_TARGET_MILLISECONDS = 50
+// Keep odd: `median` returns the upper middle value on even input, which biases repetitions high.
 const CALIBRATION_PROBES = 3
 
 // The variance this test used to leak in under CPU contention lived here, not in the downstream
@@ -225,7 +226,7 @@ describe('linear-time input parsing', () => {
     )
 
     // The old global regex retries the remaining body from each opening marker and fails this ratio guard.
-    expect(measurement.ratio).toBeLessThan(3)
+    expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
   })
 
   it('scales exported wikilink validation linearly for an unterminated opening-bracket run', () => {
@@ -249,7 +250,7 @@ describe('linear-time input parsing', () => {
     )
 
     // The exported save-path gate must retain the same linearity contract as its parser.
-    expect(measurement.ratio).toBeLessThan(3)
+    expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
   })
 
   it('preserves valid and malformed wiki log parsing', () => {
@@ -286,7 +287,7 @@ describe('linear-time input parsing', () => {
     )
 
     // The old capture regex rescans the remaining malformed log from each marker and fails this ratio guard.
-    expect(measurement.ratio).toBeLessThan(3)
+    expect(measurement.ratio).toBeLessThan(LINEAR_RATIO_CEILING)
   })
 
   it('fails validation on malformed wikilinks under the unified grammar', () => {
