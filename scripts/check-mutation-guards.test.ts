@@ -749,12 +749,13 @@ describe('resolveReporterConfig (default reporterConfig resolution)', () => {
     expect(result.resolvedJsonReportPath).toBe(mutationReportPath)
   })
 
-  // runMutationGuardCheck's own default-construction line is `reporterConfig ??
-  // resolveReporterConfig(strykerConfigPath)`, where `strykerConfigPath` is this same
-  // repository's real config path — so the assertion above (resolveReporterConfig against
-  // `realConfigPath`, the identical file) already exercises the exact production default this
-  // wrapper falls back to when no override is given, without needing to invoke
-  // runMutationGuardCheck itself against the real, non-test-owned mutationReportPath.
+  // runMutationGuardCheck's default-construction line is `reporterConfig ??
+  // reporterConfigFrom(config, strykerConfigPath)`; the exported resolveReporterConfig these
+  // tests call delegates to that same reporterConfigFrom with the same configPath, and
+  // `realConfigPath === strykerConfigPath` is asserted above. The function under test is not
+  // the one production calls, but its body is, and its input is proven identical — so the
+  // assertions here cover the production default without invoking runMutationGuardCheck
+  // against the real, non-test-owned mutationReportPath.
 })
 
 describe('runMutationGuardCheck (stale-report fix)', () => {
