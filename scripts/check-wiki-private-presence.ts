@@ -56,9 +56,7 @@ function parseFrontmatterSources(content: string): string[] | null {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content)
   if (!match) return null
 
-  // The capturing group `(...)` always participates in the match when the overall regex
-  // matches — its `[\s\S]*?` quantifier applies to the group's *content*, not to whether the
-  // group captures — so match[1] is always a string here, never undefined.
+  // Capturing group always participates when the regex matches.
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const frontmatter = match[1]!
 
@@ -66,14 +64,10 @@ function parseFrontmatterSources(content: string): string[] | null {
   try {
     parsed = YAML.parse(frontmatter)
   } catch {
-    // Fall through with `parsed` left `undefined`. That is NOT equivalent to `null` below
-    // (`undefined === null` is false) — this branch is load-bearing, not dead code.
+    // unparseable → parsed stays undefined → null below
   }
 
-  // Object.prototype.hasOwnProperty.call below throws only for null/undefined `this` (the
-  // ECMAScript ToObject coercion); every other value — string, number, boolean, array, plain
-  // object — is boxed safely and simply reports `false` for a 'sources' own-property. So the
-  // only unsafe `parsed` shape to guard against here is exactly `null` or `undefined`.
+  // hasOwnProperty.call throws only for null/undefined receivers.
   if (parsed === null || parsed === undefined) return null
 
   const obj = parsed as Record<string, unknown>
@@ -84,26 +78,16 @@ function parseFrontmatterSources(content: string): string[] | null {
   const sources = obj.sources
 
   // Key PRESENT but not an array → authoritative empty result (fail-closed).
-  // Stryker disable next-line ArrayDeclaration: the only consumer of this return value is
-  // sourceUrlMatchesRepo via .some() below, and its `new URL(...)` constructor throws (caught,
-  // returns false) for any non-URL string — a non-empty seed here can never satisfy .some()
-  // differently than the real empty array.
+  // Stryker disable next-line ArrayDeclaration: sourceUrlMatchesRepo's `new URL(...)` throws
+  // (caught, returns false) for any non-URL string, so a non-empty seed here can't affect .some().
   if (!Array.isArray(sources)) return []
 
   // Key PRESENT and is an array → extract url strings (possibly returns []).
-  // Stryker disable next-line ArrayDeclaration: same reasoning as above — sourceUrlMatchesRepo
-  // rejects any non-URL string via the URL constructor throw, so seeding this accumulator with
-  // an extra unparseable string cannot change .some()'s result at the (only) call site.
+  // Stryker disable next-line ArrayDeclaration: same reasoning — sourceUrlMatchesRepo rejects any
+  // non-URL seed string via the URL constructor throw, so it can't affect .some()'s result.
   const urls: string[] = []
   for (const src of sources) {
-    // A null element must never reach the property access below — `(null as Record<...>).url`
-    // throws.
-    if (src === null) continue
-    // No `typeof src === 'object'` guard here: property access on any non-null/undefined value
-    // never throws (per spec) and simply yields `undefined` for a primitive src (string/number/
-    // boolean), which the `typeof url === 'string'` check below already excludes identically to
-    // skipping it — the guard would be redundant dead code, not a behavior difference.
-    const url = (src as Record<string, unknown>).url
+    const url = (src as Record<string, unknown> | null | undefined)?.url
     if (typeof url === 'string') urls.push(url)
   }
   return urls
@@ -206,10 +190,7 @@ export function detectPrivateWikiLeaks(params: {
         continue
       }
 
-      // Single unique public entry — verify content attribution.
-      // entries.length === 1 is guaranteed here: buildPublicSlugMap only ever pushes into a
-      // slug's array (never creates an empty one), and the `entries.length > 1` branch above
-      // already continued past any stem with 2+ entries — so entries[0] is always defined.
+      // entries.length === 1 here: the `entries.length > 1` branch above already continued.
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const entry = entries[0]!
       const expectedUrl = `https://github.com/${entry.owner}/${entry.name}`
@@ -250,10 +231,7 @@ export function detectPrivateWikiLeaks(params: {
     }
 
     // Stem not in publicSlugMap — check content-identity grandfathering.
-    // No `grandfatherHash !== undefined` guard needed: page.hash is always a string (loadWikiPages
-    // computes it via createHash().digest('hex')), so when grandfatherHash is undefined,
-    // 'grandfatherHash === page.hash' below already evaluates false on its own — the guard would
-    // be redundant dead code, not a behavior difference.
+    // page.hash is always a string, so an undefined grandfatherHash already fails this check.
     const grandfatherHash = grandfatherByStem.get(page.stem)
     if (grandfatherHash === page.hash) {
       continue // unchanged from main → grandfathered (e.g. copiloting/lost-access)

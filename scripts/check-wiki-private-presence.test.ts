@@ -673,8 +673,8 @@ describe('detectPrivateWikiLeaks', () => {
 
     it('sources array contains a null element — skipped without throwing, not treated as an object', () => {
       // #given a sources array with a `null` entry mixed in with a valid one
-      //        typeof null === 'object', so `src !== null` must independently exclude it or
-      //        `(src as Record<string, unknown>).url` would throw on a null src
+      //        `(src as Record<string, unknown> | null | undefined)?.url` must optional-chain
+      //        past a null src, or the property access would throw
       const content = [
         '---',
         'sources:',
