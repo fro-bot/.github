@@ -542,6 +542,12 @@ describe('detectPrivateWikiLeaks', () => {
       const parsed = JSON.parse(line) as Record<string, unknown>
       // Only allowed keys: level, event, message, slug
       expect(Object.keys(parsed).sort()).toEqual(['event', 'level', 'message', 'slug'])
+      // Exact values — these are contract strings other tooling may grep/filter on
+      expect(parsed.level).toBe('warn')
+      expect(parsed.event).toBe('legacy-substring-attribution')
+      expect(parsed.message).toBe(
+        'Page attributed via body substring; add structured frontmatter sources for stronger attribution',
+      )
       // Slug must be the safe public identifier
       expect(parsed.slug).toBe('acme--widget')
       // The sensitive private name must be absent from the entire stderr output
@@ -634,6 +640,80 @@ describe('detectPrivateWikiLeaks', () => {
         grandfatherPages: [],
       })
       expect(result).toEqual([])
+    })
+  })
+
+  describe('parseFrontmatterSources grammar edge cases (null-parsed frontmatter, non-object sources entries)', () => {
+    it('frontmatter body parses to exactly null (bare "null") — falls back to substring, no throw', () => {
+      // #given frontmatter whose YAML content is the literal scalar `null` (not absent, not an
+      //        object) — typeof null === 'object' in JS, so this must be excluded by an explicit
+      //        `parsed === null` check, not a typeof check alone
+      const content = ['---', 'null', '---', 'See https://github.com/acme/widget for details.'].join('\n')
+      // #when detection runs
+      // #then it must not throw (Object.prototype.hasOwnProperty.call(null, ...) throws) and must
+      // fall back to the legacy substring check, which passes here
+      expect(() =>
+        detectPrivateWikiLeaks({
+          dataWikiPages: [page('acme--widget.md', 'h1', content)],
+          publicSlugMap: new Map([
+            ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+          ]),
+          grandfatherPages: [],
+        }),
+      ).not.toThrow()
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toEqual([])
+    })
+
+    it('sources array contains a null element — skipped without throwing, not treated as an object', () => {
+      // #given a sources array with a `null` entry mixed in with a valid one
+      //        `(src as Record<string, unknown> | null | undefined)?.url` must optional-chain
+      //        past a null src, or the property access would throw
+      const content = [
+        '---',
+        'sources:',
+        '  - null',
+        '  - url: https://github.com/acme/widget',
+        '---',
+        'no body url',
+      ].join('\n')
+      // #when detection runs
+      // #then it must not throw, and the valid entry still attributes correctly
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toEqual([])
+    })
+
+    it('rejects a non-string sources[].url that would coerce via toString to the expected URL (single-element array decoy)', () => {
+      // #given a sources entry whose `url` field is a one-element array wrapping the real URL
+      //        string. `[x].toString() === String(x)` in JS — if `typeof url === 'string'` were
+      //        bypassed, `new URL(arrayValue)` inside sourceUrlMatchesRepo would coerce this array
+      //        to the exact matching URL string via Array.prototype.toString and wrongly attribute.
+      const content = ['---', 'sources:', '  - url: ["https://github.com/acme/widget"]', '---', 'no body url'].join(
+        '\n',
+      )
+      // #when detection runs
+      // #then the non-string url is rejected by the typeof guard — no valid source, page flagged
+      const result = detectPrivateWikiLeaks({
+        dataWikiPages: [page('acme--widget.md', 'h1', content)],
+        publicSlugMap: new Map([
+          ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+        ]),
+        grandfatherPages: [],
+      })
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
     })
   })
 
@@ -768,6 +848,52 @@ describe('loadWikiPages', () => {
     await loadWikiPages('/some/custom/dir')
     expect(mockReadFile).toHaveBeenCalledWith('/some/custom/dir/foo--bar.md', 'utf8')
   })
+
+  it('calls readdir with {withFileTypes: true} — mutation gate proof (readdir options)', async () => {
+    // #given a directory to scan
+    mockReaddir.mockResolvedValue([])
+    // #when loadWikiPages is called
+    await loadWikiPages('knowledge/wiki/repos')
+    // #then readdir receives the exact options object — withFileTypes must be true, not
+    // omitted/false, or dirent.isFile()/.name would not be available
+    expect(mockReaddir).toHaveBeenCalledWith('knowledge/wiki/repos', {withFileTypes: true})
+  })
+
+  it('strips only a TRAILING .md extension, not an earlier occurrence — mutation gate proof (anchored regex)', async () => {
+    // #given a filename that legitimately ends in .md but also contains an earlier ".md" substring
+    mockReaddir.mockResolvedValue([dirent('weird--v.md.notes.md')])
+    mockReadFile.mockResolvedValue('content')
+    // #when loadWikiPages is called
+    const result = await loadWikiPages('knowledge/wiki/repos')
+    // #then only the TRAILING .md is stripped — an unanchored regex would strip the first
+    // occurrence instead, producing a different (wrong) stem
+    expect(result[0]?.stem).toBe('weird--v.md.notes')
+  })
+
+  it('propagates a thrown non-object, non-Error rejection from readdir unchanged (fail-closed)', async () => {
+    // #given readdir rejects with a bare string, not an Error/object — proves the typeof/null
+    // guard correctly re-throws instead of assuming every rejection is an inspectable object
+    mockReaddir.mockRejectedValue('boom: not an object')
+    await expect(loadWikiPages('knowledge/wiki/repos')).rejects.toBe('boom: not an object')
+  })
+
+  it('propagates a null rejection from readdir unchanged (fail-closed)', async () => {
+    // #given readdir rejects with null — typeof null === 'object', so this specifically proves
+    // the separate `error !== null` conjunct is load-bearing
+    mockReaddir.mockRejectedValue(null)
+    await expect(loadWikiPages('knowledge/wiki/repos')).rejects.toBeNull()
+  })
+
+  it('propagates a function-typed rejection with a spoofed .code === "ENOENT" unchanged — mutation gate proof (typeof guard)', async () => {
+    // #given readdir rejects with a FUNCTION carrying a .code property equal to 'ENOENT'.
+    //        typeof a function is 'function', never 'object' — so the real code's typeof guard
+    //        must reject it and rethrow, never reaching the .code comparison at all. Forcing the
+    //        typeof operand to `true` would let this spoofed value through and wrongly swallow it
+    //        as a graceful ENOENT (returning [] instead of rejecting).
+    const funcError = Object.assign(() => {}, {code: 'ENOENT'})
+    mockReaddir.mockRejectedValue(funcError)
+    return expect(loadWikiPages('knowledge/wiki/repos')).rejects.toBe(funcError)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -840,6 +966,36 @@ describe('findStructuralViolations', () => {
     const eperm = Object.assign(new Error('EPERM: operation not permitted'), {code: 'EPERM'})
     mockReaddir.mockRejectedValue(eperm)
     await expect(findStructuralViolations('knowledge/wiki/repos')).rejects.toThrow(/EPERM/)
+  })
+
+  it('calls readdir with {withFileTypes: true} — mutation gate proof (readdir options)', async () => {
+    // #given a directory to scan
+    mockReaddir.mockResolvedValue([])
+    // #when findStructuralViolations is called
+    await findStructuralViolations('knowledge/wiki/repos')
+    // #then readdir receives the exact options object
+    expect(mockReaddir).toHaveBeenCalledWith('knowledge/wiki/repos', {withFileTypes: true})
+  })
+
+  it('propagates a thrown non-object, non-Error rejection from readdir unchanged (fail-closed)', async () => {
+    // #given readdir rejects with a bare string, not an Error/object
+    mockReaddir.mockRejectedValue('boom: not an object')
+    await expect(findStructuralViolations('knowledge/wiki/repos')).rejects.toBe('boom: not an object')
+  })
+
+  it('propagates a null rejection from readdir unchanged (fail-closed)', async () => {
+    // #given readdir rejects with null — proves the separate `error !== null` conjunct is load-bearing
+    mockReaddir.mockRejectedValue(null)
+    await expect(findStructuralViolations('knowledge/wiki/repos')).rejects.toBeNull()
+  })
+
+  it('propagates a function-typed rejection with a spoofed .code === "ENOENT" unchanged — mutation gate proof (typeof guard)', async () => {
+    // #given readdir rejects with a FUNCTION carrying a .code property equal to 'ENOENT' —
+    //        typeof a function is 'function', never 'object', so the real code must reject it
+    //        and rethrow rather than swallow it as a graceful ENOENT.
+    const funcError = Object.assign(() => {}, {code: 'ENOENT'})
+    mockReaddir.mockRejectedValue(funcError)
+    return expect(findStructuralViolations('knowledge/wiki/repos')).rejects.toBe(funcError)
   })
 
   it('composes with detectPrivateWikiLeaks: subdir flagged structurally, clean public page passes', async () => {
@@ -1045,6 +1201,25 @@ describe('formatLeakReport (redaction)', () => {
     expect(report).toContain('Leak count: 0')
     expect(report).not.toMatch(/leak-\d/)
   })
+
+  it('produces the exact expected report text byte-for-byte', () => {
+    // #given two known leaks
+    // #when formatLeakReport is called
+    // #then the ENTIRE output is pinned — catches any prose-string mutation anywhere in the template
+    const report = formatLeakReport(twoLeaks)
+    expect(report).toBe(
+      `${[
+        'check-wiki-private-presence: BLOCKED — unattributable wiki repo pages detected.',
+        '  - leak-1: unattributable-page',
+        '  - leak-2: ambiguous-public-slug',
+        '',
+        'Leak count: 2',
+        'Identifiers are redacted from this public log. To map them to repositories,',
+        'run `node scripts/resolve-private.ts` locally with operator credentials and',
+        'inspect the data branch wiki pages directly.',
+      ].join('\n')}\n`,
+    )
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1154,6 +1329,16 @@ describe('requireGrandfatherDir (fail-closed missing-env branch)', () => {
     expect(() => requireGrandfatherDir(undefined)).toThrow(/GRANDFATHER_WIKI_REPOS_DIR/)
   })
 
+  it('throws with the exact full error message text', () => {
+    // #given GRANDFATHER_WIKI_REPOS_DIR is not set
+    // #then the full concatenated message is asserted, not just a keyword substring
+    expect(() => requireGrandfatherDir(undefined)).toThrow(
+      'check-wiki-private-presence: GRANDFATHER_WIKI_REPOS_DIR env var is required but not set. ' +
+        "The workflow must supply the path to main's knowledge/wiki/repos/ directory " +
+        'so that pages already public are not re-flagged.',
+    )
+  })
+
   it('throws when env is blank (empty string)', () => {
     // #given GRANDFATHER_WIKI_REPOS_DIR is set to an empty string
     expect(() => requireGrandfatherDir('')).toThrow(/GRANDFATHER_WIKI_REPOS_DIR/)
@@ -1184,6 +1369,28 @@ describe('collectLeaks path validation', () => {
     // #then the degenerate path configuration is rejected before scanning either snapshot
     await expect(runCli([], {GRANDFATHER_WIKI_REPOS_DIR: resolve('knowledge/wiki/repos')})).rejects.toThrow(
       'data and grandfather wiki directories must not resolve to the same path',
+    )
+  })
+
+  it("reads metadata/repos.yaml with the exact path and 'utf8' encoding", async () => {
+    // #given a clean environment
+    const enoent = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+    mockReaddir.mockRejectedValue(enoent)
+    mockReadFile.mockResolvedValue('version: 1\nrepos: []\n')
+    // #when runCli runs the full pipeline
+    await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: '/tmp/empty-grandfather'})
+    // #then readFile is called with the exact contract path and encoding
+    expect(mockReadFile).toHaveBeenCalledWith('metadata/repos.yaml', 'utf8')
+  })
+
+  it('rejects a well-formed-YAML, schema-invalid metadata/repos.yaml with the schema-validation message, not a generic TypeError — mutation gate proof (assertReposFile CallExpression)', async () => {
+    // #given metadata/repos.yaml decodes to valid YAML but violates the ReposFile schema (`repos`
+    // is a string, not an array). If `assertReposFile(reposParsed)` were removed (CallExpression
+    // mutant), execution would fall through to `buildPublicSlugMap(reposParsed.repos)` iterating a
+    // non-array and throw a DIFFERENT TypeError instead of the real SchemaValidationError.
+    mockReadFile.mockResolvedValue('version: 1\nrepos: not-an-array\n')
+    await expect(runCli([], {GRANDFATHER_WIKI_REPOS_DIR: '/tmp/empty-grandfather'})).rejects.toThrow(
+      /repos\.repos.*expected array/,
     )
   })
 })
@@ -1328,6 +1535,53 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
   it('case-insensitive owner/repo: different repo name (widget-other) still does NOT match acme/widget', () => {
     // Lowercasing both sides must not collapse different repo names — a distinct repo stays flagged.
     const content = ['---', 'sources:', '  - url: https://github.com/acme/widget-other', '---', 'Content.'].join('\n')
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+
+  it('source URL with no path segments (bare https://github.com) does not match and does not throw — mutation gate proof (segments[0] optional chaining)', () => {
+    // #given a source URL with an empty pathname — segments[0] is undefined after filtering
+    const content = ['---', 'sources:', '  - url: https://github.com', '---', 'Content.'].join('\n')
+    // #when detection runs
+    // #then no match (undefined?.toLowerCase() !== owner), no throw, page flagged
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+
+  it('source URL with only one path segment (owner, no repo name) does not match and does not throw — mutation gate proof (segments[1] optional chaining)', () => {
+    // #given a source URL whose path is just the owner segment — segments[1] is undefined
+    const content = ['---', 'sources:', '  - url: https://github.com/acme', '---', 'Content.'].join('\n')
+    // #when detection runs
+    // #then no match (undefined?.toLowerCase() !== name), no throw, page flagged
+    const result = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', content)],
+      publicSlugMap: new Map([
+        ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+      ]),
+      grandfatherPages: [],
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+
+  it('wrong owner, right repo name does NOT match — mutation gate proof (owner comparison is not short-circuited to true)', () => {
+    // #given a source URL whose repo NAME matches but whose OWNER does not
+    //        (proves the owner comparison is not forced-true/skipped — both operands must hold)
+    const content = ['---', 'sources:', '  - url: https://github.com/wrongowner/widget', '---', 'Content.'].join('\n')
     const result = detectPrivateWikiLeaks({
       dataWikiPages: [page('acme--widget.md', 'h1', content)],
       publicSlugMap: new Map([
@@ -1508,6 +1762,28 @@ describe('formatOperatorReport (local-only unredacted output)', () => {
     expect(report).not.toContain('marcusrbrown')
     expect(report).not.toContain('acme')
   })
+
+  it('produces the exact expected report text byte-for-byte', () => {
+    // #given two known leaks
+    // #when formatOperatorReport is called
+    // #then the ENTIRE output is pinned — catches any prose-string mutation anywhere in the template
+    const report = formatOperatorReport(twoLeaks)
+    expect(report).toBe(
+      `${[
+        'check-wiki-private-presence: BLOCKED — 2 unattributable wiki repo page(s).',
+        '',
+        'Offending pages (LOCAL OPERATOR OUTPUT — do not paste into public logs):',
+        '  - knowledge/wiki/repos/marcusrbrown--cart.md  (unattributable-page)',
+        '  - knowledge/wiki/repos/acme--secret.md  (ambiguous-public-slug)',
+        '',
+        'Remediation:',
+        '  1. Inspect each page on the data branch; if its repo is private, the page must not be promoted.',
+        '  2. Redact via a fro-bot[bot] write to data (dispatch fro-bot.yaml) — never a human-authored PR (wiki authority guard).',
+        '  3. If the repo is actually public, ensure its metadata/repos.yaml entry has `private: false` so the slug is admitted.',
+        '  4. Re-run the promotion (Merge Data Branch) once data is clean.',
+      ].join('\n')}\n`,
+    )
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1585,6 +1861,8 @@ describe('runCli — local operator path (no CI env)', () => {
     const result = await runCli(['--operator-report'], {GRANDFATHER_WIKI_REPOS_DIR: '/tmp/empty-grandfather'})
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('no private wiki leaks detected')
+    // stderr must be exactly empty on the clean operator-mode path
+    expect(result.stderr).toBe('')
   })
 
   it('exits 1 and stdout contains the offending filename when leaks are found', async () => {
@@ -1606,6 +1884,8 @@ describe('runCli — local operator path (no CI env)', () => {
     const result = await runCli(['--operator-report'], {GRANDFATHER_WIKI_REPOS_DIR: '/tmp/empty-grandfather'})
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toContain('acme--secret.md')
+    // stderr must be exactly empty on the operator-mode leak path (report goes to stdout only)
+    expect(result.stderr).toBe('')
   })
 
   it('operator report stdout does NOT contain redacted leak-N labels (uses unredacted format)', async () => {
@@ -1649,6 +1929,8 @@ describe('runCli — normal mode (no --operator-report flag)', () => {
     expect(result.stderr).not.toContain('acme--secret.md')
     // Contains the redacted leak label
     expect(result.stderr).toContain('leak-1')
+    // stdout must be exactly empty on the normal-mode leak path (redacted report goes to stderr only)
+    expect(result.stdout).toBe('')
   })
 
   it('normal mode with no leaks exits 0 and stdout contains clean message', async () => {
@@ -1662,5 +1944,165 @@ describe('runCli — normal mode (no --operator-report flag)', () => {
     const result = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: '/tmp/empty-grandfather'})
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('no private wiki leaks detected')
+    // stderr must be exactly empty on the clean normal-mode path
+    expect(result.stderr).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// CLI self-invoke guard (import.meta.url === file://<argv[1]>)
+// ---------------------------------------------------------------------------
+
+describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
+  // Every other test in this file imports the module without ever setting process.argv[1] to its
+  // own path, so the `false` branch of every mutator variant here is trivially exercised (real
+  // code and every mutant behave identically when the condition is never true) -- that is NOT
+  // sufficient to kill the mutants; a genuine discriminating test must make the condition true for
+  // the *real* code and observe main() actually run. Cache-busts the dynamic import (unique query
+  // string) so the module's top-level code re-executes with the manipulated argv/env, rather than
+  // returning the already-cached module instance from every earlier `import` in this file.
+
+  it("invokes main() and exits 0 when process.argv[1] matches the module's own path and detection finds no leaks", async () => {
+    const modulePath = new URL('./check-wiki-private-presence.ts', import.meta.url)
+    const originalArgv = [...process.argv]
+
+    const stdoutOutput: string[] = []
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
+      stdoutOutput.push(String(msg))
+      return true
+    })
+    const stderrSpyGuard = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    const enoent = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+    mockReaddir.mockRejectedValue(enoent)
+    mockReadFile.mockResolvedValue('version: 1\nrepos: []\n')
+
+    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
+    process.env.GRANDFATHER_WIKI_REPOS_DIR = '/tmp/guard-test-grandfather'
+    try {
+      // #then: the guard fired, main() ran, runCli resolved 0 with a clean message, and main()'s
+      // own body wrote that message to stdout WITHOUT calling process.exit (exitCode === 0 branch).
+      await import(`${modulePath.href}?guard-test-main-clean`)
+      expect(exitSpy).not.toHaveBeenCalled()
+      expect(stdoutOutput.join('')).toContain('no private wiki leaks detected')
+      expect(stdoutSpy).toHaveBeenCalledTimes(1)
+      // result.stderr is '' on this clean path — main()'s `if (result.stderr)` must NOT fire
+      expect(stderrSpyGuard).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      process.argv = originalArgv
+      delete process.env.GRANDFATHER_WIKI_REPOS_DIR
+    }
+  })
+
+  it("invokes main() and exits 1 when process.argv[1] matches the module's own path and a leak is found", async () => {
+    const modulePath = new URL('./check-wiki-private-presence.ts', import.meta.url)
+    const originalArgv = [...process.argv]
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    const stdoutSpyGuard = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    const enoentGrandfather = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+    mockReaddir
+      .mockResolvedValueOnce([dirent('acme--secret.md')]) // findStructuralViolations
+      .mockResolvedValueOnce([dirent('acme--secret.md')]) // loadWikiPages
+      .mockRejectedValueOnce(enoentGrandfather) // grandfather dir ENOENT
+    mockReadFile.mockResolvedValueOnce('version: 1\nrepos: []\n').mockResolvedValueOnce('private content')
+
+    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
+    process.env.GRANDFATHER_WIKI_REPOS_DIR = '/tmp/guard-test-grandfather-leak'
+    try {
+      // #then: the guard fired, main() ran, runCli resolved exitCode 1 with the redacted report on
+      // stderr, and main()'s own body called process.exit(1) (the exitCode !== 0 branch) -- the
+      // unmistakable signature that main() actually executed with a real result, not a stub.
+      await expect(import(`${modulePath.href}?guard-test-main-leak`)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(stderrOutput.join('')).toContain('leak-1')
+      // result.stdout is '' on this normal-mode leak path — main()'s `if (result.stdout)` must NOT fire
+      expect(stdoutSpyGuard).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      process.argv = originalArgv
+      delete process.env.GRANDFATHER_WIKI_REPOS_DIR
+    }
+  })
+
+  it('invokes main() with argv sliced past the node/script positions, not the raw argv — mutation gate proof (process.argv.slice(2))', async () => {
+    const modulePath = new URL('./check-wiki-private-presence.ts', import.meta.url)
+    const originalArgv = [...process.argv]
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    const stdoutOutput: string[] = []
+    vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
+      stdoutOutput.push(String(msg))
+      return true
+    })
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    const enoentGrandfather = Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+    mockReaddir
+      .mockResolvedValueOnce([dirent('acme--secret.md')]) // findStructuralViolations
+      .mockResolvedValueOnce([dirent('acme--secret.md')]) // loadWikiPages
+      .mockRejectedValueOnce(enoentGrandfather) // grandfather dir ENOENT
+    mockReadFile.mockResolvedValueOnce('version: 1\nrepos: []\n').mockResolvedValueOnce('private content')
+
+    // argv[1] must equal the module path for the self-invoke guard to fire. Put the
+    // '--operator-report' flag at argv[0] (the node-binary position) instead of after argv[1]:
+    // real `process.argv.slice(2)` on this 2-element array yields [] (normal/redacted mode);
+    // the MethodExpression mutant (`process.argv` unsliced) yields the full 2-element array,
+    // which DOES include '--operator-report' (operator/unredacted mode) — the two modes produce
+    // observably different report shapes for an identical leak, discriminating the mutant.
+    process.argv = ['--operator-report', modulePath.pathname]
+    process.env.GRANDFATHER_WIKI_REPOS_DIR = '/tmp/guard-test-grandfather-slice'
+    try {
+      await expect(import(`${modulePath.href}?guard-test-main-slice`)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      // Real (sliced argv is []): normal mode — redacted report on stderr, filename NOT on stdout.
+      expect(stderrOutput.join('')).toContain('leak-1')
+      expect(stdoutOutput.join('')).not.toContain('acme--secret.md')
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      process.argv = originalArgv
+      delete process.env.GRANDFATHER_WIKI_REPOS_DIR
+    }
+  })
+
+  it("does NOT invoke main() when process.argv[1] does not match the module's own path (positive control)", async () => {
+    const modulePath = new URL('./check-wiki-private-presence.ts', import.meta.url)
+    const originalArgv = [...process.argv]
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.argv = [originalArgv[0] ?? 'node', '/some/unrelated/entrypoint.js']
+    try {
+      // #then: with a non-matching argv[1], the module imports cleanly — no exit call, no main() run.
+      await import(`${modulePath.href}?guard-test-noop`)
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      process.argv = originalArgv
+    }
   })
 })

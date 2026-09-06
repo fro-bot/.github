@@ -1,6 +1,15 @@
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import process from 'node:process'
 import {CORRECTIONS_PATH} from '@fro-bot/wiki-write-core/corrections'
-import {describe, expect, it, vi} from 'vitest'
-import {checkWikiAuthority, fetchChangedFiles, formatBlockMessage} from './check-wiki-authority.ts'
+import {afterEach, describe, expect, it, vi} from 'vitest'
+import {
+  checkWikiAuthority,
+  fetchChangedFiles,
+  formatBlockMessage,
+  readPullRequestContext,
+} from './check-wiki-authority.ts'
 
 // Hoisted mock for execFileSync — must precede any import that might trigger the module.
 const {mockExecFileSync} = vi.hoisted(() => ({
@@ -10,6 +19,17 @@ const {mockExecFileSync} = vi.hoisted(() => ({
 vi.mock('node:child_process', () => ({
   execFileSync: mockExecFileSync,
 }))
+
+// Shared by the readPullRequestContext discrimination tests and the CLI self-invoke guard tests
+// below — both need a real event-payload file on disk (readFile in the module under test is real,
+// not mocked). Module scope, not nested inside a describe, per unicorn/consistent-function-scoping:
+// the helper closes over no test-local state.
+function writeTempEvent(prefix: string, payload: unknown): {eventPath: string; cleanup: () => void} {
+  const tmpDir = mkdtempSync(join(tmpdir(), prefix))
+  const eventPath = join(tmpDir, 'event.json')
+  writeFileSync(eventPath, JSON.stringify(payload), 'utf8')
+  return {eventPath, cleanup: () => rmSync(tmpDir, {recursive: true, force: true})}
+}
 
 describe('checkWikiAuthority', () => {
   describe('author is an allowed Fro Bot identity', () => {
@@ -234,6 +254,42 @@ describe('checkWikiAuthority', () => {
       const result = checkWikiAuthority({author: 'dependabot[bot]', headRef: 'main', files: ['metadata/repos.yaml']})
       expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
     })
+
+    it('blocks fro-bot[bot] with a trailing space (near-miss identity, exact-match only)', () => {
+      // #given a string that is not the exact identity in the frobotAuthors() set
+      // #when the guard evaluates the PR
+      // #then the edit is blocked — Set#has requires an exact string match, not a trimmed one
+      const result = checkWikiAuthority({
+        author: 'fro-bot[bot] ',
+        headRef: 'data',
+        files: ['metadata/repos.yaml'],
+      })
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+    })
+
+    it('blocks Fro-Bot (near-miss identity, case-sensitive match only)', () => {
+      // #given a differently-cased spelling of a real identity
+      // #when the guard evaluates the PR
+      // #then the edit is blocked — identity matching is case-sensitive
+      const result = checkWikiAuthority({author: 'Fro-Bot', headRef: 'data', files: ['metadata/repos.yaml']})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+    })
+
+    it('blocks fro-bot on head ref "datab" (near-miss branch, exact-match only)', () => {
+      // #given fro-bot on a branch whose name merely starts with "data"
+      // #when the guard evaluates the PR touching metadata/repos.yaml
+      // #then the edit is blocked — headRef must equal "data" exactly, not merely start with it
+      const result = checkWikiAuthority({author: 'fro-bot', headRef: 'datab', files: ['metadata/repos.yaml']})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+    })
+
+    it('blocks fro-bot on head ref "main" (near-miss branch)', () => {
+      // #given fro-bot on the main branch touching metadata/repos.yaml
+      // #when the guard evaluates the PR
+      // #then the edit is blocked — only the literal "data" branch is exempt
+      const result = checkWikiAuthority({author: 'fro-bot', headRef: 'main', files: ['metadata/repos.yaml']})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yaml']})
+    })
   })
 
   describe('path-matching edge cases', () => {
@@ -298,11 +354,27 @@ describe('checkWikiAuthority', () => {
       expect(result).toEqual({ok: true})
     })
 
-    it('does not block metadata/*.yml (wrong extension)', () => {
-      // #given a yaml file with the non-canonical .yml extension
+    it('blocks metadata/*.yml (short YAML extension, guarded alongside *.yaml)', () => {
+      // #given a yaml file using the short .yml extension
       // #when the guard evaluates the PR
-      // #then the edit is NOT blocked — the repo convention is *.yaml, and guard matches that literally
+      // #then the edit IS blocked — metadata/*.{yaml,yml} are both auto-managed state
       const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.yml']})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yml']})
+    })
+
+    it('does not block metadata/*.ymlx (longer than the guarded extension)', () => {
+      // #given a filename that merely starts with the guarded extension
+      // #when the guard evaluates the PR
+      // #then the edit is NOT blocked — the pattern is anchored at the end with $
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.ymlx']})
+      expect(result).toEqual({ok: true})
+    })
+
+    it('does not block metadata/*.yam (short of the guarded extension by one character)', () => {
+      // #given a filename missing the trailing "l" of either guarded extension
+      // #when the guard evaluates the PR
+      // #then the edit is NOT blocked — `ya?ml` requires the full "yaml" or "yml" spelling
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.yam']})
       expect(result).toEqual({ok: true})
     })
 
@@ -314,6 +386,72 @@ describe('checkWikiAuthority', () => {
         author: 'marcusrbrown',
         headRef: 'main',
         files: ['docs/knowledge/index.md', 'backup/metadata/repos.yaml', 'src/knowledge/wiki/x.md'],
+      })
+      expect(result).toEqual({ok: true})
+    })
+
+    it('does not block a wiki page path with an extra suffix after .md (trailing-anchor discrimination)', () => {
+      // #given a path that starts with a real guarded wiki prefix but keeps going past ".md"
+      // #when the guard evaluates the PR
+      // #then the edit is NOT blocked — the pattern is anchored at the end with $
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        files: ['knowledge/wiki/topics/home-assistant.md.bak'],
+      })
+      expect(result).toEqual({ok: true})
+    })
+
+    it('does not block a wiki-shaped path embedded mid-string with a real subdir/file split (leading-anchor discrimination)', () => {
+      // #given a full knowledge/wiki/<subdir>/<file>.md shape that does not start the path
+      // #when the guard evaluates the PR
+      // #then the edit is NOT blocked — the pattern is anchored at the start with ^
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        files: ['src/knowledge/wiki/topics/home-assistant.md'],
+      })
+      expect(result).toEqual({ok: true})
+    })
+
+    it('does not block knowledge/index.md with an extra suffix (trailing-anchor discrimination)', () => {
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/index.md.bak']})
+      expect(result).toEqual({ok: true})
+    })
+
+    it('does not block knowledge/log.md with an extra suffix (trailing-anchor discrimination)', () => {
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['knowledge/log.md.bak']})
+      expect(result).toEqual({ok: true})
+    })
+
+    it('does not block knowledge/log.md embedded mid-string (leading-anchor discrimination)', () => {
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['src/knowledge/log.md']})
+      expect(result).toEqual({ok: true})
+    })
+
+    it('does not block knowledge/corrections.yaml with an extra suffix (trailing-anchor discrimination)', () => {
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        files: [`${CORRECTIONS_PATH}.bak`],
+      })
+      expect(result).toEqual({ok: true})
+    })
+
+    it('does not block knowledge/corrections.yaml embedded mid-string (leading-anchor discrimination)', () => {
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        files: [`src/${CORRECTIONS_PATH}`],
+      })
+      expect(result).toEqual({ok: true})
+    })
+
+    it('does not block metadata/repos.yaml with an extra suffix (trailing-anchor discrimination)', () => {
+      const result = checkWikiAuthority({
+        author: 'marcusrbrown',
+        headRef: 'main',
+        files: ['metadata/repos.yaml.bak'],
       })
       expect(result).toEqual({ok: true})
     })
@@ -356,6 +494,175 @@ describe('formatBlockMessage', () => {
     // #then the output is a non-trivial string the CI log can surface
     const msg = formatBlockMessage({ok: false, blockedFiles: ['metadata/repos.yaml']})
     expect(msg.length).toBeGreaterThan(50)
+  })
+
+  it('renders the blocked-file list as a `  - <path>` block joined by newlines, in order', () => {
+    // #given two blocked files
+    // #when the failure message is formatted
+    // #then the rendered block matches the exact `-` prefix and newline join, not just substrings
+    const msg = formatBlockMessage({ok: false, blockedFiles: ['metadata/repos.yaml', 'knowledge/index.md']})
+    expect(msg).toContain('  - metadata/repos.yaml\n  - knowledge/index.md')
+  })
+})
+
+describe('readPullRequestContext (base vs head repo)', () => {
+  // A fork PR's head repo (the contributor's fork) is a DIFFERENT repository from the base
+  // repo (this repository, where the PR was opened) — that distinction is exactly what makes
+  // a fork PR's changed-file lookup resolvable at all: `fetchChangedFiles` must query the base
+  // repo's API endpoint, never the fork's, since only the base repo has a `/pulls/{n}/files`
+  // endpoint for this PR. `fullName` is documented as coming from `pull_request.base.repo`,
+  // but nothing pinned that against an event payload where base and head actually differ until
+  // now — every existing fixture used the same `fro-bot/.github` string for both.
+  it('returns the BASE repo full_name, not the HEAD repo full_name, when a fork PR event has different values for each', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'check-wiki-authority-fork-pr-'))
+    const eventPath = join(tmpDir, 'event.json')
+    try {
+      writeFileSync(
+        eventPath,
+        JSON.stringify({
+          pull_request: {
+            number: 7,
+            user: {login: 'contributor'},
+            head: {ref: 'feature/x', repo: {full_name: 'contributor-fork/.github'}},
+            base: {repo: {full_name: 'fro-bot/.github'}},
+          },
+        }),
+        'utf8',
+      )
+
+      const context = await readPullRequestContext(eventPath)
+
+      expect(context.fullName).toBe('fro-bot/.github')
+      expect(context.fullName).not.toBe('contributor-fork/.github')
+    } finally {
+      rmSync(tmpDir, {recursive: true, force: true})
+    }
+  })
+})
+
+describe('readPullRequestContext (optional-chaining discrimination)', () => {
+  // Each field read (`pull_request?.number`, `pull_request?.user?.login`, `pull_request?.head?.ref`)
+  // is a separate optional-chain node. `?.` is required by the enforced type
+  // (`PullRequestEventPayload`'s `pull_request`, `user`, and `head` are all declared optional) --
+  // removing any single `?.` turns a missing intermediate value into a thrown TypeError instead of
+  // this function's own diagnostic Error, which each test below discriminates by asserting the
+  // exact message.
+
+  it('throws the missing pull_request.number diagnostic (not a raw TypeError) when pull_request itself is absent', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-no-pr-', {})
+    try {
+      await expect(readPullRequestContext(eventPath)).rejects.toThrow(
+        /missing pull_request\.number or pull_request\.user\.login/,
+      )
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('throws the missing pull_request.user.login diagnostic (not a raw TypeError) when user is null', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-null-user-', {
+      pull_request: {number: 7, user: null, head: {ref: 'feature/x'}},
+    })
+    try {
+      await expect(readPullRequestContext(eventPath)).rejects.toThrow(
+        /missing pull_request\.number or pull_request\.user\.login/,
+      )
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('throws the missing pull_request.head.ref diagnostic (not a raw TypeError) when head is null', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-null-head-', {
+      pull_request: {number: 7, user: {login: 'marcusrbrown'}, head: null},
+    })
+    try {
+      await expect(readPullRequestContext(eventPath)).rejects.toThrow(/missing pull_request\.head\.ref/)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('throws the missing-number diagnostic when prNumber is present but not a number, with a valid author (isolates the prNumber operand)', async () => {
+    // #given a payload where only the number field fails validation — author and head are valid
+    // #when the number-check operand alone is forced false, the other operands must still fire
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-bad-number-', {
+      pull_request: {number: 'not-a-number', user: {login: 'marcusrbrown'}, head: {ref: 'feature/x'}},
+    })
+    try {
+      await expect(readPullRequestContext(eventPath)).rejects.toThrow(
+        /missing pull_request\.number or pull_request\.user\.login/,
+      )
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("throws the missing-author diagnostic when author is the empty string, with a valid number (isolates the author==='' operand)", async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-empty-author-', {
+      pull_request: {number: 7, user: {login: ''}, head: {ref: 'feature/x'}},
+    })
+    try {
+      await expect(readPullRequestContext(eventPath)).rejects.toThrow(
+        /missing pull_request\.number or pull_request\.user\.login/,
+      )
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('throws the missing headRef diagnostic when headRef is present but not a string (isolates the typeof headRef operand)', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-bad-headref-', {
+      pull_request: {number: 7, user: {login: 'marcusrbrown'}, head: {ref: 123}},
+    })
+    try {
+      await expect(readPullRequestContext(eventPath)).rejects.toThrow(/missing pull_request\.head\.ref/)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it("throws the missing headRef diagnostic when headRef is the empty string (isolates the headRef==='' operand)", async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-empty-headref-', {
+      pull_request: {number: 7, user: {login: 'marcusrbrown'}, head: {ref: ''}},
+    })
+    try {
+      await expect(readPullRequestContext(eventPath)).rejects.toThrow(/missing pull_request\.head\.ref/)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('resolves fullName as null (not a throw) when base.repo is absent — the repo?.full_name link is a live optional', async () => {
+    // #given a payload with a valid pull_request but no base.repo at all
+    // #when the repo?.full_name optional chain is exercised on an undefined repo
+    // #then it short-circuits to null rather than throwing (proves the link is not dead code)
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-no-base-repo-', {
+      pull_request: {number: 7, user: {login: 'marcusrbrown'}, head: {ref: 'feature/x'}, base: {}},
+    })
+    try {
+      const context = await readPullRequestContext(eventPath)
+      expect(context.fullName).toBeNull()
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('resolves fullName as null (not the empty string) when base.repo.full_name is the empty string', async () => {
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-empty-fullname-', {
+      pull_request: {
+        number: 7,
+        user: {login: 'marcusrbrown'},
+        head: {ref: 'feature/x'},
+        base: {repo: {full_name: ''}},
+      },
+    })
+    try {
+      const context = await readPullRequestContext(eventPath)
+      expect(context.fullName).toBeNull()
+    } finally {
+      cleanup()
+    }
   })
 })
 
@@ -404,5 +711,262 @@ describe('fetchChangedFiles (Fix #5 — paginated API)', () => {
     const files = fetchChangedFiles(1, 'owner/repo')
 
     expect(files).toEqual(['foo.ts', 'bar.ts'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// CLI self-invoke guard (import.meta.url === file://<argv[1]>)
+// ---------------------------------------------------------------------------
+
+describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
+  // Every other test in this file imports the module without ever setting process.argv[1] to its
+  // own path, so the `false` branch of every mutator variant here is trivially exercised (real
+  // code and every mutant behave identically when the condition is never true) -- that is NOT
+  // sufficient to kill the mutants; a genuine discriminating test must make the condition true for
+  // the *real* code and observe main() actually run. Cache-busts the dynamic import (unique query
+  // string) so the module's top-level code re-executes with the manipulated argv/env, rather than
+  // returning the already-cached module instance from every earlier `import` in this file.
+
+  // Several tests below call mockExecFileSync.mockReset() and then queue mockReturnValueOnce calls
+  // for their own scenario, without restoring afterward — order-independent only if every leftover
+  // queued return value is cleared before the next test runs.
+  afterEach(() => {
+    mockExecFileSync.mockReset()
+  })
+
+  it('exits 1 with the GITHUB_EVENT_PATH diagnostic when the env var is unset', async () => {
+    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
+    const originalArgv = [...process.argv]
+    const originalEventPath = process.env.GITHUB_EVENT_PATH
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    delete process.env.GITHUB_EVENT_PATH
+    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
+    try {
+      await expect(import(`${modulePath.href}?guard-test-no-event-path`)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(stderrOutput.join('')).toContain('GITHUB_EVENT_PATH not set')
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      process.argv = originalArgv
+      if (originalEventPath === undefined) {
+        delete process.env.GITHUB_EVENT_PATH
+      } else {
+        process.env.GITHUB_EVENT_PATH = originalEventPath
+      }
+    }
+  })
+
+  it('exits 1 with the empty-string GITHUB_EVENT_PATH treated the same as unset', async () => {
+    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
+    const originalArgv = [...process.argv]
+    const originalEventPath = process.env.GITHUB_EVENT_PATH
+
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.env.GITHUB_EVENT_PATH = ''
+    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
+    try {
+      await expect(import(`${modulePath.href}?guard-test-empty-event-path`)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      process.argv = originalArgv
+      if (originalEventPath === undefined) {
+        delete process.env.GITHUB_EVENT_PATH
+      } else {
+        process.env.GITHUB_EVENT_PATH = originalEventPath
+      }
+    }
+  })
+
+  it('invokes main() and writes the ok summary to stdout when the PR is allowed (fullName from event payload)', async () => {
+    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
+    const originalArgv = [...process.argv]
+    const originalEventPath = process.env.GITHUB_EVENT_PATH
+
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-guard-ok-', {
+      pull_request: {
+        number: 42,
+        user: {login: 'marcusrbrown'},
+        head: {ref: 'feature/x'},
+        base: {repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+
+    const stdoutOutput: string[] = []
+    vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
+      stdoutOutput.push(String(msg))
+      return true
+    })
+    const stderrSpyGuard = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+    mockExecFileSync.mockReset()
+    mockExecFileSync.mockReturnValueOnce('scripts/foo.ts\nREADME.md\n')
+
+    process.env.GITHUB_EVENT_PATH = eventPath
+    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
+    try {
+      await import(`${modulePath.href}?guard-test-main-ok`)
+      expect(exitSpy).not.toHaveBeenCalled()
+      expect(stdoutOutput.join('')).toContain('check-wiki-authority: ok (author=marcusrbrown, files_checked=2)')
+      expect(stderrSpyGuard).not.toHaveBeenCalled()
+      // fullName came from the event payload — the gh repo view fallback must not have been called.
+      expect(mockExecFileSync).toHaveBeenCalledTimes(1)
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        'gh',
+        ['api', '--paginate', '/repos/fro-bot/.github/pulls/42/files', '--jq', '.[].filename'],
+        {encoding: 'utf8'},
+      )
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      process.argv = originalArgv
+      cleanup()
+      if (originalEventPath === undefined) {
+        delete process.env.GITHUB_EVENT_PATH
+      } else {
+        process.env.GITHUB_EVENT_PATH = originalEventPath
+      }
+    }
+  })
+
+  it('invokes main() and exits 1 with the block message on stderr when the PR is blocked', async () => {
+    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
+    const originalArgv = [...process.argv]
+    const originalEventPath = process.env.GITHUB_EVENT_PATH
+
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-guard-blocked-', {
+      pull_request: {
+        number: 7,
+        user: {login: 'marcusrbrown'},
+        head: {ref: 'feature/x'},
+        base: {repo: {full_name: 'fro-bot/.github'}},
+      },
+    })
+
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
+    const stdoutSpyGuard = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+    mockExecFileSync.mockReset()
+    mockExecFileSync.mockReturnValueOnce('metadata/repos.yaml\n')
+
+    process.env.GITHUB_EVENT_PATH = eventPath
+    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
+    try {
+      await expect(import(`${modulePath.href}?guard-test-main-blocked`)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(stderrOutput.join('')).toContain('metadata/repos.yaml')
+      expect(stderrOutput.join('')).toContain('data')
+      expect(stdoutSpyGuard).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      process.argv = originalArgv
+      cleanup()
+      if (originalEventPath === undefined) {
+        delete process.env.GITHUB_EVENT_PATH
+      } else {
+        process.env.GITHUB_EVENT_PATH = originalEventPath
+      }
+    }
+  })
+
+  it('falls back to `gh repo view` for fullName, trimmed, when the event payload omits base.repo.full_name', async () => {
+    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
+    const originalArgv = [...process.argv]
+    const originalEventPath = process.env.GITHUB_EVENT_PATH
+
+    const {eventPath, cleanup} = writeTempEvent('check-wiki-authority-guard-fallback-', {
+      pull_request: {
+        number: 99,
+        user: {login: 'marcusrbrown'},
+        head: {ref: 'feature/x'},
+      },
+    })
+
+    const stdoutOutput: string[] = []
+    vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
+      stdoutOutput.push(String(msg))
+      return true
+    })
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+    mockExecFileSync.mockReset()
+    // Untrimmed, to prove `.trim()` actually runs on the fallback lookup's output.
+    mockExecFileSync.mockReturnValueOnce('  fro-bot/.github  \n')
+    mockExecFileSync.mockReturnValueOnce('README.md\n')
+
+    process.env.GITHUB_EVENT_PATH = eventPath
+    process.argv = [originalArgv[0] ?? 'node', modulePath.pathname]
+    try {
+      await import(`${modulePath.href}?guard-test-main-fallback`)
+      expect(exitSpy).not.toHaveBeenCalled()
+      expect(mockExecFileSync).toHaveBeenNthCalledWith(
+        1,
+        'gh',
+        ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'],
+        {encoding: 'utf8'},
+      )
+      expect(mockExecFileSync).toHaveBeenNthCalledWith(
+        2,
+        'gh',
+        ['api', '--paginate', '/repos/fro-bot/.github/pulls/99/files', '--jq', '.[].filename'],
+        {encoding: 'utf8'},
+      )
+      expect(stdoutOutput.join('')).toContain('check-wiki-authority: ok')
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      process.argv = originalArgv
+      cleanup()
+      if (originalEventPath === undefined) {
+        delete process.env.GITHUB_EVENT_PATH
+      } else {
+        process.env.GITHUB_EVENT_PATH = originalEventPath
+      }
+    }
+  })
+
+  it("does NOT invoke main() when process.argv[1] does not match the module's own path (positive control)", async () => {
+    const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
+    const originalArgv = [...process.argv]
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+
+    process.argv = [originalArgv[0] ?? 'node', '/some/unrelated/entrypoint.js']
+    try {
+      await import(`${modulePath.href}?guard-test-noop`)
+      expect(exitSpy).not.toHaveBeenCalled()
+    } finally {
+      exitSpy.mockRestore()
+      vi.restoreAllMocks()
+      process.argv = originalArgv
+    }
   })
 })

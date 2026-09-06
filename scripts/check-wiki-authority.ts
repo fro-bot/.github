@@ -8,8 +8,13 @@ import process from 'node:process'
  * Kept symmetric with `EXPECTED_AUTHORS` in `scripts/reconcile-repos.ts` so the two
  * enforcement points (pre-commit integrity check on `data` and pre-merge PR guard on
  * `main`) share one operator model. If this set ever changes, change both files.
+ *
+ * Function, not const: static-mutant workaround — see `operatorLogin()` in
+ * `scripts/check-private-leak.ts` and `size-subprocess-buffers-selectively-at-call-sites-2026-08-31.md`.
  */
-const FROBOT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
+function frobotAuthors(): ReadonlySet<string> {
+  return new Set(['fro-bot', 'fro-bot[bot]'])
+}
 
 /**
  * Anchored patterns for files whose only legitimate writer is Fro Bot.
@@ -19,20 +24,24 @@ const FROBOT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
  *   Karpathy schema. Top-level `knowledge/wiki/README.md` is human scaffolding.
  * - `knowledge/index.md` and `knowledge/log.md` are auto-maintained catalog and journal.
  * - `knowledge/corrections.yaml` is system-owned sidecar state for marked corrections.
- * - `metadata/*.yaml` are all auto-managed state. Manual edits to allowlist.yaml or
+ * - `metadata/*.{yaml,yml}` are all auto-managed state. Manual edits to allowlist.yaml or
  *   any other metadata YAML still land via the `data` branch and are promoted by the
  *   `Merge Data Branch` workflow under the `fro-bot[bot]` identity.
  *
  * Docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
  * `metadata/README.md`) are intentionally NOT covered.
+ *
+ * Function, not const: same static-mutant workaround as `frobotAuthors()` above.
  */
-const GUARDED_PATTERNS: readonly RegExp[] = [
-  /^knowledge\/wiki\/[^/]+\/.+\.md$/,
-  /^knowledge\/index\.md$/,
-  /^knowledge\/log\.md$/,
-  /^knowledge\/corrections\.yaml$/,
-  /^metadata\/[^/]+\.yaml$/,
-]
+function guardedPatterns(): readonly RegExp[] {
+  return [
+    /^knowledge\/wiki\/[^/]+\/.+\.md$/,
+    /^knowledge\/index\.md$/,
+    /^knowledge\/log\.md$/,
+    /^knowledge\/corrections\.yaml$/,
+    /^metadata\/[^/]+\.ya?ml$/,
+  ]
+}
 
 export interface GuardInput {
   readonly author: string
@@ -55,19 +64,22 @@ export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly bl
  * intended resolution.
  */
 export function checkWikiAuthority(input: GuardInput): GuardResult {
-  if (FROBOT_AUTHORS.has(input.author)) {
+  if (frobotAuthors().has(input.author)) {
     // metadata/repos.yaml may only arrive via the `data` promotion branch.
     // Any other head branch from a fro-bot identity is the prohibited both-sides mutation.
     // The `headRef !== 'data'` bypass is safe to gate on a branch name only because a
     // fro-bot identity never originates from a fork — fork PRs carry an external author and
-    // fall through to the GUARDED_PATTERNS check below, so a fork naming its branch `data`
-    // cannot reach this allow path.
+    // fall through to the guardedPatterns() check below, so a fork naming its branch `data`
+    // cannot reach this allow path. Deliberately a literal, not the `.ya?ml` glob below: the
+    // canonical filename is hardcoded in every reader (commit-metadata, check-private-leak,
+    // cross-repo-dispatch, ...), so a `.yml` variant is an orphan no pipeline consumes.
     if (input.files.includes('metadata/repos.yaml') && input.headRef !== 'data') {
       return {ok: false, blockedFiles: ['metadata/repos.yaml']}
     }
     return {ok: true}
   }
-  const blockedFiles = input.files.filter(f => GUARDED_PATTERNS.some(p => p.test(f)))
+  const patterns = guardedPatterns()
+  const blockedFiles = input.files.filter(f => patterns.some(p => p.test(f)))
   if (blockedFiles.length === 0) {
     return {ok: true}
   }
@@ -83,23 +95,26 @@ export function checkWikiAuthority(input: GuardInput): GuardResult {
  * - names both `fro-bot` and `fro-bot[bot]` so the reader sees the identity equivalence
  */
 export function formatBlockMessage(result: {readonly ok: false; readonly blockedFiles: readonly string[]}): string {
-  const lines = [
-    'Cannot merge: this PR modifies files that are auto-managed by Fro Bot workflows.',
-    '',
-    'Blocked files:',
-    ...result.blockedFiles.map(f => `  - ${f}`),
-    '',
-    'These paths are writable only by `fro-bot` (PAT writes) or `fro-bot[bot]` (App writes)',
-    'via the `data` branch. Authorized manual edits land like this:',
-    '',
-    '  1. Check out `data` in a worktree (`git worktree add ../worktree-data data`)',
-    '  2. Make the edit there',
-    '  3. Push `data` to origin',
-    '  4. The Merge Data Branch workflow opens a promotion PR from `data` → `main`',
-    '',
-    'See metadata/README.md and knowledge/schema.md for the operator workflow.',
-  ]
-  return lines.join('\n')
+  // Own line, own mutants (a `-` prefix and a `\n` join), so the template below stays a single
+  // StringLiteral node with no interpolation sharing its line.
+  const fileList = result.blockedFiles.map(f => `  - ${f}`).join('\n')
+  // No directive: the whole template is one StringLiteral mutant (Stryker replaces it entirely
+  // with `Stryker was here!`), and every existing content-contract assertion below (blocked-file
+  // names, `fro-bot`/`fro-bot[bot]`, "data branch", length > 50) already fails under that mutant.
+  return `Cannot merge: this PR modifies files that are auto-managed by Fro Bot workflows.
+
+Blocked files:
+${fileList}
+
+These paths are writable only by \`fro-bot\` (PAT writes) or \`fro-bot[bot]\` (App writes)
+via the \`data\` branch. Authorized manual edits land like this:
+
+  1. Check out \`data\` in a worktree (\`git worktree add ../worktree-data data\`)
+  2. Make the edit there
+  3. Push \`data\` to origin
+  4. The Merge Data Branch workflow opens a promotion PR from \`data\` → \`main\`
+
+See metadata/README.md and knowledge/schema.md for the operator workflow.`
 }
 
 interface PullRequestEventPayload {
@@ -111,11 +126,17 @@ interface PullRequestEventPayload {
   }
 }
 
-async function readPullRequestContext(
+/**
+ * Exported so `scripts/check-mutation-guards.ts`'s changed-file trigger gate can reuse the
+ * same `pull_request` event payload parsing rather than duplicating it — both checks run on
+ * the same event shape and need the same fields (`prNumber`, `fullName`).
+ */
+export async function readPullRequestContext(
   eventPath: string,
 ): Promise<{prNumber: number; author: string; headRef: string; fullName: string | null}> {
-  const raw = await readFile(eventPath, 'utf8')
-  const parsed = JSON.parse(raw) as PullRequestEventPayload
+  // Buffer.toString() defaults to utf8; no encoding literal to mutate.
+  const raw = await readFile(eventPath)
+  const parsed = JSON.parse(raw.toString()) as PullRequestEventPayload
   const prNumber = parsed.pull_request?.number
   const author = parsed.pull_request?.user?.login
   const headRef = parsed.pull_request?.head?.ref
@@ -127,7 +148,9 @@ async function readPullRequestContext(
   if (typeof headRef !== 'string' || headRef === '') {
     throw new Error(`check-wiki-authority: event payload missing pull_request.head.ref (path=${eventPath})`)
   }
-  const rawFullName = parsed.pull_request?.base?.repo?.full_name
+  // pull_request is defined: prNumber above threw otherwise.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const rawFullName = parsed.pull_request!.base?.repo?.full_name
   const fullName = typeof rawFullName === 'string' && rawFullName.length > 0 ? rawFullName : null
   return {prNumber, author, headRef, fullName}
 }

@@ -200,7 +200,7 @@ The legacy daily-oversight Discord webhook keeps running until a separate follow
 
 ## Editing metadata files
 
-All `metadata/*.yaml` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source for metadata state.
+All `metadata/*.{yaml,yml}` files are enforced as Fro-Bot-writable-only on `main`. A CI job (`Check Wiki Authority`, backed by `scripts/check-wiki-authority.ts`) fails any PR that modifies them unless authored by `fro-bot` or `fro-bot[bot]`. This prevents `main` from drifting relative to `data`, which is the single authoritative source for metadata state.
 
 `repos.yaml` carries an additional sole-writer invariant: changes to it on `main` must originate only from the `data` promotion branch. A direct edit to `repos.yaml` on a non-promotion branch is prohibited even if fro-bot-authored. Any exception requires an explicit override and is treated as an emergency measure, not routine workflow — the invariant exists precisely to prevent the both-sides mutation that causes promotion conflicts.
 
@@ -219,12 +219,12 @@ git push origin data
 
 The `Merge Data Branch` workflow runs on a schedule (weekly) and opens a `data → main` promotion PR authored by `fro-bot[bot]`, which is allowed through the guard. For faster turnaround, trigger it manually via `gh workflow run merge-data.yaml`.
 
-`metadata/README.md` (this file) and other human documentation remain editable through normal PRs to `main` — the guard targets only `metadata/*.yaml`.
+`metadata/README.md` (this file) and other human documentation remain editable through normal PRs to `main` — the guard targets only `metadata/*.{yaml,yml}`.
 
 ## Commit conventions
 
 - All programmatic metadata writes must go through `scripts/commit-metadata.ts` and target the `data` branch.
-- Manual edits to `metadata/*.yaml` also target `data` and are promoted via the `Merge Data Branch` workflow — see above.
+- Manual edits to `metadata/*.{yaml,yml}` also target `data` and are promoted via the `Merge Data Branch` workflow — see above.
 - Metadata files are initialized in-repo first; automation updates existing files only.
 
 ## Learning-proposal capture

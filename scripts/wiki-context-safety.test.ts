@@ -114,6 +114,43 @@ describe('evaluateCandidateSafety', () => {
     expect(result.safe).toBe(false)
     expect(result.unsafeFields).toContain('body')
   })
+
+  it('does not flag a candidate with no aliases field as unsafe via the aliases fallback seed — mutation gate proof (ArrayDeclaration)', () => {
+    // #given a private token that would match Stryker's seed placeholder text ('Stryker was here')
+    //        if the `candidate.aliases ?? []` fallback were ever mutated to a non-empty seed array
+    const candidate = {
+      path: 'knowledge/wiki/repos/fro-bot--agent.md',
+      title: 'Fro Bot Agent',
+      body: 'Ordinary public body text.',
+      // aliases intentionally omitted — exercises the `?? []` fallback
+    }
+    const tokensMatchingSeed = new Set(['stryker'])
+
+    // #when evaluated: the real `[]` fallback means .some() never runs against any text
+    const result = evaluateCandidateSafety(candidate, tokensMatchingSeed)
+
+    // #then safe — a mutant seeding the fallback with ["Stryker was here"] would make this unsafe
+    expect(result.safe).toBe(true)
+    expect(result.unsafeFields).not.toContain('aliases')
+  })
+
+  it('ignores an empty-string private token instead of matching every string — mutation gate proof (empty-token guard)', () => {
+    // #given a private token set that includes an empty string alongside a real token
+    //        (the module's own containsPrivateToken guards against this degenerate case)
+    const candidate = {
+      path: 'knowledge/wiki/repos/fro-bot--agent.md',
+      title: 'Fro Bot Agent',
+      body: 'Ordinary public body text.',
+    }
+    const tokensWithEmpty = new Set(['', 'marcusrbrown/secret-repo'])
+
+    // #when evaluated: the empty token must be skipped, not treated as a substring that matches everything
+    const result = evaluateCandidateSafety(candidate, tokensWithEmpty)
+
+    // #then safe — if the `token !== ''` guard (or the '' literal itself) were mutated away,
+    // `lower.includes('')` is always true and every field would be wrongly flagged unsafe
+    expect(result.safe).toBe(true)
+  })
 })
 
 describe('filterSafeCandidates', () => {

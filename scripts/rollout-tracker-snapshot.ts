@@ -74,7 +74,7 @@ export const MARKER_PREFIX = 'gateway-rollout-tracker:'
  * authenticated: `fro-bot` (PAT / classic token) and `fro-bot[bot]` (GitHub
  * App installation token). Both are legitimate and must be treated as equivalent.
  *
- * Kept symmetric with the `FROBOT_AUTHORS` set in `scripts/check-wiki-authority.ts`.
+ * Kept symmetric with `frobotAuthors()` in `scripts/check-wiki-authority.ts`.
  */
 export const FROBOT_COMMENT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
 

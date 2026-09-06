@@ -1,0 +1,103 @@
+/**
+ * Pure private-repository disclosure detector. The request-time GitHub adapter
+ * belongs outside this module and supplies only the authority list.
+ */
+export function checkPrivateLeak(privateNames, diff, override) {
+    if (override.titlePrefixed && override.isOperator) {
+        return { ok: true };
+    }
+    // No early return for privateNames.length === 0 or diff.length === 0: both converge to
+    // {ok: true} through the main path anyway (empty lowerNames means .some never matches;
+    // ''.split('\n') yields one non-matching line), so the guard was a pure optimization, not a
+    // behavior difference. Pinned by tests below rather than special-cased here.
+    const lowerNames = privateNames.map(name => name.toLowerCase());
+    const matchedFiles = [];
+    let currentFile = null;
+    // A '+++' line is a header only when the immediately preceding line was a '--- ' header
+    // (#3838); otherwise it is added content starting with '++' and must be scanned. `undefined`
+    // = no header expected; boolean = header expected, true when that '--- ' was '/dev/null'.
+    // Set only in the '--- ' branch, read once at the top of the next iteration, then cleared.
+    let pendingNewFileCheck;
+    // '---'/'+++' are headers only before a file section's first '@@' hunk marker; inside a hunk
+    // they are content (a modified line renders as '--- ...' / '+++ ...'). '@@' at index 0 is
+    // unambiguous: hunk lines render '-@@', '+@@', or ' @@'. Reset per 'diff --git a/' section.
+    // No initializer: currentFile is null until the first 'diff --git a/' line, which also sets
+    // this, so the starting value is unreadable -- a `= false` literal would be an equivalent
+    // mutant.
+    let inHunk;
+    const checkPath = (path) => {
+        const pathLower = path.toLowerCase();
+        if (lowerNames.some(name => pathLower.includes(name)) && !matchedFiles.includes(path)) {
+            matchedFiles.push(path);
+        }
+    };
+    for (const line of diff.split('\n')) {
+        const expectingPlusHeader = pendingNewFileCheck;
+        pendingNewFileCheck = undefined;
+        if (line.startsWith('diff --git a/')) {
+            const diffPrefix = 'diff --git a/';
+            const separator = ' b/';
+            // Index scanning, not a regex: the original `/^diff --git a\/.+ b\/(.+)$/` backtracked on
+            // caller-supplied diff text. Keep this branch regex-free -- no timing guard covers it (#3810).
+            // The old regex selected the rightmost separator with at least one trailing character.
+            // No upper-bound check is needed here: lastIndexOf's own `fromIndex` argument
+            // (line.length - separator.length - 1) already guarantees any found index satisfies
+            // foundIndex + separator.length < line.length, so a found separatorIndex always leaves
+            // room after it -- the miss case (-1) is rejected below by the diffPrefix.length floor.
+            const separatorIndex = line.lastIndexOf(separator, line.length - separator.length - 1);
+            if (separatorIndex > diffPrefix.length) {
+                const bPath = line.slice(separatorIndex + separator.length);
+                const aPath = line.slice(diffPrefix.length, separatorIndex);
+                currentFile = bPath;
+                if (aPath !== bPath) {
+                    checkPath(bPath);
+                }
+            }
+            else {
+                currentFile = null;
+            }
+            inHunk = false;
+            continue;
+        }
+        if (line.startsWith('@@')) {
+            inHunk = true;
+            // Fall through: a hunk marker never starts with '+', so the content scan skips it anyway.
+        }
+        if (line.startsWith('rename to ') || line.startsWith('copy to ')) {
+            const destination = line.startsWith('rename to ')
+                ? line.slice('rename to '.length)
+                : line.slice('copy to '.length);
+            if (destination !== '') {
+                checkPath(destination);
+            }
+            continue;
+        }
+        if (!inHunk && line.startsWith('--- ')) {
+            pendingNewFileCheck = line === '--- /dev/null';
+            continue;
+        }
+        if (!inHunk && line.startsWith('+++') && expectingPlusHeader !== undefined) {
+            if (expectingPlusHeader && currentFile !== null) {
+                checkPath(currentFile);
+            }
+            continue;
+        }
+        if (!line.startsWith('+')) {
+            continue;
+        }
+        const content = line.slice(1).toLowerCase();
+        if (currentFile !== null &&
+            lowerNames.some(name => content.includes(name)) &&
+            !matchedFiles.includes(currentFile)) {
+            matchedFiles.push(currentFile);
+        }
+    }
+    return matchedFiles.length === 0 ? { ok: true } : { ok: false, matchedFiles };
+}
+export async function checkPrivateLeakWithAdapter(adapter, request) {
+    const privateNames = await adapter.resolvePrivateRepositoryNames({
+        content: request.content,
+        snapshotSha: request.snapshotSha,
+    });
+    return checkPrivateLeak(privateNames, request.diff, request.override);
+}

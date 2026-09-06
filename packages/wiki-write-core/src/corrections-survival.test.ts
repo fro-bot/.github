@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises'
 import {describe, expect, it, vi} from 'vitest'
 
 import {normalizeCorrectionText} from './correction-text.ts'
-import {verifyCorrectionSurvival} from './corrections-survival.ts'
+import {maskMarkdownLinks, normalizeFormattingText, verifyCorrectionSurvival} from './corrections-survival.ts'
 import {parseCorrections, readCorrections, type CorrectionsFile} from './corrections.ts'
 import {buildWikiIngestChanges, runWikiIngestCli, WikiIngestError} from './wiki-ingest.ts'
 import {buildWikiLintJsonReport, type WikiLintResult} from './wiki-lint.ts'
@@ -53,7 +53,8 @@ describe('correction survival verification', () => {
   it('uses the shared storage normalizer rather than a private duplicate', async () => {
     const source = await readFile(new URL('./corrections-survival.ts', import.meta.url), 'utf8')
 
-    expect(source).toContain("import {normalizeCorrectionText} from './correction-text.ts'")
+    // Whitespace-tolerant: instrumented copies of this file are re-emitted by a code generator.
+    expect(source).toMatch(/import\s*\{\s*normalizeCorrectionText\s*\}\s*from\s*'\.\/correction-text\.ts'/u)
     expect(source).not.toMatch(/function normalizeCorrectionText\s*\(/u)
     expect(normalizeCorrectionText('  shared\nnormalizer  ')).toBe('shared normalizer')
   })
@@ -78,6 +79,17 @@ describe('correction survival verification', () => {
       pages: [{path: 'knowledge/wiki/repos/alice--project.md', content: page('The corrected fact.')}],
     })
     expect(built.findings).toEqual([])
+  })
+
+  it('rejects a raw corrections object that has not been schema-validated', () => {
+    expect(() =>
+      verifyCorrectionSurvival(
+        {'knowledge/wiki/repos/alice--project.md': page('The corrected fact.')},
+        // Bypasses parseCorrections/readCorrections to prove verifyCorrectionSurvival itself
+        // enforces the schema via assertCorrectionsFile, not merely its callers.
+        {version: 2, corrections: []} as unknown as CorrectionsFile,
+      ),
+    ).toThrow(/expected 1/u)
   })
 
   it('enforces a legacy no-state correction exactly like an active correction', () => {
@@ -191,8 +203,217 @@ describe('correction survival verification', () => {
     expect(result.ok).toBe(true)
     expect(result.deterministicFindings).toEqual([])
     expect(result.advisoryFindings).toEqual([
+      {
+        kind: 'correction-needs-reconfirmation',
+        path: 'knowledge/wiki/repos/alice--project.md',
+        target: 'correction-active',
+        recovery: {lifecycle: 'needs-reconfirmation', action: 'reconfirm-correction'},
+        message:
+          'Correction correction-active appears preserved with formatting-only changes and needs operator reconfirmation.',
+      },
+    ])
+  })
+
+  it('states the reconfirmation message and recovery data exactly for a pre-erosion needs-reconfirmation state', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('Anything.')},
+      {version: 1, corrections: [{...activeCorrection, state: 'needs-reconfirmation', reason: 'Review'}]},
+    )
+
+    expect(result.advisoryFindings).toEqual([
+      {
+        kind: 'correction-needs-reconfirmation',
+        path: 'knowledge/wiki/repos/alice--project.md',
+        target: 'correction-active',
+        recovery: {lifecycle: 'needs-reconfirmation', action: 'reconfirm-correction'},
+        message: 'Correction correction-active needs operator reconfirmation before it is enforced.',
+      },
+    ])
+  })
+
+  it('states the erosion message exactly', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result.deterministicFindings).toEqual([
+      {
+        kind: 'correction-eroded',
+        path: 'knowledge/wiki/repos/alice--project.md',
+        target: 'correction-active',
+        recovery: {lifecycle: 'active', action: 'restore-span'},
+        message: 'Active correction correction-active was not found in the regenerated page.',
+      },
+    ])
+  })
+
+  it('recognizes a markdown link with a multi-character url and substitutes only its label', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('start [middle](xy) end')},
+      activeCorrections('middle end'),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.deterministicFindings).toEqual([])
+    expect(result.advisoryFindings).toEqual([
       expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
     ])
+  })
+
+  it('recognizes a labeled wiki link and substitutes only its label, not its target', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('alpha [[Target|Beta]] gamma')},
+      activeCorrections('alpha Beta'),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.deterministicFindings).toEqual([])
+    expect(result.advisoryFindings).toEqual([
+      expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
+    ])
+  })
+
+  it.each([
+    ['a labeled wiki link with an Obsidian-style embed prefix', 'foo![[T|L]]bar', 'foolbar'],
+    ['a bare wiki link with an embed prefix directly against a letter', 'foo![[T]]bar', 'footbar'],
+    ['a bare wiki link with an embed prefix after a space', 'foo ![[T]]bar', 'foo tbar'],
+  ])(
+    'recognizes %s (the leading `!` is consumed by the match, not left as a separator)',
+    (_label, body, expectedFormattingText) => {
+      const result = verifyCorrectionSurvival(
+        {'knowledge/wiki/repos/alice--project.md': page(body)},
+        activeCorrections(expectedFormattingText),
+      )
+
+      expect(result.ok).toBe(true)
+      expect(result.deterministicFindings).toEqual([])
+      expect(result.advisoryFindings).toEqual([
+        expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
+      ])
+    },
+  )
+
+  it('does not let a markdown-link substitution create text a later pass would re-match as a wiki link', () => {
+    // A single combined alternation scans once, left to right, over the ORIGINAL text only.
+    // A two-pass split (markdown pattern, then wiki pattern) would let this input's markdown
+    // match `[[[]()` substitute its label `[[` back into the string, forming `[[a|b]]` — text
+    // the wiki pass then re-matches, even though those brackets were never adjacent in the
+    // original. Verbatim reds pasted in the plan's 5B-1 Result block were produced against a
+    // two-pass split that did exactly this.
+    expect(normalizeFormattingText('[[[]()a|b]]')).toBe('a b')
+    expect(normalizeFormattingText('See [[[Docs](https://x)Guide|the guide]] here.')).toBe(
+      'see docsguide the guide here',
+    )
+  })
+
+  it('blocks as erosion a correction whose span could reinterpret as a shorter, falsely-surviving formatting match under a two-pass split', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('some b prose')},
+      activeCorrections('[[[]()a|b]]'),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
+  })
+
+  it('is case-insensitive by lowercasing, not uppercasing — a German ß is not letter-for-letter equal to "ss" once folded', () => {
+    // ß.toUpperCase() === 'SS' but ß.toLowerCase() === ß, so lower- vs uppercase-folding this
+    // pair produces different equality outcomes; this pins the direction the docstring commits to.
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('Die Straße ist neu.')},
+      activeCorrections('Die STRASSE ist neu.'),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
+  })
+
+  it('collapses a run of whitespace the punctuation strip produces into exactly one space', () => {
+    // Three adjacent separators strip to three individual spaces (the strip step matches one
+    // non-alphanumeric character at a time); only the trailing `\s+` collapse reduces that run
+    // to the single space the correction's own span was authored with.
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('word1---word2')},
+      activeCorrections('word1 word2'),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.deterministicFindings).toEqual([])
+    expect(result.advisoryFindings).toEqual([
+      expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
+    ])
+  })
+
+  it('strips a non-alphanumeric separator to whitespace, not to nothing, so adjacent words stay separated', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('word1_word2')},
+      activeCorrections('word1 word2'),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.deterministicFindings).toEqual([])
+    expect(result.advisoryFindings).toEqual([
+      expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
+    ])
+  })
+
+  it('does not let inline emphasis markers splitting a word coincidentally match the word joined back together', () => {
+    // If the punctuation strip deleted separators instead of spacing them, "un**believable**"
+    // would collapse to "unbelievable" and wrongly read as a formatting-only match.
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('This is un**believable** stuff.')},
+      activeCorrections('unbelievable'),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
+  })
+
+  it('does not let a run of whitespace collapse away entirely and coincidentally join two separate words', () => {
+    // If the trailing `\s+` collapse deleted whitespace instead of reducing it to one space,
+    // "un   believable" (three real spaces) would wrongly read as "unbelievable".
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('This is un   believable stuff.')},
+      activeCorrections('unbelievable'),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
+  })
+
+  it('masks a markdown link whose url nests parentheses four levels deep, with multi-character content at the deepest level', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('start [middle](a_(b_(c_(d_(ee))))) end')},
+      activeCorrections('start end'),
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
+  it('blocks as erosion, not needs-reconfirmation, when the span normalizes to no letters or digits', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
+      activeCorrections('!!!'),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
   })
 
   it('keeps genuine content changes as blocking erosion', () => {
@@ -249,7 +470,7 @@ describe('correction survival verification', () => {
 
   it('handles nested link parentheses without treating the label as prose', () => {
     const result = verifyCorrectionSurvival(
-      {'knowledge/wiki/repos/alice--project.md': page('[The corrected fact.](a_(b))')},
+      {'knowledge/wiki/repos/alice--project.md': page('[The corrected fact.](a_(bb))')},
       {version: 1, corrections: [activeCorrection]},
     )
 
@@ -263,6 +484,86 @@ describe('correction survival verification', () => {
   it('leaves an unclosed link bracket visible to the exact prose matcher', () => {
     const result = verifyCorrectionSurvival(
       {'knowledge/wiki/repos/alice--project.md': page('[The corrected fact.')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
+  it('does not let an unrelated link elsewhere in the page interfere with exact matching', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('[a](1) The corrected fact. [b](2)')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
+  it('masks unicode link labels and targets, including astral characters, without breaking prose matching', () => {
+    const result = verifyCorrectionSurvival(
+      {
+        'knowledge/wiki/repos/alice--project.md': page('café ☕ is a nice drink. [🚀 launch](https://x.com/🎉page)'),
+      },
+      activeCorrections('café ☕ is a nice drink.'),
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
+  it('replaces a masked link with whitespace rather than deleting it, so adjacent words stay separated', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('wordone[link](url)wordtwo')},
+      activeCorrections('wordone wordtwo'),
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
+  it('resolves the finding path from the fallback build when the page was removed from the regenerated set', () => {
+    const result = verifyCorrectionSurvival(
+      {},
+      {version: 1, corrections: [activeCorrection]},
+      {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', path: 'knowledge/wiki/repos/alice--project.md'}),
+    ])
+  })
+
+  it('falls back to the corrections store path when the page is absent from both builds, and treats its prose as genuinely empty rather than any placeholder', () => {
+    // The span text deliberately matches Stryker's own string-literal placeholder: if the
+    // empty-prose branch (`page === undefined ? '' : ...`) were replaced by any non-empty
+    // string, this correction would wrongly appear to survive.
+    const result = verifyCorrectionSurvival({}, activeCorrections('Stryker was here'), {})
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', path: 'knowledge/corrections.yaml'}),
+    ])
+  })
+
+  it('resolves a correction by its page_node_id even when an unrelated page has a non-string frontmatter node_id', () => {
+    // frontmatter.node_id is `unknown`; an unquoted YAML integer parses as a number, not a
+    // string. It must not crash indexing and must not shadow a legitimately string-keyed page.
+    const numericIdPage = [
+      '---',
+      'type: topic',
+      'title: Numeric',
+      'node_id: 456',
+      'created: 2026-08-29',
+      'updated: 2026-08-29',
+      '---',
+      '',
+      'Unrelated content.',
+      '',
+    ].join('\n')
+    const result = verifyCorrectionSurvival(
+      {
+        'knowledge/wiki/repos/alice--project.md': page('The corrected fact.'),
+        'knowledge/wiki/topics/numeric.md': numericIdPage,
+      },
       {version: 1, corrections: [activeCorrection]},
     )
 
@@ -439,6 +740,165 @@ describe('correction survival verification', () => {
       expect(error.code).toBe('CORRECTION_ERODED')
       expect(error.findings.filter(finding => finding.kind === 'correction-eroded')).toHaveLength(2)
       expect(error.message).toContain('refused')
+    }
+  })
+})
+
+// Verbatim copy of the combined markdown/wikilink regex and renderer this module used before
+// the split into normalizeFormattingText's two independent patterns (see git history for
+// corrections-survival.ts prior to this test). Kept only as a differential-test oracle.
+function renderVisibleLinkTextReference(
+  _match: string,
+  markdownText: string | undefined,
+  wikiTarget: string | undefined,
+  wikiLabel: string | undefined,
+): string {
+  return markdownText ?? wikiLabel ?? wikiTarget ?? ''
+}
+
+function normalizeFormattingTextReference(value: string): string {
+  const markdownLinkPattern = /!?(?:\[([^\]]*)\]\([^)]*\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/gu
+  return value
+    .normalize('NFKC')
+    .replaceAll(markdownLinkPattern, renderVisibleLinkTextReference)
+    .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replaceAll(/\s+/gu, ' ')
+    .toLowerCase()
+}
+
+/** Enumerates every string over `alphabet` of each length from 1 to `maxLength`, inclusive. */
+function* enumerateStrings(alphabet: readonly string[], maxLength: number): Generator<string> {
+  for (let length = 1; length <= maxLength; length += 1) {
+    const total = alphabet.length ** length
+    for (let index = 0; index < total; index += 1) {
+      let remaining = index
+      const characters: string[] = []
+      for (let position = 0; position < length; position += 1) {
+        characters.push(alphabet[remaining % alphabet.length] as string)
+        remaining = Math.floor(remaining / alphabet.length)
+      }
+      yield characters.join('')
+    }
+  }
+}
+
+// Verbatim port of the char-scanning algorithm this module replaced (see git history for
+// corrections-survival.ts prior to this test). Kept only as a differential-test oracle.
+function maskMarkdownLinksReference(content: string): string {
+  const masked = content.split('')
+  let open = -1
+  let index = 0
+  while (index < content.length) {
+    if (content[index] === '[') open = index
+    if (content[index] === ']' && content[index + 1] === '(' && open !== -1) {
+      let close = index + 2
+      let depth = 1
+      while (close < content.length && depth > 0) {
+        if (content[close] === '(') depth += 1
+        else if (content[close] === ')') depth -= 1
+        close += 1
+      }
+      if (depth === 0) {
+        for (let maskIndex = open; maskIndex < close; maskIndex += 1) masked[maskIndex] = ' '
+        index = close
+        open = -1
+        continue
+      }
+    }
+    index += 1
+  }
+  return masked.join('')
+}
+
+describe('normalizeFormattingText exhaustive differential against the pre-refactor implementation', () => {
+  // Length 6, not 7: Stryker re-runs this test once per mutant, and a bounded exhaustive sweep
+  // is a corpus, not a proof -- the random pass below reaches further (length 9-20) precisely
+  // because no fixed bound can stand in for one.
+  it('matches the reference implementation for every string up to length 6 over the link-syntax alphabet', () => {
+    const alphabet = ['[', ']', '(', ')', '|', '!', 'a', ' ']
+    let checked = 0
+    for (const candidate of enumerateStrings(alphabet, 6)) {
+      checked += 1
+      const actual = normalizeFormattingText(candidate)
+      const expected = normalizeFormattingTextReference(candidate)
+      if (actual !== expected) {
+        throw new Error(
+          `normalizeFormattingText diverged for ${JSON.stringify(candidate)}: got ${JSON.stringify(actual)}, reference gave ${JSON.stringify(expected)}`,
+        )
+      }
+    }
+    expect(checked).toBe(299_592)
+  })
+
+  it('matches the reference implementation for 400,000 random strings of length 9-20 (beyond exhaustive reach)', () => {
+    const alphabet = ['[', ']', '(', ')', '|', '!', 'a', ' ']
+    const next = createSeededRandom(0x2545f491)
+    for (let sample = 0; sample < 400_000; sample += 1) {
+      const length = 9 + Math.floor(next() * 12) // 9..20
+      const candidate = randomString(alphabet, length, next)
+      const actual = normalizeFormattingText(candidate)
+      const expected = normalizeFormattingTextReference(candidate)
+      if (actual !== expected) {
+        throw new Error(
+          `normalizeFormattingText diverged for ${JSON.stringify(candidate)}: got ${JSON.stringify(actual)}, reference gave ${JSON.stringify(expected)}`,
+        )
+      }
+    }
+  })
+})
+
+/** Deterministic xorshift32 PRNG (fixed seed — reproducible across runs, not cryptographic). */
+function createSeededRandom(seed: number): () => number {
+  let state = seed
+  return () => {
+    state ^= state << 13
+    state ^= state >>> 17
+    state ^= state << 5
+    state >>>= 0
+    return state / 0xffffffff
+  }
+}
+
+function randomString(alphabet: readonly string[], length: number, next: () => number): string {
+  let result = ''
+  for (let position = 0; position < length; position += 1) {
+    result += alphabet[Math.floor(next() * alphabet.length) % alphabet.length]
+  }
+  return result
+}
+
+describe('maskMarkdownLinks exhaustive differential against the pre-refactor char-scanning implementation', () => {
+  // Length 6, not 7: same rationale as normalizeFormattingText's differential above.
+  it('matches the reference implementation for every string up to length 6 over the link-syntax alphabet', () => {
+    const alphabet = ['[', ']', '(', ')', 'a', ' ']
+    let checked = 0
+    for (const candidate of enumerateStrings(alphabet, 6)) {
+      checked += 1
+      const actual = maskMarkdownLinks(candidate)
+      const expected = maskMarkdownLinksReference(candidate)
+      if (actual !== expected) {
+        throw new Error(
+          `maskMarkdownLinks diverged for ${JSON.stringify(candidate)}: got ${JSON.stringify(actual)}, reference gave ${JSON.stringify(expected)}`,
+        )
+      }
+    }
+    expect(checked).toBe(55_986)
+  })
+
+  it('matches the reference implementation for 200,000 random strings of length 9-20 (a wider alphabet, beyond exhaustive reach)', () => {
+    const alphabet = ['[', ']', '(', ')', 'a', ' ', '!', '|']
+    const next = createSeededRandom(0x9e3779b9)
+    for (let sample = 0; sample < 200_000; sample += 1) {
+      const length = 9 + Math.floor(next() * 12) // 9..20
+      const candidate = randomString(alphabet, length, next)
+      const actual = maskMarkdownLinks(candidate)
+      const expected = maskMarkdownLinksReference(candidate)
+      if (actual !== expected) {
+        throw new Error(
+          `maskMarkdownLinks diverged for ${JSON.stringify(candidate)}: got ${JSON.stringify(actual)}, reference gave ${JSON.stringify(expected)}`,
+        )
+      }
     }
   })
 })

@@ -1,4 +1,8 @@
-import {describe, expect, it} from 'vitest'
+import {readdirSync, readFileSync} from 'node:fs'
+import {join} from 'node:path'
+import process from 'node:process'
+import {describe, expect, it, vi} from 'vitest'
+import {parse} from 'yaml'
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const solutionsQueryModulePromise: Promise<{
@@ -416,6 +420,48 @@ describe('assembleSolutionsContext', () => {
     expect(result.selectedPaths).not.toContain('docs/solutions/best-practices/malformed.md')
   })
 
+  it('names a skipped malformed doc on stderr by path and error code, never by frontmatter text', () => {
+    // #given a doc whose parse error would interpolate source text into the message (an unresolved
+    // alias is a plain ReferenceError whose FIRST line carries the token), and a token that must
+    // not reach the log surface
+    const files = {
+      'docs/solutions/best-practices/alias.md': '---\ntitle: *acme-private-repo\n---\n\nBody.\n',
+      'docs/solutions/best-practices/scalar.md': '---\ntitle: `acme-private-repo` leaked\n---\n\nBody.\n',
+    }
+    const written: string[] = []
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(chunk => {
+      written.push(String(chunk))
+      return true
+    })
+
+    try {
+      assembleSolutionsContext({
+        files,
+        event: {eventName: 'pull_request', title: 'x', body: 'x'},
+        privateNames: [],
+        now: new Date('2026-06-22'),
+      })
+    } finally {
+      spy.mockRestore()
+    }
+
+    // #then each skip is announced with its path and a closed-vocabulary reason
+    const skips = written.filter(line => line.includes('malformed frontmatter'))
+    expect(skips).toHaveLength(2)
+    expect(skips.some(line => line.includes('(path: docs/solutions/best-practices/alias.md): ReferenceError'))).toBe(
+      true,
+    )
+    expect(
+      skips.some(line =>
+        /\(path: docs\/solutions\/best-practices\/scalar\.md\): BAD_SCALAR_START at line \d+/u.test(line),
+      ),
+    ).toBe(true)
+    // #then no line carries frontmatter-derived text
+    for (const line of written) {
+      expect(line).not.toContain('acme-private-repo')
+    }
+  })
+
   it('does not time-demote a doc with verified: date-string (ISO date form)', () => {
     // #given a doc that is old but has verified: <ISO-date-string> (the real-world form)
     const verifiedDateDoc = makeDoc(
@@ -783,5 +829,35 @@ describe('assembleSolutionsContext', () => {
     // #then the output contains NO U+FFFD replacement chars
     expect(result.excerpt).not.toContain('\uFFFD')
     expect(result.byteLength).toBeLessThanOrEqual(120)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Real corpus gate: every docs/solutions/**/*.md frontmatter must parse
+// ---------------------------------------------------------------------------
+
+describe('docs/solutions corpus', () => {
+  const root = 'docs/solutions'
+  const docPaths = readdirSync(root, {withFileTypes: true, recursive: true})
+    .filter(entry => entry.isFile() && entry.name.endsWith('.md'))
+    .map(entry => join(entry.parentPath, entry.name))
+    .sort()
+
+  it('contains documents', () => {
+    expect(docPaths.length).toBeGreaterThan(0)
+  })
+
+  it.each(docPaths)('%s has parseable YAML frontmatter', path => {
+    // #given the real doc on disk
+    const content = readFileSync(path, 'utf8')
+    const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+
+    // #then it has a frontmatter block and yaml.parse accepts it -- collectDocs skips (with a
+    // stderr line) any doc whose frontmatter throws, so a doc that fails here is invisible to
+    // every future retrieval while all other gates stay green
+    expect(match, 'missing frontmatter block').not.toBeNull()
+    expect(() => {
+      parse(match?.[1] ?? '')
+    }).not.toThrow()
   })
 })

@@ -20,13 +20,16 @@
   "type": "module",
   "scripts": {
     "bootstrap": "pnpm install --prefer-offline --loglevel warn",
-    "check-types": "tsc --noEmit --project ./tsconfig.json",
-    "coverage": "vitest run --coverage",
+    "build": "node scripts/build-wiki-write-core.ts",
+    "check:wiki-write-core-dist": "node scripts/build-wiki-write-core.ts --check",
+    "check:mutation-guards": "node scripts/check-mutation-guards.ts",
+    "check-types": "pnpm build && tsc --noEmit --project ./tsconfig.json",
+    "coverage": "pnpm build && vitest run --coverage",
     "fix": "pnpm run lint --fix",
     "check:md-links": "node scripts/check-md-links.ts",
     "lint": "pnpm run check:md-links && eslint",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "pnpm build && vitest run",
+    "test:watch": "pnpm build && echo 'test:watch builds dist once; rerun after source changes' && vitest"
   },
   "prettier": "@bfra.me/prettier-config/120-proof",
   "dependencies": {
@@ -38,6 +41,8 @@
     "@bfra.me/eslint-config": "0.52.1",
     "@bfra.me/prettier-config": "0.16.0",
     "@bfra.me/tsconfig": "0.13.0",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/node": "24.13.2",
     "@vitest/coverage-v8": "4.1.4",
     "@vitest/eslint-plugin": "1.6.15",
@@ -51,5 +56,5 @@
     "typescript": "6.0.3",
     "vitest": "4.1.4"
   },
-  "packageManager": "pnpm@11.24.0"
+  "packageManager": "pnpm@11.25.0"
 }

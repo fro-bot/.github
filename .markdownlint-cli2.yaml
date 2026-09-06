@@ -14,5 +14,6 @@ globs:
   - '!knowledge/**'
   - '!docs/archive/**'
   - '!docs/brainstorms/**'
+  - '!docs/ideation/**'
   - '!docs/plans/**'
   - '!docs/solutions/**'

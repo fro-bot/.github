@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/wiki-write-core/src/corrections-survival.ts",
+    "packages/wiki-write-core/src/corrections.ts",
+    "packages/wiki-write-core/src/private-leak.ts",
+    "scripts/build-wiki-write-core.ts",
+    "scripts/check-private-leak.ts",
+    "scripts/check-wiki-authority.ts",
+    "scripts/check-wiki-private-presence.ts",
+    "scripts/wiki-context-safety.ts",
+    "scripts/wiki-lockfile-gates.ts"
+  ],
+  "testFiles": [
+    "packages/wiki-write-core/src/corrections-survival.test.ts",
+    "packages/wiki-write-core/src/corrections.test.ts",
+    "packages/wiki-write-core/src/private-leak-adapter.test.ts",
+    "packages/wiki-write-core/src/private-leak.test.ts",
+    "packages/wiki-write-core/src/wiki-write-core.test.ts",
+    "scripts/build-wiki-write-core.test.ts",
+    "scripts/check-private-leak.test.ts",
+    "scripts/check-wiki-authority.test.ts",
+    "scripts/check-wiki-private-presence.test.ts",
+    "scripts/wiki-context-safety.test.ts",
+    "scripts/wiki-lockfile-gates.test.ts"
+  ],
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts",
+    "related": false
+  },
+  "thresholds": {
+    "high": 100,
+    "low": 100,
+    "break": null
+  },
+  "reporters": ["json", "clear-text"],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "tempDirName": ".stryker-tmp",
+  "allowConsoleColors": false,
+  "timeoutMS": 30000,
+  "dryRunTimeoutMinutes": 8
+}
