@@ -479,6 +479,14 @@ describe('formatBlockMessage', () => {
     const msg = formatBlockMessage({ok: false, blockedFiles: ['metadata/repos.yaml']})
     expect(msg.length).toBeGreaterThan(50)
   })
+
+  it('renders the blocked-file list as a `  - <path>` block joined by newlines, in order', () => {
+    // #given two blocked files
+    // #when the failure message is formatted
+    // #then the rendered block matches the exact `-` prefix and newline join, not just substrings
+    const msg = formatBlockMessage({ok: false, blockedFiles: ['metadata/repos.yaml', 'knowledge/index.md']})
+    expect(msg).toContain('  - metadata/repos.yaml\n  - knowledge/index.md')
+  })
 })
 
 describe('readPullRequestContext (base vs head repo)', () => {
