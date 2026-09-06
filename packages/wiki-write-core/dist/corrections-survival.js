@@ -86,21 +86,31 @@ export function verifyCorrectionSurvival(files, corrections, fallbackFiles = {})
 }
 /**
  * Substitutes each link's visible label (markdown or wiki, labeled or bare) before the generic
- * punctuation strip below. Exported only for `corrections-survival.test.ts`'s exhaustive
- * differential test against the pre-refactor reference implementation.
+ * punctuation strip below. A single combined alternation, scanned once left to right: a
+ * two-pass split (markdown pattern, then wiki pattern) lets the first pass's substitution text
+ * form a NEW `[[...|...]]`-shaped string the second pass then matches, re-interpreting already-
+ * substituted output as if it were original content (see corrections-survival.test.ts's
+ * `[[[]()a|b]]` counterexample). Exported only for the exhaustive differential test against
+ * the pre-refactor reference implementation.
  */
 export function normalizeFormattingText(value) {
-    const markdownLinkPattern = /!?\[([^\]]*)\]\([^)]*\)/gu;
-    const wikiLinkPattern = /!?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/gu;
+    const markdownLinkPattern = /!?(?:\[([^\]]*)\]\([^)]*\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/gu;
     return (value
         .normalize('NFKC')
-        .replaceAll(markdownLinkPattern, (_match, label) => label)
-        .replaceAll(wikiLinkPattern, (_match, target, label) => label ?? target)
+        .replaceAll(markdownLinkPattern, renderVisibleLinkText)
         // `\s+` below absorbs any run this leaves; a `+` here would be unobservable.
         .replaceAll(/[^\p{L}\p{N}]/gu, ' ')
         .trim()
         .replaceAll(/\s+/gu, ' ')
         .toLowerCase());
+}
+function renderVisibleLinkText(_match, markdownText, wikiTarget, wikiLabel) {
+    // markdownLinkPattern's outer alternation guarantees exactly one branch matched whenever this
+    // callback runs: the markdown branch always captures markdownText (possibly '', never
+    // undefined), and the wiki branch always captures wikiTarget (required, 1+ chars). A final
+    // '' fallback covering "neither captured" is unreachable -- asserted, not defaulted.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- see comment above
+    return (markdownText ?? wikiLabel ?? wikiTarget);
 }
 /**
  * Masks markdown inline links `[label](url)` to spaces so exact prose matching ignores link

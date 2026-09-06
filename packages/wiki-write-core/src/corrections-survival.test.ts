@@ -294,6 +294,32 @@ describe('correction survival verification', () => {
     },
   )
 
+  it('does not let a markdown-link substitution create text a later pass would re-match as a wiki link', () => {
+    // A single combined alternation scans once, left to right, over the ORIGINAL text only.
+    // A two-pass split (markdown pattern, then wiki pattern) would let this input's markdown
+    // match `[[[]()` substitute its label `[[` back into the string, forming `[[a|b]]` — text
+    // the wiki pass then re-matches, even though those brackets were never adjacent in the
+    // original. Verbatim reds pasted in the plan's 5B-1 Result block were produced against a
+    // two-pass split that did exactly this.
+    expect(normalizeFormattingText('[[[]()a|b]]')).toBe('a b')
+    expect(normalizeFormattingText('See [[[Docs](https://x)Guide|the guide]] here.')).toBe(
+      'see docsguide the guide here',
+    )
+  })
+
+  it('blocks as erosion a correction whose span could reinterpret as a shorter, falsely-surviving formatting match under a two-pass split', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('some b prose')},
+      activeCorrections('[[[]()a|b]]'),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
+  })
+
   it('is case-insensitive by lowercasing, not uppercasing — a German ß is not letter-for-letter equal to "ss" once folded', () => {
     // ß.toUpperCase() === 'SS' but ß.toLowerCase() === ß, so lower- vs uppercase-folding this
     // pair produces different equality outcomes; this pins the direction the docstring commits to.
@@ -786,10 +812,13 @@ function maskMarkdownLinksReference(content: string): string {
 }
 
 describe('normalizeFormattingText exhaustive differential against the pre-refactor implementation', () => {
-  it('matches the reference implementation for every string up to length 7 over the link-syntax alphabet', () => {
+  // Length 6, not 7: Stryker re-runs this test once per mutant, and a bounded exhaustive sweep
+  // is a corpus, not a proof -- the random pass below reaches further (length 9-20) precisely
+  // because no fixed bound can stand in for one.
+  it('matches the reference implementation for every string up to length 6 over the link-syntax alphabet', () => {
     const alphabet = ['[', ']', '(', ')', '|', '!', 'a', ' ']
     let checked = 0
-    for (const candidate of enumerateStrings(alphabet, 7)) {
+    for (const candidate of enumerateStrings(alphabet, 6)) {
       checked += 1
       const actual = normalizeFormattingText(candidate)
       const expected = normalizeFormattingTextReference(candidate)
@@ -799,7 +828,23 @@ describe('normalizeFormattingText exhaustive differential against the pre-refact
         )
       }
     }
-    expect(checked).toBe(2_396_744)
+    expect(checked).toBe(299_592)
+  })
+
+  it('matches the reference implementation for 400,000 random strings of length 9-20 (beyond exhaustive reach)', () => {
+    const alphabet = ['[', ']', '(', ')', '|', '!', 'a', ' ']
+    const next = createSeededRandom(0x2545f491)
+    for (let sample = 0; sample < 400_000; sample += 1) {
+      const length = 9 + Math.floor(next() * 12) // 9..20
+      const candidate = randomString(alphabet, length, next)
+      const actual = normalizeFormattingText(candidate)
+      const expected = normalizeFormattingTextReference(candidate)
+      if (actual !== expected) {
+        throw new Error(
+          `normalizeFormattingText diverged for ${JSON.stringify(candidate)}: got ${JSON.stringify(actual)}, reference gave ${JSON.stringify(expected)}`,
+        )
+      }
+    }
   })
 })
 
@@ -824,10 +869,11 @@ function randomString(alphabet: readonly string[], length: number, next: () => n
 }
 
 describe('maskMarkdownLinks exhaustive differential against the pre-refactor char-scanning implementation', () => {
-  it('matches the reference implementation for every string up to length 7 over the link-syntax alphabet', () => {
+  // Length 6, not 7: same rationale as normalizeFormattingText's differential above.
+  it('matches the reference implementation for every string up to length 6 over the link-syntax alphabet', () => {
     const alphabet = ['[', ']', '(', ')', 'a', ' ']
     let checked = 0
-    for (const candidate of enumerateStrings(alphabet, 7)) {
+    for (const candidate of enumerateStrings(alphabet, 6)) {
       checked += 1
       const actual = maskMarkdownLinks(candidate)
       const expected = maskMarkdownLinksReference(candidate)
@@ -837,14 +883,14 @@ describe('maskMarkdownLinks exhaustive differential against the pre-refactor cha
         )
       }
     }
-    expect(checked).toBe(335_922)
+    expect(checked).toBe(55_986)
   })
 
-  it('matches the reference implementation for 50,000 random strings of length 9-16 (a wider alphabet, beyond exhaustive reach)', () => {
+  it('matches the reference implementation for 200,000 random strings of length 9-20 (a wider alphabet, beyond exhaustive reach)', () => {
     const alphabet = ['[', ']', '(', ')', 'a', ' ', '!', '|']
     const next = createSeededRandom(0x9e3779b9)
-    for (let sample = 0; sample < 50_000; sample += 1) {
-      const length = 9 + Math.floor(next() * 8) // 9..16
+    for (let sample = 0; sample < 200_000; sample += 1) {
+      const length = 9 + Math.floor(next() * 12) // 9..20
       const candidate = randomString(alphabet, length, next)
       const actual = maskMarkdownLinks(candidate)
       const expected = maskMarkdownLinksReference(candidate)
