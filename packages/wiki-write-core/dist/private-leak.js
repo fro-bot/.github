@@ -6,12 +6,14 @@ export function checkPrivateLeak(privateNames, diff, override) {
     if (override.titlePrefixed && override.isOperator) {
         return { ok: true };
     }
-    if (privateNames.length === 0 || diff.length === 0) {
-        return { ok: true };
-    }
+    // No early return for privateNames.length === 0 or diff.length === 0: both converge to
+    // {ok: true} through the main path anyway (empty lowerNames means .some never matches;
+    // ''.split('\n') yields one non-matching line), so the guard was a pure optimization, not a
+    // behavior difference. Pinned by tests below rather than special-cased here.
     const lowerNames = privateNames.map(name => name.toLowerCase());
     const matchedFiles = [];
     let currentFile = null;
+    // Stryker disable next-line BooleanLiteral: currentFile only ever becomes non-null via the "diff --git a/" branch, which in the same conditional branch also resets checkPathAsNew to false, or the else branch resets both currentFile and checkPathAsNew together. Whenever currentFile !== null is later read, this initial value has already been overwritten by one of those resets -- not observable.
     let checkPathAsNew = false;
     const checkPath = (path) => {
         const pathLower = path.toLowerCase();
@@ -26,8 +28,12 @@ export function checkPrivateLeak(privateNames, diff, override) {
             // Index scanning, not a regex: the original `/^diff --git a\/.+ b\/(.+)$/` backtracked on
             // caller-supplied diff text. Keep this branch regex-free -- no timing guard covers it (#3810).
             // The old regex selected the rightmost separator with at least one trailing character.
+            // No upper-bound check is needed here: lastIndexOf's own `fromIndex` argument
+            // (line.length - separator.length - 1) already guarantees any found index satisfies
+            // foundIndex + separator.length < line.length, so a found separatorIndex always leaves
+            // room after it -- the miss case (-1) is rejected below by the diffPrefix.length floor.
             const separatorIndex = line.lastIndexOf(separator, line.length - separator.length - 1);
-            if (separatorIndex > diffPrefix.length && separatorIndex + separator.length < line.length) {
+            if (separatorIndex > diffPrefix.length) {
                 const bPath = line.slice(separatorIndex + separator.length);
                 const aPath = line.slice(diffPrefix.length, separatorIndex);
                 currentFile = bPath;
@@ -38,6 +44,7 @@ export function checkPrivateLeak(privateNames, diff, override) {
             }
             else {
                 currentFile = null;
+                // Stryker disable next-line BooleanLiteral: currentFile is reset to null in this same branch, so the "+++" handler's currentFile !== null guard blocks any read of checkPathAsNew until the next "diff --git a/" line resets it again anyway -- not observable.
                 checkPathAsNew = false;
             }
             continue;
