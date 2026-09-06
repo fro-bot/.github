@@ -8,8 +8,16 @@ import process from 'node:process'
  * Kept symmetric with `EXPECTED_AUTHORS` in `scripts/reconcile-repos.ts` so the two
  * enforcement points (pre-commit integrity check on `data` and pre-merge PR guard on
  * `main`) share one operator model. If this set ever changes, change both files.
+ *
+ * A `function` rather than a top-level `const new Set([...])`, for the same static-mutant
+ * reason as `operatorLogin()` in `scripts/check-private-leak.ts`: a value built once at module
+ * load is cached across mutants within a Stryker worker process, so a mutant applied to its
+ * literal contents never actually executes for most per-test runs. A function re-evaluates the
+ * literals on every call, making each string an ordinary, per-test-killable mutant.
  */
-const FROBOT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
+function frobotAuthors(): ReadonlySet<string> {
+  return new Set(['fro-bot', 'fro-bot[bot]'])
+}
 
 /**
  * Anchored patterns for files whose only legitimate writer is Fro Bot.
@@ -25,14 +33,20 @@ const FROBOT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
  *
  * Docs (`knowledge/schema.md`, `knowledge/README.md`, `knowledge/wiki/README.md`,
  * `metadata/README.md`) are intentionally NOT covered.
+ *
+ * A `function` rather than a top-level `const` array, for the same static-mutant reason as
+ * `frobotAuthors()` above — each anchored regex literal is otherwise evaluated once per worker
+ * process and its mutant never actually runs against most tests.
  */
-const GUARDED_PATTERNS: readonly RegExp[] = [
-  /^knowledge\/wiki\/[^/]+\/.+\.md$/,
-  /^knowledge\/index\.md$/,
-  /^knowledge\/log\.md$/,
-  /^knowledge\/corrections\.yaml$/,
-  /^metadata\/[^/]+\.yaml$/,
-]
+function guardedPatterns(): readonly RegExp[] {
+  return [
+    /^knowledge\/wiki\/[^/]+\/.+\.md$/,
+    /^knowledge\/index\.md$/,
+    /^knowledge\/log\.md$/,
+    /^knowledge\/corrections\.yaml$/,
+    /^metadata\/[^/]+\.yaml$/,
+  ]
+}
 
 export interface GuardInput {
   readonly author: string
@@ -55,7 +69,7 @@ export type GuardResult = {readonly ok: true} | {readonly ok: false; readonly bl
  * intended resolution.
  */
 export function checkWikiAuthority(input: GuardInput): GuardResult {
-  if (FROBOT_AUTHORS.has(input.author)) {
+  if (frobotAuthors().has(input.author)) {
     // metadata/repos.yaml may only arrive via the `data` promotion branch.
     // Any other head branch from a fro-bot identity is the prohibited both-sides mutation.
     // The `headRef !== 'data'` bypass is safe to gate on a branch name only because a
@@ -67,7 +81,7 @@ export function checkWikiAuthority(input: GuardInput): GuardResult {
     }
     return {ok: true}
   }
-  const blockedFiles = input.files.filter(f => GUARDED_PATTERNS.some(p => p.test(f)))
+  const blockedFiles = input.files.filter(f => guardedPatterns().some(p => p.test(f)))
   if (blockedFiles.length === 0) {
     return {ok: true}
   }
@@ -84,21 +98,33 @@ export function checkWikiAuthority(input: GuardInput): GuardResult {
  */
 export function formatBlockMessage(result: {readonly ok: false; readonly blockedFiles: readonly string[]}): string {
   const lines = [
+    // Stryker disable next-line StringLiteral: diagnostic text does not affect classification, exit status, redaction, or downstream parsing.
     'Cannot merge: this PR modifies files that are auto-managed by Fro Bot workflows.',
+    // Stryker disable next-line StringLiteral: blank-line spacer; joined output is never asserted line-by-line.
     '',
+    // Stryker disable next-line StringLiteral: diagnostic text does not affect classification, exit status, redaction, or downstream parsing.
     'Blocked files:',
     ...result.blockedFiles.map(f => `  - ${f}`),
+    // Stryker disable next-line StringLiteral: blank-line spacer; joined output is never asserted line-by-line.
     '',
     'These paths are writable only by `fro-bot` (PAT writes) or `fro-bot[bot]` (App writes)',
+    // Stryker disable next-line StringLiteral: diagnostic text does not affect classification, exit status, redaction, or downstream parsing.
     'via the `data` branch. Authorized manual edits land like this:',
+    // Stryker disable next-line StringLiteral: blank-line spacer; joined output is never asserted line-by-line.
     '',
+    // Stryker disable next-line StringLiteral: diagnostic text does not affect classification, exit status, redaction, or downstream parsing.
     '  1. Check out `data` in a worktree (`git worktree add ../worktree-data data`)',
+    // Stryker disable next-line StringLiteral: diagnostic text does not affect classification, exit status, redaction, or downstream parsing.
     '  2. Make the edit there',
+    // Stryker disable next-line StringLiteral: diagnostic text does not affect classification, exit status, redaction, or downstream parsing.
     '  3. Push `data` to origin',
     '  4. The Merge Data Branch workflow opens a promotion PR from `data` → `main`',
+    // Stryker disable next-line StringLiteral: blank-line spacer; joined output is never asserted line-by-line.
     '',
+    // Stryker disable next-line StringLiteral: diagnostic text does not affect classification, exit status, redaction, or downstream parsing.
     'See metadata/README.md and knowledge/schema.md for the operator workflow.',
   ]
+  // Stryker disable next-line StringLiteral: the join separator is never asserted; substrings checked by tests do not span line boundaries.
   return lines.join('\n')
 }
 
@@ -119,8 +145,11 @@ interface PullRequestEventPayload {
 export async function readPullRequestContext(
   eventPath: string,
 ): Promise<{prNumber: number; author: string; headRef: string; fullName: string | null}> {
-  const raw = await readFile(eventPath, 'utf8')
-  const parsed = JSON.parse(raw) as PullRequestEventPayload
+  // No explicit encoding: `readFile(path)` returns a `Buffer`, and `Buffer.prototype.toString()`
+  // defaults to `'utf8'` with no argument — genuinely equivalent to `readFile(path, 'utf8')` for
+  // every input, not merely realistic ones, so there is no `'utf8'` string literal here to mutate.
+  const raw = await readFile(eventPath)
+  const parsed = JSON.parse(raw.toString()) as PullRequestEventPayload
   const prNumber = parsed.pull_request?.number
   const author = parsed.pull_request?.user?.login
   const headRef = parsed.pull_request?.head?.ref
@@ -132,7 +161,13 @@ export async function readPullRequestContext(
   if (typeof headRef !== 'string' || headRef === '') {
     throw new Error(`check-wiki-authority: event payload missing pull_request.head.ref (path=${eventPath})`)
   }
-  const rawFullName = parsed.pull_request?.base?.repo?.full_name
+  // `parsed.pull_request` is guaranteed defined here: if it were undefined, `prNumber` above would
+  // also be undefined, failing the `typeof prNumber !== 'number'` check and throwing before this
+  // line is reached. `noUncheckedIndexedAccess`/optional-property narrowing cannot see across the
+  // two statements, so a non-null assertion states the invariant directly (precedent:
+  // `validCandidates[0]!` in `scripts/check-private-leak.ts`).
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const rawFullName = parsed.pull_request!.base?.repo?.full_name
   const fullName = typeof rawFullName === 'string' && rawFullName.length > 0 ? rawFullName : null
   return {prNumber, author, headRef, fullName}
 }
