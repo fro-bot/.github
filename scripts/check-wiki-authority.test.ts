@@ -1,6 +1,15 @@
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+
 import {CORRECTIONS_PATH} from '@fro-bot/wiki-write-core/corrections'
 import {describe, expect, it, vi} from 'vitest'
-import {checkWikiAuthority, fetchChangedFiles, formatBlockMessage} from './check-wiki-authority.ts'
+import {
+  checkWikiAuthority,
+  fetchChangedFiles,
+  formatBlockMessage,
+  readPullRequestContext,
+} from './check-wiki-authority.ts'
 
 // Hoisted mock for execFileSync — must precede any import that might trigger the module.
 const {mockExecFileSync} = vi.hoisted(() => ({
@@ -356,6 +365,41 @@ describe('formatBlockMessage', () => {
     // #then the output is a non-trivial string the CI log can surface
     const msg = formatBlockMessage({ok: false, blockedFiles: ['metadata/repos.yaml']})
     expect(msg.length).toBeGreaterThan(50)
+  })
+})
+
+describe('readPullRequestContext (base vs head repo)', () => {
+  // A fork PR's head repo (the contributor's fork) is a DIFFERENT repository from the base
+  // repo (this repository, where the PR was opened) — that distinction is exactly what makes
+  // a fork PR's changed-file lookup resolvable at all: `fetchChangedFiles` must query the base
+  // repo's API endpoint, never the fork's, since only the base repo has a `/pulls/{n}/files`
+  // endpoint for this PR. `fullName` is documented as coming from `pull_request.base.repo`,
+  // but nothing pinned that against an event payload where base and head actually differ until
+  // now — every existing fixture used the same `fro-bot/.github` string for both.
+  it('returns the BASE repo full_name, not the HEAD repo full_name, when a fork PR event has different values for each', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'check-wiki-authority-fork-pr-'))
+    const eventPath = join(tmpDir, 'event.json')
+    try {
+      writeFileSync(
+        eventPath,
+        JSON.stringify({
+          pull_request: {
+            number: 7,
+            user: {login: 'contributor'},
+            head: {ref: 'feature/x', repo: {full_name: 'contributor-fork/.github'}},
+            base: {repo: {full_name: 'fro-bot/.github'}},
+          },
+        }),
+        'utf8',
+      )
+
+      const context = await readPullRequestContext(eventPath)
+
+      expect(context.fullName).toBe('fro-bot/.github')
+      expect(context.fullName).not.toBe('contributor-fork/.github')
+    } finally {
+      rmSync(tmpDir, {recursive: true, force: true})
+    }
   })
 })
 

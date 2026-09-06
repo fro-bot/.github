@@ -128,12 +128,27 @@ function treeOf(path: string): 'packages' | 'scripts' | undefined {
  *    (it is already flagged on its own, and same-tree coverage still needs its own test).
  *
  * **Reach is not coverage.** This function (and `reachedModulesTransitive`) proves a `mutate`
- * entry is *touched* — imported, statically or dynamically, directly or via a barrel — by some
- * same-tree test, nothing more. A barrel with many re-exports (`packages/wiki-write-core/src/
- * index.ts`, eight `export *` targets) makes any test that imports it "reach" every module the
- * barrel forwards to, whether or not that test exercises any of that module's actual logic; the
- * only evidence a promotion to `mutate` is *safe* is a live `pnpm check:mutation-guards` run's
- * per-module kill count, not this structural floor.
+ * entry is *touched* — imported, statically or dynamically, directly or via a barrel, or via
+ * any chain of regular imports at arbitrary depth (test imports A, A imports B, B imports
+ * mutated C — C counts as paired) — by some same-tree test, nothing more. A barrel with many
+ * re-exports (`packages/wiki-write-core/src/index.ts`, eight `export *` targets) makes any
+ * test that imports it "reach" every module the barrel forwards to, whether or not that test
+ * exercises any of that module's actual logic; the only evidence a promotion to `mutate` is
+ * safe* is a live `pnpm check:mutation-guards` run's per-module kill count, not this
+ * structural floor.
+ *
+ * **Shared walk, opposing preferences.** `reachedModulesTransitive` is also the changed-file
+ * trigger gate's closure walk (`scripts/check-mutation-guards.ts`'s `buildImportClosure`),
+ * which wants reach as WIDE as possible — every additional reached file is one more file that
+ * correctly triggers a run, strictly safer. This consumer wants the opposite: reach as NARROW
+ * as possible, since a wider walk only ever LOWERS how often the "unreached entry" violation
+ * above can fire (more paths count as reached, so fewer `mutate` entries look unreached) —
+ * widening this walk never adds a violation, only removes one. One shared implementation is
+ * tuned wide for the gate's sake; this consumer's floor is correspondingly weaker than a
+ * narrow, direct-import-only walk would give it. No behavior change today: every
+ * `packages/`-tree `mutate` entry already had barrel reach from `index.ts` under the old
+ * re-export-only walk, and every `scripts/`-tree entry has a direct same-tree test, so nothing
+ * that used to be flagged as unreached stops being flagged. Revisit if that stops holding.
  *
  * A glob `testFiles` entry (per `isLiteralPath`) cannot be read from disk to compute its reach
  * — rather than let that throw ENOENT, it is skipped from reach computation and reported as its

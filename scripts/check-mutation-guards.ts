@@ -1501,12 +1501,12 @@ export async function evaluateTriggerGate(
  * `reportPath` can also inject a `reporterConfig` that agrees with it — without this, every
  * temp-path test would trip the reporter/report-path cross-check regardless of what it is
  * actually trying to prove, since the real config's resolved path never matches a temp path.
- * `triggerGateEnv`/`triggerGateDeps` are the fourth and fifth injectable seams, passed straight
- * through to `evaluateTriggerGate` (the changed-file trigger gate) — both default to the real
- * environment/functions, so an uninjected call behaves exactly as it did before this gate
- * existed for any non-`pull_request` event. The gate runs before the report is cleared or
- * Stryker is spawned: a `not-applicable` or gate-failure result must never touch the report
- * file at all.
+ * `triggerGateEnv`/`triggerGateDeps`/`triggerGateReadSource` are the fourth, fifth, and sixth
+ * injectable seams, passed straight through to `evaluateTriggerGate` (the changed-file trigger
+ * gate) — all three default to the real environment/functions/reader, so an uninjected call
+ * behaves exactly as it did before this gate existed for any non-`pull_request` event. The
+ * gate runs before the report is cleared or Stryker is spawned: a `not-applicable` or
+ * gate-failure result must never touch the report file at all.
  */
 export async function runMutationGuardCheck(
   spawner: () => void = defaultStrykerSpawner,
@@ -1514,10 +1514,11 @@ export async function runMutationGuardCheck(
   reporterConfig?: ReporterConfig,
   triggerGateEnv?: {readonly eventName?: string; readonly eventPath?: string},
   triggerGateDeps?: ChangedFileGateDeps,
+  triggerGateReadSource?: SourceReader,
 ): Promise<ClassificationResult> {
   const config = readStrykerConfig(strykerConfigPath)
 
-  const gateResult = await evaluateTriggerGate(config, triggerGateEnv, triggerGateDeps)
+  const gateResult = await evaluateTriggerGate(config, triggerGateEnv, triggerGateDeps, triggerGateReadSource)
   if (gateResult !== undefined) return gateResult
 
   rmSync(reportPath, {force: true})

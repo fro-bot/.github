@@ -1193,6 +1193,33 @@ describe('closure-based trigger set against the real config', () => {
     expect(result?.mutants[0]?.status).toBe('ChangedFileGateFailed')
     expect(result?.mutants[0]?.reason).toContain('EACCES')
   })
+
+  // End-to-end: the same failure proven above against evaluateTriggerGate directly must also
+  // be reachable through runMutationGuardCheck's public entry point — the sixth
+  // `triggerGateReadSource` seam must actually reach evaluateTriggerGate, not just exist on
+  // the signature. A spawner that throws if called proves the gate short-circuits before
+  // Stryker would ever run.
+  it('reports instrumentation-failed through runMutationGuardCheck when triggerGateReadSource throws', async () => {
+    const throwingReadSource = (): string => {
+      throw new Error('EACCES: permission denied (simulated, via runMutationGuardCheck)')
+    }
+    const spawnerThatMustNotRun = (): void => {
+      throw new Error('Stryker must not be spawned when the trigger gate fails closed')
+    }
+
+    const result = await runMutationGuardCheck(
+      spawnerThatMustNotRun,
+      mutationReportPath,
+      undefined,
+      PULL_REQUEST_EVENT,
+      fakeGateDeps({fetchChangedFiles: () => ['packages/wiki-write-core/src/wiki-slug.ts']}),
+      throwingReadSource,
+    )
+
+    expect(result.verdict).toBe('instrumentation-failed')
+    expect(result.mutants[0]?.status).toBe('ChangedFileGateFailed')
+    expect(result.mutants[0]?.reason).toContain('EACCES: permission denied (simulated, via runMutationGuardCheck)')
+  })
 })
 
 describe('runMutationGuardCheck (stale-report fix)', () => {
