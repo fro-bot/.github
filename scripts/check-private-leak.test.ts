@@ -3589,4 +3589,31 @@ describe('isGh404Error()', () => {
     const error = new Error('network timeout')
     expect(isGh404Error(error)).toBe(false)
   })
+
+  it('does NOT detect 404 when error is not a record at all (isRecord() false branch)', () => {
+    // A non-object error (e.g. a thrown string) must fall through both isRecord() ternaries to
+    // the '' defaults rather than crash on error.stdout/error.stderr property access.
+    expect(isGh404Error('plain string throw')).toBe(false)
+    expect(isGh404Error(null)).toBe(false)
+    expect(isGh404Error(undefined)).toBe(false)
+  })
+
+  it('does NOT detect 404 when stdout/stderr are present but not strings (typeof guard)', () => {
+    // isRecord(error) is true here, but error.stdout/error.stderr are numbers, not strings --
+    // must fall through to the '' default rather than call .test() on a non-string.
+    const error = {stdout: 404, stderr: 404}
+    expect(isGh404Error(error)).toBe(false)
+  })
+
+  it('detects "status":"404" in stdout with whitespace on BOTH sides of the colon', () => {
+    // Discriminates both /"status"\s*:\S*"404"/ and /"status"\S*:\s*"404"/ from the real
+    // /"status"\s*:\s*"404"/: a swapped \S* on either side cannot match a literal space there,
+    // so this single payload (space before AND after the colon) fails both mutant variants
+    // while the real regex's \s* on both sides matches it.
+    const error = Object.assign(new Error('API error'), {
+      stderr: '',
+      stdout: '{"status" : "404","message":"Not Found"}',
+    })
+    expect(isGh404Error(error)).toBe(true)
+  })
 })

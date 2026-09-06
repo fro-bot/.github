@@ -663,6 +663,16 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   const failedNodeIds: string[] = []
 
   // Seed with missing-node-id sentinels (Fix B).
+  // Stryker disable next-line UpdateOperator: i-- makes i monotonically non-increasing while the
+  // guard requires i < missingNodeIdCount, a deterministic infinite loop for any
+  // missingNodeIdCount > 0 -- not a timing-sensitive mutant, no test can "kill" a hang.
+  // Stryker disable next-line EqualityOperator: of the three variants this mutator generates for
+  // `<` (<=, >, >=), only `>=` is a timeout -- with missingNodeIdCount === 0 (the all-node-ids-
+  // present test case), `i >= 0` is true from i's first value and stays true as i only grows,
+  // an unbounded loop. `<=` and `>` are both already Killed by the exact-sentinel-count
+  // assertions in the existing missing-node-id tests (confirmed: neither appears in the run
+  // 34007429970 survivor list) -- this directive does not need to re-argue their equivalence,
+  // only >='s.
   for (let i = 0; i < missingNodeIdCount; i++) {
     failedNodeIds.push('<missing-node-id>')
   }

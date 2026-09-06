@@ -493,3 +493,82 @@ describe('checkPrivateLeak — #3839: "---"/"+++" are headers only before the fi
     })
   })
 })
+
+// ---------------------------------------------------------------------------
+// Inverse controls (promised by docs/solutions/security-issues/
+// mutation-coverage-is-silent-about-unwritten-branches-2026-09-05.md): for each structural
+// token this parser recognizes, prove a private name appearing as CONTENT (inside a hunk,
+// `+`-prefixed) carrying that token's own text is still caught, not misread as structure.
+// Ref: scripts/check-private-leak.ts Unit 5A-2 (PR fix/mutation-5a-check-private-leak).
+// ---------------------------------------------------------------------------
+
+describe('checkPrivateLeak — inverse controls: structural-token text as added content', () => {
+  it('scans an added line whose text is a "diff --git a/... b/..." header as content, not as a new file section', () => {
+    // A `+`-prefixed line can never actually satisfy `line.startsWith('diff --git a/')` (the `+`
+    // is the first character), so this is grammar-safe by construction -- but pin it directly
+    // rather than only inferring it from the prefix check.
+    const diff = [
+      diffGit('notes.md', 'notes.md'),
+      '--- a/notes.md',
+      '+++ b/notes.md',
+      '@@ -1,1 +1,2 @@',
+      ' unrelated context line',
+      '+diff --git a/secret-repo b/secret-repo',
+    ].join('\n')
+
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({ok: false, matchedFiles: ['notes.md']})
+  })
+
+  it('scans an added line whose text is a "rename to <path>" line as content, not as a rename destination', () => {
+    // The `rename to `/`copy to ` branch is intentionally not `inHunk`-gated (unlike `--- `/
+    // `+++ `), but it is still grammar-safe: a real diff's rename/copy destination line is
+    // never `+`-prefixed, and a `+`-prefixed content line can never satisfy
+    // `line.startsWith('rename to ')` for the same first-character reason as `diff --git`.
+    const diff = [
+      diffGit('notes.md', 'notes.md'),
+      '--- a/notes.md',
+      '+++ b/notes.md',
+      '@@ -1,1 +1,2 @@',
+      ' unrelated context line',
+      '+rename to secret-repo',
+    ].join('\n')
+
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({ok: false, matchedFiles: ['notes.md']})
+  })
+
+  it('scans an added line whose text is a "copy to <path>" line as content, not as a copy destination', () => {
+    const diff = [
+      diffGit('notes.md', 'notes.md'),
+      '--- a/notes.md',
+      '+++ b/notes.md',
+      '@@ -1,1 +1,2 @@',
+      ' unrelated context line',
+      '+copy to secret-repo',
+    ].join('\n')
+
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({ok: false, matchedFiles: ['notes.md']})
+  })
+
+  it('documents CURRENT behavior (known limitation, not fixed in this PR): a real "@@" hunk marker\'s own trailing context text is never scanned', () => {
+    // Unlike diff --git/rename to/copy to, a genuine "@@ ... @@" hunk-marker line is NOT
+    // `+`-prefixed in a real diff -- so it is filtered out by the later, unconditional
+    // `if (!line.startsWith('+')) continue` before ever reaching the content scan, regardless
+    // of whether the '@@' branch itself falls through or `continue`s. A private name placed in
+    // a hunk marker's own trailing function-context text (a real thing `git diff` emits, e.g.
+    // "@@ -1,2 +1,2 @@ function secret() {") is NOT caught. This is a real, currently-open gap
+    // -- tracked, not fixed here; fixing it would require scanning '@@' lines separately from
+    // the '+'-prefixed content path, a behavior change out of scope for Unit 5A-2's mutation-
+    // coverage pass. See docs/solutions/security-issues/
+    // mutation-coverage-is-silent-about-unwritten-branches-2026-09-05.md.
+    const diff = [
+      diffGit('notes.md', 'notes.md'),
+      '--- a/notes.md',
+      '+++ b/notes.md',
+      '@@ -1,2 +1,2 @@ function secret-repo() {',
+      ' unrelated context line',
+      '+added line with no private name',
+    ].join('\n')
+
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({ok: true})
+  })
+})
