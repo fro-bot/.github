@@ -3,7 +3,18 @@ import {tmpdir} from 'node:os'
 import {join, relative, resolve} from 'node:path'
 
 import {afterAll, beforeAll, describe, expect, it} from 'vitest'
-import {isLiteralPath, reachedModulesTransitive, readStrykerConfig} from './check-mutation-guards.ts'
+import {
+  directSpecifiers,
+  isLiteralPath,
+  reachedModulesTransitive,
+  readStrykerConfig,
+  stripComments,
+  type SourceReader,
+} from './check-mutation-guards.ts'
+
+function defaultTestReadSource(absolutePath: string): string {
+  return readFileSync(absolutePath, 'utf8')
+}
 
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const packagesRoot = join(repositoryRoot, 'packages')
@@ -135,7 +146,10 @@ function treeOf(path: string): 'packages' | 'scripts' | undefined {
  * test that imports it "reach" every module the barrel forwards to, whether or not that test
  * exercises any of that module's actual logic; the only evidence a promotion to `mutate` is
  * safe* is a live `pnpm check:mutation-guards` run's per-module kill count, not this
- * structural floor.
+ * structural floor. `findMutateEntriesWithoutSourceReach` (below) closes the specific barrel
+ * hole in this floor: it requires same-tree reach through at least one non-barrel hop, so a
+ * `mutate` entry reachable only through `index.ts`'s `export *` forwarding no longer passes
+ * silently.
  *
  * **Shared walk, opposing preferences.** `reachedModulesTransitive` is also the changed-file
  * trigger gate's closure walk (`scripts/check-mutation-guards.ts`'s `buildImportClosure`),
@@ -193,6 +207,117 @@ export function findMutateTestPairingViolations(
   return violations
 }
 
+// ---------------------------------------------------------------------------
+// Source-reach check: mutate entries reachable only through a barrel
+// ---------------------------------------------------------------------------
+
+// Every alternative form a pure re-export statement can take. Deliberately mirrors what
+// `directSpecifiers` (./check-mutation-guards.ts) already recognizes as a re-export, so a
+// module this pattern fails to strip is exactly a module `directSpecifiers` would also treat
+// as carrying no reach-worthy specifier of its own (has none of the forms it looks for).
+const BARREL_EXPORT_STATEMENT_PATTERN =
+  /export\s+(?:type\s+)?\*\s+(?:as\s+[$\w]+\s+)?from\s+['"][^'"]+['"]\s*;?|export\s+type\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?|export\s*\{[^}]*\}\s*from\s+['"][^'"]+['"]\s*;?/gu
+
+/**
+ * A "pure re-export barrel": a module whose entire body, after stripping comments, consists
+ * ONLY of `export * from '...'` / `export * as X from '...'` / `export {...} from '...'` /
+ * `export type * from '...'` / `export type {...} from '...'` statements — no own declaration,
+ * no bare `import`, no non-export statement of any kind. `packages/wiki-write-core/src/index.ts`
+ * (eight `export *` lines, nothing else) is the canonical case.
+ *
+ * Deliberately conservative: every barrel-export statement is stripped out, and if ANYTHING
+ * other than whitespace/semicolons remains, this returns `false`. A module with a single
+ * non-barrel statement alongside re-exports — a lone `export {}` marker, a helper function, a
+ * bare `import` for a side effect — is NOT classified as a pure barrel, so this only ever
+ * excludes the narrowest, safest case: a file whose only possible effect on any test is
+ * forwarding another module's exports untouched, never a file that could itself run logic a
+ * test exercises.
+ */
+export function isPureReexportBarrel(repoRelativeFilePath: string, readSource: SourceReader): boolean {
+  const content = stripComments(readSource(join(repositoryRoot, repoRelativeFilePath)))
+  const withoutBarrelStatements = content.replaceAll(BARREL_EXPORT_STATEMENT_PATTERN, '')
+  return withoutBarrelStatements.trim().length === 0
+}
+
+/**
+ * Stricter sibling of `reachedModulesTransitive` (`./check-mutation-guards.ts`), used ONLY by
+ * `findMutateEntriesWithoutSourceReach` below — never by the trigger gate, which needs reach as
+ * wide as possible (see `findMutateTestPairingViolations`'s "Shared walk, opposing preferences"
+ * paragraph above; this function must never be substituted there). Identical BFS over
+ * `directSpecifiers`, except: when a module being followed is a pure re-export barrel
+ * (`isPureReexportBarrel`), its own specifiers are never added to the reached set — a test
+ * that only imports a barrel is not treated as reaching whatever the barrel forwards. The
+ * barrel module itself is still marked reached (it does not vanish from accounting), only its
+ * forwarding is not trusted as proof of reach for what it forwards.
+ */
+export function sourceReachTransitive(
+  repoRelativeFilePath: string,
+  readSource: SourceReader = defaultTestReadSource,
+): Set<string> {
+  const reached = new Set<string>()
+  const visited = new Set<string>()
+  const followQueue: string[] = []
+
+  for (const target of directSpecifiers(repoRelativeFilePath, readSource)) {
+    if (!existsSync(join(repositoryRoot, target))) continue
+    reached.add(target)
+    followQueue.push(target)
+  }
+
+  while (followQueue.length > 0) {
+    const current = followQueue.shift()
+    if (current === undefined || visited.has(current)) continue
+    visited.add(current)
+    if (!existsSync(join(repositoryRoot, current))) continue
+    if (isPureReexportBarrel(current, readSource)) continue
+    for (const target of directSpecifiers(current, readSource)) {
+      if (!existsSync(join(repositoryRoot, target))) continue
+      if (reached.has(target)) continue
+      reached.add(target)
+      followQueue.push(target)
+    }
+  }
+
+  return reached
+}
+
+/**
+ * Fro Bot's standing follow-up from PR #3833: `findMutateTestPairingViolations` (above) counts
+ * reach through a barrel as reach, so a `mutate` entry exercised only via `index.ts`'s
+ * `export *` (never through a direct, own-code import chain) passes that check even when no
+ * `testFiles` entry actually imports it by a traceable path. This function requires the
+ * stricter `sourceReachTransitive` walk instead: every `mutate` entry must be reached by at
+ * least one same-tree `testFiles` entry through a chain with no barrel hop. "Same-tree" reuses
+ * `treeOf`'s definition above (`packages/` vs `scripts/`); cross-tree pairing is already
+ * flagged by `findMutateTestPairingViolations` and is not re-flagged here. Glob `testFiles`
+ * entries are skipped (already flagged by the other check's own glob-violation message).
+ * Returns the list of `mutate` entries with no qualifying reach — empty means every entry has
+ * at least one non-barrel same-tree exerciser.
+ */
+export function findMutateEntriesWithoutSourceReach(
+  mutate: readonly string[],
+  testFiles: readonly string[],
+  reach: (testFile: string) => Iterable<string>,
+): string[] {
+  const normalizedMutate = mutate.map(normalizePath)
+  const reachedBySameTreeTest = new Set<string>()
+
+  for (const testFile of testFiles) {
+    if (!isLiteralPath(testFile)) continue
+    const testTree = treeOf(testFile)
+    if (testTree === undefined) continue
+    for (const reachedRaw of reach(normalizePath(testFile))) {
+      const reachedNormalized = normalizePath(reachedRaw)
+      const mutateEntry = normalizedMutate.find(entry => entry === reachedNormalized)
+      if (mutateEntry === undefined) continue
+      if (treeOf(mutateEntry) !== testTree) continue
+      reachedBySameTreeTest.add(mutateEntry)
+    }
+  }
+
+  return normalizedMutate.filter(entry => !reachedBySameTreeTest.has(entry))
+}
+
 describe('mutation guard enumeration', () => {
   it('Test 1: every non-test package module (across all packages) is listed in mutate or not-mutated', () => {
     const {mutate} = readStrykerConfig(strykerConfigPath)
@@ -231,6 +356,15 @@ describe('mutation guard enumeration', () => {
     const violations = findMutateTestPairingViolations(mutate, testFiles, reachedModulesTransitive)
 
     expect(violations, violations.length === 0 ? undefined : `pairing violation(s): ${violations.join('; ')}`).toEqual(
+      [],
+    )
+  })
+
+  it('Test 3b: every mutate entry has at least one same-tree exerciser reached WITHOUT stepping through a barrel', () => {
+    const {mutate, testFiles} = readStrykerConfig(strykerConfigPath)
+    const violations = findMutateEntriesWithoutSourceReach(mutate, testFiles, sourceReachTransitive)
+
+    expect(violations, violations.length === 0 ? undefined : `barrel-only reach for: ${violations.join(', ')}`).toEqual(
       [],
     )
   })
@@ -479,5 +613,163 @@ describe('reachedModulesTransitive regex-literal quote gap (item 2, pins documen
     // comment marker ahead of it.
     expect(reached.has(relative(repositoryRoot, join(tmpDir, 'x.ts')).replaceAll('\\', '/'))).toBe(true)
     expect(reached.has(relative(repositoryRoot, join(tmpDir, 'real.ts')).replaceAll('\\', '/'))).toBe(true)
+  })
+})
+
+// Fro Bot's standing follow-up from PR #3833: findMutateTestPairingViolations counts reach
+// through a barrel as reach, so it could not see that private-leak.ts's only same-tree
+// exerciser (once private-leak-adapter.test.ts is removed from testFiles) is a single it() in
+// wiki-write-core.test.ts reached only via index.ts's `export *` forwarding.
+describe('findMutateEntriesWithoutSourceReach (barrel exclusion)', () => {
+  // Cleanup backstop: each fixture test removes its own temp dir in a `finally`, but a hard
+  // kill mid-test skips that and strands an untracked `scripts/.mutation-guards-source-reach-*`
+  // dir — gitignored (see .gitignore) so it cannot land in a commit, but it would still be live
+  // ESLint input on the next run. Sweep any stale ones before this suite creates new ones.
+  beforeAll(() => {
+    for (const entry of readdirSync(scriptsDir, {withFileTypes: true})) {
+      if (entry.isDirectory() && entry.name.startsWith('.mutation-guards-source-reach-')) {
+        rmSync(join(scriptsDir, entry.name), {recursive: true, force: true})
+      }
+    }
+  })
+
+  it('Test 1: reports zero violations against the REAL stryker.config.json (mutate=9 / testFiles=10)', () => {
+    const {mutate, testFiles} = readStrykerConfig(strykerConfigPath)
+    const violations = findMutateEntriesWithoutSourceReach(mutate, testFiles, sourceReachTransitive)
+
+    expect(violations, violations.length === 0 ? undefined : `barrel-only reach for: ${violations.join(', ')}`).toEqual(
+      [],
+    )
+  })
+
+  it('Test 2: flags private-leak.ts once private-leak-adapter.test.ts is removed from testFiles, while the OLD check sees nothing', () => {
+    const {mutate, testFiles: realTestFiles} = readStrykerConfig(strykerConfigPath)
+    const testFiles = realTestFiles.filter(
+      entry => normalizePath(entry) !== 'packages/wiki-write-core/src/private-leak-adapter.test.ts',
+    )
+    // Sanity: the fixture actually removed the entry, otherwise this test would prove nothing.
+    expect(testFiles.length).toBe(realTestFiles.length - 1)
+
+    // Pin the premise this whole test depends on: wiki-write-core.test.ts must NOT have its
+    // own direct specifier resolving to private-leak.ts — if it ever gains one (rather than
+    // reaching it only through index.ts's barrel), this fixture stops proving anything about
+    // the barrel hole and the assertion below would pass for the wrong reason.
+    const wikiWriteCoreTestSpecifiers = directSpecifiers(
+      'packages/wiki-write-core/src/wiki-write-core.test.ts',
+      defaultTestReadSource,
+    )
+    expect(
+      wikiWriteCoreTestSpecifiers,
+      'fixture assumes wiki-write-core.test.ts reaches private-leak.ts only via index.ts',
+    ).not.toContain('packages/wiki-write-core/src/private-leak.ts')
+
+    const strictViolations = findMutateEntriesWithoutSourceReach(mutate, testFiles, sourceReachTransitive)
+    expect(strictViolations).toContain('packages/wiki-write-core/src/private-leak.ts')
+
+    // Pin that the OLD (barrel-counts-as-reach) check is blind to exactly this asymmetry —
+    // wiki-write-core.test.ts still reaches private-leak.ts through index.ts's `export *`,
+    // so the old check reports nothing wrong with this same modified config.
+    const oldViolations = findMutateTestPairingViolations(mutate, testFiles, reachedModulesTransitive)
+    expect(oldViolations).toEqual([])
+  })
+
+  it('Test 3a: excludes reach through a barrel (test -> barrel -> mutate entry is a violation)', () => {
+    // Written under scripts/ (not os tmpdir) so treeOf classifies these repo-relative paths as
+    // 'scripts/' — findMutateEntriesWithoutSourceReach skips any testFiles entry whose tree is
+    // undefined, and an os-tmpdir path resolves to neither packages/ nor scripts/.
+    const tmpDir = mkdtempSync(join(scriptsDir, '.mutation-guards-source-reach-barrel-'))
+    try {
+      writeFileSync(join(tmpDir, 'x.ts'), 'export const value = 1\n')
+      writeFileSync(join(tmpDir, 'barrel.ts'), "export * from './x.ts'\n")
+      writeFileSync(join(tmpDir, 'test.test.ts'), "import {value} from './barrel.ts'\nexport {}\n")
+
+      const xRelative = relative(repositoryRoot, join(tmpDir, 'x.ts')).replaceAll('\\', '/')
+      const testRelative = relative(repositoryRoot, join(tmpDir, 'test.test.ts')).replaceAll('\\', '/')
+
+      const violations = findMutateEntriesWithoutSourceReach([xRelative], [testRelative], sourceReachTransitive)
+      expect(violations).toEqual([xRelative])
+    } finally {
+      rmSync(tmpDir, {recursive: true, force: true})
+    }
+  })
+
+  it('Test 3b (control): a regular (non-barrel) two-hop chain reaches the mutate entry (no violation)', () => {
+    const tmpDir = mkdtempSync(join(scriptsDir, '.mutation-guards-source-reach-control-'))
+    try {
+      writeFileSync(join(tmpDir, 'x.ts'), 'export const value = 1\n')
+      writeFileSync(join(tmpDir, 'y.ts'), "import {value} from './x.ts'\nexport const wrapped = value\n")
+      writeFileSync(join(tmpDir, 'test.test.ts'), "import {wrapped} from './y.ts'\nexport {}\n")
+
+      const xRelative = relative(repositoryRoot, join(tmpDir, 'x.ts')).replaceAll('\\', '/')
+      const testRelative = relative(repositoryRoot, join(tmpDir, 'test.test.ts')).replaceAll('\\', '/')
+
+      const violations = findMutateEntriesWithoutSourceReach([xRelative], [testRelative], sourceReachTransitive)
+      expect(violations).toEqual([])
+    } finally {
+      rmSync(tmpDir, {recursive: true, force: true})
+    }
+  })
+
+  it('Test 4: a module with own code alongside a re-export is NOT classified as a pure barrel', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'mutation-guards-source-reach-mixed-'))
+    try {
+      writeFileSync(join(tmpDir, 'x.ts'), 'export const value = 1\n')
+      writeFileSync(
+        join(tmpDir, 'mixed.ts'),
+        ['export function ownHelper(): number {', '  return 1', '}', "export * from './x.ts'", ''].join('\n'),
+      )
+
+      const mixedRelative = relative(repositoryRoot, join(tmpDir, 'mixed.ts')).replaceAll('\\', '/')
+      expect(isPureReexportBarrel(mixedRelative, defaultTestReadSource)).toBe(false)
+    } finally {
+      rmSync(tmpDir, {recursive: true, force: true})
+    }
+  })
+
+  // Fro Bot's probe: bare `export type * from` (no `as X`) fell through the old
+  // BARREL_EXPORT_STATEMENT_PATTERN's first alternative (which required `as [$\w]+`), leaving
+  // residue that classified the module as non-barrel and reopened the #3833 hole for this
+  // shape. Pins all six alternative barrel forms as BARREL.
+  it('Test 5: every documented barrel-export form (including bare `export type * from`) classifies as a pure barrel', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'mutation-guards-source-reach-forms-'))
+    try {
+      writeFileSync(join(tmpDir, 'a.ts'), 'export const value = 1\n')
+      const forms = [
+        "export type * as T from './a.ts'",
+        "export type * from './a.ts'",
+        "export * from './a.ts'",
+        "export * as N from './a.ts'",
+        "export {value} from './a.ts'",
+        "export type {value} from './a.ts'",
+      ]
+
+      for (const [index, form] of forms.entries()) {
+        const barrelPath = join(tmpDir, `barrel-${String(index)}.ts`)
+        writeFileSync(barrelPath, `${form}\n`)
+        const relativePath = relative(repositoryRoot, barrelPath).replaceAll('\\', '/')
+        expect(isPureReexportBarrel(relativePath, defaultTestReadSource), form).toBe(true)
+      }
+    } finally {
+      rmSync(tmpDir, {recursive: true, force: true})
+    }
+  })
+
+  // Fixture gap: the docstring claims a bare side-effect `import` disqualifies a module from
+  // barrel status, but nothing pinned that until now.
+  it('Test 6: a barrel-shaped module with a bare side-effect import is NOT classified as a pure barrel', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'mutation-guards-source-reach-side-effect-'))
+    try {
+      writeFileSync(join(tmpDir, 'a.ts'), 'export const value = 1\n')
+      writeFileSync(join(tmpDir, 'side-effect.ts'), 'export const value = 1\n')
+      writeFileSync(
+        join(tmpDir, 'barrel-with-side-effect.ts'),
+        ["import './side-effect.ts'", "export * from './a.ts'", ''].join('\n'),
+      )
+
+      const relativePath = relative(repositoryRoot, join(tmpDir, 'barrel-with-side-effect.ts')).replaceAll('\\', '/')
+      expect(isPureReexportBarrel(relativePath, defaultTestReadSource)).toBe(false)
+    } finally {
+      rmSync(tmpDir, {recursive: true, force: true})
+    }
   })
 })

@@ -1124,8 +1124,12 @@ export function stripComments(content: string): string {
  * repo-relative paths. Package specifiers (`@fro-bot/...`, bare module names) never match —
  * every pattern requires a leading `./` or `../` (see `wikiWriteCoreSubpathSourceFiles` for
  * the separate package-specifier scan this wrapper's trigger-set closure also needs).
+ *
+ * Exported so `scripts/mutation-guards-config.test.ts` can build its own stricter,
+ * barrel-excluding reach walk on the same specifier extraction, rather than reimplementing
+ * the regex/comment-stripping machinery a second time.
  */
-function directSpecifiers(repoRelativeFilePath: string, readSource: SourceReader): string[] {
+export function directSpecifiers(repoRelativeFilePath: string, readSource: SourceReader): string[] {
   const content = stripComments(readSource(join(repositoryRoot, repoRelativeFilePath)))
   const raw: string[] = []
 

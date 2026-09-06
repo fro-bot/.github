@@ -53,3 +53,8 @@ wiki-lint-report.json
 
 # Build staging/backup dirs; siblings of dist/ so the atomic rename stays on one filesystem
 packages/wiki-write-core/.wiki-write-core-dist-*
+
+# Temp fixture dirs from scripts/mutation-guards-config.test.ts's source-reach discrimination
+# tests; written under scripts/ (not os tmpdir) so treeOf classifies them as scripts/-tree, but
+# a hard kill can skip the test's own cleanup and strand one here
+scripts/.mutation-guards-source-reach-*
