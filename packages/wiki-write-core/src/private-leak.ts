@@ -38,8 +38,11 @@ export function checkPrivateLeak(
   const lowerNames = privateNames.map(name => name.toLowerCase())
   const matchedFiles: string[] = []
   let currentFile: string | null = null
-  // Stryker disable next-line BooleanLiteral: currentFile only ever becomes non-null via the "diff --git a/" branch, which in the same conditional branch also resets checkPathAsNew to false, or the else branch resets both currentFile and checkPathAsNew together. Whenever currentFile !== null is later read, this initial value has already been overwritten by one of those resets -- not observable.
-  let checkPathAsNew = false
+  // A '+++' line is a header only when the immediately preceding line was a '--- ' header
+  // (#3838); otherwise it is added content starting with '++' and must be scanned. `undefined`
+  // = no header expected; boolean = header expected, true when that '--- ' was '/dev/null'.
+  // Set only in the '--- ' branch, read once at the top of the next iteration, then cleared.
+  let pendingNewFileCheck: boolean | undefined
 
   const checkPath = (path: string): void => {
     const pathLower = path.toLowerCase()
@@ -49,6 +52,9 @@ export function checkPrivateLeak(
   }
 
   for (const line of diff.split('\n')) {
+    const expectingPlusHeader = pendingNewFileCheck
+    pendingNewFileCheck = undefined
+
     if (line.startsWith('diff --git a/')) {
       const diffPrefix = 'diff --git a/'
       const separator = ' b/'
@@ -64,14 +70,11 @@ export function checkPrivateLeak(
         const bPath = line.slice(separatorIndex + separator.length)
         const aPath = line.slice(diffPrefix.length, separatorIndex)
         currentFile = bPath
-        checkPathAsNew = false
         if (aPath !== bPath) {
           checkPath(bPath)
         }
       } else {
         currentFile = null
-        // Stryker disable next-line BooleanLiteral: currentFile is reset to null in this same branch, so the "+++" handler's currentFile !== null guard blocks any read of checkPathAsNew until the next "diff --git a/" line resets it again anyway -- not observable.
-        checkPathAsNew = false
       }
       continue
     }
@@ -87,15 +90,14 @@ export function checkPrivateLeak(
     }
 
     if (line.startsWith('--- ')) {
-      checkPathAsNew = line === '--- /dev/null'
+      pendingNewFileCheck = line === '--- /dev/null'
       continue
     }
 
-    if (line.startsWith('+++')) {
-      if (checkPathAsNew && currentFile !== null) {
+    if (line.startsWith('+++') && expectingPlusHeader !== undefined) {
+      if (expectingPlusHeader && currentFile !== null) {
         checkPath(currentFile)
       }
-      checkPathAsNew = false
       continue
     }
 
