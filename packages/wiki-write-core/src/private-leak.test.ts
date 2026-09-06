@@ -242,7 +242,7 @@ describe("checkPrivateLeak — '+' added-line content scan", () => {
     expect(checkPrivateLeak(['+leaked'], diff, NO_OVERRIDE)).toEqual({ok: true})
   })
 
-  it('documents CURRENT behavior (known false-negative, filed as an issue, not fixed here): a genuine "+++" header line is never scanned as added content', () => {
+  it('documents CURRENT behavior (known false-negative, tracked in #3838, not fixed here): a genuine "+++" header line is never scanned as added content', () => {
     // This pins today's implementation, not a desired invariant: `line.startsWith('+++')`
     // treats ANY line starting with three '+' characters as a diff header, including a real
     // added-line whose own content happens to start with '++' (e.g. a diff-of-a-diff, or
