@@ -449,7 +449,7 @@ describe('checkPrivateLeak — #3839: "---"/"+++" are headers only before the fi
     })
   })
 
-  it('scans hunk-marker trailing context text for a private name (fall-through, not continue, on "@@")', () => {
+  it('a "@@" line\'s trailing context is not content-scanned (pins fall-through over continue)', () => {
     // A "@@" line can carry function-context text after the second "@@" marker. This module
     // chose fall-through (not an early continue) when setting inHunk, on the principle the
     // guard should scan more, not less -- though a "@@ ..." line never starts with "+" so this
