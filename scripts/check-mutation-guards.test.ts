@@ -1200,6 +1200,13 @@ describe('closure-based trigger set against the real config', () => {
   // the signature. A spawner that throws if called proves the gate short-circuits before
   // Stryker would ever run.
   it('reports instrumentation-failed through runMutationGuardCheck when triggerGateReadSource throws', async () => {
+    // A dedicated temp path, never the real reportPath default — the gate throws before
+    // runMutationGuardCheck's own rmSync(reportPath) runs, but that ordering is exactly what
+    // this test proves, so a gate regression here must not risk deleting a real report.
+    const tempReportPath = join(
+      mkdtempSync(join(tmpdir(), 'check-mutation-guards-trigger-readsource-throws-')),
+      'mutation.json',
+    )
     const throwingReadSource = (): string => {
       throw new Error('EACCES: permission denied (simulated, via runMutationGuardCheck)')
     }
@@ -1207,18 +1214,22 @@ describe('closure-based trigger set against the real config', () => {
       throw new Error('Stryker must not be spawned when the trigger gate fails closed')
     }
 
-    const result = await runMutationGuardCheck(
-      spawnerThatMustNotRun,
-      mutationReportPath,
-      undefined,
-      PULL_REQUEST_EVENT,
-      fakeGateDeps({fetchChangedFiles: () => ['packages/wiki-write-core/src/wiki-slug.ts']}),
-      throwingReadSource,
-    )
+    try {
+      const result = await runMutationGuardCheck(
+        spawnerThatMustNotRun,
+        tempReportPath,
+        undefined,
+        PULL_REQUEST_EVENT,
+        fakeGateDeps({fetchChangedFiles: () => ['packages/wiki-write-core/src/wiki-slug.ts']}),
+        throwingReadSource,
+      )
 
-    expect(result.verdict).toBe('instrumentation-failed')
-    expect(result.mutants[0]?.status).toBe('ChangedFileGateFailed')
-    expect(result.mutants[0]?.reason).toContain('EACCES: permission denied (simulated, via runMutationGuardCheck)')
+      expect(result.verdict).toBe('instrumentation-failed')
+      expect(result.mutants[0]?.status).toBe('ChangedFileGateFailed')
+      expect(result.mutants[0]?.reason).toContain('EACCES: permission denied (simulated, via runMutationGuardCheck)')
+    } finally {
+      rmSync(dirname(tempReportPath), {recursive: true, force: true})
+    }
   })
 })
 

@@ -430,6 +430,8 @@ Updated counts: `scripts/check-wiki-authority.test.ts` grew by 1 (fork-PR base/h
 
 Gate: `pnpm check-types`, `pnpm lint`, `pnpm test` (74 files, 2994 tests + 3 todo, up from 2992+3), `actionlint .github/workflows/main.yaml` (clean), import-inertness for every non-test `scripts/*.ts` (unchanged loop, all pass).
 
+**Fourth follow-up (Fro Bot re-review of the third pass: PASS, no blocking, no missing tests).** The `SourceReader`-throws end-to-end test passed the real `mutationReportPath` instead of a `mkdtempSync` temp path like every sibling `runMutationGuardCheck` test — safe today only because the gate throws before `rmSync(reportPath)` runs, which is exactly the ordering the test exists to prove, so a gate regression could have deleted a real local report. Fixed with a dedicated temp path; reran and confirmed the identical sentinel (`instrumentation-failed`/`ChangedFileGateFailed`) still fires — the path swap changes nothing since the throw happens before any report/reporter-config read. Test count and full-suite counts unchanged (74 files, 2994 tests + 3 todo).
+
 - [ ] **Unit 5: Cleanup baseline**
 
 **Goal:** Run the full enumerated set once and drive it to `clean`: fix every vacuous test or add a line-scoped directive with a reason.
