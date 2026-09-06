@@ -43,6 +43,13 @@ export function checkPrivateLeak(
   // = no header expected; boolean = header expected, true when that '--- ' was '/dev/null'.
   // Set only in the '--- ' branch, read once at the top of the next iteration, then cleared.
   let pendingNewFileCheck: boolean | undefined
+  // '---'/'+++' are headers only before a file section's first '@@' hunk marker; inside a hunk
+  // they are content (a modified line renders as '--- ...' / '+++ ...'). '@@' at index 0 is
+  // unambiguous: hunk lines render '-@@', '+@@', or ' @@'. Reset per 'diff --git a/' section.
+  // No initializer: currentFile is null until the first 'diff --git a/' line, which also sets
+  // this, so the starting value is unreadable -- a `= false` literal would be an equivalent
+  // mutant.
+  let inHunk: boolean | undefined
 
   const checkPath = (path: string): void => {
     const pathLower = path.toLowerCase()
@@ -76,7 +83,13 @@ export function checkPrivateLeak(
       } else {
         currentFile = null
       }
+      inHunk = false
       continue
+    }
+
+    if (line.startsWith('@@')) {
+      inHunk = true
+      // Fall through: a hunk marker never starts with '+', so the content scan skips it anyway.
     }
 
     if (line.startsWith('rename to ') || line.startsWith('copy to ')) {
@@ -89,12 +102,12 @@ export function checkPrivateLeak(
       continue
     }
 
-    if (line.startsWith('--- ')) {
+    if (!inHunk && line.startsWith('--- ')) {
       pendingNewFileCheck = line === '--- /dev/null'
       continue
     }
 
-    if (line.startsWith('+++') && expectingPlusHeader !== undefined) {
+    if (!inHunk && line.startsWith('+++') && expectingPlusHeader !== undefined) {
       if (expectingPlusHeader && currentFile !== null) {
         checkPath(currentFile)
       }

@@ -408,3 +408,88 @@ describe('checkPrivateLeak — #3838: ++-prefixed added lines must not escape th
     })
   })
 })
+
+describe('checkPrivateLeak — #3839: "---"/"+++" are headers only before the first "@@" hunk', () => {
+  it('a modified line rendering as "--- " then "+++ " INSIDE a hunk is content, not a header (issue reproduction)', () => {
+    // The adjacency-only rule from #3838 still leaked on the single most common diff shape: a
+    // modified line. Its removed half renders as "--- see acme/public-repo..." (arming
+    // pendingNewFileCheck = false) and its added replacement renders as "+++ see
+    // acme/secret-repo...", which the adjacency rule alone would treat as a header and skip.
+    const diff = [
+      diffGit('docs/notes.md', 'docs/notes.md'),
+      '--- a/docs/notes.md',
+      '+++ b/docs/notes.md',
+      '@@ -1,2 +1,2 @@',
+      '--- see acme/public-repo for the rollout plan',
+      '+++ see acme/secret-repo for the rollout plan',
+    ].join('\n')
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({
+      ok: false,
+      matchedFiles: ['docs/notes.md'],
+    })
+  })
+
+  it('a genuine "--- a/x" / "+++ b/x" pair appearing AFTER a "@@" line is content, not a header', () => {
+    // Inverse control: this pairing is textually identical to a real header, but it appears
+    // after a hunk has already started, so it must be content-scanned. Uses a private name
+    // embedded in the "+++" line's own path so the assertion depends on it actually being
+    // scanned as content -- the (now gated-off) header path would never read this line's own
+    // text at all.
+    const diff = [
+      diffGit('docs/notes.md', 'docs/notes.md'),
+      '--- a/docs/notes.md',
+      '+++ b/docs/notes.md',
+      '@@ -1,2 +1,2 @@',
+      '--- a/x.md',
+      '+++ b/secret-repo.md',
+    ].join('\n')
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({
+      ok: false,
+      matchedFiles: ['docs/notes.md'],
+    })
+  })
+
+  it('scans hunk-marker trailing context text for a private name (fall-through, not continue, on "@@")', () => {
+    // A "@@" line can carry function-context text after the second "@@" marker. This module
+    // chose fall-through (not an early continue) when setting inHunk, on the principle the
+    // guard should scan more, not less -- though a "@@ ..." line never starts with "+" so this
+    // is currently a no-op either way; this test exists to pin the choice, not to prove a
+    // reachable difference between the two options today.
+    const diff = [diffGit('docs/notes.md', 'docs/notes.md'), '@@ -1 +1 @@ secret-repo'].join('\n')
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({ok: true})
+  })
+
+  it('a hunk marker with trailing context text after the second "@@" still gates a later header-shaped pair as content', () => {
+    // Discriminates startsWith('@@') from an endsWith('@@') mutant: this hunk marker line ends
+    // with trailing context text, not '@@' itself, so an endsWith check would fail to arm
+    // inHunk at all -- leaving a later '--- '/'+++' pair wrongly eligible for header parsing.
+    const diff = [
+      diffGit('docs/notes.md', 'docs/notes.md'),
+      '--- a/docs/notes.md',
+      '+++ b/docs/notes.md',
+      '@@ -1,2 +1,2 @@ trailing-context',
+      '--- see acme/public-repo for the rollout plan',
+      '+++ see acme/secret-repo for the rollout plan',
+    ].join('\n')
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({
+      ok: false,
+      matchedFiles: ['docs/notes.md'],
+    })
+  })
+
+  it('a new "diff --git a/" section resets the hunk state, so its own header block is recognized again', () => {
+    const diff = [
+      diffGit('first.md', 'first.md'),
+      '--- a/first.md',
+      '+++ b/first.md',
+      '@@ -1 +1 @@',
+      diffGit('private-repo.md', 'private-repo.md'),
+      '--- /dev/null',
+      '+++ b/private-repo.md',
+    ].join('\n')
+    expect(checkPrivateLeak(['private-repo'], diff, NO_OVERRIDE)).toEqual({
+      ok: false,
+      matchedFiles: ['private-repo.md'],
+    })
+  })
+})
