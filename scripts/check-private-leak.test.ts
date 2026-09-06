@@ -1164,6 +1164,27 @@ describe('runPromotionScan — Fix B: missing/empty node_id BLOCKS', () => {
     }
   })
 
+  it('never calls the resolver with `undefined` for a missing-node_id entry, and excludes it from the resolved count (ConditionalExpression on hasNonEmptyNodeId)', async () => {
+    // #given: one entry with a missing node_id (undefined), one with a valid node_id. If
+    // `hasNonEmptyNodeId`'s `r.node_id.length > 0` clause were forced to `true` in a way that also
+    // bypassed the `typeof r.node_id === 'string'` guard, an `undefined` node_id would slip through
+    // the filter and reach the resolver loop directly.
+    const reposYaml = makeReposYamlOneMissingOnePresent()
+    const calledWith: (string | undefined)[] = []
+    const resolver: NodeIdResolver = async nodeId => {
+      calledWith.push(nodeId)
+      if (nodeId === 'R_valid') return {nameWithOwner: 'acme/private-repo'}
+      return {error: 'error'}
+    }
+    const diff = makePromoDiff('docs/foo.md', ['some content'])
+
+    await runPromotionScan({reposYaml, resolver, diff})
+
+    // #then: the resolver is called only for the valid node_id, never with `undefined`.
+    expect(calledWith).toEqual(['R_valid'])
+    expect(calledWith).not.toContain(undefined)
+  })
+
   it('the sentinel placeholder never contains owner or name', async () => {
     // #given: private entry with no node_id
     const reposYaml = makeReposYamlMissingNodeId()

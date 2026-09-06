@@ -109,14 +109,20 @@ export type MainReposYamlReader = (path: string) => string
 
 /**
  * The GitHub login of the operator permitted to use the [allow-private-leak] title prefix.
- * Kept as a literal constant so it never leaks via computed interpolation.
+ * A `function` declaration rather than a top-level `const` string literal, for the same
+ * static-mutant reason as `largeOutputMaxBufferBytes` above: a literal assigned directly to a
+ * top-level const is evaluated once at module load, before any per-test mutant activation can
+ * scope it, making its StringLiteral mutant unkillable by any test regardless of assertion
+ * strength (confirmed live: mutating the value here breaks 5 tests when run directly against the
+ * mutated source, but the mutant still reports Survived under Stryker's mutation switching
+ * because the ESM module instance is cached across mutants within a worker process). Calling a
+ * function evaluates the literal fresh per call site at test-invocation time, making the same
+ * string a normal, per-test-killable mutant. Behavior-neutral: same value, same one call site,
+ * only the evaluation timing changes.
  */
-// Stryker disable next-line StringLiteral: the only variant this mutator produces is `''`.
-// `author` is compared against this constant only after readWorkflowRunContext's own
-// `author === undefined || author === ''` guard (below, "missing user.login field") has already
-// thrown for an empty author -- author is provably non-empty by the time isOperator is computed,
-// so `author === ''` can never be true here regardless of this constant's value.
-const OPERATOR_LOGIN = 'marcusrbrown'
+function operatorLogin(): string {
+  return 'marcusrbrown'
+}
 
 /**
  * Maximum output accepted from commands that return diffs or repository metadata.
@@ -305,18 +311,20 @@ async function readWorkflowRunContext(
           : `check-private-leak: expected exactly 1 valid PR in pull_requests[], found ${validCandidates.length} — fail-closed`,
       )
     }
-    // Forcing the guard below to `false` (never throw) is unobservable: `validCandidates.length
-    // !== 1` already threw above, so by construction `validCandidates.length === 1` here and
-    // `validCandidates[0]` is always defined. This is a defensive check against a
-    // TypeScript-unprovable invariant, not a reachable branch; no input can make
-    // `prNum === undefined` true at this point.
-    const prNum = validCandidates[0]
-    // Stryker disable next-line ConditionalExpression,StringLiteral,CallExpression: see the note
-    // above -- this branch is unreachable by construction, so neither the condition's truth value,
-    // the throw message's exact text, nor whether the throw executes at all is observable from any
-    // input.
-    if (prNum === undefined) throw new Error('check-private-leak: internal: validCandidates[0] undefined')
-    return prNum
+    // No runtime `prNum === undefined` guard here: `validCandidates.length !== 1` already threw
+    // above, so by construction `validCandidates.length === 1` and `validCandidates[0]` is always
+    // defined -- TypeScript's `noUncheckedIndexedAccess` cannot see that array-length invariant, so
+    // a non-null assertion (rather than a runtime `if`/`throw` this project's convention would
+    // otherwise reach for) is the correct tool: it satisfies the type checker without adding a
+    // branch no input can take. A live runtime guard here would carry a ConditionalExpression
+    // mutant with two variants and only ONE (never-throw) is equivalent -- the other (always-throw)
+    // is a genuine, killable bug (confirmed live: forcing it broke 52 tests), and Stryker's
+    // `disable next-line` directive is mutator-scoped, not variant-scoped, so a single directive
+    // cannot suppress only the equivalent half. See
+    // docs/solutions/best-practices/enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md
+    // rule 3.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    return validCandidates[0]!
   })()
 
   // Fetch the validated PR's details (number, title, author).
@@ -455,19 +463,42 @@ function defaultMainReposYamlReader(path: string): string {
 }
 
 /**
- * True when `r.node_id` is present and non-empty.
- *
- * `.node_id` reaching any of this module's three call sites is always either `undefined` or a
- * schema-valid non-empty string: `assertReposFile` (called by every caller before filtering)
- * throws via assertRepoEntry/isRepoEntry (packages/wiki-write-core/src/schemas.ts:295-296) for any
- * `typeof node_id === 'string' && node_id.length === 0`, so no entry with an empty-string
- * `node_id` can exist in a validated `repos` array at all -- every entry already passing
- * `typeof r.node_id === 'string'` necessarily has `node_id.length > 0`. `> 0`, `>= 0`, and an
- * unconditionally-`true` result are therefore behaviorally identical for every caller here.
+ * True when `r.node_id` is present and non-empty. A type guard (not a plain boolean predicate) so
+ * every caller's `.filter(hasNonEmptyNodeId)` narrows `node_id` to `string` at the type level --
+ * this removes the `.map(r => r.node_id as string)` cast at every call site, which used to let a
+ * ConditionalExpression mutant forcing this function to always return `true` become a genuine,
+ * observable bug rather than equivalent code: with the old boolean-returning form, `true` let
+ * entries with `node_id: undefined` through the filter, and the (unchecked) `as string` cast
+ * silently turned that into a literal `undefined` value flowing into `privateNodeIds`/
+ * `resolvedNodeIds` arrays typed `string[]`. The type guard closes this: TypeScript rejects the
+ * `.map(r => r.node_id)` cast-free access unless every caller has actually filtered by this
+ * predicate.
  */
-function hasNonEmptyNodeId(r: Pick<RepoEntry, 'node_id'>): boolean {
-  // Stryker disable next-line EqualityOperator,ConditionalExpression: see the docstring above.
-  return typeof r.node_id === 'string' && r.node_id.length > 0
+function hasNonEmptyNodeId<T extends Pick<RepoEntry, 'node_id'>>(r: T): r is T & {node_id: string} {
+  // Split from a single `&&` expression onto its own guard line so this clause's mutants
+  // (ConditionalExpression true/false, EqualityOperator `!==`→`===`) are ordinary, per-test-
+  // killable mutants -- they are NOT equivalent (an entry with `node_id: undefined` reaching the
+  // length check below would throw, and a valid string entry wrongly excluded here would be
+  // observable everywhere `hasNonEmptyNodeId` gates a private entry into the scan). A single-line
+  // `&&` expression would put this guard's mutants on the SAME line as the length check below,
+  // and Stryker's directive is line-scoped, not sub-expression-scoped -- naming a mutator on that
+  // shared line would have silently also suppressed these, non-equivalent, mutants.
+  if (typeof r.node_id !== 'string') return false
+  // No `r.node_id.length > 0` check here: it would be dead code, not equivalent code. `.node_id`
+  // reaching this point is confirmed a string (guarded above) and, by the schema invariant,
+  // non-empty -- `assertReposFile` (called by every caller before filtering) throws via
+  // assertRepoEntry/isRepoEntry (packages/wiki-write-core/src/schemas.ts:295-296) for any
+  // `typeof node_id === 'string' && node_id.length === 0`, so no entry reaching here can ever have
+  // `node_id.length === 0` -- the comparison would always evaluate to `true` for every legally
+  // constructed input. A live `r.node_id.length > 0` here would carry a `ConditionalExpression`
+  // mutant with two variants, only one of which (`true`) is equivalent under the invariant -- the
+  // other (`false`) is a genuine, killable bug (confirmed live: forcing it broke 47 tests), and
+  // Stryker's `disable next-line` directive is mutator-scoped, not variant-scoped, so a single
+  // directive cannot suppress only the equivalent half. Deleting the tautological check removes
+  // the mutant surface entirely, per
+  // docs/solutions/best-practices/enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md
+  // rule 3 ("prefer deletion over a directive when the code itself is unnecessary").
+  return true
 }
 
 /**
@@ -476,7 +507,10 @@ function hasNonEmptyNodeId(r: Pick<RepoEntry, 'node_id'>): boolean {
 function extractPrivateNodeIds(yamlText: string): string[] {
   const parsed: unknown = parseYaml(yamlText)
   assertReposFile(parsed)
-  return parsed.repos.filter(r => r.private === true && hasNonEmptyNodeId(r)).map(r => r.node_id as string)
+  return parsed.repos
+    .filter(r => r.private === true)
+    .filter(hasNonEmptyNodeId)
+    .map(r => r.node_id)
 }
 
 /**
@@ -758,15 +792,15 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
 
   // Fix B: any private entry with missing/empty node_id is a blocking condition.
   // We cannot scan what we cannot identify — fail closed.
-  // Stryker disable next-line ConditionalExpression: forcing `r.node_id.length === 0` to `false`
-  // is unobservable -- assertRepoEntry (packages/wiki-write-core/src/schemas.ts:295-296) already
-  // rejects `node_id: ""` at the schema layer ("expected non-empty string or omitted"), so no
-  // validated entry reaching this filter can ever have `typeof node_id === 'string' &&
-  // node_id.length === 0` -- only `undefined` (omitted, counted via the `!== 'string'` clause) or
-  // a non-empty string (not counted) are possible.
-  const missingNodeIdCount = privateEntries.filter(r => typeof r.node_id !== 'string' || r.node_id.length === 0).length
-
-  const privateNodeIds = privateEntries.filter(r => hasNonEmptyNodeId(r)).map(r => r.node_id as string)
+  const privateNodeIds = privateEntries.filter(hasNonEmptyNodeId).map(r => r.node_id)
+  // Computed by subtraction against the same `hasNonEmptyNodeId` filter, rather than a second,
+  // differently-worded predicate (`typeof r.node_id !== 'string' || r.node_id.length === 0`) that
+  // would have to independently re-derive the identical partition -- removes both the duplicate
+  // logic and the ConditionalExpression/EqualityOperator mutant surface a hand-written negation
+  // would otherwise carry (a wrong-operator or forced-branch mutant on a second predicate can
+  // silently disagree with the first one; subtraction against the same source cannot disagree with
+  // itself).
+  const missingNodeIdCount = privateEntries.length - privateNodeIds.length
 
   // Resolve each node_id — exhaustive matrix.
   // Stryker disable next-line ArrayDeclaration: seeding this with Stryker's placeholder string
@@ -778,20 +812,14 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   const resolvedNames: string[] = []
   const failedNodeIds: string[] = []
 
-  // Seed with missing-node-id sentinels (Fix B).
-  // Stryker disable next-line UpdateOperator: i-- makes i monotonically non-increasing while the
-  // guard requires i < missingNodeIdCount, a deterministic infinite loop for any
-  // missingNodeIdCount > 0 -- not a timing-sensitive mutant, no test can "kill" a hang.
-  // Stryker disable next-line EqualityOperator: of the three variants this mutator generates for
-  // `<` (<=, >, >=), only `>=` is a timeout -- with missingNodeIdCount === 0 (the all-node-ids-
-  // present test case), `i >= 0` is true from i's first value and stays true as i only grows,
-  // an unbounded loop. `<=` and `>` are both already Killed by the exact-sentinel-count
-  // assertions in the existing missing-node-id tests (confirmed: neither appears in the run
-  // 34007429970 survivor list) -- this directive does not need to re-argue their equivalence,
-  // only >='s.
-  for (let i = 0; i < missingNodeIdCount; i++) {
-    failedNodeIds.push('<missing-node-id>')
-  }
+  // Seed with missing-node-id sentinels (Fix B). No induction variable: an off-by-one or
+  // wrong-direction mutant on a hand-rolled counting loop here is a deterministic hang (not a
+  // "kill"-able mutant at all), which is why this used to need two Stryker directives
+  // (UpdateOperator, EqualityOperator). `Array.from({length: missingNodeIdCount}, ...)` has no
+  // loop guard or counter to mutate into a hang; its own `ArithmeticOperator`/`ObjectLiteral`
+  // mutants on `{length: missingNodeIdCount}` are ordinary, per-test-killable mutants, caught by
+  // the existing exact-sentinel-count assertions.
+  failedNodeIds.push(...Array.from({length: missingNodeIdCount}, () => '<missing-node-id>'))
 
   for (const nodeId of privateNodeIds) {
     const result = await resolver(nodeId)
@@ -829,13 +857,11 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   const scanResult = checkPrivateLeak(privateTokens, diff, {titlePrefixed: false, isOperator: false})
 
   // Fix D: redact private tokens from matched file paths before returning.
-  // Stryker disable next-line LogicalOperator: `checkPrivateLeak`'s return type is exactly
   // `GuardResult = {ok: true} | {ok: false; matchedFiles: ...}` (packages/wiki-write-core/src/
-  // private-leak.ts:1) -- `matchedFiles` is structurally present on every `ok: false` result and
-  // structurally absent on every `ok: true` result, so `'matchedFiles' in scanResult` and
-  // `!scanResult.ok` always agree for every value this function can return; `&&` and `||` produce
-  // the same result for both.
-  if (!scanResult.ok && 'matchedFiles' in scanResult) {
+  // private-leak.ts:1) is fully discriminated on `ok`; TypeScript narrows `scanResult` to the
+  // `{ok: false; matchedFiles}` arm from `!scanResult.ok` alone — no redundant `'matchedFiles' in
+  // scanResult` conjunct needed (and no LogicalOperator mutant exists on this line to directive).
+  if (!scanResult.ok) {
     const redactedFiles = scanResult.matchedFiles.map(f => redactPathTokens(f, privateTokens))
     return {ok: false, matchedFiles: redactedFiles}
   }
@@ -941,7 +967,7 @@ export async function runPromotionCli(
   // ...)" message), never the resolved node_id string values themselves; the actual resolution
   // loop below iterates `privateNodeIds` returned from `runPromotionScan`'s own internal
   // computation, not this count.
-  const privateNodeIdCount = allPrivateEntries.filter(r => hasNonEmptyNodeId(r)).length
+  const privateNodeIdCount = allPrivateEntries.filter(hasNonEmptyNodeId).length
 
   // Log missing node_id entries (Fix B — these will block in runPromotionScan).
   const missingCount = allPrivateEntries.length - privateNodeIdCount
@@ -974,14 +1000,12 @@ export async function runPromotionCli(
     return 0
   }
 
-  // Stryker disable next-line LogicalOperator: `PromotionScanResult`'s `resolutionFailed` branch
-  // is typed as `{ok: false; resolutionFailed: true; ...}` -- the key is either absent (matchedFiles
-  // branch) or present as the literal `true` (never `false`), so for every reachable value of
-  // `result`, `'resolutionFailed' in result` and `result.resolutionFailed` agree: both false when
-  // absent (property access on a missing key is `undefined`, never throws), both true when
-  // present. `&&` and `||` therefore produce the same truth table across every input this type
-  // permits.
-  if ('resolutionFailed' in result && result.resolutionFailed) {
+  // `PromotionScanResult`'s `resolutionFailed` branch is typed as `{ok: false; resolutionFailed:
+  // true; ...}` -- the key is either wholly absent (`matchedFiles` branch) or present as the
+  // literal `true` (never `false`), so `'resolutionFailed' in result` alone already narrows to
+  // this arm; no redundant `&& result.resolutionFailed` conjunct is needed (and no LogicalOperator
+  // mutant exists on this line to directive).
+  if ('resolutionFailed' in result) {
     // Fail-closed: resolution failure (including access-lost) blocks promotion.
     // Print only the COUNT, never the raw node_ids: a node_id is normally an opaque
     // public identifier, but the schema is defense-in-depth and a malformed
@@ -1000,15 +1024,13 @@ export async function runPromotionCli(
     'check-private-leak [promotion]: FAILED — private repository name(s) detected in promotion diff\n',
   )
   process.stderr.write('\nMatched files (private tokens redacted):\n')
-  // Stryker disable next-line ConditionalExpression: `result` at this point has already excluded
-  // `ok: true` (checked above, returns 0) and `resolutionFailed: true` (checked above, returns 1)
-  // -- `PromotionScanResult`'s only remaining variant is `{ok: false, matchedFiles}`, so
-  // `'matchedFiles' in result` is always `true` here by construction; no input reaching this line
-  // can make it `false`.
-  if ('matchedFiles' in result) {
-    for (const file of result.matchedFiles) {
-      process.stderr.write(`  - ${file}\n`)
-    }
+  // `result` at this point has already excluded `ok: true` (checked above, returns 0) and
+  // `resolutionFailed: true` (checked above, returns 1) -- TypeScript already narrows
+  // `PromotionScanResult`'s only remaining variant to `{ok: false, matchedFiles}` here by
+  // construction; no runtime `'matchedFiles' in result` check is needed (and no ConditionalExpression
+  // mutant exists on this line to directive).
+  for (const file of result.matchedFiles) {
+    process.stderr.write(`  - ${file}\n`)
   }
   process.stderr.write(
     '\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts metadata/repos.yaml\n',
@@ -1088,7 +1110,7 @@ export async function main(
 
   // FIX #1: evaluate override BEFORE deciding to fail-closed.
   const titlePrefixed = title.startsWith('[allow-private-leak]')
-  const isOperator = author === OPERATOR_LOGIN
+  const isOperator = author === operatorLogin()
   const override: OverrideOptions = {titlePrefixed, isOperator}
 
   // Build a sanitized env that excludes FRO_BOT_POLL_PAT before passing to the compare-API diff fetch.
