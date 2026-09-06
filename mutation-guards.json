@@ -51,6 +51,18 @@
     {
       "path": "scripts/check-mutation-guards.ts",
       "reason": "A directive scanner cannot describe its own grammar in comments without matching it; the classifier and scanner are covered by their fixture tests, not by mutation."
+    },
+    {
+      "path": "packages/wiki-write-core/src/private-leak-adapter.ts",
+      "reason": "Exported request-time GitHub adapter with no current CI or autonomous-write caller in this repository; only its dedicated tests and the package barrel reference it. Active privacy workflows use scripts/check-private-leak.ts and private-leak.ts directly. Re-promote when a production caller lands."
+    },
+    {
+      "path": "scripts/check-repo-onboarded.ts",
+      "reason": "Survey routing predicate rather than an independent write or promotion authority. A false-positive onboarded result remains bounded by the workflow's explicit public-visibility recheck and downstream wiki-ingest/data-to-main privacy gates; a false negative only skips work."
+    },
+    {
+      "path": "scripts/check-md-links.ts",
+      "reason": "Documentation-quality lint for broken relative links. It does not protect a security boundary, autonomous write, persisted trust state, or generated executable artifact; its behavior is adequately covered by conventional tests."
     }
   ]
 }
