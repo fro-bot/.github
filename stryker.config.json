@@ -14,6 +14,7 @@
   "testFiles": [
     "packages/wiki-write-core/src/corrections-survival.test.ts",
     "packages/wiki-write-core/src/corrections.test.ts",
+    "packages/wiki-write-core/src/private-leak-adapter.test.ts",
     "packages/wiki-write-core/src/wiki-write-core.test.ts",
     "scripts/build-wiki-write-core.test.ts",
     "scripts/check-private-leak.test.ts",

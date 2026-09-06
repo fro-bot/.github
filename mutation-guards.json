@@ -58,7 +58,7 @@
     },
     {
       "path": "scripts/check-repo-onboarded.ts",
-      "reason": "Survey routing predicate rather than an independent write or promotion authority. A false-positive onboarded result remains bounded by the workflow's explicit public-visibility recheck and downstream wiki-ingest/data-to-main privacy gates; a false negative only skips work."
+      "reason": "Survey routing predicate, not an independent write or promotion authority. runCheck fails closed (onboarded:false) on every error path -- missing env, ENOENT, malformed YAML, and schema failure all resolve to false, never true. The deciding predicate, publicRepoEntryExists in scripts/repos-metadata.ts, is not itself in the mutated set, so mutating this wrapper would not exercise the real decision."
     },
     {
       "path": "scripts/check-md-links.ts",
