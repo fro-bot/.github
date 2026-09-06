@@ -341,32 +341,25 @@ async function readWorkflowRunContext(
 // ---------------------------------------------------------------------------
 
 /**
+ * Reads `error[key]` if it's a string, else `''`. Its own function so the `''` fallback's
+ * `StringLiteral` mutant sits alone on a line: the directive below is line-scoped and would
+ * otherwise also suppress the killable `'string'` typeof literal.
+ */
+function stringFieldOrEmpty(error: unknown, key: 'stdout' | 'stderr'): string {
+  const value = isRecord(error) ? error[key] : undefined
+  if (typeof value === 'string') return value
+  // Stryker disable next-line StringLiteral: the one variant (`'Stryker was here!'`) is observable
+  // only through isGh404Error's two fixed regexes, and neither matches that placeholder text.
+  return ''
+}
+
+/**
  * Returns true when `error` carries the clear HTTP 404 signal that `gh` emits
  * for branch/content API calls: `\bHTTP 404\b` in stderr OR `"status":"404"` in stdout.
  *
  * Any other error shape (401/403/5xx/network/rate-limit) returns false so the
  * caller can fail closed.
  */
-/**
- * Reads `error[key]` and returns it if it's a string, else `''`. Isolated onto its own function
- * (rather than an inline ternary at each call site) so the `''` fallback's `StringLiteral` mutant
- * sits alone on its own line -- a ternary like `isRecord(error) && typeof error[key] === 'string'
- * ? error[key] : ''` puts the `'string'` typeof-comparison literal and the `''` fallback literal
- * on the SAME line, and Stryker's `disable next-line` directive is line-scoped: naming
- * `StringLiteral` there would also silently suppress the (killable) `'string'` mutant.
- */
-function stringFieldOrEmpty(error: unknown, key: 'stdout' | 'stderr'): string {
-  const value = isRecord(error) ? error[key] : undefined
-  if (typeof value === 'string') return value
-  // Stryker disable next-line StringLiteral: `''` has one non-empty placeholder variant
-  // (`'Stryker was here!'`) here. The fallback is observable ONLY through the two fixed regexes at
-  // isGh404Error's return statement, and neither `/\bHTTP 404\b/` nor `/"status"\s*:\s*"404"/`
-  // matches the literal text "Stryker was here!" -- both the real `''` and the mutant placeholder
-  // produce `false` from both `.test()` calls for every input where this branch is taken, so no
-  // input can distinguish them.
-  return ''
-}
-
 export function isGh404Error(error: unknown): boolean {
   const stdout = stringFieldOrEmpty(error, 'stdout')
   const stderr = stringFieldOrEmpty(error, 'stderr')
