@@ -1,4 +1,7 @@
+import {readdirSync, readFileSync} from 'node:fs'
+import {join} from 'node:path'
 import {describe, expect, it} from 'vitest'
+import {parse} from 'yaml'
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const solutionsQueryModulePromise: Promise<{
@@ -783,5 +786,35 @@ describe('assembleSolutionsContext', () => {
     // #then the output contains NO U+FFFD replacement chars
     expect(result.excerpt).not.toContain('\uFFFD')
     expect(result.byteLength).toBeLessThanOrEqual(120)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Real corpus gate: every docs/solutions/**/*.md frontmatter must parse
+// ---------------------------------------------------------------------------
+
+describe('docs/solutions corpus', () => {
+  const root = 'docs/solutions'
+  const docPaths = readdirSync(root, {withFileTypes: true, recursive: true})
+    .filter(entry => entry.isFile() && entry.name.endsWith('.md'))
+    .map(entry => join(entry.parentPath, entry.name))
+    .sort()
+
+  it('contains documents', () => {
+    expect(docPaths.length).toBeGreaterThan(0)
+  })
+
+  it.each(docPaths)('%s has parseable YAML frontmatter', path => {
+    // #given the real doc on disk
+    const content = readFileSync(path, 'utf8')
+    const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+
+    // #then it has a frontmatter block and yaml.parse accepts it -- collectDocs skips (with a
+    // stderr line) any doc whose frontmatter throws, so a doc that fails here is invisible to
+    // every future retrieval while all other gates stay green
+    expect(match, 'missing frontmatter block').not.toBeNull()
+    expect(() => {
+      parse(match?.[1] ?? '')
+    }).not.toThrow()
   })
 })

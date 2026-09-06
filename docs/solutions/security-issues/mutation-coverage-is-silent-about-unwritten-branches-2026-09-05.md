@@ -26,7 +26,7 @@ root_cause: missing_validation
 resolution_type: code_fix
 symptoms:
   - A Tier 0 privacy-boundary parser reached 117 killed / 0 survived / 0 no-coverage / 2 directives (119 mutants) while still carrying a reachable false negative
-  - `line.startsWith('+++')` routed any `++`-prefixed added content line to the header branch, unscanned, on #3837's "clean" run
+  - "`line.startsWith('+++')` routed any `++`-prefixed added content line to the header branch, unscanned, on #3837's clean run"
   - The first fix (adjacency: a `+++` line is a header iff the previous line was `--- `) still leaked on the single most common diff shape — a modified line
   - No mutator flagged either defect; both were found only by manual review, after the mutation gate reported clean
 ---

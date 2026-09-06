@@ -134,8 +134,10 @@ function collectDocs(files: Record<string, string>, privateTokens: Set<string>):
       const parsed = splitFrontmatter(content)
       frontmatter = parsed.frontmatter
       body = parsed.body
-    } catch {
-      // Malformed frontmatter — skip this doc, do not crash
+    } catch (error) {
+      // Malformed frontmatter — skip this doc, do not crash, but say so
+      const reason = error instanceof Error ? error.message.split('\n')[0] : String(error)
+      process.stderr.write(`solutions-query: skipped 1 doc on malformed frontmatter (path: ${path}): ${reason}\n`)
       continue
     }
 
