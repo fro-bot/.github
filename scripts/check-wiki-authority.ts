@@ -70,7 +70,9 @@ export function checkWikiAuthority(input: GuardInput): GuardResult {
     // The `headRef !== 'data'` bypass is safe to gate on a branch name only because a
     // fro-bot identity never originates from a fork — fork PRs carry an external author and
     // fall through to the guardedPatterns() check below, so a fork naming its branch `data`
-    // cannot reach this allow path.
+    // cannot reach this allow path. Deliberately a literal, not the `.ya?ml` glob below: the
+    // canonical filename is hardcoded in every reader (commit-metadata, check-private-leak,
+    // cross-repo-dispatch, ...), so a `.yml` variant is an orphan no pipeline consumes.
     if (input.files.includes('metadata/repos.yaml') && input.headRef !== 'data') {
       return {ok: false, blockedFiles: ['metadata/repos.yaml']}
     }
