@@ -448,8 +448,14 @@ describe('assembleSolutionsContext', () => {
     // #then each skip is announced with its path and a closed-vocabulary reason
     const skips = written.filter(line => line.includes('malformed frontmatter'))
     expect(skips).toHaveLength(2)
-    expect(skips.some(line => line.includes('(path: docs/solutions/best-practices/alias.md): ReferenceError'))).toBe(true)
-    expect(skips.some(line => /\(path: docs\/solutions\/best-practices\/scalar\.md\): BAD_SCALAR_START at line \d+/u.test(line))).toBe(true)
+    expect(skips.some(line => line.includes('(path: docs/solutions/best-practices/alias.md): ReferenceError'))).toBe(
+      true,
+    )
+    expect(
+      skips.some(line =>
+        /\(path: docs\/solutions\/best-practices\/scalar\.md\): BAD_SCALAR_START at line \d+/u.test(line),
+      ),
+    ).toBe(true)
     // #then no line carries frontmatter-derived text
     for (const line of written) {
       expect(line).not.toContain('acme-private-repo')
