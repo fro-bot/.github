@@ -2,6 +2,7 @@
 title: A Stryker disable directive is mutator-scoped, not variant-scoped — enumerate every variant before shipping one
 date: 2026-09-05
 last_updated: 2026-09-05
+verified: 2026-09-05
 category: best-practices
 module: packages/wiki-write-core/src/private-leak.ts
 problem_type: best_practice
