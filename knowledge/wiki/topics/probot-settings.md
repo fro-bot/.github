@@ -2,13 +2,16 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-08-30
-tags: [probot, github, repository-settings, automation, governance]
+updated: 2026-09-03
+tags: [probot, github, repository-settings, automation, governance, branch-protection, drift-detection, reusable-workflows]
 related:
   - marcusrbrown--github
   - marcusrbrown--dev-like
+  - marcusrbrown--marcusrbrown-com
+  - marcusrbrown--marcusrbrown
   - marcusrbrown--ha-config
   - marcusrbrown--esphome-life
+  - marcusrbrown--extend-vscode
   - bfra-me--github
   - bfra-me--ha-addon-repository
   - bfra-me--works
@@ -60,35 +63,15 @@ The `fro-bot/.github` repository (this repo) has its own `common-settings.yaml` 
 
 ### bfra-me/.github (Bfra-Me Org Template)
 
-[[bfra-me--github]] ships a **third** `common-settings.yaml` for the
-`@bfra-me` org. Surveyed 2026-05-20 (SHA `a81be4c`):
+[[bfra-me--github]] ships a **third** `common-settings.yaml` for the `@bfra-me` org. Surveyed 2026-05-20 (SHA `a81be4c`):
 
-- Repo-level: `is_template: true`, `has_projects: false`, `has_wiki: false`,
-  squash-only merging, auto-merge enabled, branch deletion on merge,
-  `allow_update_branch: true`, squash commit title `COMMIT_OR_PR_TITLE`
-- Branch protection (`main`): 12 required status checks (Advanced
-  Security Analysis, CodeQL, Container Scan, Create Renovate Changeset,
-  Fro Bot, GitGuardian Scan, License Scan, Quality Check, Release,
-  Renovate, Review Dependencies, Triage), strict mode, linear history,
-  admin enforcement, `required_approving_review_count: 0` — governance
-  leans on status checks rather than human reviewers
-- `update-repository-settings` is shipped as a local custom action in
-  this repo and consumed by `update-repo-settings.yaml`
+- Repo-level: `is_template: true`, `has_projects: false`, `has_wiki: false`, squash-only merging, auto-merge enabled, branch deletion on merge, `allow_update_branch: true`, squash commit title `COMMIT_OR_PR_TITLE`
+- Branch protection (`main`): 12 required status checks (Advanced Security Analysis, CodeQL, Container Scan, Create Renovate Changeset, Fro Bot, GitGuardian Scan, License Scan, Quality Check, Release, Renovate, Review Dependencies, Triage), strict mode, linear history, admin enforcement, `required_approving_review_count: 0` — governance leans on status checks rather than human reviewers
+- `update-repository-settings` is shipped as a local custom action in this repo and consumed by `update-repo-settings.yaml`
 
-[[bfra-me--ha-addon-repository]], [[bfra-me--works]], and other
-`bfra-me/*` repos extend this template; most `marcusrbrown/*` repos
-extend the `fro-bot/.github` template instead. Reconciling which org
-template is canonical for what audience is an open follow-up.
+[[bfra-me--ha-addon-repository]], [[bfra-me--works]], and other `bfra-me/*` repos extend this template; most `marcusrbrown/*` repos extend the `fro-bot/.github` template instead. Reconciling which org template is canonical for what audience is an open follow-up.
 
-The [[bfra-me--works]] settings file is a representative example of how
-`bfra-me/*` repos compose the org template: it extends
-`.github:common-settings.yaml` and overrides `repository.{name,
-description, topics}` plus a 12-check branch-protection list (`Analyze`,
-`Build`, `CI`, `CodeQL`, `Create Renovate Changeset`, `Fro Bot`,
-`Lint`, `Prepare`, `Renovate / Renovate`, `Review Dependencies`,
-`Test`, `Workspace Analysis`) with `enforce_admins: true`,
-`required_linear_history: true`, and `required_pull_request_reviews:
-null` — matching the org-template posture (checks over reviewers).
+The [[bfra-me--works]] settings file is a representative example of how `bfra-me/*` repos compose the org template: it extends `.github:common-settings.yaml` and overrides `repository.{name, description, topics}` plus a 12-check branch-protection list (`Analyze`, `Build`, `CI`, `CodeQL`, `Create Renovate Changeset`, `Fro Bot`, `Lint`, `Prepare`, `Renovate / Renovate`, `Review Dependencies`, `Test`, `Workspace Analysis`) with `enforce_admins: true`, `required_linear_history: true`, and `required_pull_request_reviews: null` — matching the org-template posture (checks over reviewers).
 
 ## Settings Sync Workflow
 
@@ -98,64 +81,117 @@ Repos using Probot Settings typically include an `update-repo-settings.yaml` wor
 - **Implementation:** Reusable workflow from `bfra-me/.github`
 - **Auth:** GitHub App via `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets
 - **Reusable workflow version:** `bfra-me/.github` v4.16.31 (as of 2026-06-28 in [[marcusrbrown--github]], SHA `7c7e50a5`; was v4.16.20 on 2026-05-25, bumped from v4.16.9 via sequential Renovate PRs — config-only repos like this one are dominated by reusable-workflow patch churn, ~16 v4.16.x bumps in five weeks)
-- **Known defect (2026-06-10):** in [[bfra-me--github]] itself, the
-  `update-repo-settings` workflow's `Filter Changed Files` step fails
-  with git exit 128 on push events (bfra-me/.github#2213, opened
-  2026-05-23, still open) — the settings-sync path has a live bug at
-  its source repo. The upstream workflow now carries an explicit
-  `fetch-depth: 0` with a comment citing #2213, so the source-side
-  workaround has landed (confirmed at v4.22.0, 2026-08-30)
+- **Known defect (2026-06-10):** in [[bfra-me--github]] itself, the `update-repo-settings` workflow's `Filter Changed Files` step fails with git exit 128 on push events (bfra-me/.github#2213, opened 2026-05-23, still open) — the settings-sync path has a live bug at its source repo. The upstream workflow now carries an explicit `fetch-depth: 0` with a comment citing #2213, so the source-side workaround has landed (confirmed at v4.22.0, 2026-08-30)
 
 ### Upstream contract (`bfra-me/.github`, confirmed at v4.22.0, 2026-08-30)
 
-The canonical settings-sync reusable workflow lives at
-`bfra-me/.github/.github/workflows/update-repo-settings.yaml`. Its
-`workflow_call` interface is deliberately minimal:
+The canonical settings-sync reusable workflow lives at `bfra-me/.github/.github/workflows/update-repo-settings.yaml`. Its `workflow_call` interface is deliberately minimal:
 
-- **Secrets:** `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY`, both
-  `required: true`
+- **Secrets:** `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY`, both `required: true`
 - **Inputs:** none
-- **Permissions:** `contents: read` at the workflow level; write
-  authority arrives via the App token
-- Internally it path-filters (`common-settings.yaml`,
-  `.github/settings.yml`, the workflow file itself) on push events with
-  `fetch-depth: 0`, and skips the token mint entirely when nothing
-  relevant changed
+- **Permissions:** `contents: read` at the workflow level; write authority arrives via the App token
+- Internally it path-filters (`common-settings.yaml`, `.github/settings.yml`, the workflow file itself) on push events with `fetch-depth: 0`, and skips the token mint entirely when nothing relevant changed
 
-Because the secrets signature is identical to the Renovate reusable
-workflow's, a caller can be pointed at the wrong one and still resolve,
-authenticate, and report success. That is exactly the failure mode below.
+Because the secrets signature is identical to the Renovate reusable workflow's, a caller can be pointed at the wrong one and still resolve, authenticate, and report success. That is exactly the failure mode below.
 
 ### Settings sync that never syncs settings (esphome.life, 7th confirmation)
 
-[[marcusrbrown--esphome-life]]'s `update-repo-settings.yaml` calls
-`bfra-me/.github/.github/workflows/renovate.yaml` rather than the
-settings workflow. The workflow, the job, and the file are all named
-"Update Repo Settings"; the daily `23 12` cron and the push-to-`main`
-trigger both fire and both report success — while running Renovate.
-`.github/settings.yml` in that repo has therefore never been applied by
-the repo's own automation, and every merge to `main` runs Renovate
-twice.
+[[marcusrbrown--esphome-life]]'s `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/renovate.yaml` rather than the settings workflow. The workflow, the job, and the file are all named "Update Repo Settings"; the daily `23 12` cron and the push-to-`main` trigger both fire and both report success — while running Renovate. `.github/settings.yml` in that repo has therefore never been applied by the repo's own automation, and every merge to `main` runs Renovate twice.
 
 Two governance implications worth generalizing:
 
-1. **A declared `settings.yml` is not an applied `settings.yml`.** The
-   branch protection that repo declares (four required contexts, strict,
-   linear history, admin enforcement) is in force — but that state
-   traces to the Probot Settings App and/or historical manual
-   application, not to the workflow that claims to maintain it. If the
-   App is ever uninstalled or the declaration is edited, the drift will
-   be silent. Verify sync by reading the workflow's actual run logs, not
-   its name.
-2. **Identical secrets signatures make miswiring undetectable.** Both
-   reusable workflows take the same two required secrets and no inputs,
-   so there is no type-level guard. When publishing a family of reusable
-   workflows, differentiating the input surface (even a single required
-   no-op input) would turn this class of error into a hard failure at
-   `workflow_call` resolution time.
+1. **A declared `settings.yml` is not an applied `settings.yml`.** The branch protection that repo declares (four required contexts, strict, linear history, admin enforcement) is in force — but that state traces to the Probot Settings App and/or historical manual application, not to the workflow that claims to maintain it. If the App is ever uninstalled or the declaration is edited, the drift will be silent. Verify sync by reading the workflow's actual run logs, not its name.
+2. **Identical secrets signatures make miswiring undetectable.** Both reusable workflows take the same two required secrets and no inputs, so there is no type-level guard. When publishing a family of reusable workflows, differentiating the input surface (even a single required no-op input) would turn this class of error into a hard failure at `workflow_call` resolution time.
 
-The repair is a one-token path swap. See [[github-actions-ci]] for the
-generalized "SHA pinning validates the ref, not the path" analysis.
+The repair is a one-token path swap. See [[github-actions-ci]] for the generalized "SHA pinning validates the ref, not the path" analysis.
+
+### The working reference wiring (2026-08-31)
+
+[[marcusrbrown--extend-vscode]] is the in-fleet counter-example, and it settles the question of what the esphome.life repair should look like. Both of its `bfra-me/.github` callers are pinned to the same SHA and to matching paths:
+
+| Caller file | `uses:` path | Pin |
+| --- | --- | --- |
+| `.github/workflows/renovate.yaml` | `bfra-me/.github/.github/workflows/renovate.yaml` | `eb1772eb` (v4.23.0) |
+| `.github/workflows/update-repo-settings.yaml` | `bfra-me/.github/.github/workflows/update-repo-settings.yaml` | `eb1772eb` (v4.23.0) |
+
+Same operator, same reusable-workflow family, same upstream tag — one repo wired it correctly and one did not. The fix for the broken caller is therefore not a design exercise; it is a copy of a line that already exists, tested daily, three repositories over.
+
+Two details worth carrying:
+
+- **Cron schedules are per-caller, not inherited.** extend-vscode runs settings sync on `23 0` UTC; esphome.life on `23 12`. Nothing about the upstream workflow imposes a schedule, so a "consistent org-wide sync time" is an illusion unless someone enforces it.
+- **The correct wiring is indistinguishable from the broken one at review time.** Both are ten-line files, both resolve, both report success, both are SHA-pinned with a version comment. The only distinguishing feature is that the `uses:` basename matches the caller's own filename. That is exactly the assertion worth automating.
+
+### `_extends` resolves within the repository's own owner (correction, 2026-08-31)
+
+A bare `_extends: .github:common-settings.yaml` — no owner prefix — resolves to the **`.github` repository of the org that owns the repo declaring it**. For any `marcusrbrown/*` repository that is `marcusrbrown/.github`, not `fro-bot/.github`.
+
+Several wiki repo pages have asserted the `fro-bot/.github` reading. It was corrected for [[marcusrbrown--esphome-life]] on 2026-07-12 and is corrected for [[marcusrbrown--extend-vscode]] on 2026-08-31; other `marcusrbrown/*` pages carrying the same phrasing should be treated as suspect until re-verified. The downstream fact usually survives the correction — the repo does inherit an org-level template — but the _identity of the template_ changes, and with it which repository a settings change must land in. Owner-prefix the `_extends` value (`marcusrbrown/.github:common-settings.yaml`) if the intent is to be unambiguous to a reader; the bare form is only unambiguous to the resolver.
+
+### The imperative alternative: a script instead of a manifest (2026-09-01)
+
+[[marcusrbrown--marcusrbrown-com]] has no `settings.yml` and never has — confirmed across three surveys under two names. Its `.github/` holds `ACTIONS.md`, `BRANCH_PROTECTION.md`, `copilot-instructions.md`, `renovate.json5`, `actions/`, and `workflows/`, nothing else. Branch protection is instead governed by:
+
+- **`scripts/configure-branch-protection.mjs`** — an imperative script a human runs, and
+- **`.github/BRANCH_PROTECTION.md`** (7.1 KB) — a prose description of the intended state.
+
+This is worth recording as the alternative pattern because it fails differently from a declarative manifest, and the failure is quiet:
+
+- **No drift detection.** A manifest is applied continuously by the Settings App; a script is applied once, whenever someone last ran it. Anything changed in the GitHub UI afterwards silently wins, and nothing reconciles.
+- **No diffable artifact for the actual state.** The prose doc is the only record, and prose drifts — this repo's copy still opens with a header naming a _different_ project, unchanged since it was first flagged 2026-06-12. A stale manifest is at least stale in a machine-readable way.
+- **No lint surface.** Fleet-level checks that inspect `settings.yml` (required-check membership, `enforce_admins`, collaborator model) see nothing here. The repo is not non-compliant; it is invisible.
+
+The consequence shows up concretely: the repo cannot use the self-gating move [[marcusrbrown--marcusrbrown]] made via `settings.yml` (adding `Fro Bot` to `required_status_checks` with `enforce_admins: true`), nor the shorter `.github:common-settings.yaml` inheritance [[marcusrbrown--dev-like]] uses to gate `main` on `validate` + `Fro Bot`. Its Fro Bot verdict is advisory only.
+
+Note the symmetry with the settings-sync case below: [[marcusrbrown--esphome-life]] _declares_ a `settings.yml` its own automation never applies, and this repo _applies_ branch protection it never declares. Both end up in the same place — the real configuration lives only in GitHub's API state, and no committed file can be trusted to describe it. **A declared manifest is not an applied one; an applied setting is not a recorded one.**
+
+### The reference Renovate never advances (bfra-me/works, 2026-09-03)
+
+[[bfra-me--works]] holds **three** references to the same
+`bfra-me/.github` reusable-workflow family, each SHA-pinned with a
+version comment:
+
+| File | Reference | Ref as of 2026-09-03 |
+| --- | --- | --- |
+| `.github/workflows/renovate.yaml` | `…/renovate.yaml` | `2f2e9da1` # **v4.24.0** |
+| `.github/workflows/release.yaml` | `…/trigger-org-renovate.yaml` | `2f2e9da1` # **v4.24.0** |
+| `.github/workflows/update-repo-settings.yaml` | `…/update-repo-settings.yaml` | `65caa6a0` # **v4.16.0** |
+
+The first two have tracked upstream continuously across eight surveys —
+v4.16.18 → v4.16.21 → v4.16.25 → v4.16.28 → v4.16.33 → v4.16.37 →
+v4.16.45 → v4.24.0. The third has not moved once. The divergence is now
+roughly eight minor series and predates every survey of this repo.
+
+Renovate is demonstrably working on this repository — it automerges
+dozens of PRs weekly, including the other two references, in the same
+manager, from the same datasource, against the same tag list. So the
+settings-sync reference is being skipped by something specific to it.
+Two hypotheses, neither confirmed from public metadata:
+
+1. **The upstream path no longer resolves at newer refs.** If
+   `.github/workflows/update-repo-settings.yaml` was renamed or moved
+   upstream, Renovate's `github-actions` manager would still parse the
+   local `uses:` string and look up tags for `bfra-me/.github` — it does
+   not validate that the *path* exists at the candidate ref. The pin
+   would then be stuck on the last ref where it was ever correct, and
+   settings sync would have been silently dead since. This is the same
+   defect class as [[marcusrbrown--esphome-life]]'s mis-pathed `uses:`
+   (below) and the general rule that **SHA pinning validates the ref,
+   not the path**.
+2. **A `packageRules` entry excludes it.** Less likely — the local
+   `renovate.json5` has no rule naming this workflow — but the
+   `internal.json5` org baseline is not read here.
+
+Either way the observable is the same and it is the useful part:
+**a family of references that share an owner, a datasource, and a
+version comment can still diverge, and the divergence looks like
+stability.** A repo-level lint that compares all `uses:` refs to the
+same upstream owner/repo and flags disagreement would catch this in one
+pass, and would have caught it eight surveys ago. Recorded here rather
+than in [[github-actions-ci]] because the workflow that is stuck is
+specifically the settings-sync one — which means the class of failure it
+produces is not "a stale action" but "a `settings.yml` nobody applies,"
+the same end state as the esphome.life case reached by a different
+route.
 
 ## Common Configuration Patterns
 

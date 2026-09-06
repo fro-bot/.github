@@ -2,7 +2,7 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-08-25
+updated: 2026-09-05
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
@@ -58,7 +58,16 @@ sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: c6c055d906b8df3de5f371221daf930c8bd49f99
     accessed: 2026-08-25
-tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution]
+  - url: https://github.com/marcusrbrown/cortexkit_anthropic-auth
+    sha: 99fdbe906c5875893d363c904f6e6bc066d997b1
+    accessed: 2026-09-02
+  - url: https://github.com/fro-bot/systematic
+    sha: 8e26a01
+    accessed: 2026-09-04
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 9bceff393c4d14c76b01625b9268d08d37fc4f01
+    accessed: 2026-09-05
+tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, agents, tui, rpc, orphan-reaper, plugin-singleton, json-schema, oauth, anthropic, cross-process-lock, zod-config, bundled-names, deprecation-surface, upstream-sync-skill, fro-bot-workflow, custom-tools, opencode-server, directory-routing, mcp, agent-bus, browser-safe-subpaths, managed-server, subpath-loader-resolution, npm-dist-tag, release-lane-decommission, schema-fingerprint, custom-keywords, release-gated-deploy, multi-harness, optional-peers, capability-matrix, pi, claude-code, generated-skills, drift-gate, tree-sitter, trust-boundary]
 ---
 
 # OpenCode Plugin Development
@@ -343,6 +352,19 @@ Schema is draft-07, describes top-level keys `agents`, `categories`, `disabled_s
 
 **Axis independence re-confirmed with the pairing inverted (2026-08-21 [[fro-bot--systematic]] survey):** across the v3 minor train v3.6.0 → v3.12.4, the **config schema held flat at 10 properties** (no additions since 2026-08-06) while the **OCX catalog version advanced six minors** (still 73 components — the catalog *count* is frozen at the major boundary, but the advertised `version` string tracks each release). This is the first non-mutating schema interval since 2026-06-25, breaking the three-in-a-row additive streak — and it demonstrates the two axes are genuinely decoupled in *both* directions: prior three intervals were "catalog-count frozen, schema grows"; this one is "schema frozen, catalog version climbs." The rule stands; neither axis is a leading indicator of the other. Also observed: an npm `2.33.4` v2 backport published to the retired major line did **not** re-serve the dropped `schemas/v2/` path (still 404) because the deploy target only mirrors `dist-tags.latest` (3.12.4) — the wholesale-replace-at-major precedent is not reversible by a late v2 patch.
 
+**Refinement — "the schema is unchanged" was measuring a header (2026-09-04 [[fro-bot--systematic]] survey):** the two-axis rule above stands as stated, but the axes are not orthogonal beneath the surface. Four surveys tracked the config schema by counting its **top-level properties** (7 → 8 → 10 → flat). The served file is 38,180 bytes with 74 `definitions`, and its `agents` property is a **closed enumeration of the entire bundled agent roster** — 74 explicit keys (37 bare names + 37 `category/name` aliases) under `additionalProperties: false`. Adding or removing one agent upstream rewrites the schema body while the top-level count stays at ten. So "schema frozen" readings were claims about a header, not content.
+
+Two transferable rules for any generated, published JSON Schema:
+
+1. **Track a content fingerprint, not a property count.** Byte length, `definitions` count, and a hash prefix turn a nested mutation into a detectable event. (Baseline recorded on the repo page.)
+2. **A generated schema that enumerates a runtime roster is a second copy of that roster.** It is therefore a cross-checkable artifact: the schema's 37 bare agent names and the OCX registry's 37 `agent` components must agree, and a mismatch means the catalog and the IDE contract disagree about what exists. Two published artifacts from one build are worth diffing against each other, not just against their own history.
+
+**Asymmetric strictness inside one schema — closed `agents`, open `categories`:** `agents` names every valid key and rejects the rest; `categories` is `{propertyNames: {type: string}, additionalProperties: <overlay>}`, so any string is a valid category name even though the bundled categories are real and finite. Net effect for a user editing `systematic.json`: **misspell an agent and the editor underlines it; misspell a category and the editor is silent and the overlay does nothing.** Generated schemas inherit strictness from whatever the generator happened to model as an enum versus a record — the looser half is invisible precisely where a typo costs the most to debug. When emitting a schema from types, audit which keyed objects ended up open.
+
+**A non-standard keyword is documentation, not enforcement:** the same schema carries 16 occurrences of a `"trust"` keyword with values `any` and `project-or-higher`, attached to fields like `model`, `temperature`, `top_p`, and per-agent `skills`. Draft-07 validators ignore unknown keywords, so this vocabulary is inert for every consumer except the plugin's own loader — not enforced, not surfaced in IDEs, invisible through any standard validator. The naming implies a config-source trust tier (which fields a project-level file may set versus which require user-level config); that reading is inference. Either way: **if a distinction matters for safety, expressing it as a custom keyword in a published schema communicates it to nobody who is not already reading your loader.** Encode it in the shape (separate schemas per trust tier, or `$comment` plus real constraints) or document it in prose the consumer actually sees.
+
+**Deploy fan-out is release-gated, not push-gated (2026-09-04):** the docs/registry/schema deploy fires on npm publish, not on merge. Sixteen source commits (one `docs:`, fifteen `chore(deps)`/`chore(dev)`) landed on `main` after the last deploy and produced zero deploys, because semantic-release cut no release from non-releasable commit types. Consequence for anyone auditing a plugin's published artifacts: **a stale docs/registry host under a conventional-commits release gate is the correct output of a healthy pipeline**, and the cheap way to tell it apart from a dead pipeline is to read the producer's *release* feed rather than its `pushed_at` — which in this case showed same-day activity from open PR branches while the last release was ten days old.
+
 ## Bundled Skill for Upstream Sync (cortexkit_anthropic-auth pattern)
 
 [[marcusrbrown--cortexkit-anthropic-auth]] ships a `.agents/skills/anthropic-auth-upstream-release/SKILL.md` in the repo root. OpenCode's `.agents/` discovery path picks it up automatically for any agent working in that repo, giving the agent explicit procedural context for upstream sync operations and fork-invariant release cutting.
@@ -355,6 +377,22 @@ This is the first instance in the Marcus ecosystem of a repo-local skill scoped 
 
 Contrast with [[marcusrbrown--systematic]] which ships general-purpose skills (`ce:plan`, `ce:work`, etc.) distributed for consumption by other OpenCode users — the cortexkit-auth pattern is internal/operational, not distributable.
 
+**Follow-up (2026-09-02): the skill outlived the practice it encodes.** The skill still ships and still describes upstream sync, fork-conflict resolution, `vX.Y.Z-mb.N` release cutting, and npm metadata validation. It has been exercised exactly once. The fork is now 334 commits behind upstream with 32 missed releases, and the two-branch mechanism the skill assumes — an upstream-tracking `main` alongside a fork-specific default branch — was abandoned at that single use: the mirror sits at `release: v1.2.2` (2026-05-21), older than the fork's own sync point, because the v1.2.5 merge landed directly on `marcusrbrown/main`.
+
+The transferable caution for repo-local operational skills: **a skill is documentation with an execution surface, and it decays exactly like documentation.** Nothing verifies that the branches, tags, or lanes a skill names still exist in the shape it describes, and an agent handed a stale procedural skill will follow it confidently. If the procedure has preconditions (here: "the mirror is current"), the skill should assert them before acting rather than assume them.
+
+## Decommissioning a Release Lane Takes Three Deletions (2026-09-02)
+
+From [[marcusrbrown--cortexkit-anthropic-auth]]. The repo's release contract forbids the `mb` dist-tag lane in three separate places — `.github/instructions/release.instructions.md` (_"Do **not** reintroduce the `mb` dist-tag lane"_), `.github/copilot-instructions.md`, and the `fro-bot.yaml` prompt env vars that every mode references. PR #6 removed the lane from the publish workflow on 2026-05-26.
+
+The tag is still live on npm. Both fork packages carry `dist-tags: { latest: 1.2.5-mb.3, mb: 1.2.2-mb.2 }` as of 2026-09-02. `npm install @marcusrbrown/opencode-anthropic-auth@mb` resolves, succeeds, and installs a build three fork-releases stale — permanently, because the pipeline that would advance it no longer exists.
+
+**A dangling dist-tag is strictly worse than a deleted one: it is a live install surface with no producer, and it fails by succeeding.** No CI assertion catches it, and the reason is structural — `verify-artifacts.mjs` and the release-lane-watch prompt section both validate *what the release publishes*, and the release does not publish to `mb`. Removing a code path removes it from the set of things your tests can observe.
+
+The rule: retiring a distribution channel requires deleting the **CI job**, the **registry pointer** (`npm dist-tag rm`), and the **documentation that references it**. Only the first is verifiable by the pipeline; the other two need a deliberate step. Applies equally to GHCR tags, GitHub release channels, and `latest`-style aliases on any registry.
+
+The same repo supplies the third-deletion instance in isolation: `README.md` still instructs `Pin @marcusrbrown/opencode-anthropic-auth@1.2.2-mb.2` and describes both packages as published "at `1.2.2-mb.2`", never updated across three subsequent tagged releases. So the registry metadata and the install docs are **two independent stale pointers that converge on the same abandoned version** while the pipeline moved on without either. For plugin repos specifically this matters more than usual: OpenCode resolves plugins by package specifier from user config, so a stale documented pin propagates into consumers' `opencode.json` and stays there — the namespace-pinning rationale that motivated the fork in the first place cuts both ways.
+
 ## App-Embedded Design-Gate Plugin (in-repo `.opencode/impeccable/`)
 
 Not every OpenCode plugin is published or general-purpose. A recurring **app-embedded** pattern: an application repo vendors an OpenCode plugin *in-tree* to run a design/quality gate against the agents that work on that same repo, rather than consuming the gate as a pinned CI action.
@@ -364,13 +402,109 @@ Not every OpenCode plugin is published or general-purpose. A recurring **app-emb
 
 Distinguishing traits vs the distributable plugins above: **no npm publish**, **relative-path plugin registration** (`./.opencode/...` not a package name), and **the plugin is a repo-local build artifact type-checked by the app's own `tsc` pass**. This is the Impeccable gate propagating from a pinned CI action into a repo-local plugin across the fleet — worth tracking whether it lands a shared/published shape or stays vendored per-repo.
 
+## One Content Source, Three Harnesses: Optional Peers as the Portability Primitive (2026-09-05)
+
+From the first direct source-side survey of [[marcusrbrown--systematic]] v3 (`9bceff39`, v3.16.1). The largest plugin on this page **stopped being an OpenCode plugin** and became a workflow system with three shipped harness adapters. The mechanism is small enough to copy:
+
+```jsonc
+"peerDependencies": {
+  "@opencode-ai/plugin": "^1.1.30",
+  "@earendil-works/pi-coding-agent": "^0.83.0",
+  "typebox": "^1.1.38"
+},
+"peerDependenciesMeta": { /* all three optional: true */ }
+```
+
+**Every harness peer is optional.** The package installs and functions with none present; the harness is a capability discovered at load, not a dependency declared at install. One published tarball serves three hosts through three different discovery channels:
+
+| Host | Discovery channel | Build target |
+| --- | --- | --- |
+| OpenCode | `exports["."]` → `dist/index.js`, registered via `"plugin": [...]` in `opencode.json` | `bun build --target bun` |
+| [[pi-coding-agent]] | a top-level **`"pi"` manifest key** in `package.json` declaring `extensions` + `skills` | `bun build --target node` |
+| Claude Code | a **generated branch** consumed via `.claude-plugin/marketplace.json` | separate CI build script |
+
+Three lessons for anyone shipping to more than one agent host:
+
+1. **Optional peers are the portability primitive.** They let you type against a host API without requiring it, and they let the consumer's package manager stay quiet about the two hosts they don't use. The alternative — separate `-opencode` / `-pi` packages — triples the release surface for content that is identical.
+2. **Hosts differ in runtime, not just API.** OpenCode is a Bun host; Pi is a Node host. A single `--target bun` build would not have worked. If you keep an `engines.node` floor, the Node-targeted entry point is what makes it true.
+3. **The type-system dependency travels with the host.** Pi's extension API is TypeBox-typed (`typebox` rides along as an optional peer) where OpenCode's is Zod-typed. Multi-harness support means carrying two schema libraries, and the tarball pays for both.
+
+### The capability matrix that marks its own unknowns
+
+The transferable artifact is `HARNESSES.md` — a 6-harness × 5-capability matrix shipped **inside the npm tarball** (`"files"` lists it next to `dist`), on a two-tier model: **Tier 1 shipped adapter** (OpenCode, Pi, Claude Code) vs **Tier 2 documented portability target** (Codex CLI, Gemini CLI, GitHub Copilot).
+
+Two properties make it worth imitating:
+
+- **Every cell carries a citation key** (`[OC-1]`, `[PI-7]`, `[CC-9]`) resolved by an Evidence registry section. Capability claims about somebody else's tool decay fast; a citation makes decay checkable.
+- **Unverified cells say `UNVERIFIED`.** Codex CLI and Gemini CLI carry the literal token for subagent delegation and task tracking. A blank cell is indistinguishable from a false claim; an explicit `UNVERIFIED` is honest and actionable. This is the same discipline as marking a survey finding "data unavailable" rather than omitting it.
+
+**The matrix is also where the marketing claim gets corrected.** The README says skill and agent content is "identical across all three." True — and capability parity is not. Pi has *no* native blocking-question tool and *no* native task-tracking mechanism (prose fallbacks documented for both); Claude Code ships **no `systematic_skill` tool at all**, using its native Skill tool instead, and has deprecated `TodoWrite` in favour of `TaskCreate`/`TaskGet`/`TaskList`/`TaskUpdate`. The generalization: **content portability and capability portability are different claims, and a multi-harness package should state which one it is making.** Skills written to assume a tool exists are not portable; skills written to describe a fallback are.
+
+The honest limit case is recorded in the same repo as open issue **#854**: the workflow guard — the single largest subsystem — is OpenCode-only *because of its state model*, not because other harnesses can't host it. Parity claims should be scoped to what actually crossed.
+
+## A Workflow Plugin That Ships a WASM Shell Parser (2026-09-05)
+
+[[marcusrbrown--systematic]] v3 added `tree-sitter-bash` 0.25.1 and `web-tree-sitter` 0.27.0 as **runtime `dependencies`**, in a package whose entire prior runtime footprint was `js-yaml` + `jsonc-parser` + `zod`.
+
+The consumer is the receipt/guard subsystem — `receipt-classifier.ts` (36 KB) has to decide what a shell command the agent *actually ran* did, and you cannot classify bash by regex without being wrong in the cases that matter (quoting, substitution, redirection, chained operators). Choosing a real grammar is the correct call.
+
+Record it anyway as a **cost that plugin authors under-price**: a plugin loaded into every agent session now carries a WASM grammar and a parser runtime. That is install size, cold-start time, and two more supply-chain edges in the highest-trust position in the system. The trade is defensible for command classification specifically; it would not be for anything smaller. When a plugin's runtime dependency list grows a native/WASM component, it has changed category — from configuration to infrastructure — and deserves the scrutiny that implies.
+
+## A Bundled Skill That Is a Build Artifact of an npm Package (2026-09-05)
+
+In [[marcusrbrown--systematic]], `skills/agent-browser/` is not authored — it is **generated** from the `agent-browser` npm package (devDependency, pinned 0.34.0) by `scripts/generate-agent-browser-skill.ts`, with an `agent-browser:drift` check running as its own step in the `Build` job.
+
+This is distinct from vendoring, and better:
+
+- **Vendoring** copies content once and lets it rot silently.
+- **Generation + drift gate** makes the copy reproducible and makes staleness a build failure. A Renovate bump of `agent-browser` cannot merge without regenerating the skill.
+
+The repo runs six such gates in one job — content integrity, Claude Code plugin build + integrity, agent-browser skill drift, registry drift, config-schema drift, and review-artifact-schema drift — plus a `postupgrade` script that regenerates all of them in one command so Renovate's `postUpgradeTasks` can close the loop automatically.
+
+**The rule: any committed artifact derived from a pinned dependency needs a drift check, or the pin and the artifact will disagree and nothing will say so.** Systematic supplies its own counter-example in the same manifest — `biome.json` declares `$schema` for **2.5.1** while `@biomejs/biome` is pinned at **2.5.11**. That pair has drifted three times now (fixed at #533 → 2.4.16, #571 → 2.5.1, drifted again) because it is the one derived-from-a-pin relationship in the repo with *no* generator and *no* gate. The same class recurs in [[marcusrbrown--opencode-copilot-delegate]]. Hand-maintained version echoes do not stay in sync; generated ones do.
+
+## Schema Fingerprints Survive Refactors; Structural Probes Do Not (2026-09-05)
+
+A direct follow-up to the fingerprinting rule adopted on 2026-09-04 (below), and an unusually fast confirmation of it. [[fro-bot--systematic]] measured Systematic's deployed config schema on 2026-09-04 and, on finding that four surveys of "top-level property count" had been measuring a header, adopted a byte/`definitions`/hash fingerprint. Re-measured **24 hours later** from the source-side survey:
+
+| Metric | 2026-09-04 | 2026-09-05 |
+| --- | --- | --- |
+| Bytes | 38,180 | **58,954** (+54%) |
+| `definitions` | 74 | **100** |
+| Top-level properties | 10 | **12** (`+profile`, `+profiles`) |
+| `sha256[:16]` | `0e82797b9f8f43ed` | **`1f9b7c48a4b6455c`** |
+
+Two things happened at once, and separating them is the finding:
+
+1. **A feature landed** (`v3.16.0`, named model profiles with per-harness routing) — visible in every metric.
+2. **The generator's emission shape changed.** The schema now wraps top-level objects in `allOf` + `$ref` composition. `properties.agents` and `properties.categories` are now `$ref`s into `definitions`, so a shallow read of `additionalProperties`, `propertyNames`, or key-count on either **returns nothing at all**.
+
+The 09-04 structural observations (`agents` as a closed 74-key enumeration with `additionalProperties: false`; `categories` open-keyed via `propertyNames`) **cannot be reproduced by the same probe today**. The underlying asymmetry may well be intact — it moved behind an indirection, and this survey does not claim it was removed.
+
+**The rule: a structural probe measures the generator's current emission style, not the schema's semantics.** Generators refactor — `$ref` extraction, `allOf` composition, `$defs` migration — without any intent to change meaning, and every such refactor silently zeroes a probe that walked the old shape. A probe that returns `0` and a probe that returns "correctly zero" are indistinguishable at the call site.
+
+Practical guidance for tracking a generated schema across surveys:
+
+- **Fingerprint for change detection** (bytes, `definitions` count, content hash). Cheap, total, refactor-proof, and it tells you *that* something moved.
+- **Resolve `$ref`s before asserting structure.** Any claim about `additionalProperties` or key sets must deref through `definitions`/`$defs` and `allOf` first, and should record the resolution depth it used.
+- **Treat an empty structural read as "instrument broken" until proven otherwise**, never as "constraint removed."
+
+### A schema that encodes a trust boundary
+
+The new `profiles` property carries this description, and it is the most security-relevant line in the artifact:
+
+> Named routing-only overlay bundles, selectable by name via the profile field. Only valid in user config or `OPENCODE_CONFIG_DIR` config — **a project config may select a profile but may not define this field.**
+
+A checked-out repository can *choose* a routing overlay but cannot *author* one. This is the correct direction for a plugin that merges configuration from multiple precedence sources: a cloned project cannot silently redirect the user's agents to a model of its choosing. It is the config-layer expression of the same untrusted-input posture the ecosystem's agent prompts take toward issue bodies — and notably it is enforced in the *schema*, where an IDE surfaces it, not only in the loader. Plugin authors merging user + project config should ask, for every property: **is this safe for a repository I just cloned to set?** Systematic answers it per-field.
+
 ## Related Pages
 
-- [[marcusrbrown--systematic]] — Largest OpenCode plugin; structured workflows; **crossed v2 → v3 major (v3.2.5, 2026-07-22)** with catalog contraction 104 → 73 components (confirmed downstream via [[fro-bot--systematic]]); discovered-skills-as-slash-commands added v2.33.0
+- [[marcusrbrown--systematic]] — Was the largest OpenCode plugin; **as of v3 a three-harness workflow system** (OpenCode + [[pi-coding-agent]] + Claude Code, all peers optional). v3 boundary is **`3.0.0`, 2026-07-17** (the earlier `v3.2.5`/07-22 reading was a downstream artifact); catalog contracted 104 → 73 components (37 agents / 31 skills); discovered-skills-as-slash-commands added v2.33.0
+- [[pi-coding-agent]] — Second Tier 1 harness; bounded delegate (20 turns, depth-1, `noExtensions`), no native blocking-question or task-tracking primitive
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
 - [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
 - [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.15.0): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths (now exposing `messages`/`questions`/`answerQuestion` + dispatch message correlation)
-- [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi; Fro Bot active at v0.45.0 (as of 2026-06-09)
+- [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi. Fro Bot was active at v0.45.0 (2026-06-09) and is **`disabled_inactivity` as of 2026-09-02**; the fork is frozen at `1.2.5-mb.3` and 334 commits / 32 releases behind upstream `cortexkit/anthropic-auth` (`v1.21.0`, actively maintained). Contributes the cross-process OAuth refresh-lock and plugin-singleton prior art above, plus the dangling-dist-tag decommissioning rule
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
 - [[github-pages]] — GitHub Pages deployment patterns including cross-repo Starlight deploy

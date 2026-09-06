@@ -2,13 +2,15 @@
 type: topic
 title: Home Assistant
 created: 2025-06-18
-updated: 2026-08-19
-tags: [home-assistant, iot, smart-home, yaml, automation, addon]
+updated: 2026-08-31
+tags: [home-assistant, iot, smart-home, yaml, automation, addon, supply-chain]
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--esphome-life
   - bfra-me--ha-addon-repository
   - github-actions-ci
+  - docker-containers
+  - esphome
 ---
 
 # Home Assistant
@@ -37,7 +39,26 @@ The add-on side uses a different tool: `frenck/action-addon-linter` validates th
 
 ### Multi-Arch Add-on Builds
 
-Add-ons publish multi-arch Docker images via `home-assistant/builder` (pinned at `2026.03.2` in [[bfra-me--ha-addon-repository]]). Standard arch matrix: `aarch64`, `amd64`, `armhf`, `armv7`. Base images from `ghcr.io/home-assistant/{arch}-base` split between Alpine 3.23 (64-bit) and 3.22 (32-bit ARM) — upstream lags on 32-bit. The build action supports `--cosign` for Sigstore signing when `id-token: write` is granted. As of 2026-07-16, upstream has moved the 64-bit base to Alpine **3.24** but the bump (Renovate PR #558 in [[bfra-me--ha-addon-repository]]) has sat open and unmerged for ~2 months under that repo's review-required deadlock, so live `main` still reflects 3.23/3.22 — the 64-bit/32-bit lag persists across the minor bump.
+Add-ons publish multi-arch Docker images via `home-assistant/builder` (pinned at `2026.03.2` in [[bfra-me--ha-addon-repository]]). Standard arch matrix: `aarch64`, `amd64`, `armhf`, `armv7`. Base images from `ghcr.io/home-assistant/{arch}-base` split between Alpine 3.23 (64-bit) and 3.22 (32-bit ARM) — upstream lags on 32-bit. The build action supports `--cosign` for Sigstore signing when `id-token: write` is granted. As of 2026-07-16, upstream has moved the 64-bit base to Alpine **3.24** but the bump (Renovate PR #558 in [[bfra-me--ha-addon-repository]]) has sat open and unmerged for ~2 months under that repo's review-required deadlock, so live `main` still reflects 3.23/3.22 — the 64-bit/32-bit lag persists across the minor bump. **2026-08-31:** #558 is still open (5th survey), and `home-assistant/builder` upstream has since released **2026.06.0** while the caller stays on `2026.03.2` — pinned as a **mutable tag, not a SHA**, in the one job that carries `packages: write` + `id-token: write` and runs `--cosign`. Worth stating for anyone adopting this build shape: the `home-assistant/builder` step is the highest-privilege action in an add-on repo, and `@YYYY.MM.P` reads like a version but is a movable ref. SHA-pin it.
+
+### `tempio` Is the Add-on Build's Quiet Runtime Dependency
+
+The HA add-on template installs `tempio` (HA's Go template renderer) at image-build time by curling a release binary:
+
+```dockerfile
+# renovate: datasource=github-releases depName=home-assistant/tempio versioning=loose
+ARG TEMPIO_VERSION=2024.11.2
+RUN curl -sSLf -o /usr/bin/tempio \
+  "https://github.com/home-assistant/tempio/releases/download/${TEMPIO_VERSION}/tempio_${BUILD_ARCH}"
+```
+
+Three properties worth knowing (observed 2026-08-31 in [[bfra-me--ha-addon-repository]], inherited by every fork of the template):
+
+1. **It is the only artifact the image pulls over the network**, and there is no checksum or signature verification on the download.
+2. **It is calendar-versioned**, and the Renovate comment specifies `versioning: loose`. `2024.11.2 → 2026.07.0` therefore classifies as a **major** bump, which in a `dependencyDashboardApproval` setup lands as an unchecked checkbox rather than a PR. The pin has consequently sat ~21 months stale under an otherwise-active Renovate install.
+3. It is the same calendar-versioning trap documented for ESPHome in [[esphome]] — see [[github-actions-ci]] for the general rule. A pin that never moves under a hot dependency bot is a suppression signal, not a stability signal.
+
+If you fork the HA add-on template and do not use templating, deleting the `tempio` install removes an unverified network fetch from every image you publish.
 
 ### Custom Components
 

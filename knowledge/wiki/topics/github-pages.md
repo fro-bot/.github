@@ -2,12 +2,35 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-08-01
-tags: [github-pages, deployment, ci-cd, static-sites, esp-web-tools, jekyll, astro, starlight, git-lfs, csp, analytics]
+updated: 2026-09-04
+sources:
+  - url: https://github.com/fro-bot/systematic
+    sha: 8e26a01
+    accessed: 2026-09-04
+tags:
+  [
+    github-pages,
+    deployment,
+    ci-cd,
+    static-sites,
+    release-gated-deploy,
+    cross-repo-deploy,
+    esp-web-tools,
+    jekyll,
+    astro,
+    starlight,
+    git-lfs,
+    csp,
+    analytics,
+    slidev,
+    custom-domains,
+    monorepo,
+  ]
 related:
   - marcusrbrown--mrbro-dev
   - marcusrbrown--marcusrbrown-github-io
   - marcusrbrown--esphome-life
+  - marcusrbrown--presentations
   - fro-bot--systematic
 ---
 
@@ -21,6 +44,7 @@ Static site hosting via GitHub. Deployment patterns observed across the Fro Bot 
 - [[marcusrbrown--marcusrbrown-github-io]] — React 19 + Vite 7 brand site, custom domain at marcusrbrown.com
 - [[marcusrbrown--esphome-life]] — Jekyll (slate theme) + ESP Web Tools firmware installer, deployed to `gh-pages` branch
 - [[fro-bot--systematic]] — Starlight/Astro docs site for `@fro.bot/systematic`, deployed to `gh-pages` branch at fro.bot/systematic/
+- [[marcusrbrown--presentations]] — multi-deck slide archive (CRA/Spectacle + Slidev), assembled from two independent toolchains into one `_site/` and deployed via the Pages artifact API (2026-08-05, `#60`)
 
 ## Deployment Patterns Observed
 
@@ -73,6 +97,17 @@ This cross-repo pattern separates the docs deployment surface from the source re
 
 **Footgun — config files on a build-output branch.** On 2026-06-24, [[fro-bot--systematic]] merged a `.github/renovate.json5` directly onto `gh-pages` (its default, build-output branch). Because every other commit on that branch is a `fro-bot[bot]` "Deploy docs from ..." overwrite, hand-authored config living there is fragile: the next docs build can clobber or orphan it unless the source-repo build pipeline explicitly preserves the path. Onboarding a build-output-only repo into Renovate also adds operational surface (and, in this case, a config-error issue that halted Renovate) without a dependency target to update — there is no `package.json` on a pure static-output branch. When a deploy-target repo is one branch of build artifacts, repo automation that assumes a normal source branch tends to mis-fire.
 
+**A frozen deploy target is not evidence of a broken pipeline (2026-09-04, [[fro-bot--systematic]]).** The wiki carries several cases where a motionless tree concealed a dead daemon — [[bfra-me--ha-addon-repository]] (17 consecutive failed scheduled runs), [[marcusrbrown--cortexkit-anthropic-auth]] (`disabled_inactivity`). This is the inverse case, and it matters because the two look identical from the outside.
+
+`fro-bot/systematic:gh-pages` sat at one SHA for 10 days. Nothing was wrong. The deploy fires on **npm publish**, and the upstream interval contained 16 commits of which one was `docs:` and fifteen were `chore(deps)`/`chore(dev)` Renovate automerges — no `feat:`/`fix:`, therefore no semantic-release publish, therefore no deploy. A stale deploy target under a conventional-commits release gate is a **truthful signal that nothing user-visible shipped**.
+
+Two rules for auditing any cross-repo deploy target:
+
+- **Measure the gate, not the tree.** The deploy target's `pushed_at` tells you when the gate last opened, not whether the gate still works. Compare it against the producer's _release_ feed.
+- **`pushed_at` on the source repo is the wrong probe.** It counts pushes to every branch, including open PR branches. Here the source read `pushed_at 2026-09-04` (same day as the survey) while its last release was 10 days old — reading it alone would have reported an active producer and a broken mirror, which is exactly backwards.
+
+**Cadence is bursty because releases are bursty.** Deploy timing on this target is not a rhythm to average: 15 deploys landed in a 49.5-hour window, bracketed by a 3.2-day gap before and a 10-day drought after, with an earlier 9.2-day drought in the prior interval. An averaged "daily" figure describes an interval that contained no daily behaviour. Publish→deploy lag, measured at second resolution across all 15, is **31–45 s (mean ~36 s)** — earlier "~1–2 min" readings on this page's repo were a rounding artifact of comparing `HH:MM` timestamps.
+
 ## Performance Monitoring
 
 [[marcusrbrown--mrbro-dev]] runs Lighthouse CI against the deployed site with device-specific budgets:
@@ -108,3 +143,40 @@ The empty `filter=`/`diff=`/`merge=` values unset the inherited LFS attributes f
 - **CSP-safe static bootstraps.** To keep a strict Content-Security-Policy (no inline `<script>`), executable SPA bootstraps (theme preload, SPA redirect/restore for the 404-rewrite trick) were moved from inline `index.html` into tested `public/scripts/*.js` files served as real static assets. This is a general Pages-SPA pattern: inline bootstrap logic that a redirect/theme flash needs must become external scripts to satisfy CSP, and they can be unit-tested in isolation.
 
 General rule for Pages SPAs: telemetry activation is a build-time env decision (fail closed when unset), the processor should be self-hosted to honor a no-unconsented-telemetry baseline, and any bootstrap that would otherwise be an inline `<script>` should be an external, testable `public/scripts/*.js` asset for CSP compatibility.
+
+## Multi-toolchain `_site` assembly on the artifact API (2026-09-01)
+
+[[marcusrbrown--presentations]] publishes two decks built by two unrelated toolchains — Create React App under Yarn/Node 20, and Slidev under Bun — from a single `Build` job, without a monorepo, a workspace, or a shared package manager. The shape is worth reusing for any repo that hosts several independently-versioned static artifacts:
+
+1. Build each artifact in its own `working-directory` with its own toolchain (`yarn build`; then `oven-sh/setup-bun` + `bun run build`).
+2. **Assemble in an explicit staging step**, not by pointing the uploader at a source directory:
+
+   ```yaml
+   - name: Assemble Pages site
+     working-directory: .
+     run: |
+       mkdir -p _site/Deck-A _site/Deck-B
+       cp index.html _site/index.html
+       cp -R Deck-A/build/. _site/Deck-A/
+       cp -R Deck-B/dist/. _site/Deck-B/
+   ```
+
+3. `actions/configure-pages` → `actions/upload-pages-artifact` (path `_site`) → a separate `Deploy` job running `actions/deploy-pages`.
+
+Three properties that make this good rather than merely working:
+
+- **Least privilege by job.** `pages: write` + `id-token: write` live only on the `Deploy` job; `Build` and `Test` keep workflow-level `contents: read`. The elevated grant covers one step.
+- **The assembly step is unguarded; the Pages steps are not.** `configure-pages`, `upload-pages-artifact`, and the whole `Deploy` job carry `if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'`, but the `mkdir`/`cp` runs on every PR. A PR that breaks the site layout fails in review, not at deploy.
+- **Each sub-artifact must know its own base path at build time.** The Slidev deck hard-codes `--base /Presentations/Deck-B/` in its build script. Static-site generators emit absolute asset URLs; the staging layout and the per-artifact base path are one coupled decision, and getting them out of sync produces a site that builds green and 404s every asset.
+
+**Migration note:** adopting the artifact API orphans the older `gh-pages`-branch path. In this case the CRA deck retained `gh-pages` as a dependency plus `predeploy`/`deploy` scripts that nothing invokes — and Renovate independently flagged `gh-pages` as abandoned upstream. Deleting the old deploy path is part of the migration, not a follow-up.
+
+## Project Pages inherit the user site's custom domain
+
+When a user Pages site (`<user>.github.io`) has a custom domain, every **project** Pages site under that account is served from the custom apex, not from `github.io`. [[marcusrbrown--presentations]]'s canonical URL moved from `marcusrbrown.github.io/Presentations/` to `mrbro.dev/Presentations/` with no change to its own Pages configuration — the move happened because `marcusrbrown.github.io` is the [[marcusrbrown--mrbro-dev]] portfolio, whose `CNAME` is `mrbro.dev`.
+
+Practical consequences:
+
+- **A repo's canonical Pages URL can change without that repo changing.** Anything asserting the old host — READMEs, QR codes, `homepage` fields, wiki pages, external links — silently becomes a redirect at best. Here the `settings.yml` `homepage` was updated but the CRA deck's `package.json` `homepage` still hard-codes `https://marcusrbrown.github.io/Presentations/…`.
+- **Prefer relative or `--base`-relative asset paths** over absolute URLs containing the host, so the artifact is host-agnostic.
+- Compare [[fro-bot--fro-bot-github-io]], which exists solely to hold the org-level `CNAME` — the same coupling from the other side: one repo owns the domain, every sibling inherits its consequences.
