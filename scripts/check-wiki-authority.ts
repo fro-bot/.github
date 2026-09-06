@@ -69,14 +69,15 @@ export function checkWikiAuthority(input: GuardInput): GuardResult {
     // Any other head branch from a fro-bot identity is the prohibited both-sides mutation.
     // The `headRef !== 'data'` bypass is safe to gate on a branch name only because a
     // fro-bot identity never originates from a fork — fork PRs carry an external author and
-    // fall through to the GUARDED_PATTERNS check below, so a fork naming its branch `data`
+    // fall through to the guardedPatterns() check below, so a fork naming its branch `data`
     // cannot reach this allow path.
     if (input.files.includes('metadata/repos.yaml') && input.headRef !== 'data') {
       return {ok: false, blockedFiles: ['metadata/repos.yaml']}
     }
     return {ok: true}
   }
-  const blockedFiles = input.files.filter(f => guardedPatterns().some(p => p.test(f)))
+  const patterns = guardedPatterns()
+  const blockedFiles = input.files.filter(f => patterns.some(p => p.test(f)))
   if (blockedFiles.length === 0) {
     return {ok: true}
   }

@@ -3,7 +3,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
 import {CORRECTIONS_PATH} from '@fro-bot/wiki-write-core/corrections'
-import {describe, expect, it, vi} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 import {
   checkWikiAuthority,
   fetchChangedFiles,
@@ -256,7 +256,7 @@ describe('checkWikiAuthority', () => {
     })
 
     it('blocks fro-bot[bot] with a trailing space (near-miss identity, exact-match only)', () => {
-      // #given a string that is not the exact identity in the FROBOT_AUTHORS set
+      // #given a string that is not the exact identity in the frobotAuthors() set
       // #when the guard evaluates the PR
       // #then the edit is blocked — Set#has requires an exact string match, not a trimmed one
       const result = checkWikiAuthority({
@@ -710,6 +710,13 @@ describe('CLI self-invoke guard (import.meta.url === file://<argv[1]>)', () => {
   // the *real* code and observe main() actually run. Cache-busts the dynamic import (unique query
   // string) so the module's top-level code re-executes with the manipulated argv/env, rather than
   // returning the already-cached module instance from every earlier `import` in this file.
+
+  // Several tests below call mockExecFileSync.mockReset() and then queue mockReturnValueOnce calls
+  // for their own scenario, without restoring afterward — order-independent only if every leftover
+  // queued return value is cleared before the next test runs.
+  afterEach(() => {
+    mockExecFileSync.mockReset()
+  })
 
   it('exits 1 with the GITHUB_EVENT_PATH diagnostic when the env var is unset', async () => {
     const modulePath = new URL('./check-wiki-authority.ts', import.meta.url)
