@@ -24,18 +24,18 @@ export function verifyCorrectionSurvival(files, corrections, fallbackFiles = {})
     assertCorrectionsFile(corrections);
     const pages = collectWikiPages(files);
     const fallbackPages = collectWikiPages(fallbackFiles);
+    // Keyed by `unknown`, not narrowed to `string`: assertCorrectionsFile above guarantees
+    // every correction.page_node_id is a validated non-empty string (corrections.ts
+    // parseLooseCorrectionRecord), and Map lookup uses strict (SameValueZero) key equality
+    // with no coercion, so a page whose frontmatter.node_id is missing, non-string, or empty
+    // can never be retrieved by any valid correction lookup regardless of what it's keyed
+    // under. Filtering those pages out before indexing would be unreachable dead code.
     const pagesByNodeId = new Map();
     const fallbackPagesByNodeId = new Map();
-    for (const page of pages) {
-        const nodeId = page.frontmatter.node_id;
-        if (typeof nodeId === 'string' && nodeId !== '')
-            pagesByNodeId.set(nodeId, page);
-    }
-    for (const page of fallbackPages) {
-        const nodeId = page.frontmatter.node_id;
-        if (typeof nodeId === 'string' && nodeId !== '')
-            fallbackPagesByNodeId.set(nodeId, page);
-    }
+    for (const page of pages)
+        pagesByNodeId.set(page.frontmatter.node_id, page);
+    for (const page of fallbackPages)
+        fallbackPagesByNodeId.set(page.frontmatter.node_id, page);
     const deterministicFindings = [];
     const advisoryFindings = [];
     for (const correction of corrections.corrections) {
@@ -55,10 +55,15 @@ export function verifyCorrectionSurvival(files, corrections, fallbackFiles = {})
             });
             continue;
         }
+        // `correction.span.text` is guaranteed to normalize non-empty by assertCorrectionSpan
+        // (corrections.ts), enforced above via assertCorrectionsFile — no live input can make
+        // normalizedSpan ''. `page === undefined` is also not tested as its own disjunct below:
+        // it forces proseBody to '', and '' can never include the always-non-empty normalizedSpan,
+        // so `!normalizedBody.includes(normalizedSpan)` is already true whenever page is undefined.
         const normalizedSpan = normalizeCorrectionText(correction.span.text);
         const proseBody = page === undefined ? '' : maskNonProseContent(page.body);
         const normalizedBody = normalizeCorrectionText(maskMarkdownLinks(proseBody));
-        if (page === undefined || normalizedSpan === '' || !normalizedBody.includes(normalizedSpan)) {
+        if (!normalizedBody.includes(normalizedSpan)) {
             const formattingSpan = normalizeFormattingText(correction.span.text);
             const formattingBody = normalizeFormattingText(proseBody);
             if (formattingSpan !== '' && formattingBody.includes(formattingSpan)) {
@@ -86,45 +91,41 @@ export function verifyCorrectionSurvival(files, corrections, fallbackFiles = {})
         advisoryFindings,
     };
 }
+/**
+ * Two link forms get their visible label substituted in before the generic punctuation
+ * strip below; a *label-less* wiki link `[[Target]]` is deliberately NOT special-cased
+ * here — substituting it for its own target text is character-for-character identical to
+ * leaving it raw and letting the generic `[^\p{L}\p{N}]+` pass strip the `[[`/`]]` wrapper
+ * (both leave exactly the target's letters/digits), so a bare-link branch would be
+ * unobservable dead code for this comparator.
+ */
 function normalizeFormattingText(value) {
-    const markdownLinkPattern = /!?(?:\[([^\]]*)\]\([^)]*\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/gu;
-    return value
+    const markdownLinkPattern = /!?\[([^\]]*)\]\([^)]*\)/gu;
+    const wikiLabeledLinkPattern = /\[\[([^\]|]+)\|([^\]]+)\]\]/gu;
+    return (value
         .normalize('NFKC')
-        .replaceAll(markdownLinkPattern, renderVisibleLinkText)
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
+        .replaceAll(markdownLinkPattern, (_match, label) => label)
+        .replaceAll(wikiLabeledLinkPattern, (_match, _target, label) => label)
+        // No `+` here: each stripped character becomes its own single-space replacement, and the
+        // `\s+` collapse immediately below always runs afterward, absorbing any resulting run —
+        // a `+` here would be unobservable given that guaranteed follow-up pass.
+        .replaceAll(/[^\p{L}\p{N}]/gu, ' ')
         .trim()
         .replaceAll(/\s+/gu, ' ')
-        .toLowerCase();
+        .toLowerCase());
 }
-function renderVisibleLinkText(_match, markdownText, wikiTarget, wikiLabel) {
-    return markdownText ?? wikiLabel ?? wikiTarget ?? '';
-}
+/**
+ * Mask markdown inline links `[label](url)` to spaces so exact prose matching ignores
+ * link targets; wiki links `[[...]]` are left untouched (module docstring). The label
+ * matches up to the LAST unmatched `[` before a `](`, mirroring the equivalent character-
+ * scanning algorithm this replaced: `(?!\]\()[^[]` forbids the label from crossing another
+ * `[` (a later `[` wins, like re-assigning `open`) or from swallowing a `](` pair (which
+ * would end the label early, like the `open !== -1` match). The URL supports up to 4
+ * levels of nested parens — real wiki/GitHub URLs never approach that (Wikipedia-style
+ * disambiguation nests one level); deeper nesting is a documented, tested boundary (see
+ * corrections-survival.test.ts's `maskMarkdownLinks` corpus), not an unfounded assumption.
+ */
 function maskMarkdownLinks(content) {
-    const masked = content.split('');
-    let open = -1;
-    let index = 0;
-    while (index < content.length) {
-        if (content[index] === '[')
-            open = index;
-        if (content[index] === ']' && content[index + 1] === '(' && open !== -1) {
-            let close = index + 2;
-            let depth = 1;
-            while (close < content.length && depth > 0) {
-                if (content[close] === '(')
-                    depth += 1;
-                else if (content[close] === ')')
-                    depth -= 1;
-                close += 1;
-            }
-            if (depth === 0) {
-                for (let maskIndex = open; maskIndex < close; maskIndex += 1)
-                    masked[maskIndex] = ' ';
-                index = close;
-                open = -1;
-                continue;
-            }
-        }
-        index += 1;
-    }
-    return masked.join('');
+    const pattern = /\[(?:(?!\]\()[^[])*\]\((?:[^()]|\((?:[^()]|\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))*\))*\)/gu;
+    return content.replaceAll(pattern, match => ' '.repeat(match.length));
 }

@@ -81,6 +81,17 @@ describe('correction survival verification', () => {
     expect(built.findings).toEqual([])
   })
 
+  it('rejects a raw corrections object that has not been schema-validated', () => {
+    expect(() =>
+      verifyCorrectionSurvival(
+        {'knowledge/wiki/repos/alice--project.md': page('The corrected fact.')},
+        // Bypasses parseCorrections/readCorrections to prove verifyCorrectionSurvival itself
+        // enforces the schema via assertCorrectionsFile, not merely its callers.
+        {version: 2, corrections: []} as unknown as CorrectionsFile,
+      ),
+    ).toThrow(/expected 1/u)
+  })
+
   it('enforces a legacy no-state correction exactly like an active correction', () => {
     const legacy = parseCorrections(
       `version: 1\ncorrections:\n  - id: legacy\n    page_node_id: R_123\n    span:\n      text: The corrected fact.\n`,
@@ -192,8 +203,171 @@ describe('correction survival verification', () => {
     expect(result.ok).toBe(true)
     expect(result.deterministicFindings).toEqual([])
     expect(result.advisoryFindings).toEqual([
+      {
+        kind: 'correction-needs-reconfirmation',
+        path: 'knowledge/wiki/repos/alice--project.md',
+        target: 'correction-active',
+        recovery: {lifecycle: 'needs-reconfirmation', action: 'reconfirm-correction'},
+        message:
+          'Correction correction-active appears preserved with formatting-only changes and needs operator reconfirmation.',
+      },
+    ])
+  })
+
+  it('states the reconfirmation message and recovery data exactly for a pre-erosion needs-reconfirmation state', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('Anything.')},
+      {version: 1, corrections: [{...activeCorrection, state: 'needs-reconfirmation', reason: 'Review'}]},
+    )
+
+    expect(result.advisoryFindings).toEqual([
+      {
+        kind: 'correction-needs-reconfirmation',
+        path: 'knowledge/wiki/repos/alice--project.md',
+        target: 'correction-active',
+        recovery: {lifecycle: 'needs-reconfirmation', action: 'reconfirm-correction'},
+        message: 'Correction correction-active needs operator reconfirmation before it is enforced.',
+      },
+    ])
+  })
+
+  it('states the erosion message exactly', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result.deterministicFindings).toEqual([
+      {
+        kind: 'correction-eroded',
+        path: 'knowledge/wiki/repos/alice--project.md',
+        target: 'correction-active',
+        recovery: {lifecycle: 'active', action: 'restore-span'},
+        message: 'Active correction correction-active was not found in the regenerated page.',
+      },
+    ])
+  })
+
+  it('recognizes a markdown link with a multi-character url and substitutes only its label', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('start [middle](xy) end')},
+      activeCorrections('middle end'),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.deterministicFindings).toEqual([])
+    expect(result.advisoryFindings).toEqual([
       expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
     ])
+  })
+
+  it('recognizes a labeled wiki link and substitutes only its label, not its target', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('alpha [[Target|Beta]] gamma')},
+      activeCorrections('alpha Beta'),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.deterministicFindings).toEqual([])
+    expect(result.advisoryFindings).toEqual([
+      expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
+    ])
+  })
+
+  it('is case-insensitive by lowercasing, not uppercasing — a German ß is not letter-for-letter equal to "ss" once folded', () => {
+    // ß.toUpperCase() === 'SS' but ß.toLowerCase() === ß, so lower- vs uppercase-folding this
+    // pair produces different equality outcomes; this pins the direction the docstring commits to.
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('Die Straße ist neu.')},
+      activeCorrections('Die STRASSE ist neu.'),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
+  })
+
+  it('collapses a run of whitespace the punctuation strip produces into exactly one space', () => {
+    // Three adjacent separators strip to three individual spaces (the strip step matches one
+    // non-alphanumeric character at a time); only the trailing `\s+` collapse reduces that run
+    // to the single space the correction's own span was authored with.
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('word1---word2')},
+      activeCorrections('word1 word2'),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.deterministicFindings).toEqual([])
+    expect(result.advisoryFindings).toEqual([
+      expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
+    ])
+  })
+
+  it('strips a non-alphanumeric separator to whitespace, not to nothing, so adjacent words stay separated', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('word1_word2')},
+      activeCorrections('word1 word2'),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.deterministicFindings).toEqual([])
+    expect(result.advisoryFindings).toEqual([
+      expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
+    ])
+  })
+
+  it('does not let inline emphasis markers splitting a word coincidentally match the word joined back together', () => {
+    // If the punctuation strip deleted separators instead of spacing them, "un**believable**"
+    // would collapse to "unbelievable" and wrongly read as a formatting-only match.
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('This is un**believable** stuff.')},
+      activeCorrections('unbelievable'),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
+  })
+
+  it('does not let a run of whitespace collapse away entirely and coincidentally join two separate words', () => {
+    // If the trailing `\s+` collapse deleted whitespace instead of reducing it to one space,
+    // "un   believable" (three real spaces) would wrongly read as "unbelievable".
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('This is un   believable stuff.')},
+      activeCorrections('unbelievable'),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
+  })
+
+  it('masks a markdown link whose url nests parentheses four levels deep, with multi-character content at the deepest level', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('start [middle](a_(b_(c_(d_(ee))))) end')},
+      activeCorrections('start end'),
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
+  it('blocks as erosion, not needs-reconfirmation, when the span normalizes to no letters or digits', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
+      activeCorrections('!!!'),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', target: 'correction-active'}),
+    ])
+    expect(result.advisoryFindings).toEqual([])
   })
 
   it('keeps genuine content changes as blocking erosion', () => {
@@ -250,7 +424,7 @@ describe('correction survival verification', () => {
 
   it('handles nested link parentheses without treating the label as prose', () => {
     const result = verifyCorrectionSurvival(
-      {'knowledge/wiki/repos/alice--project.md': page('[The corrected fact.](a_(b))')},
+      {'knowledge/wiki/repos/alice--project.md': page('[The corrected fact.](a_(bb))')},
       {version: 1, corrections: [activeCorrection]},
     )
 
@@ -264,6 +438,86 @@ describe('correction survival verification', () => {
   it('leaves an unclosed link bracket visible to the exact prose matcher', () => {
     const result = verifyCorrectionSurvival(
       {'knowledge/wiki/repos/alice--project.md': page('[The corrected fact.')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
+  it('does not let an unrelated link elsewhere in the page interfere with exact matching', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('[a](1) The corrected fact. [b](2)')},
+      {version: 1, corrections: [activeCorrection]},
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
+  it('masks unicode link labels and targets, including astral characters, without breaking prose matching', () => {
+    const result = verifyCorrectionSurvival(
+      {
+        'knowledge/wiki/repos/alice--project.md': page('café ☕ is a nice drink. [🚀 launch](https://x.com/🎉page)'),
+      },
+      activeCorrections('café ☕ is a nice drink.'),
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
+  it('replaces a masked link with whitespace rather than deleting it, so adjacent words stay separated', () => {
+    const result = verifyCorrectionSurvival(
+      {'knowledge/wiki/repos/alice--project.md': page('wordone[link](url)wordtwo')},
+      activeCorrections('wordone wordtwo'),
+    )
+
+    expect(result).toEqual({ok: true, deterministicFindings: [], advisoryFindings: []})
+  })
+
+  it('resolves the finding path from the fallback build when the page was removed from the regenerated set', () => {
+    const result = verifyCorrectionSurvival(
+      {},
+      {version: 1, corrections: [activeCorrection]},
+      {'knowledge/wiki/repos/alice--project.md': page('The old fact.')},
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', path: 'knowledge/wiki/repos/alice--project.md'}),
+    ])
+  })
+
+  it('falls back to the corrections store path when the page is absent from both builds, and treats its prose as genuinely empty rather than any placeholder', () => {
+    // The span text deliberately matches Stryker's own string-literal placeholder: if the
+    // empty-prose branch (`page === undefined ? '' : ...`) were replaced by any non-empty
+    // string, this correction would wrongly appear to survive.
+    const result = verifyCorrectionSurvival({}, activeCorrections('Stryker was here'), {})
+
+    expect(result.ok).toBe(false)
+    expect(result.deterministicFindings).toEqual([
+      expect.objectContaining({kind: 'correction-eroded', path: 'knowledge/corrections.yaml'}),
+    ])
+  })
+
+  it('resolves a correction by its page_node_id even when an unrelated page has a non-string frontmatter node_id', () => {
+    // frontmatter.node_id is `unknown`; an unquoted YAML integer parses as a number, not a
+    // string. It must not crash indexing and must not shadow a legitimately string-keyed page.
+    const numericIdPage = [
+      '---',
+      'type: topic',
+      'title: Numeric',
+      'node_id: 456',
+      'created: 2026-08-29',
+      'updated: 2026-08-29',
+      '---',
+      '',
+      'Unrelated content.',
+      '',
+    ].join('\n')
+    const result = verifyCorrectionSurvival(
+      {
+        'knowledge/wiki/repos/alice--project.md': page('The corrected fact.'),
+        'knowledge/wiki/topics/numeric.md': numericIdPage,
+      },
       {version: 1, corrections: [activeCorrection]},
     )
 
