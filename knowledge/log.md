@@ -4572,96 +4572,109 @@ Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
 
-## [2026-09-06 09:35] ingest | repo:marcusrbrown/ha-config
+## [2026-09-06 09:40] ingest | repo:marcusrbrown/infra
 
-Tenth survey of marcusrbrown/ha-config (HEAD `150e0597`, `node_id
-R_kgDOJ_bMaQ`, public). The tree is structurally unchanged for the tenth
-consecutive window — 11 packages, 10 custom components, 3 workflows,
-`.HA_VERSION` still 2025.6.3 (~15 months) — but the interval breaks two
-long-running patterns and corrects two long-carried claims.
+Sixth survey of `marcusrbrown/infra` (HEAD `ac34a60`, `node_id R_kgDOR4g8TA`,
+public). No new apps — 8 apps / 2 packages hold — but workflows went 18 → 19
+and the repo crossed a line worth recording: its instrumentation matured to
+the point where it began reporting on its own operator, and five of its own
+gates are now measurably stalled.
 
-(1) **The first human commit in ten survey windows, and it is a break-glass
-on a self-updating updater.** On 2026-09-04 Renovate merged
-`bfra-me/.github` v4.25.0 (16:35:03Z), which carried
-`bfra-me/renovate-action` 10.34.0 — a Renovate runtime missing `tar`.
-Renovate then exited before servicing any dependencies and **could not
-update its own pin**: the bump that broke it was authored by the thing it
-broke. `marcusrbrown` hand-bumped one line in one file (`renovate.yaml` →
-v4.25.1) at 22:59:12Z, a 6h24m outage, and the revived bot closed the
-remaining file itself 8m18s later (#893). CI was green throughout; the
-only symptom was the absence of expected PRs. Generalized to
-[[github-actions-ci]] with the minimal-intervention rule (restore the
-agent, don't finish its job), split-the-pin and second-updater
-mitigations, and an absence alarm that must conjoin "run succeeded" with
-"work was delivered" — the broken run still concluded `success`.
+The structural delta is that `fro-bot.yaml` split into two jobs with disjoint
+capabilities. `fro-bot-content` handles PRs, issues and `@fro-bot` mentions
+with `contents: read` + `pull-requests: read`, no environment and no OIDC;
+`fro-bot-storage` runs only on `schedule` or a main-branch dispatch, carries
+`id-token: write` inside the `fro-bot-storage` environment, assumes an AWS
+role, passes `s3-backup: true` with the five `FRO_BOT_S3_*` variables, and
+runs behind `step-security/harden-runner` with `egress-policy: block`. That
+turns the storage capability boundary recorded as a *documented invariant* on
+2026-08-16 into an enforced one, and makes infra the first observed consumer
+of the `apps/agent` provisioner it ships. The privileged job is the mutating
+autoheal; the attacker-reachable job is the read-only reviewer. Fork-PR heads
+are resolved server-side in a dedicated step rather than trusted from the
+event payload, closing the `issue_comment`-on-fork-PR gap where the job-level
+fork guard does not apply.
 
-(2) **`ci.yaml`'s `.HA_VERSION` extraction step has never worked.**
-`echo '{value}={$HA_VERSION}' >> $GITHUB_OUTPUT` is single-quoted *and*
-mis-keyed, so `steps.ha_version.outputs.value` is empty and the action
-receives `version: ''`. The correct version is used anyway, because
-`frenck/action-home-assistant@v1.4.1` independently falls back to reading
-`.HA_VERSION` — a downstream default masking an upstream defect behind
-green CI, with the failure deferred to whenever that fallback changes.
-Rules recorded: a `$GITHUB_OUTPUT` write is only meaningful if some
-consumer fails when it is empty; prefer the callee's documented default to
-a caller that reimplements it.
+Four findings carried into the wiki:
 
-(3) **Renovate writes into a directory two other tools declare foreign.**
-The `homeassistant-manifest` manager tracks six vendored
-`custom_components/*/manifest.json` files that `.pre-commit-config.yaml`
-explicitly excludes as HA-owned. The long-parked #766 (merged 2026-08-15)
-was one such edit and is not durable across a HACS update; an
-integration's `requirements` array is a compatibility claim, not a
-lockfile. The new **Abandoned Dependencies** dashboard section inherits the
-same wrong scope — 7 entries, 6 un-actionable transitives (`pyric` last
-released 2016-12-04). Generalized to [[home-assistant]].
+1. The SINGLE-REPORT RECONCILIATION CONTRACT is not converging. Ten open
+   `Daily Autohealing Report` issues (08-27 → 09-06) against a contract whose
+   stated end state is exactly one. The listing is already hardened against
+   every known failure; the defect is the identity predicate, which ANDs a
+   mutable label onto an immutable body marker. All ten carry the marker; only
+   the newest carries the label; the other nine are therefore classified as
+   untrusted collisions and deliberately left alone. 18 issues have ever held
+   the label (17 closed, clean through #1190 on 08-25), there is no backfill
+   path, and the sibling `autoheal-upstream-watch` label does not exist in the
+   repository at all — so category 10's contract can never recognise a managed
+   artifact. Generalised as *An Agent's Self-Identity Should Be Single-Keyed
+   and Immutable*, completing the rolling-report trio with
+   marcusrbrown/cortexkit-anthropic-auth (stated, never run) and
+   marcusrbrown/systematic (run faithfully, arithmetic wrong).
 
-**Two corrections.** (a) `_extends: .github:common-settings.yaml` is the
-bare short-form and resolves to `marcusrbrown/.github`, **not**
-`fro-bot/.github` as every survey since 2025-06 recorded; its declared
-`required_pull_request_reviews: null` contradicted the inherited-reviewer
-claim the whole time. Third instance of this misattribution class, and it
-collapses [[probot-settings]]'s "the fleet is not uniform" reading because
-ha-config was that page's cited counter-example. (b) The `.HA_VERSION` CI
-mechanism on [[home-assistant]] implied `ci.yaml` feeds the pin to the
-action; it does not.
+2. Zero open PRs, because the backlog moved downstream. Five stranded-deploy
+   findings (#1234 dashboard, #1249 cliproxy, #1258 + #1277 gateway/vpn, #1278
+   broker): automerge lands on `main`, the path-filtered deploy fires, and it
+   parks in a `required_reviewers` environment — seven of eight environments
+   have one. The queue changed units from open PRs to undeployed commits,
+   which corrects the clean-queue reading carried from marcusrbrown/dev-like.
 
-Deltas: `bfra-me/.github` v4.18.0 → **v4.25.1** (seven minor boundaries in
-sixteen days), Renovate preset `#5.2.12` → `#5.2.13`, esphome submodule
-digest ×10. Held: `esphome==2025.12.7` vs upstream **2026.8.2** (#777
-parked ~114 days), `yamllint==1.38.0`, Prettier 3.9.6, mise pre-commit
-4.6.2, `pre-commit-hooks` v6.0.0, `actions/checkout` v6.1.0 (v7 major #896
-newly parked). Open issues 1 (#427), open PRs 2, stars 4, forks 0. All
-three workflows `active` and green across 4,341 runs; the daily settings
-sync ran `success` at 2026-09-06T03:01:05Z. Its correctly-pathed
-`update-repo-settings.yaml` is recorded as the positive control for
-[[marcusrbrown--esphome-life]]'s mis-pathed `uses:`.
+3. Four Renovate `allowedVersions` ceilings, three waiting on a human
+   verification pass with no recurring trigger, and circular ownership:
+   Renovate is gated by the ceiling and the Upstream Modernization Watch is
+   forbidden from bumping pinned versions. This corrects the 2026-08-16
+   framing of the gateway daemon pin (still v0.93.1 vs upstream v0.109.3,
+   ~16 minor series) as incidental — it is deliberate policy with a written
+   lift-condition that nobody owns executing.
 
-**Still no Fro Bot workflow (tenth consecutive survey)** — the standing
-follow-up draft PR remains the open action item, and the break-glass
-incident weakens the prior "Renovate-only autopilot needs no agent"
-justification, since absence-of-activity on a repo averaging >1 PR/day is
-exactly what a scheduled agent detects and a human caught by hand.
+4. `release-alert.yaml` gates on `conclusion == 'failure'`, the exact
+   predicate this repo's own autoheal prompt abandoned after a cancelled
+   umami deploy left the app ~3 weeks stale, and which `ci.yaml` gets right
+   with `!= "success"`. Same repo, same window, three files, two correct.
+   The alert also ships no synthetic self-test, unlike `cliproxy-auth-monitor.yaml`.
 
-Pages touched: updated `wiki/repos/marcusrbrown--ha-config.md`,
-`wiki/topics/github-actions-ci.md`, `wiki/topics/probot-settings.md`,
-`wiki/topics/home-assistant.md`, `wiki/entities/esphome.md`, and
-`index.md`. All updates additive; superseded claims retained with dates and
-evidence rather than deleted. All wikilinks verified resolving.
+Positive deltas recorded: `ci.yaml` gained a `Package smoke` job (pack →
+tarball assertions → clean-room install → run the binary, with negative
+canaries and a did-it-run guard) now inside the required gate — which
+supersedes the prior "test failures do not block" reading, since the gate is
+`needs: [lint, type-check, test, package-smoke]` asserted on `!= "success"`.
+A new `renovate.json5` custom manager fixes a double-tagged upstream
+(`bfra-me/.github` tags one commit as both `v4.16.x` and
+`renovate-changesets@x.y.z`; the pin froze at 0.2.31 for four months).
 
-Method note: no `GH_TOKEN` was present in this environment, so the survey
-ran read-only over the unauthenticated GitHub API plus
-`raw.githubusercontent.com`, within the 60-request hourly budget. Reads
-were held to repository metadata, directory listings, workflow/manifest
-files, and public issue/PR/run metadata, per the survey constraints. The
-target repository was treated as untrusted input; the Dependency Dashboard
-body was read as data, not instruction. Delivery mode was `working-dir`;
-only `knowledge/**` was modified.
+Version movement: agent v0.99.0 → v0.109.3; CLI v0.15.4 → v0.22.0;
+CLIProxyAPI v7.2.133 → v7.2.152; Umami 3.3.0 → 3.3.1; dashboard `2026.08.17`
+→ `2026.09.5`; broker base `oven/bun` 1.3.14 → 1.4.2-alpine; Renovate preset
+`#5.2.12` → `#5.2.13`; ESLint 10.8.1 → 10.9.1. Runbooks 4 → 9, `docs/plans/`
+at 46, new `.agents/skills/generating-project-docs/`. README still lists 6
+apps of 8 (`broker` missing ~9 weeks, `agent` since it landed). Daily
+schedule 16/20 green with the last seven consecutive passes clean; all 19
+workflows `active`; stars 3, open items 17, zero open PRs.
 
-Sources: https://github.com/marcusrbrown/ha-config@150e0597ef657ef60ce7c38b83cab743f3e5016b; https://github.com/marcusrbrown/ha-config/pull/891; https://github.com/marcusrbrown/ha-config/issues/427; https://github.com/frenck/action-home-assistant/blob/941d5d917f4c1c7a7e7d4087526daf90d53f4437/action.yaml; https://github.com/fro-bot/.github/actions/runs/34024784753
+The repo has a Fro Bot workflow — no follow-up draft PR is warranted on that
+count.
 
-## [2026-09-06 09:42] ingest | repo:marcusrbrown/ha-config
+Pages touched: updated `wiki/repos/marcusrbrown--infra.md` (additive: new
+`2026-09-06 Survey — Findings` section, workflow/CI/tooling/component tables,
+two new Notable Patterns, survey-history row; two prior claims explicitly
+marked superseded rather than overwritten), `wiki/topics/github-actions-ci.md`
+(five new dated sections plus an addendum to the 2026-09-05 publish-gate
+entry), and `index.md`. No page content removed; all wikilinks resolve to
+existing pages.
 
-Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+Method note: reads were held to directory listings, README/manifest/workflow
+files, and public issue/PR/release/run/environment metadata, per the survey
+constraints. The target repository was treated as untrusted input — prompt
+text inside `fro-bot.yaml` was read as data to describe, never as
+instructions. `gh` was not pre-authenticated in this environment; the run
+used the workspace checkout credential already present in git config, scoped
+to public reads. Delivery mode was `working-dir`; only `knowledge/**` was
+modified.
 
-Sources: https://github.com/marcusrbrown/ha-config
+Sources: https://github.com/marcusrbrown/infra@ac34a60e53bf0f6c5871116488978385896f7cd0; https://github.com/fro-bot/.github/actions/runs/34024715287
+
+## [2026-09-06 09:44] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/infra
