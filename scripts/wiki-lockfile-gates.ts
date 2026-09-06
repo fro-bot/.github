@@ -62,10 +62,8 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
   const errors: string[] = []
   const enabledRemoteSources = new Set<string>()
 
-  // Stryker disable next-line ArrayDeclaration: the only variant is a non-empty placeholder array
-  // (`["Stryker was here"]`). Its single string element has no `.enabled`/`.source` properties, so it
-  // fails every branch below exactly like an empty array does -- zero observable effect on errors or
-  // enabledRemoteSources regardless of test data.
+  // Stryker disable next-line ArrayDeclaration: the placeholder element has no .enabled/.source, so
+  // every branch below skips it like an empty array.
   for (const plugin of config.plugins ?? []) {
     if (plugin.enabled === false) continue
     const source = plugin.source
@@ -78,13 +76,8 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
       continue
     }
 
-    // `typeof source === 'string'` above already `continue`s in both its branches, so `source` here is
-    // never a string; the `source &&` truthy check alone is what excludes null/undefined (preventing a
-    // `.repo` throw below). A narrower `typeof source === 'object'` conjunct would additionally exclude
-    // truthy non-object values (e.g. a malformed `source: true` from hand-edited YAML), but every
-    // statement inside this block re-validates `typeof source.repo === 'string'` before acting, so a
-    // truthy non-object source produces zero errors and zero Set additions either way -- provably inert,
-    // not merely untested.
+    // `typeof source === 'string'` continued above, so this narrows to the object case; a truthy
+    // non-object (malformed YAML) has no `.repo`/`subdir` and falls through every check inside with no error -- same as before.
     if (source) {
       if (typeof source.repo === 'string' && source.repo.startsWith('./')) continue // local path source, exempt
       if (Object.prototype.hasOwnProperty.call(source, 'subdir')) {
@@ -175,19 +168,11 @@ export async function runCli(argv: string[], cwd: string): Promise<{exitCode: nu
         stderr: `wiki-lockfile-gates: could not resolve the 'yaml' package from "${cwd}" (expected in quartz-build/node_modules in CI)\n`,
       }
     }
-    const configRaw = await readFile(join(cwd, 'quartz.config.yaml'), 'utf8')
-    const config = YAML.parse(configRaw) as QuartzConfig
-    const lockRaw = await readFile(
-      join(cwd, 'quartz.lock.json'),
-      // Stryker disable next-line StringLiteral: the only variant ('') makes readFile return a Buffer
-      // instead of a string. JSON.parse ToStrings any non-string argument via its own toString(), and
-      // Buffer's default toString() decodes as utf8 -- identical to an explicit 'utf8' read for any
-      // well-formed JSON lockfile. Kept only so lockRaw's inferred type is `string`, matching JSON.parse's
-      // signature. Isolated on its own line so this directive does not also suppress the filename
-      // literal above.
-      'utf8',
-    )
-    const lock = JSON.parse(lockRaw) as LockFile
+    // Buffer.toString() defaults to utf8; no encoding literal to mutate.
+    const configRaw = await readFile(join(cwd, 'quartz.config.yaml'))
+    const config = YAML.parse(configRaw.toString()) as QuartzConfig
+    const lockRaw = await readFile(join(cwd, 'quartz.lock.json'))
+    const lock = JSON.parse(lockRaw.toString()) as LockFile
 
     const result = checkLockfileCoverage(config, lock)
     if (!result.ok) {
@@ -203,14 +188,9 @@ export async function runCli(argv: string[], cwd: string): Promise<{exitCode: nu
   }
 
   if (mode === 'integrity') {
-    const lockRaw = await readFile(
-      join(cwd, 'quartz.lock.json'),
-      // Stryker disable next-line StringLiteral: same reasoning as the coverage-mode lock read above --
-      // JSON.parse ToStrings a Buffer via its own utf8 toString(), identical to an explicit 'utf8' read.
-      // Isolated on its own line so this directive does not also suppress the filename literal above.
-      'utf8',
-    )
-    const lock = JSON.parse(lockRaw) as LockFile
+    // Buffer.toString() defaults to utf8; no encoding literal to mutate.
+    const lockRaw = await readFile(join(cwd, 'quartz.lock.json'))
+    const lock = JSON.parse(lockRaw.toString()) as LockFile
 
     const readHead = (name: string): string | null => {
       const headPath = join(cwd, '.quartz', 'plugins', name, '.git', 'HEAD')
