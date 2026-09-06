@@ -311,18 +311,8 @@ async function readWorkflowRunContext(
           : `check-private-leak: expected exactly 1 valid PR in pull_requests[], found ${validCandidates.length} — fail-closed`,
       )
     }
-    // No runtime `prNum === undefined` guard here: `validCandidates.length !== 1` already threw
-    // above, so by construction `validCandidates.length === 1` and `validCandidates[0]` is always
-    // defined -- TypeScript's `noUncheckedIndexedAccess` cannot see that array-length invariant, so
-    // a non-null assertion (rather than a runtime `if`/`throw` this project's convention would
-    // otherwise reach for) is the correct tool: it satisfies the type checker without adding a
-    // branch no input can take. A live runtime guard here would carry a ConditionalExpression
-    // mutant with two variants and only ONE (never-throw) is equivalent -- the other (always-throw)
-    // is a genuine, killable bug (confirmed live: forcing it broke 52 tests), and Stryker's
-    // `disable next-line` directive is mutator-scoped, not variant-scoped, so a single directive
-    // cannot suppress only the equivalent half. See
-    // docs/solutions/best-practices/enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md
-    // rule 3.
+    // Length is exactly 1 after the throw above; `noUncheckedIndexedAccess` can't see that. A
+    // runtime guard here would be an unreachable branch carrying a half-equivalent mutant.
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     return validCandidates[0]!
   })()
