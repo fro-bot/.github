@@ -3,7 +3,7 @@ import {Buffer} from 'node:buffer'
 import {readdir, readFile, writeFile} from 'node:fs/promises'
 import process from 'node:process'
 
-import {parse} from 'yaml'
+import {parse, YAMLParseError} from 'yaml'
 
 import {buildPrivateTokenSet} from './wiki-slug.ts'
 
@@ -134,8 +134,16 @@ function collectDocs(files: Record<string, string>, privateTokens: Set<string>):
       const parsed = splitFrontmatter(content)
       frontmatter = parsed.frontmatter
       body = parsed.body
-    } catch {
-      // Malformed frontmatter — skip this doc, do not crash
+    } catch (error) {
+      // Malformed frontmatter — skip this doc, do not crash, but say so. This runs before the
+      // privacy scan, so emit only a closed vocabulary (error code + position), never message text.
+      const reason =
+        error instanceof YAMLParseError
+          ? `${error.code} at line ${error.linePos?.[0]?.line ?? '?'}`
+          : error instanceof Error
+            ? error.constructor.name
+            : 'unknown'
+      process.stderr.write(`solutions-query: skipped 1 doc on malformed frontmatter (path: ${path}): ${reason}\n`)
       continue
     }
 
