@@ -354,11 +354,27 @@ describe('checkWikiAuthority', () => {
       expect(result).toEqual({ok: true})
     })
 
-    it('does not block metadata/*.yml (wrong extension)', () => {
-      // #given a yaml file with the non-canonical .yml extension
+    it('blocks metadata/*.yml (short YAML extension, guarded alongside *.yaml)', () => {
+      // #given a yaml file using the short .yml extension
       // #when the guard evaluates the PR
-      // #then the edit is NOT blocked — the repo convention is *.yaml, and guard matches that literally
+      // #then the edit IS blocked — metadata/*.{yaml,yml} are both auto-managed state
       const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.yml']})
+      expect(result).toEqual({ok: false, blockedFiles: ['metadata/repos.yml']})
+    })
+
+    it('does not block metadata/*.ymlx (longer than the guarded extension)', () => {
+      // #given a filename that merely starts with the guarded extension
+      // #when the guard evaluates the PR
+      // #then the edit is NOT blocked — the pattern is anchored at the end with $
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.ymlx']})
+      expect(result).toEqual({ok: true})
+    })
+
+    it('does not block metadata/*.yam (short of the guarded extension by one character)', () => {
+      // #given a filename missing the trailing "l" of either guarded extension
+      // #when the guard evaluates the PR
+      // #then the edit is NOT blocked — `ya?ml` requires the full "yaml" or "yml" spelling
+      const result = checkWikiAuthority({author: 'marcusrbrown', headRef: 'main', files: ['metadata/repos.yam']})
       expect(result).toEqual({ok: true})
     })
 
