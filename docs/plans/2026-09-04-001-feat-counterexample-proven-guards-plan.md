@@ -449,7 +449,7 @@ Gate: `pnpm check-types`, `pnpm lint`, `pnpm test` (74 files, 2994 tests + 3 tod
 
 **Dependencies:** Unit 4 (job exists), Unit 3 (set is complete).
 
-**Measured baseline:** CI run 34002642010 on `45a1864`, full (then-12-entry) set: 2907 mutants, 53.77% score, 1351 non-clean, verdict `mutant-timeout`. Scope corrected per Unit 3's fourth addendum (three demotions). The 5A/5B counts below (591/565/1156) are the per-module figures measured on that pre-correction run with `private-leak-adapter.test.ts` still in `testFiles`; the retained set's own composition changed after (the adapter test was restored, per Fro Bot review, after briefly being removed alongside its now-`not-mutated` module). Re-measure on this PR's own `Check Mutation Guards` run before 5A opens; treat the counts below as directional, not final.
+**Measured baseline:** CI run 34002642010 on `45a1864`, full (then-12-entry) set: 2907 mutants, 53.77% score, 1351 non-clean, verdict `mutant-timeout`. Scope corrected per Unit 3's fourth addendum (three demotions). Re-measured on the corrected 9-module set in CI run 34007429970 on `e975fd9`: 2558 mutants, 1402 killed, 787 survived, 362 no-coverage, 7 timeout — **1156 non-clean**, per-module counts identical to the pre-correction figures. The 5A/5B counts below are that measured baseline.
 
 **5A — Tier 0 (privacy and sole-writer boundaries), 591 non-clean, one PR per module, in order:**
 1. `private-leak.ts` (88)
