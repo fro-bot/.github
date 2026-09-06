@@ -13,8 +13,18 @@ export function checkPrivateLeak(privateNames, diff, override) {
     const lowerNames = privateNames.map(name => name.toLowerCase());
     const matchedFiles = [];
     let currentFile = null;
-    // Stryker disable next-line BooleanLiteral: currentFile only ever becomes non-null via the "diff --git a/" branch, which in the same conditional branch also resets checkPathAsNew to false, or the else branch resets both currentFile and checkPathAsNew together. Whenever currentFile !== null is later read, this initial value has already been overwritten by one of those resets -- not observable.
-    let checkPathAsNew = false;
+    // A '+++' line is a header only when the immediately preceding line was a '--- ' header
+    // (#3838); otherwise it is added content starting with '++' and must be scanned. `undefined`
+    // = no header expected; boolean = header expected, true when that '--- ' was '/dev/null'.
+    // Set only in the '--- ' branch, read once at the top of the next iteration, then cleared.
+    let pendingNewFileCheck;
+    // '---'/'+++' are headers only before a file section's first '@@' hunk marker; inside a hunk
+    // they are content (a modified line renders as '--- ...' / '+++ ...'). '@@' at index 0 is
+    // unambiguous: hunk lines render '-@@', '+@@', or ' @@'. Reset per 'diff --git a/' section.
+    // No initializer: currentFile is null until the first 'diff --git a/' line, which also sets
+    // this, so the starting value is unreadable -- a `= false` literal would be an equivalent
+    // mutant.
+    let inHunk;
     const checkPath = (path) => {
         const pathLower = path.toLowerCase();
         if (lowerNames.some(name => pathLower.includes(name)) && !matchedFiles.includes(path)) {
@@ -22,6 +32,8 @@ export function checkPrivateLeak(privateNames, diff, override) {
         }
     };
     for (const line of diff.split('\n')) {
+        const expectingPlusHeader = pendingNewFileCheck;
+        pendingNewFileCheck = undefined;
         if (line.startsWith('diff --git a/')) {
             const diffPrefix = 'diff --git a/';
             const separator = ' b/';
@@ -37,17 +49,19 @@ export function checkPrivateLeak(privateNames, diff, override) {
                 const bPath = line.slice(separatorIndex + separator.length);
                 const aPath = line.slice(diffPrefix.length, separatorIndex);
                 currentFile = bPath;
-                checkPathAsNew = false;
                 if (aPath !== bPath) {
                     checkPath(bPath);
                 }
             }
             else {
                 currentFile = null;
-                // Stryker disable next-line BooleanLiteral: currentFile is reset to null in this same branch, so the "+++" handler's currentFile !== null guard blocks any read of checkPathAsNew until the next "diff --git a/" line resets it again anyway -- not observable.
-                checkPathAsNew = false;
             }
+            inHunk = false;
             continue;
+        }
+        if (line.startsWith('@@')) {
+            inHunk = true;
+            // Fall through: a hunk marker never starts with '+', so the content scan skips it anyway.
         }
         if (line.startsWith('rename to ') || line.startsWith('copy to ')) {
             const destination = line.startsWith('rename to ')
@@ -58,15 +72,14 @@ export function checkPrivateLeak(privateNames, diff, override) {
             }
             continue;
         }
-        if (line.startsWith('--- ')) {
-            checkPathAsNew = line === '--- /dev/null';
+        if (!inHunk && line.startsWith('--- ')) {
+            pendingNewFileCheck = line === '--- /dev/null';
             continue;
         }
-        if (line.startsWith('+++')) {
-            if (checkPathAsNew && currentFile !== null) {
+        if (!inHunk && line.startsWith('+++') && expectingPlusHeader !== undefined) {
+            if (expectingPlusHeader && currentFile !== null) {
                 checkPath(currentFile);
             }
-            checkPathAsNew = false;
             continue;
         }
         if (!line.startsWith('+')) {
