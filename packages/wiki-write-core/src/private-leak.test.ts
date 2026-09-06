@@ -46,7 +46,9 @@ describe('checkPrivateLeak — override bypass', () => {
   })
 })
 
-describe('checkPrivateLeak — empty-input early return', () => {
+describe('checkPrivateLeak — empty privateNames/diff converge to ok:true through the main path', () => {
+  // No early return exists for these cases (removed as dead code per review: falling through
+  // converges to the same result). These tests pin that convergence directly.
   it('returns ok:true for an empty privateNames list even with leak-shaped diff content', () => {
     const diff = [diffGit('a.md', 'private-repo.md'), '+++ b/private-repo.md'].join('\n')
     expect(checkPrivateLeak([], diff, NO_OVERRIDE)).toEqual({ok: true})
@@ -190,6 +192,16 @@ describe("checkPrivateLeak — '--- '/'+++' new-file detection", () => {
     expect(checkPrivateLeak(['private-repo'], diff, NO_OVERRIDE)).toEqual({ok: true})
   })
 
+  it('resets checkPathAsNew to false after the first "+++" line, so a second consecutive "+++" line does not re-check the path', () => {
+    // Real diffs can carry two consecutive "+++" lines when added content itself starts with
+    // "++" (e.g. a diff of a diff, or markdown with a "++" prefix). checkPathAsNew starts and
+    // stays false here (no preceding "--- " line at all), so neither "+++" line should ever
+    // trigger checkPath -- if the reset after the first "+++" line were skipped or flipped,
+    // the second "+++" line would wrongly re-check a file that was never flagged as new.
+    const diff = [diffGit('private-repo.md', 'private-repo.md'), '+++ b/unrelated', '+++ b/unrelated'].join('\n')
+    expect(checkPrivateLeak(['private-repo'], diff, NO_OVERRIDE)).toEqual({ok: true})
+  })
+
   it('resets a stale currentFile and checkPathAsNew when a later diff --git line cannot be parsed', () => {
     // First section sets currentFile to a private-matching path (without an immediate match,
     // since aPath === bPath) and flips checkPathAsNew true via '--- /dev/null'. The next
@@ -230,9 +242,15 @@ describe("checkPrivateLeak — '+' added-line content scan", () => {
     expect(checkPrivateLeak(['+leaked'], diff, NO_OVERRIDE)).toEqual({ok: true})
   })
 
-  it('does not scan the "+++" header line itself as added content', () => {
-    // The path itself (b/private-repo.md) would match if the "+++" line were scanned as a "+"
-    // content line; it must be consumed by the header branch instead and never reach here.
+  it('documents CURRENT behavior (known false-negative, filed as an issue, not fixed here): a genuine "+++" header line is never scanned as added content', () => {
+    // This pins today's implementation, not a desired invariant: `line.startsWith('+++')`
+    // treats ANY line starting with three '+' characters as a diff header, including a real
+    // added-line whose own content happens to start with '++' (e.g. a diff-of-a-diff, or
+    // prose that starts with '++'). That is a genuine detection false-negative in a Tier 0
+    // privacy module -- flagged by review and filed as a separate issue rather than fixed
+    // here, since changing this branch's matching is a behavior change, not a test-only fix.
+    // This test only proves the header-consumption path this module already has; it does NOT
+    // assert the false-negative is correct or desired.
     const diff = [diffGit('docs/readme.md', 'docs/readme.md'), '--- a/docs/readme.md', '+++ b/private-repo.md'].join(
       '\n',
     )

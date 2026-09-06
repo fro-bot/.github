@@ -31,11 +31,10 @@ export function checkPrivateLeak(
     return {ok: true}
   }
 
-  // Stryker disable next-line ConditionalExpression,LogicalOperator,BlockStatement: whichever side of `||` is true, privateNames.length === 0 forces lowerNames = [] downstream so `.some(...)` can never match afterward -- forcing this condition false (or its && variant, or emptying the return block) still converges to {ok: true} for every reachable input; not observable.
-  if (privateNames.length === 0 || diff.length === 0) {
-    return {ok: true}
-  }
-
+  // No early return for privateNames.length === 0 or diff.length === 0: both converge to
+  // {ok: true} through the main path anyway (empty lowerNames means .some never matches;
+  // ''.split('\n') yields one non-matching line), so the guard was a pure optimization, not a
+  // behavior difference. Pinned by tests below rather than special-cased here.
   const lowerNames = privateNames.map(name => name.toLowerCase())
   const matchedFiles: string[] = []
   let currentFile: string | null = null
@@ -56,10 +55,12 @@ export function checkPrivateLeak(
       // Index scanning, not a regex: the original `/^diff --git a\/.+ b\/(.+)$/` backtracked on
       // caller-supplied diff text. Keep this branch regex-free -- no timing guard covers it (#3810).
       // The old regex selected the rightmost separator with at least one trailing character.
+      // No upper-bound check is needed here: lastIndexOf's own `fromIndex` argument
+      // (line.length - separator.length - 1) already guarantees any found index satisfies
+      // foundIndex + separator.length < line.length, so a found separatorIndex always leaves
+      // room after it -- the miss case (-1) is rejected below by the diffPrefix.length floor.
       const separatorIndex = line.lastIndexOf(separator, line.length - separator.length - 1)
-      // Stryker disable next-line ArithmeticOperator,EqualityOperator,ConditionalExpression: structurally redundant, not observable -- lastIndexOf's own second argument (line.length - separator.length - 1) already guarantees any found index satisfies foundIndex + separator.length < line.length, so this clause is true whenever separatorIndex !== -1. Extracted to its own line so this directive cannot also suppress the left-hand clause's mutants on the `if` line below, which are genuinely killed by a real boundary-value test.
-      const hasRoomAfterSeparator = separatorIndex + separator.length < line.length
-      if (separatorIndex > diffPrefix.length && hasRoomAfterSeparator) {
+      if (separatorIndex > diffPrefix.length) {
         const bPath = line.slice(separatorIndex + separator.length)
         const aPath = line.slice(diffPrefix.length, separatorIndex)
         currentFile = bPath
@@ -94,7 +95,6 @@ export function checkPrivateLeak(
       if (checkPathAsNew && currentFile !== null) {
         checkPath(currentFile)
       }
-      // Stryker disable next-line BooleanLiteral: currentFile can only change via a "diff --git a/" line, which always resets checkPathAsNew too -- a stale true value here is never read before the next reset. Not observable.
       checkPathAsNew = false
       continue
     }
