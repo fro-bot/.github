@@ -136,6 +136,15 @@ describe("checkPrivateLeak — 'rename to '/'copy to ' destination", () => {
     const diff = ['diff --git a/old.md b/old.md', 'rename to '].join('\n')
     expect(checkPrivateLeak(['private-repo'], diff, NO_OVERRIDE)).toEqual({ok: true})
   })
+
+  it('does not treat an empty rename destination as a match even when privateNames contains an empty string', () => {
+    // schemas.ts's assertRepoEntry only requires `typeof owner/name === 'string'` -- it does
+    // not reject an empty string, so privateNames CAN legitimately contain '' and this must be
+    // handled, not assumed away. ''.toLowerCase().includes('') is true for ANY string, so if
+    // the empty-destination guard were skipped, checkPath('') would incorrectly match.
+    const diff = ['diff --git a/old.md b/old.md', 'rename to '].join('\n')
+    expect(checkPrivateLeak([''], diff, NO_OVERRIDE)).toEqual({ok: true})
+  })
 })
 
 describe("checkPrivateLeak — '--- '/'+++' new-file detection", () => {
@@ -209,6 +218,16 @@ describe("checkPrivateLeak — '+' added-line content scan", () => {
   it('ignores a context/removed line containing the private name (only "+"-prefixed lines are scanned)', () => {
     const diff = [diffGit('docs/readme.md', 'docs/readme.md'), '-See acme/private-repo for details.'].join('\n')
     expect(checkPrivateLeak(['private-repo'], diff, NO_OVERRIDE)).toEqual({ok: true})
+  })
+
+  it("strips the leading '+' from added-line content before matching (a name that only matches WITH the '+' retained must not match)", () => {
+    // schemas.ts places no character-class constraint on RepoEntry.owner/name (unlike node_id
+    // or the allowlist's approved_contrib_repos, which are pattern-checked) -- there is no
+    // enforced upstream guarantee that a private name can't literally start with '+'. This
+    // must be handled structurally: content is the '+'-stripped line, so a name of '+leaked'
+    // can only match a raw, unstripped line, never the real, stripped content.
+    const diff = [diffGit('docs/readme.md', 'docs/readme.md'), '+leaked repo mentioned'].join('\n')
+    expect(checkPrivateLeak(['+leaked'], diff, NO_OVERRIDE)).toEqual({ok: true})
   })
 
   it('does not scan the "+++" header line itself as added content', () => {

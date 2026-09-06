@@ -79,7 +79,6 @@ export function checkPrivateLeak(
       const destination = line.startsWith('rename to ')
         ? line.slice('rename to '.length)
         : line.slice('copy to '.length)
-      // Stryker disable next-line ConditionalExpression,StringLiteral: checkPath('') is a no-op for any privateNames list that never contains an empty string (real usage never does) -- ''.toLowerCase().includes(name) is false for every non-empty name, so forcing this check to always/never run converges to the same result. Not observable under realistic input.
       if (destination !== '') {
         checkPath(destination)
       }
@@ -104,7 +103,6 @@ export function checkPrivateLeak(
       continue
     }
 
-    // Stryker disable next-line MethodExpression: dropping .slice(1) leaves the leading '+' character in content; since privateNames never contains '+' (real repo/org names don't), that extra leading character can never create or hide a substring match -- .includes(name) behaves identically either way. Not observable under realistic input. (Stryker also generates a second MethodExpression mutant on this line, .toLowerCase() -> .toUpperCase(); this directive suppresses that from future Stryker runs too, since next-line scoping is per-line not per-sub-expression, but it stays covered by the case-insensitivity test under ordinary pnpm test regardless.)
     const content = line.slice(1).toLowerCase()
     if (
       currentFile !== null &&

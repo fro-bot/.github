@@ -1,4 +1,4 @@
 // Bump deliberately when an intentional consumer-visible gate contract break ships.
 export const GATE_CONTRACT_VERSION = 1;
 // Replaced with the deterministic source-tree hash by the package build.
-export const GATE_SOURCE_TREE_HASH = 'f8e9baef6af73b1c0ea71c89decb9c9efa50971b9e635c21d7e87ee2ebacd06d';
+export const GATE_SOURCE_TREE_HASH = '4e2f72d8db02a8cb11a6a0d61b857355ba1c7157df4ecf6e538152f6efd9aff2';
