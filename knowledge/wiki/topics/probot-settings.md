@@ -2,8 +2,8 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-03
-tags: [probot, github, repository-settings, automation, governance, branch-protection, drift-detection, reusable-workflows]
+updated: 2026-09-06
+tags: [probot, github, repository-settings, automation, governance, branch-protection, drift-detection, reusable-workflows, extends-resolution]
 related:
   - marcusrbrown--github
   - marcusrbrown--dev-like
@@ -43,11 +43,25 @@ This pulls defaults from the named file. The extending file only needs to declar
 
 ### marcusrbrown/ha-config
 
-[[marcusrbrown--ha-config]] extends `fro-bot/.github:common-settings.yaml` (the Fro Bot org template) rather than Marcus's personal template. This means ha-config inherits Fro Bot org governance (1 required reviewer, code owner reviews, etc.) rather than Marcus's personal settings (no required reviews).
+**Corrected 2026-09-06.** [[marcusrbrown--ha-config]] uses the bare short-form `_extends: .github:common-settings.yaml`, which resolves to the **owner's** `.github` — `marcusrbrown/.github` ([[marcusrbrown--github]]) — exactly like esphome.life and dev-like below.
+
+The prior text of this section (2025-06 → 2026-09-03) read: *"extends `fro-bot/.github:common-settings.yaml` (the Fro Bot org template) rather than Marcus's personal template. This means ha-config inherits Fro Bot org governance (1 required reviewer, code owner reviews, etc.)."* That is wrong. Verified by direct read of `.github/settings.yml` at `150e059`: the file has never carried an owner prefix. Its own declared branch protection — `required_pull_request_reviews: null` — contradicted the inherited-1-reviewer claim the whole time, which is the tell that should have caught this earlier.
+
+**This is the third confirmed instance of the same misattribution**, after esphome.life (corrected 2026-07-12) and dev-like (recorded correctly 2026-07-31). Three instances is a pattern, not a slip: a reader encountering `_extends: .github:...` inside a Fro-Bot-surveyed repository defaults to reading `.github` as *the Fro Bot org's* `.github`, because that is the repo the surveying agent lives in. The shorthand is owner-relative to the **repository being configured**, never to the reader.
+
+The correction also collapses the "the fleet is not uniform" reading below. With ha-config moved, the tally is: every surveyed `marcusrbrown/*` repo using the short form inherits `marcusrbrown/.github`, and **no** surveyed `marcusrbrown/*` repo has been confirmed to extend `fro-bot/.github` explicitly. The claim in *bfra-me/.github (Bfra-Me Org Template)* below that "most `marcusrbrown/*` repos extend the `fro-bot/.github` template instead" is now unsupported by any surveyed example and should be treated as open until a repo with a literal `fro-bot/.github:` prefix is observed.
+
+**Lint rule, cheap and mechanical:** flag any `_extends:` value lacking an explicit `owner/` prefix and resolve it against the containing repository's owner before recording the inheritance. Never record an inheritance target that was inferred rather than read.
+
+#### Settings-sync wiring: the correct case
+
+ha-config is also the positive control for the mis-pathed `uses:` defect documented under esphome.life. Its `update-repo-settings.yaml` calls `bfra-me/.github/.github/workflows/update-repo-settings.yaml@b21f524…` — the right path — while esphome.life's calls the *Renovate* reusable workflow from the same repo, at the same tag, with an identical secrets signature, and has done so for ≥100 Renovate-authored commits. Both resolve. Both run green. Only one applies settings.
+
+Since `settings.yml` in both repos is short and largely inert, the difference is invisible in outcomes too. The only reliable detector is a repo-level lint that compares each `uses:` **path** — not just the ref — against the upstream workflow whose name matches the caller's job. Verified correct in ha-config at `150e059` (2026-09-06).
 
 ### marcusrbrown/esphome.life
 
-[[marcusrbrown--esphome-life]] uses the bare short-form `_extends: .github:common-settings.yaml`, which resolves to the **owner's** `.github` — i.e. `marcusrbrown/.github` (per the `_extends` rule above), _not_ the Fro Bot org template. Surveys before 2026-07-12 misattributed this to `fro-bot/.github`; the file has always written the un-prefixed `.github`. This is a caution that the `marcusrbrown/*` fleet is **not** uniform: some repos extend `fro-bot/.github` explicitly (ha-config), others inherit `marcusrbrown/.github` via the short-form. Verify the literal prefix in `settings.yml` before assuming which org template a repo inherits.
+[[marcusrbrown--esphome-life]] uses the bare short-form `_extends: .github:common-settings.yaml`, which resolves to the **owner's** `.github` — i.e. `marcusrbrown/.github` (per the `_extends` rule above), _not_ the Fro Bot org template. Surveys before 2026-07-12 misattributed this to `fro-bot/.github`; the file has always written the un-prefixed `.github`. This was originally written as a caution that the `marcusrbrown/*` fleet is **not** uniform: some repos extend `fro-bot/.github` explicitly (ha-config), others inherit `marcusrbrown/.github` via the short-form. **Superseded 2026-09-06:** ha-config was the cited counter-example and it, too, uses the short form — so the fleet appears uniform after all, and the standing advice reduces to its second half. Verify the literal prefix in `settings.yml` before assuming which org template a repo inherits; if there is no prefix, it is the owner's `.github`, always.
 
 ### marcusrbrown/dev-like
 

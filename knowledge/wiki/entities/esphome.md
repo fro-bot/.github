@@ -2,7 +2,7 @@
 type: entity
 title: ESPHome
 created: 2026-04-23
-updated: 2026-08-30
+updated: 2026-09-06
 sources:
   - url: https://github.com/marcusrbrown/esphome.life
     sha: e398c2e1e3ef8c68717df26fd67a99b5c91410d7
@@ -27,10 +27,14 @@ sources:
     accessed: 2026-08-30
   - url: https://github.com/esphome/esphome/releases/latest
     accessed: 2026-08-30
-tags: [esphome, iot, esp32, firmware, home-assistant, bluetooth-proxy]
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 150e0597ef657ef60ce7c38b83cab743f3e5016b
+    accessed: 2026-09-06
+tags: [esphome, iot, esp32, firmware, home-assistant, bluetooth-proxy, calendar-versioning]
 aliases: [esphome, esphome-life]
 related:
   - marcusrbrown--esphome-life
+  - marcusrbrown--ha-config
   - home-assistant
 ---
 
@@ -71,6 +75,31 @@ The upstream `esphome/esphome` latest release is **2026.8.1** (published 2026-08
 That asymmetry is the diagnostic. ESPHome uses calendar versioning (`YYYY.M.PATCH`), and the package rule sets `versioning: 'loose'` with `separateMajorMinor: false` and `separateMinorPatch: false`. Loose versioning has no notion of a calver *year* rollover; collapsing the major/minor/patch split then removes the separate update branches that would normally surface a `2025.12 → 2026.8` jump as its own PR. The net effect is a rule that was written to make ESPHome bumps *tidier* and instead made them *invisible*.
 
 **Generalizable:** calendar-versioned upstreams and `versioning: loose` are a bad pairing. If a dependency versions by date, tell Renovate so (an explicit `regex:` scheme capturing `YYYY`/`M`/`PATCH`) and leave `separateMajorMinor` alone. A pin that never moves is not evidence of stability; it is usually evidence that nothing is asking.
+
+### The same trap, reached from the other direction (2026-09-06)
+
+[[marcusrbrown--ha-config]] pins `esphome==2025.12.7` in `requirements.txt` — the identical version, in a different repo, held by a different mechanism. Its Renovate config carries a **repo-local** rule rather than inheriting the shared preset's:
+
+```json5
+{ matchPackageNames: ['esphome'], separateMajorMinor: false, separateMinorPatch: false }
+```
+
+Because ESPHome is calver, `2025.12.7 → 2026.8.2` classifies as a **major**, and this repo automerges only `minor`/`patch`. The result is PR **#777**, open since 2026-05-14 — **~114 days** — carrying the entire nine-month jump as one approval-gated change nobody wants to review.
+
+The instructive part is the contrast in *visibility*, not outcome:
+
+| | [[marcusrbrown--esphome-life]] | [[marcusrbrown--ha-config]] |
+| --- | --- | --- |
+| Suppression source | shared preset (`versioning: loose`) | repo-local `packageRules` |
+| Symptom | **no PR is ever opened** | one PR, permanently parked |
+| Detectability | invisible — looks like upstream is quiet | visible — a stale PR with a `major` label |
+| Elapsed | ~5.6 months at 2026-08-30 | ~114 days at 2026-09-06 |
+
+Same root cause, same frozen version, opposite failure signatures. Visible-and-stuck is strictly better than invisible-and-stuck — you can at least count the days — but neither ships the upgrade, and the collapse of `separateMinorPatch` is what makes the parked PR unreviewable in both cases: there is no way to take the safe patch increments while deferring the year rollover, because the config deleted that distinction.
+
+**Corollary to the rule above:** `separateMinorPatch: false` on a calver dependency does not just hide the jump, it removes the *incremental escape route*. Keep the split, and a stalled major at least leaves a merged trail of patches behind it.
+
+Upstream at 2026-09-06 is **2026.8.2** per ha-config's dependency dashboard (was 2026.8.1 on 2026-08-30) — the series continues to move while both consumers hold.
 
 ## External Links
 

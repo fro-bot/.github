@@ -2,11 +2,14 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-05
+updated: 2026-09-06
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 9bceff393c4d14c76b01625b9268d08d37fc4f01
     accessed: 2026-09-05
+  - url: https://github.com/marcusrbrown/ha-config
+    sha: 150e0597ef657ef60ce7c38b83cab743f3e5016b
+    accessed: 2026-09-06
 tags:
   [
     github-actions,
@@ -39,6 +42,9 @@ tags:
     rolling-issue,
     cadence-gating,
     body-marker,
+    break-glass,
+    self-update,
+    github-output,
   ]
 related:
   - fro-bot--agent
@@ -75,7 +81,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 
 - [[fro-bot--agent]] — Path-filtered Setup → Lint, Build (dist/ drift detection + CI SBOM as of v0.75.0), Test, Test Action (live self-referencing PR review), Dependency Review, Release (semantic-release via `next` → `release` PR flow), CodeQL, Scorecard; plus fenced `harness-release.yaml` (read-only build job / OIDC trusted-publish). **Bun-based workspace CI as of the 2026-06-24 survey** (migrated off pnpm; `packageManager: bun@1.3.14`, `bun.lock`), joining [[marcusrbrown--systematic]] / [[marcusrbrown--infra]] in the Bun-CI cohort
 - [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
-- [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
+- [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation. 3 workflows, all `active`, 4,341 runs, zero failures in the 2026-09-06 sample. The fleet's cleanest Renovate-only autopilot — and, as of 2026-09-04, the repo where the *self-updating updater* failure mode was caught and documented (see the two 2026-09-06 sections below)
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
 - [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **18 workflows** as of 2026-08-16 (added `cliproxy-auth-monitor.yaml`, a 15-min out-of-band Anthropic-auth health probe with synthetic self-test); OIDC→AWS-STS per-run storage credentials via the new `apps/agent` provisioner (no static AWS secret on runners)
@@ -1079,6 +1085,57 @@ Every clause is a scar from a documented incident. `--body-file` rather than `--
 - **The same file already has the better technique and does not use it here.** The new issue-triage mode anchors its single comment on a body marker — `<!-- fro-bot-triage -->` — which is precisely the remedy prescribed in the 09-05 fragmentation entry: *lifecycle on a body marker, identity on `author.login`, let the title be prose.* The repo demonstrates marker-based identity on its newest surface while its oldest surface still carries a five-entry title allowlist.
 
 The takeaway is not that the allowlist is wrong — it is a correct, careful fix. It is that **a marker would have made all five entries unnecessary, and the migration to markers is cheapest at the moment you are already rewriting the matcher.** If you find yourself enumerating your own historical titles, that is the signal to switch selectors, not to add a sixth line.
+
+### The Self-Updating Updater Cannot Recover Itself (2026-09-06)
+
+From [[marcusrbrown--ha-config]], and applicable to every repo in the fleet that lets Renovate manage the `uses:` ref of the workflow that *runs* Renovate.
+
+On 2026-09-04, Renovate merged `bfra-me/.github` **v4.25.0** into ha-config. That version carried [[bfra-me--renovate-action]] `10.34.0`, whose Renovate runtime was missing `tar`; Renovate exited before servicing any dependencies. The fix, `10.34.1`, shipped as `bfra-me/.github` v4.25.1 — and the only mechanism that would normally apply it was the thing it had disabled.
+
+**The structural property:** any updater that manages its own version pin has a one-way failure mode. A bad version is unrecoverable by the updater, because recovery requires the updater to run. The bump that broke it was authored by the thing it broke. Retry, rebase, and dashboard checkboxes are all no-ops — they all route through the dead process.
+
+This is distinct from the ordinary "CI is red" case. CI stayed **green** the whole time. Nothing failed. The only observable symptom was an *absence*: no new Renovate PRs on a repo that averages more than one per day. Absence is the hardest signal to alert on, which is why this class tends to be caught by a human noticing quiet rather than by a monitor firing.
+
+What ha-config did right, and what to copy:
+
+1. **Minimal break-glass.** The human commit (`87d3f7f`, #891) changed **one line in one file** — the `uses:` ref in `renovate.yaml`, and nothing else. It did not fix `update-repo-settings.yaml`, which carried the same bad pin. It restored the agent and stopped.
+2. **The automation closed the rest.** 8 minutes 18 seconds later, Renovate — now alive — merged v4.25.1 into `update-repo-settings.yaml` on its own (#893). Total human effort: one line. Total recovery: complete.
+3. **The commit message names the mechanism**, including the upstream package, the missing binary, and the reason the pin could not self-update. In a repo where 100% of prior commits are bot-authored, a lone hand-authored version bump is otherwise inexplicable a month later.
+
+Mitigations worth considering, in increasing order of cost:
+
+- **Split the pin.** The workflow that runs the updater is a different risk class from everything else the updater touches. Pinning it separately (or holding it one release behind) means a bad release cannot brick its own delivery path.
+- **Add an absence alarm.** A scheduled check asserting "at least one Renovate run concluded `success` *and* the dependency dashboard was updated within N hours" converts silence into a failing check. Note the conjunction: on 10.34.0 the *workflow run* still concluded `success` — it exited cleanly, having done nothing. Run conclusion measures the harness, not the delivery, the same lesson recorded for [[marcusrbrown--cortexkit-anthropic-auth]].
+- **A second, independent updater** (Dependabot on the workflow files only) gives an out-of-band recovery path. Cost: two bots proposing overlapping changes.
+
+Fleet exposure note: this arrived transitively through a shared reusable workflow, so every repo consuming `bfra-me/.github`'s `renovate.yaml` at v4.25.0 was in the same window. ha-config is where the incident is legible because someone wrote it down.
+
+### A Downstream Default That Masks an Upstream Defect (2026-09-06)
+
+Also from [[marcusrbrown--ha-config]]. Its `ci.yaml` extracts the pinned Home Assistant version like this:
+
+```yaml
+- id: ha_version
+  run: |
+    HA_VERSION=$(<.HA_VERSION)
+    echo '{value}={$HA_VERSION}' >> $GITHUB_OUTPUT   # two bugs, one line
+- uses: frenck/action-home-assistant@941d5d91... # v1.4.1
+  with:
+    version: ${{ steps.ha_version.outputs.value }}
+```
+
+Single quotes stop `$HA_VERSION` expanding, and the key is `{value}` rather than `value`. `$GITHUB_OUTPUT` receives the literal `{value}={$HA_VERSION}`, so `outputs.value` is empty and the action is invoked with `version: ''`.
+
+The job passes and validates against the correct version anyway, because `frenck/action-home-assistant` independently implements the same lookup — its `version` input is `required: false` with no default, and when empty the action reads `.HA_VERSION` from the config path itself, falling back to `stable` with a `::warning::` only if the file is missing. The repo's step is dead code whose entire behaviour is provided by the action's default.
+
+**The general shape:** when a caller computes a value that the callee also computes as a default, a broken caller is indistinguishable from a working one. Green CI, correct output, no warning, no signal. The defect surfaces only when the compensating default changes — the action drops the fallback, or someone needs `version` to differ from the file — and then the failure is both delayed and misattributed, because the visible symptom (a wall of Home Assistant config errors from validating against `stable`) points at the config, not at a quoting bug written years earlier.
+
+Two detection rules:
+
+- **A `$GITHUB_OUTPUT` write is only meaningful if some consumer fails when it is empty.** If passing `''` is indistinguishable from passing the right value, the step is either redundant or untested. Assert non-empty (`test -n "$X" || exit 1`) before writing, or delete the step and rely on the documented default explicitly.
+- **Prefer the callee's default to a caller that reimplements it.** Here the correct diff is to delete the step and the `version:` input entirely. Less code, identical behaviour, and the behaviour becomes the *documented* one rather than an accident.
+
+Adjacent lint, cheap to add fleet-wide: `echo '...$VAR...' >> $GITHUB_OUTPUT` — single-quoted interpolation into `$GITHUB_OUTPUT` — is essentially always a bug, and is grep-able across every workflow in the fleet in one pass.
 
 ### Convention Enforcement via Tests
 

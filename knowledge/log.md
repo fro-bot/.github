@@ -4571,3 +4571,97 @@ Sources: https://github.com/marcusrbrown/systematic@9bceff393c4d14c76b01625b9268
 Surveyed marcusrbrown/systematic and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-09-06 09:35] ingest | repo:marcusrbrown/ha-config
+
+Tenth survey of marcusrbrown/ha-config (HEAD `150e0597`, `node_id
+R_kgDOJ_bMaQ`, public). The tree is structurally unchanged for the tenth
+consecutive window — 11 packages, 10 custom components, 3 workflows,
+`.HA_VERSION` still 2025.6.3 (~15 months) — but the interval breaks two
+long-running patterns and corrects two long-carried claims.
+
+(1) **The first human commit in ten survey windows, and it is a break-glass
+on a self-updating updater.** On 2026-09-04 Renovate merged
+`bfra-me/.github` v4.25.0 (16:35:03Z), which carried
+`bfra-me/renovate-action` 10.34.0 — a Renovate runtime missing `tar`.
+Renovate then exited before servicing any dependencies and **could not
+update its own pin**: the bump that broke it was authored by the thing it
+broke. `marcusrbrown` hand-bumped one line in one file (`renovate.yaml` →
+v4.25.1) at 22:59:12Z, a 6h24m outage, and the revived bot closed the
+remaining file itself 8m18s later (#893). CI was green throughout; the
+only symptom was the absence of expected PRs. Generalized to
+[[github-actions-ci]] with the minimal-intervention rule (restore the
+agent, don't finish its job), split-the-pin and second-updater
+mitigations, and an absence alarm that must conjoin "run succeeded" with
+"work was delivered" — the broken run still concluded `success`.
+
+(2) **`ci.yaml`'s `.HA_VERSION` extraction step has never worked.**
+`echo '{value}={$HA_VERSION}' >> $GITHUB_OUTPUT` is single-quoted *and*
+mis-keyed, so `steps.ha_version.outputs.value` is empty and the action
+receives `version: ''`. The correct version is used anyway, because
+`frenck/action-home-assistant@v1.4.1` independently falls back to reading
+`.HA_VERSION` — a downstream default masking an upstream defect behind
+green CI, with the failure deferred to whenever that fallback changes.
+Rules recorded: a `$GITHUB_OUTPUT` write is only meaningful if some
+consumer fails when it is empty; prefer the callee's documented default to
+a caller that reimplements it.
+
+(3) **Renovate writes into a directory two other tools declare foreign.**
+The `homeassistant-manifest` manager tracks six vendored
+`custom_components/*/manifest.json` files that `.pre-commit-config.yaml`
+explicitly excludes as HA-owned. The long-parked #766 (merged 2026-08-15)
+was one such edit and is not durable across a HACS update; an
+integration's `requirements` array is a compatibility claim, not a
+lockfile. The new **Abandoned Dependencies** dashboard section inherits the
+same wrong scope — 7 entries, 6 un-actionable transitives (`pyric` last
+released 2016-12-04). Generalized to [[home-assistant]].
+
+**Two corrections.** (a) `_extends: .github:common-settings.yaml` is the
+bare short-form and resolves to `marcusrbrown/.github`, **not**
+`fro-bot/.github` as every survey since 2025-06 recorded; its declared
+`required_pull_request_reviews: null` contradicted the inherited-reviewer
+claim the whole time. Third instance of this misattribution class, and it
+collapses [[probot-settings]]'s "the fleet is not uniform" reading because
+ha-config was that page's cited counter-example. (b) The `.HA_VERSION` CI
+mechanism on [[home-assistant]] implied `ci.yaml` feeds the pin to the
+action; it does not.
+
+Deltas: `bfra-me/.github` v4.18.0 → **v4.25.1** (seven minor boundaries in
+sixteen days), Renovate preset `#5.2.12` → `#5.2.13`, esphome submodule
+digest ×10. Held: `esphome==2025.12.7` vs upstream **2026.8.2** (#777
+parked ~114 days), `yamllint==1.38.0`, Prettier 3.9.6, mise pre-commit
+4.6.2, `pre-commit-hooks` v6.0.0, `actions/checkout` v6.1.0 (v7 major #896
+newly parked). Open issues 1 (#427), open PRs 2, stars 4, forks 0. All
+three workflows `active` and green across 4,341 runs; the daily settings
+sync ran `success` at 2026-09-06T03:01:05Z. Its correctly-pathed
+`update-repo-settings.yaml` is recorded as the positive control for
+[[marcusrbrown--esphome-life]]'s mis-pathed `uses:`.
+
+**Still no Fro Bot workflow (tenth consecutive survey)** — the standing
+follow-up draft PR remains the open action item, and the break-glass
+incident weakens the prior "Renovate-only autopilot needs no agent"
+justification, since absence-of-activity on a repo averaging >1 PR/day is
+exactly what a scheduled agent detects and a human caught by hand.
+
+Pages touched: updated `wiki/repos/marcusrbrown--ha-config.md`,
+`wiki/topics/github-actions-ci.md`, `wiki/topics/probot-settings.md`,
+`wiki/topics/home-assistant.md`, `wiki/entities/esphome.md`, and
+`index.md`. All updates additive; superseded claims retained with dates and
+evidence rather than deleted. All wikilinks verified resolving.
+
+Method note: no `GH_TOKEN` was present in this environment, so the survey
+ran read-only over the unauthenticated GitHub API plus
+`raw.githubusercontent.com`, within the 60-request hourly budget. Reads
+were held to repository metadata, directory listings, workflow/manifest
+files, and public issue/PR/run metadata, per the survey constraints. The
+target repository was treated as untrusted input; the Dependency Dashboard
+body was read as data, not instruction. Delivery mode was `working-dir`;
+only `knowledge/**` was modified.
+
+Sources: https://github.com/marcusrbrown/ha-config@150e0597ef657ef60ce7c38b83cab743f3e5016b; https://github.com/marcusrbrown/ha-config/pull/891; https://github.com/marcusrbrown/ha-config/issues/427; https://github.com/frenck/action-home-assistant/blob/941d5d917f4c1c7a7e7d4087526daf90d53f4437/action.yaml; https://github.com/fro-bot/.github/actions/runs/34024784753
+
+## [2026-09-06 09:42] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/ha-config
