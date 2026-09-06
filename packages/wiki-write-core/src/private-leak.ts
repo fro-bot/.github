@@ -31,6 +31,7 @@ export function checkPrivateLeak(
     return {ok: true}
   }
 
+  // Stryker disable next-line ConditionalExpression,LogicalOperator,BlockStatement: whichever side of `||` is true, privateNames.length === 0 forces lowerNames = [] downstream so `.some(...)` can never match afterward -- forcing this condition false (or its && variant, or emptying the return block) still converges to {ok: true} for every reachable input; not observable.
   if (privateNames.length === 0 || diff.length === 0) {
     return {ok: true}
   }
@@ -38,6 +39,7 @@ export function checkPrivateLeak(
   const lowerNames = privateNames.map(name => name.toLowerCase())
   const matchedFiles: string[] = []
   let currentFile: string | null = null
+  // Stryker disable next-line BooleanLiteral: currentFile only ever becomes non-null via the "diff --git a/" branch, which in the same conditional branch also resets checkPathAsNew to false, or the else branch resets both currentFile and checkPathAsNew together. Whenever currentFile !== null is later read, this initial value has already been overwritten by one of those resets -- not observable.
   let checkPathAsNew = false
 
   const checkPath = (path: string): void => {
@@ -55,7 +57,9 @@ export function checkPrivateLeak(
       // caller-supplied diff text. Keep this branch regex-free -- no timing guard covers it (#3810).
       // The old regex selected the rightmost separator with at least one trailing character.
       const separatorIndex = line.lastIndexOf(separator, line.length - separator.length - 1)
-      if (separatorIndex > diffPrefix.length && separatorIndex + separator.length < line.length) {
+      // Stryker disable next-line ArithmeticOperator,EqualityOperator,ConditionalExpression: structurally redundant, not observable -- lastIndexOf's own second argument (line.length - separator.length - 1) already guarantees any found index satisfies foundIndex + separator.length < line.length, so this clause is true whenever separatorIndex !== -1. Extracted to its own line so this directive cannot also suppress the left-hand clause's mutants on the `if` line below, which are genuinely killed by a real boundary-value test.
+      const hasRoomAfterSeparator = separatorIndex + separator.length < line.length
+      if (separatorIndex > diffPrefix.length && hasRoomAfterSeparator) {
         const bPath = line.slice(separatorIndex + separator.length)
         const aPath = line.slice(diffPrefix.length, separatorIndex)
         currentFile = bPath
@@ -65,6 +69,7 @@ export function checkPrivateLeak(
         }
       } else {
         currentFile = null
+        // Stryker disable next-line BooleanLiteral: currentFile is reset to null in this same branch, so the "+++" handler's currentFile !== null guard blocks any read of checkPathAsNew until the next "diff --git a/" line resets it again anyway -- not observable.
         checkPathAsNew = false
       }
       continue
@@ -74,6 +79,7 @@ export function checkPrivateLeak(
       const destination = line.startsWith('rename to ')
         ? line.slice('rename to '.length)
         : line.slice('copy to '.length)
+      // Stryker disable next-line ConditionalExpression,StringLiteral: checkPath('') is a no-op for any privateNames list that never contains an empty string (real usage never does) -- ''.toLowerCase().includes(name) is false for every non-empty name, so forcing this check to always/never run converges to the same result. Not observable under realistic input.
       if (destination !== '') {
         checkPath(destination)
       }
@@ -89,6 +95,7 @@ export function checkPrivateLeak(
       if (checkPathAsNew && currentFile !== null) {
         checkPath(currentFile)
       }
+      // Stryker disable next-line BooleanLiteral: currentFile can only change via a "diff --git a/" line, which always resets checkPathAsNew too -- a stale true value here is never read before the next reset. Not observable.
       checkPathAsNew = false
       continue
     }
@@ -97,6 +104,7 @@ export function checkPrivateLeak(
       continue
     }
 
+    // Stryker disable next-line MethodExpression: dropping .slice(1) leaves the leading '+' character in content; since privateNames never contains '+' (real repo/org names don't), that extra leading character can never create or hide a substring match -- .includes(name) behaves identically either way. Not observable under realistic input. (Stryker also generates a second MethodExpression mutant on this line, .toLowerCase() -> .toUpperCase(); this directive suppresses that from future Stryker runs too, since next-line scoping is per-line not per-sub-expression, but it stays covered by the case-insensitivity test under ordinary pnpm test regardless.)
     const content = line.slice(1).toLowerCase()
     if (
       currentFile !== null &&

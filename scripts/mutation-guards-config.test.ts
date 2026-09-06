@@ -642,13 +642,19 @@ describe('findMutateEntriesWithoutSourceReach (barrel exclusion)', () => {
     )
   })
 
-  it('Test 2: flags private-leak.ts once private-leak-adapter.test.ts is removed from testFiles, while the OLD check sees nothing', () => {
+  it('Test 2: flags private-leak.ts once its direct same-tree exercisers are removed from testFiles, while the OLD check sees nothing', () => {
     const {mutate, testFiles: realTestFiles} = readStrykerConfig(strykerConfigPath)
-    const testFiles = realTestFiles.filter(
-      entry => normalizePath(entry) !== 'packages/wiki-write-core/src/private-leak-adapter.test.ts',
-    )
-    // Sanity: the fixture actually removed the entry, otherwise this test would prove nothing.
-    expect(testFiles.length).toBe(realTestFiles.length - 1)
+    // Both direct, non-barrel exercisers of private-leak.ts must be removed for this fixture:
+    // private-leak-adapter.test.ts (imports it via the adapter) and private-leak.test.ts
+    // (imports it directly). With either one still present, private-leak.ts is genuinely
+    // reached without a barrel and this fixture no longer proves anything about the hole.
+    const directExercisers = new Set([
+      'packages/wiki-write-core/src/private-leak-adapter.test.ts',
+      'packages/wiki-write-core/src/private-leak.test.ts',
+    ])
+    const testFiles = realTestFiles.filter(entry => !directExercisers.has(normalizePath(entry)))
+    // Sanity: the fixture actually removed both entries, otherwise this test would prove nothing.
+    expect(testFiles.length).toBe(realTestFiles.length - directExercisers.size)
 
     // Pin the premise this whole test depends on: wiki-write-core.test.ts must NOT have its
     // own direct specifier resolving to private-leak.ts — if it ever gains one (rather than
