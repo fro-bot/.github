@@ -51,6 +51,18 @@
     {
       "path": "scripts/check-mutation-guards.ts",
       "reason": "A directive scanner cannot describe its own grammar in comments without matching it; the classifier and scanner are covered by their fixture tests, not by mutation."
+    },
+    {
+      "path": "packages/wiki-write-core/src/private-leak-adapter.ts",
+      "reason": "Exported request-time GitHub adapter with no current CI or autonomous-write caller in this repository; only its dedicated tests and the package barrel reference it. Active privacy workflows use scripts/check-private-leak.ts and private-leak.ts directly. Re-promote when a production caller lands. Its test stays in stryker.config.json testFiles regardless: it is private-leak.ts's only same-tree source exerciser (scripts/check-private-leak.ts imports the dist specifier), so mutate=9/testFiles=10 is intentional."
+    },
+    {
+      "path": "scripts/check-repo-onboarded.ts",
+      "reason": "Survey routing predicate, not an independent write or promotion authority. runCheck fails closed (onboarded:false) on every error path -- missing env, ENOENT, malformed YAML, and schema failure all resolve to false, never true. The deciding predicate, publicRepoEntryExists in scripts/repos-metadata.ts, is not itself in the mutated set, so mutating this wrapper would not exercise the real decision."
+    },
+    {
+      "path": "scripts/check-md-links.ts",
+      "reason": "Documentation-quality lint for broken relative links. It does not protect a security boundary, autonomous write, persisted trust state, or generated executable artifact; its behavior is adequately covered by conventional tests."
     }
   ]
 }

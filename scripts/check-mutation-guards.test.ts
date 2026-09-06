@@ -1063,8 +1063,8 @@ describe('evaluateTriggerGate (changed-file trigger gate scenarios)', () => {
 // Closure-based trigger set against the REAL stryker.config.json / mutation-guards.json.
 // Blocking fix: buildTriggerSet's import closure must catch a change to a module that is only
 // *imported by* a mutate/testFiles entry, not itself listed — without it, a PR touching only
-// packages/wiki-write-core/src/wiki-slug.ts (imported by the mutated private-leak-adapter.ts)
-// would read not-applicable and never run Stryker at all.
+// packages/wiki-write-core/src/wiki-slug.ts (reached from the corrections testFiles entries via
+// wiki-ingest.ts) would read not-applicable and never run Stryker at all.
 // ---------------------------------------------------------------------------
 
 describe('closure-based trigger set against the real config', () => {
@@ -1079,11 +1079,11 @@ describe('closure-based trigger set against the real config', () => {
 
   // (a) Discrimination, red under the old (pre-closure) buildTriggerSet: wiki-slug.ts is not
   // itself a mutate/testFiles entry (it is `not-mutated`, pending relocation per
-  // mutation-guards.json), but private-leak-adapter.ts (a real mutate entry) imports it
-  // directly (`import {buildPrivateNameTokens} from './wiki-slug.ts'`). A PR touching only this
+  // mutation-guards.json), but corrections.test.ts / corrections-survival.test.ts (real testFiles
+  // entries) import wiki-ingest.ts, which imports it directly. A PR touching only this
   // file must never read not-applicable — that would be exactly the fail-open the review
   // flagged: a change that can affect a mutated module's behavior silently skipping the check.
-  it('does NOT report not-applicable for a changed set of only wiki-slug.ts (imported by the mutated private-leak-adapter.ts)', async () => {
+  it('does NOT report not-applicable for a changed set of only wiki-slug.ts (reached transitively from the corrections testFiles entries)', async () => {
     const result = await evaluateTriggerGate(
       realConfig,
       PULL_REQUEST_EVENT,
@@ -1162,8 +1162,8 @@ describe('closure-based trigger set against the real config', () => {
     ).toEqual([])
   })
 
-  // Item 1's regular-import fix: private-leak-adapter.ts (mutate) imports wiki-slug.ts
-  // directly; wiki-lint.ts (reached from corrections-survival.ts, mutate, via `import type
+  // Item 1's regular-import fix: wiki-ingest.ts (a testFiles entry's direct import) imports
+  // wiki-slug.ts directly; wiki-lint.ts (reached from corrections-survival.ts, mutate, via `import type
   // {WikiLintFinding} from './wiki-lint.ts'`) imports markdown-links.ts directly; wiki-ingest.ts
   // (a testFiles entry's direct import) imports data-branch-bootstrap.ts directly. None of
   // these three second-hop modules are themselves re-export barrels — they are only reachable

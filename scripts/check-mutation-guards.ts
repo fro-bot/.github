@@ -1350,8 +1350,8 @@ export interface TriggerSet {
  * check actually mutates or executes.
  *
  * The closure is load-bearing, not cosmetic: without it, a pull request touching only
- * `packages/wiki-write-core/src/wiki-slug.ts` (imported by the already-mutated
- * `private-leak-adapter.ts`, but itself only `not-mutated`/pending relocation) would read
+ * `packages/wiki-write-core/src/wiki-slug.ts` (reached from the corrections `testFiles`
+ * entries via `wiki-ingest.ts`, but itself only `not-mutated`/pending relocation) would read
  * `not-applicable` and never run Stryker at all — a fail-open this wrapper exists to prevent
  * for every other kind of drift. Entries are normalized the same way as everywhere else in
  * this module (`normalizeMutatePath`, stripping a single leading `./`).

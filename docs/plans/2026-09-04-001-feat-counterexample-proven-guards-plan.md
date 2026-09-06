@@ -299,6 +299,17 @@ Also landed as non-blocking hardening in the same pass: `walkNonTestTsFiles` now
 
 **Third addendum (review pass — reach is not coverage, plus four extractor hardenings):** `findMutateTestPairingViolations` and `reachedModulesTransitive` prove a `mutate` entry is *touched* by a same-tree test, not that it is *exercised* — the barrel `packages/wiki-write-core/src/index.ts` (eight `export *` targets) makes `wiki-write-core.test.ts` reach 11 package modules, so this positive rule is a near-vacuous structural floor for `packages/`, not evidence a promotion is safe (documented directly on `findMutateTestPairingViolations`'s docstring; the corresponding one-sentence caveat is now also on Unit 5's execution note, above). Four more gaps closed in the extractor: (1) a commented-out import (`// import ... from './x.ts'` or a `/* ... */` block form) was still counted as reach — closed by stripping comments (a new, file-scoped `stripComments`, deliberately not the shared `stripStringLiterals`, since that blanks string content and would erase the specifiers this extractor needs to keep) before running the import patterns; discrimination proven red→green: a fixture test file with both comment forms wrapping an import no longer reaches that import's target, while a real adjacent import on the next line still does. (2) `REEXPORT_PATTERN` now accepts `export type {...} from` and `export type * from`, proven with a fixture barrel chain. (3) A glob `testFiles` entry (`isLiteralPath`) is filtered before `reach` would `readFileSync` it (ENOENT) and reported as its own violation ("glob testFiles entries are not supported for pairing") instead. (4) The prior test at this location, named after the wiki-slug fixture data, is renamed to describe the general shape it tests ("flags a mutate entry when reach resolves only to the other tree's shell"). `mutation-guards-config.test.ts` grew from 12 tests to 16. Combined wrapper + config-enumeration test count: 111 (95 + 16).
 
+**Fourth addendum (Unit 5 scope correction — supersedes the "genuine gates" criterion above):** "Structural gate shape" (classification + `main()` with `exitCode`) was necessary but not sufficient, and drew the mutated set too wide. Corrected criterion:
+
+> Mutate a module when it runs in CI or an autonomous write/read path AND owns a material trust/security decision, persisted state later trusted by such a decision, or a generated artifact whose correctness is not independently validated — and the plausible failure is wrong-but-valid, not a loud crash. Structural gate shape alone is not sufficient.
+
+Three demotions from `mutate` to `not-mutated` (with their `testFiles` pairs) under this criterion:
+- `packages/wiki-write-core/src/private-leak-adapter.ts`: no production caller, only its own tests and the barrel reference it.
+- `scripts/check-repo-onboarded.ts`: a routing predicate, not an independent write/promotion authority; both failure directions are bounded by downstream gates.
+- `scripts/check-md-links.ts`: a documentation-quality lint, no security/trust/artifact boundary.
+
+`scripts/build-wiki-write-core.ts` stays despite being a build script: its `main()` validates the committed dist against its own `compareTrees`, so a defect there is self-consistently green — wrong-but-valid, not a crash.
+
 **Goal:** Make the mutated set structurally complete and the pairing structurally safe: a new guard file cannot be forgotten, and a package module cannot be paired with scripts tests.
 
 **Requirements:** R2, R3
@@ -434,28 +445,40 @@ Gate: `pnpm check-types`, `pnpm lint`, `pnpm test` (74 files, 2994 tests + 3 tod
 
 - [ ] **Unit 5: Cleanup baseline**
 
-**Goal:** Run the full enumerated set once and drive it to `clean`: fix every vacuous test or add a line-scoped directive with a reason.
-
 **Requirements:** R12
 
 **Dependencies:** Unit 4 (job exists), Unit 3 (set is complete).
 
-**Files:**
-- Modify: whichever `*.test.ts` files under `scripts/` and `packages/wiki-write-core/src/` have surviving mutants; whichever mutated modules need a directive.
+**Measured baseline:** CI run 34002642010 on `45a1864`, full (then-12-entry) set: 2907 mutants, 53.77% score, 1351 non-clean, verdict `mutant-timeout`. Scope corrected per Unit 3's fourth addendum (three demotions). Re-measured on the corrected 9-module set in CI run 34007429970 on `e975fd9`: 2558 mutants, 1402 killed, 787 survived, 362 no-coverage, 7 timeout — **1156 non-clean**, per-module counts identical to the pre-correction figures. The 5A/5B counts below are that measured baseline.
+
+**5A — Tier 0 (privacy and sole-writer boundaries), 591 non-clean, one PR per module, in order:**
+1. `private-leak.ts` (88)
+2. `check-private-leak.ts` (326, includes 2 timeout directives)
+3. `check-wiki-private-presence.ts` + `wiki-context-safety.ts` (79)
+4. `check-wiki-authority.ts` (98)
+
+**5B — Tier 1 (persisted trust state, supply chain, build contract), 565 non-clean, one PR per module, in order — deferred until 5A's measured cost is known; if budget won't cover it, 5B is cut consciously, not diluted:**
+1. `corrections.ts` (280)
+2. `corrections-survival.ts` (81, includes 5 timeout directives)
+3. `wiki-lockfile-gates.ts` (47)
+4. `build-wiki-write-core.ts` (157)
 
 **Approach:**
 - One pull request per module or small cluster, not one giant baseline PR — each survivor is a small, reviewable fix with its own reasoning.
 - Prefer fixing the test over adding a directive. A directive is for mutants that are genuinely inert (logging branches, message text, defensive duplicates) — the reason must say why the mutation has no rejection consequence.
 - For `mutants-uncovered` in a script's `main()`: cover the assembled flow with the injected-seam pattern already used in `scripts/check-private-leak.test.ts` and `scripts/wiki-context-safety.test.ts`, or move the file to `not-mutated` naming the module that carries its core. Never a directive per line.
 - Each pull request records the before/after survivor count in its description.
+- Survivor priority within each PR: `ConditionalExpression`, `LogicalOperator`, `EqualityOperator`, `Regex`, meaningful `CallExpression`/`ObjectLiteral` first; meaningful `NoCoverage` branches second; cosmetic/diagnostic/defensive-duplicate directives last.
+- **StringLiteral policy:** stays enabled — no global or per-file `excludedMutations`. Semantic strings (verdict/`scan_result` vocabulary, diff markers, `/dev/null`, `[REDACTED]`, guarded-path patterns, env names, API routes, lifecycle names) get killed by assertions; human-readable prose gets a `next-line` directive with a reason of the form "diagnostic text does not affect classification, exit status, redaction, or downstream parsing."
+- **Timeout policy:** the 7 timeouts are deterministic infinite-loop mutants (`Hit limit reached` at `301/300`, `6001/6000`, `65501/65500` — not 30s wall-clock). All are induction-variable destruction in `corrections-survival.ts:127-144` (`maskMarkdownLinks`) and `check-private-leak.ts:666` (loop counter). They get line-scoped directives naming the destroyed loop progress. Do NOT lower `timeoutMS`, do NOT add runtime iteration guards to production code.
 
-**Execution note:** For every survivor fixed by a test change, keep the mutant's location in the commit message so the pairing is auditable. Before promoting `wiki-ingest.ts`, `wiki-slug.ts`, or `schemas.ts` out of `not-mutated` (after relocating their real tests beside them), Unit 3's `findMutateTestPairingViolations` passing is a structural floor only — it proves the relocated test *reaches* the module, not that it *exercises* it; the only evidence the promotion is safe is a live `pnpm check:mutation-guards` run showing that module's per-mutant kill count, the same standard already applied to every other promotion in Unit 3's Result block.
+**Execution note:** For every survivor fixed by a test change, keep the mutant's location in the commit message so the pairing is auditable. Unit 3's `findMutateTestPairingViolations` passing is a structural floor only — it proves a test *reaches* the module, not that it *exercises* it; the only evidence a survivor fix is safe is a live `pnpm check:mutation-guards` run showing that module's per-mutant kill count.
 
 **Test scenarios:**
 - Test expectation: none as a unit — this unit is the application of Units 2–4's checks to existing code; each fix carries its own test change or directive.
 
 **Verification:**
-- `pnpm check:mutation-guards` reports `clean` on the full set on `main`.
+- `pnpm check:mutation-guards` reports `clean` on the full retained set on `main`.
 - Every directive in the mutated set has a non-empty reason and is `next-line` scoped (enforced by Unit 2).
 
 - [ ] **Unit 6: Register the required context and document the check**
@@ -464,7 +487,7 @@ Gate: `pnpm check-types`, `pnpm lint`, `pnpm test` (74 files, 2994 tests + 3 tod
 
 **Requirements:** R7, R12
 
-**Dependencies:** Unit 5 (`clean` on `main`). Operator approval for the branch-protection change.
+**Dependencies:** Unit 5A and 5B both `clean` on `main` (whether 5B is formally cut, rather than deferred, is decided after 5A's measured cost). Operator approval for the branch-protection change.
 
 **Files:**
 - Modify: `.github/settings.yml` (add `Check Mutation Guards` to `required_status_checks.contexts`)
