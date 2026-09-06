@@ -56,14 +56,19 @@ function parseFrontmatterSources(content: string): string[] | null {
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content)
   if (!match) return null
 
+  // Capturing group always participates when the regex matches.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const frontmatter = match[1]!
+
   let parsed: unknown
   try {
-    parsed = YAML.parse(match[1] ?? '')
+    parsed = YAML.parse(frontmatter)
   } catch {
-    return null // unparseable frontmatter → caller falls back to substring
+    // unparseable → parsed stays undefined → null below
   }
 
-  if (typeof parsed !== 'object' || parsed === null) return null
+  // hasOwnProperty.call throws only for null/undefined receivers.
+  if (parsed === null || parsed === undefined) return null
 
   const obj = parsed as Record<string, unknown>
 
@@ -73,15 +78,17 @@ function parseFrontmatterSources(content: string): string[] | null {
   const sources = obj.sources
 
   // Key PRESENT but not an array → authoritative empty result (fail-closed).
+  // Stryker disable next-line ArrayDeclaration: sourceUrlMatchesRepo's `new URL(...)` throws
+  // (caught, returns false) for any non-URL string, so a non-empty seed here can't affect .some().
   if (!Array.isArray(sources)) return []
 
   // Key PRESENT and is an array → extract url strings (possibly returns []).
+  // Stryker disable next-line ArrayDeclaration: same reasoning — sourceUrlMatchesRepo rejects any
+  // non-URL seed string via the URL constructor throw, so it can't affect .some()'s result.
   const urls: string[] = []
   for (const src of sources) {
-    if (typeof src === 'object' && src !== null) {
-      const url = (src as Record<string, unknown>).url
-      if (typeof url === 'string') urls.push(url)
-    }
+    const url = (src as Record<string, unknown> | null | undefined)?.url
+    if (typeof url === 'string') urls.push(url)
   }
   return urls
 }
@@ -183,14 +190,9 @@ export function detectPrivateWikiLeaks(params: {
         continue
       }
 
-      // Single unique public entry — verify content attribution.
-      // entries.length === 1 is guaranteed by the guard above; the non-null assertion
-      // is safe but we narrow with a runtime guard to satisfy strict noUncheckedIndexedAccess.
-      const entry = entries[0]
-      if (entry === undefined) {
-        leaks.push({filename: page.filename, reason: 'unattributable-page'})
-        continue
-      }
+      // entries.length === 1 here: the `entries.length > 1` branch above already continued.
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const entry = entries[0]!
       const expectedUrl = `https://github.com/${entry.owner}/${entry.name}`
       const structuredSources = parseFrontmatterSources(page.content)
 
@@ -229,8 +231,9 @@ export function detectPrivateWikiLeaks(params: {
     }
 
     // Stem not in publicSlugMap — check content-identity grandfathering.
+    // page.hash is always a string, so an undefined grandfatherHash already fails this check.
     const grandfatherHash = grandfatherByStem.get(page.stem)
-    if (grandfatherHash !== undefined && grandfatherHash === page.hash) {
+    if (grandfatherHash === page.hash) {
       continue // unchanged from main → grandfathered (e.g. copiloting/lost-access)
     }
 
