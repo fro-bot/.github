@@ -43,7 +43,7 @@ immediately preceding line was `--- `. That closed #3838's exact reproduction bu
 the single most common diff shape of all — a modified line. Its removed half renders as
 `-- see acme/public-repo...` → `--- see acme/public-repo...`, and its added replacement can just as
 easily render as `++ see acme/secret-repo...` → `+++ see acme/secret-repo...`, arming the same false
-pairing. Filed as #3839. The correct invariant was positional, not adjacency-based: `---`/`+++` are
+pairing. Caught in review on #3839. The correct invariant was positional, not adjacency-based: `---`/`+++` are
 headers only in a file's header block, before that file section's first `@@` hunk marker.
 
 ## Why Mutation Coverage Didn't Catch It
@@ -94,8 +94,8 @@ content is prefixed — carrying a value the guard must catch. That's the invers
 structural branch does NOT fire when the token appears in a content position, by using a payload
 that only a broken parser would miss. #3839 landed this for `---`/`+++` (a private name inside a
 `+++`-shaped line, positioned after a `@@` hunk marker, must still be caught). The same test does not
-yet exist for `diff --git`, `rename to`/`copy to`, or `@@` itself — filed as follow-up work, not
-retrofitted here.
+yet exist for `diff --git`, `rename to`/`copy to`, or `@@` itself — add them in Unit 5A-2, where
+`check-private-leak.ts` consumes this parser.
 
 ## Related
 
@@ -106,8 +106,8 @@ retrofitted here.
 - `docs/solutions/best-practices/test-the-integration-seam-not-the-endpoints-2026-07-06.md` — the
   related boundary-testing principle: test where the trust boundary actually is, not where it's
   convenient to assert.
-- PR #3837 — `fix(wiki-write-core): fix three mutator-scoped directive violations in private-leak.ts`
-  (the "clean" run that still carried the defect)
+- PR #3837 — the "clean" mutation run that still carried the defect
 - Issue #3838 — `++`-prefixed added lines escape the content scan (prefix-test defect)
-- Issue #3839 — adjacency-only header detection still leaks on a modified line (positional-grammar fix)
+- PR #3839 — the fix; its first round used adjacency and still leaked on a modified line, the
+  second used hunk position
 - `docs/plans/2026-09-04-001-feat-counterexample-proven-guards-plan.md`, Unit 5A-1 Result block
