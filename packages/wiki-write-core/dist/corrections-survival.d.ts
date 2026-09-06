@@ -24,11 +24,8 @@ export declare function verifyCorrectionSurvival(files: Record<string, string>, 
 export declare function normalizeFormattingText(value: string): string;
 /**
  * Masks markdown inline links `[label](url)` to spaces so exact prose matching ignores link
- * targets; wiki links `[[...]]` are left untouched (module docstring). Ported from a
- * char-scanning algorithm; URLs nest parens up to 4 levels deep, a proven, tested bound.
- * KNOWN DIVERGENCE from the ported algorithm, found by exhaustive differential testing and not
- * yet resolved: a malformed link whose label is empty/near-empty and immediately followed by
- * another `](` that itself fails to close (e.g. `[](]()`) — see corrections-survival.test.ts.
- * Exported only for that test.
+ * targets; wiki links `[[...]]` are left untouched (module docstring). A regex port was proven
+ * non-equivalent by exhaustive differential testing (corrections-survival.test.ts), so this
+ * scanner stays; its directived lines are deterministic hangs under mutation, not timing noise.
  */
 export declare function maskMarkdownLinks(content: string): string;

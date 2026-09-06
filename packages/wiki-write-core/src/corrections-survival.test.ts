@@ -803,18 +803,56 @@ describe('normalizeFormattingText exhaustive differential against the pre-refact
   })
 })
 
-describe('maskMarkdownLinks against the pre-refactor char-scanning reference implementation', () => {
-  it('documents a known divergence from the reference implementation for a malformed, unclosed nested link', () => {
-    // [](]() : the reference implementation's `open` pointer survives a failed inner-paren
-    // match and is reused by a LATER `](`, masking the whole string; the shipped regex has no
-    // equivalent "retry from an earlier failed open" behavior and leaves it unmasked. Found by
-    // exhaustive differential testing (all 6^k strings, k=1..7, over ['[',']','(',')','a',' ']:
-    // 335,922 cases, 1 divergence, this is it). Not yet resolved — see the plan's 5B-1 Result
-    // block for the accept/fix decision. This test pins the CURRENT (diverging) behavior so a
-    // future change to either implementation is a conscious, reviewed decision, not a silent
-    // regression discovered by accident.
-    const input = '[](]()'
-    expect(maskMarkdownLinksReference(input)).toBe('      ')
-    expect(maskMarkdownLinks(input)).toBe('[](]()')
+/** Deterministic xorshift32 PRNG (fixed seed — reproducible across runs, not cryptographic). */
+function createSeededRandom(seed: number): () => number {
+  let state = seed
+  return () => {
+    state ^= state << 13
+    state ^= state >>> 17
+    state ^= state << 5
+    state >>>= 0
+    return state / 0xffffffff
+  }
+}
+
+function randomString(alphabet: readonly string[], length: number, next: () => number): string {
+  let result = ''
+  for (let position = 0; position < length; position += 1) {
+    result += alphabet[Math.floor(next() * alphabet.length) % alphabet.length]
+  }
+  return result
+}
+
+describe('maskMarkdownLinks exhaustive differential against the pre-refactor char-scanning implementation', () => {
+  it('matches the reference implementation for every string up to length 7 over the link-syntax alphabet', () => {
+    const alphabet = ['[', ']', '(', ')', 'a', ' ']
+    let checked = 0
+    for (const candidate of enumerateStrings(alphabet, 7)) {
+      checked += 1
+      const actual = maskMarkdownLinks(candidate)
+      const expected = maskMarkdownLinksReference(candidate)
+      if (actual !== expected) {
+        throw new Error(
+          `maskMarkdownLinks diverged for ${JSON.stringify(candidate)}: got ${JSON.stringify(actual)}, reference gave ${JSON.stringify(expected)}`,
+        )
+      }
+    }
+    expect(checked).toBe(335_922)
+  })
+
+  it('matches the reference implementation for 50,000 random strings of length 9-16 (a wider alphabet, beyond exhaustive reach)', () => {
+    const alphabet = ['[', ']', '(', ')', 'a', ' ', '!', '|']
+    const next = createSeededRandom(0x9e3779b9)
+    for (let sample = 0; sample < 50_000; sample += 1) {
+      const length = 9 + Math.floor(next() * 8) // 9..16
+      const candidate = randomString(alphabet, length, next)
+      const actual = maskMarkdownLinks(candidate)
+      const expected = maskMarkdownLinksReference(candidate)
+      if (actual !== expected) {
+        throw new Error(
+          `maskMarkdownLinks diverged for ${JSON.stringify(candidate)}: got ${JSON.stringify(actual)}, reference gave ${JSON.stringify(expected)}`,
+        )
+      }
+    }
   })
 })
