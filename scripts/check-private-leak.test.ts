@@ -1337,6 +1337,37 @@ describe('runPromotionScan — assertReposFile is actually called (CallExpressio
       /repos\.repos.*expected array/,
     )
   })
+
+  it('rejects an empty-string node_id at the schema layer before hasNonEmptyNodeId ever runs (pins the assertRepoEntry invariant hasNonEmptyNodeId depends on)', async () => {
+    // #given: a private entry with `node_id: ""` (empty string, not omitted). `hasNonEmptyNodeId`'s
+    // own body assumes assertRepoEntry (packages/wiki-write-core/src/schemas.ts:295-296) already
+    // rejects this shape before any entry reaches its filter -- that assumption is load-bearing
+    // (the tautological-length-check deletion in `hasNonEmptyNodeId` depends on it) but
+    // `schemas.ts` itself is `not-mutated`, so nothing else in this suite pins it directly. This
+    // test fails closed on the schema's own message, not a downstream TypeError or a silent
+    // miscount, proving the invariant actually holds for the exact input `hasNonEmptyNodeId`'s
+    // reasoning depends on.
+    const reposYaml = [
+      'version: 1',
+      'repos:',
+      '  - owner: "[REDACTED]"',
+      '    name: repo-empty-id',
+      '    private: true',
+      '    node_id: ""',
+      '    added: "2024-01-01"',
+      '    onboarding_status: onboarded',
+      '    last_survey_at: null',
+      '    last_survey_status: null',
+      '    has_fro_bot_workflow: false',
+      '    has_renovate: false',
+      '',
+    ].join('\n')
+    const resolver: NodeIdResolver = async () => ({error: 'error'})
+
+    await expect(runPromotionScan({reposYaml, resolver, diff: ''})).rejects.toThrow(
+      /node_id.*expected non-empty string or omitted/,
+    )
+  })
 })
 
 describe('runPromotionCli — assertReposFile is actually called for logging (CallExpression)', () => {

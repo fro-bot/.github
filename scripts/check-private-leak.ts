@@ -347,17 +347,29 @@ async function readWorkflowRunContext(
  * Any other error shape (401/403/5xx/network/rate-limit) returns false so the
  * caller can fail closed.
  */
-// StringLiteral fallback-value note: `''` has one non-empty placeholder variant
-// (`'Stryker was here!'`) for each of the two fallback values below. Each fallback is observable
-// ONLY through the two fixed regexes at the return statement, and neither `/\bHTTP 404\b/` nor
-// `/"status"\s*:\s*"404"/` matches the literal text "Stryker was here!" -- both the real `''` and
-// the mutant placeholder produce `false` from both `.test()` calls for every input where the
-// ternary's false branch is taken, so no input can distinguish them.
+/**
+ * Reads `error[key]` and returns it if it's a string, else `''`. Isolated onto its own function
+ * (rather than an inline ternary at each call site) so the `''` fallback's `StringLiteral` mutant
+ * sits alone on its own line -- a ternary like `isRecord(error) && typeof error[key] === 'string'
+ * ? error[key] : ''` puts the `'string'` typeof-comparison literal and the `''` fallback literal
+ * on the SAME line, and Stryker's `disable next-line` directive is line-scoped: naming
+ * `StringLiteral` there would also silently suppress the (killable) `'string'` mutant.
+ */
+function stringFieldOrEmpty(error: unknown, key: 'stdout' | 'stderr'): string {
+  const value = isRecord(error) ? error[key] : undefined
+  if (typeof value === 'string') return value
+  // Stryker disable next-line StringLiteral: `''` has one non-empty placeholder variant
+  // (`'Stryker was here!'`) here. The fallback is observable ONLY through the two fixed regexes at
+  // isGh404Error's return statement, and neither `/\bHTTP 404\b/` nor `/"status"\s*:\s*"404"/`
+  // matches the literal text "Stryker was here!" -- both the real `''` and the mutant placeholder
+  // produce `false` from both `.test()` calls for every input where this branch is taken, so no
+  // input can distinguish them.
+  return ''
+}
+
 export function isGh404Error(error: unknown): boolean {
-  // Stryker disable next-line StringLiteral: see the fallback-value note above the function.
-  const stdout = isRecord(error) && typeof error.stdout === 'string' ? error.stdout : ''
-  // Stryker disable next-line StringLiteral: see the fallback-value note above the function.
-  const stderr = isRecord(error) && typeof error.stderr === 'string' ? error.stderr : ''
+  const stdout = stringFieldOrEmpty(error, 'stdout')
+  const stderr = stringFieldOrEmpty(error, 'stderr')
   return /\bHTTP 404\b/.test(stderr) || /"status"\s*:\s*"404"/.test(stdout)
 }
 
