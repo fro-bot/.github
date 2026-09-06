@@ -51,6 +51,12 @@ describe('corrections sidecar', () => {
     expect(missingReconfirmationReason).toBeDefined()
   })
 
+  it("assertCorrectionSpan rejects text whose normalized form is empty — corrections-survival.ts relies on this to avoid ''.includes('')", () => {
+    expect(() => recordCorrection(emptyCorrections, {...correctionInput, span: {text: '   \n\t  '}})).toThrow(
+      'expected text with non-empty normalized content',
+    )
+  })
+
   it('records server-derived attribution and remains readable by survey tooling', async () => {
     const recorded = recordCorrection(emptyCorrections, correctionInput)
     const raw = serializeCorrections(recorded)

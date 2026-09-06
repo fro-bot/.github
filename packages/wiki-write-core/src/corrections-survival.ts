@@ -36,16 +36,12 @@ export function verifyCorrectionSurvival(
   assertCorrectionsFile(corrections)
   const pages = collectWikiPages(files)
   const fallbackPages = collectWikiPages(fallbackFiles)
-  const pagesByNodeId = new Map<string, (typeof pages)[number]>()
-  const fallbackPagesByNodeId = new Map<string, (typeof fallbackPages)[number]>()
-  for (const page of pages) {
-    const nodeId = page.frontmatter.node_id
-    if (typeof nodeId === 'string' && nodeId !== '') pagesByNodeId.set(nodeId, page)
-  }
-  for (const page of fallbackPages) {
-    const nodeId = page.frontmatter.node_id
-    if (typeof nodeId === 'string' && nodeId !== '') fallbackPagesByNodeId.set(nodeId, page)
-  }
+  // Keyed by `unknown`: correction.page_node_id is a validated non-empty string
+  // (corrections.ts parseLooseCorrectionRecord), so unkeyable pages are never looked up.
+  const pagesByNodeId = new Map<unknown, (typeof pages)[number]>()
+  const fallbackPagesByNodeId = new Map<unknown, (typeof fallbackPages)[number]>()
+  for (const page of pages) pagesByNodeId.set(page.frontmatter.node_id, page)
+  for (const page of fallbackPages) fallbackPagesByNodeId.set(page.frontmatter.node_id, page)
 
   const deterministicFindings: WikiLintFinding[] = []
   const advisoryFindings: WikiLintFinding[] = []
@@ -67,10 +63,12 @@ export function verifyCorrectionSurvival(
       continue
     }
 
+    // normalizedSpan is never '' (assertCorrectionSpan, corrections.ts:185); page === undefined
+    // forces proseBody '', and '' can never include a non-empty span, so that disjunct is dead.
     const normalizedSpan = normalizeCorrectionText(correction.span.text)
     const proseBody = page === undefined ? '' : maskNonProseContent(page.body)
     const normalizedBody = normalizeCorrectionText(maskMarkdownLinks(proseBody))
-    if (page === undefined || normalizedSpan === '' || !normalizedBody.includes(normalizedSpan)) {
+    if (!normalizedBody.includes(normalizedSpan)) {
       const formattingSpan = normalizeFormattingText(correction.span.text)
       const formattingBody = normalizeFormattingText(proseBody)
       if (formattingSpan !== '' && formattingBody.includes(formattingSpan)) {
@@ -100,15 +98,27 @@ export function verifyCorrectionSurvival(
   }
 }
 
-function normalizeFormattingText(value: string): string {
+/**
+ * Substitutes each link's visible label (markdown or wiki, labeled or bare) before the generic
+ * punctuation strip below. A single combined alternation, scanned once left to right: a
+ * two-pass split (markdown pattern, then wiki pattern) lets the first pass's substitution text
+ * form a NEW `[[...|...]]`-shaped string the second pass then matches, re-interpreting already-
+ * substituted output as if it were original content (see corrections-survival.test.ts's
+ * `[[[]()a|b]]` counterexample). Exported only for the exhaustive differential test against
+ * the pre-refactor reference implementation.
+ */
+export function normalizeFormattingText(value: string): string {
   const markdownLinkPattern = /!?(?:\[([^\]]*)\]\([^)]*\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/gu
-  return value
-    .normalize('NFKC')
-    .replaceAll(markdownLinkPattern, renderVisibleLinkText)
-    .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-    .replaceAll(/\s+/gu, ' ')
-    .toLowerCase()
+  return (
+    value
+      .normalize('NFKC')
+      .replaceAll(markdownLinkPattern, renderVisibleLinkText)
+      // `\s+` below absorbs any run this leaves; a `+` here would be unobservable.
+      .replaceAll(/[^\p{L}\p{N}]/gu, ' ')
+      .trim()
+      .replaceAll(/\s+/gu, ' ')
+      .toLowerCase()
+  )
 }
 
 function renderVisibleLinkText(
@@ -117,30 +127,51 @@ function renderVisibleLinkText(
   wikiTarget: string | undefined,
   wikiLabel: string | undefined,
 ): string {
-  return markdownText ?? wikiLabel ?? wikiTarget ?? ''
+  // markdownLinkPattern's outer alternation guarantees exactly one branch matched whenever this
+  // callback runs: the markdown branch always captures markdownText (possibly '', never
+  // undefined), and the wiki branch always captures wikiTarget (required, 1+ chars). A final
+  // '' fallback covering "neither captured" is unreachable -- asserted, not defaulted.
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- see comment above
+  return (markdownText ?? wikiLabel ?? wikiTarget)!
 }
 
-function maskMarkdownLinks(content: string): string {
+/**
+ * Masks markdown inline links `[label](url)` to spaces so exact prose matching ignores link
+ * targets; wiki links `[[...]]` are left untouched (module docstring). A regex port was proven
+ * non-equivalent by exhaustive differential testing (corrections-survival.test.ts), so this
+ * scanner stays; its directived lines are deterministic hangs under mutation, not timing noise.
+ */
+export function maskMarkdownLinks(content: string): string {
   const masked = content.split('')
   let open = -1
   let index = 0
+  // Stryker disable next-line BlockStatement,EqualityOperator: BlockStatement mutation destroys mandatory loop progress (deterministic hang, not a timing artifact); EqualityOperator's >= variant hangs on empty content (0 >= 0 is true, index only grows, so it never becomes false again) and its <= variant only extends the loop to content[content.length], which is always undefined and has no side effect on open/masked/depth
   while (index < content.length) {
     if (content[index] === '[') open = index
     if (content[index] === ']' && content[index + 1] === '(' && open !== -1) {
       let close = index + 2
       let depth = 1
-      while (close < content.length && depth > 0) {
+      // Split from the original `close < content.length && depth > 0` combined condition so
+      // each half's mutants land on their own line; the `depth <= 0` check below is bounded by
+      // this while's own `close < content.length`, so its mutants are not a hang, just wrong
+      // output, and are killed by the differential test like any other behavior change.
+      // Stryker disable next-line BlockStatement,EqualityOperator: BlockStatement mutation destroys mandatory loop progress (deterministic hang, not a timing artifact); EqualityOperator's >= variant hangs when close starts at or past content.length (a link's `](` at the very end of the string) for the same reason as the outer loop above, and its <= variant only extends the loop to content[content.length], which is always undefined and has no side effect on open/masked/depth
+      while (close < content.length) {
+        if (depth <= 0) break
         if (content[close] === '(') depth += 1
         else if (content[close] === ')') depth -= 1
+        // Stryker disable next-line AssignmentOperator: mutation destroys mandatory loop progress; deterministic hang, not a timing artifact
         close += 1
       }
       if (depth === 0) {
+        // Stryker disable next-line AssignmentOperator: mutation destroys mandatory loop progress; deterministic hang, not a timing artifact
         for (let maskIndex = open; maskIndex < close; maskIndex += 1) masked[maskIndex] = ' '
         index = close
         open = -1
         continue
       }
     }
+    // Stryker disable next-line AssignmentOperator: mutation destroys mandatory loop progress; deterministic hang, not a timing artifact
     index += 1
   }
   return masked.join('')

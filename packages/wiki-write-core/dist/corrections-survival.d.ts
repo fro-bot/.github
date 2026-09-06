@@ -16,3 +16,20 @@ import { type CorrectionsFile, type CorrectionSurvivalResult } from './correctio
  * `correction-needs-reconfirmation`; any other miss is erosion and blocks ingest.
  */
 export declare function verifyCorrectionSurvival(files: Record<string, string>, corrections: CorrectionsFile | undefined, fallbackFiles?: Record<string, string>): CorrectionSurvivalResult;
+/**
+ * Substitutes each link's visible label (markdown or wiki, labeled or bare) before the generic
+ * punctuation strip below. A single combined alternation, scanned once left to right: a
+ * two-pass split (markdown pattern, then wiki pattern) lets the first pass's substitution text
+ * form a NEW `[[...|...]]`-shaped string the second pass then matches, re-interpreting already-
+ * substituted output as if it were original content (see corrections-survival.test.ts's
+ * `[[[]()a|b]]` counterexample). Exported only for the exhaustive differential test against
+ * the pre-refactor reference implementation.
+ */
+export declare function normalizeFormattingText(value: string): string;
+/**
+ * Masks markdown inline links `[label](url)` to spaces so exact prose matching ignores link
+ * targets; wiki links `[[...]]` are left untouched (module docstring). A regex port was proven
+ * non-equivalent by exhaustive differential testing (corrections-survival.test.ts), so this
+ * scanner stays; its directived lines are deterministic hangs under mutation, not timing noise.
+ */
+export declare function maskMarkdownLinks(content: string): string;
