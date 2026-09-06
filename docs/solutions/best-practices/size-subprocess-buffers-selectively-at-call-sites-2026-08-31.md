@@ -87,12 +87,18 @@ The current script defines one finite budget and uses it only for calls whose ou
 scale:
 
 ```ts
-export const LARGE_OUTPUT_MAX_BUFFER_BYTES = 32 * 1024 * 1024
+// A function, not a top-level `const`: a module-level const initializer runs once per Stryker
+// worker process (not per call), making its mutant "static" and unkillable by any test; a function
+// body is re-evaluated on every call, so the same constant value carries an ordinary, per-test-
+// killable mutant instead.
+export function largeOutputMaxBufferBytes(): number {
+  return 32 * 1024 * 1024
+}
 
 const compareJsonRaw = execFileSync(
   'gh',
   ['api', `repos/{owner}/{repo}/compare/${EXPECTED_BASE_BRANCH}...${headSha}`],
-  {encoding: 'utf8', env, maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES},
+  {encoding: 'utf8', env, maxBuffer: largeOutputMaxBufferBytes()},
 )
 ```
 

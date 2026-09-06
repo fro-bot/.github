@@ -7,7 +7,7 @@ import process from 'node:process'
 import {checkPrivateLeak} from '@fro-bot/wiki-write-core/private-leak'
 import {parse as parseYaml} from 'yaml'
 import {isRecord, makeGhNodeIdResolver} from './private-repo-resolution.ts'
-import {assertReposFile} from './schemas.ts'
+import {assertReposFile, type RepoEntry} from './schemas.ts'
 import {buildPrivateNameTokens} from './wiki-slug.ts'
 
 // ---------------------------------------------------------------------------
@@ -109,9 +109,20 @@ export type MainReposYamlReader = (path: string) => string
 
 /**
  * The GitHub login of the operator permitted to use the [allow-private-leak] title prefix.
- * Kept as a literal constant so it never leaks via computed interpolation.
+ * A `function` declaration rather than a top-level `const` string literal, for the same
+ * static-mutant reason as `largeOutputMaxBufferBytes` above: a literal assigned directly to a
+ * top-level const is evaluated once at module load, before any per-test mutant activation can
+ * scope it, making its StringLiteral mutant unkillable by any test regardless of assertion
+ * strength (confirmed live: mutating the value here breaks 5 tests when run directly against the
+ * mutated source, but the mutant still reports Survived under Stryker's mutation switching
+ * because the ESM module instance is cached across mutants within a worker process). Calling a
+ * function evaluates the literal fresh per call site at test-invocation time, making the same
+ * string a normal, per-test-killable mutant. Behavior-neutral: same value, same one call site,
+ * only the evaluation timing changes.
  */
-const OPERATOR_LOGIN = 'marcusrbrown'
+function operatorLogin(): string {
+  return 'marcusrbrown'
+}
 
 /**
  * Maximum output accepted from commands that return diffs or repository metadata.
@@ -120,8 +131,17 @@ const OPERATOR_LOGIN = 'marcusrbrown'
  * (typically with `ENOBUFS`) and the caller exits non-zero rather than passing.
  * Apply this to responses that scale with repository or diff size; bounded fixed-shape
  * responses intentionally keep Node's default ceiling.
+ *
+ * A function rather than a top-level `const`: Stryker classifies a top-level arithmetic
+ * initializer as a "static" mutant (evaluated once at module load, before any per-test mutant
+ * activation can scope it), which is unkillable by any test regardless of assertion strength.
+ * Computing the value inside a function evaluates it per call site at test-invocation time,
+ * making the same arithmetic a normal, per-test-killable mutant. Behavior-neutral: same value,
+ * same call sites, only the evaluation timing changes.
  */
-export const LARGE_OUTPUT_MAX_BUFFER_BYTES = 32 * 1024 * 1024
+export function largeOutputMaxBufferBytes(): number {
+  return 32 * 1024 * 1024
+}
 
 type ScanResultOutput = 'success' | 'detection' | 'error'
 
@@ -146,14 +166,22 @@ export {checkPrivateLeak}
 /**
  * The expected base repository for PRs this gate scans.
  * Fail-closed if the PR targets a different repo.
+ *
+ * A function rather than a top-level `const`, for the same static-mutant reason documented on
+ * `largeOutputMaxBufferBytes` above: a top-level string-literal initializer is a "static" mutant,
+ * unkillable by any test. Computing it inside a function evaluates it per call site.
  */
-const EXPECTED_BASE_REPO = 'fro-bot/.github'
+function expectedBaseRepo(): string {
+  return 'fro-bot/.github'
+}
 
 /**
  * The expected base branch for PRs this gate scans.
  * Fail-closed if the PR targets a different branch.
  */
-const EXPECTED_BASE_BRANCH = 'main'
+function expectedBaseBranch(): string {
+  return 'main'
+}
 
 /**
  * Validate a PR object against the expected base repo, base branch, and head SHA.
@@ -168,7 +196,7 @@ function validatePrIdentity(pr: Record<string, unknown>, expectedHeadSha: string
   const baseRef = typeof base?.ref === 'string' ? base.ref : undefined
   const baseRepoFullName = typeof baseRepo?.full_name === 'string' ? baseRepo.full_name : undefined
 
-  return headSha === expectedHeadSha && baseRef === EXPECTED_BASE_BRANCH && baseRepoFullName === EXPECTED_BASE_REPO
+  return headSha === expectedHeadSha && baseRef === expectedBaseBranch() && baseRepoFullName === expectedBaseRepo()
 }
 
 /**
@@ -222,6 +250,11 @@ async function readWorkflowRunContext(
   // Resolve PR number from pull_requests[] or API fallback.
   // IMPORTANT: pull_requests[] entries are ABBREVIATED — they lack base.repo.full_name.
   // Extract PR numbers only; fetch the full PR object via fetchPrByNumber for validation.
+  // Stryker disable next-line ArrayDeclaration: the only variant is a non-empty placeholder array
+  // (e.g. `["Stryker was here"]`). Its single string element fails `isRecord()` in extractNumbers'
+  // `for (const pr of prs) { if (!isRecord(pr)) continue }` loop below, so it yields zero candidate
+  // numbers -- identical to the real `[]` fallback triggering the head-SHA fallback path. No input
+  // can distinguish a non-record placeholder element from an empty array at this call site.
   const pullRequests = Array.isArray(workflowRun.pull_requests) ? workflowRun.pull_requests : []
 
   const resolvedPrNumber: number = await (async (): Promise<number> => {
@@ -278,9 +311,10 @@ async function readWorkflowRunContext(
           : `check-private-leak: expected exactly 1 valid PR in pull_requests[], found ${validCandidates.length} — fail-closed`,
       )
     }
-    const prNum = validCandidates[0]
-    if (prNum === undefined) throw new Error('check-private-leak: internal: validCandidates[0] undefined')
-    return prNum
+    // Length is exactly 1 after the throw above; `noUncheckedIndexedAccess` can't see that. A
+    // runtime guard here would be an unreachable branch carrying a half-equivalent mutant.
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    return validCandidates[0]!
   })()
 
   // Fetch the validated PR's details (number, title, author).
@@ -307,6 +341,19 @@ async function readWorkflowRunContext(
 // ---------------------------------------------------------------------------
 
 /**
+ * Reads `error[key]` if it's a string, else `''`. Its own function so the `''` fallback's
+ * `StringLiteral` mutant sits alone on a line: the directive below is line-scoped and would
+ * otherwise also suppress the killable `'string'` typeof literal.
+ */
+function stringFieldOrEmpty(error: unknown, key: 'stdout' | 'stderr'): string {
+  const value = isRecord(error) ? error[key] : undefined
+  if (typeof value === 'string') return value
+  // Stryker disable next-line StringLiteral: the one variant (`'Stryker was here!'`) is observable
+  // only through isGh404Error's two fixed regexes, and neither matches that placeholder text.
+  return ''
+}
+
+/**
  * Returns true when `error` carries the clear HTTP 404 signal that `gh` emits
  * for branch/content API calls: `\bHTTP 404\b` in stderr OR `"status":"404"` in stdout.
  *
@@ -314,8 +361,8 @@ async function readWorkflowRunContext(
  * caller can fail closed.
  */
 export function isGh404Error(error: unknown): boolean {
-  const stdout = isRecord(error) && typeof error.stdout === 'string' ? error.stdout : ''
-  const stderr = isRecord(error) && typeof error.stderr === 'string' ? error.stderr : ''
+  const stdout = stringFieldOrEmpty(error, 'stdout')
+  const stderr = stringFieldOrEmpty(error, 'stderr')
   return /\bHTTP 404\b/.test(stderr) || /"status"\s*:\s*"404"/.test(stdout)
 }
 
@@ -323,28 +370,57 @@ export function isGh404Error(error: unknown): boolean {
 // Default seam implementations for main()
 // ---------------------------------------------------------------------------
 
-const defaultWorkflowRunReader: WorkflowRunReader = async (path: string): Promise<string> => readFile(path, 'utf8')
+// A function declaration rather than an arrow-const: Stryker classifies the ArrowFunction mutator
+// on a top-level `const fn = (...) => ...` initializer as a "static" mutant (the function VALUE is
+// created once at module load, even though its body runs per call), which is unkillable by any
+// test regardless of assertion strength -- the same static-mutant issue documented on
+// `largeOutputMaxBufferBytes` above. A `function` declaration is not mutated by the ArrowFunction
+// mutator at all, so its body's mutants (BlockStatement, etc.) are ordinary per-call, dynamic
+// mutants instead. Behavior-neutral: same signature, same body, same default-parameter role.
+async function defaultWorkflowRunReader(path: string): Promise<string> {
+  return readFile(path, 'utf8')
+}
 
-const defaultPrApiResolver: PrApiResolver = {
-  fetchPrByNumber: async (prNumber: number): Promise<Record<string, unknown>> => {
-    const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/pulls/${prNumber}`, '--jq', '.'], {encoding: 'utf8'})
-    const parsed: unknown = JSON.parse(raw)
-    if (!isRecord(parsed)) {
-      throw new TypeError(`check-private-leak: fetchPrByNumber returned non-object for PR #${prNumber}`)
-    }
-    return parsed
-  },
-  fetchPrsByHeadSha: async (headSha: string): Promise<Record<string, unknown>[]> => {
-    const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/commits/${headSha}/pulls`, '--jq', '.'], {
-      encoding: 'utf8',
-      maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES,
-    })
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) {
-      throw new TypeError(`check-private-leak: fetchPrsByHeadSha returned non-array for SHA ${headSha}`)
-    }
-    return parsed.filter(isRecord)
-  },
+// A factory function, called once per `main()` invocation via the default-parameter expression
+// below, rather than a top-level `const` object literal: the same static-mutant reason as
+// defaultWorkflowRunReader above -- an object literal assigned directly to a top-level const is
+// constructed once at module load; Stryker's ObjectLiteral mutator on that construction is a
+// static, unkillable mutant. Calling a factory from a default-parameter expression re-constructs
+// the object fresh on every uninjected call, making the same object literal a dynamic mutant.
+function createDefaultPrApiResolver(): PrApiResolver {
+  return {
+    fetchPrByNumber: async (prNumber: number): Promise<Record<string, unknown>> => {
+      const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/pulls/${prNumber}`, '--jq', '.'], {
+        encoding: 'utf8',
+      })
+      const parsed: unknown = JSON.parse(raw)
+      if (!isRecord(parsed)) {
+        throw new TypeError(`check-private-leak: fetchPrByNumber returned non-object for PR #${prNumber}`)
+      }
+      return parsed
+    },
+    fetchPrsByHeadSha: async (headSha: string): Promise<Record<string, unknown>[]> => {
+      const raw = execFileSync('gh', ['api', `repos/{owner}/{repo}/commits/${headSha}/pulls`, '--jq', '.'], {
+        encoding: 'utf8',
+        maxBuffer: largeOutputMaxBufferBytes(),
+      })
+      const parsed: unknown = JSON.parse(raw)
+      if (!Array.isArray(parsed)) {
+        throw new TypeError(`check-private-leak: fetchPrsByHeadSha returned non-array for SHA ${headSha}`)
+      }
+      // Stryker disable next-line MethodExpression: dropping `.filter(isRecord)` (returning
+      // `parsed` unfiltered) is unobservable through main()'s only call site -- this array flows
+      // directly into readWorkflowRunContext's extractNumbers, which applies the IDENTICAL
+      // `isRecord(pr)` predicate to every entry before reading `.number` (see extractNumbers
+      // above). Filtering twice with the same predicate on the same unmodified data cannot change
+      // which entries extractNumbers accepts. Kept (not deleted) because `PrApiResolver` is an
+      // exported interface: this filter is the type-contract enforcement point for any other
+      // implementation or caller that trusts `fetchPrsByHeadSha`'s declared `Record<string,
+      // unknown>[]` return type without re-checking, even though this repository's one production
+      // caller happens to re-check.
+      return parsed.filter(isRecord)
+    },
+  }
 }
 
 /**
@@ -375,7 +451,50 @@ const defaultDataBranchChecker: DataBranchChecker = (fullName: string): boolean 
  * Default MainReposYamlReader: reads `metadata/repos.yaml` from the local working tree.
  * The workflow checks out `ref: main`, so the file is present at `metadata/repos.yaml` in CWD.
  */
-const defaultMainReposYamlReader: MainReposYamlReader = (path: string): string => readFileSync(path, 'utf8')
+// A function declaration rather than an arrow-const, for the same static-mutant reason as
+// defaultWorkflowRunReader above.
+function defaultMainReposYamlReader(path: string): string {
+  return readFileSync(path, 'utf8')
+}
+
+/**
+ * True when `r.node_id` is present and non-empty. A type guard (not a plain boolean predicate) so
+ * every caller's `.filter(hasNonEmptyNodeId)` narrows `node_id` to `string` at the type level --
+ * this removes the `.map(r => r.node_id as string)` cast at every call site, which used to let a
+ * ConditionalExpression mutant forcing this function to always return `true` become a genuine,
+ * observable bug rather than equivalent code: with the old boolean-returning form, `true` let
+ * entries with `node_id: undefined` through the filter, and the (unchecked) `as string` cast
+ * silently turned that into a literal `undefined` value flowing into `privateNodeIds`/
+ * `resolvedNodeIds` arrays typed `string[]`. The type guard closes this: TypeScript rejects the
+ * `.map(r => r.node_id)` cast-free access unless every caller has actually filtered by this
+ * predicate.
+ */
+function hasNonEmptyNodeId<T extends Pick<RepoEntry, 'node_id'>>(r: T): r is T & {node_id: string} {
+  // Split from a single `&&` expression onto its own guard line so this clause's mutants
+  // (ConditionalExpression true/false, EqualityOperator `!==`→`===`) are ordinary, per-test-
+  // killable mutants -- they are NOT equivalent (an entry with `node_id: undefined` reaching the
+  // length check below would throw, and a valid string entry wrongly excluded here would be
+  // observable everywhere `hasNonEmptyNodeId` gates a private entry into the scan). A single-line
+  // `&&` expression would put this guard's mutants on the SAME line as the length check below,
+  // and Stryker's directive is line-scoped, not sub-expression-scoped -- naming a mutator on that
+  // shared line would have silently also suppressed these, non-equivalent, mutants.
+  if (typeof r.node_id !== 'string') return false
+  // No `r.node_id.length > 0` check here: it would be dead code, not equivalent code. `.node_id`
+  // reaching this point is confirmed a string (guarded above) and, by the schema invariant,
+  // non-empty -- `assertReposFile` (called by every caller before filtering) throws via
+  // assertRepoEntry/isRepoEntry (packages/wiki-write-core/src/schemas.ts:295-296) for any
+  // `typeof node_id === 'string' && node_id.length === 0`, so no entry reaching here can ever have
+  // `node_id.length === 0` -- the comparison would always evaluate to `true` for every legally
+  // constructed input. A live `r.node_id.length > 0` here would carry a `ConditionalExpression`
+  // mutant with two variants, only one of which (`true`) is equivalent under the invariant -- the
+  // other (`false`) is a genuine, killable bug (confirmed live: forcing it broke 47 tests), and
+  // Stryker's `disable next-line` directive is mutator-scoped, not variant-scoped, so a single
+  // directive cannot suppress only the equivalent half. Deleting the tautological check removes
+  // the mutant surface entirely, per
+  // docs/solutions/best-practices/enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md
+  // rule 3 ("prefer deletion over a directive when the code itself is unnecessary").
+  return true
+}
 
 /**
  * Parse a repos.yaml YAML string and extract private node_ids.
@@ -384,8 +503,9 @@ function extractPrivateNodeIds(yamlText: string): string[] {
   const parsed: unknown = parseYaml(yamlText)
   assertReposFile(parsed)
   return parsed.repos
-    .filter(r => r.private === true && typeof r.node_id === 'string' && r.node_id.length > 0)
-    .map(r => r.node_id as string)
+    .filter(r => r.private === true)
+    .filter(hasNonEmptyNodeId)
+    .map(r => r.node_id)
 }
 
 /**
@@ -413,11 +533,16 @@ function fetchPrivateNodeIds(
   // Step 1: attempt to fetch content from the data branch.
   let encoded: string
   try {
+    // No `.trim()`: the base64 payload is immediately `.replaceAll('\n', '')`-stripped below, and
+    // Node's `Buffer.from(str, 'base64')` decoder silently skips every non-base64-alphabet
+    // character (spaces, tabs, `\r`, `\n`) wherever it appears in the string -- confirmed:
+    // `Buffer.from('  \r\nSGVsbG8=\r\n  ', 'base64').toString()` decodes identically to the
+    // untrimmed-whitespace-free input. `.trim()` cannot change the decoded result for any input.
     encoded = execFileSync(
       'gh',
       ['api', `repos/${fullName}/contents/metadata/repos.yaml?ref=data`, '--jq', '.content'],
-      {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES},
-    ).trim()
+      {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: largeOutputMaxBufferBytes()},
+    )
   } catch (error: unknown) {
     if (!isGh404Error(error)) {
       // Step 4: non-404 error (401/403/5xx/network/rate-limit) → fail closed.
@@ -446,11 +571,12 @@ function fetchPrivateNodeIds(
     // Step 3c: data branch EXISTS but content is 404 (create/race) → retry once.
     let retryEncoded: string
     try {
+      // No `.trim()`: same equivalence proof as the initial fetch above.
       retryEncoded = execFileSync(
         'gh',
         ['api', `repos/${fullName}/contents/metadata/repos.yaml?ref=data`, '--jq', '.content'],
-        {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES},
-      ).trim()
+        {encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: largeOutputMaxBufferBytes()},
+      )
     } catch {
       // Retry also 404 or other error → fail closed.
       throw new Error(
@@ -459,13 +585,19 @@ function fetchPrivateNodeIds(
     }
 
     // Retry succeeded — use data branch content.
-    const retryYaml = Buffer.from(retryEncoded.replaceAll('\n', ''), 'base64').toString('utf8')
+    // No `.replaceAll('\n', '')`: Node's `Buffer.from(str, 'base64')` decoder silently skips
+    // embedded `\n` characters wherever they appear, decoding identically with or without them
+    // stripped -- confirmed: `Buffer.from('SGVs\nbG8=', 'base64')` decodes the same as
+    // `Buffer.from('SGVsbG8=', 'base64')`. Stripping cannot change the decoded result for any
+    // input (same equivalence class as the deleted `.trim()` calls above).
+    const retryYaml = Buffer.from(retryEncoded, 'base64').toString('utf8')
     return extractPrivateNodeIds(retryYaml)
   }
 
   // Step 2: SUCCESS — parse and return private node_ids.
-  // GitHub API returns base64 with potential embedded newlines.
-  const yamlText = Buffer.from(encoded.replaceAll('\n', ''), 'base64').toString('utf8')
+  // GitHub API returns base64 with potential embedded newlines; no `.replaceAll('\n', '')` needed
+  // (see the equivalence note above the retry-path decode).
+  const yamlText = Buffer.from(encoded, 'base64').toString('utf8')
   return extractPrivateNodeIds(yamlText)
 }
 
@@ -542,8 +674,8 @@ function fetchDiffForSha(headSha: string, env: NodeJS.ProcessEnv): string {
   // A missing per-file `patch` in the JSON is not fatal; the raw diff (Step 2) is the scan source.
   const compareJsonRaw = execFileSync(
     'gh',
-    ['api', `repos/{owner}/{repo}/compare/${EXPECTED_BASE_BRANCH}...${headSha}`],
-    {encoding: 'utf8', env, maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES},
+    ['api', `repos/{owner}/{repo}/compare/${expectedBaseBranch()}...${headSha}`],
+    {encoding: 'utf8', env, maxBuffer: largeOutputMaxBufferBytes()},
   )
   const compareJson: unknown = JSON.parse(compareJsonRaw)
   assertCompareNotTruncated(compareJson)
@@ -554,11 +686,11 @@ function fetchDiffForSha(headSha: string, env: NodeJS.ProcessEnv): string {
     'gh',
     [
       'api',
-      `repos/{owner}/{repo}/compare/${EXPECTED_BASE_BRANCH}...${headSha}`,
+      `repos/{owner}/{repo}/compare/${expectedBaseBranch()}...${headSha}`,
       '-H',
       'Accept: application/vnd.github.v3.diff',
     ],
-    {encoding: 'utf8', env, maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES},
+    {encoding: 'utf8', env, maxBuffer: largeOutputMaxBufferBytes()},
   )
 }
 
@@ -645,27 +777,44 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   assertReposFile(parsed)
   const privateEntries = parsed.repos.filter(r => r.private === true)
 
-  // Zero private entries → nothing to scan.
-  if (privateEntries.length === 0) {
-    return {ok: true}
-  }
+  // No early return for privateEntries.length === 0: zero private entries yields
+  // missingNodeIdCount === 0, an empty privateNodeIds/resolvedNames/privateTokens, and
+  // checkPrivateLeak([], diff, ...) converges to {ok: true} through the main path anyway (mirrors
+  // the identical dead-code removal already documented in
+  // packages/wiki-write-core/src/private-leak.ts's own checkPrivateLeak) -- a pure optimization,
+  // not a behavior difference. Pinned by the "zero private entries" test rather than special-cased
+  // here.
 
   // Fix B: any private entry with missing/empty node_id is a blocking condition.
   // We cannot scan what we cannot identify — fail closed.
-  const missingNodeIdCount = privateEntries.filter(r => typeof r.node_id !== 'string' || r.node_id.length === 0).length
-
-  const privateNodeIds = privateEntries
-    .filter(r => typeof r.node_id === 'string' && r.node_id.length > 0)
-    .map(r => r.node_id as string)
+  const privateNodeIds = privateEntries.filter(hasNonEmptyNodeId).map(r => r.node_id)
+  // Computed by subtraction against the same `hasNonEmptyNodeId` filter, rather than a second,
+  // differently-worded predicate (`typeof r.node_id !== 'string' || r.node_id.length === 0`) that
+  // would have to independently re-derive the identical partition -- removes both the duplicate
+  // logic and the ConditionalExpression/EqualityOperator mutant surface a hand-written negation
+  // would otherwise carry (a wrong-operator or forced-branch mutant on a second predicate can
+  // silently disagree with the first one; subtraction against the same source cannot disagree with
+  // itself).
+  const missingNodeIdCount = privateEntries.length - privateNodeIds.length
 
   // Resolve each node_id — exhaustive matrix.
+  // Stryker disable next-line ArrayDeclaration: seeding this with Stryker's placeholder string
+  // (`['Stryker was here']`) is unobservable -- `resolvedNames` is consumed only by
+  // `buildTokensForName(nameWithOwner)` below, and `buildPrivateNameTokens` (which it delegates
+  // to) requires a `/` at index >= 1 to produce any token at all (`slashIndex < 1` -> `return []`,
+  // wiki-slug.ts:35-36) -- "Stryker was here" has no `/`, so it contributes zero tokens to
+  // `privateTokens` regardless of whether it's seeded here.
   const resolvedNames: string[] = []
   const failedNodeIds: string[] = []
 
-  // Seed with missing-node-id sentinels (Fix B).
-  for (let i = 0; i < missingNodeIdCount; i++) {
-    failedNodeIds.push('<missing-node-id>')
-  }
+  // Seed with missing-node-id sentinels (Fix B). No induction variable: an off-by-one or
+  // wrong-direction mutant on a hand-rolled counting loop here is a deterministic hang (not a
+  // "kill"-able mutant at all), which is why this used to need two Stryker directives
+  // (UpdateOperator, EqualityOperator). `Array.from({length: missingNodeIdCount}, ...)` has no
+  // loop guard or counter to mutate into a hang; its own `ArithmeticOperator`/`ObjectLiteral`
+  // mutants on `{length: missingNodeIdCount}` are ordinary, per-test-killable mutants, caught by
+  // the existing exact-sentinel-count assertions.
+  failedNodeIds.push(...Array.from({length: missingNodeIdCount}, () => '<missing-node-id>'))
 
   for (const nodeId of privateNodeIds) {
     const result = await resolver(nodeId)
@@ -691,10 +840,23 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   }
 
   // Run the pure scan. No override in promotion mode (operator-supervised scheduled job).
+  // Stryker disable next-line BooleanLiteral,ObjectLiteral: `false` has exactly one variant
+  // (`true`); flipping EITHER `titlePrefixed` or `isOperator` alone cannot change behavior --
+  // checkPrivateLeak's own override gate is `override.titlePrefixed && override.isOperator`
+  // (packages/wiki-write-core/src/private-leak.ts:30), both must be true simultaneously to bypass
+  // detection, and Stryker mutates exactly one BooleanLiteral per mutant, never both at once. The
+  // ObjectLiteral variant (`{}`) makes both fields `undefined`, and `undefined && undefined` is
+  // also falsy -- same no-override outcome. This promotion path deliberately never offers an
+  // override (operator-supervised scheduled job, comment above), so no input can distinguish any
+  // of these three mutants from the real code.
   const scanResult = checkPrivateLeak(privateTokens, diff, {titlePrefixed: false, isOperator: false})
 
   // Fix D: redact private tokens from matched file paths before returning.
-  if (!scanResult.ok && 'matchedFiles' in scanResult) {
+  // `GuardResult = {ok: true} | {ok: false; matchedFiles: ...}` (packages/wiki-write-core/src/
+  // private-leak.ts:1) is fully discriminated on `ok`; TypeScript narrows `scanResult` to the
+  // `{ok: false; matchedFiles}` arm from `!scanResult.ok` alone — no redundant `'matchedFiles' in
+  // scanResult` conjunct needed (and no LogicalOperator mutant exists on this line to directive).
+  if (!scanResult.ok) {
     const redactedFiles = scanResult.matchedFiles.map(f => redactPathTokens(f, privateTokens))
     return {ok: false, matchedFiles: redactedFiles}
   }
@@ -711,12 +873,19 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
  * so the PAT never reaches git (Fix C). The env argument is the already-sanitized
  * env built by the caller.
  */
-const defaultGitDiffRunner: GitDiffRunner = (args: string[], env: NodeJS.ProcessEnv): string =>
-  execFileSync('git', args, {encoding: 'utf8', env, maxBuffer: LARGE_OUTPUT_MAX_BUFFER_BYTES})
+// Function declarations rather than arrow-consts, for the same static-mutant reason as
+// defaultWorkflowRunReader above.
+function defaultGitDiffRunner(args: string[], env: NodeJS.ProcessEnv): string {
+  return execFileSync('git', args, {encoding: 'utf8', env, maxBuffer: largeOutputMaxBufferBytes()})
+}
 
-const defaultReposYamlReader: ReposYamlReader = async (path: string): Promise<string> => readFile(path, 'utf8')
+async function defaultReposYamlReader(path: string): Promise<string> {
+  return readFile(path, 'utf8')
+}
 
-const defaultResolverFactory: ResolverFactory = (pat: string): NodeIdResolver => makeGhNodeIdResolver(pat)
+function defaultResolverFactory(pat: string): NodeIdResolver {
+  return makeGhNodeIdResolver(pat)
+}
 
 // ---------------------------------------------------------------------------
 // Promotion CLI shell — injectable seams for testability (Fix E)
@@ -789,12 +958,14 @@ export async function runPromotionCli(
   const parsedForLog: unknown = parseYaml(reposYaml)
   assertReposFile(parsedForLog)
   const allPrivateEntries = parsedForLog.repos.filter(r => r.private === true)
-  const privateNodeIds = allPrivateEntries
-    .filter(r => typeof r.node_id === 'string' && r.node_id.length > 0)
-    .map(r => r.node_id as string)
+  // Count only — this value is used for logging counts (`missingCount`, the final "ok (scanned N
+  // ...)" message), never the resolved node_id string values themselves; the actual resolution
+  // loop below iterates `privateNodeIds` returned from `runPromotionScan`'s own internal
+  // computation, not this count.
+  const privateNodeIdCount = allPrivateEntries.filter(hasNonEmptyNodeId).length
 
   // Log missing node_id entries (Fix B — these will block in runPromotionScan).
-  const missingCount = allPrivateEntries.length - privateNodeIds.length
+  const missingCount = allPrivateEntries.length - privateNodeIdCount
   if (missingCount > 0) {
     process.stderr.write(
       `check-private-leak [promotion]: ${missingCount} private entry/entries have no node_id — will block\n`,
@@ -820,11 +991,16 @@ export async function runPromotionCli(
   const result = await runPromotionScan({reposYaml, resolver: loggingResolver, diff})
 
   if (result.ok) {
-    process.stdout.write(`check-private-leak [promotion]: ok (scanned ${privateNodeIds.length} private node_id(s))\n`)
+    process.stdout.write(`check-private-leak [promotion]: ok (scanned ${privateNodeIdCount} private node_id(s))\n`)
     return 0
   }
 
-  if ('resolutionFailed' in result && result.resolutionFailed) {
+  // `PromotionScanResult`'s `resolutionFailed` branch is typed as `{ok: false; resolutionFailed:
+  // true; ...}` -- the key is either wholly absent (`matchedFiles` branch) or present as the
+  // literal `true` (never `false`), so `'resolutionFailed' in result` alone already narrows to
+  // this arm; no redundant `&& result.resolutionFailed` conjunct is needed (and no LogicalOperator
+  // mutant exists on this line to directive).
+  if ('resolutionFailed' in result) {
     // Fail-closed: resolution failure (including access-lost) blocks promotion.
     // Print only the COUNT, never the raw node_ids: a node_id is normally an opaque
     // public identifier, but the schema is defense-in-depth and a malformed
@@ -843,10 +1019,13 @@ export async function runPromotionCli(
     'check-private-leak [promotion]: FAILED — private repository name(s) detected in promotion diff\n',
   )
   process.stderr.write('\nMatched files (private tokens redacted):\n')
-  if ('matchedFiles' in result) {
-    for (const file of result.matchedFiles) {
-      process.stderr.write(`  - ${file}\n`)
-    }
+  // `result` at this point has already excluded `ok: true` (checked above, returns 0) and
+  // `resolutionFailed: true` (checked above, returns 1) -- TypeScript already narrows
+  // `PromotionScanResult`'s only remaining variant to `{ok: false, matchedFiles}` here by
+  // construction; no runtime `'matchedFiles' in result` check is needed (and no ConditionalExpression
+  // mutant exists on this line to directive).
+  for (const file of result.matchedFiles) {
+    process.stderr.write(`  - ${file}\n`)
   }
   process.stderr.write(
     '\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts metadata/repos.yaml\n',
@@ -862,7 +1041,7 @@ export async function runPromotionCli(
 
 export async function main(
   workflowRunReader: WorkflowRunReader = defaultWorkflowRunReader,
-  prApiResolver: PrApiResolver = defaultPrApiResolver,
+  prApiResolver: PrApiResolver = createDefaultPrApiResolver(),
   dataBranchChecker: DataBranchChecker = defaultDataBranchChecker,
   mainReposYamlReader: MainReposYamlReader = defaultMainReposYamlReader,
 ): Promise<void> {
@@ -926,7 +1105,7 @@ export async function main(
 
   // FIX #1: evaluate override BEFORE deciding to fail-closed.
   const titlePrefixed = title.startsWith('[allow-private-leak]')
-  const isOperator = author === OPERATOR_LOGIN
+  const isOperator = author === operatorLogin()
   const override: OverrideOptions = {titlePrefixed, isOperator}
 
   // Build a sanitized env that excludes FRO_BOT_POLL_PAT before passing to the compare-API diff fetch.
@@ -1029,10 +1208,15 @@ export async function main(
     process.stderr.write(`  - ${redactPathTokens(file, privateTokens)}\n`)
   }
   // FIX #5: corrected remediation command (resolve-private takes a file path, not a node_id).
-  process.stderr.write(
-    '\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts metadata/repos.yaml\n',
-  )
+  // prettier-ignore
+  // Stryker disable next-line StringLiteral,CallExpression: operator-facing remediation prose.
+  // Not read by any parser, not compared by any assertion, does not affect classification, exit
+  // status, redaction, or downstream parsing — purely a human instruction for the PR author.
+  // Removing the call entirely (CallExpression) is equally unobservable for the same reason.
+  process.stderr.write('\nTo look up the private repository locally, run: GH_TOKEN=<operator-PAT> node scripts/resolve-private.ts metadata/repos.yaml\n')
+  // Stryker disable next-line StringLiteral,CallExpression: see the note above — operator-facing prose.
   process.stderr.write('  (This prints a node_id → owner/name table for all private entries.)\n')
+  // Stryker disable next-line StringLiteral,CallExpression: see the note above — operator-facing prose.
   process.stderr.write('To bypass (operator only): prefix the PR title with [allow-private-leak] and re-run.\n')
   process.exit(1)
 }
