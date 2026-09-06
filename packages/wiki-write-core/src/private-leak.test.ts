@@ -549,17 +549,10 @@ describe('checkPrivateLeak — inverse controls: structural-token text as added 
     expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({ok: false, matchedFiles: ['notes.md']})
   })
 
-  it('documents CURRENT behavior (known limitation, not fixed in this PR): a real "@@" hunk marker\'s own trailing context text is never scanned', () => {
-    // Unlike diff --git/rename to/copy to, a genuine "@@ ... @@" hunk-marker line is NOT
-    // `+`-prefixed in a real diff -- so it is filtered out by the later, unconditional
-    // `if (!line.startsWith('+')) continue` before ever reaching the content scan, regardless
-    // of whether the '@@' branch itself falls through or `continue`s. A private name placed in
-    // a hunk marker's own trailing function-context text (a real thing `git diff` emits, e.g.
-    // "@@ -1,2 +1,2 @@ function secret() {") is NOT caught. This is a real, currently-open gap
-    // -- tracked, not fixed here; fixing it would require scanning '@@' lines separately from
-    // the '+'-prefixed content path, a behavior change out of scope for Unit 5A-2's mutation-
-    // coverage pass. See docs/solutions/security-issues/
-    // mutation-coverage-is-silent-about-unwritten-branches-2026-09-05.md.
+  it('documents CURRENT behavior (known gap, tracked in #3842): a real "@@" hunk marker\'s own trailing context text is never scanned', () => {
+    // A hunk-marker line is not `+`-prefixed, so the `!line.startsWith('+')` filter drops it
+    // before the content scan. A private name in the trailing function-context text
+    // ("@@ -1,2 +1,2 @@ function secret() {") is NOT caught. Flip this test when fixing #3842.
     const diff = [
       diffGit('notes.md', 'notes.md'),
       '--- a/notes.md',
