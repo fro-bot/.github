@@ -16,3 +16,19 @@ import { type CorrectionsFile, type CorrectionSurvivalResult } from './correctio
  * `correction-needs-reconfirmation`; any other miss is erosion and blocks ingest.
  */
 export declare function verifyCorrectionSurvival(files: Record<string, string>, corrections: CorrectionsFile | undefined, fallbackFiles?: Record<string, string>): CorrectionSurvivalResult;
+/**
+ * Substitutes each link's visible label (markdown or wiki, labeled or bare) before the generic
+ * punctuation strip below. Exported only for `corrections-survival.test.ts`'s exhaustive
+ * differential test against the pre-refactor reference implementation.
+ */
+export declare function normalizeFormattingText(value: string): string;
+/**
+ * Masks markdown inline links `[label](url)` to spaces so exact prose matching ignores link
+ * targets; wiki links `[[...]]` are left untouched (module docstring). Ported from a
+ * char-scanning algorithm; URLs nest parens up to 4 levels deep, a proven, tested bound.
+ * KNOWN DIVERGENCE from the ported algorithm, found by exhaustive differential testing and not
+ * yet resolved: a malformed link whose label is empty/near-empty and immediately followed by
+ * another `](` that itself fails to close (e.g. `[](]()`) — see corrections-survival.test.ts.
+ * Exported only for that test.
+ */
+export declare function maskMarkdownLinks(content: string): string;

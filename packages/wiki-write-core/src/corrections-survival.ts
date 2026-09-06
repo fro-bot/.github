@@ -36,12 +36,8 @@ export function verifyCorrectionSurvival(
   assertCorrectionsFile(corrections)
   const pages = collectWikiPages(files)
   const fallbackPages = collectWikiPages(fallbackFiles)
-  // Keyed by `unknown`, not narrowed to `string`: assertCorrectionsFile above guarantees
-  // every correction.page_node_id is a validated non-empty string (corrections.ts
-  // parseLooseCorrectionRecord), and Map lookup uses strict (SameValueZero) key equality
-  // with no coercion, so a page whose frontmatter.node_id is missing, non-string, or empty
-  // can never be retrieved by any valid correction lookup regardless of what it's keyed
-  // under. Filtering those pages out before indexing would be unreachable dead code.
+  // Keyed by `unknown`: correction.page_node_id is a validated non-empty string
+  // (corrections.ts parseLooseCorrectionRecord), so unkeyable pages are never looked up.
   const pagesByNodeId = new Map<unknown, (typeof pages)[number]>()
   const fallbackPagesByNodeId = new Map<unknown, (typeof fallbackPages)[number]>()
   for (const page of pages) pagesByNodeId.set(page.frontmatter.node_id, page)
@@ -67,11 +63,8 @@ export function verifyCorrectionSurvival(
       continue
     }
 
-    // `correction.span.text` is guaranteed to normalize non-empty by assertCorrectionSpan
-    // (corrections.ts), enforced above via assertCorrectionsFile — no live input can make
-    // normalizedSpan ''. `page === undefined` is also not tested as its own disjunct below:
-    // it forces proseBody to '', and '' can never include the always-non-empty normalizedSpan,
-    // so `!normalizedBody.includes(normalizedSpan)` is already true whenever page is undefined.
+    // normalizedSpan is never '' (assertCorrectionSpan, corrections.ts:185); page === undefined
+    // forces proseBody '', and '' can never include a non-empty span, so that disjunct is dead.
     const normalizedSpan = normalizeCorrectionText(correction.span.text)
     const proseBody = page === undefined ? '' : maskNonProseContent(page.body)
     const normalizedBody = normalizeCorrectionText(maskMarkdownLinks(proseBody))
@@ -106,24 +99,19 @@ export function verifyCorrectionSurvival(
 }
 
 /**
- * Two link forms get their visible label substituted in before the generic punctuation
- * strip below; a *label-less* wiki link `[[Target]]` is deliberately NOT special-cased
- * here — substituting it for its own target text is character-for-character identical to
- * leaving it raw and letting the generic `[^\p{L}\p{N}]+` pass strip the `[[`/`]]` wrapper
- * (both leave exactly the target's letters/digits), so a bare-link branch would be
- * unobservable dead code for this comparator.
+ * Substitutes each link's visible label (markdown or wiki, labeled or bare) before the generic
+ * punctuation strip below. Exported only for `corrections-survival.test.ts`'s exhaustive
+ * differential test against the pre-refactor reference implementation.
  */
-function normalizeFormattingText(value: string): string {
+export function normalizeFormattingText(value: string): string {
   const markdownLinkPattern = /!?\[([^\]]*)\]\([^)]*\)/gu
-  const wikiLabeledLinkPattern = /\[\[([^\]|]+)\|([^\]]+)\]\]/gu
+  const wikiLinkPattern = /!?\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/gu
   return (
     value
       .normalize('NFKC')
       .replaceAll(markdownLinkPattern, (_match: string, label: string) => label)
-      .replaceAll(wikiLabeledLinkPattern, (_match: string, _target: string, label: string) => label)
-      // No `+` here: each stripped character becomes its own single-space replacement, and the
-      // `\s+` collapse immediately below always runs afterward, absorbing any resulting run —
-      // a `+` here would be unobservable given that guaranteed follow-up pass.
+      .replaceAll(wikiLinkPattern, (_match: string, target: string, label: string | undefined) => label ?? target)
+      // `\s+` below absorbs any run this leaves; a `+` here would be unobservable.
       .replaceAll(/[^\p{L}\p{N}]/gu, ' ')
       .trim()
       .replaceAll(/\s+/gu, ' ')
@@ -132,17 +120,15 @@ function normalizeFormattingText(value: string): string {
 }
 
 /**
- * Mask markdown inline links `[label](url)` to spaces so exact prose matching ignores
- * link targets; wiki links `[[...]]` are left untouched (module docstring). The label
- * matches up to the LAST unmatched `[` before a `](`, mirroring the equivalent character-
- * scanning algorithm this replaced: `(?!\]\()[^[]` forbids the label from crossing another
- * `[` (a later `[` wins, like re-assigning `open`) or from swallowing a `](` pair (which
- * would end the label early, like the `open !== -1` match). The URL supports up to 4
- * levels of nested parens — real wiki/GitHub URLs never approach that (Wikipedia-style
- * disambiguation nests one level); deeper nesting is a documented, tested boundary (see
- * corrections-survival.test.ts's `maskMarkdownLinks` corpus), not an unfounded assumption.
+ * Masks markdown inline links `[label](url)` to spaces so exact prose matching ignores link
+ * targets; wiki links `[[...]]` are left untouched (module docstring). Ported from a
+ * char-scanning algorithm; URLs nest parens up to 4 levels deep, a proven, tested bound.
+ * KNOWN DIVERGENCE from the ported algorithm, found by exhaustive differential testing and not
+ * yet resolved: a malformed link whose label is empty/near-empty and immediately followed by
+ * another `](` that itself fails to close (e.g. `[](]()`) — see corrections-survival.test.ts.
+ * Exported only for that test.
  */
-function maskMarkdownLinks(content: string): string {
+export function maskMarkdownLinks(content: string): string {
   const pattern = /\[(?:(?!\]\()[^[])*\]\((?:[^()]|\((?:[^()]|\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))*\))*\)/gu
   return content.replaceAll(pattern, match => ' '.repeat(match.length))
 }

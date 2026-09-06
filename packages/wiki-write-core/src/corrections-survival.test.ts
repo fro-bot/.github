@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises'
 import {describe, expect, it, vi} from 'vitest'
 
 import {normalizeCorrectionText} from './correction-text.ts'
-import {verifyCorrectionSurvival} from './corrections-survival.ts'
+import {maskMarkdownLinks, normalizeFormattingText, verifyCorrectionSurvival} from './corrections-survival.ts'
 import {parseCorrections, readCorrections, type CorrectionsFile} from './corrections.ts'
 import {buildWikiIngestChanges, runWikiIngestCli, WikiIngestError} from './wiki-ingest.ts'
 import {buildWikiLintJsonReport, type WikiLintResult} from './wiki-lint.ts'
@@ -273,6 +273,26 @@ describe('correction survival verification', () => {
       expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
     ])
   })
+
+  it.each([
+    ['a labeled wiki link with an Obsidian-style embed prefix', 'foo![[T|L]]bar', 'foolbar'],
+    ['a bare wiki link with an embed prefix directly against a letter', 'foo![[T]]bar', 'footbar'],
+    ['a bare wiki link with an embed prefix after a space', 'foo ![[T]]bar', 'foo tbar'],
+  ])(
+    'recognizes %s (the leading `!` is consumed by the match, not left as a separator)',
+    (_label, body, expectedFormattingText) => {
+      const result = verifyCorrectionSurvival(
+        {'knowledge/wiki/repos/alice--project.md': page(body)},
+        activeCorrections(expectedFormattingText),
+      )
+
+      expect(result.ok).toBe(true)
+      expect(result.deterministicFindings).toEqual([])
+      expect(result.advisoryFindings).toEqual([
+        expect.objectContaining({kind: 'correction-needs-reconfirmation', target: 'correction-active'}),
+      ])
+    },
+  )
 
   it('is case-insensitive by lowercasing, not uppercasing — a German ß is not letter-for-letter equal to "ss" once folded', () => {
     // ß.toUpperCase() === 'SS' but ß.toLowerCase() === ß, so lower- vs uppercase-folding this
@@ -695,5 +715,106 @@ describe('correction survival verification', () => {
       expect(error.findings.filter(finding => finding.kind === 'correction-eroded')).toHaveLength(2)
       expect(error.message).toContain('refused')
     }
+  })
+})
+
+// Verbatim copy of the combined markdown/wikilink regex and renderer this module used before
+// the split into normalizeFormattingText's two independent patterns (see git history for
+// corrections-survival.ts prior to this test). Kept only as a differential-test oracle.
+function renderVisibleLinkTextReference(
+  _match: string,
+  markdownText: string | undefined,
+  wikiTarget: string | undefined,
+  wikiLabel: string | undefined,
+): string {
+  return markdownText ?? wikiLabel ?? wikiTarget ?? ''
+}
+
+function normalizeFormattingTextReference(value: string): string {
+  const markdownLinkPattern = /!?(?:\[([^\]]*)\]\([^)]*\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/gu
+  return value
+    .normalize('NFKC')
+    .replaceAll(markdownLinkPattern, renderVisibleLinkTextReference)
+    .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replaceAll(/\s+/gu, ' ')
+    .toLowerCase()
+}
+
+/** Enumerates every string over `alphabet` of each length from 1 to `maxLength`, inclusive. */
+function* enumerateStrings(alphabet: readonly string[], maxLength: number): Generator<string> {
+  for (let length = 1; length <= maxLength; length += 1) {
+    const total = alphabet.length ** length
+    for (let index = 0; index < total; index += 1) {
+      let remaining = index
+      const characters: string[] = []
+      for (let position = 0; position < length; position += 1) {
+        characters.push(alphabet[remaining % alphabet.length] as string)
+        remaining = Math.floor(remaining / alphabet.length)
+      }
+      yield characters.join('')
+    }
+  }
+}
+
+// Verbatim port of the char-scanning algorithm this module replaced (see git history for
+// corrections-survival.ts prior to this test). Kept only as a differential-test oracle.
+function maskMarkdownLinksReference(content: string): string {
+  const masked = content.split('')
+  let open = -1
+  let index = 0
+  while (index < content.length) {
+    if (content[index] === '[') open = index
+    if (content[index] === ']' && content[index + 1] === '(' && open !== -1) {
+      let close = index + 2
+      let depth = 1
+      while (close < content.length && depth > 0) {
+        if (content[close] === '(') depth += 1
+        else if (content[close] === ')') depth -= 1
+        close += 1
+      }
+      if (depth === 0) {
+        for (let maskIndex = open; maskIndex < close; maskIndex += 1) masked[maskIndex] = ' '
+        index = close
+        open = -1
+        continue
+      }
+    }
+    index += 1
+  }
+  return masked.join('')
+}
+
+describe('normalizeFormattingText exhaustive differential against the pre-refactor implementation', () => {
+  it('matches the reference implementation for every string up to length 7 over the link-syntax alphabet', () => {
+    const alphabet = ['[', ']', '(', ')', '|', '!', 'a', ' ']
+    let checked = 0
+    for (const candidate of enumerateStrings(alphabet, 7)) {
+      checked += 1
+      const actual = normalizeFormattingText(candidate)
+      const expected = normalizeFormattingTextReference(candidate)
+      if (actual !== expected) {
+        throw new Error(
+          `normalizeFormattingText diverged for ${JSON.stringify(candidate)}: got ${JSON.stringify(actual)}, reference gave ${JSON.stringify(expected)}`,
+        )
+      }
+    }
+    expect(checked).toBe(2_396_744)
+  })
+})
+
+describe('maskMarkdownLinks against the pre-refactor char-scanning reference implementation', () => {
+  it('documents a known divergence from the reference implementation for a malformed, unclosed nested link', () => {
+    // [](]() : the reference implementation's `open` pointer survives a failed inner-paren
+    // match and is reused by a LATER `](`, masking the whole string; the shipped regex has no
+    // equivalent "retry from an earlier failed open" behavior and leaves it unmasked. Found by
+    // exhaustive differential testing (all 6^k strings, k=1..7, over ['[',']','(',')','a',' ']:
+    // 335,922 cases, 1 divergence, this is it). Not yet resolved — see the plan's 5B-1 Result
+    // block for the accept/fix decision. This test pins the CURRENT (diverging) behavior so a
+    // future change to either implementation is a conscious, reviewed decision, not a silent
+    // regression discovered by accident.
+    const input = '[](]()'
+    expect(maskMarkdownLinksReference(input)).toBe('      ')
+    expect(maskMarkdownLinks(input)).toBe('[](]()')
   })
 })
