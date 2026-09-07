@@ -1,13 +1,15 @@
 ---
 title: 'feat: Counterexample-proven guards via scoped mutation testing'
 type: feat
-status: active
+status: complete
 date: 2026-09-04
 origin: docs/brainstorms/2026-09-04-counterexample-proven-guards-requirements.md
 deepened: 2026-09-04
 ---
 
 # feat: Counterexample-proven guards via scoped mutation testing
+
+**Status: complete.** All six units shipped and merged. Unit 4: #3831. Unit 5: #3833, #3834, #3837, #3839, #3840, #3841, #3843, #3844, #3845, #3848, #3855, #3856, #3858. Unit 6: #3860. See the Final State section below.
 
 ## Overview
 
@@ -43,7 +45,8 @@ The repository's guards almost all have negative tests and several carry hand-wr
 
 - `fro-bot/dashboard` `wiki-writer` guards: adopt the same shape once proven here — separate plan in that repository.
 - Narrowing the manifest/lockfile trigger to dependency bumps that touch the mutation or test toolchain, if Renovate churn makes the cost material — future iteration after Unit 6 lands and cost is observed.
-- A `docs/solutions/` learning capturing the vacuous-counterexample class and this remedy — write after Unit 6 via the compound workflow.
+- ~~A `docs/solutions/` learning capturing the vacuous-counterexample class and this remedy — write after Unit 6 via the compound workflow.~~ Delivered: `docs/solutions/best-practices/enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md`, `docs/solutions/best-practices/equivalence-refactors-need-differential-proofs-past-the-bound-2026-09-06.md`, and `docs/solutions/security-issues/mutation-coverage-is-silent-about-unwritten-branches-2026-09-05.md` (via #3840 and #3856), all three citing this plan by path.
+- #3835 — extract the barrel-detection logic in `scripts/mutation-guards-config.test.ts` into a mutatable module.
 
 ## Context & Research
 
@@ -452,6 +455,8 @@ Gate: `pnpm check-types`, `pnpm lint`, `pnpm test` (74 files, 2994 tests + 3 tod
 **Dependencies:** Unit 4 (job exists), Unit 3 (set is complete).
 
 **Measured baseline:** CI run 34002642010 on `45a1864`, full (then-12-entry) set: 2907 mutants, 53.77% score, 1351 non-clean, verdict `mutant-timeout`. Scope corrected per Unit 3's fourth addendum (three demotions). Re-measured on the corrected 9-module set in CI run 34007429970 on `e975fd9`: 2558 mutants, 1402 killed, 787 survived, 362 no-coverage, 7 timeout — **1156 non-clean**, per-module counts identical to the pre-correction figures. The 5A/5B counts below are that measured baseline.
+
+> **Note on the 591/565/1156 figures below:** these were measured while `private-leak-adapter.test.ts` was briefly absent from `testFiles` (see Unit 3's fifth addendum, closed on #3833). That config state no longer exists — every module is now clean — so these counts cannot be re-measured and are retained as historical planning estimates only, not a reproducible baseline. See the Final State section for the current, live-measured numbers.
 
 **5A — Tier 0 (privacy and sole-writer boundaries), 591 non-clean, one PR per module, in order — COMPLETE (all four modules clean, confirmed by a live full `pnpm check:mutation-guards` run: `private-leak.ts` 130/0/0/0/0, `check-private-leak.ts` 571/0/0/0/0, `check-wiki-private-presence.ts` 304/0/0/0/0 + `wiki-context-safety.ts` 41/0/0/0/0, `check-wiki-authority.ts` 155/0/0/0/0):**
 1. `private-leak.ts` (88)
@@ -890,6 +895,27 @@ No deadlock risk: `main.yaml` carries no `paths:` filter, so it runs on every pu
 **Measured cost** (12 most recent `main.yaml` runs): a full mutation run takes 4m15s–7m59s, median ~6 minutes; a pull request outside the trigger set short-circuits in ~22 seconds. The "narrow the trigger to toolchain-touching dependency bumps" item under Scope Boundaries was written against an unmeasured assumption of a much longer run — at six minutes for the Renovate case it is not currently worth the added trigger complexity. Revisit only if observed Renovate churn changes that.
 
 `.github/copilot-instructions.md` gains the conditional verification line and a `Stryker disable directives` Do/Don't pair citing the enumerate-variants learning.
+
+## Final State
+
+Measured by `pnpm check:mutation-guards` on `ba730df` (2026-09-07): **overall verdict `clean`, exit code 0.**
+
+This table is authoritative over the per-unit Result-block figures above, which record what each unit measured when it ran and are not updated as later units change shared modules.
+
+| Module | Killed | Ignored | Mutation score |
+|---|---|---|---|
+| `private-leak.ts` | 130 | 0 | 100.00% |
+| `check-private-leak.ts` | 571 | 13 | 100.00% |
+| `check-wiki-private-presence.ts` | 304 | 2 | 100.00% |
+| `wiki-context-safety.ts` | 41 | 0 | 100.00% |
+| `check-wiki-authority.ts` | 155 | 0 | 100.00% |
+| `corrections.ts` | 511 | 7 | 100.00% |
+| `corrections-survival.ts` | 142 | 9 | 100.00% |
+| `wiki-lockfile-gates.ts` | 367 | 0 | 100.00% |
+| `build-wiki-write-core.ts` | 337 | 3 | 100.00% |
+| **Total** | **2558** | **34** | **100.00%** |
+
+Total mutants: 2592. Aggregate directive ledger (sum of Ignored across all nine modules): 34.
 
 ## System-Wide Impact
 
