@@ -1,9 +1,13 @@
 ---
 type: repo
-title: "marcusrbrown/marcusrbrown"
+title: marcusrbrown/marcusrbrown
 created: 2026-04-18
-updated: 2026-08-19
+updated: 2026-09-07
+node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: 958be8df530c79e6313a24c9abec0f8f19012de8
+    accessed: 2026-09-07
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: df85b7dfaea37c0f1e74ba2c21f04b61b89fceed
     accessed: 2026-08-19
@@ -31,12 +35,33 @@ sources:
   - url: https://github.com/marcusrbrown/marcusrbrown
     sha: af78e68d510b24152531f7fdafe9bff35a58f071
     accessed: 2026-04-18
-tags: [profile-readme, typescript, github-actions, automation, badges, sponsors, readme-scribe, fro-bot]
-aliases: [marcusrbrown-profile]
+tags:
+  - profile-readme
+  - typescript
+  - github-actions
+  - automation
+  - badges
+  - sponsors
+  - readme-scribe
+  - fro-bot
+  - propose-without-merge
+  - required-checks
+  - retention-policy
+  - generated-content
+  - supply-chain-cooldown
+aliases:
+  - marcusrbrown-profile
 related:
   - marcusrbrown--ha-config
   - marcusrbrown--github
   - marcusrbrown--mrbro-dev
+  - marcusrbrown--marcusrbrown-com
+  - bfra-me--ha-addon-repository
+  - bfra-me--renovate-action
+  - marcusrbrown--systematic
+  - marcusrbrown--cortexkit-anthropic-auth
+  - fro-bot--agent
+  - github-actions-ci
 ---
 
 # marcusrbrown/marcusrbrown
@@ -49,7 +74,8 @@ Marcus R. Brown's GitHub profile README repository. A TypeScript-powered automat
 - **Default branch:** `main`
 - **Language:** TypeScript
 - **Created:** 2020-12-09
-- **Last push:** 2026-07-20
+- **Last push:** 2026-09-07 (was 2026-07-20 at the 2026-08-19 survey)
+- **Repo id / `node_id`:** `319928661` / `MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=`
 - **License:** MIT
 - **Topics:** `github`, `readme-profile`, `profile-readme`, `awesome-readme`, `typescript`, `markdown`
 - **Collaborators:** `marcusrbrown` (admin), `fro-bot` (push)
@@ -118,7 +144,11 @@ A/B test variants live in `templates/variants/` (e.g., `SPONSORME-benefits.tpl.m
 | Renovate | `renovate.yaml` | issue/PR edit, push, dispatch, Main completion | Dependency updates |
 | Update Repo Settings | `update-repo-settings.yaml` | push to `main`, daily cron, dispatch | Probot settings sync |
 | Cleanup Cache | `cleanup-cache.yaml` | PR close, weekly, dispatch | Prune stale GHA cache entries |
-| **Fro Bot** | `fro-bot.yaml` | PR events, issues (opened/edited), `@fro-bot` mentions, cron 04:30 + 16:30 UTC, dispatch | Three-mode agent: PR review / autoheal / maintenance (added 2026-06-02; `fro-bot/agent@v0.100.0` SHA-pinned `7b9a281` as of 2026-08-19; `Fro Bot` is a required `main` status check since #1138 2026-08-09) |
+| **Fro Bot** | `fro-bot.yaml` | PR events, issues (opened/edited), `@fro-bot` mentions, cron 04:30 + 16:30 UTC, dispatch | Three-mode agent: PR review / autoheal / maintenance (added 2026-06-02; `fro-bot/agent@v0.109.4` SHA-pinned `b799b64` as of 2026-09-07; `Fro Bot` is a required `main` status check since #1138 2026-08-09 — **but the job guard skips `[bot]` authors and `fro-bot` by name, so the required context resolves `skipped ⇒ pass` on ~98% of this repo's PRs**) |
+
+All six workflows are `state: active`; the last 25 scheduled `Fro Bot` runs are 25/25 `success` (2026-09-07).
+
+**Trigger overlap worth knowing:** `update-profile.yaml` fires on `pull_request` as well as `push`/`schedule`, and on PRs it commits regenerated `BADGES.md`/`SPONSORME.md` straight to the PR head. Every open PR in this repo therefore accretes generated-content commits it did not ask for (#1094 carries 37, #1100 carries 28), which (a) makes `updated_at` useless as a liveness signal, (b) pollutes every diff, and (c) is why the two `chore(lint)` PRs went `dirty`. It is also why the profile pipeline's own PR never has anything left to merge — see the 2026-09-07 findings.
 
 ### Profile Update Pipeline (update-profile.yaml)
 
@@ -144,7 +174,9 @@ Required status checks on `main`: **CI, Fro Bot, Renovate / Renovate, Prepare, F
 
 ### Shared Workflows
 
-`renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github` (v4.4.0). Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
+`renovate.yaml` and `update-repo-settings.yaml` reference reusable workflows from `bfra-me/.github` (v4.4.0 at initial survey; **v4.26.0** as of 2026-09-07, SHA `5310cfc`). Authentication uses `APPLICATION_ID` and `APPLICATION_PRIVATE_KEY` secrets (GitHub App).
+
+This pin is a single point of failure for dependency automation, and it failed on 2026-09-04: v4.25.0 carried a [[bfra-me--renovate-action]] build whose runtime was missing `tar`, Renovate exited before servicing any dependencies, and therefore could not open the PR that would fix it. Marcus cut the loop by hand in #1194; Renovate re-proposed the identical bump as a no-op one commit later (#1195).
 
 ## Developer Tooling
 
@@ -174,6 +206,128 @@ Required status checks on `main`: **CI, Fro Bot, Renovate / Renovate, Prepare, F
 | `jiti`                  | 2.6.1    | TypeScript config loader            |
 
 ## Fro Bot Integration
+
+### 2026-09-07 update: no structural change — and four green gates are each covering a different hole
+
+Survey at HEAD `958be8d` (`chore(deps): update bfra-me/.github action to v4.26.0 (#1204)`, 2026-09-07). 41 commits since `df85b7d`, **40 of them `mrbro-bot[bot]` Renovate merges and exactly one human commit**; 10 files touched, of which 6 are pure version tokens and one is `pnpm-lock.yaml`. `fro-bot.yaml` is `+1/-1` — the agent pin, nothing else. Branch protection, prompts, triggers, crons, the composite `setup` action, and the `.github/settings.yml` context list are all byte-stable. By the usual measure this is the quietest window this page has recorded.
+
+It is also the window in which the most things turned out to be broken. Every workflow is `active`, the last 25 scheduled `Fro Bot` runs are 25/25 `success`, `main` is green, and the daemon wrote a report every single day. None of the five findings below produced a red anywhere.
+
+#### 1. The required `Fro Bot` check excludes the author who writes ~98% of the PRs
+
+The 2026-08-09 change (#1138) that made `Fro Bot` a required status check on `main` is still in place, and it is doing much less than the prior section claimed. The job guard at `fro-bot.yaml:536-553` refuses two author classes:
+
+```yaml
+!endsWith(github.event.pull_request.user.login || '', '[bot]') &&
+(github.event.pull_request.user.login || '') != 'fro-bot'
+```
+
+A skipped job reports as **passing** to branch protection. So on every `mrbro-bot[bot]` (Renovate) PR and every `fro-bot` PR, the required check resolves `skipped ⇒ green` without the agent ever reading the diff. In this 41-commit window the check evaluated **one** PR — #1194, the sole human-authored change.
+
+This is the [[bfra-me--ha-addon-repository]] mechanism (cataloged in [[github-actions-ci]] as *A Required Check That Cannot Fail Loudly*) reappearing with a different payload. There the skip masked a dead daemon. Here the daemon is healthy and the skip hollows out the gate precisely where it would matter most: **the agent's own security PRs are certified `mergeable_state: clean` partly because the reviewer declined to review them.** Verified directly on #1094's head SHA `7c09752` — `CI: success`, `Prepare: success`, `Finalize: success`, `Renovate / Renovate: success`, **`Fro Bot: skipped`**.
+
+The guard itself is correct — you do not want the agent grading its own homework, and you do not want it burning a run on every Renovate patch. The error is upstream of the guard: **making a self-excluding check *required* on a repo whose PR stream is almost entirely bot-authored buys the appearance of a gate and roughly none of the substance.**
+
+#### 2. Four green, mergeable security PRs have been stranded 44–61 days
+
+Six PRs are open. Five are `fro-bot`-authored, and four of those are remediation work that the repo's own `AUTOHEAL_PROMPT` category 2 (SECURITY) produced and then never delivered:
+
+| PR | Subject | Opened | Age | Mergeable | Commits on branch |
+| --- | --- | --- | --- | --- | --- |
+| #1094 | `js-yaml` + `brace-expansion` overrides | 2026-07-21 | 48 d | `clean` | 37 |
+| #1100 | `fast-uri` ≥3.1.5 + `linkify-it` override | 2026-07-22 | 47 d | `clean` | 28 |
+| #1107 | `postcss` ≥8.5.23 override | 2026-07-25 | 44 d | `clean` | 22 |
+| #1095 | `chore(lint)` auto-fixes | 2026-07-21 | 48 d | `dirty` | 6 |
+| #1055 | `chore(lint)` auto-fixes | 2026-07-08 | 61 d | `dirty` | 21 |
+
+These are not redundant re-proposals of pins already in the tree. Each raises a floor against advisories that postdate the existing ledger entry — #1107 moves `postcss` `>=8.5.10 → >=8.5.23` citing GHSA-r28c-9q8g-f849 (high) and two more; #1100 moves `fast-uri` `>=3.1.2 → >=3.1.5` citing three new GHSAs; #1094 adds `js-yaml >=4.3.1 <5` (high) and — the sophisticated bit — **per-parent-scoped** `brace-expansion` floors, `minimatch@3>brace-expansion: '>=1.1.16 <2'` and `minimatch@10>brace-expansion: '>=5.0.7'`, because two incompatible `minimatch` major lines pull it in. That is a correct, non-obvious fix written by the agent, sitting green for 48 days.
+
+In the same window 40 Renovate PRs merged same-day. The only variable separating the two populations is automerge eligibility — the pattern first isolated on [[marcusrbrown--marcusrbrown-com]], confirmed here with a sharper cost: the stranded population is not cosmetic drift, it is **four unpatched high-severity transitive advisories on a repo where the daemon already did the work.**
+
+The two `chore(lint)` PRs are the [[marcusrbrown--marcusrbrown-com]] DEDUPLICATION failure again, and this time the resolution is visible. #1055 (2026-07-08) and #1095 (2026-07-21) are near-identical proposals both patching the `scripts/update-sponsors.ts` fence generator; both are now `dirty`; and the fix actually landed via a **third** sibling, **#1117, merged 2026-08-10**. Two of the three siblings rot, conflicting with the merged one, and nothing closes them. The prior 2026-07-20 section recorded #1055 as evidence that "autoheal graduated from writing reports to shipping fixes" — **superseded**: #1055 never merged. The graduation was real, but it happened through a differently-numbered PR a month later.
+
+#### 3. The profile pipeline has not delivered through its own path in 28 days — Renovate is delivering for it
+
+This is the most consequential finding, and it is invisible from every dashboard.
+
+`update-profile.yaml` runs on `push`, on `schedule` every 6 hours, **and on `pull_request`** — and on PRs it commits regenerated content directly to the PR head via `EndBug/add-and-commit`. Renovate PRs are PRs. So every dependency branch gets the freshly generated `BADGES.md`/`SPONSORME.md` written onto it, and that content merges to `main` as a rider on a `chore(deps)` commit.
+
+The evidence is unambiguous. Every commit touching `BADGES.md` or `SPONSORME.md` in this window is a Renovate merge — `#1188 (pnpm v11.25.0)`, `#1190 (tsx v4.23.13)`, `#1186 (simple-git-hooks v2.14.0)`, and so on. Meanwhile:
+
+- **The last `build:` commit on `main` is #1129, 2026-08-10 — 28 days ago.**
+- **Ten consecutive `build/update-readme` PRs (#1140 → #1189) have been opened and every one closed unmerged or is still open.** Zero merged.
+- **`README.md` has not changed on `main` since 2026-05-23 — 107 days**, across roughly 428 scheduled pipeline runs, all green.
+
+The pipeline's own PR is reliably cannibalized: whatever Renovate merges first carries the same regenerated content to `main`, leaving `create-pull-request` with an empty or near-empty diff to close. The dedicated delivery path is a decoy that runs every six hours and goes green.
+
+The coupling is load-bearing and undocumented: **profile freshness is now a function of Renovate PR volume.** This page already records what happens when that volume goes to zero — the 2026-03-12 → 2026-05-14 preset stall. Under today's topology that stall would have frozen the public profile for two months while `Update GitHub Profile` reported success 240 times. The PR body still asks a human to "review the changes and merge this pull request if you approve"; nobody has, ten times running.
+
+#### 4. Nobody audits the generated artifact, only the process that generates it
+
+Because generated content now rides in on dependency PRs, the diffs are visible in the commit graph — and they show the badge generator producing wrong output on `main` right now:
+
+- **`![TypeScript badge](…/TypeScript-24.13.3-…)`.** TypeScript is not in `package.json` at all, in either dependency map. `24.13.3` is exactly `@types/node`.
+- **`![ESLint badge](…/ESLint-5.5.6-…)`.** ESLint is not a direct dependency either; the ecosystem is on 10.x. `5.5.6` is exactly `eslint-plugin-prettier`.
+- **Categories reshuffle between runs.** In this window Go moved from *Languages* (`primary`) to *Development Tools & Platforms* (`used`), Docker left *Cloud & Infrastructure* for *Development Tools*, and **ESLint landed under *Cloud & Infrastructure***. React flipped `used → primary`. None of this tracks a change in the repo.
+- **`_Badge data automatically updated every 6 hours via GitHub Actions_`** is rendered directly beneath the badges. It is the exact class of stale date-bound claim the repo's own `PR_REVIEW_PROMPT` instructs the agent to flag, printed on the artifact the agent never reviews.
+
+The autoheal sweep audits lint cleanliness, security advisories, stale TODOs, `llms.txt` drift, and its own quality gates. It runs `pnpm badges:update` as a *smoke test* — it checks that generation **succeeds**, never that the output is **true**. A green generator emitting `TypeScript 24.13.3` on Marcus's public profile is the cleanest available example of the difference.
+
+#### 5. The rolling-report retention clause works here — which relocates the cortexkit diagnosis
+
+`fro-bot.yaml` carries the fleet-standard 50,000-character archival clause (lines 173-175 for maintenance, 486-489 for autoheal). Unlike [[marcusrbrown--cortexkit-anthropic-auth]] #11, **here it fires**: #936 carries six recorded archival events and #926 two, with explicit markers ("_[Archived 1 older update (2026-08-31 section) on 2026-09-06 - issue body approaching the 50,000-character bound]_"). The daemon is executing the clause on schedule.
+
+Measured at survey time, #936 is **47,849 characters** holding **six** dated sections plus a 1,158-character Historical Summary:
+
+| Section | Chars |
+| --- | --- |
+| 2026-09-06 | 8,574 |
+| 2026-09-05 | 7,946 |
+| 2026-09-04 | 8,024 |
+| 2026-09-03 | 7,954 |
+| 2026-09-02 | 7,700 |
+| 2026-09-01 | 6,493 |
+| Historical Summary | 1,158 |
+
+Per-section floor ≈ **7,780 characters**. 50,000 ÷ 7,780 = **6**. The observed steady state is exactly the arithmetic prediction — a third quantitative confirmation of the rule derived from [[marcusrbrown--systematic]] #153 (see [[github-actions-ci]], *A Retention Policy With Two Numbers Nobody Multiplied*).
+
+This repo adds a **third** unreachable number the systematic case did not have. The maintenance prompt asks for two retention behaviours on top of the cap:
+
+- *"replace any individual daily sections older than **14 days** with a single Historical Summary"* → 14 × 7,780 ≈ **108,900 chars**, about **1.7× GitHub's hard 65,536-character issue-body limit**. Not merely over the soft cap — over the platform ceiling.
+- *"…removing all but the **30 most recent** daily sections"* → 30 × 7,780 ≈ **233,000 chars**, **≈4.7× the 50,000 threshold this clause exists to enforce.** The prescribed remedy for approaching 50,000 is a target that guarantees 233,000.
+
+Three numbers, none reachable, and the issue survives only because the model silently ignores all three and converges on six. **Correction to the fleet reading:** the 2026-09-05 comparison table attributes cortexkit #11's unbounded growth to the clause being "a soft prose budget, no enforcement." This repo runs the same clause, from the same prompt lineage, and it executes reliably eight times over. That weakens *unexecutable clause* as the explanation for cortexkit and strengthens the other finding already on that page — the daemon there had stopped writing at all six weeks before it was disabled. A clause cannot fail to fire if nothing is firing.
+
+#### The one human commit is the interesting one
+
+**#1194 (`chore(ci): bump bfra-me/.github to v4.25.1`, marcusrbrown, 2026-09-04)** is the only non-Renovate commit in 41. Its body:
+
+> Takes bfra-me/renovate-action 10.34.1, which restores tar in the Renovate runtime. Renovate on 10.34.0 exits before servicing any dependencies, so this pin cannot self-update.
+
+`bfra-me/.github` v4.25.0 shipped a [[bfra-me--renovate-action]] build whose container was missing `tar`; Renovate died at startup, therefore Renovate could not open the PR that fixes Renovate. A human had to reach in and cut the loop. Renovate then re-proposed the identical bump one commit later (#1195) — a no-op catch-up on a fix it was structurally incapable of authoring. **A self-updating dependency has no recovery path from a version of itself that fails before it reaches its work queue**; the bootstrap has to come from outside. Cataloged in [[github-actions-ci]].
+
+#### New: a supply-chain cooldown that a bot waives on its own behalf
+
+`pnpm-workspace.yaml` gained a `minimumReleaseAgeExclude` block (first appearance on this repo), written incrementally by five Renovate PRs between 2026-08-23 and 2026-08-26:
+
+```yaml
+minimumReleaseAgeExclude:
+  - '@bfra.me/eslint-config@0.51.2 || 0.52.1'
+  - '@bfra.me/prettier-config@0.16.10 || 0.16.11'
+  - '@bfra.me/tsconfig@0.13.2'
+```
+
+pnpm 11 ships a publish-age cooldown as a defense against freshly compromised releases. This block waives it, per version, for the packages Renovate wants to install *right now* — added by the same automation the cooldown exists to slow down. The waivers are version-scoped, so they are not a live hole, but nothing prunes them: `0.51.2` and `0.16.10` are already superseded by `0.52.1` and `0.16.11` and remain in the file. It is an append-only exemption ledger with no reaper, and it is first-party packages today by accident of which dependencies happen to be fast-moving, not by policy.
+
+#### Carried items, unchanged
+
+- **#1087** (jq fork-detection bug) — still open, **not touched since it was filed on 2026-07-19**, 50 days. Verified verbatim at HEAD: line 577 is still `--jq '.head.repo.fork // "unknown"'`; line 540's job guard is still correct. Same reconciliation as 2026-08-19.
+- **#1056** (stale TODO) — 61 days open; `utils/badge-detector.ts:72` still reads `// TODO: Load from @bfra.me/badge-config package when available`. The finding is still true and the fix is one line.
+- **#1039** (llms.txt drift) — 67 days open, and **partially self-healed while nobody was looking**: the map now covers `templates/sponsor-testimonials.tpl.md`, `.agents/skills/sync-sponsors-bio/SKILL.md`, and the newer test files. Still missing `HIGHLIGHTS.md` and `templates/HIGHLIGHTS.tpl.md` — a first-class generated output absent from the project map — plus `.ai/plan/` and `assets/`. An issue that outlived most of its own finding.
+- **#925** (Fro Bot evolution tracker) — untouched since 2026-05-23. Its four follow-ups (bound `timeout: 0`, migrate `FRO_BOT_PAT` → GitHub App token, perpetual-issue TOCTOU, prompt tuning) are all still open questions; `timeout: 0` is still at line 648.
+- Perpetual-issue contract satisfied and stable: #936 (103 comments) and #926 (99 comments) both open, no oscillation. Sixth consecutive stable window.
+
+**Version movement.** Agent pin **v0.100.0 → v0.109.4** (`b799b64`, ~20 bumps #1157–#1203) — this repo is the **ecosystem version leader**, ahead of [[marcusrbrown--infra]] (v0.109.3) and [[marcusrbrown--dotfiles]] (v0.105.0). `bfra-me/.github` **v4.18.0 → v4.26.0** — eight minor boundaries in 19 days, the fastest run this page has recorded. pnpm 11.22.0 → **11.25.0**, Node 24.19.0 → **24.20.0**, `@bfra.me/eslint-config` 0.51.1 → **0.52.1** (minor boundary), `@bfra.me/prettier-config` 0.16.9 → **0.16.11**, `@bfra.me/tsconfig` 0.13.1 → **0.13.2**, vitest/`@vitest/ui` 4.1.10 → **4.1.11**, tsx 4.23.12 → **4.23.13**, `simple-git-hooks` 2.13.1 → **2.14.0**, renovate-config `#5.2.12` → **#5.2.13**. The GHSA override ledger in `pnpm-workspace.yaml` is byte-identical; no `[SECURITY]` or `fix(security)` commits landed this window — which is the point of finding 2, since three were sitting green the whole time.
 
 ### 2026-08-19 update: Fro Bot becomes a merge gate; agent crosses v1.00-adjacent v0.100.0; autoheal prompt gains a Quality Gates category; fork preflight bug still open
 
@@ -283,6 +437,30 @@ The repo references `fro-bot/.github:common-settings.yaml` in its Probot setting
 
 ## Open Work Items
 
+### 2026-09-07 snapshot (current)
+
+Seven open issues, six open PRs.
+
+| # | Kind | Title | Author | Created | Age | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| #1094 | PR | `fix(security)`: js-yaml + brace-expansion overrides | fro-bot | 2026-07-21 | 48 d | `mergeable_state: clean`, 37 branch commits. Per-parent-scoped `minimatch@3>brace-expansion` / `minimatch@10>brace-expansion` floors |
+| #1095 | PR | `chore(lint)`: auto-fixes from autohealing run | fro-bot | 2026-07-21 | 48 d | `dirty` — duplicate of #1055; fix landed via #1117 |
+| #1100 | PR | `fix(security)`: fast-uri ≥3.1.5 + linkify-it | fro-bot | 2026-07-22 | 47 d | `clean`, 28 branch commits. Three GHSAs newer than the tree's `>=3.1.2` |
+| #1107 | PR | `fix(security)`: postcss ≥8.5.23 | fro-bot | 2026-07-25 | 44 d | `clean`, 22 branch commits. GHSA-r28c-9q8g-f849 (high) + 2 |
+| #1055 | PR | `chore(lint)`: auto-fixes from autohealing run | fro-bot | 2026-07-08 | 61 d | `dirty`. **Never merged** — supersedes the 2026-07-20 claim |
+| #1189 | PR | `build:` update generated profile content | mrbro-bot[bot] | 2026-09-01 | 6 d | Tenth in an unmerged run since 2026-08-10 |
+| #1087 | Issue | jq fork-detection bug refuses same-repo comment triggers | fro-bot | 2026-07-19 | 50 d | Untouched since filing. Line 577 verbatim at HEAD |
+| #1056 | Issue | Stale TODOs | fro-bot | 2026-07-08 | 61 d | `utils/badge-detector.ts:72` unchanged |
+| #1039 | Issue | llms.txt drift | fro-bot | 2026-07-02 | 67 d | Partially self-healed; `HIGHLIGHTS.md`/`.tpl.md` still absent from the map |
+| #936 | Issue | Daily Maintenance Report | fro-bot | 2026-05-24 | — | Perpetual. 47,849 chars / 6 sections / 103 comments |
+| #926 | Issue | Daily Autohealing Report | fro-bot | 2026-05-23 | — | Perpetual. 36,941 chars / 99 comments |
+| #925 | Issue | Fro Bot evolution tracker | marcusrbrown | 2026-05-23 | — | Untouched since filing; all four follow-ups still open |
+| #284 | Issue | Dependency Dashboard | mrbro-bot[bot] | 2024-02-22 | — | Standard Renovate dashboard |
+
+The shape is the finding: **every open PR except one is agent-authored, green, and unmerged**, while 40 Renovate PRs merged same-day in the same window.
+
+### 2026-04 snapshot (retained for history — superseded)
+
 | # | Title | Author | Created | Notes |
 | --- | --- | --- | --- | --- |
 | #895 | Action Required: Fix Renovate Configuration | mrbro-bot[bot] | 2026-03-12 | **Blocks all Renovate PRs** — regex parse error in `marcusrbrown/renovate-config` preset resolution |
@@ -299,9 +477,37 @@ The repo references `fro-bot/.github:common-settings.yaml` in its Probot setting
 - **Shared config ecosystem:** All tooling configs extend `@bfra.me/*` packages, keeping local config minimal. Same pattern observed in [[marcusrbrown--ha-config]] and [[marcusrbrown--github]] for Renovate and Probot settings.
 - **`mrbro-bot[bot]` vs `fro-bot` (updated 2026-06-02):** The two bot identities now coexist with clean separation of duties. `mrbro-bot[bot]` (app 137683033) owns generated-content commits on `build/update-readme`; `fro-bot` (via `fro-bot.yaml`) owns PR review, autoheal, and maintenance. Earlier surveys (through 2026-05-18) noted Fro Bot was not yet integrated — that gap is now closed.
 - **Dependency drift risk (resolved 2026-05-18, retained for history):** The 2026-04 survey noted Renovate stalled since 2026-03-12, accumulating drift. That stall cleared with the 2026-05-14 preset fix (#897 → renovate-config 5.2.0); every survey since (2026-05-18 through 2026-07-20) shows Renovate fully healthy, this repo frequently *leading* the ecosystem on the `fro-bot/agent` pin. This bullet is superseded — see the dated Version Comparison snapshots.
-- **Autoheal as an active remediation surface (2026-07-20):** By the 2026-07-20 survey, the autoheal mode had shifted from writing perpetual-report entries to opening concrete fix PRs (#1055, #1061) and precise hygiene issues (#1056), and even auditing its own workflow (#1087 fork-detection bug). The autoheal loop is now a genuine maintenance actor on this repo, not just a reporter — a pattern worth watching for adoption across the sibling repos in [[fro-bot--agent]]'s focus list.
+- **Autoheal as an active remediation surface (2026-07-20; qualified 2026-09-07):** By the 2026-07-20 survey, the autoheal mode had shifted from writing perpetual-report entries to opening concrete fix PRs (#1055, #1061) and precise hygiene issues (#1056), and even auditing its own workflow (#1087 fork-detection bug). The autoheal loop is now a genuine maintenance actor on this repo, not just a reporter — a pattern worth watching for adoption across the sibling repos in [[fro-bot--agent]]'s focus list. **Qualified 2026-09-07:** the *authoring* half is real and has held; the *delivery* half has not. #1055 never merged (its fix landed via sibling #1117 on 2026-08-10), and four green remediation PRs have been stranded 44–61 days. The daemon is a productive author with no merge path — measure the merged set, not the opened set.
+- **The delivery path is not the pipeline that owns it (2026-09-07):** `update-profile.yaml` regenerates content onto *every* PR head, so generated `BADGES.md`/`SPONSORME.md` reaches `main` as a rider on Renovate `chore(deps)` merges. Its own `build/update-readme` PR is left with an empty diff and closed — ten consecutive, zero merged, no `build:` commit since 2026-08-10, `README.md` untouched since 2026-05-23. Profile freshness is now a function of Renovate PR volume, which this repo has already demonstrated can drop to zero for two months.
+- **Green generation is not correct output (2026-09-07):** the autoheal quality-gate category runs `pnpm badges:update` and checks that it *succeeds*. On `main` right now the generator publishes `TypeScript 24.13.3` (that is `@types/node`; TypeScript is not a dependency), `ESLint 5.5.6` (that is `eslint-plugin-prettier`), files ESLint under *Cloud & Infrastructure*, and captions the block "updated every 6 hours" beneath content whose delivery path has been closed for 28 days. Smoke-testing a generator says nothing about the truth of what it emits.
+- **A required check that excludes an author is not a gate on that author (2026-09-07):** `Fro Bot` became a required context on `main` in #1138, but the job guard skips `[bot]` authors and `fro-bot` by name, and skipped ⇒ passing. Across 41 commits the check evaluated exactly one PR. The agent's own security PRs show `Fro Bot: skipped` alongside four green checks. Same mechanism as [[bfra-me--ha-addon-repository]], opposite consequence: there it hid a dead daemon, here it certifies the daemon's unreviewed output.
 
 ## Version Comparison (vs. Ecosystem)
+
+### 2026-09-07 snapshot
+
+| Dependency | This Repo | Delta vs 2026-08-19 |
+| --- | --- | --- |
+| `fro-bot/agent` | **v0.109.4** (`b799b64`, SHA-pinned) | v0.100.0 → v0.109.4 — ~20 bumps (#1157–#1203); **ecosystem version leader** (vs [[marcusrbrown--infra]] v0.109.3) |
+| `bfra-me/.github` | **v4.26.0** (`5310cfc`) | v4.18.0 → v4.26.0 — **eight minor boundaries in 19 days** |
+| `pnpm` | 11.25.0 | 11.22.0 → 11.25.0 (stays 11.x) |
+| `Node.js` | 24.20.0 | 24.19.0 → 24.20.0 (`.mise.toml`) |
+| `marcusrbrown/renovate-config` | `#5.2.13` | 5.2.12 → 5.2.13 (#1197) |
+| `@bfra.me/eslint-config` | 0.52.1 | 0.51.1 → 0.52.1 — **minor boundary** (#1163/#1169) |
+| `@bfra.me/prettier-config` | 0.16.11 | 0.16.9 → 0.16.11 (#1164/#1166) |
+| `@bfra.me/tsconfig` | 0.13.2 | 0.13.1 → 0.13.2 (#1170) |
+| `vitest` / `@vitest/ui` | 4.1.11 | 4.1.10 → 4.1.11 (#1159) |
+| `tsx` | 4.23.13 | 4.23.12 → 4.23.13 (#1190) |
+| `simple-git-hooks` | 2.14.0 | 2.13.1 → 2.14.0 (#1186) |
+| `Prettier` | 3.9.6 | unchanged |
+| `@types/node` | 24.13.3 | unchanged |
+| `@bfra.me/badge-config` | 0.2.0 | unchanged |
+| `jiti` | 2.7.0 (`<2.8.0`) | unchanged (pin in `pnpm-workspace.yaml`) |
+| `markdownlint-cli2` | 0.20.0 | unchanged |
+| `eslint-plugin-prettier` | 5.5.6 | unchanged |
+| `eslint-config-prettier` | 10.1.8 | unchanged |
+
+`pnpm-workspace.yaml` GHSA override ledger byte-identical (`vite 7.3.6`, `postcss >=8.5.10`, `picomatch`, `fast-uri >=3.1.2`, `jiti <2.8.0`) — **and four PRs raising three of those floors against newer advisories are open and green** (#1094/#1100/#1107). New `minimumReleaseAgeExclude` block (pnpm 11 cooldown waivers for `@bfra.me/*`, added by Renovate across #1163–#1170). **Structural (non-deps) changes: none.** `fro-bot.yaml` is `+1/-1` (agent pin only); branch protection contexts, prompts, crons, and the composite `setup` action are byte-stable.
 
 ### 2026-08-19 snapshot
 
@@ -504,3 +710,4 @@ Backlog is back to baseline. The profile update pipeline (every 6 hours) and Ren
 | 2026-07-06 | `08bd1ad` | **Structural: pnpm 10→11 major + security overrides migrate to `pnpm-workspace.yaml`** — `fro-bot/agent` v0.75.0 → v0.83.1 (~16 bumps #1017–#1050, SHA `d1786f3`); **pnpm 10.34.4 → 11.9.0** (`[SECURITY]` #1021/#1024/#1025); **Prettier 3.8.4 → 3.9.4** (minor); renovate-config 5.2.3 → 5.2.4; `bfra-me/.github` v4.16.27 → v4.16.34; Node → 24.18.0; tsx → 4.22.5; `actions/cache` → v5.1.0. **New `pnpm-workspace.yaml`** with `allowBuilds`/`onlyBuiltDependencies` + GHSA-annotated override ledger (`vite 7.3.6`, `postcss`, `picomatch`, `fast-uri`; `jiti` pin relocated) — matches [[marcusrbrown--mrbro-dev]] override-ledger pattern. Direct `fix(security)` commit #1038 (vite 7.3.6). **First `fro-bot.yaml` body change since onboarding**: #1045 bare-dispatch-prompt fallback + `mrbro.dev` added to focus-repo list. **#936 reopened** (both #936/#926 open — contract satisfied again, but three-survey history = churn/closed/reopened = unstable). New autoheal issue #1039 (llms.txt drift). Generated PR #1007 → #1048 |
 | 2026-07-20 | `abff970` | **Autoheal matures: report-noise → concrete fix PRs; agent self-catches a workflow bug** — `fro-bot/agent` v0.83.1 → v0.93.1 (~18 bumps #1050–#1085, SHA `a4976f4`); pnpm 11.9.0 → 11.13.1 (stays 11.x); Prettier 3.9.4 → 3.9.5; renovate-config 5.2.4 → 5.2.7; `bfra-me/.github` v4.16.34 → v4.16.38; tsx → 4.23.1; vitest → 4.1.10; `@types/node` → 24.13.3; Node unchanged (24.18.0). `fro-bot.yaml` body structurally unchanged (no trigger/prompt/hardening drift). **Operational shift: autoheal now ships remediation** — PR #1055 (fix markdownlint fence in `update-sponsors.ts` generator), PR #1061 (template-vs-generated README drift), issue #1056 (stale TODO in `badge-detector.ts`). **Self-audit bug: issue #1087** — fork-refusal preflight (line 577) uses jq `.head.repo.fork // "unknown"`, which mis-resolves same-repo `false` to `"unknown"` and over-refuses legitimate comment-triggered reviews; warrants a fix PR. Perpetual issues #936 + #926 both open — contract satisfied and **stable** (no oscillation, first stable window in 4 surveys). Pure Renovate treadmill (32 commits, all mrbro-bot); no direct `fix(security)`. Generated PR #1048 → #1088 |
 | 2026-08-19 | `df85b7d` | **Fro Bot becomes a merge gate; agent crosses v0.100.0; autoheal category set corrected** — `fro-bot/agent` v0.93.1 → v0.100.0 (~20 bumps #1105–#1152, SHA `7b9a281`, still 0.x); pnpm 11.13.1 → 11.22.0; Node 24.18.0 → 24.19.0; Prettier 3.9.5 → 3.9.6; tsx → 4.23.12; renovate-config 5.2.7 → 5.2.12; `bfra-me/.github` v4.16.38 → v4.18.0 (#1156). **Structural: #1138 added `Fro Bot` to `main` required status checks** (`.github/settings.yml` contexts `[CI, Fro Bot, Renovate / Renovate, Prepare, Finalize]`, `enforce_admins: true`) — review verdict now blocks merge. **#1137/#1139** removed tsconfig `baseUrl`/`moduleResolution` (defers to `@bfra.me/tsconfig`); `.agents/skills/**/*` now type-checked. **Reconciliation:** autoheal `AUTOHEAL_PROMPT` runs 7 categories with **QUALITY GATES VERIFICATION at #5** (present since onboarding #924 per `git log -S`; prior page under-recorded it). **#1087 still open** — the *preflight step* (line 577) still uses jq `// "unknown"`; the job-level `if:` (line 540) was never buggy (prior page conflated the two). New `templates/sponsor-testimonials.tpl.md`, `.ai/plan/` dir. Override ledger byte-identical; no `fix(security)`. Autoheal shipped #1061/#1117 in-window |
+| 2026-09-07 | `958be8d` | **No structural change — and four green gates each covering a different hole.** 41 commits, 40 `mrbro-bot[bot]` Renovate + **one human**; `fro-bot.yaml` is `+1/-1` (agent pin only); branch protection, prompts, crons, `setup` action all byte-stable; 25/25 scheduled runs `success`. **(1)** The required `Fro Bot` check skips `[bot]` authors and `fro-bot` **by name** (`fro-bot.yaml:536-553`), and skipped ⇒ passing — so across 41 commits it evaluated **one** PR (#1194, the human one), and the agent's own PRs certify `clean` with `Fro Bot: skipped` (verified on #1094 head `7c09752`). Same mechanism as [[bfra-me--ha-addon-repository]], inverted consequence. **(2)** Six open PRs, five `fro-bot`-authored; **four green, mergeable security PRs stranded 44–61 days** (#1094 js-yaml + per-parent-scoped `minimatch@3>brace-expansion`/`minimatch@10>brace-expansion`, #1100 fast-uri ≥3.1.5 + linkify-it, #1107 postcss ≥8.5.23 — each raising a floor against advisories **newer** than the tree's ledger, not re-proposing it) while 40 Renovate PRs merged same-day; #1055/#1095 are duplicate `chore(lint)` siblings both now `dirty`, the fix having landed via a **third** sibling #1117 on 2026-08-10 — **supersedes** the 2026-07-20 claim that #1055 shipped. **(3)** The profile pipeline **has not delivered through its own path in 28 days**: last `build:` commit is #1129 (2026-08-10), ten consecutive `build/update-readme` PRs (#1140→#1189) all unmerged, `README.md` unchanged since 2026-05-23 (107 days, ~428 green scheduled runs) — because `update-profile.yaml` also runs on `pull_request` and commits regenerated content onto every PR head, so `BADGES.md`/`SPONSORME.md` reach `main` exclusively as riders on Renovate `chore(deps)` merges. Profile freshness is now coupled to Renovate PR volume. **(4)** The generated artifact is unaudited: `main` publishes `TypeScript 24.13.3` (= `@types/node`; TypeScript is not a dependency), `ESLint 5.5.6` (= `eslint-plugin-prettier`), ESLint filed under *Cloud & Infrastructure*, and a "updated every 6 hours" caption over a closed delivery path — the quality-gate category smoke-tests that generation *succeeds*, never that output is *true*. **(5)** The 50,000-char archival clause **does fire here** (6 recorded events on #936, 2 on #926); #936 measures **47,849 chars / 6 sections**, per-section floor ≈7,780, and 50,000 ÷ 7,780 = 6 — the observed steady state equals the arithmetic, a third confirmation of the [[marcusrbrown--systematic]] #153 rule. This repo adds a third unreachable number: the "14 days of individual sections" rule implies ~108,900 chars, **1.7× GitHub's hard 65,536 body limit**, and the "keep 30 most recent" remedy implies ~233,000, **4.7× the threshold it enforces**. **Corrects** the fleet reading that attributed [[marcusrbrown--cortexkit-anthropic-auth]] #11's overrun to an unexecutable clause. **Human commit #1194** broke a **Renovate self-update deadlock** — `bfra-me/.github` v4.25.0 shipped a [[bfra-me--renovate-action]] runtime missing `tar`, Renovate exited before servicing dependencies, so the pin could not self-update; Renovate re-proposed the same bump as a no-op one commit later (#1195). New `minimumReleaseAgeExclude` block in `pnpm-workspace.yaml` — pnpm 11 publish-age cooldown waived per-version by Renovate for `@bfra.me/*`, append-only with no reaper (`0.51.2`/`0.16.10` already superseded and still listed). Versions: agent v0.100.0 → **v0.109.4** (`b799b64`, **ecosystem leader**), `bfra-me/.github` v4.18.0 → **v4.26.0** (8 minors / 19 days), pnpm → 11.25.0, Node → 24.20.0, `@bfra.me/eslint-config` 0.51.1 → **0.52.1**, prettier-config → 0.16.11, tsconfig → 0.13.2, vitest → 4.1.11, tsx → 4.23.13, simple-git-hooks → 2.14.0, renovate-config → #5.2.13. Carried: #1087 untouched since filing (50 d, line 577 verbatim), #1056 (61 d, TODO still at `badge-detector.ts:72`), #1039 (67 d, **partially self-healed** — map now covers `sponsor-testimonials.tpl.md` and the sync-sponsors-bio skill, still omits `HIGHLIGHTS.md`/`HIGHLIGHTS.tpl.md`), #925 untouched since 2026-05-23 (`timeout: 0` still at line 648). Perpetual-issue contract satisfied and stable for a sixth window (#936 103 comments, #926 99) |

@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-06
+updated: 2026-09-07
 sources:
+  - url: https://github.com/marcusrbrown/marcusrbrown
+    sha: 958be8df530c79e6313a24c9abec0f8f19012de8
+    accessed: 2026-09-07
   - url: https://github.com/marcusrbrown/infra
     sha: ac34a60e53bf0f6c5871116488978385896f7cd0
     accessed: 2026-09-06
@@ -48,6 +51,11 @@ tags:
     environment-approval,
     harden-runner,
     package-smoke,
+    generated-content,
+    delivery-path,
+    supply-chain-cooldown,
+    bootstrap-deadlock,
+    skipped-required-check,
   ]
 related:
   - fro-bot--agent
@@ -86,6 +94,7 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--containers]] — Multi-arch container builds, Python/Dockerfile linting, Trivy security scanning
 - [[marcusrbrown--ha-config]] — YAML lint, Remark lint, Prettier, Home Assistant config validation
 - [[marcusrbrown--github]] — Prettier-only CI, Renovate with event-driven triggers, Probot settings sync
+- [[marcusrbrown--marcusrbrown]] — 6 workflows, all `active` (2026-09-07): `main.yaml` (markdownlint + `tsc --noEmit` + eslint), `update-profile.yaml` (push / **`pull_request`** / 6-hour cron — commits regenerated content to PR heads via `EndBug/add-and-commit`, opens `build/update-readme` via `peter-evans/create-pull-request`), `fro-bot.yaml` (single-file **three-mode**, 648 lines / 30 KB, agent **v0.109.4** — fleet version leader), `renovate.yaml` + `update-repo-settings.yaml` (`bfra-me/.github` reusable @ **v4.26.0**), `cleanup-cache.yaml`; local composite `.github/actions/setup`. Probot `settings.yml` gates `main` on `[CI, Fro Bot, Renovate / Renovate, Prepare, Finalize]` with `enforce_admins: true` and linear history. No CodeQL/Scorecard. Sole ecosystem source of the 2026-09-07 findings below on delivery-path cannibalization, generator-output correctness, author-excluded required checks, self-update deadlock, and cooldown waiver ledgers
 - [[marcusrbrown--systematic]] — Bun build + Node.js verification, Biome lint, bun:test, semantic-release to npm, OCX registry validation, Starlight docs build
 - [[marcusrbrown--infra]] — Split deploy pipeline (per-app dedicated workflows), convention enforcement tests, Bun workspace CI, Changesets publishing; **19 workflows** as of 2026-09-06 (added `release-alert.yaml`, a `workflow_run` post-merge liveness alert on `Release`; `cliproxy-auth-monitor.yaml` remains the 15-min out-of-band Anthropic-auth probe with synthetic self-test). 2026-09-06: `fro-bot.yaml` **split into two jobs with disjoint capabilities** — `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment) and `fro-bot-storage` (schedule / main-dispatch only, `fro-bot-storage` environment, `id-token: write`, `aws-actions/configure-aws-credentials`, `s3-backup: true`, `step-security/harden-runner` `egress-policy: block`) — so the *privileged* job is the mutating autoheal and the attacker-reachable job is the read-only reviewer; `ci.yaml` gained a `Package smoke` job (pack → tarball assertions → clean-room install → run the binary) inside the required gate. Sole ecosystem source of the 2026-09-06 findings below on run conclusions, stranded deploys, version ceilings, self-identity keys, and double-tagged upstreams
 - [[marcusrbrown--renovate-config]] — Lint + semantic-release pipeline for Renovate presets, self-referential Renovate config, CodeQL, OpenSSF Scorecard
@@ -1015,6 +1024,26 @@ Three transferable rules:
 
 The broader point for anyone writing agent report prompts: **retention, size, and recurrence-tracking are one design, not three independent clauses.** Specify the per-entry size budget first, derive the retention count from the cap, and put durable findings somewhere the sweep cannot reach.
 
+#### Addendum (2026-09-07): a third data point that validates the arithmetic and relocates the cortexkit diagnosis
+
+[[marcusrbrown--marcusrbrown]] runs the same clause lineage, and this survey measured it directly. Issue #936 at survey time: **47,849 characters, six dated sections, one 1,158-character Historical Summary**, with per-section sizes of 8,574 / 7,946 / 8,024 / 7,954 / 7,700 / 6,493 — a floor of ≈**7,780**.
+
+50,000 ÷ 7,780 = **6**. The observed steady state *is* the predicted retention. Rule 1 above ("`cap ÷ per-item-floor ≥ retention-count`, or the retention count is fiction") now has three independent confirmations and a clean generalization:
+
+| Repo | Cap | Per-section floor | Achievable | Promised | Observed |
+| --- | --- | --- | --- | --- | --- |
+| [[marcusrbrown--systematic]] #153 | 50,000 | ~31,000 | 1 | 30 | 1 |
+| [[marcusrbrown--marcusrbrown]] #936 | 50,000 | ~7,780 | 6 | 30 | 6 |
+| [[marcusrbrown--cortexkit-anthropic-auth]] #11 | 50,000 | — | — | 30 | *clause never ran* |
+
+**The "keep 30 sections" clause is satisfiable only if a section stays under ~1,666 characters.** No agent report in this fleet is within 4× of that. The number is not merely wrong for one repo — it is wrong for the entire class of output these prompts produce, and it was never going to be right.
+
+This repo also supplies a **third** unreachable number the systematic case lacked. Its maintenance prompt asks, as the *routine* (non-emergency) behaviour, that individual daily sections be kept for **14 days** before collapsing into a Historical Summary: 14 × 7,780 ≈ **108,900 characters**, roughly **1.7× GitHub's hard 65,536-character issue-body limit**. The routine policy is unachievable against the *platform*, not just against the soft cap; and the emergency remedy ("remove all but the 30 most recent") targets ≈233,000 characters, **4.7× the 50,000 threshold it exists to enforce**. Three numbers, none reachable. The issue survives only because the model quietly discards all three and converges on six.
+
+**Correction to the comparison table above.** It attributes cortexkit #11's unbounded 54,813-character growth to root cause "soft prose budget, no enforcement," implying the clause is unexecutable. [[marcusrbrown--marcusrbrown]] executes the same clause **eight recorded times** across two issues — six archival events on #936, two on #926, each with an explicit marker naming the 50,000-character bound — while holding steady at 96% of cap. The clause is demonstrably executable by this model on this fleet. That removes "unexecutable clause" as the explanation for cortexkit and pushes the weight onto the other finding already recorded there: **the daemon had stopped writing anything at all six weeks before it was disabled.** A rotation clause cannot fail to fire when nothing is firing. The distinction matters operationally — one diagnosis says *rewrite the prompt*, the other says *the automation is dead* — and only the second one was true there.
+
+Refined guidance, which the two survivable cases now support: state the cap, state the measured per-entry floor, and let the agent **derive** the retention count at runtime rather than hard-coding one. [[marcusrbrown--marcusrbrown]] arrives at the correct answer every day and has to rediscover it every day, because the prompt asserts a number the arithmetic forbids.
+
 ### Weekly Cadence as a Day-Gated Category, Not a Second Cron (2026-09-05)
 
 [[marcusrbrown--systematic]] joins the fleet's cron-consolidation convergence (see *Fro Bot Scheduled-Run Consolidation* above) — modes 3 → 2, crons 2 → 1 — but does it with a mechanism worth extracting separately, because it solves the problem the other consolidations left open: **where does the weekly work go?**
@@ -1219,6 +1248,101 @@ The class, now with four members and one shared symptom — *a dependency that l
 | [[marcusrbrown--infra]] (here) | datasource resolves the repo tag family, not the action's | action pin frozen four months |
 
 **Whenever a monorepo publishes multiple artifacts from one commit, a version pin needs `extractVersionTemplate` (or an equivalent tag-family constraint) or it will silently resolve against the wrong series.** And the fleet-level detector remains the same one this page has now recommended three times: a lint that compares every `uses:` ref against the upstream's actual latest for *that artifact*, and flags any pin whose age exceeds its peers.
+
+### A Pipeline That Delivers Through Someone Else's PR (2026-09-07)
+
+From [[marcusrbrown--marcusrbrown]], and the clearest case yet of a workflow that is green, on schedule, and not doing its job.
+
+`update-profile.yaml` regenerates the profile's public artifacts. It triggers on `push`, on `schedule` every 6 hours, **and on `pull_request`** — and on the PR path it commits the regenerated files directly to the PR head (`EndBug/add-and-commit`). On the `main` path it opens a PR via `peter-evans/create-pull-request` on a fixed `build/update-readme` branch.
+
+Renovate PRs are PRs. So the pipeline writes fresh `BADGES.md`/`SPONSORME.md` onto **every dependency branch**, and that content merges to `main` as a rider on a `chore(deps)` commit. By the time the pipeline's own PR is evaluated, `main` already has the content and the diff is empty, so `create-pull-request` closes it and opens a new one next cycle.
+
+The measurements:
+
+| Signal | Value |
+| --- | --- |
+| Last `build:` commit on `main` | #1129, **2026-08-10** (28 days) |
+| `build/update-readme` PRs #1140 → #1189 | **10 consecutive, zero merged** |
+| `README.md` last changed on `main` | **2026-05-23** (107 days, ~428 green scheduled runs) |
+| Commits touching `BADGES.md`/`SPONSORME.md` in the window | **100% Renovate `chore(deps)` merges** |
+| `Update GitHub Profile` run conclusions | all `success` |
+
+Three transferable points:
+
+1. **A workflow that both mutates PR heads and opens its own PR is competing with itself.** Any other PR that merges first delivers the payload and starves the dedicated path. Nothing errors; the starved PR is closed as "no changes."
+2. **The delivery coupling becomes load-bearing and undocumented.** Profile freshness here is now a function of Renovate PR volume — and this repo has already survived a two-month Renovate stall (2026-03-12 → 2026-05-14). Under today's topology that stall would freeze the public artifact while the pipeline reported success 240 times.
+3. **Count merges, not runs, and not PRs opened.** Every dashboard for this pipeline is green. The only query that finds the problem is "when did this workflow's output last reach the default branch?" — `commits?path=<generated-file>` and a `state=all&head=<branch>` PR listing, both one API call.
+
+Corollary for the fleet: **any workflow that writes generated content to PR heads should exclude bot-authored branches, or accept that its own delivery PR is now decorative.** The same head-mutation behaviour also inflates unrelated PRs — [[marcusrbrown--marcusrbrown]]'s stranded security PRs carry 22–37 branch commits of pure generated churn, which destroys `updated_at` as a liveness signal and manufactures the conflicts that made two sibling PRs `dirty`.
+
+### Smoke-Testing a Generator Says Nothing About Its Output (2026-09-07)
+
+Companion finding from [[marcusrbrown--marcusrbrown]]. The `AUTOHEAL_PROMPT`'s QUALITY GATES VERIFICATION category runs `pnpm sponsors:update` and `pnpm badges:update` as **template-generation smoke tests** — it asserts the generator exits zero. Meanwhile the generator publishes, on `main`, on Marcus's public profile:
+
+- `![TypeScript badge](…/TypeScript-24.13.3-…)` — TypeScript appears nowhere in `package.json`; `24.13.3` is exactly `@types/node`.
+- `![ESLint badge](…/ESLint-5.5.6-…)` — ESLint is not a direct dependency; the ecosystem is on 10.x. `5.5.6` is exactly `eslint-plugin-prettier`.
+- ESLint categorised under **Cloud & Infrastructure**; Docker moved *out* of it; Go reclassified from `primary` language to `used` tool between runs.
+- The caption `_Badge data automatically updated every 6 hours via GitHub Actions_`, printed over content whose delivery path has been closed for 28 days — the exact stale date-bound claim the same repo's `PR_REVIEW_PROMPT` instructs the agent to flag.
+
+**Exit code zero is a liveness check, not a correctness check.** A generator that maps a technology name to the first version string it finds in a manifest will always exit zero and will always be plausible. The rule: for any generated artifact, the gate must assert something about the *content* — a fixture snapshot, a manifest cross-check (`badge.version == manifest[badge.package]`), or at minimum an assertion that the named dependency exists. Otherwise the audit surface stops at the process and the product is unowned.
+
+Sharper version, since this pairs with the section above: **the repo has an agent auditing lint, advisories, TODOs, `llms.txt` drift, and its own quality gates — and the one thing nobody audits is the artifact the repository exists to produce.** Coverage gaps cluster at the output boundary because that is where "did it run?" stops resembling "is it right?".
+
+### A Required Check That Excludes Its Own Author (2026-09-07)
+
+Second instance of the skipped-required-check mechanism (see *A Required Check That Cannot Fail Loudly*, 2026-08-31), from [[marcusrbrown--marcusrbrown]] — same primitive, different and arguably worse payload.
+
+The repo added `Fro Bot` to `main`'s `required_status_checks.contexts` on 2026-08-09 to make the agent's review verdict a hard merge gate. The workflow's job guard refuses two author classes:
+
+```yaml
+!endsWith(github.event.pull_request.user.login || '', '[bot]') &&
+(github.event.pull_request.user.login || '') != 'fro-bot'
+```
+
+Across a 41-commit window the check evaluated **one** PR — the sole human-authored commit. Everything else was Renovate (`mrbro-bot[bot]`) or the agent itself, and every one of those resolved `skipped ⇒ green`.
+
+The consequence differs from the ha-addon case in a way worth stating plainly. There, the skip **hid a failure**. Here the daemon is healthy and the skip **manufactures an approval**: four agent-authored security PRs report `mergeable_state: clean` with a check-run set of `CI: success / Prepare: success / Finalize: success / Renovate / Renovate: success / **Fro Bot: skipped**`. The reviewer declined to review its own work, and the decline is indistinguishable from a pass.
+
+The guard is not the bug — self-review is worthless and reviewing every dependency patch is waste. The bug is the pairing:
+
+> **Making a self-excluding check *required* is only meaningful in proportion to the PR traffic that check can actually evaluate.** On a repo whose stream is ~98% bot-authored, a required agent-review context is a gate on the 2% of PRs that already had a human in the loop.
+
+Two mitigations, neither expensive: (a) split the reviewer into a workflow whose required context is only ever *claimed* on evaluable PRs, so a skip is visibly absent rather than silently green; or (b) accept that agent-authored PRs need a different gate entirely — a human reviewer, or an automerge policy — and stop reading `clean` as "reviewed."
+
+### A Self-Updating Dependency Cannot Recover From a Broken Version of Itself (2026-09-07)
+
+From [[marcusrbrown--marcusrbrown]] #1194, the only human commit in a 41-commit window, and worth the whole survey on its own:
+
+> Takes bfra-me/renovate-action 10.34.1, which restores tar in the Renovate runtime. Renovate on 10.34.0 exits before servicing any dependencies, so this pin cannot self-update.
+
+`bfra-me/.github` v4.25.0 shipped a [[bfra-me--renovate-action]] container missing `tar`. Renovate died during setup — before reaching its work queue — so the one actor capable of bumping the pin was the actor the pin had broken. Renovate then re-proposed the identical bump as a no-op one commit later (#1195), catching up to a fix it was structurally incapable of authoring.
+
+This is a bootstrap deadlock, and it is structural to every self-updating dependency: **the update mechanism is inside the thing being updated, so any failure that occurs before the mechanism reaches its work queue is unrecoverable from inside.** SHA-pinning does not help — it is what makes the broken version sticky. Renovate's own `rollbackPrs` does not help either, because rollback requires a run.
+
+Detection and mitigation:
+
+- **The signal is silence, not failure.** A Renovate that exits at startup may still produce a `success` workflow conclusion, and its Dependency Dashboard simply stops updating. The observable is *elapsed time since the last Renovate-authored commit*, compared against the repo's normal cadence — this repo runs 1–3/day, so a 24-hour gap is already anomalous. Cheap fleet lint; nobody runs it.
+- **The fleet blast radius is the reusable-workflow pin.** Every `marcusrbrown/*` repo consumes `bfra-me/.github`'s `renovate.yaml`, so one bad minor stalls dependency automation everywhere at once, and each repo needs an independent manual bump because none of them can self-heal.
+- **Pin the caller, stage the callee.** A reusable workflow that carries an execution runtime should not go straight to every consumer on a floating minor. The cost of this incident was one human commit; the cost of not noticing would have been a fleet-wide silent freeze indistinguishable from a quiet week.
+
+### An Append-Only Waiver Ledger for a Supply-Chain Cooldown (2026-09-07)
+
+pnpm 11 ships a publish-age cooldown (`minimumReleaseAge`) — a defense against installing a freshly compromised release inside the window before anyone notices. [[marcusrbrown--marcusrbrown]] now carries the counterpart in `pnpm-workspace.yaml`:
+
+```yaml
+minimumReleaseAgeExclude:
+  - '@bfra.me/eslint-config@0.51.2 || 0.52.1'
+  - '@bfra.me/prettier-config@0.16.10 || 0.16.11'
+  - '@bfra.me/tsconfig@0.13.2'
+```
+
+Every line was written by Renovate, across five PRs in four days, so that Renovate could install the version Renovate wanted. **The mechanism that the cooldown is meant to slow down is the mechanism that files the waivers.** Note what this is and is not:
+
+- **Not a live hole.** The waivers are version-scoped, so a future compromised release is not pre-approved.
+- **But append-only.** `0.51.2` and `0.16.10` are already superseded by `0.52.1` and `0.16.11` and remain in the file. Nothing prunes them, and the list only grows with the publish cadence of the fastest-moving dependencies.
+- **And undirected.** It happens to contain only first-party `@bfra.me/*` packages, because those are the ones that publish often enough to trip the cooldown — not because a policy scoped it that way. A fast-releasing third-party dependency would land there identically.
+
+The rule: **a security control whose exemptions are auto-generated by the tool it constrains needs an expiry, a scope predicate, or both.** Scope the exclusion to a package pattern you actually trust (`@bfra.me/*`) rather than accumulating version literals, or set the cooldown low enough that automation does not need to route around it — a control everything bypasses is a control nobody is running.
 
 ### Convention Enforcement via Tests
 

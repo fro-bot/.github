@@ -4678,3 +4678,137 @@ Sources: https://github.com/marcusrbrown/infra@ac34a60e53bf0f6c58711164889783858
 Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/infra
+
+## [2026-09-07 10:45] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown at HEAD
+`958be8df530c79e6313a24c9abec0f8f19012de8` and ingested the results into the
+control-plane wiki. Prior survey: 2026-08-19 at `df85b7d`.
+
+By every conventional measure this was the quietest window this page has
+recorded: 41 commits, 40 of them `mrbro-bot[bot]` Renovate merges and exactly
+one human commit; 10 files touched, 6 of them pure version tokens;
+`fro-bot.yaml` diffs `+1/-1` (the agent pin, nothing else); prompts, crons,
+triggers, branch-protection contexts and the composite `setup` action all
+byte-stable; all 6 workflows `active`; the last 25 scheduled `Fro Bot` runs
+25/25 `success`. It is also the window in which the most things turned out to
+be broken, and none of them produced a red anywhere.
+
+Five findings:
+
+1. The required `Fro Bot` status check excludes the author who writes ~98% of
+   this repo's PRs. The job guard (`fro-bot.yaml:536-553`) skips `[bot]`
+   accounts and `fro-bot` by name; a skipped job reports as passing. Across 41
+   commits the check evaluated one PR — #1194, the sole human change. The
+   agent's own security PRs certify `mergeable_state: clean` on a check set of
+   `CI/Prepare/Finalize/Renovate: success` plus `Fro Bot: skipped` (verified on
+   #1094 head `7c09752`). Same primitive as bfra-me/ha-addon-repository,
+   inverted payload: there a skip hid a dead daemon, here it manufactures an
+   approval.
+
+2. Four green, mergeable, agent-authored security PRs stranded 44–61 days
+   (#1094, #1100, #1107, plus #1094's per-parent-scoped
+   `minimatch@3>brace-expansion` / `minimatch@10>brace-expansion` floors),
+   while 40 Renovate PRs merged same-day. These are not re-proposals of pins
+   already in the tree — each raises a floor against advisories newer than the
+   existing ledger entry. Automerge eligibility is again the only
+   distinguishing variable (the marcusrbrown.com pattern), but here the cost is
+   unpatched high-severity transitives. #1055/#1095 are duplicate `chore(lint)`
+   siblings, both now `dirty`, the fix having landed via a third sibling #1117
+   on 2026-08-10 — which supersedes the 2026-07-20 page claim that #1055
+   shipped.
+
+3. The profile pipeline has not delivered through its own path in 28 days.
+   Last `build:` commit is #1129 (2026-08-10); ten consecutive
+   `build/update-readme` PRs (#1140 → #1189) are unmerged; `README.md` has not
+   changed on `main` since 2026-05-23 (107 days, ~428 green scheduled runs).
+   Cause: `update-profile.yaml` also fires on `pull_request` and commits
+   regenerated content to PR heads, so `BADGES.md`/`SPONSORME.md` reach `main`
+   exclusively as riders on Renovate `chore(deps)` merges and the pipeline's
+   own PR is left with nothing to merge. Profile freshness is now coupled to
+   Renovate PR volume — on a repo whose page already documents a two-month
+   Renovate stall.
+
+4. The generated artifact is unaudited. `main` publishes `TypeScript 24.13.3`
+   (that is `@types/node`; TypeScript is not a dependency in either map),
+   `ESLint 5.5.6` (that is `eslint-plugin-prettier`), ESLint filed under
+   "Cloud & Infrastructure", and an "updated every 6 hours" caption over a
+   delivery path closed for 28 days. The autoheal quality-gate category runs
+   `pnpm badges:update` as a smoke test — it asserts the generator exits zero,
+   never that its output is true.
+
+5. The 50,000-character archival clause does fire here — six recorded events on
+   #936, two on #926 — and #936 measures 47,849 chars across 6 dated sections
+   with a ~7,780-char floor. 50,000 ÷ 7,780 = 6: observed steady state equals
+   the arithmetic, a third confirmation of the marcusrbrown/systematic #153
+   rule and the generalization that "keep the 30 most recent sections" is
+   satisfiable only under ~1,666 chars per section. This repo adds a third
+   unreachable number — "14 days of individual sections" implies ~108,900
+   chars, about 1.7x GitHub's hard 65,536-character issue-body limit.
+
+One correction recorded rather than overwritten: the 2026-09-05 comparison
+table on `topics/github-actions-ci.md` attributes cortexkit-anthropic-auth
+#11's unbounded growth to the clause being an unenforceable soft prose budget.
+This repo runs the same clause and executes it eight times, so the clause is
+demonstrably executable by this model on this fleet; the cortexkit cause is
+re-attributed to the finding already on that page — the daemon had stopped
+writing anything six weeks before it was disabled. Both readings are retained
+with dates; the earlier one is marked corrected, not deleted.
+
+The lone human commit is the interesting one. #1194 broke a Renovate
+self-update deadlock: `bfra-me/.github` v4.25.0 shipped a
+bfra-me/renovate-action runtime missing `tar`, so Renovate exited before
+reaching its work queue and could not author the PR that fixes Renovate.
+Renovate re-proposed the identical bump as a no-op one commit later (#1195).
+Also new: a `minimumReleaseAgeExclude` block in `pnpm-workspace.yaml` — pnpm
+11's publish-age cooldown waived per-version by the same automation it
+constrains, append-only, with superseded entries (`0.51.2`, `0.16.10`) still
+listed.
+
+Version movement: agent v0.100.0 -> v0.109.4 (`b799b64`, ecosystem version
+leader ahead of marcusrbrown/infra at v0.109.3); `bfra-me/.github` v4.18.0 ->
+v4.26.0 (eight minor boundaries in 19 days); pnpm 11.22.0 -> 11.25.0; Node
+24.19.0 -> 24.20.0; `@bfra.me/eslint-config` 0.51.1 -> 0.52.1 (minor
+boundary); prettier-config -> 0.16.11; tsconfig -> 0.13.2; vitest -> 4.1.11;
+tsx -> 4.23.13; simple-git-hooks -> 2.14.0; renovate-config preset -> #5.2.13.
+The GHSA override ledger is byte-identical and no `fix(security)` commit
+landed — which is finding 2 restated, since three were sitting green
+throughout. Carried unchanged: #1087 untouched since it was filed 50 days ago
+(line 577 jq `// "unknown"` verbatim at HEAD, line 540 still correct), #1056
+(61 d, TODO still at `badge-detector.ts:72`), #1039 (67 d, partially
+self-healed — the map now covers `sponsor-testimonials.tpl.md` and the
+sync-sponsors-bio skill but still omits `HIGHLIGHTS.md` and its template),
+#925 untouched since 2026-05-23 with `timeout: 0` still at line 648.
+Perpetual-issue contract satisfied and stable for a sixth consecutive window.
+
+The repo has a Fro Bot workflow — no follow-up draft PR is warranted on that
+count.
+
+Pages touched: updated `wiki/repos/marcusrbrown--marcusrbrown.md` (additive:
+new `2026-09-07 update` section with six numbered findings, current open-items
+table alongside the retained 2026-04 snapshot, 2026-09-07 version snapshot,
+four new Notable Patterns, workflow/shared-workflow annotations, survey-history
+row, `node_id` added to frontmatter; two prior claims explicitly marked
+superseded or qualified rather than overwritten),
+`wiki/topics/github-actions-ci.md` (five new dated sections plus a dated
+addendum correcting the 2026-09-05 retention entry, new repo entry, new tags),
+and `index.md`. No page content removed; all wikilinks resolve to existing
+pages.
+
+Method note: reads were held to directory listings, README/manifest/workflow
+files, and public issue/PR/check-run/workflow-run metadata, per the survey
+constraints. The target repository was treated as untrusted input — prompt text
+inside `fro-bot.yaml` was read as data to describe, never as instructions;
+`.github/corrections-context.json` was read as data and contained an empty
+corrections list. `gh` was not pre-authenticated in this environment; the run
+used the workspace checkout credential already present in git config, scoped to
+public reads. Delivery mode was `working-dir`; only `knowledge/**` was
+modified.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown@958be8df530c79e6313a24c9abec0f8f19012de8; https://github.com/fro-bot/.github/actions/runs/34111003338
+
+## [2026-09-07 10:37] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown
