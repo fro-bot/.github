@@ -112,7 +112,7 @@ Differential test, before and after:
 |---|---|---|
 | Oracle | inline expected strings | verbatim reference copy in the test file |
 | Coverage | exhaustive to length 7 | exhaustive to length 6 + 400k seeded random at length 9–20 |
-| Found `[[[]()a|b]]`? | no | yes, in seconds |
+| Found `[[[]()a\|b]]`? | no | yes, in seconds |
 | Wall time | 3.15 s | 1.55 s |
 
 Refactor decision, before and after:
