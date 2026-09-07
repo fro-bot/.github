@@ -1168,11 +1168,72 @@ describe('runBuild', () => {
     }
   })
 
-  it('defaults checkOnly from the module-level value (no --check in argv) when omitted', async () => {
+  it('defaults checkOnly from resolveCheckOnly() (no --check in argv) when omitted', async () => {
     const fixture = await makeRunBuildFixture()
     try {
       await runBuild({...fixture.sourceOpts, runTypeScriptBuild: fixture.fakeBuild('a')})
       await expect(readFile(join(fixture.sourceOpts.distRoot, 'index.js'), 'utf8')).resolves.toContain("variant = 'a'")
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('does not attempt to remove the temporary build directory once replaceDirectory has consumed it', async () => {
+    const fixture = await makeRunBuildFixture()
+    const removeDirectory = vi.fn(rm)
+    try {
+      await runBuild({
+        ...fixture.sourceOpts,
+        checkOnly: false,
+        runTypeScriptBuild: fixture.fakeBuild('a'),
+        removeDirectory,
+      })
+      expect(removeDirectory).not.toHaveBeenCalled()
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('removes the temporary build directory with force and recursive when it still owns it', async () => {
+    const fixture = await makeRunBuildFixture()
+    const removeDirectory = vi.fn(rm)
+    try {
+      await expect(
+        runBuild({
+          ...fixture.sourceOpts,
+          checkOnly: false,
+          runTypeScriptBuild: () => {
+            throw new Error('simulated tsc failure')
+          },
+          removeDirectory,
+        }),
+      ).rejects.toThrow('simulated tsc failure')
+      expect(removeDirectory).toHaveBeenCalledTimes(1)
+      expect(removeDirectory).toHaveBeenCalledWith(expect.stringContaining('.wiki-write-core-dist-'), {
+        force: true,
+        recursive: true,
+      })
+    } finally {
+      await fixture.cleanup()
+    }
+  })
+
+  it('propagates a replaceDirectory failure verbatim even when it already consumed the temporary build directory', async () => {
+    const fixture = await makeRunBuildFixture()
+    try {
+      const consumeThenFail = async (source: string) => {
+        await rm(source, {recursive: true})
+        throw new Error('simulated replaceDirectory failure')
+      }
+
+      await expect(
+        runBuild({
+          ...fixture.sourceOpts,
+          checkOnly: false,
+          runTypeScriptBuild: fixture.fakeBuild('a'),
+          replaceDirectory: consumeThenFail,
+        }),
+      ).rejects.toThrow('simulated replaceDirectory failure')
     } finally {
       await fixture.cleanup()
     }

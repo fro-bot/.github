@@ -40,8 +40,6 @@ export function resolveCheckOnly(argv: readonly string[] = process.argv): boolea
   return argv.includes('--check')
 }
 
-const checkOnly = resolveCheckOnly()
-
 interface RunTypeScriptBuildOptions {
   buildConfigPath?: string
   cwd?: string
@@ -79,23 +77,28 @@ export interface RunBuildOptions {
   checkOnly?: boolean
   distRoot?: string
   manifestPath?: string
+  removeDirectory?: typeof rm
+  replaceDirectory?: typeof replaceDirectoryAtomically
   runTypeScriptBuild?: (outputDirectory: string) => void
   sourceRoot?: string
   write?: (message: string) => void
 }
 
 /**
- * The assembled build/check flow `main()` drives. All I/O boundaries that would otherwise
- * make this unreachable outside a real CLI invocation are injectable: `runTypeScriptBuild`
- * (default: `runTypeScriptBuild`, which spawns real `tsc`) and every path default.
+ * The assembled build/check flow the `import.meta.main` guard drives. All I/O boundaries that
+ * would otherwise make this unreachable outside a real CLI invocation are injectable:
+ * `runTypeScriptBuild` (default: `runTypeScriptBuild`, which spawns real `tsc`) and every path
+ * default.
  */
 export async function runBuild(options: RunBuildOptions = {}): Promise<void> {
   const currentSourceRoot = options.sourceRoot ?? sourceRoot()
   const currentDistRoot = options.distRoot ?? distRoot()
   const currentBuildConfig = options.buildConfigPath ?? buildConfig()
   const currentManifest = options.manifestPath ?? packageManifest()
-  const currentCheckOnly = options.checkOnly ?? checkOnly
+  const currentCheckOnly = options.checkOnly ?? resolveCheckOnly()
   const buildTypeScript = options.runTypeScriptBuild ?? runTypeScriptBuild
+  const replaceDirectory = options.replaceDirectory ?? replaceDirectoryAtomically
+  const removeDirectory = options.removeDirectory ?? rm
   const write = options.write ?? writeToStdout
 
   const temporaryRoot = await mkdtemp(join(dirname(currentDistRoot), '.wiki-write-core-dist-'))
@@ -127,17 +130,15 @@ export async function runBuild(options: RunBuildOptions = {}): Promise<void> {
       }
       write('wiki-write-core dist is up to date\n')
     } else {
-      await replaceDirectoryAtomically(temporaryRoot, currentDistRoot)
+      await replaceDirectory(temporaryRoot, currentDistRoot)
       temporaryRootOwned = false
     }
   } finally {
-    // `force: true` is deliberately omitted: whenever temporaryRootOwned is true, temporaryRoot
-    // genuinely still exists (mkdtemp created it, and nothing removes or renames it away while
-    // still owned) — `recursive: true` alone is correct, and a stray rm on a directory that was
-    // already replaced would now surface as a real, test-visible error instead of a silent
-    // force:true no-op.
+    // `force: true` restored: replaceDirectory can consume temporaryRoot (rename it away) and
+    // then itself throw during its own cleanup, leaving temporaryRootOwned uncleared with
+    // nothing left at temporaryRoot to remove — a legitimate absence, not a bug to surface as ENOENT.
     if (temporaryRootOwned) {
-      await rm(temporaryRoot, {recursive: true})
+      await removeDirectory(temporaryRoot, {force: true, recursive: true})
     }
   }
 }
