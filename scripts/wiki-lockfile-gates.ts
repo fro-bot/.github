@@ -57,6 +57,42 @@ export function isLocalPluginSource(source: string): boolean {
 }
 
 /**
+ * Derive the source string a lock entry would need to be classified as local -- a string source is
+ * itself; an object source uses `.repo` when it is a string. Returns `null` when no usable source
+ * string exists (e.g. an object source with no `repo`).
+ */
+function lockEntrySourceString(entry: LockPluginEntry): string | null {
+  if (typeof entry.source === 'string') return entry.source
+  if (typeof entry.source.repo === 'string') return entry.source.repo
+  return null
+}
+
+/**
+ * Whether a lock entry's own `source` shape is local, per `isLocalPluginSource`. This is the ONLY
+ * predicate either gate may use to exempt a lock entry from remote-plugin handling --
+ * `entry.commit` must never participate in that decision. `commit` is a value the lockfile itself
+ * controls, so keying an exemption on `commit === 'local'` lets a forged lock entry (a remote
+ * `source` paired with a hand-written `commit: 'local'`) claim the local exemption and slip both
+ * Gate A's orphan check and Gate B's HEAD-integrity check. `source` shape cannot be forged the same
+ * way: it is either the literal config-declared source (Gate A) or an already-trusted lock field
+ * that Gate B's integrity check is the very thing verifying (Gate B does not re-derive `source`
+ * from anywhere the plugin controls).
+ */
+export function isLocalLockEntry(entry: LockPluginEntry): boolean {
+  const sourceString = lockEntrySourceString(entry)
+  return sourceString !== null && isLocalPluginSource(sourceString)
+}
+
+/**
+ * Message for a lock entry whose `source` is local but whose `commit` isn't the local sentinel --
+ * an inconsistency worth failing on rather than silently accepting, now that `commit` no longer
+ * grants the local exemption itself.
+ */
+function localCommitMismatchError(name: string, entry: LockPluginEntry): string {
+  return `lock entry "${name}" has a local source but commit "${entry.commit}" is not "local" -- local plugins must record commit: "local"`
+}
+
+/**
  * Classify a Quartz plugin-source string as remote per `parseGitSource`'s grammar (order matters:
  * `github:`, then `git+`, then `https://`; anything else is unparseable). There is no bare
  * two-part `owner/repo` shorthand here -- that form exists only in `gitLoader.ts::parsePluginSource`
@@ -95,11 +131,14 @@ function isRemotePluginSourceString(source: string): boolean {
  * source strings, so a remote plugin must be declared as a string source to be lock-coverable.
  * `subdir` and `ref` are rejected the same way for the same reason -- both are stored as separate
  * lock fields alongside a verbatim `source`, so neither can be folded into a normalized string
- * identity either.
+ * identity either. An object source whose `repo` is neither local nor a usable non-empty string
+ * (`{}`, `{repo: ''}`, `{repo: 123}`, `{name: 'x'}` with no `repo`) is reported as malformed rather
+ * than silently ignored.
  *
- * Disabled plugins (`enabled === false`) are skipped entirely. Lock entries whose source isn't in
- * the enabled-remote-source set are orphans, except entries with `commit: 'local'` -- those
- * correspond to a config plugin the gate deliberately exempts on the config side.
+ * Disabled plugins (`enabled === false`) are skipped entirely. Lock entries are exempted from the
+ * orphan check by `isLocalLockEntry` -- their OWN `source` shape, never `entry.commit` (see that
+ * function's doc for why keying the exemption on `commit` is a fail-open). A local lock entry
+ * whose `commit` isn't the `'local'` sentinel is a self-inconsistency and is reported as an error.
  */
 export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): CoverageGateResult {
   const lockPlugins = lock.plugins ?? {}
@@ -145,12 +184,19 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
         errors.push(
           `enabled remote plugin uses rejected object-source form; declare it as a string source instead: ${JSON.stringify(source)}`,
         )
+      } else if (typeof source === 'object') {
+        errors.push(
+          `enabled plugin has a malformed object source (missing or invalid "repo"): ${JSON.stringify(source)}`,
+        )
       }
     }
   }
 
   for (const [name, entry] of Object.entries(lockPlugins)) {
-    if (entry.commit === 'local') continue // local plugin, exempt on the config side too
+    if (isLocalLockEntry(entry)) {
+      if (entry.commit !== 'local') errors.push(localCommitMismatchError(name, entry))
+      continue
+    }
     // Membership is tested on the rendered label rather than on `entry.source` itself: the set only
     // ever holds raw config strings, so a JSON-rendered object source can never match it, and an
     // object lock entry with no enabled counterpart is still reported rather than silently skipped.
@@ -175,12 +221,21 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
  * plugin, or `null` if the plugin directory/HEAD file is missing. A `ref:
  * refs/heads/...` line (branch checkout) never equals a pinned SHA, so it
  * naturally fails the equality check — this is how branch drift is caught.
+ *
+ * Local entries (`isLocalLockEntry`, the SAME predicate Gate A uses) are skipped: a local plugin is
+ * symlinked, not cloned, so it has no meaningful `.git/HEAD` to compare against a pinned commit --
+ * without this exemption it would fail either as a missing HEAD or as a branch-ref mismatch. A local
+ * entry whose `commit` isn't the `'local'` sentinel is still reported, the same as in Gate A.
  */
 export function checkLockfileIntegrity(lock: LockFile, readHead: (name: string) => string | null): GateResult {
   const errors: string[] = []
   const plugins = lock.plugins ?? {}
 
   for (const [name, entry] of Object.entries(plugins)) {
+    if (isLocalLockEntry(entry)) {
+      if (entry.commit !== 'local') errors.push(localCommitMismatchError(name, entry))
+      continue
+    }
     const head = readHead(name)
     if (head === null) {
       errors.push(`missing plugin directory/.git/HEAD for "${name}"`)

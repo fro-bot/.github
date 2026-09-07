@@ -7,6 +7,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {
   checkLockfileCoverage,
   checkLockfileIntegrity,
+  isLocalLockEntry,
   isLocalPluginSource,
   runCli,
   type LockFile,
@@ -212,18 +213,52 @@ describe('checkLockfileCoverage', () => {
     expect(result.errors).toEqual([])
   })
 
-  it('does not throw and requires no lock entry when an object source has neither repo nor subdir', () => {
+  it('fails with a malformed-source error for an object source with no repo at all', () => {
     // #given an enabled plugin with an empty object source (no repo, no subdir — a degenerate but
-    // #type-legal QuartzPluginObjectSource)
+    // #type-legal QuartzPluginObjectSource). Previously this fell through every check silently; now
+    // #that every other object shape is handled explicitly, this must be reported rather than ignored
     const config: QuartzConfig = {plugins: [{enabled: true, source: {}}]}
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
     const result = checkLockfileCoverage(config, lock)
 
-    // #then it passes silently — no repo means nothing to classify as remote or local
-    expect(result.ok).toBe(true)
-    expect(result.errors).toEqual([])
+    // #then it fails with the malformed-source error
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(['enabled plugin has a malformed object source (missing or invalid "repo"): {}'])
+  })
+
+  it('fails with a malformed-source error for an object source whose name has no accompanying repo', () => {
+    // #given an enabled plugin with a `name` override but no `repo` -- a plausible hand-edit mistake
+    // #(the config author remembered to name the plugin but forgot the source)
+    const config = {plugins: [{enabled: true, source: {name: 'x'}}]} as unknown as QuartzConfig
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it fails with the malformed-source error
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'enabled plugin has a malformed object source (missing or invalid "repo"): {"name":"x"}',
+    ])
+  })
+
+  it('fails with a malformed-source error for an object source whose repo is a non-string', () => {
+    // #given an enabled plugin whose object-source repo is a number -- not representable by
+    // #QuartzPluginObjectSource's real type but reachable at runtime since config is only
+    // #YAML.parse'd, never schema-validated (e.g. an unquoted YAML `repo: 123`)
+    const config = {plugins: [{enabled: true, source: {repo: 123}}]} as unknown as QuartzConfig
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it fails with the malformed-source error
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'enabled plugin has a malformed object source (missing or invalid "repo"): {"repo":123}',
+    ])
   })
 
   it('does not error and requires no lock entry when source is a truthy non-object (malformed YAML)', () => {
@@ -243,7 +278,7 @@ describe('checkLockfileCoverage', () => {
     expect(result.errors).toEqual([])
   })
 
-  it('does not require a lock entry when an object-source repo normalizes to an empty string', () => {
+  it('fails with a malformed-source error for an object-source repo that is present but empty', () => {
     // #given an enabled plugin whose object-source repo is present but empty
     const config: QuartzConfig = {plugins: [{enabled: true, source: {repo: ''}}]}
     const lock: LockFile = {plugins: {}}
@@ -251,9 +286,11 @@ describe('checkLockfileCoverage', () => {
     // #when checking coverage
     const result = checkLockfileCoverage(config, lock)
 
-    // #then it passes silently — an empty repo is not a valid remote source to require or normalize
-    expect(result.ok).toBe(true)
-    expect(result.errors).toEqual([])
+    // #then it fails with the malformed-source error -- an empty repo is neither remote nor local
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'enabled plugin has a malformed object source (missing or invalid "repo"): {"repo":""}',
+    ])
   })
 
   it('matches a string-form remote source via .some() even when other lock entries do not match it', () => {
@@ -599,10 +636,12 @@ describe('checkLockfileCoverage', () => {
     ])
   })
 
-  it('does not report a lock entry with commit: "local" as an orphan', () => {
-    // #given a lock entry for a local plugin (commit: "local", the value Quartz's lockfile writer
-    // #uses for local sources) with no corresponding entry in `enabledRemoteSources` -- local plugins
-    // #are deliberately exempted on the config side, so the lock-side orphan check must not flag them
+  it('does not report a lock entry with a local source as an orphan', () => {
+    // #given a lock entry for a local plugin (a local `source`, and the `commit: "local"` sentinel
+    // #Quartz's lockfile writer uses for local sources) with no corresponding entry in
+    // #`enabledRemoteSources` -- local plugins are deliberately exempted on the config side, so the
+    // #lock-side orphan check must not flag them. The exemption is keyed on `source`, not `commit`
+    // #(see the next test for why that distinction matters)
     const config: QuartzConfig = {plugins: []}
     const lock: LockFile = {
       plugins: {'local-plugin': {source: './local-plugin', commit: 'local'}},
@@ -614,6 +653,49 @@ describe('checkLockfileCoverage', () => {
     // #then it passes -- a local lock entry is never an orphan, regardless of config contents
     expect(result.ok).toBe(true)
     expect(result.errors).toEqual([])
+  })
+
+  it('SECURITY: does not let a remote-source lock entry bypass the orphan check merely by claiming commit: "local"', () => {
+    // #given a lock entry whose `source` is REMOTE (`github:evil/x`) but whose `commit` field is the
+    // #hand-writable string "local" -- `commit` is a value the lockfile itself controls and cannot be
+    // #trusted to gate an exemption. If the exemption keyed on `entry.commit === 'local'` (as an
+    // #earlier version of this gate did), this forged entry would silently bypass the orphan check
+    // #entirely, alongside a genuine unrelated remote plugin that IS covered
+    const config: QuartzConfig = {plugins: [{enabled: true, source: 'github:good/x'}]}
+    const lock: LockFile = {
+      plugins: {
+        good: {source: 'github:good/x', commit: 'abc123'},
+        evil: {source: 'github:evil/x', commit: 'local'},
+      },
+    }
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then the forged entry is still reported as an orphan -- its REMOTE source shape, not its
+    // #self-declared commit, is what the exemption decision is keyed on
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(['lock entry "evil" (github:evil/x) is not an enabled plugin in quartz.config.yaml'])
+  })
+
+  it('fails with a commit-mismatch error when a local-source lock entry does not record commit: "local"', () => {
+    // #given a lock entry with a local `source` but a `commit` value other than the "local" sentinel
+    // #-- an internal inconsistency in the lockfile itself, now that `commit` no longer participates
+    // #in the exemption decision. Silently accepting this would let `commit` drift from meaning
+    // #anything, so it is reported as an error rather than ignored
+    const config: QuartzConfig = {plugins: []}
+    const lock: LockFile = {
+      plugins: {'local-plugin': {source: './local-plugin', commit: 'abc123'}},
+    }
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it fails with the commit-mismatch error, not the orphan error
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'lock entry "local-plugin" has a local source but commit "abc123" is not "local" -- local plugins must record commit: "local"',
+    ])
   })
 
   it('regression: every enabled github: plugin in the real quartz-site config matches its real lock entry', async () => {
@@ -678,10 +760,96 @@ describe('isLocalPluginSource', () => {
 })
 
 // ---------------------------------------------------------------------------
+// isLocalLockEntry — the shared local-exemption predicate BOTH gates must use, keyed on the lock
+// entry's own `source` shape and never on `entry.commit` (see the SECURITY test above for why).
+// ---------------------------------------------------------------------------
+
+describe('isLocalLockEntry', () => {
+  it('is true for a string source that is local, regardless of commit', () => {
+    expect(isLocalLockEntry({source: './p', commit: 'local'})).toBe(true)
+    expect(isLocalLockEntry({source: './p', commit: 'not-local'})).toBe(true)
+  })
+
+  it('is true for an object source whose repo is local', () => {
+    expect(isLocalLockEntry({source: {repo: './p'}, commit: 'local'})).toBe(true)
+  })
+
+  it('is false for a remote string source, regardless of commit', () => {
+    expect(isLocalLockEntry({source: 'github:owner/repo', commit: 'local'})).toBe(false)
+    expect(isLocalLockEntry({source: 'github:owner/repo', commit: 'abc123'})).toBe(false)
+  })
+
+  it('is false for an object source with no usable repo string', () => {
+    expect(isLocalLockEntry({source: {}, commit: 'local'})).toBe(false)
+    expect(isLocalLockEntry({source: {repo: 123 as unknown as string}, commit: 'local'})).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // checkLockfileIntegrity — Gate B
 // ---------------------------------------------------------------------------
 
 describe('checkLockfileIntegrity', () => {
+  it('skips a local-source entry entirely, never calling readHead for it', () => {
+    // #given a lock entry with a local source and no corresponding readHead result (readHead would
+    // #throw if ever called for it, proving the entry is skipped rather than looked up and passing
+    // #by coincidence)
+    const lock: LockFile = {plugins: {'local-plugin': {source: './local-plugin', commit: 'local'}}}
+    const readHead = (name: string): string | null => {
+      throw new Error(`readHead should not be called for local entry "${name}"`)
+    }
+
+    // #when checking integrity
+    const result = checkLockfileIntegrity(lock, readHead)
+
+    // #then it passes without ever consulting .git/HEAD for the local entry
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  it('fails with a commit-mismatch error when a local-source entry does not record commit: "local", without consulting readHead', () => {
+    // #given a lock entry with a local source but a non-"local" commit -- the same inconsistency
+    // #Gate A reports, using the same shared predicate and the same error text
+    const lock: LockFile = {plugins: {'local-plugin': {source: './local-plugin', commit: 'abc123'}}}
+    const readHead = (name: string): string | null => {
+      throw new Error(`readHead should not be called for local entry "${name}"`)
+    }
+
+    // #when checking integrity
+    const result = checkLockfileIntegrity(lock, readHead)
+
+    // #then it fails with the commit-mismatch error, not a HEAD-comparison error
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'lock entry "local-plugin" has a local source but commit "abc123" is not "local" -- local plugins must record commit: "local"',
+    ])
+  })
+
+  it('AGREEMENT: a local-source lock entry is exempt in Gate A and skipped in Gate B, via the same predicate', () => {
+    // #given a lock with one local entry and one remote entry, checked by BOTH gates -- this is the
+    // #agreement itself under test: both gates must treat the local entry identically (exempt) using
+    // #isLocalLockEntry, not disagree with each other via separate ad-hoc logic
+    const lock: LockFile = {
+      plugins: {
+        'local-plugin': {source: './local-plugin', commit: 'local'},
+        remote: {source: 'github:owner/repo', commit: 'sha-remote'},
+      },
+    }
+    const config: QuartzConfig = {plugins: [{enabled: true, source: 'github:owner/repo'}]}
+    const readHead = (name: string): string | null => (name === 'remote' ? 'sha-remote' : 'sha-should-not-be-used')
+
+    // #when checking both gates
+    const coverageResult = checkLockfileCoverage(config, lock)
+    const integrityResult = checkLockfileIntegrity(lock, readHead)
+
+    // #then both gates pass -- the local entry is exempt from Gate A's orphan check and skipped by
+    // #Gate B's HEAD comparison, while the remote entry is fully verified by both
+    expect(coverageResult.ok).toBe(true)
+    expect(coverageResult.errors).toEqual([])
+    expect(integrityResult.ok).toBe(true)
+    expect(integrityResult.errors).toEqual([])
+  })
+
   it('passes when every plugin HEAD matches its lock commit', () => {
     // #given a lock with two entries whose readHead returns the exact matching commit SHA
     const lock: LockFile = {
