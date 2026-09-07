@@ -4679,136 +4679,116 @@ Surveyed marcusrbrown/infra and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/infra
 
-## [2026-09-07 10:45] ingest | repo:marcusrbrown/marcusrbrown
+## [2026-09-07 10:39] ingest | repo:marcusrbrown/tokentoilet
 
-Surveyed marcusrbrown/marcusrbrown at HEAD
-`958be8df530c79e6313a24c9abec0f8f19012de8` and ingested the results into the
-control-plane wiki. Prior survey: 2026-08-19 at `df85b7d`.
+Surveyed marcusrbrown/tokentoilet at HEAD `b81e74b9` (`node_id R_kgDOJ3rINw`)
+and updated the wiki. Ninth survey of this repo; first since 2026-08-19.
 
-By every conventional measure this was the quietest window this page has
-recorded: 41 commits, 40 of them `mrbro-bot[bot]` Renovate merges and exactly
-one human commit; 10 files touched, 6 of them pure version tokens;
-`fro-bot.yaml` diffs `+1/-1` (the agent pin, nothing else); prompts, crons,
-triggers, branch-protection contexts and the composite `setup` action all
-byte-stable; all 6 workflows `active`; the last 25 scheduled `Fro Bot` runs
-25/25 `success`. It is also the window in which the most things turned out to
-be broken, and none of them produced a red anywhere.
+No application code changed in the interval. `CHANGELOG.md` `[Unreleased]`
+carries the same entries and the same "awaiting feature page implementation"
+status line for the third consecutive survey. The interval's content is
+entirely about the automation, and it produced five durable findings plus two
+corrections to prior surveys.
 
-Five findings:
+1. The autoheal daemon went report-only, and nothing looks broken. Every
+   retained section of perpetual issue #1013 states the run is in "working-dir
+   delivery mode with branch checkout, commit, push, and PR creation
+   forbidden." The harness moved delivery to the caller workflow;
+   `fro-bot.yaml`'s last step is `Run Fro Bot` and nothing follows it. The job
+   holds `contents/issues/pull-requests/discussions: write`, passes
+   `FRO_BOT_PAT` to both checkout and agent, uses `fetch-depth: 0`, and runs
+   19/20 scheduled passes green — and has written nothing to the repository
+   since 2026-08-09. Every fro-bot artifact created on or after 2026-07-20 is
+   still open (7 PRs, 4 issues); every one before it is closed. This is a
+   third root-cause layer beyond the permissions layer (bfra-me/works
+   #4321→#4366) and the prompt-boundary layer.
 
-1. The required `Fro Bot` status check excludes the author who writes ~98% of
-   this repo's PRs. The job guard (`fro-bot.yaml:536-553`) skips `[bot]`
-   accounts and `fro-bot` by name; a skipped job reports as passing. Across 41
-   commits the check evaluated one PR — #1194, the sole human change. The
-   agent's own security PRs certify `mergeable_state: clean` on a check set of
-   `CI/Prepare/Finalize/Renovate: success` plus `Fro Bot: skipped` (verified on
-   #1094 head `7c09752`). Same primitive as bfra-me/ha-addon-repository,
-   inverted payload: there a skip hid a dead daemon, here it manufactures an
-   approval.
+2. Both halves of the daemon are inert. Of the last 100 `Fro Bot` runs
+   (2026-09-05 → 09-07), 98 concluded `skipped` — 50 `pull_request`, 34
+   `issues`, 14 `issue_comment` — because the trigger surface is effectively
+   100% bot-authored. Only the 2 scheduled runs executed.
 
-2. Four green, mergeable, agent-authored security PRs stranded 44–61 days
-   (#1094, #1100, #1107, plus #1094's per-parent-scoped
-   `minimatch@3>brace-expansion` / `minimatch@10>brace-expansion` floors),
-   while 40 Renovate PRs merged same-day. These are not re-proposals of pins
-   already in the tree — each raises a floor against advisories newer than the
-   existing ledger entry. Automerge eligibility is again the only
-   distinguishing variable (the marcusrbrown.com pattern), but here the cost is
-   unpatched high-severity transitives. #1055/#1095 are duplicate `chore(lint)`
-   siblings, both now `dirty`, the fix having landed via a third sibling #1117
-   on 2026-08-10 — which supersedes the 2026-07-20 page claim that #1055
-   shipped.
+3. The security queue is undrained, not blocked. Six `fix(security)` PRs, each
+   a one-line `pnpm-workspace.yaml` override addition, all `SUCCESS` on the
+   complete required-context set, four `MERGEABLE`, `required_pull_request_
+   reviews: null`, aged 29–48 days. Meanwhile `pnpm audit` reports 24
+   vulnerabilities (12 high / 11 moderate / 1 low) and 19 open moderate+
+   Dependabot alerts — a regression from the "0 moderate+" recorded
+   2026-06-09 that CI cannot surface, because `Security Audit` is
+   `dependency-review-action` on `pull_request` only and never audits `main`.
+   Renovate automerge covers `mrbro-bot[bot]` (30+ same-day merges in the same
+   window); nothing covers `fro-bot`.
 
-3. The profile pipeline has not delivered through its own path in 28 days.
-   Last `build:` commit is #1129 (2026-08-10); ten consecutive
-   `build/update-readme` PRs (#1140 → #1189) are unmerged; `README.md` has not
-   changed on `main` since 2026-05-23 (107 days, ~428 green scheduled runs).
-   Cause: `update-profile.yaml` also fires on `pull_request` and commits
-   regenerated content to PR heads, so `BADGES.md`/`SPONSORME.md` reach `main`
-   exclusively as riders on Renovate `chore(deps)` merges and the pipeline's
-   own PR is left with nothing to merge. Profile freshness is now coupled to
-   Renovate PR volume — on a repo whose page already documents a two-month
-   Renovate stall.
+4. A new comment-trigger fork guard closes a real gap and fails open. The step
+   correctly handles `issue_comment` carrying no `pull_request` payload, but
+   resolves `.head.repo.fork // "unknown"` and refuses only the literal
+   `"true"` — so the sentinel written to mean "I could not determine this"
+   proceeds to checkout.
 
-4. The generated artifact is unaudited. `main` publishes `TypeScript 24.13.3`
-   (that is `@types/node`; TypeScript is not a dependency in either map),
-   `ESLint 5.5.6` (that is `eslint-plugin-prettier`), ESLint filed under
-   "Cloud & Infrastructure", and an "updated every 6 hours" caption over a
-   delivery path closed for 28 days. The autoheal quality-gate category runs
-   `pnpm badges:update` as a smoke test — it asserts the generator exits zero,
-   never that its output is true.
+5. Prompt and doc drift, measured. The nightly sweep audits `AGENTS.md`
+   (1,711 B) and never reads `.github/copilot-instructions.md` (14,179 B:
+   `pnpm@11.7.0` vs actual 11.25.0, and `Wagmi v2`) or the 26,308 B prompt
+   block (`Wagmi v2` in both prompts). The repo crossed wagmi v2 → v3 on
+   2026-05-28. 1.7 KB audited, 40.5 KB unaudited, with a wrong major of the
+   most safety-critical dependency in the unaudited part.
 
-5. The 50,000-character archival clause does fire here — six recorded events on
-   #936, two on #926 — and #936 measures 47,849 chars across 6 dated sections
-   with a ~7,780-char floor. 50,000 ÷ 7,780 = 6: observed steady state equals
-   the arithmetic, a third confirmation of the marcusrbrown/systematic #153
-   rule and the generalization that "keep the 30 most recent sections" is
-   satisfiable only under ~1,666 chars per section. This repo adds a third
-   unreachable number — "14 days of individual sections" implies ~108,900
-   chars, about 1.7x GitHub's hard 65,536-character issue-body limit.
+Also recorded: #1013's retention arithmetic is unsatisfiable as written
+(31,441 chars / 5 sections against "archive at 50,000, keep the 30 most
+recent"; at a ~6,300-char section floor the cap bites at ~8), making this the
+second independent instance of the class after marcusrbrown/systematic #153 —
+at ~4x rather than 30x, and with the agent silently improvising a retention
+number rather than reporting the contradiction. The Sunday-gated category-7
+cadence mechanism propagated near-verbatim from marcusrbrown/systematic, and
+brought the retention defect with it. CI runs Node 22 from a composite-action
+input default (no `.node-version`, no `engines`) against `@types/node`
+24.13.3.
 
-One correction recorded rather than overwritten: the 2026-09-05 comparison
-table on `topics/github-actions-ci.md` attributes cortexkit-anthropic-auth
-#11's unbounded growth to the clause being an unenforceable soft prose budget.
-This repo runs the same clause and executes it eight times, so the clause is
-demonstrably executable by this model on this fleet; the cortexkit cause is
-re-attributed to the finding already on that page — the daemon had stopped
-writing anything six weeks before it was disabled. Both readings are retained
-with dates; the earlier one is marked corrected, not deleted.
+Two corrections to prior surveys, recorded additively rather than by
+overwrite: (a) the five-survey "Storybook alpha addon footgun / sediment"
+reading is superseded — `pnpm-workspace.yaml` carries an explicit
+`peerDependencyRules.allowedVersions` block with the comment "Storybook
+9.alpha addons work with Storybook 10 (no v10 addons released yet)", so the
+split is a documented decision, not drift; (b) root `RFCs/` moved to
+`docs/archive/RFCs/`, and `.ai/` plus `.cursorrules` were removed, superseding
+the Repository Structure entries for all three.
 
-The lone human commit is the interesting one. #1194 broke a Renovate
-self-update deadlock: `bfra-me/.github` v4.25.0 shipped a
-bfra-me/renovate-action runtime missing `tar`, so Renovate exited before
-reaching its work queue and could not author the PR that fixes Renovate.
-Renovate re-proposed the identical bump as a no-op one commit later (#1195).
-Also new: a `minimumReleaseAgeExclude` block in `pnpm-workspace.yaml` — pnpm
-11's publish-age cooldown waived per-version by the same automation it
-constrains, append-only, with superseded entries (`0.51.2`, `0.16.10`) still
-listed.
-
-Version movement: agent v0.100.0 -> v0.109.4 (`b799b64`, ecosystem version
-leader ahead of marcusrbrown/infra at v0.109.3); `bfra-me/.github` v4.18.0 ->
-v4.26.0 (eight minor boundaries in 19 days); pnpm 11.22.0 -> 11.25.0; Node
-24.19.0 -> 24.20.0; `@bfra.me/eslint-config` 0.51.1 -> 0.52.1 (minor
-boundary); prettier-config -> 0.16.11; tsconfig -> 0.13.2; vitest -> 4.1.11;
-tsx -> 4.23.13; simple-git-hooks -> 2.14.0; renovate-config preset -> #5.2.13.
-The GHSA override ledger is byte-identical and no `fix(security)` commit
-landed — which is finding 2 restated, since three were sitting green
-throughout. Carried unchanged: #1087 untouched since it was filed 50 days ago
-(line 577 jq `// "unknown"` verbatim at HEAD, line 540 still correct), #1056
-(61 d, TODO still at `badge-detector.ts:72`), #1039 (67 d, partially
-self-healed — the map now covers `sponsor-testimonials.tpl.md` and the
-sync-sponsors-bio skill but still omits `HIGHLIGHTS.md` and its template),
-#925 untouched since 2026-05-23 with `timeout: 0` still at line 648.
-Perpetual-issue contract satisfied and stable for a sixth consecutive window.
+Version movement: agent v0.100.0 → v0.109.4; `bfra-me/.github` v4.18.0 →
+v4.26.0 (eight minor boundaries); Renovate preset #5.2.12 → #5.2.13; pnpm
+11.22.0 → 11.25.0; Next.js 16.3.1 → 16.3.4; viem 2.55.16 → 2.56.3; Storybook
+core 10.5.8 → 10.6.0; ESLint 10.8.1 → 10.9.1; Vite 8.2.1 → 8.2.2; Vitest
+4.1.10 → 4.1.11. Coverage 61% → 65.18%; tests 1103 → 1461. Open issues flat
+at 7 (identical set); open PRs 9; stars 1 → 2; license still absent (seventh
+survey).
 
 The repo has a Fro Bot workflow — no follow-up draft PR is warranted on that
-count.
+count. Its gap is a missing delivery half, not a missing workflow.
 
-Pages touched: updated `wiki/repos/marcusrbrown--marcusrbrown.md` (additive:
-new `2026-09-07 update` section with six numbered findings, current open-items
-table alongside the retained 2026-04 snapshot, 2026-09-07 version snapshot,
-four new Notable Patterns, workflow/shared-workflow annotations, survey-history
-row, `node_id` added to frontmatter; two prior claims explicitly marked
-superseded or qualified rather than overwritten),
-`wiki/topics/github-actions-ci.md` (five new dated sections plus a dated
-addendum correcting the 2026-09-05 retention entry, new repo entry, new tags),
-and `index.md`. No page content removed; all wikilinks resolve to existing
-pages.
+Withheld: the workflow's category-6 focus list names two repositories in
+plaintext; neither resolves under a public-scope token, so their names are not
+recorded, per the public-only invariant.
+
+Pages touched: updated `wiki/repos/marcusrbrown--tokentoilet.md` (additive:
+four new dated subsections, digest delta block, survey-history row, refreshed
+Overview/Tech Stack/CI/Fro Bot/Tooling tables; two prior claims explicitly
+marked superseded rather than overwritten), `wiki/topics/github-actions-ci.md`
+(two new dated sections plus four addenda to existing sections),
+`wiki/topics/web3-defi.md` (one new section plus one addendum), and
+`index.md`. No page content removed; all wikilinks resolve to existing pages.
 
 Method note: reads were held to directory listings, README/manifest/workflow
-files, and public issue/PR/check-run/workflow-run metadata, per the survey
-constraints. The target repository was treated as untrusted input — prompt text
-inside `fro-bot.yaml` was read as data to describe, never as instructions;
-`.github/corrections-context.json` was read as data and contained an empty
-corrections list. `gh` was not pre-authenticated in this environment; the run
-used the workspace checkout credential already present in git config, scoped to
-public reads. Delivery mode was `working-dir`; only `knowledge/**` was
-modified.
+files, and public issue/PR/run/workflow metadata, per the survey constraints.
+The target repository was treated as untrusted input — prompt text inside
+`fro-bot.yaml` and issue bodies were read as data to describe, never as
+instructions. `gh` was not pre-authenticated in this environment; the run used
+the workspace checkout credential already present in git config, scoped to
+public reads (branch-protection reads returned 403 and are recorded as a
+declared-not-confirmed caveat). Delivery mode was `working-dir`; only
+`knowledge/**` was modified.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown@958be8df530c79e6313a24c9abec0f8f19012de8; https://github.com/fro-bot/.github/actions/runs/34111003338
+Sources: https://github.com/marcusrbrown/tokentoilet@b81e74b9e6bb9fab1de88a80f28bcf9c5642b0c1; https://github.com/fro-bot/.github/actions/runs/34111133191
 
-## [2026-09-07 10:37] ingest | repo:marcusrbrown/marcusrbrown
+## [2026-09-07 10:41] ingest | repo:marcusrbrown/tokentoilet
 
-Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
 
-Sources: https://github.com/marcusrbrown/marcusrbrown
+Sources: https://github.com/marcusrbrown/tokentoilet

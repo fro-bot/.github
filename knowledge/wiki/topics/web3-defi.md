@@ -2,7 +2,7 @@
 type: topic
 title: "Web3 & DeFi Development"
 created: 2026-04-18
-updated: 2026-07-18
+updated: 2026-09-07
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 0ed90a61784b5b85dcf925bb1255e794c4f5d6a3
@@ -31,7 +31,29 @@ sources:
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: 8d7648c7e0e57fafbb13778689ae1b7bacbe72d0
     accessed: 2026-07-18
-tags: [web3, defi, wagmi, reown-appkit, walletconnect, ethereum, sepolia, erc-20, erc-721, alchemy, viem, code-splitting]
+  - url: https://github.com/marcusrbrown/tokentoilet
+    sha: b81e74b9e6bb9fab1de88a80f28bcf9c5642b0c1
+    accessed: 2026-09-07
+tags:
+  [
+    web3,
+    defi,
+    wagmi,
+    reown-appkit,
+    walletconnect,
+    ethereum,
+    sepolia,
+    erc-20,
+    erc-721,
+    alchemy,
+    viem,
+    code-splitting,
+    override-ledger,
+    advisory-remediation,
+  ]
+related:
+  - marcusrbrown--tokentoilet
+  - github-actions-ci
 ---
 
 # Web3 & DeFi Development
@@ -134,3 +156,20 @@ Wallet stacks are heavy — wagmi, AppKit, and their connector transitives are a
 ## Migration Notes: Wagmi v2 → v3 (2026-05-28)
 
 The `useWallet` abstraction in [[marcusrbrown--tokentoilet]] paid off during the wagmi v2 → v3 upgrade — the firewall between components and the wagmi API meant the major version bump largely contained itself inside the `hooks/` directory. The pattern's value: every component that uses `useWallet` instead of `useAccount`/`useConnect` directly is one less site that needs touching when wagmi changes shape. Watch for this when migrating other Web3 apps in the portfolio.
+
+**Addendum (2026-09-07) — the abstraction contained the code and not the documentation.** Three months after the v2 → v3 cutover, the repo's `.github/copilot-instructions.md` and *both* prompts in `fro-bot.yaml` still describe the stack as "Wagmi v2". The insulating property that made the migration cheap in source is exactly what let the prose stay wrong without anything breaking: nothing compiles the prompt. **When a hook abstraction absorbs a major bump, deliberately grep the non-code surfaces — prompts, agent instructions, READMEs, CHANGELOGs — because the usual signal that a version reference is stale (a build failure) is the thing the abstraction removed.** See [[github-actions-ci]] § *Prompt Text Is a Dependency With No Dependency Bot* (2026-09-07 addendum).
+
+## Security Posture as a Merge-Rate Problem (2026-09-07)
+
+A Web3 app's dependency surface is unusually deep — wallet connectors, RPC clients, and crypto primitives pull long transitive trees — so `pnpm.overrides`-style advisory remediation is routine maintenance rather than an exception. [[marcusrbrown--tokentoilet]] shows what happens when that routine has no merge path.
+
+- **The ledger is the right mechanism.** `pnpm-workspace.yaml` carries ~28 `overrides` entries pinning transitive floors (axios, undici, ws, form-data, js-yaml, brace-expansion, postcss, rollup, vite, yaml, and both deprecated `@metamask/sdk*` packages), one line per advisory, alongside `allowBuilds`, `minimumReleaseAgeExclude`, and `peerDependencyRules`. Single-source, diffable, greppable — the same shape used at [[marcusrbrown--mrbro-dev]] and [[marcusrbrown--marcusrbrown]].
+- **Six more lines are stranded in unmerged PRs.** `fast-uri`, `sharp`, `js-yaml`, `brace-expansion`, `nanoid`, and an axios floor-widening sit in six green, review-free, one-line PRs aged 29–48 days, while `pnpm audit` reports 24 findings and Dependabot reports 19 open moderate-or-higher alerts.
+- **The CI security gate cannot see it.** `actions/dependency-review-action` runs on `pull_request` only. It compares a diff against advisories; it does not audit the default branch. A repo can accumulate 19 open alerts on `main` with a permanently green `Security Audit` check.
+
+Two rules for Web3 repos specifically, where the transitive surface guarantees a steady advisory stream:
+
+1. **An override ledger needs a merge path proportional to its update rate.** Advisory remediation arrives continuously; if only one identity's PRs automerge, remediation authored by any other identity queues indefinitely. Decide which identity owns ledger edits and give that identity a drain.
+2. **PR-scoped dependency review is a change gate, not a posture monitor.** Pair it with a scheduled `pnpm audit` (or equivalent) against the default branch that can actually go red, or the only thing reporting your posture will be an agent writing prose into an issue nobody gates on.
+
+Detail on both, including the per-PR breakdown, lives on [[marcusrbrown--tokentoilet]] and in [[github-actions-ci]] § *Merge Gates Sorted by Authorship, Not Quality* (2026-09-07 addendum).
