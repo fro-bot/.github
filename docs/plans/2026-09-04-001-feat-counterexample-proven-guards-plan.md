@@ -852,7 +852,7 @@ Every other directive across both prior passes is gone. `main()` was pure indire
 
 **Gate (fourth pass):** `pnpm exec eslint --fix scripts/build-wiki-write-core.ts scripts/build-wiki-write-core.test.ts` (clean); `pnpm check-types` (clean, includes `pnpm build`); `pnpm lint` (clean); `pnpm exec vitest run scripts/build-wiki-write-core.test.ts` (75/75); `pnpm test` 75 files, 3445 passed + 3 todo (up from 3442+3, net +3, exact match); `pnpm build` + `pnpm check:wiki-write-core-dist` clean, **no dist bytes changed** (`git status --short packages/wiki-write-core/dist` empty). Live `pnpm exec stryker run --mutate scripts/build-wiki-write-core.ts` confirms 100.00%/100.00%, 337/0/0/0/0 (Killed/Survived/NoCoverage/Timeout/Errors), 3 Ignored, 340 total. **Full `pnpm check:mutation-guards` run: overall verdict `clean`, exit code `0`** — confirmed in both the printed per-file table (all nine modules 100.00%/100.00%, 0 non-clean each) and the literal stdout line `clean` with process exit code 0.
 
-- [ ] **Unit 6: Register the required context and document the check**
+- [x] **Unit 6: Register the required context and document the check**
 
 **Goal:** Make `Check Mutation Guards` a required status on `main`, and document the verification command and the exception rule.
 
@@ -876,6 +876,18 @@ Every other directive across both prior passes is gone. `main()` was pure indire
 
 **Verification:**
 - `Update Repo Settings` run succeeds after merge; a subsequent unrelated pull request shows `Check Mutation Guards` as a satisfied required check.
+
+**Result.**
+
+`Check Mutation Guards` added to `.github/settings.yml`'s `required_status_checks.contexts`. `Update Repo Settings` applies it on push to `main` and re-applies daily at 04:05 UTC, so the registration is self-healing against manual removal.
+
+The settings string and the workflow job `name:` are now tied by a test rather than by convention. `scripts/main-workflow.test.ts` parses both files and asserts the contexts array contains the value read from `jobs.check-mutation-guards.name` — not a repeated literal, so renaming either side alone fails. Red confirmed by renaming the context to `Check Mutation Guardz`: `expected [ 'Analyze (typescript)', …(13) ] to include 'Check Mutation Guards'`.
+
+No deadlock risk: `main.yaml` carries no `paths:` filter, so it runs on every pull request to `main`, and `Lint`, `Check Types`, and `Test` are already required from the same workflow under identical triggers. The job's own `if: github.event_name == 'pull_request'` is always true in that context, and the trigger gate short-circuits to `not-applicable` with exit 0 rather than skipping the job, so the context always reports.
+
+**Measured cost** (12 most recent `main.yaml` runs): a full mutation run takes 4m15s–7m59s, median ~6 minutes; a pull request outside the trigger set short-circuits in ~22 seconds. The "narrow the trigger to toolchain-touching dependency bumps" item under Scope Boundaries was written against an unmeasured assumption of a much longer run — at six minutes for the Renovate case it is not currently worth the added trigger complexity. Revisit only if observed Renovate churn changes that.
+
+`.github/copilot-instructions.md` gains the conditional verification line and a `Stryker disable directives` Do/Don't pair citing the enumerate-variants learning.
 
 ## System-Wide Impact
 
