@@ -13,6 +13,7 @@ branches:
         strict: true
         contexts:
           - Analyze (typescript)
+          - Check Mutation Guards
           - Check Types
           - Check Wiki Authority
           - Check Wiki Write Core Dist
