@@ -1,4 +1,4 @@
-import {mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises'
+import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises'
 import {createRequire} from 'node:module'
 import {tmpdir} from 'node:os'
 import {dirname, join} from 'node:path'
@@ -285,6 +285,239 @@ describe('checkLockfileCoverage', () => {
     // #then it fails — proving the gate is load-bearing and would catch a tampered lockfile
     expect(result.ok).toBe(false)
     expect(result.errors.some(e => e.includes('github:quartz-community/plugin-b'))).toBe(true)
+  })
+
+  // -------------------------------------------------------------------------
+  // Issue #3859 — Quartz's plugin-source grammar has 3 more remote forms
+  // beyond `github:`, verified at pinned SHA 9cf87ff1c248a8ca551093214b0fec3b31415009
+  // (quartz/plugins/loader/gitLoader.ts, parsePluginSource).
+  // -------------------------------------------------------------------------
+
+  it('fails coverage for an enabled git+https:// source with no lock entry', () => {
+    // #given an enabled `git+https://` remote source absent from the lock -- one of the 3 remote
+    // #forms the old `source.startsWith('github:')` bound silently exempted. It has 5 `/`-separated
+    // #parts, so it can only be classified remote via the `git+` prefix check, not the bare
+    // #two-part fallback -- this pins that exact branch, not just "some error mentions the source"
+    const config: QuartzConfig = {
+      plugins: [{enabled: true, source: 'git+https://gitlab.com/org/plugin.git'}],
+    }
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it fails with exactly the missing-lock-entry error naming the source verbatim, not
+    // #silently exempt and not misclassified as unparseable
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'missing lock entry for enabled remote plugin: git+https://gitlab.com/org/plugin.git',
+    ])
+  })
+
+  it('fails coverage for an enabled bare https:// source with no lock entry', () => {
+    // #given an enabled `https://` remote source absent from the lock. It has 5 `/`-separated parts,
+    // #so it can only be classified remote via the `https://` prefix check, not the bare two-part
+    // #fallback
+    const config: QuartzConfig = {
+      plugins: [{enabled: true, source: 'https://gitlab.com/org/plugin.git'}],
+    }
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it fails with exactly the missing-lock-entry error naming the source verbatim, not
+    // #silently exempt and not misclassified as unparseable
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(['missing lock entry for enabled remote plugin: https://gitlab.com/org/plugin.git'])
+  })
+
+  it('fails coverage for an enabled bare owner/repo source with no lock entry', () => {
+    // #given an enabled bare two-part `owner/repo` source (Quartz treats this as GitHub shorthand)
+    // #absent from the lock
+    const config: QuartzConfig = {
+      plugins: [{enabled: true, source: 'someorg/some-plugin'}],
+    }
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it fails with exactly the missing-lock-entry error naming the source verbatim, not
+    // #silently exempt and not misclassified as unparseable
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(['missing lock entry for enabled remote plugin: someorg/some-plugin'])
+  })
+
+  it('classifies a github:-prefixed source with more than two path segments as remote via the github: prefix check, not the bare two-part fallback', () => {
+    // #given a `github:` source with a nested path (3 `/`-separated parts) -- the bare two-part
+    // #fallback rule would NOT classify this as remote on its own, so this pins the `github:` prefix
+    // #check specifically, independent of the fallback every other github: test happens to also satisfy
+    const config: QuartzConfig = {
+      plugins: [{enabled: true, source: 'github:owner/repo/sub'}],
+    }
+    const lock: LockFile = {
+      plugins: {p: {source: 'github:owner/repo/sub', commit: 'sha-nested'}},
+    }
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it passes -- the source matches its lock entry verbatim
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  it('fails coverage with an unparseable-source error for a source Quartz itself would throw on', () => {
+    // #given a source with no slash at all -- not local (no ./, ../, /, or drive-letter prefix), not
+    // #`github:`/`git+`/`https://` prefixed, and not a bare two-part `owner/repo` (only 1 part), so
+    // #Quartz's own `parsePluginSource` would throw "Cannot parse plugin source" on it
+    const config: QuartzConfig = {
+      plugins: [{enabled: true, source: 'not-a-parseable-source'}],
+    }
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it fails with exactly the unparseable-source error, distinct from "missing lock entry" --
+    // #it is reported rather than silently exempted
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'unparseable plugin source (Quartz would throw "Cannot parse plugin source"): not-a-parseable-source',
+    ])
+  })
+
+  it('rejects an object source carrying a ref key outright', () => {
+    // #given an enabled object source with a `ref` key -- lock identity is the source string alone,
+    // #so a ref-bearing object source cannot be expressed in the lock and must be rejected outright,
+    // #the same way `subdir` already is
+    const config: QuartzConfig = {
+      plugins: [{enabled: true, source: {repo: 'owner/repo', ref: 'main'}}],
+    }
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it fails rejecting the ref usage
+    expect(result.ok).toBe(false)
+    expect(result.errors.some(e => e.includes('ref'))).toBe(true)
+  })
+
+  it('resolves an already github:-prefixed object-source repo without double-prefixing it', () => {
+    // #given an enabled object source whose repo is already `github:owner/repo` -- the old code
+    // #unconditionally prepended another `github:`, producing `github:github:owner/repo` and failing
+    // #closed with a confusing message even when the lock entry was correct
+    const config: QuartzConfig = {
+      plugins: [{enabled: true, source: {repo: 'github:owner/repo'}}],
+    }
+    const lock: LockFile = {
+      plugins: {'owner-repo': {source: 'github:owner/repo', commit: 'sha-owner-repo'}},
+    }
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it passes -- the repo resolves to `github:owner/repo`, matching the lock entry exactly,
+    // #not `github:github:owner/repo`
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  it('resolves an already git+-prefixed object-source repo unchanged, matching the lock entry verbatim', () => {
+    // #given an enabled object source whose repo is a `git+` URL -- pins the `git+` disjunct of the
+    // #object-repo normalizer specifically (the `github:`-prefix disjunct short-circuits before ever
+    // #reaching this one for a github:-prefixed repo, so it needs its own dedicated case)
+    const config: QuartzConfig = {
+      plugins: [{enabled: true, source: {repo: 'git+https://gitlab.com/org/plugin.git'}}],
+    }
+    const lock: LockFile = {
+      plugins: {p: {source: 'git+https://gitlab.com/org/plugin.git', commit: 'sha-git-plus'}},
+    }
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it passes -- the repo is used verbatim, not re-prefixed with `github:`
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  it('resolves an already https://-prefixed object-source repo unchanged, matching the lock entry verbatim', () => {
+    // #given an enabled object source whose repo is a direct `https://` URL -- pins the `https://`
+    // #disjunct of the object-repo normalizer specifically
+    const config: QuartzConfig = {
+      plugins: [{enabled: true, source: {repo: 'https://gitlab.com/org/plugin.git'}}],
+    }
+    const lock: LockFile = {
+      plugins: {p: {source: 'https://gitlab.com/org/plugin.git', commit: 'sha-https'}},
+    }
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it passes -- the repo is used verbatim, not re-prefixed with `github:`
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  it('fails coverage with an unparseable object-source-repo error for a repo Quartz itself would throw on', () => {
+    // #given an enabled object source whose repo has 3 `/`-separated parts -- not prefixed
+    // #`github:`/`git+`/`https://`, and not a bare two-part `owner/repo`, so Quartz's own
+    // #`parsePluginSource` would throw on it when it recurses into this repo string
+    const config: QuartzConfig = {
+      plugins: [{enabled: true, source: {repo: 'owner/repo/sub'}}],
+    }
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it fails with exactly the unparseable object-source-repo error, not silently exempt and
+    // #not misclassified as a bare two-part github: source
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'unparseable object-source repo (Quartz would throw "Cannot parse plugin source"): {"repo":"owner/repo/sub"}',
+    ])
+  })
+
+  it('regression: all four local-source forms stay exempt from lock coverage', () => {
+    // #given four enabled string sources covering every local form Quartz's isLocalSource recognizes
+    // #(./, ../, /, and a Windows drive letter), none present in the lock
+    const config: QuartzConfig = {
+      plugins: [
+        {enabled: true, source: './p'},
+        {enabled: true, source: '../p'},
+        {enabled: true, source: '/p'},
+        {enabled: true, source: String.raw`C:\p`},
+      ],
+    }
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it passes -- every local form remains exempt, unaffected by the stricter remote classification
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  it('regression: every enabled github: plugin in the real quartz-site config matches its real lock entry', async () => {
+    // #given the actual quartz-site/quartz.config.yaml and quartz.lock.json shipped in this repo
+    const YAML = require('yaml') as typeof import('yaml')
+    const configRaw = await readFile(join(process.cwd(), 'quartz-site', 'quartz.config.yaml'), 'utf8')
+    const lockRaw = await readFile(join(process.cwd(), 'quartz-site', 'quartz.lock.json'), 'utf8')
+    const config = YAML.parse(configRaw) as QuartzConfig
+    const lock = JSON.parse(lockRaw) as LockFile
+
+    // #when checking coverage against the real, stricter classification
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it still passes -- the real config uses only `github:` string sources and `./`-local
+    // #object sources, none of which are affected by closing the exemption for the other 3 remote forms
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
   })
 })
 

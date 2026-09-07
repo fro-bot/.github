@@ -11,6 +11,7 @@ import process from 'node:process'
 export interface QuartzPluginObjectSource {
   repo?: string
   subdir?: string
+  ref?: string
 }
 
 export interface QuartzConfigPlugin {
@@ -44,18 +45,64 @@ export interface CoverageGateResult extends GateResult {
 // checkLockfileCoverage — Gate A (pre-install): config<->lock coverage
 // ---------------------------------------------------------------------------
 
+/** Mirrors Quartz's `isLocalSource`: `./`, `../`, `/`, or a Windows drive path. */
+export function isLocalPluginSource(source: string): boolean {
+  return source.startsWith('./') || source.startsWith('../') || source.startsWith('/') || /^[A-Z]:[\\/]/i.test(source)
+}
+
 /**
- * Verify that every enabled remote (github:) plugin in `config` has a
- * matching entry in `lock`, and that every lock entry corresponds to an
- * enabled config plugin (no orphans).
+ * Classify a Quartz plugin-source string as remote per `parsePluginSource`'s
+ * grammar (order matters: `github:`, then `git+`, then `https://`, then a
+ * bare two-part `owner/repo` -- literally "exactly two `/`-separated parts",
+ * with no non-emptiness check, mirroring Quartz's own
+ * `if (parts.length === 2)`). Callers must check `isLocalPluginSource` first
+ * -- this function does not itself exempt local paths.
+ */
+function isRemotePluginSourceString(source: string): boolean {
+  if (source.startsWith('github:')) return true
+  if (source.startsWith('git+')) return true
+  if (source.startsWith('https://')) return true
+  return source.split('/').length === 2
+}
+
+/**
+ * Normalize an object-source `repo` string to the form Quartz would resolve
+ * it to, recursing the same classification `parsePluginSource` applies to a
+ * top-level string source. A bare `owner/repo` normalizes to a `github:`
+ * prefix (matching Quartz's GitHub default); a source already prefixed
+ * `github:`, `git+`, or `https://` passes through unchanged -- fixing the
+ * latent double-prefix bug where `{repo: 'github:owner/repo'}` used to
+ * become `github:github:owner/repo`. Returns `null` when Quartz itself
+ * would throw (unparseable).
+ */
+function normalizeRemotePluginSourceRepo(repo: string): string | null {
+  if (repo.startsWith('github:') || repo.startsWith('git+') || repo.startsWith('https://')) return repo
+  if (repo.split('/').length === 2) return `github:${repo}`
+  return null
+}
+
+/**
+ * Verify that every enabled remote plugin in `config` has a matching entry
+ * in `lock`, and that every lock entry corresponds to an enabled config
+ * plugin (no orphans).
  *
- * Ported verbatim from the workflow's inline Gate A `node -e` script:
- * - String sources not prefixed `github:` are treated as local and skipped.
- * - Object sources with a `repo` starting `./` are local and exempt.
- * - Object sources with a `subdir` property are rejected outright.
- * - Object sources with `repo` are normalized to a `github:` prefix before matching.
- * - Disabled plugins (`enabled === false`) are skipped entirely.
- * - Lock entries whose source isn't in the enabled-remote-source set are orphans.
+ * Quartz's plugin-source grammar, verified at the pinned SHA
+ * `9cf87ff1c248a8ca551093214b0fec3b31415009` (`quartz/plugins/loader/gitLoader.ts`,
+ * `parsePluginSource`), tried in order:
+ * - `./p`, `../p`, `/p`, or a Windows drive path (`C:\p`) -> local, exempt.
+ * - `github:owner/repo[#ref]` -> remote, checked against the lock verbatim.
+ * - `git+<url>[#ref]` -> remote, checked against the lock verbatim.
+ * - `https://<url>[#ref]` -> remote, checked against the lock verbatim.
+ * - a bare source with exactly two `/`-separated parts -> remote, treated as GitHub.
+ *   This is a raw `parts.length === 2` test upstream, so `gitlab:owner/repo` and
+ *   `git@host:owner/repo.git` land here rather than throwing.
+ * - anything else -> Quartz throws `Cannot parse plugin source`; this gate reports it
+ *   as an error instead of silently exempting it.
+ *
+ * Object sources recurse the same classification over `source.repo`. `subdir` and
+ * `ref` are rejected outright, since neither can be expressed in lock identity.
+ * Disabled plugins (`enabled === false`) are skipped entirely. Lock entries whose
+ * source isn't in the enabled-remote-source set are orphans.
  */
 export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): CoverageGateResult {
   const lockPlugins = lock.plugins ?? {}
@@ -69,9 +116,11 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
     const source = plugin.source
 
     if (typeof source === 'string') {
-      // Bound: any string source not prefixed `github:` is exempt from lock coverage -- Quartz's
-      // plugin-source grammar (what other prefixes/shapes exist) is external to this repo.
-      if (!source.startsWith('github:')) continue // not a remote plugin
+      if (isLocalPluginSource(source)) continue // local path source, exempt
+      if (!isRemotePluginSourceString(source)) {
+        errors.push(`unparseable plugin source (Quartz would throw "Cannot parse plugin source"): ${source}`)
+        continue
+      }
       enabledRemoteSources.add(source)
       const entry = Object.values(lockPlugins).some(p => p.source === source)
       if (!entry) errors.push(`missing lock entry for enabled remote plugin: ${source}`)
@@ -82,14 +131,30 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
     // non-object (malformed YAML) has no `.repo`/`subdir` and falls through every check inside with no error -- same as before.
     if (source) {
       // Ordering is intentional: a local `./` repo is exempt even if `subdir` is also present -- the
-      // local-path check runs before the subdir-rejection check below.
-      if (typeof source.repo === 'string' && source.repo.startsWith('./')) continue // local path source, exempt
+      // local-path check runs before the subdir/ref-rejection checks below.
+      if (typeof source.repo === 'string' && isLocalPluginSource(source.repo)) continue // local path source, exempt
       if (Object.prototype.hasOwnProperty.call(source, 'subdir')) {
         errors.push(`enabled remote plugin uses rejected object-source subdir: ${JSON.stringify(source)}`)
         continue
       }
+      // `ref` is rejected the same way `subdir` is: lock identity is the source string alone, so a
+      // ref-bearing object source cannot be expressed in the lock. We prefer rejection over folding
+      // ref into identity because there is no ground truth for what Quartz writes to the lock for a
+      // refed object source, and a wrong guess would fail open. The string-form equivalent
+      // (`github:owner/repo#ref`) already fails closed for free, since the whole string including
+      // `#ref` is stored verbatim and won't match an unrefed lock entry.
+      if (Object.prototype.hasOwnProperty.call(source, 'ref')) {
+        errors.push(`enabled remote plugin uses rejected object-source ref: ${JSON.stringify(source)}`)
+        continue
+      }
       if (typeof source.repo === 'string' && source.repo.length > 0) {
-        const normalized = `github:${source.repo}`
+        const normalized = normalizeRemotePluginSourceRepo(source.repo)
+        if (normalized === null) {
+          errors.push(
+            `unparseable object-source repo (Quartz would throw "Cannot parse plugin source"): ${JSON.stringify(source)}`,
+          )
+          continue
+        }
         enabledRemoteSources.add(normalized)
         const entry = Object.values(lockPlugins).some(p => p.source === normalized)
         if (!entry) errors.push(`missing lock entry for enabled remote plugin: ${normalized}`)
