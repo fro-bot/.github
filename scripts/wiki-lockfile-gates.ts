@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
 import {createRequire} from 'node:module'
-import {join} from 'node:path'
+import {join, resolve, sep} from 'node:path'
 import process from 'node:process'
 
 // ---------------------------------------------------------------------------
@@ -57,6 +57,31 @@ export function isLocalPluginSource(source: string): boolean {
 }
 
 /**
+ * Whether a config-declared local source resolves to a path inside `root` (the directory
+ * `quartz.config.yaml` lives in -- the same `cwd` the CLI is invoked with, in both CI and locally).
+ * This is a DIFFERENT question from `isLocalPluginSource`'s "is this path-shaped" grammar check
+ * (issue #3863): a path can be local-shaped and still point anywhere on disk (`/tmp/attacker`,
+ * `../../outside`), so shape alone is not a repository boundary. Deliberately a SEPARATE predicate
+ * rather than folded into `isLocalPluginSource` -- overloading one classifier to answer both "is
+ * this a local path" and "is this an acceptable local path" is the same shape of bug that produced
+ * the lock-side exemption failures in #3862-#3864 (one predicate, two questions, one bypass).
+ *
+ * A Windows drive-letter form (`C:\evil`) is rejected outright before resolution: `path.resolve` on
+ * POSIX does not treat it as an absolute path (it would resolve AS IF relative, which could
+ * spuriously pass the containment check), so the drive-letter shape is checked directly rather than
+ * trusted to `resolve`'s platform-dependent behavior. Everything else is resolved with `node:path`'s
+ * `resolve` (not string prefix matching) so that traversal is caught by where the path actually
+ * lands, not by scanning its text for `..` -- `./a/../../outside` must fail by resolution, and
+ * `./a/../local-plugin` (which also contains `..` but stays inside) must still pass.
+ */
+export function isLocalPluginSourceWithinRoot(source: string, root: string): boolean {
+  if (/^[A-Z]:[\\/]/i.test(source)) return false
+  const resolvedRoot = resolve(root)
+  const resolvedSource = resolve(root, source)
+  return resolvedSource === resolvedRoot || resolvedSource.startsWith(resolvedRoot + sep)
+}
+
+/**
  * Extract the string form of a `string | QuartzPluginObjectSource` value, or `null` when none
  * exists (an object source with no string `repo`, or an absent source). Shared by the config-side
  * local-source derivation and the lock-side identification, since `QuartzConfigPlugin.source` and
@@ -90,6 +115,15 @@ function lockEntryMustNotBeLocalError(name: string, sourceLabel: string): string
  */
 function malformedLockSourceError(name: string, source: string | QuartzPluginObjectSource): string {
   return `lock entry "${name}" has a source that cannot be identified (neither a string nor an object with a string "repo"): ${JSON.stringify(source)}`
+}
+
+/**
+ * A config-declared local source (issue #3863) resolves outside the repository root -- Quartz
+ * symlinks or copies from this path at build time with no boundary of its own, so this gate is the
+ * only place that can be bounded. Rejected with guidance toward the fix rather than left exempt.
+ */
+function localSourceEscapesRootError(source: string): string {
+  return `enabled plugin declares a local source outside the repository: ${source} -- use a repo-relative "./" path instead`
 }
 
 /**
@@ -139,8 +173,16 @@ function isRemotePluginSourceString(source: string): boolean {
  * entry is still an orphan (unchanged). A lock entry with a local-looking source is always an error
  * (see `lockEntryMustNotBeLocalError`'s doc): local plugins are resolved from config and must never
  * appear in the lockfile at all, so there is no config-declaration lookup to perform here.
+ *
+ * `root` is the repository-boundary anchor for `isLocalPluginSourceWithinRoot` (issue #3863): a
+ * local-shaped config source must additionally resolve inside `root`, or it is rejected rather than
+ * exempted. `root` is the directory `quartz.config.yaml` lives in -- i.e. the same `cwd` the CLI is
+ * invoked with (`quartz-build/` in CI, `quartz-site/` locally) -- because that is the one path both
+ * the real local plugin (`./local-plugin`, `./local-plugin/sanitizer`) and every local source string
+ * are already resolved relative to; anchoring anywhere else would accept or reject paths using a
+ * root the source strings were never written against.
  */
-export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): CoverageGateResult {
+export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile, root: string): CoverageGateResult {
   const lockPlugins = lock.plugins ?? {}
   const errors: string[] = []
   const enabledRemoteSources = new Set<string>()
@@ -152,7 +194,10 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
     const source = plugin.source
 
     if (typeof source === 'string') {
-      if (isLocalPluginSource(source)) continue // local path source, exempt
+      if (isLocalPluginSource(source)) {
+        if (!isLocalPluginSourceWithinRoot(source, root)) errors.push(localSourceEscapesRootError(source))
+        continue // local path source: exempt from lock coverage either way (boundary violation is reported above, not converted into a lock requirement)
+      }
       if (!isRemotePluginSourceString(source)) {
         errors.push(`unparseable plugin source (Quartz would throw "Cannot parse plugin source"): ${source}`)
         continue
@@ -168,7 +213,10 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
     if (source) {
       // Ordering is intentional: a local `./` repo is exempt even if `subdir` is also present -- the
       // local-path check runs before the subdir/ref/remote-object-rejection checks below.
-      if (typeof source.repo === 'string' && isLocalPluginSource(source.repo)) continue // local path source, exempt
+      if (typeof source.repo === 'string' && isLocalPluginSource(source.repo)) {
+        if (!isLocalPluginSourceWithinRoot(source.repo, root)) errors.push(localSourceEscapesRootError(source.repo))
+        continue // local path source: exempt from lock coverage either way, same as the string-source case above
+      }
       if (Object.prototype.hasOwnProperty.call(source, 'subdir')) {
         errors.push(`enabled remote plugin uses rejected object-source subdir: ${JSON.stringify(source)}`)
         continue
@@ -353,7 +401,7 @@ export async function runCli(argv: string[], cwd: string): Promise<{exitCode: nu
     if (!loadedLock.ok) return {exitCode: 2, stdout: '', stderr: loadedLock.stderr}
     const lock = loadedLock.lock
 
-    const result = checkLockfileCoverage(loadedConfig.config, lock)
+    const result = checkLockfileCoverage(loadedConfig.config, lock, cwd)
     if (!result.ok) {
       const lines = ['Lockfile coverage gate failed:', ...result.errors.map(e => `  - ${e}`)]
       return {exitCode: 1, stdout: '', stderr: `${lines.join('\n')}\n`}
