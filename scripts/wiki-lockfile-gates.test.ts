@@ -81,6 +81,21 @@ describe('checkLockfileCoverage', () => {
     expect(result.errors.some(e => e.includes('subdir'))).toBe(true)
   })
 
+  it('exempts a local "./" object-form repo even when a rejected subdir key is also present', () => {
+    // #given an object source whose repo is a local "./" path AND which also carries a subdir key --
+    // #the local-path exemption check runs first (see the ordering comment above it), so it wins over
+    // #the subdir rejection
+    const config: QuartzConfig = {plugins: [{enabled: true, source: {repo: './local', subdir: 'x'}}]}
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it passes -- the local-path exemption takes priority over the subdir rejection
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
   it('exempts a local "./" string source from requiring a lock entry', () => {
     // #given an enabled plugin with a local relative-path string source and no lock entries
     const config: QuartzConfig = {plugins: [{enabled: true, source: './local-plugin'}]}
@@ -105,6 +120,20 @@ describe('checkLockfileCoverage', () => {
     // #then it passes — local object-form sources are exempt
     expect(result.ok).toBe(true)
     expect(result.errors).toEqual([])
+  })
+
+  it('treats a plugin with no "enabled" key at all as enabled and requires a lock entry', () => {
+    // #given a remote plugin config entry that omits the `enabled` key entirely -- only
+    // #`enabled === false` is treated as disabled, so an absent key defaults to enabled
+    const config: QuartzConfig = {plugins: [{source: 'github:quartz-community/plugin-a'}]}
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it fails, naming the missing lock entry -- the plugin was not silently skipped
+    expect(result.ok).toBe(false)
+    expect(result.errors.some(e => e.includes('github:quartz-community/plugin-a'))).toBe(true)
   })
 
   it('does not require a lock entry for a disabled plugin', () => {
@@ -162,6 +191,23 @@ describe('checkLockfileCoverage', () => {
     const result = checkLockfileCoverage(config, lock)
 
     // #then it passes silently — no repo means nothing to classify as remote or local
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  it('does not error and requires no lock entry when source is a truthy non-object (malformed YAML)', () => {
+    // #given an enabled plugin whose source is a boolean (a malformed hand-edited quartz.config.yaml
+    // #shape, not representable by QuartzConfigPlugin's real type but reachable at runtime since the
+    // #config is only YAML.parse'd, never schema-validated) — pins the deleted `typeof source ===
+    // #'object'` conjunct's equivalence: a truthy non-object source has no `.repo`, so it falls through
+    // #every check with no error, same as before the conjunct was removed
+    const config = {plugins: [{enabled: true, source: true}]} as unknown as QuartzConfig
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock)
+
+    // #then it passes silently — a truthy non-object source is neither remote nor local
     expect(result.ok).toBe(true)
     expect(result.errors).toEqual([])
   })
@@ -609,6 +655,10 @@ describe('runCli coverage mode — yaml resolution topology', () => {
 // exercised already -- that alone does not kill the mutants on `main()`'s body or the guard condition
 // itself. Cache-busts the dynamic import (unique query string) so the module's top-level code
 // re-executes with the manipulated argv/cwd, rather than returning the already-cached module instance.
+// Note: these tests exercise main()'s body and its wiring to runCli/process, not the guard predicate
+// itself -- vitest strips the query string from import.meta.url before the equality check runs, and a
+// real production invocation never carries one either, so the query string is purely a test-isolation
+// device, not something the guard has to tolerate.
 describe('main() CLI self-invoke guard', () => {
   it("does NOT invoke main() when process.argv[1] does not match the module's own path (positive control)", async () => {
     const modulePath = new URL('./wiki-lockfile-gates.ts', import.meta.url)
@@ -661,7 +711,10 @@ describe('main() CLI self-invoke guard', () => {
     })
     // `process.chdir()` is unsupported inside vitest's worker threads -- stub `process.cwd()` instead,
     // which is the only thing main() actually reads (`runCli(process.argv.slice(2), process.cwd())`).
-    vi.spyOn(process, 'cwd').mockReturnValue(dir)
+    // `mockImplementationOnce` because main() reads cwd exactly once; if that ever changes, switch to a
+    // scoped `mockImplementation` with an explicit restore in `finally` instead of widening this to serve
+    // unlimited calls.
+    vi.spyOn(process, 'cwd').mockImplementationOnce(() => dir)
 
     process.argv = [originalArgv[0] ?? 'node', modulePath.pathname, 'coverage']
     try {

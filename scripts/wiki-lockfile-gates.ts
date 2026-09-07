@@ -69,6 +69,8 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
     const source = plugin.source
 
     if (typeof source === 'string') {
+      // Bound: any string source not prefixed `github:` is exempt from lock coverage -- Quartz's
+      // plugin-source grammar (what other prefixes/shapes exist) is external to this repo.
       if (!source.startsWith('github:')) continue // not a remote plugin
       enabledRemoteSources.add(source)
       const entry = Object.values(lockPlugins).some(p => p.source === source)
@@ -79,6 +81,8 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
     // `typeof source === 'string'` continued above, so this narrows to the object case; a truthy
     // non-object (malformed YAML) has no `.repo`/`subdir` and falls through every check inside with no error -- same as before.
     if (source) {
+      // Ordering is intentional: a local `./` repo is exempt even if `subdir` is also present -- the
+      // local-path check runs before the subdir-rejection check below.
       if (typeof source.repo === 'string' && source.repo.startsWith('./')) continue // local path source, exempt
       if (Object.prototype.hasOwnProperty.call(source, 'subdir')) {
         errors.push(`enabled remote plugin uses rejected object-source subdir: ${JSON.stringify(source)}`)
