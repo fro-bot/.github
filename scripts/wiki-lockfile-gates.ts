@@ -58,13 +58,15 @@ export function isLocalPluginSource(source: string): boolean {
 
 /**
  * Whether a config-declared local source resolves to a path inside `root` (the directory
- * `quartz.config.yaml` lives in -- the same `cwd` the CLI is invoked with, in both CI and locally).
+ * `quartz.config.yaml` lives in -- the same `cwd` the CLI is invoked with; in CI that is
+ * `quartz-build/`, a scratch checkout of pinned upstream Quartz overlaid with this repo's config
+ * and local plugin, NOT this repository's own checkout -- see `localSourceEscapesRootError`'s doc).
  * This is a DIFFERENT question from `isLocalPluginSource`'s "is this path-shaped" grammar check
  * (issue #3863): a path can be local-shaped and still point anywhere on disk (`/tmp/attacker`,
- * `../../outside`), so shape alone is not a repository boundary. Deliberately a SEPARATE predicate
- * rather than folded into `isLocalPluginSource` -- overloading one classifier to answer both "is
- * this a local path" and "is this an acceptable local path" is the same shape of bug that produced
- * the lock-side exemption failures in #3862-#3864 (one predicate, two questions, one bypass).
+ * `../../outside`), so shape alone is not a boundary. Deliberately a SEPARATE predicate rather than
+ * folded into `isLocalPluginSource` -- overloading one classifier to answer both "is this a local
+ * path" and "is this an acceptable local path" is the same shape of bug that produced the lock-side
+ * exemption failures in #3862-#3864 (one predicate, two questions, one bypass).
  *
  * A Windows drive-letter form (`C:\evil`) is rejected outright before resolution: `path.resolve` on
  * POSIX does not treat it as an absolute path (it would resolve AS IF relative, which could
@@ -73,6 +75,12 @@ export function isLocalPluginSource(source: string): boolean {
  * `resolve` (not string prefix matching) so that traversal is caught by where the path actually
  * lands, not by scanning its text for `..` -- `./a/../../outside` must fail by resolution, and
  * `./a/../local-plugin` (which also contains `..` but stays inside) must still pass.
+ *
+ * This containment check is LEXICAL, not realpath-strength: `resolve` does not traverse symlinks,
+ * so a committed `local-plugin -> /etc` symlink resolves inside `root` textually and passes here.
+ * Not an escalation in this threat model -- anyone who can commit that symlink into the repo can
+ * commit the plugin code directly -- but do not mistake this function for a realpath-equivalent
+ * boundary when reusing it elsewhere.
  */
 export function isLocalPluginSourceWithinRoot(source: string, root: string): boolean {
   if (/^[A-Z]:[\\/]/i.test(source)) return false
@@ -118,12 +126,30 @@ function malformedLockSourceError(name: string, source: string | QuartzPluginObj
 }
 
 /**
- * A config-declared local source (issue #3863) resolves outside the repository root -- Quartz
- * symlinks or copies from this path at build time with no boundary of its own, so this gate is the
- * only place that can be bounded. Rejected with guidance toward the fix rather than left exempt.
+ * A config-declared local source (issue #3863) resolves outside the build root -- named "build
+ * root" rather than "repository" deliberately: the anchor is `cwd`, which in CI is `quartz-build/`
+ * (the pinned upstream Quartz checkout plus this repo's overlay), not this repository's own
+ * checkout. Quartz symlinks or copies from this path at build time with no boundary of its own, so
+ * this gate is the only place that can be bounded. Rejected with guidance toward the fix rather
+ * than left exempt.
  */
 function localSourceEscapesRootError(source: string): string {
-  return `enabled plugin declares a local source outside the repository: ${source} -- use a repo-relative "./" path instead`
+  return `enabled plugin declares a local source outside the build root: ${source} -- use a repo-relative "./" path instead`
+}
+
+/**
+ * A malformed entry in `config.plugins` (not an object -- e.g. a YAML `plugins:` list containing a
+ * bare `-` item, which parses to `null`) or `lock.plugins` (not an object -- e.g. a JSON `null`
+ * value). Guarded at the top of BOTH loops in BOTH gate functions: this is the same class of gap
+ * `loadQuartzConfig`/`loadLockFile` closed one grammar level up (the parsed document itself might
+ * not be an object) -- a document can be a well-formed object while one of its own list/map entries
+ * is not, and each position in the grammar needs its own check, not just the top of the document
+ * (see docs/solutions/security-issues/mutation-coverage-is-silent-about-unwritten-branches-2026-09-05.md:
+ * a check present at one grammar position and silently absent at the next one down is exactly the
+ * failure mode mutation testing cannot surface, since no mutator inserts a missing validation).
+ */
+function malformedEntryError(location: string, entry: unknown): string {
+  return `${location} is not a valid entry (not an object): ${JSON.stringify(entry)}`
 }
 
 /**
@@ -174,22 +200,25 @@ function isRemotePluginSourceString(source: string): boolean {
  * (see `lockEntryMustNotBeLocalError`'s doc): local plugins are resolved from config and must never
  * appear in the lockfile at all, so there is no config-declaration lookup to perform here.
  *
- * `root` is the repository-boundary anchor for `isLocalPluginSourceWithinRoot` (issue #3863): a
+ * `root` is the build-root boundary anchor for `isLocalPluginSourceWithinRoot` (issue #3863): a
  * local-shaped config source must additionally resolve inside `root`, or it is rejected rather than
  * exempted. `root` is the directory `quartz.config.yaml` lives in -- i.e. the same `cwd` the CLI is
- * invoked with (`quartz-build/` in CI, `quartz-site/` locally) -- because that is the one path both
- * the real local plugin (`./local-plugin`, `./local-plugin/sanitizer`) and every local source string
- * are already resolved relative to; anchoring anywhere else would accept or reject paths using a
- * root the source strings were never written against.
+ * invoked with (`quartz-build/` in CI -- the scratch pinned-Quartz checkout, not this repository's
+ * own checkout; `quartz-site/` when this repo's fixtures/CLI are exercised directly) -- because that
+ * is the one path both the real local plugin (`./local-plugin`, `./local-plugin/sanitizer`) and
+ * every local source string are already resolved relative to; anchoring anywhere else would accept
+ * or reject paths using a root the source strings were never written against.
  */
 export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile, root: string): CoverageGateResult {
   const lockPlugins = lock.plugins ?? {}
   const errors: string[] = []
   const enabledRemoteSources = new Set<string>()
 
-  // Stryker disable next-line ArrayDeclaration: the placeholder element has no .enabled/.source, so
-  // every branch below skips it like an empty array.
-  for (const plugin of config.plugins ?? []) {
+  for (const [index, plugin] of (config.plugins ?? []).entries()) {
+    if (typeof plugin !== 'object' || plugin === null) {
+      errors.push(malformedEntryError(`config.plugins[${index}]`, plugin))
+      continue
+    }
     if (plugin.enabled === false) continue
     const source = plugin.source
 
@@ -241,6 +270,10 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile, root
   }
 
   for (const [name, entry] of Object.entries(lockPlugins)) {
+    if (typeof entry !== 'object' || entry === null) {
+      errors.push(malformedEntryError(`lock entry "${name}"`, entry))
+      continue
+    }
     const entrySourceString = extractSourceString(entry.source)
     if (entrySourceString === null) {
       errors.push(malformedLockSourceError(name, entry.source))
@@ -284,6 +317,10 @@ export function checkLockfileIntegrity(lock: LockFile, readHead: (name: string) 
   const plugins = lock.plugins ?? {}
 
   for (const [name, entry] of Object.entries(plugins)) {
+    if (typeof entry !== 'object' || entry === null) {
+      errors.push(malformedEntryError(`lock entry "${name}"`, entry))
+      continue
+    }
     const entrySourceString = extractSourceString(entry.source)
     if (entrySourceString === null) {
       errors.push(malformedLockSourceError(name, entry.source))
