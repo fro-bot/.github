@@ -95,15 +95,17 @@ export declare function assertCorrectionsFile(value: unknown, path?: string): as
 export declare function parseCorrections(raw: string): CorrectionsFile;
 /** Explicitly convert the loose I/O shape into one lifecycle union member. */
 export declare function normalizeLooseCorrectionRecord(record: LooseCorrectionRecord, path?: string): CorrectionRecord;
+/** @internal */
+export declare function parseLooseCorrectionRecord(value: unknown, path: string): LooseCorrectionRecord;
 export declare function serializeCorrections(value: unknown): string;
-export declare function readCorrections(readFileImpl?: ReadUtf8File, warn?: (message: string) => void, path?: "knowledge/corrections.yaml"): Promise<CorrectionsReadResult>;
-export declare function writeCorrections(value: unknown, writeFileImpl?: WriteUtf8File, path?: "knowledge/corrections.yaml"): Promise<void>;
+export declare function readCorrections(readFileImpl?: ReadUtf8File, warn?: (message: string) => void, path?: string): Promise<CorrectionsReadResult>;
+export declare function writeCorrections(value: unknown, writeFileImpl?: WriteUtf8File, path?: string): Promise<void>;
 export declare function recordCorrection(file: CorrectionsFile, input: RecordCorrectionInput): CorrectionsFile;
 export declare function getCorrectionsForPage(file: CorrectionsFile, pageNodeId: string): CorrectionRecord[];
 /** Legacy records without the optional state field remain active until explicitly transitioned. */
 export declare function getCorrectionLifecycle(correction: CorrectionRecord): CorrectionLifecycle;
 export declare function transitionCorrection(file: CorrectionsFile, id: string, state: CorrectionLifecycle, supersededBy?: string, reason?: string): CorrectionsFile;
-export declare const retireCorrection: (file: CorrectionsFile, id: string) => CorrectionsFile;
-export declare const flagCorrectionForReconfirmation: (file: CorrectionsFile, id: string) => CorrectionsFile;
-export declare const reconfirmCorrection: (file: CorrectionsFile, id: string) => CorrectionsFile;
+export declare function retireCorrection(file: CorrectionsFile, id: string): CorrectionsFile;
+export declare function flagCorrectionForReconfirmation(file: CorrectionsFile, id: string): CorrectionsFile;
+export declare function reconfirmCorrection(file: CorrectionsFile, id: string): CorrectionsFile;
 export { verifyCorrectionSurvival } from './corrections-survival.js';
