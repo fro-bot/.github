@@ -7,66 +7,166 @@ import process from 'node:process'
 
 import {GATE_CONTRACT_VERSION} from '../packages/wiki-write-core/src/gate-contract.ts'
 
-const repositoryRoot = resolve(import.meta.dirname, '..')
-const sourceRoot = join(repositoryRoot, 'packages', 'wiki-write-core', 'src')
-const distRoot = join(repositoryRoot, 'packages', 'wiki-write-core', 'dist')
-const buildConfig = join(repositoryRoot, 'packages', 'wiki-write-core', 'tsconfig.build.json')
-const packageManifest = join(repositoryRoot, 'packages', 'wiki-write-core', 'package.json')
-const sourceHashPlaceholder = '__SOURCE_TREE_HASH__'
+// Each of these is a function, not a top-level `const`: a module-level const initializer runs
+// once per Stryker worker process (not per call), making its literal-segment mutants "static"
+// and unobservable by per-test coverage attribution; a function body re-evaluates on every
+// call, so each path segment carries an ordinary, per-call-killable mutant instead.
+export function repositoryRoot(): string {
+  return resolve(import.meta.dirname, '..')
+}
 
-const checkOnly = process.argv.includes('--check')
+export function sourceRoot(): string {
+  return join(repositoryRoot(), 'packages', 'wiki-write-core', 'src')
+}
 
-async function main(): Promise<void> {
-  const temporaryRoot = await mkdtemp(join(dirname(distRoot), '.wiki-write-core-dist-'))
+export function distRoot(): string {
+  return join(repositoryRoot(), 'packages', 'wiki-write-core', 'dist')
+}
+
+export function buildConfig(): string {
+  return join(repositoryRoot(), 'packages', 'wiki-write-core', 'tsconfig.build.json')
+}
+
+export function packageManifest(): string {
+  return join(repositoryRoot(), 'packages', 'wiki-write-core', 'package.json')
+}
+
+export function sourceHashPlaceholder(): string {
+  return '__SOURCE_TREE_HASH__'
+}
+
+/** Whether the CLI was invoked with `--check` (verify only, never write). Pure and testable in isolation. */
+export function resolveCheckOnly(argv: readonly string[] = process.argv): boolean {
+  return argv.includes('--check')
+}
+
+interface RunTypeScriptBuildOptions {
+  buildConfigPath?: string
+  cwd?: string
+  spawn?: typeof execFileSync
+}
+
+/**
+ * Runs the package's TypeScript build into `outputDirectory`. `spawn` is an injectable seam
+ * (default `execFileSync`) so tests can assert on the exact command/args/options without
+ * actually invoking `tsc`.
+ */
+export function runTypeScriptBuild(outputDirectory: string, options: RunTypeScriptBuildOptions = {}): void {
+  const spawn = options.spawn ?? execFileSync
+  spawn(
+    'pnpm',
+    [
+      'exec',
+      'tsc',
+      '--project',
+      options.buildConfigPath ?? buildConfig(),
+      '--outDir',
+      outputDirectory,
+      '--pretty',
+      'false',
+    ],
+    {
+      cwd: options.cwd ?? repositoryRoot(),
+      stdio: 'inherit',
+    },
+  )
+}
+
+export interface RunBuildOptions {
+  buildConfigPath?: string
+  checkOnly?: boolean
+  distRoot?: string
+  manifestPath?: string
+  removeDirectory?: typeof rm
+  replaceDirectory?: typeof replaceDirectoryAtomically
+  runTypeScriptBuild?: (outputDirectory: string) => void
+  sourceRoot?: string
+  write?: (message: string) => void
+}
+
+/**
+ * The assembled build/check flow the `import.meta.main` guard drives. All I/O boundaries that
+ * would otherwise make this unreachable outside a real CLI invocation are injectable:
+ * `runTypeScriptBuild` (default: `runTypeScriptBuild`, which spawns real `tsc`) and every path
+ * default.
+ */
+export async function runBuild(options: RunBuildOptions = {}): Promise<void> {
+  const currentSourceRoot = options.sourceRoot ?? sourceRoot()
+  const currentDistRoot = options.distRoot ?? distRoot()
+  const currentBuildConfig = options.buildConfigPath ?? buildConfig()
+  const currentManifest = options.manifestPath ?? packageManifest()
+  const currentCheckOnly = options.checkOnly ?? resolveCheckOnly()
+  const buildTypeScript = options.runTypeScriptBuild ?? runTypeScriptBuild
+  const replaceDirectory = options.replaceDirectory ?? replaceDirectoryAtomically
+  const removeDirectory = options.removeDirectory ?? rm
+  const write = options.write ?? writeToStdout
+
+  const temporaryRoot = await mkdtemp(join(dirname(currentDistRoot), '.wiki-write-core-dist-'))
   let temporaryRootOwned = true
 
   try {
-    if (await pathExists(distRoot)) {
-      await collectFiles(distRoot)
+    if (await pathExists(currentDistRoot)) {
+      await collectFiles(currentDistRoot)
     }
     await mkdir(temporaryRoot, {recursive: true})
 
-    execFileSync('pnpm', ['exec', 'tsc', '--project', buildConfig, '--outDir', temporaryRoot, '--pretty', 'false'], {
-      cwd: repositoryRoot,
-      stdio: 'inherit',
-    })
+    buildTypeScript(temporaryRoot)
 
-    const sourceHash = await computeSourceTreeHash()
+    const sourceHash = await computeSourceTreeHash({
+      sourceRoot: currentSourceRoot,
+      buildConfigPath: currentBuildConfig,
+      manifestPath: currentManifest,
+    })
     await collectFiles(temporaryRoot)
     await embedSourceTreeHash(temporaryRoot, sourceHash)
     await writeGateContractMarker(temporaryRoot, sourceHash)
     await rewriteDeclarationExtensions(temporaryRoot)
     await collectFiles(temporaryRoot)
 
-    if (checkOnly) {
-      const differences = await compareTrees(temporaryRoot, distRoot)
+    if (currentCheckOnly) {
+      const differences = await compareTrees(temporaryRoot, currentDistRoot)
       if (differences.length > 0) {
         throw new Error(`wiki-write-core dist is stale:\n${differences.map(path => `- ${path}`).join('\n')}`)
       }
-      process.stdout.write('wiki-write-core dist is up to date\n')
+      write('wiki-write-core dist is up to date\n')
     } else {
-      await replaceDirectoryAtomically(temporaryRoot, distRoot)
+      await replaceDirectory(temporaryRoot, currentDistRoot)
       temporaryRootOwned = false
     }
   } finally {
+    // `force: true` restored: replaceDirectory can consume temporaryRoot (rename it away) and
+    // then itself throw during its own cleanup, leaving temporaryRootOwned uncleared with
+    // nothing left at temporaryRoot to remove — a legitimate absence, not a bug to surface as ENOENT.
     if (temporaryRootOwned) {
-      await rm(temporaryRoot, {force: true, recursive: true})
+      await removeDirectory(temporaryRoot, {force: true, recursive: true})
     }
   }
+}
+
+function writeToStdout(message: string): void {
+  process.stdout.write(message)
+}
+
+export function reportFatalError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error)
+  process.stderr.write(`${message}\n`)
+  process.exitCode = 1
 }
 
 interface SourceTreeHashOptions {
   buildConfigPath?: string
   manifestPath?: string
+  readEntries?: typeof readdir
   resolvedBuildConfig?: unknown
   sourceRoot?: string
 }
 
 export async function computeSourceTreeHash(options: SourceTreeHashOptions = {}): Promise<string> {
-  const currentSourceRoot = options.sourceRoot ?? sourceRoot
-  const currentBuildConfig = options.buildConfigPath ?? buildConfig
-  const currentManifest = options.manifestPath ?? packageManifest
-  const files = (await collectFiles(currentSourceRoot))
+  const currentSourceRoot = options.sourceRoot ?? sourceRoot()
+  const currentBuildConfig = options.buildConfigPath ?? buildConfig()
+  const currentManifest = options.manifestPath ?? packageManifest()
+  const readEntries = options.readEntries ?? readdir
+  const files = (await collectFiles(currentSourceRoot, 'wiki-write-core dist', readEntries))
     .filter(path => !path.endsWith('.test.ts'))
     .sort((left, right) => left.localeCompare(right))
   const hash = createHash('sha256')
@@ -80,29 +180,33 @@ export async function computeSourceTreeHash(options: SourceTreeHashOptions = {})
   const resolvedConfig = options.resolvedBuildConfig ?? resolveBuildConfig(currentBuildConfig)
   updateHash(hash, 'build-config/tsconfig.build.json', stableJson(resolvedConfig))
 
-  const manifest = parsePackageManifest(await readFile(currentManifest, 'utf8'), currentManifest)
+  const manifest = parsePackageManifest((await readFile(currentManifest)).toString(), currentManifest)
   updateHash(hash, 'package/exports', stableJson(manifest.exports))
   updateHash(hash, 'package/files', stableJson([...manifest.files].sort((left, right) => left.localeCompare(right))))
 
   return hash.digest('hex')
 }
 
-export function resolveBuildConfig(configPath: string): unknown {
-  const resolvedConfig = execFileSync(
-    'pnpm',
-    ['exec', 'tsc', '--showConfig', '--project', configPath, '--pretty', 'false'],
-    {cwd: repositoryRoot, encoding: 'utf8'},
-  )
+export function resolveBuildConfig(configPath: string, options: {spawn?: typeof execFileSync} = {}): unknown {
+  const spawn = options.spawn ?? execFileSync
+  const resolvedConfig = spawn('pnpm', ['exec', 'tsc', '--showConfig', '--project', configPath, '--pretty', 'false'], {
+    cwd: repositoryRoot(),
+    encoding: 'utf8',
+  })
   return JSON.parse(resolvedConfig) as unknown
 }
 
-export async function collectFiles(directory: string, label = 'wiki-write-core dist'): Promise<string[]> {
+export async function collectFiles(
+  directory: string,
+  label = 'wiki-write-core dist',
+  readEntries: typeof readdir = readdir,
+): Promise<string[]> {
   const directoryInfo = await lstat(directory)
   if (directoryInfo.isSymbolicLink()) {
     throw new Error(`symlink is not allowed in ${label}: ${displayPath(directory)}`)
   }
 
-  const entries = await readdir(directory, {withFileTypes: true})
+  const entries = await readEntries(directory, {withFileTypes: true})
   const files: string[] = []
 
   for (const entry of entries) {
@@ -110,7 +214,7 @@ export async function collectFiles(directory: string, label = 'wiki-write-core d
     if (entry.isSymbolicLink()) {
       throw new Error(`symlink is not allowed in ${label}: ${displayPath(path)}`)
     } else if (entry.isDirectory()) {
-      files.push(...(await collectFiles(path, label)))
+      files.push(...(await collectFiles(path, label, readEntries)))
     } else if (entry.isFile()) {
       files.push(path)
     }
@@ -122,18 +226,18 @@ export async function collectFiles(directory: string, label = 'wiki-write-core d
 export async function embedSourceTreeHash(outputRoot: string, sourceHash: string): Promise<void> {
   const contractPath = join(outputRoot, 'gate-contract.js')
   const content = await readFile(contractPath, 'utf8')
-  const occurrences = content.split(sourceHashPlaceholder).length - 1
+  const occurrences = content.split(sourceHashPlaceholder()).length - 1
   if (occurrences !== 1) {
     throw new Error(`expected one source-tree hash placeholder in ${contractPath}, found ${occurrences}`)
   }
-  await writeFile(contractPath, content.replace(sourceHashPlaceholder, sourceHash), 'utf8')
+  await writeFile(contractPath, content.replace(sourceHashPlaceholder(), sourceHash))
 }
 
 // The version is the gate criterion; sourceTreeHash is diagnostic only because it moves with
 // ordinary source changes and must not turn unrelated package edits into write refusals.
 export async function writeGateContractMarker(outputRoot: string, sourceTreeHash: string): Promise<void> {
   const markerPath = join(outputRoot, 'gate-contract.json')
-  await writeFile(markerPath, `${JSON.stringify({version: GATE_CONTRACT_VERSION, sourceTreeHash})}\n`, 'utf8')
+  await writeFile(markerPath, `${JSON.stringify({version: GATE_CONTRACT_VERSION, sourceTreeHash})}\n`)
 }
 
 export async function rewriteDeclarationExtensions(outputRoot: string): Promise<void> {
@@ -142,7 +246,7 @@ export async function rewriteDeclarationExtensions(outputRoot: string): Promise<
     const content = await readFile(path, 'utf8')
     const rewritten = content.replaceAll(/(\bfrom\s+|\bimport\s*\(\s*)(['"])(\.\.?\/[^'"]+)\.ts\2/gu, '$1$2$3.js$2')
     if (rewritten !== content) {
-      await writeFile(path, rewritten, 'utf8')
+      await writeFile(path, rewritten)
     }
   }
 }
@@ -187,7 +291,10 @@ export async function replaceDirectoryAtomically(
   renameDirectory: typeof rename = rename,
 ): Promise<void> {
   const backup = await mkdtemp(join(dirname(target), '.wiki-write-core-dist-backup-'))
-  await rm(backup, {force: true, recursive: true})
+  // `force: true` is deliberately omitted: mkdtemp just created `backup`, so it always exists
+  // at this point — this call exists only to vacate the unique path mkdtemp reserved, not to
+  // tolerate a missing directory.
+  await rm(backup, {recursive: true})
   let targetMoved = false
 
   try {
@@ -203,13 +310,19 @@ export async function replaceDirectoryAtomically(
     }
     throw error
   } finally {
-    if (targetMoved || (await pathExists(backup))) {
-      await rm(backup, {force: true, recursive: true})
+    // `pathExists(backup)` is redundant with `targetMoved`: backup is unconditionally removed
+    // immediately above (before targetMoved can ever become true), and the only place it is
+    // (re)created is the `targetMoved = true` assignment, which the catch block's restore
+    // unwinds back to false before this finally runs. targetMoved's value and backup's
+    // existence are therefore always equal here, so `force: true` would only ever mask a real
+    // bug in that invariant.
+    if (targetMoved) {
+      await rm(backup, {recursive: true})
     }
   }
 }
 
-function updateHash(hash: ReturnType<typeof createHash>, label: string, content: Buffer | string): void {
+export function updateHash(hash: ReturnType<typeof createHash>, label: string, content: Buffer | string): void {
   const byteLength = Buffer.isBuffer(content) ? content.byteLength : Buffer.byteLength(content)
   hash.update(label)
   hash.update('\0')
@@ -234,7 +347,8 @@ export function parsePackageManifest(content: string, path: string): {exports: u
   return {exports: parsed.exports, files: parsed.files}
 }
 
-function stableJson(value: unknown): string {
+/** @internal */
+export function stableJson(value: unknown): string {
   if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
     return JSON.stringify(value)
   }
@@ -250,13 +364,14 @@ function stableJson(value: unknown): string {
   throw new Error('package manifest contains an unsupported value')
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** @internal */
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-async function pathExists(path: string): Promise<boolean> {
+export async function pathExists(path: string, lstatPath: typeof lstat = lstat): Promise<boolean> {
   try {
-    await lstat(path)
+    await lstatPath(path)
     return true
   } catch (error: unknown) {
     if (isFileNotFoundError(error)) return false
@@ -274,19 +389,14 @@ async function collectFilesIfPresent(directory: string): Promise<string[]> {
 }
 
 function displayPath(path: string): string {
-  return relative(repositoryRoot, path).split(sep).join('/') || path
+  return relative(repositoryRoot(), path).split(sep).join('/') || path
 }
 
-function isFileNotFoundError(error: unknown): boolean {
+export function isFileNotFoundError(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
 }
 
 // Deliberately use Node's main-module check: unlike the repository's legacy scripts, it survives
 // symlinks and spaces in paths without reconstructing a file URL from argv[1].
-if (import.meta.main) {
-  main().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`${message}\n`)
-    process.exitCode = 1
-  })
-}
+// Stryker disable next-line ConditionalExpression,CallExpression: → true spawns a real tsc build on import; → false and removing the call are no-ops under test since no test invokes the CLI path.
+if (import.meta.main) runBuild().catch(reportFatalError)
