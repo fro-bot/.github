@@ -1,8 +1,8 @@
 ---
 title: A Stryker disable directive is mutator-scoped, not variant-scoped — enumerate every variant before shipping one
 date: 2026-09-05
-last_updated: 2026-09-05
-verified: 2026-09-05
+last_updated: 2026-09-06
+verified: 2026-09-06
 category: best-practices
 module: packages/wiki-write-core/src/private-leak.ts
 problem_type: best_practice
@@ -12,6 +12,7 @@ applies_when:
   - writing a `// Stryker disable next-line <Mutator>: <reason>` directive during mutation-testing cleanup
   - a directive's reason argues equivalence for only one output of a mutator (e.g. only `if (false)`, not `if (true)`)
   - a directive's reason depends on an assumption about input shape ("realistic input", "never contains X") rather than the code's own logic
+  - a guard's `true` variant is equivalent but its `false` variant is killable, so no directive placement on that line hides zero kills
 tags:
   - mutation-testing
   - stryker
@@ -62,6 +63,24 @@ swap it produces. Before shipping a directive:
    `assertRepoEntry`/`isRepoEntry` constrain `owner`/`name` to `typeof === 'string'` only — no
    non-empty or character-class constraint like `node_id`'s pattern check — so `''` and a private name
    starting with `+` were both legal inputs. Both became real tests instead of directives.
+5. **When a guard has one equivalent variant and one killable variant, no directive placement on that
+   line hides zero kills — isolate the guard and keep the comparison live.** PR #3855, `corrections.ts`
+   `assertCorrectionSpan`: `start !== undefined && end !== undefined && end < start`. Forcing either
+   presence check `true` is equivalent (`<` against an actual `undefined` is `false`); forcing either
+   `false` skips a real rejection and is killed by the `end < start` test. Because the directive is
+   mutator-scoped, naming `ConditionalExpression` to excuse the equivalent variants also hides the
+   killable one. The shape that bounds the damage:
+
+   ```ts
+   // Stryker disable next-line ConditionalExpression,LogicalOperator: → true / && → || are no-ops (`<` vs undefined is false); → false is killable and ALSO hidden here — re-proven by the live `end < start` line below
+   const bothPresent = start !== undefined && end !== undefined
+   if (bothPresent && end < start) throw invalidCorrections(path, 'end must be greater than or equal to start')
+   ```
+
+   TS ≥ 4.4 narrows `start`/`end` through the `const` alias. The alias line carries the directive and
+   names the hidden kill explicitly; the comparison line stays directive-free so the same rejection test
+   provably kills something live adjacent. Record the hidden kill in the ledger — a directive that
+   pretends to hide zero kills is the same defect as one that argues one variant.
 
 ## Why This Matters
 
@@ -89,5 +108,7 @@ the mutation gate exists to catch.
 ## Related
 
 - PR #3837 (`fix(wiki-write-core): fix three mutator-scoped directive violations in private-leak.ts` and
-  its preceding commits)
-- `docs/plans/2026-09-04-001-feat-counterexample-proven-guards-plan.md`, Unit 5A-1 Result block
+  its preceding commits); PR #3855 (`corrections.ts`, the aliased-guard shape in rule 5)
+- `docs/plans/2026-09-04-001-feat-counterexample-proven-guards-plan.md`, Unit 5A-1 and 5B-3 Result blocks
+- `docs/solutions/best-practices/equivalence-refactors-need-differential-proofs-past-the-bound-2026-09-06.md`
+  — when the fix is a refactor rather than a directive, the proof it needs
