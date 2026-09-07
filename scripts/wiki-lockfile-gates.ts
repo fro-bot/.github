@@ -62,11 +62,15 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
   const errors: string[] = []
   const enabledRemoteSources = new Set<string>()
 
+  // Stryker disable next-line ArrayDeclaration: the placeholder element has no .enabled/.source, so
+  // every branch below skips it like an empty array.
   for (const plugin of config.plugins ?? []) {
     if (plugin.enabled === false) continue
     const source = plugin.source
 
     if (typeof source === 'string') {
+      // Bound: any string source not prefixed `github:` is exempt from lock coverage -- Quartz's
+      // plugin-source grammar (what other prefixes/shapes exist) is external to this repo.
       if (!source.startsWith('github:')) continue // not a remote plugin
       enabledRemoteSources.add(source)
       const entry = Object.values(lockPlugins).some(p => p.source === source)
@@ -74,7 +78,11 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
       continue
     }
 
-    if (source && typeof source === 'object') {
+    // `typeof source === 'string'` continued above, so this narrows to the object case; a truthy
+    // non-object (malformed YAML) has no `.repo`/`subdir` and falls through every check inside with no error -- same as before.
+    if (source) {
+      // Ordering is intentional: a local `./` repo is exempt even if `subdir` is also present -- the
+      // local-path check runs before the subdir-rejection check below.
       if (typeof source.repo === 'string' && source.repo.startsWith('./')) continue // local path source, exempt
       if (Object.prototype.hasOwnProperty.call(source, 'subdir')) {
         errors.push(`enabled remote plugin uses rejected object-source subdir: ${JSON.stringify(source)}`)
@@ -164,10 +172,11 @@ export async function runCli(argv: string[], cwd: string): Promise<{exitCode: nu
         stderr: `wiki-lockfile-gates: could not resolve the 'yaml' package from "${cwd}" (expected in quartz-build/node_modules in CI)\n`,
       }
     }
-    const configRaw = await readFile(join(cwd, 'quartz.config.yaml'), 'utf8')
-    const config = YAML.parse(configRaw) as QuartzConfig
-    const lockRaw = await readFile(join(cwd, 'quartz.lock.json'), 'utf8')
-    const lock = JSON.parse(lockRaw) as LockFile
+    // Buffer.toString() defaults to utf8; no encoding literal to mutate.
+    const configRaw = await readFile(join(cwd, 'quartz.config.yaml'))
+    const config = YAML.parse(configRaw.toString()) as QuartzConfig
+    const lockRaw = await readFile(join(cwd, 'quartz.lock.json'))
+    const lock = JSON.parse(lockRaw.toString()) as LockFile
 
     const result = checkLockfileCoverage(config, lock)
     if (!result.ok) {
@@ -183,8 +192,9 @@ export async function runCli(argv: string[], cwd: string): Promise<{exitCode: nu
   }
 
   if (mode === 'integrity') {
-    const lockRaw = await readFile(join(cwd, 'quartz.lock.json'), 'utf8')
-    const lock = JSON.parse(lockRaw) as LockFile
+    // Buffer.toString() defaults to utf8; no encoding literal to mutate.
+    const lockRaw = await readFile(join(cwd, 'quartz.lock.json'))
+    const lock = JSON.parse(lockRaw.toString()) as LockFile
 
     const readHead = (name: string): string | null => {
       const headPath = join(cwd, '.quartz', 'plugins', name, '.git', 'HEAD')
