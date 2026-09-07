@@ -95,7 +95,11 @@ describe('main.yaml check-mutation-guards job', () => {
 
 interface SettingsBranchProtection {
   readonly required_status_checks?: {
-    readonly contexts?: readonly string[]
+    // `unknown`, not `string`: an unquoted colon-bearing context (e.g. `Security: Private
+    // Leak Scan`) parses as a YAML mapping, not a string, and a `readonly string[]` type
+    // would silently assume that away instead of letting the string-invariant test below
+    // actually check it.
+    readonly contexts?: readonly unknown[]
   }
 }
 
@@ -133,6 +137,18 @@ describe('settings.yml required status checks', () => {
   it('lists the check-mutation-guards job name as a required status check context (byte-for-byte, not a repeated literal)', () => {
     expect(job?.name).toBeDefined()
     expect(mainBranch?.protection?.required_status_checks?.contexts).toContain(job?.name)
+  })
+
+  it('has only string entries in required_status_checks.contexts (an unquoted colon-bearing context parses as a YAML mapping, not a string)', () => {
+    const contexts = mainBranch?.protection?.required_status_checks?.contexts
+    // Pin the premise: without this the loop below passes vacuously if the key ever moves.
+    expect(
+      Array.isArray(contexts) && contexts.length > 0,
+      'required_status_checks.contexts must be a non-empty array',
+    ).toBe(true)
+    for (const context of contexts ?? []) {
+      expect(typeof context, `context entry ${JSON.stringify(context)} is not a string`).toBe('string')
+    }
   })
 })
 
