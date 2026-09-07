@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs'
 import {readFile} from 'node:fs/promises'
 import {createRequire} from 'node:module'
-import {join} from 'node:path'
+import {join, resolve, sep} from 'node:path'
 import process from 'node:process'
 
 // ---------------------------------------------------------------------------
@@ -57,6 +57,39 @@ export function isLocalPluginSource(source: string): boolean {
 }
 
 /**
+ * Whether a config-declared local source resolves to a path inside `root` (the directory
+ * `quartz.config.yaml` lives in -- the same `cwd` the CLI is invoked with; in CI that is
+ * `quartz-build/`, a scratch checkout of pinned upstream Quartz overlaid with this repo's config
+ * and local plugin, NOT this repository's own checkout -- see `localSourceEscapesRootError`'s doc).
+ * This is a DIFFERENT question from `isLocalPluginSource`'s "is this path-shaped" grammar check
+ * (issue #3863): a path can be local-shaped and still point anywhere on disk (`/tmp/attacker`,
+ * `../../outside`), so shape alone is not a boundary. Deliberately a SEPARATE predicate rather than
+ * folded into `isLocalPluginSource` -- overloading one classifier to answer both "is this a local
+ * path" and "is this an acceptable local path" is the same shape of bug that produced the lock-side
+ * exemption failures in #3862-#3864 (one predicate, two questions, one bypass).
+ *
+ * A Windows drive-letter form (`C:\evil`) is rejected outright before resolution: `path.resolve` on
+ * POSIX does not treat it as an absolute path (it would resolve AS IF relative, which could
+ * spuriously pass the containment check), so the drive-letter shape is checked directly rather than
+ * trusted to `resolve`'s platform-dependent behavior. Everything else is resolved with `node:path`'s
+ * `resolve` (not string prefix matching) so that traversal is caught by where the path actually
+ * lands, not by scanning its text for `..` -- `./a/../../outside` must fail by resolution, and
+ * `./a/../local-plugin` (which also contains `..` but stays inside) must still pass.
+ *
+ * This containment check is LEXICAL, not realpath-strength: `resolve` does not traverse symlinks,
+ * so a committed `local-plugin -> /etc` symlink resolves inside `root` textually and passes here.
+ * Not an escalation in this threat model -- anyone who can commit that symlink into the repo can
+ * commit the plugin code directly -- but do not mistake this function for a realpath-equivalent
+ * boundary when reusing it elsewhere.
+ */
+export function isLocalPluginSourceWithinRoot(source: string, root: string): boolean {
+  if (/^[A-Z]:[\\/]/i.test(source)) return false
+  const resolvedRoot = resolve(root)
+  const resolvedSource = resolve(root, source)
+  return resolvedSource === resolvedRoot || resolvedSource.startsWith(resolvedRoot + sep)
+}
+
+/**
  * Extract the string form of a `string | QuartzPluginObjectSource` value, or `null` when none
  * exists (an object source with no string `repo`, or an absent source). Shared by the config-side
  * local-source derivation and the lock-side identification, since `QuartzConfigPlugin.source` and
@@ -69,31 +102,18 @@ function extractSourceString(source: string | QuartzPluginObjectSource | undefin
 }
 
 /**
- * Derive the set of source strings that ENABLED config plugins declare as local -- the only trusted
- * basis for exempting a lock entry from remote-plugin handling in either gate, since a lock entry's
- * own fields are what this gate verifies and cannot self-attest an exemption. Disabled plugins are
- * excluded for consistency with the coverage loop below, which also skips them.
+ * A lock entry may never be local. Four PRs in a row (#3862-#3864) tried narrowing an EXEMPTION
+ * for local-looking lock entries by checking progressively more of the entry's own fields --
+ * `commit`, then `source`, and review then found the pointer the build actually consumes
+ * (`resolved`) was still unchecked. Every one of those fields lives INSIDE the lockfile, the
+ * artifact this gate exists to distrust, so no combination of them can be a trusted exemption
+ * basis. The fix is to stop granting the exemption at all: local plugins are resolved directly
+ * from `quartz.config.yaml` at build time (see `isLocalPluginSource` above, still used on the
+ * CONFIG side, unchanged) and never need a lock entry. A lock entry claiming a local-looking
+ * source is therefore always wrong, in both gates, with no field check required.
  */
-export function deriveConfigLocalSources(config: QuartzConfig): Set<string> {
-  const localSources = new Set<string>()
-  const plugins = config.plugins
-  // Early return avoids a second `?? []` occurrence of the array-placeholder equivalent mutant
-  // already directived below in `checkLockfileCoverage`.
-  if (!plugins) return localSources
-  for (const plugin of plugins) {
-    if (plugin.enabled === false) continue
-    const sourceString = extractSourceString(plugin.source)
-    if (sourceString !== null && isLocalPluginSource(sourceString)) localSources.add(sourceString)
-  }
-  return localSources
-}
-
-/**
- * Message for a lock entry whose `source` matches a config-declared local source but whose `commit`
- * isn't the local sentinel -- an inconsistency worth failing on rather than silently accepting.
- */
-function localCommitMismatchError(name: string, entry: LockPluginEntry): string {
-  return `lock entry "${name}" has a local source but commit "${entry.commit}" is not "local" -- local plugins must record commit: "local"`
+function lockEntryMustNotBeLocalError(name: string, sourceLabel: string): string {
+  return `lock entry "${name}" (${sourceLabel}) has a local source -- local plugins are resolved from quartz.config.yaml and must not appear in quartz.lock.json`
 }
 
 /**
@@ -103,6 +123,33 @@ function localCommitMismatchError(name: string, entry: LockPluginEntry): string 
  */
 function malformedLockSourceError(name: string, source: string | QuartzPluginObjectSource): string {
   return `lock entry "${name}" has a source that cannot be identified (neither a string nor an object with a string "repo"): ${JSON.stringify(source)}`
+}
+
+/**
+ * A config-declared local source (issue #3863) resolves outside the build root -- named "build
+ * root" rather than "repository" deliberately: the anchor is `cwd`, which in CI is `quartz-build/`
+ * (the pinned upstream Quartz checkout plus this repo's overlay), not this repository's own
+ * checkout. Quartz symlinks or copies from this path at build time with no boundary of its own, so
+ * this gate is the only place that can be bounded. Rejected with guidance toward the fix rather
+ * than left exempt.
+ */
+function localSourceEscapesRootError(source: string): string {
+  return `enabled plugin declares a local source outside the build root: ${source} -- use a repo-relative "./" path instead`
+}
+
+/**
+ * A malformed entry in `config.plugins` (not an object -- e.g. a YAML `plugins:` list containing a
+ * bare `-` item, which parses to `null`) or `lock.plugins` (not an object -- e.g. a JSON `null`
+ * value). Guarded at the top of BOTH loops in BOTH gate functions: this is the same class of gap
+ * `loadQuartzConfig`/`loadLockFile` closed one grammar level up (the parsed document itself might
+ * not be an object) -- a document can be a well-formed object while one of its own list/map entries
+ * is not, and each position in the grammar needs its own check, not just the top of the document
+ * (see docs/solutions/security-issues/mutation-coverage-is-silent-about-unwritten-branches-2026-09-05.md:
+ * a check present at one grammar position and silently absent at the next one down is exactly the
+ * failure mode mutation testing cannot surface, since no mutator inserts a missing validation).
+ */
+function malformedEntryError(location: string, entry: unknown): string {
+  return `${location} is not a valid entry (not an object): ${JSON.stringify(entry)}`
 }
 
 /**
@@ -148,25 +195,38 @@ function isRemotePluginSourceString(source: string): boolean {
  * (`{}`, `{repo: ''}`, `{repo: 123}`, `{name: 'x'}` with no `repo`) is reported as malformed rather
  * than silently ignored.
  *
- * Disabled plugins (`enabled === false`) are skipped entirely, including for
- * `deriveConfigLocalSources` -- a disabled local plugin's lock entry is an orphan exactly like a
- * disabled remote plugin's, for the same reason (both are dormant). A lock entry whose source
- * matches a config-declared local source but whose `commit` isn't `'local'` is reported as an error.
+ * Disabled plugins (`enabled === false`) are skipped entirely -- a disabled remote plugin's lock
+ * entry is still an orphan (unchanged). A lock entry with a local-looking source is always an error
+ * (see `lockEntryMustNotBeLocalError`'s doc): local plugins are resolved from config and must never
+ * appear in the lockfile at all, so there is no config-declaration lookup to perform here.
+ *
+ * `root` is the build-root boundary anchor for `isLocalPluginSourceWithinRoot` (issue #3863): a
+ * local-shaped config source must additionally resolve inside `root`, or it is rejected rather than
+ * exempted. `root` is the directory `quartz.config.yaml` lives in -- i.e. the same `cwd` the CLI is
+ * invoked with (`quartz-build/` in CI -- the scratch pinned-Quartz checkout, not this repository's
+ * own checkout; `quartz-site/` when this repo's fixtures/CLI are exercised directly) -- because that
+ * is the one path both the real local plugin (`./local-plugin`, `./local-plugin/sanitizer`) and
+ * every local source string are already resolved relative to; anchoring anywhere else would accept
+ * or reject paths using a root the source strings were never written against.
  */
-export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): CoverageGateResult {
+export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile, root: string): CoverageGateResult {
   const lockPlugins = lock.plugins ?? {}
   const errors: string[] = []
   const enabledRemoteSources = new Set<string>()
-  const configLocalSources = deriveConfigLocalSources(config)
 
-  // Stryker disable next-line ArrayDeclaration: the placeholder element has no .enabled/.source, so
-  // every branch below skips it like an empty array.
-  for (const plugin of config.plugins ?? []) {
+  for (const [index, plugin] of (config.plugins ?? []).entries()) {
+    if (typeof plugin !== 'object' || plugin === null) {
+      errors.push(malformedEntryError(`config.plugins[${index}]`, plugin))
+      continue
+    }
     if (plugin.enabled === false) continue
     const source = plugin.source
 
     if (typeof source === 'string') {
-      if (isLocalPluginSource(source)) continue // local path source, exempt
+      if (isLocalPluginSource(source)) {
+        if (!isLocalPluginSourceWithinRoot(source, root)) errors.push(localSourceEscapesRootError(source))
+        continue // local path source: exempt from lock coverage either way (boundary violation is reported above, not converted into a lock requirement)
+      }
       if (!isRemotePluginSourceString(source)) {
         errors.push(`unparseable plugin source (Quartz would throw "Cannot parse plugin source"): ${source}`)
         continue
@@ -182,7 +242,10 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
     if (source) {
       // Ordering is intentional: a local `./` repo is exempt even if `subdir` is also present -- the
       // local-path check runs before the subdir/ref/remote-object-rejection checks below.
-      if (typeof source.repo === 'string' && isLocalPluginSource(source.repo)) continue // local path source, exempt
+      if (typeof source.repo === 'string' && isLocalPluginSource(source.repo)) {
+        if (!isLocalPluginSourceWithinRoot(source.repo, root)) errors.push(localSourceEscapesRootError(source.repo))
+        continue // local path source: exempt from lock coverage either way, same as the string-source case above
+      }
       if (Object.prototype.hasOwnProperty.call(source, 'subdir')) {
         errors.push(`enabled remote plugin uses rejected object-source subdir: ${JSON.stringify(source)}`)
         continue
@@ -207,19 +270,23 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
   }
 
   for (const [name, entry] of Object.entries(lockPlugins)) {
+    if (typeof entry !== 'object' || entry === null) {
+      errors.push(malformedEntryError(`lock entry "${name}"`, entry))
+      continue
+    }
     const entrySourceString = extractSourceString(entry.source)
     if (entrySourceString === null) {
       errors.push(malformedLockSourceError(name, entry.source))
-      continue
-    }
-    if (configLocalSources.has(entrySourceString)) {
-      if (entry.commit !== 'local') errors.push(localCommitMismatchError(name, entry))
       continue
     }
     // Membership is tested on the rendered label rather than on `entry.source` itself: the set only
     // ever holds raw config strings, so a JSON-rendered object source can never match it, and an
     // object lock entry with no enabled counterpart is still reported rather than silently skipped.
     const sourceLabel = typeof entry.source === 'string' ? entry.source : JSON.stringify(entry.source)
+    if (isLocalPluginSource(entrySourceString)) {
+      errors.push(lockEntryMustNotBeLocalError(name, sourceLabel))
+      continue
+    }
     if (!enabledRemoteSources.has(sourceLabel)) {
       errors.push(`lock entry "${name}" (${sourceLabel}) is not an enabled plugin in quartz.config.yaml`)
     }
@@ -241,32 +308,27 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
  * refs/heads/...` line (branch checkout) never equals a pinned SHA, so it
  * naturally fails the equality check — this is how branch drift is caught.
  *
- * `configLocalSources` (from `deriveConfigLocalSources`, the SAME derived set Gate A uses) marks
- * entries exempt from the HEAD comparison: a local plugin is symlinked, not cloned, so it has no
- * meaningful `.git/HEAD` to compare against a pinned commit -- without this exemption it would fail
- * either as a missing HEAD or as a branch-ref mismatch. Gate B takes the derived set rather than the
- * raw `QuartzConfig` so it never re-implements the config-walking/derivation logic itself -- there is
- * exactly one place (`deriveConfigLocalSources`) that decides what counts as a trusted local source,
- * and both gates consume its output, guaranteeing they cannot silently diverge on the same entry. A
- * lock entry whose source matches a config-declared local source but whose `commit` isn't the
- * `'local'` sentinel is still reported, the same as in Gate A.
+ * A lock entry with a local-looking source is an error here too, the SAME rule Gate A applies (see
+ * `lockEntryMustNotBeLocalError`'s doc) -- neither gate needs `quartz.config.yaml` to make this
+ * decision, since a local-looking lock entry is wrong regardless of what config says.
  */
-export function checkLockfileIntegrity(
-  lock: LockFile,
-  configLocalSources: Set<string>,
-  readHead: (name: string) => string | null,
-): GateResult {
+export function checkLockfileIntegrity(lock: LockFile, readHead: (name: string) => string | null): GateResult {
   const errors: string[] = []
   const plugins = lock.plugins ?? {}
 
   for (const [name, entry] of Object.entries(plugins)) {
+    if (typeof entry !== 'object' || entry === null) {
+      errors.push(malformedEntryError(`lock entry "${name}"`, entry))
+      continue
+    }
     const entrySourceString = extractSourceString(entry.source)
     if (entrySourceString === null) {
       errors.push(malformedLockSourceError(name, entry.source))
       continue
     }
-    if (configLocalSources.has(entrySourceString)) {
-      if (entry.commit !== 'local') errors.push(localCommitMismatchError(name, entry))
+    const sourceLabel = typeof entry.source === 'string' ? entry.source : JSON.stringify(entry.source)
+    if (isLocalPluginSource(entrySourceString)) {
+      errors.push(lockEntryMustNotBeLocalError(name, sourceLabel))
       continue
     }
     const head = readHead(name)
@@ -294,10 +356,9 @@ export function checkLockfileIntegrity(
  * to repo root and fail every time. `createRequire` rooted at `cwd` resolves `yaml` the same way
  * the old inline script did when it ran with cwd=quartz-build (Quartz's own dependency).
  *
- * Shared by both CLI modes: coverage needs the full config to check against the lock, and
- * integrity needs `deriveConfigLocalSources(config)` to know which lock entries are exempt from
- * the HEAD comparison. Loading it once per mode from one place keeps that resolution quirk
- * documented and tested in exactly one spot.
+ * Used only by coverage mode -- integrity mode no longer needs `quartz.config.yaml` at all, since
+ * neither gate exempts local-looking lock entries anymore (see `lockEntryMustNotBeLocalError`'s
+ * doc), so it has nothing left to derive from config.
  */
 async function loadQuartzConfig(cwd: string): Promise<{ok: true; config: QuartzConfig} | {ok: false; stderr: string}> {
   let YAML: typeof import('yaml')
@@ -310,18 +371,51 @@ async function loadQuartzConfig(cwd: string): Promise<{ok: true; config: QuartzC
       stderr: `wiki-lockfile-gates: could not resolve the 'yaml' package from "${cwd}" (expected in quartz-build/node_modules in CI)\n`,
     }
   }
-  // Both modes must return the gate's own {exitCode, stdout, stderr} envelope on failure, never an
-  // uncaught exception -- a missing file or malformed YAML should read as a diagnosable gate error,
-  // not a crash indistinguishable from a real bug.
+  // Must return the gate's own {exitCode, stdout, stderr} envelope on failure, never an uncaught
+  // exception -- a missing file, malformed YAML, or a valid-but-empty/comments-only YAML document
+  // (which `YAML.parse` returns as `null` rather than throwing) should all read as a diagnosable
+  // gate error, not a crash indistinguishable from a real bug.
   try {
     // Buffer.toString() defaults to utf8; no encoding literal to mutate.
     const configRaw = await readFile(join(cwd, 'quartz.config.yaml'))
-    const config = YAML.parse(configRaw.toString()) as QuartzConfig
-    return {ok: true, config}
+    const parsed: unknown = YAML.parse(configRaw.toString())
+    if (typeof parsed !== 'object' || parsed === null) {
+      return {
+        ok: false,
+        stderr: `wiki-lockfile-gates: quartz.config.yaml at "${cwd}" did not parse to an object (got ${JSON.stringify(parsed)})\n`,
+      }
+    }
+    return {ok: true, config: parsed}
   } catch (error) {
     return {
       ok: false,
       stderr: `wiki-lockfile-gates: could not read or parse quartz.config.yaml from "${cwd}": ${String(error)}\n`,
+    }
+  }
+}
+
+/**
+ * Load and parse `quartz.lock.json` from `cwd`, returning the gate's own failure envelope rather
+ * than an uncaught exception. The lockfile is the artifact both gates exist to distrust, so a
+ * missing or malformed lockfile deserves at least the same diagnosable-error treatment the config
+ * file gets, not a raw stack trace. Shared by both CLI modes.
+ */
+async function loadLockFile(cwd: string): Promise<{ok: true; lock: LockFile} | {ok: false; stderr: string}> {
+  try {
+    // Buffer.toString() defaults to utf8; no encoding literal to mutate.
+    const lockRaw = await readFile(join(cwd, 'quartz.lock.json'))
+    const parsed: unknown = JSON.parse(lockRaw.toString())
+    if (typeof parsed !== 'object' || parsed === null) {
+      return {
+        ok: false,
+        stderr: `wiki-lockfile-gates: quartz.lock.json at "${cwd}" did not parse to an object (got ${JSON.stringify(parsed)})\n`,
+      }
+    }
+    return {ok: true, lock: parsed}
+  } catch (error) {
+    return {
+      ok: false,
+      stderr: `wiki-lockfile-gates: could not read or parse quartz.lock.json from "${cwd}": ${String(error)}\n`,
     }
   }
 }
@@ -338,12 +432,13 @@ export async function runCli(argv: string[], cwd: string): Promise<{exitCode: nu
   const mode = argv[0]
 
   if (mode === 'coverage') {
-    const loaded = await loadQuartzConfig(cwd)
-    if (!loaded.ok) return {exitCode: 2, stdout: '', stderr: loaded.stderr}
-    const lockRaw = await readFile(join(cwd, 'quartz.lock.json'))
-    const lock = JSON.parse(lockRaw.toString()) as LockFile
+    const loadedConfig = await loadQuartzConfig(cwd)
+    if (!loadedConfig.ok) return {exitCode: 2, stdout: '', stderr: loadedConfig.stderr}
+    const loadedLock = await loadLockFile(cwd)
+    if (!loadedLock.ok) return {exitCode: 2, stdout: '', stderr: loadedLock.stderr}
+    const lock = loadedLock.lock
 
-    const result = checkLockfileCoverage(loaded.config, lock)
+    const result = checkLockfileCoverage(loadedConfig.config, lock, cwd)
     if (!result.ok) {
       const lines = ['Lockfile coverage gate failed:', ...result.errors.map(e => `  - ${e}`)]
       return {exitCode: 1, stdout: '', stderr: `${lines.join('\n')}\n`}
@@ -357,18 +452,11 @@ export async function runCli(argv: string[], cwd: string): Promise<{exitCode: nu
   }
 
   if (mode === 'integrity') {
-    // Gate B needs the same trusted local-source set Gate A derives, so a lock entry cannot be
-    // exempted from HEAD verification by any means the lockfile itself controls (see
-    // `deriveConfigLocalSources`'s doc). This requires loading quartz.config.yaml here too --
-    // the real publish-wiki workflow always runs both gates with cwd=quartz-build/, so
-    // quartz.config.yaml is present for integrity mode exactly as it is for coverage mode.
-    const loaded = await loadQuartzConfig(cwd)
-    if (!loaded.ok) return {exitCode: 2, stdout: '', stderr: loaded.stderr}
-    const configLocalSources = deriveConfigLocalSources(loaded.config)
-
-    // Buffer.toString() defaults to utf8; no encoding literal to mutate.
-    const lockRaw = await readFile(join(cwd, 'quartz.lock.json'))
-    const lock = JSON.parse(lockRaw.toString()) as LockFile
+    // No `quartz.config.yaml` load here: neither gate exempts local-looking lock entries anymore,
+    // so integrity mode has nothing to derive from config (see `checkLockfileIntegrity`'s doc).
+    const loadedLock = await loadLockFile(cwd)
+    if (!loadedLock.ok) return {exitCode: 2, stdout: '', stderr: loadedLock.stderr}
+    const lock = loadedLock.lock
 
     const readHead = (name: string): string | null => {
       const headPath = join(cwd, '.quartz', 'plugins', name, '.git', 'HEAD')
@@ -379,7 +467,7 @@ export async function runCli(argv: string[], cwd: string): Promise<{exitCode: nu
       }
     }
 
-    const result = checkLockfileIntegrity(lock, configLocalSources, readHead)
+    const result = checkLockfileIntegrity(lock, readHead)
     if (!result.ok) {
       const lines = ['Lockfile integrity gate failed:', ...result.errors.map(e => `  - ${e}`)]
       return {exitCode: 1, stdout: '', stderr: `${lines.join('\n')}\n`}

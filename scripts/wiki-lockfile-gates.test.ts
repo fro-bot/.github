@@ -7,14 +7,19 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {
   checkLockfileCoverage,
   checkLockfileIntegrity,
-  deriveConfigLocalSources,
   isLocalPluginSource,
+  isLocalPluginSourceWithinRoot,
   runCli,
   type LockFile,
   type QuartzConfig,
 } from './wiki-lockfile-gates.ts'
 
 const require = createRequire(import.meta.url)
+
+// The repository-boundary root for `checkLockfileCoverage`'s tests that don't specifically exercise
+// the boundary check itself -- `process.cwd()` is the repo root when tests run (vitest's default),
+// so every `./`-relative fixture source used elsewhere in this file trivially resolves inside it.
+const TEST_ROOT = process.cwd()
 
 // ---------------------------------------------------------------------------
 // checkLockfileCoverage — Gate A
@@ -31,7 +36,7 @@ describe('checkLockfileCoverage', () => {
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it passes with no errors
     expect(result.ok).toBe(true)
@@ -46,7 +51,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails naming the missing plugin
     expect(result.ok).toBe(false)
@@ -61,7 +66,7 @@ describe('checkLockfileCoverage', () => {
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails naming the orphan entry
     expect(result.ok).toBe(false)
@@ -79,7 +84,7 @@ describe('checkLockfileCoverage', () => {
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then the source appears unquoted, exactly as written
     expect(result.ok).toBe(false)
@@ -100,7 +105,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with exactly the subdir-rejection message
     expect(result.ok).toBe(false)
@@ -117,7 +122,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it passes -- the local-path exemption takes priority over the subdir rejection
     expect(result.ok).toBe(true)
@@ -130,7 +135,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it passes — local sources are exempt
     expect(result.ok).toBe(true)
@@ -143,7 +148,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it passes — local object-form sources are exempt
     expect(result.ok).toBe(true)
@@ -157,7 +162,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails, naming the missing lock entry -- the plugin was not silently skipped
     expect(result.ok).toBe(false)
@@ -172,7 +177,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it passes — disabled plugins are not required to be locked
     expect(result.ok).toBe(true)
@@ -193,7 +198,7 @@ describe('checkLockfileCoverage', () => {
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails rejecting the object-source form -- normalization/matching never happens
     expect(result.ok).toBe(false)
@@ -206,7 +211,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it passes silently — an absent source is neither remote nor local, so nothing is required
     expect(result.ok).toBe(true)
@@ -221,7 +226,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with the malformed-source error
     expect(result.ok).toBe(false)
@@ -235,7 +240,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with the malformed-source error
     expect(result.ok).toBe(false)
@@ -252,7 +257,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with the malformed-source error
     expect(result.ok).toBe(false)
@@ -271,7 +276,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it passes silently — a truthy non-object source is neither remote nor local
     expect(result.ok).toBe(true)
@@ -284,7 +289,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with the malformed-source error -- an empty repo is neither remote nor local
     expect(result.ok).toBe(false)
@@ -305,7 +310,7 @@ describe('checkLockfileCoverage', () => {
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then the matching entry satisfies coverage — no "missing lock entry" error for plugin-q — but the
     // #unrelated entry is still flagged as an orphan
@@ -327,7 +332,7 @@ describe('checkLockfileCoverage', () => {
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails rejecting the object-source config plugin, plus both unrelated lock entries as
     // #distinguishable orphans
@@ -350,7 +355,7 @@ describe('checkLockfileCoverage', () => {
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails — proving the gate is load-bearing and would catch a tampered lockfile
     expect(result.ok).toBe(false)
@@ -374,7 +379,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with exactly the missing-lock-entry error naming the source verbatim, not
     // #silently exempt and not misclassified as unparseable
@@ -394,7 +399,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with exactly the missing-lock-entry error naming the source verbatim, not
     // #silently exempt and not misclassified as unparseable
@@ -414,7 +419,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with exactly the unparseable-source error, not a "missing lock entry" error --
     // #a bare owner/repo source cannot be lock-covered because Quartz's lock writer cannot parse it
@@ -436,7 +441,7 @@ describe('checkLockfileCoverage', () => {
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it passes -- the source matches its lock entry verbatim
     expect(result.ok).toBe(true)
@@ -456,7 +461,7 @@ describe('checkLockfileCoverage', () => {
     const lockMissing: LockFile = {plugins: {}}
 
     // #when checking coverage with no lock entry
-    const resultMissing = checkLockfileCoverage(config, lockMissing)
+    const resultMissing = checkLockfileCoverage(config, lockMissing, TEST_ROOT)
 
     // #then it fails naming the literal source string as missing, not silently exempt and not
     // #reported as unparseable (the `github:` prefix alone is enough to classify it remote)
@@ -467,7 +472,7 @@ describe('checkLockfileCoverage', () => {
     const lockPresent: LockFile = {plugins: {p: {source: 'github:owner', commit: 'sha-owner'}}}
 
     // #when checking coverage
-    const resultPresent = checkLockfileCoverage(config, lockPresent)
+    const resultPresent = checkLockfileCoverage(config, lockPresent, TEST_ROOT)
 
     // #then it passes -- exact string equality is all the gate requires
     expect(resultPresent.ok).toBe(true)
@@ -484,7 +489,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with exactly the unparseable-source error, distinct from "missing lock entry" --
     // #it is reported rather than silently exempted
@@ -506,7 +511,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with exactly the ref-rejection message
     expect(result.ok).toBe(false)
@@ -531,7 +536,7 @@ describe('checkLockfileCoverage', () => {
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with both the config-side rejection and the lock-side orphan report
     expect(result.ok).toBe(false)
@@ -550,7 +555,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails, rejecting the object form regardless of the lock's contents
     expect(result.ok).toBe(false)
@@ -567,7 +572,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails, rejecting the object form regardless of the lock's contents
     expect(result.ok).toBe(false)
@@ -586,7 +591,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails, rejecting the object form
     expect(result.ok).toBe(false)
@@ -595,12 +600,28 @@ describe('checkLockfileCoverage', () => {
     ])
   })
 
-  it('regression: all four local-source forms stay exempt from lock coverage', () => {
-    // #given four enabled string sources covering every local form Quartz's isLocalSource recognizes
-    // #(./, ../, /, and a Windows drive letter), none present in the lock
+  it('regression: a relative "./" local-source form that stays inside the root remains exempt from lock coverage', () => {
+    // #given a single enabled "./"-relative source, resolving inside TEST_ROOT, absent from the lock
+    const config: QuartzConfig = {plugins: [{enabled: true, source: './p'}]}
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
+
+    // #then it passes -- no lock entry required, and it stays inside the root
+    expect(result.ok).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  it('regression: "../", absolute, and drive-letter local-source forms are still exempt from LOCK COVERAGE, but are now rejected for escaping the root (#3863)', () => {
+    // #given the three local forms that, resolved against TEST_ROOT (the repo root, with no parent
+    // #directory legitimately in scope), escape it by construction: "../p" (one level up from repo
+    // #root), an absolute POSIX path, and a Windows drive-letter form (rejected outright, see
+    // #`isLocalPluginSourceWithinRoot`'s doc). None is converted into a remote/lock-coverage
+    // #requirement -- all three are still classified as local -- but none is silently exempted
+    // #either, closing #3863
     const config: QuartzConfig = {
       plugins: [
-        {enabled: true, source: './p'},
         {enabled: true, source: '../p'},
         {enabled: true, source: '/p'},
         {enabled: true, source: String.raw`C:\p`},
@@ -608,12 +629,17 @@ describe('checkLockfileCoverage', () => {
     }
     const lock: LockFile = {plugins: {}}
 
-    // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    // #when checking coverage against a root none of the three sources resolve inside
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
-    // #then it passes -- every local form remains exempt, unaffected by the stricter remote classification
-    expect(result.ok).toBe(true)
-    expect(result.errors).toEqual([])
+    // #then all three are rejected as escaping the root -- NOT reported as missing a lock entry,
+    // #proving they are still on the local branch, just no longer silently exempted from it
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'enabled plugin declares a local source outside the build root: ../p -- use a repo-relative "./" path instead',
+      'enabled plugin declares a local source outside the build root: /p -- use a repo-relative "./" path instead',
+      String.raw`enabled plugin declares a local source outside the build root: C:\p -- use a repo-relative "./" path instead`,
+    ])
   })
 
   it('names an orphan lock entry with an object source without interpolating [object Object]', () => {
@@ -627,7 +653,7 @@ describe('checkLockfileCoverage', () => {
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails naming the orphan, with the object source rendered as JSON, not "[object Object]"
     expect(result.ok).toBe(false)
@@ -645,7 +671,7 @@ describe('checkLockfileCoverage', () => {
     const lock: LockFile = {plugins: {broken: {source: {}, commit: 'unknown'}}}
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
     // #then it fails with the malformed-source message, not the orphan message
     expect(result.ok).toBe(false)
@@ -654,150 +680,218 @@ describe('checkLockfileCoverage', () => {
     ])
   })
 
-  it('does not report a lock entry with a local source as an orphan, WHEN that same source is declared in config', () => {
-    // #given a config that declares a local plugin AND a lock entry for the same local source (with
-    // #the `commit: "local"` sentinel Quartz's lockfile writer uses) -- the exemption requires BOTH
-    // #sides to agree on the source; config declaring it is what legitimizes the lock entry
+  it('returns ok with zero enabled remote plugins for a config with no plugins list at all', () => {
+    // #given a config object with the "plugins" key entirely absent (not even an empty array) --
+    // #covers the `config.plugins ?? []` default independently of any entry-level guard
+    const config: QuartzConfig = {}
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
+
+    // #then it passes trivially -- no plugins to check
+    expect(result.ok).toBe(true)
+    expect(result).toMatchObject({errors: [], enabledRemoteCount: 0})
+  })
+
+  it('reports a non-null, non-object entry in config.plugins as malformed (distinguishes the two halves of the entry-type guard)', () => {
+    // #given a config.plugins array containing a bare string element -- neither `null` (the other
+    // #half of the guard) nor a valid object. A mutant that narrows the guard to "is this null"
+    // #alone would still catch the null case from the sibling test but let this one silently fall
+    // #through to `plugin.enabled` (undefined on a string, no crash, no error) instead of reporting it
+    const config = {plugins: ['not an object']} as unknown as QuartzConfig
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
+
+    // #then it fails with the malformed-entry message
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(['config.plugins[0] is not a valid entry (not an object): "not an object"'])
+  })
+
+  it('SECURITY: reports a null entry in config.plugins with the malformed-entry envelope, not a thrown TypeError', () => {
+    // #given a config.plugins array containing a `null` element -- exactly what a YAML `plugins:`
+    // #list with a bare `-` item parses to. Before this fix, `plugin.enabled` on a null `plugin`
+    // #threw `TypeError: Cannot read properties of null (reading 'enabled')`, uncaught, inside
+    // #`checkLockfileCoverage` itself -- one grammar level down from the top-level
+    // #object/non-object guard `loadQuartzConfig` already applies to the parsed document as a whole
+    const config = {plugins: [null]} as unknown as QuartzConfig
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
+
+    // #then it fails with a dedicated malformed-entry message, not a crash
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(['config.plugins[0] is not a valid entry (not an object): null'])
+  })
+
+  it('SECURITY: reports a null value in lock.plugins with the malformed-entry envelope, not a thrown TypeError', () => {
+    // #given a lock.plugins map containing a `null` value under some key -- exactly what a JSON
+    // #`"a": null` entry parses to. Before this fix, `entry.source` on a null `entry` threw
+    // #`TypeError: Cannot read properties of null (reading 'source')`, uncaught
+    const config: QuartzConfig = {plugins: []}
+    const lock = {plugins: {a: null}} as unknown as LockFile
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
+
+    // #then it fails with a dedicated malformed-entry message, not a crash
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(['lock entry "a" is not a valid entry (not an object): null'])
+  })
+
+  it('reports a non-null, non-object value in lock.plugins as malformed (distinguishes the two halves of the entry-type guard)', () => {
+    // #given a lock.plugins map containing a bare number value -- neither `null` nor a valid object,
+    // #the same distinguishing shape as the config-side sibling test above
+    const config: QuartzConfig = {plugins: []}
+    const lock = {plugins: {a: 42}} as unknown as LockFile
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
+
+    // #then it fails with the malformed-entry message
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(['lock entry "a" is not a valid entry (not an object): 42'])
+  })
+
+  it('rejects a lock entry with a local string source outright, even when config declares the same source', () => {
+    // #given a config that declares a local plugin AND a lock entry for that same local source, with
+    // #the `commit: "local"` sentinel Quartz's lockfile writer uses. Four PRs in a row (#3862-#3864)
+    // #tried an EXEMPTION for exactly this shape, keyed on progressively more of the lock entry's own
+    // #fields -- each version was found forgeable. The fix removes the exemption entirely: a lock
+    // #entry may never be local, regardless of what config says, because local plugins never need a
+    // #lock entry at all (they are resolved from config at build time)
     const config: QuartzConfig = {plugins: [{enabled: true, source: './local-plugin'}]}
     const lock: LockFile = {
       plugins: {'local-plugin': {source: './local-plugin', commit: 'local'}},
     }
 
     // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
 
-    // #then it passes -- the lock entry's source matches a config-declared local source
+    // #then it fails -- a config declaration no longer grants any exemption
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'lock entry "local-plugin" (./local-plugin) has a local source -- local plugins are resolved from quartz.config.yaml and must not appear in quartz.lock.json',
+    ])
+  })
+
+  it('rejects a lock entry with a local object-form source outright', () => {
+    // #given a lock entry whose `source` is an object with a local `repo` -- the same rejection must
+    // #apply regardless of whether the lock stores the source as a string or an object
+    const config: QuartzConfig = {plugins: [{enabled: true, source: {repo: './local-plugin'}}]}
+    const lock: LockFile = {
+      plugins: {'local-plugin': {source: {repo: './local-plugin'}, commit: 'local'}},
+    }
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
+
+    // #then it fails -- rendered with the JSON label, since the source is an object
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'lock entry "local-plugin" ({"repo":"./local-plugin"}) has a local source -- local plugins are resolved from quartz.config.yaml and must not appear in quartz.lock.json',
+    ])
+  })
+
+  it('SECURITY: rejects the exact forged entry review found unchecked -- a local source with resolved pointing outside the repo', () => {
+    // #given the exact case review reproduced: config declares an object-form local plugin, and a
+    // #lock entry with a local source ALSO carries `resolved: "/tmp/attacker"` -- a pointer the build
+    // #actually consumes that no field-by-field exemption check had ever covered. Removing the
+    // #exemption entirely (rather than adding a fifth field check) closes this without needing to
+    // #know `resolved` exists
+    const config: QuartzConfig = {plugins: [{enabled: true, source: {repo: './local-plugin'}}]}
+    const lock: LockFile = {
+      plugins: {evil: {source: {repo: './local-plugin'}, commit: 'local', resolved: '/tmp/attacker'}},
+    }
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock, TEST_ROOT)
+
+    // #then it fails -- the local source is rejected regardless of `resolved` or any other lock field
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'lock entry "evil" ({"repo":"./local-plugin"}) has a local source -- local plugins are resolved from quartz.config.yaml and must not appear in quartz.lock.json',
+    ])
+  })
+
+  it('SECURITY (#3863): rejects a config-declared local source that resolves outside the build root', () => {
+    // #given a config plugin declaring an ABSOLUTE local-shaped source -- `isLocalPluginSource`
+    // #correctly classifies this as local-SHAPED, but shape alone was never a build-root boundary:
+    // #Quartz symlinks/copies from this exact path at build time with nothing else bounding it
+    const config: QuartzConfig = {plugins: [{enabled: true, source: '/tmp/attacker'}]}
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage with a root that does not contain the source
+    const result = checkLockfileCoverage(config, lock, '/repo')
+
+    // #then it fails, naming the offending source and suggesting the fix
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'enabled plugin declares a local source outside the build root: /tmp/attacker -- use a repo-relative "./" path instead',
+    ])
+  })
+
+  it('SECURITY (#3863): rejects a config-declared local OBJECT source whose repo resolves outside the build root', () => {
+    // #given the object-source form of the same escape
+    const config: QuartzConfig = {plugins: [{enabled: true, source: {repo: '../../outside'}}]}
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage with a root the source escapes
+    const result = checkLockfileCoverage(config, lock, '/repo')
+
+    // #then it fails the same way
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'enabled plugin declares a local source outside the build root: ../../outside -- use a repo-relative "./" path instead',
+    ])
+  })
+
+  it('accepts a config-declared local source that stays inside the build root, matching the real ./local-plugin and ./local-plugin/sanitizer shapes', () => {
+    // #given both real local-plugin source shapes shipped in quartz-site/quartz.config.yaml today
+    const config: QuartzConfig = {
+      plugins: [
+        {enabled: true, source: './local-plugin'},
+        {enabled: true, source: {repo: './local-plugin/sanitizer'}},
+      ],
+    }
+    const lock: LockFile = {plugins: {}}
+
+    // #when checking coverage
+    const result = checkLockfileCoverage(config, lock, '/repo')
+
+    // #then both pass -- no lock entry required, and neither is flagged as escaping the root
     expect(result.ok).toBe(true)
     expect(result.errors).toEqual([])
   })
 
-  it('SECURITY: does not exempt a local-looking lock entry that has no matching config declaration (the PR #3862 follow-up regression)', () => {
-    // #given a lock entry whose source LOOKS local (`/tmp/attacker`, a path Quartz's own
-    // #isLocalSource would recognize) but which NO config plugin declares -- this is the exact
-    // #regression a security review found in the prior fix: it exempted a lock entry by inspecting
-    // #the entry's OWN source shape (`isLocalPluginSource(entry.source)`), which is a field INSIDE
-    // #the lockfile, the artifact this gate verifies. A forged entry just needed a local-looking
-    // #source string to slip the orphan check entirely, with no config plugin ever declaring it
-    const config: QuartzConfig = {plugins: []}
-    const lock: LockFile = {
-      plugins: {evil: {source: '/tmp/attacker', commit: 'local'}},
-    }
-
-    // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
-
-    // #then it fails -- the local-looking source earns no exemption without a matching config
-    // #declaration; it is reported as an orphan exactly like PRE-#3862 behavior
-    expect(result.ok).toBe(false)
-    expect(result.errors).toEqual(['lock entry "evil" (/tmp/attacker) is not an enabled plugin in quartz.config.yaml'])
-  })
-
-  it('SECURITY: a disabled local config declaration does not exempt a matching lock entry (a disabled plugin grants no standing exemption)', () => {
-    // #given a config that declares the plugin's local source but with `enabled: false` -- a review
-    // #found the prior fix let disabled plugins contribute to the local-exemption set, creating a
-    // #standing exemption for a dormant declaration
-    const config: QuartzConfig = {plugins: [{enabled: false, source: './maintenance-only'}]}
-    const lock: LockFile = {
-      plugins: {ghost: {source: './maintenance-only', commit: 'local', resolved: '/tmp/attacker'}},
-    }
-
-    // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
-
-    // #then it fails -- a disabled declaration earns no exemption, the same as a disabled remote
-    // #plugin's lock entry (see the symmetry test below)
-    expect(result.ok).toBe(false)
-    expect(result.errors).toEqual([
-      'lock entry "ghost" (./maintenance-only) is not an enabled plugin in quartz.config.yaml',
-    ])
-  })
-
-  it('SYMMETRY: a disabled local declaration and a disabled remote declaration are both orphaned identically', () => {
-    // #given two disabled plugins -- one local, one remote -- each with a matching lock entry. This
-    // #symmetry is the thing that must not drift: `checkLockfileCoverage`'s config loop already skips
-    // #disabled plugins before adding a remote source to `enabledRemoteSources`, so a disabled remote
-    // #plugin's lock entry is an orphan; a disabled LOCAL plugin's lock entry must be treated the
-    // #same way, not silently exempted
-    const config: QuartzConfig = {
-      plugins: [
-        {enabled: false, source: './local-plugin'},
-        {enabled: false, source: 'github:owner/remote-plugin'},
-      ],
-    }
-    const lock: LockFile = {
-      plugins: {
-        'local-plugin': {source: './local-plugin', commit: 'local'},
-        'remote-plugin': {source: 'github:owner/remote-plugin', commit: 'sha-remote'},
-      },
-    }
-
-    // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
-
-    // #then both entries are reported as orphans -- identical treatment for identical dormancy
-    expect(result.ok).toBe(false)
-    expect(result.errors).toEqual([
-      'lock entry "local-plugin" (./local-plugin) is not an enabled plugin in quartz.config.yaml',
-      'lock entry "remote-plugin" (github:owner/remote-plugin) is not an enabled plugin in quartz.config.yaml',
-    ])
-  })
-
-  it('SECURITY: does not let a remote-source lock entry bypass the orphan check merely by claiming commit: "local"', () => {
-    // #given a lock entry whose `source` is REMOTE (`github:evil/x`) but whose `commit` field is the
-    // #hand-writable string "local" -- `commit` is a value the lockfile itself controls and cannot be
-    // #trusted to gate an exemption. This forged entry has no matching config-declared LOCAL source
-    // #either (config only declares the unrelated remote `github:good/x`), so it must still be
-    // #reported as an orphan, alongside a genuine unrelated remote plugin that IS covered
-    const config: QuartzConfig = {plugins: [{enabled: true, source: 'github:good/x'}]}
-    const lock: LockFile = {
-      plugins: {
-        good: {source: 'github:good/x', commit: 'abc123'},
-        evil: {source: 'github:evil/x', commit: 'local'},
-      },
-    }
-
-    // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
-
-    // #then the forged entry is still reported as an orphan -- its self-declared commit grants it
-    // #nothing, and its remote source shape isn't in the config-declared local-sources set either
-    expect(result.ok).toBe(false)
-    expect(result.errors).toEqual(['lock entry "evil" (github:evil/x) is not an enabled plugin in quartz.config.yaml'])
-  })
-
-  it('fails with a commit-mismatch error when a config-declared local source has a non-"local" lock commit', () => {
-    // #given a config that declares a local plugin, and a matching lock entry whose `commit` is
-    // #something other than the "local" sentinel -- an internal inconsistency in the lockfile itself,
-    // #now that `commit` no longer participates in the exemption decision. Silently accepting this
-    // #would let `commit` drift from meaning anything, so it is reported as an error rather than ignored
-    const config: QuartzConfig = {plugins: [{enabled: true, source: './local-plugin'}]}
-    const lock: LockFile = {
-      plugins: {'local-plugin': {source: './local-plugin', commit: 'abc123'}},
-    }
-
-    // #when checking coverage
-    const result = checkLockfileCoverage(config, lock)
-
-    // #then it fails with the commit-mismatch error, not the orphan error
-    expect(result.ok).toBe(false)
-    expect(result.errors).toEqual([
-      'lock entry "local-plugin" has a local source but commit "abc123" is not "local" -- local plugins must record commit: "local"',
-    ])
-  })
-
-  it('regression: every enabled github: plugin in the real quartz-site config matches its real lock entry', async () => {
-    // #given the actual quartz-site/quartz.config.yaml and quartz.lock.json shipped in this repo
+  it('regression: every enabled github: plugin in the real quartz-site config matches its real lock entry, and the real local plugins stay inside the build-root boundary', async () => {
+    // #given the actual quartz-site/quartz.config.yaml and quartz.lock.json shipped in this repo.
+    // #This test anchors the boundary at quartz-site/ -- NOT the same root the real CI job uses.
+    // #publish-wiki.yaml's build job runs Gate A with `working-directory: quartz-build`, a scratch
+    // #checkout of pinned upstream Quartz onto which this repo's `quartz-site/local-plugin` is
+    // #copied (the "Overlay quartz-site theme" step) BEFORE the gate runs -- so the real boundary
+    // #root in CI is quartz-build/, a directory this test never constructs. Anchoring at
+    // #quartz-site/ here is still a valid check of THIS repo's source declarations (every real
+    // #local source is `./`-relative, so it resolves the same way under either root), but it is not
+    // #a substitute for exercising the actual CI topology -- per
+    // #docs/solutions/best-practices/verify-in-the-ci-topology-not-just-locally-2026-07-11.md, this
+    // #comment states that limitation explicitly rather than implying the two roots are the same one
+    const quartzSiteRoot = join(process.cwd(), 'quartz-site')
     const YAML = require('yaml') as typeof import('yaml')
-    const configRaw = await readFile(join(process.cwd(), 'quartz-site', 'quartz.config.yaml'), 'utf8')
-    const lockRaw = await readFile(join(process.cwd(), 'quartz-site', 'quartz.lock.json'), 'utf8')
+    const configRaw = await readFile(join(quartzSiteRoot, 'quartz.config.yaml'), 'utf8')
+    const lockRaw = await readFile(join(quartzSiteRoot, 'quartz.lock.json'), 'utf8')
     const config = YAML.parse(configRaw) as QuartzConfig
     const lock = JSON.parse(lockRaw) as LockFile
 
-    // #when checking coverage against the real, stricter classification
-    const result = checkLockfileCoverage(config, lock)
+    // #when checking coverage against the real, stricter classification with the real root
+    const result = checkLockfileCoverage(config, lock, quartzSiteRoot)
 
     // #then it still passes -- the real config uses only `github:` string sources and `./`-local
-    // #object sources, none of which are affected by closing the exemption for the other 3 remote forms
+    // #object sources (`./local-plugin` and `./local-plugin/sanitizer`), both of which resolve
+    // #inside quartz-site/ and are unaffected by closing either exemption gap
     expect(result.ok).toBe(true)
     expect(result.errors).toEqual([])
   })
@@ -847,38 +941,67 @@ describe('isLocalPluginSource', () => {
 })
 
 // ---------------------------------------------------------------------------
-// deriveConfigLocalSources — the ONLY trusted basis for the local exemption, keyed on what CONFIG
-// declares, never on the lock entry's own fields (see the SECURITY tests below for why).
+// isLocalPluginSourceWithinRoot — issue #3863: a SEPARATE question from `isLocalPluginSource`'s
+// shape check. Something can be path-shaped (local) and still point anywhere on disk; this
+// predicate is the repository-boundary check, tested directly since `checkLockfileCoverage`
+// exercises it only indirectly.
 // ---------------------------------------------------------------------------
 
-describe('deriveConfigLocalSources', () => {
-  it('collects a local string source', () => {
-    const config: QuartzConfig = {plugins: [{enabled: true, source: './local-plugin'}]}
-    expect(deriveConfigLocalSources(config)).toEqual(new Set(['./local-plugin']))
+describe('isLocalPluginSourceWithinRoot', () => {
+  it('rejects an absolute path outside the root', () => {
+    expect(isLocalPluginSourceWithinRoot('/tmp/attacker', '/repo')).toBe(false)
   })
 
-  it('collects a local object-form repo source', () => {
-    const config: QuartzConfig = {plugins: [{enabled: true, source: {repo: './local-plugin'}}]}
-    expect(deriveConfigLocalSources(config)).toEqual(new Set(['./local-plugin']))
+  it('rejects ../ traversal that escapes the root', () => {
+    expect(isLocalPluginSourceWithinRoot('../outside', '/repo')).toBe(false)
   })
 
-  it('does not collect a remote source', () => {
-    const config: QuartzConfig = {plugins: [{enabled: true, source: 'github:owner/repo'}]}
-    expect(deriveConfigLocalSources(config)).toEqual(new Set())
+  it('rejects a path that traverses out and back to a DIFFERENT, merely similarly-named directory (proves boundary is a real path segment, not a string prefix)', () => {
+    // #given a root of "/repo" and a source that resolves to "/repo-evil" -- a naive string-prefix
+    // #check (`resolvedSource.startsWith(resolvedRoot)`) would wrongly ACCEPT this, since
+    // #"/repo-evil".startsWith("/repo") is true; the real check requires either exact equality or a
+    // #path separator immediately after the root
+    expect(isLocalPluginSourceWithinRoot('../repo-evil', '/repo')).toBe(false)
   })
 
-  it('does not collect a source from a disabled plugin -- disabled means dormant, whether local or remote', () => {
-    // #given a disabled plugin with a local source -- `checkLockfileCoverage`'s own config loop
-    // #already skips disabled plugins before adding a REMOTE source to `enabledRemoteSources`, so a
-    // #disabled remote plugin's lock entry is reported as an orphan. Symmetry requires the same
-    // #dormancy to apply to a disabled LOCAL plugin: it must not grant a standing exemption either
-    const config: QuartzConfig = {plugins: [{enabled: false, source: './local-plugin'}]}
-    expect(deriveConfigLocalSources(config)).toEqual(new Set())
+  it('rejects resolution that escapes the root and comes back outside via a longer detour (proves resolution, not substring matching for ".." in the text)', () => {
+    // #given a source containing ".." that nonetheless resolves OUTSIDE the root -- this must be
+    // #caught by where the path actually lands after resolution, not by scanning the source text
+    expect(isLocalPluginSourceWithinRoot('./a/../../outside', '/repo')).toBe(false)
   })
 
-  it('returns an empty set for an empty or absent plugin list', () => {
-    expect(deriveConfigLocalSources({plugins: []})).toEqual(new Set())
-    expect(deriveConfigLocalSources({})).toEqual(new Set())
+  it('rejects a Windows drive-letter form outright, without attempting POSIX resolution', () => {
+    // #given a drive-letter source -- `path.resolve` on POSIX would NOT treat this as absolute (it
+    // #would be resolved as a relative-looking string), which could spuriously satisfy the
+    // #containment check; the drive-letter shape must be rejected before resolution runs at all
+    expect(isLocalPluginSourceWithinRoot(String.raw`C:\evil`, '/repo')).toBe(false)
+  })
+
+  it('accepts a direct child path staying inside the root', () => {
+    expect(isLocalPluginSourceWithinRoot('./local-plugin', '/repo')).toBe(true)
+  })
+
+  it('accepts a nested descendant path staying inside the root', () => {
+    expect(isLocalPluginSourceWithinRoot('./local-plugin/sanitizer', '/repo')).toBe(true)
+  })
+
+  it('accepts a path that traverses out and back to the SAME root (proves the check is containment, not merely banning "..")', () => {
+    // #given a source containing ".." that resolves back inside the root -- this must NOT be
+    // #rejected just because the text contains "..", since resolution (not string matching) is what
+    // #determines containment
+    expect(isLocalPluginSourceWithinRoot('./a/../local-plugin', '/repo')).toBe(true)
+  })
+
+  it('accepts the root itself', () => {
+    expect(isLocalPluginSourceWithinRoot('.', '/repo')).toBe(true)
+  })
+
+  it('does not treat a drive-letter-SHAPED substring appearing mid-string (not at the start) as a drive-letter form', () => {
+    // #given a relative, root-contained path that merely CONTAINS "C:\" somewhere after the start --
+    // #the drive-letter rejection must be anchored to the start of the string (`^`), not a bare
+    // #substring search, or a legitimate relative path with that text anywhere in it would be
+    // #wrongly rejected outright before resolution ever runs
+    expect(isLocalPluginSourceWithinRoot(String.raw`./legit/C:\notdrive`, '/repo')).toBe(true)
   })
 })
 
@@ -887,73 +1010,72 @@ describe('deriveConfigLocalSources', () => {
 // ---------------------------------------------------------------------------
 
 describe('checkLockfileIntegrity', () => {
-  it('skips a lock entry whose source matches a config-declared local source, never calling readHead for it', () => {
-    // #given a lock entry with a local source that IS declared in config, and no corresponding
-    // #readHead result (readHead would throw if ever called for it, proving the entry is skipped
-    // #rather than looked up and passing by coincidence)
-    const configLocalSources = deriveConfigLocalSources({plugins: [{enabled: true, source: './local-plugin'}]})
+  it('rejects a lock entry with a local string source outright, without ever calling readHead', () => {
+    // #given a lock entry with a local source -- readHead would throw if ever called for it, proving
+    // #the local entry is rejected before reaching the HEAD comparison, not skipped by an exemption
     const lock: LockFile = {plugins: {'local-plugin': {source: './local-plugin', commit: 'local'}}}
     const readHead = (name: string): string | null => {
       throw new Error(`readHead should not be called for local entry "${name}"`)
     }
 
     // #when checking integrity
-    const result = checkLockfileIntegrity(lock, configLocalSources, readHead)
+    const result = checkLockfileIntegrity(lock, readHead)
 
-    // #then it passes without ever consulting .git/HEAD for the local entry
-    expect(result.ok).toBe(true)
-    expect(result.errors).toEqual([])
+    // #then it fails -- local plugins must never appear in the lockfile at all
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual([
+      'lock entry "local-plugin" (./local-plugin) has a local source -- local plugins are resolved from quartz.config.yaml and must not appear in quartz.lock.json',
+    ])
   })
 
-  it('fails with a commit-mismatch error when a config-declared local entry does not record commit: "local", without consulting readHead', () => {
-    // #given a lock entry matching a config-declared local source but with a non-"local" commit --
-    // #the same inconsistency Gate A reports, using the same shared derivation and the same error text
-    const configLocalSources = deriveConfigLocalSources({plugins: [{enabled: true, source: './local-plugin'}]})
-    const lock: LockFile = {plugins: {'local-plugin': {source: './local-plugin', commit: 'abc123'}}}
+  it('rejects a lock entry with a local object-form source outright, without ever calling readHead', () => {
+    // #given a lock entry whose source is an object with a local `repo`
+    const lock: LockFile = {plugins: {'local-plugin': {source: {repo: './local-plugin'}, commit: 'local'}}}
     const readHead = (name: string): string | null => {
       throw new Error(`readHead should not be called for local entry "${name}"`)
     }
 
     // #when checking integrity
-    const result = checkLockfileIntegrity(lock, configLocalSources, readHead)
+    const result = checkLockfileIntegrity(lock, readHead)
 
-    // #then it fails with the commit-mismatch error, not a HEAD-comparison error
+    // #then it fails, rendered with the JSON label
     expect(result.ok).toBe(false)
     expect(result.errors).toEqual([
-      'lock entry "local-plugin" has a local source but commit "abc123" is not "local" -- local plugins must record commit: "local"',
+      'lock entry "local-plugin" ({"repo":"./local-plugin"}) has a local source -- local plugins are resolved from quartz.config.yaml and must not appear in quartz.lock.json',
     ])
   })
 
-  it('SECURITY: does not exempt a local-looking lock entry that has no matching config-declared local source', () => {
-    // #given a lock entry with a LOCAL-LOOKING source (`/tmp/attacker`) but NO config plugin declares
-    // #it -- this is the exact PR #3862 follow-up regression: the previous exemption inspected the
-    // #lock entry's own source shape, which the lockfile itself controls, so a forged local-looking
-    // #source slipped both the orphan check and readHead verification. `readHead` throwing if called
-    // #proves the entry is still routed through the normal (non-exempt) path
-    const configLocalSources = deriveConfigLocalSources({plugins: []})
-    const lock: LockFile = {plugins: {evil: {source: '/tmp/attacker', commit: 'local'}}}
-    const readHead = (): null => null
+  it('SECURITY: rejects the exact forged entry review found unchecked -- a local source with resolved pointing outside the repo', () => {
+    // #given the exact case review reproduced -- a local-source lock entry carrying `resolved:
+    // #"/tmp/attacker"`, a pointer the build actually consumes that no field-by-field check had
+    // #ever covered. readHead throwing proves the entry never reaches the HEAD comparison
+    const lock: LockFile = {
+      plugins: {evil: {source: {repo: './local-plugin'}, commit: 'local', resolved: '/tmp/attacker'}},
+    }
+    const readHead = (name: string): string | null => {
+      throw new Error(`readHead should not be called for local entry "${name}"`)
+    }
 
     // #when checking integrity
-    const result = checkLockfileIntegrity(lock, configLocalSources, readHead)
+    const result = checkLockfileIntegrity(lock, readHead)
 
-    // #then it fails as an unverified plugin -- the local-looking source earns no exemption without
-    // #a matching config declaration
+    // #then it fails regardless of `resolved` or any other lock field
     expect(result.ok).toBe(false)
-    expect(result.errors.some(e => e.includes('evil'))).toBe(true)
+    expect(result.errors).toEqual([
+      'lock entry "evil" ({"repo":"./local-plugin"}) has a local source -- local plugins are resolved from quartz.config.yaml and must not appear in quartz.lock.json',
+    ])
   })
 
   it('reports a malformed lock entry source distinctly, without ever calling readHead', () => {
     // #given a lock entry whose source is an object with no string `repo` -- readHead would throw if
     // #ever called for it, proving the malformed entry is caught before reaching the HEAD comparison
-    const configLocalSources = deriveConfigLocalSources({plugins: []})
     const lock: LockFile = {plugins: {broken: {source: {}, commit: 'unknown'}}}
     const readHead = (name: string): string | null => {
       throw new Error(`readHead should not be called for malformed entry "${name}"`)
     }
 
     // #when checking integrity
-    const result = checkLockfileIntegrity(lock, configLocalSources, readHead)
+    const result = checkLockfileIntegrity(lock, readHead)
 
     // #then it fails with the malformed-source message
     expect(result.ok).toBe(false)
@@ -962,46 +1084,63 @@ describe('checkLockfileIntegrity', () => {
     ])
   })
 
-  it('AGREEMENT: Gate B consumes the EXACT set deriveConfigLocalSources returns for this config, and both gates reach the same verdict on a genuine and a forged entry', () => {
-    // #given a lock with three entries: a genuine local entry declared in config, a covered remote
-    // #entry, and a FORGED local-looking entry with no config declaration. A prior version of this
-    // #test only asserted both gates happened to agree on one fixture, which would still pass if they
-    // #diverged and coincidentally landed on the same verdict. This version pins the actual derived
-    // #set FIRST -- proving Gate B is really consuming `deriveConfigLocalSources`'s output, not some
-    // #independently-computed set that merely produces the same answer here
-    const config: QuartzConfig = {
-      plugins: [
-        {enabled: true, source: './local-plugin'},
-        {enabled: true, source: 'github:owner/repo'},
-      ],
+  it('SECURITY: reports a null value in lock.plugins with the malformed-entry envelope, not a thrown TypeError, without ever calling readHead', () => {
+    // #given a lock.plugins map containing a `null` value under some key -- before this fix,
+    // #`entry.source` on a null `entry` threw `TypeError: Cannot read properties of null (reading
+    // #'source')`, uncaught, inside `checkLockfileIntegrity` itself. readHead throwing if called
+    // #proves the malformed entry is caught before reaching the HEAD comparison
+    const lock = {plugins: {a: null}} as unknown as LockFile
+    const readHead = (name: string): string | null => {
+      throw new Error(`readHead should not be called for malformed entry "${name}"`)
     }
+
+    // #when checking integrity
+    const result = checkLockfileIntegrity(lock, readHead)
+
+    // #then it fails with a dedicated malformed-entry message, not a crash
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(['lock entry "a" is not a valid entry (not an object): null'])
+  })
+
+  it('reports a non-null, non-object value in lock.plugins as malformed, without ever calling readHead (distinguishes the two halves of the entry-type guard)', () => {
+    // #given a lock.plugins map containing a bare number value -- neither `null` nor a valid object
+    const lock = {plugins: {a: 42}} as unknown as LockFile
+    const readHead = (name: string): string | null => {
+      throw new Error(`readHead should not be called for malformed entry "${name}"`)
+    }
+
+    // #when checking integrity
+    const result = checkLockfileIntegrity(lock, readHead)
+
+    // #then it fails with the malformed-entry message
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(['lock entry "a" is not a valid entry (not an object): 42'])
+  })
+
+  it('AGREEMENT: both gates apply the identical local-source rejection and reach the same verdict on a genuine remote entry and a forged local entry', () => {
+    // #given a lock with a covered remote entry and a forged local-looking entry -- both gates must
+    // #reach the same verdict for each, since both now apply the exact same rule with no derived
+    // #intermediate set for either to consume differently
+    const config: QuartzConfig = {plugins: [{enabled: true, source: 'github:owner/repo'}]}
     const lock: LockFile = {
       plugins: {
-        'local-plugin': {source: './local-plugin', commit: 'local'},
         remote: {source: 'github:owner/repo', commit: 'sha-remote'},
         evil: {source: '/tmp/attacker', commit: 'local'},
       },
     }
-    const configLocalSources = deriveConfigLocalSources(config)
-
-    // #then the derived set is exactly what config declares as local -- one entry, the local plugin
-    expect(configLocalSources).toEqual(new Set(['./local-plugin']))
-
     const readHead = (name: string): string | null => (name === 'remote' ? 'sha-remote' : null)
 
-    // #when checking both gates, Gate B with that exact derived set
-    const coverageResult = checkLockfileCoverage(config, lock)
-    const integrityResult = checkLockfileIntegrity(lock, configLocalSources, readHead)
+    // #when checking both gates
+    const coverageResult = checkLockfileCoverage(config, lock, TEST_ROOT)
+    const integrityResult = checkLockfileIntegrity(lock, readHead)
 
-    // #then both gates agree: pass for the genuine local and remote entries, fail (naming "evil") for
-    // #the forged entry -- in both gates
+    // #then both gates agree: pass for the genuine remote entry, fail (naming "evil") for the forged
+    // #local entry -- in both gates
     expect(coverageResult.ok).toBe(false)
     expect(coverageResult.errors.some(e => e.includes('evil'))).toBe(true)
-    expect(coverageResult.errors.some(e => e.includes('local-plugin'))).toBe(false)
     expect(coverageResult.errors.some(e => e.includes('"remote"'))).toBe(false)
     expect(integrityResult.ok).toBe(false)
     expect(integrityResult.errors.some(e => e.includes('evil'))).toBe(true)
-    expect(integrityResult.errors.some(e => e.includes('local-plugin'))).toBe(false)
     expect(integrityResult.errors.some(e => e.includes('"remote"'))).toBe(false)
   })
 
@@ -1016,7 +1155,7 @@ describe('checkLockfileIntegrity', () => {
     const readHead = (name: string): string | null => (name === 'plugin-a' ? 'sha-a' : 'sha-b')
 
     // #when checking integrity
-    const result = checkLockfileIntegrity(lock, new Set(), readHead)
+    const result = checkLockfileIntegrity(lock, readHead)
 
     // #then it passes
     expect(result.ok).toBe(true)
@@ -1029,7 +1168,7 @@ describe('checkLockfileIntegrity', () => {
     const readHead = (): string => 'sha-drifted'
 
     // #when checking integrity
-    const result = checkLockfileIntegrity(lock, new Set(), readHead)
+    const result = checkLockfileIntegrity(lock, readHead)
 
     // #then it fails naming the plugin
     expect(result.ok).toBe(false)
@@ -1042,7 +1181,7 @@ describe('checkLockfileIntegrity', () => {
     const readHead = (): string => 'ref: refs/heads/main'
 
     // #when checking integrity
-    const result = checkLockfileIntegrity(lock, new Set(), readHead)
+    const result = checkLockfileIntegrity(lock, readHead)
 
     // #then it fails — branch drift never equals a pinned SHA
     expect(result.ok).toBe(false)
@@ -1055,7 +1194,7 @@ describe('checkLockfileIntegrity', () => {
     const readHead = (): null => null
 
     // #when checking integrity
-    const result = checkLockfileIntegrity(lock, new Set(), readHead)
+    const result = checkLockfileIntegrity(lock, readHead)
 
     // #then it fails naming the missing plugin
     expect(result.ok).toBe(false)
@@ -1183,20 +1322,13 @@ describe('runCli', () => {
   })
 
   it('integrity mode exits 0 when all plugin HEADs match the lock', async () => {
-    // #given a config declaring the plugin, a matching lock entry, and a matching
-    // #.quartz/plugins/<name>/.git/HEAD fixture -- integrity mode now loads quartz.config.yaml too,
-    // #to derive which lock entries are exempt as local
-    await writeFile(
-      join(dir, 'quartz.config.yaml'),
-      'plugins:\n  - enabled: true\n    source: github:quartz-community/plugin-a\n',
-      'utf8',
-    )
+    // #given a matching lock entry and a matching .quartz/plugins/<name>/.git/HEAD fixture --
+    // #integrity mode no longer loads quartz.config.yaml at all, since it has no exemption to derive
     await writeFile(
       join(dir, 'quartz.lock.json'),
       JSON.stringify({plugins: {'plugin-a': {source: 'github:quartz-community/plugin-a', commit: 'sha-a'}}}),
       'utf8',
     )
-    await symlinkRepoYamlInto(dir)
     const headDir = join(dir, '.quartz', 'plugins', 'plugin-a', '.git')
     await mkdir(headDir, {recursive: true})
     await writeFile(join(headDir, 'HEAD'), 'sha-a\n', 'utf8')
@@ -1211,11 +1343,8 @@ describe('runCli', () => {
   })
 
   it('integrity mode treats a lockfile with no "plugins" key as zero plugins, without throwing', async () => {
-    // #given an empty config and a lock file that omits the "plugins" key entirely (not even an
-    // #empty object)
-    await writeFile(join(dir, 'quartz.config.yaml'), 'plugins: []\n', 'utf8')
+    // #given a lock file that omits the "plugins" key entirely (not even an empty object)
     await writeFile(join(dir, 'quartz.lock.json'), JSON.stringify({}), 'utf8')
-    await symlinkRepoYamlInto(dir)
 
     // #when running the integrity CLI mode
     const result = await runCli(['integrity'], dir)
@@ -1227,19 +1356,12 @@ describe('runCli', () => {
   })
 
   it('integrity mode exits 1 with the error on stderr when a plugin dir is missing', async () => {
-    // #given a config declaring the plugin, a matching lock entry, and no corresponding
-    // #.quartz/plugins directory
-    await writeFile(
-      join(dir, 'quartz.config.yaml'),
-      'plugins:\n  - enabled: true\n    source: github:quartz-community/plugin-a\n',
-      'utf8',
-    )
+    // #given a matching lock entry and no corresponding .quartz/plugins directory
     await writeFile(
       join(dir, 'quartz.lock.json'),
       JSON.stringify({plugins: {'plugin-a': {source: 'github:quartz-community/plugin-a', commit: 'sha-a'}}}),
       'utf8',
     )
-    await symlinkRepoYamlInto(dir)
 
     // #when running the integrity CLI mode
     const result = await runCli(['integrity'], dir)
@@ -1254,13 +1376,7 @@ describe('runCli', () => {
   })
 
   it('integrity mode joins multiple failure lines with real newlines and leaves stdout empty', async () => {
-    // #given a config declaring both plugins and two lock entries, neither with a corresponding
-    // #.quartz/plugins directory
-    await writeFile(
-      join(dir, 'quartz.config.yaml'),
-      'plugins:\n  - enabled: true\n    source: github:quartz-community/plugin-a\n  - enabled: true\n    source: github:quartz-community/plugin-b\n',
-      'utf8',
-    )
+    // #given two lock entries, neither with a corresponding .quartz/plugins directory
     await writeFile(
       join(dir, 'quartz.lock.json'),
       JSON.stringify({
@@ -1271,7 +1387,6 @@ describe('runCli', () => {
       }),
       'utf8',
     )
-    await symlinkRepoYamlInto(dir)
 
     // #when running the integrity CLI mode
     const result = await runCli(['integrity'], dir)
@@ -1385,27 +1500,7 @@ describe('runCli coverage mode — yaml resolution topology', () => {
     expect(result.stderr).toContain(quartzBuild)
   })
 
-  it('integrity mode also exits 2 with a clear resolution error when yaml is unreachable from cwd', async () => {
-    // #given the same CI-shaped quartz-build/ dir with NO node_modules/yaml, but running INTEGRITY
-    // #mode -- integrity mode now loads quartz.config.yaml too (to derive the local-source exemption
-    // #set), so it must fail the exact same way coverage mode does when yaml can't be resolved
-    const quartzBuild = join(ciDir, 'quartz-build')
-    await mkdir(quartzBuild, {recursive: true})
-    await writeFile(join(quartzBuild, 'quartz.config.yaml'), 'plugins: []\n', 'utf8')
-    await writeFile(join(quartzBuild, 'quartz.lock.json'), JSON.stringify({plugins: {}}), 'utf8')
-
-    // #when running the integrity CLI mode
-    const result = await runCli(['integrity'], quartzBuild)
-
-    // #then it exits 2 with the SPECIFIC resolution-failure phrase, distinguished from the
-    // #read/parse-failure message the same way as the coverage-mode test above
-    expect(result.exitCode).toBe(2)
-    expect(result.stdout).toBe('')
-    expect(result.stderr).toContain("could not resolve the 'yaml' package")
-    expect(result.stderr).toContain(quartzBuild)
-  })
-
-  it('integrity mode exits 2 with gate-shaped stderr, not an uncaught exception, when quartz.config.yaml is missing', async () => {
+  it('coverage mode exits 2 with gate-shaped stderr, not an uncaught exception, when quartz.config.yaml is missing', async () => {
     // #given a fixture dir with a resolvable `yaml` package but NO quartz.config.yaml file at all --
     // #a review found `loadQuartzConfig` only caught the yaml-PACKAGE-resolution failure; the
     // #subsequent `readFile` for the config file itself was uncaught, so a missing config crashed
@@ -1415,8 +1510,8 @@ describe('runCli coverage mode — yaml resolution topology', () => {
     await writeFile(join(quartzBuild, 'quartz.lock.json'), JSON.stringify({plugins: {}}), 'utf8')
     await symlinkRepoYamlInto(quartzBuild)
 
-    // #when running the integrity CLI mode with no quartz.config.yaml present
-    const result = await runCli(['integrity'], quartzBuild)
+    // #when running the coverage CLI mode with no quartz.config.yaml present
+    const result = await runCli(['coverage'], quartzBuild)
 
     // #then it returns the gate's own exit-code-2 envelope, not a thrown/uncaught exception
     expect(result.exitCode).toBe(2)
@@ -1425,7 +1520,7 @@ describe('runCli coverage mode — yaml resolution topology', () => {
     expect(result.stderr).toContain(quartzBuild)
   })
 
-  it('integrity mode exits 2 with gate-shaped stderr, not an uncaught exception, when quartz.config.yaml is malformed YAML', async () => {
+  it('coverage mode exits 2 with gate-shaped stderr, not an uncaught exception, when quartz.config.yaml is malformed YAML', async () => {
     // #given a fixture dir with a resolvable `yaml` package and a quartz.config.yaml file containing
     // #syntactically invalid YAML -- `YAML.parse` throwing was likewise uncaught before this fix
     const quartzBuild = join(ciDir, 'quartz-build')
@@ -1434,13 +1529,161 @@ describe('runCli coverage mode — yaml resolution topology', () => {
     await writeFile(join(quartzBuild, 'quartz.lock.json'), JSON.stringify({plugins: {}}), 'utf8')
     await symlinkRepoYamlInto(quartzBuild)
 
-    // #when running the integrity CLI mode with malformed YAML
-    const result = await runCli(['integrity'], quartzBuild)
+    // #when running the coverage CLI mode with malformed YAML
+    const result = await runCli(['coverage'], quartzBuild)
 
     // #then it returns the gate's own exit-code-2 envelope, not a thrown/uncaught exception
     expect(result.exitCode).toBe(2)
     expect(result.stdout).toBe('')
     expect(result.stderr).toContain('quartz.config.yaml')
+    expect(result.stderr).toContain(quartzBuild)
+  })
+
+  it('coverage mode exits 2 with gate-shaped stderr, not a dereference crash, when quartz.config.yaml is empty or comments-only', async () => {
+    // #given a quartz.config.yaml that is empty (or contains only comments) -- `YAML.parse` returns
+    // #`null` for this input rather than throwing, so it exits `loadQuartzConfig`'s try block as
+    // #"success" and a later `config.plugins ?? []` dereference on `null` would throw
+    // #`TypeError: Cannot read properties of null (reading 'plugins')`, uncaught, exit 1 (not the
+    // #gate's exit-2 envelope) -- reproduced verbatim before this fix
+    const quartzBuild = join(ciDir, 'quartz-build')
+    await mkdir(quartzBuild, {recursive: true})
+    await writeFile(join(quartzBuild, 'quartz.config.yaml'), '# just a comment, no content\n', 'utf8')
+    await writeFile(join(quartzBuild, 'quartz.lock.json'), JSON.stringify({plugins: {}}), 'utf8')
+    await symlinkRepoYamlInto(quartzBuild)
+
+    // #when running the coverage CLI mode with a comments-only config
+    const result = await runCli(['coverage'], quartzBuild)
+
+    // #then it returns the gate's own exit-code-2 envelope, not a TypeError crash
+    expect(result.exitCode).toBe(2)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('quartz.config.yaml')
+    expect(result.stderr).toContain('did not parse to an object')
+  })
+
+  it('coverage mode exits 2 with gate-shaped stderr, not a dereference crash, when quartz.config.yaml parses to a scalar', async () => {
+    // #given a quartz.config.yaml whose content is a bare YAML scalar (plain text with no mapping
+    // #structure) -- `YAML.parse` returns the string itself rather than an object or null, so this
+    // #exercises the `typeof parsed !== 'object'` half of the guard independently from the
+    // #`parsed === null` half the comments-only test above exercises
+    const quartzBuild = join(ciDir, 'quartz-build')
+    await mkdir(quartzBuild, {recursive: true})
+    await writeFile(join(quartzBuild, 'quartz.config.yaml'), 'just plain text, not a mapping\n', 'utf8')
+    await writeFile(join(quartzBuild, 'quartz.lock.json'), JSON.stringify({plugins: {}}), 'utf8')
+    await symlinkRepoYamlInto(quartzBuild)
+
+    // #when running the coverage CLI mode with a scalar-parsing config
+    const result = await runCli(['coverage'], quartzBuild)
+
+    // #then it returns the gate's own exit-code-2 envelope, not a TypeError crash
+    expect(result.exitCode).toBe(2)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('quartz.config.yaml')
+    expect(result.stderr).toContain('did not parse to an object')
+  })
+
+  it('coverage mode exits 2 with gate-shaped stderr, not a dereference crash, when quartz.lock.json parses to a scalar', async () => {
+    // #given a quartz.lock.json whose content is valid JSON but a bare scalar string, not an object
+    const quartzBuild = join(ciDir, 'quartz-build')
+    await mkdir(quartzBuild, {recursive: true})
+    await writeFile(join(quartzBuild, 'quartz.config.yaml'), 'plugins: []\n', 'utf8')
+    await writeFile(join(quartzBuild, 'quartz.lock.json'), '"just a string"', 'utf8')
+    await symlinkRepoYamlInto(quartzBuild)
+
+    // #when running the coverage CLI mode with a scalar-parsing lockfile
+    const result = await runCli(['coverage'], quartzBuild)
+
+    // #then it returns the gate's own exit-code-2 envelope, not a TypeError crash
+    expect(result.exitCode).toBe(2)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('quartz.lock.json')
+    expect(result.stderr).toContain('did not parse to an object')
+  })
+
+  it('coverage mode exits 2 with gate-shaped stderr, not a dereference crash, when quartz.lock.json parses to null', async () => {
+    // #given a quartz.lock.json whose content is the valid JSON literal `null`
+    const quartzBuild = join(ciDir, 'quartz-build')
+    await mkdir(quartzBuild, {recursive: true})
+    await writeFile(join(quartzBuild, 'quartz.config.yaml'), 'plugins: []\n', 'utf8')
+    await writeFile(join(quartzBuild, 'quartz.lock.json'), 'null', 'utf8')
+    await symlinkRepoYamlInto(quartzBuild)
+
+    // #when running the coverage CLI mode with a null-parsing lockfile
+    const result = await runCli(['coverage'], quartzBuild)
+
+    // #then it returns the gate's own exit-code-2 envelope, not a TypeError crash
+    expect(result.exitCode).toBe(2)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('quartz.lock.json')
+    expect(result.stderr).toContain('did not parse to an object')
+  })
+
+  it('coverage mode exits 2 with gate-shaped stderr, not an uncaught exception, when quartz.lock.json is missing', async () => {
+    // #given a valid config but NO quartz.lock.json file -- the lockfile is the artifact both gates
+    // #exist to distrust, so it deserves at least the same envelope treatment the config file gets,
+    // #not a raw ENOENT stack trace
+    const quartzBuild = join(ciDir, 'quartz-build')
+    await mkdir(quartzBuild, {recursive: true})
+    await writeFile(join(quartzBuild, 'quartz.config.yaml'), 'plugins: []\n', 'utf8')
+    await symlinkRepoYamlInto(quartzBuild)
+
+    // #when running the coverage CLI mode with no quartz.lock.json present
+    const result = await runCli(['coverage'], quartzBuild)
+
+    // #then it returns the gate's own exit-code-2 envelope, not a thrown/uncaught exception
+    expect(result.exitCode).toBe(2)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('quartz.lock.json')
+    expect(result.stderr).toContain(quartzBuild)
+  })
+
+  it('coverage mode exits 2 with gate-shaped stderr, not an uncaught exception, when quartz.lock.json is malformed JSON', async () => {
+    // #given a valid config but a quartz.lock.json containing syntactically invalid JSON
+    const quartzBuild = join(ciDir, 'quartz-build')
+    await mkdir(quartzBuild, {recursive: true})
+    await writeFile(join(quartzBuild, 'quartz.config.yaml'), 'plugins: []\n', 'utf8')
+    await writeFile(join(quartzBuild, 'quartz.lock.json'), '{not valid json', 'utf8')
+    await symlinkRepoYamlInto(quartzBuild)
+
+    // #when running the coverage CLI mode with malformed JSON
+    const result = await runCli(['coverage'], quartzBuild)
+
+    // #then it returns the gate's own exit-code-2 envelope, not a thrown/uncaught exception
+    expect(result.exitCode).toBe(2)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('quartz.lock.json')
+    expect(result.stderr).toContain(quartzBuild)
+  })
+
+  it('integrity mode exits 2 with gate-shaped stderr, not an uncaught exception, when quartz.lock.json is missing', async () => {
+    // #given NO quartz.lock.json file at all -- integrity mode no longer touches quartz.config.yaml,
+    // #so this is the only file it needs to guard
+    const quartzBuild = join(ciDir, 'quartz-build')
+    await mkdir(quartzBuild, {recursive: true})
+
+    // #when running the integrity CLI mode with no quartz.lock.json present
+    const result = await runCli(['integrity'], quartzBuild)
+
+    // #then it returns the gate's own exit-code-2 envelope, not a thrown/uncaught exception
+    expect(result.exitCode).toBe(2)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('quartz.lock.json')
+    expect(result.stderr).toContain(quartzBuild)
+  })
+
+  it('integrity mode exits 2 with gate-shaped stderr, not an uncaught exception, when quartz.lock.json is malformed JSON', async () => {
+    // #given a quartz.lock.json containing syntactically invalid JSON
+    const quartzBuild = join(ciDir, 'quartz-build')
+    await mkdir(quartzBuild, {recursive: true})
+    await writeFile(join(quartzBuild, 'quartz.lock.json'), '{not valid json', 'utf8')
+
+    // #when running the integrity CLI mode with malformed JSON
+    const result = await runCli(['integrity'], quartzBuild)
+
+    // #then it returns the gate's own exit-code-2 envelope, not a thrown/uncaught exception
+    expect(result.exitCode).toBe(2)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('quartz.lock.json')
     expect(result.stderr).toContain(quartzBuild)
   })
 })
