@@ -11,6 +11,7 @@ import process from 'node:process'
 export interface QuartzPluginObjectSource {
   repo?: string
   subdir?: string
+  ref?: string
 }
 
 export interface QuartzConfigPlugin {
@@ -23,8 +24,14 @@ export interface QuartzConfig {
 }
 
 export interface LockPluginEntry {
-  source: string
+  // Quartz's plugin-git-handlers.js writes `source` verbatim from the config entry -- an object
+  // config source produces an object here, not a normalized string.
+  source: string | QuartzPluginObjectSource
   commit: string
+  ref?: string
+  subdir?: string
+  resolved?: string
+  installedAt?: string
 }
 
 export interface LockFile {
@@ -44,18 +51,94 @@ export interface CoverageGateResult extends GateResult {
 // checkLockfileCoverage — Gate A (pre-install): config<->lock coverage
 // ---------------------------------------------------------------------------
 
+/** Mirrors Quartz's `isLocalSource`: `./`, `../`, `/`, or a Windows drive path. */
+export function isLocalPluginSource(source: string): boolean {
+  return source.startsWith('./') || source.startsWith('../') || source.startsWith('/') || /^[A-Z]:[\\/]/i.test(source)
+}
+
 /**
- * Verify that every enabled remote (github:) plugin in `config` has a
- * matching entry in `lock`, and that every lock entry corresponds to an
- * enabled config plugin (no orphans).
+ * Derive the source string a lock entry would need to be classified as local -- a string source is
+ * itself; an object source uses `.repo` when it is a string. Returns `null` when no usable source
+ * string exists (e.g. an object source with no `repo`).
+ */
+function lockEntrySourceString(entry: LockPluginEntry): string | null {
+  if (typeof entry.source === 'string') return entry.source
+  if (typeof entry.source.repo === 'string') return entry.source.repo
+  return null
+}
+
+/**
+ * Whether a lock entry's own `source` shape is local, per `isLocalPluginSource`. This is the ONLY
+ * predicate either gate may use to exempt a lock entry from remote-plugin handling --
+ * `entry.commit` must never participate in that decision. `commit` is a value the lockfile itself
+ * controls, so keying an exemption on `commit === 'local'` lets a forged lock entry (a remote
+ * `source` paired with a hand-written `commit: 'local'`) claim the local exemption and slip both
+ * Gate A's orphan check and Gate B's HEAD-integrity check. `source` shape cannot be forged the same
+ * way: it is either the literal config-declared source (Gate A) or an already-trusted lock field
+ * that Gate B's integrity check is the very thing verifying (Gate B does not re-derive `source`
+ * from anywhere the plugin controls).
+ */
+export function isLocalLockEntry(entry: LockPluginEntry): boolean {
+  const sourceString = lockEntrySourceString(entry)
+  return sourceString !== null && isLocalPluginSource(sourceString)
+}
+
+/**
+ * Message for a lock entry whose `source` is local but whose `commit` isn't the local sentinel --
+ * an inconsistency worth failing on rather than silently accepting, now that `commit` no longer
+ * grants the local exemption itself.
+ */
+function localCommitMismatchError(name: string, entry: LockPluginEntry): string {
+  return `lock entry "${name}" has a local source but commit "${entry.commit}" is not "local" -- local plugins must record commit: "local"`
+}
+
+/**
+ * Classify a Quartz plugin-source string as remote per `parseGitSource`'s grammar (order matters:
+ * `github:`, then `git+`, then `https://`; anything else is unparseable). There is no bare
+ * two-part `owner/repo` shorthand here -- that form exists only in `gitLoader.ts::parsePluginSource`
+ * (the build-time installer used by `install-plugins.ts`), not in `plugin-data.js::parseGitSource`
+ * (what actually writes the lockfile in `plugin-git-handlers.js`). Callers must check
+ * `isLocalPluginSource` first -- this function does not itself exempt local paths.
+ */
+function isRemotePluginSourceString(source: string): boolean {
+  if (source.startsWith('github:')) return true
+  if (source.startsWith('git+')) return true
+  return source.startsWith('https://')
+}
+
+/**
+ * Verify that every enabled remote plugin in `config` has a matching entry
+ * in `lock`, and that every lock entry corresponds to an enabled config
+ * plugin (no orphans).
  *
- * Ported verbatim from the workflow's inline Gate A `node -e` script:
- * - String sources not prefixed `github:` are treated as local and skipped.
- * - Object sources with a `repo` starting `./` are local and exempt.
- * - Object sources with a `subdir` property are rejected outright.
- * - Object sources with `repo` are normalized to a `github:` prefix before matching.
- * - Disabled plugins (`enabled === false`) are skipped entirely.
- * - Lock entries whose source isn't in the enabled-remote-source set are orphans.
+ * Quartz's plugin-source grammar, verified at the pinned SHA
+ * `9cf87ff1c248a8ca551093214b0fec3b31415009`. Gate A models `quartz/cli/plugin-data.js::parseGitSource`,
+ * not `quartz/plugins/loader/gitLoader.ts::parsePluginSource` -- the former is what
+ * `plugin-git-handlers.js` calls to actually write `quartz.lock.json`, so it is the grammar that
+ * governs lock coverage. `parseGitSource`, in order:
+ * - `./p`, `../p`, `/p`, or a Windows drive path (`C:\p`) -> local, exempt.
+ * - `github:owner/repo[#ref]` -> remote, checked against the lock verbatim.
+ * - `git+<url>[#ref]` -> remote, checked against the lock verbatim.
+ * - `https://<url>[#ref]` -> remote, checked against the lock verbatim.
+ * - anything else -> Quartz throws `Cannot parse plugin source`; this gate reports it as an error
+ *   instead of silently exempting it. (Note: `parsePluginSource` in `gitLoader.ts` additionally
+ *   accepts a bare two-part `owner/repo` shorthand, but that parser never runs during lock writes,
+ *   so a bare `owner/repo` here is correctly reported unparseable, not silently trusted.)
+ *
+ * Object sources are rejected outright unless their `repo` is local: Quartz's lockfile writer
+ * stores the config `source` value verbatim, so an object config source produces an object in
+ * `lock.plugins[x].source`, which can never `===`-match a normalized string. The gate compares
+ * source strings, so a remote plugin must be declared as a string source to be lock-coverable.
+ * `subdir` and `ref` are rejected the same way for the same reason -- both are stored as separate
+ * lock fields alongside a verbatim `source`, so neither can be folded into a normalized string
+ * identity either. An object source whose `repo` is neither local nor a usable non-empty string
+ * (`{}`, `{repo: ''}`, `{repo: 123}`, `{name: 'x'}` with no `repo`) is reported as malformed rather
+ * than silently ignored.
+ *
+ * Disabled plugins (`enabled === false`) are skipped entirely. Lock entries are exempted from the
+ * orphan check by `isLocalLockEntry` -- their OWN `source` shape, never `entry.commit` (see that
+ * function's doc for why keying the exemption on `commit` is a fail-open). A local lock entry
+ * whose `commit` isn't the `'local'` sentinel is a self-inconsistency and is reported as an error.
  */
 export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): CoverageGateResult {
   const lockPlugins = lock.plugins ?? {}
@@ -69,9 +152,11 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
     const source = plugin.source
 
     if (typeof source === 'string') {
-      // Bound: any string source not prefixed `github:` is exempt from lock coverage -- Quartz's
-      // plugin-source grammar (what other prefixes/shapes exist) is external to this repo.
-      if (!source.startsWith('github:')) continue // not a remote plugin
+      if (isLocalPluginSource(source)) continue // local path source, exempt
+      if (!isRemotePluginSourceString(source)) {
+        errors.push(`unparseable plugin source (Quartz would throw "Cannot parse plugin source"): ${source}`)
+        continue
+      }
       enabledRemoteSources.add(source)
       const entry = Object.values(lockPlugins).some(p => p.source === source)
       if (!entry) errors.push(`missing lock entry for enabled remote plugin: ${source}`)
@@ -82,24 +167,42 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
     // non-object (malformed YAML) has no `.repo`/`subdir` and falls through every check inside with no error -- same as before.
     if (source) {
       // Ordering is intentional: a local `./` repo is exempt even if `subdir` is also present -- the
-      // local-path check runs before the subdir-rejection check below.
-      if (typeof source.repo === 'string' && source.repo.startsWith('./')) continue // local path source, exempt
+      // local-path check runs before the subdir/ref/remote-object-rejection checks below.
+      if (typeof source.repo === 'string' && isLocalPluginSource(source.repo)) continue // local path source, exempt
       if (Object.prototype.hasOwnProperty.call(source, 'subdir')) {
         errors.push(`enabled remote plugin uses rejected object-source subdir: ${JSON.stringify(source)}`)
         continue
       }
+      if (Object.prototype.hasOwnProperty.call(source, 'ref')) {
+        errors.push(`enabled remote plugin uses rejected object-source ref: ${JSON.stringify(source)}`)
+        continue
+      }
+      // A remote object source is rejected outright -- Quartz's lockfile writer stores `source`
+      // verbatim, so an object here produces an object in the lock, which can never `===`-match a
+      // normalized string. Declare remote plugins as string sources so coverage can compare them.
       if (typeof source.repo === 'string' && source.repo.length > 0) {
-        const normalized = `github:${source.repo}`
-        enabledRemoteSources.add(normalized)
-        const entry = Object.values(lockPlugins).some(p => p.source === normalized)
-        if (!entry) errors.push(`missing lock entry for enabled remote plugin: ${normalized}`)
+        errors.push(
+          `enabled remote plugin uses rejected object-source form; declare it as a string source instead: ${JSON.stringify(source)}`,
+        )
+      } else if (typeof source === 'object') {
+        errors.push(
+          `enabled plugin has a malformed object source (missing or invalid "repo"): ${JSON.stringify(source)}`,
+        )
       }
     }
   }
 
   for (const [name, entry] of Object.entries(lockPlugins)) {
-    if (!enabledRemoteSources.has(entry.source)) {
-      errors.push(`lock entry "${name}" (${entry.source}) is not an enabled plugin in quartz.config.yaml`)
+    if (isLocalLockEntry(entry)) {
+      if (entry.commit !== 'local') errors.push(localCommitMismatchError(name, entry))
+      continue
+    }
+    // Membership is tested on the rendered label rather than on `entry.source` itself: the set only
+    // ever holds raw config strings, so a JSON-rendered object source can never match it, and an
+    // object lock entry with no enabled counterpart is still reported rather than silently skipped.
+    const sourceLabel = typeof entry.source === 'string' ? entry.source : JSON.stringify(entry.source)
+    if (!enabledRemoteSources.has(sourceLabel)) {
+      errors.push(`lock entry "${name}" (${sourceLabel}) is not an enabled plugin in quartz.config.yaml`)
     }
   }
 
@@ -118,12 +221,21 @@ export function checkLockfileCoverage(config: QuartzConfig, lock: LockFile): Cov
  * plugin, or `null` if the plugin directory/HEAD file is missing. A `ref:
  * refs/heads/...` line (branch checkout) never equals a pinned SHA, so it
  * naturally fails the equality check — this is how branch drift is caught.
+ *
+ * Local entries (`isLocalLockEntry`, the SAME predicate Gate A uses) are skipped: a local plugin is
+ * symlinked, not cloned, so it has no meaningful `.git/HEAD` to compare against a pinned commit --
+ * without this exemption it would fail either as a missing HEAD or as a branch-ref mismatch. A local
+ * entry whose `commit` isn't the `'local'` sentinel is still reported, the same as in Gate A.
  */
 export function checkLockfileIntegrity(lock: LockFile, readHead: (name: string) => string | null): GateResult {
   const errors: string[] = []
   const plugins = lock.plugins ?? {}
 
   for (const [name, entry] of Object.entries(plugins)) {
+    if (isLocalLockEntry(entry)) {
+      if (entry.commit !== 'local') errors.push(localCommitMismatchError(name, entry))
+      continue
+    }
     const head = readHead(name)
     if (head === null) {
       errors.push(`missing plugin directory/.git/HEAD for "${name}"`)
