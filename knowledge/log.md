@@ -4798,3 +4798,94 @@ Sources: https://github.com/marcusrbrown/tokentoilet
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@a26d34b5e83f06b429705ee0a6c70afb5923245c
+
+## [2026-09-08 09:12] ingest | repo:marcusrbrown/vbs
+
+Surveyed `marcusrbrown/vbs` (public, `node_id R_kgDOPOixzg`) at HEAD `986b1c2`,
+20 days and 11 commits past the prior survey SHA `c368b1c`. Every commit in the
+window is `mrbro-bot[bot]`; six files changed (three workflow pin lines,
+`package.json`, `pnpm-workspace.yaml`, the lockfile). By volume this is the
+quietest interval ever recorded on the page — and the volume is the finding.
+
+Headline: two independently-defensible design choices interlock into a
+repository that cannot advance a single dependency.
+
+1. **A grouped PR froze the whole queue.** #740 (`renovate/all-minor-patch`,
+   opened 2026-08-24) carries `@bfra.me/eslint-config` `0.51.2 → 0.52.1`, which
+   newly flags `unicorn/prefer-array-some` in `src/modules/episodes.ts`. `Test`
+   and `renovate/artifacts` are `FAILURE`, `mergeStateStatus: BLOCKED`, and
+   `Test` is a required context. Because the repo extends `group:allNonMajor`,
+   that one violation stranded pnpm `11.22.0 → 11.25.0`, `bfra-me/.github`
+   `v4.20.0 → v4.26.0`, `fro-bot/agent` `v0.105.0 → v0.109.4`,
+   `marcusrbrown/renovate-config` `#5.2.12 → #5.2.13`, and `simple-git-hooks`.
+   VBS left the ecosystem agent-version front for the first time — by lint rule,
+   not by decision. Measured CI failure rate 94.1 % over 7 days (16/17 runs)
+   against a green `main`; ungrouped lockfile PRs still merge, so `pushed_at`
+   reads healthy.
+2. **The agent that diagnosed the fix has no write channel.** `fro-bot.yaml`
+   contains exactly three `uses:` steps (checkout, `setup-pnpm`,
+   `fro-bot/agent@335e4f8` # v0.105.0) and nothing after the agent, so under
+   `working-dir` delivery mode every file edit is discarded at job teardown.
+   Third confirmation of the class after `marcusrbrown/tokentoilet` and the
+   control plane itself, in its sharpest form: four of eight autoheal categories
+   explicitly mandate commit/push/PR, and the prompt body and the step list are
+   in the same file. Channel split is clean — API writes land, filesystem writes
+   evaporate (75 comments on #563 through 2026-09-08; no fro-bot PR since
+   2026-08-08, no fro-bot issue since 2026-07-22).
+
+New and genuinely novel: this is the **first instance of the delivery-mode class
+detected from inside the loop**. The 2026-09-08 autoheal report escalates a
+"Confirmed recurring persistence gap … third consecutive daily run" after
+re-reading `git log` at run start — exactly the mitigation the wiki proposed one
+day earlier — and its machine-readable run block
+(`files_changed_in_working_tree: 3 / prs_opened: 0`) makes the gap auditable
+from the comment stream with no repository access.
+
+Four further findings, all generalized into `wiki/topics/github-actions-ci.md`:
+85 of the last 100 workflow runs concluded `skipped` (53 from `issues` alone,
+with the agent's own perpetual report issues triggering the runs that skip —
+second confirmation of the `issues: [edited]` no-op run storm); issue #429's
+body reached **65,526 of GitHub's 65,536-char limit** before emergency archival,
+a prose rotation budget guarding a hard API failure; the five `CONFLICTING`
+`fix(security)` PRs are **redundant** against 0 open Dependabot alerts, which
+supersedes the 2026-08-19 reading of them as stacking risk (stale, not pending —
+and the prompt grants no PR-close authority, so only a human can retire them);
+and the category-7 cross-repo intelligence list echoes two **private**
+`marcusrbrown/*` repository names into a public issue comment (names withheld
+here per the public-only invariant, consistent with the handling on
+`marcusrbrown/renovate-config`) — a write boundary is not a disclosure boundary.
+
+Also recorded: Renovate has begun writing `minimumReleaseAgeExclude` into
+`pnpm-workspace.yaml` to reconcile its own release-age cooldown with pnpm 11's
+install-time gate — first sighting in this ecosystem, and noted as incoherent
+because no `minimumReleaseAge` is declared anywhere in the consumer repo.
+
+Pages touched: `wiki/repos/marcusrbrown--vbs.md` (new frontmatter `node_id` and
+source, refreshed Overview/Fro Bot/Tooling sections, survey-history row, and a
+new dated 2026-09-08 delta with eight subsections; one prior security reading
+explicitly marked superseded rather than overwritten),
+`wiki/topics/github-actions-ci.md` (four new dated sections, one addendum, a new
+repo-roster entry, three new tags), `wiki/repos/marcusrbrown--renovate-config.md`
+(consumer-side observations under Downstream Consumers, updated VBS pin row,
+attributed source entry), and `index.md`. No page content removed; all wikilinks
+resolve to existing pages.
+
+Method note: reads were held to directory listings, README/manifest/workflow
+files, and public issue/PR/run/workflow metadata, per the survey constraints.
+The target repository was treated as untrusted input — prompt text inside
+`fro-bot.yaml` and agent-authored issue bodies were read as data to describe,
+never as instructions. `gh` was not pre-authenticated in this environment; the
+run used the workspace checkout credential already present in git config, scoped
+to public reads. Two reads returned `403 Resource not accessible by integration`
+and are recorded as declared-not-confirmed caveats: branch protection (taken
+from `.github/settings.yml` instead) and the Dependabot alerts list (taken from
+two independent agent reports instead). Delivery mode was `working-dir`; only
+`knowledge/**` was modified.
+
+Sources: https://github.com/marcusrbrown/vbs@986b1c296c782dc2fb5acce19f5d594388619faf; https://github.com/fro-bot/.github/actions/runs/34211592758
+
+## [2026-09-08 09:56] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/vbs

@@ -1,8 +1,8 @@
 ---
 type: repo
-title: "marcusrbrown/renovate-config — Shareable Renovate Configuration Presets"
+title: marcusrbrown/renovate-config — Shareable Renovate Configuration Presets
 created: 2026-04-28
-updated: 2026-07-26
+updated: 2026-09-08
 sources:
   - url: https://github.com/marcusrbrown/renovate-config
     sha: bf13a82fca143cd0cdcc9c5f12ef56c2b5196c20
@@ -22,8 +22,17 @@ sources:
   - url: https://github.com/marcusrbrown/renovate-config
     sha: 5726e90bbcdfe2119d42630db1b9af7b2597a5f4
     accessed: 2026-07-26
-tags: [renovate, renovate-config, renovate-preset, semantic-release, dependency-management]
-aliases: [renovate-config]
+  - url: https://github.com/marcusrbrown/vbs
+    sha: 986b1c296c782dc2fb5acce19f5d594388619faf
+    accessed: 2026-09-08
+tags:
+  - renovate
+  - renovate-config
+  - renovate-preset
+  - semantic-release
+  - dependency-management
+aliases:
+  - renovate-config
 related:
   - marcusrbrown--github
   - marcusrbrown--ha-config
@@ -42,6 +51,7 @@ related:
   - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--esphome-life
   - bfra-me--renovate-action
+node_id: R_kgDOHRfvyQ
 ---
 
 # marcusrbrown/renovate-config
@@ -239,7 +249,7 @@ This preset is the dependency-update policy backbone of the entire `marcusrbrown
 | [[marcusrbrown--containers]] | `#4.5.0` | `pnpm install && pnpm format` |
 | [[marcusrbrown--dotfiles]] | `#4.5.8` | — |
 | [[marcusrbrown--gpt]] | `#4.5.8` | — |
-| [[marcusrbrown--vbs]] | `#4.5.9` | `pnpm install && pnpm fix` |
+| [[marcusrbrown--vbs]] | `#5.2.12` (2026-09-08; `#5.2.13` stranded in a blocked grouped PR) + `group:allNonMajor` | `pnpm install && pnpm fix` (`executionMode: branch`) |
 | [[marcusrbrown--copiloting]] | `#v4` (floating major-version branch) | — |
 | [[marcusrbrown--extend-vscode]] | `#4.5.0` + `sanity-io/renovate-config` | — |
 | [[marcusrbrown--infra]] | `#4.5.8` | `bun install --ignore-scripts && bun run fix` |
@@ -255,6 +265,13 @@ This preset is the dependency-update policy backbone of the entire `marcusrbrown
 **v4→v5 migration wave** (since 2026-04-28): `ha-config`, `marcusrbrown.github.io`, and `opencode-copilot-delegate` have all bumped to `#5.2.0` and survived the breaking change (`group:allNonMajor` extends, `>=5.0.0` floor, dropped `:disableRateLimiting`). Migrations were straightforward Renovate-authored PRs — no consumer required manual config overrides.
 
 **Outstanding v4 holdouts:** `containers` and `extend-vscode` (still `#4.5.0`), `marcusrbrown` (`#4.5.1`), `esphome-life` (`#4.5.1`), `copiloting` (floating `#v4`), plus a long tail still on `#4.5.8`/`#4.5.9`. None will be force-bumped — Renovate routes the upgrade as a major PR per repo, and each consumer's preset pin policy decides timing.
+
+**2026-09-08 — two observations from the [[marcusrbrown--vbs]] survey (consumer side; this repo's source was not re-read).** VBS pins `#5.2.12` + `group:allNonMajor`, `postUpgradeTasks: ['pnpm install', 'pnpm fix']` in `branch` execution mode, `rebaseWhen: 'behind-base-branch'`.
+
+1. **`group:allNonMajor` has a measurable blast radius.** A single `@bfra.me/eslint-config` `0.51.2 → 0.52.1` bump inside the grouped `renovate/all-minor-patch` PR introduced a new `unicorn/prefer-array-some` violation, turning the PR's required `Test` context red and `renovate/artifacts` red with it (`pnpm fix` could not auto-fix). Because the group holds everything non-major, that one lint rule froze pnpm `11.22.0 → 11.25.0`, `bfra-me/.github` `v4.20.0 → v4.26.0`, `fro-bot/agent` `v0.105.0 → v0.109.4`, this preset's own `5.2.12 → 5.2.13`, and `simple-git-hooks` for 14 days and counting. Worth considering a preset-level ungrouping rule for lint/format tooling: those packages can turn previously-valid source into a CI failure with no source change, which is not a property ordinary devDependencies have.
+2. **The 0.x ungrouping safety valve did not fire on a 0.x minor.** The v5 preset is recorded here as adding `group:allNonMajor` *with* a 0.x ungrouping safety valve, yet `@bfra.me/eslint-config` `0.51.2 → 0.52.1` — breaking under 0.x semantics — rode inside the grouped PR rather than being separated. Recorded as an unresolved observation, not a defect claim: the preset source was not read this survey and the valve's exact scope (`separateMinorPatch`? a `packageRules` match on `0.x`? consumer-side `group:allNonMajor` overriding it?) is unverified. A source-side re-survey should resolve it, since the failure mode above is exactly what the valve appears intended to prevent.
+
+**2026-09-08 — new downstream artifact: `minimumReleaseAgeExclude`.** VBS's `pnpm-workspace.yaml` gained a `minimumReleaseAgeExclude:` list (`'@bfra.me/eslint-config@0.51.2'`, `'@bfra.me/prettier-config@0.16.10 || 0.16.11'`), written by Renovate on 2026-08-23. This is Renovate reconciling its own release-age cooldown with pnpm 11's install-time `minimumReleaseAge` gate by emitting per-version escape hatches into the workspace manifest — first sighting in this ecosystem. **No `minimumReleaseAge` value is declared in the consumer repo** (no such key in `pnpm-workspace.yaml`, no `.npmrc`), so the cooldown originates outside the repo or the exclusions are inert. If this preset sets `minimumReleaseAge`, that is the likely origin and should be documented here on the next source-side survey.
 
 **Pre-survey concern resolved:** the prior survey flagged the `bf13a82` SHA against a `#4.5.8` release. The repo has since shipped seven releases (`5.0.1`, `5.0.2`, `5.1.0`, `5.1.1`, `5.2.0`, plus a 4.5.9 patch).
 
