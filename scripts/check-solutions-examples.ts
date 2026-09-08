@@ -108,19 +108,109 @@ export interface CheckResult {
   readonly directiveFindings: readonly DirectiveFinding[]
 }
 
-const VERIFY_ANNOTATION_PATTERN = /^<!--\s*verify:\s*(\S+)\s+from\s+(\S+)\s*-->$/u
-const HTML_COMMENT_PATTERN = /^<!--(.*)-->$/u
+// Matches an HTML comment's full text, INCLUDING one that spans multiple lines, via `[\s\S]`
+// rather than `.` (which never matches a newline) — CodeQL's "Bad HTML filtering regexp" query
+// correctly flagged an earlier line-anchored `.`-based version of this pattern for exactly this
+// gap: a `<!-- verify: ... -->` annotation wrapped across two lines silently failed to match
+// and was never checked at all (see PR #3870's second review round). The lazy `*?` stops at the
+// FIRST `-->`, so back-to-back comments on adjacent lines are still matched as separate spans.
+const COMMENT_SPAN_PATTERN = /<!--([\s\S]*?)-->/gu
+const COMMENT_OPEN_PATTERN = /<!--/gu
+// Case-insensitive prefix match, not a literal "verify" substring check: catches "verifies:",
+// "Verify:", and any other verify*/verifying variant ("verifies" does NOT contain "verify" as a
+// substring — it diverges right before the final "y" — so a literal substring check misses it).
+const VERIFY_LIKE_PATTERN = /\bverif\w*/iu
+const VERIFY_ANNOTATION_INNER_PATTERN = /^verify:\s*(\S+)\s+from\s+(\S+)$/u
 // Deliberately loose: captures ANY fence line (any indent, any info string, including empty
 // or malformed), so every fence-shaped line gets a chance to be validated rather than silently
 // falling through when it doesn't match a stricter pattern.
 const FENCE_LINE_PATTERN = /^(\s*)```(.*)$/u
 const FENCE_CLOSE_PATTERN = /^\s*```\s*$/u
 
+interface CommentSpan {
+  /** 1-based line the `<!--` opens on. */
+  readonly startLine: number
+  /** 1-based line the matching `-->` closes on (equals `startLine` for a single-line comment). */
+  readonly endLine: number
+  /** Raw text between the delimiters, newlines and all. */
+  readonly inner: string
+}
+
+/** 1-based line number containing byte offset `index` into `content`. */
+function lineNumberAt(content: string, index: number): number {
+  let line = 1
+  for (let i = 0; i < index; i++) {
+    if (content[i] === '\n') line += 1
+  }
+  return line
+}
+
+/**
+ * Finds every HTML comment span in `content`, multi-line ones included, plus every `<!--` that
+ * never finds a matching `-->` before EOF (which the lazy `COMMENT_SPAN_PATTERN` scan, correctly,
+ * does not consume). An unterminated comment must not be silently swallowed — it is reported by
+ * the caller when it looks like an annotation.
+ */
+interface UnterminatedComment {
+  readonly line: number
+  readonly index: number
+}
+
+function findCommentSpans(content: string): {
+  readonly spans: readonly CommentSpan[]
+  readonly unterminated: readonly UnterminatedComment[]
+} {
+  const spans: CommentSpan[] = []
+  const consumedRanges: {readonly start: number; readonly end: number}[] = []
+
+  for (const match of content.matchAll(COMMENT_SPAN_PATTERN)) {
+    const start = match.index
+    const end = start + match[0].length
+    consumedRanges.push({start, end})
+    spans.push({
+      startLine: lineNumberAt(content, start),
+      endLine: lineNumberAt(content, end - 1),
+      inner: match[1] ?? '',
+    })
+  }
+
+  const unterminated: UnterminatedComment[] = []
+  for (const openMatch of content.matchAll(COMMENT_OPEN_PATTERN)) {
+    const index = openMatch.index
+    const covered = consumedRanges.some(range => index >= range.start && index < range.end)
+    if (!covered) unterminated.push({line: lineNumberAt(content, index), index})
+  }
+
+  return {spans, unterminated}
+}
+
+/** Collapses a (possibly multi-line) comment body to single-spaced text for grammar matching. */
+function normalizeCommentInner(inner: string): string {
+  return inner.replaceAll(/\s+/gu, ' ').trim()
+}
+
 /** Extracts every fenced code block from a markdown document's raw text. */
 export function extractCodeBlocks(content: string, docPath: string): ExtractResult {
   const lines = content.split('\n')
   const blocks: CodeBlock[] = []
   const directiveFindings: DirectiveFinding[] = []
+
+  const {spans, unterminated} = findCommentSpans(content)
+  const spansByEndLine = new Map(spans.map(span => [span.endLine, span]))
+  for (const comment of unterminated) {
+    // Only the text up to the next 4KB (or EOF) is worth scanning for "looks like an
+    // annotation" — an unterminated `<!--` this script cares about names a `verify` directive
+    // near its own opening line, not an arbitrarily distant, unrelated closing tag.
+    const tail = content.slice(comment.index, comment.index + 4096)
+    if (VERIFY_LIKE_PATTERN.test(tail)) {
+      directiveFindings.push({
+        docPath,
+        line: comment.line,
+        reason:
+          'HTML comment opened with `<!--` here is never closed with `-->` before EOF (or the next 4KB) — looks like an unterminated `<!-- verify: ... -->` annotation',
+      })
+    }
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const openMatch = FENCE_LINE_PATTERN.exec(lines[i] ?? '')
@@ -147,7 +237,7 @@ export function extractCodeBlocks(content: string, docPath: string): ExtractResu
 
     if (CODE_LANGS.has(lang)) {
       const modifierTokens = rest.length === 0 ? [] : rest.split(/\s+/u)
-      const {annotations, findings: annotationFindings} = collectAnnotations(lines, i)
+      const {annotations, findings: annotationFindings} = collectAnnotationsAt(spansByEndLine, fenceLine)
       for (const finding of annotationFindings) directiveFindings.push({...finding, docPath})
 
       if (modifierTokens.length === 0) {
@@ -216,46 +306,51 @@ function levenshteinDistance(a: string, b: string): number {
 }
 
 /**
- * Walks upward from the fence line collecting contiguous `<!-- verify: ... -->` comments.
- * Stops at the first line that either isn't an HTML comment or is one unrelated to `verify`.
- * An HTML comment that mentions `verify` but doesn't match the real annotation grammar is
- * reported as a `DirectiveFinding` rather than silently skipped, and also stops the walk — a
- * malformed directive is exactly the kind of line a reader (or a script) should not read past
- * as if it weren't there.
+ * Walks upward from the fence line collecting contiguous `<!-- verify: ... -->` comments —
+ * contiguous by LINE, not by raw source line: a comment span's `endLine`/`startLine` already
+ * account for it having consumed one or more physical lines, so a two-line annotation
+ * immediately above the fence is exactly one "step" of this walk, and a comment plus a
+ * following blank line still breaks contiguity (an annotation must sit directly above the
+ * fence). Stops at the first comment that doesn't match the annotation grammar. One that
+ * mentions `verify` but doesn't match it is reported as a `DirectiveFinding` rather than
+ * silently skipped, and also stops the walk — a malformed directive is exactly the kind of
+ * comment a reader (or a script) should not read past as if it weren't there. A comment
+ * unrelated to `verify` stops the walk silently, same as before.
  */
 interface RawDirectiveFinding {
   readonly line: number
   readonly reason: string
 }
 
-function collectAnnotations(
-  lines: readonly string[],
-  fenceIndex: number,
+function collectAnnotationsAt(
+  spansByEndLine: ReadonlyMap<number, CommentSpan>,
+  fenceLine: number,
 ): {readonly annotations: readonly VerifyAnnotation[]; readonly findings: readonly RawDirectiveFinding[]} {
   const annotations: VerifyAnnotation[] = []
   const findings: RawDirectiveFinding[] = []
-  let k = fenceIndex - 1
-  while (k >= 0) {
-    const trimmed = (lines[k] ?? '').trim()
-    const verifyMatch = VERIFY_ANNOTATION_PATTERN.exec(trimmed)
+  let expectedEndLine = fenceLine - 1
+
+  for (;;) {
+    const span = spansByEndLine.get(expectedEndLine)
+    if (!span) break
+
+    const normalized = normalizeCommentInner(span.inner)
+    const verifyMatch = VERIFY_ANNOTATION_INNER_PATTERN.exec(normalized)
     if (verifyMatch) {
       annotations.unshift({symbol: verifyMatch[1] ?? '', file: verifyMatch[2] ?? ''})
-      k -= 1
+      expectedEndLine = span.startLine - 1
       continue
     }
 
-    const commentMatch = HTML_COMMENT_PATTERN.exec(trimmed)
-    // Prefix match on "verif", not a literal "verify" substring check: catches the exact typo
-    // this rejection path exists for ("verifies:" does NOT contain "verify" as a substring —
-    // it diverges right before the final "y") along with any other verify*/verifying variant.
-    if (commentMatch && /\bverif\w*/iu.test(commentMatch[1] ?? '')) {
+    if (VERIFY_LIKE_PATTERN.test(normalized)) {
       findings.push({
-        line: k + 1,
-        reason: `comment looks like a \`<!-- verify: NAME from PATH -->\` annotation but doesn't match that grammar: ${trimmed}`,
+        line: span.startLine,
+        reason: `comment looks like a \`<!-- verify: NAME from PATH -->\` annotation but doesn't match that grammar: <!--${span.inner}-->`,
       })
     }
     break
   }
+
   return {annotations, findings}
 }
 

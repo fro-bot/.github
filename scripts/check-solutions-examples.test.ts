@@ -135,6 +135,60 @@ describe('extractCodeBlocks', () => {
       expect(directiveFindings).toEqual([])
     })
   })
+
+  describe('multi-line `<!-- verify -->` annotations (CodeQL js/bad-tag-filter regression)', () => {
+    it('resolves an annotation wrapped across two lines, normalizing interior whitespace', () => {
+      const content = [
+        '<!-- verify: guardedPatterns',
+        '     from scripts/check-wiki-authority.ts -->',
+        '```ts',
+        'guardedPatterns()',
+        '```',
+      ].join('\n')
+
+      const {blocks, directiveFindings} = extractCodeBlocks(content, 'doc.md')
+      expect(directiveFindings).toEqual([])
+      expect(blocks[0]?.annotations).toEqual([{symbol: 'guardedPatterns', file: 'scripts/check-wiki-authority.ts'}])
+    })
+
+    it('still requires the annotation to sit directly above the fence when wrapped', () => {
+      const content = ['<!-- verify: foo', '     from scripts/foo.ts -->', '', '```ts', 'foo(1)', '```'].join('\n')
+
+      const {blocks} = extractCodeBlocks(content, 'doc.md')
+      expect(blocks[0]?.annotations).toEqual([])
+    })
+
+    it('reports a malformed multi-line comment that mentions verify but does not match the grammar', () => {
+      const content = ['<!-- verifies: foo', '     from scripts/foo.ts -->', '```ts', 'foo(1)', '```'].join('\n')
+
+      const {blocks, directiveFindings} = extractCodeBlocks(content, 'doc.md')
+      expect(blocks[0]?.annotations).toEqual([])
+      expect(directiveFindings).toEqual([expect.objectContaining({docPath: 'doc.md', line: 1})])
+    })
+
+    it('reports an unterminated `<!--` that looks like a verify annotation instead of swallowing it', () => {
+      const content = ['<!-- verify: foo from scripts/foo.ts', '```ts', 'foo(1)', '```'].join('\n')
+
+      const {blocks, directiveFindings} = extractCodeBlocks(content, 'doc.md')
+      expect(blocks[0]?.annotations).toEqual([])
+      expect(directiveFindings).toHaveLength(1)
+      expect(directiveFindings[0]).toMatchObject({docPath: 'doc.md', line: 1})
+      expect(directiveFindings[0]?.reason).toContain('never closed')
+    })
+
+    it('does not report an unterminated, unrelated HTML comment (no false positive)', () => {
+      const content = ['<!-- just a stray note that never closes', '```ts', 'const x = 1', '```'].join('\n')
+
+      const {directiveFindings} = extractCodeBlocks(content, 'doc.md')
+      expect(directiveFindings).toEqual([])
+    })
+
+    it('still matches an ordinary single-line annotation unchanged', () => {
+      const content = ['<!-- verify: foo from scripts/foo.ts -->', '```ts', 'foo(1)', '```'].join('\n')
+      const {blocks} = extractCodeBlocks(content, 'doc.md')
+      expect(blocks[0]?.annotations).toEqual([{symbol: 'foo', file: 'scripts/foo.ts'}])
+    })
+  })
 })
 
 describe('checkBlockParses', () => {
@@ -404,5 +458,43 @@ describe('checkSolutionsExamples', () => {
     expect(result.directiveFindings).toEqual([
       expect.objectContaining({docPath: 'docs/solutions/best-practices/regression.md'}),
     ])
+  })
+
+  it('reproduces the exact CodeQL-flagged regression: a two-line annotation plus a wrong-arity call in the same block', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'check-solutions-examples-'))
+    await writeFixture(
+      rootDir,
+      'scripts/check-wiki-authority.ts',
+      'export function guardedPatterns(): readonly RegExp[] { return [] }\n',
+    )
+    await writeFixture(
+      rootDir,
+      'docs/solutions/best-practices/multiline-regression.md',
+      [
+        '# Multi-line regression',
+        '',
+        '<!-- verify: guardedPatterns',
+        '     from scripts/check-wiki-authority.ts -->',
+        '```ts',
+        'guardedPatterns(1, 2, 3)',
+        '```',
+        '',
+      ].join('\n'),
+    )
+
+    const result = await checkSolutionsExamples(rootDir)
+
+    // Before the fix: `content.split('\n')` line-by-line scanning meant a `<!-- verify -->`
+    // comment wrapped across two lines never matched the (line-anchored) annotation pattern at
+    // all, so the annotation was silently dropped and this 3-argument call against a 0-argument
+    // signature was never checked — exit 0.
+    expect(result.symbolFindings).toHaveLength(1)
+    expect(result.symbolFindings[0]).toMatchObject({
+      docPath: 'docs/solutions/best-practices/multiline-regression.md',
+      symbol: 'guardedPatterns',
+    })
+    expect(result.symbolFindings[0]?.reason).toContain('3 argument(s); real signature accepts 0')
+    expect(result.directiveFindings).toEqual([])
+    expect(result.parseFindings).toEqual([])
   })
 })
