@@ -449,14 +449,15 @@ describe('checkPrivateLeak — #3839: "---"/"+++" are headers only before the fi
     })
   })
 
-  it('a "@@" line\'s trailing context is not content-scanned (pins fall-through over continue)', () => {
-    // A "@@" line can carry function-context text after the second "@@" marker. This module
-    // chose fall-through (not an early continue) when setting inHunk, on the principle the
-    // guard should scan more, not less -- though a "@@ ..." line never starts with "+" so this
-    // is currently a no-op either way; this test exists to pin the choice, not to prove a
-    // reachable difference between the two options today.
+  it('(#3842 fix) a "@@" line\'s trailing context IS content-scanned, attributed to the current file', () => {
+    // Nothing between the '@@' branch and the `!line.startsWith('+')` filter below can match a
+    // line beginning with '@', so falling through here (no early `continue`) is safe -- see the
+    // invariant comment on the '@@' branch itself.
     const diff = [diffGit('docs/notes.md', 'docs/notes.md'), '@@ -1 +1 @@ secret-repo'].join('\n')
-    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({ok: true})
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({
+      ok: false,
+      matchedFiles: ['docs/notes.md'],
+    })
   })
 
   it('a hunk marker with trailing context text after the second "@@" still gates a later header-shaped pair as content', () => {
@@ -549,10 +550,11 @@ describe('checkPrivateLeak — inverse controls: structural-token text as added 
     expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({ok: false, matchedFiles: ['notes.md']})
   })
 
-  it('documents CURRENT behavior (known gap, tracked in #3842): a real "@@" hunk marker\'s own trailing context text is never scanned', () => {
-    // A hunk-marker line is not `+`-prefixed, so the `!line.startsWith('+')` filter drops it
-    // before the content scan. A private name in the trailing function-context text
-    // ("@@ -1,2 +1,2 @@ function secret() {") is NOT caught. Flip this test when fixing #3842.
+  it('(#3842 fix) a real "@@" hunk marker\'s own trailing context text IS scanned', () => {
+    // A hunk-marker line is not `+`-prefixed, so it never reached the '+' content scan -- but
+    // the '@@' branch now scans its own trailing function-context text directly, in the parser,
+    // before falling through. A private name there ("@@ -1,2 +1,2 @@ function secret-repo() {")
+    // is now caught even though no '+' line in this hunk mentions it.
     const diff = [
       diffGit('notes.md', 'notes.md'),
       '--- a/notes.md',
@@ -562,6 +564,139 @@ describe('checkPrivateLeak — inverse controls: structural-token text as added 
       '+added line with no private name',
     ].join('\n')
 
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({ok: false, matchedFiles: ['notes.md']})
+  })
+})
+
+describe('checkPrivateLeak — #3842: hunk-header trailing function-context is scanned', () => {
+  it('(issue reproduction) catches a private repository name in the function-context text a diff hunk carries', () => {
+    // The issue's literal example uses a '## Heading' as the context text. This repo has no
+    // markdown diff driver configured (`git check-attr diff` reports "unspecified"), so git's
+    // default funcname pattern -- lines starting with a letter, '_' or '$', not a digit or '#' --
+    // never actually produces a heading here; real hunks carry ordinary prose instead (see the
+    // '@@' branch's own comment for the truncation and base-side bounds). The scan doesn't care
+    // which pattern produced the text, so this pins the issue's own example directly.
+    const diff = [
+      diffGit('knowledge/wiki/rollouts.md', 'knowledge/wiki/rollouts.md'),
+      '--- a/knowledge/wiki/rollouts.md',
+      '+++ b/knowledge/wiki/rollouts.md',
+      '@@ -1,2 +1,2 @@ ## Rollout for acme/secret-repo',
+      ' unrelated context line',
+      '+added line with no private name',
+    ].join('\n')
+
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({
+      ok: false,
+      matchedFiles: ['knowledge/wiki/rollouts.md'],
+    })
+  })
+
+  it('context text itself containing a literal "@@" does not confuse the header/context split', () => {
+    // The closing marker is located by scanning for the SAME run length of '@' used by the
+    // opening marker, past the ranges -- not by the first or last '@@' in the line. Context text
+    // that itself contains '@@' must not shift where the real closing marker is found, and its
+    // own '@@' text must still be scanned as content along with the rest of the context.
+    const diff = [
+      diffGit('docs/notes.md', 'docs/notes.md'),
+      '--- a/docs/notes.md',
+      '+++ b/docs/notes.md',
+      '@@ -1,2 +1,2 @@ ## secret-repo @@ status',
+      ' unrelated context line',
+      '+added line with no private name',
+    ].join('\n')
+
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({
+      ok: false,
+      matchedFiles: ['docs/notes.md'],
+    })
+  })
+
+  it('a hunk header with no trailing context at all is a no-op scan (no false positive, no crash)', () => {
+    const diff = [
+      diffGit('docs/notes.md', 'docs/notes.md'),
+      '--- a/docs/notes.md',
+      '+++ b/docs/notes.md',
+      '@@ -1,2 +1,2 @@',
+      ' unrelated context line',
+      '+added line with no private name',
+    ].join('\n')
+
     expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({ok: true})
+  })
+
+  it('a private name in hunk-header context is the ONLY leak on an otherwise-clean file (matchedFiles has exactly one entry)', () => {
+    const diff = [
+      diffGit('docs/notes.md', 'docs/notes.md'),
+      '--- a/docs/notes.md',
+      '+++ b/docs/notes.md',
+      '@@ -1,2 +1,2 @@ ## Rollout for acme/secret-repo',
+      ' unrelated context line',
+      '-removed line, no private name',
+      '+added line, no private name either',
+    ].join('\n')
+
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({
+      ok: false,
+      matchedFiles: ['docs/notes.md'],
+    })
+  })
+
+  it('an n-way combined-diff hunk header ("@@@ ... @@@") scans its trailing context the same way', () => {
+    // Pins the comment's claim that a combined-diff header (one more leading/trailing '@' per
+    // extra merge parent) is handled by the same length-matched marker scan, with no dedicated
+    // branch: the opening and closing markers here are both '@@@', and the three ranges between
+    // them are still only digits/commas/spaces/sign characters, so the closing marker is found
+    // at the first '@@@' run past the opening one, not misread from the ranges.
+    const diff = [
+      diffGit('docs/notes.md', 'docs/notes.md'),
+      '--- a/docs/notes.md',
+      '+++ b/docs/notes.md',
+      '@@@ -1,2 -1,2 +1,2 @@@ secret-repo',
+      '  unrelated context line',
+      '+added line with no private name',
+    ].join('\n')
+
+    expect(checkPrivateLeak(['secret-repo'], diff, NO_OVERRIDE)).toEqual({
+      ok: false,
+      matchedFiles: ['docs/notes.md'],
+    })
+  })
+
+  it('scans only after the closing "@@" marker, not the range text between the two markers', () => {
+    // '-1,2 +1,2' is exactly the range text BETWEEN the hunk header's opening and closing '@@'
+    // markers, never real content. Naming it as a "private repository" (schemas.ts places no
+    // format constraint on the name -- see the existing empty-string and '+leaked' tests above)
+    // proves the scan starts strictly after the CLOSING marker: if marker-length tracking broke
+    // (the scan loop never advances past 0, or loses the '@' literal it looks for) the fallback
+    // start position would collapse to right after the OPENING marker instead, sweeping up this
+    // range text as if it were content.
+    const diff = [diffGit('docs/notes.md', 'docs/notes.md'), '@@ -1,2 +1,2 @@'].join('\n')
+    expect(checkPrivateLeak(['-1,2 +1,2'], diff, NO_OVERRIDE)).toEqual({ok: true})
+  })
+
+  it('starts the fallback scan exactly at markerLength, not one character early, when no closing marker is found at all', () => {
+    // A malformed hunk-marker line with no closing '@@' anywhere: the closing-marker search
+    // legitimately misses, so the fallback scan must start at `markerLength`, not
+    // `markerLength - 1`. '@x' straddles that exact boundary -- it is a substring of the raw
+    // line only if the scan starts one character earlier than it should.
+    const diff = [diffGit('docs/notes.md', 'docs/notes.md'), '@@x'].join('\n')
+    expect(checkPrivateLeak(['@x'], diff, NO_OVERRIDE)).toEqual({ok: true})
+  })
+
+  it('starts the trailing-context scan by ADDING the marker length to the closing index, not subtracting it', () => {
+    // '2 @@' is exactly the tail of the range text plus the real closing marker -- it only
+    // appears in the scanned text if the start position is computed by subtracting the marker
+    // length from the closing index instead of adding it (landing one marker-length before the
+    // real closing marker instead of one marker-length after it).
+    const diff = [diffGit('docs/notes.md', 'docs/notes.md'), '@@ -1,2 +1,2 @@'].join('\n')
+    expect(checkPrivateLeak(['2 @@'], diff, NO_OVERRIDE)).toEqual({ok: true})
+  })
+
+  it('does not scan hunk-header content at all when there is no trailing context, even if privateNames contains an empty string', () => {
+    // Mirrors the '' privateNames test for rename destinations above: ''.includes('') is true
+    // for ANY string, so if the empty-context guard were skipped, an unconditional call to the
+    // content scan would incorrectly match on an empty string content.
+    const diff = [diffGit('docs/notes.md', 'docs/notes.md'), '@@ -1,2 +1,2 @@'].join('\n')
+    expect(checkPrivateLeak([''], diff, NO_OVERRIDE)).toEqual({ok: true})
   })
 })
