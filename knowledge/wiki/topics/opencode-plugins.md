@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-09-05
+updated: 2026-09-08
 sources:
+  - url: https://github.com/marcusrbrown/mothership
+    sha: 8895732b6b3a0f88fd3bf51117beeec985791fc5
+    accessed: 2026-09-08
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: bea3f576d7218900b9216a8a2c2947003660809b
     accessed: 2026-04-23
@@ -497,6 +500,34 @@ The new `profiles` property carries this description, and it is the most securit
 
 A checked-out repository can *choose* a routing overlay but cannot *author* one. This is the correct direction for a plugin that merges configuration from multiple precedence sources: a cloned project cannot silently redirect the user's agents to a model of its choosing. It is the config-layer expression of the same untrusted-input posture the ecosystem's agent prompts take toward issue bodies — and notably it is enforced in the *schema*, where an IDE surfaces it, not only in the loader. Plugin authors merging user + project config should ask, for every property: **is this safe for a repository I just cloned to set?** Systematic answers it per-field.
 
+## An MCP Client Keyed by Server Name Cannot Carry a Session Principal (2026-09-08)
+
+From [[marcusrbrown--mothership]]'s `docs/architecture/planning-host-contract.md` — the first artifact in this wiki to trace the OpenCode MCP invocation path end-to-end and write down where agent identity is lost. The reading is against `@fro.bot/harness@1.18.29-harness.88b6b5fb` (runtime integration commit `88b6b5fb…` in `fro-bot/agent`, base OpenCode `1.18.29`).
+
+The call path, as documented:
+
+1. The MCP service **stores clients by MCP server name within the service instance** — `packages/opencode/src/mcp/index.ts`. A client is *not* allocated per agent session.
+2. `SessionTools.resolve` (`packages/opencode/src/session/tools.ts`) does hold the full per-call context: runtime `sessionID`, `messageID`, `callID`, and `agent`.
+3. `McpCatalog.convertTool` (`packages/opencode/src/mcp/catalog.ts`) constructs the outbound `client.callTool` request from **tool name and arguments only**. It supplies abort/timeout/progress options and **constructs no agent-principal assertion**.
+4. A consuming stdio bridge (Mothership's `scripts/ide-mcp-bridge.ts`) forwards tool name and arguments **with a shared bearer**. Its request envelope contains no verified agent principal.
+
+Net: **a shared MCP connection cannot distinguish simultaneous calls from differently-authorized sessions.** The context exists one layer up and is dropped at the wire boundary. For any MCP server that wants to make an authorization decision per calling agent — rather than per connection — this is the blocking gap.
+
+The contract scopes its own claim carefully, which is worth imitating: _"SDK-generated transport metadata, such as progress bookkeeping, is not agent identity. The finding is the absence of a principal handoff in the inspected construction, not a claim that the SDK can never add any metadata."_
+
+Constraints any fix must satisfy, per the same document:
+
+- **Identity must come from runtime context** — never from model arguments, agent display names, mutable client-global variables, or an earlier request on the same connection. Every one of those is either model-controlled or connection-scoped, and the whole problem is that the connection is shared.
+- **The assertion must bind to the actual outbound request.** Changes introduced by tool hooks must not let an assertion minted for one request authorize a different one.
+- **A shared connection must support simultaneous calls from differently authorized sessions without context crossing between them** — i.e. the binding has to be per-invocation, not per-client.
+- **A new metadata object alone is not the proof.** Transport authentication and host registration are separate design work.
+
+### npm `gitHead` Names the Wrapper Tree, Not the Runtime Tree
+
+A second, immediately reusable provenance rule from the same document. For the patched-OpenCode harness, npm `gitHead` is `cb4a1425…` (the `packages/harness` wrapper source) while the runtime integration commit is `88b6b5fb…` (the tree containing `packages/opencode`). They are different trees in the same repository, and the contract states the consequence plainly: **"inspecting only `packages/harness` at npm `gitHead` does not establish the runtime MCP behavior."**
+
+When a published package wraps a patched runtime, `gitHead` answers *"what did we package?"*, not *"what will execute?"*. Auditing plugin or harness behavior from `gitHead` alone reads the wrong tree. Related: [[marcusrbrown--systematic]]'s `HARNESSES.md`, which solves the adjacent honesty problem by making unverified matrix cells say the literal string `UNVERIFIED` rather than defaulting to an optimistic assumption.
+
 ## Related Pages
 
 - [[marcusrbrown--systematic]] — Was the largest OpenCode plugin; **as of v3 a three-harness workflow system** (OpenCode + [[pi-coding-agent]] + Claude Code, all peers optional). v3 boundary is **`3.0.0`, 2026-07-17** (the earlier `v3.2.5`/07-22 reading was a downstream artifact); catalog contracted 104 → 73 components (37 agents / 31 skills); discovered-skills-as-slash-commands added v2.33.0
@@ -506,5 +537,6 @@ A checked-out repository can *choose* a routing overlay but cannot *author* one.
 - [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.15.0): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths (now exposing `messages`/`questions`/`answerQuestion` + dispatch message correlation)
 - [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi. Fro Bot was active at v0.45.0 (2026-06-09) and is **`disabled_inactivity` as of 2026-09-02**; the fork is frozen at `1.2.5-mb.3` and 334 commits / 32 releases behind upstream `cortexkit/anthropic-auth` (`v1.21.0`, actively maintained). Contributes the cross-process OAuth refresh-lock and plugin-singleton prior art above, plus the dangling-dist-tag decommissioning rule
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
+- [[marcusrbrown--mothership]] — MCP *consumer* rather than plugin: exposes 17 `ide_*` tools (8 layout + 9 session control) over a loopback bearer-token sidecar, and contributes the MCP principal-handoff gap and the `gitHead`-vs-runtime-tree provenance rule above
 - [[github-actions-ci]] — CI patterns for plugin repositories (Biome, bun test, semantic-release)
 - [[github-pages]] — GitHub Pages deployment patterns including cross-repo Starlight deploy

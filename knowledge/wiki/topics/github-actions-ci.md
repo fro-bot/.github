@@ -4,8 +4,8 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-08
 sources:
-  - url: https://github.com/marcusrbrown/vbs
-    sha: 986b1c296c782dc2fb5acce19f5d594388619faf
+  - url: https://github.com/marcusrbrown/mothership
+    sha: 8895732b6b3a0f88fd3bf51117beeec985791fc5
     accessed: 2026-09-08
   - url: https://github.com/marcusrbrown/tokentoilet
     sha: b81e74b9e6bb9fab1de88a80f28bcf9c5642b0c1
@@ -58,9 +58,6 @@ tags:
     fork-guard,
     fail-open,
     undrained-queue,
-    renovate-grouping,
-    issue-body-limit,
-    private-disclosure,
   ]
 related:
   - marcusrbrown--tokentoilet
@@ -109,7 +106,6 @@ Cross-cutting CI/CD patterns observed across Marcus's repositories in the Fro Bo
 - [[marcusrbrown--marcusrbrown-com]] — 5 workflows (2026-09-01): `ci.yaml` (shared `setup` → parallel Lint/Build/Test/Type Check/Validate → `quality-gate` aggregator that mints a GitHub App token and comments "Ready for review"), `deploy.yaml` (push-to-`main` → Pages), `fro-bot.yaml` (single-file **three-mode**, 625 lines / 29 KB, agent **v0.107.0** — 20 minutes behind upstream release, fleet's fastest adopter), `renovate.yaml` (`bfra-me/.github` reusable @ v4.23.0), `copilot-setup-steps.yaml`; local composite `.github/actions/setup` (Node 22 + pnpm + **opt-in** Playwright). No CodeQL/Scorecard; no Probot `settings.yml` (branch protection is imperative via `scripts/configure-branch-protection.mjs`). Notable: **two of three declared test tiers have no CI actuator** — `playwright.config.ts` + `tests/e2e/` are only installed by the autoheal job, and `lhci.config.js` has no workflow at all.
 - [[marcusrbrown--cortexkit-anthropic-auth]] — 4 workflow files: `ci.yml` (**`on: pull_request` only** — no default-branch verification), `release.yaml` (tag-driven, npm Trusted Publishing/OIDC + provenance, tag-commit integrity check, no manifest mutation in CI), `fro-bot.yaml` (three-mode single-file, agent **v0.45.0** — the fleet's oldest pin by a wide margin), `copilot-setup-steps.yml`. Dependabot instead of Renovate, and it has never opened a PR. **As of 2026-09-02 the Fro Bot workflow is `disabled_inactivity`** (GitHub's 60-day shutoff, last run 2026-07-30) and had already stopped writing its report six weeks earlier while running green. The fleet's reference case for automation that is present in the tree and absent in reality — see the three 2026-09-02 sections below.
 - [[marcusrbrown--tokentoilet]] — 5 workflows (2026-09-07): `ci.yaml` (Lint / Test / Build / Build Storybook / Security Audit; `Security Audit` is `dependency-review-action` on **PRs only**, so `main` is never audited), `fro-bot.yaml` (single-job, **561 lines / 26 KB**, agent v0.109.4, seven autoheal categories with a Sunday-gated category 7), `renovate.yaml` + `update-repo-settings.yaml` (both `bfra-me/.github` reusable callers @ v4.26.0), `copilot-setup-steps.yml`. Local composite `.github/actions/setup` — note its `node-version` input **defaults to `'22'`** with no `.node-version` and no `engines` to override it, while `@types/node` is 24.13.3. Source of the 2026-09-07 findings below on delivery contracts, fail-open fork guards, and the undrained security queue; **98 of its last 100 workflow runs concluded `skipped`**, a second instance of the no-op run storm at a quieter scale.
-- [[marcusrbrown--vbs]] — 7 workflows (2026-09-08): `ci.yaml` (Test → lint/type-check/coverage→Codecov; Build → artifact), `deploy.yaml` (push-to-`main` → Pages), `fro-bot.yaml` (single-job **three-mode**, 609 lines / 28 KB, agent v0.105.0, **eight** autoheal categories with a Sunday-gated category 8), `update-star-trek-data.yaml` (weekly data regeneration → `peter-evans/create-pull-request`), `renovate.yaml` + `update-repo-settings.yaml` (`bfra-me/.github` reusable callers @ v4.20.0), `copilot-setup-steps.yaml`; local composite `.github/actions/setup-pnpm`. Third confirmed instance of the delivery-mode gap — three `uses:` steps, nothing after the agent — and the **first where the agent detected it itself**. Also the source of the 2026-09-08 findings on grouped-PR queue freeze, prose rotation budgets, and cross-repo disclosure.
 - [[bfra-me--works]] — `@bfra-me` tooling monorepo; 11 workflows including `main.yaml` (Prepare → parallel {Lint+type-coverage, Test, Build, Workspace Analysis} → CI), `release.yaml` (Changesets, `workflow_run` after Main + Sunday cron + dispatch with force-release toggle), `fro-bot.yaml` (three-mode single-file at v0.44.2), `docs.yaml` (Astro Starlight → GitHub Pages), `docs-sync.yaml` (path-filtered @bfra.me/doc-sync re-sync), `renovate.yaml` + `update-repo-settings.yaml` (reusable `bfra-me/.github` callers), `renovate-changeset.yaml`, `cache-cleanup.yaml`, plus CodeQL/Scorecard/Dependency Review. Local composite action `.github/actions/pnpm-install` consumed by every workflow.
 
 ## Common Patterns
@@ -373,10 +369,6 @@ Mitigations:
 - **Treat "a bot that edits an issue" and "a workflow that triggers on issue edits" in the same repo as a self-amplifying loop** and check for it explicitly when onboarding an agent into a Renovate-managed repo.
 
 Cost is not primarily billing (skipped jobs are cheap) — it is queue slots, API budget, and the destruction of the Actions run list as a diagnostic surface. When 99% of runs are no-ops, 17 days of scheduled failures do not stand out. The storm and the silent-death pattern above are the same incident viewed from two angles.
-
-**2026-09-08 addendum — second confirmation, and the agent is feeding it ([[marcusrbrown--vbs]]).** Same shape at a much smaller scale, which makes the composition legible. Last 100 `fro-bot.yaml` runs: **85 `skipped`, 15 `success`**, and all 15 successes are the two daily crons. By event: `issues` **53**, `pull_request` 18, `issue_comment` 14, `schedule` 15 — so **every single non-schedule trigger in the last 100 runs was a no-op**, and `issues` alone accounts for more than half the total. The `issues` runs are titled `Dependency Dashboard`, `Daily Autohealing Report`, and `Daily Maintenance Report`.
-
-That last pair is the new part: **the agent's own perpetual report issues are among the bot edits that trigger the runs that skip.** The daily autoheal prepends a section to #563, which fires `issues: [edited]`, which queues a Fro Bot run, which skips on the `(github.event.issue.user.login || '') != 'fro-bot'` guard. The self-amplifying loop no longer needs Renovate to close it — a single-repo autoheal with a perpetual issue closes it alone. Add to the mitigations: **a perpetual-issue output format and an `issues: [edited]` trigger in the same workflow are mutually incompatible; drop `edited`, or the report writes its own no-op runs.**
 
 ### SHA-Pinning Rules That Only Reject Known-Bad Refs (2026-08-31)
 
@@ -1368,83 +1360,66 @@ Rules:
 - **A delivery-mode contract that promises caller-side commit must be verified against the caller, not trusted from the prompt.** The `working-dir` block asserting "the caller workflow owns diff detection, commit, push, and pull-request creation" is prompt text; it is not a property of the workflow, and here it is simply false.
 - **An agent that reports a change as "staged for the caller" should re-verify it on the next run before treating it as done.** The cheap check is to re-read the file it claims to have changed. A remediation that reappears in consecutive reports as newly-discovered is the signature of a dropped delivery channel, and it will not surface as a failed run — the 2026-09-07 run concluded `success`. Related: [A Run's Conclusion Measures the Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02).
 
-### The Agent That Caught Its Own Dropped Delivery (2026-09-08)
+### An Agent Can Detect Its Own Dropped Delivery — And That Changes Nothing (2026-09-08)
 
-Third confirmation of the delivery-mode class from [[marcusrbrown--vbs]], after [[marcusrbrown--tokentoilet]] and the control plane. The structural facts are by now familiar — `fro-bot.yaml` has exactly three `uses:` steps (checkout, `setup-pnpm`, `fro-bot/agent@335e4f8` # v0.105.0) and nothing after the agent; job-level `permissions` grant `contents`/`issues`/`pull-requests`/`discussions: write`; `FRO_BOT_PAT` reaches both checkout and the agent; `fetch-depth: 0`; every signal reads *empowered*. Last fro-bot PR **2026-08-08**, last fro-bot issue **2026-07-22**, comments on the perpetual reports current through **2026-09-08**.
+From [[marcusrbrown--mothership]]. **Third independent confirmation** of the working-dir delivery defect, after [[marcusrbrown--tokentoilet]] ([A Delivery Contract With Only One Half Implemented](#a-delivery-contract-with-only-one-half-implemented-2026-09-07)) and `fro-bot/.github` itself ([The Control Plane Fails Its Own Delivery Lint](#the-control-plane-fails-its-own-delivery-lint-2026-09-08)). Mothership's `fro-bot.yaml` has the same three-`uses:` shape — checkout, setup, agent — and nothing after `Run Fro Bot`. Three repos, three surveys, three days: this is a fleet-wide harness/workflow contract break, not a per-repo oversight.
 
-What makes this instance worth its own entry is the **detection**, which arrived from inside the loop:
+What makes this instance worth its own entry is the **feedback loop**. The 2026-09-08 entry above prescribed a mitigation: *"An agent that reports a change as 'staged for the caller' should re-verify it on the next run before treating it as done. The cheap check is to re-read the file it claims to have changed."* Mothership's daily pass did exactly that, unprompted, and it worked:
 
-> **⚠️ Confirmed recurring persistence gap:** this is the **third consecutive daily run** to independently re-implement the exact same `migration-progress.ts`/`episodes.ts` fixes — the 2026-09-07 run reported implementing and leaving them in the working tree, but `git log` at the start of this run showed neither change had ever landed on `main`.
->
-> — Fro Bot autoheal run summary, [[marcusrbrown--vbs]] #563, 2026-09-08
+- It found that the **2026-09-06 and 2026-09-07 reports both claimed** two CodeQL findings fixed — `js/unused-local-variable` in `spikes/0c-server-connectivity/probe.ts` and `js/tainted-format-string` at `src/main.tsx:40`.
+- It checked `git log` for both files: no commit for either change ever landed on `main` (`src/main.tsx` untouched since 2026-07-04; `probe.ts` untouched since its authoring commit).
+- It confirmed both alerts were still open at the run's start, applied both fixes for real, and re-verified the gates green.
+- It then closed with: _"These two file edits are staged in the working tree for the caller workflow to commit/PR."_
 
-That is exactly the mitigation recommended one day earlier in [The Control Plane Fails Its Own Delivery Lint](#the-control-plane-fails-its-own-delivery-lint-2026-09-08): re-read the artifact on the next run instead of trusting a prior "staged for the caller" claim. It works, and it is cheap — a `git log` at run start, before any planning. Two refinements it produces:
+**There is no caller workflow.** The run concluded `success`. The fix will be dropped a third time, and tomorrow's run will rediscover it.
 
-- **The signal is the repetition, not the report.** Any single day's report was honest, complete, and indistinguishable from a healthy one. Only the *streak* is diagnostic. Escalation logic should key on "I have proposed this same change N times" rather than on any per-run condition. Same shape as the note under [A Delivery Contract With Only One Half Implemented](#a-delivery-contract-with-only-one-half-implemented-2026-09-07): honest reporting is necessary and not sufficient.
-- **A machine-readable run block makes the gap trivially auditable.** The report ends with `prs_opened: 0 / issues_opened: 0 / files_changed_in_working_tree: 3`. A fleet lint that alerts on `files_changed_in_working_tree > 0 && prs_opened == 0` for N consecutive runs needs no repository access at all — just the comment stream. **Emit counters, not only prose; a prose report cannot be diffed against itself.**
+So the prescribed rule is **necessary and insufficient**. Detection converts a silent failure into a documented one — genuinely better, and the resulting report is honest in a way the two before it were not — but it does not restore the channel. The loop regenerates an identical diff every 24 hours and files a correct report about doing so. Rules:
 
-A second contrast worth recording. In tokentoilet the write channel closed completely. In [[marcusrbrown--vbs]] the split is clean and instructive: **API writes land, filesystem writes evaporate.** The agent still comments daily (75 comments on #563, 89 on #429) because `gh issue comment` goes over the network from inside the job, while file edits need a commit step that does not exist. A reviewer glancing at issue activity sees a productive daemon. **When auditing delivery, count artifacts by write mechanism — network API calls and working-tree writes are separate channels and fail separately.**
+- **A "re-read before trusting" check must be paired with an escalation, not just a correction.** If the same remediation is rediscovered on N consecutive runs, the agent should stop re-staging it and instead open an issue naming the *delivery channel* as the defect. Re-applying a fix that has provably failed to persist twice is a loop, not diligence.
+- **Verify the delivery half exists before doing work that depends on it.** The workflow file is readable at run start; `grep` for a commit/push/PR step after the agent step costs nothing and would let the agent report "I have no delivery channel, here is the patch" instead of "staged for the caller."
+- **Cross-repo convergence on a diagnosis is not convergence on a fix.** Three repos independently identified this failure — one of them even cited the upstream remediation by name (`marcusrbrown/mrbro.dev` #350, *"stop reporting success on work that did not happen"*). None of the three has a delivery step yet. Diagnosis propagates through reports; fixes require someone to edit a workflow.
 
-And the sharpest version of the underlying defect: this repo's prompt **mandates** the forbidden path in four of eight autoheal categories (*"Commit … and push to the PR branch"*, *"create a new PR with the remediation"*, *"Open a PR for all fixes"*, *"include it in a category 4 PR"*). Prompt intent and workflow capability are separately checkable strings in the **same file** — `fro-bot.yaml` holds both the prompt body and the step list — so the lint proposed on 2026-09-07 needs no cross-file analysis to fire here.
+### Zero Open PRs Can Mean Blocked, Not Clean (2026-09-08)
 
-### One Grouped PR, One New Lint Rule, a Whole Queue Frozen (2026-09-08)
+From [[marcusrbrown--mothership]], correcting a measurement this wiki has used repeatedly. Three surveys of that repo read "Renovate is live but the majors never move" off an empty-to-thin PR list, and the 2026-08-22 page hypothesized the majors were *grouped-and-held or awaiting a manual cutover*. Both readings were wrong, and the instrument was the reason.
 
-From [[marcusrbrown--vbs]]: the cost side of `group:allNonMajor`, measured.
+Mothership has **0 open PRs** and **11 update branches parked behind unchecked `Pending Approval` checkboxes** on its Dependency Dashboard — `typescript` v7, `@biomejs/biome` v2, `dockview` v8, Vite majors, `actions/checkout` v7, `@changesets/cli` v3, and, critically, **the entire non-major group** (`renovate/all-minor-patch`) too. That is `dependencyDashboardApproval` inherited from the [[marcusrbrown--renovate-config]] preset. Under that setting Renovate **never creates the branch**, so there is never a PR to count. The queue exists; it just isn't on the surface the fleet audits.
 
-The repo extends `marcusrbrown/renovate-config` plus `group:allNonMajor`, so every non-major update batches into a single `renovate/all-minor-patch` PR. On 2026-08-24 that PR (#740) picked up `@bfra.me/eslint-config` `0.51.2 → 0.52.1`, which rides an ESLint Unicorn major and newly flags `unicorn/prefer-array-some` in one application file. `Test` → `FAILURE`, `renovate/artifacts` → `FAILURE` (the `postUpgradeTasks` `pnpm fix` could not auto-fix it), `mergeStateStatus: BLOCKED`. `Test` is a required context.
+This also explains staleness that was invisible on the PR list: `bfra-me/.github` reusable frozen at `@v4.16.37` while the fleet runs v4.26.0, the preset at `#5.2.4` against `#5.2.13`, Bun at `1.3.14` against `1.4.2`, and `actions/checkout v6.0.3` in four workflows while three others already run `v7.0.0` — a version skew *within one repo* that no PR ever surfaced.
 
-Stranded behind one lint violation in one file, for 14 days:
+The fleet now has three mechanisms producing three superficially identical queue shapes:
 
-| Update | Held at | Available |
-| --- | --- | --- |
-| pnpm | 11.22.0 | 11.25.0 |
-| `bfra-me/.github` reusable workflows | v4.20.0 | v4.26.0 |
-| `fro-bot/agent` | v0.105.0 | v0.109.4 |
-| `marcusrbrown/renovate-config` | #5.2.12 | #5.2.13 |
-| `simple-git-hooks` | 2.13.1 | 2.14.0 |
-
-Second-order effects, all of which look like unrelated problems:
-
-- **Measured CI health inverts.** The maintenance report logs a **94.1 % CI failure rate over 7 days (16/17 runs)** while `main` itself is green — every failure is the same blocked PR re-running. Related: [A Commit's Status Rollup Is Not Branch Health](#a-commits-status-rollup-is-not-branch-health-2026-09-05), from the other direction.
-- **The repo looks alive in `git log`.** Ungrouped lockfile-maintenance PRs (#742, #743) merged on 2026-09-07, so `pushed_at` is fresh while the actual dependency queue has not moved since 2026-08-24. **`pushed_at` and grouped-queue progress are unrelated measurements.**
-- **A version pin freezes without anyone choosing to freeze it.** The agent pin falling 4 minors behind the fleet is not a policy decision; it is a lint rule in a devDependency. Same end state as the calver trap on [[marcusrbrown--esphome-life]] and the verification-gated ceilings on [[marcusrbrown--infra]], reached by a third route. **Any frozen pin under an otherwise-hot bot deserves a cause, and "grouped PR is red" is now a known cause.**
-- **The interlock is what actually hurts.** Grouping is defensible; caller-side delivery is defensible. Their product is a repository where the one actor capable of unblocking the queue has diagnosed the fix three days running and has no channel to land it.
+| Repo | Open PRs | Actual state | Mechanism |
+| --- | --- | --- | --- |
+| [[marcusrbrown--dev-like]] | 0 | genuinely drained | every Renovate PR automerged same-day |
+| [[marcusrbrown--mothership]] | 0 | **11 updates blocked** | `dependencyDashboardApproval` — no branch is ever created |
+| [[bfra-me--ha-addon-repository]] | 5 (fixed) | 6-deep backlog behind the window | `prConcurrentLimit` throttling |
 
 Rules:
 
-- **Grouping strategy is a blast-radius decision, not a noise-reduction decision.** `group:allNonMajor` converts *any* single incompatible update into a total queue stall. Where it is used, pair it with either a per-PR ungrouping escape hatch on lint/format tooling, or an alert on grouped-PR age.
-- **Lint-config packages are not ordinary devDependencies.** They can turn previously-valid source into a CI failure with no source change. They belong in their own Renovate group.
-- **Note for [[marcusrbrown--renovate-config]]:** the v5 preset is recorded as carrying a *0.x ungrouping safety valve*, yet `@bfra.me/eslint-config` `0.51.2 → 0.52.1` — a breaking bump under 0.x semantics — rode inside the grouped PR. Recorded as an observation from the consumer side; the preset itself was not read this survey and the valve's exact scope is unverified.
+- **`open_issues_count` and the open-PR list do not measure dependency backlog.** They measure how many updates were allowed to *become* PRs. With approval gating on, an empty queue and a fully-blocked queue are indistinguishable from outside.
+- **Read the Dependency Dashboard body, not just its existence.** Its `Pending Approval`, `Rate-Limited`, `Awaiting Schedule`, and `Abandoned Dependencies` sections are the real queue. This is the same lesson [[bfra-me--ha-addon-repository]] taught for rate limiting, generalized: **the dashboard is the queue; the PR list is a filtered view of it.**
+- **A per-datasource exemption will hide the gate.** Mothership's `fro-bot/agent` pin moved five times in the window, every one merged same-day, which reads as a healthy automation loop — while everything else sat behind checkboxes. One fast-moving dependency class is enough to make a blocked repo look live.
 
-### A Prose Rotation Budget Guarding a Hard API Limit (2026-09-08)
+### A Self-Cleanup Contract Must Key on Something Re-Derivable (2026-09-08)
 
-From [[marcusrbrown--vbs]]. GitHub's issue body limit is **65,536 characters**; a `PATCH` past it fails. The 2026-09-06 maintenance run reports:
+From [[marcusrbrown--mothership]], as the control case for [[marcusrbrown--infra]]'s non-converging single-report contract. Both repos run the same prompt clause: maintain exactly one open daily report, close the older ones. Infra has **ten** open. Mothership has generated **61 reports and has exactly one open**.
 
-> Issue body was at 65,526/65,536 chars — essentially GitHub's hard limit. Archived 8 older daily sections … to restore headroom (now 27,751 chars).
+The difference is the predicate. Infra's trust clause ANDs a **mutable label** onto an **immutable body marker**, so nine of its own past artifacts fail the trust check — the agent correctly refuses to touch issues it cannot prove are its own, and there is no backfill path. Mothership's clause is a title prefix and nothing else: _"CLOSE every older open issue whose title starts with `Daily Fro Bot Report —`."_ Every run can re-derive the predicate from the artifact itself, so it converges and has for 61 iterations.
 
-Ten characters of margin. The rotation policy exists only as prose inside `MAINTENANCE_PROMPT`, so whether it binds on any given run is a modelling outcome, not a guarantee — and here it did not bind until the write was about to be rejected. The sibling autoheal issue #563 is governed by a *different* prose threshold (50,000) and sits at 35,676, i.e. the two perpetual issues in the same workflow file are on different, independently-drifting budgets.
+- **Key self-cleanup on properties recoverable from the artifact at read time.** Labels, assignees, and milestones are applied at creation and can be removed by anyone; a body marker or title prefix travels with the artifact.
+- **ANDing a mutable term onto an immutable one makes the whole predicate mutable** — and fail-closed on identity means the agent orphans its own history rather than risking a wrong write. That is the right failure direction and still a broken contract.
+- **The simpler predicate is not free.** A title-prefix match is also a title-matched public write surface (see [A Title-Matched Rolling Issue Is a Public Write Surface](#a-title-matched-rolling-issue-is-a-public-write-surface-2026-09-03)). Mothership takes wider blast radius in exchange for convergence; infra took the opposite trade and stopped converging. Pick deliberately.
 
-Same class as the 54,813-char perpetual issue on [[marcusrbrown--cortexkit-anthropic-auth]], but sharper: that one was a soft prose budget overrunning a soft prose threshold; this one nearly overran the API. And the failure mode is the worst available — the report channel simply stops, on a run that otherwise concludes `success` ([A Run's Conclusion Measures the Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02)).
+### Enforce a Design Decision as a Diff Check, Not a Comment (2026-09-08)
 
-Rules:
+From [[marcusrbrown--mothership]]'s `ci.yaml` Release Config Smoke job. The repo bundles its `ide_*` MCP sidecar as a compiled Tauri `externalBin`, which needs `disable-library-validation` — an entitlement that must **not** apply to the main webview. The usual way to encode that is a comment in the entitlements file. Instead, CI asserts it mechanically, with no secrets and no macOS runner:
 
-- **A size budget enforced by prose is not enforced.** Rotation of an append-only artifact is arithmetic; put it in a script step that truncates before the write, and let the prompt describe policy rather than perform it.
-- **Set the threshold with headroom proportional to one section, not to the limit.** A daily section here runs ~4,000 chars; a 50,000 threshold leaves four sections of slack, a 65,000 threshold leaves none.
-- **Perpetual-issue growth is a first-class fleet metric.** `issues/{n}` returns `body` length for free; any repo with a rolling report should be checked for it, and the check is one API call.
+- `Entitlements.plist` and `sidecar-Entitlements.plist` must **not** be byte-identical (`diff -q` must fail) — catching the copy-paste that silently widens the app's entitlements to the sidecar's.
+- The main-app file must not contain `disable-library-validation`.
+- The release config must declare the `ide-server` `externalBin`, reference `Entitlements.plist`, enable `hardenedRuntime`, and not ship the placeholder updater public key; the base config must not ship a null CSP.
 
-### A Cross-Repo Read Category That Discloses What It Read (2026-09-08)
-
-From [[marcusrbrown--vbs]], extending the finding first recorded on [[marcusrbrown--renovate-config]].
-
-The autoheal's category 7 (Cross-Project Intelligence) carries a hard-coded focus list of sibling repositories and three explicit boundaries: *never modify other repositories*, *never open PRs, issues, or comments in other repositories*, *all findings go into the perpetual summary issue in THIS repo only*. Those boundaries are about **writes**. Two entries on the list are repositories that prior surveys re-verified as **private** (names withheld here per the public-only invariant), and the daily maintenance summary reproduces them verbatim in a **public issue comment** — "no relevant cross-project findings from … this run."
-
-The prior instance of this class was a leak in *workflow source*, which is at least a static artifact a reviewer can audit once. This is a leak in *generated output*, produced fresh every day, on a surface with no review step. A negative finding still discloses existence.
-
-Rules:
-
-- **A write boundary is not a disclosure boundary.** "Never modify other repos" and "never name other repos" are separate constraints; a prompt that states the first and not the second will satisfy it while leaking.
-- **Resolve the focus list at runtime and filter by visibility before emitting.** `gh api repos/{owner}/{repo} --jq .visibility` is one call per entry; anything not `public` should be referred to by an opaque index in any published text.
-- **Audit the generated surface, not only the configured one.** A private name that never appears in the workflow file can still appear in every report the workflow produces, and vice versa.
+The byte-inequality check is the clever part: it does not enumerate which exceptions are sidecar-only, it just refuses to let the two files converge. **A separation invariant is often cheaper to assert as an inequality between two artifacts than as a property of either one** — and this whole class of check runs on `ubuntu-latest` against JSON and plists, so a config regression fails in a 10-second PR job instead of mid-release on a signing runner.
 
 ### Convention Enforcement via Tests
 

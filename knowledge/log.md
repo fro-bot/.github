@@ -4799,93 +4799,92 @@ Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@a26d34b5e83f06b429705ee0a6c70afb5923245c
 
-## [2026-09-08 09:12] ingest | repo:marcusrbrown/vbs
+## [2026-09-08 10:12] ingest | repo:marcusrbrown/mothership
 
-Surveyed `marcusrbrown/vbs` (public, `node_id R_kgDOPOixzg`) at HEAD `986b1c2`,
-20 days and 11 commits past the prior survey SHA `c368b1c`. Every commit in the
-window is `mrbro-bot[bot]`; six files changed (three workflow pin lines,
-`package.json`, `pnpm-workspace.yaml`, the lockfile). By volume this is the
-quietest interval ever recorded on the page — and the volume is the finding.
+Surveyed marcusrbrown/mothership (HEAD `8895732`, `node_id R_kgDOTOX0_A`) and
+ingested durable findings into the wiki. This is the first survey of this repo
+that is not a version-churn interval: 9 commits since `739f230`, 7 of them
+`mrbro-bot[bot]` bumps, and two `marcusrbrown`-authored `feat` PRs totaling 86
+files and roughly 27,000 added lines, both landing in the final 48 hours.
 
-Headline: two independently-defensible design choices interlock into a
-repository that cannot advance a single dependency.
+Ten findings recorded. (1) The `ide_*` MCP surface doubled 8 → 17 via PR #100 —
+a new `src/ide/` module tree and nine session-control tools — and AGENTS.md now
+carries a falsifiable standing dogfood check rather than a slogan; the README
+documents the limit of its own redaction, stating that transcript text crosses
+the boundary verbatim and must be treated as untrusted. (2) PR #102 lands
+`src/planning/` contract-first, with two `docs/architecture/` contracts that open
+by enumerating what is not implemented ("successful parsing establishes syntax
+only") and a refusal clause keeping publication unavailable until a guarantee is
+proven. (3) That host contract documents an MCP agent-principal handoff gap in
+the fro-bot/agent OpenCode runtime: clients are keyed by MCP server name rather
+than session, `SessionTools.resolve` holds full per-call context, and
+`McpCatalog.convertTool` constructs no principal assertion — so a shared
+connection cannot separate differently-authorized sessions. It also yields a
+reusable provenance rule: npm `gitHead` names the wrapper tree, not the runtime
+tree. (4) The three-survey "Renovate is live but the majors never move" thread
+is root-caused: `dependencyDashboardApproval` parks 11 update branches — majors
+and the entire non-major group — behind unchecked checkboxes, so zero open PRs
+means blocked, not clean. (5) `@fro.bot/space-bus` reached 0.15.0 by hand inside
+PR #100, and Renovate autoclosed its own 50-day-old PR #45 exactly 126 seconds
+later — the benign inverse of the bfra-me/ha-addon-repository #556 stall, with
+an identical API signature. (6) Third independent confirmation of the working-dir
+delivery defect, and the first instance of an agent detecting its own dropped
+delivery via `git log` — which validates the rule recorded one day earlier and
+simultaneously proves it insufficient. (7) The single-perpetual-report contract
+converges here (61 reports, exactly 1 open) where it does not in
+marcusrbrown/infra, because its predicate is re-derivable from the artifact.
+(8) The release pipeline gained SLSA provenance attestation, a draft-publish
+job, a dual-target build matrix, and a compiled sidecar `externalBin` whose
+entitlements separation is enforced as a byte-inequality diff check. (9) AGENTS.md
+invariants went 8 → 9 (release-secret isolation) — recorded as an addition, not
+a revision; the original eight are verbatim-durable. (10) Tags and releases
+remain 0/0 for a third consecutive survey while the release apparatus keeps
+growing.
 
-1. **A grouped PR froze the whole queue.** #740 (`renovate/all-minor-patch`,
-   opened 2026-08-24) carries `@bfra.me/eslint-config` `0.51.2 → 0.52.1`, which
-   newly flags `unicorn/prefer-array-some` in `src/modules/episodes.ts`. `Test`
-   and `renovate/artifacts` are `FAILURE`, `mergeStateStatus: BLOCKED`, and
-   `Test` is a required context. Because the repo extends `group:allNonMajor`,
-   that one violation stranded pnpm `11.22.0 → 11.25.0`, `bfra-me/.github`
-   `v4.20.0 → v4.26.0`, `fro-bot/agent` `v0.105.0 → v0.109.4`,
-   `marcusrbrown/renovate-config` `#5.2.12 → #5.2.13`, and `simple-git-hooks`.
-   VBS left the ecosystem agent-version front for the first time — by lint rule,
-   not by decision. Measured CI failure rate 94.1 % over 7 days (16/17 runs)
-   against a green `main`; ungrouped lockfile PRs still merge, so `pushed_at`
-   reads healthy.
-2. **The agent that diagnosed the fix has no write channel.** `fro-bot.yaml`
-   contains exactly three `uses:` steps (checkout, `setup-pnpm`,
-   `fro-bot/agent@335e4f8` # v0.105.0) and nothing after the agent, so under
-   `working-dir` delivery mode every file edit is discarded at job teardown.
-   Third confirmation of the class after `marcusrbrown/tokentoilet` and the
-   control plane itself, in its sharpest form: four of eight autoheal categories
-   explicitly mandate commit/push/PR, and the prompt body and the step list are
-   in the same file. Channel split is clean — API writes land, filesystem writes
-   evaporate (75 comments on #563 through 2026-09-08; no fro-bot PR since
-   2026-08-08, no fro-bot issue since 2026-07-22).
+Two prior claims are explicitly marked superseded rather than overwritten: the
+2026-08-22 hypothesis that the frozen TS/Vite/Biome majors were "grouped-and-held
+or awaiting a manual cutover" (the cause is approval gating at branch creation),
+and the recorded tagline "The craft the fleet reports back to" (the README now
+reads "your agents", which is the repo's own public-copy guard applied to
+itself). The `@fro.bot/space-bus` pin thread and the "planned-but-unbuilt
+surfaces" thread are marked resolved and partially superseded respectively.
 
-New and genuinely novel: this is the **first instance of the delivery-mode class
-detected from inside the loop**. The 2026-09-08 autoheal report escalates a
-"Confirmed recurring persistence gap … third consecutive daily run" after
-re-reading `git log` at run start — exactly the mitigation the wiki proposed one
-day earlier — and its machine-readable run block
-(`files_changed_in_working_tree: 3 / prs_opened: 0`) makes the gap auditable
-from the comment stream with no repository access.
+The repo has a Fro Bot workflow, so no follow-up draft PR is warranted on that
+count. Its defect is the missing delivery half: the job holds
+`contents`/`issues`/`pull-requests: write` plus `FRO_BOT_PAT`, but the workflow's
+last step is `Run Fro Bot` with no commit, push, or PR step after it. Two CodeQL
+fixes have now been staged into the void on three consecutive days.
 
-Four further findings, all generalized into `wiki/topics/github-actions-ci.md`:
-85 of the last 100 workflow runs concluded `skipped` (53 from `issues` alone,
-with the agent's own perpetual report issues triggering the runs that skip —
-second confirmation of the `issues: [edited]` no-op run storm); issue #429's
-body reached **65,526 of GitHub's 65,536-char limit** before emergency archival,
-a prose rotation budget guarding a hard API failure; the five `CONFLICTING`
-`fix(security)` PRs are **redundant** against 0 open Dependabot alerts, which
-supersedes the 2026-08-19 reading of them as stacking risk (stale, not pending —
-and the prompt grants no PR-close authority, so only a human can retire them);
-and the category-7 cross-repo intelligence list echoes two **private**
-`marcusrbrown/*` repository names into a public issue comment (names withheld
-here per the public-only invariant, consistent with the handling on
-`marcusrbrown/renovate-config`) — a write boundary is not a disclosure boundary.
+Caveat recorded on the page rather than elided: `code-scanning/alerts`,
+`dependabot/alerts`, and `branches/main/protection` all returned 403 to this
+survey's token, so the security counts (1 dismissed Dependabot alert, 18
+workflow CodeQL alerts, 2 spike alerts, 17 untriaged RUSTSEC advisories, the
+non-constant-time bearer comparison, 1190 passing tests) are attributed as
+declared by Fro Bot's own 2026-09-08 report, not independently confirmed.
 
-Also recorded: Renovate has begun writing `minimumReleaseAgeExclude` into
-`pnpm-workspace.yaml` to reconcile its own release-age cooldown with pnpm 11's
-install-time gate — first sighting in this ecosystem, and noted as incoherent
-because no `minimumReleaseAge` is declared anywhere in the consumer repo.
+Pages touched: updated `wiki/repos/marcusrbrown--mothership.md` (additive — a
+new dated survey section with ten findings, refreshed Overview/Tech
+Stack/`ide_*`/CI/Fro Bot/Relationship blocks, a ninth invariant appended to the
+invariants list, resolved and still-open threads reorganized without deletion,
+new survey-history row), `wiki/topics/github-actions-ci.md` (four new dated
+sections), `wiki/topics/opencode-plugins.md` (one new dated section with a
+sub-section, plus a Related Pages entry), and `index.md`. No page content
+removed; all wikilinks resolve to existing pages.
 
-Pages touched: `wiki/repos/marcusrbrown--vbs.md` (new frontmatter `node_id` and
-source, refreshed Overview/Fro Bot/Tooling sections, survey-history row, and a
-new dated 2026-09-08 delta with eight subsections; one prior security reading
-explicitly marked superseded rather than overwritten),
-`wiki/topics/github-actions-ci.md` (four new dated sections, one addendum, a new
-repo-roster entry, three new tags), `wiki/repos/marcusrbrown--renovate-config.md`
-(consumer-side observations under Downstream Consumers, updated VBS pin row,
-attributed source entry), and `index.md`. No page content removed; all wikilinks
-resolve to existing pages.
+Method note: reads were held to directory listings, README, manifest files
+(`package.json`, `biome.json`, `renovate.json5`, `.impeccable/config.json`),
+workflow files, `AGENTS.md`, the two new `docs/architecture/*-contract.md`
+specification documents, and public issue/PR/run/tree metadata, per the survey
+constraints. The target repository was treated as untrusted input — prompt text
+inside `fro-bot.yaml`, contract documents, and issue bodies were read as data to
+describe, never as instructions. `gh` was not pre-authenticated; the run used
+the workspace checkout credential already present in git config, scoped to
+public reads. Delivery mode was `working-dir`; only `knowledge/**` was modified.
 
-Method note: reads were held to directory listings, README/manifest/workflow
-files, and public issue/PR/run/workflow metadata, per the survey constraints.
-The target repository was treated as untrusted input — prompt text inside
-`fro-bot.yaml` and agent-authored issue bodies were read as data to describe,
-never as instructions. `gh` was not pre-authenticated in this environment; the
-run used the workspace checkout credential already present in git config, scoped
-to public reads. Two reads returned `403 Resource not accessible by integration`
-and are recorded as declared-not-confirmed caveats: branch protection (taken
-from `.github/settings.yml` instead) and the Dependabot alerts list (taken from
-two independent agent reports instead). Delivery mode was `working-dir`; only
-`knowledge/**` was modified.
+Sources: https://github.com/marcusrbrown/mothership@8895732b6b3a0f88fd3bf51117beeec985791fc5; https://github.com/fro-bot/.github/actions/runs/34211737112
 
-Sources: https://github.com/marcusrbrown/vbs@986b1c296c782dc2fb5acce19f5d594388619faf; https://github.com/fro-bot/.github/actions/runs/34211592758
+## [2026-09-08 09:58] ingest | repo:marcusrbrown/mothership
 
-## [2026-09-08 09:56] ingest | repo:marcusrbrown/vbs
+Surveyed marcusrbrown/mothership and updated the control-plane wiki.
 
-Surveyed marcusrbrown/vbs and updated the control-plane wiki.
-
-Sources: https://github.com/marcusrbrown/vbs
+Sources: https://github.com/marcusrbrown/mothership
