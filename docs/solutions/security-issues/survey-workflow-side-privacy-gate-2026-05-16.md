@@ -208,7 +208,7 @@ await params.appOctokit.rest.actions.createWorkflowDispatch({
 **6. Use the refreshed `nodeId` from the invitation refresh path** — `scripts/handle-invitation.ts`:
 
 ```typescript
-async function acceptedInvitationRepositoryPrivacy(...) {
+async function acceptedInvitationRepositoryPrivacy(invitationPrivacy: {kind: string; nodeId: string}) {
   try {
     const response = await octokit.rest.repos.get({owner, repo})
     const nodeId =

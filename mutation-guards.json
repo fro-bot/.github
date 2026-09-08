@@ -63,6 +63,10 @@
     {
       "path": "scripts/check-md-links.ts",
       "reason": "Documentation-quality lint for broken relative links. It does not protect a security boundary, autonomous write, persisted trust state, or generated executable artifact; its behavior is adequately covered by conventional tests."
+    },
+    {
+      "path": "scripts/check-solutions-examples.ts",
+      "reason": "Documentation-quality lint for docs/solutions code examples (parse validity, opt-in symbol/arity checks). It does not protect a security boundary, autonomous write, persisted trust state, or generated executable artifact; its behavior is adequately covered by conventional tests. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here."
     }
   ]
 }
