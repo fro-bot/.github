@@ -1,4 +1,4 @@
-import type {AuditRunResult, RangeGroup} from './check-override-floors.ts'
+import type {AuditRunResult, RangeInterval} from './check-override-floors.ts'
 
 import {mkdtemp, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
@@ -8,12 +8,10 @@ import {
   checkOverrideFloors,
   compareVersions,
   extractOverridesMap,
-  floorSatisfiesRange,
   isNoFixAvailable,
   overrideBaseName,
+  overrideCoveredByPatched,
   parseAuditOutput,
-  parseOverrideFloor,
-  parseRangeFloor,
   parseRangeGroups,
   parseVersion,
 } from './check-override-floors.ts'
@@ -52,7 +50,7 @@ function mustParse(raw: string): ReturnType<typeof parseVersion> & object {
 }
 
 /** Parses `raw` into range groups and fails the test loudly if it doesn't parse. */
-function mustParseGroups(raw: string): readonly RangeGroup[] {
+function mustParseGroups(raw: string): readonly RangeInterval[] {
   const result = parseRangeGroups(raw)
   if (!result.ok) throw new Error(`expected "${raw}" to parse as a range: ${result.reason}`)
   return result.groups
@@ -87,46 +85,52 @@ describe('parseVersion / compareVersions', () => {
 })
 
 describe('parseRangeGroups', () => {
-  it('parses a bare ">=X" range into a single unbounded-above group', () => {
+  it('parses a bare ">=X" range into a single unbounded-above interval', () => {
     expect(parseRangeGroups('>=4.1.3')).toEqual({
       ok: true,
-      groups: [{lowerBound: {major: 4, minor: 1, patch: 3, prerelease: []}, upperBound: undefined}],
+      groups: [{lo: {major: 4, minor: 1, patch: 3, prerelease: []}, hi: undefined}],
     })
   })
 
-  it('parses a compound ">=X <Y" range into one bounded group, exclusive upper bound', () => {
+  it('parses an exact pin as its own one-patch-wide interval, not an unbounded floor', () => {
+    expect(parseRangeGroups('8.20.0')).toEqual({
+      ok: true,
+      groups: [
+        {lo: {major: 8, minor: 20, patch: 0, prerelease: []}, hi: {major: 8, minor: 20, patch: 1, prerelease: []}},
+      ],
+    })
+  })
+
+  it('parses a compound ">=X <Y" range into one bounded interval, exclusive upper bound', () => {
     expect(parseRangeGroups('>=4.17.21 <5.0.0')).toEqual({
       ok: true,
       groups: [
         {
-          lowerBound: {major: 4, minor: 17, patch: 21, prerelease: []},
-          upperBound: {version: {major: 5, minor: 0, patch: 0, prerelease: []}, inclusive: false},
+          lo: {major: 4, minor: 17, patch: 21, prerelease: []},
+          hi: {major: 5, minor: 0, patch: 0, prerelease: []},
         },
       ],
     })
   })
 
-  it('parses ">=X <=Y" with an inclusive upper bound', () => {
+  it('normalizes an inclusive ">=X <=Y" upper bound to an exclusive one at Y\'s next patch', () => {
     const [group] = mustParseGroups('>=1.0.0 <=2.0.0')
-    expect(group?.upperBound).toEqual({version: {major: 2, minor: 0, patch: 0, prerelease: []}, inclusive: true})
+    expect(group?.hi).toEqual({major: 2, minor: 0, patch: 1, prerelease: []})
   })
 
-  it('parses a disjoint (||) range into two independent groups', () => {
+  it('parses a disjoint (||) range into two independent intervals', () => {
     expect(parseRangeGroups('>=1.2.3 <2.0.0 || >=2.1.0')).toEqual({
       ok: true,
       groups: [
-        {
-          lowerBound: {major: 1, minor: 2, patch: 3, prerelease: []},
-          upperBound: {version: {major: 2, minor: 0, patch: 0, prerelease: []}, inclusive: false},
-        },
-        {lowerBound: {major: 2, minor: 1, patch: 0, prerelease: []}, upperBound: undefined},
+        {lo: {major: 1, minor: 2, patch: 3, prerelease: []}, hi: {major: 2, minor: 0, patch: 0, prerelease: []}},
+        {lo: {major: 2, minor: 1, patch: 0, prerelease: []}, hi: undefined},
       ],
     })
   })
 
   it('treats a ">" lower bound as exclusive, using the next patch as its effective floor', () => {
     const [group] = mustParseGroups('>3.3.17')
-    expect(group?.lowerBound).toEqual({major: 3, minor: 3, patch: 18, prerelease: []})
+    expect(group?.lo).toEqual({major: 3, minor: 3, patch: 18, prerelease: []})
   })
 
   it('fails closed with no lower bound at all', () => {
@@ -145,81 +149,123 @@ describe('parseRangeGroups', () => {
     expect(parseRangeGroups('>=1.0.0 || ').ok).toBe(false)
   })
 
-  // Every genuinely uninterpretable shape this check has never claimed to support.
+  // Every genuinely uninterpretable shape this check has never claimed to support — on the
+  // patched side.
   it.each(['^1.2.3', '~1.2', '*', 'garbage', ''])('fails closed on uninterpretable input %j', input => {
     expect(parseRangeGroups(input).ok).toBe(false)
   })
 })
 
-describe('parseRangeFloor (single-point floor, used for overrides)', () => {
-  it('extracts the LOWEST lower bound across a disjoint (||) range', () => {
-    expect(parseRangeFloor('>=1.2.3 <2.0.0 || >=2.1.0')).toEqual({
-      ok: true,
-      version: {major: 1, minor: 2, patch: 3, prerelease: []},
-    })
-  })
-
-  it('accepts an exact pin as a floor', () => {
-    expect(parseRangeFloor('8.20.0')).toEqual({ok: true, version: {major: 8, minor: 20, patch: 0, prerelease: []}})
-  })
-
-  it('fails closed on unparseable version text', () => {
-    expect(parseRangeFloor('>=not-a-version').ok).toBe(false)
-  })
-})
-
-describe('parseOverrideFloor (thin wrapper over parseRangeFloor)', () => {
-  it('accepts a bounded ">=X <Y" range, using the lower bound as the floor', () => {
-    expect(parseOverrideFloor('>=3.3.18 <4')).toEqual({
-      ok: true,
-      version: {major: 3, minor: 3, patch: 18, prerelease: []},
-    })
-  })
-
-  it('fails closed on a range with no lower bound', () => {
-    expect(parseOverrideFloor('<4').ok).toBe(false)
-  })
-})
-
-describe('floorSatisfiesRange', () => {
-  const disjointRange = mustParseGroups('>=1.2.3 <2.0.0 || >=2.1.0')
-
-  it('fails a floor sitting in the unpatched gap between two disjoint groups', () => {
-    // The exact false negative from PR #3871's review: 2.0.0 clears the lowest lower bound
+describe('overrideCoveredByPatched', () => {
+  it('fails a floor sitting in the unpatched gap between two disjoint patched groups', () => {
+    // The false negative from PR #3871's round-4 review: 2.0.0 clears the lowest lower bound
     // (1.2.3) but is not itself inside any patched interval — [2.0.0, 2.1.0) is the gap.
-    expect(floorSatisfiesRange(mustParse('2.0.0'), disjointRange)).toBe(false)
+    const override = mustParseGroups('>=2.0.0')
+    const patched = mustParseGroups('>=1.2.3 <2.0.0 || >=2.1.0')
+    expect(overrideCoveredByPatched(override, patched)).toBe(false)
   })
 
-  it('passes a floor inside the lower patched branch', () => {
-    expect(floorSatisfiesRange(mustParse('1.5.0'), disjointRange)).toBe(true)
+  it('passes a bounded floor fully inside the lower patched branch', () => {
+    // Bounded, not unbounded: an unbounded '>=1.5.0' would admit the [2.0.0, 2.1.0) gap too and
+    // must still fail (see the round-5 regression tests below) -- only a bounded override that
+    // stays inside one branch is safe here.
+    const override = mustParseGroups('>=1.5.0 <2.0.0')
+    const patched = mustParseGroups('>=1.2.3 <2.0.0 || >=2.1.0')
+    expect(overrideCoveredByPatched(override, patched)).toBe(true)
   })
 
   it('passes a floor inside the upper (unbounded) patched branch', () => {
-    expect(floorSatisfiesRange(mustParse('2.1.0'), disjointRange)).toBe(true)
-    expect(floorSatisfiesRange(mustParse('5.0.0'), disjointRange)).toBe(true)
+    const patched = mustParseGroups('>=1.2.3 <2.0.0 || >=2.1.0')
+    expect(overrideCoveredByPatched(mustParseGroups('>=2.1.0'), patched)).toBe(true)
+    expect(overrideCoveredByPatched(mustParseGroups('>=5.0.0'), patched)).toBe(true)
   })
 
   it('fails a floor below every branch', () => {
-    expect(floorSatisfiesRange(mustParse('1.0.0'), disjointRange)).toBe(false)
+    const override = mustParseGroups('>=1.0.0')
+    const patched = mustParseGroups('>=1.2.3 <2.0.0 || >=2.1.0')
+    expect(overrideCoveredByPatched(override, patched)).toBe(false)
   })
 
-  it('excludes an exclusive "<" upper bound at the boundary', () => {
-    const groups = mustParseGroups('>=1.0.0 <2.0.0')
-    expect(floorSatisfiesRange(mustParse('2.0.0'), groups)).toBe(false)
-    expect(floorSatisfiesRange(mustParse('1.9.9'), groups)).toBe(true)
+  it('excludes a bounded override reaching exactly an exclusive patched ceiling, one patch too far', () => {
+    const patched = mustParseGroups('>=1.0.0 <2.0.0')
+    expect(overrideCoveredByPatched(mustParseGroups('>=1.0.0 <2.0.1'), patched)).toBe(false)
+    expect(overrideCoveredByPatched(mustParseGroups('>=1.0.0 <2.0.0'), patched)).toBe(true)
   })
 
-  it('includes an inclusive "<=" upper bound at the boundary', () => {
-    const groups = mustParseGroups('>=1.0.0 <=2.0.0')
-    expect(floorSatisfiesRange(mustParse('2.0.0'), groups)).toBe(true)
-    expect(floorSatisfiesRange(mustParse('2.0.1'), groups)).toBe(false)
+  it('includes a bounded override reaching exactly an inclusive patched ceiling', () => {
+    const patched = mustParseGroups('>=1.0.0 <=2.0.0')
+    expect(overrideCoveredByPatched(mustParseGroups('>=1.0.0 <=2.0.0'), patched)).toBe(true)
   })
 
   it('collapses to simple at-or-above comparison for a single unbounded group', () => {
-    const groups = mustParseGroups('>=4.1.3')
-    expect(floorSatisfiesRange(mustParse('4.1.3'), groups)).toBe(true)
-    expect(floorSatisfiesRange(mustParse('4.1.2'), groups)).toBe(false)
-    expect(floorSatisfiesRange(mustParse('4.1.4'), groups)).toBe(true)
+    const patched = mustParseGroups('>=4.1.3')
+    expect(overrideCoveredByPatched(mustParseGroups('>=4.1.3'), patched)).toBe(true)
+    expect(overrideCoveredByPatched(mustParseGroups('>=4.1.2'), patched)).toBe(false)
+    expect(overrideCoveredByPatched(mustParseGroups('>=4.1.4'), patched)).toBe(true)
+  })
+
+  // The round-5 review's two mirrored false negatives: reducing the OVERRIDE side to a point
+  // lost its own ceiling (or its own unboundedness), the same mistake made twice already on the
+  // patched side.
+  it('fails a bounded override with an unpatched tail above a bounded patched range', () => {
+    const override = mustParseGroups('>=1.2.3 <5.0.0')
+    const patched = mustParseGroups('>=1.2.3 <2.0.0')
+    // Admits [2.0.0, 5.0.0), which the patched range never covers.
+    expect(overrideCoveredByPatched(override, patched)).toBe(false)
+  })
+
+  it('fails an unbounded override against a patched range with a gap above its lower bound', () => {
+    const override = mustParseGroups('>=4.17.21')
+    const patched = mustParseGroups('>=4.17.21 <5.0.0 || >=5.0.3')
+    // Admits [5.0.0, 5.0.3), the gap between the two patched branches, forever.
+    expect(overrideCoveredByPatched(override, patched)).toBe(false)
+  })
+
+  it('passes an unbounded override against an unbounded patched group starting at or below it', () => {
+    const override = mustParseGroups('>=5.0.0')
+    const patched = mustParseGroups('>=4.17.21')
+    expect(overrideCoveredByPatched(override, patched)).toBe(true)
+  })
+
+  it('passes a bounded override fully inside a single patched interval', () => {
+    const override = mustParseGroups('>=1.5.0 <2.0.0')
+    const patched = mustParseGroups('>=1.0.0')
+    expect(overrideCoveredByPatched(override, patched)).toBe(true)
+  })
+
+  it('passes a bounded override spanning two contiguous patched intervals with no gap', () => {
+    const override = mustParseGroups('>=1.5.0 <2.5.0')
+    const patched = mustParseGroups('>=1.2.3 <2.0.0 || >=2.0.0 <3.0.0')
+    expect(overrideCoveredByPatched(override, patched)).toBe(true)
+  })
+
+  it('fails a bounded override spanning a disjoint gap', () => {
+    const override = mustParseGroups('>=1.5.0 <2.5.0')
+    const patched = mustParseGroups('>=1.2.3 <2.0.0 || >=2.1.0')
+    expect(overrideCoveredByPatched(override, patched)).toBe(false)
+  })
+
+  it('excludes an exclusive override ceiling against an exclusive patched ceiling one below it', () => {
+    // Override admits up to (not including) 2.0.0; patched covers only up to (not including) 2.0.0
+    // as well -- exact match, covered.
+    const override = mustParseGroups('>=1.0.0 <2.0.0')
+    const patched = mustParseGroups('>=1.0.0 <2.0.0')
+    expect(overrideCoveredByPatched(override, patched)).toBe(true)
+  })
+
+  it('fails an inclusive override ceiling against an exclusive patched ceiling at the same version', () => {
+    // Override admits 2.0.0 itself (<=2.0.0); patched excludes it (<2.0.0) -- not covered.
+    const override = mustParseGroups('>=1.0.0 <=2.0.0')
+    const patched = mustParseGroups('>=1.0.0 <2.0.0')
+    expect(overrideCoveredByPatched(override, patched)).toBe(false)
+  })
+
+  it('passes an exclusive override ceiling against an inclusive patched ceiling at the same version', () => {
+    // Override admits up to (not including) 2.0.0; patched covers up to AND including 2.0.0 --
+    // strictly more coverage than the override needs.
+    const override = mustParseGroups('>=1.0.0 <2.0.0')
+    const patched = mustParseGroups('>=1.0.0 <=2.0.0')
+    expect(overrideCoveredByPatched(override, patched)).toBe(true)
   })
 })
 
@@ -329,11 +375,23 @@ describe('checkOverrideFloors', () => {
       runAudit: auditOf([advisory({module_name: 'lodash', patched_versions: '>=4.17.21 <5.0.0'})]),
     })
 
+    // Unbounded override against a bounded patched range with a gap above it: correctly a
+    // failure now (see the round-5 fix), NOT the round-3 false positive this test originally
+    // guarded against. Use the round-4/5 regression fixtures below for the "already covered"
+    // shape of this case.
+    expect(result.ok).toBe(false)
+  })
+
+  it('passes when a compound patched range fully covers the override (no gap above it)', async () => {
+    const rootDir = await fixtureRoot("  lodash: '>=4.17.21 <5.0.0'")
+    const result = await checkOverrideFloors({
+      rootDir,
+      runAudit: auditOf([advisory({module_name: 'lodash', patched_versions: '>=4.17.21 <5.0.0'})]),
+    })
+
     expect(result).toEqual({ok: true, evaluated: 1, problems: []})
   })
 
-  // The false negative PR #3871's review caught: a floor that clears the lowest lower bound of
-  // a disjoint patched range but sits in the unpatched gap between its branches must still fail.
   it("fails a floor sitting inside a disjoint patched range's vulnerable gap", async () => {
     const rootDir = await fixtureRoot("  widget: '>=2.0.0'")
     const result = await checkOverrideFloors({
@@ -355,8 +413,10 @@ describe('checkOverrideFloors', () => {
     ])
   })
 
-  it('passes a floor inside the lower branch of a disjoint patched range', async () => {
-    const rootDir = await fixtureRoot("  widget: '>=1.5.0'")
+  it('passes a bounded floor fully inside the lower branch of a disjoint patched range', async () => {
+    // Bounded, not unbounded -- an unbounded '>=1.5.0' would admit the gap too (see the
+    // dedicated round-5 regression tests below).
+    const rootDir = await fixtureRoot("  widget: '>=1.5.0 <2.0.0'")
     const result = await checkOverrideFloors({
       rootDir,
       runAudit: auditOf([advisory({module_name: 'widget', patched_versions: '>=1.2.3 <2.0.0 || >=2.1.0'})]),
@@ -380,6 +440,27 @@ describe('checkOverrideFloors', () => {
     const result = await checkOverrideFloors({
       rootDir,
       runAudit: auditOf([advisory({module_name: 'widget', patched_versions: '>=1.2.3 <2.0.0 || >=2.1.0'})]),
+    })
+
+    expect(result.ok).toBe(false)
+  })
+
+  // The round-5 review's exact live-reproduced cases, at the checkOverrideFloors level.
+  it('fails a bounded override with an unpatched tail above a bounded patched range (live case 1)', async () => {
+    const rootDir = await fixtureRoot("  widget: '>=1.2.3 <5.0.0'")
+    const result = await checkOverrideFloors({
+      rootDir,
+      runAudit: auditOf([advisory({module_name: 'widget', patched_versions: '>=1.2.3 <2.0.0'})]),
+    })
+
+    expect(result.ok).toBe(false)
+  })
+
+  it('fails an unbounded override against a disjoint patched range with a gap above it (live case 2)', async () => {
+    const rootDir = await fixtureRoot("  lodash: '>=4.17.21'")
+    const result = await checkOverrideFloors({
+      rootDir,
+      runAudit: auditOf([advisory({module_name: 'lodash', patched_versions: '>=4.17.21 <5.0.0 || >=5.0.3'})]),
     })
 
     expect(result.ok).toBe(false)
