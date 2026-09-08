@@ -112,3 +112,7 @@ the mutation gate exists to catch.
 - `docs/plans/2026-09-04-001-feat-counterexample-proven-guards-plan.md`, Unit 5A-1 and 5B-3 Result blocks
 - `docs/solutions/best-practices/equivalence-refactors-need-differential-proofs-past-the-bound-2026-09-06.md`
   — when the fix is a refactor rather than a directive, the proof it needs
+- `docs/solutions/best-practices/a-policy-scanner-must-parse-tokens-not-prose-2026-09-08.md` — the same policy
+  from the enforcing side: how `check-mutation-guards.ts` must read these directives
+- `docs/solutions/best-practices/a-mutation-score-can-measure-nothing-2026-09-08.md` — the adjacent trap,
+  where a mutant is never reachable rather than silenced
