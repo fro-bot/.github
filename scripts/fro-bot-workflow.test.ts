@@ -129,6 +129,46 @@ describe('fro-bot.yaml wiki baseline/detect/ingest ordering', () => {
     expect(findStepIndex(remediateJob, step => step.name === 'Detect wiki insight changes')).toBe(-1)
     expect(findStepIndex(remediateJob, step => step.name === 'Ingest wiki insight changes')).toBe(-1)
   })
+
+  it('fro-bot-remediate has no daily-report steps — only fro-bot-observe creates/announces the report', () => {
+    expect(findStepIndex(remediateJob, step => step.name === '🔍 Discover daily report URL')).toBe(-1)
+    expect(findStepIndex(remediateJob, step => step.name === '📊 Derive daily digest counts')).toBe(-1)
+    expect(findStepIndex(remediateJob, step => step.name === '📣 Announce daily digest to gateway')).toBe(-1)
+  })
+})
+
+describe('fro-bot.yaml pre-agent tree cleanliness', () => {
+  const remediateJob = froBotParsed.jobs['fro-bot-remediate']
+  const observeJob = froBotParsed.jobs['fro-bot-observe']
+
+  it('fro-bot-remediate restores knowledge/ to HEAD after solutions-query and before the agent runs', () => {
+    const solutionsIndex = findStepIndex(remediateJob, step => step.id === 'solutions-query')
+    const restoreIndex = findStepIndex(
+      remediateJob,
+      step => typeof step.run === 'string' && step.run.includes('git restore --worktree --source=HEAD -- knowledge'),
+    )
+    const agentIndex = findStepIndex(remediateJob, step => step.id === 'fro-bot-agent')
+
+    expect(solutionsIndex).toBeGreaterThanOrEqual(0)
+    expect(restoreIndex).toBeGreaterThan(solutionsIndex)
+    expect(agentIndex).toBeGreaterThan(restoreIndex)
+  })
+
+  it('the restore step verifies a clean git status --porcelain -- knowledge, not just the restore command', () => {
+    const restoreStep = remediateJob?.steps?.find(
+      step => typeof step.run === 'string' && step.run.includes('git restore --worktree --source=HEAD -- knowledge'),
+    )
+    expect(String(restoreStep?.run ?? '')).toContain('git status --porcelain -- knowledge')
+    expect(String(restoreStep?.run ?? '')).toContain('exit 1')
+  })
+
+  it('fro-bot-observe has no such restore step — its dirty tree is load-bearing for wiki-ingest.ts', () => {
+    const restoreIndex = findStepIndex(
+      observeJob,
+      step => typeof step.run === 'string' && step.run.includes('git restore --worktree --source=HEAD -- knowledge'),
+    )
+    expect(restoreIndex).toBe(-1)
+  })
 })
 
 describe('fro-bot.yaml custom-prompt single-job resolution', () => {
@@ -179,7 +219,42 @@ describe('fro-bot.yaml custom-prompt single-job resolution', () => {
     expect(observeIf).not.toContain('success()')
   })
 })
+describe('fro-bot.yaml: prompt bound to output-mode', () => {
+  const remediateJob = froBotParsed.jobs['fro-bot-remediate']
+  const observeJob = froBotParsed.jobs['fro-bot-observe']
 
+  it('remediate task prompt references REMEDIATE pieces only', () => {
+    const agentStep = remediateJob?.steps?.find(step => step.id === 'fro-bot-agent')
+    const taskPrompt = String(agentStep?.env?.TASK_PROMPT ?? '')
+    expect(taskPrompt).toContain('env.REMEDIATE_INTRO')
+    expect(taskPrompt).toContain('env.REMEDIATE_CATEGORIES')
+    expect(taskPrompt).not.toContain('env.OBSERVE_INTRO')
+    expect(taskPrompt).not.toContain('env.OBSERVE_CATEGORIES')
+    expect(taskPrompt).not.toContain('env.OBSERVE_OUTPUT')
+  })
+
+  it('observe task prompt references OBSERVE pieces only', () => {
+    const agentStep = observeJob?.steps?.find(step => step.id === 'fro-bot-agent')
+    const taskPrompt = String(agentStep?.env?.TASK_PROMPT ?? '')
+    expect(taskPrompt).toContain('env.OBSERVE_INTRO')
+    expect(taskPrompt).toContain('env.OBSERVE_CATEGORIES')
+    expect(taskPrompt).toContain('env.OBSERVE_OUTPUT')
+    expect(taskPrompt).not.toContain('env.REMEDIATE_INTRO')
+    expect(taskPrompt).not.toContain('env.REMEDIATE_CATEGORIES')
+  })
+
+  it('both jobs share HARD_BOUNDARIES, AGENT_NOTES, and SHARED_RULES', () => {
+    const remediateAgentStep = remediateJob?.steps?.find(step => step.id === 'fro-bot-agent')
+    const observeAgentStep = observeJob?.steps?.find(step => step.id === 'fro-bot-agent')
+    const remediateTaskPrompt = String(remediateAgentStep?.env?.TASK_PROMPT ?? '')
+    const observeTaskPrompt = String(observeAgentStep?.env?.TASK_PROMPT ?? '')
+    const sharedNames = ['env.SHARED_RULES', 'env.HARD_BOUNDARIES', 'env.AGENT_NOTES']
+    for (const shared of sharedNames) {
+      expect(remediateTaskPrompt).toContain(shared)
+      expect(observeTaskPrompt).toContain(shared)
+    }
+  })
+})
 describe('reusable-workflow callers declare the output-mode they need', () => {
   it('apply-branding.yaml passes output-mode: branch-pr', () => {
     const job = applyBrandingParsed.jobs['apply-branding']
