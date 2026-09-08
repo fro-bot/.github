@@ -8,10 +8,12 @@ import {
   checkOverrideFloors,
   compareVersions,
   extractOverridesMap,
+  isNoFixAvailable,
   overrideBaseName,
   parseAuditOutput,
   parseOverrideFloor,
   parsePatchedFloor,
+  parseRangeFloor,
   parseVersion,
 } from './check-override-floors.ts'
 
@@ -76,54 +78,70 @@ describe('parseVersion / compareVersions', () => {
   })
 })
 
-describe('parsePatchedFloor', () => {
+describe('parseRangeFloor (shared by parsePatchedFloor and parseOverrideFloor)', () => {
   it('accepts a bare ">=X" floor', () => {
-    expect(parsePatchedFloor('>=4.1.3')).toEqual({ok: true, version: {major: 4, minor: 1, patch: 3, prerelease: []}})
-  })
-
-  it('fails closed on a disjoint (||) range', () => {
-    const result = parsePatchedFloor('>=1.0.0 <2.0.0 || >=3.0.0')
-    expect(result.ok).toBe(false)
-  })
-
-  it('fails closed on a compound range', () => {
-    expect(parsePatchedFloor('>=1.0.0 <2.0.0').ok).toBe(false)
-  })
-
-  it('fails closed on an operator other than ">="', () => {
-    expect(parsePatchedFloor('<4.1.3').ok).toBe(false)
-  })
-
-  it('fails closed on unparseable version text', () => {
-    expect(parsePatchedFloor('>=not-a-version').ok).toBe(false)
-  })
-})
-
-describe('parseOverrideFloor', () => {
-  it('accepts a bare ">=X" floor', () => {
-    expect(parseOverrideFloor('>=5.0.9').ok).toBe(true)
+    expect(parseRangeFloor('>=4.1.3')).toEqual({ok: true, version: {major: 4, minor: 1, patch: 3, prerelease: []}})
   })
 
   it('accepts an exact pin as a floor', () => {
-    const result = parseOverrideFloor('8.20.0')
-    expect(result).toEqual({ok: true, version: {major: 8, minor: 20, patch: 0, prerelease: []}})
+    expect(parseRangeFloor('8.20.0')).toEqual({ok: true, version: {major: 8, minor: 20, patch: 0, prerelease: []}})
   })
 
-  it('accepts a bounded ">=X <Y" range, using the lower bound as the floor', () => {
-    const result = parseOverrideFloor('>=3.3.18 <4')
-    expect(result).toEqual({ok: true, version: {major: 3, minor: 3, patch: 18, prerelease: []}})
+  it('extracts the lower bound from a compound ">=X <Y" range', () => {
+    expect(parseRangeFloor('>=4.17.21 <5.0.0')).toEqual({
+      ok: true,
+      version: {major: 4, minor: 17, patch: 21, prerelease: []},
+    })
+  })
+
+  it('extracts the LOWEST lower bound across a disjoint (||) range', () => {
+    const result = parseRangeFloor('>=1.2.3 <2.0.0 || >=2.1.0')
+    expect(result).toEqual({ok: true, version: {major: 1, minor: 2, patch: 3, prerelease: []}})
+  })
+
+  it('treats a ">" lower bound as exclusive, using the next patch as its effective floor', () => {
+    expect(parseRangeFloor('>3.3.17')).toEqual({ok: true, version: {major: 3, minor: 3, patch: 18, prerelease: []}})
   })
 
   it('fails closed with no lower bound at all', () => {
-    expect(parseOverrideFloor('<4').ok).toBe(false)
+    expect(parseRangeFloor('<4').ok).toBe(false)
   })
 
-  it('fails closed with more than one lower-bound comparator', () => {
-    expect(parseOverrideFloor('>=1.0.0 >=2.0.0').ok).toBe(false)
+  it('fails closed with more than one lower-bound comparator in the same group', () => {
+    expect(parseRangeFloor('>=1.0.0 >=2.0.0').ok).toBe(false)
   })
 
-  it('fails closed on a disjoint (||) range', () => {
-    expect(parseOverrideFloor('>=1.0.0 || >=2.0.0').ok).toBe(false)
+  it('fails closed on an empty branch in a disjoint range', () => {
+    expect(parseRangeFloor('>=1.0.0 || ').ok).toBe(false)
+  })
+
+  it('fails closed on unparseable version text', () => {
+    expect(parseRangeFloor('>=not-a-version').ok).toBe(false)
+  })
+
+  it('fails closed on empty input', () => {
+    expect(parseRangeFloor('').ok).toBe(false)
+  })
+})
+
+describe('parsePatchedFloor / parseOverrideFloor (thin wrappers)', () => {
+  it('parsePatchedFloor now accepts a compound range (previously rejected — see PR #3871 review)', () => {
+    expect(parsePatchedFloor('>=4.17.21 <5.0.0').ok).toBe(true)
+  })
+
+  it('parseOverrideFloor still accepts a bounded ">=X <Y" range', () => {
+    expect(parseOverrideFloor('>=3.3.18 <4').ok).toBe(true)
+  })
+})
+
+describe('isNoFixAvailable', () => {
+  it('recognizes the npm advisory "<0.0.0" convention for no fix published', () => {
+    expect(isNoFixAvailable('<0.0.0')).toBe(true)
+  })
+
+  it('does not misclassify an ordinary range as no-fix-available', () => {
+    expect(isNoFixAvailable('>=4.1.3')).toBe(false)
+    expect(isNoFixAvailable('<4.1.3')).toBe(false)
   })
 })
 
@@ -144,8 +162,16 @@ describe('overrideBaseName', () => {
 describe('extractOverridesMap', () => {
   it('maps override keys to their raw floor strings, keyed by base package name', () => {
     const map = extractOverridesMap(['overrides:', '  ajv@8: 8.20.0', "  fast-uri: '>=4.1.3'"].join('\n'))
-    expect(map.get('ajv')).toBe('8.20.0')
-    expect(map.get('fast-uri')).toBe('>=4.1.3')
+    expect(map.get('ajv')).toEqual([{key: 'ajv@8', raw: '8.20.0'}])
+    expect(map.get('fast-uri')).toEqual([{key: 'fast-uri', raw: '>=4.1.3'}])
+  })
+
+  it('collects every selector-scoped entry for the same base package name, not just the last', () => {
+    const map = extractOverridesMap(['overrides:', '  ajv@7: 7.0.0', '  ajv@8: 8.20.0'].join('\n'))
+    expect(map.get('ajv')).toEqual([
+      {key: 'ajv@7', raw: '7.0.0'},
+      {key: 'ajv@8', raw: '8.20.0'},
+    ])
   })
 
   it('returns an empty map when there is no overrides section', () => {
@@ -184,6 +210,7 @@ describe('checkOverrideFloors', () => {
       {
         kind: 'floor-below-patched',
         packageName: 'fast-uri',
+        overrideKey: 'fast-uri',
         severity: 'high',
         advisoryId: 1000000,
         floor: '>=4.1.2',
@@ -206,6 +233,49 @@ describe('checkOverrideFloors', () => {
     expect(result.ok).toBe(true)
   })
 
+  // The exact false positive Fro Bot flagged in review: a compound patched range with an
+  // already-compliant floor must pass, not red a required check on a safe repo.
+  it('passes when a compound patched range has an already-compliant floor', async () => {
+    const rootDir = await fixtureRoot("  lodash: '>=4.17.21'")
+    const result = await checkOverrideFloors({
+      rootDir,
+      runAudit: auditOf([advisory({module_name: 'lodash', patched_versions: '>=4.17.21 <5.0.0'})]),
+    })
+
+    expect(result).toEqual({ok: true, evaluated: 1, problems: []})
+  })
+
+  it('resolves a disjoint patched range to its lowest lower bound', async () => {
+    const rootDir = await fixtureRoot("  widget: '>=1.2.3'")
+    const result = await checkOverrideFloors({
+      rootDir,
+      runAudit: auditOf([advisory({module_name: 'widget', patched_versions: '>=1.2.3 <2.0.0 || >=2.1.0'})]),
+    })
+
+    expect(result).toEqual({ok: true, evaluated: 1, problems: []})
+  })
+
+  it('fails a floor below the lowest lower bound of a disjoint patched range', async () => {
+    const rootDir = await fixtureRoot("  widget: '>=1.0.0'")
+    const result = await checkOverrideFloors({
+      rootDir,
+      runAudit: auditOf([advisory({module_name: 'widget', patched_versions: '>=1.2.3 <2.0.0 || >=2.1.0'})]),
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.problems).toEqual([
+      {
+        kind: 'floor-below-patched',
+        packageName: 'widget',
+        overrideKey: 'widget',
+        severity: 'high',
+        advisoryId: 1000000,
+        floor: '>=1.0.0',
+        patchedVersions: '>=1.2.3 <2.0.0 || >=2.1.0',
+      },
+    ])
+  })
+
   it('fails when a vulnerable package has no override entry at all', async () => {
     const rootDir = await fixtureRoot("  flatted: '>=3.4.2'")
     const result = await checkOverrideFloors({
@@ -223,6 +293,56 @@ describe('checkOverrideFloors', () => {
         patchedVersions: '>=3.3.18',
       },
     ])
+  })
+
+  it('classifies "<0.0.0" as no-fix-available, with its own message, and fails the gate', async () => {
+    const rootDir = await fixtureRoot("  vulnerable-pkg: '>=1.0.0'")
+    const result = await checkOverrideFloors({
+      rootDir,
+      runAudit: auditOf([advisory({module_name: 'vulnerable-pkg', patched_versions: '<0.0.0'})]),
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.problems).toEqual([
+      {
+        kind: 'no-fix-available',
+        packageName: 'vulnerable-pkg',
+        severity: 'high',
+        advisoryId: 1000000,
+        patchedVersions: '<0.0.0',
+      },
+    ])
+  })
+
+  it('checks every selector-scoped override entry independently, catching a vulnerable @7 floor beside a safe @8 one', async () => {
+    const rootDir = await fixtureRoot(['  ajv@7: 7.0.0', '  ajv@8: 8.20.0'].join('\n'))
+    const result = await checkOverrideFloors({
+      rootDir,
+      runAudit: auditOf([advisory({module_name: 'ajv', patched_versions: '>=7.0.5'})]),
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.problems).toEqual([
+      {
+        kind: 'floor-below-patched',
+        packageName: 'ajv',
+        overrideKey: 'ajv@7',
+        severity: 'high',
+        advisoryId: 1000000,
+        floor: '7.0.0',
+        patchedVersions: '>=7.0.5',
+      },
+    ])
+  })
+
+  it('passes a ">" lower bound against an inclusive patched floor one patch above it', async () => {
+    const rootDir = await fixtureRoot("  widget: '>3.3.17'")
+    const result = await checkOverrideFloors({
+      rootDir,
+      runAudit: auditOf([advisory({module_name: 'widget', patched_versions: '>=3.3.18'})]),
+    })
+
+    expect(result).toEqual({ok: true, evaluated: 1, problems: []})
   })
 
   it('fails when pnpm audit output does not parse', async () => {
@@ -285,19 +405,19 @@ describe('checkOverrideFloors', () => {
     ])
   })
 
-  it('fails closed on a patched_versions range this check cannot interpret', async () => {
+  it('fails closed on a patched_versions range this check genuinely cannot interpret', async () => {
     const rootDir = await fixtureRoot("  fast-uri: '>=4.1.3'")
     const result = await checkOverrideFloors({
       rootDir,
-      runAudit: auditOf([advisory({patched_versions: '>=1.0.0 <2.0.0 || >=3.0.0'})]),
+      runAudit: auditOf([advisory({patched_versions: '<4.1.3'})]), // no lower bound at all — still fails closed
     })
 
     expect(result.ok).toBe(false)
     expect(result.problems[0]?.kind).toBe('unparseable-patched-range')
   })
 
-  it('fails closed on an override entry this check cannot interpret', async () => {
-    const rootDir = await fixtureRoot("  fast-uri: '>=1.0.0 || >=4.1.3'")
+  it('fails closed on an override entry this check genuinely cannot interpret', async () => {
+    const rootDir = await fixtureRoot("  fast-uri: '<4.1.3'") // no lower bound at all — still fails closed
     const result = await checkOverrideFloors({rootDir, runAudit: auditOf([advisory()])})
 
     expect(result.ok).toBe(false)
