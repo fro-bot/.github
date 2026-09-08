@@ -7,9 +7,9 @@ import process from 'node:process'
 import {parse as parseYaml} from 'yaml'
 
 /**
- * Verifies that every `overrides` floor in `pnpm-workspace.yaml` sits at or above the version
- * that patches its advisory, and that every advisory at or above `DEFAULT_SEVERITY_THRESHOLD`
- * has an override floor at all.
+ * Verifies that every `overrides` floor in `pnpm-workspace.yaml` sits INSIDE a patched region of
+ * its advisory's `patched_versions`, and that every advisory at or above
+ * `DEFAULT_SEVERITY_THRESHOLD` has an override floor at all.
  *
  * `dependency-review.yaml` scans only manifest files that change in a pull request, so a
  * vulnerable transitive dependency already resting in the lockfile is invisible to it. Nothing
@@ -17,23 +17,25 @@ import {parse as parseYaml} from 'yaml'
  *
  * Advisories come from `pnpm audit --json`. Anything this script cannot interpret is a FAILURE,
  * not a skip: non-JSON output, missing `metadata.vulnerabilities`/`advisories`, an unreadable
- * workspace file, an advisory missing required fields, an unknown severity, or a range neither
- * comparator group below resolves to exactly one lower bound. `pnpm audit` exits non-zero
- * whenever any advisory exists, so exit status alone is not the failure signal — unparseable
- * output is.
+ * workspace file, an advisory missing required fields, an unknown severity, or a range whose
+ * comparator groups don't resolve cleanly (see below). `pnpm audit` exits non-zero whenever any
+ * advisory exists, so exit status alone is not the failure signal — unparseable output is.
  *
  * Threshold defaults to `high`. A `moderate` default would fail on `@humanfs/node`, an open
  * advisory this repo is deliberately not remediating on this gate's schedule.
  *
- * `patched_versions` and an `overrides` entry are parsed by the SAME function,
- * `parseRangeFloor` — a version's floor is a floor regardless of which side of the comparison it
- * came from, and the two parsers drifting apart (one extracting a compound range's lower bound,
- * the other refusing to) is exactly how this script false-positived on a safe repo the first
- * time around. `parseRangeFloor` extracts the LOWEST lower bound across every `||`-separated
- * comparator group, which is the correct question for "does this floor sit at or above the point
- * where patched versions begin" — a disjoint `>=1.2.3 <2.0.0 || >=2.1.0` starts admitting
- * versions at 1.2.3, not 2.1.0. Every group must resolve to exactly one lower-bound comparator;
- * a group that doesn't fails the whole range closed rather than guessing.
+ * `patched_versions` is parsed into a set of `||`-separated comparator groups (`parseRangeGroups`),
+ * each an interval `[lowerBound, upperBound)` or `[lowerBound, ∞)`. An override's floor is safe
+ * iff it falls INSIDE at least one of those groups (`floorSatisfiesRange`) — not merely at or
+ * above the lowest group's lower bound. Taking only the lowest lower bound is anti-conservative
+ * for a disjoint range: `>=1.2.3 <2.0.0 || >=2.1.0` describes versions [1.2.3, 2.0.0) and
+ * [2.1.0, ∞) as patched, with [2.0.0, 2.1.0) as an unpatched gap between them, and a floor of
+ * `>=2.0.0` sits exactly inside that gap while still clearing 1.2.3. This script shipped that
+ * exact false negative once already (fixing an earlier, different false positive without
+ * re-deriving the actual question, which is containment, not "above some point"). An `overrides`
+ * entry's own floor is still a single point (`parseRangeFloor`, the lowest lower bound across its
+ * own groups) since every override in this repo describes "the resolved version is at least X",
+ * not a disjoint set of acceptable resolutions.
  *
  * `patched_versions` of exactly `<0.0.0` is the npm advisory convention for "no fix has been
  * published yet" — not a malformed range — and is classified as its own `no-fix-available`
@@ -50,7 +52,8 @@ import {parse as parseYaml} from 'yaml'
  * (`semver` resolves only transitively through eslint). A `>` lower bound is exclusive: `>X`
  * admits nothing until the next release above `X`, so its effective floor for comparison
  * purposes is `X`'s next patch — treating it as equal to `X` itself (as `>=X` would) is a false
- * positive against a safe floor, understating what `>` actually guarantees.
+ * positive against a safe floor, understating what `>` actually guarantees. Prerelease ordering
+ * is handled by `compareVersions` and is unchanged by the containment logic above.
  */
 
 const WORKSPACE_FILE = 'pnpm-workspace.yaml'
@@ -175,14 +178,27 @@ export interface FloorParseFailure {
 }
 export type FloorParseResult = FloorParseSuccess | FloorParseFailure
 
+export interface RangeUpperBound {
+  readonly version: SemverVersion
+  /** True for `<=` (boundary version included); false for `<` (boundary version excluded). */
+  readonly inclusive: boolean
+}
+
+export interface RangeGroup {
+  readonly lowerBound: SemverVersion
+  readonly upperBound?: RangeUpperBound
+}
+
 /**
- * Parses one AND-group (no `||`) of whitespace-separated comparators and returns its single
- * lower bound's effective floor version. Any number of upper-bound comparators (`<`, `<=`) are
- * accepted alongside it and ignored — they narrow the range, they do not affect whether the
- * lower bound clears a patched floor. A group with zero or more than one lower-bound comparator
- * fails closed rather than guessing which one is intended.
+ * Parses one AND-group (no `||`) of whitespace-separated comparators into an interval: exactly
+ * one lower-bound comparator (required), plus at most one upper-bound comparator (optional). A
+ * group with zero or more than one lower bound, or more than one upper bound, fails closed
+ * rather than guessing which one is intended.
  */
-function parseGroupLowerBound(group: string, rawForMessage: string): FloorParseResult {
+function parseGroupBounds(
+  group: string,
+  rawForMessage: string,
+): {readonly ok: true; readonly group: RangeGroup} | FloorParseFailure {
   const tokens = group.split(/\s+/u).filter(token => token.length > 0)
   if (tokens.length === 0) {
     return {ok: false, reason: `range "${rawForMessage}" has an empty comparator group`}
@@ -200,53 +216,93 @@ function parseGroupLowerBound(group: string, rawForMessage: string): FloorParseR
   )
   const upperBounds = comparators.filter(comparator => comparator.operator === '<' || comparator.operator === '<=')
   const [lowerBound] = lowerBounds
-  if (!lowerBound || lowerBounds.length !== 1 || lowerBounds.length + upperBounds.length !== comparators.length) {
+  const [upperBound] = upperBounds
+  if (
+    !lowerBound ||
+    lowerBounds.length !== 1 ||
+    upperBounds.length > 1 ||
+    lowerBounds.length + upperBounds.length !== comparators.length
+  ) {
     return {
       ok: false,
-      reason: `range "${rawForMessage}" does not resolve to exactly one lower-bound comparator per comparator group, which this check requires to establish a floor`,
+      reason: `range "${rawForMessage}" does not resolve to exactly one lower-bound comparator (and at most one upper-bound comparator) per comparator group, which this check requires`,
     }
   }
-  return {ok: true, version: effectiveFloorVersion(lowerBound)}
+  return {
+    ok: true,
+    group: {
+      lowerBound: effectiveFloorVersion(lowerBound),
+      upperBound: upperBound ? {version: upperBound.version, inclusive: upperBound.operator === '<='} : undefined,
+    },
+  }
 }
 
+export interface RangeGroupsParseSuccess {
+  readonly ok: true
+  readonly groups: readonly RangeGroup[]
+}
+export type RangeGroupsParseResult = RangeGroupsParseSuccess | FloorParseFailure
+
 /**
- * Extracts the LOWEST lower bound across every `||`-separated comparator group in `raw` — the
- * earliest point at which the range admits versions. Used for BOTH an `overrides` floor and an
- * advisory's `patched_versions`: a version's floor is a floor regardless of which side of the
- * comparison it came from. See the module docstring for why this replaced two independent,
- * drifted implementations.
+ * Parses `raw` into its `||`-separated comparator groups, each an interval
+ * `[lowerBound, upperBound)`/`[lowerBound, upperBound]`/`[lowerBound, \u221e)`. This is the shared
+ * foundation for both an `overrides` floor (`parseRangeFloor`, a single point) and an advisory's
+ * `patched_versions` (checked via `floorSatisfiesRange`, containment across all groups) — see the
+ * module docstring for why containment, not a single extracted floor, is the correct question for
+ * a disjoint patched range.
  */
-export function parseRangeFloor(raw: string): FloorParseResult {
+export function parseRangeGroups(raw: string): RangeGroupsParseResult {
   const trimmed = raw.trim()
   if (trimmed.length === 0) {
     return {ok: false, reason: 'range is empty'}
   }
-  const groups = trimmed.split('||').map(group => group.trim())
-  if (groups.some(group => group.length === 0)) {
+  const rawGroups = trimmed.split('||').map(group => group.trim())
+  if (rawGroups.some(group => group.length === 0)) {
     return {ok: false, reason: `range "${raw}" has an empty branch in a disjoint (||) range`}
   }
-  let lowest: SemverVersion | undefined
-  for (const group of groups) {
-    const result = parseGroupLowerBound(group, raw)
+  const groups: RangeGroup[] = []
+  for (const rawGroup of rawGroups) {
+    const result = parseGroupBounds(rawGroup, raw)
     if (!result.ok) return result
-    if (lowest === undefined || compareVersions(result.version, lowest) < 0) {
-      lowest = result.version
-    }
+    groups.push(result.group)
   }
-  if (lowest === undefined) {
-    return {ok: false, reason: `range "${raw}" resolved to no comparator groups`}
-  }
-  return {ok: true, version: lowest}
+  return {ok: true, groups}
 }
 
-/** Thin, named wrapper over `parseRangeFloor` for call-site clarity. */
-export function parsePatchedFloor(patchedVersions: string): FloorParseResult {
-  return parseRangeFloor(patchedVersions)
+/**
+ * Extracts the LOWEST lower bound across every comparator group in `raw` as a single point —
+ * correct for an `overrides` entry, which describes "the resolved version is at least X"
+ * (optionally "and below Y"), never a disjoint set of independently acceptable resolutions.
+ */
+export function parseRangeFloor(raw: string): FloorParseResult {
+  const groupsResult = parseRangeGroups(raw)
+  if (!groupsResult.ok) return groupsResult
+  const [first, ...rest] = groupsResult.groups.map(group => group.lowerBound)
+  if (!first) {
+    return {ok: false, reason: `range "${raw}" resolved to no comparator groups`}
+  }
+  const lowest = rest.reduce((min, version) => (compareVersions(version, min) < 0 ? version : min), first)
+  return {ok: true, version: lowest}
 }
 
 /** Thin, named wrapper over `parseRangeFloor` for call-site clarity. */
 export function parseOverrideFloor(overrideRaw: string): FloorParseResult {
   return parseRangeFloor(overrideRaw)
+}
+
+/**
+ * True iff `floor` falls INSIDE at least one of `groups` — at or above that group's lower bound,
+ * and (if the group has an upper bound) below it (or at/below it, for an inclusive `<=` bound).
+ * This is containment, not "at or above the lowest lower bound": a floor sitting in the gap
+ * between two disjoint patched groups must fail even though it clears the lowest group's floor.
+ */
+export function floorSatisfiesRange(floor: SemverVersion, groups: readonly RangeGroup[]): boolean {
+  return groups.some(group => {
+    if (compareVersions(floor, group.lowerBound) < 0) return false
+    if (!group.upperBound) return true
+    const upperComparison = compareVersions(floor, group.upperBound.version)
+    return group.upperBound.inclusive ? upperComparison <= 0 : upperComparison < 0
+  })
 }
 
 /**
@@ -531,15 +587,15 @@ export async function checkOverrideFloors(
       continue
     }
 
-    const patchedFloor = parsePatchedFloor(advisory.patchedVersions)
-    if (!patchedFloor.ok) {
+    const patchedRanges = parseRangeGroups(advisory.patchedVersions)
+    if (!patchedRanges.ok) {
       problems.push({
         kind: 'unparseable-patched-range',
         packageName: advisory.moduleName,
         severity: advisory.severity,
         advisoryId: advisory.id,
         patchedVersions: advisory.patchedVersions,
-        reason: patchedFloor.reason,
+        reason: patchedRanges.reason,
       })
       continue
     }
@@ -569,7 +625,7 @@ export async function checkOverrideFloors(
         continue
       }
 
-      if (compareVersions(overrideFloor.version, patchedFloor.version) < 0) {
+      if (!floorSatisfiesRange(overrideFloor.version, patchedRanges.groups)) {
         problems.push({
           kind: 'floor-below-patched',
           packageName: advisory.moduleName,
@@ -589,7 +645,7 @@ export async function checkOverrideFloors(
 function formatProblem(problem: FloorProblem): string {
   switch (problem.kind) {
     case 'floor-below-patched':
-      return `${problem.overrideKey}: override floor "${problem.floor}" is below the patched range "${problem.patchedVersions}" (advisory ${String(problem.advisoryId)}, ${problem.severity.toUpperCase()})`
+      return `${problem.overrideKey}: override floor "${problem.floor}" does not fall within the patched range "${problem.patchedVersions}" (advisory ${String(problem.advisoryId)}, ${problem.severity.toUpperCase()})`
     case 'missing-override':
       return `${problem.packageName}: no override entry exists, but advisory ${String(problem.advisoryId)} (${problem.severity.toUpperCase()}) requires patched_versions "${problem.patchedVersions}"`
     case 'no-fix-available':
