@@ -27,8 +27,9 @@
     "coverage": "pnpm build && vitest run --coverage",
     "fix": "pnpm run lint --fix",
     "check:md-links": "node scripts/check-md-links.ts",
+    "check:override-floors": "node scripts/check-override-floors.ts",
     "check:solutions-examples": "node scripts/check-solutions-examples.ts",
-    "lint": "pnpm run check:md-links && pnpm run check:solutions-examples && eslint",
+    "lint": "pnpm run check:md-links && pnpm run check:override-floors && pnpm run check:solutions-examples && eslint",
     "test": "pnpm build && vitest run",
     "test:watch": "pnpm build && echo 'test:watch builds dist once; rerun after source changes' && vitest"
   },

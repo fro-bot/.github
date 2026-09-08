@@ -67,6 +67,10 @@
     {
       "path": "scripts/check-solutions-examples.ts",
       "reason": "Documentation-quality lint for docs/solutions code examples (parse validity, opt-in symbol/arity checks). It does not protect a security boundary, autonomous write, persisted trust state, or generated executable artifact; its behavior is adequately covered by conventional tests. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here."
+    },
+    {
+      "path": "scripts/check-override-floors.ts",
+      "reason": "Supply-chain lint verifying pnpm-workspace.yaml override floors sit at or above their advisory's patched_versions (see PR #3871). It is a real security-relevant gate, but its rejection paths (fail-closed on unparseable audit output, unparseable ranges, unrecognized severities, and every missing/below-floor case) are enumerated and asserted directly in scripts/check-override-floors.test.ts, including a regression fixture reproducing PR #3871's own pre-fix floors. Whether it belongs in stryker.config.json's mutate set is a separate materiality decision, deliberately left open here, matching scripts/check-solutions-examples.ts's precedent."
     }
   ]
 }
