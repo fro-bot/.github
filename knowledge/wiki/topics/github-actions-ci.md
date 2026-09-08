@@ -1335,6 +1335,28 @@ This is the [choose your failure direction deliberately](#an-agents-self-identit
 - **A sentinel introduced to represent "I don't know" must be routed somewhere.** Writing `// "unknown"` and then never comparing against it converts an explicit uncertainty into an implicit approval.
 - **Test the guard against a null `head.repo`.** It is reachable from any deleted fork and is the only path that reaches the fallback.
 
+### The Control Plane Fails Its Own Delivery Lint (2026-09-08)
+
+Direct confirmation, from `fro-bot/.github` itself, of the fleet lint proposed one day earlier in [A Delivery Contract With Only One Half Implemented](#a-delivery-contract-with-only-one-half-implemented-2026-09-07). That entry recommended asserting, for every repo whose agent prompt mandates commit/push/PR, that the workflow contains a delivery step after the agent step. **Run the lint against the repository that authors the prompt and it fails there too.**
+
+`fro-bot/.github/.github/workflows/fro-bot.yaml` contains exactly three `uses:` steps — `actions/checkout`, `./.github/actions/setup`, and `fro-bot/agent`. Everything after the agent step is read-only bookkeeping: report-URL discovery, digest counts, an optional gateway announce, and `wiki-ingest.ts`. There is no `create-pull-request`, no `git commit`, no `git push`.
+
+The consequence is narrower and more dangerous than tokentoilet's total delivery outage, because **one path does persist**:
+
+| Working-tree path | Delivered? | Mechanism |
+| --- | --- | --- |
+| `knowledge/**` | yes | `scripts/wiki-ingest.ts` → `data` branch |
+| `metadata/**` | yes | `scripts/commit-metadata.ts` → `data` branch |
+| everything else (`pnpm-workspace.yaml`, `pnpm-lock.yaml`, `scripts/`, `.github/`) | **no** | discarded at job teardown |
+
+**A partially-working delivery path is harder to detect than a broken one.** The 2026-09-07 daily run staged a `fast-uri` override bump (`>=4.1.2` → `>=4.1.3`, remediating four HIGH advisories), verified it against the full suite, and reported it as "staged in the working tree for the caller workflow to deliver." The wiki edits from that same run landed on `data`. The security fix did not. Twenty-four hours later `pnpm-workspace.yaml` still reads `>=4.1.2` and the four advisories are still open — with a prior report on record asserting they were remediated. That is worse than never having attempted the fix: it manufactures false remediation evidence in the audit trail.
+
+Rules:
+
+- **Enumerate the delivery path per path-prefix, not per workflow.** "Does this workflow deliver working-tree changes?" is the wrong question when the answer is "for two directories, yes." Ask which prefixes have a writer.
+- **A delivery-mode contract that promises caller-side commit must be verified against the caller, not trusted from the prompt.** The `working-dir` block asserting "the caller workflow owns diff detection, commit, push, and pull-request creation" is prompt text; it is not a property of the workflow, and here it is simply false.
+- **An agent that reports a change as "staged for the caller" should re-verify it on the next run before treating it as done.** The cheap check is to re-read the file it claims to have changed. A remediation that reappears in consecutive reports as newly-discovered is the signature of a dropped delivery channel, and it will not surface as a failed run — the 2026-09-07 run concluded `success`. Related: [A Run's Conclusion Measures the Harness, Not the Deliverable](#a-runs-conclusion-measures-the-harness-not-the-deliverable-2026-09-02).
+
 ### Convention Enforcement via Tests
 
 [[marcusrbrown--infra]] introduced a pattern of mechanically enforcing AGENTS.md conventions at CI time via colocated test files (`conventions.test.ts`). Rules marked `(enforced)` in AGENTS.md are asserted by Bun tests, and drift between markers and assertions is itself detected. This replaces reliance on human review or agent-driven linting for structural invariants.
