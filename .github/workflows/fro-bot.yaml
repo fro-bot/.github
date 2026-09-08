@@ -27,6 +27,18 @@ on:
         description: 'Custom prompt for the Fro Bot agent (leave empty to run the default daily oversight + autohealing pass)'
         required: false
         default: ''
+      output-mode:
+        description: >-
+          Delivery mode for a custom prompt: branch-pr commits and opens a PR,
+          working-dir edits the checkout without committing. Selects which of
+          the two daily-pass jobs runs a custom prompt; ignored when prompt is
+          empty (the daily pass always runs both jobs in sequence).
+        required: false
+        type: choice
+        options:
+          - branch-pr
+          - working-dir
+        default: branch-pr
       correlation_id:
         description: Optional opaque correlation id echoed into run-name (used by cross-repo-dispatch to identify this run)
         required: false
@@ -37,6 +49,14 @@ on:
         description: Prompt passed by reusable caller workflow
         required: true
         type: string
+      output-mode:
+        description: >-
+          Delivery mode this caller needs: branch-pr commits and opens a PR,
+          working-dir edits the checkout without committing. Defaults to
+          working-dir, the safer no-mutation choice for a caller that omits it.
+        required: false
+        type: string
+        default: working-dir
     secrets:
       FRO_BOT_PAT:
         description: GitHub PAT for Fro Bot write-tier actions
@@ -168,20 +188,17 @@ env:
       escaped character like `\#` breaks the parser and turns a successful
       run into an unparseable receipt.
 
-  SCHEDULE_PROMPT: |
-    Run the daily Fro Bot pass for fro-bot/.github — the autonomous control
-    center for the fro-bot GitHub account. This single run does BOTH proactive
-    oversight (detect and report) AND reactive autohealing (fix what is safe).
-    Prioritize minimal, reversible changes. Read the canonical context first:
-    README.md, .github/copilot-instructions.md, and AGENTS.md if present.
+  # ── Daily pass prompt pieces ────────────────────────────────────────────
+  # SCHEDULE_PROMPT used to be one monolithic block covering categories 1–8.
+  # It is now split across two jobs (fro-bot-remediate: categories 1–4 via
+  # branch-pr; fro-bot-observe: categories 5–8 + the daily report via
+  # working-dir). Sections that must stay identical in both prompts live in
+  # SHARED_RULES / HARD_BOUNDARIES / AGENT_NOTES below and are concatenated
+  # at the point of use with format() — GitHub Actions env: entries cannot
+  # reference each other, but a step's env: block can reference workflow-level
+  # env, so the concatenation happens in each job's "Run Fro Bot" step.
 
-    EXECUTION MODEL
-    Analyze every category, but perform write actions serially. Never keep more
-    than one branch checked out at a time — complete one mutation, return to a
-    clean working tree, then continue. The control plane's data branch is the
-    authoritative writer for knowledge/** and metadata/**; never write those
-    paths from this run except through the established wiki/metadata scripts.
-
+  SHARED_RULES: |
     For version comparisons, current-version truth comes from the authoritative
     registry or upstream release source; name that source and state whether major
     drift was included.
@@ -209,6 +226,56 @@ env:
     fro-bot). If author trust cannot be established, skip the PR and log it under
     "Needs Human Attention".
 
+  HARD_BOUNDARIES: |
+    HARD BOUNDARIES
+    - Never force-push, rewrite history, delete branches, merge PRs, submit
+      approvals, or close/reopen PRs.
+    - Never push directly to main. Direct pushes are allowed only to an existing
+      non-default PR branch you are repairing under category 1 or 2.
+    - Never modify secrets, org settings, environments, or branch protection.
+    - Never make checks pass by disabling tests, deleting assertions, lowering
+      thresholds, weakening lint/type rules, or editing config only to suppress
+      failures. If the smallest safe fix would weaken a guardrail, skip and log.
+    - Do not modify .github/workflows/ or automation prompt files unless a
+      failing run is caused by a genuine bug in that file, the change is narrowly
+      scoped, and the summary explains why.
+
+  AGENT_NOTES: |
+    AGENT NOTES (instead of per-agent follow-up tasks)
+    Do NOT create follow-up tasks addressed to a specific agent (Fro Bot,
+    Copilot, etc.). When work is deferred, write the note so any LLM agent can
+    pick it up cold: state the exact file paths, the root cause, the smallest
+    safe fix, any constraints or "do not retry" warnings, and how to verify.
+    Put these under "Needs Human Attention" in the report. If a finding is
+    durable repository knowledge, also persist it to the wiki per the
+    knowledge_persistence block, following knowledge/schema.md.
+
+  REMEDIATE_INTRO: |
+    Run the remediation half of the daily Fro Bot pass for fro-bot/.github — the
+    autonomous control center for the fro-bot GitHub account. This run handles
+    categories 1–4 (reactive autohealing): find what is broken and fix it.
+    Categories 5–8 (proactive oversight, report-only) and the daily report run
+    afterward in a separate pass and are out of scope here. Prioritize minimal,
+    reversible changes. Read the canonical context first: README.md,
+    .github/copilot-instructions.md, and AGENTS.md if present.
+
+    EXECUTION MODEL
+    This run delivers in branch-pr mode: every fix below lands by checking out a
+    branch, committing, pushing, and opening or updating a PR — that is the
+    required delivery mechanism here, not a fallback. Analyze every category, but
+    perform write actions serially. Never keep more than one branch checked out
+    at a time — complete one mutation (commit, push, PR), return to a clean
+    working tree, then continue to the next fix.
+
+    Never commit to knowledge/wiki/**, knowledge/index.md, knowledge/log.md,
+    knowledge/corrections.yaml, or metadata/*.yaml and metadata/*.yml from this run, and never open
+    a PR touching those paths — Check Wiki Authority rejects them against main
+    regardless. The control plane's data branch is the authoritative writer for
+    knowledge/** and metadata/**, written only through the established
+    wiki/metadata scripts. If a fix would require touching those paths, log it
+    under "Needs Human Attention" instead.
+
+  REMEDIATE_CATEGORIES: |
     CATEGORIES (work in order)
 
     1. ERRORED PRs
@@ -251,6 +318,37 @@ env:
        pnpm lint, pnpm test. Apply safe mechanical fixes (lint/format autofixes)
        on a PR branch — never commit directly to main. If a check fails and the
        fix is not minimal/reversible, open or update an issue and log it.
+
+  OBSERVE_INTRO: |
+    Run the oversight half of the daily Fro Bot pass for fro-bot/.github — the
+    autonomous control center for the fro-bot GitHub account. This run handles
+    categories 5–8 (proactive oversight, report-only) and writes the daily
+    report. A separate remediation pass already ran categories 1–4 (reactive
+    autohealing) via branch+PR before this run started. Read the canonical
+    context first: README.md, .github/copilot-instructions.md, and AGENTS.md if
+    present.
+
+    EXECUTION MODEL
+    This run delivers in working-dir mode: never run `git branch`, `git commit`,
+    `git push`, `gh pr create`, `gh pr merge`, create or switch branches, or use
+    any tool/skill that delivers via branch+PR. All observable output goes into
+    issue/PR comments and the daily report issue created below. Never write
+    metadata/*.yaml from this run — that path is owned exclusively by the data
+    branch via commit-metadata.ts.
+
+    The one exception is durable knowledge capture: if this pass surfaces
+    knowledge worth persisting, write it directly into knowledge/wiki/**,
+    knowledge/index.md, and knowledge/log.md in the working tree per
+    knowledge/schema.md, and leave that tree dirty when you finish this run.
+    `wiki-ingest.ts` discovers its payload by running `git status --porcelain`
+    and reading whatever it finds changed; a clean tree means ingestion silently
+    delivers nothing and exits 0. Do not run `git checkout`, `git restore`, or
+    any other cleanup against knowledge/** before finishing — a later step in
+    this same job captures and commits that diff for you. Do not commit those
+    changes yourself.
+
+  OBSERVE_CATEGORIES: |
+    CATEGORIES (work in order)
 
     5. OVERSIGHT (org-wide detection, report-only)
        Scope: all repositories the fro-bot account can see. Enumerate them with
@@ -296,30 +394,17 @@ env:
        comments or edit Project fields from this daily report path; the dedicated
        Gateway Rollout Tracker workflow owns tracker writes.
 
-
-    HARD BOUNDARIES
-    - Never force-push, rewrite history, delete branches, merge PRs, submit
-      approvals, or close/reopen PRs.
-    - Never push directly to main. Direct pushes are allowed only to an existing
-      non-default PR branch you are repairing under category 1 or 2.
-    - Never modify secrets, org settings, environments, or branch protection.
-    - Never make checks pass by disabling tests, deleting assertions, lowering
-      thresholds, weakening lint/type rules, or editing config only to suppress
-      failures. If the smallest safe fix would weaken a guardrail, skip and log.
-    - Do not modify .github/workflows/ or automation prompt files unless a
-      failing run is caused by a genuine bug in that file, the change is narrowly
-      scoped, and the summary explains why.
-
-    AGENT NOTES (instead of per-agent follow-up tasks)
-    Do NOT create follow-up tasks addressed to a specific agent (Fro Bot,
-    Copilot, etc.). When work is deferred, write the note so any LLM agent can
-    pick it up cold: state the exact file paths, the root cause, the smallest
-    safe fix, any constraints or "do not retry" warnings, and how to verify.
-    Put these under "Needs Human Attention" in the report. If a finding is
-    durable repository knowledge, also persist it to the wiki per the
-    knowledge_persistence block, following knowledge/schema.md.
-
+  OBSERVE_OUTPUT: |
     OUTPUT — ONE PERPETUAL SUMMARY ISSUE
+    This report still covers categories 1–4, but this job did not do that work —
+    a separate remediation pass already ran them in branch-pr mode before this
+    job started. Populate the Errored PRs, Security, Control-Plane Integrity, and
+    Code Quality sections and their Run Summary rows by inspecting what that pass
+    produced: open Fro-Bot-authored PRs relevant to each category, their current
+    check status, and any comments left on them. Do not re-analyze those
+    categories from scratch. If you cannot find evidence of what the remediation
+    pass did for a category, mark it ❔ and say so.
+
     Maintain exactly one daily report. Create an issue titled
     "Daily Fro Bot Report — YYYY-MM-DD (UTC)" for today. Before or after
     creating it, CLOSE every older open issue whose title starts with
@@ -356,6 +441,10 @@ env:
     render ✅ for could-not-check.
 
 jobs:
+  # ── Content-triggered job: comments, issues, PR review, cross-repo-goal ──
+  # output-mode is ignored for these events (the agent only branches this on
+  # schedule/workflow_dispatch), so this job is untouched by the delivery-mode
+  # split below.
   fro-bot:
     name: Fro Bot
     runs-on: ubuntu-latest
@@ -378,9 +467,6 @@ jobs:
           !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
           (github.event.pull_request.user.login || '') != 'fro-bot'
         ) ||
-        github.event_name == 'schedule' ||
-        github.event_name == 'workflow_dispatch' ||
-        inputs.prompt != '' ||
         (
           (github.event_name == 'issue_comment' ||
            github.event_name == 'pull_request_review_comment' ||
@@ -448,24 +534,6 @@ jobs:
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: node scripts/wiki-query.ts
 
-      # Overlay metadata/ from the data branch so the scheduled run can derive
-      # digest counts from live metadata/repos.yaml. Mirrors the precedented guard
-      # in reconcile-repos.yaml: tolerate a missing data branch (skip, don't fail).
-      # Runs BEFORE solutions-query so the privacy scan reads the freshest repos.yaml.
-      - name: ⤵ Overlay metadata from data branch
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            overlay_err=$(
-              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
-            ) || {
-              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
-            }
-          else
-            echo "data branch not yet established; skipping metadata overlay."
-          fi
-
       - name: Query solutions context
         id: solutions-query
         env:
@@ -500,10 +568,7 @@ jobs:
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
           TASK_PROMPT: >-
             ${{
-              (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
-              || inputs.prompt
-              || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && env.SCHEDULE_PROMPT)
-              || (github.event_name == 'pull_request' && env.PR_REVIEW_PROMPT)
+              (github.event_name == 'pull_request' && env.PR_REVIEW_PROMPT)
               || (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'cross-repo-goal') && env.GOAL_DECOMPOSITION_PROMPT)
               || ''
             }}
@@ -553,6 +618,329 @@ jobs:
             dates and sources, and leave the wiki untouched when the signal is weak.
             </knowledge_persistence>
 
+      - name: Detect wiki insight changes
+        id: wiki-changes
+        if: always() && !cancelled()
+        run: |
+          git diff --no-ext-diff -- knowledge/index.md knowledge/log.md knowledge/wiki > "$RUNNER_TEMP/wiki-current.diff"
+          current_hash=$(shasum -a 256 "$RUNNER_TEMP/wiki-current.diff" | cut -d ' ' -f1)
+          if [ "$current_hash" = "${{ steps.wiki-baseline.outputs.hash }}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Capture ingest timestamp
+        if: >-
+          success() &&
+          steps.wiki-changes.outputs.changed == 'true' &&
+          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request"]'), github.event_name)
+        id: ingest-ts
+        run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Ingest wiki insight changes
+        if: >-
+          success() &&
+          steps.wiki-changes.outputs.changed == 'true' &&
+          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request"]'), github.event_name)
+        env:
+          GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          WIKI_OPERATION: event
+          WIKI_TARGET: 'repo:${{ github.repository }}'
+          WIKI_SUMMARY: Persisted durable knowledge from the ${{ github.event_name }} interaction on ${{ github.repository }}.
+          WIKI_COMMIT_MESSAGE: 'feat(knowledge): ingest ${{ github.event_name }} context for ${{ github.repository }}'
+          WIKI_SOURCES: '[{"url":"https://github.com/${{ github.repository }}","sha":"${{ github.sha }}","accessed":"${{ steps.ingest-ts.outputs.now }}"}]'
+        run: |
+          warning_file="$RUNNER_TEMP/wiki-ingest-warnings"
+          if node scripts/wiki-ingest.ts 2>"$warning_file"; then
+            status=0
+          else
+            status=$?
+          fi
+          cat "$warning_file" >&2
+          if grep -q '^wiki-ingest:warning:' "$warning_file"; then
+            {
+              echo '### Wiki ingest warnings'
+              grep '^wiki-ingest:warning:' "$warning_file" | sed 's/^wiki-ingest:warning:/- /'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+
+  # ── Remediation half of the daily pass: categories 1–4, branch-pr ────────
+  # Runs for the scheduled cron, an empty-prompt workflow_dispatch (daily
+  # pass — both jobs run), or a custom prompt whose output-mode resolves to
+  # branch-pr (a direct workflow_dispatch defaulting to branch-pr, or a
+  # workflow_call caller like apply-branding.yaml that requests it).
+  fro-bot-remediate:
+    name: Fro Bot — Remediate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      (inputs.prompt == '' || inputs['output-mode'] == 'branch-pr')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.FRO_BOT_PAT }}
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: Sync wiki from data branch
+        run: |
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch origin data
+            git restore --source FETCH_HEAD --worktree -- knowledge
+          fi
+
+      - name: 🎭 Load Persona
+        id: persona
+        run: |
+          delimiter="EOF_$(openssl rand -hex 8)"
+          {
+            echo "content<<$delimiter"
+            cat persona/fro-bot-persona.md
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Query wiki context
+        id: wiki-query
+        env:
+          WIKI_QUERY_EVENT_NAME: ${{ github.event_name }}
+          WIKI_QUERY_OWNER: ${{ github.repository_owner }}
+          WIKI_QUERY_REPO: ${{ github.event.repository.name }}
+          WIKI_QUERY_TITLE: ''
+          WIKI_QUERY_BODY: ''
+          # Run-local handoff for optional wiki context expansion.
+          # Contains only selected wiki paths — never logged, never echoed.
+          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-remediate.json
+        run: node scripts/wiki-query.ts
+
+      - name: Query solutions context
+        id: solutions-query
+        env:
+          SOLUTIONS_QUERY_EVENT_NAME: ${{ github.event_name }}
+          SOLUTIONS_QUERY_OWNER: ${{ github.repository_owner }}
+          SOLUTIONS_QUERY_REPO: ${{ github.event.repository.name }}
+          SOLUTIONS_QUERY_TITLE: ''
+          SOLUTIONS_QUERY_BODY: ''
+        run: node scripts/solutions-query.ts
+
+      - name: Run Fro Bot
+        id: fro-bot-agent
+        uses: fro-bot/agent@a31e0ad13a77e4f815b73c25dbcb214e82796728 # v0.109.0
+        env:
+          OPENCODE_PROMPT_ARTIFACT: 'true'
+          PERSONA: ${{ steps.persona.outputs.content }}
+          WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
+          SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
+          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-remediate.json
+          TASK_PROMPT: >-
+            ${{
+              (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
+              || inputs.prompt
+              || format('{0}{1}{2}{3}{4}', env.REMEDIATE_INTRO, env.SHARED_RULES, env.REMEDIATE_CATEGORIES, env.HARD_BOUNDARIES, env.AGENT_NOTES)
+              || ''
+            }}
+        with:
+          github-token: ${{ secrets.FRO_BOT_PAT }}
+          auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
+          model: ${{ vars.FRO_BOT_MODEL }}
+          omo-providers: ${{ secrets.OMO_PROVIDERS }}
+          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          output-mode: branch-pr
+          prompt: |
+            <persona>
+            ${{ env.PERSONA }}
+            </persona>
+
+            ${{ env.TASK_PROMPT }}
+
+            <wiki_context>
+            ${{ env.WIKI_CONTEXT }}
+            </wiki_context>
+
+            <solutions_context>
+            ${{ env.SOLUTIONS_CONTEXT }}
+            </solutions_context>
+
+            <wiki_context_expansion>
+            The wiki context above is baseline-injected and usually enough on its own — do not
+            expand by default. If baseline context is insufficient, following linked pages would
+            help, or you have a short grounded query, you may optionally run one of:
+
+            `node scripts/wiki-context-expand.ts linked`
+            `node scripts/wiki-context-expand.ts query "<short grounded query>"`
+
+            Linked mode reads the baseline-selected pages from the path in
+            `WIKI_CONTEXT_HANDOFF_PATH`; do not print or echo that path, its file contents, the
+            query text, returned excerpts, or any token/env values into your output or logs. Use
+            returned wiki paths only to ground a recommendation.
+            </wiki_context_expansion>
+
+            <knowledge_persistence>
+            Use the wiki context when it materially improves the response.
+            Consult the solutions context for prior learnings relevant to this work;
+            when one applies, follow it and cite its `Path:` in your reasoning. Treat
+            entries marked as candidate suggestions as hints to verify, not settled facts.
+            This job delivers via branch-pr and must not write knowledge/** or metadata/**
+            (see EXECUTION MODEL above) — leave wiki/metadata updates to the observe job.
+            </knowledge_persistence>
+
+  # ── Oversight half of the daily pass: categories 5–8 + daily report ──────
+  # working-dir. Runs after fro-bot-remediate (whether it ran or was
+  # skipped) so the report can describe remediation that actually landed.
+  # Also the single job for a custom prompt whose output-mode resolves to
+  # working-dir (a workflow_dispatch override, or a workflow_call caller
+  # like gateway-rollout-tracker.yaml that relies on the working-dir default).
+  fro-bot-observe:
+    name: Fro Bot — Observe
+    needs: fro-bot-remediate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: >-
+      !cancelled() &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      (inputs.prompt == '' || inputs['output-mode'] == 'working-dir')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.FRO_BOT_PAT }}
+
+      - name: 📦 Setup
+        uses: ./.github/actions/setup
+
+      - name: Sync wiki from data branch
+        run: |
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch origin data
+            git restore --source FETCH_HEAD --worktree -- knowledge
+          fi
+
+      - name: Capture wiki baseline
+        id: wiki-baseline
+        run: |
+          git diff --no-ext-diff -- knowledge/index.md knowledge/log.md knowledge/wiki > "$RUNNER_TEMP/wiki-baseline.diff"
+          echo "hash=$(shasum -a 256 "$RUNNER_TEMP/wiki-baseline.diff" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: 🎭 Load Persona
+        id: persona
+        run: |
+          delimiter="EOF_$(openssl rand -hex 8)"
+          {
+            echo "content<<$delimiter"
+            cat persona/fro-bot-persona.md
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Query wiki context
+        id: wiki-query
+        env:
+          WIKI_QUERY_EVENT_NAME: ${{ github.event_name }}
+          WIKI_QUERY_OWNER: ${{ github.repository_owner }}
+          WIKI_QUERY_REPO: ${{ github.event.repository.name }}
+          WIKI_QUERY_TITLE: ''
+          WIKI_QUERY_BODY: ''
+          # Run-local handoff for optional wiki context expansion.
+          # Contains only selected wiki paths — never logged, never echoed.
+          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-observe.json
+        run: node scripts/wiki-query.ts
+
+      # Overlay metadata/ from the data branch so this run can derive digest
+      # counts and scan metadata/repos.yaml (category 6) from live data.
+      # Mirrors the precedented guard in reconcile-repos.yaml: tolerate a
+      # missing data branch (skip, don't fail). Runs BEFORE solutions-query
+      # so the privacy scan reads the freshest repos.yaml.
+      - name: ⤵ Overlay metadata from data branch
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            overlay_err=$(
+              { git fetch --no-tags origin data && git checkout origin/data -- metadata/; } 2>&1
+            ) || {
+              echo "::warning::metadata overlay fetch/checkout failed (continuing — counts will use stale/missing metadata): $(echo "$overlay_err" | head -c 200)"
+            }
+          else
+            echo "data branch not yet established; skipping metadata overlay."
+          fi
+
+      - name: Query solutions context
+        id: solutions-query
+        env:
+          SOLUTIONS_QUERY_EVENT_NAME: ${{ github.event_name }}
+          SOLUTIONS_QUERY_OWNER: ${{ github.repository_owner }}
+          SOLUTIONS_QUERY_REPO: ${{ github.event.repository.name }}
+          SOLUTIONS_QUERY_TITLE: ''
+          SOLUTIONS_QUERY_BODY: ''
+        run: node scripts/solutions-query.ts
+
+      - name: Run Fro Bot
+        id: fro-bot-agent
+        uses: fro-bot/agent@a31e0ad13a77e4f815b73c25dbcb214e82796728 # v0.109.0
+        env:
+          OPENCODE_PROMPT_ARTIFACT: 'true'
+          PERSONA: ${{ steps.persona.outputs.content }}
+          WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
+          SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
+          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-observe.json
+          TASK_PROMPT: >-
+            ${{
+              (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt)
+              || inputs.prompt
+              || format('{0}{1}{2}{3}{4}{5}', env.OBSERVE_INTRO, env.SHARED_RULES, env.OBSERVE_CATEGORIES, env.HARD_BOUNDARIES, env.AGENT_NOTES, env.OBSERVE_OUTPUT)
+              || ''
+            }}
+        with:
+          github-token: ${{ secrets.FRO_BOT_PAT }}
+          auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
+          model: ${{ vars.FRO_BOT_MODEL }}
+          omo-providers: ${{ secrets.OMO_PROVIDERS }}
+          opencode-config: ${{ secrets.OPENCODE_CONFIG }}
+          output-mode: working-dir
+          prompt: |
+            <persona>
+            ${{ env.PERSONA }}
+            </persona>
+
+            ${{ env.TASK_PROMPT }}
+
+            <wiki_context>
+            ${{ env.WIKI_CONTEXT }}
+            </wiki_context>
+
+            <solutions_context>
+            ${{ env.SOLUTIONS_CONTEXT }}
+            </solutions_context>
+
+            <wiki_context_expansion>
+            The wiki context above is baseline-injected and usually enough on its own — do not
+            expand by default. If baseline context is insufficient, following linked pages would
+            help, or you have a short grounded query, you may optionally run one of:
+
+            `node scripts/wiki-context-expand.ts linked`
+            `node scripts/wiki-context-expand.ts query "<short grounded query>"`
+
+            Linked mode reads the baseline-selected pages from the path in
+            `WIKI_CONTEXT_HANDOFF_PATH`; do not print or echo that path, its file contents, the
+            query text, returned excerpts, or any token/env values into your output or logs. Use
+            returned wiki paths only to ground a recommendation.
+            </wiki_context_expansion>
+
+            <knowledge_persistence>
+            Use the wiki context when it materially improves the response.
+            Consult the solutions context for prior learnings relevant to this work;
+            when one applies, follow it and cite its `Path:` in your reasoning. Treat
+            entries marked as candidate suggestions as hints to verify, not settled facts.
+            If this interaction surfaces durable knowledge worth keeping, update only
+            `knowledge/wiki/**`, `knowledge/index.md`, and `knowledge/log.md` following
+            `knowledge/schema.md`. Keep changes additive, preserve contradictions with
+            dates and sources, and leave the wiki untouched when the signal is weak.
+            </knowledge_persistence>
+
       # Discover the daily report issue URL created by the agent this run.
       # MUST run after the agent step (the agent creates the issue mid-run).
       # Matches the EXACT title "Daily Fro Bot Report — <today-UTC> (UTC)" (em-dash U+2014).
@@ -560,9 +948,7 @@ jobs:
       # Shape-validates the URL before use; skips the post on zero/multiple matches (fail-soft).
       - name: 🔍 Discover daily report URL
         id: report-url
-        if: >-
-          (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-          inputs.prompt == ''
+        if: inputs.prompt == ''
         env:
           GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
         run: |
@@ -603,9 +989,7 @@ jobs:
       # Surfaces count_status=='error' as a step warning so a broken data overlay is visible.
       - name: 📊 Derive daily digest counts
         id: digest-counts
-        if: >-
-          (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-          inputs.prompt == ''
+        if: inputs.prompt == ''
         run: |
           set -euo pipefail
           TODAY_UTC="$(date -u +%Y-%m-%d)"
@@ -635,7 +1019,6 @@ jobs:
       # deployed and verified in fro-bot/agent + marcusrbrown/infra.
       - name: 📣 Announce daily digest to gateway
         if: >-
-          (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
           inputs.prompt == '' &&
           steps.digest-counts.outputs.count_status == 'ok' &&
           steps.report-url.outputs.report_url != '' &&
@@ -673,7 +1056,7 @@ jobs:
         if: >-
           success() &&
           steps.wiki-changes.outputs.changed == 'true' &&
-          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule","workflow_dispatch"]'), github.event_name)
+          contains(fromJSON('["schedule","workflow_dispatch"]'), github.event_name)
         id: ingest-ts
         run: echo "now=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
@@ -681,7 +1064,7 @@ jobs:
         if: >-
           success() &&
           steps.wiki-changes.outputs.changed == 'true' &&
-          contains(fromJSON('["issue_comment","pull_request_review_comment","discussion_comment","issues","pull_request","schedule","workflow_dispatch"]'), github.event_name)
+          contains(fromJSON('["schedule","workflow_dispatch"]'), github.event_name)
         env:
           GITHUB_TOKEN: ${{ secrets.FRO_BOT_PAT }}
           WIKI_OPERATION: event

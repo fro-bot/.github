@@ -1,0 +1,233 @@
+/**
+ * Contract tests for .github/workflows/fro-bot.yaml's daily-pass delivery-mode
+ * split: the schedule/workflow_dispatch path runs as two jobs
+ * (fro-bot-remediate: categories 1–4, branch-pr; fro-bot-observe: categories
+ * 5–8 + daily report, working-dir), a custom prompt resolves to exactly one
+ * of them, and the reusable-workflow callers (apply-branding.yaml,
+ * gateway-rollout-tracker.yaml) declare the output-mode they need. Style
+ * mirrors publish-wiki-workflow.test.ts.
+ */
+
+import {readFileSync} from 'node:fs'
+import {resolve} from 'node:path'
+import {describe, expect, it} from 'vitest'
+import {parse} from 'yaml'
+
+interface WorkflowStep {
+  name?: string
+  id?: string
+  if?: string
+  run?: string
+  uses?: string
+  env?: Record<string, unknown>
+  with?: Record<string, unknown>
+}
+
+interface WorkflowJob {
+  name?: string
+  steps?: WorkflowStep[]
+  needs?: string | string[]
+  if?: string
+  with?: Record<string, unknown>
+}
+
+interface WorkflowInput {
+  description?: string
+  required?: boolean
+  type?: string
+  default?: unknown
+  options?: string[]
+}
+
+function assertWorkflowShape(value: unknown): asserts value is {
+  on: Record<string, unknown>
+  env?: Record<string, unknown>
+  jobs: Record<string, WorkflowJob>
+} {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('jobs' in value) ||
+    typeof (value as Record<string, unknown>).jobs !== 'object'
+  ) {
+    throw new TypeError('workflow file does not have expected shape: missing jobs object')
+  }
+}
+
+const froBotPath = resolve(import.meta.dirname, '../.github/workflows/fro-bot.yaml')
+const froBotRaw = readFileSync(froBotPath, 'utf8')
+const froBotParsed: unknown = parse(froBotRaw)
+assertWorkflowShape(froBotParsed)
+
+const applyBrandingPath = resolve(import.meta.dirname, '../.github/workflows/apply-branding.yaml')
+const applyBrandingParsed: unknown = parse(readFileSync(applyBrandingPath, 'utf8'))
+assertWorkflowShape(applyBrandingParsed)
+
+const gatewayTrackerPath = resolve(import.meta.dirname, '../.github/workflows/gateway-rollout-tracker.yaml')
+const gatewayTrackerParsed: unknown = parse(readFileSync(gatewayTrackerPath, 'utf8'))
+assertWorkflowShape(gatewayTrackerParsed)
+
+function findStepIndex(job: WorkflowJob | undefined, predicate: (step: WorkflowStep) => boolean): number {
+  return (job?.steps ?? []).findIndex(predicate)
+}
+
+describe('fro-bot.yaml daily-pass job split', () => {
+  const remediateJob = froBotParsed.jobs['fro-bot-remediate']
+  const observeJob = froBotParsed.jobs['fro-bot-observe']
+  const contentJob = froBotParsed.jobs['fro-bot']
+
+  it('defines fro-bot-remediate and fro-bot-observe alongside the unchanged content-trigger job', () => {
+    expect(contentJob).toBeDefined()
+    expect(remediateJob).toBeDefined()
+    expect(observeJob).toBeDefined()
+  })
+
+  it('fro-bot-remediate sets output-mode: branch-pr on the agent step', () => {
+    const agentStep = remediateJob?.steps?.find(step => step.id === 'fro-bot-agent')
+    expect(agentStep?.with?.['output-mode']).toBe('branch-pr')
+  })
+
+  it('fro-bot-observe sets output-mode: working-dir on the agent step', () => {
+    const agentStep = observeJob?.steps?.find(step => step.id === 'fro-bot-agent')
+    expect(agentStep?.with?.['output-mode']).toBe('working-dir')
+  })
+
+  it('the content-trigger job does not set an output-mode (unaffected by the split)', () => {
+    const agentStep = contentJob?.steps?.find(step => step.id === 'fro-bot-agent')
+    expect(agentStep?.with?.['output-mode']).toBeUndefined()
+  })
+
+  it('fro-bot-observe declares needs: fro-bot-remediate', () => {
+    expect(observeJob?.needs).toBe('fro-bot-remediate')
+  })
+
+  it('content-trigger job if: still excludes schedule and workflow_dispatch (unchanged path)', () => {
+    const contentIf = String(contentJob?.if ?? '')
+    expect(contentIf).not.toContain("github.event_name == 'schedule'")
+    expect(contentIf).not.toContain("github.event_name == 'workflow_dispatch'")
+  })
+})
+
+describe('fro-bot.yaml wiki baseline/detect/ingest ordering', () => {
+  const observeJob = froBotParsed.jobs['fro-bot-observe']
+  const remediateJob = froBotParsed.jobs['fro-bot-remediate']
+
+  it('within fro-bot-observe: Capture wiki baseline precedes the agent step, which precedes Detect/Ingest', () => {
+    const baselineIndex = findStepIndex(observeJob, step => step.name === 'Capture wiki baseline')
+    const agentIndex = findStepIndex(observeJob, step => step.id === 'fro-bot-agent')
+    const detectIndex = findStepIndex(observeJob, step => step.name === 'Detect wiki insight changes')
+    const ingestIndex = findStepIndex(observeJob, step => step.name === 'Ingest wiki insight changes')
+
+    expect(baselineIndex).toBeGreaterThanOrEqual(0)
+    expect(agentIndex).toBeGreaterThan(baselineIndex)
+    expect(detectIndex).toBeGreaterThan(agentIndex)
+    expect(ingestIndex).toBeGreaterThan(detectIndex)
+  })
+
+  it('fro-bot-remediate has no wiki baseline/detect/ingest steps — it cannot commit knowledge/**', () => {
+    expect(findStepIndex(remediateJob, step => step.name === 'Capture wiki baseline')).toBe(-1)
+    expect(findStepIndex(remediateJob, step => step.name === 'Detect wiki insight changes')).toBe(-1)
+    expect(findStepIndex(remediateJob, step => step.name === 'Ingest wiki insight changes')).toBe(-1)
+  })
+})
+
+describe('fro-bot.yaml custom-prompt single-job resolution', () => {
+  const workflowDispatchInputs = (froBotParsed.on as {workflow_dispatch?: {inputs?: Record<string, WorkflowInput>}})
+    .workflow_dispatch?.inputs
+  const workflowCallInputs = (froBotParsed.on as {workflow_call?: {inputs?: Record<string, WorkflowInput>}})
+    .workflow_call?.inputs
+
+  it('workflow_dispatch declares an output-mode choice input defaulting to branch-pr', () => {
+    const input = workflowDispatchInputs?.['output-mode']
+    expect(input).toBeDefined()
+    expect(input?.type).toBe('choice')
+    expect(input?.options).toEqual(['branch-pr', 'working-dir'])
+    expect(input?.default).toBe('branch-pr')
+  })
+
+  it('workflow_call declares an output-mode input defaulting to working-dir (safest for an omitting caller)', () => {
+    const input = workflowCallInputs?.['output-mode']
+    expect(input).toBeDefined()
+    expect(input?.required).toBe(false)
+    expect(input?.default).toBe('working-dir')
+  })
+
+  it('fro-bot-remediate only runs a custom prompt when output-mode resolves to branch-pr', () => {
+    const remediateIf = String(froBotParsed.jobs['fro-bot-remediate']?.if ?? '')
+    expect(remediateIf).toContain("inputs.prompt == ''")
+    expect(remediateIf).toContain("inputs['output-mode'] == 'branch-pr'")
+  })
+
+  it('fro-bot-observe only runs a custom prompt when output-mode resolves to working-dir', () => {
+    const observeIf = String(froBotParsed.jobs['fro-bot-observe']?.if ?? '')
+    expect(observeIf).toContain("inputs.prompt == ''")
+    expect(observeIf).toContain("inputs['output-mode'] == 'working-dir'")
+  })
+
+  it('the two jobs gate on mutually exclusive output-mode values, so a custom prompt selects exactly one', () => {
+    const remediateIf = String(froBotParsed.jobs['fro-bot-remediate']?.if ?? '')
+    const observeIf = String(froBotParsed.jobs['fro-bot-observe']?.if ?? '')
+    expect(remediateIf).toContain('branch-pr')
+    expect(remediateIf).not.toContain("'working-dir'")
+    expect(observeIf).toContain('working-dir')
+    expect(observeIf).not.toContain("'branch-pr'")
+  })
+
+  it('fro-bot-observe runs regardless of fro-bot-remediate outcome (skipped or failed), only cancellation stops it', () => {
+    const observeIf = String(froBotParsed.jobs['fro-bot-observe']?.if ?? '')
+    expect(observeIf).toContain('!cancelled()')
+    expect(observeIf).not.toContain('success()')
+  })
+})
+
+describe('reusable-workflow callers declare the output-mode they need', () => {
+  it('apply-branding.yaml passes output-mode: branch-pr', () => {
+    const job = applyBrandingParsed.jobs['apply-branding']
+    expect(job?.with).toBeDefined()
+    expect(job?.with?.['output-mode']).toBe('branch-pr')
+  })
+
+  it('gateway-rollout-tracker.yaml does not pass output-mode — it relies on the working-dir default', () => {
+    const job = gatewayTrackerParsed.jobs['update-rollout-tracker']
+    expect(job?.with?.['output-mode']).toBeUndefined()
+  })
+})
+
+describe('fro-bot.yaml prompt content: delivery-mode instructions land in the right job', () => {
+  const env = froBotParsed.env as Record<string, string>
+
+  it('the observe prompt forbids branch/commit/push — it cannot deliver that way', () => {
+    const observeIntro = env.OBSERVE_INTRO ?? ''
+    expect(observeIntro).toContain('never run `git branch`, `git commit`,')
+    expect(observeIntro).toContain('delivers via branch+PR')
+    expect(observeIntro.toLowerCase()).toContain('working-dir mode')
+  })
+
+  it('the remediate prompt instructs branch/commit/push as the required delivery mechanism', () => {
+    const remediateIntro = env.REMEDIATE_INTRO ?? ''
+    const remediateCategories = env.REMEDIATE_CATEGORIES ?? ''
+    expect(remediateIntro.toLowerCase()).toContain('branch-pr mode')
+    expect(remediateIntro).toContain('checking out a')
+    expect(remediateCategories).toContain('push to that PR branch')
+  })
+
+  it('both the remediate and observe prompts state the guarded-paths boundary explicitly', () => {
+    const remediateIntro = env.REMEDIATE_INTRO ?? ''
+    const observeIntro = env.OBSERVE_INTRO ?? ''
+    expect(remediateIntro).toContain('knowledge/wiki/**')
+    expect(remediateIntro).toContain('metadata/*.yaml')
+    expect(observeIntro).toContain('metadata/*.yaml')
+  })
+
+  it('the observe prompt corrects the dirty-tree requirement for wiki-ingest.ts', () => {
+    const observeIntro = env.OBSERVE_INTRO ?? ''
+    expect(observeIntro).toContain('git status --porcelain')
+    expect(observeIntro).toContain('leave that tree dirty')
+  })
+
+  it('the observe output section instructs reading remediate PRs instead of re-analysis', () => {
+    const observeOutput = env.OBSERVE_OUTPUT ?? ''
+    expect(observeOutput).toContain('Do not re-analyze those')
+    expect(observeOutput).toContain('Fro-Bot-authored PRs')
+  })
+})
