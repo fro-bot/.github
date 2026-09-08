@@ -1,3 +1,4 @@
+import {readdir, readFile} from 'node:fs/promises'
 /**
  * Verifies TypeScript code examples embedded in `docs/solutions/**\/*.md`.
  *
@@ -7,7 +8,9 @@
  * prose claims and nothing else catches it (see PR #3868, where `source.url === expectedUrl`
  * was presented as the vulnerable line despite `===` doing no coercion).
  *
- * Two independent checks, run over every ` ```ts `/` ```typescript `/` ```tsx ` fenced block:
+ * Two independent checks, run over every ` ```ts `/` ```typescript `/` ```tsx ` fenced block
+ * (indented fences — e.g. inside a list item — are matched and dedented before parsing, so
+ * list-nested examples get real coverage rather than being silently skipped):
  *
  * 1. **Parse.** Every block must parse as valid TypeScript (checked via the TypeScript
  *    compiler API's syntactic diagnostics — no type information is required or used). Most
@@ -23,9 +26,15 @@
  *    repo-relative `PATH` file, and every call to `NAME` inside the block is checked against
  *    that symbol's real parameter count. This is opt-in because most blocks are illustrative
  *    and name nothing real; only annotate a block when it names or calls an actual repo symbol.
+ *
+ * Both directive forms (the `<!-- verify -->` comment and the fence's own info string) fail
+ * CLOSED on anything that looks like it was meant to be a directive but doesn't parse as one —
+ * a typo'd `verify:` keyword, a fence with more than one unrecognized modifier, or a
+ * near-miss language tag — is reported as a `directiveFindings` entry rather than silently
+ * skipped. A gate that stays green on unrecognized input is exactly the failure mode this
+ * script exists to close (see PR #3870).
  */
-import {readdir, readFile} from 'node:fs/promises'
-import {join, relative} from 'node:path'
+import {isAbsolute, join, relative, resolve} from 'node:path'
 import process from 'node:process'
 
 import ts from 'typescript'
@@ -33,6 +42,13 @@ import ts from 'typescript'
 const SOLUTIONS_ROOT = 'docs/solutions'
 const CODE_LANGS = new Set(['ts', 'typescript', 'tsx'])
 const FRAGMENT_MODIFIER = 'fragment'
+// Every non-code fence language actually used in docs/solutions today, so the near-miss
+// language-tag check below never flags a legitimate tag as a typo of `ts`/`typescript`/`tsx`.
+const KNOWN_NON_CODE_FENCE_LANGS = new Set(['yaml', 'bash', 'sh', 'text', 'markdown', 'json5', 'json', 'diff'])
+// A fence's info string is only worth comparing against CODE_LANGS when it's short enough that
+// a real near-miss (one or two typo'd characters) is plausible — bounds the cost of comparing
+// against a long, unrelated word.
+const NEAR_MISS_MAX_DISTANCE = 2
 
 export interface CodeBlock {
   /** Repository-relative path of the markdown file containing the block. */
@@ -40,6 +56,7 @@ export interface CodeBlock {
   /** 1-based line number of the block's opening fence. */
   readonly line: number
   readonly lang: string
+  /** Fence content, dedented by the opening fence's own indentation. */
   readonly code: string
   /** True when the fence's info string carries the `fragment` escape (skips the parse check). */
   readonly fragment: boolean
@@ -67,64 +84,179 @@ export interface SymbolFinding {
   readonly reason: string
 }
 
+/**
+ * A directive-shaped input (a `<!-- verify -->`-looking comment, or a fence whose info string
+ * starts with a recognized language) that failed to parse as a real directive. Reported as an
+ * error rather than silently ignored — see the module docstring.
+ */
+export interface DirectiveFinding {
+  readonly docPath: string
+  readonly line: number
+  readonly reason: string
+}
+
+export interface ExtractResult {
+  readonly blocks: readonly CodeBlock[]
+  readonly directiveFindings: readonly DirectiveFinding[]
+}
+
 export interface CheckResult {
   readonly blocksChecked: number
   readonly fragmentsExempted: number
   readonly parseFindings: readonly ParseFinding[]
   readonly symbolFindings: readonly SymbolFinding[]
+  readonly directiveFindings: readonly DirectiveFinding[]
 }
 
 const VERIFY_ANNOTATION_PATTERN = /^<!--\s*verify:\s*(\S+)\s+from\s+(\S+)\s*-->$/u
-const FENCE_OPEN_PATTERN = /^```([\w-]+)(?:\s+(\S+))?\s*$/u
-const FENCE_CLOSE_PATTERN = /^```\s*$/u
+const HTML_COMMENT_PATTERN = /^<!--(.*)-->$/u
+// Deliberately loose: captures ANY fence line (any indent, any info string, including empty
+// or malformed), so every fence-shaped line gets a chance to be validated rather than silently
+// falling through when it doesn't match a stricter pattern.
+const FENCE_LINE_PATTERN = /^(\s*)```(.*)$/u
+const FENCE_CLOSE_PATTERN = /^\s*```\s*$/u
 
 /** Extracts every fenced code block from a markdown document's raw text. */
-export function extractCodeBlocks(content: string, docPath: string): CodeBlock[] {
+export function extractCodeBlocks(content: string, docPath: string): ExtractResult {
   const lines = content.split('\n')
   const blocks: CodeBlock[] = []
+  const directiveFindings: DirectiveFinding[] = []
 
   for (let i = 0; i < lines.length; i++) {
-    const openMatch = FENCE_OPEN_PATTERN.exec(lines[i] ?? '')
+    const openMatch = FENCE_LINE_PATTERN.exec(lines[i] ?? '')
     if (!openMatch) continue
 
-    const lang = openMatch[1] ?? ''
-    const modifier = openMatch[2]
+    const indent = openMatch[1] ?? ''
+    const infoString = (openMatch[2] ?? '').trim()
+    // Split on the first whitespace run rather than a second regex group sharing a wildcard
+    // with the info string's remainder — two adjacent variable-length quantifiers over
+    // overlapping character classes is exactly the shape `regexp/no-super-linear-backtracking`
+    // (correctly) flags.
+    const spaceIndex = infoString.search(/\s/u)
+    const rawLang = spaceIndex === -1 ? infoString : infoString.slice(0, spaceIndex)
+    const lang = rawLang.toLowerCase()
+    const rest = spaceIndex === -1 ? '' : infoString.slice(spaceIndex).trim()
     const fenceLine = i + 1
+
     const bodyLines: string[] = []
     let j = i + 1
     for (; j < lines.length; j++) {
       if (FENCE_CLOSE_PATTERN.test(lines[j] ?? '')) break
-      bodyLines.push(lines[j] ?? '')
+      bodyLines.push(dedent(lines[j] ?? '', indent))
     }
 
     if (CODE_LANGS.has(lang)) {
-      blocks.push({
-        docPath,
-        line: fenceLine,
-        lang,
-        code: bodyLines.join('\n'),
-        fragment: modifier === FRAGMENT_MODIFIER,
-        annotations: collectAnnotations(lines, i),
-      })
+      const modifierTokens = rest.length === 0 ? [] : rest.split(/\s+/u)
+      const {annotations, findings: annotationFindings} = collectAnnotations(lines, i)
+      for (const finding of annotationFindings) directiveFindings.push({...finding, docPath})
+
+      if (modifierTokens.length === 0) {
+        blocks.push({docPath, line: fenceLine, lang, code: bodyLines.join('\n'), fragment: false, annotations})
+      } else if (modifierTokens.length === 1 && modifierTokens[0] === FRAGMENT_MODIFIER) {
+        blocks.push({docPath, line: fenceLine, lang, code: bodyLines.join('\n'), fragment: true, annotations})
+      } else {
+        directiveFindings.push({
+          docPath,
+          line: fenceLine,
+          reason: `unrecognized fence modifier "${rest}" on a \`${rawLang}\` fence (only the bare fence or a single \`${FRAGMENT_MODIFIER}\` modifier is recognized) — block was not checked`,
+        })
+      }
+    } else if (rest.length === 0 && rawLang.length > 0 && !KNOWN_NON_CODE_FENCE_LANGS.has(lang)) {
+      const nearestMatch = nearestCodeLang(lang)
+      if (nearestMatch !== undefined) {
+        directiveFindings.push({
+          docPath,
+          line: fenceLine,
+          reason: `fence language "${rawLang}" is not recognized and closely resembles "${nearestMatch}" — likely a typo (block was not checked as TypeScript)`,
+        })
+      }
     }
 
     i = j // skip past the closing fence; outer loop's i++ advances past it
   }
 
-  return blocks
+  return {blocks, directiveFindings}
 }
 
-/** Walks upward from the fence line collecting contiguous `<!-- verify: ... -->` comments. */
-function collectAnnotations(lines: readonly string[], fenceIndex: number): VerifyAnnotation[] {
+/** Strips up to `indent`'s length of leading whitespace from `line`, tolerating a shorter prefix. */
+function dedent(line: string, indent: string): string {
+  if (indent.length === 0) return line
+  if (line.startsWith(indent)) return line.slice(indent.length)
+  const leading = /^\s*/u.exec(line)?.[0] ?? ''
+  return line.slice(Math.min(leading.length, indent.length))
+}
+
+/** The nearest `CODE_LANGS` member to `lang` within `NEAR_MISS_MAX_DISTANCE` edits, if any. */
+function nearestCodeLang(lang: string): string | undefined {
+  let best: {readonly candidate: string; readonly distance: number} | undefined
+  for (const candidate of CODE_LANGS) {
+    const distance = levenshteinDistance(lang, candidate)
+    if (distance > 0 && distance <= NEAR_MISS_MAX_DISTANCE && (!best || distance < best.distance)) {
+      best = {candidate, distance}
+    }
+  }
+  return best?.candidate
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  let previousRow = Array.from({length: b.length + 1}, (_, index) => index)
+  for (let i = 1; i <= a.length; i++) {
+    const currentRow: number[] = Array.from({length: b.length + 1}, () => 0)
+    currentRow[0] = i
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      const deletion = (previousRow[j] ?? 0) + 1
+      const insertion = (currentRow[j - 1] ?? 0) + 1
+      const substitution = (previousRow[j - 1] ?? 0) + cost
+      currentRow[j] = Math.min(deletion, insertion, substitution)
+    }
+    previousRow = currentRow
+  }
+  return previousRow[b.length] ?? 0
+}
+
+/**
+ * Walks upward from the fence line collecting contiguous `<!-- verify: ... -->` comments.
+ * Stops at the first line that either isn't an HTML comment or is one unrelated to `verify`.
+ * An HTML comment that mentions `verify` but doesn't match the real annotation grammar is
+ * reported as a `DirectiveFinding` rather than silently skipped, and also stops the walk — a
+ * malformed directive is exactly the kind of line a reader (or a script) should not read past
+ * as if it weren't there.
+ */
+interface RawDirectiveFinding {
+  readonly line: number
+  readonly reason: string
+}
+
+function collectAnnotations(
+  lines: readonly string[],
+  fenceIndex: number,
+): {readonly annotations: readonly VerifyAnnotation[]; readonly findings: readonly RawDirectiveFinding[]} {
   const annotations: VerifyAnnotation[] = []
+  const findings: RawDirectiveFinding[] = []
   let k = fenceIndex - 1
   while (k >= 0) {
-    const match = VERIFY_ANNOTATION_PATTERN.exec((lines[k] ?? '').trim())
-    if (!match) break
-    annotations.unshift({symbol: match[1] ?? '', file: match[2] ?? ''})
-    k -= 1
+    const trimmed = (lines[k] ?? '').trim()
+    const verifyMatch = VERIFY_ANNOTATION_PATTERN.exec(trimmed)
+    if (verifyMatch) {
+      annotations.unshift({symbol: verifyMatch[1] ?? '', file: verifyMatch[2] ?? ''})
+      k -= 1
+      continue
+    }
+
+    const commentMatch = HTML_COMMENT_PATTERN.exec(trimmed)
+    // Prefix match on "verif", not a literal "verify" substring check: catches the exact typo
+    // this rejection path exists for ("verifies:" does NOT contain "verify" as a substring —
+    // it diverges right before the final "y") along with any other verify*/verifying variant.
+    if (commentMatch && /\bverif\w*/iu.test(commentMatch[1] ?? '')) {
+      findings.push({
+        line: k + 1,
+        reason: `comment looks like a \`<!-- verify: NAME from PATH -->\` annotation but doesn't match that grammar: ${trimmed}`,
+      })
+    }
+    break
   }
-  return annotations
+  return {annotations, findings}
 }
 
 /**
@@ -178,27 +310,32 @@ interface ResolvedSignature {
   readonly maxArgs: number
 }
 
-/** Finds the first function/arrow-function declaration named `symbol` anywhere in `sourceFile`. */
+/**
+ * Finds the top-level function/arrow-function declaration named `symbol` in `sourceFile`.
+ * Deliberately restricted to `sourceFile.statements` (not a full-tree walk): a nested helper
+ * that happens to share a name with the intended top-level symbol must never shadow it.
+ */
 function findSignature(sourceFile: ts.SourceFile, symbol: string): ResolvedSignature | undefined {
   let found: readonly ts.ParameterDeclaration[] | undefined
 
-  const visit = (node: ts.Node): void => {
-    if (found) return
-    if (ts.isFunctionDeclaration(node) && node.name?.text === symbol) {
-      found = node.parameters
-      return
+  for (const statement of sourceFile.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text === symbol) {
+      found = statement.parameters
+      break
     }
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === symbol) {
-      const initializer = node.initializer
-      if (initializer && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))) {
-        found = initializer.parameters
-        return
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name) || declaration.name.text !== symbol) continue
+        const initializer = declaration.initializer
+        if (initializer && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))) {
+          found = initializer.parameters
+          break
+        }
       }
     }
-    ts.forEachChild(node, visit)
+    if (found) break
   }
 
-  ts.forEachChild(sourceFile, visit)
   if (!found) return undefined
 
   let minArgs = 0
@@ -237,42 +374,68 @@ function findCalls(code: string, symbol: string): {line: number; argCount: numbe
   return calls
 }
 
+/** True iff `candidateRelativePath`, resolved against `rootDir`, stays within `rootDir`. */
+function resolvesWithinRoot(rootDir: string, candidateRelativePath: string): boolean {
+  const resolvedRoot = resolve(rootDir)
+  const resolvedCandidate = resolve(rootDir, candidateRelativePath)
+  const rel = relative(resolvedRoot, resolvedCandidate)
+  return rel.length > 0 && !rel.startsWith('..') && !isAbsolute(rel)
+}
+
 /**
  * Checks one `<!-- verify -->` annotation against a block: the named symbol must exist in the
  * named repo-relative file, and every call to it inside the block must pass an argument count
  * the real signature accepts. A block with no calls to the symbol still passes (b) vacuously —
- * the annotation's minimum guarantee is that the symbol exists.
+ * the annotation's minimum guarantee is that the symbol exists. Returns every violation found,
+ * not just the first, so a block with several wrong-arity calls is reported in one pass.
  */
 export async function checkAnnotation(
   block: CodeBlock,
   annotation: VerifyAnnotation,
   rootDir: string,
-): Promise<SymbolFinding | undefined> {
+): Promise<readonly SymbolFinding[]> {
+  if (!resolvesWithinRoot(rootDir, annotation.file)) {
+    return [
+      {
+        docPath: block.docPath,
+        line: block.line,
+        symbol: annotation.symbol,
+        file: annotation.file,
+        reason: `annotation file path escapes the repository root: ${annotation.file}`,
+      },
+    ]
+  }
+
   let content: string
   try {
     content = await readFile(join(rootDir, annotation.file), 'utf8')
   } catch {
-    return {
-      docPath: block.docPath,
-      line: block.line,
-      symbol: annotation.symbol,
-      file: annotation.file,
-      reason: `file not found: ${annotation.file}`,
-    }
+    return [
+      {
+        docPath: block.docPath,
+        line: block.line,
+        symbol: annotation.symbol,
+        file: annotation.file,
+        reason: `file not found: ${annotation.file}`,
+      },
+    ]
   }
 
   const sourceFile = ts.createSourceFile(annotation.file, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const signature = findSignature(sourceFile, annotation.symbol)
   if (!signature) {
-    return {
-      docPath: block.docPath,
-      line: block.line,
-      symbol: annotation.symbol,
-      file: annotation.file,
-      reason: `no function or arrow-function declaration named "${annotation.symbol}" found in ${annotation.file}`,
-    }
+    return [
+      {
+        docPath: block.docPath,
+        line: block.line,
+        symbol: annotation.symbol,
+        file: annotation.file,
+        reason: `no function or arrow-function declaration named "${annotation.symbol}" found in ${annotation.file}`,
+      },
+    ]
   }
 
+  const findings: SymbolFinding[] = []
   for (const call of findCalls(block.code, annotation.symbol)) {
     if (call.hasSpread) continue // argument count cannot be determined statically
     if (call.argCount < signature.minArgs || call.argCount > signature.maxArgs) {
@@ -280,17 +443,17 @@ export async function checkAnnotation(
         signature.minArgs === signature.maxArgs
           ? `${String(signature.minArgs)}`
           : `${String(signature.minArgs)}-${signature.maxArgs === Number.POSITIVE_INFINITY ? '∞' : String(signature.maxArgs)}`
-      return {
+      findings.push({
         docPath: block.docPath,
         line: block.line + call.line + 1,
         symbol: annotation.symbol,
         file: annotation.file,
         reason: `doc calls ${annotation.symbol} with ${String(call.argCount)} argument(s); real signature accepts ${expected}`,
-      }
+      })
     }
   }
 
-  return undefined
+  return findings
 }
 
 async function collectSolutionsMarkdownPaths(rootDir: string): Promise<string[]> {
@@ -327,12 +490,16 @@ export async function checkSolutionsExamples(rootDir: string = process.cwd()): P
   const docPaths = await collectSolutionsMarkdownPaths(rootDir)
   const parseFindings: ParseFinding[] = []
   const symbolFindings: SymbolFinding[] = []
+  const directiveFindings: DirectiveFinding[] = []
   let blocksChecked = 0
   let fragmentsExempted = 0
 
   for (const docPath of docPaths) {
     const content = await readFile(join(rootDir, docPath), 'utf8')
-    for (const block of extractCodeBlocks(content, docPath)) {
+    const {blocks, directiveFindings: docDirectiveFindings} = extractCodeBlocks(content, docPath)
+    directiveFindings.push(...docDirectiveFindings)
+
+    for (const block of blocks) {
       blocksChecked += 1
       if (block.fragment) fragmentsExempted += 1
 
@@ -340,18 +507,21 @@ export async function checkSolutionsExamples(rootDir: string = process.cwd()): P
       if (parseFinding) parseFindings.push(parseFinding)
 
       for (const annotation of block.annotations) {
-        const symbolFinding = await checkAnnotation(block, annotation, rootDir)
-        if (symbolFinding) symbolFindings.push(symbolFinding)
+        const findings = await checkAnnotation(block, annotation, rootDir)
+        symbolFindings.push(...findings)
       }
     }
   }
 
-  return {blocksChecked, fragmentsExempted, parseFindings, symbolFindings}
+  return {blocksChecked, fragmentsExempted, parseFindings, symbolFindings, directiveFindings}
 }
 
 export async function main(): Promise<void> {
   const result = await checkSolutionsExamples()
 
+  for (const finding of result.directiveFindings) {
+    process.stderr.write(`${finding.docPath}:${String(finding.line)} -> ${finding.reason}\n`)
+  }
   for (const finding of result.parseFindings) {
     process.stderr.write(`${finding.docPath}:${String(finding.line)} -> ${finding.message}\n`)
   }
@@ -361,7 +531,7 @@ export async function main(): Promise<void> {
     )
   }
 
-  if (result.parseFindings.length > 0 || result.symbolFindings.length > 0) {
+  if (result.directiveFindings.length > 0 || result.parseFindings.length > 0 || result.symbolFindings.length > 0) {
     process.exitCode = 1
   }
 }
