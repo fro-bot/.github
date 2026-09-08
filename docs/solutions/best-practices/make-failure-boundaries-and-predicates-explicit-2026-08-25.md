@@ -112,21 +112,27 @@ Current `scripts/capture-patterns-cluster.ts` documents the detect contract next
  * that could leak content.
  */
 async function main(): Promise<void> {
+  // ...
+}
 ```
 
 The implementation then catches unexpected errors, records `scanFailure`, writes an empty digest
 when possible, and emits counts-only output:
 
 ```ts
-} catch (error: unknown) {
-  const errorName = error instanceof Error ? error.name : 'unknown'
-  process.stderr.write(`capture-patterns-cluster: unexpected error (${errorName}), falling back to empty digest\n`)
-  result.scanFailure = true
-  digestCandidates = []
+async function main(): Promise<void> {
   try {
-    await writePatternDigestFile(digestCandidates)
-  } catch {
-    // ignore
+    // ...
+  } catch (error: unknown) {
+    const errorName = error instanceof Error ? error.name : 'unknown'
+    process.stderr.write(`capture-patterns-cluster: unexpected error (${errorName}), falling back to empty digest\n`)
+    result.scanFailure = true
+    digestCandidates = []
+    try {
+      await writePatternDigestFile(digestCandidates)
+    } catch {
+      // ignore
+    }
   }
 }
 ```
@@ -142,6 +148,8 @@ async function main(): Promise<void> {
   // intentionally fail-hard on malformed inputs or missing credentials: after the
   // live gate, ambiguity must stop before any issue mutation.
   const {loadPrivateTokensFromDisk} = await import('./capture-learnings-privacy.ts')
+  // ...
+}
 ```
 
 The digest read and client construction remain outside a top-level catch:

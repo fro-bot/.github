@@ -49,13 +49,15 @@ Two fixes, both in PR #3144.
 
 ```ts
 // BEFORE (broken) — fed deletions to readFile
-.filter(line => line.length >= 4)
-.map(line => line.slice(3))
+const pathsBefore = porcelainLines
+  .filter(line => line.length >= 4)
+  .map(line => line.slice(3))
 
 // AFTER — skip any status where X or Y position is 'D'
-.filter(line => line.length >= 4)
-.filter(line => !line.slice(0, 2).includes('D'))
-.map(line => line.slice(3))
+const pathsAfter = porcelainLines
+  .filter(line => line.length >= 4)
+  .filter(line => !line.slice(0, 2).includes('D'))
+  .map(line => line.slice(3))
 ```
 
 Tests added for the full deletion status matrix: `' D'`, `'D '`, `'DD'`, `'AD'`, `'MD'`, `'RD'`, `'CD'`. RED-confirmed by landing tests on unchanged code and watching them fail before applying the filter.

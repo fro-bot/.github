@@ -79,7 +79,7 @@ if (remainder.includes('next-line')) { /* treated as correctly scoped */ }
 
 // Scope is a parsed token; the reason is a separate field.
 const {scope, mutators, reason} = parseDirective(line)
-if (scope !== 'next-line') { report(...) }
+if (scope !== 'next-line') { report(scope, mutators, reason) }
 ```
 
 Silence distinguished from cleanliness:

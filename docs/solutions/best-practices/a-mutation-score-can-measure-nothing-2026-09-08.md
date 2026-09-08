@@ -73,6 +73,7 @@ The second mechanism is worse than the first, because a static mutant reports 0 
 
 The conversion that unfroze the decision table:
 
+<!-- verify: guardedPatterns from scripts/check-wiki-authority.ts -->
 ```ts
 // Before: evaluated once per Stryker worker; every mutant inside is static.
 const GUARDED_PATTERNS = [/^knowledge\/wiki\/[^/]+\/.+\.md$/, /* … */]

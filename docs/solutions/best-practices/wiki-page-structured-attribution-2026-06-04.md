@@ -115,6 +115,8 @@ if (parsed.hostname !== 'github.com') return false
 
 ### Structured-first decision with legacy fallback
 
+<!-- verify: parseFrontmatterSources from scripts/check-wiki-private-presence.ts -->
+<!-- verify: sourceUrlMatchesRepo from scripts/check-wiki-private-presence.ts -->
 ```ts
 // detectPrivateWikiLeaks
 const structuredSources = parseFrontmatterSources(page.content)

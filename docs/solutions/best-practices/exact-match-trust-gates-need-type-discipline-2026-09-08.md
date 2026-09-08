@@ -83,6 +83,7 @@ sources:
 
 The discipline:
 
+<!-- verify: sourceUrlMatchesRepo from scripts/check-wiki-private-presence.ts -->
 ```ts
 // Before: sourceUrlMatchesRepo calls `new URL(sourceUrl)`, which stringifies its
 // argument, so the one-element array parses and matches.

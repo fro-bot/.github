@@ -56,6 +56,7 @@ Documentation drift is normally a readability problem. In a classifier it is a c
 
 Enumeration as a table rather than prose:
 
+<!-- verify: isPureReexportBarrel from scripts/mutation-guards-config.test.ts -->
 ```ts
 // Every form the docstring claims, driven through the real matcher. The matcher takes
 // a path and a source reader, so each row is a fixture file rather than a bare line.
