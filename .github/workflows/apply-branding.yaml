@@ -119,3 +119,4 @@ jobs:
       OPENCODE_CONFIG: ${{ secrets.OPENCODE_CONFIG }}
     with:
       prompt: ${{ needs.resolve-prompt.outputs.prompt }}
+      output-mode: branch-pr
