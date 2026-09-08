@@ -742,6 +742,10 @@ jobs:
       - name: Restore knowledge/ to a clean tree before the agent runs
         run: |
           git restore --worktree --source=HEAD -- knowledge
+          # restore only manages tracked paths, so a page that exists on `data` but not
+          # on `main` lands untracked and survives it. -fd, not -fdx: nothing under
+          # knowledge/ is gitignored, and the pathspec keeps the scope to what the sync wrote.
+          git clean -fd -- knowledge
           if [ -n "$(git status --porcelain -- knowledge)" ]; then
             echo "::error::knowledge/ is still dirty after restore — remediate must start clean" >&2
             git status --porcelain -- knowledge >&2

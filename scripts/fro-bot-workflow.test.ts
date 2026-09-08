@@ -162,6 +162,17 @@ describe('fro-bot.yaml pre-agent tree cleanliness', () => {
     expect(String(restoreStep?.run ?? '')).toContain('exit 1')
   })
 
+  it('the restore step also removes untracked pages, which git restore cannot touch', () => {
+    // `data` may carry a wiki page `main` lacks; the sync writes it untracked, and
+    // `git restore` only manages tracked paths. Without the clean, the guard below it
+    // fails the job the first time a survey adds a page before the weekly promotion.
+    const restoreStep = remediateJob?.steps?.find(
+      step => typeof step.run === 'string' && step.run.includes('git restore --worktree --source=HEAD -- knowledge'),
+    )
+    expect(String(restoreStep?.run ?? '')).toContain('git clean -fd -- knowledge')
+    expect(String(restoreStep?.run ?? '')).not.toContain('git clean -fdx')
+  })
+
   it('fro-bot-observe has no such restore step — its dirty tree is load-bearing for wiki-ingest.ts', () => {
     const restoreIndex = findStepIndex(
       observeJob,
