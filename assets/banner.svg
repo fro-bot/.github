@@ -120,7 +120,7 @@
     <!-- URL -->
     <text x="0" y="-120" font-family="'Courier New', monospace" font-size="20" fill="#00BCD4" opacity="0.9">fro-bot/.github</text>
 
-    <!-- Title (High Contrast) -->
+    <!-- Title (High Contrast): preserved at the existing 140px browser-safe size -->
     <text x="-5" y="20" font-family="'Arial Black', 'Arial', sans-serif" font-weight="bold" font-size="140" fill="#FFFFFF" stroke="#00BCD4" stroke-width="2" paint-order="stroke" filter="url(#b1-glow)">.github</text>
 
     <!-- Tagline -->

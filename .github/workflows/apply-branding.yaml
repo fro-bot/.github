@@ -55,7 +55,9 @@ env:
        - Replace `{{REPO_NAME}}` with the repo name (second part of $REPOSITORY)
        - Replace `{{TAGLINE}}` with: $TAGLINE
        - Replace `{{CTA}}` with: @fro-bot — mention it anywhere
-       - Save as `assets/banner.svg` in the target repo
+       - Set `{{TITLE_FONT_SIZE}}` by measurement, not by character count. Start with the styleguide display size, 96px, or the previous generated value when updating an existing banner.
+       - Render the generated SVG in the target browser engine at 1280×640, then measure the title element's rendered right edge with `getBoundingClientRect().right`. Reduce `{{TITLE_FONT_SIZE}}` and repeat until the measured right edge is at or before canvas x=745, leaving a 5px safety gap before the avatar portal at x=750. Start at 96px for a new banner, or the existing title size when updating a banner, and only reduce it. This preserves short-name typography without stretching it. Do not add `textLength`, `lengthAdjust`, or a clipping path.
+       - Save the measured result as `assets/banner.svg` in the target repo.
 
     5. Generate the repo-specific README:
        - Use the README template as the foundation
@@ -66,7 +68,9 @@ env:
 
     6. Copy `assets/styleguide.md` to the target repo's `assets/` directory
     7. Copy `branding/tokens.css` to the target repo's `assets/` directory
-    8. Copy `assets/fro-bot.png` to the target repo's `assets/` directory (if not present)
+    8. Copy `assets/fro-bot.png` to the target repo's `assets/` directory (if not present):
+       - Use the materialized working-tree file, not a raw Git blob or `git show` output. If the source begins with `version https://git-lfs.github.com/spec/v1`, run `git lfs checkout assets/fro-bot.png` before continuing; fail instead of copying if it is still a pointer.
+       - Copy it with a binary-safe filesystem copy and verify the destination starts with PNG magic bytes `89 50 4e 47 0d 0a 1a 0a` (`89504e470d0a1a0a`). Do not add `.gitattributes` or any Git LFS configuration to the target repository.
 
     9. Style any existing Mermaid diagrams in the README to use brand colors:
        - Background: #1A0B2E
