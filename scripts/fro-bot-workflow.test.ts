@@ -317,3 +317,77 @@ describe('fro-bot.yaml prompt content: delivery-mode instructions land in the ri
     expect(observeOutput).toContain('Fro-Bot-authored PRs')
   })
 })
+
+describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout credential scope', () => {
+  const contentJob = froBotParsed.jobs['fro-bot']
+  const contentIf = String(contentJob?.if ?? '')
+  const checkoutStep = contentJob?.steps?.find(step => step.name === 'Checkout repository')
+
+  it('configuration contract: the fro-bot job if predicate matches the expected condition exactly, whitespace-normalized (static string comparison, not a live GHA evaluation)', () => {
+    const expectedIf = `
+      (
+        github.event.pull_request == null ||
+        (
+          !github.event.pull_request.head.repo.fork &&
+          !endsWith(github.event.pull_request.user.login || '', '[bot]')
+        )
+      ) && (
+        (
+          github.event_name == 'issues' &&
+          !endsWith(github.event.issue.user.login || '', '[bot]') &&
+          (github.event.issue.user.login || '') != 'fro-bot' &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association || '')
+        ) ||
+        (
+          github.event_name == 'pull_request' &&
+          !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
+          (github.event.pull_request.user.login || '') != 'fro-bot'
+        ) ||
+        (
+          (github.event_name == 'issue_comment' ||
+           github.event_name == 'pull_request_review_comment' ||
+           github.event_name == 'discussion_comment') &&
+          contains(github.event.comment.body || '', '@fro-bot') &&
+          (github.event.comment.user.login || '') != 'fro-bot' &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || '')
+        )
+      )
+    `
+
+    expect(contentIf.replaceAll(/\s+/g, ' ').trim()).toBe(expectedIf.replaceAll(/\s+/g, ' ').trim())
+  })
+
+  it('keeps the issues branch bot exclusions and opened/edited event types unchanged', () => {
+    expect(contentIf).toContain(`!endsWith(github.event.issue.user.login || '', '[bot]')`)
+    expect(contentIf).toContain(`(github.event.issue.user.login || '') != 'fro-bot'`)
+    const issuesTypes = (froBotParsed.on as {issues?: {types?: string[]}}).issues?.types
+    expect(issuesTypes).toEqual(['opened', 'edited'])
+  })
+
+  it('leaves the comment branch and other jobs untouched', () => {
+    expect(contentIf).toContain(
+      `contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || '')`,
+    )
+    const remediateCheckout = froBotParsed.jobs['fro-bot-remediate']?.steps?.find(
+      step => step.name === 'Checkout repository',
+    )
+    const observeCheckout = froBotParsed.jobs['fro-bot-observe']?.steps?.find(
+      step => step.name === 'Checkout repository',
+    )
+    expect(remediateCheckout?.with?.['persist-credentials']).toBeUndefined()
+    expect(observeCheckout?.with?.['persist-credentials']).toBeUndefined()
+  })
+
+  it('sets persist-credentials: false on the content-trigger job checkout while keeping the PAT token', () => {
+    const expressionStart = '$' + '{{'
+    expect(checkoutStep?.with?.['persist-credentials']).toBe(false)
+    expect(checkoutStep?.with?.token).toBe(`${expressionStart} secrets.FRO_BOT_PAT }}`)
+    expect(checkoutStep?.with?.['fetch-depth']).toBe(0)
+  })
+
+  it('leaves the agent step github-token input unchanged', () => {
+    const agentStep = contentJob?.steps?.find(step => step.id === 'fro-bot-agent')
+    const expressionStart = '$' + '{{'
+    expect(agentStep?.with?.['github-token']).toBe(`${expressionStart} secrets.FRO_BOT_PAT }}`)
+  })
+})
