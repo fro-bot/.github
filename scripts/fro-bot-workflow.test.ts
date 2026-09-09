@@ -8,8 +8,11 @@
  * mirrors publish-wiki-workflow.test.ts.
  */
 
-import {readFileSync} from 'node:fs'
-import {resolve} from 'node:path'
+import {execFileSync} from 'node:child_process'
+import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join, resolve} from 'node:path'
+import process from 'node:process'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
@@ -323,7 +326,11 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
   const contentIf = String(contentJob?.if ?? '')
   const checkoutStep = contentJob?.steps?.find(step => step.name === 'Checkout repository')
 
-  it('configuration contract: the fro-bot job if predicate matches the expected condition exactly, whitespace-normalized (static string comparison, not a live GHA evaluation)', () => {
+  it('configuration contract: full if predicate matches expected condition (whitespace-normalized)', () => {
+    // Not redundant with the narrower tests below: only a full-predicate pin catches
+    // guard placement drift (right clause text, wrong branch) and an unsafe `|| true`
+    // bypass appended to one clause — neither a substring/contains check on a single
+    // clause would detect either. This is a static string comparison, not a live GHA evaluation.
     const expectedIf = `
       (
         github.event.pull_request == null ||
@@ -364,18 +371,20 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
     expect(issuesTypes).toEqual(['opened', 'edited'])
   })
 
-  it('leaves the comment branch and other jobs untouched', () => {
+  it('leaves the comment branch untouched', () => {
     expect(contentIf).toContain(
       `contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association || '')`,
     )
+  })
+
+  it('fro-bot-remediate keeps checkout credential persistence effective (its branch-pr push needs it)', () => {
     const remediateCheckout = froBotParsed.jobs['fro-bot-remediate']?.steps?.find(
       step => step.name === 'Checkout repository',
     )
-    const observeCheckout = froBotParsed.jobs['fro-bot-observe']?.steps?.find(
-      step => step.name === 'Checkout repository',
-    )
-    expect(remediateCheckout?.with?.['persist-credentials']).toBeUndefined()
-    expect(observeCheckout?.with?.['persist-credentials']).toBeUndefined()
+    expect(remediateCheckout).toBeDefined() // guards against a vacuous pass if the step were renamed/removed
+    // output-mode: branch-pr commits and pushes from this job, so persist-credentials must
+    // stay effective — the actions/checkout default (undefined) or an explicit true; never false.
+    expect(remediateCheckout?.with?.['persist-credentials']).not.toBe(false)
   })
 
   it('sets persist-credentials: false on the content-trigger job checkout while keeping the PAT token', () => {
@@ -389,5 +398,79 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
     const agentStep = contentJob?.steps?.find(step => step.id === 'fro-bot-agent')
     const expressionStart = '$' + '{{'
     expect(agentStep?.with?.['github-token']).toBe(`${expressionStart} secrets.FRO_BOT_PAT }}`)
+  })
+})
+
+describe('fro-bot.yaml content-trigger job: wiki sync failure visibility (shell-flow fixtures — fake git in an isolated tmp dir, not a hosted GHA run)', () => {
+  const syncStep = froBotParsed.jobs['fro-bot']?.steps?.find(step => step.name === 'Sync wiki from data branch')
+  const runScript = String(syncStep?.run ?? '')
+
+  // Bounded, single-purpose fake `git`: only the three subcommands this step calls
+  // are recognized, each exits per an env var the test controls. Not a git reimplementation.
+  const fakeGit = [
+    '#!/bin/sh',
+    'case "$1" in',
+    '  ls-remote) exit "$FAKE_GIT_LS_REMOTE_EXIT" ;;',
+    '  fetch) exit "$FAKE_GIT_FETCH_EXIT" ;;',
+    '  restore) exit "$FAKE_GIT_RESTORE_EXIT" ;;',
+    '  *) exit 0 ;;',
+    'esac',
+  ].join('\n')
+
+  function runSyncStep(env: Record<string, string>): {status: number; stdout: string} {
+    const dir = mkdtempSync(join(tmpdir(), 'fro-bot-wiki-sync-'))
+    try {
+      const gitPath = join(dir, 'git')
+      writeFileSync(gitPath, fakeGit)
+      chmodSync(gitPath, 0o755)
+      const scriptPath = join(dir, 'step.sh')
+      writeFileSync(scriptPath, runScript)
+      try {
+        const stdout = execFileSync('bash', [scriptPath], {
+          cwd: dir,
+          env: {...env, PATH: `${dir}:${process.env.PATH ?? ''}`},
+          encoding: 'utf8',
+        })
+        return {status: 0, stdout}
+      } catch (error) {
+        const failure = error as {status?: number; stdout?: string}
+        return {status: failure.status ?? 1, stdout: String(failure.stdout ?? '')}
+      }
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  }
+
+  it('branch present, fetch and restore succeed: exits clean with no warning or skip message', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.stdout).not.toContain('not yet established')
+  })
+
+  it('data branch absent (ls-remote exit 2): informational message, no warning, exits clean', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '2', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
+    expect(result.status).toBe(0)
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.stdout.toLowerCase()).toContain('not yet established')
+  })
+
+  it('ls-remote probe error (exit 128, distinct from the exit-2 absence case): visible warning, exits clean', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '128', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('::warning::')
+    expect(result.stdout.toLowerCase()).toContain('checked-out knowledge')
+  })
+
+  it('fetch fails after a successful probe: visible warning, exits clean', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '1', FAKE_GIT_RESTORE_EXIT: '0'})
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('::warning::')
+    expect(result.stdout.toLowerCase()).toContain('checked-out knowledge')
+  })
+
+  it('restore fails: hard failure is preserved, not swallowed (unchanged from before this fix)', () => {
+    const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '1'})
+    expect(result.status).not.toBe(0)
   })
 })

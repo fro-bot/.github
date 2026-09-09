@@ -18,7 +18,7 @@ Fro Bot is an AI-powered GitHub bot for repository review, maintenance, and cont
 
 **What Fro Bot Does:**
 
-- Reviews pull requests and triages issues under the `@fro-bot` identity
+- Reviews pull requests and triages issues opened/edited by trusted authors (OWNER/MEMBER/COLLABORATOR) under the `@fro-bot` identity
 - Accepts allowlisted collaborator invitations, stars onboarded repositories, and tracks them in auditable metadata
 - Ingests collaborator repositories into the knowledge wiki and lints the authoritative snapshot from `data`
 - Dispatches Renovate across tracked repos and refreshes org metadata on schedule
@@ -208,7 +208,7 @@ Fro Bot control plane:
 
 | Workflow | Purpose | Trigger |
 | --- | --- | --- |
-| **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Issues, PR events, schedule, dispatch, workflow_call |
+| **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Trusted-author issues (opened/edited; OWNER/MEMBER/COLLABORATOR), PR events, schedule, dispatch, workflow_call |
 | **Capture Learnings** | Capture and commit knowledge-wiki learnings to the `data` branch | Schedule, dispatch |
 | **Capture Patterns** | Detect recurring correction patterns across accepted learnings and solution docs, then draft human-reviewed pattern proposals | Manual dispatch |
 | **Poll Invitations** | Accept allowlisted collaboration invitations | Every 15 minutes, dispatch |

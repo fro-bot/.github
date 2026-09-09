@@ -486,6 +486,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.FRO_BOT_PAT }}
+          # Content-triggered runs never retain checkout credentials.
           persist-credentials: false
 
       - name: 📦 Setup
@@ -493,9 +494,19 @@ jobs:
 
       - name: Sync wiki from data branch
         run: |
-          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
-            git fetch origin data
-            git restore --source FETCH_HEAD --worktree -- knowledge
+          set -euo pipefail
+          ls_remote_status=0
+          git ls-remote --exit-code origin data >/dev/null 2>&1 || ls_remote_status=$?
+          if [ "$ls_remote_status" -eq 0 ]; then
+            if git fetch origin data; then
+              git restore --source FETCH_HEAD --worktree -- knowledge
+            else
+              echo "::warning::data branch fetch failed; using checked-out knowledge as-is."
+            fi
+          elif [ "$ls_remote_status" -eq 2 ]; then
+            echo "data branch not yet established; skipping wiki sync."
+          else
+            echo "::warning::data branch probe failed (exit $ls_remote_status); using checked-out knowledge as-is."
           fi
 
       - name: Capture wiki baseline
