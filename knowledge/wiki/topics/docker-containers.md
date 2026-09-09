@@ -2,11 +2,16 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-08-31
-tags: [docker, containers, multi-arch, oci, security, ci-cd, hadolint, cve, renovate, alpine]
+updated: 2026-09-09
+sources:
+  - url: https://github.com/fro-bot/dashboard
+    sha: a11f1b7dc5c3cf2ae021eb6c147b0d8fca0684f0
+    accessed: 2026-09-09
+tags: [docker, containers, multi-arch, oci, security, ci-cd, hadolint, cve, renovate, alpine, trivy, sarif, multi-stage, non-root, ignore-unfixed]
 related:
   - marcusrbrown--containers
   - bfra-me--ha-addon-repository
+  - fro-bot--dashboard
   - github-actions-ci
   - home-assistant
 ---
@@ -19,6 +24,7 @@ Docker container build patterns, security practices, and CI/CD integration obser
 
 - [[marcusrbrown--containers]] — Primary container collection with multi-arch builds, Python automation, and template system
 - [[bfra-me--ha-addon-repository]] — HA add-on template; four-arch (`aarch64`/`amd64`/`armhf`/`armv7`) builds via `home-assistant/builder` with cosign signing to GHCR, digest-pinned `ARG BUILD_FROM`, `repology` custom manager for apk pins
+- [[fro-bot--dashboard]] (added 2026-09-09) — single-arch `node:24-slim` app image, three-stage (`builder` → `prod-deps` → runtime), digest-pinned, CalVer-tagged to GHCR, smoke-tested by digest before promotion, two-phase Trivy scan on the release path
 
 ## Dockerfile Patterns Observed
 
@@ -66,6 +72,30 @@ Registry push is gated on `github.event_name != 'pull_request'` to prevent PR bu
 ### Security Scanning
 
 Trivy is used for both vulnerability scanning (image scan) and misconfiguration scanning (config scan). Results are uploaded as SARIF for GitHub Security tab integration. Hadolint provides static Dockerfile linting with SARIF output.
+
+#### Split Visibility From Enforcement: The Two-Phase Trivy Scan (2026-09-09)
+
+From [[fro-bot--dashboard]]'s `release.yaml` (present since ≤2026-08-08, first recorded 2026-09-09). The release job scans the freshly built candidate image **by digest, twice, with opposite policies**:
+
+| Phase | Purpose | Key settings |
+| --- | --- | --- |
+| 1. Report | Full picture into code scanning | `severity: HIGH,CRITICAL`, `limit-severities-for-sarif: true`, **`exit-code: '0'`**, `format: sarif` → upload as artifact (5-day retention) **and** `codeql-action/upload-sarif` under a dedicated `category: trivy/release-image` |
+| 2. Enforce | Fail only on what a maintainer can fix | same action + same Trivy version, **`ignore-unfixed: true`**, **`exit-code: '1'`** |
+
+Both phases use the same pinned action (`aquasecurity/trivy-action` v0.36.0) and the same explicit `version: v0.72.0` scanner pin, so the two runs cannot disagree because of tool drift. A `$GITHUB_STEP_SUMMARY` block records the digest, artifact name, code-scanning category, and severity floor, so the run is self-describing without opening the SARIF.
+
+This is the correct resolution of the tension recorded under *Base Image Pinning* above: **digest pinning buys reproducibility, not freshness**, so a digest-pinned base will carry HIGH/CRITICAL CVEs with no upstream fix available. A single blocking scan against that reality has exactly two stable end states — every release blocked, or the severity floor quietly raised until the gate means nothing. Splitting the concerns keeps the complete HIGH/CRITICAL picture visible in code scanning while gating releases only on findings that have a patch. The reasoning is written down in-repo at `docs/solutions/best-practices/trivy-base-image-alerts-unfixable-by-design-2026-08-30.md`.
+
+Two details worth copying:
+
+- **Scan the digest, not the tag.** `image-ref: ghcr.io/<repo>@<digest>` scans exactly the artifact that will be promoted, and the digest is regex-validated (`^[a-f0-9]{64}$`) before use.
+- **Mint privileged credentials after third-party steps.** The workflow carries an explicit comment that the publication App token is created only once all third-party actions have finished — so the scanner, the uploader, and the builder never run with the release identity in their environment. Cheap ordering discipline that survives a compromised action.
+
+#### Prefer the Image's Stock Non-Root User (2026-09-09)
+
+[[fro-bot--dashboard]] replaced a bespoke `addgroup --system --gid 1001 dashboard` / `adduser … --uid 1001` block with plain `USER node` (uid **1000**, already present in every `node:*` image). Less Dockerfile, one fewer layer, and — the actual motivation, per the PR title `fix(docker): run as the node user to match deployment` — the container UID now matches what the deployment environment expects for volume ownership.
+
+The transferable part is the second half of that change: the release pipeline **asserted the old UID**. `release.yaml` smoke-tests the candidate with `docker run --rm "$IMG" node -p 'process.getuid()'` and failed if it was not `1001`; the same PR updated the assertion to `1000`. A UID assertion in the smoke test is a good idea precisely because it turns a silent permissions regression into a release failure — but it means the runtime identity is now specified in two places, and changing one without the other blocks every release. **If you assert a container's UID in CI, treat the Dockerfile `USER` line and the assertion as a single coupled edit**, the same discipline the *Renovate Custom Managers* entry below prescribes for base-image and package-set version pairs.
 
 ### Tagging Strategy
 

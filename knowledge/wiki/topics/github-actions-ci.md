@@ -174,12 +174,14 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 
 **Supply-chain parity added 2026-08-08:** [[fro-bot--dashboard]] closed its CodeQL/Scorecard gap in one wave — workflow count 3 → 7 with `codeql.yaml` (weekly `javascript-typescript` CodeQL v4), `scorecard.yaml` (weekly OpenSSF Scorecard v2.4.4 + SARIF upload), `dependency-review.yaml` (PR-gated v5.0.0), and a **self-hosted `renovate.yaml`** (`bfra-me/.github` reusable @v4.16.44 — Renovate was previously org-side only), plus an OpenSSF Scorecard README badge. This is the same CodeQL+Scorecard+Dependency-Review triad already durable in [[bfra-me--works]], [[bfra-me--renovate-action]], [[marcusrbrown--renovate-config]], and [[fro-bot--agent]]. Notably it **superseded a harness-delivery gap**: the prior daily-pass `pnpm-workspace.yaml` security `overrides` (`brace-expansion`/`fast-uri`) that never landed under working-dir delivery are gone — the transitive-advisory path is now owned by in-repo Renovate + Dependency Review rather than an undeliverable autoheal edit. A data point that repo-local supply-chain automation is the durable fix for autoheal edits a `schedule`-trigger working-dir contract can't commit.
 
+**Correction and extension (2026-09-09).** Two parts of that reading need adjusting. (a) The 2026-08-08 survey missed that `release.yaml` **already carried a two-phase Trivy image scan** at the same SHA, so the "one wave" framing understated the posture — container scanning was in place before the workflow-count jump. (b) The conclusion that in-repo Renovate + Dependency Review had *superseded* the `pnpm.overrides` ledger was wrong in its implication: the ledger **returned on 2026-08-30** (PR #400) with `brace-expansion@2`/`@5`, `fast-uri@3`, and a new `undici@7`. `dependency-review-action` is a **PR-scoped change gate**; it does not remediate a transitive version already resolved in the lockfile. An override ledger and an advisory gate are complementary, not substitutes — the same distinction [[marcusrbrown--tokentoilet]] demonstrated from the failure side, where `Security Audit` stayed green through a 19-alert regression because it only ever ran on PRs. What genuinely fixed the undeliverable-autoheal problem was not the supply-chain suite; it was `output-mode` (see the 2026-09-09 delivery entry below).
+
 ### Fro Bot Agent
 
 | Repo | Fro Bot Workflow | Schedule |
 | --- | --- | --- |
 | [[fro-bot--agent]] | Present (`fro-bot.yaml`, self-hosted; agent v0.94.0 as of 2026-07-21). As of v0.93.0 the workflow carries a two-job release-notes path (read-only generation + `FRO_BOT_PAT` apply) and a `review-skip-label` opt-out for automatic PR reviews. | Daily 15:30 UTC DMR, Weekly Sun 20:00 UTC wiki update |
-| [[fro-bot--dashboard]] | Present (single-file three-mode `fro-bot.yaml`, self-hosted at agent **v0.97.0** SHA-pinned `3f19f02` as of 2026-08-08 — ecosystem version co-leader with [[marcusrbrown--gpt]]) | Daily `0 0 * * *` (midnight UTC) oversight + autohealing; modes review/triage/schedule + dispatch; checkout pins to default ref (never PR-head) to protect `FRO_BOT_PAT` |
+| [[fro-bot--dashboard]] | Present (single-file three-mode `fro-bot.yaml`, self-hosted at agent **v0.109.4** SHA-pinned `b799b64` as of 2026-09-09; was v0.97.0 `3f19f02` at 2026-08-08) | Daily `0 0 * * *` (midnight UTC) oversight + autohealing; modes review/triage/schedule + dispatch; checkout pins to default ref (never PR-head) to protect `FRO_BOT_PAT`. **2026-08-31: `output-mode` made trigger-conditional (`branch-pr` on schedule/dispatch, `auto` elsewhere) and `persist-credentials` scoped to match — the fleet's first repo-side fix of the delivery break** |
 | [[marcusrbrown--containers]] | Present (`fro-bot.yaml`, agent v0.55.0) | Daily 14:30 UTC autohealing |
 | [[marcusrbrown--systematic]] | Present (`fro-bot.yaml`) | Weekly Mon 09:00 UTC maintenance, Daily 03:30 UTC autohealing |
 | [[marcusrbrown--infra]] | Present (`fro-bot.yaml`, agent v0.44.3) | Daily 03:30 UTC autohealing (8 categories incl. CLIProxy + Gateway + cross-project + upstream modernization watch on Sundays) |
@@ -1397,6 +1399,9 @@ The fleet now has three mechanisms producing three superficially identical queue
 | [[marcusrbrown--dev-like]] | 0 | genuinely drained | every Renovate PR automerged same-day |
 | [[marcusrbrown--mothership]] | 0 | **11 updates blocked** | `dependencyDashboardApproval` — no branch is ever created |
 | [[bfra-me--ha-addon-repository]] | 5 (fixed) | 6-deep backlog behind the window | `prConcurrentLimit` throttling |
+| [[fro-bot--dashboard]] (added 2026-09-09) | 0 | **drained _and_ 11 majors blocked** | automerge on minors/patches + `dependencyDashboardApproval` on majors |
+
+The dashboard case is the one that breaks a tempting shortcut: its PR list is *genuinely* drained — 84 of the last 100 closed PRs are same-day Renovate merges — **and** eleven majors (TypeScript v7, Vitest v5, pnpm v12, jsdom v30, `jest-dom` v7, the Actions majors, and all three `pnpm.overrides` range caps) sit unchecked in `Pending Approval`. So "the merge rate is healthy" and "the queue is blocked" are both true simultaneously, at different severity tiers. An audit that samples merge latency concludes the repo is current; an audit that diffs installed versions against latest concludes it is a major behind on its three core dev tools. Neither is measuring wrong; they are measuring different partitions of the same queue.
 
 Rules:
 
@@ -1439,6 +1444,42 @@ The generalization matters more than the instance:
 - **`issues: [opened]` is the most open trigger a repo has.** Comments at least require someone to find an existing thread; opening an issue is the front door. Anywhere a comment trigger earns an association gate, the `issues` trigger needs the same gate or a stronger reason not to.
 - **Splitting a workflow does not automatically split its trust boundary.** This repo split `fro-bot.yaml` into two jobs on 2026-09-08 (`fro-bot-remediate` / `fro-bot-observe`) — but along the **delivery-mode** axis (branch-pr vs working-dir), which is orthogonal to reachability. Both new jobs are schedule/dispatch-only; the attacker-reachable job was left untouched, still holding the PAT. Compare [[marcusrbrown--infra]]'s 2026-09-06 split, which cut on the **capability** axis instead: `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment, no privileged credential) versus `fro-bot-storage` (schedule/main-dispatch only, environment-gated, `id-token: write`, egress-blocked). Same file, same two-job outcome, completely different property purchased.
 - **The remediation shape is known and cheap:** either add the association gate to the `issues` branch, or move the content-triggered path onto the default `GITHUB_TOKEN` with a narrow `permissions:` block and keep `FRO_BOT_PAT` on the schedule/dispatch jobs — the token-scope-not-token-absence pattern from `docs/solutions/workflow-issues/required-github-token-for-agent-steps-2026-06-22.md`. The agent still authenticates; it just cannot reach across repos on an untrusted trigger.
+
+### The Delivery Break Has a Fix, and It Costs a Credential Decision (2026-09-09)
+
+From [[fro-bot--dashboard]] at `a11f1b7` — the first surveyed repo to **close** the working-dir/`output-mode: auto` delivery break rather than diagnose it. Prior entries recorded three failure states of the same defect: silent ([[marcusrbrown--tokentoilet]], a fully-permissioned daemon that wrote nothing for a month), self-detected-but-unfixed ([[marcusrbrown--mothership]], regenerating an identical diff every 24 h), and control-plane-scoped ([[marcusrbrown--infra]]). This is the remediation.
+
+The fix is one expression:
+
+```yaml
+# Scheduled runs need branch-pr; this workflow has no caller-side PR step.
+# Scope it to those triggers so other events stay on auto.
+output-mode: >-
+  ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      && 'branch-pr' || 'auto' }}
+```
+
+Three things generalize:
+
+- **The dispatch-time contract must match the workflow's actual shape.** `auto` resolving to working-dir delivery is only correct if the *caller* implements commit/push/PR. A workflow whose last step is `Run Fro Bot` has no caller half, so `auto` is a guaranteed discard. The cheap pre-check is structural, not behavioral: *does any step after the agent step deliver anything?* If not, `auto` is wrong regardless of what the run concludes. This can be linted across a fleet from workflow YAML alone, without waiting for a report to be contradicted by `git log`.
+- **Restoring delivery is a permissions change.** `branch-pr` means the agent pushes, which means the checkout must keep its credential. The dashboard scoped it rather than enabling it globally: `persist-credentials: ${{ !contains(fromJSON('["pull_request", "issue_comment", "issues"]'), github.event_name) }}` — withheld on exactly the attacker-reachable review triggers, kept only where delivery needs it. That is the same disjoint-capability outcome [[marcusrbrown--infra]] bought by splitting into two jobs, achieved with two expressions in one job. **Scope the credential to the trigger, not to the workflow** — and note this composes with the 2026-09-09 trust-gate entry above: the trigger list you exempt from credentials should be the same trigger list you cannot gate on `author_association`.
+- **Verify the repair with an artifact, not a green run.** The claim "delivery works now" is only supported by a merged, agent-authored PR — here #414, `fix(web): remove no-op replace() in tokens.test.ts (CodeQL #31)`, authored by the `fro-bot` identity (distinct from the Renovate `fro-bot[bot]` identity) and merged the same day. Run conclusions measure the harness; a merge commit measures the channel. One agent-authored PR among the last 100 closed is also the honest read: the channel is repaired and lightly used, which is a different claim from "the agent is productive."
+
+The full post-mortem shape is worth copying: **#413** the fix → **#415** the learning (`docs/solutions/workflow-issues/workflow-output-mode-auto-discarded-agent-fixes-2026-08-31.md`) → **#416** the security consequence of the fix → **#418** a correction to the learning, all merged the same day.
+
+### A Survey That Reads Only Workflows and Manifests Cannot See Application Subsystems (2026-09-09)
+
+Method finding, from the [[fro-bot--dashboard]] survey, generalizable to every repo page in this wiki. Four consecutive surveys of that repo read workflow files, `package.json`, `pnpm-workspace.yaml`, `Dockerfile`, and `renovate.json5` carefully — and inherited application structure from the *previous wiki page* rather than from a listing of the tree. The cost, all caught in one pass by diffing recursive trees at the five recorded SHAs:
+
+- A route file (`src/routes/dashboard.ts`) documented in the Architecture table for **four surveys** after it was deleted. Its test file survived, which kept the stale entry plausible.
+- **Two entire subsystems** — a Web Push stack (11 modules + a contract-barrel member + a view) and an authenticated listener channel (4 modules + a route + a written wire contract) — that landed by 2026-07-23 and went unrecorded through two surveys. Neither touches a workflow or a manifest, so neither was reachable by the method being used.
+- A **Trivy image-scanning stage already present** inside a workflow file the survey reported it had covered.
+
+The rules:
+
+1. **Diff the tree, not the prose.** One recursive tree call per survey, compared against the previously recorded SHA, is cheap and catches additions, deletions, and renames that no manifest reflects. Deletions are the ones prose never catches, because a page carries a claim forward until something contradicts it — and absence contradicts nothing.
+2. **A dependency manifest describes what the code *imports*, not what it *does*.** A push subsystem built on standard Web APIs and a listener built on the existing HTTP framework add zero dependencies. Manifest-driven surveying is structurally blind to exactly the features that introduce no new vendor.
+3. **"I read that file" is not "I recorded that file."** The Trivy miss is the uncomfortable one: the file was in scope and the finding still did not land. Record what a file contains, not that it was opened.
 
 ### Convention Enforcement via Tests
 
