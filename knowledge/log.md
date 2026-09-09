@@ -4888,3 +4888,30 @@ Sources: https://github.com/marcusrbrown/mothership@8895732b6b3a0f88fd3bf51117be
 Surveyed marcusrbrown/mothership and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/mothership
+
+## [2026-09-09 04:20] oversight | repo:fro-bot/.github
+
+Daily Fro Bot oversight pass (categories 5–8) on the control plane itself. One
+durable finding recorded: `wiki/topics/github-actions-ci.md` gains the dated
+section "A Trust Gate on One Trigger Is Not a Trust Gate on the Job", covering
+the author-gate asymmetry between the comment triggers and the
+`issues: [opened, edited]` trigger inside a single `if:` expression on a job
+that holds a cross-repo write-tier PAT, contrasted against
+[[marcusrbrown--infra]]'s capability-axis job split of 2026-09-06. Frontmatter
+`updated` advanced to 2026-09-09 and a `fro-bot/.github@c4f6e01` source entry
+added. No page content removed; all wikilinks resolve to existing pages. No
+`wiki/repos/` page exists for `fro-bot/.github` itself, so the section names the
+repo in plain text rather than minting a dangling wikilink.
+
+Method note: the finding was read directly from the workflow file in the
+checkout (`.github/workflows/fro-bot.yaml`) plus branch-protection and
+repository metadata from the GitHub API. Delivery mode was `working-dir`; only
+`knowledge/**` was modified by this run.
+
+Sources: https://github.com/fro-bot/.github@c4f6e01d2ec25b31d9a95300e7acfb5271c39c4a; https://github.com/fro-bot/.github/actions/runs/34309211782
+
+## [2026-09-09 04:23] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@c4f6e01d2ec25b31d9a95300e7acfb5271c39c4a

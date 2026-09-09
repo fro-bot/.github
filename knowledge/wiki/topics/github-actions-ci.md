@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-08
+updated: 2026-09-09
 sources:
+  - url: https://github.com/fro-bot/.github
+    sha: c4f6e01d2ec25b31d9a95300e7acfb5271c39c4a
+    accessed: 2026-09-09
   - url: https://github.com/marcusrbrown/mothership
     sha: 8895732b6b3a0f88fd3bf51117beeec985791fc5
     accessed: 2026-09-08
@@ -1420,6 +1423,22 @@ From [[marcusrbrown--mothership]]'s `ci.yaml` Release Config Smoke job. The repo
 - The release config must declare the `ide-server` `externalBin`, reference `Entitlements.plist`, enable `hardenedRuntime`, and not ship the placeholder updater public key; the base config must not ship a null CSP.
 
 The byte-inequality check is the clever part: it does not enumerate which exceptions are sidecar-only, it just refuses to let the two files converge. **A separation invariant is often cheaper to assert as an inequality between two artifacts than as a property of either one** — and this whole class of check runs on `ubuntu-latest` against JSON and plists, so a config regression fails in a 10-second PR job instead of mid-release on a signing runner.
+
+### A Trust Gate on One Trigger Is Not a Trust Gate on the Job (2026-09-09)
+
+From the control plane's own `fro-bot/.github` `.github/workflows/fro-bot.yaml`, found by the daily oversight pass at `c4f6e01` (this repo has no `wiki/repos/` page of its own — it surveys others, not itself). The content-triggered `fro-bot` job answers five event types, and its `if:` expression gates them in one boolean with four `||` branches. Two of those branches are not gated the same way:
+
+- The **comment** branch (`issue_comment` / `pull_request_review_comment` / `discussion_comment`) requires `author_association` ∈ `{OWNER, MEMBER, COLLABORATOR}` — a real trust gate.
+- The **`issues: [opened, edited]`** branch requires only that the author is not a `[bot]` and not `fro-bot`. There is no association check. It is the only `author_association` reference in the entire 1,115-line file.
+
+The job checks out with `token: ${{ secrets.FRO_BOT_PAT }}` and hands the same PAT to the agent as `github-token`. That credential is documented in the file itself as carrying cross-repo write-tier authority (repo + `read:org` + `project`). So on a public repository, opening an issue — an action available to any account on GitHub — starts a run whose environment holds the fleet's broadest credential, with the issue title and body flowing into the agent prompt as untrusted text.
+
+The generalization matters more than the instance:
+
+- **A trigger allowlist is per-branch, not per-job.** When several event types share one `if:` expression joined by `||`, the weakest branch defines the job's actual reachability. Auditing "does this workflow check `author_association`?" returns yes and tells you nothing. Ask instead: _for each trigger this job answers, who can fire it?_
+- **`issues: [opened]` is the most open trigger a repo has.** Comments at least require someone to find an existing thread; opening an issue is the front door. Anywhere a comment trigger earns an association gate, the `issues` trigger needs the same gate or a stronger reason not to.
+- **Splitting a workflow does not automatically split its trust boundary.** This repo split `fro-bot.yaml` into two jobs on 2026-09-08 (`fro-bot-remediate` / `fro-bot-observe`) — but along the **delivery-mode** axis (branch-pr vs working-dir), which is orthogonal to reachability. Both new jobs are schedule/dispatch-only; the attacker-reachable job was left untouched, still holding the PAT. Compare [[marcusrbrown--infra]]'s 2026-09-06 split, which cut on the **capability** axis instead: `fro-bot-content` (content-triggered, `contents: read` + `pull-requests: read`, no environment, no privileged credential) versus `fro-bot-storage` (schedule/main-dispatch only, environment-gated, `id-token: write`, egress-blocked). Same file, same two-job outcome, completely different property purchased.
+- **The remediation shape is known and cheap:** either add the association gate to the `issues` branch, or move the content-triggered path onto the default `GITHUB_TOKEN` with a narrow `permissions:` block and keep `FRO_BOT_PAT` on the schedule/dispatch jobs — the token-scope-not-token-absence pattern from `docs/solutions/workflow-issues/required-github-token-for-agent-steps-2026-06-22.md`. The agent still authenticates; it just cannot reach across repos on an untrusted trigger.
 
 ### Convention Enforcement via Tests
 
