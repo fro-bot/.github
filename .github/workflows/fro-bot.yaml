@@ -501,12 +501,14 @@ jobs:
             if git fetch origin data; then
               git restore --source FETCH_HEAD --worktree -- knowledge
             else
-              echo "::warning::data branch fetch failed; using checked-out knowledge as-is."
+              echo "::error::data branch fetch failed; refusing to run on a possibly stale knowledge/ snapshot."
+              exit 1
             fi
           elif [ "$ls_remote_status" -eq 2 ]; then
             echo "data branch not yet established; skipping wiki sync."
           else
-            echo "::warning::data branch probe failed (exit $ls_remote_status); using checked-out knowledge as-is."
+            echo "::error::data branch probe failed (exit $ls_remote_status); refusing to run on a possibly stale knowledge/ snapshot."
+            exit 1
           fi
 
       - name: Capture wiki baseline

@@ -132,6 +132,8 @@ This repository provides shared configurations and automation for the Fro Bot ec
    pnpm coverage
    ```
 
+   > [!NOTE] A few `scripts/*.test.ts` files (e.g. `fro-bot-workflow.test.ts`) shell out to `bash` and a fake `git` fixture to exercise workflow `run:` blocks directly; these are verified on Linux CI and macOS, not tested on Windows.
+
 4. **Auto-fix issues:**
 
    ```bash

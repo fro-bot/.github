@@ -406,9 +406,12 @@ describe('fro-bot.yaml content-trigger job: wiki sync failure visibility (shell-
   const runScript = String(syncStep?.run ?? '')
 
   // Bounded, single-purpose fake `git`: only the three subcommands this step calls
-  // are recognized, each exits per an env var the test controls. Not a git reimplementation.
+  // are recognized, each exits per an env var the test controls, and each appends its
+  // own name to a trace file so tests can assert which subcommands actually ran.
+  // Not a git reimplementation.
   const fakeGit = [
     '#!/bin/sh',
+    'echo "$1" >> "$FAKE_GIT_TRACE_FILE"',
     'case "$1" in',
     '  ls-remote) exit "$FAKE_GIT_LS_REMOTE_EXIT" ;;',
     '  fetch) exit "$FAKE_GIT_FETCH_EXIT" ;;',
@@ -417,7 +420,7 @@ describe('fro-bot.yaml content-trigger job: wiki sync failure visibility (shell-
     'esac',
   ].join('\n')
 
-  function runSyncStep(env: Record<string, string>): {status: number; stdout: string} {
+  function runSyncStep(env: Record<string, string>): {status: number; stdout: string; trace: string[]} {
     const dir = mkdtempSync(join(tmpdir(), 'fro-bot-wiki-sync-'))
     try {
       const gitPath = join(dir, 'git')
@@ -425,17 +428,19 @@ describe('fro-bot.yaml content-trigger job: wiki sync failure visibility (shell-
       chmodSync(gitPath, 0o755)
       const scriptPath = join(dir, 'step.sh')
       writeFileSync(scriptPath, runScript)
+      const traceFile = join(dir, 'trace')
+      writeFileSync(traceFile, '')
+      const runEnv = {...env, PATH: `${dir}:${process.env.PATH ?? ''}`, FAKE_GIT_TRACE_FILE: traceFile}
+      let result: {status: number; stdout: string}
       try {
-        const stdout = execFileSync('bash', [scriptPath], {
-          cwd: dir,
-          env: {...env, PATH: `${dir}:${process.env.PATH ?? ''}`},
-          encoding: 'utf8',
-        })
-        return {status: 0, stdout}
+        const stdout = execFileSync('bash', [scriptPath], {cwd: dir, env: runEnv, encoding: 'utf8'})
+        result = {status: 0, stdout}
       } catch (error) {
         const failure = error as {status?: number; stdout?: string}
-        return {status: failure.status ?? 1, stdout: String(failure.stdout ?? '')}
+        result = {status: failure.status ?? 1, stdout: String(failure.stdout ?? '')}
       }
+      const trace = readFileSync(traceFile, 'utf8').split('\n').filter(Boolean)
+      return {...result, trace}
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
@@ -455,18 +460,20 @@ describe('fro-bot.yaml content-trigger job: wiki sync failure visibility (shell-
     expect(result.stdout.toLowerCase()).toContain('not yet established')
   })
 
-  it('ls-remote probe error (exit 128, distinct from the exit-2 absence case): visible warning, exits clean', () => {
+  it('ls-remote probe error (exit 128, distinct from the exit-2 absence case): fails closed with ::error::, no fetch/restore attempted', () => {
     const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '128', FAKE_GIT_FETCH_EXIT: '0', FAKE_GIT_RESTORE_EXIT: '0'})
-    expect(result.status).toBe(0)
-    expect(result.stdout).toContain('::warning::')
-    expect(result.stdout.toLowerCase()).toContain('checked-out knowledge')
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::')
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.trace).toEqual(['ls-remote'])
   })
 
-  it('fetch fails after a successful probe: visible warning, exits clean', () => {
+  it('fetch fails after a successful probe: fails closed with ::error::, no restore attempted', () => {
     const result = runSyncStep({FAKE_GIT_LS_REMOTE_EXIT: '0', FAKE_GIT_FETCH_EXIT: '1', FAKE_GIT_RESTORE_EXIT: '0'})
-    expect(result.status).toBe(0)
-    expect(result.stdout).toContain('::warning::')
-    expect(result.stdout.toLowerCase()).toContain('checked-out knowledge')
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain('::error::')
+    expect(result.stdout).not.toContain('::warning::')
+    expect(result.trace).toEqual(['ls-remote', 'fetch'])
   })
 
   it('restore fails: hard failure is preserved, not swallowed (unchanged from before this fix)', () => {
