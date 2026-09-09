@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/systematic
 created: 2026-05-07
-updated: 2026-09-05
+updated: 2026-09-09
 node_id: R_kgDORLx6ew
 sources:
   - url: https://github.com/fro-bot/systematic
@@ -38,6 +38,9 @@ sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: 9bceff393c4d14c76b01625b9268d08d37fc4f01
     accessed: 2026-09-05
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-09-09
 tags:
   - documentation
   - github-pages
@@ -53,11 +56,20 @@ tags:
 related:
   - marcusrbrown--systematic
   - marcusrbrown--dotfiles
+  - fro-bot--fro-bot-github-io
 ---
 
 # fro-bot/systematic
 
 Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Starlight/Astro docs site for `@fro.bot/systematic` at **https://fro.bot/systematic/**.
+
+> **2026-09-09 incidental observation from the [[fro-bot--fro-bot-github-io]] domain survey.** Not a survey of this repo — the `fro.bot` holder was surveyed and this deploy target was probed from the network side in passing. Three data points, all unauthenticated HTTP:
+>
+> - **The site is live and recent.** `https://fro.bot/systematic/` → 200, `last-modified 2026-09-08T04:17:27Z`. The deploy has fired since the 09-05 correction; the release gate keeps working.
+> - **The OCX registry reads `version 3.16.5`** (`/systematic/index.json`, 23,900 B; top-level keys `name`/`namespace`/`version`/`author`/`components`) — up from 3.15.0 observed 09-04 and 3.16.1 source-side 09-05.
+> - **Components are flat at 73 for a fifth consecutive observation**, across those three version moves. Component count and release cadence are independent measurements on this target; a moving version does not imply a moving surface, and the 09-05 note that the *schema* moved while components did not is consistent with this.
+>
+> One unresolved item: this page and the index describe a pinned JSON Schema served at `/schemas/v<major>/`. Probes of `fro.bot/schemas/`, `fro.bot/systematic/schemas/`, `fro.bot/systematic/schemas/v3/`, and `…/systematic.json` all returned 404, and `sitemap-0.xml` contains a single `<loc>`. These were **guessed paths**, so this is not a claim that the schema is unpublished — only that the recorded description does not locate it. The next source-side survey should record the exact URL.
 
 > **2026-09-05 correction from the source-side survey of [[marcusrbrown--systematic]].** A direct survey of the upstream repository (HEAD `9bceff39`, v3.16.1) reached three of this page's standing claims. Recorded here rather than edited into the sections below, per the additive rule.
 >

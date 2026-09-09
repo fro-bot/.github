@@ -2,11 +2,14 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-09-04
+updated: 2026-09-09
 sources:
   - url: https://github.com/fro-bot/systematic
     sha: 8e26a01
     accessed: 2026-09-04
+  - url: https://github.com/fro-bot/fro-bot.github.io
+    sha: 3e44653c4d185b239b44b3af12255d18c86463ab
+    accessed: 2026-09-09
 tags:
   [
     github-pages,
@@ -25,6 +28,9 @@ tags:
     slidev,
     custom-domains,
     monorepo,
+    tls,
+    dns,
+    https-enforcement,
   ]
 related:
   - marcusrbrown--mrbro-dev
@@ -32,6 +38,7 @@ related:
   - marcusrbrown--esphome-life
   - marcusrbrown--presentations
   - fro-bot--systematic
+  - fro-bot--fro-bot-github-io
 ---
 
 # GitHub Pages
@@ -45,6 +52,7 @@ Static site hosting via GitHub. Deployment patterns observed across the Fro Bot 
 - [[marcusrbrown--esphome-life]] — Jekyll (slate theme) + ESP Web Tools firmware installer, deployed to `gh-pages` branch
 - [[fro-bot--systematic]] — Starlight/Astro docs site for `@fro.bot/systematic`, deployed to `gh-pages` branch at fro.bot/systematic/
 - [[marcusrbrown--presentations]] — multi-deck slide archive (CRA/Spectacle + Slidev), assembled from two independent toolchains into one `_site/` and deployed via the Pages artifact API (2026-08-05, `#60`)
+- [[fro-bot--fro-bot-github-io]] — org-level custom-domain holder for `fro.bot`; a single `CNAME` blob, legacy build from `main:/`, no content of its own
 
 ## Deployment Patterns Observed
 
@@ -107,6 +115,42 @@ Two rules for auditing any cross-repo deploy target:
 - **`pushed_at` on the source repo is the wrong probe.** It counts pushes to every branch, including open PR branches. Here the source read `pushed_at 2026-09-04` (same day as the survey) while its last release was 10 days old — reading it alone would have reported an active producer and a broken mirror, which is exactly backwards.
 
 **Cadence is bursty because releases are bursty.** Deploy timing on this target is not a rhythm to average: 15 deploys landed in a 49.5-hour window, bracketed by a 3.2-day gap before and a 10-day drought after, with an earlier 9.2-day drought in the prior interval. An averaged "daily" figure describes an interval that contained no daily behaviour. Publish→deploy lag, measured at second resolution across all 15, is **31–45 s (mean ~36 s)** — earlier "~1–2 min" readings on this page's repo were a rounding artifact of comparing `HH:MM` timestamps.
+
+### Custom Domains: What the Repo Controls vs. What DNS Controls
+
+**HTTPS enforcement is not a hygiene checkbox — it decides the scheme of GitHub's canonical redirect (2026-09-09, [[fro-bot--fro-bot-github-io]]).** Six surveys recorded `https_enforced: false` on the `fro.bot` holder as a to-do item. Probing the live domain produced the consequence:
+
+```text
+https://fro-bot.github.io/  →  301  Location: http://fro.bot/      ← TLS dropped
+http://fro.bot/             →  404  (cleartext, no upgrade, no HSTS)
+
+https://www.fro.bot/        →  301  Location: https://fro.bot/     ← TLS preserved
+```
+
+When a repo sets a custom domain, Pages redirects `<owner>.github.io` to that domain — and emits the redirect at `http://` while enforcement is off. A visitor who arrives over TLS is redirected out of it. The `www` → apex redirect is unaffected, so the same domain produces two different scheme outcomes depending on entry point, and neither response carries `Strict-Transport-Security` (Pages only sends HSTS when enforcement is on). Any audit that reads `https_enforced: false` and files it as low-severity because "the site is served over HTTPS anyway" has measured the wrong hop. Check the redirect chain from the `github.io` name, not just the apex.
+
+**A custom domain splits ownership across two systems, and only one of them is in the repo.** The `CNAME` blob is the whole repo-side contribution; everything else that makes the domain safe lives in DNS, where no repo automation looks:
+
+| Concern | Lives in | Failure mode when absent |
+| ------- | -------- | ------------------------ |
+| Domain → Pages routing | `A` / `CNAME` records | Site unreachable — loud, gets fixed |
+| IPv6 reachability | `AAAA` records | **Silent.** The Pages edge is dual-stack (`<owner>.github.io` → `2606:50c0:800{0,1,2,3}::153`), but a custom domain inherits none of it — `fro.bot` publishes only `A`, so IPv6-only clients cannot reach it, and nothing in GitHub's UI mentions the gap |
+| Org domain verification | `_github-pages-challenge-<org>` TXT | **Silent.** Domain stays takeover-eligible if the CNAME is ever removed |
+| Certificate issuance constraint | `CAA` records | **Silent.** Any CA may issue |
+| Scheme of the canonical redirect | Pages repo setting | Silent downgrade (above) |
+
+Three of the five are invisible to every repo-level lint the ecosystem runs, because the artifact under test is a DNS zone. `protected_domain_state: unverified` had been recorded on that page since 2026-06-15 as a state; a single `dig` showed the cause is a missing challenge TXT record at self-hosted nameservers — i.e. the remediation was never a settings click. **For any custom-domain Pages repo, the survey unit is domain + repo, not repo.**
+
+### Measurement Channels: Observing the Artifact vs. Reading the Report
+
+**Carrying a value forward is a decision to stop measuring it (2026-09-09, [[fro-bot--fro-bot-github-io]]).** That page tracked a TLS expiry of 2026-09-07 across three token-less surveys, each labeling it "carried forward, not re-confirmed," and the last one wrote an escalation trigger conditioned on a future token-bearing survey. A single `openssl s_client` — available every one of those cycles — showed the certificate had actually been reissued on 2026-08-08, two days before the survey that warned the renewal was still pending.
+
+The failure was not the absence of a token. It was treating one channel's unavailability as the fact's unavailability. Two rules:
+
+- **Prefer the channel that observes the artifact over the one that reports on it.** The GitHub API describes intended Pages configuration; a TLS handshake, a redirect chain, and `dig` observe what clients actually receive. For custom domains the observing channels are unauthenticated, cheaper, and closer to ground truth — GitHub's own view can also lag its edge.
+- **Every carry-forward should name the cheapest independent channel, not just the unavailable one.** "Not re-confirmed this cycle" is honest about provenance and silent about feasibility; those are different claims, and conflating them is how a stale value survives long enough to generate a false alarm.
+
+This is the inverse of the [[fro-bot--systematic]] lesson recorded above (_measure the gate, not the tree_): there, the wrong probe was too eager; here, the right probe was never attempted. Both reduce to picking the channel whose semantics match the question.
 
 ## Performance Monitoring
 

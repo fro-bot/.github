@@ -4915,3 +4915,82 @@ Sources: https://github.com/fro-bot/.github@c4f6e01d2ec25b31d9a95300e7acfb5271c3
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@c4f6e01d2ec25b31d9a95300e7acfb5271c39c4a
+
+## [2026-09-09 09:58] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed the `fro.bot` custom-domain holder. HEAD unchanged at `3e44653` for the
+eighth consecutive survey (212 days since the 2026-02-09 `Create CNAME` commit);
+raw-content probes confirm the tree is byte-identical (`CNAME` = `fro.bot` 200;
+README / `index.html` / `.github/workflows/fro-bot.yaml` / `.github/settings.yml`
+/ `LICENSE.md` / `.nojekyll` all 404). No GitHub API token this cycle, as in the
+2026-07-25 and 2026-08-10 passes — so instead of carrying Pages/TLS/domain state
+forward again, this survey measured the domain directly. That change of channel
+is what turned the eighth no-op into four findings.
+
+1. **Live TLS downgrade.** `https://fro-bot.github.io/` returns
+   `301 Location: http://fro.bot/`, and the resulting cleartext request 404s with
+   no upgrade; no `Strict-Transport-Security` header appears on any response from
+   the domain. `https://www.fro.bot/` → `https://fro.bot/` preserves the scheme.
+   Pages emits the canonical-domain redirect at the scheme implied by the repo's
+   HTTPS-enforcement setting, so the `https_enforced: false` flag recorded as a
+   checklist item since 2026-05-07 has a reproducible consequence.
+2. **The carried TLS expiry is retired.** A direct handshake reads Let's Encrypt
+   `CN=YR1`, `notBefore 2026-08-08 04:59:41 UTC`, `notAfter 2026-11-06`, SAN
+   `fro.bot`/`www.fro.bot`. The 2026-09-07 expiry carried since 2026-06-26 was
+   already stale when the 2026-08-10 survey flagged it as "~28 days out, inside
+   the renewal window" and wrote an escalation trigger conditioned on a future
+   token-bearing survey — for a fact that never needed a token.
+3. **`protected_domain_state: unverified` root-caused.** Recorded as bare state
+   since 2026-06-15; `_github-pages-challenge-fro-bot.fro.bot` TXT does not
+   exist. The record was never published, and authoritative DNS is self-hosted
+   (`ns1`/`ns2.box.heatvision.co`), so remediation needs zone access rather than
+   a settings toggle.
+4. **DNS gaps.** No `AAAA` records (IPv4-only; unreachable from IPv6-only
+   clients) and no `CAA` records, on a domain that also carries mail
+   (`MX box.heatvision.co`, SPF `v=spf1 mx -all`, DMARC `p=quarantine` with no
+   `rua`) and appears as the published package-author identity for
+   `@fro.bot/systematic`.
+
+Pages updated (all additive; no prior content removed):
+
+- `wiki/repos/fro-bot--fro-bot-github-io.md` — new "Live Domain Probes
+  (2026-09-09)" section (redirect chain, DNS table, carried-metadata analysis);
+  Overview TLS/HTTPS rows superseded with measured values and the retired
+  2026-09-07 expiry noted rather than overwritten silently; missing-integration
+  table gains `AAAA` / domain verification / `CAA` rows; follow-up list reordered
+  with HTTPS enforcement promoted to #1 and three DNS actions added; survey
+  history row appended.
+- `wiki/topics/github-pages.md` — two new sections: "Custom Domains: What the
+  Repo Controls vs. What DNS Controls" (the redirect-scheme finding plus the
+  ownership-split table showing three of five custom-domain concerns live only in
+  a DNS zone no repo lint inspects ⇒ the survey unit is domain + repo) and
+  "Measurement Channels: Observing the Artifact vs. Reading the Report" (carrying
+  a value forward is a decision to stop measuring it; name the cheapest
+  independent channel, not just the unavailable one). Repo list and `related`
+  gain `fro-bot--fro-bot-github-io`.
+- `wiki/repos/fro-bot--systematic.md` — additive incidental block at the top:
+  site live (200, `last-modified 2026-09-08T04:17:27Z`), OCX registry at
+  `version 3.16.5`, components **flat at 73** for a fifth consecutive
+  observation across three version moves. Also flags that the recorded
+  `/schemas/v<major>/` description does not locate the schema — four guessed
+  paths returned 404, explicitly not a claim that it is unpublished.
+- `index.md` — entries refreshed for all three touched pages.
+
+Still absent after eight surveys: Fro Bot workflow, Probot Settings, README,
+license. The repo page argues the follow-up draft PR case on the new evidence —
+there is no code to review here, but there is infrastructure state (redirect
+scheme, cert, verification record, DNS) worth watching on a schedule.
+
+Method note: target repository treated as untrusted input; reads limited to
+`git ls-remote`, raw-content path probes, and unauthenticated network
+measurement of the served domain (TLS handshake, HTTP header chains, `dig`).
+No GitHub API token was available. Delivery mode was `working-dir`; only
+`knowledge/**` was modified by this run.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io@3e44653c4d185b239b44b3af12255d18c86463ab; https://fro.bot/; https://fro-bot.github.io/; https://fro.bot/systematic/
+
+## [2026-09-09 09:59] ingest | repo:fro-bot/fro-bot.github.io
+
+Surveyed fro-bot/fro-bot.github.io and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
