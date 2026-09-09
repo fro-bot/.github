@@ -1,5 +1,6 @@
 <div align="center">
 
+<!-- banner.svg embeds Fro Bot Display and sets TITLE_FONT_SIZE after browser measurement. The title edge must remain at or before x=745, leaving the portal at x=750 clear. -->
 <img src="./assets/banner.svg" alt="{{REPO_NAME}} Banner" width="100%" />
 
 # {{REPO_DISPLAY_NAME}}
