@@ -5008,3 +5008,70 @@ Sources: https://github.com/fro-bot/.github@36894f69e0048103a4209eaf7e811319db7f
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@36894f69e0048103a4209eaf7e811319db7f9adb
+
+## [2026-09-10 10:00] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Sixth survey of the Copilot-delegation plugin, at HEAD `b67bd4da` (prior
+`c6c055d`, 2026-08-25). Read scope held to the constraint: recursive tree
+listing, `package.json` / `mise.toml` / `biome.json` / `tsconfig.json` /
+`opencode.json` / `tui.json` / `.changeset/config.json` / `.github/renovate.json5`
+/ `.github/settings.yml`, all six workflow files, `README.md`, `AGENTS.md`,
+`CHANGELOG.md`, plus repository metadata, the commit-range compare, and the open
+issue/PR list. No source files read.
+
+v0.12.1 held for a sixth straight survey (48 days since the tag). The window is
+16 commits touching 7 files, all `mrbro-bot[bot]`, with zero source-tree change.
+Three findings recorded:
+
+1. **Twelve of the sixteen commits are `fro-bot/agent` pin bumps** (v0.105.0 →
+   v0.109.4, #378–#390 less #382). The repo carries no patch-disable rule, which
+   makes it the control case for the same-day patch-suppression census in
+   [[github-actions-ci]] — suppressed repos froze at v0.109.0, this one tracked
+   every release at a cost of ~75% self-maintenance commit volume. Generalized
+   into a new topic section pricing both postures and naming the unconfigured
+   middle (`groupName` + weekly schedule).
+2. **`README.md` documents three tools; four have shipped since v0.12.0.**
+   `copilot_resume` appears zero times in its 121 lines while `AGENTS.md` is
+   correct. README ships in `files[]`, so the stale surface is the npm page.
+   Generalized into [[opencode-plugins]] as the agent-doc-vs-front-door
+   divergence pattern, with the mechanically checkable fix (assert registered
+   tool names appear in the README) and a survey-method rule.
+3. **`update-repo-settings.yaml` pins a bare untagged SHA with no version
+   comment** (`f6a7976c` = `v4.16.8-3-gf6a7976`, 2026-04-23), invisible to
+   Renovate, while its sibling `renovate.yaml` advanced v4.19.0 → v4.27.0 in the
+   same window. Third fleet instance of the settings-sync workflow being the
+   frozen one; recorded in [[probot-settings]] with the three-mechanism table and
+   the lint that catches all three.
+
+Four prior claims on the repo page corrected additively (prior text retained
+with its date): the Biome schema/CLI gap is widening rather than a one-hop lag
+(`biome.json` untouched at 2.5.5, CLI 2.5.9 → 2.5.12); `settings.yml` uses the
+bare short-form `_extends` and inherits `marcusrbrown/.github`, not
+`fro-bot/.github`; `rimraf` + the `clean` script and `actions/checkout` v7.0.1
+were already present and went unrecorded; the Renovate preset was `#5.2.12`, not
+`#5.2.9`. The page's own Overview had inherited the README's three-tool error
+across four surveys and is corrected.
+
+Fro Bot workflow is present and current (agent v0.109.4), so no follow-up
+onboarding draft is warranted. Its job ends at `Run Fro Bot` with no
+commit/push/PR step — the working-dir delivery shape from
+[[marcusrbrown--tokentoilet]] — consistent with the newest fro-bot artifact
+being PR #335 of 2026-08-01 while perpetual issue #26 still updates.
+
+Limitation: this pass ran without GitHub credentials (`gh` unauthenticated;
+anonymous REST exhausted mid-run). Workflow-run telemetry — conclusion counts,
+scheduled-run liveness, issue-body inspection — was not obtained, and every
+claim above is scoped to what was actually read. Delivery mode `working-dir`;
+no branch, commit, push, or PR performed by this run.
+
+Pages touched: `wiki/repos/marcusrbrown--opencode-copilot-delegate.md`,
+`wiki/topics/opencode-plugins.md`, `wiki/topics/github-actions-ci.md`,
+`wiki/topics/probot-settings.md`, `index.md`.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate@b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c; https://github.com/marcusrbrown/opencode-copilot-delegate/compare/c6c055d906b8df3de5f371221daf930c8bd49f99...b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c; https://github.com/bfra-me/.github@f6a7976c5cc48af150f7de3df331362262f15a18
+
+## [2026-09-10 10:02] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate

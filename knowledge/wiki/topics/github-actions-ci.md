@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-09-10
 sources:
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c
+    accessed: 2026-09-10
   - url: https://github.com/fro-bot/.github
     sha: 36894f69e0048103a4209eaf7e811319db7f9adb
     accessed: 2026-09-10
@@ -1508,6 +1511,26 @@ Three things generalize:
 **Fleet census (2026-09-10, 34 active repos readable by the `fro-bot` account):** exactly **three** carry the disable-patch shape — `fro-bot/.github`, [[marcusrbrown--containers]], and [[marcusrbrown--extend-vscode]] — all three with the near-identical `'Disable patch updates except for select dependencies.'` description exempting only `typescript`/`python`. The other 30 let patches flow, so this is a **minority convention that has now produced a confirmed outage in one of its three adopters**. Worth flagging as a correlation rather than a proven link: [[marcusrbrown--extend-vscode]]'s `Publish` workflow has been red since 2026-08-20 on `Pre-Release Validation (vulnerabilities)` — `pnpm audit --audit-level moderate` exiting non-zero — and moderate-severity advisories are precisely the class that Renovate's security bypass does *not* reliably escalate past a patch-disable rule.
 
 Do not read "quiet queue" as "current." Under this rule the queue is quiet by construction, and the dashboard is the only place the deferred work is visible.
+
+### The Unsuppressed Side of the Same Census (2026-09-10)
+
+The patch-suppression finding above measured three repos that decline patch updates. The same-day survey of [[marcusrbrown--opencode-copilot-delegate]] supplies the control: a repo with **no** patch-disable rule — `renovate.json5` carries exactly three `packageRules`, two `allowedVersions` allowlists and one `semanticCommitType` override — over the identical sixteen-day window.
+
+The result confirms the diagnosis and prices the alternative. Where the suppressed repos hold `fro-bot/agent` at `v0.109.0` while `v0.109.4` ships, this repo reached `v0.109.4`. It got there through **twelve separate Renovate PRs** — #378 `v0.105.1`, #379 `v0.106.0`, #380 `v0.106.2`, #381 `v0.107.0`, #383 `v0.107.1`, #384 `v0.107.2`, #385 `v0.107.3`, #386 `v0.108.1`, #387 `v0.109.0`, #388 `v0.109.2`, #389 `v0.109.3`, #390 `v0.109.4` — each merged same-day, each a **one-line change to a workflow file** that nevertheless triggers the full required gate (Biome, `tsc --noEmit`, `bun build` + declarations, a Node ESM export-shape smoke test, and the unit suite). Twelve of the window's sixteen commits are the daemon versioning itself; the other four carry all of the repo's actual dependency movement.
+
+Both postures have a cost and they are not the same kind of cost:
+
+| | Patch suppressed (3 of 34 repos) | Patch unsuppressed (30 of 34) |
+| --- | --- | --- |
+| Agent pin | Frozen at `v0.109.0` | Current at `v0.109.4` |
+| Queue | Quiet by construction | 12 PRs / 16 days for one dependency |
+| Commit log | Reads clean | ~75% self-maintenance |
+| Failure mode | Silent — a suppressed bug-fix patch can freeze the daemon that would report the freeze | Loud and cheap — CI minutes and log noise |
+| Where the truth lives | Dependency Dashboard annotations | The commit log itself |
+
+The asymmetry is the point. The unsuppressed cost is **visible and bounded**: you can see it in `git log`, and it buys currency. The suppressed cost is **invisible and unbounded**: nothing surfaces it except a dashboard nobody reads, and it eventually buys an outage — as it did for `dessant/lock-threads` v6.0.2. Given a choice between a noisy commit log and a silent version freeze, prefer the noise; it is the only one of the two that is self-reporting.
+
+There is a third option neither repo takes, and it is the actual recommendation: **group the high-frequency, low-risk pin into a single scheduled batch** rather than choosing between per-release PRs and total suppression. A `groupName` on `fro-bot/agent` with a weekly `schedule` collapses twelve PRs into one without freezing anything. The current fleet is split between two extremes because nobody configured the middle.
 
 ### Convention Enforcement via Tests
 

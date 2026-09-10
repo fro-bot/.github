@@ -2,10 +2,26 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-09-03
-tags: [probot, github, repository-settings, automation, governance, branch-protection, drift-detection, reusable-workflows]
+updated: 2026-09-10
+sources:
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c
+    accessed: 2026-09-10
+tags:
+  [
+    probot,
+    github,
+    repository-settings,
+    automation,
+    governance,
+    branch-protection,
+    drift-detection,
+    reusable-workflows,
+    sha-pinning,
+  ]
 related:
   - marcusrbrown--github
+  - marcusrbrown--opencode-copilot-delegate
   - marcusrbrown--dev-like
   - marcusrbrown--marcusrbrown-com
   - marcusrbrown--marcusrbrown
@@ -52,6 +68,12 @@ This pulls defaults from the named file. The extending file only needs to declar
 ### marcusrbrown/dev-like
 
 [[marcusrbrown--dev-like]] (survey 2026-07-31) uses the bare short-form `_extends: .github:common-settings.yaml`, resolving to the **owner's** `.github` (`marcusrbrown/.github`) per the `_extends` rule — same inheritance shape as esphome.life above. Its overrides declare `repository.{name, description, homepage, topics}` and a `main` branch-protection block with `required_status_checks` strict on `validate` + **`Fro Bot`**, `enforce_admins: true`, `required_pull_request_reviews: null`, `required_linear_history: true` — the checks-over-reviewers posture. Note the `Fro Bot` status check is required for merge, wiring the repo's own agent into the gate (the agent's `pr-review` mode produces it). Applied via an `update-repo-settings.yaml` workflow, landed alongside the repo's other onboarding (Renovate, Fro Bot) after its 2026-07-12 initial survey had none.
+
+### marcusrbrown/opencode-copilot-delegate
+
+[[marcusrbrown--opencode-copilot-delegate]] (correction recorded 2026-09-10) is the **third** repo found using the bare short-form `_extends: .github:common-settings.yaml` and the third to be misattributed to `fro-bot/.github` by an earlier survey. Its overrides declare `repository.{name, description, homepage, topics}` plus a `main` branch-protection block: `required_status_checks` strict on `Fro Bot` + `Lint, typecheck, build, unit tests` + `Renovate / Renovate`, `enforce_admins: true`, `required_pull_request_reviews: null`, `required_linear_history: true` — the same checks-over-reviewers posture as [[marcusrbrown--dev-like]], and likewise self-gating on its own agent's verdict.
+
+Three misattributions of the same form is no longer a series of mistakes; it is a **survey defect**. The un-prefixed `.github` reads as "the Fro Bot org's `.github`" to anyone who has just been reading Fro Bot workflow files, and nothing in the file disambiguates it. The mechanical fix for future passes: never record an `_extends` target from the string as written — record it as `{repo owner}/.github` unless an explicit owner prefix is present.
 
 ### fro-bot/.github (Org Template)
 
@@ -192,6 +214,59 @@ specifically the settings-sync one — which means the class of failure it
 produces is not "a stale action" but "a `settings.yml` nobody applies,"
 the same end state as the esphome.life case reached by a different
 route.
+
+### Third instance: a bare, untagged SHA (marcusrbrown/opencode-copilot-delegate, 2026-09-10)
+
+[[marcusrbrown--opencode-copilot-delegate]] completes a pattern that now has three
+independent mechanisms and one shared victim. Its
+`.github/workflows/update-repo-settings.yaml` references:
+
+```yaml
+uses: bfra-me/.github/.github/workflows/update-repo-settings.yaml@f6a7976c5cc48af150f7de3df331362262f15a18
+```
+
+No `# vX.Y.Z` comment. It is the **only** unannotated `uses:` in the repository —
+`renovate.yaml`, `ci.yaml`, `release.yaml`, `copilot-setup-steps.yaml`, and
+`fro-bot.yaml` all carry version comments on all eight of their pins. Resolved
+upstream, `f6a7976c` is `git describe` → **`v4.16.8-3-gf6a7976`**: three commits
+past tag `v4.16.8` (2026-04-22), dated **2026-04-23**, and reachable from no
+current branch or tag in `bfra-me/.github`. Upstream is at **v4.27.0** — roughly
+eleven minor series. 2026-04-23 is also the consuming repository's `created_at`,
+so on the available evidence the pin has never been updated.
+
+The mechanism is different from the two cases above and worth stating precisely:
+Renovate's `github-actions` manager derives an update candidate by mapping the
+*current version* to a tag list. A bare digest with no version comment gives it
+no current version, so it produces **no candidate at all** — the reference is not
+stale-and-queued, it is absent from the dependency graph. Confirmed by contrast
+in the same window: the sibling `renovate.yaml` reference, same owner, same
+datasource, same manager, same directory, carries `# v4.19.0` and was bumped to
+`# v4.27.0` by PR #392 while `update-repo-settings.yaml` sat untouched across
+sixteen commits. Same defect class as [[bfra-me--ha-addon-repository]]'s
+`chrisdickinson/setup-yq`, which is likewise a bare SHA and likewise invisible.
+
+Three routes, one destination:
+
+| Repo | Mechanism | End state |
+| --- | --- | --- |
+| [[marcusrbrown--esphome-life]] | Correct ref, **wrong path** (`uses:` names `renovate.yaml`) | `settings.yml` never applied; Renovate runs twice per merge |
+| [[bfra-me--works]] | Correct path, **tag ref frozen** at v4.16.0 while siblings advanced | `settings.yml` applied by an eight-series-old workflow |
+| [[marcusrbrown--opencode-copilot-delegate]] | Correct path, **bare untagged SHA, no version comment** | Reference invisible to Renovate; frozen since repo creation |
+
+Why the settings-sync workflow keeps being the one that breaks is not a
+coincidence, and the reason is diagnostic rather than mystical: **a stale settings
+sync produces no error.** A stale build action fails a build; a stale test action
+fails a test; a stale settings sync applies an older workflow's logic to a current
+manifest, exits zero, and reports green. It is the reference with the weakest
+feedback signal in the entire workflow directory, so it is the reference where a
+silent pinning defect can survive longest. Every one of these three was found by
+reading `uses:` strings, not by anything failing.
+
+The lint that catches all three is the same one proposed in the `bfra-me/works`
+entry above, with one addition: **flag any `uses:` that lacks a version comment**,
+not merely ones that disagree with their siblings. Two of the three cases here are
+invisible to a disagreement check — esphome.life's ref was *correct*, and
+opencode-copilot-delegate's has no version to disagree with.
 
 ## Common Configuration Patterns
 

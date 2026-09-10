@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-09-08
+updated: 2026-09-10
 sources:
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate
+    sha: b67bd4da5f63825c51abd5dd8dd94e8ac48aad0c
+    accessed: 2026-09-10
   - url: https://github.com/marcusrbrown/mothership
     sha: 8895732b6b3a0f88fd3bf51117beeec985791fc5
     accessed: 2026-09-08
@@ -528,12 +531,33 @@ A second, immediately reusable provenance rule from the same document. For the p
 
 When a published package wraps a patched runtime, `gitHead` answers *"what did we package?"*, not *"what will execute?"*. Auditing plugin or harness behavior from `gitHead` alone reads the wrong tree. Related: [[marcusrbrown--systematic]]'s `HARNESSES.md`, which solves the adjacent honesty problem by making unverified matrix cells say the literal string `UNVERIFIED` rather than defaulting to an optimistic assumption.
 
+## The Agent-Facing Doc and the Package Front Door Drift Apart (2026-09-10)
+
+From [[marcusrbrown--opencode-copilot-delegate]] at `b67bd4da`. The plugin has shipped **four** tools since v0.12.0 (2026-05-21): `copilot_delegate`, `copilot_output`, `copilot_cancel`, `copilot_resume`, one file each under `src/tools/`. Two documents describe that surface, and they disagree:
+
+- `AGENTS.md` line 5: *"It exposes four tools to OpenCode sessions"*, with `copilot_resume` enumerated and `src/tools/resume.ts` in its tree diagram. **Correct.**
+- `README.md` line 7: *"This plugin registers three tools in OpenCode."* Line 100 repeats it. `copilot_resume` appears **zero times** in the file's 121 lines. **Wrong for ~3.7 months.**
+
+Three things make this a pattern rather than a typo.
+
+**1. The stale surface is the published one.** `README.md` is listed in `package.json`'s `files[]`, so it is the npm package page — and `.github/settings.yml` declares that npm page as the repository homepage. The plugin's front door under-reports its own tool catalog by 25%. For a plugin, the tool catalog *is* the API; a consumer deciding whether to install has no reason to discover `copilot_resume` at all.
+
+**2. The drift survives because the readers who would catch it are reading the other file.** Every agent that touches this repo loads `AGENTS.md` and sees four tools. Human contributors do the same. The README's audience is people who have not cloned the repo — exactly the population that cannot notice the discrepancy and has no channel to report it. **An agent-facing doc that is more accurate than the public one is a failure mode, not a success**, because it removes the pressure that normally keeps the public one honest.
+
+**3. Nothing mechanical looks at it.** The repo's CI gate is thorough about *shape* — Biome, `tsc --noEmit`, `bun build` plus declarations, a Node ESM export-shape smoke test that fails the build if the plugin entry exports anything but `default`, and the unit suite. Its autoheal prompt has four categories covering errored PRs, security advisories, dependency and changeset hygiene, and lint/typecheck/build. Not one step compares documented surface to registered surface.
+
+The fix is small and the repo already contains its template. `tests/package-exports.test.ts` exists precisely to mirror a CI assertion about the public surface locally; the same shape pointed at documentation — assert every registered tool name appears in `README.md` — would have failed on the v0.12.0 commit that introduced the divergence. **For any plugin, the registered tool names are the one part of the docs that is mechanically checkable, because they are string literals in both places.** Check them.
+
+Generalizes the [[marcusrbrown--tokentoilet]] rule ("grep the non-code surfaces whenever an abstraction absorbs a major bump") from version strings to **capability inventories**, and sharpens [[marcusrbrown--marcusrbrown-com]]'s AGENTS.md-drift case by inverting it: there the agent doc was stale and the code was current; here the agent doc is current and the *public* doc is stale, which is harder to see and worse to ship.
+
+A closing note on survey method, since this wiki reproduced the error for four consecutive passes: the repo page's own Overview said "three tools" from 2026-04-23 through 2026-08-25 while the sections beneath it correctly documented `copilot_resume` from 2026-05-21. The cause was reading the README for the summary and the tree for the detail. **A survey that sources its summary from a README will faithfully republish that README's errors.** Derive the summary from the tree, then diff the README against it — the diff is itself a finding.
+
 ## Related Pages
 
 - [[marcusrbrown--systematic]] — Was the largest OpenCode plugin; **as of v3 a three-harness workflow system** (OpenCode + [[pi-coding-agent]] + Claude Code, all peers optional). v3 boundary is **`3.0.0`, 2026-07-17** (the earlier `v3.2.5`/07-22 reading was a downstream artifact); catalog contracted 104 → 73 components (37 agents / 31 skills); discovered-skills-as-slash-commands added v2.33.0
 - [[pi-coding-agent]] — Second Tier 1 harness; bounded delegate (20 turns, depth-1, `noExtensions`), no native blocking-question or task-tracking primitive
 - [[fro-bot--systematic]] — Documentation deployment target for `@fro.bot/systematic`
-- [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin
+- [[marcusrbrown--opencode-copilot-delegate]] — Copilot CLI delegation plugin; **four** tools since v0.12.0, though its README still says three (see the doc-drift section above). Contributes the agent-doc-vs-front-door divergence pattern
 - [[fro-bot--space-bus]] — Workspace agent bus, now a **published plugin** (`@fro.bot/space-bus` v0.15.0): six `bus_*` tools + one directory-routed `opencode serve` + MCP facade + managed-server lifecycle + CI-enforced browser-safe library subpaths (now exposing `messages`/`questions`/`answerQuestion` + dispatch message correlation)
 - [[marcusrbrown--cortexkit-anthropic-auth]] — Claude Pro/Max OAuth, fallback accounts, quota routing, Cloudflare Worker relay for OpenCode and Pi. Fro Bot was active at v0.45.0 (2026-06-09) and is **`disabled_inactivity` as of 2026-09-02**; the fork is frozen at `1.2.5-mb.3` and 334 commits / 32 releases behind upstream `cortexkit/anthropic-auth` (`v1.21.0`, actively maintained). Contributes the cross-process OAuth refresh-lock and plugin-singleton prior art above, plus the dangling-dist-tag decommissioning rule
 - [[marcusrbrown--dotfiles]] — Agent skill configuration (`~/.agents/skills/`), consumes systematic as installed plugin
