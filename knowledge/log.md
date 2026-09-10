@@ -4986,3 +4986,25 @@ Sources: https://github.com/fro-bot/dashboard@a11f1b7dc5c3cf2ae021eb6c147b0d8fca
 Surveyed fro-bot/dashboard and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/dashboard
+
+## [2026-09-10 04:20] manual-edit | topic:github-actions-ci
+
+Added *Patch Suppression Eventually Breaks CI, Not Just Freshness (2026-09-10)*
+from the daily oversight pass. Escalates the existing invisible-drift finding on
+[[marcusrbrown--extend-vscode]]: the same `matchUpdateTypes: ['patch'] →
+enabled: false` rule shape in the control plane suppressed the upstream patch
+release that fixed a ten-day `Manage Issues → Lock` outage. Records the
+suppressed-set audit method (dashboard available-update annotations minus the
+open-PR list; 11 found), the harness-freeze composition (`fro-bot/agent`
+versions in the patch slot), and a fleet census of the rule shape (3 of 34
+active repos). Additive; no prior claims overwritten. Frontmatter `updated`
+advanced 2026-09-09 → 2026-09-10 with a new source SHA. `index.md` entry
+extended with the same dated summary.
+
+Sources: https://github.com/fro-bot/.github@36894f69e0048103a4209eaf7e811319db7f9adb; https://github.com/fro-bot/.github/pull/3880; https://github.com/dessant/lock-threads/issues/55; https://github.com/fro-bot/.github/actions/runs/34435374053
+
+## [2026-09-10 04:19] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@36894f69e0048103a4209eaf7e811319db7f9adb

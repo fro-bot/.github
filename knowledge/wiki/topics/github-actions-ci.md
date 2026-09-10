@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-09-09
+updated: 2026-09-10
 sources:
+  - url: https://github.com/fro-bot/.github
+    sha: 36894f69e0048103a4209eaf7e811319db7f9adb
+    accessed: 2026-09-10
   - url: https://github.com/fro-bot/.github
     sha: c4f6e01d2ec25b31d9a95300e7acfb5271c39c4a
     accessed: 2026-09-09
@@ -1480,6 +1483,31 @@ The rules:
 1. **Diff the tree, not the prose.** One recursive tree call per survey, compared against the previously recorded SHA, is cheap and catches additions, deletions, and renames that no manifest reflects. Deletions are the ones prose never catches, because a page carries a claim forward until something contradicts it — and absence contradicts nothing.
 2. **A dependency manifest describes what the code *imports*, not what it *does*.** A push subsystem built on standard Web APIs and a listener built on the existing HTTP framework add zero dependencies. Manifest-driven surveying is structurally blind to exactly the features that introduce no new vendor.
 3. **"I read that file" is not "I recorded that file."** The Trivy miss is the uncomfortable one: the file was in scope and the finding still did not land. Record what a file contains, not that it was opened.
+
+### Patch Suppression Eventually Breaks CI, Not Just Freshness (2026-09-10)
+
+[[marcusrbrown--extend-vscode]] recorded patch suppression as an *invisible-drift generator* on 2026-08-31 — a `matchUpdateTypes: ['patch'] → enabled: false` rule keeps the Renovate queue quiet while pins silently age. The 2026-09-10 control-plane pass upgrades the severity of that finding: **the same rule shape also suppresses upstream bug-fix patches, and one of those was the only thing standing between a workflow and ten consecutive days of failure.**
+
+The incident, in `fro-bot/.github`. The `Manage Issues` workflow's `Lock` job failed on every scheduled run from at least 2026-08-31 through 2026-09-10 with `"github-token" length must be less than or equal to 100 characters long`. Root cause was upstream, not local: `dessant/lock-threads` v6.0.0 validates its token input with `Joi.string().trim().max(100)` (`src/schema.js:116` at tag `v6.0.0`), and the runner-issued `GITHUB_TOKEN` outgrew 100 characters. Upstream fixed it in **v6.0.2** — `.max(1000)`, closing `dessant/lock-threads#55` — a pure patch release. Renovate listed `v6.0.0 → v6.0.2` on the Dependency Dashboard and never opened a PR for it, because `.github/renovate.json5` carries:
+
+```json5
+{
+  description: 'Disable patch updates except for select dependencies.',
+  matchUpdateTypes: ['patch'],
+  matchPackageNames: ['!python', '!typescript'],
+  enabled: false,
+}
+```
+
+Three things generalize:
+
+1. **Patch is the delivery channel for upstream bug fixes, and it has no alternate route.** A repo can decline patch *churn* and still need patch *repairs*; SemVer gives you no way to tell them apart from the outside, so a blanket `enabled: false` declines both. The security path is the documented exception — Renovate's vulnerability alerts ignore `enabled: false`, which is why every `[SECURITY]` patch in [[marcusrbrown--extend-vscode]]'s history landed while ordinary ones did not — but **a correctness bug is not a CVE**, so nothing rescues it.
+2. **The dashboard is the audit surface, and it will tell you exactly how much is suppressed.** The same pass enumerated **11 patch-shaped updates** visible on `fro-bot/.github` #2828 with no PR path: five actions (`actions/checkout` v7.0.0→v7.0.1, `actions/deploy-pages` v5.0.0→v5.0.1, `dessant/lock-threads` v6.0.0→v6.0.2, `fro-bot/agent` v0.109.0→v0.109.4, `ossf/scorecard-action` v2.4.3→v2.4.4) and six npm (`@bfra.me/prettier-config` 0.16.0→0.16.11, `@vitest/coverage-v8` 4.1.4→4.1.11, `@vitest/eslint-plugin` 1.6.15→1.6.27, `eslint-config-prettier` 10.1.1→10.1.8, `eslint-plugin-prettier` 5.5.0→5.5.6, `prettier` 3.9.1→3.9.6). Contrast the minor-shaped updates in the same dashboard, which *did* get PRs (#3877, #3879). **Count the dashboard's available-update annotations against the open PR list; the difference is the suppressed set.**
+3. **A suppressed patch can freeze the agent that would report the freeze.** `fro-bot/agent` versions the harness in the patch slot, so all six `fro-bot/agent@…# v0.109.0` pins in this repo are held by the same rule while `v0.109.4` ships. This is the [[marcusrbrown--extend-vscode]] observation ("the policy that governs updates is itself an update the policy forbids") applied to the daemon rather than the preset — and it composes badly with *A Run's Conclusion Measures the Harness, Not the Deliverable*, because a frozen harness produces green runs.
+
+**Fleet census (2026-09-10, 34 active repos readable by the `fro-bot` account):** exactly **three** carry the disable-patch shape — `fro-bot/.github`, [[marcusrbrown--containers]], and [[marcusrbrown--extend-vscode]] — all three with the near-identical `'Disable patch updates except for select dependencies.'` description exempting only `typescript`/`python`. The other 30 let patches flow, so this is a **minority convention that has now produced a confirmed outage in one of its three adopters**. Worth flagging as a correlation rather than a proven link: [[marcusrbrown--extend-vscode]]'s `Publish` workflow has been red since 2026-08-20 on `Pre-Release Validation (vulnerabilities)` — `pnpm audit --audit-level moderate` exiting non-zero — and moderate-severity advisories are precisely the class that Renovate's security bypass does *not* reliably escalate past a patch-disable rule.
+
+Do not read "quiet queue" as "current." Under this rule the queue is quiet by construction, and the dashboard is the only place the deferred work is visible.
 
 ### Convention Enforcement via Tests
 
